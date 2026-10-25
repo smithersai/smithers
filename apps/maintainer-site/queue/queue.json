@@ -1,526 +1,568 @@
 {
-  "version": 1,
-  "generatedAt": "2026-10-22T06:47:22Z",
-  "items": [
+ "version": 1,
+ "generatedAt": "2026-10-23T19:46:48Z",
+ "items": [
+  {
+   "id": "code:mvp/src/features/auth/schema@c99e",
+   "kind": "code",
+   "title": "Code: mvp/src/features/auth: schema.ts, store.ts",
+   "priority": 419,
+   "why": "security: auth, shape access, secrets; landed today; guide attached",
+   "area": "infra",
+   "addedAt": "2026-10-21T16:18:35Z",
+   "context": "# Live session and retained identity rows\n\nSource commit: `e93c4812547a3215b40221224972c48d44481ede`.\n\n## What\nDefines the server session response and the two browser identity rows.\nThe current session is local to a tab; the last confirmed person survives reloads.\n\n## Why\nAn offline reload needs retained identity without confusing it with a fresh server authorization.\nSee `apps/mvp/docs/decisions/0008-auth.md` and `apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority.md`.\n\n## How\n- `SessionState` is a discriminated signed-in/signed-out schema for incoming JSON.\n- `Session` tracks loading, reachability, sign-out progress and restoration separately.\n- `Confirmed` retains stable person id when available, login and role.\n- `AuthStore` seeds a single loading row and exposes one-row live queries.\n- `auth-confirmed` uses injected persistence at schema version 2; the tab session uses local storage only in memory.\n\n## Architecture diagram\n```text\nWorker session JSON -> [THIS: SessionState schema] -> auth actions\n                                                       |\nBrowser UI <- live queries <- [THIS: AuthStore] <--------+\n                              |             |\n                        tab Session    Confirmed v2\n                                           |\n                                  device Persistence\n(No network or server authorization is performed by this store.)\n```\n\n## Read this first\n- `apps/mvp/src/features/auth/schema.ts:10`: Optional personId preserves old responses but weakens identity information.\n- `apps/mvp/src/features/auth/schema.ts:20`: Independent fields can represent inconsistent session states.\n- `apps/mvp/src/features/auth/store.ts:52`: Confirmed identity persists separately from the live session.\n\n## Questions a reviewer should ask\n- Where is the version-1 to version-2 retained identity migration verified?\n- Can any consumer treat Confirmed as fresh server authorization?\n- Are impossible status/login/role combinations prevented by actions?\n\n## Readability\npass. The layer generator is 31 lines, mostly declarative options, with no conditional nesting. Only live state, retained state and queries must be held together. Session and Confirmed names and comments make their lifetimes clear.\n\n```json\n{\"readability\": {\"verdict\": \"pass\", \"why\": \"The layer generator is 31 lines, mostly declarative options, with no conditional nesting. Only live state, retained state and queries must be held together. Session and Confirmed names and comments make their lifetimes clear.\"}}\n```",
+   "files": [
     {
-      "id": "code:mvp/src/features/auth/components/Account@ad83",
-      "kind": "code",
-      "title": "Code: mvp/src/features/auth/components: Account.tsx, AuthContext.tsx, Compose...",
-      "priority": 397,
-      "why": "security: auth, shape access, secrets; landed recently; guide attached",
-      "area": "infra",
-      "addedAt": "2026-10-21T01:59:45Z",
-      "context": "# Account controls and composer gating\n\nSource commit: `e93c4812547a3215b40221224972c48d44481ede`.\n\n## What\nRenders sign-in, sign-out and the account name from live session state.\nShows the composer only when the access policy permits it and the Settings link only to an Admin.\n\n## Why\nSign-in must be a deliberate gesture; offline Members retain the composer without granting server authority.\nSee `apps/mvp/docs/decisions/0008-auth.md` and `apps/mvp/docs/decisions/0007-roles-and-tags.md`.\n\n## How\n- `AuthProvider` supplies queries and plain actions; useAuth fails clearly without a provider.\n- `Account` hides while loading, disables duplicate sign-out presses and displays callback failure copy.\n- `SignInButton` is a real link, present only when sign-in is available.\n- The link records a press and returns to the current path and query after GitHub.\n- `ComposerGate` delegates all policy to composerAccess using live and confirmed rows.\n- `SettingsLink` checks signed-in Admin state; server routes still enforce actual authority.\n\n## Architecture diagram\n```text\nBrowser Auth service -> [THIS: AuthProvider]\n                              | live queries / plain actions\n                 +------------+--------------+\n                 v            v              v\n              Account     ComposerGate    SettingsLink\n                 |            |              |\n             SignInButton   composer       settings route\n                 | link / signOut action\n                 v\n          Worker auth routes <-> GitHub / Postgres\nUI visibility complements server authorization.\n```\n\n## Read this first\n- `apps/mvp/src/features/auth/components/ComposerGate.tsx:16`: One policy determines online and retained offline composer access.\n- `apps/mvp/src/features/auth/components/SignInButton.tsx:16`: Sign-in is a browser navigation initiated by the person.\n- `apps/mvp/src/features/auth/components/Account.tsx:14`: Unreachable state falls through to the sign-in branch.\n- `apps/mvp/src/features/auth/components/SettingsLink.tsx:9`: Admin visibility is only a presentation gate.\n\n## Questions a reviewer should ask\n- Does the account header show the right state when offline with a confirmed identity?\n- Should the return target preserve the URL fragment too?\n- Do settings mutations reject unauthorized direct calls independently of this link?\n\n## Readability\npass. Account is the longest function at 22 lines; JSX and guards reach roughly three levels. Each component has one display decision, and access policy lives elsewhere. Names are plain and match visible controls.\n\n```json\n{\"readability\": {\"verdict\": \"pass\", \"why\": \"Account is the longest function at 22 lines; JSX and guards reach roughly three levels. Each component has one display decision, and access policy lives elsewhere. Names are plain and match visible controls.\"}}\n```",
-      "files": [
-        {
-          "path": "apps/mvp/src/features/auth/components/Account.tsx",
-          "from": 1,
-          "to": 31,
-          "note": "Who is signed in, for the header: their GitHub login and Sign out; or, signed out, the sign-in button, with \"Couldn't sign in.\" after GitHub's callback failed. Exports `Account`. Look at: correctness, naming and whether it can be smaller."
-        },
-        {
-          "path": "apps/mvp/src/features/auth/components/AuthContext.tsx",
-          "from": 1,
-          "to": 14,
-          "note": "What React components get: sign-in's live query to render and plain actions to call (features/auth/auth.ts). Exports `AuthProvider`, `useAuth`. Look at: correctness, naming and whether it can be smaller."
-        },
-        {
-          "path": "apps/mvp/src/features/auth/components/ComposerGate.tsx",
-          "from": 1,
-          "to": 26,
-          "note": "Asking Smithers is for Members and above (decision 0007 §2, `repo:ask`; decision 0008 §11): the composer for them, even offline after a reload; a short line for a… Exports `ComposerGate`. Look at: correctness, naming and whether it can be smaller."
-        },
-        {
-          "path": "apps/mvp/src/features/auth/components/SettingsLink.tsx",
-          "from": 1,
-          "to": 11,
-          "note": "The header's link to the deployment's settings, for an Admin only (docs/features/spend-alerts.md#channels). Exports `SettingsLink`. Look at: correctness, naming and whether it can be smaller."
-        },
-        {
-          "path": "apps/mvp/src/features/auth/components/SignInButton.tsx",
-          "from": 1,
-          "to": 21,
-          "note": "\"Sign in with GitHub\": a link the person presses, never a redirect the app makes (decision 0008 §3). Exports `SignInButton`. Look at: correctness, naming and whether it can be smaller."
-        }
-      ],
-      "revision": "ad83547c9e5386aa24d3e35cd4590c91e587c47e2c2dddfa51916377b9f8c63f"
+     "path": "apps/mvp/src/features/auth/schema.ts",
+     "from": 1,
+     "to": 41,
+     "note": "What `GET /api/auth/session` answers (contract.ts `SessionState`), checked as it arrives. Exports `SessionState`, `Session`, `Confirmed`. Look at: correctness, naming and whether it can be smaller."
     },
     {
-      "id": "code:mvp/src/features/auth/schema@c99e",
-      "kind": "code",
-      "title": "Code: mvp/src/features/auth: schema.ts, store.ts",
-      "priority": 395,
-      "why": "security: auth, shape access, secrets; landed recently; guide attached",
-      "area": "infra",
-      "addedAt": "2026-10-21T16:18:35Z",
-      "context": "# Live session and retained identity rows\n\nSource commit: `e93c4812547a3215b40221224972c48d44481ede`.\n\n## What\nDefines the server session response and the two browser identity rows.\nThe current session is local to a tab; the last confirmed person survives reloads.\n\n## Why\nAn offline reload needs retained identity without confusing it with a fresh server authorization.\nSee `apps/mvp/docs/decisions/0008-auth.md` and `apps/mvp/docs/decisions/0023-device-ownership-and-queued-authority.md`.\n\n## How\n- `SessionState` is a discriminated signed-in/signed-out schema for incoming JSON.\n- `Session` tracks loading, reachability, sign-out progress and restoration separately.\n- `Confirmed` retains stable person id when available, login and role.\n- `AuthStore` seeds a single loading row and exposes one-row live queries.\n- `auth-confirmed` uses injected persistence at schema version 2; the tab session uses local storage only in memory.\n\n## Architecture diagram\n```text\nWorker session JSON -> [THIS: SessionState schema] -> auth actions\n                                                       |\nBrowser UI <- live queries <- [THIS: AuthStore] <--------+\n                              |             |\n                        tab Session    Confirmed v2\n                                           |\n                                  device Persistence\n(No network or server authorization is performed by this store.)\n```\n\n## Read this first\n- `apps/mvp/src/features/auth/schema.ts:10`: Optional personId preserves old responses but weakens identity information.\n- `apps/mvp/src/features/auth/schema.ts:20`: Independent fields can represent inconsistent session states.\n- `apps/mvp/src/features/auth/store.ts:52`: Confirmed identity persists separately from the live session.\n\n## Questions a reviewer should ask\n- Where is the version-1 to version-2 retained identity migration verified?\n- Can any consumer treat Confirmed as fresh server authorization?\n- Are impossible status/login/role combinations prevented by actions?\n\n## Readability\npass. The layer generator is 31 lines, mostly declarative options, with no conditional nesting. Only live state, retained state and queries must be held together. Session and Confirmed names and comments make their lifetimes clear.\n\n```json\n{\"readability\": {\"verdict\": \"pass\", \"why\": \"The layer generator is 31 lines, mostly declarative options, with no conditional nesting. Only live state, retained state and queries must be held together. Session and Confirmed names and comments make their lifetimes clear.\"}}\n```",
-      "files": [
-        {
-          "path": "apps/mvp/src/features/auth/schema.ts",
-          "from": 1,
-          "to": 41,
-          "note": "What `GET /api/auth/session` answers (contract.ts `SessionState`), checked as it arrives. Exports `SessionState`, `Session`, `Confirmed`. Look at: correctness, naming and whether it can be smaller."
-        },
-        {
-          "path": "apps/mvp/src/features/auth/store.ts",
-          "from": 1,
-          "to": 67,
-          "note": "The key of the one session row, and of the one confirmed row. Exports `SESSION`, `AuthStore`. Look at: correctness, naming and whether it can be smaller."
-        }
-      ],
-      "revision": "c99e5da01947eeff7734b92124b68b1a1a57391d3d96c88a241bfb70ffc2c449"
-    },
-    {
-      "id": "code:mvp/src/features/presence/components/PresenceAvatars@e5d7",
-      "kind": "code",
-      "title": "Code: mvp/src/features/presence/components: PresenceAvatars.tsx",
-      "priority": 392,
-      "why": "collaboration: branch sharing, presence, terminal attach; landed recently; guide attached",
-      "area": "branch",
-      "addedAt": "2026-10-21T01:59:45Z",
-      "context": "# Presence avatars and follow navigation\n\nSource commit: `e93c4812547a3215b40221224972c48d44481ede`.\n\n## What\nShows one avatar per person on the branch.\nSelecting a person navigates to the code, editor or terminal their chosen connection is viewing.\n\n## Why\nBranch collaboration needs a quick way to see and follow other people.\nSee `apps/mvp/docs/decisions/0013-branch-workspace.md`.\n\n## How\n- The component reads the live participants query through the branch context.\n- `avatarsOf` supplies display identity and location titles.\n- `followOf` resolves the selected connection against the latest roster.\n- A missing target stops navigation, handling someone who has already left.\n- Navigation preserves repository/ref and selects terminal or editor through route search parameters.\n\n## Architecture diagram\n```text\nBranch room roster -> local participants query\n                                  |\n                                  v\n                   [THIS: PresenceAvatars]\n                    | avatarsOf       | select id -> followOf\n                    v                 v\n               AvatarStack       TanStack Router\n                                      | same branch: path / edit / terminal\n                                      v\n                            Code view / editor / terminal\nThe component opens no socket and writes no shared data.\n```\n\n## Read this first\n- `apps/mvp/src/features/presence/components/PresenceAvatars.tsx:16`: Target is resolved again at click time.\n- `apps/mvp/src/features/presence/components/PresenceAvatars.tsx:20`: Absent route params silently become empty strings.\n- `apps/mvp/src/features/presence/components/PresenceAvatars.tsx:21`: Terminal wins over edit if both fields appear.\n\n## Questions a reviewer should ask\n- Can this render outside a branch route with missing owner, repo or ref?\n- Does the target terminal identify the other person’s actual terminal when unnamed?\n- Does following an edit preserve the parent directory and selected file?\n\n## Readability\npass. The component spans 21 lines and its click handler 13. Nesting is about three levels; the only compound choice is a short terminal/edit search expression. Names clearly separate people, target and navigation, so one pass is sufficient.\n\n```json\n{\"readability\": {\"verdict\": \"pass\", \"why\": \"The component spans 21 lines and its click handler 13. Nesting is about three levels; the only compound choice is a short terminal/edit search expression. Names clearly separate people, target and navigation, so one pass is sufficient.\"}}\n```",
-      "files": [
-        {
-          "path": "apps/mvp/src/features/presence/components/PresenceAvatars.tsx",
-          "from": 1,
-          "to": 29,
-          "note": "Who else is on the branch (decision 0013 §5): one avatar each, titled with where they are. Exports `PresenceAvatars`. Look at: correctness, naming and whether it can be smaller."
-        }
-      ],
-      "revision": "e5d765120bb13aafef406291dbd2adf1b08203ff0ef09ce01656e0f037764c7d"
-    },
-    {
-      "id": "code:mvp/src/features/presence/store@d7ec",
-      "kind": "code",
-      "title": "Code: mvp/src/features/presence: store.ts, view.ts, where.ts",
-      "priority": 390,
-      "why": "collaboration: branch sharing, presence, terminal attach; landed recently; guide attached",
-      "area": "branch",
-      "addedAt": "2026-10-21T01:59:45Z",
-      "context": "# Presence storage, location codec and avatar projection\n\nSource commit: `e93c4812547a3215b40221224972c48d44481ede`.\n\n## What\nKeeps transient room state and turns connection rows into one avatar per person.\nEncodes page locations within the presence protocol’s byte limit and resolves follow destinations.\n\n## Why\nPresence should disappear with the tab and remain small enough for live room messages.\nSee `apps/mvp/docs/decisions/0013-branch-workspace.md`.\n\n## How\n- PresenceStore uses only local collections, scoped fibers and refs; no retained presence rows.\n- Participant queries preserve room order; the room query returns its singleton row.\n- `avatarsOf` puts this tab’s person first and chooses the last roster connection for each other person.\n- `followOf` maps editor files to parent directory plus edit, and terminal state to terminal search.\n- `encodeWhere` truncates code/editor paths by characters and then UTF-8 bytes.\n- Schema decoding treats malformed location JSON as no location.\n\n## Architecture diagram\n```text\nWorker room -- roster/state --> presence actions\n                                    |\n                                    v\n                      [THIS: local PresenceStore]\n                        | participants         | socket / latest Where refs\n                        v                      v\n             [THIS: avatarsOf / followOf]   [THIS: encodeWhere]\n                        |                      | bounded location JSON\n                  header / router         WebSocket -> room -> browsers\nRoom state is ephemeral; no Postgres/Electric path here.\n```\n\n## Read this first\n- `apps/mvp/src/features/presence/view.ts:26`: Last connection wins in roster order, not by a local activity timestamp.\n- `apps/mvp/src/features/presence/view.ts:48`: Unnamed remote terminal maps to me on the viewer’s route.\n- `apps/mvp/src/features/presence/where.ts:20`: Terminal state bypasses the byte-size reduction applied to paths.\n\n## Questions a reviewer should ask\n- Does roster order really identify the most relevant tab for each person?\n- Can an oversized terminalId exceed the protocol limit?\n- Does following an unnamed remote terminal accidentally select your own terminal?\n\n## Readability\npass. The store generator is 23 lines of declarations; avatarsOf is 12 lines and codec functions are shorter. Loops and callback branches nest about two levels. Storage, projection and encoding are separated and named clearly; edge cases are localized.\n\n```json\n{\"readability\": {\"verdict\": \"pass\", \"why\": \"The store generator is 23 lines of declarations; avatarsOf is 12 lines and codec functions are shorter. Loops and callback branches nest about two levels. Storage, projection and encoding are separated and named clearly; edge cases are localized.\"}}\n```",
-      "files": [
-        {
-          "path": "apps/mvp/src/features/presence/store.ts",
-          "from": 1,
-          "to": 68,
-          "note": "Where the room is: ChatApi's origin, the site's own. Exports `PresenceConfig`, `participantsQuery`, `roomQuery`, `PresenceStore`. Look at: correctness, naming and whether it can be smaller."
-        },
-        {
-          "path": "apps/mvp/src/features/presence/view.ts",
-          "from": 1,
-          "to": 53,
-          "note": "Where a place is, in the fewest words: the file or folder's path, or Terminal. Exports `placeOf`, `Avatar`, `avatarsOf`, `followOf`, `selfAccessOf`. Look at: correctness, naming and whether it can be smaller."
-        },
-        {
-          "path": "apps/mvp/src/features/presence/where.ts",
-          "from": 1,
-          "to": 28,
-          "note": "Whether `state` fits the room's limit in UTF-8. Exports `encodeWhere`, `decodeWhere`. Look at: correctness, naming and whether it can be smaller."
-        }
-      ],
-      "revision": "d7ec344e0ebab1000f225a0646df72bb96f255d98cb1026f2ce46553555c6de3"
-    },
-    {
-      "id": "code:mvp/worker/SessionStore@5edf",
-      "kind": "code",
-      "title": "Code: mvp/worker: SessionStore.ts",
-      "priority": 385,
-      "why": "security: auth, shape access, secrets; landed recently; guide attached",
-      "area": "infra",
-      "addedAt": "2026-10-21T16:18:35Z",
-      "context": "# Postgres session persistence\n\nSource commit: `e93c4812547a3215b40221224972c48d44481ede`.\n\n## What\nStores sign-in attempts, stable people, sessions and sealed GitHub tokens.\nProvides atomic callback consumption and conditional token replacement for refresh races.\n\n## Why\nCallbacks must be single-use, database reads must not reveal raw tokens, and revocation must take effect immediately.\nSee `apps/mvp/docs/decisions/0008-auth.md`.\n\n## How\n- `takeAttempt` deletes and returns one state digest in a single statement, including its expiry result.\n- `upsertPerson` keys identity by GitHub numeric id while updating a changeable login.\n- `findLiveBy` admits only unrevoked, unexpired sessions using Postgres time.\n- Sign-out revocation keeps sealed tokens until the revocation flow delivers; other reasons clear them.\n- `replaceTokens` uses the presented refresh digest as compare-and-swap protection.\n- `ownerOf` intentionally reads ended sessions for pending sign-out work; it is not a live-session check.\n\n## Architecture diagram\n```text\nWorker SignIn / role-check / token-revocation flows\n                  | digest, stable ids, sealed ciphertext\n                  v\n         [THIS: SessionStore SQL helpers]\n                  | parameterized SQL / conditional updates\n                  v\nPostgres: people <- sessions      sign_in_attempts\n             |       |                  |\n        stable id   sealed tokens    DELETE RETURNING once\n             +---- live Actor to Worker authorization\n```\n\n## Read this first\n- `apps/mvp/worker/SessionStore.ts:53`: Deleting the attempt consumes callbacks atomically.\n- `apps/mvp/worker/SessionStore.ts:138`: Sign out retains ciphertext for later remote revocation.\n- `apps/mvp/worker/SessionStore.ts:230`: Replacement checks revocation and digest, but not expires_at.\n- `apps/mvp/worker/SessionStore.ts:249`: A failed role recheck advances freshness without changing the role.\n\n## Questions a reviewer should ask\n- Should replaceTokens also reject a session that expired during a refresh?\n- How long can repeated GitHub outages retain a stale role?\n- Do callers distinguish ownerOf from a live authorization lookup?\n\n## Readability\npass. The largest executable generator, held, is 22 lines; declaration-heavy signatures are longer. SQL branches nest roughly two levels. Each helper has one database operation and names distinguish ownership, liveness and held tokens. Revocation and refresh invariants are localized.\n\n```json\n{\"readability\": {\"verdict\": \"pass\", \"why\": \"The largest executable generator, held, is 22 lines; declaration-heavy signatures are longer. SQL branches nest roughly two levels. Each helper has one database operation and names distinguish ownership, liveness and held tokens. Revocation and refresh invariants are localized.\"}}\n```",
-      "files": [
-        {
-          "path": "apps/mvp/worker/SessionStore.ts",
-          "from": 1,
-          "to": 250,
-          "note": "A sealed value as a row holds it (`@smthrs/control`'s `CredentialCipher.Sealed`). Exports `Sealed`, `RevokedReason`, `beginAttempt`, `takeAttempt`, `upsertPerson` +13. Look at: SQL: parameters and row authorization."
-        }
-      ],
-      "revision": "5edfd42a96aac3d5963c2db7d722a65ac6c477c7817471220731818d5c54e6e1"
-    },
-    {
-      "id": "code:mvp/src/features/terminal/view@d129",
-      "kind": "code",
-      "title": "Code: mvp/src/features/terminal: view.ts, view.test.ts",
-      "priority": 384,
-      "why": "collaboration: branch sharing, presence, terminal attach; landed recently; guide attached",
-      "area": "branch",
-      "addedAt": "2026-10-21T01:33:26Z",
-      "context": "# Pure terminal screen selection\n\nCommit: `e93c4812547a3215b40221224972c48d44481ede`. Line references use this revision.\n\n## What\nChooses the terminal screen, Open terminal button and connection badge from live state. Tests spell out what an editor or viewer sees while a terminal opens, disconnects or ends.\n\n## Why\n`apps/mvp/docs/decisions/0013-branch-workspace.md` keeps the terminal’s place on the page visible during machine startup. This pure view decision keeps React’s rendering separate from access and phase choices.\n\n## How\n- `PanelView` has frame, open and empty screen variants.\n- `BADGES` maps only offline, ended and no-access phases to a badge.\n- An editor gets Open terminal while opening or when none of the tabs is theirs.\n- A frame remains visible while connecting, open or offline.\n- Only explicit read access marks the frame read-only; the socket host remains the enforcement boundary.\n\n## Architecture diagram\n```text\nElectric terminal rows --> browser actions --> panel + tabs\n                                                 |\ncanOpen from branch access ----------------------+\n                                                 v\n                               [THIS: panelViewOf] --> TerminalPanel\n                                                           |\n                                                opaque frame or empty screen\nNo network, storage or sandbox effects occur in this slice.\n```\n\n## Read this first\n- `apps/mvp/src/features/terminal/view.ts:45`: button offering depends on ownership and opening state.\n- `apps/mvp/src/features/terminal/view.ts:49`: unknown access currently yields readOnly false.\n- `apps/mvp/src/features/terminal/view.test.ts:57`: connecting with unknown access is explicitly tested.\n\n## Questions a reviewer should ask\n- Should connecting with unknown access default to read-only?\n- What should a failed panel show if another live terminal remains in its tabs?\n\n## Readability\n**pass**: panelViewOf spans 15 lines, with flat guards and no nested callbacks beyond one some predicate. It combines three related view choices; variant names make them clear. The compact final returns still fit one pass.",
-      "files": [
-        {
-          "path": "apps/mvp/src/features/terminal/view.ts",
-          "from": 1,
-          "to": 52,
-          "note": "What a branch that has no live terminal shows someone who can't open one. Exports `NO_TERMINALS`, `OPEN_TERMINAL`, `PanelView`, `panelViewOf`. Look at: correctness, naming and whether it can be smaller."
-        },
-        {
-          "path": "apps/mvp/src/features/terminal/view.test.ts",
-          "from": 1,
-          "to": 85,
-          "note": "What the Terminal view shows (src/features/terminal/view.ts, docs/features/branch-workspace.md#the-page). Look at: behavior asserted through the public boundary; failure and ordering cases."
-        }
-      ],
-      "revision": "d129bf7c309048d5a3fbb3eb7c6ef0009acbcd0e61ef8dfcb79c211b417a903d"
-    },
-    {
-      "id": "code:mvp/worker/branch/Access@60a0",
-      "kind": "code",
-      "title": "Code: mvp/worker/branch: Access.ts, Access.test.ts, BranchApi.ts",
-      "priority": 382,
-      "why": "collaboration: branch sharing, presence, terminal attach; landed recently; guide attached",
-      "area": "branch",
-      "addedAt": "2026-10-21T05:34:27Z",
-      "context": "# Branch access policy and route composition\n\nCommit: `e93c4812547a3215b40221224972c48d44481ede`. Line references use this revision.\n\n## What\nDecides who can view or edit a live branch from ownership, named shares and general access. Wires the branch workspace’s HTTP routes to the same database-backed checks.\n\n## Why\n`apps/mvp/docs/decisions/0013-branch-workspace.md` makes branches private until shared and caps every share by the person’s GitHub-derived role. Guests need a named share and can only view.\n\n## How\n- `ceilingOf` limits Members and above to edit, Guests to view, and absent roles to none.\n- `accessOf` grants ownership only under the edit ceiling; otherwise it caps the best eligible share.\n- General-access links do not admit Guests; `underPolicy` reads only own grant properties.\n- `branchAccess` loads the living branch, conversation and relevant grants with parameterized SQL.\n- `policyOf` supplies the whole list for connected-socket enforcement.\n- `BranchApi` composes terminal, sharing, presence, tool and text routes; tests cover pure policy and real SQL.\n\n## Architecture diagram\n```text\nBrowser HTTP / shape / socket request --> BranchApi routing\n                                               |\n                                [THIS: branchAccess / accessOf]\n                                  ^ role + subject    | parameterized read\n                                  |                   v\n                               Sessions           Postgres branches + shares\n                                               |\n                                  owner / edit / view / none\n                                               v\n                          route admission --> room / terminal / sandbox\nSharing updates --> policyOf --> underPolicy --> existing socket enforcement\n```\n\n## Read this first\n- `apps/mvp/worker/branch/Access.ts:50`: effective access and Guest link exclusion.\n- `apps/mvp/worker/branch/Access.ts:81`: inherited object properties cannot become grants.\n- `apps/mvp/worker/branch/Access.ts:133`: deleted branches are excluded by the database read.\n- `apps/mvp/worker/branch/Access.test.ts:66`: demoting a creator removes automatic ownership.\n\n## Questions a reviewer should ask\n- Do all write callers separately enforce branch mode, since accessOf does not?\n- Can a policy snapshot and a request check disagree during a concurrent sharing change?\n\n## Readability\n**pass**: branchAccess spans 19 lines with one SQL query and a flat result conversion. The router factory spans 24 lines and has flat dispatch guards. Role ceilings and grant ranking are a few small named concepts; SQL aliases match the decoded types.",
-      "files": [
-        {
-          "path": "apps/mvp/worker/branch/Access.ts",
-          "from": 1,
-          "to": 157,
-          "note": "Who a share narrows to: what each role may get at most. Exports `ceilingOf`, `Grants`, `accessOf`, `canView`, `canEdit` +7. Look at: SQL: parameters and row authorization."
-        },
-        {
-          "path": "apps/mvp/worker/branch/Access.test.ts",
-          "from": 1,
-          "to": 162,
-          "note": "Who may do what on a branch's live workspace (worker/branch/Access.ts, decision 0013 §2 and §4): Google Docs-style sharing on this file's schema of the compose Postgres… Look at: behavior asserted through the public boundary; failure and ordering cases."
-        },
-        {
-          "path": "apps/mvp/worker/branch/BranchApi.ts",
-          "from": 1,
-          "to": 53,
-          "note": "Whether a path is one of the branch workspace's routes. Exports `handles`, `make`. Look at: SQL: parameters and row authorization."
-        }
-      ],
-      "revision": "60a05733b29cdc9e6bfdedb4330d81e0f08ff91e6c2e057dfa54babd9badebaf"
-    },
-    {
-      "id": "code:mvp/src/features/sharing/components/ShareButton@18a0",
-      "kind": "code",
-      "title": "Code: mvp/src/features/sharing/components: ShareButton.tsx",
-      "priority": 372,
-      "why": "collaboration: branch sharing, presence, terminal attach; guide attached",
-      "area": "branch",
-      "addedAt": "2026-10-21T01:33:26Z",
-      "context": "# Owner share controls\n\nSource commit: `e93c4812547a3215b40221224972c48d44481ede`.\n\n## What\nShows the branch owner a Share button and the shared dialog component.\nConnects people, link access, pending rows and errors to the sharing service.\n\n## Why\nBranch access should follow familiar collaboration controls while the server keeps the permission boundary.\nSee `apps/mvp/docs/decisions/0013-branch-workspace.md`.\n\n## How\n- The ready branch must have owner access and a non-null branch id before controls render.\n- The dialog opens only when its captured branch matches the currently shown branch.\n- `peopleOf`, `generalOf` and `linkOf` supply view data without Effect in React.\n- Callbacks dispatch add, set and remove actions instead of editing shared rows locally.\n- Restricted general access removes the repository grantee; other choices set its access.\n- Pending keys and mapped errors come from the live dialog row.\n\n## Architecture diagram\n```text\nBrowser branch/session/share live queries\n                     |\n                     v\n             [THIS: ShareButton]\n              | owner guard     | view projections\n              v                 v\n                @smthrs/ui ShareDialog\n                     | callbacks: add / access / remove / general\n                     v\n                sharing actions -> durable branch/share\n                     |\n                 Worker authorization -> Postgres -> Electric -> query\n```\n\n## Read this first\n- `apps/mvp/src/features/sharing/components/ShareButton.tsx:18`: Owner visibility is a presentation rule, not server authorization.\n- `apps/mvp/src/features/sharing/components/ShareButton.tsx:26`: Open state is explicitly tied to the current branch.\n- `apps/mvp/src/features/sharing/components/ShareButton.tsx:38`: Restricted removes the general-access grant.\n\n## Questions a reviewer should ask\n- Do late pending/error updates stay tied to the correct branch?\n- Does revoking owner access close an already open dialog immediately?\n- Can stale shares render briefly while another branch opens?\n\n## Readability\npass. ShareButton spans 34 lines, mostly direct component props. Its deepest conditional is about three JSX/expression levels. Four live queries converge on one dialog, and the owner guard plus pure view helpers keep the names and data flow followable.\n\n```json\n{\"readability\": {\"verdict\": \"pass\", \"why\": \"ShareButton spans 34 lines, mostly direct component props. Its deepest conditional is about three JSX/expression levels. Four live queries converge on one dialog, and the owner guard plus pure view helpers keep the names and data flow followable.\"}}\n```",
-      "files": [
-        {
-          "path": "apps/mvp/src/features/sharing/components/ShareButton.tsx",
-          "from": 1,
-          "to": 44,
-          "note": "Share, for the branch's owner (decision 0013 §5): Google Docs' dialog over the branch's permission list. Exports `ShareButton`. Look at: correctness, naming and whether it can be smaller."
-        }
-      ],
-      "revision": "18a0f5ce92e5ad9d1593227f3b67269701f62631884a187ba80df5892189e28b"
-    },
-    {
-      "id": "code:mvp/worker/secrets/SecretFlows@9c4c",
-      "kind": "code",
-      "title": "Code: mvp/worker/secrets: SecretFlows.ts",
-      "priority": 367,
-      "why": "security: auth, shape access, secrets; guide attached",
-      "area": "infra",
-      "addedAt": "2026-10-21T01:33:26Z",
-      "context": "# Durable secret write flows\n\nCommit: `e93c4812547a3215b40221224972c48d44481ede`. Line references use this revision.\n\n## What\nSets, replaces or deletes a sealed repository secret in one durable step. Records the change under the step’s invocation key so replay does not record another change.\n\n## Why\n`apps/mvp/docs/decisions/0005-sandboxes-secrets-and-the-forge.md` §4 requires write-only secrets, and durable-flow rulings require retry and replay at the engine layer. Admission and sealing happen before these flows start.\n\n## How\n- PUT payload contains ciphertext, nonce, binding, key version and actor ID, never plaintext.\n- `Store_` and `Erase` require `db:write:secrets` and use the engine’s bounded retry policy.\n- `Put` and `Delete` are not model-invocable and each call one action.\n- Step handlers require `Action.CurrentInvocationKey`; a missing key is a defect.\n- The database layer supplies transactional writes; typed availability errors allow retry.\n- Records contain operation, name, repository and outcome, never sealed or revealed values.\n\n## Architecture diagram\n```text\nAdmin --> Worker admission + sealing\n                | sealed payload only\n                v\n       [THIS: secret/Put or secret/Delete]\n                | durable action / invocation key\n                v\n       Store.put / Store.remove --> Postgres secrets + secret_events\n                |\n                +--> outcome metrics / logs (no value)\nBrowser <------- Electric names + bindings (separate read path)\n```\n\n## Read this first\n- `apps/mvp/worker/secrets/SecretFlows.ts:35`: payload keeps only the sealed representation.\n- `apps/mvp/worker/secrets/SecretFlows.ts:68`: capability and model-invocation boundary.\n- `apps/mvp/worker/secrets/SecretFlows.ts:116`: refuses to proceed without a replay identity.\n\n## Questions a reviewer should ask\n- Are all callers required to pass the person-only admission boundary?\n- Does replay after a database commit return repeat without changing the stored binding?\n\n## Readability\n**pass**: The largest factory spans 32 lines; its largest step body is 16 lines. Nesting stays at factory, handler and generator, with one shared recording wrapper. The action name Store_ is awkward, but the two symmetric write paths are easy to follow.",
-      "files": [
-        {
-          "path": "apps/mvp/worker/secrets/SecretFlows.ts",
-          "from": 1,
-          "to": 153,
-          "note": "Postgres couldn't record the write. Exports `StoreUnavailable`, `NoInvocationKey`, `writes`, `STORE_RETRY`, `Store_` +5. Look at: flow secret/Delete, secret/Put: capabilities, payload and error schemas, idempotent steps; SQL: parameters and row authorization."
-        }
-      ],
-      "revision": "9c4c91a71a2d9c157fe014a94be1681953d5f00e499f00090d81240f05fd47c3"
-    },
-    {
-      "id": "code:mvp/worker/secrets/Store@3404",
-      "kind": "code",
-      "title": "Code: mvp/worker/secrets: Store.ts",
-      "priority": 365,
-      "why": "security: auth, shape access, secrets; guide attached",
-      "area": "infra",
-      "addedAt": "2026-10-21T01:33:26Z",
-      "context": "# Sealed secret storage and audit transactions\n\nCommit: `e93c4812547a3215b40221224972c48d44481ede`. Line references use this revision.\n\n## What\nStores sealed secret values and their host bindings in Postgres. Keeps a separate audit of writes and outbound use without storing plaintext values.\n\n## Why\n`apps/mvp/docs/decisions/0005-sandboxes-secrets-and-the-forge.md` §4 requires sealed values, names-only reads and audited use. Durable writes need a repeatable database effect after a flow resumes.\n\n## How\n- `Put` carries ciphertext, nonce, key version, binding and an invocation key.\n- `put` checks the audit key inside a transaction, then upserts the secret and records set or replace.\n- `remove` deletes by repository and name and records delete in the same transaction.\n- A repeated invocation returns repeat; a missing delete returns missing.\n- `bindings` excludes ciphertext; `sealed` reads one repository-scoped sealed row.\n- `recordUse` writes only scope, host, method, outcome and secret names through SQL parameters.\n\n## Architecture diagram\n```text\nsecret/Put or secret/Delete -- invocation key --> [THIS: Store]\n                                                     | transaction\n                                                     v\n                                         Postgres secrets + secret_events\n                                                     ^\nSandboxEgress --> bindings / sealed ------------------+\nSandboxEgress --> recordUse (names and decision) ------+\nEncryption and authorization occur in callers, outside this module.\n```\n\n## Read this first\n- `apps/mvp/worker/secrets/Store.ts:43`: deduplication, row write and audit share a transaction.\n- `apps/mvp/worker/secrets/Store.ts:55`: xmax determines insert versus replace.\n- `apps/mvp/worker/secrets/Store.ts:97`: value lookup is scoped by repository and name.\n- `apps/mvp/worker/secrets/Store.ts:115`: use audit carries names, never values.\n\n## Questions a reviewer should ask\n- Does a unique invocation-key constraint roll back a concurrent duplicate’s whole transaction?\n- What orders different durable writes to the same secret after one has retried?\n\n## Readability\n**pass**: put spans 23 lines with two generator levels; remove mirrors it. Readers track transaction, deduplication and audit together, with straightforward names. The Postgres xmax expression is the only specialized detail.",
-      "files": [
-        {
-          "path": "apps/mvp/worker/secrets/Store.ts",
-          "from": 1,
-          "to": 118,
-          "note": "A sealed value as Postgres keeps it. Exports `Sealed`, `Binding`, `Put`, `Change`, `put` +6. Look at: SQL: parameters and row authorization."
-        }
-      ],
-      "revision": "340465296ef9aa9451b2f7bc33d9814fffb374fa0d052e1b035d5243f7227569"
-    },
-    {
-      "id": "code:secrets/PACKAGE@ecb2",
-      "kind": "code",
-      "title": "Code: flows/secrets: PACKAGE.ts, eslint.config.js, vitest.config.ts",
-      "priority": 363,
-      "why": "security: the egress proxy and secrets; guide attached",
-      "area": "sdk:secrets",
-      "addedAt": "2026-10-21T01:33:26Z",
-      "context": "# Secrets package security and test gates\n\nCommit: `e93c4812547a3215b40221224972c48d44481ede`. Line references use this revision.\n\n## What\nDeclares the secrets package’s build checks and threat-focused security reviews. Configures lint rules and full coverage thresholds for the Node test runner.\n\n## Why\n`apps/mvp/docs/decisions/0005-sandboxes-secrets-and-the-forge.md` §4 supplies the secret-handling threats. PROC-4 in `apps/mvp/docs/rulings.md` requires engineering rules to become enforceable checks; these targets make those expectations reviewable.\n\n## How\n- `BuildAndCheckTypeScriptPackage` supplies build, format, lint, documentation and test targets.\n- `SecurityReview` declares five checks: value opacity, audience binding, redirects, echo scrubbing and header injection.\n- Each review names threats, suspect patterns and relevant source paths.\n- `SdkRules` adds import checks and manual Jev rules for a library role.\n- ESLint installs shared invariants; Vitest sets finite timeouts and 100% coverage thresholds.\n- Coverage reports use a process-specific temporary directory so concurrent runs do not overwrite them.\n\n## Architecture diagram\n```text\nMaintainer / CI target selection\n              |\n     [THIS: secrets PACKAGE.ts]\n       | standard gates     | SecurityReview       | SdkRules\n       v                    v                      v\n build / lint / tests   threat rubrics         import / Jev checks\n       |                    |\n       +-------- secrets source + docs --------+\n                         |\n          runtime egress --> Worker vault/audit --> allowed HTTPS host\nThis slice configures checks; it does not run the egress or prove tests passed.\n```\n\n## Read this first\n- `packages/smithers/flows/secrets/PACKAGE.ts:20`: opacity review includes client errors holding substituted requests.\n- `packages/smithers/flows/secrets/PACKAGE.ts:52`: scrub review includes ranges and compression.\n- `packages/smithers/flows/secrets/PACKAGE.ts:76`: Jev rules are manual, unlike import checks.\n- `packages/smithers/flows/secrets/vitest.config.ts:17`: thresholds are configured, not an execution receipt.\n\n## Questions a reviewer should ask\n- Which target selection actually runs securityAudit rather than only standard tests?\n- Are import rules and security review failures required by the landing gate?\n\n## Readability\n**pass**: There are no substantial functions: the longest callable is a 3-line package declaration. Nesting is static rubric/config data, with five explicit threats and direct names. The longer file is a checklist rather than control flow.",
-      "files": [
-        {
-          "path": "packages/smithers/flows/secrets/PACKAGE.ts",
-          "from": 1,
-          "to": 80,
-          "note": "Standard package targets for the secrets egress, plus a security review of its secret handling. Exports `Package`. Look at: deep import (root entries only)."
-        },
-        {
-          "path": "packages/smithers/flows/secrets/eslint.config.js",
-          "from": 1,
-          "to": 49,
-          "note": "Look at: correctness, naming and whether it can be smaller."
-        },
-        {
-          "path": "packages/smithers/flows/secrets/vitest.config.ts",
-          "from": 1,
-          "to": 20,
-          "note": "A finite budget that survives coverage-instrumented load, so a genuine hang still fails the run. Look at: platform code outside a host package."
-        }
-      ],
-      "revision": "ecb22edbd6fbad39a084adf5409ee6dd221dee7d03236b59aa1e48d049cc8898"
-    },
-    {
-      "id": "code:secrets/src/Binding@d596",
-      "kind": "code",
-      "title": "Code: flows/secrets/src: Binding.ts",
-      "priority": 361,
-      "why": "security: the egress proxy and secrets; guide attached",
-      "area": "sdk:secrets",
-      "addedAt": "2026-10-21T01:33:26Z",
-      "context": "# Secret binding and value validation\n\nCommit: `e93c4812547a3215b40221224972c48d44481ede`. Line references use this revision.\n\n## What\nDefines which names, destination hosts and HTTP methods a secret can use. Rejects values that are too short, too large or unsafe to insert into a header.\n\n## Why\n`apps/mvp/docs/decisions/0005-sandboxes-secrets-and-the-forge.md` §4 binds every secret to its destination and keeps values opaque. The catalog’s `@smthrs/secrets` entry puts the reusable validation in the SDK.\n\n## How\n- `Name` allows an environment-variable-style uppercase name of at most 64 characters.\n- `isHost` accepts lowercase multi-label DNS names, without IP literals, ports or wildcards.\n- `Binding` requires one to sixteen hosts and, when supplied, at least one allowed method.\n- `valueProblem` rejects malformed surrogate pairs and control characters before measuring UTF-8 bytes.\n- Values must be 8 bytes to 16 KiB; `checkValue` returns a typed reason without the value.\n\n## Architecture diagram\n```text\nAdmin input --> Worker secret PUT --> [THIS: Binding schema + valueProblem]\n                                           | accepted binding + value\n                                           v\n                                      seal --> Postgres\n                                           |\nSandbox placeholder --> Egress policy ------+\n                              | revealed value\n                              v\n                      [THIS: valueProblem] --> safe header --> allowed HTTPS host\nValidation does not authenticate callers or resolve DNS.\n```\n\n## Read this first\n- `packages/smithers/flows/secrets/src/Binding.ts:43`: host syntax is exact and intentionally narrow.\n- `packages/smithers/flows/secrets/src/Binding.ts:80`: host-count and optional-method contract.\n- `packages/smithers/flows/secrets/src/Binding.ts:128`: malformed UTF-16 and controls fail without exposing input.\n\n## Questions a reviewer should ask\n- Do callers decode Binding before constructing an Egress.Policy directly?\n- Is an omitted method list intentionally broader than the product’s preferred binding?\n\n## Readability\n**pass**: valueProblem is the longest function at 9 lines. Nesting is shallow: flat validation guards and a single labels.every predicate. It asks readers to hold syntax, byte bounds and opaque errors, each with a direct name.",
-      "files": [
-        {
-          "path": "packages/smithers/flows/secrets/src/Binding.ts",
-          "from": 1,
-          "to": 157,
-          "note": "What a secret is bound to: its name, the hosts that may receive its value, and optionally the methods. Exports `Name`, `isHost`, `Host`, `Method`, `maximumHosts` +7. Look at: correctness, naming and whether it can be smaller."
-        }
-      ],
-      "revision": "d596d307602eb4380cf5a7a31ebd2fed8a9deb129d63b7f657acdc7478daf2d1"
-    },
-    {
-      "id": "code:sync/src/BranchProjection@5a9b",
-      "kind": "code",
-      "title": "Code: flows/sync/src: BranchProjection.ts",
-      "priority": 356,
-      "why": "collaboration: branch sharing, presence, terminal attach; guide attached",
-      "area": "branch",
-      "addedAt": "2026-10-21T01:33:26Z",
-      "context": "# BranchProjection: one document from canonical commands\n\n## What\nBuilds a branch conversation, command history and shared field values from journal entries.\nTwo readers with the same canonical entries converge even when delivery repeats or arrives out of order.\n\n## Why\nDecision: `apps/mvp/docs/decisions/0013-branch-workspace.md`, shared workspace.\n`packages/smithers/flows/sync/docs/concepts/branches.md` defines this pure SDK projection; validated admission must precede it.\n\n## How\n- `State` carries the branch, highest sequence, messages, applied commands and field winners.\n- Foreign run IDs and already-seen command identities do not change document content.\n- Late unseen commands are inserted at canonical sequence positions instead of discarded.\n- `resolveField` chooses highest sequence, with participant ID as a deterministic tie-break.\n- `capabilityId`, stamped at admission, is attribution; participantId is only a client claim.\n- Incremental apply caches immutable command-ID sets; bulk project sorts once after folding.\n\n## Architecture diagram\n```text\nJournal durable entries --> validated SyncServer/SyncClient read path\n                                      |\n                             canonical branch entries\n                                      v\n                           [* BranchProjection *]\n                            |        |          |\n                         messages commands field winners\n                            +--------+----------+\n                                      v\n                              browser branch views\nNo network, database write, sandbox or model effect occurs in this fold.\n```\n\n## Read this first\n- `packages/smithers/flows/sync/src/BranchProjection.ts:158` — field conflict policy uses journal order, not clocks.\n- `packages/smithers/flows/sync/src/BranchProjection.ts:214` — malformed known payloads advance the cursor here; admission must reject them first.\n- `packages/smithers/flows/sync/src/BranchProjection.ts:261` — bulk fold must stay equivalent to incremental apply.\n\n## Questions a reviewer should ask\n- Can any caller feed unvalidated transport data directly into these pure folds?\n- Do duplicate and out-of-order tests compare both fold APIs over the same canonical set?\n- Can a caller mutate an array after the WeakMap indexes it?\n\nSource: `e93c4812547a3215b40221224972c48d44481ede` (landed text; line references above).\n\n## Readability verdict\n**pass** — The longest fold is 48 lines; nesting is about three levels. The reader tracks ordering, identity and field resolution, each with a named helper or explicit guard. Names match the branch data they represent.",
-      "files": [
-        {
-          "path": "packages/smithers/flows/sync/src/BranchProjection.ts",
-          "from": 1,
-          "to": 308,
-          "note": "The branch document projection: journal entries folded into what two people looking at the same branch must agree on. Exports `Message`, `AppliedCommand`, `Field`, `State`, `empty` +3. Look at: deep import (root entries only)."
-        }
-      ],
-      "revision": "5a9b686b1f2c76f553ef1a7872b19dcf8afb17beb4972dcf52ee93dc81514b7a"
-    },
-    {
-      "id": "code:secrets/src/internal/bytes@ddce",
-      "kind": "code",
-      "title": "Code: flows/secrets/src/internal: bytes.ts",
-      "priority": 355,
-      "why": "security: the egress proxy and secrets; guide attached",
-      "area": "sdk:secrets",
-      "addedAt": "2026-10-21T01:33:26Z",
-      "context": "# Portable byte and base64 helpers\n\nCommit: `e93c4812547a3215b40221224972c48d44481ede`. Line references use this revision.\n\n## What\nConverts text and byte arrays for secret placeholders, header substitution and echo scrubbing. Supports both base64 alphabets and rejects invalid base64 text during Basic credential decoding.\n\n## Why\n`apps/mvp/docs/decisions/0005-sandboxes-secrets-and-the-forge.md` §4 requires decoding Basic credentials and finding encoded echoes without giving values to the guest. The catalog’s portable secrets library uses web-standard byte operations here.\n\n## How\n- `utf8` encodes with a shared TextEncoder; `text` decodes permissively with replacement characters.\n- `base64` constructs binary text, applies btoa and optionally removes padding or switches alphabets.\n- `fromBase64` catches invalid base64 and then uses fatal UTF-8 decoding.\n- Invalid encoded credentials return undefined instead of an exception containing input.\n- `concat` measures total bytes, allocates once and copies each part in order.\n\n## Architecture diagram\n```text\nPlaceholder HMAC input / Binding byte limits\n                     |\n                     v\n           [THIS: UTF-8 + base64 + concat]\n             ^                       ^\n             |                       |\nEgress Basic header decode      Scrub encoded patterns + chunk retention\n             |                       |\n       allowed HTTPS request <-- egress --> scrubbed answer to sandbox\nThese helpers have no network, storage or authorization effects.\n```\n\n## Read this first\n- `packages/smithers/flows/secrets/src/internal/bytes.ts:23`: permissive decoding differs intentionally from credential decoding.\n- `packages/smithers/flows/secrets/src/internal/bytes.ts:54`: malformed UTF-8 fails closed.\n- `packages/smithers/flows/secrets/src/internal/bytes.ts:66`: concatenation preserves chunk order without text conversion.\n\n## Questions a reviewer should ask\n- Do callers rely on permissive text decoding where fatal decoding is required?\n- Are input sizes bounded before the binary-string base64 conversion allocates?\n\n## Readability\n**pass**: fromBase64 is the longest function at 14 lines, with two flat try/catch blocks. concat has two shallow loops. Readers track bytes, alphabets and strict versus permissive decoding; the names and comments distinguish them.",
-      "files": [
-        {
-          "path": "packages/smithers/flows/secrets/src/internal/bytes.ts",
-          "from": 1,
-          "to": 76,
-          "note": "UTF-8 and base64 helpers over the web-standard globals every host ships. Exports `utf8`, `text`, `base64`, `fromBase64`, `concat`. Look at: correctness, naming and whether it can be smaller."
-        }
-      ],
-      "revision": "ddce2dcbfc48e45bde95a6b086fa867b3024683342bbf48a7631175912884678"
-    },
-    {
-      "id": "code:sync/src/BranchProtocol@2e45",
-      "kind": "code",
-      "title": "Code: flows/sync/src: BranchProtocol.ts",
-      "priority": 354,
-      "why": "collaboration: branch sharing, presence, terminal attach; guide attached",
-      "area": "branch",
-      "addedAt": "2026-10-21T01:33:26Z",
-      "context": "# BranchProtocol: shared branch wire and retained history\n\n## What\nDefines commands, receipts, share claims and presence data exchanged by branch collaboration services.\nIt gives one branch a stable journal identity and preserves older command payloads.\n\n## Why\nDecision: `apps/mvp/docs/decisions/0013-branch-workspace.md`, one shared branch.\nThis SDK journal protocol is described in `packages/smithers/flows/sync/docs/concepts/branches.md`; it is not the app database schema.\n\n## How\n- Branded non-empty IDs distinguish branches, participants and commands at public boundaries.\n- `branchRunId` adds one reversible prefix; the bare prefix is not a valid branch.\n- Command source ID plus fixed source sequence zero gives resends the same durable producer key.\n- `ShareClaims` binds key ID, branch, capability, access and expiry; the signature lives beside claims.\n- Announcements and leased participants describe ephemeral presence without journal writes.\n- Wire submissions require fields; retained payload decoding defaults older args, target and capabilityId.\n\n## Architecture diagram\n```text\nClient intent -- CommandSubmission + capability --> BranchCommands\n                       |                               |\n                [* BranchProtocol *]                   v\n                 IDs / schemas / mapping       Journal branch run\n                       |                               |\n                 BranchRpcs wire                 retained payload\n                       |                               v\n                  host services                 BranchProjection\nPresence announcements --> lease roster (not journal history)\nSignature keys stay in authority; model and sandbox are outside this slice.\n```\n\n## Read this first\n- `packages/smithers/flows/sync/src/BranchProtocol.ts:115` — reverse mapping must never construct an empty branded ID.\n- `packages/smithers/flows/sync/src/BranchProtocol.ts:150` — allocating a new producer sequence would break deduplication.\n- `packages/smithers/flows/sync/src/BranchProtocol.ts:265` — sourcesReady is a host assertion, not client authority.\n- `packages/smithers/flows/sync/src/BranchProtocol.ts:377` — retained attribution defaults to empty, never a real capability.\n\n## Questions a reviewer should ask\n- Are all branded IDs decoded at external boundaries rather than asserted with casts?\n- Does any consumer trust participantId or sourcesReady as authenticated identity?\n- Will older retained command payloads still decode after the next schema change?\n\nSource: `e93c4812547a3215b40221224972c48d44481ede` (landed text; line references above).\n\n## Readability verdict\n**pass** — Most of 411 lines are schema declarations and comments; longest function is five lines with one branch. Naming separates submissions, durable payloads and receipts. Identity, authorization and compatibility can each be read locally.",
-      "files": [
-        {
-          "path": "packages/smithers/flows/sync/src/BranchProtocol.ts",
-          "from": 1,
-          "to": 411,
-          "note": "The branch collaboration contract: a branch is one shared live document. Exports `BranchId`, `ParticipantId`, `CommandId`, `Access`, `branchRunId` +17. Look at: deep import (root entries only)."
-        }
-      ],
-      "revision": "2e457b06c4a5ee53b4ea6c5e21a1556ccb633ba1e7065e4af9b4ba12656bbdfc"
-    },
-    {
-      "id": "code:views/src/internal/bytes@70f1",
-      "kind": "code",
-      "title": "Code: ui/views/src/internal: bytes.ts, harden.ts, vocabulary.ts",
-      "priority": 351,
-      "why": "security: the views realm; guide attached",
-      "area": "sdk:views",
-      "addedAt": "2026-10-21T10:55:47Z",
-      "context": "# View guard vocabulary and realm hardening\n\n## What\nDefines the names and HTML features generated views cannot use.\nIt also sizes JSON safely and freezes the object graph exposed to a presentation realm.\n\n## Why\nDecision: `apps/mvp/docs/decisions/0004-agent-ui-codemode-and-rendering.md`, bounded generated views.\n`packages/smithers/ui/views/docs/security.md` explains the layered sandbox boundary.\n\n## How\n- `jsonLength` measures serialized UTF-8 bytes; unencodable values return undefined.\n- `harden` walks objects, functions, prototypes and accessor functions without invoking getters.\n- A seen set handles cycles; freezing happens before visiting further objects.\n- Element and attribute sets refuse navigation, code execution and external resource loading.\n- Attribute normalization folds case and removes hyphens and colons; only image data URLs get a src exception.\n- The same vocabulary supports source checks and rendering checks, including forbidden globals and properties.\n\n## Architecture diagram\n```text\nModel-produced TSX --> ViewCode source checker\n                             |\n                     [* shared vocabulary *]\n                             |\nApproved code --> bounded QuickJS presentation realm --> HTML --> browser sandbox frame\n                     |                    |\n              [* harden *]          render-time prop checks\n                     |\n               frozen host API\nInput/output JSON --> [* byte limits *]\nNo network or storage authority is supplied to the view.\n```\n\n## Read this first\n- `packages/smithers/ui/views/src/internal/harden.ts:14` — freezes prototypes and getters without calling accessors.\n- `packages/smithers/ui/views/src/internal/vocabulary.ts:129` — normalized attributes and the data-image exception.\n- `packages/smithers/ui/views/src/internal/vocabulary.ts:225` — constructor/prototype escape names are blocked.\n- `packages/smithers/ui/views/src/internal/bytes.ts:21` — serialization failures must be treated as refusal by callers.\n\n## Questions a reviewer should ask\n- Are computed names and spread props checked at render time with the same rules?\n- Do CSP and realm isolation still contain a vocabulary omission?\n- Is harden ever called with a proxy that can run traps during traversal?\n\nSource: `e93c4812547a3215b40221224972c48d44481ede` (landed text; line references above).\n\n## Readability verdict\n**pass** — The longest function is 15 lines, nesting is two control levels, and names describe the checks. Three small guard mechanisms are independent; most of the slice is explicit policy data.",
-      "files": [
-        {
-          "path": "packages/smithers/ui/views/src/internal/bytes.ts",
-          "from": 1,
-          "to": 28,
-          "note": "UTF-8 sizes, without a host encoder. Exports `jsonLength`. Look at: correctness, naming and whether it can be smaller."
-        },
-        {
-          "path": "packages/smithers/ui/views/src/internal/harden.ts",
-          "from": 1,
-          "to": 28,
-          "note": "Deep freezing for the presentation realm. Exports `harden`. Look at: correctness, naming and whether it can be smaller."
-        },
-        {
-          "path": "packages/smithers/ui/views/src/internal/vocabulary.ts",
-          "from": 1,
-          "to": 252,
-          "note": "The words a view may not use: elements, attributes and names. Exports `refusedElements`, `refusedAttributes`, `normalizeAttribute`, `isRefusedElement`, `isEventHandler` +4. Look at: browser storage; credential handling: scope, expiry, never logged."
-        }
-      ],
-      "revision": "70f1f7c2051dff83e594f4257b90be2527bf424dc88d10c610fc9856b012d6fd"
-    },
-    {
-      "id": "code:sync/src/BranchShare@eaba",
-      "kind": "code",
-      "title": "Code: flows/sync/src: BranchShare.ts",
-      "priority": 350,
-      "why": "collaboration: branch sharing, presence, terminal attach; guide attached",
-      "area": "branch",
-      "addedAt": "2026-10-21T01:33:26Z",
-      "context": "# BranchShare: signed branch access\n\n## What\nMints and verifies credentials granting read or write access to one SDK branch until a deadline.\nIt supports key rotation while previously issued capabilities remain verifiable.\n\n## Why\nDecision: `apps/mvp/docs/decisions/0013-branch-workspace.md`, branch access boundaries.\nThis is the SDK capability scheme, not the app general-access sharing UI.\nContract: `packages/smithers/flows/sync/docs/concepts/authorization.md`.\n\n## How\n- `MintRequest` defines branch, capability ID, access, positive TTL and an optional parent expiry ceiling.\n- `canonical` length-prefixes all claims under a branch-specific scheme label.\n- `makeHmac` imports the keyring once; new signatures use the active key and verification selects signed kid.\n- Minting decodes arguments, reads Effect Clock, enforces the expiry ceiling and signs claims.\n- Verification snapshots claims before asynchronous cryptography, then checks signature, expiry, access and scope.\n- Noop refuses both operations; configuration has no fallback signing secret.\n\n## Architecture diagram\n```text\nTrusted host / BranchServer\n  | gated mint request                         untrusted holder\n  v                                                  |\n[* BranchShare *] <------- branch capability + requested access\n  |         |\n  |         +--> shared signer --> Web Crypto HMAC\n  |                                ^\n  +--> Effect Clock           Redacted keyring\n  |\n  +--> verified claims --> command / presence / sync read admission\nNo Postgres lookup or per-capability revocation table is present here.\n```\n\n## Read this first\n- `packages/smithers/flows/sync/src/BranchShare.ts:133` — canonical encoding prevents ambiguous claims and cross-scheme reuse.\n- `packages/smithers/flows/sync/src/BranchShare.ts:199` — mint itself does not authorize who may create a capability.\n- `packages/smithers/flows/sync/src/BranchShare.ts:234` — checks use copied claims across the crypto await.\n- `packages/smithers/flows/sync/src/BranchShare.ts:290` — a missing configured key fails closed.\n\n## Questions a reviewer should ask\n- Which trusted host gate prevents callers from minting arbitrary branch authority?\n- Is expiry or key removal sufficient revocation for every intended consumer?\n- Are all signing keys excluded from the browser composition and all telemetry?\n\nSource: `e93c4812547a3215b40221224972c48d44481ede` (landed text; line references above).\n\n## Readability verdict\n**pass** — The authority factory is 67 lines but consists of two separately named operations of about 27 and 31 lines. Nesting is at most two control levels. Claim copying, signing and policy checks have concrete names and a clear order.",
-      "files": [
-        {
-          "path": "packages/smithers/flows/sync/src/BranchShare.ts",
-          "from": 1,
-          "to": 297,
-          "note": "Share capabilities: the authorization boundary of a shared branch. Exports `AuthorizeRequest`, `MintRequest`, `Service`, `BranchShare`, `makeNoop` +6. Look at: credential handling: scope, expiry, never logged."
-        }
-      ],
-      "revision": "eabafbf7fbbb0fd6baf43d1341ea753a1d8ff084117de09c6809f81ef553185b"
-    },
-    {
-      "id": "code:sync/src/PresenceProtocol@3c30",
-      "kind": "code",
-      "title": "Code: flows/sync/src: PresenceProtocol.ts",
-      "priority": 348,
-      "why": "collaboration: branch sharing, presence, terminal attach; guide attached",
-      "area": "branch",
-      "addedAt": "2026-10-21T01:33:26Z",
-      "context": "# Presence WebSocket wire contract\n\nCommit: `e93c4812547a3215b40221224972c48d44481ede`. Line references use this revision.\n\n## What\nDefines the JSON messages a page and live presence room exchange. Bounds client state and roster size and tells the page which socket closes should reconnect.\n\n## Why\n`apps/mvp/docs/decisions/0013-branch-workspace.md` sends transient presence through a hibernating room rather than Postgres or a branch machine. The catalog’s `@smthrs/sync` entry supplies a shared browser/Worker protocol.\n\n## How\n- A client frame carries only opaque state; the server roster includes host-assigned identity and access.\n- State is capped at 1 KiB, client frames at 2 KiB, rooms at 256 participants and host-only data at 512 bytes.\n- `isFinal` stops reconnects for normal leave, unsupported data, revoked access and oversized frames.\n- `reconnectDelay` doubles from one second up to thirty seconds, for ten attempts.\n- Schema decoders return undefined for bad input; the client decoder checks UTF-8 frame size first.\n- Server encoding projects participant data through PresenceWire; permission enforcement remains the host’s job.\n\n## Architecture diagram\n```text\nBrowser page --> PresenceSocket\n                     | state JSON\n                     v\n             [THIS: PresenceProtocol] <---- shared schemas/limits ----+\n                     | WebSocket                                   |\n                     v                                             |\nWorker admission --> PresenceRoom in branch RoomObject -------------+\n  cookie/access       | roster JSON + close codes\n                      v\n                Browser avatars/cursors\nNo journal, Postgres, Electric or sandbox effects occur in the protocol.\n```\n\n## Read this first\n- `packages/smithers/flows/sync/src/PresenceProtocol.ts:95`: revoked access is final; changed access deliberately reconnects.\n- `packages/smithers/flows/sync/src/PresenceProtocol.ts:116`: retry bounds live in the shared wire contract.\n- `packages/smithers/flows/sync/src/PresenceProtocol.ts:220`: client frame byte limit is checked before decoding.\n- `packages/smithers/flows/sync/src/PresenceProtocol.ts:240`: server decoder limits participants but has no total frame-byte check.\n\n## Questions a reviewer should ask\n- Where are principal/name lengths and total server roster bytes bounded?\n- Should reconnectDelay reject fractional or NaN attempts at this public boundary?\n- Does the room keep authorization metadata out of encoded participants?\n\n## Readability\n**pass**: The longest exported function is a 4-line reconnect expression; schema construction is static. Nesting is limited to schema combinators and one encoding map. The four limits, frame types and close-code names let the reader follow the protocol in one pass.",
-      "files": [
-        {
-          "path": "packages/smithers/flows/sync/src/PresenceProtocol.ts",
-          "from": 1,
-          "to": 240,
-          "note": "The wire protocol between a page and a presence room: who is on a page, and where, live. Exports `maxStateBytes`, `maxFrameBytes`, `maxParticipants`, `maxDataBytes`, `CloseCode` +11. Look at: correctness, naming and whether it can be smaller."
-        }
-      ],
-      "revision": "3c3010fc1cc39ab4cab2c57870130aee8991e492aaae817090da4d20411834d5"
-    },
-    {
-      "id": "code:effect-electric/src/ShapeSource@4dbb",
-      "kind": "code",
-      "title": "Code: effect-electric/src: ShapeSource.ts, SyncPolicy.ts, index.ts",
-      "priority": 347,
-      "why": "security: shapes and access; guide attached",
-      "area": "sdk:effect-electric",
-      "addedAt": "2026-10-21T01:33:26Z",
-      "context": "# ShapeSource: abortable fetch and controlled sync faults\n\n## What\nProvides the network source used by Electric collections and a fault layer for failure tests.\nIt also exposes the shared backoff policy used when sync cannot reach its source.\n\n## Why\nDecision: `apps/mvp/docs/decisions/0001-electric-postgres-tanstack-db.md` and\n`apps/mvp/docs/decisions/0002-local-first.md`: collections recover after connectivity fails.\nSee `packages/effect-electric/docs/sync-policy.md`.\n\n## How\n- `ShapeSource` defaults to host-injected fetch and passes Effect cancellation as AbortSignal.\n- Every request sets no-store; live long polls request low priority to reduce contention.\n- `Faults` can reject before the network or stall, corrupt, truncate or break a real response.\n- A Ref selects the current fault; a latch releases stalled responses when healed.\n- `SyncPolicy.backoff` caps exponential delay before jitter; collection code consumes the schedule.\n- The root entry exports the collection, proxy, source and policy namespaces.\n\n## Architecture diagram\n```text\nBrowser ElectricCollection --> [* ShapeSource *] --> fetch --> Worker ShapeProxy\n       |                            ^                           |\n       |                       test-only Faults                 v\n       |                   down / stall / cut / drop       Electric <-- Postgres\n       +--> [* SyncPolicy Schedule *]\n                 delay / reconnect controlled by collection\nSource interruption --> AbortSignal --> cancel network request\nRows return through Electric into the local collection.\n```\n\n## Read this first\n- `packages/effect-electric/src/ShapeSource.ts:70` — no-store and cancellation belong to every real request.\n- `packages/effect-electric/src/ShapeSource.ts:185` — faults are sampled before request and after response at distinct times.\n- `packages/effect-electric/src/SyncPolicy.ts:39` — jitter follows the cap, so actual delay can exceed max.\n\n## Questions a reviewer should ask\n- Is the advertised max intended to cap the final jittered wait or only its base?\n- Do happy-path tests use real Electric rather than the fault layer as their only evidence?\n- Are stalled and truncated requests interrupted cleanly on collection disposal?\n\nSource: `e93c4812547a3215b40221224972c48d44481ede` (landed text; line references above).\n\n## Readability verdict\n**pass** — The longest layer is about 55 lines; its request generator is 28 lines with at most two control branches nested. Fault names and before/after sampling make the test machinery readable. Fetch and backoff are small independent mechanisms.",
-      "files": [
-        {
-          "path": "packages/effect-electric/src/ShapeSource.ts",
-          "from": 1,
-          "to": 226,
-          "note": "Where an Electric collection's shape requests go: the source of its shape stream, as an Effect service. Exports `RequestFailed`, `Source`, `fetchSource`, `ShapeSource`, `Requests` +3. Look at: network call: timeouts, typed errors, no credentials in logs."
-        },
-        {
-          "path": "packages/effect-electric/src/SyncPolicy.ts",
-          "from": 1,
-          "to": 54,
-          "note": "The sync policy: how long an Electric collection waits before it sends a shape request again after one failed on the network, or with a 5xx or 429. Exports `Backoff`, `backoff`, `defaultPolicy`. Look at: correctness, naming and whether it can be smaller."
-        },
-        {
-          "path": "packages/effect-electric/src/index.ts",
-          "from": 1,
-          "to": 31,
-          "note": "Electric for Effect: TanStack DB collections synced from Postgres through Electric shapes, with a `Schedule` retry policy and sync status as a `Stream`, and a validating… Look at: correctness, naming and whether it can be smaller."
-        }
-      ],
-      "revision": "4dbb39730b2c19eba060c5be5a0c70a5bff0cb431a2844ddadc75d4b45ab4222"
-    },
-    {
-      "id": "code:sync/src/PresenceRoom@bab2",
-      "kind": "code",
-      "title": "Code: flows/sync/src: PresenceRoom.ts",
-      "priority": 346,
-      "why": "collaboration: branch sharing, presence, terminal attach; guide attached",
-      "area": "branch",
-      "addedAt": "2026-10-21T01:33:26Z",
-      "context": "# PresenceRoom: the host half of live presence\n\n## What\nShows everyone on a branch who else is there and where they are.\nThe host keeps each connection in its socket attachment, so a hibernating room can resume.\n\n## Why\nAn idle branch should keep its live roster without keeping a machine awake.\nDecision: `apps/mvp/docs/decisions/0013-branch-workspace.md`, presence and hibernation.\nPackage contract: `packages/smithers/flows/sync/docs/concepts/presence.md`.\n\n## How\n- `RoomHost` supplies accepted sockets; authentication happens before `join`.\n- `Identity` supplies trusted principal and access; frames can change only state.\n- `Attachment` keeps identity, state and join order through host hibernation.\n- `publish` sends a roster with a recipient-specific `self`; failed sends remove peers.\n- `receive` rejects binary, malformed and oversized frames before updating attachments.\n- `evict` removes every socket for a principal; host-only `data` stays off the wire.\n\n## Architecture diagram\n```text\nBrowser pages                       Worker / hibernating room host\n  | cookie-authenticated upgrade ---> host authenticates identity\n  | state frames ------------------> [* PresenceRoom *]\n  | <---------- roster + self --------    |        |\n  |                                      |        +--> counts / spans\n  +--------------------------------------+\n                                  socket attachments\n                              identity, state, order, private data\n                          (no Postgres or Electric persistence)\n```\n\n## Read this first\n- `packages/smithers/flows/sync/src/PresenceRoom.ts:160` — public participant excludes private attachment data.\n- `packages/smithers/flows/sync/src/PresenceRoom.ts:218` — failed peers trigger a smaller roster and another publication.\n- `packages/smithers/flows/sync/src/PresenceRoom.ts:274` — join trusts the host identity; capacity and duplicate checks live here.\n- `packages/smithers/flows/sync/src/PresenceRoom.ts:326` — inbound frames cannot replace principal or access.\n\n## Questions a reviewer should ask\n- Does every host authenticate before joining and evict immediately when access changes?\n- Can concurrent joins exceed capacity or publish an obsolete roster?\n- Does the open counter remain meaningful after hibernation resets the process?\n\nSource: `e93c4812547a3215b40221224972c48d44481ede` (landed text; line references above).\n\n## Readability verdict\n**pass** — Longest operation is about 41 lines; nesting reaches three control levels\nin publication. Attachment, roster and host responsibilities are distinct, and names\nare concrete. The bounded peer-removal loop is followable in one pass.",
-      "files": [
-        {
-          "path": "packages/smithers/flows/sync/src/PresenceRoom.ts",
-          "from": 1,
-          "to": 405,
-          "note": "The host side of a presence room: one room per page, such as a branch, that tells everyone on it who else is there and where. Exports `RoomSocket`, `RoomHost`, `Identity`, `Connection`, `joins` +9. Look at: hand-rolled retry or timer (the engine owns retries)."
-        }
-      ],
-      "revision": "bab291236885efa403cd3b9c878a3fca2e3108aaf51c469788ed5cf38032d1c6"
-    },
-    {
-      "id": "code:sync/src/SyncAuth@bec5",
-      "kind": "code",
-      "title": "Code: flows/sync/src: SyncAuth.ts",
-      "priority": 342,
-      "why": "collaboration: branch sharing, presence, terminal attach; guide attached",
-      "area": "branch",
-      "addedAt": "2026-10-21T01:33:26Z",
-      "context": "# SyncAuth: authenticate the workspace connection\n\n## What\nReads a signed workspace capability from the sync RPC header and installs the caller identity.\nMissing credentials become anonymous; invalid supplied credentials are refused.\n\n## Why\nDecisions: `apps/mvp/docs/decisions/0008-auth.md`, explicit actor authority, and\n`apps/mvp/docs/decisions/0013-branch-workspace.md`, scoped collaboration.\nThe SDK two-boundary contract is `packages/smithers/flows/sync/docs/concepts/authorization.md`.\n\n## How\n- `encodeCapability` schema-encodes JSON and base64url; errors render a safe cause rather than retaining credential data.\n- `decodeCapability` folds base64, JSON and schema failures into one unauthorized response.\n- The middleware checks the workspace header on each RPC request.\n- A verified workspace capability installs both capabilityId and signed expiry on SyncPrincipal.\n- An anonymous connection may still present a branch capability in its payload; it gains no workspace authority.\n- `layerClient` stamps generated RPC requests with the encoded workspace header.\n\n## Architecture diagram\n```text\nRPC client --> [* layerClient *] -- workspace header --> transport\n                                                          |\n                                                  [* SyncAuth *]\n                                                   |          |\n                                                absent     supplied\n                                                   |          v\n                                              anonymous  WorkspaceShare.verify\n                                                   |          |\n                                                   +--> SyncPrincipal + expiry\n                                                              |\n                                                    SyncServer authorization\nBranch capabilities in payloads remain a separate branch-only boundary.\n```\n\n## Read this first\n- `packages/smithers/flows/sync/src/SyncAuth.ts:54` — encode failure must not carry the rejected credential object.\n- `packages/smithers/flows/sync/src/SyncAuth.ts:78` — malformed credentials share one refusal message.\n- `packages/smithers/flows/sync/src/SyncAuth.ts:110` — present-but-invalid never falls back to anonymous.\n- `packages/smithers/flows/sync/src/SyncAuth.ts:123` — expiry travels with identity for long-running reads.\n\n## Questions a reviewer should ask\n- Does every stream consumer enforce the principal expiry after connection authentication?\n- Do proxy and tracing layers redact the custom credential header?\n- Are header-size limits enforced before base64 and JSON allocation?\n\nSource: `e93c4812547a3215b40221224972c48d44481ede` (landed text; line references above).\n\n## Readability verdict\n**pass** — The largest middleware layer is 26 lines; decode is 16 lines with two control levels. Encoding, authentication and outgoing headers are separately named. The reader can follow the absent, invalid and verified cases in one pass.",
-      "files": [
-        {
-          "path": "packages/smithers/flows/sync/src/SyncAuth.ts",
-          "from": 1,
-          "to": 146,
-          "note": "The sync read path's connection authentication: implementations of the `SyncRpcs.SyncAuth` RPC middleware. Exports `capabilityHeader`, `encodeCapability`, `decodeCapability`, `layer`, `layerClient`. Look at: correctness, naming and whether it can be smaller."
-        }
-      ],
-      "revision": "bec593209bfafc21b18dc9ffd9f94ca7934511a1b8b80887d85bbbcc98ea35e4"
-    },
-    {
-      "id": "code:secrets/scripts/build@a2ee",
-      "kind": "code",
-      "title": "Code: flows/secrets/scripts: build.mjs, circular.mjs",
-      "priority": 315,
-      "why": "security: the egress proxy and secrets; guide attached",
-      "area": "sdk:secrets",
-      "addedAt": "2026-10-21T01:33:26Z",
-      "context": "# Secrets package build and cycle checks\n\n## What\nBuilds the secrets library through the shared repository builder and checks its runtime import graph for cycles.\nThese scripts do not read or process secret values.\n\n## Why\nDecision: `apps/mvp/docs/decisions/0005-sandboxes-secrets-and-the-forge.md` supplies the package purpose.\nThese are maintenance scripts, not a new product decision.\nCatalog entry: `docs/libraries.md`, `@smthrs/secrets`.\n\n## How\n- `build.mjs` resolves the package directory relative to its own module URL.\n- The repository buildLibrary helper owns output production; no custom build behavior is added here.\n- `circular.mjs` asks madge to inspect TypeScript under src with the package tsconfig.\n- Type-only imports are excluded, so the check concerns runtime dependency cycles.\n- A cycle prints the cycle graph and sets exitCode to one for the invoking target.\n\n## Architecture diagram\n```text\nDeveloper / declared package build target\n                 |\n        [* build.mjs *] --> shared buildLibrary --> library artifacts\n                 \nDeveloper / cycle-check target\n                 |\n       [* circular.mjs *] --> madge + tsconfig --> runtime import graph\n                                                   |\n                                            cycles => exit 1\nNode-only maintenance boundary; browser, Worker and sandbox consumers use artifacts.\nNo vault, model provider or secret value crosses either script.\n```\n\n## Read this first\n- `packages/smithers/flows/secrets/scripts/build.mjs:4` — build root is independent of the current directory.\n- `packages/smithers/flows/secrets/scripts/circular.mjs:3` — unlike build, the check assumes the package working directory.\n- `packages/smithers/flows/secrets/scripts/circular.mjs:6` — type-only cycles are intentionally out of scope.\n\n## Questions a reviewer should ask\n- Does the declared target always run madge from this package directory?\n- Does the shared builder preserve the intended root public API and browser-safe output?\n\nSource: `e93c4812547a3215b40221224972c48d44481ede` (landed text; line references above).\n\n## Readability verdict\n**pass** — The scripts are four and thirteen lines, with one conditional and shallow configuration. Build and cycle detection are distinct, conventional concepts; names are direct.",
-      "files": [
-        {
-          "path": "packages/smithers/flows/secrets/scripts/build.mjs",
-          "from": 1,
-          "to": 4,
-          "note": "Look at: platform code outside a host package."
-        },
-        {
-          "path": "packages/smithers/flows/secrets/scripts/circular.mjs",
-          "from": 1,
-          "to": 13,
-          "note": "Look at: correctness, naming and whether it can be smaller."
-        }
-      ],
-      "revision": "a2eeffd22856991f5b69529f623d2ee2c994296d11c8a6f247facd68e27067a5"
+     "path": "apps/mvp/src/features/auth/store.ts",
+     "from": 1,
+     "to": 67,
+     "note": "The key of the one session row, and of the one confirmed row. Exports `SESSION`, `AuthStore`. Look at: correctness, naming and whether it can be smaller."
     }
-  ]
+   ],
+   "revision": "c99e5da01947eeff7734b92124b68b1a1a57391d3d96c88a241bfb70ffc2c449"
+  },
+  {
+   "id": "code:mvp/src/features/auth/components/Account@ad83",
+   "kind": "code",
+   "title": "Code: mvp/src/features/auth/components: Account.tsx, AuthContext.tsx, Compose...",
+   "priority": 393,
+   "why": "security: auth, shape access, secrets; guide attached",
+   "area": "infra",
+   "addedAt": "2026-10-21T01:59:45Z",
+   "context": "# Account controls and composer gating\n\nSource commit: `e93c4812547a3215b40221224972c48d44481ede`.\n\n## What\nRenders sign-in, sign-out and the account name from live session state.\nShows the composer only when the access policy permits it and the Settings link only to an Admin.\n\n## Why\nSign-in must be a deliberate gesture; offline Members retain the composer without granting server authority.\nSee `apps/mvp/docs/decisions/0008-auth.md` and `apps/mvp/docs/decisions/0007-roles-and-tags.md`.\n\n## How\n- `AuthProvider` supplies queries and plain actions; useAuth fails clearly without a provider.\n- `Account` hides while loading, disables duplicate sign-out presses and displays callback failure copy.\n- `SignInButton` is a real link, present only when sign-in is available.\n- The link records a press and returns to the current path and query after GitHub.\n- `ComposerGate` delegates all policy to composerAccess using live and confirmed rows.\n- `SettingsLink` checks signed-in Admin state; server routes still enforce actual authority.\n\n## Architecture diagram\n```text\nBrowser Auth service -> [THIS: AuthProvider]\n                              | live queries / plain actions\n                 +------------+--------------+\n                 v            v              v\n              Account     ComposerGate    SettingsLink\n                 |            |              |\n             SignInButton   composer       settings route\n                 | link / signOut action\n                 v\n          Worker auth routes <-> GitHub / Postgres\nUI visibility complements server authorization.\n```\n\n## Read this first\n- `apps/mvp/src/features/auth/components/ComposerGate.tsx:16`: One policy determines online and retained offline composer access.\n- `apps/mvp/src/features/auth/components/SignInButton.tsx:16`: Sign-in is a browser navigation initiated by the person.\n- `apps/mvp/src/features/auth/components/Account.tsx:14`: Unreachable state falls through to the sign-in branch.\n- `apps/mvp/src/features/auth/components/SettingsLink.tsx:9`: Admin visibility is only a presentation gate.\n\n## Questions a reviewer should ask\n- Does the account header show the right state when offline with a confirmed identity?\n- Should the return target preserve the URL fragment too?\n- Do settings mutations reject unauthorized direct calls independently of this link?\n\n## Readability\npass. Account is the longest function at 22 lines; JSX and guards reach roughly three levels. Each component has one display decision, and access policy lives elsewhere. Names are plain and match visible controls.\n\n```json\n{\"readability\": {\"verdict\": \"pass\", \"why\": \"Account is the longest function at 22 lines; JSX and guards reach roughly three levels. Each component has one display decision, and access policy lives elsewhere. Names are plain and match visible controls.\"}}\n```",
+   "files": [
+    {
+     "path": "apps/mvp/src/features/auth/components/Account.tsx",
+     "from": 1,
+     "to": 31,
+     "note": "Who is signed in, for the header: their GitHub login and Sign out; or, signed out, the sign-in button, with \"Couldn't sign in.\" after GitHub's callback failed. Exports `Account`. Look at: correctness, naming and whether it can be smaller."
+    },
+    {
+     "path": "apps/mvp/src/features/auth/components/AuthContext.tsx",
+     "from": 1,
+     "to": 14,
+     "note": "What React components get: sign-in's live query to render and plain actions to call (features/auth/auth.ts). Exports `AuthProvider`, `useAuth`. Look at: correctness, naming and whether it can be smaller."
+    },
+    {
+     "path": "apps/mvp/src/features/auth/components/ComposerGate.tsx",
+     "from": 1,
+     "to": 26,
+     "note": "Asking Smithers is for Members and above (decision 0007 \u00a72, `repo:ask`; decision 0008 \u00a711): the composer for them, even offline after a reload; a short line for a\u2026 Exports `ComposerGate`. Look at: correctness, naming and whether it can be smaller."
+    },
+    {
+     "path": "apps/mvp/src/features/auth/components/SettingsLink.tsx",
+     "from": 1,
+     "to": 11,
+     "note": "The header's link to the deployment's settings, for an Admin only (docs/features/spend-alerts.md#channels). Exports `SettingsLink`. Look at: correctness, naming and whether it can be smaller."
+    },
+    {
+     "path": "apps/mvp/src/features/auth/components/SignInButton.tsx",
+     "from": 1,
+     "to": 21,
+     "note": "\"Sign in with GitHub\": a link the person presses, never a redirect the app makes (decision 0008 \u00a73). Exports `SignInButton`. Look at: correctness, naming and whether it can be smaller."
+    }
+   ],
+   "revision": "ad83547c9e5386aa24d3e35cd4590c91e587c47e2c2dddfa51916377b9f8c63f"
+  },
+  {
+   "id": "code:mvp/worker/secrets/SecretFlows@9c4c",
+   "kind": "code",
+   "title": "Code: mvp/worker/secrets: SecretFlows.ts",
+   "priority": 387,
+   "why": "security: auth, shape access, secrets; guide attached",
+   "area": "infra",
+   "addedAt": "2026-10-21T01:33:26Z",
+   "context": "# Durable secret write flows\n\nCommit: `e93c4812547a3215b40221224972c48d44481ede`. Line references use this revision.\n\n## What\nSets, replaces or deletes a sealed repository secret in one durable step. Records the change under the step\u2019s invocation key so replay does not record another change.\n\n## Why\n`apps/mvp/docs/decisions/0005-sandboxes-secrets-and-the-forge.md` \u00a74 requires write-only secrets, and durable-flow rulings require retry and replay at the engine layer. Admission and sealing happen before these flows start.\n\n## How\n- PUT payload contains ciphertext, nonce, binding, key version and actor ID, never plaintext.\n- `Store_` and `Erase` require `db:write:secrets` and use the engine\u2019s bounded retry policy.\n- `Put` and `Delete` are not model-invocable and each call one action.\n- Step handlers require `Action.CurrentInvocationKey`; a missing key is a defect.\n- The database layer supplies transactional writes; typed availability errors allow retry.\n- Records contain operation, name, repository and outcome, never sealed or revealed values.\n\n## Architecture diagram\n```text\nAdmin --> Worker admission + sealing\n                | sealed payload only\n                v\n       [THIS: secret/Put or secret/Delete]\n                | durable action / invocation key\n                v\n       Store.put / Store.remove --> Postgres secrets + secret_events\n                |\n                +--> outcome metrics / logs (no value)\nBrowser <------- Electric names + bindings (separate read path)\n```\n\n## Read this first\n- `apps/mvp/worker/secrets/SecretFlows.ts:35`: payload keeps only the sealed representation.\n- `apps/mvp/worker/secrets/SecretFlows.ts:68`: capability and model-invocation boundary.\n- `apps/mvp/worker/secrets/SecretFlows.ts:116`: refuses to proceed without a replay identity.\n\n## Questions a reviewer should ask\n- Are all callers required to pass the person-only admission boundary?\n- Does replay after a database commit return repeat without changing the stored binding?\n\n## Readability\n**pass**: The largest factory spans 32 lines; its largest step body is 16 lines. Nesting stays at factory, handler and generator, with one shared recording wrapper. The action name Store_ is awkward, but the two symmetric write paths are easy to follow.",
+   "files": [
+    {
+     "path": "apps/mvp/worker/secrets/SecretFlows.ts",
+     "from": 1,
+     "to": 153,
+     "note": "Postgres couldn't record the write. Exports `StoreUnavailable`, `NoInvocationKey`, `writes`, `STORE_RETRY`, `Store_` +5. Look at: flow secret/Delete, secret/Put: capabilities, payload and error schemas, idempotent steps; SQL: parameters and row authorization."
+    }
+   ],
+   "revision": "9c4c91a71a2d9c157fe014a94be1681953d5f00e499f00090d81240f05fd47c3"
+  },
+  {
+   "id": "code:mvp/src/features/presence/components/PresenceAvatars@e5d7",
+   "kind": "code",
+   "title": "Code: mvp/src/features/presence/components: PresenceAvatars.tsx",
+   "priority": 386,
+   "why": "collaboration: branch sharing, presence, terminal attach; guide attached",
+   "area": "branch",
+   "addedAt": "2026-10-21T01:59:45Z",
+   "context": "# Presence avatars and follow navigation\n\nSource commit: `e93c4812547a3215b40221224972c48d44481ede`.\n\n## What\nShows one avatar per person on the branch.\nSelecting a person navigates to the code, editor or terminal their chosen connection is viewing.\n\n## Why\nBranch collaboration needs a quick way to see and follow other people.\nSee `apps/mvp/docs/decisions/0013-branch-workspace.md`.\n\n## How\n- The component reads the live participants query through the branch context.\n- `avatarsOf` supplies display identity and location titles.\n- `followOf` resolves the selected connection against the latest roster.\n- A missing target stops navigation, handling someone who has already left.\n- Navigation preserves repository/ref and selects terminal or editor through route search parameters.\n\n## Architecture diagram\n```text\nBranch room roster -> local participants query\n                                  |\n                                  v\n                   [THIS: PresenceAvatars]\n                    | avatarsOf       | select id -> followOf\n                    v                 v\n               AvatarStack       TanStack Router\n                                      | same branch: path / edit / terminal\n                                      v\n                            Code view / editor / terminal\nThe component opens no socket and writes no shared data.\n```\n\n## Read this first\n- `apps/mvp/src/features/presence/components/PresenceAvatars.tsx:16`: Target is resolved again at click time.\n- `apps/mvp/src/features/presence/components/PresenceAvatars.tsx:20`: Absent route params silently become empty strings.\n- `apps/mvp/src/features/presence/components/PresenceAvatars.tsx:21`: Terminal wins over edit if both fields appear.\n\n## Questions a reviewer should ask\n- Can this render outside a branch route with missing owner, repo or ref?\n- Does the target terminal identify the other person\u2019s actual terminal when unnamed?\n- Does following an edit preserve the parent directory and selected file?\n\n## Readability\npass. The component spans 21 lines and its click handler 13. Nesting is about three levels; the only compound choice is a short terminal/edit search expression. Names clearly separate people, target and navigation, so one pass is sufficient.\n\n```json\n{\"readability\": {\"verdict\": \"pass\", \"why\": \"The component spans 21 lines and its click handler 13. Nesting is about three levels; the only compound choice is a short terminal/edit search expression. Names clearly separate people, target and navigation, so one pass is sufficient.\"}}\n```",
+   "files": [
+    {
+     "path": "apps/mvp/src/features/presence/components/PresenceAvatars.tsx",
+     "from": 1,
+     "to": 29,
+     "note": "Who else is on the branch (decision 0013 \u00a75): one avatar each, titled with where they are. Exports `PresenceAvatars`. Look at: correctness, naming and whether it can be smaller."
+    }
+   ],
+   "revision": "e5d765120bb13aafef406291dbd2adf1b08203ff0ef09ce01656e0f037764c7d"
+  },
+  {
+   "id": "code:mvp/worker/secrets/Store@3404",
+   "kind": "code",
+   "title": "Code: mvp/worker/secrets: Store.ts",
+   "priority": 385,
+   "why": "security: auth, shape access, secrets; guide attached",
+   "area": "infra",
+   "addedAt": "2026-10-21T01:33:26Z",
+   "context": "# Sealed secret storage and audit transactions\n\nCommit: `e93c4812547a3215b40221224972c48d44481ede`. Line references use this revision.\n\n## What\nStores sealed secret values and their host bindings in Postgres. Keeps a separate audit of writes and outbound use without storing plaintext values.\n\n## Why\n`apps/mvp/docs/decisions/0005-sandboxes-secrets-and-the-forge.md` \u00a74 requires sealed values, names-only reads and audited use. Durable writes need a repeatable database effect after a flow resumes.\n\n## How\n- `Put` carries ciphertext, nonce, key version, binding and an invocation key.\n- `put` checks the audit key inside a transaction, then upserts the secret and records set or replace.\n- `remove` deletes by repository and name and records delete in the same transaction.\n- A repeated invocation returns repeat; a missing delete returns missing.\n- `bindings` excludes ciphertext; `sealed` reads one repository-scoped sealed row.\n- `recordUse` writes only scope, host, method, outcome and secret names through SQL parameters.\n\n## Architecture diagram\n```text\nsecret/Put or secret/Delete -- invocation key --> [THIS: Store]\n                                                     | transaction\n                                                     v\n                                         Postgres secrets + secret_events\n                                                     ^\nSandboxEgress --> bindings / sealed ------------------+\nSandboxEgress --> recordUse (names and decision) ------+\nEncryption and authorization occur in callers, outside this module.\n```\n\n## Read this first\n- `apps/mvp/worker/secrets/Store.ts:43`: deduplication, row write and audit share a transaction.\n- `apps/mvp/worker/secrets/Store.ts:55`: xmax determines insert versus replace.\n- `apps/mvp/worker/secrets/Store.ts:97`: value lookup is scoped by repository and name.\n- `apps/mvp/worker/secrets/Store.ts:115`: use audit carries names, never values.\n\n## Questions a reviewer should ask\n- Does a unique invocation-key constraint roll back a concurrent duplicate\u2019s whole transaction?\n- What orders different durable writes to the same secret after one has retried?\n\n## Readability\n**pass**: put spans 23 lines with two generator levels; remove mirrors it. Readers track transaction, deduplication and audit together, with straightforward names. The Postgres xmax expression is the only specialized detail.",
+   "files": [
+    {
+     "path": "apps/mvp/worker/secrets/Store.ts",
+     "from": 1,
+     "to": 118,
+     "note": "A sealed value as Postgres keeps it. Exports `Sealed`, `Binding`, `Put`, `Change`, `put` +6. Look at: SQL: parameters and row authorization."
+    }
+   ],
+   "revision": "340465296ef9aa9451b2f7bc33d9814fffb374fa0d052e1b035d5243f7227569"
+  },
+  {
+   "id": "code:mvp/src/features/presence/store@d7ec",
+   "kind": "code",
+   "title": "Code: mvp/src/features/presence: store.ts, view.ts, where.ts",
+   "priority": 384,
+   "why": "collaboration: branch sharing, presence, terminal attach; guide attached",
+   "area": "branch",
+   "addedAt": "2026-10-21T01:59:45Z",
+   "context": "# Presence storage, location codec and avatar projection\n\nSource commit: `e93c4812547a3215b40221224972c48d44481ede`.\n\n## What\nKeeps transient room state and turns connection rows into one avatar per person.\nEncodes page locations within the presence protocol\u2019s byte limit and resolves follow destinations.\n\n## Why\nPresence should disappear with the tab and remain small enough for live room messages.\nSee `apps/mvp/docs/decisions/0013-branch-workspace.md`.\n\n## How\n- PresenceStore uses only local collections, scoped fibers and refs; no retained presence rows.\n- Participant queries preserve room order; the room query returns its singleton row.\n- `avatarsOf` puts this tab\u2019s person first and chooses the last roster connection for each other person.\n- `followOf` maps editor files to parent directory plus edit, and terminal state to terminal search.\n- `encodeWhere` truncates code/editor paths by characters and then UTF-8 bytes.\n- Schema decoding treats malformed location JSON as no location.\n\n## Architecture diagram\n```text\nWorker room -- roster/state --> presence actions\n                                    |\n                                    v\n                      [THIS: local PresenceStore]\n                        | participants         | socket / latest Where refs\n                        v                      v\n             [THIS: avatarsOf / followOf]   [THIS: encodeWhere]\n                        |                      | bounded location JSON\n                  header / router         WebSocket -> room -> browsers\nRoom state is ephemeral; no Postgres/Electric path here.\n```\n\n## Read this first\n- `apps/mvp/src/features/presence/view.ts:26`: Last connection wins in roster order, not by a local activity timestamp.\n- `apps/mvp/src/features/presence/view.ts:48`: Unnamed remote terminal maps to me on the viewer\u2019s route.\n- `apps/mvp/src/features/presence/where.ts:20`: Terminal state bypasses the byte-size reduction applied to paths.\n\n## Questions a reviewer should ask\n- Does roster order really identify the most relevant tab for each person?\n- Can an oversized terminalId exceed the protocol limit?\n- Does following an unnamed remote terminal accidentally select your own terminal?\n\n## Readability\npass. The store generator is 23 lines of declarations; avatarsOf is 12 lines and codec functions are shorter. Loops and callback branches nest about two levels. Storage, projection and encoding are separated and named clearly; edge cases are localized.\n\n```json\n{\"readability\": {\"verdict\": \"pass\", \"why\": \"The store generator is 23 lines of declarations; avatarsOf is 12 lines and codec functions are shorter. Loops and callback branches nest about two levels. Storage, projection and encoding are separated and named clearly; edge cases are localized.\"}}\n```",
+   "files": [
+    {
+     "path": "apps/mvp/src/features/presence/store.ts",
+     "from": 1,
+     "to": 68,
+     "note": "Where the room is: ChatApi's origin, the site's own. Exports `PresenceConfig`, `participantsQuery`, `roomQuery`, `PresenceStore`. Look at: correctness, naming and whether it can be smaller."
+    },
+    {
+     "path": "apps/mvp/src/features/presence/view.ts",
+     "from": 1,
+     "to": 53,
+     "note": "Where a place is, in the fewest words: the file or folder's path, or Terminal. Exports `placeOf`, `Avatar`, `avatarsOf`, `followOf`, `selfAccessOf`. Look at: correctness, naming and whether it can be smaller."
+    },
+    {
+     "path": "apps/mvp/src/features/presence/where.ts",
+     "from": 1,
+     "to": 28,
+     "note": "Whether `state` fits the room's limit in UTF-8. Exports `encodeWhere`, `decodeWhere`. Look at: correctness, naming and whether it can be smaller."
+    }
+   ],
+   "revision": "d7ec344e0ebab1000f225a0646df72bb96f255d98cb1026f2ce46553555c6de3"
+  },
+  {
+   "id": "code:mvp/src/features/sharing/components/ShareButton@18a0",
+   "kind": "code",
+   "title": "Code: mvp/src/features/sharing/components: ShareButton.tsx",
+   "priority": 380,
+   "why": "collaboration: branch sharing, presence, terminal attach; guide attached",
+   "area": "branch",
+   "addedAt": "2026-10-21T01:33:26Z",
+   "context": "# Owner share controls\n\nSource commit: `e93c4812547a3215b40221224972c48d44481ede`.\n\n## What\nShows the branch owner a Share button and the shared dialog component.\nConnects people, link access, pending rows and errors to the sharing service.\n\n## Why\nBranch access should follow familiar collaboration controls while the server keeps the permission boundary.\nSee `apps/mvp/docs/decisions/0013-branch-workspace.md`.\n\n## How\n- The ready branch must have owner access and a non-null branch id before controls render.\n- The dialog opens only when its captured branch matches the currently shown branch.\n- `peopleOf`, `generalOf` and `linkOf` supply view data without Effect in React.\n- Callbacks dispatch add, set and remove actions instead of editing shared rows locally.\n- Restricted general access removes the repository grantee; other choices set its access.\n- Pending keys and mapped errors come from the live dialog row.\n\n## Architecture diagram\n```text\nBrowser branch/session/share live queries\n                     |\n                     v\n             [THIS: ShareButton]\n              | owner guard     | view projections\n              v                 v\n                @smthrs/ui ShareDialog\n                     | callbacks: add / access / remove / general\n                     v\n                sharing actions -> durable branch/share\n                     |\n                 Worker authorization -> Postgres -> Electric -> query\n```\n\n## Read this first\n- `apps/mvp/src/features/sharing/components/ShareButton.tsx:18`: Owner visibility is a presentation rule, not server authorization.\n- `apps/mvp/src/features/sharing/components/ShareButton.tsx:26`: Open state is explicitly tied to the current branch.\n- `apps/mvp/src/features/sharing/components/ShareButton.tsx:38`: Restricted removes the general-access grant.\n\n## Questions a reviewer should ask\n- Do late pending/error updates stay tied to the correct branch?\n- Does revoking owner access close an already open dialog immediately?\n- Can stale shares render briefly while another branch opens?\n\n## Readability\npass. ShareButton spans 34 lines, mostly direct component props. Its deepest conditional is about three JSX/expression levels. Four live queries converge on one dialog, and the owner guard plus pure view helpers keep the names and data flow followable.\n\n```json\n{\"readability\": {\"verdict\": \"pass\", \"why\": \"ShareButton spans 34 lines, mostly direct component props. Its deepest conditional is about three JSX/expression levels. Four live queries converge on one dialog, and the owner guard plus pure view helpers keep the names and data flow followable.\"}}\n```",
+   "files": [
+    {
+     "path": "apps/mvp/src/features/sharing/components/ShareButton.tsx",
+     "from": 1,
+     "to": 44,
+     "note": "Share, for the branch's owner (decision 0013 \u00a75): Google Docs' dialog over the branch's permission list. Exports `ShareButton`. Look at: correctness, naming and whether it can be smaller."
+    }
+   ],
+   "revision": "18a0f5ce92e5ad9d1593227f3b67269701f62631884a187ba80df5892189e28b"
+  },
+  {
+   "id": "code:mvp/worker/branch/Access@60a0",
+   "kind": "code",
+   "title": "Code: mvp/worker/branch: Access.ts, Access.test.ts, BranchApi.ts",
+   "priority": 370,
+   "why": "collaboration: branch sharing, presence, terminal attach; guide attached",
+   "area": "branch",
+   "addedAt": "2026-10-21T05:34:27Z",
+   "context": "# Branch access policy and route composition\n\nCommit: `e93c4812547a3215b40221224972c48d44481ede`. Line references use this revision.\n\n## What\nDecides who can view or edit a live branch from ownership, named shares and general access. Wires the branch workspace\u2019s HTTP routes to the same database-backed checks.\n\n## Why\n`apps/mvp/docs/decisions/0013-branch-workspace.md` makes branches private until shared and caps every share by the person\u2019s GitHub-derived role. Guests need a named share and can only view.\n\n## How\n- `ceilingOf` limits Members and above to edit, Guests to view, and absent roles to none.\n- `accessOf` grants ownership only under the edit ceiling; otherwise it caps the best eligible share.\n- General-access links do not admit Guests; `underPolicy` reads only own grant properties.\n- `branchAccess` loads the living branch, conversation and relevant grants with parameterized SQL.\n- `policyOf` supplies the whole list for connected-socket enforcement.\n- `BranchApi` composes terminal, sharing, presence, tool and text routes; tests cover pure policy and real SQL.\n\n## Architecture diagram\n```text\nBrowser HTTP / shape / socket request --> BranchApi routing\n                                               |\n                                [THIS: branchAccess / accessOf]\n                                  ^ role + subject    | parameterized read\n                                  |                   v\n                               Sessions           Postgres branches + shares\n                                               |\n                                  owner / edit / view / none\n                                               v\n                          route admission --> room / terminal / sandbox\nSharing updates --> policyOf --> underPolicy --> existing socket enforcement\n```\n\n## Read this first\n- `apps/mvp/worker/branch/Access.ts:50`: effective access and Guest link exclusion.\n- `apps/mvp/worker/branch/Access.ts:81`: inherited object properties cannot become grants.\n- `apps/mvp/worker/branch/Access.ts:133`: deleted branches are excluded by the database read.\n- `apps/mvp/worker/branch/Access.test.ts:66`: demoting a creator removes automatic ownership.\n\n## Questions a reviewer should ask\n- Do all write callers separately enforce branch mode, since accessOf does not?\n- Can a policy snapshot and a request check disagree during a concurrent sharing change?\n\n## Readability\n**pass**: branchAccess spans 19 lines with one SQL query and a flat result conversion. The router factory spans 24 lines and has flat dispatch guards. Role ceilings and grant ranking are a few small named concepts; SQL aliases match the decoded types.",
+   "files": [
+    {
+     "path": "apps/mvp/worker/branch/Access.ts",
+     "from": 1,
+     "to": 157,
+     "note": "Who a share narrows to: what each role may get at most. Exports `ceilingOf`, `Grants`, `accessOf`, `canView`, `canEdit` +7. Look at: SQL: parameters and row authorization."
+    },
+    {
+     "path": "apps/mvp/worker/branch/Access.test.ts",
+     "from": 1,
+     "to": 162,
+     "note": "Who may do what on a branch's live workspace (worker/branch/Access.ts, decision 0013 \u00a72 and \u00a74): Google Docs-style sharing on this file's schema of the compose Postgres\u2026 Look at: behavior asserted through the public boundary; failure and ordering cases."
+    },
+    {
+     "path": "apps/mvp/worker/branch/BranchApi.ts",
+     "from": 1,
+     "to": 53,
+     "note": "Whether a path is one of the branch workspace's routes. Exports `handles`, `make`. Look at: SQL: parameters and row authorization."
+    }
+   ],
+   "revision": "60a05733b29cdc9e6bfdedb4330d81e0f08ff91e6c2e057dfa54babd9badebaf"
+  },
+  {
+   "id": "code:secrets/PACKAGE@ecb2",
+   "kind": "code",
+   "title": "Code: flows/secrets: PACKAGE.ts, eslint.config.js, vitest.config.ts",
+   "priority": 369,
+   "why": "security: the egress proxy and secrets; guide attached",
+   "area": "sdk:secrets",
+   "addedAt": "2026-10-21T01:33:26Z",
+   "context": "# Secrets package security and test gates\n\nCommit: `e93c4812547a3215b40221224972c48d44481ede`. Line references use this revision.\n\n## What\nDeclares the secrets package\u2019s build checks and threat-focused security reviews. Configures lint rules and full coverage thresholds for the Node test runner.\n\n## Why\n`apps/mvp/docs/decisions/0005-sandboxes-secrets-and-the-forge.md` \u00a74 supplies the secret-handling threats. PROC-4 in `apps/mvp/docs/rulings.md` requires engineering rules to become enforceable checks; these targets make those expectations reviewable.\n\n## How\n- `BuildAndCheckTypeScriptPackage` supplies build, format, lint, documentation and test targets.\n- `SecurityReview` declares five checks: value opacity, audience binding, redirects, echo scrubbing and header injection.\n- Each review names threats, suspect patterns and relevant source paths.\n- `SdkRules` adds import checks and manual Jev rules for a library role.\n- ESLint installs shared invariants; Vitest sets finite timeouts and 100% coverage thresholds.\n- Coverage reports use a process-specific temporary directory so concurrent runs do not overwrite them.\n\n## Architecture diagram\n```text\nMaintainer / CI target selection\n              |\n     [THIS: secrets PACKAGE.ts]\n       | standard gates     | SecurityReview       | SdkRules\n       v                    v                      v\n build / lint / tests   threat rubrics         import / Jev checks\n       |                    |\n       +-------- secrets source + docs --------+\n                         |\n          runtime egress --> Worker vault/audit --> allowed HTTPS host\nThis slice configures checks; it does not run the egress or prove tests passed.\n```\n\n## Read this first\n- `packages/smithers/flows/secrets/PACKAGE.ts:20`: opacity review includes client errors holding substituted requests.\n- `packages/smithers/flows/secrets/PACKAGE.ts:52`: scrub review includes ranges and compression.\n- `packages/smithers/flows/secrets/PACKAGE.ts:76`: Jev rules are manual, unlike import checks.\n- `packages/smithers/flows/secrets/vitest.config.ts:17`: thresholds are configured, not an execution receipt.\n\n## Questions a reviewer should ask\n- Which target selection actually runs securityAudit rather than only standard tests?\n- Are import rules and security review failures required by the landing gate?\n\n## Readability\n**pass**: There are no substantial functions: the longest callable is a 3-line package declaration. Nesting is static rubric/config data, with five explicit threats and direct names. The longer file is a checklist rather than control flow.",
+   "files": [
+    {
+     "path": "packages/smithers/flows/secrets/PACKAGE.ts",
+     "from": 1,
+     "to": 80,
+     "note": "Standard package targets for the secrets egress, plus a security review of its secret handling. Exports `Package`. Look at: deep import (root entries only)."
+    },
+    {
+     "path": "packages/smithers/flows/secrets/eslint.config.js",
+     "from": 1,
+     "to": 49,
+     "note": "Look at: correctness, naming and whether it can be smaller."
+    },
+    {
+     "path": "packages/smithers/flows/secrets/vitest.config.ts",
+     "from": 1,
+     "to": 20,
+     "note": "A finite budget that survives coverage-instrumented load, so a genuine hang still fails the run. Look at: platform code outside a host package."
+    }
+   ],
+   "revision": "ecb22edbd6fbad39a084adf5409ee6dd221dee7d03236b59aa1e48d049cc8898"
+  },
+  {
+   "id": "code:secrets/src/Binding@d596",
+   "kind": "code",
+   "title": "Code: flows/secrets/src: Binding.ts",
+   "priority": 367,
+   "why": "security: the egress proxy and secrets; guide attached",
+   "area": "sdk:secrets",
+   "addedAt": "2026-10-21T01:33:26Z",
+   "context": "# Secret binding and value validation\n\nCommit: `e93c4812547a3215b40221224972c48d44481ede`. Line references use this revision.\n\n## What\nDefines which names, destination hosts and HTTP methods a secret can use. Rejects values that are too short, too large or unsafe to insert into a header.\n\n## Why\n`apps/mvp/docs/decisions/0005-sandboxes-secrets-and-the-forge.md` \u00a74 binds every secret to its destination and keeps values opaque. The catalog\u2019s `@smthrs/secrets` entry puts the reusable validation in the SDK.\n\n## How\n- `Name` allows an environment-variable-style uppercase name of at most 64 characters.\n- `isHost` accepts lowercase multi-label DNS names, without IP literals, ports or wildcards.\n- `Binding` requires one to sixteen hosts and, when supplied, at least one allowed method.\n- `valueProblem` rejects malformed surrogate pairs and control characters before measuring UTF-8 bytes.\n- Values must be 8 bytes to 16 KiB; `checkValue` returns a typed reason without the value.\n\n## Architecture diagram\n```text\nAdmin input --> Worker secret PUT --> [THIS: Binding schema + valueProblem]\n                                           | accepted binding + value\n                                           v\n                                      seal --> Postgres\n                                           |\nSandbox placeholder --> Egress policy ------+\n                              | revealed value\n                              v\n                      [THIS: valueProblem] --> safe header --> allowed HTTPS host\nValidation does not authenticate callers or resolve DNS.\n```\n\n## Read this first\n- `packages/smithers/flows/secrets/src/Binding.ts:43`: host syntax is exact and intentionally narrow.\n- `packages/smithers/flows/secrets/src/Binding.ts:80`: host-count and optional-method contract.\n- `packages/smithers/flows/secrets/src/Binding.ts:128`: malformed UTF-16 and controls fail without exposing input.\n\n## Questions a reviewer should ask\n- Do callers decode Binding before constructing an Egress.Policy directly?\n- Is an omitted method list intentionally broader than the product\u2019s preferred binding?\n\n## Readability\n**pass**: valueProblem is the longest function at 9 lines. Nesting is shallow: flat validation guards and a single labels.every predicate. It asks readers to hold syntax, byte bounds and opaque errors, each with a direct name.",
+   "files": [
+    {
+     "path": "packages/smithers/flows/secrets/src/Binding.ts",
+     "from": 1,
+     "to": 157,
+     "note": "What a secret is bound to: its name, the hosts that may receive its value, and optionally the methods. Exports `Name`, `isHost`, `Host`, `Method`, `maximumHosts` +7. Look at: correctness, naming and whether it can be smaller."
+    }
+   ],
+   "revision": "d596d307602eb4380cf5a7a31ebd2fed8a9deb129d63b7f657acdc7478daf2d1"
+  },
+  {
+   "id": "code:secrets/src/internal/bytes@ddce",
+   "kind": "code",
+   "title": "Code: flows/secrets/src/internal: bytes.ts",
+   "priority": 361,
+   "why": "security: the egress proxy and secrets; guide attached",
+   "area": "sdk:secrets",
+   "addedAt": "2026-10-21T01:33:26Z",
+   "context": "# Portable byte and base64 helpers\n\nCommit: `e93c4812547a3215b40221224972c48d44481ede`. Line references use this revision.\n\n## What\nConverts text and byte arrays for secret placeholders, header substitution and echo scrubbing. Supports both base64 alphabets and rejects invalid base64 text during Basic credential decoding.\n\n## Why\n`apps/mvp/docs/decisions/0005-sandboxes-secrets-and-the-forge.md` \u00a74 requires decoding Basic credentials and finding encoded echoes without giving values to the guest. The catalog\u2019s portable secrets library uses web-standard byte operations here.\n\n## How\n- `utf8` encodes with a shared TextEncoder; `text` decodes permissively with replacement characters.\n- `base64` constructs binary text, applies btoa and optionally removes padding or switches alphabets.\n- `fromBase64` catches invalid base64 and then uses fatal UTF-8 decoding.\n- Invalid encoded credentials return undefined instead of an exception containing input.\n- `concat` measures total bytes, allocates once and copies each part in order.\n\n## Architecture diagram\n```text\nPlaceholder HMAC input / Binding byte limits\n                     |\n                     v\n           [THIS: UTF-8 + base64 + concat]\n             ^                       ^\n             |                       |\nEgress Basic header decode      Scrub encoded patterns + chunk retention\n             |                       |\n       allowed HTTPS request <-- egress --> scrubbed answer to sandbox\nThese helpers have no network, storage or authorization effects.\n```\n\n## Read this first\n- `packages/smithers/flows/secrets/src/internal/bytes.ts:23`: permissive decoding differs intentionally from credential decoding.\n- `packages/smithers/flows/secrets/src/internal/bytes.ts:54`: malformed UTF-8 fails closed.\n- `packages/smithers/flows/secrets/src/internal/bytes.ts:66`: concatenation preserves chunk order without text conversion.\n\n## Questions a reviewer should ask\n- Do callers rely on permissive text decoding where fatal decoding is required?\n- Are input sizes bounded before the binary-string base64 conversion allocates?\n\n## Readability\n**pass**: fromBase64 is the longest function at 14 lines, with two flat try/catch blocks. concat has two shallow loops. Readers track bytes, alphabets and strict versus permissive decoding; the names and comments distinguish them.",
+   "files": [
+    {
+     "path": "packages/smithers/flows/secrets/src/internal/bytes.ts",
+     "from": 1,
+     "to": 76,
+     "note": "UTF-8 and base64 helpers over the web-standard globals every host ships. Exports `utf8`, `text`, `base64`, `fromBase64`, `concat`. Look at: correctness, naming and whether it can be smaller."
+    }
+   ],
+   "revision": "ddce2dcbfc48e45bde95a6b086fa867b3024683342bbf48a7631175912884678"
+  },
+  {
+   "id": "code:views/src/internal/bytes@70f1",
+   "kind": "code",
+   "title": "Code: ui/views/src/internal: bytes.ts, harden.ts, vocabulary.ts",
+   "priority": 357,
+   "why": "security: the views realm; guide attached",
+   "area": "sdk:views",
+   "addedAt": "2026-10-21T10:55:47Z",
+   "context": "# View guard vocabulary and realm hardening\n\n## What\nDefines the names and HTML features generated views cannot use.\nIt also sizes JSON safely and freezes the object graph exposed to a presentation realm.\n\n## Why\nDecision: `apps/mvp/docs/decisions/0004-agent-ui-codemode-and-rendering.md`, bounded generated views.\n`packages/smithers/ui/views/docs/security.md` explains the layered sandbox boundary.\n\n## How\n- `jsonLength` measures serialized UTF-8 bytes; unencodable values return undefined.\n- `harden` walks objects, functions, prototypes and accessor functions without invoking getters.\n- A seen set handles cycles; freezing happens before visiting further objects.\n- Element and attribute sets refuse navigation, code execution and external resource loading.\n- Attribute normalization folds case and removes hyphens and colons; only image data URLs get a src exception.\n- The same vocabulary supports source checks and rendering checks, including forbidden globals and properties.\n\n## Architecture diagram\n```text\nModel-produced TSX --> ViewCode source checker\n                             |\n                     [* shared vocabulary *]\n                             |\nApproved code --> bounded QuickJS presentation realm --> HTML --> browser sandbox frame\n                     |                    |\n              [* harden *]          render-time prop checks\n                     |\n               frozen host API\nInput/output JSON --> [* byte limits *]\nNo network or storage authority is supplied to the view.\n```\n\n## Read this first\n- `packages/smithers/ui/views/src/internal/harden.ts:14` \u2014 freezes prototypes and getters without calling accessors.\n- `packages/smithers/ui/views/src/internal/vocabulary.ts:129` \u2014 normalized attributes and the data-image exception.\n- `packages/smithers/ui/views/src/internal/vocabulary.ts:225` \u2014 constructor/prototype escape names are blocked.\n- `packages/smithers/ui/views/src/internal/bytes.ts:21` \u2014 serialization failures must be treated as refusal by callers.\n\n## Questions a reviewer should ask\n- Are computed names and spread props checked at render time with the same rules?\n- Do CSP and realm isolation still contain a vocabulary omission?\n- Is harden ever called with a proxy that can run traps during traversal?\n\nSource: `e93c4812547a3215b40221224972c48d44481ede` (landed text; line references above).\n\n## Readability verdict\n**pass** \u2014 The longest function is 15 lines, nesting is two control levels, and names describe the checks. Three small guard mechanisms are independent; most of the slice is explicit policy data.",
+   "files": [
+    {
+     "path": "packages/smithers/ui/views/src/internal/bytes.ts",
+     "from": 1,
+     "to": 28,
+     "note": "UTF-8 sizes, without a host encoder. Exports `jsonLength`. Look at: correctness, naming and whether it can be smaller."
+    },
+    {
+     "path": "packages/smithers/ui/views/src/internal/harden.ts",
+     "from": 1,
+     "to": 28,
+     "note": "Deep freezing for the presentation realm. Exports `harden`. Look at: correctness, naming and whether it can be smaller."
+    },
+    {
+     "path": "packages/smithers/ui/views/src/internal/vocabulary.ts",
+     "from": 1,
+     "to": 252,
+     "note": "The words a view may not use: elements, attributes and names. Exports `refusedElements`, `refusedAttributes`, `normalizeAttribute`, `isRefusedElement`, `isEventHandler` +4. Look at: browser storage; credential handling: scope, expiry, never logged."
+    }
+   ],
+   "revision": "70f1f7c2051dff83e594f4257b90be2527bf424dc88d10c610fc9856b012d6fd"
+  },
+  {
+   "id": "code:sync/src/BranchProjection@5a9b",
+   "kind": "code",
+   "title": "Code: flows/sync/src: BranchProjection.ts",
+   "priority": 356,
+   "why": "collaboration: branch sharing, presence, terminal attach; guide attached",
+   "area": "branch",
+   "addedAt": "2026-10-21T01:33:26Z",
+   "context": "# BranchProjection: one document from canonical commands\n\n## What\nBuilds a branch conversation, command history and shared field values from journal entries.\nTwo readers with the same canonical entries converge even when delivery repeats or arrives out of order.\n\n## Why\nDecision: `apps/mvp/docs/decisions/0013-branch-workspace.md`, shared workspace.\n`packages/smithers/flows/sync/docs/concepts/branches.md` defines this pure SDK projection; validated admission must precede it.\n\n## How\n- `State` carries the branch, highest sequence, messages, applied commands and field winners.\n- Foreign run IDs and already-seen command identities do not change document content.\n- Late unseen commands are inserted at canonical sequence positions instead of discarded.\n- `resolveField` chooses highest sequence, with participant ID as a deterministic tie-break.\n- `capabilityId`, stamped at admission, is attribution; participantId is only a client claim.\n- Incremental apply caches immutable command-ID sets; bulk project sorts once after folding.\n\n## Architecture diagram\n```text\nJournal durable entries --> validated SyncServer/SyncClient read path\n                                      |\n                             canonical branch entries\n                                      v\n                           [* BranchProjection *]\n                            |        |          |\n                         messages commands field winners\n                            +--------+----------+\n                                      v\n                              browser branch views\nNo network, database write, sandbox or model effect occurs in this fold.\n```\n\n## Read this first\n- `packages/smithers/flows/sync/src/BranchProjection.ts:158` \u2014 field conflict policy uses journal order, not clocks.\n- `packages/smithers/flows/sync/src/BranchProjection.ts:214` \u2014 malformed known payloads advance the cursor here; admission must reject them first.\n- `packages/smithers/flows/sync/src/BranchProjection.ts:261` \u2014 bulk fold must stay equivalent to incremental apply.\n\n## Questions a reviewer should ask\n- Can any caller feed unvalidated transport data directly into these pure folds?\n- Do duplicate and out-of-order tests compare both fold APIs over the same canonical set?\n- Can a caller mutate an array after the WeakMap indexes it?\n\nSource: `e93c4812547a3215b40221224972c48d44481ede` (landed text; line references above).\n\n## Readability verdict\n**pass** \u2014 The longest fold is 48 lines; nesting is about three levels. The reader tracks ordering, identity and field resolution, each with a named helper or explicit guard. Names match the branch data they represent.",
+   "files": [
+    {
+     "path": "packages/smithers/flows/sync/src/BranchProjection.ts",
+     "from": 1,
+     "to": 308,
+     "note": "The branch document projection: journal entries folded into what two people looking at the same branch must agree on. Exports `Message`, `AppliedCommand`, `Field`, `State`, `empty` +3. Look at: deep import (root entries only)."
+    }
+   ],
+   "revision": "5a9b686b1f2c76f553ef1a7872b19dcf8afb17beb4972dcf52ee93dc81514b7a"
+  },
+  {
+   "id": "code:sync/src/BranchProtocol@2e45",
+   "kind": "code",
+   "title": "Code: flows/sync/src: BranchProtocol.ts",
+   "priority": 354,
+   "why": "collaboration: branch sharing, presence, terminal attach; guide attached",
+   "area": "branch",
+   "addedAt": "2026-10-21T01:33:26Z",
+   "context": "# BranchProtocol: shared branch wire and retained history\n\n## What\nDefines commands, receipts, share claims and presence data exchanged by branch collaboration services.\nIt gives one branch a stable journal identity and preserves older command payloads.\n\n## Why\nDecision: `apps/mvp/docs/decisions/0013-branch-workspace.md`, one shared branch.\nThis SDK journal protocol is described in `packages/smithers/flows/sync/docs/concepts/branches.md`; it is not the app database schema.\n\n## How\n- Branded non-empty IDs distinguish branches, participants and commands at public boundaries.\n- `branchRunId` adds one reversible prefix; the bare prefix is not a valid branch.\n- Command source ID plus fixed source sequence zero gives resends the same durable producer key.\n- `ShareClaims` binds key ID, branch, capability, access and expiry; the signature lives beside claims.\n- Announcements and leased participants describe ephemeral presence without journal writes.\n- Wire submissions require fields; retained payload decoding defaults older args, target and capabilityId.\n\n## Architecture diagram\n```text\nClient intent -- CommandSubmission + capability --> BranchCommands\n                       |                               |\n                [* BranchProtocol *]                   v\n                 IDs / schemas / mapping       Journal branch run\n                       |                               |\n                 BranchRpcs wire                 retained payload\n                       |                               v\n                  host services                 BranchProjection\nPresence announcements --> lease roster (not journal history)\nSignature keys stay in authority; model and sandbox are outside this slice.\n```\n\n## Read this first\n- `packages/smithers/flows/sync/src/BranchProtocol.ts:115` \u2014 reverse mapping must never construct an empty branded ID.\n- `packages/smithers/flows/sync/src/BranchProtocol.ts:150` \u2014 allocating a new producer sequence would break deduplication.\n- `packages/smithers/flows/sync/src/BranchProtocol.ts:265` \u2014 sourcesReady is a host assertion, not client authority.\n- `packages/smithers/flows/sync/src/BranchProtocol.ts:377` \u2014 retained attribution defaults to empty, never a real capability.\n\n## Questions a reviewer should ask\n- Are all branded IDs decoded at external boundaries rather than asserted with casts?\n- Does any consumer trust participantId or sourcesReady as authenticated identity?\n- Will older retained command payloads still decode after the next schema change?\n\nSource: `e93c4812547a3215b40221224972c48d44481ede` (landed text; line references above).\n\n## Readability verdict\n**pass** \u2014 Most of 411 lines are schema declarations and comments; longest function is five lines with one branch. Naming separates submissions, durable payloads and receipts. Identity, authorization and compatibility can each be read locally.",
+   "files": [
+    {
+     "path": "packages/smithers/flows/sync/src/BranchProtocol.ts",
+     "from": 1,
+     "to": 411,
+     "note": "The branch collaboration contract: a branch is one shared live document. Exports `BranchId`, `ParticipantId`, `CommandId`, `Access`, `branchRunId` +17. Look at: deep import (root entries only)."
+    }
+   ],
+   "revision": "2e457b06c4a5ee53b4ea6c5e21a1556ccb633ba1e7065e4af9b4ba12656bbdfc"
+  },
+  {
+   "id": "code:effect-electric/src/ShapeSource@4dbb",
+   "kind": "code",
+   "title": "Code: effect-electric/src: ShapeSource.ts, SyncPolicy.ts, index.ts",
+   "priority": 353,
+   "why": "security: shapes and access; guide attached",
+   "area": "sdk:effect-electric",
+   "addedAt": "2026-10-21T01:33:26Z",
+   "context": "# ShapeSource: abortable fetch and controlled sync faults\n\n## What\nProvides the network source used by Electric collections and a fault layer for failure tests.\nIt also exposes the shared backoff policy used when sync cannot reach its source.\n\n## Why\nDecision: `apps/mvp/docs/decisions/0001-electric-postgres-tanstack-db.md` and\n`apps/mvp/docs/decisions/0002-local-first.md`: collections recover after connectivity fails.\nSee `packages/effect-electric/docs/sync-policy.md`.\n\n## How\n- `ShapeSource` defaults to host-injected fetch and passes Effect cancellation as AbortSignal.\n- Every request sets no-store; live long polls request low priority to reduce contention.\n- `Faults` can reject before the network or stall, corrupt, truncate or break a real response.\n- A Ref selects the current fault; a latch releases stalled responses when healed.\n- `SyncPolicy.backoff` caps exponential delay before jitter; collection code consumes the schedule.\n- The root entry exports the collection, proxy, source and policy namespaces.\n\n## Architecture diagram\n```text\nBrowser ElectricCollection --> [* ShapeSource *] --> fetch --> Worker ShapeProxy\n       |                            ^                           |\n       |                       test-only Faults                 v\n       |                   down / stall / cut / drop       Electric <-- Postgres\n       +--> [* SyncPolicy Schedule *]\n                 delay / reconnect controlled by collection\nSource interruption --> AbortSignal --> cancel network request\nRows return through Electric into the local collection.\n```\n\n## Read this first\n- `packages/effect-electric/src/ShapeSource.ts:70` \u2014 no-store and cancellation belong to every real request.\n- `packages/effect-electric/src/ShapeSource.ts:185` \u2014 faults are sampled before request and after response at distinct times.\n- `packages/effect-electric/src/SyncPolicy.ts:39` \u2014 jitter follows the cap, so actual delay can exceed max.\n\n## Questions a reviewer should ask\n- Is the advertised max intended to cap the final jittered wait or only its base?\n- Do happy-path tests use real Electric rather than the fault layer as their only evidence?\n- Are stalled and truncated requests interrupted cleanly on collection disposal?\n\nSource: `e93c4812547a3215b40221224972c48d44481ede` (landed text; line references above).\n\n## Readability verdict\n**pass** \u2014 The longest layer is about 55 lines; its request generator is 28 lines with at most two control branches nested. Fault names and before/after sampling make the test machinery readable. Fetch and backoff are small independent mechanisms.",
+   "files": [
+    {
+     "path": "packages/effect-electric/src/ShapeSource.ts",
+     "from": 1,
+     "to": 226,
+     "note": "Where an Electric collection's shape requests go: the source of its shape stream, as an Effect service. Exports `RequestFailed`, `Source`, `fetchSource`, `ShapeSource`, `Requests` +3. Look at: network call: timeouts, typed errors, no credentials in logs."
+    },
+    {
+     "path": "packages/effect-electric/src/SyncPolicy.ts",
+     "from": 1,
+     "to": 54,
+     "note": "The sync policy: how long an Electric collection waits before it sends a shape request again after one failed on the network, or with a 5xx or 429. Exports `Backoff`, `backoff`, `defaultPolicy`. Look at: correctness, naming and whether it can be smaller."
+    },
+    {
+     "path": "packages/effect-electric/src/index.ts",
+     "from": 1,
+     "to": 31,
+     "note": "Electric for Effect: TanStack DB collections synced from Postgres through Electric shapes, with a `Schedule` retry policy and sync status as a `Stream`, and a validating\u2026 Look at: correctness, naming and whether it can be smaller."
+    }
+   ],
+   "revision": "4dbb39730b2c19eba060c5be5a0c70a5bff0cb431a2844ddadc75d4b45ab4222"
+  },
+  {
+   "id": "code:sync/src/BranchShare@eaba",
+   "kind": "code",
+   "title": "Code: flows/sync/src: BranchShare.ts",
+   "priority": 350,
+   "why": "collaboration: branch sharing, presence, terminal attach; guide attached",
+   "area": "branch",
+   "addedAt": "2026-10-21T01:33:26Z",
+   "context": "# BranchShare: signed branch access\n\n## What\nMints and verifies credentials granting read or write access to one SDK branch until a deadline.\nIt supports key rotation while previously issued capabilities remain verifiable.\n\n## Why\nDecision: `apps/mvp/docs/decisions/0013-branch-workspace.md`, branch access boundaries.\nThis is the SDK capability scheme, not the app general-access sharing UI.\nContract: `packages/smithers/flows/sync/docs/concepts/authorization.md`.\n\n## How\n- `MintRequest` defines branch, capability ID, access, positive TTL and an optional parent expiry ceiling.\n- `canonical` length-prefixes all claims under a branch-specific scheme label.\n- `makeHmac` imports the keyring once; new signatures use the active key and verification selects signed kid.\n- Minting decodes arguments, reads Effect Clock, enforces the expiry ceiling and signs claims.\n- Verification snapshots claims before asynchronous cryptography, then checks signature, expiry, access and scope.\n- Noop refuses both operations; configuration has no fallback signing secret.\n\n## Architecture diagram\n```text\nTrusted host / BranchServer\n  | gated mint request                         untrusted holder\n  v                                                  |\n[* BranchShare *] <------- branch capability + requested access\n  |         |\n  |         +--> shared signer --> Web Crypto HMAC\n  |                                ^\n  +--> Effect Clock           Redacted keyring\n  |\n  +--> verified claims --> command / presence / sync read admission\nNo Postgres lookup or per-capability revocation table is present here.\n```\n\n## Read this first\n- `packages/smithers/flows/sync/src/BranchShare.ts:133` \u2014 canonical encoding prevents ambiguous claims and cross-scheme reuse.\n- `packages/smithers/flows/sync/src/BranchShare.ts:199` \u2014 mint itself does not authorize who may create a capability.\n- `packages/smithers/flows/sync/src/BranchShare.ts:234` \u2014 checks use copied claims across the crypto await.\n- `packages/smithers/flows/sync/src/BranchShare.ts:290` \u2014 a missing configured key fails closed.\n\n## Questions a reviewer should ask\n- Which trusted host gate prevents callers from minting arbitrary branch authority?\n- Is expiry or key removal sufficient revocation for every intended consumer?\n- Are all signing keys excluded from the browser composition and all telemetry?\n\nSource: `e93c4812547a3215b40221224972c48d44481ede` (landed text; line references above).\n\n## Readability verdict\n**pass** \u2014 The authority factory is 67 lines but consists of two separately named operations of about 27 and 31 lines. Nesting is at most two control levels. Claim copying, signing and policy checks have concrete names and a clear order.",
+   "files": [
+    {
+     "path": "packages/smithers/flows/sync/src/BranchShare.ts",
+     "from": 1,
+     "to": 297,
+     "note": "Share capabilities: the authorization boundary of a shared branch. Exports `AuthorizeRequest`, `MintRequest`, `Service`, `BranchShare`, `makeNoop` +6. Look at: credential handling: scope, expiry, never logged."
+    }
+   ],
+   "revision": "eabafbf7fbbb0fd6baf43d1341ea753a1d8ff084117de09c6809f81ef553185b"
+  },
+  {
+   "id": "code:sync/src/PresenceProtocol@3c30",
+   "kind": "code",
+   "title": "Code: flows/sync/src: PresenceProtocol.ts",
+   "priority": 348,
+   "why": "collaboration: branch sharing, presence, terminal attach; guide attached",
+   "area": "branch",
+   "addedAt": "2026-10-21T01:33:26Z",
+   "context": "# Presence WebSocket wire contract\n\nCommit: `e93c4812547a3215b40221224972c48d44481ede`. Line references use this revision.\n\n## What\nDefines the JSON messages a page and live presence room exchange. Bounds client state and roster size and tells the page which socket closes should reconnect.\n\n## Why\n`apps/mvp/docs/decisions/0013-branch-workspace.md` sends transient presence through a hibernating room rather than Postgres or a branch machine. The catalog\u2019s `@smthrs/sync` entry supplies a shared browser/Worker protocol.\n\n## How\n- A client frame carries only opaque state; the server roster includes host-assigned identity and access.\n- State is capped at 1 KiB, client frames at 2 KiB, rooms at 256 participants and host-only data at 512 bytes.\n- `isFinal` stops reconnects for normal leave, unsupported data, revoked access and oversized frames.\n- `reconnectDelay` doubles from one second up to thirty seconds, for ten attempts.\n- Schema decoders return undefined for bad input; the client decoder checks UTF-8 frame size first.\n- Server encoding projects participant data through PresenceWire; permission enforcement remains the host\u2019s job.\n\n## Architecture diagram\n```text\nBrowser page --> PresenceSocket\n                     | state JSON\n                     v\n             [THIS: PresenceProtocol] <---- shared schemas/limits ----+\n                     | WebSocket                                   |\n                     v                                             |\nWorker admission --> PresenceRoom in branch RoomObject -------------+\n  cookie/access       | roster JSON + close codes\n                      v\n                Browser avatars/cursors\nNo journal, Postgres, Electric or sandbox effects occur in the protocol.\n```\n\n## Read this first\n- `packages/smithers/flows/sync/src/PresenceProtocol.ts:95`: revoked access is final; changed access deliberately reconnects.\n- `packages/smithers/flows/sync/src/PresenceProtocol.ts:116`: retry bounds live in the shared wire contract.\n- `packages/smithers/flows/sync/src/PresenceProtocol.ts:220`: client frame byte limit is checked before decoding.\n- `packages/smithers/flows/sync/src/PresenceProtocol.ts:240`: server decoder limits participants but has no total frame-byte check.\n\n## Questions a reviewer should ask\n- Where are principal/name lengths and total server roster bytes bounded?\n- Should reconnectDelay reject fractional or NaN attempts at this public boundary?\n- Does the room keep authorization metadata out of encoded participants?\n\n## Readability\n**pass**: The longest exported function is a 4-line reconnect expression; schema construction is static. Nesting is limited to schema combinators and one encoding map. The four limits, frame types and close-code names let the reader follow the protocol in one pass.",
+   "files": [
+    {
+     "path": "packages/smithers/flows/sync/src/PresenceProtocol.ts",
+     "from": 1,
+     "to": 240,
+     "note": "The wire protocol between a page and a presence room: who is on a page, and where, live. Exports `maxStateBytes`, `maxFrameBytes`, `maxParticipants`, `maxDataBytes`, `CloseCode` +11. Look at: correctness, naming and whether it can be smaller."
+    }
+   ],
+   "revision": "3c3010fc1cc39ab4cab2c57870130aee8991e492aaae817090da4d20411834d5"
+  },
+  {
+   "id": "code:sync/src/PresenceRoom@bab2",
+   "kind": "code",
+   "title": "Code: flows/sync/src: PresenceRoom.ts",
+   "priority": 346,
+   "why": "collaboration: branch sharing, presence, terminal attach; guide attached",
+   "area": "branch",
+   "addedAt": "2026-10-21T01:33:26Z",
+   "context": "# PresenceRoom: the host half of live presence\n\n## What\nShows everyone on a branch who else is there and where they are.\nThe host keeps each connection in its socket attachment, so a hibernating room can resume.\n\n## Why\nAn idle branch should keep its live roster without keeping a machine awake.\nDecision: `apps/mvp/docs/decisions/0013-branch-workspace.md`, presence and hibernation.\nPackage contract: `packages/smithers/flows/sync/docs/concepts/presence.md`.\n\n## How\n- `RoomHost` supplies accepted sockets; authentication happens before `join`.\n- `Identity` supplies trusted principal and access; frames can change only state.\n- `Attachment` keeps identity, state and join order through host hibernation.\n- `publish` sends a roster with a recipient-specific `self`; failed sends remove peers.\n- `receive` rejects binary, malformed and oversized frames before updating attachments.\n- `evict` removes every socket for a principal; host-only `data` stays off the wire.\n\n## Architecture diagram\n```text\nBrowser pages                       Worker / hibernating room host\n  | cookie-authenticated upgrade ---> host authenticates identity\n  | state frames ------------------> [* PresenceRoom *]\n  | <---------- roster + self --------    |        |\n  |                                      |        +--> counts / spans\n  +--------------------------------------+\n                                  socket attachments\n                              identity, state, order, private data\n                          (no Postgres or Electric persistence)\n```\n\n## Read this first\n- `packages/smithers/flows/sync/src/PresenceRoom.ts:160` \u2014 public participant excludes private attachment data.\n- `packages/smithers/flows/sync/src/PresenceRoom.ts:218` \u2014 failed peers trigger a smaller roster and another publication.\n- `packages/smithers/flows/sync/src/PresenceRoom.ts:274` \u2014 join trusts the host identity; capacity and duplicate checks live here.\n- `packages/smithers/flows/sync/src/PresenceRoom.ts:326` \u2014 inbound frames cannot replace principal or access.\n\n## Questions a reviewer should ask\n- Does every host authenticate before joining and evict immediately when access changes?\n- Can concurrent joins exceed capacity or publish an obsolete roster?\n- Does the open counter remain meaningful after hibernation resets the process?\n\nSource: `e93c4812547a3215b40221224972c48d44481ede` (landed text; line references above).\n\n## Readability verdict\n**pass** \u2014 Longest operation is about 41 lines; nesting reaches three control levels\nin publication. Attachment, roster and host responsibilities are distinct, and names\nare concrete. The bounded peer-removal loop is followable in one pass.",
+   "files": [
+    {
+     "path": "packages/smithers/flows/sync/src/PresenceRoom.ts",
+     "from": 1,
+     "to": 405,
+     "note": "The host side of a presence room: one room per page, such as a branch, that tells everyone on it who else is there and where. Exports `RoomSocket`, `RoomHost`, `Identity`, `Connection`, `joins` +9. Look at: hand-rolled retry or timer (the engine owns retries)."
+    }
+   ],
+   "revision": "bab291236885efa403cd3b9c878a3fca2e3108aaf51c469788ed5cf38032d1c6"
+  },
+  {
+   "id": "code:sync/src/SyncAuth@bec5",
+   "kind": "code",
+   "title": "Code: flows/sync/src: SyncAuth.ts",
+   "priority": 342,
+   "why": "collaboration: branch sharing, presence, terminal attach; guide attached",
+   "area": "branch",
+   "addedAt": "2026-10-21T01:33:26Z",
+   "context": "# SyncAuth: authenticate the workspace connection\n\n## What\nReads a signed workspace capability from the sync RPC header and installs the caller identity.\nMissing credentials become anonymous; invalid supplied credentials are refused.\n\n## Why\nDecisions: `apps/mvp/docs/decisions/0008-auth.md`, explicit actor authority, and\n`apps/mvp/docs/decisions/0013-branch-workspace.md`, scoped collaboration.\nThe SDK two-boundary contract is `packages/smithers/flows/sync/docs/concepts/authorization.md`.\n\n## How\n- `encodeCapability` schema-encodes JSON and base64url; errors render a safe cause rather than retaining credential data.\n- `decodeCapability` folds base64, JSON and schema failures into one unauthorized response.\n- The middleware checks the workspace header on each RPC request.\n- A verified workspace capability installs both capabilityId and signed expiry on SyncPrincipal.\n- An anonymous connection may still present a branch capability in its payload; it gains no workspace authority.\n- `layerClient` stamps generated RPC requests with the encoded workspace header.\n\n## Architecture diagram\n```text\nRPC client --> [* layerClient *] -- workspace header --> transport\n                                                          |\n                                                  [* SyncAuth *]\n                                                   |          |\n                                                absent     supplied\n                                                   |          v\n                                              anonymous  WorkspaceShare.verify\n                                                   |          |\n                                                   +--> SyncPrincipal + expiry\n                                                              |\n                                                    SyncServer authorization\nBranch capabilities in payloads remain a separate branch-only boundary.\n```\n\n## Read this first\n- `packages/smithers/flows/sync/src/SyncAuth.ts:54` \u2014 encode failure must not carry the rejected credential object.\n- `packages/smithers/flows/sync/src/SyncAuth.ts:78` \u2014 malformed credentials share one refusal message.\n- `packages/smithers/flows/sync/src/SyncAuth.ts:110` \u2014 present-but-invalid never falls back to anonymous.\n- `packages/smithers/flows/sync/src/SyncAuth.ts:123` \u2014 expiry travels with identity for long-running reads.\n\n## Questions a reviewer should ask\n- Does every stream consumer enforce the principal expiry after connection authentication?\n- Do proxy and tracing layers redact the custom credential header?\n- Are header-size limits enforced before base64 and JSON allocation?\n\nSource: `e93c4812547a3215b40221224972c48d44481ede` (landed text; line references above).\n\n## Readability verdict\n**pass** \u2014 The largest middleware layer is 26 lines; decode is 16 lines with two control levels. Encoding, authentication and outgoing headers are separately named. The reader can follow the absent, invalid and verified cases in one pass.",
+   "files": [
+    {
+     "path": "packages/smithers/flows/sync/src/SyncAuth.ts",
+     "from": 1,
+     "to": 146,
+     "note": "The sync read path's connection authentication: implementations of the `SyncRpcs.SyncAuth` RPC middleware. Exports `capabilityHeader`, `encodeCapability`, `decodeCapability`, `layer`, `layerClient`. Look at: correctness, naming and whether it can be smaller."
+    }
+   ],
+   "revision": "bec593209bfafc21b18dc9ffd9f94ca7934511a1b8b80887d85bbbcc98ea35e4"
+  },
+  {
+   "id": "code:secrets/scripts/build@a2ee",
+   "kind": "code",
+   "title": "Code: flows/secrets/scripts: build.mjs, circular.mjs",
+   "priority": 315,
+   "why": "security: the egress proxy and secrets; guide attached",
+   "area": "sdk:secrets",
+   "addedAt": "2026-10-21T01:33:26Z",
+   "context": "# Secrets package build and cycle checks\n\n## What\nBuilds the secrets library through the shared repository builder and checks its runtime import graph for cycles.\nThese scripts do not read or process secret values.\n\n## Why\nDecision: `apps/mvp/docs/decisions/0005-sandboxes-secrets-and-the-forge.md` supplies the package purpose.\nThese are maintenance scripts, not a new product decision.\nCatalog entry: `docs/libraries.md`, `@smthrs/secrets`.\n\n## How\n- `build.mjs` resolves the package directory relative to its own module URL.\n- The repository buildLibrary helper owns output production; no custom build behavior is added here.\n- `circular.mjs` asks madge to inspect TypeScript under src with the package tsconfig.\n- Type-only imports are excluded, so the check concerns runtime dependency cycles.\n- A cycle prints the cycle graph and sets exitCode to one for the invoking target.\n\n## Architecture diagram\n```text\nDeveloper / declared package build target\n                 |\n        [* build.mjs *] --> shared buildLibrary --> library artifacts\n                 \nDeveloper / cycle-check target\n                 |\n       [* circular.mjs *] --> madge + tsconfig --> runtime import graph\n                                                   |\n                                            cycles => exit 1\nNode-only maintenance boundary; browser, Worker and sandbox consumers use artifacts.\nNo vault, model provider or secret value crosses either script.\n```\n\n## Read this first\n- `packages/smithers/flows/secrets/scripts/build.mjs:4` \u2014 build root is independent of the current directory.\n- `packages/smithers/flows/secrets/scripts/circular.mjs:3` \u2014 unlike build, the check assumes the package working directory.\n- `packages/smithers/flows/secrets/scripts/circular.mjs:6` \u2014 type-only cycles are intentionally out of scope.\n\n## Questions a reviewer should ask\n- Does the declared target always run madge from this package directory?\n- Does the shared builder preserve the intended root public API and browser-safe output?\n\nSource: `e93c4812547a3215b40221224972c48d44481ede` (landed text; line references above).\n\n## Readability verdict\n**pass** \u2014 The scripts are four and thirteen lines, with one conditional and shallow configuration. Build and cycle detection are distinct, conventional concepts; names are direct.",
+   "files": [
+    {
+     "path": "packages/smithers/flows/secrets/scripts/build.mjs",
+     "from": 1,
+     "to": 4,
+     "note": "Look at: platform code outside a host package."
+    },
+    {
+     "path": "packages/smithers/flows/secrets/scripts/circular.mjs",
+     "from": 1,
+     "to": 13,
+     "note": "Look at: correctness, naming and whether it can be smaller."
+    }
+   ],
+   "revision": "a2eeffd22856991f5b69529f623d2ee2c994296d11c8a6f247facd68e27067a5"
+  },
+  {
+   "id": "question:cf-token-workers-observability-read",
+   "kind": "question",
+   "title": "(Optional) Give the Cloudflare token 'baseapp' Workers Observability: Read?",
+   "priority": 300,
+   "why": "Production failures that already happened can't be read back from Worker logs",
+   "area": "infra",
+   "addedAt": "2026-10-22T07:21:15Z",
+   "confidence": {
+    "score": 85,
+    "why": "OBS-4 needs records that answer production failures; read-only and revocable any time"
+   },
+   "context": "**Read first:** the token can only live-tail Worker logs, so a production failure that already happened can't be read back. Tonight the TODO-run start delay couldn't be explained from records (OBS-4).\n\n1. Open https://dash.cloudflare.com/profile/api-tokens (My Profile \u2192 API Tokens) and edit the token **baseapp**.\n2. Add the permission **Account \u2192 Workers Observability \u2192 Read**, for the Smithers account.\n3. Save. The token's value doesn't change.",
+   "options": [
+    {
+     "key": "1",
+     "label": "Done",
+     "recommended": true,
+     "detail": "85% confident: OBS-4 needs records that answer production failures; read-only and revocable any time"
+    },
+    {
+     "key": "2",
+     "label": "Not now"
+    }
+   ]
+  },
+  {
+   "id": "question:merge-ci-fixture-pr-23",
+   "kind": "question",
+   "title": "Merge PR #23: the CI test files on smithers-github-tests",
+   "priority": 900,
+   "why": "CI on Smithers is built; its end-to-end proof runs on production once these files are on the test repo's main",
+   "area": "ci",
+   "addedAt": "2026-10-23T19:02:11Z",
+   "confidence": {
+    "score": 95,
+    "why": "Test repository only; three files the CI e2e reads; production's App already has the permissions it needs"
+   },
+   "context": "**Read first:** agents never merge, so a person merges this.\n\n1. Open https://github.com/roninjin10/smithers-github-tests/pull/23 (opened by the test account).\n2. Merge it. It adds `.smithers/factory.json`, `.smithers/flows/ci/flow.ts` and `.smithers/flows/hand/flow.ts`.\n\nNo key moves: the e2e runs on smithers.sh, whose App (smitherspreviewrelease) already has Commit statuses: write on that repo.",
+   "options": [
+    {
+     "key": "1",
+     "label": "Merged",
+     "recommended": true,
+     "detail": "95% confident: test repository only; unblocks the CI e2e on production"
+    },
+    {
+     "key": "2",
+     "label": "Not now"
+    }
+   ]
+  },
+  {
+   "id": "decision:new-conversation-branch-location",
+   "kind": "decision",
+   "title": "Does /new create a GitHub branch, or a Smithers-only branch until a TODO publishes?",
+   "priority": 850,
+   "why": "/new has never worked on production: Code Storage refuses branch writes on a repository that syncs from GitHub",
+   "area": "conversations",
+   "addedAt": "2026-10-23T19:46:48Z",
+   "confidence": {
+    "score": 75,
+    "why": "Code Storage documents ephemeral refs on a synced repo for this case; decision 0005 already puts sandbox work there; nothing appears on GitHub until a person publishes"
+   },
+   "context": "**Read first:** `/new` starts a conversation on its own new branch. On smithers.sh it fails: Code Storage refuses to write a branch to a repository that mirrors GitHub. The key is fine. No ruling says where that branch lives; decisions 0012/0013 lean GitHub, 0005 and the Forge code lean Smithers-only.\n\n**1. Smithers-only until publish (recommended).** The branch is a Code Storage ephemeral ref on the existing mirror. Other Smithers users on the repo see and share it; GitHub sees nothing until a TODO publishes its PR.\n\n**2. A GitHub branch per conversation.** Created through the App, the same path TODO publishing uses (PR #22). Everyone on GitHub sees one branch per new conversation.\n\nFull options with citations (including three costlier ones): `apps/maintainer-site/queue/attachments/new-branch/design.md`.",
+   "options": [
+    {
+     "key": "1",
+     "label": "Smithers-only until a TODO publishes",
+     "recommended": true,
+     "detail": "75% confident: Code Storage's ephemeral refs are made for this; no GitHub noise"
+    },
+    {
+     "key": "2",
+     "label": "A GitHub branch per new conversation",
+     "detail": "Reuses the proven publish path; every conversation shows on GitHub"
+    },
+    {
+     "key": "3",
+     "label": "Not now"
+    }
+   ],
+   "files": [
+    "apps/maintainer-site/queue/attachments/new-branch/design.md"
+   ]
+  }
+ ]
 }
