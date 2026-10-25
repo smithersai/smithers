@@ -23,7 +23,27 @@ type Raw = Record<string, unknown>
 const USER = { id: 1, login: "octocat" }
 const BASE = "a".repeat(40)
 const OTHER = "b".repeat(40)
+/** A head whose comparison GitHub answers without a commit list or a count. */
+const BARE = "d".repeat(40)
 const sha = (n: number) => n.toString(16).padStart(40, "c")
+
+/**
+ * The commits the fake compares for an ordinary head, oldest first: one a
+ * GitHub account wrote, one whose email maps to no account and whose author
+ * GitHub leaves null, and one with no author fields at all.
+ */
+const COMPARED_COMMITS = [
+  {
+    sha: sha(97),
+    commit: {
+      message: "T1: Add a line\n\nSmithers for @maya",
+      author: { name: "Maya", email: "maya@example.com", date: "2026-10-20T09:00:00Z" }
+    },
+    author: { login: "maya", id: 2, type: "User" }
+  },
+  { sha: sha(98), commit: { message: "Fix the build\r\n\r\nWhy", author: null }, author: null },
+  { sha: sha(99), commit: { message: "" } }
+]
 
 interface FakeGitHub {
   readonly fixture: Fixture
@@ -131,6 +151,46 @@ const startGitHub = async (): Promise<FakeGitHub> => {
       pull["draft"] = false
       return write(response, 200, { data: { markPullRequestReadyForReview: { pullRequest: { isDraft: false } } } })
     }
+    if (path === "/graphql" && (body.query as string).includes("updatePullRequestBranch")) {
+      if (state.graphqlAnswer !== undefined) {
+        const answer = state.graphqlAnswer
+        state.graphqlAnswer = undefined
+        return json(response, 200, answer)
+      }
+      const input = body.variables.input
+      const pull = state.pulls.find((candidate) => candidate["node_id"] === input.pullRequestId)
+      if (pull === undefined) {
+        const message = `Could not resolve to a node with the global id of '${input.pullRequestId}'`
+        return json(response, 200, { data: { updatePullRequestBranch: null }, errors: [{ type: "NOT_FOUND", message }] })
+      }
+      const head = pull["head"] as Raw
+      const branch = head["ref"] as string
+      const current = state.refs.get(branch)!
+      if (current !== input.expectedHeadOid) {
+        return json(response, 200, {
+          data: { updatePullRequestBranch: null },
+          errors: [{ type: "STALE_DATA", message: `Expected head oid ${input.expectedHeadOid} but it is ${current}.` }]
+        })
+      }
+      const base = (pull["base"] as Raw)["ref"] as string
+      const onto = state.refs.get(base)!
+      const updated = sha(nextCommit++)
+      // A merge adds a merge commit of the base; a rebase makes the branch's one commit again on the base.
+      state.commits.set(
+        updated,
+        input.updateMethod === "MERGE"
+          ? {
+            sha: updated,
+            message: `Merge branch '${base}' into ${branch}`,
+            tree: { sha: `tree-${updated}` },
+            parents: [{ sha: current }, { sha: onto }]
+          }
+          : { ...state.commits.get(current), sha: updated, tree: { sha: `tree-${updated}` }, parents: [{ sha: onto }] }
+      )
+      state.refs.set(branch, updated)
+      head["sha"] = updated
+      return write(response, 200, { data: { updatePullRequestBranch: { pullRequest: { headRefOid: updated } } } })
+    }
     if (path === "/repos/o/r/merges" && request.method === "POST") {
       const into = state.refs.get(body.base)
       const from = state.refs.get(body.head) ?? (state.commits.has(body.head) ? body.head : undefined)
@@ -214,7 +274,23 @@ const startGitHub = async (): Promise<FakeGitHub> => {
         changes: 1,
         ...(i === 0 ? { patch: "@@ -1 +1,2 @@\n a\n+b" } : {})
       }))
-      return json(response, 200, { ahead_by: 1, behind_by: 0, total_commits: 1, files })
+      // An answer without its commit list, as an older or trimmed answer can be.
+      if (compared[2] === BARE) return json(response, 200, { ahead_by: 1, behind_by: 0, files })
+      // GitHub lists at most 250 commits and counts them all in total_commits.
+      const commits = compared[2] === OTHER
+        ? Array.from({ length: 250 }, (_, i) => ({
+          sha: sha(5000 + i),
+          commit: { message: `C${i}`, author: { name: "Maya", email: "maya@example.com", date: stamp() } },
+          author: { login: "maya", id: 2 }
+        }))
+        : COMPARED_COMMITS
+      return json(response, 200, {
+        ahead_by: commits.length,
+        behind_by: 0,
+        total_commits: compared[2] === OTHER ? 300 : commits.length,
+        commits,
+        files
+      })
     }
     if (path === "/repos/o/r/pulls") {
       if (request.method === "POST") {
@@ -478,13 +554,32 @@ describe("Commits", () => {
     await startGitHub()
     const small = await run(Commits.compare("o", "r", BASE, sha(99)))
     expect(small).toEqual({
-      aheadBy: 1,
+      aheadBy: 3,
       behindBy: 0,
       truncated: false,
-      files: [{ filename: "f0.md", status: "modified", additions: 1, deletions: 0, patch: "@@ -1 +1,2 @@\n a\n+b" }]
+      files: [{ filename: "f0.md", status: "modified", additions: 1, deletions: 0, patch: "@@ -1 +1,2 @@\n a\n+b" }],
+      commits: [
+        { sha: sha(97), headline: "T1: Add a line", authorLogin: "maya", authoredAt: "2026-10-20T09:00:00Z" },
+        { sha: sha(98), headline: "Fix the build", authorLogin: null, authoredAt: null },
+        { sha: sha(99), headline: "", authorLogin: null, authoredAt: null }
+      ],
+      commitsTruncated: false
     })
     const large = await run(Commits.compare("o", "r", BASE, OTHER))
     expect([large.files.length, large.truncated]).toEqual([Commits.MAX_COMPARE_FILES, true])
+    // GitHub counted 300 commits and listed its 250, oldest first.
+    expect([large.commits.length, large.commitsTruncated]).toEqual([250, true])
+    expect([large.commits[0]!.sha, large.commits[0]!.headline, large.commits.at(-1)!.sha]).toEqual([
+      sha(5000),
+      "C0",
+      sha(5249)
+    ])
+  })
+
+  it("decodes a comparison without commits or a count as no commits, not cut", async () => {
+    await startGitHub()
+    const bare = await run(Commits.compare("o", "r", BASE, BARE))
+    expect([bare.aheadBy, bare.commits, bare.commitsTruncated]).toEqual([1, [], false])
   })
 })
 
@@ -537,6 +632,128 @@ describe("Commits.mergeInto", () => {
     expect((await failure(Commits.mergeInto("o", "r", { base: "../t1", head: "main" }))).reason).toBe("invalid-config")
     expect((await failure(Commits.mergeInto("o", "r", { base: "t1", head: "a..b" }))).reason).toBe("invalid-config")
     expect(github!.fixture.requests.length).toBe(before)
+  })
+})
+
+describe("Pulls.updateBranch", () => {
+  /** Pull request #1 from `t1`, one commit past `BASE`, and `main` moved on by a commit `t1` lacks. */
+  const behind = async () => {
+    await startGitHub()
+    const head = await branchWithCommit("t1")
+    const opened = await run(Pulls.createPull("o", "r", { head: "t1", base: "main", title: "T1", body: "" }))
+    const main = sha(nextCommit++)
+    github!.commits.set(main, { sha: main, message: "T0 (#0)", tree: { sha: "tm" }, parents: [{ sha: BASE }] })
+    github!.refs.set("main", main)
+    return { head, main, opened }
+  }
+  const sent = () =>
+    JSON.parse(github!.fixture.requests.filter((request) => request.url === "/graphql").at(-1)!.body).variables.input
+
+  it("merges the base into the branch at the head the caller saw, and moves the pull request's head", async () => {
+    const { head, main, opened } = await behind()
+    const updated = await run(
+      Pulls.updateBranch("o", "r", { pullNodeId: opened.node_id, expectedHeadOid: head, method: "merge" })
+    )
+    expect(updated).toEqual({ headSha: github!.refs.get("t1") })
+    expect(updated.headSha).not.toBe(head)
+    expect(sent()).toEqual({ pullRequestId: opened.node_id, expectedHeadOid: head, updateMethod: "MERGE" })
+    expect((await run(Pulls.getPull("o", "r", opened.number))).head.sha).toBe(updated.headSha)
+    const merge = await run(Commits.getCommit("o", "r", updated.headSha))
+    expect(merge.parents.map((parent) => parent.sha)).toEqual([head, main])
+  })
+
+  it("rebases the branch onto the base, rewriting its commit with a new SHA", async () => {
+    const { head, main, opened } = await behind()
+    const updated = await run(
+      Pulls.updateBranch("o", "r", { pullNodeId: opened.node_id, expectedHeadOid: head, method: "rebase" })
+    )
+    expect(sent()).toEqual({ pullRequestId: opened.node_id, expectedHeadOid: head, updateMethod: "REBASE" })
+    expect((await run(Pulls.getPull("o", "r", opened.number))).head.sha).toBe(updated.headSha)
+    const rebased = await run(Commits.getCommit("o", "r", updated.headSha))
+    expect([rebased.sha === head, rebased.message, rebased.parents]).toEqual([
+      false,
+      "T1: Add a line\n\nSmithers for @maya",
+      [{ sha: main }]
+    ])
+  })
+
+  it("refuses a stale head and other GraphQL errors as 422 with the error's type, never its message", async () => {
+    const { head, opened } = await behind()
+    const stale = await failure(
+      Pulls.updateBranch("o", "r", { pullNodeId: opened.node_id, expectedHeadOid: OTHER, method: "merge" })
+    )
+    expect(stale.details).toEqual({
+      reason: "delivery-failed",
+      status: 422,
+      graphql: true,
+      type: "STALE_DATA",
+      retryable: false,
+      outcomeUnknown: false
+    })
+    expect(stale.message).not.toContain(OTHER)
+    expect(github!.refs.get("t1")).toBe(head)
+    const unknown = await failure(
+      Pulls.updateBranch("o", "r", { pullNodeId: "PR_404", expectedHeadOid: head, method: "merge" })
+    )
+    expect(unknown.details).toMatchObject({ status: 422, type: "NOT_FOUND", retryable: false })
+    expect(`${unknown.message} ${JSON.stringify(unknown.details)}`).not.toContain("Could not resolve")
+    const untyped = [
+      { data: null, errors: [{ message: "Something went wrong" }] },
+      { data: null, errors: [] },
+      { data: { updatePullRequestBranch: null } },
+      { data: { updatePullRequestBranch: { pullRequest: null } } },
+      {}
+    ]
+    for (const answer of untyped) {
+      github!.graphqlAnswer = answer
+      const refused = await failure(
+        Pulls.updateBranch("o", "r", { pullNodeId: opened.node_id, expectedHeadOid: head, method: "rebase" })
+      )
+      expect(refused.details).toEqual({
+        reason: "delivery-failed",
+        status: 422,
+        graphql: true,
+        retryable: false,
+        outcomeUnknown: false
+      })
+    }
+    expect(github!.refs.get("t1")).toBe(head)
+  })
+
+  it("leaves a lost answer unknown; the pull request read back shows whether the head moved", async () => {
+    const { head, opened } = await behind()
+    github!.lose = true
+    const lost = await failure(
+      Pulls.updateBranch("o", "r", { pullNodeId: opened.node_id, expectedHeadOid: head, method: "merge" })
+    )
+    expect(lost.details).toMatchObject({ status: 502, retryable: false, outcomeUnknown: true })
+    expect((await run(Pulls.getPull("o", "r", opened.number))).head.sha).toBe(github!.refs.get("t1"))
+    expect(github!.refs.get("t1")).not.toBe(head)
+  })
+
+  it("validates every input before any request, naming the field", async () => {
+    await startGitHub()
+    const valid = { pullNodeId: "PR_1", expectedHeadOid: BASE, method: "merge" as const }
+    const cases: Array<[Partial<Parameters<typeof Pulls.updateBranch>[2]>, string]> = [
+      [{ pullNodeId: "" }, "pullNodeId"],
+      [{ pullNodeId: "not a node id" }, "pullNodeId"],
+      [{ pullNodeId: "x".repeat(101) }, "pullNodeId"],
+      [{ pullNodeId: 5 as unknown as string }, "pullNodeId"],
+      [{ expectedHeadOid: "short" }, "expectedHeadOid"],
+      [{ expectedHeadOid: BASE.toUpperCase() }, "expectedHeadOid"],
+      [{ expectedHeadOid: 7 as unknown as string }, "expectedHeadOid"],
+      [{ method: "squash" as unknown as Pulls.UpdateMethod }, "method"]
+    ]
+    for (const [change, field] of cases) {
+      const refused = await failure(Pulls.updateBranch("o", "r", { ...valid, ...change }))
+      expect([refused.reason, refused.details?.["field"], refused.details?.["retryable"]]).toEqual([
+        "invalid-config",
+        field,
+        false
+      ])
+    }
+    expect((await failure(Pulls.updateBranch("bad owner", "r", valid))).reason).toBe("invalid-config")
+    expect(github!.fixture.requests).toHaveLength(0)
   })
 })
 

@@ -22,6 +22,10 @@
  * request is not mergeable (a draft, a conflict, or a required check). Nothing
  * here bypasses branch protection.
  *
+ * **Updating is fenced too.** {@link updateBranch} brings a pull request's
+ * branch up to date with its base only while the branch's head is still the
+ * one the caller saw. A rebase rewrites the branch; a merge only adds to it.
+ *
  * Every coordinate is validated before it becomes a request path, as
  * `Repository.repositoryPath` does.
  *
@@ -167,6 +171,15 @@ export type ReviewEvent = "COMMENT" | "APPROVE" | "REQUEST_CHANGES"
 export type MergeMethod = "squash" | "merge" | "rebase"
 
 /**
+ * How {@link updateBranch} brings a pull request's branch up to date with its
+ * base: a merge commit on the branch, or a rebase that rewrites it.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type UpdateMethod = "merge" | "rebase"
+
+/**
  * What GitHub answered a merge: the merge commit's SHA, and whether it merged.
  *
  * @category models
@@ -215,6 +228,16 @@ const requireMethod = (method: MergeMethod): Effect.Effect<MergeMethod, Integrat
   method === "squash" || method === "merge" || method === "rebase"
     ? Effect.succeed(method)
     : Effect.fail(invalid("method", "A merge method is squash, merge or rebase.", method))
+
+const requireUpdateMethod = (method: UpdateMethod): Effect.Effect<UpdateMethod, IntegrationError> =>
+  method === "merge" || method === "rebase"
+    ? Effect.succeed(method)
+    : Effect.fail(invalid("method", "A branch update method is merge or rebase.", method))
+
+const requireNodeId = (field: string, nodeId: string): Effect.Effect<string, IntegrationError> =>
+  typeof nodeId === "string" && /^[A-Za-z0-9_=-]{1,100}$/.test(nodeId)
+    ? Effect.succeed(nodeId)
+    : Effect.fail(invalid(field, "A pull request's node id is 1 to 100 letters, digits, - and _.", nodeId))
 
 const requireEvent = (event: ReviewEvent): Effect.Effect<ReviewEvent, IntegrationError> =>
   event === "COMMENT" || event === "APPROVE" || event === "REQUEST_CHANGES"
@@ -436,11 +459,7 @@ export const markReady = (
   Effect.gen(function*() {
     const client = yield* GitHubClient
     yield* requireRepositoryPath(owner, repo)
-    if (typeof nodeId !== "string" || !/^[A-Za-z0-9_=-]{1,100}$/.test(nodeId)) {
-      return yield* Effect.fail(
-        invalid("nodeId", "A pull request's node id is 1 to 100 letters, digits, - and _.", nodeId)
-      )
-    }
+    yield* requireNodeId("nodeId", nodeId)
     const answer = yield* client.request("POST", "/graphql", {
       query: "mutation($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) " +
         "{ pullRequest { isDraft } } }",
@@ -457,6 +476,69 @@ export const markReady = (
       )
     }
   }).pipe(Effect.withSpan("GitHub.Pulls.markReady", { attributes: spanAttributes(owner, repo) }))
+
+const UpdateBranchAnswer = Schema.Struct({
+  data: Schema.optionalKey(Schema.NullOr(Schema.Struct({
+    updatePullRequestBranch: Schema.NullOr(Schema.Struct({
+      pullRequest: Schema.NullOr(Schema.Struct({ headRefOid: Schema.String }))
+    }))
+  }))),
+  errors: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ message: Schema.String, type: Schema.optionalKey(Schema.String) }))
+  )
+})
+
+/**
+ * Brings pull request `pullNodeId`'s branch (its `node_id`) up to date with
+ * its base, as the token's account, through GraphQL `updatePullRequestBranch`:
+ * `POST /graphql`. Answers the branch's new head SHA.
+ *
+ * GitHub fences the update by the head: it refuses when the branch's head is
+ * no longer `expectedHeadOid`, so a commit a person pushed since is never
+ * lost. `merge` adds a merge commit of the base to the branch. `rebase`
+ * rewrites the branch: its commits are made again on the base with new SHAs,
+ * and anyone holding the old head must fetch the new one.
+ *
+ * Any GraphQL error, a stale head among them, fails `status: 422` with the
+ * first error's `type` in the details, not retryable. A lost answer fails
+ * `outcomeUnknown`: read the pull request's head before updating again.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const updateBranch = (
+  owner: string,
+  repo: string,
+  input: { readonly pullNodeId: string; readonly expectedHeadOid: string; readonly method: UpdateMethod }
+): Effect.Effect<{ readonly headSha: string }, IntegrationError, GitHubClient> =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    yield* requireRepositoryPath(owner, repo)
+    const pullRequestId = yield* requireNodeId("pullNodeId", input.pullNodeId)
+    const expectedHeadOid = yield* requireSha("expectedHeadOid", input.expectedHeadOid)
+    const method = yield* requireUpdateMethod(input.method)
+    const answer = yield* client.request("POST", "/graphql", {
+      query: "mutation($input: UpdatePullRequestBranchInput!) " +
+        "{ updatePullRequestBranch(input: $input) { pullRequest { headRefOid } } }",
+      variables: {
+        input: { pullRequestId, expectedHeadOid, updateMethod: method === "merge" ? "MERGE" : "REBASE" }
+      }
+    }, { schema: UpdateBranchAnswer })
+    const pullRequest = answer.data?.updatePullRequestBranch?.pullRequest
+    if ((answer.errors !== undefined && answer.errors.length > 0) || pullRequest === undefined || pullRequest === null) {
+      const type = answer.errors?.[0]?.type
+      return yield* Effect.fail(
+        new IntegrationError("delivery-failed", "GitHub refused to update the pull request's branch.", {
+          status: 422,
+          graphql: true,
+          ...(type === undefined ? {} : { type: type.slice(0, 64) }),
+          retryable: false,
+          outcomeUnknown: false
+        })
+      )
+    }
+    return { headSha: pullRequest.headRefOid }
+  }).pipe(Effect.withSpan("GitHub.Pulls.updateBranch", { attributes: spanAttributes(owner, repo) }))
 
 /**
  * Merges pull request `number` at exactly `sha`, its head as the person saw

@@ -93,9 +93,28 @@ export type ChangedFile = typeof ChangedFile.Type
 export const MAX_COMPARE_FILES = 300
 
 /**
- * Two commits compared: how far apart they are and the files that differ,
- * `truncated` when GitHub listed {@link MAX_COMPARE_FILES} files and may hold
- * more.
+ * One commit of a comparison: its SHA, its message's first line, the GitHub
+ * login of its author (`null` when GitHub links the commit to no account),
+ * and when it was authored (`null` when GitHub names no time).
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface ComparedCommit {
+  readonly sha: string
+  readonly headline: string
+  readonly authorLogin: string | null
+  readonly authoredAt: string | null
+}
+
+/**
+ * Two commits compared: how far apart they are, the files that differ, and
+ * the commits `head` has that `base` lacks, oldest first.
+ *
+ * - `truncated` when GitHub listed {@link MAX_COMPARE_FILES} files and may
+ *   hold more.
+ * - `commitsTruncated` when GitHub counted more commits than it listed: a
+ *   comparison lists at most 250.
  *
  * @category models
  * @since 1.0.0
@@ -105,13 +124,33 @@ export interface Comparison {
   readonly behindBy: number
   readonly files: ReadonlyArray<ChangedFile>
   readonly truncated: boolean
+  readonly commits: ReadonlyArray<ComparedCommit>
+  readonly commitsTruncated: boolean
 }
+
+const CompareCommitAnswer = Schema.Struct({
+  sha: Schema.String,
+  commit: Schema.Struct({
+    message: Schema.String,
+    author: Schema.NullOr(Schema.Struct({ date: Schema.optionalKey(Schema.String) })).pipe(
+      Schema.withDecodingDefault(Effect.succeed(null))
+    )
+  }),
+  author: Schema.NullOr(Schema.Struct({ login: Schema.String })).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null))
+  )
+})
 
 const CompareAnswer = Schema.Struct({
   ahead_by: Schema.Number,
   behind_by: Schema.Number,
+  total_commits: Schema.Number.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
+  commits: Schema.Array(CompareCommitAnswer).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   files: Schema.Array(ChangedFile).pipe(Schema.withDecodingDefault(Effect.succeed([])))
 })
+
+// A message's first line: everything before its first line break.
+const headlineOf = (message: string): string => /^[^\r\n]*/.exec(message)![0]
 
 const GraphQLAnswer = Schema.Struct({
   data: Schema.optionalKey(
@@ -305,6 +344,10 @@ export const getCommit = (
  * `GET /repos/{owner}/{repo}/compare/{base}...{head}`. Two SHAs never change
  * what they compare, so a caller may keep the answer forever.
  *
+ * Answers the commits `head` has that `base` lacks in GitHub's order, oldest
+ * first, each with its headline, author login and author time. GitHub lists
+ * at most 250; `commitsTruncated` says it counted more.
+ *
  * @category getters
  * @since 1.0.0
  */
@@ -322,10 +365,18 @@ export const compare = (
     const answer = yield* client.request("GET", `/repos/${repository}/compare/${from}...${to}`, undefined, {
       schema: CompareAnswer
     })
+    const commits = answer.commits.map((commit): ComparedCommit => ({
+      sha: commit.sha,
+      headline: headlineOf(commit.commit.message),
+      authorLogin: commit.author?.login ?? null,
+      authoredAt: commit.commit.author?.date ?? null
+    }))
     return {
       aheadBy: answer.ahead_by,
       behindBy: answer.behind_by,
       files: answer.files,
-      truncated: answer.files.length >= MAX_COMPARE_FILES
+      truncated: answer.files.length >= MAX_COMPARE_FILES,
+      commits,
+      commitsTruncated: answer.total_commits > commits.length
     }
   }).pipe(Effect.withSpan("GitHub.Commits.compare", { attributes: spanAttributes(owner, repo) }))

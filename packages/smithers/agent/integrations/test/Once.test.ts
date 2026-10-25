@@ -12,6 +12,7 @@ import { Effect, Option } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 import type { IntegrationError } from "../src/core/IntegrationError.ts"
 import { RECONCILE_PAGES } from "../src/github/Actions.ts"
+import * as Commits from "../src/github/Commits.ts"
 import type { GitHubClient } from "../src/github/GitHubClient.ts"
 import * as Issues from "../src/github/Issues.ts"
 import * as Once from "../src/github/Once.ts"
@@ -45,6 +46,8 @@ interface FakeGitHub {
   pageSize: number
   /** Raw items every ref listing starts with. */
   refJunk: Array<unknown>
+  /** The next merge into a branch applies, then answers 502. */
+  lose: boolean
 }
 
 let github: FakeGitHub | undefined
@@ -68,7 +71,8 @@ const startGitHub = async (): Promise<FakeGitHub> => {
     comments: [] as Array<Raw>,
     reviews: [] as Array<Raw>,
     pageSize: 100,
-    refJunk: [] as Array<unknown>
+    refJunk: [] as Array<unknown>,
+    lose: false
   }
   const fixture: Fixture = await startFixture((request, response) => {
     const url = new URL(request.url, "http://github.test")
@@ -100,6 +104,34 @@ const startGitHub = async (): Promise<FakeGitHub> => {
       })
       state.refs.set(input.branch.branchName, oid)
       return json(response, 200, { data: { createCommitOnBranch: { commit: { oid } } } })
+    }
+    if (path === "/repos/o/r/merges" && request.method === "POST") {
+      const into = state.refs.get(body.base)
+      const from = state.refs.get(body.head) ?? (state.commits.has(body.head) ? body.head : undefined)
+      if (into === undefined || from === undefined) return json(response, 404, { message: "Base or head not found" })
+      if (body.head === "conflicting") return json(response, 409, { message: "Merge conflict" })
+      // Already holds it: GitHub's 204, no body.
+      const holds = (at: string): boolean =>
+        at === from ||
+        ((state.commits.get(at)?.["parents"] ?? []) as Array<Raw>).some((parent) => holds(parent["sha"] as string))
+      if (holds(into)) {
+        response.writeHead(204)
+        response.end()
+        return
+      }
+      const merged = sha()
+      state.commits.set(merged, {
+        sha: merged,
+        message: body.commit_message ?? `Merge ${body.head} into ${body.base}`,
+        tree: { sha: `tree-${merged}` },
+        parents: [{ sha: into }, { sha: from }]
+      })
+      state.refs.set(body.base, merged)
+      if (state.lose) {
+        state.lose = false
+        return json(response, 502, { message: "Bad Gateway" })
+      }
+      return json(response, 201, { sha: merged, commit: { message: "merge" } })
     }
     const matching = /^\/repos\/o\/r\/git\/matching-refs\/heads\/(.+)$/.exec(path)
     if (matching !== null) {
@@ -240,6 +272,12 @@ const startGitHub = async (): Promise<FakeGitHub> => {
     },
     set refJunk(value: Array<unknown>) {
       state.refJunk = value
+    },
+    get lose() {
+      return state.lose
+    },
+    set lose(value: boolean) {
+      state.lose = value
     },
     refs: state.refs,
     commits: state.commits,
@@ -510,5 +548,103 @@ describe("merge", () => {
     expect(merged.merged).toBe(true)
     // Merged by this very call, and still not provably this write's: a lost answer reads as someone else's merge.
     expect(Option.isNone(await run(rebase.find(KEY)))).toBe(true)
+  })
+})
+
+describe("mergeInto", () => {
+  /** `t2` one commit past `BASE`, and `main` moved on by a squash `t2` lacks. */
+  const stacked = async () => {
+    const fake = await startGitHub()
+    github = fake
+    const t2 = sha()
+    fake.commits.set(t2, { sha: t2, message: "T2: Another line", tree: { sha: "t2" }, parents: [{ sha: BASE }] })
+    fake.refs.set("t2", t2)
+    const squash = sha()
+    fake.commits.set(squash, { sha: squash, message: "T1 (#1)", tree: { sha: "ts" }, parents: [{ sha: BASE }] })
+    fake.refs.set("main", squash)
+    return { fake, t2, squash }
+  }
+  const mainIntoT2 = () => Once.mergeInto("o", "r", { base: "t2", head: "main", commitMessage: "Merge main into t2" })
+
+  it("merges with the key's trailer, finds that merge by it alone, and answers up to date after", async () => {
+    const { fake, t2, squash } = await stacked()
+    expect(Option.isNone(await run(mainIntoT2().find(KEY)))).toBe(true)
+    const merged = await run(mainIntoT2().perform(KEY))
+    const mergeSha = fake.refs.get("t2")!
+    expect(merged).toEqual({ kind: "merged", sha: mergeSha })
+    expect(fake.commits.get(mergeSha)).toMatchObject({
+      message: `Merge main into t2\n\nSmithers-Write: ${KEY}`,
+      parents: [{ sha: t2 }, { sha: squash }]
+    })
+    expect(await run(mainIntoT2().find(KEY))).toEqual(Option.some(merged))
+    expect(Option.isNone(await run(mainIntoT2().find(OTHER_KEY)))).toBe(true)
+    // `t2` already holds `main`: GitHub's 204, answered unchanged, and the branch stays put.
+    expect(await run(mainIntoT2().perform(OTHER_KEY))).toEqual({ kind: "upToDate" })
+    expect(fake.refs.get("t2")).toBe(mergeSha)
+    // A head given by SHA, with no message of its own: the message is the trailer alone.
+    const next = sha()
+    fake.commits.set(next, { sha: next, message: "T3", tree: { sha: "t3" }, parents: [{ sha: squash }] })
+    const bySha = Once.mergeInto("o", "r", { base: "t2", head: next })
+    const again = await run(bySha.perform(OTHER_KEY))
+    expect(fake.commits.get(fake.refs.get("t2")!)!["message"]).toBe(`Smithers-Write: ${OTHER_KEY}`)
+    expect(await run(bySha.find(OTHER_KEY))).toEqual(Option.some(again))
+    expect(writes()).toBe(3)
+  })
+
+  it("adopts a merge whose answer was lost, by its trailer key", async () => {
+    const { fake } = await stacked()
+    fake.lose = true
+    const lost = await failure(mainIntoT2().perform(KEY))
+    expect(lost.details).toMatchObject({ status: 502, retryable: true })
+    expect(await run(mainIntoT2().find(KEY))).toEqual(Option.some({ kind: "merged", sha: fake.refs.get("t2") }))
+    expect(writes()).toBe(1)
+  })
+
+  it("never adopts someone else's merge at the head; merging again answers up to date", async () => {
+    const { fake, t2 } = await stacked()
+    // A person merged main into t2 with the same message and no trailer.
+    await run(Commits.mergeInto("o", "r", { base: "t2", head: "main", commitMessage: "Merge main into t2" }))
+    const theirs = fake.refs.get("t2")
+    expect(theirs).not.toBe(t2)
+    expect(Option.isNone(await run(mainIntoT2().find(KEY)))).toBe(true)
+    expect(await run(mainIntoT2().perform(KEY))).toEqual({ kind: "upToDate" })
+    expect(fake.refs.get("t2")).toBe(theirs)
+  })
+
+  it("loses sight of its merge under a commit pushed on top, and merging again answers up to date", async () => {
+    const { fake } = await stacked()
+    await run(mainIntoT2().perform(KEY))
+    const pushed = sha()
+    fake.commits.set(pushed, {
+      sha: pushed,
+      message: "Fix a typo",
+      tree: { sha: "tp" },
+      parents: [{ sha: fake.refs.get("t2") }]
+    })
+    fake.refs.set("t2", pushed)
+    expect(Option.isNone(await run(mainIntoT2().find(KEY)))).toBe(true)
+    expect(await run(mainIntoT2().perform(KEY))).toEqual({ kind: "upToDate" })
+    expect(fake.refs.get("t2")).toBe(pushed)
+  })
+
+  it("finds nothing on a branch that is gone, and refuses it (404) and a conflict (409), unretried", async () => {
+    const { fake } = await stacked()
+    const gone = Once.mergeInto("o", "r", { base: "gone", head: "main" })
+    expect(Option.isNone(await run(gone.find(KEY)))).toBe(true)
+    expect((await failure(gone.perform(KEY))).details).toMatchObject({ status: 404, retryable: false })
+    fake.refs.set("conflicting", sha())
+    const before = fake.refs.get("t2")
+    const conflict = Once.mergeInto("o", "r", { base: "t2", head: "conflicting" })
+    expect((await failure(conflict.perform(KEY))).details).toMatchObject({
+      status: 409,
+      retryable: false,
+      outcomeUnknown: false
+    })
+    expect(fake.refs.get("t2")).toBe(before)
+    const requests = fake.fixture.requests.length
+    expect((await failure(Once.mergeInto("o", "r", { base: "../t2", head: "main" }).find(KEY))).reason).toBe(
+      "invalid-config"
+    )
+    expect(fake.fixture.requests).toHaveLength(requests)
   })
 })

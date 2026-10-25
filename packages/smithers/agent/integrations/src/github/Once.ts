@@ -14,6 +14,7 @@
  * | commit | a `Smithers-Write: <key>` trailer | the branch head, when it moved past the expected head |
  * | pull request, issue, comment, review | the body's hidden write marker | GitHub's listing, whole |
  * | merge | a `Smithers-Write: <key>` trailer in the merge commit's message | the pull request and its merge commit |
+ * | merge into a branch | a `Smithers-Write: <key>` trailer in the merge commit's message | the branch head |
  *
  * A step writes with them like this; the key comes from the dispatch, so the
  * step never names one:
@@ -298,6 +299,45 @@ export const merge = (
         sha: input.sha,
         method: input.method,
         commitTitle: input.commitTitle,
+        commitMessage: withTrailer(input.commitMessage ?? "", key)
+      })
+  })
+
+/**
+ * A merge of `head` (a branch or a commit SHA) into branch `base`, its commit
+ * message ending with the write's `Smithers-Write` trailer, through
+ * `Commits.mergeInto`. Answers its {@link Commits.MergedInto} unchanged:
+ * `merged` with the merge commit, or `upToDate` when `base` already held
+ * `head`.
+ *
+ * The lookup reads `base`'s head. A head whose message carries the key's
+ * trailer is this write's merge; any other head, or no branch, answers none,
+ * so someone else's commit is never adopted. A commit pushed on top of the
+ * merge hides it: the lookup answers none, and merging again answers
+ * `upToDate`, since `base` already holds `head`.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const mergeInto = (
+  owner: string,
+  repo: string,
+  input: { readonly base: string; readonly head: string; readonly commitMessage?: string | undefined }
+): Action.Keyed<Commits.MergedInto, IntegrationError, GitHubClient> =>
+  Action.keyed({
+    find: (key) =>
+      Effect.gen(function*() {
+        const branch = yield* Refs.getBranch(owner, repo, input.base)
+        if (Option.isNone(branch)) return Option.none()
+        const commit = yield* Commits.getCommit(owner, repo, branch.value.sha)
+        return trailerKeyOf(commit.message) === key
+          ? Option.some<Commits.MergedInto>({ kind: "merged", sha: branch.value.sha })
+          : Option.none()
+      }),
+    perform: (key) =>
+      Commits.mergeInto(owner, repo, {
+        base: input.base,
+        head: input.head,
         commitMessage: withTrailer(input.commitMessage ?? "", key)
       })
   })
