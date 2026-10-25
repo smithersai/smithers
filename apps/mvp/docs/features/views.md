@@ -117,10 +117,12 @@ None of these carries a schema, values, a description, a module, props, state, H
 | `db/Database.test.ts` "0052_agent_views" | each template's columns, and `source` on questions only |
 | `src/device/*.test.ts` | `asking` v2, `chat-unsent` v2 and `views` v4, migrated or synced afresh |
 | `evals/cases.test.ts`, `checks.test.ts` | the four [agent eval](agent-evals.md) cases `form-ask`, `form-clone-no-url`, `board` and `view-loads-script`, calibrated |
-| `e2e/forms.spec.ts` | the real app, two devices: the agent asks with a form, the person fills and sends it, the agent answers with the URL; the form answered on both devices and after a reload |
-| `e2e/generated-view.spec.ts` | the real app, two devices: the agent shows a tic-tac-toe board in a sandboxed frame; a move shows on both; Full screen, the person plays to a win; it survives a reload |
+| `e2e/forms.spec.ts` | scripted, two devices: submit once, sync and reload; live model: ask to clone without a URL, fill the repository form and see the next reply finish |
+| `e2e/generated-view.spec.ts` | scripted, two devices: play to a win, sync and reload; live model: ask for a board, see nine cells inline, open that view full screen, play a move and see it again inline |
 
-The e2e tests script the models in the asking browser (`/app?agent=form`, `/app?agent=board`, `src/test/scriptedAgent.ts`); everything else is real. Run them with the compose Postgres and Electric up: `pnpm exec vitest run worker/AgentViews.test.ts src/features/views`, and `pnpm e2e forms.spec.ts generated-view.spec.ts` against `pnpm dev`.
+The original e2e cases script the models in the asking browser (`/app?agent=form`, `/app?agent=board`, `src/test/scriptedAgent.ts`); everything else is real. Run them with the compose Postgres and Electric up: `pnpm exec vitest run worker/AgentViews.test.ts src/features/views`, and `pnpm e2e forms.spec.ts generated-view.spec.ts` against `pnpm dev`.
+
+The same specs also declare `member`, `ownConversation` and `liveModel` for their live cases. On a deployment they use the test account's own branch; locally they skip with the `liveModel` reason when no model key is configured. The form request collects a URL afresh even when earlier runs left one in the conversation. The board request specifies nine empty buttons with text X/O marks. They observe newly created view ids and submitted values, successful answer completion and a persisted board move, without fixing the model's reply, form title, submit label or cell labels. Run only these cases with `pnpm e2e forms.spec.ts generated-view.spec.ts --grep 'Live (forms|generated views)'`, or the same arguments to `pnpm e2e:prod` for the deployment setup and session.
 
 ## Not yet
 
