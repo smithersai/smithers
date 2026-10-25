@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, test } from "vitest"
-import { DOCS_SITE, DOCS_SITE_PATHS, FRAME_POLICY, PAGE_HEADERS, shellCaches } from "./pwa"
+import { DOCS_SITE, DOCS_SITE_PATHS, FRAME_POLICY, PAGE_HEADERS, shellCaches, watchUpdates, type UpdateTrigger } from "./pwa"
 
 const APP = "https://app.smithers.sh"
 
@@ -64,5 +64,55 @@ describe("framing", () => {
 
   test("the app frames only https: pages", () => {
     expect(FRAME_POLICY).toBe("frame-src https:")
+  })
+})
+
+
+describe("open tabs check for releases", () => {
+  test("visibility, focus and route completion check the registered worker; failures recover on the next signal", async () => {
+    const listeners = new Map<UpdateTrigger, () => void>()
+    const records: unknown[] = []
+    let visible = true
+    let calls = 0
+    let finish!: () => void
+    let fail = false
+    const stop = watchUpdates({ update: async () => {
+      calls++
+      if (fail) throw new Error("offline")
+      await new Promise<void>((resolve) => { finish = resolve })
+    } }, {
+      visible: () => visible,
+      listen: (trigger, check) => { listeners.set(trigger, check); return () => { listeners.delete(trigger) } },
+      record: (trigger, outcome) => records.push([trigger, outcome]),
+    })
+    const signal = (trigger: UpdateTrigger) => listeners.get(trigger)!()
+    visible = false
+    signal("visible")
+    expect(calls).toBe(0)
+    visible = true
+    for (const trigger of ["visible", "focus", "navigation"] as const) {
+      signal(trigger)
+      signal(trigger)
+      finish()
+      await new Promise((resolve) => setImmediate(resolve))
+    }
+    expect(calls).toBe(3)
+    fail = true
+    signal("focus")
+    await new Promise((resolve) => setImmediate(resolve))
+    fail = false
+    signal("navigation")
+    finish()
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(calls).toBe(5)
+    expect(records).toEqual([
+      ["visible", "hidden"],
+      ["visible", "busy"], ["visible", "checked"],
+      ["focus", "busy"], ["focus", "checked"],
+      ["navigation", "busy"], ["navigation", "checked"],
+      ["focus", "failed"], ["navigation", "checked"],
+    ])
+    stop()
+    expect(listeners.size).toBe(0)
   })
 })

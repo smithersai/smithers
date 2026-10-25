@@ -79,3 +79,32 @@ export const PAGE_HEADERS = {
  * `javascript:`, `data:`, `blob:`, `file:` or `http:` never loads, whatever reaches the page.
  */
 export const FRAME_POLICY = "frame-src https:"
+
+/** Browser lifecycle sources are host arguments; no timers or retry policy in the app. */
+export interface UpdateHost {
+  readonly visible: () => boolean
+  readonly listen: (trigger: "visible" | "focus" | "navigation", check: () => void) => () => void
+  readonly record: (trigger: UpdateTrigger, outcome: "checked" | "failed" | "busy" | "hidden") => void
+}
+export type UpdateTrigger = "visible" | "focus" | "navigation"
+
+/** Each browser signal asks the browser to check its worker script, including its HTTP cache rules. */
+export const watchUpdates = (registration: { readonly update: () => Promise<unknown> }, host: UpdateHost): (() => void) => {
+  let checking = false
+  const stops = (["visible", "focus", "navigation"] as const).map((trigger) => host.listen(trigger, () => {
+    if (!host.visible()) { host.record(trigger, "hidden"); return }
+    if (checking) { host.record(trigger, "busy"); return }
+    checking = true
+    void (async () => {
+      try {
+        await registration.update()
+        host.record(trigger, "checked")
+      } catch {
+        host.record(trigger, "failed")
+      } finally {
+        checking = false
+      }
+    })()
+  }))
+  return () => { for (const stop of stops) stop() }
+}

@@ -1,3 +1,4 @@
+import { watchUpdates } from "./pwa"
 import { SmithersUiStyles } from "@smthrs/ui"
 import { BrowserCollectionCoordinator, createBrowserWASQLitePersistence } from "@tanstack/browser-db-sqlite-persistence"
 import { SharedSqlite, StoragePersistence, WebLock } from "@smthrs/platform-browser"
@@ -77,6 +78,20 @@ const editorUpdateParked = () => {
 }
 registerSW({
   immediate: true,
+  onRegistered: (registration) => {
+    if (!registration) return
+    watchUpdates(registration, {
+      visible: () => document.visibilityState === "visible",
+      listen: (trigger, check) => {
+        if (trigger === "navigation") return router.subscribe("onResolved", check)
+        const target = trigger === "visible" ? document : window
+        const event = trigger === "visible" ? "visibilitychange" : "focus"
+        target.addEventListener(event, check)
+        return () => target.removeEventListener(event, check)
+      },
+      record: (trigger, outcome) => console.info("pwa.update.check", { trigger, outcome }),
+    })
+  },
   onNeedReload: () => {
     if (updateReloading) return
     updateReloading = true

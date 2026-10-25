@@ -37,7 +37,7 @@ const sendFile = async (root: string, path: string, response: Http2ServerRespons
     response.end(body)
   } catch {
     response.writeHead(404, { "content-type": "text/plain" })
-    response.end("Not in the old build")
+    response.end("Not in the build")
   }
 }
 
@@ -45,10 +45,10 @@ const sendFile = async (root: string, path: string, response: Http2ServerRespons
 export type Build = "old" | "new"
 
 /**
- * Serves `old`'s files, or the dev server's pages (`use("new")`), at a new HTTPS origin, with `/api/*` on the dev
+ * Serves `old`'s files, then `new`'s files or the dev server's pages (`use("new")`), at one HTTPS origin, with `/api/*` on the dev
  * server (`DEV_UPSTREAM`, default http://localhost:1337, the plain HTTP dev server `pnpm dev` runs). Close it when done.
  */
-export const serveBuilds = async (options: { readonly old: string }) => {
+export const serveBuilds = async (options: { readonly old: string; readonly new?: string }) => {
   let build: Build = "old"
   const front = await serve({
     port: 0,
@@ -56,8 +56,8 @@ export const serveBuilds = async (options: { readonly old: string }) => {
     certificate: await certificate(join(import.meta.dirname, "..", "node_modules", ".dev-https")),
     answer: (request, response) => {
       const path = new URL(request.url, "https://localhost").pathname
-      if (build === "new" || path.startsWith("/api/")) return false
-      void sendFile(options.old, path, response)
+      if (path.startsWith("/api/") || (build === "new" && !options.new)) return false
+      void sendFile(build === "new" ? options.new! : options.old, path, response)
       return true
     },
   })
