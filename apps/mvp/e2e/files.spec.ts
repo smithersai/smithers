@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test"
 import { expect, step, test } from "./fixtures"
-import { requires, scriptedAgent } from "./target"
+import { ownPlace, requires, scriptedAgent } from "./target"
 
 // File tabs end to end (docs/features/files.md), against the real app, Worker, Postgres, Electric, GitHub and Code
 // Storage: the agent opens a file of the branch the person's workspace shows as a tab, its lines highlighted, through
@@ -12,6 +12,8 @@ import { requires, scriptedAgent } from "./target"
 requires("personalModel", "member", "ownConversation")
 
 const REPO = "/octocat/Spoon-Knife"
+
+const fileProofHome = () => ownPlace()?.path ?? `${REPO}/tree/main`
 
 /** Opens Spoon-Knife, cloning it if no run has yet, and waits until its code is on the device. */
 const openReady = (page: Page) =>
@@ -144,3 +146,28 @@ test(
     })
   },
 )
+
+test("live agent shows code: own-branch file tab highlights the requested lines", {
+  annotation: { type: "summary", description: "The real agent opens README.md on the test account's branch with only lines 1 to 3 highlighted." },
+}, async ({ page }) => {
+  requires("liveModel", "codeStorage")
+  test.setTimeout(240_000)
+  if (ownPlace() === undefined) await openReady(page)
+  await page.goto(fileProofHome())
+  const start = new URL(page.url())
+  const branchPath = start.pathname
+  await step("Ask the agent to show README.md", async () => {
+    await send(page, "Show README.md in this branch as a file tab using file/open, and highlight lines 1 to 3. Keep the conversation beside the file.")
+  })
+  await step("The branch's file opens with the requested highlight", async () => {
+    await expect(strip(page).getByRole("tab", { name: "README.md", exact: true })).toHaveAttribute("aria-selected", "true", { timeout: 180_000 })
+    await expect(page).toHaveURL(/\/blob\/[^/]+\/README\.md\?L=1-3$/)
+    // The agent must stay in the branch that owns this conversation.
+    expect(new URL(page.url()).pathname).toBe(branchPath.replace("/tree/", "/blob/") + "/README.md")
+    // Markdown starts in Preview; its Code control exposes the source line markers.
+    await page.getByRole("group", { name: "Show as" }).getByRole("button", { name: "Code", exact: true }).click()
+    for (const n of [1, 2, 3]) await expect(line(page, n, true)).toBeVisible({ timeout: 30_000 })
+    await expect(line(page, 4, false)).toBeVisible()
+    await expect(page.getByRole("region", { name: "Conversation", exact: true })).toBeVisible()
+  })
+})

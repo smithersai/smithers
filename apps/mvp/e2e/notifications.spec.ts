@@ -214,3 +214,51 @@ test("repository events: `main` moving and a new release reach both people as en
   await notification(b, `main:github/${owner}/${name}`).getByRole("button", { name: "Open" }).click()
   await expect(b.page).toHaveURL(new RegExp(`/${owner}/${name}$`, "i"))
 })
+
+test("live notification: own-branch toast opens, expands and dismisses across two devices", {
+  annotation: { type: "summary", description: "A real agent asks a question; its toast opens the run and dismissal syncs to another device." },
+}, async ({ devices }) => {
+  requires("member", "ownConversation", "liveModel")
+  test.setTimeout(300_000)
+  const [a, b] = await devices.open("Laptop", "Phone")
+  const prompt = `Choose a proof label ${devices.word}`
+  const question = `Use app/agent/ask to ask me the question "${prompt}" with options "Blue" and "Green". Wait for my reply before continuing. After I answer, reply "Received ${devices.word}".`
+  await a.askAndWaitTaken(question)
+  const answerId = a.asked.find((asked) => asked.text === question)!.answerId
+  const subject = `run:${answerId}`
+  try {
+    for (const tab of [a, b]) {
+      await expect(entry(tab, subject)).toContainText(prompt, { timeout: 120_000 })
+    }
+    await entry(b, subject).locator('[data-slot="toast-open"]').click()
+    await expect(b.page).toHaveURL(new RegExp(`#${answerId}$`))
+    await expect(b.page.locator(`[id="${answerId}"]`)).toBeInViewport()
+    await inPanel(b, () => expect(notification(b, subject)).toContainText(prompt, { timeout: 2_000 }))
+    const item = notification(b, subject)
+    // The bell may already expand the waiting question. Collapse, then click to prove expansion.
+    if (await item.getAttribute("data-expanded") !== null) await item.locator('[data-slot="notification-row"]').click()
+    await expect(item).not.toHaveAttribute("data-expanded", "")
+    await item.locator('[data-slot="notification-row"]').click()
+    await expect(item).toHaveAttribute("data-expanded", "")
+    await expect(item.getByRole("button", { name: "Blue", exact: true })).toBeVisible()
+    await item.getByRole("button", { name: "Blue", exact: true }).click()
+    await a.expectAnswered(question, `Received ${devices.word}`, 120_000)
+    await inPanel(b, () => expect(notification(b, subject)).toContainText("Done", { timeout: 2_000 }))
+    await notification(b, subject).getByRole("button", { name: "Dismiss", exact: true }).click()
+    for (const tab of [a, b]) {
+      await inPanel(tab, () => expect(notification(tab, subject)).toHaveCount(0, { timeout: 2_000 }))
+      await expect(entry(tab, subject)).toHaveCount(0)
+    }
+    await b.reload()
+    await inPanel(b, () => expect(notification(b, subject)).toHaveCount(0, { timeout: 2_000 }))
+  } finally {
+    // If an assertion fails while the real agent waits, answer it rather than leaving a human task behind.
+    await inPanel(a, async () => {
+      const item = notification(a, subject)
+      if (await item.count() === 0) return
+      if (await item.getAttribute("data-expanded") === null) await item.locator('[data-slot="notification-row"]').click()
+      const choice = item.getByRole("button", { name: "Blue", exact: true })
+      if (await choice.isVisible()) await choice.click()
+    }).catch(() => undefined)
+  }
+})
