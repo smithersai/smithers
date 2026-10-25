@@ -587,6 +587,12 @@ record synchronously only when a slot is free, then performs only queue
 admission; a forked worker drains the queue into the journal. A record a full
 queue cannot take is counted and discarded without being snapshotted.
 
+The record's schema and snapshot are `@smthrs/journal`'s
+[`TelemetryLog`](/api/journal#telemetrylog); this module re-exports them under
+the names below. The engine already journals what each action attempt's body
+logs to that attempt's step (`@smthrs/engine-store`'s `StepLogs`), so this
+forwarder is for a process's own logs, attributed to one run.
+
 ### JournalLogger.Options
 
 ```ts
@@ -706,7 +712,8 @@ container edges. Unreadable values become `unrenderableMarker`, values past a
 ceiling become `truncatedMarker`, and deeper values become the journal's
 `[Deep]` marker. Container-shaped fields keep their shape, so annotations that
 spent the whole budget arrive as `{ "[Truncated]": "[Truncated]" }` rather than
-as a scalar. Text is bounded in one pass that never cuts a surrogate pair, and
+as a scalar. An Effect `Redacted` value becomes `"<redacted>"`, never the value
+it hides. Text is bounded in one pass that never cuts a surrogate pair, and
 the journal's own redaction rules run before queue admission.
 
 ## Metric

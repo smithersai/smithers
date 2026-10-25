@@ -166,6 +166,12 @@ export * as OwnerIdentity from "./OwnerIdentity.ts"
 export * as ReplayOnly from "./ReplayOnly.ts"
 
 /**
+ * @since 1.0.0
+ * @category services
+ */
+export * as StepLogs from "./StepLogs.ts"
+
+/**
  * @since 0.1.0
  * @category schemas
  */

@@ -34,6 +34,7 @@ matching duration timer.
 | `flows_engine_boundary_settlements`             | Step boundary settlements.                                                                                                                                                             |
 | `flows_engine_step_cache_decisions`             | What a dispatch actually did with a cache row, after read-set verification and output materialization.                                                                                 |
 | `flows_engine_claims`                           | The run driver's claim-and-activate decisions.                                                                                                                                         |
+| `flows_engine_step_logs`                        | Log records action attempt bodies emitted, by `outcome`: `journaled` to the step, or dropped as `dropped_limit`, `dropped_queue`, `dropped_journal`, `dropped_flush` or `failed`.      |
 
 Each counter also has a tag-keyed record of attributed views, so a caller
 updates the right dimension by name rather than by re-attributing:

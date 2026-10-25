@@ -16815,6 +16815,52 @@ retried, so the run settles `failed` instead of spinning in its retry policy.
 Replays still write the journal rows a resume converges on, so drive a copy of
 the store, never the original.
 
+## StepLogs
+
+[src/StepLogs.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/StepLogs.ts)
+
+What an action attempt's body logs, journaled to the attempt's run while the
+body runs. Every host gets it: the engine wraps each body it executes, so a
+replayed step, whose body does not run, writes none.
+
+Each record the body emits at or above the ambient minimum level becomes a
+`telemetry.log` entry on the run's lossy channel, source `flows/engine-store/step-log`,
+with an [`@smthrs/journal` `TelemetryLog.Log`](/docs/reference/api/journal/#telemetrylog)
+payload snapshotted with `Redaction.diagnosticRules`. Its annotations carry
+`runId`, `stepKeyDigest` (the digest attempt rows and settled nodes'
+`stepKeyDigests` carry) and `attempt`, ahead of the body's own annotations,
+which cannot override them. A nested action's body writes to its own step. The
+ambient loggers keep every record, and the body's log annotations gain
+`stepKeyDigest` for them too.
+
+| Export          | Signature                                                              | Meaning                                                                                   |
+| --------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `Limits`        | `Context.Reference<Limits>`                                            | The bounds an attempt reads when its body starts; provide it to change them.              |
+| `Limits`        | `{ records, recordBytes, queue, flush }`                               | Records per attempt (`0` turns step logs off), bytes per record, queue depth, flush wait. |
+| `defaultLimits` | `{ records: 1000, recordBytes: 4096, queue: 256, flush: "5 seconds" }` | What every host uses unless it provides `Limits`.                                         |
+| `sourceId`      | `"flows/engine-store/step-log"`                                        | The journal producer of every step log record.                                            |
+| `droppedCode`   | `"step_logs_dropped"`                                                  | The `code` of the summary record an attempt with losses journals.                         |
+
+Delivery is lossy and never blocks the body. The logger checks the record budget
+and the queue's room before it builds a record, snapshots it cut to
+`recordBytes`, and offers it to a bounded queue a fiber drains to the journal
+as the body runs, so a long attempt's lines are readable before it ends. When
+the body exits, by any exit, the queue is flushed for at most `flush`, and the
+body's exit is returned unchanged. A record past `records`, a full or closed
+queue, a journal refusal, a failed write and a flush deadline each drop the
+record and count it on `EngineStoreMetrics.stepLog`; a failed write also logs
+`A step log record could not be journaled` with code `step_log_failed`. An
+attempt that dropped any record journals one `Warn` record, `Log lines
+dropped`, with `code: "step_logs_dropped"` and the count in `dropped`.
+
+```ts
+import { StepLogs } from "@smthrs/engine-store"
+import * as Effect from "effect/Effect"
+
+// No step logs for this engine's attempts.
+const quiet = Effect.provideService(StepLogs.Limits, { ...StepLogs.defaultLimits, records: 0 })
+```
+
 ## OwnerIdentity
 
 [src/OwnerIdentity.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/OwnerIdentity.ts)
@@ -16890,6 +16936,7 @@ remain host-owned.
 | `boundarySettlements`, `boundarySettlement`                             | counter and views keyed by `Clean`, `Deviation`, `Violation`, `Refused`                                                       |
 | `stepCacheDecisions`, `stepCacheDecision`                               | counter and views keyed by `VerifiedHit`, `Miss`, `UnverifiableEvidence`, `Unmeasurable`, `StaleReadSet`, `ReplayFailed`      |
 | `claims`, `claim`                                                       | counter and views keyed by `Activated`, `Terminal`, `HeartbeatFresh`, `StealRefusedOwnerAlive`, `ClaimLost`, `ActivationLost` |
+| `stepLogs`, `stepLog`                                                   | counter and views keyed by `Journaled`, `DroppedLimit`, `DroppedQueue`, `DroppedJournal`, `DroppedFlush`, `Failed`            |
 
 Outcome tags are rewritten as snake case attribute values, so `HeartbeatFresh`
 is recorded as `heartbeat_fresh`. `observe` composes `Effect.trackDuration` with
@@ -23281,6 +23328,44 @@ operator the whole line. A caller's own `onTooDeep` still wins. Wrapping is
 idempotent.
 
 See [Keep credentials out of log output](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/guides/redact-log-output.md).
+
+## TelemetryLog
+
+The `telemetry.log` journal record: its durable schema and the bounded,
+redacted snapshot of an Effect log event that fills it. `@smthrs/observability`'s
+`JournalLogger` and `@smthrs/engine-store`'s step logs both build their records
+here, so there is one schema and one snapshot.
+
+| Export                                                                   | Signature                                                               |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| `eventType`                                                              | `"telemetry.log"`                                                       |
+| `Log`, `LogCause`, `CauseReason`, `Fail`, `Die`, `Interrupt`             | the versioned payload schemas and their types                           |
+| `snapshot`                                                               | `(options: Logger.Options<unknown>, settings?: SnapshotOptions) => Log` |
+| `SnapshotOptions`                                                        | `{ maximumBytes?, annotations?, rules? }`                               |
+| `maximumSnapshotBytes`, `maximumSnapshotMembers`, `maximumSnapshotDepth` | `1048576`, `4096`, `64`                                                 |
+| `truncatedMarker`, `unrenderableMarker`, `redactedMarker`                | `"[Truncated]"`, `"[Unrenderable]"`, `"<redacted>"`                     |
+
+A `Log` carries `version: 1`, the `level`, the `message` parts as Effect
+handed them to the logger, the fiber's `annotations`, a structural `cause`
+(ordered `Fail`, `Die` and `Interrupt` reasons), the `fiberId`, the span's
+`traceId` and `spanId` when one is open, and an ISO-8601 `timestamp`.
+
+`snapshot` runs inside a logger: it is synchronous and never throws. It copies
+the value before any asynchronous delivery, never runs a caller's getter,
+`toJSON` or `toISOString`, names cycles, binaries, functions, symbols and
+unreadable members, renders an Effect `Redacted` as `redactedMarker`, and
+redacts the result with `Redaction`. It is bounded in members and depth, and in
+bytes measured in one forward pass that never splits a surrogate pair.
+
+| `SnapshotOptions` | Effect                                                                                                                                                                                  |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `maximumBytes`    | The whole record's bound, capped at `maximumSnapshotBytes`. The envelope is reserved first, so a long message is cut with `truncatedMarker`. Omitted, the values share the 1 MiB bound. |
+| `annotations`     | Annotations copied ahead of the fiber's and winning over them, kept by every fallback record. For attribution such as run and step ids, never a value.                                  |
+| `rules`           | The redaction rules; `Redaction.defaultRules` unless given. A diagnostic producer passes `Redaction.diagnosticRules`.                                                                   |
+
+A projection that is too large or fails `Log` degrades to a record whose
+message is `truncatedMarker`; one that throws degrades to `unrenderableMarker`.
+Both keep the level, timestamp and `annotations`.
 
 ## Projection
 
@@ -30131,6 +30216,12 @@ record synchronously only when a slot is free, then performs only queue
 admission; a forked worker drains the queue into the journal. A record a full
 queue cannot take is counted and discarded without being snapshotted.
 
+The record's schema and snapshot are `@smthrs/journal`'s
+[`TelemetryLog`](/docs/reference/api/journal/#telemetrylog); this module re-exports them under
+the names below. The engine already journals what each action attempt's body
+logs to that attempt's step (`@smthrs/engine-store`'s `StepLogs`), so this
+forwarder is for a process's own logs, attributed to one run.
+
 ### JournalLogger.Options
 
 ```ts
@@ -30250,7 +30341,8 @@ container edges. Unreadable values become `unrenderableMarker`, values past a
 ceiling become `truncatedMarker`, and deeper values become the journal's
 `[Deep]` marker. Container-shaped fields keep their shape, so annotations that
 spent the whole budget arrive as `{ "[Truncated]": "[Truncated]" }` rather than
-as a scalar. Text is bounded in one pass that never cuts a surrogate pair, and
+as a scalar. An Effect `Redacted` value becomes `"<redacted>"`, never the value
+it hides. Text is bounded in one pass that never cuts a surrogate pair, and
 the journal's own redaction rules run before queue admission.
 
 ## Metric

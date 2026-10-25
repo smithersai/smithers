@@ -91,6 +91,12 @@ export * as Redaction from "./Redaction.ts"
 export * as RedactedLogger from "./RedactedLogger.ts"
 
 /**
+ * @category redaction
+ * @since 1.0.0
+ */
+export * as TelemetryLog from "./TelemetryLog.ts"
+
+/**
  * @category projections
  * @since 0.1.0
  */

@@ -11,6 +11,11 @@ beside [OTLP export](./export-to-a-collector.md), and it is the one an operator
 reads without a collector: the records land next to the run's lifecycle events
 and are read back with the same `Journal.entries` call.
 
+An action attempt's body needs none of this: the engine journals what the body
+logs to the attempt's step itself, under source `flows/engine-store/step-log`
+(see `StepLogs` in [`@smthrs/engine-store`](/api/engine-store)). Install this
+layer for the logs a process emits outside any step.
+
 ## Install the layer
 
 The layer names one run, and requires a `Journal.Journal` service from

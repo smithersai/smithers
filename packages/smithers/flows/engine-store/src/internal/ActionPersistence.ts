@@ -45,6 +45,7 @@ import * as JournalRecords from "./JournalRecords.ts"
 import * as ProvenanceSlot from "./ProvenanceSlot.ts"
 import * as SandboxedExecution from "./SandboxedExecution.ts"
 import * as StepFacts from "./StepFacts.ts"
+import * as StepLogCapture from "./StepLogCapture.ts"
 
 /**
  * The boundary declaration an action may carry alongside its input.
@@ -901,7 +902,11 @@ const runBody = (dispatch: Dispatch, adopted: boolean) => {
   const { deps, input, stepKeyDigest } = dispatch
   return Effect.andThen(
     Action.reportDispatch({ outcome: "executed", stepKeyDigest, attempt: input.attempt }),
-    deps.execute(input)
+    // What the body logs is journaled to this attempt's step as it runs
+    // (`../StepLogs.ts`). A replay never reaches here, so it writes none.
+    deps.execute(input).pipe(
+      StepLogCapture.capture(dispatch.journal, { runId: deps.runId, stepKeyDigest, attempt: input.attempt })
+    )
   ).pipe(
     // Usage metrics: one step attempt ran its body, under the flow whose
     // instance dispatched it. A replayed step never reaches here.

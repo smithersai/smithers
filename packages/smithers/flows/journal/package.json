@@ -48,6 +48,7 @@
     "./RedactedLogger": "./src/RedactedLogger.ts",
     "./Redaction": "./src/Redaction.ts",
     "./SqlJournal": "./src/SqlJournal.ts",
+    "./TelemetryLog": "./src/TelemetryLog.ts",
     "./index": "./src/index.ts",
     "./test/Notifying": "./src/test/Notifying.ts",
     "./test/TestJournal": "./src/test/TestJournal.ts",
@@ -184,6 +185,16 @@
         "require": {
           "types": "./dist/cjs/SqlJournal.d.ts",
           "default": "./dist/cjs/SqlJournal.js"
+        }
+      },
+      "./TelemetryLog": {
+        "import": {
+          "types": "./dist/esm/TelemetryLog.d.ts",
+          "default": "./dist/esm/TelemetryLog.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TelemetryLog.d.ts",
+          "default": "./dist/cjs/TelemetryLog.js"
         }
       },
       "./index": {

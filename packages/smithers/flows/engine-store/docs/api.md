@@ -1456,6 +1456,52 @@ retried, so the run settles `failed` instead of spinning in its retry policy.
 Replays still write the journal rows a resume converges on, so drive a copy of
 the store, never the original.
 
+## StepLogs
+
+[src/StepLogs.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/StepLogs.ts)
+
+What an action attempt's body logs, journaled to the attempt's run while the
+body runs. Every host gets it: the engine wraps each body it executes, so a
+replayed step, whose body does not run, writes none.
+
+Each record the body emits at or above the ambient minimum level becomes a
+`telemetry.log` entry on the run's lossy channel, source `flows/engine-store/step-log`,
+with an [`@smthrs/journal` `TelemetryLog.Log`](/api/journal#telemetrylog)
+payload snapshotted with `Redaction.diagnosticRules`. Its annotations carry
+`runId`, `stepKeyDigest` (the digest attempt rows and settled nodes'
+`stepKeyDigests` carry) and `attempt`, ahead of the body's own annotations,
+which cannot override them. A nested action's body writes to its own step. The
+ambient loggers keep every record, and the body's log annotations gain
+`stepKeyDigest` for them too.
+
+| Export          | Signature                                                              | Meaning                                                                                   |
+| --------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `Limits`        | `Context.Reference<Limits>`                                            | The bounds an attempt reads when its body starts; provide it to change them.              |
+| `Limits`        | `{ records, recordBytes, queue, flush }`                               | Records per attempt (`0` turns step logs off), bytes per record, queue depth, flush wait. |
+| `defaultLimits` | `{ records: 1000, recordBytes: 4096, queue: 256, flush: "5 seconds" }` | What every host uses unless it provides `Limits`.                                         |
+| `sourceId`      | `"flows/engine-store/step-log"`                                        | The journal producer of every step log record.                                            |
+| `droppedCode`   | `"step_logs_dropped"`                                                  | The `code` of the summary record an attempt with losses journals.                         |
+
+Delivery is lossy and never blocks the body. The logger checks the record budget
+and the queue's room before it builds a record, snapshots it cut to
+`recordBytes`, and offers it to a bounded queue a fiber drains to the journal
+as the body runs, so a long attempt's lines are readable before it ends. When
+the body exits, by any exit, the queue is flushed for at most `flush`, and the
+body's exit is returned unchanged. A record past `records`, a full or closed
+queue, a journal refusal, a failed write and a flush deadline each drop the
+record and count it on `EngineStoreMetrics.stepLog`; a failed write also logs
+`A step log record could not be journaled` with code `step_log_failed`. An
+attempt that dropped any record journals one `Warn` record, `Log lines
+dropped`, with `code: "step_logs_dropped"` and the count in `dropped`.
+
+```ts
+import { StepLogs } from "@smthrs/engine-store"
+import * as Effect from "effect/Effect"
+
+// No step logs for this engine's attempts.
+const quiet = Effect.provideService(StepLogs.Limits, { ...StepLogs.defaultLimits, records: 0 })
+```
+
 ## OwnerIdentity
 
 [src/OwnerIdentity.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/OwnerIdentity.ts)
@@ -1531,6 +1577,7 @@ remain host-owned.
 | `boundarySettlements`, `boundarySettlement`                             | counter and views keyed by `Clean`, `Deviation`, `Violation`, `Refused`                                                       |
 | `stepCacheDecisions`, `stepCacheDecision`                               | counter and views keyed by `VerifiedHit`, `Miss`, `UnverifiableEvidence`, `Unmeasurable`, `StaleReadSet`, `ReplayFailed`      |
 | `claims`, `claim`                                                       | counter and views keyed by `Activated`, `Terminal`, `HeartbeatFresh`, `StealRefusedOwnerAlive`, `ClaimLost`, `ActivationLost` |
+| `stepLogs`, `stepLog`                                                   | counter and views keyed by `Journaled`, `DroppedLimit`, `DroppedQueue`, `DroppedJournal`, `DroppedFlush`, `Failed`            |
 
 Outcome tags are rewritten as snake case attribute values, so `HeartbeatFresh`
 is recorded as `heartbeat_fresh`. `observe` composes `Effect.trackDuration` with

@@ -394,3 +394,32 @@ export const heartbeatReceipts = Metric.counter("flows_engine_heartbeat_receipts
   description: "External run heartbeat receipts by outcome",
   incremental: true
 })
+
+/**
+ * Counter over the log records action attempt bodies emitted at or above the
+ * ambient minimum level, dimensioned by what became of each (`outcome`):
+ * `journaled` into the attempt's run, or lost and counted as
+ * `dropped_limit` (past `StepLogs.Limits.records`), `dropped_queue` (the
+ * attempt's queue was full or closed), `dropped_journal` (the journal's lossy
+ * channel refused it), `dropped_flush` (still queued when the flush deadline
+ * passed, or its write was interrupted) or `failed` (the journal write
+ * failed). The one summary record an attempt with losses journals counts too.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const stepLogs = Metric.counter("flows_engine_step_logs", {
+  description: "Log records action attempt bodies emitted, by outcome"
+})
+
+/**
+ * `stepLogs` views keyed by outcome.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const stepLog = byOutcome(
+  stepLogs,
+  {},
+  ["Journaled", "DroppedLimit", "DroppedQueue", "DroppedJournal", "DroppedFlush", "Failed"] as const
+)

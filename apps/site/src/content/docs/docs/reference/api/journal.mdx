@@ -430,6 +430,44 @@ idempotent.
 
 See [Keep credentials out of log output](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/guides/redact-log-output.md).
 
+## TelemetryLog
+
+The `telemetry.log` journal record: its durable schema and the bounded,
+redacted snapshot of an Effect log event that fills it. `@smthrs/observability`'s
+`JournalLogger` and `@smthrs/engine-store`'s step logs both build their records
+here, so there is one schema and one snapshot.
+
+| Export                                                                   | Signature                                                               |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| `eventType`                                                              | `"telemetry.log"`                                                       |
+| `Log`, `LogCause`, `CauseReason`, `Fail`, `Die`, `Interrupt`             | the versioned payload schemas and their types                           |
+| `snapshot`                                                               | `(options: Logger.Options<unknown>, settings?: SnapshotOptions) => Log` |
+| `SnapshotOptions`                                                        | `{ maximumBytes?, annotations?, rules? }`                               |
+| `maximumSnapshotBytes`, `maximumSnapshotMembers`, `maximumSnapshotDepth` | `1048576`, `4096`, `64`                                                 |
+| `truncatedMarker`, `unrenderableMarker`, `redactedMarker`                | `"[Truncated]"`, `"[Unrenderable]"`, `"<redacted>"`                     |
+
+A `Log` carries `version: 1`, the `level`, the `message` parts as Effect
+handed them to the logger, the fiber's `annotations`, a structural `cause`
+(ordered `Fail`, `Die` and `Interrupt` reasons), the `fiberId`, the span's
+`traceId` and `spanId` when one is open, and an ISO-8601 `timestamp`.
+
+`snapshot` runs inside a logger: it is synchronous and never throws. It copies
+the value before any asynchronous delivery, never runs a caller's getter,
+`toJSON` or `toISOString`, names cycles, binaries, functions, symbols and
+unreadable members, renders an Effect `Redacted` as `redactedMarker`, and
+redacts the result with `Redaction`. It is bounded in members and depth, and in
+bytes measured in one forward pass that never splits a surrogate pair.
+
+| `SnapshotOptions` | Effect                                                                                                                                                                                  |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `maximumBytes`    | The whole record's bound, capped at `maximumSnapshotBytes`. The envelope is reserved first, so a long message is cut with `truncatedMarker`. Omitted, the values share the 1 MiB bound. |
+| `annotations`     | Annotations copied ahead of the fiber's and winning over them, kept by every fallback record. For attribution such as run and step ids, never a value.                                  |
+| `rules`           | The redaction rules; `Redaction.defaultRules` unless given. A diagnostic producer passes `Redaction.diagnosticRules`.                                                                   |
+
+A projection that is too large or fails `Log` degrades to a record whose
+message is `truncatedMarker`; one that throws degrades to `unrenderableMarker`.
+Both keep the level, timestamp and `annotations`.
+
 ## Projection
 
 | Export                | Signature                                                                           |
