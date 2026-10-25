@@ -7,7 +7,7 @@ import { ConversationsStore } from "../conversations/store"
 import { Presence, type PresenceView } from "../presence/presence"
 import { Sharing, type SharingView } from "../sharing/sharing"
 import { SharingStore } from "../sharing/store"
-import { leave, open } from "./actions"
+import { leave, open, writable } from "./actions"
 import { BranchRoute, BranchStore } from "./store"
 
 // The branch workspace as a frontend sees it (docs/features/branch-workspace.md#the-page): a live query to read and
@@ -31,6 +31,11 @@ export interface BranchActions {
   readonly open: (owner: string, repo: string, ref: string, signal?: AbortSignal) => Promise<string | undefined>
   /** Leaves the branch for the home conversation. */
   readonly leave: () => Promise<void>
+  /**
+   * Whether this person may write the branch the page shows now: tracked, Owner or Can edit, and open to changes. A
+   * route asks it once `open` resolved, to show a Markdown file in the live editor in place.
+   */
+  readonly writable: () => boolean
 }
 
 export class Branch extends Context.Service<
@@ -54,12 +59,14 @@ export class Branch extends Context.Service<
       Branch,
       Effect.gen(function* () {
         const store = yield* BranchStore
-        const run = Effect.runPromiseWith(yield* Effect.context<BranchRoute | BranchStore | ChatStore | ConversationsStore | FlowDispatch | SharingStore>())
+        const context = yield* Effect.context<BranchRoute | BranchStore | ChatStore | ConversationsStore | FlowDispatch | SharingStore>()
+        const run = Effect.runPromiseWith(context)
         return Branch.of({
           queries: { current: store.currentState.tanstack },
           actions: {
             open: (owner, repo, ref, signal) => run(open(owner, repo, ref, signal)),
             leave: () => run(leave),
+            writable: () => Effect.runSyncWith(context)(writable),
           },
           sharing: yield* Sharing,
           presence: yield* Presence,

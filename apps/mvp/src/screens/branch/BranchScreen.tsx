@@ -25,7 +25,8 @@ import "./branch-screen.css"
 // conversation, with the composer at the conversation's foot: on a branch its owner shared, the branch's prompt, typed
 // together by those who may edit it and shown read-only to those who may only view it; else the person's own draft
 // (docs/features/coedit.md#the-prompt). Under `?edit`, a file of the
-// branch's working copy is in the live editor in Code's place. A branch that isn't shared
+// branch's working copy is in the live editor in Code's place; for someone who may write the branch, a Markdown file's
+// own page edits it in place (docs/features/repo.md#the-browser). A branch that isn't shared
 // with them, or stops being, says No access where the conversation would be; the code stays as GitHub shows it. The
 // route's loader opens the location, the branch, its room and its terminal; this screen only renders what the device
 // has.
@@ -40,6 +41,8 @@ export function BranchScreen({ homeTabs = false }: { readonly homeTabs?: boolean
   const open = access !== undefined && access !== "none"
   const savedConversation = current?.status === "offline" && current.conversationId !== null
   const denied = access === "none" || current?.status === "forbidden"
+  // This person may change the branch's files: the live editor for a file, and a Markdown file in place on its page.
+  const editsFiles = open && writes(access) && current?.mode === "open"
   return (
     <main className="branch-screen" aria-label="Repository" data-workspace={open || denied || savedConversation ? "true" : "false"}>
       <RepoHeader />
@@ -55,7 +58,10 @@ export function BranchScreen({ homeTabs = false }: { readonly homeTabs?: boolean
           : (
             <>
               <FileTabsBar />
-              <RepoPage editFiles={open && writes(access) && current?.mode === "open"} />
+              <RepoPage
+                editFiles={editsFiles}
+                liveMarkdown={editsFiles && current?.conversationId != null ? { conversationId: current.conversationId } : undefined}
+              />
             </>
           )}
       </div>

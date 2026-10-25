@@ -646,6 +646,46 @@ test("a branch page handles missing branches, editor locations, aborts and actio
   await terminal.actions.show(null)
 }, WITHIN)
 
+test("a blob page's Markdown file opens in the live editor in place only for someone who may write the branch", async () => {
+  const tab = await open()
+  const branch = await tab.runtime.runPromise(Effect.service(Branch))
+  const terminal = await tab.runtime.runPromise(Effect.service(Terminal))
+  const presence = await tab.runtime.runPromise(Effect.service(PresenceStore))
+  const coedit = await tab.runtime.runPromise(Effect.service(CoeditStore))
+  const shownFiles = async () =>
+    (await tab.runtime.runPromise(coedit.texts.toArray)).filter((row) => row.kind === "file" && row.shown).map((row) => row.key)
+  // Nothing tracked yet: nobody may write.
+  expect(branch.actions.writable()).toBe(false)
+  const page = (ref: string, file: string) =>
+    openBranchPage(branch, terminal, new AbortController().signal, { owner: "octo", repo: "hello", ref, _splat: file }, { file })
+
+  // The person's own new branch is open to changes: its Markdown file's page is the live editor's text, and presence
+  // still says they read the code there.
+  await page("feature/one", "docs/guide.md")
+  expect(branch.actions.writable()).toBe(true)
+  const conversation = await conversationOf(tab.current()!.branchId!)
+  expect(await shownFiles()).toEqual([`${conversation}/docs/guide.md`])
+  expect(await tab.runtime.runPromise(Ref.get(presence.where))).toEqual({ view: "code", path: "docs/guide.md" })
+
+  // A code file's page edits nothing in place: the editor's room is left.
+  await page("feature/one", "src/app.ts")
+  expect(await shownFiles()).toEqual([])
+
+  // The default branch is locked: Can edit, but nothing changes it but a merge, so its Markdown stays read-only.
+  await page("main", "README.md")
+  expect(tab.current()).toMatchObject({ name: "main", access: "edit", mode: "locked" })
+  expect(branch.actions.writable()).toBe(false)
+  expect(await shownFiles()).toEqual([])
+
+  // A branch GitHub doesn't have is no branch to write.
+  await page("gone", "README.md")
+  expect(branch.actions.writable()).toBe(false)
+  expect(await shownFiles()).toEqual([])
+  await branch.presence.actions.leave()
+  await branch.coedit.actions.hideFiles()
+  await terminal.actions.show(null)
+}, WITHIN)
+
 test("an open's time is the page's when it gave one, else the clock's now, which the stamp step records once", async () => {
   expect(await Effect.runPromise(stampOpen({ repo: "octo/hello", branch: "main", openedAt: 5 })))
     .toEqual({ repo: "octo/hello", branch: "main", openedAt: 5 })

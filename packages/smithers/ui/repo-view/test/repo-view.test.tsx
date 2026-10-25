@@ -250,6 +250,39 @@ describe("RepoView", () => {
     expect(modes).toEqual(["source", "source"]);
   });
 
+  test("a host's Markdown preview takes the read-only document's place in preview mode only, an empty file's too", async () => {
+    const editor = <div data-testid="live-editor" contentEditable suppressContentEditableWarning>live</div>;
+    const { element } = view({ location: { kind: "blob", path: "docs/guide.md" }, file: text("# Guide\n"), markdownPreview: editor });
+    await render(element());
+    expect(q('[data-testid="live-editor"]')!.getAttribute("contenteditable")).toBe("true");
+    expect(q("textarea")).toBeNull();
+    expect(q(".sui-markdown-editor")).toBeNull();
+    // Code still shows the source.
+    await click(all(".sui-repo-segment")[1]!);
+    expect(q('[data-testid="live-editor"]')).toBeNull();
+    expect(q('[data-slot="code-view"]')!.getAttribute("data-language")).toBe("markdown");
+    // An empty file is the editor too, where a document would say Empty file.
+    await render(element({ markdownMode: "preview", file: text("") }));
+    expect(q('[data-testid="live-editor"]')).not.toBeNull();
+    expect(q(".sui-repo-note")).toBeNull();
+    // A file that hasn't loaded shows its skeleton, and absent or null the read-only document shows.
+    await render(element({ markdownMode: "preview", file: { state: "loading" } }));
+    expect(q('[data-testid="live-editor"]')).toBeNull();
+    await render(element({ markdownMode: "preview", markdownPreview: null }));
+    expect(q('[data-testid="live-editor"]')).toBeNull();
+    expect(q("textarea")!.readOnly).toBe(true);
+    // Code files and a directory's README never take it.
+    await render(element({ location: { kind: "blob", path: "src/router.ts" }, file: text("export {}\n") }));
+    expect(q('[data-testid="live-editor"]')).toBeNull();
+    await render(element({
+      location: { kind: "tree", path: "" },
+      file: undefined,
+      readme: { path: "README.md", file: text("# tinyhttp\n") },
+    }));
+    expect(q('[data-testid="live-editor"]')).toBeNull();
+    expect(q('article[aria-label="README.md"] textarea')).not.toBeNull();
+  });
+
   test("a document's relative links open in the view; the browser keeps the rest", async () => {
     const { element, moves } = view({
       location: { kind: "blob", path: "docs/guide.md" },

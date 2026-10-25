@@ -3,11 +3,10 @@ import { Button, Card, EmptyState } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useBranch } from "../../branch/components/BranchContext"
 import { GeneratedFileWarning } from "../../repo/components/FileMarks"
+import { isMarkdownPath } from "../../repo/paths"
 import { fileOf, saveLabelOf } from "../view"
 
 const FAILED = { too_large: "Too large", forbidden: "No access", unavailable: "Couldn't open" } as const
-
-const isMarkdown = (path: string) => /\.(md|markdown)$/i.test(path)
 
 // A file of the branch's working copy in the live editor (docs/features/coedit.md#files): everyone with `Can edit`
 // types in it at once and sees each other's carets; Save writes it to the working copy. Markdown opens in the Markdown
@@ -42,7 +41,7 @@ export function SharedFile({
       {file?.status === "ready" && !readOnly ? <GeneratedFileWarning path={path} contents={file.text} /> : null}
       {file === undefined || file.status === "loading" ? null : file.status === "failed" ? (
         <EmptyState title={FAILED[file.failure ?? "unavailable"]} />
-      ) : isMarkdown(path) ? (
+      ) : isMarkdownPath(path) ? (
         <LiveMarkdownEditor
           className="shared-file-editor"
           value={file.text}

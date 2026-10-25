@@ -5,6 +5,7 @@ import {
   encodePath,
   editHrefFor,
   hrefFor,
+  isMarkdownPath,
   lineSearch,
   parseLines,
   readmeOf,
@@ -12,6 +13,7 @@ import {
   resolveRef,
   targetOf,
   treeKey,
+  viewHrefFor,
 } from "./paths"
 
 // Where things are in a repository and in the app's URLs: the pure functions the actions, queries and views share.
@@ -228,5 +230,24 @@ describe("editHrefFor", () => {
     expect(editHrefFor({ owner: "a b", name: "c#d" }, "feature/docs", "docs/a b#.md")).toBe(
       '/a%20b/c%23d/tree/feature/docs/docs?edit=%22docs%2Fa%20b%23.md%22',
     )
+  })
+})
+
+
+describe("Markdown edited in place", () => {
+  test("Markdown is .md or .markdown in any case; anything else, MDX included, is not", () => {
+    expect(["README.md", "docs/Guide.MD", "notes.markdown"].map(isMarkdownPath)).toEqual([true, true, true])
+    expect(["page.mdx", "md", "README.md.txt", "src/app.ts", ""].map(isMarkdownPath)).toEqual([false, false, false, false, false])
+  })
+
+  test("a workspace that edits files opens a file's live editor, but a Markdown file's own page; without it, every page", () => {
+    const at = { ...repo, defaultBranch: "main" }
+    expect(viewHrefFor(at, "feature", { kind: "blob", path: "src/app.ts" }, true))
+      .toBe('/octocat/Spoon-Knife/tree/feature/src?edit=%22src%2Fapp.ts%22')
+    expect(viewHrefFor(at, "feature", { kind: "blob", path: "docs/guide.md" }, true))
+      .toBe("/octocat/Spoon-Knife/blob/feature/docs/guide.md")
+    expect(viewHrefFor(at, "feature", { kind: "tree", path: "docs" }, true)).toBe("/octocat/Spoon-Knife/tree/feature/docs")
+    expect(viewHrefFor(at, "feature", { kind: "blob", path: "src/app.ts", line: 3 }, false))
+      .toBe("/octocat/Spoon-Knife/blob/feature/src/app.ts?L=3")
   })
 })

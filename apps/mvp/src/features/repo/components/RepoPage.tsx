@@ -13,8 +13,8 @@ import {
   Skeleton,
   Snippet,
 } from "@smthrs/ui"
-import { RepoView, type RepoViewLocation } from "@smthrs/repo-view"
-import type { ReactNode } from "react"
+import { LiveMarkdownEditor, RepoView, type RepoViewLocation } from "@smthrs/repo-view"
+import { Fragment, type ReactNode } from "react"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useNavigate } from "@tanstack/react-router"
 import {
@@ -30,7 +30,7 @@ import {
   RAW,
   TRY_AGAIN,
 } from "../contract"
-import { editHrefFor, hrefFor } from "../paths"
+import { hrefFor, viewHrefFor } from "../paths"
 import {
   aboutOf,
   atRoot,
@@ -49,8 +49,10 @@ import {
   revisionLabel,
   treeProps,
 } from "../view"
+import { useBranch } from "../../branch/components/BranchContext"
 import { codeIntelParts, useCodeIntelRow } from "../../code-intel/components/CodeIntelView"
-import { GeneratedFileChip } from "./FileMarks"
+import { markdownInPlace, saveLabelOf } from "../../coedit/view"
+import { GeneratedFileChip, GeneratedFileWarning } from "./FileMarks"
 import { RepoAside } from "./RepoAside"
 import { useRepo } from "./RepoContext"
 
@@ -106,9 +108,17 @@ function CodeMenu({ owner, name, onCopy }: {
 // before Electric delivered that row (`shownOf`). Every link is a real link to the app's GitHub-shaped URL; a plain
 // click navigates through the router, and a ref chosen in the picker runs `app/navigate`. Each Copy runs `repo/copy`.
 // With `editFiles`, in a branch's workspace for someone who may edit it, a file opens in the live editor of the
-// branch's working copy instead (docs/features/coedit.md#files).
-export function RepoPage({ editFiles = false }: { readonly editFiles?: boolean } = {}) {
+// branch's working copy instead (docs/features/coedit.md#files), except a Markdown file: with `liveMarkdown`, the
+// branch's conversation for someone who may write the branch, its own page edits it in place, a WYSIWYG document in the
+// live editor with Save in its toolbar, once its text loaded. Anyone else, and that person while the text loads or if
+// it fails, reads the document read-only (docs/features/repo.md#the-browser).
+export function RepoPage({ editFiles = false, liveMarkdown }: {
+  readonly editFiles?: boolean
+  readonly liveMarkdown?: { readonly conversationId: string } | undefined
+} = {}) {
   const { queries, actions } = useRepo()
+  const { coedit } = useBranch()
+  const { data: texts } = useLiveQuery(coedit.queries.texts)
   const { data: current } = useLiveQuery(queries.view)
   const { data: refs } = useLiveQuery(queries.refs)
   const { data: tree } = useLiveQuery(queries.tree)
@@ -189,10 +199,9 @@ export function RepoPage({ editFiles = false }: { readonly editFiles?: boolean }
   }
   const shown = page.repository
   const revision = view.revision ?? shown.defaultBranch ?? ""
-  const href = (location: RepoViewLocation) =>
-    editFiles && location.kind === "blob"
-      ? editHrefFor(shown, revision, location.path)
-      : hrefFor(shown, revision, location)
+  const href = (location: RepoViewLocation) => viewHrefFor(shown, revision, location, editFiles)
+  // The Markdown file this page edits in place, for someone who may write the branch, once its text loaded.
+  const editing = markdownInPlace(texts, liveMarkdown?.conversationId, view.kind, view.path)
   const at = (ref: string) => hrefFor(shown, ref, { kind: view.kind, path: view.path })
   const commit = headCommitOf(repository, view.sha, about)
   const links = fileLinksOf(view, file?.file)
@@ -244,11 +253,31 @@ export function RepoPage({ editFiles = false }: { readonly editFiles?: boolean }
           <CopyButton variant="outline" size="sm" onCopy={() => actions.copy("permalink")}>{COPY_PERMALINK}</CopyButton>
         </>
       }
+      markdownPreview={editing === undefined ? undefined : (
+        <Fragment key={editing.id}>
+          <GeneratedFileWarning path={view.path} contents={editing.text} />
+          <LiveMarkdownEditor
+            value={editing.text}
+            aria-label={view.path}
+            onChange={(markdown, { base }) => coedit.actions.type(editing.id, markdown, { base })}
+          />
+        </Fragment>
+      )}
       fileBadges={view.kind === "blob"
         ? <GeneratedFileChip path={view.path} contents={file?.file?.state === "text" ? file.file.contents ?? undefined : undefined} />
         : undefined}
       fileActions={
         <>
+          {editing === undefined ? null : (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={editing.saving || editing.saved}
+              onClick={() => void coedit.actions.save(editing.id)}
+            >
+              {saveLabelOf(editing)}
+            </Button>
+          )}
           {intel.toolbar}
           {links.raw === undefined ? null : (
             <Button asChild variant="ghost" size="sm">

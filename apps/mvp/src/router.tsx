@@ -299,7 +299,7 @@ const blobRoute = createRoute({
       Promise.all([
         context.repo.actions.openRoute("blob", params, search),
         context.home.actions.open(params.owner, params.repo),
-        openBranchPage(context.branch, context.terminal, load.abortController.signal, params, {}),
+        openBranchPage(context.branch, context.terminal, load.abortController.signal, params, params._splat === undefined ? {} : { file: params._splat }),
       ])),
   onLeave: ({ context, abortController }) => {
     abortController.abort()

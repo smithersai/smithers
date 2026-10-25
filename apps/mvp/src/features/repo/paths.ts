@@ -16,6 +16,12 @@ export const blobKey = (id: string, sha: string, path: string): string => `${id}
 export const refsKey = (id: string, headSha: string, refsChangedAt?: string | null): string =>
   `${id}@${headSha}@${refsChangedAt ?? ""}`
 
+/**
+ * Whether `path` is a Markdown file the app edits as a document: in the live Markdown editor, in place on its page for
+ * a person who may write the branch (docs/features/repo.md#the-browser).
+ */
+export const isMarkdownPath = (path: string): boolean => /\.(md|markdown)$/i.test(path)
+
 /** The README of directory `dir` (`""` is the root): its direct entry named `README.md`, in any case. */
 export const readmeOf = (paths: ReadonlyArray<string>, dir: string): string | undefined => {
   const prefix = dir === "" ? "" : `${dir}/`
@@ -118,6 +124,21 @@ export const editHrefFor = (repository: { readonly owner: string; readonly name:
   const at = `/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}/tree/${encodePath(revision)}`
   return `${at}${directory === "" ? "" : `/${encodePath(directory)}`}?edit=${encodeURIComponent(JSON.stringify(path))}`
 }
+
+/**
+ * A link in the repository view at `revision`: with `editFiles`, in a branch's workspace for someone who may edit it, a
+ * file opens in the live editor (`editHrefFor`), except a Markdown file, whose own page edits it in place; anything
+ * else is its page (`hrefFor`).
+ */
+export const viewHrefFor = (
+  repository: { readonly owner: string; readonly name: string; readonly defaultBranch: string | null },
+  revision: string,
+  location: Location,
+  editFiles: boolean,
+): string =>
+  editFiles && location.kind === "blob" && !isMarkdownPath(location.path)
+    ? editHrefFor(repository, revision, location.path)
+    : hrefFor(repository, revision, location)
 
 /** What a route opens: the repository, a directory or a file, the URL's ref and path, and the file's line anchor. */
 export interface Target {

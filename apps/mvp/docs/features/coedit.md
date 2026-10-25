@@ -71,7 +71,7 @@ What isn't covered yet:
 
 - **The composer** (`ChatComposer`'s `collaborators`, `selection`, `onSelectionChange`) draws others' carets over its input on a shared branch. Sending is one person's act: the merged text is asked as them, and the prompt clears for everyone. Someone who may only view the branch (`Can view`) sees the prompt read-only, with the carets and no Send; `Owner` and `Can edit` type and send.
 - **The answer box** (`NeedsYouCard`, in the conversation and in the notifications panel) does the same for the person's devices.
-- **A file.** In a branch's Code view, someone who may edit opens a file in the live editor (`?edit=<path>`): `@smthrs/repo-view`'s `CodeEditor` (CodeMirror) with everyone's carets, or `LiveMarkdownEditor` for Markdown. `Save` writes it to the working copy: it reads `Saving…` while it runs, `Saved` on every editor's screen once written, and `Retry save` after a failure. Presence says where each person is (`edit`), and following them opens the same file.
+- **A file.** In a branch's Code view, someone who may edit opens a file in the live editor (`?edit=<path>`): `@smthrs/repo-view`'s `CodeEditor` (CodeMirror) with everyone's carets, or `LiveMarkdownEditor` for Markdown. A Markdown file's own page (`/blob/<branch>/<path>`) is that same text in place, a WYSIWYG document with Save in the file's toolbar, for someone who may write the branch; anyone else reads it ([repositories](repo.md#the-browser)). `Save` writes it to the working copy: it reads `Saving…` while it runs, `Saved` on every editor's screen once written, and `Retry save` after a failure. Presence says where each person is (`edit`), and following them opens the same file.
 
 ## Observability
 

@@ -10,6 +10,7 @@ import { isBranchName } from "./contract"
 import { opens, reopens } from "./metrics"
 import { CURRENT, type Current } from "./schema"
 import { BranchRoute, BranchStore } from "./store"
+import { writes } from "./view"
 
 // What opening a branch's page does (docs/features/branch-workspace.md#the-page): it runs `branch/track` and, once it
 // answers, shows the branch's conversation in this tab (decision 0013 §1), so the composer asks there, in the branch's
@@ -204,6 +205,18 @@ export const open = (owner: string, repo: string, ref: string, signal?: AbortSig
 
 
 /** Leaves the branch: this tab shows and asks in the home conversation again. */
+/**
+ * Whether this person may write the branch the page shows now: tracked, as its Owner or with Can edit, and open to
+ * changes (not `locked` or `restricted`). Anything missing, such as a branch still tracking, refused or opened offline,
+ * is no.
+ */
+export const writable = Effect.map(
+  Effect.flatMap(BranchStore, ({ current }) => current.get(CURRENT)),
+  (row) =>
+    Option.isSome(row) && row.value.status === "ready" && row.value.access !== null && writes(row.value.access) &&
+    row.value.mode === "open",
+)
+
 export const leave = Effect.gen(function* () {
   yield* Ref.update((yield* BranchStore).generation, (value) => value + 1)
   yield* FiberHandle.clear((yield* BranchStore).follower)

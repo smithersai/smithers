@@ -76,7 +76,11 @@ Markdown document.
   controls `expanded` does the same.
 - **Markdown:** a file renders as a read-only WYSIWYG document by default.
   Preview and Code switch it to its source and back, through `markdownMode`
-  and `onMarkdownModeChange`, controlled or not.
+  and `onMarkdownModeChange`, controlled or not. `markdownPreview` takes the
+  read-only document's place in preview mode once the file's text has loaded,
+  an empty file included: pass a `LiveMarkdownEditor` there for a person who
+  may change the file, and leave it out for anyone else. A directory's README
+  is always the read-only document.
 - **HTML:** a file opens as code; Preview shows the page live and Split shows
   the source beside it, as CodePen does, through `htmlMode` and
   `onHtmlModeChange`, controlled or not. The page is `HtmlPreview`: a frame

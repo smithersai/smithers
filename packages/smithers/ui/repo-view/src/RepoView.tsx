@@ -141,6 +141,14 @@ export type RepoViewProps = Omit<ComponentProps<"section">, "children"> & {
    * WYSIWYG editor (`false`), and `loadEditor` supplies the editor modules.
    */
   markdownEditor?: Pick<MarkdownEditorProps, "fallback" | "loadEditor"> | undefined;
+  /**
+   * A Markdown file's preview, in place of the read-only document: a host's
+   * live editor for a person who may change the file. It shows only for a
+   * file whose text loaded, in preview mode; Code still shows the source.
+   * Absent, the read-only document shows. A directory's README is always the
+   * read-only document.
+   */
+  markdownPreview?: ReactNode;
 };
 
 /** What `RepoView` passes through to the shown file's `CodeFileView`. */
@@ -178,6 +186,7 @@ function FileBody({
   codeMode,
   intelligence,
   markdownEditor,
+  markdownPreview,
   onLink
 }: {
   path: string;
@@ -189,6 +198,7 @@ function FileBody({
   codeMode: CodeViewMode | undefined;
   intelligence?: RepoViewCode | undefined;
   markdownEditor: RepoViewProps["markdownEditor"];
+  markdownPreview?: ReactNode;
   onLink: (href: string) => boolean;
 }) {
   switch (file.state) {
@@ -208,7 +218,11 @@ function FileBody({
     case "too-large":
       return <div className="sui-repo-note">Too large to show</div>;
   }
-  // Text: a Markdown document, code, or an HTML page in the mode asked for.
+  // Text: the host's own preview of a Markdown file (its live editor, which an empty file needs too), a Markdown
+  // document, code, or an HTML page in the mode asked for.
+  if (isMarkdown(path) && markdownMode === "preview" && markdownPreview !== undefined && markdownPreview !== null) {
+    return markdownPreview;
+  }
   if (file.contents === "") return <div className="sui-repo-note">Empty file</div>;
   if (isMarkdown(path) && markdownMode === "preview") {
     return (
@@ -315,6 +329,7 @@ export function RepoView({
   codeMode,
   code,
   markdownEditor,
+  markdownPreview,
   className,
   ...props
 }: RepoViewProps) {
@@ -470,6 +485,7 @@ export function RepoView({
           codeMode={codeMode}
           intelligence={code}
           markdownEditor={markdownEditor}
+          markdownPreview={markdownPreview}
           onLink={linkFrom(tree.paths, location.path)}
         />
       </article>
