@@ -101,7 +101,7 @@ const open = async (reopenRoute?: () => void) => {
     /** The browser's `offline` and `online` events, as chat's connectivity binding runs them. */
     offline: () => runtime.runPromise(wentOffline),
     online: () => runtime.runPromise(retry("online")),
-    render: branchRenderer({
+    render: branchRenderer({ home,
       files: await runtime.runPromise(Effect.service(Files)), chat, auth, repo, branch, intel, status, commands, theme, terminal,
       attention, spend, personalModel: await runtime.runPromise(Effect.service(PersonalModel)), todos,
       views: await runtime.runPromise(Effect.service(Views)),

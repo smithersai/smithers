@@ -1,0 +1,116 @@
+import { createElement } from "react"
+import { FlowsUi } from "../src/features/flows-ui/flowsUi"
+import { HomePage } from "../src/features/home/components/HomePage"
+import { createMemoryHistory, createRootRoute, createRoute, createRouter } from "@tanstack/react-router"
+import { Context, Effect, Layer, Scope, Exit } from "effect"
+import { expect, test, vi } from "vitest"
+import { renderRepositoryPages } from "./fixtures/repository-pages"
+import { openTestApp } from "../src/test/chatApi"
+import { put } from "../src/features/repo/actions"
+import { RepoStore } from "../src/features/repo/store"
+import { HomeStore } from "../src/features/home/store"
+import { AuthStore } from "../src/features/auth/store"
+import { TodosStore } from "../src/features/todos/store"
+import { IssuesScreen } from "../src/screens/issues/IssuesScreen"
+import { PullsScreen } from "../src/screens/pulls/PullsScreen"
+import { NewIssueScreen } from "../src/screens/issues/NewIssueScreen"
+import { StackScreen } from "../src/screens/stack/StackScreen"
+import { SecretsScreen } from "../src/screens/secrets/SecretsScreen"
+import { ActionsScreen } from "../src/screens/actions/ActionsScreen"
+import { Auth } from "../src/features/auth/auth"
+import { Repo } from "../src/features/repo/repo"
+import { Home } from "../src/features/home/home"
+import { Issues } from "../src/features/issues/issues"
+import { Todos } from "../src/features/todos/todos"
+import { Pulls } from "../src/features/pulls/pulls"
+import { Runs } from "../src/features/runs/runs"
+import { Secrets } from "../src/features/secrets/secrets"
+import { Attention } from "../src/features/attention/attention"
+import { Chat } from "../src/features/chat/chat"
+
+// Real feature collections and views. These are stored row fixtures, with no module mocks or intercepted requests.
+test("direct feature pages keep navigation, fence the deployment role, and name GitHub instead of an unobservable write", async () => {
+  const app = openTestApp({ sessionLifecycle: false })
+  const scope = await Effect.runPromise(Scope.make())
+  try {
+    const homeContext = await app.runPromise(Layer.buildWithScope(HomeStore.layer, scope))
+    const homeStore = Context.get(homeContext, HomeStore)
+    const homeView = await app.runPromise(Effect.service(Home).pipe(Effect.provide(Home.layer), Effect.provideContext(homeContext)))
+    const services = await app.runPromise(Effect.all({
+      flows: Effect.service(FlowsUi),
+      auth: Effect.service(Auth),
+      repo: Effect.service(Repo),
+      home: Effect.succeed(homeView),
+      issues: Effect.service(Issues),
+      todos: Effect.service(Todos),
+      pulls: Effect.service(Pulls),
+      runs: Effect.service(Runs),
+      secrets: Effect.service(Secrets),
+      attention: Effect.service(Attention),
+      chat: Effect.service(Chat),
+    }))
+    const [repo, auth, todos] = await app.runPromise(Effect.all([Effect.service(RepoStore), Effect.service(AuthStore), Effect.service(TodosStore)]))
+    const home = homeStore
+    services.repo.actions.openRoute("tree", { owner: "smithersai", repo: "vibelang" }, {})
+    await app.runPromise(Effect.all([
+      auth.session.update("session", row => { row.status = "signed_in"; row.role = "admin"; row.login = "reader" }),
+      home.current.update("current", row => { row.owner = "smithersai"; row.name = "vibelang"; row.repoId = "github/smithersai/vibelang"; row.answering = false; row.defaultBranch = "main"; row.curatedDocs = "docs/index.md" }),
+      home.curated.insert({ key: "github/smithersai/vibelang", state: "declared", defaultBranch: "main", sections: [{ audience: "everyone", blocks: [{ type: "text", text: "VibeLang" }, { type: "prompt", title: "Ask about this repository" }] }] }),
+    ]))
+    for (const query of [services.repo.queries.view, services.home.queries.home, services.auth.queries.session, services.auth.queries.confirmed, services.chat.queries.connection, services.chat.queries.queued, services.chat.queries.place, services.attention.queries.unread, services.attention.queries.needs, services.attention.queries.panel]) query.startSyncImmediate()
+    for (const feature of [services.issues, services.todos, services.pulls, services.runs, services.secrets, services.flows]) {
+      for (const query of Object.values(feature.queries)) if (typeof query === "object" && query !== null && "startSyncImmediate" in query && typeof query.startSyncImmediate === "function") query.startSyncImmediate()
+    }
+    for (const [path, component, text] of [
+      ["", () => createElement(HomePage, { tree: null }), "VibeLang"],
+      ["issues", IssuesScreen, "Issues for this repository are on GitHub."],
+      ["pulls", PullsScreen, "Pull requests for this repository are on GitHub."],
+      ["issues/new", NewIssueScreen, "Open an issue on GitHub"],
+      ["settings/secrets", SecretsScreen, "You can&#x27;t see this repository&#x27;s secrets."],
+      ["actions", ActionsScreen, "Runs"],
+      ["stack", StackScreen, "Members can make TODOs."],
+    ] as const) {
+      services.issues.actions.open("smithersai", "vibelang")
+      await app.runPromise(todos.view.update("view", row => { row.owner = "smithersai"; row.name = "vibelang"; row.repoId = "github/smithersai/vibelang" }))
+      if (path === "stack") await app.runPromise(put(todos.access, "github/smithersai/vibelang", { id: "github/smithersai/vibelang", status: "forbidden" }))
+      const root = createRootRoute()
+      const route = createRoute({ getParentRoute: () => root, path: path === "" ? "/$owner/$repo" : `/$owner/$repo/${path}`, component })
+      const router = createRouter({ routeTree: root.addChildren([route]), history: createMemoryHistory({ initialEntries: [path === "" ? "/smithersai/vibelang" : `/smithersai/vibelang/${path}`] }) })
+      await router.load()
+      expect(router.state.matches.at(-1)).toMatchObject({ routeId: route.id, status: "success" })
+      await vi.waitFor(() => {
+      const html = renderRepositoryPages(router, services)
+      if (path !== "") expect(html).toContain('aria-label="Repository"')
+      if (path !== "") expect(html).toContain("smithersai / vibelang")
+      if (path !== "") expect(html).toContain('aria-label="Repository pages"')
+      expect(html).toContain(text)
+      expect(html).not.toContain("Ask about this repository")
+      expect(html).not.toContain('>Secrets</a>')
+      expect(html).not.toContain('>Settings</a>')
+      expect(html).not.toContain('aria-label="Commitment"')
+      })
+    }
+    // The same deployment role is valid only when About explicitly scopes it to this repository.
+    await app.runPromise(put(repo.abouts, "github/smithersai/vibelang", {
+      key: "github/smithersai/vibelang", state: "ready", message: null,
+      about: { name: "smithersai/vibelang", deploymentRepository: "smithersai/vibelang", description: null, homepage: null, topics: [], stars: 0, forks: 0, watchers: 0, license: null, defaultBranch: "main", archived: false, languages: [], release: null, releases: null, contributors: [], contributorCount: null, commits: null, branches: null, tags: null, head: null, root: null, readme: null, installUrl: null },
+    }))
+    for (const [path, component, expected] of [
+      ["settings/secrets", SecretsScreen, "No secrets"],
+      ["issues/new", NewIssueScreen, "You can’t open issues in this repository."],
+    ] as const) {
+      if (path === "issues/new") await app.runPromise(auth.session.update("session", row => { row.role = null }))
+      const root = createRootRoute()
+      const route = createRoute({ getParentRoute: () => root, path: path === "" ? "/$owner/$repo" : `/$owner/$repo/${path}`, component })
+      const router = createRouter({ routeTree: root.addChildren([route]), history: createMemoryHistory({ initialEntries: [path === "" ? "/smithersai/vibelang" : `/smithersai/vibelang/${path}`] }) })
+      await router.load()
+      expect(router.state.matches.at(-1)).toMatchObject({ routeId: route.id, status: "success" })
+      await vi.waitFor(() => {
+      const html = renderRepositoryPages(router, services)
+      expect(html).toContain(expected)
+      expect(html).not.toContain(">Sign in</")
+      })
+    }
+
+  } finally { await Effect.runPromise(Scope.close(scope, Exit.void)); await app.dispose() }
+}, 90_000)

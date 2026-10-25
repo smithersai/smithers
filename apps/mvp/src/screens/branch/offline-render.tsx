@@ -1,6 +1,7 @@
 import { SpendAlertEntries } from "../../features/spend/components/SpendAlertEntries"
 import { NotificationsBell } from "../../features/attention/components/NotificationsBell"
 import { Notices } from "../../features/attention/components/Notices"
+import { HomeProvider } from "../../features/home/components/HomeContext"
 import { FilesProvider } from "../../features/files/components/FilesContext"
 import { createElement, type ComponentProps, type ReactNode } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
@@ -22,6 +23,7 @@ import { TodosProvider } from "../../features/todos/components/TodosContext"
 import { ViewsProvider } from "../../features/views/components/ViewsContext"
 
 type Services = {
+  home: ComponentProps<typeof HomeProvider>["value"]
   files: ComponentProps<typeof FilesProvider>["value"]
   todos: ComponentProps<typeof TodosProvider>["value"]
   chat: ComponentProps<typeof ChatProvider>["value"]
@@ -51,7 +53,7 @@ export const wrapBranch = ({ files, chat, auth, repo, branch, intel, status, com
                       createElement(SpendProvider, { value: spend }, createElement(PersonalModelProvider, { value: personalModel }, createElement(FilesProvider, { value: files }, createElement(TodosProvider, { value: todos }, createElement(ViewsProvider, { value: views }, child)))))))))))))))
 
 export const branchRenderer = (services: Services) => (router: ComponentProps<typeof RouterProvider>["router"]) =>
-  renderToStaticMarkup(wrapBranch(services)(createElement(RouterProvider, { router })))
+  renderToStaticMarkup(wrapBranch(services)(createElement(HomeProvider, { value: services.home }, createElement(RouterProvider, { router }))))
 export const DeniedBranchHeader = () => createElement(BranchHeader, { access: "none" })
 
 export const renderNoticeHistory = (services: Services) => {

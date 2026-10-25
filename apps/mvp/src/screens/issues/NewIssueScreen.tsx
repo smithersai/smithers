@@ -1,4 +1,8 @@
-import { IssueForm } from "@smthrs/ui"
+import { useRepo } from "../../features/repo/components/RepoContext"
+import { githubList, isDeploymentRepository } from "../../features/repo/scope"
+import { RepoHeader } from "../../features/repo/components/RepoHeader"
+import { HomeTabs } from "../../features/home/components/HomeTabs"
+import { EmptyState, IssueForm } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useNavigate, useParams } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
@@ -13,16 +17,21 @@ import "./issues-screen.css"
 // not open one gets sign-in instead.
 export function NewIssueScreen() {
   const { owner, repo } = useParams({ from: "/$owner/$repo/issues/new" })
+  const { data: repository } = useLiveQuery(useRepo().queries.view)
   const { queries, actions } = useIssues()
   const auth = useAuth()
   const { data: view } = useLiveQuery(queries.view)
   const { data: session } = useLiveQuery(auth.queries.session)
   const { data: confirmed } = useLiveQuery(auth.queries.confirmed)
   const navigate = useNavigate()
-  if (session === undefined) return null
+  if (!isDeploymentRepository(owner, repo, repository?.about)) {
+    const list = githubList(owner, repo, "issues")
+    return <main className="issues-screen" aria-label="New issue"><RepoHeader /><HomeTabs /><p><a href={list.href + "/new"}>{"Open an issue on GitHub"}</a></p></main>
+  }
+  if (session === undefined) return <main className="issues-screen" aria-label="New issue"><RepoHeader /><HomeTabs /></main>
   const draft = draftOf(view)
   return (
-    <main className="issues-screen" aria-label="New issue">
+    <main className="issues-screen" aria-label="New issue"><RepoHeader /><HomeTabs />
       {mayWrite(session, confirmed)
         ? (
           <IssueForm
@@ -37,7 +46,7 @@ export function NewIssueScreen() {
             }}
           />
         )
-        : <SignInButton />}
+        : session.status === "signed_in" ? <EmptyState title="You can’t open issues in this repository." /> : <SignInButton />}
     </main>
   )
 }

@@ -187,3 +187,10 @@ test.describe("cloned repositories", () => {
     },
   )
 })
+
+test("repository code keeps Home, Code and Docs on a direct visit", async ({ page }) => {
+  await page.goto("/smithersai/vibelang/tree/main")
+  const tabs = page.getByRole("navigation", { name: "Repository pages" })
+  await expect(tabs.getByRole("link")).toHaveText(["Home", "Code", "Docs"], { timeout: 60_000 })
+  await expect(tabs.getByRole("link", { name: "Code", exact: true })).toHaveAttribute("aria-current", "page")
+})

@@ -95,3 +95,8 @@ export function BranchScreen({ homeTabs = false }: { readonly homeTabs?: boolean
 export function BlobScreen() {
   return <BranchScreen homeTabs />
 }
+
+/** A routed directory keeps the repository home navigation, as a routed file does. */
+export function TreeScreen() {
+  return <BranchScreen homeTabs />
+}

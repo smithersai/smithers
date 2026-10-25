@@ -1,3 +1,4 @@
+import { repository as deploymentRepository } from "./github/Config.ts"
 import * as RefReads from "./branch/RefReads.ts"
 import { ImmutableCache } from "@smthrs/artifacts"
 import type { CodeStorage } from "@smthrs/effect-code-storage"
@@ -107,6 +108,7 @@ export interface Options {
  */
 export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, options: Options) =>
   Effect.gen(function* () {
+    const deployment = yield* deploymentRepository
     const budgets = yield* Repos.budgets
     const aboutSource = yield* RepoAbout.make(yield* RepoAbout.settings, AboutStore.postgres(database), database)
     const maxTreePaths = yield* RepoReads.maxTreePaths
@@ -419,7 +421,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           Object.assign(fields, RepoAbout.fieldsOf(outcome))
           yield* Metric.update(Metric.withAttributes(RepoMetrics.aboutAnswers, { cache: outcome.cache }), 1)
           if (outcome._tag === "Answered") {
-            const bytes = encoder.encode(outcome.text)
+            const bytes = encoder.encode(JSON.stringify({ ...JSON.parse(outcome.text), deploymentRepository: `${deployment.owner}/${deployment.name}` }))
             fields.bytes = bytes.length
             return HttpServerResponse.uint8Array(bytes, {
               headers: { "cache-control": `public, max-age=${outcome.maxAgeSeconds}` },

@@ -117,3 +117,35 @@ test.describe("VibeLang's files on Smithers", () => {
     },
   )
 })
+
+for (const who of ["visitor", "contributor"] as const) {
+  test(`repository pages: ${who} sees navigation and honest GitHub destinations`, async ({ page }) => {
+    if (who === "contributor") requires("member")
+    test.setTimeout(180_000)
+    await as(page, who)
+    for (const path of ["issues", "pulls", "stack", "issues/new", "settings/secrets", "actions", "tree/main"]) {
+      await step(`Open ${path}`, async () => {
+        await page.goto(`${REPO}/${path}`)
+        const header = page.locator('header[aria-label="Repository"]')
+        await expect(header).toContainText("smithersai / vibelang", { timeout: 30_000 })
+        await expect(tabsOf(page).getByRole("link")).toHaveText(["Home", "Code", "Docs"], { timeout: 60_000 })
+        await expect(header.getByRole("link", { name: "Secrets", exact: true })).toHaveCount(0)
+        await expect(header.getByRole("link", { name: "Settings", exact: true })).toHaveCount(0)
+        if (path === "issues" || path === "pulls") {
+          const text = path === "issues" ? "Issues for this repository are on GitHub." : "Pull requests for this repository are on GitHub."
+          await expect(page.getByRole("link", { name: text, exact: true })).toHaveAttribute("href", `https://github.com/smithersai/vibelang/${path}`)
+          await expect(page.getByRole("navigation", { name: "Commitment" })).toHaveCount(0)
+        }
+        if (path === "issues/new") {
+          await expect(page.getByRole("link", { name: "Open an issue on GitHub" })).toHaveAttribute("href", "https://github.com/smithersai/vibelang/issues/new")
+          await expect(page.getByRole("button", { name: "Create issue", exact: true })).toHaveCount(0)
+        }
+        if (path === "stack") await expect(page.getByText("Members can make TODOs.", { exact: true })).toBeVisible()
+        if (path === "settings/secrets") await expect(page.getByRole("heading", { name: "You can't see this repository's secrets.", exact: true })).toBeVisible()
+      })
+    }
+    await page.goto(REPO)
+    await expect(homeOf(page)).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByRole("link", { name: "Ask about this repository", exact: true })).toHaveCount(0)
+  })
+}

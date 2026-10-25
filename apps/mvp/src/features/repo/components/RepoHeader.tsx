@@ -11,6 +11,7 @@ import { SecretsLink } from "../../secrets/components/SecretsLink"
 import { STACK } from "../../todos/contract"
 import { BackToChat } from "../../views/components/BackToChat"
 import { CLONE, TRY_AGAIN } from "../contract"
+import { isDeploymentRepository } from "../scope"
 import { minimizedOf } from "../embedView"
 import { aboutOf, headerOf } from "../view"
 import { useRepo } from "./RepoContext"
@@ -31,6 +32,7 @@ export function RepoHeader() {
   const { view, repository, clone, about } = data
   const header = headerOf(repository, clone, view.signedIn, view.answered, about)
   const defaultBranch = repository?.defaultBranch ?? aboutOf(about)?.defaultBranch ?? null
+  const managed = isDeploymentRepository(view.owner, view.name, about)
   return (
     <header className="repo-header" aria-label="Repository">
       <BackToChat target={{ template: "repo", props: minimizedOf(view, defaultBranch) }} />
@@ -41,13 +43,19 @@ export function RepoHeader() {
         <Link to="/$owner/$repo/issues" params={{ owner: view.owner, repo: view.name }}>{ISSUES}</Link>
       </Button>
       <Button asChild variant="ghost">
+        <Link to="/$owner/$repo/pulls" params={{ owner: view.owner, repo: view.name }}>Pull requests</Link>
+      </Button>
+      <Button asChild variant="ghost">
+        <Link to="/$owner/$repo/actions" params={{ owner: view.owner, repo: view.name }}>Runs</Link>
+      </Button>
+      <Button asChild variant="ghost">
         <Link to="/$owner/$repo/stack" params={{ owner: view.owner, repo: view.name }}>{STACK}</Link>
       </Button>
-      <SecretsLink owner={view.owner} repo={view.name} />
+      {managed ? <SecretsLink owner={view.owner} repo={view.name} /> : null}
       {(header.kind === "clone" || header.kind === "sign_in") && header.status !== undefined
         ? <span role="status">{header.status}</span>
         : null}
-      {session?.status === "signed_in" && mayManageDomains(session.role)
+      {managed && session?.status === "signed_in" && mayManageDomains(session.role)
         ? (
           <Button asChild variant="ghost">
             <Link to="/$owner/$repo/settings" params={{ owner: view.owner, repo: view.name }}>{SETTINGS}</Link>

@@ -95,6 +95,7 @@ export const readCode = (page: Page) =>
     await expect(code).toHaveAttribute("href", `${REPO}/tree/main`)
     await code.click()
     await expect(page).toHaveURL(new RegExp(`${REPO}/tree/main`))
+    await expect(tabsOf(page).getByRole("link")).toHaveText(["Home", "Code", "Docs"])
     await expect(page.getByRole("link", { name: "packages", exact: true })).toBeVisible({ timeout: 60_000 })
     await expect(page.locator('article[aria-label="README.md"]')).toContainText("VibeLang", { timeout: 30_000 })
   })

@@ -1,3 +1,5 @@
+import { useRepo } from "../../repo/components/RepoContext"
+import { isDeploymentRepository } from "../../repo/scope"
 import { Button, EmptyState, Field, Input, Label, RelativeTime, Textarea } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import type { FormEvent } from "react"
@@ -47,7 +49,8 @@ export function SecretsPage({ owner, repo }: { readonly owner: string; readonly 
   const { data: rows } = useLiveQuery(queries.list(id))
   const { data: view } = useLiveQuery(queries.view)
   const { data: forms } = useLiveQuery(queries.forms)
-  const access = accessOf(session)
+  const { data: repository } = useLiveQuery(useRepo().queries.view)
+  const access = isDeploymentRepository(owner, repo, repository?.about) ? accessOf(session) : "none"
   if (access === "loading") return null
   if (access === "none") return <EmptyState title={CANT_SEE} />
   const admin = access === "write"
@@ -81,6 +84,7 @@ export function SecretsPage({ owner, repo }: { readonly owner: string; readonly 
           </form>
         )
         : null}
+      {rows.length === 0 ? <EmptyState title="No secrets" /> : null}
       <ul className="secrets-list" aria-label={SECRETS}>
         {rows.map((row) => {
           const rotating = admin && view?.repoId === id && view.rotating === row.name

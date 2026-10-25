@@ -1,3 +1,7 @@
+import { useRepo } from "../../features/repo/components/RepoContext"
+import { githubList, isDeploymentRepository } from "../../features/repo/scope"
+import { RepoHeader } from "../../features/repo/components/RepoHeader"
+import { HomeTabs } from "../../features/home/components/HomeTabs"
 import { EmptyState, IssuesView } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useNavigate, useParams } from "@tanstack/react-router"
@@ -13,6 +17,7 @@ import "./pulls-screen.css"
 // route's loader opens the repository (`open`); this screen only renders what the device has.
 export function PullsScreen() {
   const { owner, repo } = useParams({ from: "/$owner/$repo/pulls" })
+  const { data: repository } = useLiveQuery(useRepo().queries.view)
   const { queries } = usePulls()
   const issues = useIssues()
   const { data: rows, isReady } = useLiveQuery(queries.list)
@@ -21,12 +26,16 @@ export function PullsScreen() {
   const { data: view } = useLiveQuery(queries.view)
   const navigate = useNavigate()
   const page = listPageOf(rows ?? [], { owner, name: repo }, synced, pullAccessOf(access, view), isReady)
-  if (page.refused === "sign_in") return <main className="pulls-screen" aria-label="Pull requests"><SignInButton /></main>
+  if (!isDeploymentRepository(owner, repo, repository?.about)) {
+    const list = githubList(owner, repo, "pulls")
+    return <main className="issues-screen" aria-label="Pull requests"><RepoHeader /><HomeTabs /><p><a href={list.href}>{list.text}</a></p></main>
+  }
+  if (page.refused === "sign_in") return <main className="pulls-screen" aria-label="Pull requests"><RepoHeader /><HomeTabs /><SignInButton /></main>
   if (page.refused === "forbidden") {
-    return <main className="pulls-screen" aria-label="Pull requests"><EmptyState title={NOT_FOUND} /></main>
+    return <main className="pulls-screen" aria-label="Pull requests"><RepoHeader /><HomeTabs /><EmptyState title={NOT_FOUND} /></main>
   }
   return (
-    <main className="pulls-screen" aria-label="Pull requests">
+    <main className="pulls-screen" aria-label="Pull requests"><RepoHeader /><HomeTabs />
       <IssuesView
         repo={`${owner}/${repo}`}
         size="full"

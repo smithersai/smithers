@@ -1,3 +1,4 @@
+import { HomeProvider } from "../features/home/components/HomeContext"
 import { FilesProvider } from "../features/files/components/FilesContext"
 import type { FilesView } from "../features/files/files"
 // Render the real branch screen for router integration tests; React stays in the view adapter.
@@ -52,7 +53,7 @@ export const renderTerminalScreen = (
               <StatusProvider value={views.status}>
                 <CommandsProvider value={views.commands}>
                   <RepoProvider value={context.repo}>
-                    <BranchProvider value={context.branch}>
+                    <HomeProvider value={context.home}><BranchProvider value={context.branch}>
                       <ThemeProvider value={theme}>
                         <TerminalProvider value={context.terminal}>
                           <TodosProvider value={context.todos}>
@@ -62,7 +63,7 @@ export const renderTerminalScreen = (
                           </TodosProvider>
                         </TerminalProvider>
                       </ThemeProvider>
-                    </BranchProvider>
+                    </BranchProvider></HomeProvider>
                   </RepoProvider>
                 </CommandsProvider>
               </StatusProvider>

@@ -1,3 +1,7 @@
+import { useRepo } from "../../features/repo/components/RepoContext"
+import { githubList, isDeploymentRepository } from "../../features/repo/scope"
+import { RepoHeader } from "../../features/repo/components/RepoHeader"
+import { HomeTabs } from "../../features/home/components/HomeTabs"
 import { Badge, Button, EmptyState, IssuesView } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router"
@@ -27,6 +31,7 @@ import "./issues-screen.css"
 // opens the repository (`open`); this screen only renders what the device has.
 export function IssuesScreen() {
   const { owner, repo } = useParams({ from: "/$owner/$repo/issues" })
+  const { data: repository } = useLiveQuery(useRepo().queries.view)
   const { queries, actions } = useIssues()
   const auth = useAuth()
   const { data: rows } = useLiveQuery(queries.list)
@@ -46,14 +51,17 @@ export function IssuesScreen() {
   const triageSwitch = triageSwitchOf(triage, triagePending ?? [])
   // The full-screen size of the repository's issues view in the chat (ruling FE-9): Back to chat minimizes it.
   const back = <BackToChat target={{ template: "issues", props: { repo: `${owner}/${repo}` } }} />
+  if (!isDeploymentRepository(owner, repo, repository?.about)) {
+    const list = githubList(owner, repo, "issues")
+    return <main className="issues-screen" aria-label="Issues">{back}<RepoHeader /><HomeTabs /><p><a href={list.href}>{list.text}</a></p></main>
+  }
   // A repository whose issues this person may not read: sign in, or nothing to show.
-  if (list.refused === "sign_in") return <main className="issues-screen" aria-label="Issues">{back}<SignInButton /></main>
+  if (list.refused === "sign_in") return <main className="issues-screen" aria-label="Issues">{back}<RepoHeader /><HomeTabs /><SignInButton /></main>
   if (list.refused === "forbidden") {
-    return <main className="issues-screen" aria-label="Issues">{back}<EmptyState title={NOT_FOUND} /></main>
+    return <main className="issues-screen" aria-label="Issues">{back}<RepoHeader /><HomeTabs /><EmptyState title={NOT_FOUND} /></main>
   }
   return (
-    <main className="issues-screen" aria-label="Issues">
-      {back}
+    <main className="issues-screen" aria-label="Issues">{back}<RepoHeader /><HomeTabs />
       <nav aria-label="Commitment">
         {[undefined, ...COMMITMENTS].map((commitment) => (
           <Button key={commitment ?? "all"} variant={search.commitment === commitment ? "secondary" : "ghost"} size="sm" asChild>

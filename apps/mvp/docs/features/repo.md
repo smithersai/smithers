@@ -310,3 +310,7 @@ Code Storage and GitHub are third-party providers, scripted like the model (`wor
 - Go to file through the command palette's path mode ([command palette](../work/command-palette.md)).
 - Serving git: the clone URL is GitHub's until Smithers serves git itself.
 - Another commit's details (message, author, age) beside a branch, tag or SHA other than the default branch's head.
+
+## Repository page boundaries
+
+Issues, pull requests, Stack, Secrets and Runs retain the repository header and home navigation on direct visits. For repositories outside `GITHUB_REPOSITORY`, issue and pull-request lists link to GitHub, and new issues open on GitHub. Deployment-only controls fail closed until About identifies the configured repository. See decision [0102](../decisions/0102-repository-page-boundaries.md).

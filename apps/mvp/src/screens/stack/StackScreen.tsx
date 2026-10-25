@@ -1,3 +1,5 @@
+import { RepoHeader } from "../../features/repo/components/RepoHeader"
+import { HomeTabs } from "../../features/home/components/HomeTabs"
 import { Badge, Breadcrumbs, Button, EmptyState, IssuesView } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router"
@@ -10,7 +12,6 @@ import {
   EDIT,
   NEW_TODO,
   NO_TODOS,
-  NOT_FOUND,
   STACK,
   stackFilterOf,
   stackPath,
@@ -51,15 +52,15 @@ export function StackScreen() {
   const { data: confirmed } = useLiveQuery(auth.queries.confirmed)
   const navigate = useNavigate()
   const status = accessFor(repoId, access)
-  if (status === "sign_in") return <main className="stack-screen" aria-label="Stack"><SignInButton /></main>
+  if (status === "sign_in") return <main className="stack-screen" aria-label="Stack"><RepoHeader /><HomeTabs /><EmptyState title="Members can make TODOs." /><SignInButton /></main>
   if (status === "forbidden") {
-    return <main className="stack-screen" aria-label="Stack"><EmptyState title={NOT_FOUND} /></main>
+    return <main className="stack-screen" aria-label="Stack"><RepoHeader /><HomeTabs /><EmptyState title="Members can make TODOs." /></main>
   }
   const rows = stackRows(repoId, todos, sending, requested)
-  const may = session !== undefined && mayChange(session, confirmed)
+  const may = status === "allowed" && session !== undefined && mayChange(session, confirmed)
   const notSent = notSentRows(repoId, requested)
   return (
-    <main className="stack-screen" aria-label="Stack">
+    <main className="stack-screen" aria-label="Stack"><RepoHeader /><HomeTabs />
       <Breadcrumbs
         items={[{ key: "repo", label: `${owner}/${repo}`, href: `/${owner}/${repo}` }, { key: "stack", label: STACK }]}
         onNavigate={(item) => void navigate({ href: item.href! })}

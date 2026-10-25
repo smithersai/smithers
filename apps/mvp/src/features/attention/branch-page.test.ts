@@ -1,3 +1,4 @@
+import { Home } from "../home/home"
 import { Files } from "../files/files"
 // Render the real branch screen over the app's real Effect services and live collections, through the same providers
 // as the branch page's other render tests (src/screens/branch/offline-render.tsx). No React hooks or views are
@@ -53,8 +54,8 @@ test("a branch page renders its shared inline toast stack below the header", asy
     expect(router.state.matches.map((match) => match.routeId)).toContain(route.id)
     const personalModel = await runtime.runPromise(Effect.service(PersonalModel))
     const views = await runtime.runPromise(Effect.service(Views))
-    const html = branchRenderer({ files: await runtime.runPromise(Effect.service(Files)), chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend, personalModel, todos, views })(router)
-    const services = { files: await runtime.runPromise(Effect.service(Files)), chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend, personalModel, todos, views }
+    const html = branchRenderer({ home: await runtime.runPromise(Effect.service(Home)), files: await runtime.runPromise(Effect.service(Files)), chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend, personalModel, todos, views })(router)
+    const services = { home: await runtime.runPromise(Effect.service(Home)), files: await runtime.runPromise(Effect.service(Files)), chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend, personalModel, todos, views }
     await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.all([
       sql`INSERT INTO notifications (recipient, subject, kind, state, mine, title, href, occurred_at, updated_at)
         SELECT 'person-member', 'main:overflow:' || n, 'main', 'update', false, 'Old update', '/acme/widgets', now() - interval '1 day', now() - interval '1 day'

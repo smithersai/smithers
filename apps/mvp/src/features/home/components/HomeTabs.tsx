@@ -9,11 +9,10 @@ import { useHome } from "./HomeContext"
 /** The router marks a tab current only at its own URL. */
 const EXACT = { exact: true } as const
 
-// The repository's Home and Code tabs, when a home shows: Home is `/$owner/$repo`, Code the tree at the default branch,
-// and Docs its docs when the repository names them (docs/features/docs.md). Nothing shows for a repository without a
-// home, whose page is its tree. `active` alone marks the page's tab: the router marks a link current only at its exact
-// URL, where `active` names it too, so Home's `/$owner/$repo` isn't current on every page under it.
-export function HomeTabs({ active }: { readonly active: "home" | "code" | "docs" }) {
+// Home and Code stay available once the default branch is known, including repositories without a declared home.
+// Docs shows when the repository names its index (docs/features/docs.md). `active` alone marks the page's tab: the
+// router marks a link current only at its exact URL, so Home's `/$owner/$repo` isn't current on every page under it.
+export function HomeTabs({ active }: { readonly active?: "home" | "code" | "docs" }) {
   const { queries } = useHome()
   const { data } = useLiveQuery(queries.home)
   const tabs = data === undefined ? undefined : tabsOf(homePageOf(data.current, data.home, data.curated), data.current)

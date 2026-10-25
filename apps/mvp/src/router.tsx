@@ -19,7 +19,7 @@ import type { SecretsLayer } from "./features/secrets/secrets"
 import type { TerminalView } from "./features/terminal/terminal"
 import type { ViewsView } from "./features/views/views"
 import { AppScreen } from "./screens/app/AppScreen"
-import { BlobScreen, BranchScreen } from "./screens/branch/BranchScreen"
+import { BlobScreen, TreeScreen } from "./screens/branch/BranchScreen"
 import { BranchPendingScreen } from "./screens/branch/BranchPendingScreen"
 import { CodeScreen } from "./screens/flows/CodeScreen"
 import { DraftScreen } from "./screens/flows/DraftScreen"
@@ -116,6 +116,22 @@ const enter = async (load: Load, warm: () => unknown, open: () => unknown): Prom
   if (load.preload || load.abortController.signal.aborted) return
   await open()
 }
+
+/** Repository feature routes share the same frame, including on a direct visit. */
+const enterRepository = (
+  context: RouterContext,
+  params: { readonly owner: string; readonly repo: string },
+  load: Load,
+  warm: () => unknown,
+  open: () => unknown,
+) => enter(load,
+  () => Promise.all([context.repo.actions.warmRoute("tree", params, {}), context.home.actions.warm(params.owner, params.repo), warm()]),
+  () => {
+    context.repo.actions.openRoute("tree", params, {})
+    context.home.actions.open(params.owner, params.repo)
+    return open()
+  },
+)
 
 /** A page whose data is on the device already: nothing to warm. */
 const local = () => undefined
@@ -267,13 +283,14 @@ const repoRoute = createRoute({
 const treeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/$owner/$repo/tree/$ref/$",
-  component: BranchScreen,
+  component: TreeScreen,
   pendingComponent: BranchPendingScreen,
   validateSearch: branchSearch,
   beforeLoad: ({ context, params, search, ...load }) =>
-    enter(load, () => context.repo.actions.warmRoute("tree", params, { L: search.L }), () =>
+    enter(load, () => Promise.all([context.repo.actions.warmRoute("tree", params, { L: search.L }), context.home.actions.warm(params.owner, params.repo)]), () =>
       Promise.all([
         context.repo.actions.openRoute("tree", params, { L: search.L }),
+        context.home.actions.open(params.owner, params.repo),
         context.todos.actions.warm(params.owner, params.repo),
         openBranchPage(context.branch, context.terminal, load.abortController.signal, params, search),
       ])),
@@ -390,7 +407,7 @@ const issuesRoute = createRoute({
   component: IssuesScreen,
   validateSearch: commitmentSearch,
   beforeLoad: ({ context, params, ...load }) =>
-    enter(
+    enterRepository(context, params,
       load,
       () => Promise.all([context.issues.actions.warm(), context.todos.actions.warm(params.owner, params.repo)]),
       () =>
@@ -407,7 +424,7 @@ const newIssueRoute = createRoute({
   path: "/$owner/$repo/issues/new",
   component: NewIssueScreen,
   beforeLoad: ({ context, params, ...load }) =>
-    enter(load, () => context.issues.actions.warm(), () => context.issues.actions.open(params.owner, params.repo)),
+    enterRepository(context, params, load, () => context.issues.actions.warm(), () => context.issues.actions.open(params.owner, params.repo)),
 })
 
 /** `/$owner/$repo/issues/$number`: one issue, and the TODOs made from it; any other `$number` matches no route. */
@@ -439,7 +456,7 @@ const actionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/$owner/$repo/actions",
   component: ActionsScreen,
-  beforeLoad: ({ context, params, ...load }) => enter(load, () => context.runs.actions.openRepoRuns(params.owner, params.repo), local),
+  beforeLoad: ({ context, params, ...load }) => enterRepository(context, params, load, () => context.runs.actions.openRepoRuns(params.owner, params.repo), local),
 })
 
 /** `/$owner/$repo/actions/runs/$runId`: one of them, its jobs and their logs, read and followed on Cloudflare. */
@@ -459,7 +476,7 @@ const pullsRoute = createRoute({
   path: "/$owner/$repo/pulls",
   component: PullsScreen,
   beforeLoad: ({ context, params, ...load }) =>
-    enter(load, () => context.pulls.actions.warm(), () => context.pulls.actions.open(params.owner, params.repo)),
+    enterRepository(context, params, load, () => context.pulls.actions.warm(), () => context.pulls.actions.open(params.owner, params.repo)),
 })
 
 /** A pull request's number in its path, as an issue's is; any other matches no route. */
@@ -522,7 +539,7 @@ const repoSettingsRoute = createRoute({
   path: "/$owner/$repo/settings",
   component: RepoSettingsScreen,
   beforeLoad: ({ context, params, ...load }) =>
-    enter(load, local, () => context.domains.actions.open(params.owner, params.repo)),
+    enterRepository(context, params, load, local, () => context.domains.actions.open(params.owner, params.repo)),
 })
 
 /**
@@ -536,7 +553,7 @@ const stackRoute = createRoute({
   validateSearch: (search: Record<string, unknown>): { readonly state?: StackFilter } =>
     stackFilterOf(search.state) === "closed" ? { state: "closed" } : {},
   beforeLoad: ({ context, params, ...load }) =>
-    enter(
+    enterRepository(context, params,
       load,
       () => context.todos.actions.warm(params.owner, params.repo),
       () => context.todos.actions.open(params.owner, params.repo),
@@ -572,7 +589,7 @@ const secretsRoute = createRoute({
   path: "/$owner/$repo/settings/secrets",
   component: SecretsScreen,
   beforeLoad: ({ context, params, ...load }) =>
-    enter(
+    enterRepository(context, params,
       load,
       () => context.secrets.actions.warm(params.owner, params.repo),
       () => context.secrets.actions.open(params.owner, params.repo),

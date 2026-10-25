@@ -228,8 +228,10 @@ describe("tabsOf", () => {
       _splat: "b/c",
     })
     expect(tabsOf(homePageOf(opened, undefined, curated()), opened)).toMatchObject({ ref: "develop" })
-    expect(tabsOf(homePageOf(ready, row({ state: "absent", sections: [] }), undefined), ready)).toBeUndefined()
-    expect(tabsOf({ kind: "loading" }, ready)).toBeUndefined()
+    expect(tabsOf(homePageOf(ready, row({ state: "absent", sections: [] }), undefined), ready)).toMatchObject({ ref: "main", docs: false })
+    expect(tabsOf({ kind: "loading" }, ready)).toMatchObject({ ref: "main", docs: false })
+    expect(tabsOf({ kind: "tree", notice: null }, { ...ready, docs: "docs/index.md" })).toMatchObject({ docs: true })
+    expect(tabsOf({ kind: "loading" }, opened)).toBeUndefined()
   })
 
   test("Docs only when the repository names docs: its own home's, else the curated home's", () => {

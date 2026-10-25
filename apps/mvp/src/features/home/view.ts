@@ -106,13 +106,14 @@ export const homePageOf = (current: CurrentRow, home: HomeRow | undefined, curat
 }
 
 /**
- * The Home and Code tabs' route params, when a home shows: none for a repository without one. Code is the tree route at
+ * The Home and Code tabs' route params once the default branch is known. Code is the tree route at
  * the default branch, whose name may hold a `/`: its first segment is `$ref`, the rest the splat.
  */
 export const tabsOf = (page: HomePage, current: CurrentRow) => {
-  if (page.kind !== "home") return undefined
-  const [ref, ...rest] = page.defaultBranch.split("/")
-  return { owner: current.owner, repo: current.name, ref: ref!, _splat: rest.join("/"), docs: page.docs !== null }
+  const branch = page.kind === "home" ? page.defaultBranch : current.defaultBranch
+  if (branch === null) return undefined
+  const [ref, ...rest] = branch.split("/")
+  return { owner: current.owner, repo: current.name, ref: ref!, _splat: rest.join("/"), docs: page.kind === "home" ? page.docs !== null : (current.docs ?? current.curatedDocs) !== null }
 }
 
 /** Whether the composer has a slash command for an app block's flow: the button shows only then. */

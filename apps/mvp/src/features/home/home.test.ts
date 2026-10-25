@@ -155,17 +155,18 @@ describe("a repository's home", () => {
     await seeded(h, { [HOME_FILE]: declared }, "release/1.0")
     const tab = await open(h)
     tab.home.actions.open("maya", "tinyhttp")
-    await waitFor(() => expect(page(tab).tabs).toEqual({ owner: "maya", repo: "tinyhttp", ref: "release", _splat: "1.0", docs: false }))
+    await waitFor(() => expect(page(tab).page.kind).toBe("home"))
+    expect(page(tab).tabs).toEqual({ owner: "maya", repo: "tinyhttp", ref: "release", _splat: "1.0", docs: false })
     expect(page(tab).page).toMatchObject({ askHref: "/maya/tinyhttp/tree/release/1.0" })
   })
 
-  test("a repository without a home is its tree, with no tabs and no line", async () => {
+  test("a repository without a home is its tree, with navigation and no line", async () => {
     const h = await repoHarness(server, { roles: "maya/tinyhttp" })
     await seeded(h, {})
     const tab = await open(h)
     tab.home.actions.open("maya", "tinyhttp")
     await waitFor(() => expect(page(tab).home?.state).toBe("absent"))
-    expect(page(tab)).toMatchObject({ page: { kind: "tree", notice: null }, tabs: undefined })
+    expect(page(tab)).toMatchObject({ page: { kind: "tree", notice: null }, tabs: { owner: "maya", repo: "tinyhttp", ref: "main", _splat: "", docs: false } })
     expect(tab.lines("home.resolve")[0]!.annotations).toMatchObject({ outcome: "absent", status: 404, blocks: 0 })
   })
 
@@ -175,7 +176,7 @@ describe("a repository's home", () => {
     const tab = await open(h)
     tab.home.actions.open("maya", "tinyhttp")
     await waitFor(() => expect(page(tab).home?.state).toBe("declared"))
-    expect(page(tab)).toMatchObject({ page: { kind: "tree", notice: null }, tabs: undefined })
+    expect(page(tab)).toMatchObject({ page: { kind: "tree", notice: null }, tabs: { owner: "maya", repo: "tinyhttp", ref: "main", _splat: "", docs: false } })
   })
 
   // Five repositories, each with its own harness and tab.
@@ -195,7 +196,7 @@ describe("a repository's home", () => {
       tab.home.actions.open("maya", "tinyhttp")
       await waitFor(() => expect(page(tab).home?.state).toBe("invalid"))
       expect([reason, page(tab).home?.reason, page(tab).page]).toEqual([reason, reason, { kind: "tree", notice: HOME_INVALID }])
-      expect(page(tab).tabs).toBeUndefined()
+      expect(page(tab).tabs).toEqual({ owner: "maya", repo: "tinyhttp", ref: "main", _splat: "", docs: false })
       expect(tab.lines("home.resolve")[0]!.annotations).toMatchObject({ outcome: "invalid", reason })
     }
   })
