@@ -8,15 +8,15 @@ import { accessOf, awaiting, formOf, hostsText, landed, onItsWay, showsLink } fr
 // The Secrets page's pure rules (docs/features/secrets.md#the-secrets-page): who sees which controls, what a person typed
 // as hosts, and the words for each failure.
 
-test("an Admin of the repository writes, a Maintainer or Member reads, anyone else sees nothing; nothing shows until sign-in and ChatApi know", () => {
+test("an Admin of the repository writes, a Maintainer or Member reads, anyone else sees nothing; nothing shows until sign-in knows", () => {
   const signedIn = { status: "signed_in" }
   const on = (role: "admin" | "maintainer" | "member" | "guest" | null, own = true) => ({ role, own })
   expect(accessOf(undefined, on("admin"))).toBe("loading")
   expect(accessOf({ status: "loading" }, on("admin"))).toBe("loading")
   expect(accessOf({ status: "signed_out" }, on("admin"))).toBe("none")
   expect(accessOf({ status: "unreachable" }, on("admin"))).toBe("none")
-  // Signed in, until ChatApi answers who the person is on the repository (decision 0079).
-  expect(accessOf(signedIn, undefined)).toBe("loading")
+  // Signed in, until ChatApi answers who the person is on the repository (decision 0079): unknown fails closed.
+  expect(accessOf(signedIn, undefined)).toBe("none")
   expect(accessOf(signedIn, on("admin"))).toBe("write")
   expect(accessOf(signedIn, on("maintainer"))).toBe("read")
   expect(accessOf(signedIn, on("member"))).toBe("read")

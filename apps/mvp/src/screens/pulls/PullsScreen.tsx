@@ -1,5 +1,6 @@
-import { useRepo } from "../../features/repo/components/RepoContext"
-import { githubList, isDeploymentRepository } from "../../features/repo/scope"
+import { ownRepository } from "../../features/auth/viewer"
+import { useRepoAnswer } from "../../features/repo/components/RepoContext"
+import { githubList } from "../../features/repo/scope"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
 import { HomeTabs } from "../../features/home/components/HomeTabs"
 import { EmptyState, IssuesView } from "@smthrs/ui"
@@ -17,7 +18,7 @@ import "./pulls-screen.css"
 // route's loader opens the repository (`open`); this screen only renders what the device has.
 export function PullsScreen() {
   const { owner, repo } = useParams({ from: "/$owner/$repo/pulls" })
-  const { data: repository } = useLiveQuery(useRepo().queries.view)
+  const answer = useRepoAnswer(owner, repo)
   const { queries } = usePulls()
   const issues = useIssues()
   const { data: rows, isReady } = useLiveQuery(queries.list)
@@ -26,7 +27,7 @@ export function PullsScreen() {
   const { data: view } = useLiveQuery(queries.view)
   const navigate = useNavigate()
   const page = listPageOf(rows ?? [], { owner, name: repo }, synced, pullAccessOf(access, view), isReady)
-  if (!isDeploymentRepository(owner, repo, repository?.about)) {
+  if (!ownRepository(answer)) {
     const list = githubList(owner, repo, "pulls")
     return <main className="issues-screen" aria-label="Pull requests"><RepoHeader /><HomeTabs /><p><a href={list.href}>{list.text}</a></p></main>
   }

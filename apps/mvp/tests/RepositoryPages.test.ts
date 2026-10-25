@@ -31,7 +31,7 @@ import { Spend } from "../src/features/spend/spend"
 import { Views } from "../src/features/views/views"
 
 // Real feature collections and views. These are stored row fixtures, with no module mocks or intercepted requests.
-test("direct feature pages keep navigation, fence the deployment role, and name GitHub instead of an unobservable write", async () => {
+test("direct feature pages keep navigation, fence the deployment's own repository, and name GitHub instead of an unobservable write", async () => {
   const app = openTestApp({ sessionLifecycle: false })
   const scope = await Effect.runPromise(Scope.make())
   try {
@@ -94,20 +94,13 @@ test("direct feature pages keep navigation, fence the deployment role, and name 
       expect(html).not.toContain('aria-label="Commitment"')
       })
     }
-    // The same deployment role is valid only when About explicitly scopes it to this repository.
-    await app.runPromise(put(repo.abouts, "github/smithersai/vibelang", {
-      key: "github/smithersai/vibelang", state: "ready", message: null,
-      about: { name: "smithersai/vibelang", deploymentRepository: "smithersai/vibelang", description: null, homepage: null, topics: [], stars: 0, forks: 0, watchers: 0, license: null, defaultBranch: "main", archived: false, languages: [], release: null, releases: null, contributors: [], contributorCount: null, commits: null, branches: null, tags: null, head: null, root: null, readme: null, installUrl: null },
-    }))
+    // The deployment's own repository only once ChatApi answers it is, with the person's role there (decision 0079).
     await app.runPromise(put(repo.roles, "github/smithersai/vibelang", { id: "github/smithersai/vibelang", role: "admin", own: true }))
     for (const [path, component, expected] of [
       ["settings/secrets", SecretsScreen, "No secrets"],
       ["issues/new", NewIssueScreen, "You can’t open issues in this repository."],
     ] as const) {
-      if (path === "issues/new") {
-        await app.runPromise(auth.session.update("session", row => { row.role = null }))
-        await app.runPromise(put(repo.roles, "github/smithersai/vibelang", { id: "github/smithersai/vibelang", role: null, own: true }))
-      }
+      if (path === "issues/new") await app.runPromise(put(repo.roles, "github/smithersai/vibelang", { id: "github/smithersai/vibelang", role: null, own: true }))
       const root = createRootRoute()
       const route = createRoute({ getParentRoute: () => root, path: path === "" ? "/$owner/$repo" : `/$owner/$repo/${path}`, component })
       const router = createRouter({ routeTree: root.addChildren([route]), history: createMemoryHistory({ initialEntries: [path === "" ? "/smithersai/vibelang" : `/smithersai/vibelang/${path}`] }) })

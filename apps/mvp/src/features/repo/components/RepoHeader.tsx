@@ -4,6 +4,7 @@ import { Link, useLocation } from "@tanstack/react-router"
 import { NotificationsBell } from "../../attention/components/NotificationsBell"
 import { useAuth } from "../../auth/components/AuthContext"
 import { mayManageDomains, signInHref } from "../../auth/contract"
+import { ownRepository } from "../../auth/viewer"
 import { ConnectionPill } from "../../chat/components/ConnectionPill"
 import { SETTINGS } from "../../domains/copy"
 import { ISSUES } from "../../issues/contract"
@@ -11,7 +12,6 @@ import { SecretsLink } from "../../secrets/components/SecretsLink"
 import { STACK } from "../../todos/contract"
 import { BackToChat } from "../../views/components/BackToChat"
 import { CLONE, TRY_AGAIN } from "../contract"
-import { isDeploymentRepository } from "../scope"
 import { minimizedOf } from "../embedView"
 import { aboutOf, headerOf } from "../view"
 import { useRepo, useRepoAnswer } from "./RepoContext"
@@ -34,7 +34,6 @@ export function RepoHeader() {
   const { view, repository, clone, about } = data
   const header = headerOf(repository, clone, view.signedIn, view.answered, about)
   const defaultBranch = repository?.defaultBranch ?? aboutOf(about)?.defaultBranch ?? null
-  const managed = isDeploymentRepository(view.owner, view.name, about)
   return (
     <header className="repo-header" aria-label="Repository">
       <BackToChat target={{ template: "repo", props: minimizedOf(view, defaultBranch) }} />
@@ -53,11 +52,11 @@ export function RepoHeader() {
       <Button asChild variant="ghost">
         <Link to="/$owner/$repo/stack" params={{ owner: view.owner, repo: view.name }}>{STACK}</Link>
       </Button>
-      {managed ? <SecretsLink owner={view.owner} repo={view.name} /> : null}
+      <SecretsLink owner={view.owner} repo={view.name} />
       {(header.kind === "clone" || header.kind === "sign_in") && header.status !== undefined
         ? <span role="status">{header.status}</span>
         : null}
-      {managed && session?.status === "signed_in" && answer?.own === true && mayManageDomains(answer.role)
+      {session?.status === "signed_in" && ownRepository(answer) && mayManageDomains(answer!.role)
         ? (
           <Button asChild variant="ghost">
             <Link to="/$owner/$repo/settings" params={{ owner: view.owner, repo: view.name }}>{SETTINGS}</Link>

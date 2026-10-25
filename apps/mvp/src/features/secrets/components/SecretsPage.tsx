@@ -1,5 +1,3 @@
-import { useRepo } from "../../repo/components/RepoContext"
-import { isDeploymentRepository } from "../../repo/scope"
 import { Button, EmptyState, Field, Input, Label, RelativeTime, Textarea } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import type { FormEvent } from "react"
@@ -50,9 +48,8 @@ export function SecretsPage({ owner, repo }: { readonly owner: string; readonly 
   const { data: rows } = useLiveQuery(queries.list(id))
   const { data: view } = useLiveQuery(queries.view)
   const { data: forms } = useLiveQuery(queries.forms)
-  const { data: repository } = useLiveQuery(useRepo().queries.view)
   const answer = useRepoAnswer(owner, repo)
-  const access = isDeploymentRepository(owner, repo, repository?.about) ? accessOf(session, answer) : "none"
+  const access = accessOf(session, answer)
   if (access === "loading") return null
   if (access === "none") return <EmptyState title={CANT_SEE} />
   const admin = access === "write"

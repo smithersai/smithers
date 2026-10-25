@@ -1,4 +1,4 @@
-import type { RepoAnswer } from "../auth/viewer"
+import { ownRepository, type RepoAnswer } from "../auth/viewer"
 import type { SecretForm, SecretRow } from "./schema"
 
 // What the Secrets page shows, as pure rules its view reads (docs/features/secrets.md#the-secrets-page). The server is
@@ -7,8 +7,8 @@ import type { SecretForm, SecretRow } from "./schema"
 /**
  * What a person may do on the page (decision 0007 `repo:secret-write`), by their role on the repository as ChatApi
  * answered for it (decision 0079): `write` for an Admin, `read` for a Maintainer or Member, `none` for a Guest, anyone
- * signed out, or any repository but the deployment's own, the only one secrets serve; `loading` until sign-in and
- * ChatApi know.
+ * signed out, or any repository ChatApi hasn't answered is the deployment's own, the only one secrets serve (unknown
+ * fails closed); `loading` until sign-in knows.
  */
 export type SecretsAccess = "loading" | "none" | "read" | "write"
 
@@ -18,10 +18,9 @@ export const accessOf = (
 ): SecretsAccess => {
   if (session === undefined || session.status === "loading") return "loading"
   if (session.status !== "signed_in") return "none"
-  if (answer === undefined) return "loading"
-  if (!answer.own) return "none"
-  if (answer.role === "admin") return "write"
-  return answer.role === "maintainer" || answer.role === "member" ? "read" : "none"
+  if (!ownRepository(answer)) return "none"
+  if (answer!.role === "admin") return "write"
+  return answer!.role === "maintainer" || answer!.role === "member" ? "read" : "none"
 }
 
 /** Whether the header shows the Secrets link: to a Member or above. */

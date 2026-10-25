@@ -45,3 +45,10 @@ export const hereOf = (
     own: answer?.own ?? false,
   }
 }
+
+/**
+ * Whether ChatApi answered that the routed repository is the deployment's own (`GITHUB_REPOSITORY`), where the
+ * features still fenced to it act (secrets, custom domains, asking from its home, its synced lists). Unknown fails
+ * closed: no answer yet is not the deployment's own.
+ */
+export const ownRepository = (answer: RepoAnswer | undefined): boolean => answer?.own === true

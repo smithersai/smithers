@@ -1,5 +1,5 @@
-import { useRepo } from "../../repo/components/RepoContext"
-import { isDeploymentRepository } from "../../repo/scope"
+import { ownRepository } from "../../auth/viewer"
+import { useRepoAnswer } from "../../repo/components/RepoContext"
 import { mayAsk } from "../../auth/contract"
 import { RepositoryHome, type RepositoryHomeLive, SegmentedControl, Skeleton } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
@@ -36,8 +36,9 @@ export function HomePage({ tree }: { readonly tree: ReactNode }) {
   // The stack `open` opened for a `stack` block: a new collection once it opens, which the hook follows.
   const { data: todos } = useLiveQuery(queries.stack(data?.current.stack ?? ""))
   const { data: access } = useLiveQuery(queries.stackAccess)
-  const { data: repository } = useLiveQuery(useRepo().queries.view)
   const { data: session } = useLiveQuery(auth.queries.session)
+  // Who the person is on the repository (decision 0079): asking from a home is the deployment's own repository's.
+  const answer = useRepoAnswer(data?.current.owner ?? "", data?.current.name ?? "")
   // The live query's first read: the same skeleton as a home still being read, so the body is never blank.
   if (data === undefined) return <Skeleton className="repo-page-loading" />
   const { current } = data
@@ -94,7 +95,7 @@ export function HomePage({ tree }: { readonly tree: ReactNode }) {
       data-audience={page.audience}
       sections={page.sections}
       files={filesOf(files ?? [])}
-      askHref={session?.status === "signed_in" && mayAsk(session.role) && isDeploymentRepository(current.owner, current.name, repository?.about) ? page.askHref : undefined}
+      askHref={session?.status === "signed_in" && mayAsk(session.role) && ownRepository(answer) ? page.askHref : undefined}
       onAsk={ask}
       offered={offered}
       live={live}

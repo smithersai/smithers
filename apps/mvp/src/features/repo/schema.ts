@@ -121,7 +121,6 @@ export const About = Schema.Struct({
   readme: Schema.NullOr(Schema.Struct({ path: Schema.String, text: Schema.String })),
   home: Schema.optionalKey(Schema.NullOr(Schema.String)),
   installUrl: Schema.NullOr(Schema.String),
-  deploymentRepository: Schema.optionalKey(Schema.String),
 })
 export type About = typeof About.Type
 

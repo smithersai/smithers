@@ -1,5 +1,5 @@
-import { useRepo } from "../../features/repo/components/RepoContext"
-import { githubList, isDeploymentRepository } from "../../features/repo/scope"
+import { ownRepository } from "../../features/auth/viewer"
+import { githubList } from "../../features/repo/scope"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
 import { HomeTabs } from "../../features/home/components/HomeTabs"
 import { Badge, Button, EmptyState, IssuesView } from "@smthrs/ui"
@@ -32,7 +32,6 @@ import { useRepoAnswer } from "../../features/repo/components/RepoContext"
 // opens the repository (`open`); this screen only renders what the device has.
 export function IssuesScreen() {
   const { owner, repo } = useParams({ from: "/$owner/$repo/issues" })
-  const { data: repository } = useLiveQuery(useRepo().queries.view)
   const { queries, actions } = useIssues()
   const auth = useAuth()
   const { data: rows } = useLiveQuery(queries.list)
@@ -53,7 +52,7 @@ export function IssuesScreen() {
   const triageSwitch = triageSwitchOf(triage, triagePending ?? [])
   // The full-screen size of the repository's issues view in the chat (ruling FE-9): Back to chat minimizes it.
   const back = <BackToChat target={{ template: "issues", props: { repo: `${owner}/${repo}` } }} />
-  if (!isDeploymentRepository(owner, repo, repository?.about)) {
+  if (!ownRepository(answer)) {
     const list = githubList(owner, repo, "issues")
     return <main className="issues-screen" aria-label="Issues">{back}<RepoHeader /><HomeTabs /><p><a href={list.href}>{list.text}</a></p></main>
   }

@@ -1,5 +1,5 @@
-import { useRepo } from "../../features/repo/components/RepoContext"
-import { githubList, isDeploymentRepository } from "../../features/repo/scope"
+import { ownRepository } from "../../features/auth/viewer"
+import { githubList } from "../../features/repo/scope"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
 import { HomeTabs } from "../../features/home/components/HomeTabs"
 import { EmptyState, IssueForm } from "@smthrs/ui"
@@ -18,7 +18,6 @@ import { useRepoAnswer } from "../../features/repo/components/RepoContext"
 // not open one gets sign-in instead.
 export function NewIssueScreen() {
   const { owner, repo } = useParams({ from: "/$owner/$repo/issues/new" })
-  const { data: repository } = useLiveQuery(useRepo().queries.view)
   const { queries, actions } = useIssues()
   const auth = useAuth()
   const { data: view } = useLiveQuery(queries.view)
@@ -26,7 +25,7 @@ export function NewIssueScreen() {
   const { data: confirmed } = useLiveQuery(auth.queries.confirmed)
   const answer = useRepoAnswer(owner, repo)
   const navigate = useNavigate()
-  if (!isDeploymentRepository(owner, repo, repository?.about)) {
+  if (!ownRepository(answer)) {
     const list = githubList(owner, repo, "issues")
     return <main className="issues-screen" aria-label="New issue"><RepoHeader /><HomeTabs /><p><a href={list.href + "/new"}>{"Open an issue on GitHub"}</a></p></main>
   }

@@ -815,7 +815,6 @@ describe("GET /api/repos/<owner>/<name>/about", () => {
     expect(response.status).toBe(200)
     expect(response.headers.get("cache-control")).toBe("public, max-age=3600")
     expect(await response.json()).toEqual({
-      deploymentRepository: "smithersai/smithers",
       name: "octocat/Spoon-Knife",
       description: "This repo is for demonstration purposes only.",
       homepage: null,
