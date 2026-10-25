@@ -3544,6 +3544,16 @@
             "default": "./dist/cjs/StepBoundary.js"
           }
         },
+        "./StepLogs": {
+          "import": {
+            "types": "./dist/esm/StepLogs.d.ts",
+            "default": "./dist/esm/StepLogs.js"
+          },
+          "require": {
+            "types": "./dist/cjs/StepLogs.d.ts",
+            "default": "./dist/cjs/StepLogs.js"
+          }
+        },
         "./DeferredClockFold": {
           "import": {
             "types": "./dist/esm/DeferredClockFold.d.ts",
@@ -3633,7 +3643,7 @@
         "DisasterRecovery.d.ts": "bed744cf4cf459bfeb090f05d0fceb9fd90fbbe38798df0e816297c5a4c145da",
         "DurableEngineState.d.ts": "630404eb333adfe872e6c202831e0bdf907d5b691cc5ef19258f401e5d766bf8",
         "EngineStore.d.ts": "b7b0d7b3c7189e01c1030e3de1590e57ee514166ee9fad07462a5d4b9f56ab03",
-        "EngineStoreMetrics.d.ts": "4de37b09b96a61d3ddc67d17fdb2f24f9ab9ed690b0173fc969d626a16e43921",
+        "EngineStoreMetrics.d.ts": "22ccac76da32c9638da69fcafd7d968d00ddaa0a326dd9fcfe92ada929a5e8bb",
         "Errors.d.ts": "9013130829b7f8df2e986e3b259c282797f3ce0b44c3bcf8f4de311815965d7b",
         "EventTypes.d.ts": "d6cc09404bc4e1afe2f014ee07eab7e83818bf7e5e7bb96bba5dd369604b8a23",
         "ExecutionFacts.d.ts": "5ad95f4903253ef399515d08021322b952b46c5436f914e7573fe2161aa488ab",
@@ -3655,10 +3665,11 @@
         "SelectionStore.d.ts": "8a7dc152dc5283674c5ab0e563e56d2962f2bab95fcf72b9200c90f0233f033e",
         "StepBoundary.d.ts": "29d2e39c9e60b970e638316599f8d083f0b99a283c215a92dc300d2d24eb8c16",
         "StepCacheFold.d.ts": "e749d2916d763c322d3b24dd07303777cb227cf5f43840505dc74833bd2d889b",
+        "StepLogs.d.ts": "ee30cfd0f1246e9b29a1b1d7e4fbe809abac5c15e855b4532bc9577925ade314",
         "StepSandbox.d.ts": "c171694ce3f2df66b43db6e2ddb35cdda03e98cc0cfd15e7262c26aa44a82be1",
         "WakeBus.d.ts": "a18377e5b5381088a8e556813942d474dfa13cf60bda2847e8399653b1ec42f6",
         "WorkspaceSandbox.d.ts": "99a40ca9e612798ca33ef8809f6aea20b83f88a9812ccc8cb3f176532b6970fe",
-        "index.d.ts": "9cd73adc24908e0abb1cc2337ba78c67124470a4ef11f65fc1bde5b1f50c2277",
+        "index.d.ts": "e217fd8c41c7637e3316b8ce5fc83187156790ba3231d9a12d5a20f9cb8c2718",
         "internal/ActionPersistence.d.ts": "a0a2ab7e53975022b4328a86fd160c725bfccac65b418076a6e835e60234c4c9",
         "internal/ArtifactRoots.d.ts": "cced4227ed6508feb13f451a2e3a7cc4361b8f3eec80030b81a9f64d43bc990e",
         "internal/AttemptAdmission.d.ts": "235a4266bb1fb140ddf125417e69fca7da5d2ca989c0d81c15d9432370a5211b",
@@ -3701,6 +3712,7 @@
         "internal/SandboxedExecution.d.ts": "0f54e34ab93281045681140baf55b6fb2cc98fc1778b740249ea968570215bf7",
         "internal/StateTransaction.d.ts": "f15667bbe0bc9bd27a2cdedb847c519d44b984d5ca9d13ea9b6f9d6e6d21d983",
         "internal/StepFacts.d.ts": "78125e363791d45136da6875383ceb07ef34aff601c77d986cf573c3666d18bb",
+        "internal/StepLogCapture.d.ts": "6abe9e5d5190ea51e9f88744c9f5ed71aea9a10a1b21299b6dde03a58f2075e8",
         "internal/TypedEvents.d.ts": "e9bbab2dd7ba442b9ec87aecca1958d601f6295514375e715ada4775afe4ba2a",
         "migrations/0001_initial.d.ts": "61f279d21934557368ddad82e103c2bb0da66291b875220fcf942c1d513a46be",
         "migrations/0002_selection_store.d.ts": "cd7f049010f470bd45751f3bec25d7845ebe03a7e5f3637932f891fa44c3e2e7",
@@ -5004,7 +5016,7 @@
         "QuickJSLifecycle.d.ts": "2fabf3d53b501332aa6cf6e1f111b0882eb5637342136152cdb419a1709682a8",
         "QuickJSSandbox.d.ts": "47b33589ef4a1185ba0ba00acd381888f8134ddf632f03f38246aecb3fdc56f7",
         "QuickJSVariant.d.ts": "dddf0cea8a7189e6b873868c9894172b7982c622bbcb9a7146eabb0843c7d341",
-        "RealmFlow.d.ts": "f3eb9babb89ebdba7f176203b75156aeafa2f7c1b110d7c5e373c679d48a365d",
+        "RealmFlow.d.ts": "eb916a998727d93d9b134966049b1b40f427f1895362f26d44600a2cec7dc618",
         "Relevance.d.ts": "7b3484fc96bf34d93876549a41786836bc8fd541b3be6300aabb12be57ac3df7",
         "Sandbox.d.ts": "00488df12438557aa8797f15b4632341279276e60b4e965d0c74c8feacc832a9",
         "Steering.d.ts": "73d2546486e858fd1f0b9f246e6c761e6bd1fef64120e411a8119a2dc8dac4da",
@@ -5019,7 +5031,7 @@
         "VacuousVerification.d.ts": "21caf72ca8546a20a013979aaff3eb19efb37cd7100475e754f769bfd8165b31",
         "VariablesPanel.d.ts": "2566cbfeeb5d8eb424a9a532efbc44841bbc66fbb7e67a6027b351b868d865ee",
         "index.d.ts": "917b82d657cf68fd6a0c5761007e8583135d4c8b27349ff3c84c418753c23593",
-        "internal/RealmFlowBundle.d.ts": "9ed1a8ad272313b4027504dda917245d9795a8b4dfb85fb8c254f24c0d773195",
+        "internal/RealmFlowBundle.d.ts": "adce6205036b2f3effc0bd57b68525a7388486d142ec7f530af5a1201c86a7d3",
         "internal/bytes.d.ts": "c8bc2e02dcff1d5782f3260313dba216a733085b2d705db52efc5dfa327ecc0a",
         "internal/cellPrompt.d.ts": "9ba6c34a1d3f834a38deb6a9e43c61856b52da208d888f8d0a5f4912fc6bec6b",
         "internal/compactable.d.ts": "5cd6a239000459f6a6feff83d86323f019681ee462ac38fecf45fc8f9ef35ca6",
@@ -5671,6 +5683,16 @@
             "default": "./dist/cjs/SqlJournal.js"
           }
         },
+        "./TelemetryLog": {
+          "import": {
+            "types": "./dist/esm/TelemetryLog.d.ts",
+            "default": "./dist/esm/TelemetryLog.js"
+          },
+          "require": {
+            "types": "./dist/cjs/TelemetryLog.d.ts",
+            "default": "./dist/cjs/TelemetryLog.js"
+          }
+        },
         "./index": {
           "import": {
             "types": "./dist/esm/index.d.ts",
@@ -5749,7 +5771,8 @@
         "SqlConsensus.d.ts": "2acfa55b8756568defe75efc0f91f883744db3b047fda30e38aebe84c719d8b4",
         "SqlJournal.d.ts": "087d8b8e957fab0856b7b563d7627b3ca27fc13a2429730bb2853a08df78dae4",
         "StepFact.d.ts": "1493f9997d3fc41d5fa61094b45ea3f943a2a531509293fd3b5bd6e6312014d7",
-        "index.d.ts": "3e006a6ca3f6a5d18da0c3af0a52db94cf2e4f2099d1b695cf105624f52a1c88",
+        "TelemetryLog.d.ts": "559baada81643ff4eec9b3c3c7c06d55fad34d32acb3429e8c8af6373af48185",
+        "index.d.ts": "8e529c1b6dea0f8947935287663b8d26a1d06cca64bec5f0ae4bd1b51f50071c",
         "internal/EventTally.d.ts": "bcbb8f2fc9be3ba14fea193279c7c7ed1be89598753dbe60e035e6328d48922c",
         "internal/JournalInternalFault.d.ts": "3719a961372609de711d842dd4599665ffd2d2b0362c833a92696cb826ed1712",
         "migrations/0001_initial.d.ts": "cadcdb829be7ead76741bd08b519f8b6425343ef3bb156eb49f5a3e7a85f4280",
@@ -7407,7 +7430,7 @@
       "declarations": {
         "BrowserOtel.d.ts": "f1fd5e8a375ac9d6c130dfaf280c71849ba35c6025a44f6d2f555a5d02781b4b",
         "Endpoint.d.ts": "90ac9e1fa1c4cb2c966f8db204d9759eef754f11843eb6bd51bae1e3ce824745",
-        "JournalLogger.d.ts": "abb82a887df4ca733b1f34cbb635f71788a3abf26ace1016be391717ff119b99",
+        "JournalLogger.d.ts": "06844fb7244df3bc90f7f8d36c6e5dc4feb9ad9eb5199eb912fc0df7d5d62942",
         "Logger.d.ts": "f03876b795ad1977f375def9d65ff44d3f2c0291faaa1ef7106c2ee8c096346e",
         "Metric.d.ts": "be427fdaea2a7d7162359fa376a8e6cd627570f7f3c186b279dfb19e46737e81",
         "NodeOtel.d.ts": "b14d9b1835966feae0ea26310768ceb766940e47d47be6097ac73d49bfb0777f",
