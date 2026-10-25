@@ -1,3 +1,4 @@
+import * as MirrorRefresh from "../MirrorRefresh.ts"
 import { COMMITMENTS } from "../../src/features/issues/lifecycle.ts"
 import { digestSync } from "@smthrs/crypto"
 import { ShapeProxy } from "@smthrs/effect-electric"
@@ -514,6 +515,11 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             })
           }
         }
+        const mirror = MirrorRefresh.pushRepository(event, delivered.payload)
+        if (Option.isSome(mirror)) {
+          yield* MirrorRefresh.request(mirror.value.owner, mirror.value.name, deliveryId)
+          fields.mirror = "requested"
+        }
         // A push or a pull request of any repository the App is installed on: its flows' triggers decide what runs
         // (docs/features/ci.md#triggers), on the delivery's own `triggers/Dispatch`.
         const dispatch = options.repoFlows === true ? Dispatch.requestOf(event, deliveryId, delivered.payload) : Option.none()
@@ -531,7 +537,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           fields.notified = yield* Notifications.recordRepoEvent(repoEvent.value).pipe(Effect.provide(database))
         }
         if (!first) return yield* answer(200, "duplicate")
-        return yield* answer(200, Option.isSome(named) || Option.isSome(repoEvent) || Option.isSome(dispatch) ? "applied" : "ignored")
+        return yield* answer(200, Option.isSome(named) || Option.isSome(repoEvent) || Option.isSome(dispatch) || Option.isSome(mirror) ? "applied" : "ignored")
       }).pipe(
         Effect.catchCause((cause) =>
           Effect.gen(function* () {

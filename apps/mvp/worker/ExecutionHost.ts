@@ -18,6 +18,7 @@ import * as Expire from "./flows/Expire.ts"
 import * as Pause from "./flows/Pause.ts"
 import * as RecheckRole from "./flows/RecheckRole.ts"
 import * as RepoClone from "./flows/RepoClone.ts"
+import * as RepoRefresh from "./flows/RepoRefresh.ts"
 import * as RevokeGitHubToken from "./flows/RevokeGitHubToken.ts"
 import * as SandboxCall from "./flows/SandboxCall.ts"
 import * as SandboxCommand from "./flows/SandboxCommand.ts"
@@ -109,8 +110,8 @@ export const remoteWithSignIn = <E, R>(
  * Code Storage organization (docs/features/repo.md#the-clone).
  */
 export const withRepoClone = <ROut, E, R, CE, CR>(flows: Flows<ROut, E, R>, services: RepoClone.Services<CE, CR>) => ({
-  flows: [...flows.flows, RepoClone.Clone],
-  registration: Layer.merge(flows.registration, RepoClone.registration(services)),
+  flows: [...flows.flows, RepoClone.Clone, RepoRefresh.Refresh],
+  registration: Layer.mergeAll(flows.registration, RepoClone.registration(services), RepoRefresh.registration(services)),
 })
 
 /**

@@ -27,6 +27,7 @@ import {
   COPY_PERMALINK,
   DOWNLOAD,
   NOT_FOUND,
+  NOT_SYNCED,
   RAW,
   TRY_AGAIN,
 } from "../contract"
@@ -133,6 +134,13 @@ export function RepoPage({ editFiles = false, liveMarkdown }: {
   const { view, repository } = current
   const about = aboutOf(aboutRow?.about)
   const root = atRoot(view)
+  if (((repository?.status === "ready" || view.refsKey !== null) && view.missing) || tree?.tree?.message === NOT_SYNCED || file?.file?.message === NOT_SYNCED) {
+    return <EmptyState title={NOT_SYNCED} action={
+      <Button variant="outline" onClick={() => {
+        actions.refresh({ owner: view.owner, name: view.name, kind: view.kind, ref: view.ref, path: view.splat, line: view.line, lineEnd: view.lineEnd })
+      }}>Refresh</Button>
+    } />
+  }
   if (page.kind === "missing") return <EmptyState title={NOT_FOUND} />
   if (page.kind === "failure") return <EmptyState title={page.text} />
   if (page.kind === "retry") return (

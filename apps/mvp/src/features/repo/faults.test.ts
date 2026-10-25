@@ -253,6 +253,8 @@ describe("opening a view", () => {
     expect(tab.view().view).toMatchObject({ missing: true, repoId: null, owner: "api" })
     expect(tab.count(opens, { kind: "tree" })).toBe(1)
     expect(tab.lines("repo.open")[0]!.annotations).toMatchObject({ kind: "tree", feature: "repo" })
+    tab.repo.actions.refresh({ owner: "api", name: "x", kind: "tree", ref: null, path: "", line: null, lineEnd: null })
+    expect(tab.view().view).toMatchObject({ missing: true, repoId: null, owner: "api" })
   })
 
   test("a repository the device doesn't have yet waits, holding where the URL said", async () => {

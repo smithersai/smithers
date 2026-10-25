@@ -12,6 +12,7 @@ import {
   type CopyKind,
   isRepository,
   NOT_FOUND,
+  NOT_SYNCED,
   rawRoute,
   READING_PAUSED,
   repoId,
@@ -115,6 +116,7 @@ export const retryClone = (owner: string, name: string) => clone(owner, name, "r
 
 /** What a failed read shows: gone, the read budget spent, Code Storage busy, or couldn't load. */
 const readFailure = (refused: RepoRefused): string =>
+  refused.code === "not_synced" ? NOT_SYNCED :
   refused.status === 404
     ? NOT_FOUND
     : refused.status === 503 && refused.code === "capacity"
@@ -628,7 +630,7 @@ export const warm = (target: Target) =>
  * once the repository is ready (`readable`). Opening another location interrupts a load still waiting; a request already sent
  * finishes and keeps what it read.
  */
-export const open = (target: Target) =>
+export const open = (target: Target, again = false) =>
   Effect.gen(function* () {
     const store = yield* RepoStore
     const valid = isRepository(target.owner, target.name)
@@ -661,7 +663,7 @@ export const open = (target: Target) =>
     if (id === null) return yield* FiberHandle.clear(store.loader)
     // What GitHub says loads at once, cloned or not: the page is never empty while the clone isn't ready.
     yield* ensureAbout(target.owner, target.name, id)
-    yield* FiberHandle.run(store.loader, load(target, id), { startImmediately: true })
+    yield* FiberHandle.run(store.loader, again ? warm(target).pipe(Effect.andThen(load(target, id))) : load(target, id), { startImmediately: true })
   }).pipe(
     Effect.withSpan("repo.open", { attributes: { "smithers.repo.kind": target.kind } }),
     Effect.annotateLogs({ feature: "repo" }),
@@ -707,3 +709,11 @@ export const rawHref = (target: Target) =>
     const view = yield* until(store.view, VIEW, (view) => view.missing || view.failure !== null || view.sha !== null)
     return view.sha === null ? undefined : rawRoute(view.owner, view.name, view.sha, view.path)
   })
+
+/** Re-read a location after its mirror refresh, discarding only the mutable refs listing. */
+export const refresh = (target: Target) => Effect.gen(function* () {
+  const store = yield* RepoStore
+  const view = Option.getOrThrow(yield* store.view.get(VIEW))
+  if (view.refsKey !== null) yield* Effect.orDie(store.refs.delete(view.refsKey))
+  yield* open(target, true)
+})

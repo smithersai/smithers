@@ -1063,3 +1063,20 @@ test("the production metadata transport uses the configured read token and refus
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
   }
 })
+
+
+test("a signed push refreshes another installed repository independently of REPO_FLOWS, redelivery keeps its identity", async () => {
+  const h = await githubHarness(runtime)
+  const id = crypto.randomUUID()
+  const payload = { repository: { full_name: "octo/other" }, installation: { id: 42 }, ref: "refs/heads/main" }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    expect((await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("push", payload, { id }))).status).toBe(200)
+  }
+  expect(h.starts).toHaveLength(2)
+  expect(h.starts[0]).toEqual({
+    flow: "repo/Refresh", executionId: `repo-refresh:github/octo/other:push:${id}`,
+    payload: { owner: "octo", name: "other" },
+  })
+  expect(h.starts[1]).toEqual(h.starts[0])
+  expect(h.count(Metrics.webhooks, { event: "push", outcome: "duplicate" })).toBe(1)
+})

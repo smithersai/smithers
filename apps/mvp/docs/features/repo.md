@@ -317,3 +317,36 @@ Code Storage and GitHub are third-party providers, scripted like the model (`wor
 ## Repository page boundaries
 
 Issues, pull requests, Stack, Secrets and Runs retain the repository header and home navigation on direct visits. For repositories outside `GITHUB_REPOSITORY`, issue and pull-request lists link to GitHub, and new issues open on GitHub. Deployment-only controls fail closed until About identifies the configured repository. See decision [0102](../decisions/0102-repository-page-boundaries.md).
+
+## Mirror freshness
+
+[Decision 0105](../decisions/0105-mirror-freshness.md).
+
+Public Code Storage mirrors do not subscribe to GitHub themselves. A verified App push for **any installed
+repository**, including a deleted ref, requests `repo/Refresh`, independently of `REPO_FLOWS` and the deployment's
+issue/PR repository. The delivery ID names the execution, so redelivery resumes the same work. Repositories without
+an admitted, ready clone are skipped; a webhook cannot bypass clone admission.
+
+`repo/RefreshInspect` checks GitHub and the stored clone, `repo/RefreshPull` requests Code Storage's upstream pull,
+and `repo/RefreshSettle` waits for Code Storage's default-branch commit to equal GitHub's current head. The engine
+owns all retries. A busy pull is retried; an accepted pull is journaled and is not repeated while waiting for sync.
+Settle compares the previously read database head before updating it, so racing refreshes retry instead of
+publishing an older head. It advances `refs_changed_at` even when only another branch or a tag changed.
+
+A missing tree or file probes the commit separately: a missing path at an available commit remains `404 not_found`;
+a commit absent from an admitted mirror is `503 not_synced`, uncached, with `Retry-After: 2`. That read requests the
+same durable refresh used by push deliveries. The view says **Not synced yet** with **Refresh**; a missing branch
+also offers this recovery, and Refresh discards its tab's mutable refs listing. Refs reads and an explicit Clone
+of an existing ready repository request refresh too. Read-driven requests share one execution per repository per
+minute, across tree, blob and refs requests. A failed start never claims sync completed.
+
+This deliberately uses the not-synced fallback: the current Code Storage SDK exposes a whole-mirror
+`pullUpstream`, not a scoped upstream fetch. The sandbox's scoped git transport is not a Code Storage mirror-write
+API. No raw git transport or invented provider option is used. The SDK remains the library catalog's
+“Import a public GitHub repository into git hosting and read its files and commits” entry.
+
+Records: `repo.refresh.inspect`, `.pull`, `.settle` spans, `repo.refresh` logs with stage/ref/outcome, and
+`repo_refresh_steps{stage,outcome}`. No file content, commit messages or credentials enter these records.
+Regression coverage is in `worker/flows/RepoRefresh.test.ts`, webhook API tests and the repository device suite.
+`e2e/vibelang-highlighting.spec.ts` additionally obtains GitHub's newest commit and compares its README with
+Smithers' tree/blob responses; it runs locally or against a deployment with the declared Code Storage/member needs.

@@ -24,7 +24,7 @@ import * as Repos from "./Repos.ts"
 
 /** Why a read couldn't answer: RepoApi's status and code, a file's size, and Code Storage's wait. */
 export class ReadRefused extends Data.TaggedError("ReadRefused")<{
-  readonly code: "not_found" | "too_large" | "capacity" | "unavailable"
+  readonly code: "not_found" | "not_synced" | "too_large" | "capacity" | "unavailable"
   readonly size?: number
   readonly retryAfterMillis?: number
 }> {}
@@ -113,6 +113,19 @@ export const make = <E, R>(services: Services<E, R>) => {
       ),
     )
 
+  // A missing path at a known commit is genuinely absent. A missing commit isn't proof of absence on GitHub.
+  const classifyMissing = (id: string, sha: string, error: CodeStorage.CodeStorageError) => {
+    if (!MISSING.has(error.code)) return Effect.fail(refusedBy(error))
+    return Effect.gen(function* () {
+      const head = yield* Repos.readyHead(id).pipe(Effect.provide(database), Effect.mapError(() => new ReadRefused({ code: "unavailable" })))
+      if (Option.isNone(head)) return yield* new ReadRefused({ code: "not_found" })
+      const commit = yield* codeStorage.listCommits(id, { ref: sha, limit: 1 }).pipe(Effect.result)
+      if (commit._tag === "Failure" && !MISSING.has(commit.failure.code)) return yield* refusedBy(commit.failure)
+      if (commit._tag === "Success") yield* meter(commit.success.bytesRead)
+      return yield* new ReadRefused({ code: commit._tag === "Success" && commit.success.commits.length > 0 ? "not_found" : "not_synced" })
+    })
+  }
+
   /** Every page of `id`'s files at `sha`, until `maxTreePaths`. */
   const listAll = (id: string, sha: string) =>
     Effect.map(
@@ -167,7 +180,7 @@ export const make = <E, R>(services: Services<E, R>) => {
       ImmutableCache.key("repo.tree", id, sha),
       Effect.gen(function* () {
         yield* admitRead
-        const { listing, bytesRead } = yield* listAll(id, sha).pipe(Effect.mapError(refusedBy))
+        const { listing, bytesRead } = yield* listAll(id, sha).pipe(Effect.catch((error) => classifyMissing(id, sha, error)))
         yield* meter(bytesRead)
         return { bytes: encoder.encode(JSON.stringify(listing)), metadata: {} }
       }),
@@ -189,7 +202,7 @@ export const make = <E, R>(services: Services<E, R>) => {
       Effect.gen(function* () {
         yield* admitRead
         const file = yield* codeStorage.readFile(id, { path, ref: sha, maxBytes: MAX_BLOB_BYTES }).pipe(
-          Effect.mapError(refusedBy),
+          Effect.catch((error) => classifyMissing(id, sha, error)),
         )
         yield* meter(file.bytes.length)
         const metadata: Record<string, string> = file.blobSha === undefined ? {} : { blobSha: file.blobSha }

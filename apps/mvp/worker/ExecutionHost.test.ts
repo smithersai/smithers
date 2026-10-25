@@ -21,6 +21,7 @@ import * as Pause from "./flows/Pause.ts"
 import { awaitPullClosed } from "./flows/TodoWait.ts"
 import * as RecheckRole from "./flows/RecheckRole.ts"
 import * as RepoClone from "./flows/RepoClone.ts"
+import * as RepoRefresh from "./flows/RepoRefresh.ts"
 import * as RevokeGitHubToken from "./flows/RevokeGitHubToken.ts"
 import * as SpendAlert from "./flows/SpendAlert.ts"
 import * as SessionKeys from "./SessionKeys.ts"
@@ -766,7 +767,7 @@ describe("ExecutionHost over the compose Postgres", () => {
       index: () => Effect.succeed(3),
       installed: () => Effect.succeed(false),
     })
-    expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, DatabaseLoad.DatabaseLoad, SandboxSpend.SandboxSpend, BugReport.BugReport, RepoClone.Clone])
+    expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, DatabaseLoad.DatabaseLoad, SandboxSpend.SandboxSpend, BugReport.BugReport, RepoClone.Clone, RepoRefresh.Refresh])
     await withSchema(({ name, sql, url }) =>
       Effect.gen(function* () {
         const object = memory()

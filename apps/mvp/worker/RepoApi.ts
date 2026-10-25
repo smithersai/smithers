@@ -1,4 +1,5 @@
 import type { BranchRoles } from "./branch/Access.ts"
+import * as MirrorRefresh from "./MirrorRefresh.ts"
 import * as RefReads from "./branch/RefReads.ts"
 import { ImmutableCache } from "@smthrs/artifacts"
 import type { CodeStorage } from "@smthrs/effect-code-storage"
@@ -180,6 +181,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         fields.cloneId = requested.cloneId
         // The request is persisted: it answers now, and the asker's `repo/clone` launches it (`launch`, below).
         if (requested.kind === "existing") {
+          if (requested.status === "ready") yield* MirrorRefresh.request(body.value.owner, body.value.name)
           fields.outcome = "existing"
           fields.row = requested.status
           return HttpServerResponse.jsonUnsafe(
@@ -324,7 +326,9 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
                 const actor = yield* (yield* Sessions).resolve
                 return yield* RefReads.visible(repoId(target.owner, target.name), actor).pipe(Effect.provide(database))
               }).pipe(Effect.mapError(() => new RepoReads.ReadRefused({ code: "unavailable" })))
-              return yield* reads.value.refs(target.owner, target.name, names)
+              const refs = yield* reads.value.refs(target.owner, target.name, names)
+              yield* MirrorRefresh.request(target.owner, target.name).pipe(Effect.catch(() => Effect.void))
+              return refs
             }).pipe(
               Effect.map((refs) => {
                 const bytes = encoder.encode(JSON.stringify(refs))
@@ -359,6 +363,11 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             Effect.catchTag("ReadRefused", (refused) => {
               fields.errorCode = refused.code
               switch (refused.code) {
+                case "not_synced":
+                  return MirrorRefresh.request(target.owner, target.name).pipe(
+                    Effect.as(refuse(503, "not_synced", {}, { "retry-after": "2" })),
+                    Effect.catch(() => Effect.succeed(refuse(503, "not_synced", {}, { "retry-after": "2" }))),
+                  )
                 case "not_found":
                   return Effect.succeed(refuse(404, "not_found"))
                 case "too_large":

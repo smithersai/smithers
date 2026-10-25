@@ -72,6 +72,7 @@ export type CapacityReason = (typeof CAPACITY_REASONS)[number]
  * organization).
  */
 export const REFUSALS = [
+  "not_synced",
   "invalid",
   "authentication",
   "forbidden",
@@ -392,3 +393,6 @@ export const REPO_TELEMETRY = {
     "smithers.repo.copy",
   ],
 } as const
+
+/** The mirror has not received the requested GitHub commit yet. */
+export const NOT_SYNCED = "Not synced yet"

@@ -44,8 +44,8 @@ afterEach(async () => {
 })
 
 /** A tab on `h`'s RepoApi. */
-const open = async (h: RepoHarness) => {
-  const tab = await openTab({ origin: h.origin, fetch: h.fetch, confirmWithin: "10 seconds" })
+const open = async (h: RepoHarness, shapes?: "stalled") => {
+  const tab = await openTab({ origin: h.origin, fetch: h.fetch, confirmWithin: "10 seconds", ...(shapes === undefined ? {} : { shapes }) })
   tabs.push(tab)
   return tab
 }
@@ -158,7 +158,8 @@ describe("cloning from a tab", () => {
     await waitFor(() => expect(tab.view().clone).toBeUndefined())
     expect(tab.count(clones, { outcome: "existing" })).toBe(1)
     expect(header(tab)).toEqual({ kind: "ready" })
-    expect(h.started()).toHaveLength(1)
+    expect(h.started().filter((id) => id.startsWith("repo-clone:"))).toHaveLength(1)
+    expect(h.started().some((id) => id.startsWith("repo-refresh:"))).toBe(true)
   })
 
   test("a clone done before the device has its row waits for Electric to deliver it", async () => {
@@ -474,7 +475,8 @@ describe("the agent's repository flows on this device", () => {
     await h.settled()
     const again = await runFlow(RepoCloneRequest, { repo: "octocat/Spoon-Knife" }, flows(h))
     expect(again.exit).toEqual(Exit.succeed({ txid: null, id: "github/octocat/spoon-knife", status: "ready", cloneId }))
-    expect(h.started()).toHaveLength(1)
+    expect(h.started().filter((id) => id.startsWith("repo-clone:"))).toHaveLength(1)
+    expect(h.started().some((id) => id.startsWith("repo-refresh:"))).toBe(true)
   })
 
   test("repo/clone signed out is refused sign_in, and a Guest's forbidden", async () => {
@@ -750,4 +752,39 @@ describe("what GitHub says, cloned or not", () => {
     expect(other.view().view.manifestKey).toBeNull()
     expect(other.view().view.manifestPath).toBeNull()
   })
+})
+
+test.each([undefined, "stalled"] as const)("an unsynced commit says Not synced yet; Refresh reopens the same file after its durable mirror pull (shape: %s)", async (shapes) => {
+  const h = await repoHarness(server)
+  await h.seed("octocat", "Spoon-Knife")
+  const next = fixture({ commit: { ...fixture().commit, sha: shaOf("fresh") } })
+  h.scripted.publish("octocat", "Spoon-Knife", next)
+  const release = h.scripted.hold("pullUpstream")
+  const tab = await open(h, shapes)
+  const target = { ...root("octocat", "Spoon-Knife"), kind: "blob" as const, ref: next.commit.sha, path: "README.md" }
+  tab.repo.actions.open(target)
+  await waitFor(() => expect(tab.file().file).toMatchObject({ state: "failed", message: "Not synced yet" }))
+  release()
+  await h.settled()
+  tab.repo.actions.refresh(target)
+  await waitFor(() => expect(tab.file().file).toMatchObject({ state: "text", contents: next.files["README.md"] }))
+  expect(tab.view().view.sha).toBe(next.commit.sha)
+})
+
+test("leaving during Refresh cannot reopen the old file when its read finishes", async () => {
+  const h = await repoHarness(server)
+  const { headSha } = await h.seed("octocat", "Spoon-Knife")
+  const tab = await open(h)
+  const file = { ...root("octocat", "Spoon-Knife"), kind: "blob" as const, ref: headSha, path: "README.md" }
+  h.scripted.fail("readFile", h.scripted.error("readFile", "internal_error", 500))
+  tab.repo.actions.open(file)
+  await waitFor(() => expect(tab.file().file?.state).toBe("failed"))
+  const release = h.scripted.hold("readFile")
+  const before = h.scripted.calls.filter((call) => call.startsWith("readFile:")).length
+  tab.repo.actions.refresh(file)
+  await waitFor(() => expect(h.scripted.calls.filter((call) => call.startsWith("readFile:")).length).toBeGreaterThan(before))
+  tab.repo.actions.open(root("octocat", "Spoon-Knife"))
+  release()
+  await waitFor(() => expect(tab.repo.lookups.file("github/octocat/spoon-knife", headSha, "README.md")?.state).toBe("text"))
+  expect(tab.view().view).toMatchObject({ kind: "tree", ref: null, path: "" })
 })

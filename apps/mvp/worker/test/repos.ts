@@ -35,6 +35,7 @@ import * as DocsApi from "../docs/Api.ts"
 import * as DocsSource from "../docs/Source.ts"
 import { FlowStarter, StartConflict } from "../Flows.ts"
 import * as RepoClone from "../flows/RepoClone.ts"
+import * as RepoRefresh from "../flows/RepoRefresh.ts"
 import * as HomeApi from "../home/Api.ts"
 import type { CuratedFile } from "../home/Curated.ts"
 import * as RepoApi from "../RepoApi.ts"
@@ -205,7 +206,7 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
     Effect.gen(function* () {
       if (engine !== undefined) return engine
       const built = yield* build(
-        RepoClone.registration({
+        Layer.merge(RepoRefresh.registration({ database, codeStorage: client, upstream: options.upstream ?? scripted.upstream }), RepoClone.registration({
           database,
           codeStorage: client,
           upstream: options.upstream ?? scripted.upstream,
@@ -218,7 +219,7 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
                 Effect.mapError(() => new RepoClone.CloneUnavailable()),
               ),
           installed: () => Effect.succeed(options.installed ?? false),
-        }),
+        })),
         { maxConnections: 3 },
       ).pipe(Effect.provideService(Scope.Scope, scope), Effect.orDie)
       engine = built

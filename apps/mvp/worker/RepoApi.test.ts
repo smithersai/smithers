@@ -107,7 +107,7 @@ describe("POST /api/repos", () => {
     expect((await usageRow(runtime))?.imported).toBe(640 * 1024)
   })
 
-  test("a second request starts nothing: 200 with the row's status, and its launch finds it settled", async () => {
+  test("a second request reuses its clone and requests a refresh: 200 with the row status", async () => {
     const h = await repoHarness(runtime)
     await h.seed("octocat", "Spoon-Knife")
     const { cloneId } = (await repositoryRow(runtime, "github/octocat/spoon-knife"))!
@@ -116,7 +116,8 @@ describe("POST /api/repos", () => {
     expect(await again.json()).toEqual({ txid: null, id: "github/octocat/spoon-knife", status: "ready", cloneId })
     const launched = await h.launch("OctoCat", "spoon-knife", cloneId)
     expect([launched.status, await launched.json()]).toEqual([200, { launched: false, status: "ready" }])
-    expect(h.started()).toHaveLength(1)
+    expect(h.started()).toHaveLength(2)
+    expect(h.started()[1]).toMatch(/^repo-refresh:/)
     expect(h.count(RepoMetrics.cloneRequests, { outcome: "existing" })).toBe(1)
     expect(h.count(RepoMetrics.cloneLaunches, { outcome: "settled" })).toBe(1)
   })

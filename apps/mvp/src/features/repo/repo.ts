@@ -1,7 +1,7 @@
 import { Context, Data, Effect, Layer, Option } from "effect"
 import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { clone, copy, navigate, open, rawHref, retryAbout, retryClone, role, warm } from "./actions"
+import { clone, copy, navigate, open, rawHref, refresh, retryAbout, retryClone, role, warm } from "./actions"
 import type { RepoClient } from "./api"
 import type { CopyKind } from "./contract"
 import { type RouteParams, type Target, targetOf } from "./paths"
@@ -55,6 +55,7 @@ export interface RepoActions {
   /** Try the public About read again after its durable retry window ends. */
   readonly retryAbout: (owner: string, name: string) => boolean
   /** Opens a location in the routed view. */
+  readonly refresh: (target: Target) => void
   readonly open: (target: Target) => void
   /** What a route calls once the location is warm: opens it in the routed view. */
   readonly openRoute: (kind: "tree" | "blob", params: RouteParams, search: { readonly L?: unknown }) => void
@@ -115,6 +116,7 @@ export class Repo extends Context.Service<
           clone: (owner, name) => run(clone(owner, name)),
           retryClone: (owner, name) => run(retryClone(owner, name)),
           retryAbout: (owner, name) => run(retryAbout(owner, name)),
+          refresh: (target) => run(refresh(target)),
           open: (target) => run(open(target)),
           openRoute: (kind, params, search) => run(open(targetOf(kind, params, search))),
           warmRoute: (kind, params, search) => promise(warm(targetOf(kind, params, search))),
