@@ -279,6 +279,28 @@ describe("CodeFileView with a language server", () => {
     expect(keys).toEqual(["ArrowDown"]);
   }, 90_000);
 
+  test("a pointer rest survives a parent render and is cancelled when the file changes or unmounts", async () => {
+    const rested: Array<CodeTokenPosition> = [];
+    const onRest = (at: CodeTokenPosition) => rested.push(at);
+    const view = (className: string, name = "src/a.ts") => <CodeFileView name={name} contents={CONTENTS} mode="dark" palette="paper" className={className} restMs={100} onTokenRest={onRest} />;
+    await mount(view("before"));
+    await tokens();
+    token(2, "add").dispatchEvent(new PointerEvent("pointermove", { bubbles: true, composed: true, pointerType: "mouse" }));
+    await rerender(view("after"));
+    await until(() => rested.length === 1, "a parent render cancelled the pending hover", 2_000);
+    expect(rested).toEqual([{ line: 2, column: 15, text: "add" }]);
+    token(2, "total").dispatchEvent(new PointerEvent("pointermove", { bubbles: true, composed: true, pointerType: "mouse" }));
+    await rerender(view("replacement", "src/b.ts"));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(rested).toHaveLength(1);
+    await tokens();
+    token(2, "add").dispatchEvent(new PointerEvent("pointermove", { bubbles: true, composed: true, pointerType: "mouse" }));
+    await act(async () => root!.unmount());
+    root = undefined;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(rested).toHaveLength(1);
+  }, 90_000);
+
   test("a plain click selects a token; a click that ends a text selection selects nothing", async () => {
     const selected: Array<CodeTokenPosition> = [];
     await mount(<CodeFileView name="src/a.ts" contents={CONTENTS} mode="dark" palette="paper" onTokenSelect={(at) => selected.push(at)} />);

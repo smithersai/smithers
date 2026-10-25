@@ -53,7 +53,7 @@ A definition's or reference's row is a link to `/<owner>/<name>/blob/<revision>/
 | `language.worker.ts` | the worker entry, a program boundary like `main.tsx` |
 | `components/` | the provider, and the code's props, the pane and the toolbar's buttons for `RepoPage` |
 
-An answer to an older hover, or for a file or symbol the view has left, is dropped.
+An answer to an older hover, or for a file or symbol the view has left, is dropped. A parent render preserves a pending pointer rest; leaving the token, replacing the file or unmounting the code view cancels it.
 
 ## Observability
 

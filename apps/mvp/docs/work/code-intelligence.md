@@ -1,11 +1,23 @@
 ---
 title: Code intelligence in the file view (hover, go to definition, diagnostics)
-status: in-progress
+status: blocked
 area: app
-owner: Design-first code intelligence builder assigned by lead
-updated: 2026-10-21 01:54 PDT
+owner: Codex codeintel
+updated: 2026-10-25 14:11 PDT
 links: [../design/code-intelligence/DESIGN.md, ../features/code-intelligence.md, old-app-feature-gaps.md, repo-clone-and-view.md, agent-repo-navigation.md, sandboxes.md, ../decisions/0006-repo-clone-and-view.md, ../../../../AGENTS.md]
 ---
+
+## Production hover regression — 2026-10-25
+
+Owner: Codex codeintel. The production sweep's `engine.worker` parser/transform stacks are decoded `branch/track` refusals and `timeline/SummaryFailed` model failures, not TypeScript parser failures. Its snapshot still has Symbols, so code intelligence opened the file.
+
+The code view used an inline callback ref to disarm the pointer-rest timer on unmount. React also detaches that ref on every render; an unrelated parent render during the rest cancels the hover, while Pierre still considers the stationary pointer inside the same token. Keep the frame ref stable for the shown file; retain cancellation when the file changes or the view unmounts.
+
+Regression: the real Pierre view receives a mouse pointer move onto `add`, its parent renders before the rest expires, and exactly one hover arrives. Replacing the file and unmounting cancel the next token's pending rest. Latitude: the regression failed on the old code; the SDK suite passed 168 tests with 100% lines and functions after the fix.
+
+The downloaded production language-worker bundle independently returned the expected `format` signature for the pinned `vercel/ms` sources. This isolated harness supplies TypeScript declaration files from the installed compiler and browser message-port globals; it is not browser e2e proof. Latitude app typecheck and importRules passed. The full app suite passed on Latitude: 343 files, 4,466 passing tests, 3 expected failures and 17 skipped tests; statements, branches, functions and lines are all 100%. Mini e2e started successfully from a temporary validation copy combining this fix with the mini-e2e builder’s proven startup repair (e52eeeb70965), which is not part of this bookmark. The code-intel spec skipped because the farm lacks CODE_STORAGE_ORG and CODE_STORAGE_KEY. Browser verification therefore remains blocked; run the declared deployment-capable spec after landing and deploying the fix. No e2e pass or GIF is claimed.
+
+Libraries: catalog entries `@smthrs/repo-view` (token gestures) and `@smthrs/platform-browser` (`BrowserLanguageServer`). No dependency or worker-transform change.
 
 ## Tracker reconciliation — 2026-10-21 01:54 PDT
 

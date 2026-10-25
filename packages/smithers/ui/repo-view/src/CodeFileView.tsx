@@ -376,10 +376,15 @@ export function CodeFileView({
    * ref callback disarms it on unmount.
    */
   const rest = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const disarm = (): void => {
+  const disarm = useStableCallback((): void => {
     if (rest.current !== null) clearTimeout(rest.current);
     rest.current = null;
-  };
+  });
+  // React detaches an inline ref on every commit, cancelling a stationary
+  // pointer's pending rest. Detach only when the file changes or unmounts.
+  const frameRef = useMemo(() => (node: HTMLDivElement | null): void => {
+    if (node === null) disarm();
+  }, [file, disarm]);
   const onTokenEnter = useStableCallback((token: { lineNumber: number; lineCharStart: number; tokenText: string }) => {
     disarm();
     if (onTokenRest === undefined) return;
@@ -464,9 +469,7 @@ export function CodeFileView({
 
   return (
     <div
-      ref={(node) => {
-        if (node === null) disarm();
-      }}
+      ref={frameRef}
       className={cn("sui-code-view", className)}
       data-slot="code-view"
       data-theme-mode={resolvedMode}

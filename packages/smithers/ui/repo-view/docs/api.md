@@ -127,7 +127,7 @@ scrolled into view, `lineEnd` widens the mark to the range from `line` to it,
 and `mode` and `palette` override the document's theme.
 `annotations` (`CodeLineAnnotation`) render under their lines, and the consumer
 must memoize the array because a new one redraws the rows. `onTokenRest` fires
-once per token after the pointer rests for `CODE_VIEW_REST_MS`, reporting a
+once per token after the pointer rests for `CODE_VIEW_REST_MS`, including across parent renders, reporting a
 `CodeTokenPosition`; `onTokenActivate` fires on ⌘-click or Ctrl-click.
 
 A language server's answers draw through the rest, with no state of their own:
