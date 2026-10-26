@@ -10,6 +10,9 @@ export interface RailMessage {
   readonly createdAt?: string
   readonly inputTokens?: number | null
   readonly outputTokens?: number | null
+  /** An answer's recorded summary and the content identity it summarizes; "" or none while it has none. */
+  readonly summary?: string | null
+  readonly summaryRevision?: string | null
 }
 export interface RailStatus { readonly id: string; readonly state: string; readonly flow?: string | null }
 export interface RailDraft { readonly id: string; readonly answerId: string | null; readonly title: string; readonly createdAt: number }
@@ -23,7 +26,6 @@ export interface RailTodo {
   readonly failure: string | null
   readonly updatedAt: string
 }
-export interface RailSummary { readonly id: string; readonly revision: string; readonly summary: string }
 
 /** A short subject in the same private conversation; never log it or copy assistant output. */
 const subjectOf = (text: string): string => {
@@ -41,7 +43,7 @@ const fallback = (message: RailMessage, messages: readonly RailMessage[], state:
 }
 
 export const railEntries = (
-  messages: readonly RailMessage[], summaries: readonly RailSummary[], statuses: readonly RailStatus[],
+  messages: readonly RailMessage[], statuses: readonly RailStatus[],
   drafts: readonly RailDraft[] = [], todos: readonly RailTodo[] = [],
 ): ChatTimelineEntry[] => [
   ...messages.filter(message => message.role !== "view").flatMap(message => {
@@ -50,7 +52,7 @@ export const railEntries = (
       : status?.state === "waiting" ? "queued"
       : message.status === "streaming" ? "working" : message.status === "failed" || message.status === "unsent" ? "failed"
       : message.status === "queued" ? "queued" : "done"
-    const summary = message.status === "done" ? summaries.find(summary => summary.id === message.id && summary.revision === revisionOf(message))?.summary.trim() : undefined
+    const summary = message.status === "done" && message.summary && message.summaryRevision === revisionOf(message) ? message.summary.trim() : undefined
     const entries: ChatTimelineEntry[] = [{
       id: message.status === "unsent" ? `unsent:${message.id}` : message.id,
       actor: message.role === "user" ? "Person" : "Smithers",

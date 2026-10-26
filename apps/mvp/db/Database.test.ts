@@ -1378,3 +1378,44 @@ describe("0065_model_tiers", () => {
       expect(await on(through("0065"))).toEqual([])
     }))
 })
+
+describe("0066_timeline_summaries", () => {
+  test("adds a message's summary with its revision, and claims one per message revision that leave with the message", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+      const taken = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        on(effect.pipe(Effect.as("taken"), Effect.orElseSucceed(() => "refused")))
+      await on(through("0065"))
+      const id = crypto.randomUUID()
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        INSERT INTO messages (id, role, text, status, conversation_id)
+        SELECT ${id}, 'user', 'hi', 'done', id FROM conversations LIMIT 1`))
+      expect((await on(through("0066"))).map(([id, name]) => `${id}_${name}`)).toEqual(["66_timeline_summaries"])
+
+      const summarize = (summary: string | null, revision: string | null) =>
+        taken(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          UPDATE messages SET summary = ${summary}, summary_revision = ${revision} WHERE id = ${id}`))
+      expect(await summarize("Release regression found", "r1")).toBe("taken")
+      expect(await summarize(null, null)).toBe("taken")
+      for (const [summary, revision] of [["Lone summary", null], [null, "r1"], ["", "r1"], ["x".repeat(97), "r1"], ["ok", "r".repeat(129)]] as const) {
+        expect(await summarize(summary, revision), JSON.stringify([summary, revision])).toBe("refused")
+      }
+
+      const claim = (revision: string, reason: string) =>
+        taken(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          INSERT INTO timeline_summaries (message_id, revision, person_id, reason) VALUES (${id}, ${revision}, 'p', ${reason})`))
+      expect(await claim("r1", "long_answer")).toBe("taken")
+      // One claim per message revision, whoever asks.
+      expect(await claim("r1", "multiline_answer")).toBe("refused")
+      expect(await claim("r2", "multiline_answer")).toBe("taken")
+      expect(await claim("r3", "words")).toBe("refused")
+      expect(await taken(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        INSERT INTO timeline_summaries (message_id, revision, person_id, reason)
+        VALUES (${crypto.randomUUID()}, 'r1', 'p', 'long_answer')`))).toBe("refused")
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`DELETE FROM messages WHERE id = ${id}`))
+      expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`SELECT count(*)::int AS n FROM timeline_summaries`)))
+        .toEqual([{ n: 0 }])
+      expect(await on(through("0066"))).toEqual([])
+    }))
+})

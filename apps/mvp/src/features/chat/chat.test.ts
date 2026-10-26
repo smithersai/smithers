@@ -1033,23 +1033,28 @@ describe("the window", () => {
   // The rail summarizes what the window shows. Before, a device that opened a long conversation started one
   // `timeline/summarize` run per message it held, in turn, which kept its engine and store busy for minutes and starved
   // its other tabs' sync (docs/work/local-first-conflicts.md, "stale tab").
-  test("a device opening a long conversation summarizes only the messages its window shows", async () => {
+  test("a device opening a long conversation summarizes only the answers its window shows", async () => {
     const first = await openChat()
-    const asked: Array<{ readonly id: string; readonly text: string }> = []
-    for (const text of ["one", "two", "three"]) {
-      const { questionId } = await first.onApi(first.api.askElsewhere(text))
-      asked.push({ id: questionId, text })
+    const answered: Array<{ readonly id: string; readonly text: string }> = []
+    for (const word of ["one", "two", "three"]) {
+      const { answerId } = asked(first.actions.ask(word))
+      // Longer than a label shows, so the answer needs a model summary (docs/features/timeline.md#cost).
+      const text = `Answer ${word}: the release retried twice and kept both recorded attempts.`
+      const reply = await first.onApi(first.api.answerTo(word))
+      reply.say(text)
+      reply.done()
+      answered.push({ id: answerId, text })
     }
-    await until(() => expect(first.synced(asked[2]!.id)).toBe(true))
+    await until(() => expect(first.shown().filter(row => row.startsWith("assistant done"))).toHaveLength(3), agentWithin)
     // Another device opens it, its window two messages: the last question and its answer.
     const runtime = openTab(first.api, { pageSize: 2 })
     const second = await tabOn(runtime)
-    await until(() => expect(second.shown()).toEqual(["user done three", "assistant streaming "]))
+    await until(() => expect(second.shown()).toEqual(["user done three", `assistant done ${answered[2]!.text}`]))
     const requests = await runtime.runPromise(Effect.service(TabRequests))
     const summarized = ({ id, text }: { readonly id: string; readonly text: string }) =>
-      Option.isSome(runtime.runSync(requests.doorOf(`timeline-${revisionOf({ id, role: "user", text })}`)))
-    await until(() => expect(summarized(asked[2]!)).toBe(true), agentWithin)
-    expect(asked.map(summarized)).toEqual([false, false, true])
+      Option.isSome(runtime.runSync(requests.doorOf(`timeline-${revisionOf({ id, role: "assistant", text })}`)))
+    await until(() => expect(summarized(answered[2]!)).toBe(true), agentWithin)
+    expect(answered.map(summarized)).toEqual([false, false, true])
   })
 })
 

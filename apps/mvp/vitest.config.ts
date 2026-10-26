@@ -57,6 +57,9 @@ export default defineConfig({
         // The metered model endpoint and admin/SetModel (docs/features/model-endpoint.md).
         "worker/Pins.ts",
         "db/migrations/0054_message_pins.ts",
+        // The timeline's summaries, once per message (docs/features/timeline.md#cost).
+        "worker/TimelineSummaries.ts",
+        "db/migrations/0066_timeline_summaries.ts",
         "worker/Actor.ts",
         "worker/ErrorCode.ts",
         "worker/ModelEndpoint.ts",

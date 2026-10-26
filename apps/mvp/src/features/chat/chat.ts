@@ -39,7 +39,6 @@ export interface ChatQueries {
   readonly pinCollapsed: Store["pinState"]["collapseState"]["tanstack"]
   /** The window of the conversation, oldest first. */
   readonly conversation: Store["shown"]["tanstack"]
-  readonly summaries: Store["summaries"]["tanstack"]
   /** Questions queued on this device that Postgres doesn't have yet. */
   readonly queued: Store["queued"]["tanstack"]
   readonly composer: Store["composerState"]["tanstack"]
@@ -178,7 +177,6 @@ export class Chat extends Context.Service<Chat, { readonly queries: ChatQueries;
           pinned: store.pinned.tanstack,
           pinPending: store.pinState.pendingState.tanstack,
           pinCollapsed: store.pinState.collapseState.tanstack,
-          summaries: store.summaries.tanstack,
           conversation: store.shown.tanstack,
           queued: store.queued.tanstack,
           composer: store.composerState.tanstack,

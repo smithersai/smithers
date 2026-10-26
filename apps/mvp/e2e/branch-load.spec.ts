@@ -36,7 +36,8 @@ test("Branch page: its conversation shows with its chrome, even after a reload b
         })
         expect(asked.status()).toBe(202)
         const answered = await a.page.request.post(`/api/answers/${answerId}`, {
-          data: { status: "done", text: `Release step ${n + 1} passed both of its checks.` },
+          // Longer than a label shows, so each answer is summarized once (docs/features/timeline.md#cost).
+          data: { status: "done", text: `Release step ${n + 1} passed both of its checks after retrying the second one once.` },
         })
         expect(answered.status()).toBe(200)
       }

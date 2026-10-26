@@ -50,14 +50,13 @@ export function Conversation({ empty = <Wordmark />, readOnly = false, timelineT
   const pin = pinned[0]
   const collapsed = pin === undefined ? false : collapsedPins.some(row => row.id === pin.id && row.collapsed)
   const { data: history } = useLiveQuery(shown.history)
-  const { data: summaries } = useLiveQuery(queries.summaries)
   const { data: connection } = useLiveQuery(queries.connection)
   const pill = connection !== undefined && connection.status !== "up"
   return (
     <div className="mvp-conversation">
     {failedPin === undefined ? null : <Button variant="ghost" size="sm" aria-label={failedPin.messageId === null ? "Retry unpin" : "Retry pin"} onClick={() => actions.retryPin(failedPin.conversationId)}>Retry</Button>}
     {pin === undefined ? null : <PinnedMessage message={pin} collapsed={collapsed} onUnpin={actions.unpin} onCollapse={() => actions.collapsePin(pin.id, !collapsed)} />}
-    <ChatTranscript empty={history?.opened === true ? empty : null} rail={<TimelineContribution messages={conversation} summaries={summaries} statuses={statuses} drafts={readOnly ? [] : drafts} todos={timelineTodos} onJump={jump} onActivate={activate} />}>
+    <ChatTranscript empty={history?.opened === true ? empty : null} rail={<TimelineContribution messages={conversation} statuses={statuses} drafts={readOnly ? [] : drafts} todos={timelineTodos} onJump={jump} onActivate={activate} />}>
       {history?.earlier === true ? (
         <Button variant="ghost" size="sm" onClick={actions.loadEarlier}>
           Load earlier

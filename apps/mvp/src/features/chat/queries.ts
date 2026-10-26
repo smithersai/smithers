@@ -47,6 +47,9 @@ export const conversationQuery = (
           // A message's tokens as numbers, 0 while unknown: a nullable column here collapses the union's row type.
           inputTokens: Query.coalesce(synced.inputTokens, 0),
           outputTokens: Query.coalesce(synced.outputTokens, 0),
+          // An answer's one-line summary and the content it summarizes (worker/TimelineSummaries.ts), "" while it has none.
+          summary: Query.coalesce(synced.summary, ""),
+          summaryRevision: Query.coalesce(synced.summaryRevision, ""),
         })),
         q.from({ view: views.tanstack }).select(({ view }) => ({
           id: view.id,

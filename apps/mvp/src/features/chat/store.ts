@@ -1,6 +1,6 @@
 import { makePins, pinnedQuery } from "../pins/store"
 import { observeLoad } from "./load"
-import { makeLane, makeSummaries, followSummaries, summaryQuery } from "../timeline/store"
+import { makeLane, followSummaries } from "../timeline/store"
 import { answerCannotFinish } from "./answerEnd"
 import { ElectricCollection, type ShapeSource } from "@smthrs/effect-electric"
 import { Collection, Outbox, Persistence } from "@smthrs/effect-tanstack-db"
@@ -144,7 +144,6 @@ export class ChatStore extends Context.Service<
     readonly conversation: Query<typeof conversationQuery>
     readonly latest: Query<typeof latestQuery>
     readonly shown: Query<typeof shownQuery>
-    readonly summaries: Query<typeof summaryQuery>
     readonly queued: Query<typeof queuedQuery>
     readonly composerState: Query<typeof composerQuery>
     readonly connectionState: Query<typeof connectionQuery>
@@ -265,7 +264,6 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
   const unreachableAfter = config.unreachableAfter ?? Duration.seconds(10)
   const pageSize = config.pageSize ?? PAGE_SIZE
 
-  const summaries = yield* makeSummaries
   // One lane for the home and the branch conversation: their summaries take turns on the engine together.
   const summaryLane = yield* makeLane
   const composer = yield* Collection.local<Composer, string>({
@@ -300,8 +298,8 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     schema: Message,
     getKey: (row) => row.id,
     syncMode: "eager",
-    // 2: `attempts` is gone (server answering went with it) and an answer can fail `unfinished`.
-    persist: { schemaVersion: 4 },
+    // 2: `attempts` is gone (server answering went with it) and an answer can fail `unfinished`. 5: an answer's summary.
+    persist: { schemaVersion: 5 },
     shape: {
       url: config.shapeUrl,
       columnMapper: ElectricCollection.snakeCamelMapper(),
@@ -440,7 +438,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
         schema: Message,
         getKey: (row) => row.id,
         syncMode: "eager",
-        persist: { schemaVersion: 4 },
+        persist: { schemaVersion: 5 },
         shape: {
           url: `${config.shapeUrl}?conversation=${encodeURIComponent(conversationId)}`,
           columnMapper: ElectricCollection.snakeCamelMapper(),
@@ -459,7 +457,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
       const branchConversation = yield* conversationQuery(branchMessages, unsent, asking, branchViews, conversationId)
       const branchLatest = yield* latestQuery(branchConversation, pageSize)
       // The rail summarizes what this conversation's window shows (src/features/timeline/store.ts).
-      yield* followSummaries(branchLatest, branchMessages, summaries, flows, summaryLane).pipe(Effect.forkIn(scope))
+      yield* followSummaries(branchLatest, branchMessages, flows, summaryLane).pipe(Effect.forkIn(scope))
       const opened: ConversationState = {
         pinned: yield* pinnedQuery(pinState.effective, branchMessages, pinState.pending, conversationId),
         conversationId,
@@ -611,11 +609,10 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
   }
 
   // The rail summarizes what the window shows, never every message the device holds (src/features/timeline/store.ts).
-  yield* followSummaries(latest, messages, summaries, flows, summaryLane).pipe(Effect.forkIn(scope))
+  yield* followSummaries(latest, messages, flows, summaryLane).pipe(Effect.forkIn(scope))
   const store = ChatStore.of({
     pinState,
     pinned: yield* pinnedQuery(pinState.effective, messages, pinState.pending),
-    summaries: yield* summaryQuery(summaries),
     messages,
     asking,
     unsent,

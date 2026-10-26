@@ -65,6 +65,7 @@ import cloneProgress from "./migrations/0028_clone_progress.ts"
 import alertChannels from "./migrations/0029_alert_channels.ts"
 import bugReports from "./migrations/0064_bug_reports.ts"
 import modelTiers from "./migrations/0065_model_tiers.ts"
+import timelineSummaries from "./migrations/0066_timeline_summaries.ts"
 
 /** The compose Postgres (`docker-compose.yml`): what `DATABASE_URL` defaults to, and the only one tests use. */
 export const LOCAL_URL = "postgresql://smithers:smithers@localhost:54321/smithers"
@@ -167,6 +168,7 @@ export const migrations = {
   "0063_app_template_views": appTemplateViews,
   "0064_bug_reports": bugReports,
   "0065_model_tiers": modelTiers,
+  "0066_timeline_summaries": timelineSummaries,
 }
 
 /** Applies every migration in `db/migrations` that hasn't run, in order; returns the ones it applied. */

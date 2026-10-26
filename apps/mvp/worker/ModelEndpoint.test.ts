@@ -25,7 +25,7 @@ import { PersonalModels } from "./personal/Models.ts"
 import * as SetModel from "./SetModel.ts"
 import * as SpendAlert from "./flows/SpendAlert.ts"
 import { Summarize, SummaryFailed } from "../src/features/timeline/flow.ts"
-import { registration as summaries, SummarySeat } from "../src/features/timeline/steps.ts"
+import { registration as summaries, SummaryLedger, SummarySeat } from "../src/features/timeline/steps.ts"
 import { build, runFlow } from "./test/flowHost.ts"
 import { delta, eventually, harness, recorded, stop, testFile, usage } from "./test/harness.ts"
 
@@ -1664,8 +1664,10 @@ describe("timeline summary role", () => {
     })
     const scope = Effect.runSync(Scope.make())
     try {
+      // A fresh answer's claim is this run's (worker/TimelineSummaries.ts); this test is about the model call after it.
+      const claimed = Layer.succeed(SummaryLedger, SummaryLedger.of({ claim: () => Effect.succeed(true), record: () => Effect.void }))
       const { context } = await Effect.runPromise(Scope.provide(scope)(build(summaries.pipe(
-        Layer.provide(counted),
+        Layer.provide(Layer.merge(counted, claimed)),
         Layer.provideMerge(Action.layerImplementations),
       ))))
       const payload = { id: "entry", revision: "r1", role: "user" as const, text: "Please check the release retries." }

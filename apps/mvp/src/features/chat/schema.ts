@@ -34,6 +34,12 @@ export const Message = Schema.Struct({
    * row the device kept from before the app read them has none until it changes.
    */
   parts: Schema.optional(Schema.Array(Part)),
+  /**
+   * An answer's one-line summary and the content identity it summarizes (src/features/timeline/identity.ts), made once
+   * for every device (docs/features/timeline.md#cost); none until then, and none for a question.
+   */
+  summary: Schema.optional(Schema.NullOr(Schema.String)),
+  summaryRevision: Schema.optional(Schema.NullOr(Schema.String)),
 })
 export type Message = typeof Message.Type
 

@@ -1,4 +1,5 @@
 import * as Pins from "./Pins.ts"
+import * as TimelineSummaries from "./TimelineSummaries.ts"
 import { PIN_ROUTE, PINS_SHAPE_ROUTE } from "../src/features/pins/contract.ts"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { OtlpRelay } from "@smthrs/observability"
@@ -86,6 +87,9 @@ export const SYNCED_MESSAGE_COLUMNS = [
   "created_at",
   "updated_at",
   "parts",
+  // An answer's one-line summary, made once for every device (worker/TimelineSummaries.ts).
+  "summary",
+  "summary_revision",
 ]
 
 /**
@@ -167,6 +171,8 @@ export const make = <E, R>(
     // GET and POST /api/answers/<id>: the write path for the browser's agent (docs/features/agent.md).
     const answers = yield* Answers.make(database)
     const pins = yield* Pins.make(database)
+    // POST /api/timeline/summaries: an answer's one summary, claimed once and recorded on the message (docs/features/timeline.md#cost).
+    const timelineSummaries = yield* TimelineSummaries.make(database)
     // POST /api/views and GET /api/shapes/views: the conversation's views (docs/features/web-pages.md).
     const views = yield* Views.make(database, options)
     // POST /api/web/preview: a page checked before it is framed (docs/features/web-pages.md#before-a-page-is-framed).
@@ -369,6 +375,7 @@ export const make = <E, R>(
       }
       if (path === PIN_ROUTE || path === `${PIN_ROUTE}/stamp`) return yield* pins.write
       if (path === PINS_SHAPE_ROUTE) return yield* pins.shape
+      if (path === timelineSummaries.route) return yield* timelineSummaries.write
       if (path === SHAPE_ROUTE) return yield* shape
       if (path === VIEWS_ROUTE) return yield* views.add
       const stateOf = Views.stateViewId(path)

@@ -37,7 +37,6 @@ import {
   TodoRequestedStore,
   HomesStore,
   CuratedHomesStore,
-  TimelineSummariesStore,
   AuthConfirmedStore,
   ChatDraftsStore,
   ChatUnsentStore,
@@ -131,8 +130,8 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
     expect(outcomes).toEqual({
       "auth-confirmed": "migrated 1→2 migrated 1 kept 0",
       "chat-drafts": "current 1→1 migrated 0 kept 0",
-      "chat-messages": legacy ? "resync 2→4 migrated 0 kept 0" : "resync 3→4 migrated 0 kept 0",
-      [branch]: legacy ? "resync 2→4 migrated 0 kept 0" : "resync 3→4 migrated 0 kept 0",
+      "chat-messages": legacy ? "resync 2→5 migrated 0 kept 0" : "resync 3→5 migrated 0 kept 0",
+      [branch]: legacy ? "resync 2→5 migrated 0 kept 0" : "resync 3→5 migrated 0 kept 0",
       "chat-unsent": "migrated 1→2 migrated 1 kept 0",
       flows: legacy ? "resync 1→2 migrated 0 kept 0" : "current 2→2 migrated 0 kept 0",
       "issue-drafts": "current 1→1 migrated 0 kept 0",
@@ -323,7 +322,6 @@ test("device-local records restore and replace by their declared identity", asyn
     [AttentionPendingStore, { id: "ack", subject: "run:one", act: "read", version: 1 }, "version", 2],
     [TodoDraftsStore, { id: "draft", repo: "a/b", repoId: "repo", title: "First", prompt: "Build", acceptance: [], answerId: null, createdAt: 1 }, "title", "Next"],
     [TodoRequestedStore, { id: "op", op: "drop", repo: "a/b", title: "", prompt: "", acceptance: [], number: 1, repoId: "repo", queuedAt: 1, status: "requested", reason: null, taken: null }, "taken", 2],
-    [TimelineSummariesStore, { id: "message", revision: "v1", summary: "Before" }, "summary", "After"],
   ] as const
   for (const [store, row, field, next] of cases) {
     await Effect.runPromise(Effect.scoped(Effect.gen(function* () {

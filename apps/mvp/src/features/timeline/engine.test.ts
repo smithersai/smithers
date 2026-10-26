@@ -6,12 +6,25 @@ import { Cause, Context, Effect, Exit, Layer, Logger, Metric, Schema, Scope, Str
 import { FetchHttpClient } from "effect/http"
 import { afterEach, expect, test } from "vitest"
 import { build } from "../../../worker/test/flowHost"
-import { Summarize, SummaryFailed } from "./flow"
-import { registration, summaryCalls, SummarySeat } from "./steps"
+import { Summarize, SummaryFailed, type SummaryPayload } from "./flow"
+import { registration, summaryCalls, SummaryLedger, SummarySeat } from "./steps"
 
 const scopes: Scope.Closeable[] = []
 afterEach(async () => { for (const scope of scopes.splice(0)) await Effect.runPromise(Scope.close(scope, Exit.void)) })
 const payload = { id: "entry", revision: "r1", role: "user" as const, text: "Please check whether the release retried twice." }
+/** The server's claims, as worker/TimelineSummaries.ts keeps them: the first claim of a revision takes it. */
+const memoryLedger = () => {
+  const claimed = new Set<string>()
+  const recorded: Array<{ readonly messageId: string; readonly revision: string; readonly summary: string }> = []
+  return {
+    recorded,
+    layer: Layer.succeed(SummaryLedger, SummaryLedger.of({
+      claim: ({ messageId, revision }) => Effect.sync(() => !claimed.has(`${messageId}:${revision}`) && !!claimed.add(`${messageId}:${revision}`)),
+      record: record => Effect.sync(() => { recorded.push(record) }),
+    })),
+  }
+}
+const registered = (ledger = memoryLedger()) => registration.pipe(Layer.provide(ledger.layer))
 
 test("sealed summary model step replays without a second provider call and logs no content", async () => {
   let calls = 0
@@ -23,7 +36,7 @@ test("sealed summary model step replays without a second provider call and logs 
   const scope = Effect.runSync(Scope.make()); scopes.push(scope)
   const lines: string[] = []
   const logger = Logger.make(options => { lines.push(JSON.stringify(Logger.formatStructured.log(options))) })
-  const { context } = await Effect.runPromise(Scope.provide(scope)(build(registration.pipe(
+  const { context } = await Effect.runPromise(Scope.provide(scope)(build(registered().pipe(
     Layer.provide(SummarySeat.layer("https://summary.test", model)),
     Layer.provideMerge(Action.layerImplementations),
   ))).pipe(Effect.provideService(Logger.CurrentLoggers, new Set([logger]))))
@@ -44,7 +57,7 @@ test.each(["Reply sent", "one <two> three"])("invalid model output is a safe typ
   const model = Model.make({ stream: () => Stream.fromIterable<ModelEvent.ModelEvent>([{ type: "text-delta", id: "s", text }, { type: "settle", stopReason: "stop" }]) })
   const scope = Effect.runSync(Scope.make()); scopes.push(scope)
   const registry: Metric.MetricRegistry = new Map()
-  const { context } = await Effect.runPromise(Scope.provide(scope)(build(registration.pipe(
+  const { context } = await Effect.runPromise(Scope.provide(scope)(build(registered().pipe(
     Layer.provide(SummarySeat.layer("https://summary.test", model)), Layer.provideMerge(Action.layerImplementations),
   ))).pipe(Effect.provideService(Metric.MetricRegistry, registry)))
   const runtime = Context.get(context, FlowRuntime.FlowRuntime)
@@ -58,7 +71,7 @@ test.each([["content_policy", "refused"], ["authentication", "unavailable"]] as 
   const model = Model.make({ stream: () => Stream.fail(new ModelError.ModelError({ code, message: "private provider detail" })) })
   const scope = Effect.runSync(Scope.make()); scopes.push(scope)
   const registry: Metric.MetricRegistry = new Map()
-  const { context } = await Effect.runPromise(Scope.provide(scope)(build(registration.pipe(
+  const { context } = await Effect.runPromise(Scope.provide(scope)(build(registered().pipe(
     Layer.provide(SummarySeat.layer("https://summary.test", model)), Layer.provideMerge(Action.layerImplementations),
   ))).pipe(Effect.provideService(Metric.MetricRegistry, registry)))
   const runtime = Context.get(context, FlowRuntime.FlowRuntime)
@@ -74,7 +87,7 @@ test("summary seat constructs the real proxy and preparation failures become saf
   const seat = Context.get(seatContext, SummarySeat)
   expect(seat.model).toBeDefined()
   const faulty = { ...seat, route: { prepare: () => Effect.fail(new ModelError.ModelError({ code: "content_policy", message: "private route detail" })) } }
-  const { context } = await Effect.runPromise(Scope.provide(scope)(build(registration.pipe(
+  const { context } = await Effect.runPromise(Scope.provide(scope)(build(registered().pipe(
     Layer.provide(Layer.succeed(SummarySeat, faulty)), Layer.provideMerge(Action.layerImplementations),
   ))))
   const runtime = Context.get(context, FlowRuntime.FlowRuntime)
@@ -88,7 +101,7 @@ test.each([
 ] as const)("a summary role without a model fails unconfigured, from %s", async (_where, unconfigured) => {
   const scope = Effect.runSync(Scope.make()); scopes.push(scope)
   const seatContext = await Effect.runPromise(Scope.provide(scope)(Layer.build(SummarySeat.layer("https://summary.test").pipe(Layer.provide(FetchHttpClient.layer)))))
-  const { context } = await Effect.runPromise(Scope.provide(scope)(build(registration.pipe(
+  const { context } = await Effect.runPromise(Scope.provide(scope)(build(registered().pipe(
     Layer.provide(Layer.succeed(SummarySeat, unconfigured(Context.get(seatContext, SummarySeat)))), Layer.provideMerge(Action.layerImplementations),
   ))))
   const runtime = Context.get(context, FlowRuntime.FlowRuntime)
@@ -100,7 +113,7 @@ test.each([
 test("a non-provider model-step failure is a safe unavailable summary", async () => {
   const model = Model.make({ stream: () => Stream.die("preparation must fail before the provider") })
   const scope = Effect.runSync(Scope.make()); scopes.push(scope)
-  const { context } = await Effect.runPromise(Scope.provide(scope)(build(registration.pipe(
+  const { context } = await Effect.runPromise(Scope.provide(scope)(build(registered().pipe(
     Layer.provide(Layer.succeed(SummarySeat, { model, route: { prepare: () => Effect.fail(new HarnessError.HarnessError({ code: "approval_unavailable", message: "private failure" })) as never } })),
     Layer.provideMerge(Action.layerImplementations),
   ))))
@@ -122,11 +135,67 @@ test("a model grant-store failure leaves the summary unavailable without exposin
     retryPolicy: RetryPolicy.make({ ...ModelStep.defaultRetryPolicy, initialMs: 1, maxMs: 1 }),
   }))).pipe(Layer.provide(SummarySeat.layer("https://summary.test", model)))
   const scope = Effect.runSync(Scope.make()); scopes.push(scope)
-  const { context } = await Effect.runPromise(Scope.provide(scope)(build(registration.pipe(
+  const { context } = await Effect.runPromise(Scope.provide(scope)(build(registered().pipe(
     Layer.provide(seat), Layer.provideMerge(Action.layerImplementations),
   ))))
   const runtime = Context.get(context, FlowRuntime.FlowRuntime)
   const exit = await Effect.runPromise(Effect.exit(runtime.execute(Summarize, { executionId: "grant-unavailable", payload })).pipe(Effect.provide(context)))
   expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toEqual(new SummaryFailed({ code: "unavailable" }))
   expect(attempts).toBe(6)
+})
+
+const answering = (text = "Release retry check completed") => {
+  const requests: Array<import("@smthrs/model").ModelRequest.ModelRequest> = []
+  const model = Model.make({ stream: request => {
+    requests.push(request)
+    return Stream.fromIterable<ModelEvent.ModelEvent>([{ type: "text-delta", id: "s", text }, { type: "settle", stopReason: "stop" }])
+  } })
+  return { requests, model }
+}
+const executeWith = async (ledger: Layer.Layer<SummaryLedger>, model: Model.Model, input: SummaryPayload, executionId: string) => {
+  const scope = Effect.runSync(Scope.make()); scopes.push(scope)
+  const { context } = await Effect.runPromise(Scope.provide(scope)(build(registration.pipe(
+    Layer.provide(Layer.merge(SummarySeat.layer("https://summary.test", model), ledger)), Layer.provideMerge(Action.layerImplementations),
+  ))))
+  const runtime = Context.get(context, FlowRuntime.FlowRuntime)
+  return Effect.runPromise(Effect.exit(runtime.execute(Summarize, { executionId, payload: input })).pipe(Effect.provide(context)))
+}
+
+test("claims before the model, records what it wrote, and sends a bounded exchange with no reasoning effort", async () => {
+  const ledger = memoryLedger()
+  const { requests, model } = answering()
+  const answer = { ...payload, role: "assistant" as const, text: `${"a".repeat(2500)}`, question: `Did the release retry? ${"q".repeat(900)}`, reason: "long_answer" as const }
+  expect(await executeWith(ledger.layer, model, answer, "summary-claimed")).toEqual(Exit.succeed({ summary: "Release retry check completed" }))
+  expect(ledger.recorded).toEqual([{ messageId: "entry", revision: "r1", summary: "Release retry check completed" }])
+  expect(requests).toHaveLength(1)
+  const request = requests[0]!
+  expect(request.modelId).toBe("summary")
+  expect(request.params.maxTokens).toBe(24)
+  expect(request.params.reasoningEffort).toBeUndefined()
+  const sent = JSON.parse((request.messages[0]!.content[0] as { readonly text: string }).text) as { question: string; answer: string }
+  expect([sent.question.length, sent.answer.length]).toEqual([500, 2000])
+  expect(sent.question.startsWith("Did the release retry?")).toBe(true)
+})
+
+test("an answer another tab, device or person claimed fails taken without a model call", async () => {
+  const { requests, model } = answering()
+  const taken = Layer.succeed(SummaryLedger, SummaryLedger.of({ claim: () => Effect.succeed(false), record: () => Effect.die("never recorded") }))
+  const exit = await executeWith(taken, model, payload, "summary-taken")
+  expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toEqual(new SummaryFailed({ code: "taken" }))
+  expect(requests).toHaveLength(0)
+})
+
+test.each(["capped", "unavailable"] as const)("a claim the server refuses %s costs no model call", async code => {
+  const { requests, model } = answering()
+  const refusing = Layer.succeed(SummaryLedger, SummaryLedger.of({ claim: () => Effect.fail(new SummaryFailed({ code })), record: () => Effect.die("never recorded") }))
+  const exit = await executeWith(refusing, model, payload, `summary-${code}`)
+  expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toEqual(new SummaryFailed({ code }))
+  expect(requests).toHaveLength(0)
+})
+
+test("a summary the server couldn't record is unavailable", async () => {
+  const { model } = answering()
+  const lost = Layer.succeed(SummaryLedger, SummaryLedger.of({ claim: () => Effect.succeed(true), record: () => Effect.fail(new SummaryFailed({ code: "unavailable" })) }))
+  const exit = await executeWith(lost, model, payload, "summary-lost")
+  expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toEqual(new SummaryFailed({ code: "unavailable" }))
 })

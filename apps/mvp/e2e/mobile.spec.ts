@@ -481,7 +481,8 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
               id: crypto.randomUUID(), answerId, text: `Inspect release regression ${index + 1}`,
             } })).status()).toBe(202)
             expect((await page.request.post(`/api/answers/${answerId}`, { headers: writeHeaders(), data: {
-              status: "done", text: `Release regression ${index + 1} checked both recorded attempts.`,
+              // Longer than a label shows, so the rail asks the summary model for it, once (docs/features/timeline.md#cost).
+              status: "done", text: `Release regression ${index + 1} checked both recorded attempts and found the missing projection entry.`,
             } })).status()).toBe(200)
           }
           const composer = await openComposer(page)
@@ -498,7 +499,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
               await audit(page, info, "conversation")
               await disclosure.click()
             }
-            await expect(rail.locator("button > span").filter({ hasText: "Find the release regression" }).first()).toBeVisible({ timeout: 30_000 })
+            await expect(rail.locator("button > span").filter({ hasText: "Release regression check completed" }).first()).toBeVisible({ timeout: 30_000 })
             await expect(async () => {
               const errors = await rail.evaluate((element) => {
                 const failures: string[] = []

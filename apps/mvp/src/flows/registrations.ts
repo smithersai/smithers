@@ -111,7 +111,9 @@ export const jev = (origin: string) => Jev.registration.pipe(Layer.provide(Jev.J
  */
 export const registrations = (options: HostOptions) =>
   Layer.mergeAll(
-    Timeline.registration.pipe(Layer.provide(Timeline.SummarySeat.layer(options.origin, options.summaryModel))),
+    Timeline.registration.pipe(Layer.provide(Layer.merge(
+      Timeline.SummarySeat.layer(options.origin, options.summaryModel), Timeline.SummaryLedger.layer(options.origin),
+    ))),
     AuthSteps.registration,
     Theme.registration,
     Navigation.registration,

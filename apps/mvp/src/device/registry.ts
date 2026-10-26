@@ -28,7 +28,6 @@ import { BugReport } from "../features/bugs/schema"
 import { RepoRunRow, SteerSending, SteerSent } from "../features/runs/schema"
 import { Run } from "../features/status/schema"
 import { Preference } from "../features/theme/schema"
-import { Summary } from "../features/timeline/store"
 import { TodoSendingV1, TodoRequestedV2 } from "./history"
 import { Draft as TodoDraft, Requested as TodoRequested, Sending as TodoSending, Todo, TodoRequest } from "../features/todos/schema"
 import { View } from "../features/views/schema"
@@ -154,20 +153,15 @@ export const TodoRequestedStore = Migrations.local({
 /** Steers of a TODO's agent the server took or refused (src/features/runs/writes.ts). */
 export const SteerSentStore = Migrations.local({ id: "steer-sent", versions: [SteerSent], getKey: (row) => row.id })
 
-/** The timeline's summaries: a cache the summarizer fills again. */
-export const TimelineSummariesStore = Migrations.local({
-  id: "timeline-summaries",
-  versions: [Summary],
-  getKey: (row) => row.id,
-  discard: true,
-})
-
 export const PinPendingStore = Migrations.local({ id: "message-pin-pending", versions: [PinPending], getKey: r => r.conversationId })
 
 // --- Synced: the server's rows, kept on the device ---
 
-/** The conversation's messages, one collection per conversation. Version 4: terminal model quota refusals. */
-export const MessagesStore = Migrations.synced({ id: "chat-messages", version: 4, schema: Message, family: true })
+/**
+ * The conversation's messages, one collection per conversation. Version 4: terminal model quota refusals. Version 5: an
+ * answer's summary, made once for every device.
+ */
+export const MessagesStore = Migrations.synced({ id: "chat-messages", version: 5, schema: Message, family: true })
 
 /**
  * The conversation's views. Version 2: a page's title, description and icon. Version 3: docs pages. Version 4: forms and
@@ -270,9 +264,10 @@ export const deviceRegistry = Migrations.registry({
     FlowCodeStore,
     TodoRequestedStore,
     SteerSentStore,
-    TimelineSummariesStore,
     ...synced,
   ],
+  // The timeline's summaries live on the messages now, made once for every device (docs/features/timeline.md#cost).
+  retired: [Migrations.retired({ id: "timeline-summaries", kind: "local", version: 1 })],
   outbox: {
     payloads: [AskingPayload, IssueSendingPayload, TextSendingPayload, TodoSendingPayload, SteerSendingPayload],
     mutations: ["ask", "issue-write", "text-update", "todo-op", "run-steer"],
