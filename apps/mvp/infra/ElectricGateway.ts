@@ -8,9 +8,8 @@ import * as Output from "alchemy/Output"
 import { Config, Context, Effect, Option, Redacted } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { ELECTRIC_POOL_SIZE } from "./Connections.ts"
-import { admit } from "./ElectricAccess.ts"
 import { directOr, forward, type Host, isLive, logged, makeAwake, makeInFlight } from "./ElectricAwake.ts"
-import { relay } from "./ElectricRelay.ts"
+import { LONG_POLL_TIMEOUT_MS, serve } from "./ElectricCache.ts"
 import { workerBuild } from "./WorkerBuild.ts"
 
 /** The Electric release the app is built against; docker-compose.yml runs the same one. */
@@ -50,14 +49,16 @@ export class DatabaseUrl extends Context.Service<
  * traces.
  * `DATABASE_URL` isn't here: the object passes it when it starts the container (`DATABASE_URL_BINDING`).
  */
-class Electric extends Cloudflare.Container<Electric>()("Electric", {
+export const containerProps = {
   image: IMAGE,
   // 1/4 vCPU, 1 GiB of memory and 4 GB of disk; the default `lite` (256 MiB) is too small for Electric.
   instanceType: "basic",
   maxInstances: 1,
   // Its query pool is its share of the compute's connections (infra/Connections.ts `CONNECTION_BUDGET`).
-  env: { ELECTRIC_INSECURE: "true", ELECTRIC_DB_POOL_SIZE: String(ELECTRIC_POOL_SIZE) },
-}) {}
+  env: { ELECTRIC_INSECURE: "true", ELECTRIC_DB_POOL_SIZE: String(ELECTRIC_POOL_SIZE), ELECTRIC_LONG_POLL_TIMEOUT: String(LONG_POLL_TIMEOUT_MS) },
+} as const
+
+class Electric extends Cloudflare.Container<Electric>()("Electric", containerProps) {}
 
 /**
  * Starts Electric's container when a request needs it, with Postgres' direct URL from the Worker's secret binding as
@@ -108,6 +109,7 @@ export const props = {
   compatibility: { date: "2026-10-01", flags: ["nodejs_compat"] },
   // No public URL at all, neither workers.dev nor per-version previews: ChatApi's service binding is the only way in.
   workersDev: { enabled: false, previewsEnabled: false },
+  cache: { enabled: true, crossVersionCache: false },
   build: workerBuild,
   observability: {
     enabled: true,
@@ -125,11 +127,7 @@ export default class ElectricGateway extends Cloudflare.Worker<ElectricGateway>(
     if (Option.isSome(databaseUrl)) yield* Output.named(databaseUrl.value.value, DATABASE_URL_BINDING)
     const objects = yield* ElectricObject
     return {
-      fetch: logged(Effect.gen(function* () {
-        const admission = admit(yield* HttpServerRequest.HttpServerRequest)
-        if (admission._tag === "Refused") return HttpServerResponse.empty({ status: admission.status })
-        return yield* relay(objects.getByName(INSTANCE).fetch(admission.request), isLive(admission.request.url))
-      })),
+      fetch: logged(serve((request) => objects.getByName(INSTANCE).fetch(request))),
     }
   }),
 ) {}

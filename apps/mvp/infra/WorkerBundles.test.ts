@@ -111,3 +111,9 @@ describe("the Workers alchemy plan bundles", () => {
     expect(Exit.isSuccess(exit)).toBe(true)
   }, 120_000)
 })
+
+test("the gateway cache is private and versioned, with Electric's measured ten-second hold", () => {
+  expect(ElectricGateway.props.workersDev).toEqual({ enabled: false, previewsEnabled: false })
+  expect(ElectricGateway.props.cache).toEqual({ enabled: true, crossVersionCache: false })
+  expect(ElectricGateway.containerProps.env.ELECTRIC_LONG_POLL_TIMEOUT).toBe("10000")
+})

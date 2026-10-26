@@ -1000,3 +1000,23 @@ A tail's empty result does not prove absent instrumentation. The production swee
 Cloudflare documents that [real-time logs can sample under load](https://developers.cloudflare.com/workers/observability/logs/real-time-logs/). Sampling, socket failure and receipt timeout are reported as incomplete capture, never converted into successful assertions or empty production logs. Only the protocol warning's type is retained; its text and request metadata are not logged.
 
 The 2026-10-25 browser transport reproduction received ten successful, fully consumed collector acknowledgments but captured five records. No sampling warning arrived and the configured head sampling rate was 1. A Node reproduction retained all 20 records. The remaining production gap is unresolved; passing the capture integrity regressions does not prove the original production usage or correlation assertions pass. Stored-log comparison requires access to Cloudflare’s telemetry query API, which the available tail token lacks.
+
+## Electric gateway cache
+
+Workers Cache may answer before ElectricGateway runs. `electric.gateway.request`
+therefore counts only invocations relayed to the object, not every authorized
+ChatApi request. It records `live`, `status`, `outcome` (answered, overloaded,
+failed), `durationMs`, and failure `errorTag`; count overloads by outcome.
+`electric.object.request` records the object's duration and `inFlight`, and
+`electric.object.port` identifies the startup fallback. Compare aggregate gateway
+calls with ShapeProxy's request counters over the same window to measure collapse;
+do not infer exact per-key collapse from sampled tails. Existing request spans
+remain the tracing boundary; no URL, parameter, person, cookie or body is logged.
+
+Production keeps no trial URL hash, response-body classification or Prometheus
+polling. A cache hit produces no new gateway log; absence of one is not evidence
+of a missing response. The browser's ShapeProxy response remains private/no-store,
+while only the private hop retains Electric's public TTL. Workerd checks that
+header boundary; deployed measurements must verify actual edge hits and collapse.
+See [decision 0115](decisions/0115-electric-workers-cache.md) for the measured
+trial, limitations and rollback.

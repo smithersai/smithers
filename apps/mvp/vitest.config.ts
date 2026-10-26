@@ -198,6 +198,7 @@ export default defineConfig({
         "infra/ElectricAccess.ts",
         // How ChatApi calls the gateway: its service binding (docs/infrastructure.md).
         "infra/ElectricUpstream.ts",
+        "infra/ElectricCache.ts",
         // Electric's container kept running between visits (docs/infrastructure.md#electric).
         "infra/ElectricAwake.ts",
         // An overloaded Electric object answered 503, and the gateway's record of each request (docs/infrastructure.md#electric).

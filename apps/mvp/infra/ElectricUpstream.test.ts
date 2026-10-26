@@ -2,7 +2,7 @@
 // the gateway's service binding when the Worker has one, and through the global fetch to `ELECTRIC_URL` when it
 // doesn't (`alchemy dev`). The binding here is a recording `fetch`, the shape Cloudflare gives a service binding.
 import { ShapeProxy } from "@smthrs/effect-electric"
-import { Effect, Logger, Option, Redacted } from "effect"
+import { Arbitrary, Effect, Logger, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpEffect } from "effect/http"
 import { describe, expect, test } from "vitest"
 import { GATEWAY_BINDING, GATEWAY_URL, upstream } from "./ElectricUpstream.ts"
@@ -101,4 +101,52 @@ test("without a private binding the configured upstream still receives its Elect
   })(new Request("http://app.test/api/shapes/items?offset=-1"))
   await response.arrayBuffer()
   expect(global.headers[0]!.get("authorization")).toBe("Bearer synthetic-regression-credential")
+})
+
+/** The exact URL the private binding receives, after the SDK fixes the shape and strips browser input. */
+const keyFor = async (shape: ShapeProxy.Shape, query: string) => {
+  const gateway = binding()
+  const handler = HttpEffect.toWebHandler(ShapeProxy.make({ url: GATEWAY_URL, shape }).pipe(
+    Effect.provide(upstream({ [GATEWAY_BINDING]: gateway })),
+    Effect.provide(FetchHttpClient.layer), Effect.provide(Logger.layer([])),
+  ))
+  const response = await handler(new Request(`http://app.test/api/shapes/personal?${query}`))
+  expect(response.headers.get("cache-control")).toBe("private, no-store")
+  await response.arrayBuffer()
+  return gateway.urls[0]!
+}
+
+test("canonical keys retain every protocol discriminator and use the first duplicate value", async () => {
+  const shape = { table: "messages", where: "person = $1", params: { "1": "a +&%/雪" } }
+  const params = new URLSearchParams({ handle: "h +/", offset: "1_0", cursor: "c&1", expired_handle: "old", "cache-buster": "fresh", live: "true" })
+  const key = await keyFor(shape, params.toString())
+  const reversed = new URLSearchParams([...params].reverse())
+  reversed.append("offset", "ignored")
+  expect(await keyFor(shape, reversed.toString())).toBe(key)
+  expect(await keyFor(shape, params.toString().replaceAll("+", "%20"))).toBe(key)
+  expect(new URL(key).searchParams.get("params[1]")).toBe(shape.params["1"])
+  for (const name of params.keys()) {
+    const changed = new URLSearchParams(params)
+    changed.set(name, `${params.get(name)}-different`)
+    expect(await keyFor(shape, changed.toString())).not.toBe(key)
+  }
+  expect(await keyFor(shape, `${params}&table=other&where=public&params%5B1%5D=other`)).toBe(key)
+})
+
+test("property: different person-scoped definitions never share a private cache key", async () => {
+  const result = await Effect.runPromise(Arbitrary.checkEffect(
+    Arbitrary.schema(Schema.Struct({ person: Schema.String.check(Schema.isUUID()), other: Schema.String.check(Schema.isUUID()), cursor: Schema.String })),
+    ({ person, other, cursor }) => Effect.promise(async () => {
+      if (person === other) return true
+      const first = { table: "runs", where: "person_id = $1", params: { "1": person } }
+      const second = { ...first, params: { "1": other } }
+      const query = new URLSearchParams({ offset: "-1", cursor }).toString()
+      const a = await keyFor(first, query)
+      const b = await keyFor(second, query)
+      return a !== b && new URL(a).searchParams.get("params[1]") === person &&
+        new URL(b).searchParams.get("params[1]") === second.params["1"]
+    }),
+    { seed: "electric-person-scope", runs: 200 },
+  ))
+  expect(Arbitrary.formatCheckFailure(result)).toBeUndefined()
 })
