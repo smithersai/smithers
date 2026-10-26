@@ -105,6 +105,32 @@ describe("chat/Answer", () => {
     expect(model.calls).toHaveLength(2)
   })
 
+  test("a flow that answered passes the !result.ok guard the model wrote, and the answer says it worked", async () => {
+    // The guard gpt-4.1-mini put after `sandbox/write` on smithers.sh (2026-10-25, e2e/sandbox-tools.spec.ts "agent
+    // tools"): the machine wrote the file, the call settled done, and the answer was "I couldn't write the file.",
+    // because a success resolved `{ path, bytes }` with no `ok` (docs/features/sandbox-tools.md#the-flows).
+    const model = answering(
+      `const set = await ctx.call("app/theme/set", { mode: "dark" })
+if (!set.ok) {
+  ctx.done("I couldn't change the theme.")
+}
+ctx.done("Dark mode is on (" + set.mode + ").")`,
+    )
+    const agent = await openAgent(runtime, model.script)
+    const engine = await agent.engine()
+    engines.push(engine)
+    const answerId = await agent.ask("Switch to dark mode")
+
+    const exit = await agent.answer(engine, answerId)
+
+    expect(exit).toEqual(Exit.succeed({ status: "done" }))
+    expect(agent.painted).toEqual(["dark"])
+    const answer = await row(runtime, answerId)
+    expect(answer).toMatchObject({ status: "done", text: "Dark mode is on (dark)." })
+    expect(answer.parts).toEqual([{ id: "0.0", kind: "step", flow: "app/theme/set", status: "done" }])
+    expect(model.calls).toHaveLength(1)
+  })
+
   test("streams the answer's text and steps to its row while the model writes, then settles the whole text", async () => {
     const release = Effect.runSync(Deferred.make<void>())
     let calls = 0

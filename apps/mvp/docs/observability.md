@@ -774,6 +774,7 @@ The relay doesn't check the values: a caller picks its records' `service.name`, 
 | Test | Proves |
 |---|---|
 | `e2e/fixtures.ts` | every e2e test keeps the browser console; a failing test saves `browser.log` |
+| `e2e/console.test.ts` | a browser log line keeps every field of a record: Playwright's `text()` keeps an object argument's first five properties, so `e2e/console.ts` writes each object out from its value (a `sandbox.call`'s `outcome` and `callId` were missing until 2026-10-25) |
 | `worker/Chat.test.ts` "what anyone wrote never reaches a log line, span or metric" | a sentinel in questions, an invalid body, a refused retry and a Guest's refused question appears in no log, span attribute, event or failure, or metric attribute |
 | `worker/Chat.test.ts` "a crash on … is 500, logged by the defect's name and never its message" | a defect is `chat.question` at Error with `errorCode: defect` and its name, `error.type` on a span that ends without it, and its message nowhere |
 | `worker/Chat.test.ts` 400, 401, 403, 405, 409, 413 and 503 tests | each `chat.question` `errorCode` |

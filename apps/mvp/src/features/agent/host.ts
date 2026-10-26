@@ -1,6 +1,7 @@
 import type { MemoryError, Opening } from "@smthrs/memory"
 import * as OpeningMemory from "./memory"
 import { Agent, AgentAction, Budget, EventSink, QuotaPolicy, Seat, SeatResolver } from "@smthrs/agent"
+import type { AgentEvent } from "@smthrs/harness"
 import { Interpreter } from "@smthrs/flow"
 import { Evaluator, type Model, ModelProxy } from "@smthrs/model"
 import { Registry } from "@smthrs/registry"
@@ -97,13 +98,35 @@ export const agentHost = Layer.effect(
     })),
 )
 
+/**
+ * `agent.cell`: how each of the answer's cells ended and how many flow calls it made, never its code or its answer.
+ * A cell that completed after calls that all settled done answered from its own reading of them: on 2026-10-25 a write
+ * the machine had made was answered "I couldn't write the file." that way, and the records showed only the write.
+ */
+const cellRecord = (answerId: string, event: AgentEvent.AgentEvent) => {
+  if (event._tag !== "cell-settled") return Effect.void
+  const { outcome, work } = event
+  return Effect.logInfo("agent.cell").pipe(
+    Effect.annotateLogs({
+      answerId,
+      outcome: outcome._tag,
+      ...(outcome._tag === "settled" ? { transition: outcome.transition._tag } : {}),
+      ...(outcome._tag === "rejected" ? { code: outcome.code } : {}),
+      ...(work === undefined ? {} : { work: work.kind, calls: work.calls }),
+    }),
+  )
+}
+
 /** The agent's events, recorded against the answer the run is for: its execution id. */
 export const sink = Layer.effect(
   EventSink.EventSink,
   Effect.gen(function* () {
     const progress = yield* AnswerProgress
     return EventSink.make({
-      emit: (event, step) => (step === undefined ? Effect.void : progress.record(step.executionId, event)),
+      emit: (event, step) =>
+        step === undefined
+          ? Effect.void
+          : Effect.andThen(cellRecord(step.executionId, event), progress.record(step.executionId, event)),
     })
   }),
 )

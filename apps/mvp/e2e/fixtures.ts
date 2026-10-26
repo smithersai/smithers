@@ -1,6 +1,7 @@
 import { type APIRequestContext, test as base, expect, type Locator, type Page, type TestInfo } from "@playwright/test"
 import { readdir, writeFile } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
+import { recordConsole } from "./console"
 import { describeCrashes, watchCrashes } from "./crashes"
 import { themeFor } from "./frames.ts"
 import { redactRequestErrors } from "./redact"
@@ -284,7 +285,7 @@ export const test = base.extend<{ browserLog: Array<string>; spendGuard: void },
       await page.addInitScript(watchForSpinners)
       await recordActions(page, testInfo)
       const log: Array<string> = []
-      page.on("console", (message) => log.push(`${message.type()}: ${message.text()}`))
+      recordConsole(page, log)
       page.on("pageerror", (error) => log.push(`pageerror: ${error.message}`))
       const crashes = watchCrashes(page, "default", log)
       await use(log)

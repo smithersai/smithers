@@ -151,6 +151,14 @@ The turn wait (`ANSWER_TURN_WAIT`, 10 minutes, counted from when the queue befor
 
 The Durable Object's own `cloudflare.execution.start` and `cloudflare.execution.alarm` records show the expiry's start, its park on the timer and its end ([observability](../observability.md#remote-flow-executions)). No record carries a question, an answer's text or a cell (sentinel tests).
 
+The browser's engine adds one line per cell the agent ran (`src/features/agent/host.ts`'s sink, `progress.test.ts`):
+
+| Record | Kind | Fields |
+|---|---|---|
+| `agent.cell` | log | `answerId`; `outcome` (`settled`, `raised`, `rejected`); `transition` (`complete`, `continue`, `park`) for a settled cell; `code` for a rejected one; `work` (`calls`, `no_call`, `threw`, `comment_only`, `rejected`) and `calls`, the flow calls it made |
+
+A cell that `complete`d after calls whose steps all show `done` answered from its own reading of their results. On 2026-10-25 gpt-4.1-mini's `if (!result.ok)` guard read a done `sandbox/write` as failed; a successful call's object result now answers `.ok` as true (`@smthrs/harness`, [sandbox tools](sandbox-tools.md#the-flows)).
+
 ## Tests
 
 | Test | Proves |

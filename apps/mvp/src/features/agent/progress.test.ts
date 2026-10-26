@@ -2,7 +2,7 @@
 // the writer that streams each answer's text and parts, over an `AnswerApi` that records or refuses its writes.
 import type { AgentEvent } from "@smthrs/harness"
 import { EventSink } from "@smthrs/agent"
-import { Context, Deferred, Effect, Exit, Layer, Scope } from "effect"
+import { Context, Deferred, Effect, Exit, Layer, Logger, Scope } from "effect"
 import { describe, expect, test, vi } from "vitest"
 import { AnswerApi, AnswerSettled, AnswersUnavailable } from "./answers"
 import { settlement, settleAnswer, sink } from "./host"
@@ -336,5 +336,51 @@ describe("the agent's sink", () => {
     await Effect.runPromise(emit(started(0, 1)))
 
     expect(recorded).toEqual([["answer-1", "cell-call-started"]])
+  })
+
+  test("logs agent.cell for each settled cell: how it ended and its calls, never its answer or error", async () => {
+    const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+    const emit = await Effect.runPromise(
+      Effect.map(EventSink.EventSink, (service) => service.emit).pipe(
+        Effect.provide(sink),
+        Effect.provide(Layer.succeed(AnswerProgress, AnswerProgress.of({
+          record: () => Effect.void,
+          get: () => Effect.succeed(undefined),
+          forget: () => Effect.void,
+        }))),
+      ),
+    )
+    const cellSettled = (outcome: Record<string, unknown>, work?: Record<string, unknown>) =>
+      event({ _tag: "cell-settled", cell: "secret cell source", outcome, ...(work === undefined ? {} : { work }) })
+    const run = (settledEvent: AgentEvent.AgentEvent, executionId?: string) =>
+      Effect.runPromise(
+        emit(settledEvent, executionId === undefined ? undefined : { executionId } as never).pipe(
+          Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((o) => void logs.push(Logger.formatStructured.log(o)))])),
+        ),
+      )
+
+    await run(
+      cellSettled({ _tag: "settled", transition: { _tag: "complete", output: "I couldn't write the file." } }, {
+        kind: "calls",
+        calls: 1,
+        callMs: 15_000,
+      }),
+      "answer-1",
+    )
+    await run(cellSettled({ _tag: "rejected", code: "syntax", message: "Unexpected token at secret" }), "answer-1")
+    await run(cellSettled({ _tag: "raised", name: "TypeError", message: "secret.ok is undefined" }, {
+      kind: "threw",
+      calls: 0,
+      callMs: 0,
+    }), "answer-1")
+    await run(started(0, 0), "answer-1")
+    await run(cellSettled({ _tag: "settled", transition: { _tag: "continue" } }))
+
+    expect(logs.map((log) => [log.message, log.annotations])).toEqual([
+      ["agent.cell", { answerId: "answer-1", outcome: "settled", transition: "complete", work: "calls", calls: 1 }],
+      ["agent.cell", { answerId: "answer-1", outcome: "rejected", code: "syntax" }],
+      ["agent.cell", { answerId: "answer-1", outcome: "raised", work: "threw", calls: 0 }],
+    ])
+    expect(JSON.stringify(logs)).not.toMatch(/secret|couldn't/)
   })
 })

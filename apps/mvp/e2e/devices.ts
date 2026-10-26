@@ -2,6 +2,7 @@ import { answerTo, questionIn } from "./messages"
 import { test as base, type APIRequestContext, type Browser, type BrowserContext, type Locator, type Page, type TestInfo } from "@playwright/test"
 import { writeFile } from "node:fs/promises"
 import { DEV_URL } from "../dev/https"
+import { recordConsole } from "./console"
 import { describeCrashes, watchCrashes } from "./crashes"
 import { devReload } from "./devReload"
 import { faultyApp, faults } from "./faults"
@@ -198,7 +199,7 @@ export class Tab {
     this.openedAt = (Date.now() - startedAt) / 1000
     this.crashes = watchCrashes(page, name, this.log)
     const at = () => `${((Date.now() - startedAt) / 1000).toFixed(2)}s`
-    page.on("console", (message) => this.log.push(`${at()} ${message.type()}: ${message.text()}`))
+    recordConsole(page, this.log, () => `${at()} `)
     page.on("pageerror", (error) => this.log.push(`${at()} pageerror: ${error.message}`))
     // Vite reloads every page it serves when a module changes (its HMR socket's `full-reload`), as when someone edits
     // the checkout a shared dev server serves. The page restarts mid-test, losing its memory and its fault switches,

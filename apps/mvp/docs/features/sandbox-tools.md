@@ -34,6 +34,7 @@ sandbox/<tool>/start: POST /api/sandbox/calls { callId, call, conversationId | a
 
 - **The call's id** is the version 5 UUID of the run's execution id (`CALL_ID_NAMESPACE`). A step run again, after a crash or with the tab closed and reopened, names the same call; ChatApi answers it as it stands, and the machine never runs it twice.
 - **Where it runs:** the agent's call is a child of its answer's run, so it names the answer, and ChatApi uses that answer's conversation's branch, however the person's tab moved since. A person's call names the conversation their tab showed (`conversationId`, pinned by `src/features/sandbox/actions.ts`; a person never types it). A call that names neither is refused `invalid`.
+- **What the agent reads:** a done call resolves in the agent's cell as the tool's answer, `{ path, bytes }` for a write, and answers `.ok` as true like any successful call's object result (`@smthrs/harness`), so a cell's `if (!result.ok)` guard reads it as done. Until 2026-10-25 it had no `ok`: gpt-4.1-mini's guard read a write the machine had made as failed, and the answer was "I couldn't write the file." (`e2e/sandbox-tools.spec.ts` "agent tools").
 - **Failures:** `SandboxCallRefused` (`sign_in`, `forbidden`, `locked`, `not_found`, `invalid`), `SandboxCommandTooLong` with `maxSeconds`, `SandboxCallFailed` with the machine's reason, `SandboxCallUnavailable` while ChatApi is unreachable, and `SandboxCallRunning` while the machine works. The agent sees a failure's kind and any command limit, never its message.
 
 ## The routes
