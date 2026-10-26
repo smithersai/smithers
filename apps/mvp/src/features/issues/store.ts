@@ -1,6 +1,9 @@
-import { ElectricCollection } from "@smthrs/effect-electric"
+import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection } from "@smthrs/effect-tanstack-db"
 import { Clock, Context, Effect, Layer, Option, Ref, type Scope, Stream } from "effect"
+import { AuthStore } from "../auth/store"
+import { RepoStore } from "../repo/store"
+import { repositoryAccessChanges, repositoryShapeSource, syncStatusAfter } from "./source"
 import { ChatStore } from "../chat/store"
 import { repoId } from "../repo/contract"
 import {
@@ -103,6 +106,8 @@ export class IssuesStore extends Context.Service<
 
 const make = Effect.fnUntraced(function* (config: IssuesConfig) {
   const scope = yield* Effect.scope
+  const authority = repositoryAccessChanges(yield* AuthStore, yield* RepoStore)
+  const source = repositoryShapeSource(yield* ShapeSource.ShapeSource, authority)
   const chat = yield* ChatStore
   const { sending, requested } = yield* IssueWrites
 
@@ -121,7 +126,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     shape: shape(ITEMS_SHAPE_ROUTE),
     syncMode: "eager",
     persist: { schemaVersion: 3 },
-  })
+  }).pipe(Effect.provideService(ShapeSource.ShapeSource, source))
   yield* observeIssueShape(items.sync).pipe(Effect.forkScoped)
   const comments = yield* ElectricCollection.make<Comment>({
     id: "issue-comments",
@@ -129,14 +134,14 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     getKey: (row) => row.id,
     shape: shape(COMMENTS_SHAPE_ROUTE),
     ...kept,
-  })
+  }).pipe(Effect.provideService(ShapeSource.ShapeSource, source))
   const sync = yield* ElectricCollection.make<SyncRow>({
     id: "issue-sync",
     schema: SyncRow,
     getKey: syncKey,
     shape: shape(SYNC_SHAPE_ROUTE),
     ...kept,
-  })
+  }).pipe(Effect.provideService(ShapeSource.ShapeSource, source))
   // Version 2: a Publish's or an Update branch's write names its branch (docs/features/branch-publish.md).
   const writes = yield* ElectricCollection.make<WriteRow>({
     id: "issue-writes",
@@ -152,7 +157,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     getKey: (row) => row.repoId,
     shape: shape(TRIAGE_SETTINGS_SHAPE_ROUTE),
     ...kept,
-  })
+  }).pipe(Effect.provideService(ShapeSource.ShapeSource, source))
   const drafts = yield* Collection.persisted<Draft, string>({
     id: "issue-drafts",
     schema: Draft,
@@ -173,26 +178,30 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     initialData: [{ id: ACCESS, status: "unknown", installed: false }],
   })
 
+  yield* authority.pipe(Stream.runForEach((status) => Effect.ignore(access.update(ACCESS, (row) => {
+    row.status = status
+    if (status !== "allowed") row.installed = false
+  }))), Effect.forkIn(scope, { startImmediately: true }))
+
   // The followers: a requested write whose GitHub row arrived goes, and the synced row shows in its place; and the
-  // items shape's answers say whether this person may read the repository's issues at all.
+  // session and role answer decide whether this person may read the repository's issues at all.
   const delivered = yield* deliveredQuery(requested, items, comments, writes)
   const started = yield* Ref.make(false)
   const awaitingItems = yield* Ref.make(false)
   yield* items.sync.pipe(
     Stream.runForEach((event) => Effect.gen(function* () {
-      const status = accessOf(event)
+      const status = syncStatusOf(event)
       if (status === undefined) return
       yield* Effect.ignore(access.update(ACCESS, (row) => {
         // A failed reconnect cannot undo a current authorization refusal and reveal a cached private item.
-        if (status !== "unavailable" || (row.status !== "sign_in" && row.status !== "forbidden")) row.status = status
+        row.status = syncStatusAfter(row.status, status)
         // An installed batch stays readable through a failed live poll. A cold shape has no such receipt.
-        if (status === "sign_in" || status === "forbidden") row.installed = false
       }))
       // A 2xx precedes installation. Restored rows can also make `preload` ready before the network answers.
       if (status !== "allowed" || (yield* Ref.getAndSet(awaitingItems, true))) return
       yield* items.currentApplied.pipe(
         Effect.flatMap(() => Effect.ignore(access.update(ACCESS, (row) => {
-          row.installed = true
+          row.installed = row.status === "allowed"
         }))),
         Effect.ensuring(Ref.set(awaitingItems, false)),
         Effect.forkIn(scope, { startImmediately: true }),
@@ -205,8 +214,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
   // decoded and installed cursor (ElectricCollection.certify); a refused request cannot release either waiter.
   yield* items.currentApplied.pipe(
     Effect.flatMap(() => Effect.ignore(access.update(ACCESS, (row) => {
-      row.status = "allowed"
-      row.installed = true
+      row.installed = row.status === "allowed"
     }))),
     Effect.forkIn(scope, { startImmediately: true }),
   )
@@ -275,18 +283,7 @@ export const repoIdOf = (repo: string): string => {
   return repoId(owner, name)
 }
 
-/**
- * What one of the items shape's sync events says of access: allowed once a request succeeds; refused when ChatApi
- * stopped the shape with `401` (sign in) or `403` (no role); a failed request or other stop is unavailable until
- * another request succeeds. `Sent` says nothing new.
- */
-export const accessOf = (event: ElectricCollection.SyncEvent): Access["status"] | undefined =>
-  event._tag === "Succeeded"
-    ? "allowed"
-    : event._tag === "Stopped" && event.error.status === 401
-    ? "sign_in"
-    : event._tag === "Stopped" && event.error.status === 403
-    ? "forbidden"
-    : event._tag === "Failed" || event._tag === "Stopped"
-    ? "unavailable"
-    : undefined
+/** Transport health never grants or revokes session authority. */
+export const syncStatusOf = (event: ElectricCollection.SyncEvent): "allowed" | "unavailable" | undefined =>
+  event._tag === "Succeeded" ? "allowed"
+    : event._tag === "Failed" || event._tag === "Stopped" ? "unavailable" : undefined

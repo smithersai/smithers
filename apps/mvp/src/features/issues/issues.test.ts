@@ -1,3 +1,6 @@
+import { RepoStore } from "../repo/store"
+import { RepoClient } from "../repo/api"
+import { role as readRepositoryRole } from "../repo/actions"
 // Issues on the tab (decision 0012 slice G0, docs/features/issues.md), driven as React drives them: the issues layer's
 // plain actions, its live queries and the slash commands, with no React. Each device runs the browser's own layer
 // (`appLayer`) on a Node device whose engine leads (src/test/chatApi.ts), against ChatApi's real handler and its git
@@ -105,7 +108,7 @@ const faultyClient = () => {
   }
 }
 
-type App = ManagedRuntime.ManagedRuntime<Issues | IssuesStore | ChatStore | Chat | Commands | AuthStore, unknown>
+type App = ManagedRuntime.ManagedRuntime<Issues | IssuesStore | ChatStore | Chat | Commands | AuthStore | RepoStore | RepoClient, unknown>
 
 /** A tab on `runtime`, with the issues layer's queries started as React starts them. */
 const tabOf = async (runtime: App) => {
@@ -132,7 +135,7 @@ const tabOf = async (runtime: App) => {
 /** The app on a fresh ChatApi as `actor` (Maya unless set), its device's engine leading. */
 const open = async (options: TabOptions = {}, actor: Actor | null = maya) => {
   const runtime: ManagedRuntime.ManagedRuntime<
-    Issues | IssuesStore | ChatStore | Chat | Commands | AuthStore | TestChatApi,
+    Issues | IssuesStore | ChatStore | Chat | Commands | AuthStore | RepoStore | RepoClient | TestChatApi,
     unknown
   > = openTestApp(options, { actor })
   runtimes.push(runtime)
@@ -399,7 +402,7 @@ describe("a comment", () => {
 })
 
 describe("loading", () => {
-  test("a cached issue stays visible on a failed poll, then a 403 hides it through another failure", async () => {
+  test("a cached issue stays visible through transport failures; session authority hides it", async () => {
     const runtime = openFaultyApp()
     runtimes.push(runtime)
     const tab = await tabOf(runtime)
@@ -422,29 +425,30 @@ describe("loading", () => {
     expect(currentPage()).toBe("shown")
     await runtime.runPromise(faults.refuse(403))
     await runtime.runPromise(tab.store.items.reconnect)
+    await runtime.runPromise(Effect.flatMap(AuthStore, (auth) => auth.session.update(SESSION, (row) => { row.role = null })))
     await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "forbidden", installed: false }), 5_000)
     expect(tab.issues.queries.item.toArray[0]).toMatchObject({ number: 31 })
     expect(currentPage()).toBe("missing")
     await runtime.runPromise(faults.refuse(503))
     await runtime.runPromise(tab.store.items.reconnect)
-    await until(() => expect(tab.count(shapeTransitions, { phase: "failed" })).toBeGreaterThan(1), 15_000)
+    await until(() => expect(tab.issues.queries.access.toArray[0]?.status).toBe("forbidden"))
     expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "forbidden", installed: false })
     expect(currentPage()).toBe("missing")
   }, WITHIN)
 
-  test("a failed reconnect cannot clear a 403 refusal", async () => {
+  test("a transport refusal is unavailable and does not decide session authority", async () => {
     const runtime = openFaultyApp({}, (faults) => faults.refuse(403))
     runtimes.push(runtime)
     const tab = await tabOf(runtime)
     tab.actions.open(OWNER, NAME, 3)
-    await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "forbidden", installed: false }), 5_000)
+    await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "unavailable", installed: false }), 5_000)
     const faults = await runtime.runPromise(Effect.service(ShapeSource.Faults))
     await runtime.runPromise(faults.refuse(503))
     await runtime.runPromise(tab.store.items.reconnect)
     await until(() => expect(tab.count(shapeTransitions, { phase: "failed" })).toBeGreaterThan(0), 5_000)
-    expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "forbidden", installed: false })
+    expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "unavailable", installed: false })
     expect(pageOf(tab.issues.queries.item.toArray[0], tab.issues.queries.synced.toArray[0],
-      tab.issues.queries.item.isReady(), tab.issues.queries.synced.isReady(), tab.issues.queries.access.toArray[0])).toBe("missing")
+      tab.issues.queries.item.isReady(), tab.issues.queries.synced.isReady(), tab.issues.queries.access.toArray[0])).toBe("unknown")
   }, WITHIN)
 
   test("a failed items shape settles a direct issue before device hydration or the next retry", async () => {
@@ -551,6 +555,7 @@ describe("who reads a repository's issues", () => {
     await Effect.runPromise(visitor.api.github.run(Store.recordRepository(REPO_ID, { githubId: 1, private: false })))
     await server(visitor.api).seed(4, "Public issue")
     const later = await another(visitor.api)
+    await later.runtime.runPromise(readRepositoryRole(OWNER, NAME))
     later.actions.open(OWNER, NAME)
     await until(() => expect(access(later)).toMatchObject({ status: "allowed" }))
     await until(() => expect(later.list().issues.map(({ title }) => title)).toEqual(["Public issue"]))

@@ -880,5 +880,5 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       return HttpServerResponse.empty({ status: 404 })
     })
 
-    return { fetch }
+    return { fetch, mayRead: (target: Repository) => Effect.map(readRefusal(target), Option.isNone) }
   })

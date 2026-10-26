@@ -1,3 +1,6 @@
+import { RepoStore } from "../repo/store"
+import { RepoClient } from "../repo/api"
+import { role as readRepositoryRole } from "../repo/actions"
 // TODOs on the tab (decision 0016 slice 1, Track A; docs/features/todos.md), driven as React drives them: the TODOs
 // layer's plain actions, its live queries and the view's pure functions, with no React. Each device runs the browser's
 // own layer (`appLayer`) on a Node device whose engine leads (src/test/chatApi.ts), against ChatApi's real stack routes
@@ -98,10 +101,11 @@ const holdClient = (op: "commit" | "drop") => {
   return { layer, entered, release, settled }
 }
 
-type App = ManagedRuntime.ManagedRuntime<Todos | TodosStore | ChatStore | Chat | Commands | AuthStore | FlowDispatch | IssuesStore, unknown>
+type App = ManagedRuntime.ManagedRuntime<RepoStore | RepoClient | Todos | TodosStore | ChatStore | Chat | Commands | AuthStore | FlowDispatch | IssuesStore, unknown>
 
 /** A tab on `runtime`, with the TODOs layer's queries started as React starts them. */
 const tabOf = async (runtime: App) => {
+  await runtime.runPromise(readRepositoryRole(OWNER, NAME))
   const todos = await runtime.runPromise(Effect.service(Todos))
   const store = await runtime.runPromise(Effect.service(TodosStore))
   const { queries } = todos
@@ -145,7 +149,7 @@ type Tab = Awaited<ReturnType<typeof tabOf>>
 /** The app on a fresh ChatApi as `actor` (Maya unless set), its device's engine leading. */
 const open = async (options: TabOptions = {}, actor: Actor | null = maya) => {
   const runtime: ManagedRuntime.ManagedRuntime<
-    Todos | TodosStore | ChatStore | Chat | Commands | AuthStore | FlowDispatch | IssuesStore | TestChatApi,
+    RepoClient | RepoStore | Todos | TodosStore | ChatStore | Chat | Commands | AuthStore | FlowDispatch | IssuesStore | TestChatApi,
     unknown
   > = openTestApp(options, { actor })
   runtimes.push(runtime)
@@ -786,10 +790,11 @@ describe("the device", () => {
 
 
 describe("stack initialization regressions", () => {
-  test.each([[401, "sign_in"], [403, "forbidden"]] as const)("a prompt shape refused %s updates access to %s", async (status, expected) => {
+  test.each([[401, "allowed"], [403, "allowed"]] as const)("a prompt shape refused %s cannot change session authority (%s)", async (status, expected) => {
     const runtime = openTestApp()
     runtimes.push(runtime)
     const api = await runtime.runPromise(Effect.service(TestChatApi))
+    await runtime.runPromise(readRepositoryRole(OWNER, NAME))
     await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
       const built = yield* Layer.build(TodosStore.layer({ origin: api.origin }).pipe(
         Layer.provide(Layer.succeed(ShapeSource.ShapeSource, {
@@ -812,6 +817,7 @@ describe("stack initialization regressions", () => {
     const runtime = openTestApp()
     runtimes.push(runtime)
     const api = await runtime.runPromise(Effect.service(TestChatApi))
+    await runtime.runPromise(readRepositoryRole(OWNER, NAME))
     await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
       const real = yield* Persistence.Persistence
       let fail = false

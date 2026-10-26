@@ -1,6 +1,10 @@
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Persistence } from "@smthrs/effect-tanstack-db"
 import { Cache, Clock, Context, Effect, Exit, Layer, Option, Scope, Stream } from "effect"
+import { AuthStore } from "../auth/store"
+import { RepoStore } from "../repo/store"
+import { repositoryShapeSource } from "../issues/source"
+import { stackAccess } from "./source"
 import { ChatStore } from "../chat/store"
 import { repoId } from "../repo/contract"
 import { TODO_REQUESTS_SHAPE_ROUTE, TODOS_SHAPE_ROUTE } from "./contract"
@@ -84,21 +88,10 @@ export class TodosStore extends Context.Service<
 const viewOf = (view: Collection.Collection<StackView, string>) =>
   LiveQuery.make((q) => q.from({ view: view.tanstack }).findOne())
 
-/**
- * What one of a stack's shape answers says of access: allowed once a request succeeds; refused when ChatApi stopped the
- * shape with `401` (sign in) or `403` (not a Member); anything else says nothing new.
- */
-export const accessOf = (event: ElectricCollection.SyncEvent): Access["status"] | undefined =>
-  event._tag === "Succeeded"
-    ? "allowed"
-    : event._tag === "Stopped" && event.error.status === 401
-    ? "sign_in"
-    : event._tag === "Stopped" && event.error.status === 403
-    ? "forbidden"
-    : undefined
-
 const make = Effect.fnUntraced(function* (config: TodosConfig) {
   const scope = yield* Effect.scope
+  const auth = yield* AuthStore
+  const repos = yield* RepoStore
   const persistence = yield* Persistence.Persistence
   // Stack shapes open later; retain the source supplied when this store was built.
   const source = yield* ShapeSource.ShapeSource
@@ -137,6 +130,10 @@ const make = Effect.fnUntraced(function* (config: TodosConfig) {
   const stacks = new Map<string, RepoStack>()
   const open = (id: string) =>
     Effect.gen(function* () {
+      const authority = Stream.zipLatest(auth.sessionState.rows, repos.rolesState.rows).pipe(
+        Stream.map(([sessions, roles]) => stackAccess(sessions[0]!, roles, id)), Stream.changes,
+      )
+      const guarded = repositoryShapeSource(source, authority)
       const todos = yield* ElectricCollection.make<Todo>({
         id: `todos:${id}`,
         schema: Todo,
@@ -145,7 +142,7 @@ const make = Effect.fnUntraced(function* (config: TodosConfig) {
         syncMode: "eager",
         // 4: a failure may be `base_closed` (stacked TODOs).
         persist: { schemaVersion: 4 },
-      })
+      }).pipe(Effect.provideService(ShapeSource.ShapeSource, guarded))
       const requests = yield* ElectricCollection.make<TodoRequest>({
         id: `todo-requests:${id}`,
         schema: TodoRequest,
@@ -153,33 +150,19 @@ const make = Effect.fnUntraced(function* (config: TodosConfig) {
         shape: shape(TODO_REQUESTS_SHAPE_ROUTE, id),
         syncMode: "eager",
         persist: { schemaVersion: 1 },
-      })
+      }).pipe(Effect.provideService(ShapeSource.ShapeSource, guarded))
       const stack: RepoStack = { todos: yield* rowsOf(todos), requests: yield* rowsOf(requests) }
-      // The followers: a requested change whose result arrived goes, and the shape's answers say whether this person
-      // may read the stack.
+      // A requested change whose result arrived goes. Access follows the device session and repository role.
       yield* Stream.zipLatest(stack.todos.rows, requestedQuery.rows).pipe(
         Stream.runForEach(([rows, mine]) =>
           Effect.forEach(deliveredOf(id, rows, mine), (opId) => Effect.ignore(requested.delete(opId)), { discard: true })
         ),
         Effect.forkIn(scope, { startImmediately: true }),
       )
-      // Unknown until the shape answers.
+      // Unknown until the session and repository role answer.
       yield* Effect.ignore(access.insert({ id, status: "unknown" }))
-      // Both shapes must allow access. A successful TODO request cannot erase a prompt refusal.
-      const statuses: Array<Access["status"]> = ["unknown", "unknown"]
-      yield* Stream.merge(
-        todos.sync.pipe(Stream.map((event) => ({ index: 0, event }))),
-        requests.sync.pipe(Stream.map((event) => ({ index: 1, event }))),
-      ).pipe(
-        Stream.runForEach(({ index, event }) => {
-          const status = accessOf(event)
-          if (status === undefined) return Effect.void
-          statuses[index] = status
-          const combined = statuses.includes("sign_in") ? "sign_in"
-            : statuses.includes("forbidden") ? "forbidden"
-            : statuses.every((value) => value === "allowed") ? "allowed" : "unknown"
-          return Effect.ignore(access.update(id, (draft) => void (draft.status = combined)))
-        }),
+      yield* authority.pipe(
+        Stream.runForEach((status) => Effect.ignore(access.update(id, (row) => { row.status = status }))),
         Effect.forkIn(scope, { startImmediately: true }),
       )
       stacks.set(id, stack)

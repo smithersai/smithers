@@ -263,8 +263,8 @@ export const role = (owner: string, name: string) =>
         Effect.annotateLogs({ outcome: "refused", status: result.failure.status ?? 0, durationMs }),
       )
     }
-    const { role: held, own } = result.success
-    yield* put(store.roles, id, { id, role: held, own })
+    const { role: held, own, readable } = result.success
+    yield* put(store.roles, id, { id, role: held, own, readable })
     yield* Metric.update(Metric.withAttributes(roleAnswers, { outcome: "answered", role: held ?? "none" }), 1)
     yield* Effect.logInfo("repo.role").pipe(
       Effect.annotateLogs({ outcome: "answered", role: held ?? "none", own, durationMs }),

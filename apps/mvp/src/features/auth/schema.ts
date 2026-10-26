@@ -61,6 +61,8 @@ export type SessionAnswer = typeof SessionAnswer.Type
 export const RepoRoleAnswer = Schema.Struct({
   role: Schema.NullOr(Schema.Literals(ROLES)),
   own: Schema.Boolean,
+  /** Repository shapes may be read; with no role this is an explicit public-read receipt. */
+  readable: Schema.optional(Schema.Boolean),
 })
 export type RepoRoleAnswer = typeof RepoRoleAnswer.Type
 
@@ -72,5 +74,7 @@ export const RepoRole = Schema.Struct({
   id: Schema.String,
   role: Schema.NullOr(Schema.Literals(ROLES)),
   own: Schema.Boolean,
+  /** Repository shapes may be read; with no role this is an explicit public-read receipt. */
+  readable: Schema.optional(Schema.Boolean),
 })
 export type RepoRole = typeof RepoRole.Type

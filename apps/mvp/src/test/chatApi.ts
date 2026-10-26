@@ -524,7 +524,7 @@ export class TestChatApi extends Context.Service<
         // The stack's routes, as ChatApi routes them (worker/ChatApi.ts): no host runs a TODO, so every TODO stays Queued.
         const stack = yield* StackApi.make(database, roles).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
         // A repository's home, as ChatApi routes it (worker/ChatApi.ts): the curated homes a test gives, else the real ones.
-        const home = HomeApi.make({ roles, ...(options.homes === undefined ? {} : { files: options.homes }) })
+        const home = HomeApi.make({ roles, mayRead: github.mayRead, ...(options.homes === undefined ? {} : { files: options.homes }) })
         // A repository's docs, as ChatApi routes them (worker/ChatApi.ts): the index its home names, or the curated home
         // a test gives, read from the scripted outside web, the home from what GitHub says of it (RepoApi's about read).
         // A `docs` view reads its page through the same source.

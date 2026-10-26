@@ -1,7 +1,10 @@
-import { ElectricCollection } from "@smthrs/effect-electric"
+import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, Layer, Ref, Stream, type Scope } from "effect"
-import { accessOf, IssuesStore } from "../issues/store"
+import { AuthStore } from "../auth/store"
+import { RepoStore } from "../repo/store"
+import { repositoryAccessChanges, repositoryShapeSource, syncStatusAfter } from "../issues/source"
+import { syncStatusOf, IssuesStore } from "../issues/store"
 import { CHECKS_SHAPE_ROUTE, PULL_COMMITS_SHAPE_ROUTE, PULLS_SHAPE_ROUTE, REVIEWS_SHAPE_ROUTE } from "./contract"
 import {
   checksQuery,
@@ -55,6 +58,8 @@ export class PullsStore extends Context.Service<
 
 const make = Effect.fnUntraced(function* (config: PullsConfig) {
   const scope = yield* Effect.scope
+  const authority = repositoryAccessChanges(yield* AuthStore, yield* RepoStore)
+  const source = repositoryShapeSource(yield* ShapeSource.ShapeSource, authority)
   const issues = yield* IssuesStore
   const shape = (route: string) => ({
     url: `${config.origin}${route}`,
@@ -68,7 +73,7 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
     getKey: (row) => row.itemId,
     shape: shape(PULLS_SHAPE_ROUTE),
     ...kept,
-  })
+  }).pipe(Effect.provideService(ShapeSource.ShapeSource, source))
   yield* observePullShape(pulls.sync).pipe(Effect.forkScoped)
   const commits = yield* ElectricCollection.make<PullCommitRow>({
     id: "pull-commits",
@@ -76,21 +81,21 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
     getKey: commitKey,
     shape: shape(PULL_COMMITS_SHAPE_ROUTE),
     ...kept,
-  })
+  }).pipe(Effect.provideService(ShapeSource.ShapeSource, source))
   const reviews = yield* ElectricCollection.make<ReviewRow>({
     id: "pull-reviews",
     schema: ReviewRow,
     getKey: (row) => row.id,
     shape: shape(REVIEWS_SHAPE_ROUTE),
     ...kept,
-  })
+  }).pipe(Effect.provideService(ShapeSource.ShapeSource, source))
   const checks = yield* ElectricCollection.make<CheckRow>({
     id: "pull-checks",
     schema: CheckRow,
     getKey: (row) => row.id,
     shape: shape(CHECKS_SHAPE_ROUTE),
     ...kept,
-  })
+  }).pipe(Effect.provideService(ShapeSource.ShapeSource, source))
   const files = yield* Collection.local<FilesRow, string>({ id: "pull-files", schema: FilesRow, getKey: (row) => row.id })
   const view = yield* Collection.local<PullsView, string>({
     id: "pull-view",
@@ -110,22 +115,23 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
       pullStatus: "unknown",
     }],
   })
+  yield* authority.pipe(Stream.runForEach((status) => Effect.ignore(view.update(VIEW, (row) => {
+    row.pullStatus = status
+    if (status !== "allowed") row.installed = false
+  }))), Effect.forkIn(scope, { startImmediately: true }))
   const awaitingPulls = yield* Ref.make(false)
   yield* pulls.sync.pipe(
     Stream.runForEach((event) => Effect.gen(function* () {
-      const status = accessOf(event)
+      const status = syncStatusOf(event)
       if (status === undefined) return
       yield* Effect.ignore(view.update(VIEW, (row) => {
-        if (status !== "unavailable" || (row.pullStatus !== "sign_in" && row.pullStatus !== "forbidden")) {
-          row.pullStatus = status
-        }
-        if (status === "sign_in" || status === "forbidden") row.installed = false
+        row.pullStatus = syncStatusAfter(row.pullStatus, status)
       }))
       if (status !== "allowed") return
       if (yield* Ref.getAndSet(awaitingPulls, true)) return
       yield* pulls.currentApplied.pipe(
         Effect.flatMap(() => Effect.ignore(view.update(VIEW, (row) => {
-          row.installed = true
+          row.installed = row.pullStatus === "allowed"
         }))),
         Effect.ensuring(Ref.set(awaitingPulls, false)),
         Effect.forkIn(scope, { startImmediately: true }),
@@ -138,8 +144,7 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
   // a refusal invalidates that cursor and cannot release either waiter (ElectricCollection.certify).
   yield* pulls.currentApplied.pipe(
     Effect.flatMap(() => Effect.ignore(view.update(VIEW, (row) => {
-      row.pullStatus = "allowed"
-      row.installed = true
+      row.installed = row.pullStatus === "allowed"
     }))),
     Effect.forkIn(scope, { startImmediately: true }),
   )

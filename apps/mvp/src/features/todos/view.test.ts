@@ -1,6 +1,6 @@
 import { mayRetry } from "./view"
 // What the stack's screens show (src/features/todos/view.ts) and the contract's helpers, as pure functions over rows;
-// and how a send's refusal and a shape's answer read (writes.ts `reasonOf`, store.ts `accessOf`). The rows they read
+// and how a send's refusal reads (writes.ts `reasonOf`). The rows they read
 // come from real devices in todos.test.ts.
 import { describe, expect, test } from "vitest"
 import {
@@ -23,7 +23,7 @@ import {
   todosChannel,
 } from "./contract"
 import type { Draft, Requested, Sending, Todo, TodoRequest } from "./schema"
-import { accessOf } from "./store"
+
 import {
   accessFor,
   deliveredOf,
@@ -227,14 +227,7 @@ describe("drafts, access and who may change a stack", () => {
     expect(accessFor(REPO, [{ id: REPO, status: "forbidden" }, { id: "x", status: "allowed" }])).toBe("forbidden")
   })
 
-  test("a shape's answer: allowed once it succeeds, sign in on 401, forbidden on 403, else nothing new", () => {
-    const stopped = (status?: number) => ({ _tag: "Stopped", error: { status } }) as never
-    expect(accessOf({ _tag: "Succeeded" })).toBe("allowed")
-    expect(accessOf(stopped(401))).toBe("sign_in")
-    expect(accessOf(stopped(403))).toBe("forbidden")
-    expect(accessOf(stopped())).toBeUndefined()
-    expect(accessOf({ _tag: "Failed" } as never)).toBeUndefined()
-  })
+
 
   test("a Member and above on the repository may change its stack, as ChatApi answered for it (decision 0079)", () => {
     const session = (status: "loading" | "signed_in" | "signed_out" | "unreachable", role: "member" | "guest" | null = null) => ({

@@ -1,3 +1,4 @@
+import { role as readRepositoryRole } from "../repo/actions"
 // Pull requests on the tab (decision 0012 §6, docs/features/pulls.md#the-browser), driven as React drives them: the
 // pulls layer's plain actions and its live queries, with no React. Each device runs the browser's own layer (`appLayer`)
 // on a Node device (src/test/chatApi.ts), against ChatApi's real handler and its git routes (worker/github/Api.ts) over
@@ -213,7 +214,7 @@ const server = (api: TestChatApi["Service"]) => {
 }
 
 describe("the list and a pull request's page", () => {
-  test.each([[401, "sign_in", "sign_in"], [403, "forbidden", "missing"]] as const)(
+  test.each([[401, "unavailable", "shown"], [403, "unavailable", "shown"]] as const)(
     "a %s pull refusal survives a failed reconnect and recovers only with an installed batch",
     async (status, refusal, page) => {
       let fault: number | undefined = status
@@ -332,6 +333,7 @@ describe("the list and a pull request's page", () => {
     runtimes.push(fresh)
     const pulls = await fresh.runPromise(Effect.service(Pulls))
     pulls.queries.list.startSyncImmediate()
+    await fresh.runPromise(readRepositoryRole(OWNER, NAME))
     pulls.actions.open(OWNER, NAME)
     await until(() => expect(pulls.queries.list.toArray.map((row) => row.number)).toEqual([3845, 3844, 3843, 3842, 3841]))
     expect(itemChunks).toBeGreaterThan(1)

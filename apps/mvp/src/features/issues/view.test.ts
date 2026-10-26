@@ -24,7 +24,7 @@ import {
   triageControlOf,
   triageSwitchOf,
 } from "./view"
-import { accessOf } from "./store"
+import { syncStatusOf } from "./store"
 import { keep } from "./writes"
 
 const synced: ListRow = {
@@ -273,15 +273,15 @@ describe("a repository this person may not read", () => {
   })
 
   test("the items shape's answers: allowed, refused, or unavailable until its next success", () => {
-    expect(accessOf({ _tag: "Succeeded" })).toBe("allowed")
-    expect(accessOf({ _tag: "Stopped", error: new ElectricCollection.SyncFailed({ cause: null, status: 401 }) })).toBe("sign_in")
-    expect(accessOf({ _tag: "Stopped", error: new ElectricCollection.SyncFailed({ cause: null, status: 403 }) })).toBe(
-      "forbidden",
+    expect(syncStatusOf({ _tag: "Succeeded" })).toBe("allowed")
+    expect(syncStatusOf({ _tag: "Stopped", error: new ElectricCollection.SyncFailed({ cause: null, status: 401 }) })).toBe("unavailable")
+    expect(syncStatusOf({ _tag: "Stopped", error: new ElectricCollection.SyncFailed({ cause: null, status: 403 }) })).toBe(
+      "unavailable",
     )
-    expect(accessOf({ _tag: "Stopped", error: new ElectricCollection.SyncFailed({ cause: null, status: 400 }) })).toBe("unavailable")
-    expect(accessOf({ _tag: "Failed", status: 503 })).toBe("unavailable")
-    expect(accessOf({ _tag: "Failed" })).toBe("unavailable")
-    expect(accessOf({ _tag: "Sent" })).toBeUndefined()
+    expect(syncStatusOf({ _tag: "Stopped", error: new ElectricCollection.SyncFailed({ cause: null, status: 400 }) })).toBe("unavailable")
+    expect(syncStatusOf({ _tag: "Failed", status: 503 })).toBe("unavailable")
+    expect(syncStatusOf({ _tag: "Failed" })).toBe("unavailable")
+    expect(syncStatusOf({ _tag: "Sent" })).toBeUndefined()
   })
 })
 

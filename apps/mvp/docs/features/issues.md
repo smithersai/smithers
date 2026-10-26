@@ -300,3 +300,11 @@ Delivery receipt is stored before Apply starts, including on a launch retry. Ite
 Identical issue and comment reads advance freshness fences without counting a content change. Absence carries the read's start time, cannot overwrite a newer observation, and fences older in-flight reads. A gone pull also removes its pull, commits and reviews in the same transaction.
 
 Migration `0048_github_projection_fences` keeps absence and complete-list fences even when no local row exists yet. It backfills existing deletion fences and removes pull projections left behind by legacy tombstones. The table is server-only and is not an Electric shape.
+
+### Shape authority
+
+The device opens items, comments, GitHub sync, triage settings and the four pull shapes only while the session has a repository role, or the deployment repository's role answer explicitly permits a public read. A signed-out cold home opens none of these shapes. Each request, including reconnects, waits for this authority. Shape failures describe transport availability; they never decide whether a person must sign in or lacks a role. GitHub writes retain their existing person-filtered shape.
+
+The role answer uses the same server read policy as the repository shapes, preserving decision 0012's public reads. Libraries: `@smthrs/effect-electric` and `@smthrs/effect-tanstack-db`.
+
+The lazily opened TODO and prompt shapes separately require Member authority on their named repository. They also wait before requesting and never infer authority from a refusal.
