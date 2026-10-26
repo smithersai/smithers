@@ -370,5 +370,20 @@ Nothing else may declare one, and `e2e/health.spec.ts` declares none. A spec bui
   | 32 | 4,791 | 80 | 3,802 (79%) | 529 of 576 | 1,304 | 16.7 ms |
   | 50 † | 8,303 | 138 | 7,054 (85%) | 790 of 900 | 2,105 | 13.6 ms |
 
-  The object overloaded from 3 visitors at once (a 20 s run: 114 of 225 responses 500) and never served more than about 35 requests a second (2,105 a minute at 50 visitors): it was CPU-bound at 10 to 17 ms per request. ChatApi recorded its 500s as Electric's (`upstream: "electric"`), and a live tail of the gateway showed "Durable Object is overloaded" for them; the † runs also got 54 and 360 503s. These are the numbers before the fix; the next production ramp records the ones after.
+  The object overloaded from 3 visitors at once (a 20 s run: 114 of 225 responses 500) and never served more than about 35 requests a second (2,105 a minute at 50 visitors): it was CPU-bound at 10 to 17 ms per request. ChatApi recorded its 500s as Electric's (`upstream: "electric"`), and a live tail of the gateway showed "Durable Object is overloaded" for them; the † runs also got 54 and 360 503s. These are the numbers before the fix.
+
+  After it (main 39ccbd83, 2026-10-26 11:17 to 11:30 PDT: the object returns Electric's responses untouched, the gateway answers an overloaded object `503`, ChatApi reaches the gateway by service binding, and a signed-out tab opens only the shapes its page reads), the same harness, networks and 60 s rows. "18 routes" repeats the rows above; "8 routes" follows what a signed-out tab on `/smithersai/smithers/pulls` opens now (the repository's home opens 4, its issues 7).
+
+  | Visitors at once | Routes | Requests | req/s | 5xx (of them 503) | Routes not up to date in 10 s | Object requests | Object CPU per request |
+  |---|---|---|---|---|---|---|---|
+  | 8 | 18 | 592 | 10 | 0 | 8 of 144 | 736 | 6.6 ms |
+  | 16 | 18 | 1,152 | 19 | 0 | 68 of 288 | 1,440 | 2.9 ms |
+  | 32 | 18 | 2,218 | 37 | 1,225 (261) | 424 of 576 | 2,678 | 2.3 ms |
+  | 50 | 18 | 3,604 | 60 | 2,449 (1,422) | 704 of 900 | 4,263 | 0.2 ms |
+  | 8 | 8 | 241 | 4 | 0 | 64 of 64 | 305 | 3.0 ms |
+  | 16 | 8 | 528 | 9 | 0 | 19 of 128 | 656 | 2.8 ms |
+  | 32 | 8 | 1,007 | 17 | 0 | 88 of 256 | 1,263 | 1.2 ms |
+  | 50 | 8 | 2,139 | 36 | 1,089 (896) | 247 of 400 | 1,618 | 0.2 ms |
+
+  The first 5xx moved from 3 visitors to between 16 and 32 with 18 routes, and to between 32 and 50 with a signed-out tab's 8. At 32 and 50 visitors the 500s are not the object's: Cloudflare counted every object and gateway invocation in those windows a success, so the 500s came from Electric's container or ChatApi; the 503s are the gateway's answer to an overloaded object. No row meets the launch bar (zero 5xx, every route up to date within 10 s), so the next step is the cache in front of the gateway.
 - **HTTP/1.1 at http://localhost:1337.** A browser opens at most six connections to it, fewer than a tab's shapes, so a change can take up to 40 seconds to reach another device there, and Electric's client warns about plain `http://`. Use https://localhost:1443, which speaks HTTP/2 as Cloudflare does ([HTTPS and HTTP/2](#https-and-http2)).
