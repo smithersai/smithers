@@ -70,7 +70,9 @@ test("publish: a Smithers-only branch reaches GitHub only through Publish, as a 
     const branch = await step("Maya starts a new conversation on the scratch repository with /new", async () => {
       await page.goto(`/${repo}/tree/${facts.default_branch}`)
       await expect(page.getByRole("navigation", { name: "Branch" })).toContainText(facts.default_branch, { timeout: 60_000 })
+      await page.getByRole("button", { name: /^Chat\b/ }).click()
       const composer = page.getByRole("textbox", { name: "Message Smithers" })
+      await expect(composer).toBeVisible()
       await composer.fill("/new")
       await composer.press("Enter")
       await expect(page).toHaveURL(new RegExp(`/${repo}/tree/[^/]+$`), { timeout: 120_000 })
