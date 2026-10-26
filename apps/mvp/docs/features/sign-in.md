@@ -57,7 +57,7 @@ The return path is a path on this site; anything else, including `//host` and `/
 
 ## Run credentials
 
-The server tells the person from the agent, a flow or a plugin acting for them ([decision 0017](../decisions/0017-everything-is-a-plugin.md#run-credentials-telling-the-person-from-the-agent-slice-0), slice 0). Only the person's own press runs with their session: a root run of a person's flow (the registry's `acts` unset) that the tab started through a person door (`button`, `slash`, `composer`, `key`). Every other run, every nested one included, sends a credential the server minted for that run, and never the session cookie.
+The server tells the person from the agent, a flow or a plugin acting for them ([decision 0017](../decisions/0017-everything-is-a-plugin.md#run-credentials-telling-the-person-from-the-agent-slice-0), slice 0). Only the person's own press runs with their session: a root run of a person's flow (the registry's `acts` unset) that the tab started through a person door (`button`, `slash`, `composer`, `key`). The compiled `branch/operation/start` and `branch/operation/program` implementations retain a `branch/publish` or `branch/update` parent’s session so a person’s GitHub write stays theirs (GH-2). This exact compiled parent/child pair is the only exception: a credential-backed parent never gains a session, and all other nested runs send their own server-minted credential without the session cookie.
 
 ```
 tab ── dispatch(flow, door)

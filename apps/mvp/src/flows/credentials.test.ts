@@ -117,6 +117,22 @@ const inner = (payload: { readonly path: string; readonly body: unknown }) =>
       Effect.orElseSucceed(() => ({ status: -1 })),
     ))
 
+// Compiled branch implementations are nested by a person's Publish/Update press. Their HTTP must retain that press.
+const Operation = sending("branch/operation/start")
+const OperationProgram = sending("branch/operation/program")
+const BranchOperation = Action.make("test/branch-operation", { payload: { path: Schema.String, body: Schema.Unknown }, success: Got })
+const publishFlow = (tag: string) => Flow.make(tag, {
+  payload: { path: Schema.String, body: Schema.Unknown }, success: Got,
+  body: Node.capture({ operation: BranchOperation.name }, (payload) => BranchOperation.call(payload)),
+})
+const PublishBranch = publishFlow("branch/publish")
+const UpdateBranch = publishFlow("branch/update")
+const OtherBranch = publishFlow("repo/about")
+const branchOperation = (payload: { path: string; body: unknown }) => Effect.flatMap(FlowRuntime.FlowRuntime, (runtime) =>
+  runtime.execute(payload.path.endsWith("/program") ? OperationProgram : Operation, {
+    executionId: `branch-operation:${crypto.randomUUID()}`, payload: { ...payload, path: "/api/watches" },
+  }).pipe(Effect.orDie))
+
 /** One request as the transport saw it: its path, whether it carried a credential, and its cookie policy. */
 interface Seen {
   readonly path: string
@@ -172,8 +188,13 @@ const device = async (
   )
   const name = `credentials-${crypto.randomUUID()}`
   const requests = TabRequests.layer()
-  const flows = [Answer, Watch, Plugin, Agent, Write, Commit, Outer]
+  const flows = [Answer, Watch, Plugin, Agent, Write, Commit, Outer, PublishBranch, UpdateBranch, OtherBranch, Operation, OperationProgram]
   const registration = Layer.mergeAll(
+    Interpreter.layerWithImplementations(OtherBranch, BranchOperation.toLayer(branchOperation)),
+    Interpreter.layerWithImplementations(PublishBranch, BranchOperation.toLayer(branchOperation)),
+    Interpreter.layerWithImplementations(UpdateBranch, BranchOperation.toLayer(branchOperation)),
+    Interpreter.layerWithImplementations(Operation, Send.toLayer(send)),
+    Interpreter.layerWithImplementations(OperationProgram, Send.toLayer(send)),
     Interpreter.layerWithImplementations(Answer, Send.toLayer(send)),
     Interpreter.layerWithImplementations(Watch, Send.toLayer(send)),
     Interpreter.layerWithImplementations(Plugin, Send.toLayer(send)),
@@ -238,6 +259,25 @@ const asked = async (h: Awaited<ReturnType<typeof harness>>) => {
 const waiting = { execution: "x/call/0.0", kind: "question", prompt: "Which branch?", options: ["main", "docs-v2"] }
 
 describe("who a run's requests go as", () => {
+  test.each([PublishBranch, UpdateBranch])("a person's compiled branch operation retains their session", async (flow) => {
+    const d = await device(member)
+    for (const path of ["/api/watches", "/api/program"]) {
+      expect(await d.run(flow, crypto.randomUUID(), { path, body: { conversationId: null } }, "button")).toMatchObject({ status: 200 })
+    }
+    expect(d.seenFor("/api/watches")).toEqual([
+      { path: "/api/watches", bearer: false, credentials: undefined },
+      { path: "/api/watches", bearer: false, credentials: undefined },
+    ])
+    expect(d.seen.filter((request) => request.path.endsWith("/credential"))).toEqual([])
+  })
+
+  test("a branch operation through a non-person door keeps its run credential; unrelated parents cannot inherit a session", async () => {
+    const d = await device(member)
+    expect(await d.run(PublishBranch, crypto.randomUUID(), { path: "/api/watches", body: { conversationId: null } }, "view")).toMatchObject({ status: 200 })
+    expect(await d.run(OtherBranch, crypto.randomUUID(), { path: "/api/watches", body: { conversationId: null } }, "button")).toMatchObject({ status: 200 })
+    expect(d.seenFor("/api/watches").every((request) => request.bearer && request.credentials === "omit")).toBe(true)
+  })
+
   test("the agent's run goes with its credential; its nested run/answer is refused before anything is sent", async () => {
     const d = await device(member)
     const answerId = await asked(d.h)

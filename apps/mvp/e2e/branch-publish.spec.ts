@@ -115,6 +115,8 @@ test("publish: a Smithers-only branch reaches GitHub only through Publish, as a 
         (value) => value.head.sha.length === 40,
       )
       expect(found.user.login.toLowerCase()).toBe(me().login.toLowerCase())
+      const commit = await github<{ author: { login: string } | null }>(page, `/repos/${repo}/commits/${found.head.sha}`)
+      expect(commit.author?.login.toLowerCase()).toBe(me().login.toLowerCase())
       expect([found.base.ref, found.title]).toEqual([facts.default_branch, `Branch publish e2e ${devices.word}`])
       expect(found.head.ref.startsWith(`${branch}-`)).toBe(true)
       const files = await github<Array<{ filename: string }>>(page, `/repos/${repo}/pulls/${number}/files`)

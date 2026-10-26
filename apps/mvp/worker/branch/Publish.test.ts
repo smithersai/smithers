@@ -4,7 +4,8 @@
 // pressed, and `branch/Update` brings the published branch up to date with its base, or settles why not.
 import * as Pg from "@effect/sql-pg"
 import { GitHub } from "@smthrs/integrations"
-import { Cause, Context, Effect, Exit, Layer, Metric, Redacted } from "effect"
+import { Logger as StructuredLogger } from "@smthrs/observability"
+import { Cause, Context, Effect, Exit, Layer, Logger, Metric, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
@@ -15,7 +16,7 @@ import { publishExecutionId, updateExecutionId } from "../../src/features/branch
 import { TokenUnavailable } from "../github/Tokens.ts"
 import * as Metrics from "../github/Metrics.ts"
 import * as Write from "../github/Write.ts"
-import { admit, database, REPOSITORY, reset, services, signedIn, sql, writeRow } from "../github/test/fixtures.ts"
+import { admit, database, keys, REPOSITORY, reset, services, signedIn, sql, writeRow } from "../github/test/fixtures.ts"
 import { BOT_LOGIN, type ScriptedGitHub, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
@@ -140,6 +141,99 @@ describe("branch/Publish", { timeout: 60_000 }, () => {
     // Read back, so every device sees the pull request before any webhook rings.
     expect(await sql(runtime, `SELECT head_ref AS head FROM pulls`)).toEqual([{ head: ref }])
     expect(github.refs.get("main")).toBe(baseSha)
+  })
+
+  test.each(["person", "agent"] as const)("a %s write records only its identity, operation and write id", async (via) => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    github.roles.set("maya", "write")
+    const { maya, branchId } = await tracked(github)
+    const machine = machines(github)
+    await edit(machine, branchId, maya.personId, { "README.md": "record identity\n" })
+    const writeId = await publishing(maya, branchId, via)
+    const { services: built } = await services(runtime, github)
+    const registry: Metric.MetricRegistry = new Map()
+    const records: Array<unknown> = []
+    expect(await runtime.runPromise(Publish.steps(built).publish({ writeId }).pipe(
+      Effect.provide(machine.layer),
+      Effect.provideService(Metric.MetricRegistry, registry),
+      Effect.provide(Logger.layer([Logger.make((log) => {
+        const record = StructuredLogger.formatStructured.log(log)
+        if (record.message === "branch.write.identity") records.push(record.annotations)
+      })])),
+    ))).toEqual({ status: "done", prNumber: 1 })
+    const identity = via === "person" ? "person" : "app"
+    expect(records).toEqual([{ writeId, op: "branch/publish", identity, span_id: expect.any(String), trace_id: expect.any(String) }])
+    const counted = await runtime.runPromise(Metric.value(Metric.withAttributes(Publish.writeIdentities, { op: "branch/publish", identity })).pipe(
+      Effect.provideService(Metric.MetricRegistry, registry),
+    ))
+    expect(counted.count).toBe(1)
+  })
+
+  test.each(["installation", "other-person", "bot", "missing", "revoked"] as const)(
+    "a person's Publish with a %s credential refuses sign_in_required before any GitHub write",
+    async (kind) => {
+      const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+      const { maya, branchId } = await tracked(github)
+      const machine = machines(github)
+      await edit(machine, branchId, maya.personId, { "README.md": "identity guard\n" })
+      const writeId = await publishing(maya, branchId)
+      const { services: built } = await services(runtime, github)
+      if (kind === "missing") {
+        await sql(runtime, "UPDATE sessions SET github_access = NULL")
+      } else if (kind === "revoked") {
+        github.faults.push({ match: (method, path) => method === "GET" && path === "/user", status: 401 })
+      } else {
+        // Store a misbound credential through the real session cipher: decrypting it must not authorize its use.
+        const token = kind === "installation"
+          ? await runtime.runPromise(built.tokens.forInstallation(REPOSITORY, "publish"))
+          : github.userToken(kind === "bot" ? BOT_LOGIN : "someone-else")
+        const sessionKeys = await keys()
+        const sealed = await Effect.runPromise(sessionKeys.seal(token, { id: maya.sessionId, name: "github_access", version: 1 }))
+        await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+          sql`UPDATE sessions SET github_access = ${JSON.stringify(sealed)}::jsonb WHERE id = ${maya.sessionId}::uuid`
+        ))
+      }
+      expect(await send(built, machine, writeId)).toEqual({ status: "refused", prNumber: null })
+      expect(await writeRow(runtime, writeId)).toMatchObject({ failure: "sign_in_required", attempts: 0 })
+      expect(github.calls.filter((call) => call.method !== "GET" && !call.path.endsWith("/access_tokens"))).toEqual([])
+      expect(github.pulls.size).toBe(0)
+      expect(await publication(branchId)).toBeUndefined()
+    },
+  )
+
+  test("an expired person's token waits for refresh, then refuses if refresh ended the session; no App write", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const { maya, branchId } = await tracked(github)
+    const machine = machines(github)
+    await edit(machine, branchId, maya.personId, { "README.md": "expired\n" })
+    const writeId = await publishing(maya, branchId)
+    await sql(runtime, "UPDATE sessions SET github_access_expires_at = now() - interval '1 minute'")
+    const { services: built, refreshes } = await services(runtime, github)
+    const exit = await runtime.runPromise(Effect.exit(Publish.steps(built).publish({ writeId }).pipe(Effect.provide(machine.layer))))
+    expect(exit._tag === "Failure" && Cause.squash(exit.cause)).toEqual(new Publish.PublishUnavailable({ retryAfterMillis: 5_000 }))
+    expect(refreshes).toHaveLength(1)
+    expect(github.calls).toEqual([])
+    // The durable role check ends the session when the refresh token cannot be redeemed.
+    await sql(runtime, "UPDATE sessions SET revoked_at = now(), github_access = NULL")
+    expect(await send(built, machine, writeId)).toEqual({ status: "refused", prNumber: null })
+    expect(await writeRow(runtime, writeId)).toMatchObject({ failure: "sign_in_required", attempts: 0 })
+    expect(github.calls).toEqual([])
+  })
+
+  test.each([502, 429])("identity verification's %s waits without writing, then publishes as the person", async (status) => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const { maya, branchId } = await tracked(github)
+    const machine = machines(github)
+    await edit(machine, branchId, maya.personId, { "README.md": "retry identity\n" })
+    const writeId = await publishing(maya, branchId)
+    const { services: built } = await services(runtime, github)
+    github.faults.push({ match: (method, path) => method === "GET" && path === "/user", status,
+      ...(status === 429 ? { headers: { "retry-after": "3" } } : {}) })
+    const exit = await runtime.runPromise(Effect.exit(Publish.steps(built).publish({ writeId }).pipe(Effect.provide(machine.layer))))
+    expect(exit._tag === "Failure" && Cause.squash(exit.cause)).toEqual(new Publish.PublishUnavailable(status === 429 ? { retryAfterMillis: 3_000 } : {}))
+    expect(github.calls.every((call) => call.method === "GET")).toBe(true)
+    expect(await send(built, machine, writeId)).toEqual({ status: "done", prNumber: 1 })
+    expect(github.issues.get(1)!.login).toBe("maya")
   })
 
   test("the agent's Publish goes as the App, saying whom it acted for", async () => {

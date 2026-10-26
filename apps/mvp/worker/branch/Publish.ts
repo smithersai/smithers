@@ -70,9 +70,9 @@ export const Settled = Schema.Struct({
 export type Settled = typeof Settled.Type
 
 /** The steps' implementation versions; a run parked on another stops with `plan_changed`. */
-export const PUBLISH_VERSION = "branch-publish/send/v1"
-export const UPDATE_VERSION = "branch-update/send/v1"
-export const RESYNC_VERSION = "branch-resync/send/v1"
+export const PUBLISH_VERSION = "branch-publish/send/v2"
+export const UPDATE_VERSION = "branch-update/send/v2"
+export const RESYNC_VERSION = "branch-resync/send/v2"
 
 /** A resync after a Publish or an Update: 1 s doubling to a minute, for at most half an hour, through the mirror's sync. */
 export const RESYNC_RETRY = RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000, expirationMs: 30 * 60_000 })
@@ -208,6 +208,12 @@ export const Resync = Flow.make("branch/Resync", {
 /** Publishes, by `outcome`: `done`, or the failure. */
 export const publishes = Metric.counter("smithers_branch_publishes", {
   description: "Publish writes settled, by outcome",
+  incremental: true,
+})
+
+/** GitHub write attempts, by operation and verified identity; never a login or token. */
+export const writeIdentities = Metric.counter("smithers_branch_write_identities", {
+  description: "Branch write attempts by operation and identity",
   incremental: true,
 })
 
@@ -413,11 +419,25 @@ export const steps = <E, R>(services: GitHubServices<E, R>) => {
         ))
       }
       // The route admits a person's write only from their session, and Postgres holds every person's write to one.
-      return yield* services.tokens.forSession(write.sessionId!).pipe(Effect.mapError((failure) =>
+      const token = yield* services.tokens.forSession(write.sessionId!).pipe(Effect.mapError((failure) =>
         failure.reason === "refreshing" || failure.reason === "unavailable"
           ? new PublishUnavailable(failure.retryAfterMillis === undefined ? {} : { retryAfterMillis: failure.retryAfterMillis })
           : new Refused({ failure: "sign_in_required" })
       ))
+      // Opening a sealed credential proves only where it was stored. Ask GitHub who it acts as before any write:
+      // an installation token in a person's session must never silently publish as the App.
+      const person = yield* Effect.flatMap(GitHub.GitHubClient.GitHubClient, (client) =>
+        client.request("GET", "/user", undefined, { schema: Schema.Struct({ id: Schema.Number, type: Schema.String }) })
+      ).pipe(withToken(token, services.apiBaseUrl), Effect.mapError((error) => {
+        const failure = classify(error)
+        return failure.kind === "refused"
+          ? new Refused({ failure: "sign_in_required" })
+          : new PublishUnavailable(failure.kind === "retry" && failure.retryAfterMillis !== undefined
+            ? { retryAfterMillis: failure.retryAfterMillis }
+            : {})
+      }))
+      if (person.type !== "User" || person.id !== write.accountId) return yield* new Refused({ failure: "sign_in_required" })
+      return token
     })
 
   /**
@@ -631,6 +651,9 @@ export const steps = <E, R>(services: GitHubServices<E, R>) => {
         )
         // Counted for the write's record; `Action.once` decides what was made, by the keys alone.
         yield* Store.beginAttempt(write.id)
+        const identity = write.via === "person" ? "person" : "app"
+        yield* Metric.update(Metric.withAttributes(writeIdentities, { op: write.op, identity }), 1)
+        yield* Effect.logInfo("branch.write.identity").pipe(Effect.annotateLogs({ writeId: write.id, op: write.op, identity }))
         // Store.writeOf reads the person's login with the write; `actsForWriter` refuses an agent's write without one.
         const attribution = write.via === "agent" ? agentAttribution(write.login!) : undefined
         const sql = yield* SqlClient.SqlClient
@@ -729,6 +752,9 @@ export const steps = <E, R>(services: GitHubServices<E, R>) => {
         if (publication === undefined || publication.repoId !== write.repoId) return yield* new Refused({ failure: "not_published" })
         const token = yield* tokenOf(write, repository)
         yield* Store.beginAttempt(write.id)
+        const identity = write.via === "person" ? "person" : "app"
+        yield* Metric.update(Metric.withAttributes(writeIdentities, { op: write.op, identity }), 1)
+        yield* Effect.logInfo("branch.write.identity").pipe(Effect.annotateLogs({ writeId: write.id, op: write.op, identity }))
         const outcome = yield* Effect.gen(function* () {
           yield* actsForWriter(write, repository)
           const pull = yield* GitHub.Pulls.getPull(repository.owner, repository.name, publication.prNumber)

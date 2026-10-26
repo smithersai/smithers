@@ -329,6 +329,11 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
       if (token === "none" || login === undefined) return { response: json({ message: "Bad credentials" }, 401) }
       return graphql(body, login)
     }
+    if (path === "/user" && method === "GET") {
+      return { response: token === "user" && login !== undefined
+        ? json({ ...user(login), type: login.endsWith("[bot]") ? "Bot" : "User" })
+        : json({ message: "Resource not accessible by integration" }, 403) }
+    }
     if (!path.startsWith(apiPath)) return { response: json({ message: "Not Found" }, 404) }
     if (path === apiPath && method === "GET" && token === "none") {
       return { response: github.private ? json({ message: "Not Found" }, 404) : json({ id: REPOSITORY_ID, private: false, default_branch: "main" }) }

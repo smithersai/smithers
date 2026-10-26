@@ -15,7 +15,7 @@ import { requesterOf } from "./requests"
 // compiled-in application code, decides who each request acts as; the model, realm code and frames never choose. A
 // request a run makes to ChatApi goes with the person's session only when the run is the person's own press: a root
 // run of a person's flow (the registry's `acts` unset) that the tab started through a person door (`PERSON_DOORS`).
-// Every other run, every nested one included, sends a credential the server minted for that very run, and its session
+// The compiled branch-operation subflows retain their Publish/Update caller’s session. Every other run, nested ones included, sends a credential the server minted for that very run, and its session
 // cookie never rides along (`credentials: "omit"`). A nested run's credential is minted under its parent's, so the
 // server narrows it at every hop and refuses one a person-only flow or a wider callee asks for; that refusal is the
 // request's answer. A run whose person is signed out sends its requests with no credential at all; a root run whose
@@ -166,7 +166,12 @@ export const layer = (options: {
               }
             }
             const under = parent === null ? sessionCredential : yield* Cache.get(credentials, parent)
-            return ownPress
+            // These compiled implementation flows are the person's Publish/Update, not a delegated agent.
+            // Only this exact parent/child pair inherits a session; a bearer parent never gains one.
+            const implementation = parent !== null &&
+              (flow === "branch/operation/start" || flow === "branch/operation/program") &&
+              ["branch/publish", "branch/update"].includes((yield* runOf(parent)).flow)
+            return ownPress || (implementation && under._tag === "Session")
               ? sessionCredential
               : under._tag === "Session"
               ? yield* mint(run, flow, undefined)
