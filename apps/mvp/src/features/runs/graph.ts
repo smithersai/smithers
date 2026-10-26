@@ -172,7 +172,12 @@ export const graphOf = (page: RunPage, at: number | null, now: number, pathOf: (
         failedAttempts: attempts.filter((s) => s.state === "failed").length
       },
       input: latest?.input === undefined ? null : asValue(latest.input),
-      output,
+      // Complete journal results preserve the node result shape used by debug readers.
+      // Only missing/clipped live previews need the schema-redacted sealed outcome.
+      // Replay never discloses a later attempt's output.
+      output: at === null && node.state === "done" && (output === null || output.clipped)
+        ? native?.output ?? output
+        : output,
       attempts,
       wait: null,
       href: ownerId === run.runId ? null : pathOf(ownerId),

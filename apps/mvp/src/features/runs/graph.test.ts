@@ -141,11 +141,12 @@ test("recorded attempt boundaries, wait metadata, clipped output and node logs h
     annotations: { runId: "r", stepKeyDigest: "b".repeat(64) },
     message: "other"
   })
+  const fullOutput = value(JSON.stringify({ history: "x".repeat(3000), memoryDebug: { inserted: 1 } }))
   const clipped = event(8, "flows.engine.node-settled", {
     nodeId: "a",
     outcome: "built",
     attempts: 1,
-    result: { preview: "{", bytes: 100, truncated: true }
+    result: { preview: "{", bytes: fullOutput.bytes, truncated: true }
   })
   const inspection: Partial<Inspection> = {
     steps: [{
@@ -156,10 +157,10 @@ test("recorded attempt boundaries, wait metadata, clipped output and node logs h
       scheduledAtMs: 1200,
       settledAtMs: 1800,
       seq: 2,
-      output: value("{"),
+      output: fullOutput,
       attempts: [
         { attempt: 1, state: "failed", startedAtMs: 1200, finishedAtMs: 1250, outcome: null, error: "unavailable" },
-        { attempt: 2, state: "succeeded", startedAtMs: 1260, finishedAtMs: 1800, outcome: value("{"), error: null }
+        { attempt: 2, state: "succeeded", startedAtMs: 1260, finishedAtMs: 1800, outcome: fullOutput, error: null }
       ]
     }],
     children: [{
@@ -173,7 +174,9 @@ test("recorded attempt boundaries, wait metadata, clipped output and node logs h
     }]
   }
   const live = graphOf(page(inspection, [waits, log, unrelated, clipped]), null, 2000)
-  expect(live.steps[0]!.output).toEqual({ text: "{", bytes: 100, clipped: true })
+  expect(live.steps[0]!.output).toEqual(inspection.steps![0]!.output)
+  expect(JSON.parse(live.steps[0]!.output!.text).memoryDebug.inserted).toBe(1)
+  expect(graphOf(page(inspection, [waits, log, unrelated, clipped]), 8, 2000).steps[0]!.output).toEqual({ text: "{", bytes: fullOutput.bytes, clipped: true })
   expect(live.steps[0]!.attempts.map((a) => a.state)).toEqual(["failed", "succeeded"])
   expect(live.steps[1]!.wait).toBeNull() // No current wait metadata leaks into a replayed node.
   expect(live.steps[1]!.logs).toEqual([log.payload])
@@ -423,4 +426,19 @@ test("inspector kinds use product words", () => {
     }]
   })
   expect(graphOf(data, null, 3000).steps.map((step) => step.row.kind)).toEqual(["Step", "Flow"])
+})
+
+test("complete journal results retain debug fields instead of sealed outcome metadata", () => {
+  const sealed = value(JSON.stringify({ _tag: "Success", value: { verdicts: ["yes"] } }))
+  const data = page({ steps: [{
+    nodeId: "a", action: "flow/run/load", kind: "ActionCall", status: "completed",
+    scheduledAtMs: 1200, settledAtMs: 1300, seq: 3, output: sealed, attempts: []
+  }] })
+  expect(graphOf(data, null, 2000).steps[0]!.output).toEqual(value('{"loaded":true}'))
+  expect(graphOf(data, 3, 2000).steps[0]!.output).toEqual(value('{"loaded":true}'))
+  const missing = page({ ...data.inspection!, journal: { events: events.map((e) => e.seq === 3
+    ? event(3, "flows.engine.node-settled", { nodeId: "a", outcome: "built", attempts: 1 }) : e),
+    afterSeq: -1, nextSeq: 4, hasMore: false } })
+  expect(graphOf(missing, null, 2000).steps[0]!.output).toEqual(sealed)
+  expect(graphOf({ ...missing, inspection: { ...missing.inspection!, steps: [] } }, null, 2000).steps[0]!.output).toBeNull()
 })

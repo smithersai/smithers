@@ -153,7 +153,7 @@ describe("the feed on two people's devices", { timeout: ENGINE_WITHIN }, () => {
     annToo.attention.actions.open(subject, "conversation")
     await until(() => expect(annToo.entry(subject)!.unread).toBe(false))
     expect(annToo.focus(answerId)).toBe(1)
-    expect(annToo.host.navigated).toEqual([])
+    expect(annToo.host.navigated).toEqual([`/app#${answerId}`])
     await until(() => expect(ann.entry(subject)!.unread).toBe(false))
     // Hide on her first device hides the toast on both, and keeps the entry in her list.
     ann.attention.actions.hide(subject)
@@ -329,11 +329,11 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
     ann.attention.actions.read(done)
     expect(ann.pending().filter((id) => id.startsWith(done))).toEqual([])
 
-    // Answer over this conversation focuses the existing card without navigating away.
+    // Answer over this conversation anchors and focuses the existing card.
     const focused = ann.focus(askId) ?? 0
     ann.attention.actions.answer(asks, "conversation")
     await until(() => expect(ann.focus(askId)).toBe(focused + 1))
-    expect(ann.host.navigated).toEqual([])
+    expect(ann.host.navigated).toEqual([`/app#${askId}`])
     expect(ann.panel().open).toBe(false)
     ann.attention.actions.openPanel("key", done)
 
@@ -352,7 +352,7 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
     // Open from the panel closes it and goes to the run's answer.
     ann.attention.actions.open(done, "page")
     expect(ann.panel().open).toBe(false)
-    expect(ann.host.navigated).toEqual([`/app#${doneId}`])
+    expect(ann.host.navigated).toEqual([`/app#${askId}`, `/app#${doneId}`])
     // A toast's E opens the panel at its entry, expanded; Close closes it.
     ann.attention.actions.openPanel("toast", asks)
     expect(ann.panel()).toMatchObject({ open: true, focus: asks, expanded: asks })
@@ -361,7 +361,7 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
     expect(panelCount(ann, { act: "open", via: "toast" })).toBe(1)
     // A on a toast is its Answer: over the conversation, the question's card takes focus. This one is answered.
     ann.attention.actions.answer(asks, "conversation")
-    expect(ann.host.navigated).toEqual([`/app#${doneId}`])
+    expect(ann.host.navigated).toEqual([`/app#${askId}`, `/app#${doneId}`])
   })
 
   test("Retry on a failed run asks its question again and dismisses the entry; elsewhere it does nothing", async () => {
@@ -428,7 +428,7 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
     // Open from another page or conversation navigates to the branch before focusing its question.
     for (const surface of ["page", "conversation"] as const) {
       ann.attention.actions.open(subject, surface)
-      expect(ann.host.navigated.at(-1)).toBe("/acme/widgets/tree/feature")
+      expect(ann.host.navigated.at(-1)).toBe(`/acme/widgets/tree/feature#${answerId}`)
       ann.attention.actions.openPanel("more", subject)
     }
     ann.status.actions.answer(answerId, true)
@@ -437,7 +437,7 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
     await until(() => expect(ann.entry(subject)).toMatchObject({ state: "done" }))
     // Open takes the person to the branch, at the answer.
     ann.attention.actions.open(subject, "conversation")
-    expect(ann.host.navigated).toEqual(["/acme/widgets/tree/feature", "/acme/widgets/tree/feature", `/acme/widgets/tree/feature#${answerId}`])
+    expect(ann.host.navigated).toEqual(Array(3).fill(`/acme/widgets/tree/feature#${answerId}`))
     // Answering what isn't open, or a run this device has no row of, does nothing.
     ann.status.actions.answer(answerId, false)
     ann.status.actions.setDraft(crypto.randomUUID(), "x")

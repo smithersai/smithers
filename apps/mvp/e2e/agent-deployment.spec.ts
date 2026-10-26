@@ -35,10 +35,14 @@ test("memory: a remembered language preference changes a later answer and Openin
   await opening.press("Enter")
   const inspector = a.page.locator('[data-slot="step-inspector"]')
   await expect(inspector).toHaveAttribute("aria-label", "Inspect chat/Opening")
-  await inspector.getByRole("tab", { name: "Output" }).click()
-  const output = inspector.locator('[data-slot="json-value"]').filter({ hasText: "Output" })
-  const value = JSON.parse((await output.locator("pre").textContent())!) as { memoryDebug: { inserted: number } }
-  expect(value.memoryDebug.inserted, "the later turn actually used stored memory").toBeGreaterThan(0)
+  // The turn includes bounded conversation history, so even its sealed output may be clipped.
+  // The step's compact telemetry record proves insertion without parsing a JSON prefix.
+  await inspector.getByRole("tab", { name: /^Logs/ }).click()
+  const openingLog = inspector.locator('[data-slot="json-value"]').filter({ hasText: "memory.opening" })
+  await expect(openingLog).toHaveCount(1)
+  await expect(openingLog).not.toHaveAttribute("data-clipped", "true")
+  const value = JSON.parse((await openingLog.locator("pre").textContent())!) as { annotations: { inserted: number } }
+  expect(value.annotations.inserted, "the later turn actually used stored memory").toBeGreaterThan(0)
 })
 
 test("todo status: the agent reports the scratch TODO's shared dropped state", {

@@ -260,3 +260,5 @@ without keeping the router pending. Reopening a cached run keeps its last read;
 a failed refresh follows the existing refusal rules. Replay freezes the latest
 visible snapshot, including a parent whose child has not arrived yet (decision
 [0097](../decisions/0097-run-page-progressive-inspection.md)).
+
+The live graph inspector preserves complete journal results, including the verdict fields read by answer debug info. For completed steps with missing or clipped previews, it uses the engine inspection’s schema-redacted sealed outcome. Journal replay retains the bounded preview recorded at that position; later outcomes never enter an earlier replay.

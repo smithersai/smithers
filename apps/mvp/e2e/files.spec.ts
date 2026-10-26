@@ -149,7 +149,7 @@ test(
 )
 
 test("live agent shows code: own-branch file tab highlights the requested lines", {
-  annotation: { type: "summary", description: "The real agent opens README.md on the test account's branch with only lines 1 to 3 highlighted." },
+  annotation: { type: "summary", description: "The real agent opens README.md on the test account's branch with only lines 1 to 2 highlighted." },
 }, async ({ page }) => {
   requires("liveModel", "codeStorage")
   test.setTimeout(240_000)
@@ -158,17 +158,17 @@ test("live agent shows code: own-branch file tab highlights the requested lines"
   const start = new URL(page.url())
   const branchPath = start.pathname
   await step("Ask the agent to show README.md", async () => {
-    await send(page, "Show README.md in this branch as a file tab using file/open, and highlight lines 1 to 3. Keep the conversation beside the file.")
+    await send(page, "Show README.md in this branch as a file tab using file/open, and highlight lines 1 to 2. Keep the conversation beside the file.")
   })
   await step("The branch's file opens with the requested highlight", async () => {
     await expect(strip(page).getByRole("tab", { name: "README.md", exact: true })).toHaveAttribute("aria-selected", "true", { timeout: 180_000 })
-    await expect(page).toHaveURL(/\/blob\/[^/]+\/README\.md\?L=1-3$/)
+    await expect(page).toHaveURL(/\/blob\/[^/]+\/README\.md\?L=1-2$/)
     // The agent must stay in the branch that owns this conversation.
     expect(new URL(page.url()).pathname).toBe(branchPath.replace("/tree/", "/blob/") + "/README.md")
     // Markdown starts in Preview; its Code control exposes the source line markers.
     await page.getByRole("group", { name: "Show as" }).getByRole("button", { name: "Code", exact: true }).click()
-    for (const n of [1, 2, 3]) await expect(line(page, n, true)).toBeVisible({ timeout: 30_000 })
-    await expect(line(page, 4, false)).toBeVisible()
+    for (const n of [1, 2]) await expect(line(page, n, true)).toBeVisible({ timeout: 30_000 })
+    await expect(line(page, 3, false)).toBeVisible()
     await expect(page.getByRole("region", { name: "Conversation", exact: true })).toBeVisible()
   })
 })

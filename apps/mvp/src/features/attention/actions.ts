@@ -154,15 +154,15 @@ export const expand = (subject: string) =>
  * open question, on the conversation it was asked in, takes focus there; a question elsewhere takes focus once its card
  * shows. Any other run opens its conversation at its answer (`#<run id>`); `main` and a release open their page.
  */
-export const open = (subject: string, surface: Surface) =>
+export const open = (subject: string, _surface: Surface) =>
   Effect.gen(function* () {
     const entry = yield* record(subject, "read")
     if (Option.isNone(entry)) return
-    const { here, action, runId, href } = entry.value
+    const { action, runId, href } = entry.value
     if ((yield* panelNow).open) yield* closePanel
     // Its run is the answer it asks about: the question's card takes focus where it shows.
     if (action === "answer" && runId !== null) {
-      if (surface !== "conversation" || !here) (yield* AttentionNavigation).navigate(href)
+      (yield* AttentionNavigation).navigate(`${href}#${runId}`)
       yield* focus(runId)
       return
     }
