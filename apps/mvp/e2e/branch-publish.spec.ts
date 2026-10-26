@@ -75,7 +75,8 @@ test("publish: a Smithers-only branch reaches GitHub only through Publish, as a 
       await expect(composer).toBeVisible()
       await composer.fill("/new")
       await composer.press("Enter")
-      await expect(page).toHaveURL(new RegExp(`/${repo}/tree/[^/]+$`), { timeout: 120_000 })
+      // The page starts on the default branch's tree, which a plain `/tree/<name>` pattern already matches.
+      await expect(page).toHaveURL(new RegExp(`/${repo}/tree/(?!${facts.default_branch}$)[^/]+$`), { timeout: 120_000 })
       const name = decodeURIComponent(new URL(page.url()).pathname.split("/").at(-1)!)
       expect(name).not.toBe(facts.default_branch)
       await expect(page.getByRole("navigation", { name: "Branch" })).toContainText(name, { timeout: 60_000 })
