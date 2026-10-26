@@ -5,3 +5,8 @@
 .root-notices { max-width:56rem; margin:0 auto; padding:3rem 1rem 0; box-sizing:border-box; }
 .root-notices:empty { display:none; }
 .root-notices [data-slot="toast-stack"] { width:min(380px, 100%); }
+
+/* A page's or a doc's Full screen in the chat (src/features/views/components/ConversationView.tsx): a tap target. */
+@media (max-width: 60rem) {
+  .conversation-view-full-screen { display: inline-flex; align-items: center; min-height: 32px; }
+}

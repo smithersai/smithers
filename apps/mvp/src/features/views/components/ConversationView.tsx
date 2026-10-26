@@ -73,6 +73,7 @@ export function ConversationView({ id, conversationId }: { id: string; conversat
   }
   const fullScreen = (
     <Link
+      className="conversation-view-full-screen"
       to="/app/views/$viewId"
       params={{ viewId: view.id }}
       search={conversationId === undefined ? {} : { conversation: conversationId }}
