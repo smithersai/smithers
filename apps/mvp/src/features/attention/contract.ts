@@ -42,8 +42,10 @@ export const surfaceOf = (routeId: string | undefined): Surface =>
   routeId !== undefined && CONVERSATION_ROUTES.has(routeId) ? "conversation" : "page"
 
 /**
- * The routes whose screen's header holds the top bar's bell: the home conversation's, and the repository header of a
- * repository's home, a branch, a file, its raw view and docs.
+ * The routes whose screen's header holds the top bar's bell: the home conversation's, and the repository header
+ * (src/features/repo/components/RepoHeader.tsx) of a repository's home, a branch, a file, its raw view, docs, issues,
+ * new issue, runs, pull requests, stack and secrets. A screen that adds the repository header adds its route here, or
+ * the floating bell covers the header's last button.
  */
 export const BELL_ROUTES: ReadonlySet<string> = new Set([
   "/app",
@@ -53,6 +55,12 @@ export const BELL_ROUTES: ReadonlySet<string> = new Set([
   "/$owner/$repo/raw/$ref/$",
   "/$owner/$repo/docs",
   "/$owner/$repo/docs/$",
+  "/$owner/$repo/issues",
+  "/$owner/$repo/issues/new",
+  "/$owner/$repo/actions",
+  "/$owner/$repo/pulls",
+  "/$owner/$repo/stack",
+  "/$owner/$repo/settings/secrets",
 ])
 
 /** Whether the route `routeId` needs the top bar's bell floated at the window's top-right: its header doesn't hold it. */

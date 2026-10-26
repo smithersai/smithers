@@ -155,4 +155,9 @@ a.sui-rh-entry-title:hover { color:${t.primary}; }
   .sui-rh-code-body { font-size:12px; }
   .sui-rh-ask { padding:18px; }
 }
+/* A touch screen's tap targets: the announcement, a release's name, All versions and a panel's title link. */
+@media (max-width:960px) {
+  .sui-rh-announce { height:auto; min-height:${t.controlHeight}; }
+  .sui-rh-more, .sui-rh-release-name, .sui-rh-panel-link { display:inline-flex; align-items:center; min-height:${t.controlHeight}; min-width:32px; }
+}
 `;

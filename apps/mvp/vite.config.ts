@@ -120,6 +120,14 @@ export default defineConfig({
   // TypeScript is the language server worker's one CommonJS import: bundled up front, so the first TypeScript file the
   // dev server shows doesn't reload every page to optimize it.
   optimizeDeps: { include: ["typescript"] },
-  server: { port: 5190, strictPort: true, fs: { strict: false } },
+  // The dev server transforms the app's entry and its workers' as it starts, so a dependency a change newly imports, such
+  // as a new `effect/*` module, is optimized before the first page loads instead of reloading every open page (Vite's
+  // "optimized dependencies changed. reloading", which answers 504 to the modules the pages were still loading).
+  server: {
+    port: 5190,
+    strictPort: true,
+    fs: { strict: false },
+    warmup: { clientFiles: ["./src/main.tsx", "./src/flows/engine.worker.ts", "./src/features/code-intel/language.worker.ts"] },
+  },
   build: { target: "esnext" },
 })

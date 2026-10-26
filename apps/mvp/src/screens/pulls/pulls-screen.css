@@ -11,3 +11,8 @@
 
 .pull-merge { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
 .pull-refs code { font-family: var(--sui-font-mono, monospace); overflow-wrap: anywhere; }
+
+/* A signed-out pull request's Sign in sits at its width at the top left, clear of the floating bell at the top right. */
+@media (max-width: 60rem) {
+  .pulls-screen > .sui-button { align-self: flex-start; }
+}

@@ -12,3 +12,8 @@
 .stack-not-sent { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
 .stack-not-sent-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; min-width: 0; }
 .stack-not-sent-label { margin-right: auto; overflow-wrap: anywhere; }
+
+/* A signed-out TODO's Sign in sits at its width at the top left, clear of the floating bell at the top right. */
+@media (max-width: 60rem) {
+  .stack-screen > .sui-button { align-self: flex-start; }
+}

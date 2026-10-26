@@ -79,4 +79,5 @@
   .branch-screen-conversation { max-height: 60dvh; }
   .branch-header-views > a { display: inline-flex; align-items: center; min-width: 32px; min-height: 32px; }
   .branch-header-presence { flex-wrap: wrap; min-width: 0; }
+  .terminal-panel-tabs > a { display: inline-flex; align-items: center; min-width: 32px; min-height: 32px; }
 }
