@@ -90,7 +90,8 @@ test("publish: a Smithers-only branch reaches GitHub only through Publish, as a 
 
     await step("Maya writes a file in the live editor and saves it", async () => {
       await page.goto(`/${repo}/tree/${branch}?edit=${file}`)
-      const editor = page.getByRole("region", { name: file }).locator(".cm-content")
+      // A Markdown file opens in the Markdown editor, whose text is the region's textbox.
+      const editor = page.getByRole("region", { name: file }).getByRole("textbox", { name: file })
       await editor.click({ timeout: MACHINE })
       await page.keyboard.type(`Published from Smithers ${devices.word}`)
       await page.getByRole("region", { name: file }).getByRole("button", { name: "Save", exact: true }).click()
@@ -146,7 +147,7 @@ test("publish: a Smithers-only branch reaches GitHub only through Publish, as a 
     await step("Maya edits the file main added, and it saves", async () => {
       await page.goto(`/${repo}/tree/${branch}?edit=${mains}`)
       const region = page.getByRole("region", { name: mains })
-      const editor = region.locator(".cm-content")
+      const editor = region.getByRole("textbox", { name: mains })
       await expect(editor).toContainText("moved", { timeout: MACHINE })
       await editor.click()
       await page.keyboard.press("ControlOrMeta+End")
