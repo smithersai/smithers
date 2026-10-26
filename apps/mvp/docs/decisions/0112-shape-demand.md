@@ -14,3 +14,7 @@ A waiting collection sends nothing and stays loading; a view never shows it as e
 Rejected: Electric's `on-demand` subsets, which the shape proxy drops; and building stores per route, which would tear down collections the outbox and background followers own.
 
 Library catalog entries: `@smthrs/effect-electric`, `@smthrs/effect-tanstack-db`.
+
+## Cold pull request lists (2026-10-26)
+
+The list query joins the authority-gated items and pull metadata, not the detail shapes. The repository sync receipt can arrive before that query is ready on a cold device. Until both are ready, an empty list shows unknown counts, never a spinner or confirmed empty counts (ARCH-5). Existing rows render immediately; refusals still hide them. Keep the detail shapes gated: opening them does not resolve this dependency.

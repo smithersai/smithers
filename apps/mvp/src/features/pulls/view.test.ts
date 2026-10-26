@@ -92,9 +92,9 @@ describe("the list page", () => {
     expect(listPageOf([row], repository, undefined, undefined).pulls.map((pull) => pull.href)).toEqual(["/octo/hello/pull/3"])
   })
 
-  test("a completed GitHub sync still waits for device hydration", () => {
+  test("a completed GitHub sync keeps unknown counts until device hydration", () => {
     const synced = { syncedAt: "now" }
-    expect(listPageOf([], repository, synced, { status: "allowed" }, false)).toMatchObject({ loading: true, unknown: false })
+    expect(listPageOf([], repository, synced, { status: "allowed" }, false)).toMatchObject({ loading: false, unknown: true })
     expect(listPageOf([row], repository, synced, { status: "allowed" }, false).loading).toBe(false)
     for (const status of ["sign_in", "forbidden"]) {
       expect(listPageOf([], repository, synced, { status }, false)).toMatchObject({ refused: status, loading: false, unknown: false })

@@ -70,8 +70,8 @@ export const listProps = (rows: ReadonlyArray<ListRow>, owner: string, name: str
   }))
 
 /**
- * The list page: its rows, loading until the repository sync and device hydration finish,
- * and the shape's refusal (sign in, or not allowed). Existing rows and refusals never wait.
+ * The list page: device rows, unknown counts until both repository sync and device hydration finish,
+ * and the shape's refusal (sign in, or not allowed). A cold list never shows a spinner (ARCH-5).
  */
 export const listPageOf = (
   rows: ReadonlyArray<ListRow>,
@@ -84,8 +84,8 @@ export const listPageOf = (
   return {
     refused,
     pulls: refused === undefined ? listProps(rows, repository.owner, repository.name) : [],
-    loading: refused === undefined && synced !== undefined && !ready && rows.length === 0,
-    unknown: refused === undefined && synced === undefined && rows.length === 0,
+    loading: false,
+    unknown: refused === undefined && (synced === undefined || !ready) && rows.length === 0,
   }
 }
 

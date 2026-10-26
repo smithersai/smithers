@@ -9,7 +9,7 @@ import { role as readRepositoryRole } from "../repo/actions"
 import { ShapeSource } from "@smthrs/effect-electric"
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { GitHub } from "@smthrs/integrations"
-import { Context, Effect, Exit, Layer, type ManagedRuntime, Metric } from "effect"
+import { Context, Deferred, Effect, Exit, Layer, type ManagedRuntime, Metric } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
@@ -221,6 +221,27 @@ const server = (api: TestChatApi["Service"]) => {
 }
 
 describe("the list and a pull request's page", () => {
+  test("a cold list with a sync receipt shows unknown counts until its items arrive, never a spinner", async () => {
+    const release = Deferred.makeUnsafe<void>()
+    const source = ShapeSource.ShapeSource.of({ request: (url, init) =>
+      new URL(url).pathname === "/api/shapes/items"
+        ? Effect.andThen(Deferred.await(release), ShapeSource.fetchSource.request(url, init))
+        : ShapeSource.fetchSource.request(url, init),
+    })
+    const tab = await open({ replace: Layer.succeed(ShapeSource.ShapeSource, source) })
+    await server(tab.api).pull(pullOf(2), "Cold pull")
+    await Effect.runPromise(tab.api.github.run(Store.finishSync(REPO_ID, ISSUES_STREAM, { complete: true, failure: null })))
+    await tab.actions.open(OWNER, NAME)
+    const page = () => listPageOf(tab.queries.list.toArray, { owner: OWNER, name: NAME },
+      tab.issues.queries.synced.toArray[0], tab.issues.queries.access.toArray[0], tab.queries.list.isReady())
+    await until(() => expect(tab.issues.queries.synced.toArray[0]).toMatchObject({ syncedAt: expect.any(String) }))
+    expect(tab.queries.list.isReady()).toBe(false)
+    expect(page()).toMatchObject({ pulls: [], loading: false, unknown: true })
+    await Effect.runPromise(Deferred.succeed(release, undefined))
+    await until(() => expect(page().pulls.map((row) => row.number)).toEqual([2]))
+    expect(page()).toMatchObject({ loading: false, unknown: false })
+  }, WITHIN)
+
   test.each([[401, "unavailable", "shown"], [403, "unavailable", "shown"]] as const)(
     "a %s pull refusal survives a failed reconnect and recovers only with an installed batch",
     async (status, refusal, page) => {
