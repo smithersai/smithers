@@ -1,5 +1,5 @@
 {
-  "epoch": 92,
+  "epoch": 93,
   "stores": {
     "message-pin-pending": {
       "kind": "local",
@@ -198,7 +198,8 @@
     "issue-writes": {
       "kind": "synced",
       "versions": {
-        "1": "900c98190b4a7657"
+        "1": "900c98190b4a7657",
+        "2": "e3be627a1c0529dd"
       }
     },
     "issue-triage-settings": {

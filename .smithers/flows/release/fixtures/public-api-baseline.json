@@ -4216,7 +4216,7 @@
         "Interpreter.d.ts": "d3fa0230f79fe67cdd292f0744655c36e917b4b44191a9f02a5c10bedc5ab585",
         "Poll.d.ts": "597f0397f800733a8d7c7227fa4474ba6af5a84cea2b0b572acbc6bc6a643ab3",
         "RetryPolicy.d.ts": "cb9077b4e8ec6a9316c7d3cd25baf330ec7ef224859f6838bae091722a20a3c6",
-        "RunMetrics.d.ts": "2cc73bfbf955b0b0f217d9ea9491017c04042dc35eca3d14e0c14e3c797febb5",
+        "RunMetrics.d.ts": "adf4f78ae8c4a3791ca5b00f5dd8d09fe877d5bc02f21825e9298a55ebb05311",
         "Sleep.d.ts": "47945c4da7b8c712b20dca0a885ffebf9e47645a6a207bcdc4653c164730763c",
         "Stall.d.ts": "5580fb50f9c8931aa456b984f95adbbd8070c8731a7bdec1f0e75eca637cc282",
         "WaitFor.d.ts": "63b998f7f184e3ee0e8be226a171e05362f3c173bec0101902443549229430ed",
@@ -5440,15 +5440,15 @@
         "github/Actions.d.ts": "7fcb37a9b5cc68c4f5a625f1028ad10f0f3f97432e7004bd3ecd5242cc6b7488",
         "github/AppAuth.d.ts": "386ce0d572c6c82f04c56a609561030e3c7d265d1dd6c89cdef0231d422ea859",
         "github/Collaborators.d.ts": "6716e3cca7ca5035bdc69328b157561ab26ed74fbc6fdfa5221113c3aedc3727",
-        "github/Commits.d.ts": "065c8dde696db0edb0d30d1a35f7146ce5eef360aeabc968fa498d9d8fb7a25d",
+        "github/Commits.d.ts": "bfbfc6513320258dbe65714e1dc799897f8ac867b4d8055ad0dd82ddbe5ff9b5",
         "github/Config.d.ts": "cb4b23f03ad5ac97b3e2d772eb2aee5992cdd711f8881f9f33c8986300dd521c",
         "github/Contents.d.ts": "bb88c0bca5e593f7aff311d8277f10c94e3b825e480bf7d51d803ee23832df02",
         "github/GitHubClient.d.ts": "d9ae0909fb622753b28051734eb94241fdb4eb2015039e26ddd0a98a4fe59904",
         "github/Issues.d.ts": "d204c4d3e0c33e11da37ce66b7e2ab59ce909c490357a994bc2c73cf0e18ebbb",
-        "github/Once.d.ts": "636b5ad6d45891d95d341392c12e2d02277600904788dd90bd71b4323b519994",
+        "github/Once.d.ts": "b7ccc4e74aec260ed4cf2e561f4d181952740476f0c559a91650152468f76c05",
         "github/Payload.d.ts": "602cf1be551738a46acc43500691f32fa761ce3cb1f7ef4ef69580aa4bc6e4ab",
         "github/Proxy.d.ts": "cf58c2d7903d3b48ada46725e889e194e180f56024cac6464a0ca0737f09e02b",
-        "github/Pulls.d.ts": "c8b9f45562d12088ff35448a7e4fe168e0898a9d699fef053f9c2ca1201c31bb",
+        "github/Pulls.d.ts": "ec73d89f131dce967a7f36c5e3feea64b1c99682e33344faedb6fdb127f307be",
         "github/RateLimit.d.ts": "eaefb20d5172e5d4936ac9f5afd4b1ca5e0eb026a6fd6c99b24def33f09e1141",
         "github/Refs.d.ts": "5914576b9c13b0c0b4bffd1df6bedaedc6c45e1ce59d3e39d59fc3955875aa24",
         "github/Repository.d.ts": "82856ead138dde7f8bfa08c830ba51628475b4923f37f2ccab14afbb88994f18",
@@ -7348,6 +7348,16 @@
             "default": "./dist/cjs/Endpoint.js"
           }
         },
+        "./FetchFailures": {
+          "import": {
+            "types": "./dist/esm/FetchFailures.d.ts",
+            "default": "./dist/esm/FetchFailures.js"
+          },
+          "require": {
+            "types": "./dist/cjs/FetchFailures.d.ts",
+            "default": "./dist/cjs/FetchFailures.js"
+          }
+        },
         "./JournalLogger": {
           "import": {
             "types": "./dist/esm/JournalLogger.d.ts",
@@ -7356,6 +7366,16 @@
           "require": {
             "types": "./dist/cjs/JournalLogger.d.ts",
             "default": "./dist/cjs/JournalLogger.js"
+          }
+        },
+        "./LogFailures": {
+          "import": {
+            "types": "./dist/esm/LogFailures.d.ts",
+            "default": "./dist/esm/LogFailures.js"
+          },
+          "require": {
+            "types": "./dist/cjs/LogFailures.d.ts",
+            "default": "./dist/cjs/LogFailures.js"
           }
         },
         "./Logger": {
@@ -7432,7 +7452,9 @@
       "declarations": {
         "BrowserOtel.d.ts": "f1fd5e8a375ac9d6c130dfaf280c71849ba35c6025a44f6d2f555a5d02781b4b",
         "Endpoint.d.ts": "90ac9e1fa1c4cb2c966f8db204d9759eef754f11843eb6bd51bae1e3ce824745",
+        "FetchFailures.d.ts": "1302532bdc16214196660d42a991903dda9297c309de0dc32f40e8a7de8055c1",
         "JournalLogger.d.ts": "06844fb7244df3bc90f7f8d36c6e5dc4feb9ad9eb5199eb912fc0df7d5d62942",
+        "LogFailures.d.ts": "cb3512df1bd3b7c45dd79687b4076c3efa74b634514b12e0f28be1d15d04988b",
         "Logger.d.ts": "f03876b795ad1977f375def9d65ff44d3f2c0291faaa1ef7106c2ee8c096346e",
         "Metric.d.ts": "be427fdaea2a7d7162359fa376a8e6cd627570f7f3c186b279dfb19e46737e81",
         "NodeOtel.d.ts": "b14d9b1835966feae0ea26310768ceb766940e47d47be6097ac73d49bfb0777f",
@@ -7440,7 +7462,7 @@
         "Otlp.d.ts": "de89ce29361335fbb91ede9c8bf79185548cc83280a5611ae844967868ba6a30",
         "OtlpRelay.d.ts": "bff3adce4ad443307e103c12b87c09bff17bb75eeabdb82bf0603b7df47348bb",
         "Resource.d.ts": "0aac1e7a9bfb28b241b0030c51be8c9b5ab70c8a3851d3b70334960ba7453ae8",
-        "index.d.ts": "a5c8f45bb0db4075cec90a0c055eb1cc6f52482e9dddbede4e0e6f14e28843df",
+        "index.d.ts": "f9c6034537e455331e92423565f419442182a8505c54d4c7669d4feac7333e90",
         "internal/schemaIssuePath.d.ts": "d1121b36495f65d0503eceb0170cee739e9ebdfdab2f0aed169c7f0083f21f4d",
         "internal/split.d.ts": "e2271f312cd9f0299611ce2bda52933bb84965b2e9587f0d37df4f582e32bb54"
       }
@@ -8100,7 +8122,7 @@
         "internal/AccessHandlePoolVFS.d.ts": "a6665ee66e2fc793452d9bcd374979d18fc9dac3357ee609d0215023d92e5a36",
         "internal/Engine.d.ts": "ab5a92c85359d24556f9827dba2d924544184b47eeef3b920368c08976a66275",
         "internal/HttpClient.d.ts": "4c264a6ecc2239c32f3bef177bacab15fbfe4184a58cbf93a0a7eb24202b303d",
-        "internal/LanguageProtocol.d.ts": "b88877ea9661dcb9c529b2eeb310a47b763fad0ea81e6a9753529ef805957a0f",
+        "internal/LanguageProtocol.d.ts": "fb8f00ad222289fbe547923ec6bd61b7b7641be019c56f10747fdc398ca39764",
         "internal/Leader.d.ts": "47f735d0d93e30f63ba1ddee8aff2644ac381dd5459a096bfd12bf43d01ccf4d",
         "internal/Metrics.d.ts": "0efa52d88279cf1aca83e1e286ef7be45f6cf8a7e04dbf5af642685c117cb620",
         "internal/Prepare.d.ts": "dc73b22cc84dfe735d5967b7c1e9b2232596d6c8a3fd7e90a4bc2358bd4f84aa",
@@ -9423,7 +9445,7 @@
         "SandboxSupervision/index.d.ts": "6da135e88709eba60231bd787b2fda46b51fcf97dab06032ad959ff53cadb736",
         "SandboxSupervision/layer.d.ts": "f282459dd2f33712dad813f5041936bb1724cdb25f42df7f5cd461eb87888738",
         "SandboxSupervision/make.d.ts": "dc11d1a29a5750e2a71f4e35a3846562c5d9f2db65402d8a2a5e32ae1e8fdd55",
-        "SandboxTools/index.d.ts": "239cdb55f237488159753efac02a43deef3dbde49cff3d2d78eeb67d63919d64",
+        "SandboxTools/index.d.ts": "c9d09803b440f0324fdf47b279e56975d46e7aa064e741b0fafe2fdfb7085b82",
         "TerminalProtocol/index.d.ts": "bd47b088906556f995f6c80839b46c03d62c36b9736fe757847c7d22eea69ff8",
         "VercelSandbox/Credentials.d.ts": "2ea4129204aaa93e0ae078cb02b803f2906b7b7f549fbe68f15278f15c2d715d",
         "VercelSandbox/Sdk.d.ts": "e740f20b370598b7a0d81e96f77cf03a1cd44ce25473cc0fbf2f09299004c8d2",

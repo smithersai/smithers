@@ -22277,23 +22277,25 @@ request and submitting a review are not idempotent: mark the body with
 `Issues.withWriteMarker`, and after `outcomeUnknown` look first with
 `findPullByHead` or `findReviewByWrite`. A merge is fenced by the head SHA the
 person saw; a step that may run again merges through `GitHub.Once.merge`, which finds its merge by the key in the
-commit message. Closing is idempotent.
+commit message. Updating a pull request's branch is fenced the same way, by the head the caller saw. Closing is
+idempotent.
 
-| Export                                                       | Signature                                                                                                                | Notes                                                                                                                                                                                                                                                |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `getPull`                                                    | `(owner, repo, number) => Effect<PullRequest, IntegrationError, GitHubClient>`                                           | `GET /repos/{owner}/{repo}/pulls/{number}`, with merge state and size.                                                                                                                                                                               |
-| `listPulls`                                                  | `(owner, repo, options?: { state?, head?, maxPages? }) => Effect<{ items, truncated }, IntegrationError, GitHubClient>`  | Most recently updated first; `state` defaults to `all`; `head` is a branch of the repository itself.                                                                                                                                                 |
-| `findPullByHead`                                             | `(owner, repo, { head, writeId? }) => Effect<Option<PullRequest>, IntegrationError, GitHubClient>`                       | The earliest-opened pull request from `head`, carrying `writeId`'s marker when given. A listing that runs out of pages without a match fails `poll-failed` with `incomplete: true`.                                                                  |
-| `createPull`                                                 | `(owner, repo, { head, base, title, body, draft? }) => Effect<PullRequest, IntegrationError, GitHubClient>`              | `POST /repos/{owner}/{repo}/pulls`. 422 for no commits, a duplicate or a refused draft. A lost answer fails `outcomeUnknown`.                                                                                                                        |
-| `closePull`                                                  | `(owner, repo, number) => Effect<PullRequest, IntegrationError, GitHubClient>`                                           | `PATCH` with `state: closed`; a lost answer fails `retryable`.                                                                                                                                                                                       |
-| `setBase`                                                    | `(owner, repo, number, base) => Effect<PullRequest, IntegrationError, GitHubClient>`                                     | `PATCH` with `base`: a stacked pull request moves onto the default branch once the one below merged. Idempotent; a lost answer fails `retryable`; 422 for a missing base or a closed pull request.                                                   |
-| `markReady`                                                  | `(owner, repo, nodeId) => Effect<void, IntegrationError, GitHubClient>`                                                  | GraphQL `markPullRequestReadyForReview` on the pull request's `node_id` (REST can't take a pull request out of draft). A lost answer fails `retryable`; a GraphQL error fails `status: 422`.                                                         |
-| `mergePull`                                                  | `(owner, repo, number, { sha, method, commitTitle?, commitMessage? }) => Effect<Merged, IntegrationError, GitHubClient>` | `PUT /repos/{owner}/{repo}/pulls/{number}/merge` at exactly `sha`. 409 when the head moved, 405 when not mergeable, 422 for a disallowed method. A lost answer fails `outcomeUnknown`; a step that may run again merges through `GitHub.Once.merge`. |
-| `listCommits`, `listReviews`                                 | `(owner, repo, number, options?: { maxPages? }) => Effect<{ items, truncated }, IntegrationError, GitHubClient>`         | Oldest first; at most 3 pages unless `maxPages` says otherwise.                                                                                                                                                                                      |
-| `createReview`                                               | `(owner, repo, number, { commitId, event, body }) => Effect<Review, IntegrationError, GitHubClient>`                     | `POST .../reviews` against head `commitId`. `event` is `COMMENT`, `APPROVE` or `REQUEST_CHANGES`; `COMMENT` needs a body. A lost answer fails `outcomeUnknown`.                                                                                      |
-| `findReviewByWrite`                                          | `(owner, repo, number, { writeId }) => Effect<Option<Review>, IntegrationError, GitHubClient>`                           | The review whose body carries the marker. A listing that runs out of pages without a match fails `poll-failed` with `incomplete: true`.                                                                                                              |
-| `PullRequest`, `PullEnd`, `PullBase`, `PullCommit`, `Review` | schemas                                                                                                                  | GitHub's JSON narrowed to the fields Smithers reads. A listing's missing merge and size fields decode as `false`, `null` or `0`.                                                                                                                     |
-| `MergeMethod`, `ReviewEvent`, `Merged`                       | types                                                                                                                    | `squash`, `merge`, `rebase`; the review events; `{ sha, merged }`.                                                                                                                                                                                   |
+| Export                                                       | Signature                                                                                                                | Notes                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getPull`                                                    | `(owner, repo, number) => Effect<PullRequest, IntegrationError, GitHubClient>`                                           | `GET /repos/{owner}/{repo}/pulls/{number}`, with merge state and size.                                                                                                                                                                                                                                                                                                                                        |
+| `listPulls`                                                  | `(owner, repo, options?: { state?, head?, maxPages? }) => Effect<{ items, truncated }, IntegrationError, GitHubClient>`  | Most recently updated first; `state` defaults to `all`; `head` is a branch of the repository itself.                                                                                                                                                                                                                                                                                                          |
+| `findPullByHead`                                             | `(owner, repo, { head, writeId? }) => Effect<Option<PullRequest>, IntegrationError, GitHubClient>`                       | The earliest-opened pull request from `head`, carrying `writeId`'s marker when given. A listing that runs out of pages without a match fails `poll-failed` with `incomplete: true`.                                                                                                                                                                                                                           |
+| `createPull`                                                 | `(owner, repo, { head, base, title, body, draft? }) => Effect<PullRequest, IntegrationError, GitHubClient>`              | `POST /repos/{owner}/{repo}/pulls`. 422 for no commits, a duplicate or a refused draft. A lost answer fails `outcomeUnknown`.                                                                                                                                                                                                                                                                                 |
+| `closePull`                                                  | `(owner, repo, number) => Effect<PullRequest, IntegrationError, GitHubClient>`                                           | `PATCH` with `state: closed`; a lost answer fails `retryable`.                                                                                                                                                                                                                                                                                                                                                |
+| `setBase`                                                    | `(owner, repo, number, base) => Effect<PullRequest, IntegrationError, GitHubClient>`                                     | `PATCH` with `base`: a stacked pull request moves onto the default branch once the one below merged. Idempotent; a lost answer fails `retryable`; 422 for a missing base or a closed pull request.                                                                                                                                                                                                            |
+| `markReady`                                                  | `(owner, repo, nodeId) => Effect<void, IntegrationError, GitHubClient>`                                                  | GraphQL `markPullRequestReadyForReview` on the pull request's `node_id` (REST can't take a pull request out of draft). A lost answer fails `retryable`; a GraphQL error fails `status: 422`.                                                                                                                                                                                                                  |
+| `updateBranch`                                               | `(owner, repo, { pullNodeId, expectedHeadOid, method }) => Effect<{ headSha }, IntegrationError, GitHubClient>`          | GraphQL `updatePullRequestBranch` on the pull request's `node_id`: brings its branch up to date with its base, fenced by `expectedHeadOid` so a commit pushed since is never lost. `merge` adds a merge commit; `rebase` rewrites the branch with new SHAs. Any GraphQL error, a stale head among them, fails `status: 422` with the error's `type`, never its message. A lost answer fails `outcomeUnknown`. |
+| `mergePull`                                                  | `(owner, repo, number, { sha, method, commitTitle?, commitMessage? }) => Effect<Merged, IntegrationError, GitHubClient>` | `PUT /repos/{owner}/{repo}/pulls/{number}/merge` at exactly `sha`. 409 when the head moved, 405 when not mergeable, 422 for a disallowed method. A lost answer fails `outcomeUnknown`; a step that may run again merges through `GitHub.Once.merge`.                                                                                                                                                          |
+| `listCommits`, `listReviews`                                 | `(owner, repo, number, options?: { maxPages? }) => Effect<{ items, truncated }, IntegrationError, GitHubClient>`         | Oldest first; at most 3 pages unless `maxPages` says otherwise.                                                                                                                                                                                                                                                                                                                                               |
+| `createReview`                                               | `(owner, repo, number, { commitId, event, body }) => Effect<Review, IntegrationError, GitHubClient>`                     | `POST .../reviews` against head `commitId`. `event` is `COMMENT`, `APPROVE` or `REQUEST_CHANGES`; `COMMENT` needs a body. A lost answer fails `outcomeUnknown`.                                                                                                                                                                                                                                               |
+| `findReviewByWrite`                                          | `(owner, repo, number, { writeId }) => Effect<Option<Review>, IntegrationError, GitHubClient>`                           | The review whose body carries the marker. A listing that runs out of pages without a match fails `poll-failed` with `incomplete: true`.                                                                                                                                                                                                                                                                       |
+| `PullRequest`, `PullEnd`, `PullBase`, `PullCommit`, `Review` | schemas                                                                                                                  | GitHub's JSON narrowed to the fields Smithers reads. A listing's missing merge and size fields decode as `false`, `null` or `0`.                                                                                                                                                                                                                                                                              |
+| `MergeMethod`, `UpdateMethod`, `ReviewEvent`, `Merged`       | types                                                                                                                    | `squash`, `merge`, `rebase`; `merge`, `rebase`; the review events; `{ sha, merged }`.                                                                                                                                                                                                                                                                                                                         |
 
 ### GitHub.Refs
 
@@ -22309,13 +22311,13 @@ Branch refs. Nothing here moves an existing ref, so nothing can force one.
 
 ### GitHub.Commits
 
-| Export                                                   | Signature                                                                                                                             | Notes                                                                                                                                                                                                                                                                                                                                                                                  |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `createOnBranch`                                         | `(owner, repo, { branch, expectedHeadOid, headline, body?, additions, deletions }) => Effect<string, IntegrationError, GitHubClient>` | GraphQL `createCommitOnBranch` (`POST /graphql`), fenced by `expectedHeadOid`; answers the new SHA. Each addition is a whole file, base64; 1 to 1,000 changes. A moved branch fails `status: 409, stale: true`, any other GraphQL error `status: 422`, neither retryable. A lost answer fails `outcomeUnknown`; a step that may run again writes through `GitHub.Once.commitOnBranch`. |
-| `mergeInto`                                              | `(owner, repo, { base, head, commitMessage? }) => Effect<MergedInto, IntegrationError, GitHubClient>`                                 | `POST /repos/{owner}/{repo}/merges`: merges branch or SHA `head` into branch `base`, never a rebase, so nothing is forced. Answers `{ kind: "merged", sha }`, or `{ kind: "upToDate" }` when `base` already holds `head` (204), so a lost answer fails `retryable`. 409 for a conflict, 404 for a missing branch or head, neither retryable.                                           |
-| `getCommit`                                              | `(owner, repo, sha) => Effect<GitCommit, IntegrationError, GitHubClient>`                                                             | `GET /repos/{owner}/{repo}/git/commits/{sha}`: tree, parents and message.                                                                                                                                                                                                                                                                                                              |
-| `compare`                                                | `(owner, repo, base, head) => Effect<Comparison, IntegrationError, GitHubClient>`                                                     | `GET /repos/{owner}/{repo}/compare/{base}...{head}` with two SHAs, so the answer never changes. `truncated` when GitHub listed `MAX_COMPARE_FILES` (300) files.                                                                                                                                                                                                                        |
-| `FileAddition`, `GitCommit`, `ChangedFile`, `Comparison` | types and schemas                                                                                                                     | A changed file's `patch` is absent for a binary or very large file.                                                                                                                                                                                                                                                                                                                    |
+| Export                                                                                   | Signature                                                                                                                             | Notes                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `createOnBranch`                                                                         | `(owner, repo, { branch, expectedHeadOid, headline, body?, additions, deletions }) => Effect<string, IntegrationError, GitHubClient>` | GraphQL `createCommitOnBranch` (`POST /graphql`), fenced by `expectedHeadOid`; answers the new SHA. Each addition is a whole file, base64; 1 to 1,000 changes. A moved branch fails `status: 409, stale: true`, any other GraphQL error `status: 422`, neither retryable. A lost answer fails `outcomeUnknown`; a step that may run again writes through `GitHub.Once.commitOnBranch`. |
+| `mergeInto`                                                                              | `(owner, repo, { base, head, commitMessage? }) => Effect<MergedInto, IntegrationError, GitHubClient>`                                 | `POST /repos/{owner}/{repo}/merges`: merges branch or SHA `head` into branch `base`, never a rebase, so nothing is forced. Answers `{ kind: "merged", sha }`, or `{ kind: "upToDate" }` when `base` already holds `head` (204), so a lost answer fails `retryable`. 409 for a conflict, 404 for a missing branch or head, neither retryable.                                           |
+| `getCommit`                                                                              | `(owner, repo, sha) => Effect<GitCommit, IntegrationError, GitHubClient>`                                                             | `GET /repos/{owner}/{repo}/git/commits/{sha}`: tree, parents and message.                                                                                                                                                                                                                                                                                                              |
+| `compare`                                                                                | `(owner, repo, base, head) => Effect<Comparison, IntegrationError, GitHubClient>`                                                     | `GET /repos/{owner}/{repo}/compare/{base}...{head}` with two SHAs, so the answer never changes. `truncated` when GitHub listed `MAX_COMPARE_FILES` (300) files. `commits` lists what `head` has that `base` lacks, oldest first, as `{ sha, headline, authorLogin, authoredAt }`; GitHub lists at most 250, and `commitsTruncated` says it counted more.                               |
+| `FileAddition`, `GitCommit`, `ChangedFile`, `ComparedCommit`, `Comparison`, `MergedInto` | types and schemas                                                                                                                     | A changed file's `patch` is absent for a binary or very large file. A compared commit's `authorLogin` is `null` when GitHub links it to no account.                                                                                                                                                                                                                                    |
 
 ### GitHub.Once
 
@@ -22330,16 +22332,17 @@ name, parent or age. A lookup that runs out of pages fails `poll-failed` with
 const sha = yield * Action.once("commit", GitHub.Once.commitOnBranch(owner, repo, change))
 ```
 
-| Export                                                                      | Signature                                                                                                                            | Notes                                                                                                                                                                                                                                                                                                                          |
-| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `branch`                                                                    | `(owner, repo, { prefix, label, at }) => Keyed<Branch, IntegrationError \| E, GitHubClient \| R>`                                    | Named `prefix`, `label`, `-`, then the key's first 12 hex digits; found among the branches under `prefix` by that suffix, whatever the label. `at: Effect<string, E, R>` is read only when the branch is made.                                                                                                                 |
-| `commitOnBranch`                                                            | `(owner, repo, { branch, expectedHeadOid, headline, body?, additions, deletions }) => Keyed<string, IntegrationError, GitHubClient>` | The message ends with `Smithers-Write: <key>`. Found as the branch head carrying that trailer; a branch at `expectedHeadOid` holds none, and any other head fails `status: 409, stale: true`.                                                                                                                                  |
-| `pull`                                                                      | `(owner, repo, { head, base, title, body, draft? }) => Keyed<PullRequest, IntegrationError, GitHubClient>`                           | The body carries the write marker; found among every pull request from `head`.                                                                                                                                                                                                                                                 |
-| `issue`                                                                     | `(owner, repo, { title, body, since }) => Keyed<Issue, IntegrationError, GitHubClient>`                                              | Found among the issues updated since `since`, a time before the first attempt that every attempt agrees on.                                                                                                                                                                                                                    |
-| `comment`                                                                   | `(owner, repo, number, body) => Keyed<IssueComment, IntegrationError, GitHubClient>`                                                 | Found in the whole thread.                                                                                                                                                                                                                                                                                                     |
-| `review`                                                                    | `(owner, repo, number, { commitId, event, body }) => Keyed<Review, IntegrationError, GitHubClient>`                                  | Found among every review.                                                                                                                                                                                                                                                                                                      |
-| `merge`                                                                     | `(owner, repo, number, { sha, method, commitTitle?, commitMessage? }) => Keyed<Merged, IntegrationError, GitHubClient>`              | Merges at head `sha` with `Smithers-Write: <key>` at the end of the commit message. Found as the pull request's merge commit carrying that trailer; a merge without it is someone else's. A rebase writes no message to carry the key, so a rebase merge is never found: a lost answer reads as a pull request someone merged. |
-| `withTrailer`, `trailerKeyOf`, `branchName`, `TRAILER`, `BRANCH_KEY_LENGTH` | helpers                                                                                                                              | The trailer and the branch name the adapters write.                                                                                                                                                                                                                                                                            |
+| Export                                                                      | Signature                                                                                                                            | Notes                                                                                                                                                                                                                                                                                                                                                                                                            |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `branch`                                                                    | `(owner, repo, { prefix, label, at }) => Keyed<Branch, IntegrationError \| E, GitHubClient \| R>`                                    | Named `prefix`, `label`, `-`, then the key's first 12 hex digits; found among the branches under `prefix` by that suffix, whatever the label. `at: Effect<string, E, R>` is read only when the branch is made.                                                                                                                                                                                                   |
+| `commitOnBranch`                                                            | `(owner, repo, { branch, expectedHeadOid, headline, body?, additions, deletions }) => Keyed<string, IntegrationError, GitHubClient>` | The message ends with `Smithers-Write: <key>`. Found as the branch head carrying that trailer; a branch at `expectedHeadOid` holds none, and any other head fails `status: 409, stale: true`.                                                                                                                                                                                                                    |
+| `pull`                                                                      | `(owner, repo, { head, base, title, body, draft? }) => Keyed<PullRequest, IntegrationError, GitHubClient>`                           | The body carries the write marker; found among every pull request from `head`.                                                                                                                                                                                                                                                                                                                                   |
+| `issue`                                                                     | `(owner, repo, { title, body, since }) => Keyed<Issue, IntegrationError, GitHubClient>`                                              | Found among the issues updated since `since`, a time before the first attempt that every attempt agrees on.                                                                                                                                                                                                                                                                                                      |
+| `comment`                                                                   | `(owner, repo, number, body) => Keyed<IssueComment, IntegrationError, GitHubClient>`                                                 | Found in the whole thread.                                                                                                                                                                                                                                                                                                                                                                                       |
+| `review`                                                                    | `(owner, repo, number, { commitId, event, body }) => Keyed<Review, IntegrationError, GitHubClient>`                                  | Found among every review.                                                                                                                                                                                                                                                                                                                                                                                        |
+| `merge`                                                                     | `(owner, repo, number, { sha, method, commitTitle?, commitMessage? }) => Keyed<Merged, IntegrationError, GitHubClient>`              | Merges at head `sha` with `Smithers-Write: <key>` at the end of the commit message. Found as the pull request's merge commit carrying that trailer; a merge without it is someone else's. A rebase writes no message to carry the key, so a rebase merge is never found: a lost answer reads as a pull request someone merged.                                                                                   |
+| `mergeInto`                                                                 | `(owner, repo, { base, head, commitMessage? }) => Keyed<MergedInto, IntegrationError, GitHubClient>`                                 | Merges branch or SHA `head` into branch `base` through `Commits.mergeInto`, with `Smithers-Write: <key>` at the end of the message (the trailer alone without `commitMessage`), and answers its `merged` or `upToDate` unchanged. Found as `base`'s head carrying that trailer; any other head is someone else's and answers none. A commit pushed on top hides the merge, and merging again answers `upToDate`. |
+| `withTrailer`, `trailerKeyOf`, `branchName`, `TRAILER`, `BRANCH_KEY_LENGTH` | helpers                                                                                                                              | The trailer and the branch name the adapters write.                                                                                                                                                                                                                                                                                                                                                              |
 
 ### GitHub.Statuses
 
@@ -29674,11 +29677,22 @@ https://smithers.sh/docs/reference/api/observability/
 
 > **Related APIs:** [`@smthrs/journal`](/docs/reference/api/journal/)
 
-`@smthrs/observability` exports eight modules from its root entry point.
+`@smthrs/observability` exports ten modules from its root entry point.
 Import them from the root:
 
 ```ts
-import { Endpoint, JournalLogger, Logger, Metric, Otel, Otlp, OtlpRelay, Resource } from "@smthrs/observability"
+import {
+  Endpoint,
+  FetchFailures,
+  JournalLogger,
+  LogFailures,
+  Logger,
+  Metric,
+  Otel,
+  Otlp,
+  OtlpRelay,
+  Resource
+} from "@smthrs/observability"
 ```
 
 Two more modules are subpath-only, because each binds a host-specific
@@ -30249,6 +30263,164 @@ const layer: (logger: Logger.Logger<unknown, unknown>, options?: Options) => Lay
 ```
 
 Installs a caller-supplied logger under the same two rules.
+
+## LogFailures
+
+Counts what went wrong from the log: every line at `Warn` or above, by its
+record, its code and its area, and keeps the latest of them. A program that
+logs each failure once, by a stable record name and a code, gets every failure
+counted without a counter at each call site.
+
+```ts
+import { LogFailures, Otlp } from "@smthrs/observability"
+
+const telemetry = LogFailures.layer({ records: ["question not sent", "page error"] }).pipe(
+  Layer.provideMerge(Otlp.layerFetch({ baseUrl: "/api/telemetry", serviceName: "web" }))
+)
+```
+
+### LogFailures.layer
+
+```ts
+const layer: (options?: Options) => Layer.Layer<Recent>
+```
+
+Adds a logger to the ambient set (it never replaces one) and provides
+`Recent`. Each line at `Warn`, `Error` or `Fatal` adds one to `failures` and
+becomes the newest `Entry`. Provide it above the exporter's layer, so the set
+it extends already holds the exporter's logger.
+
+### LogFailures.Options
+
+```ts
+interface Options {
+  readonly records?: Iterable<string> | undefined
+  readonly codes?: ReadonlyArray<string> | undefined
+  readonly area?: string | undefined
+  readonly keep?: number | undefined
+}
+```
+
+- `records`: the record names a line keeps as its `record`, its message when
+  it is one of these; any other line is `other`. Omitted, a message of up to
+  96 letters, digits, spaces and `_ . : ' / @ -` is kept, up to `maxRecords`
+  (200) distinct ones.
+- `codes`: the annotations read for a line's code, first present first.
+  Defaults to `defaultCodeFields`: `errorCode`, `code`, `reason`, `outcome`,
+  `error.type`, `error`, `name`, `status`. A value counts when it is an identifier of up
+  to 64 characters (letters, digits, `_ . : / @ -`) or a finite number. With
+  none, the code is the `code`, `_tag` or name (not plain `Error`) of the first
+  failure or defect in the line's cause, else `none`.
+- `area`: the annotation naming a line's area, `feature` by default; absent or
+  not an identifier, `none`.
+- `keep`: how many of the latest lines `Recent` keeps, 50 by default; 0 keeps
+  none and still counts.
+
+Codes and areas are capped at `maxCodes` (200) and `maxAreas` (50) distinct
+values; past a cap a new value reads `other`. A message is never a code, so a
+line that quotes what someone wrote costs `other`, never a new series.
+
+### LogFailures.failures
+
+```ts
+const failures: Metric.Counter<number>
+```
+
+Counter `flows_observability_log_failures`, by `level` (`warn`, `error`,
+`fatal`), `record`, `code` and `area`.
+
+### LogFailures.Recent and LogFailures.Entry
+
+```ts
+class Recent extends Context.Service<Recent, { readonly entries: Effect.Effect<ReadonlyArray<Entry>> }>() {}
+
+interface Entry {
+  readonly at: number
+  readonly level: "warn" | "error" | "fatal"
+  readonly record: string
+  readonly code: string
+  readonly area: string
+  readonly traceId?: string
+  readonly spanId?: string
+}
+```
+
+The latest lines at `Warn` or above, oldest first: when (epoch milliseconds
+from the program's clock), how bad, the same `record`, `code` and `area` the
+counter has, and the ids of the span the line was logged in. A bug report can
+carry them as they are.
+
+## FetchFailures
+
+Records every request a program's `fetch` sends that fails, by its route
+template, its status class and whether it repeats a request that failed. It
+wraps the `fetch` in Effect's `FetchHttpClient.Fetch`, which Effect's
+`HttpClient` and `@smthrs/effect-electric`'s shape source send through, so a
+client that retries quietly still leaves a record.
+
+```ts
+import { FetchFailures } from "@smthrs/observability"
+
+const observed = FetchFailures.layer({
+  route: (url) => url.pathname.startsWith("/api/") ? url.pathname.replace(/\/\d+/g, "/:id") : undefined
+})
+```
+
+### FetchFailures.layer
+
+```ts
+const layer: (options: Options) => Layer.Layer<never>
+```
+
+Replaces `FetchHttpClient.Fetch` with a `fetch` that records the failures of
+the requests `route` names, through the loggers and metrics the layer is built
+with, and keeps the wrapped `fetch`'s own properties. Provide it above the
+exporter's layer, so the exporter keeps the `fetch` below and its own requests
+are never recorded through themselves.
+
+- A response with status 400 or above failed, and so did a request that got no
+  answer (`network`): rejected, or answered with status 0 that isn't an opaque
+  redirect. A request its caller aborted did not fail.
+- Each failure adds one to `failures`, with `retried: "true"` when the same
+  request (method and full URL) failed before and hasn't succeeded since.
+- A run of failures of one request writes `http.request.failed` once when it
+  starts, and again when its status changes: at Error for a 5xx, Warn for a
+  4xx or no answer, with `route`, `method`, `status` (0 for `network`), `statusClass`,
+  `retried` and `failures` (the run's count so far). When the request succeeds
+  again, `http.request.recovered` at Info with `route`, `method` and
+  `failures`.
+
+The full URL is kept in memory only to tell a retry from a first failure, for
+the latest `remember` failing requests; no record carries a path or query.
+
+### FetchFailures.Options
+
+```ts
+interface Options {
+  readonly route: (url: URL) => string | undefined
+  readonly remember?: number | undefined
+}
+```
+
+- `route`: the template of a request it records, such as
+  `/api/repos/:owner/:repo/stack`, or `undefined` to leave it alone. A
+  relative request is resolved against the page's location where there is
+  one. The template is a record's only name for the request, so it holds no
+  id, name or query value.
+- `remember`: how many failing requests it remembers; past it the oldest is
+  forgotten and its next failure starts a new run. 256 by default.
+
+### FetchFailures.failures and FetchFailures.statusClass
+
+```ts
+const failures: Metric.Counter<number>
+const statusClass: (response: Pick<Response, "status" | "type">) => StatusClass | undefined
+type StatusClass = "4xx" | "5xx" | "network"
+```
+
+Counter `flows_observability_http_failures`, by `route`, `method`,
+`statusClass` and `retried`. `statusClass` names a response's class, or
+`undefined` when it didn't fail.
 
 ## JournalLogger
 
@@ -33043,7 +33215,7 @@ provides faulty ones and an app can share one instance.
 | `BrowserEngine.RunEvent`, `WorkerLike`, `Options`                                                                 | tab    | An engine event's execution id and type; the slice of `Worker` the tab uses; the layer's options.                                                                                                                                                                                                                                                                                                                                                                                    |
 | `BrowserEngine.FlowReference`                                                                                     | tab    | What the service's calls take of a flow: its `_tag` and its payload, success and error schemas. A whole flow is one.                                                                                                                                                                                                                                                                                                                                                                 |
 | `BrowserEngine.requests`, `persistence`, `unavailable`                                                            | tab    | Counters: requests by `request` and `outcome`; storage answers by `outcome`; failed workers by `reason`.                                                                                                                                                                                                                                                                                                                                                                             |
-| `BrowserRuntime.run(options)`                                                                                     | worker | The worker entry: `serve` over `layerHost` with the browser's own lock and channel, and `options.telemetry`, if given, as where its records go. With `options.prepare`, the leader runs it on the app's database as `device/prepare` before serving any tab (`BrowserRuntime.Prepare`). With `options.authorize`, the worker checks the app's database before it builds the engine, on every activation; a failure stops the engine (`BrowserRuntime.Authorize`). Returns the fiber. |
+| `BrowserRuntime.run(options)`                                                                                     | worker | The worker entry: `serve` over `layerHost` with the browser's own lock and channel, and `options.telemetry`, if given, as where its records go. With `options.prepare`, the leader runs it on the app's database as `device/prepare` before serving any tab (`BrowserRuntime.Prepare`). With `options.authorize`, the worker checks the app's database before it builds the engine, on every activation; a failure stops the engine (`BrowserRuntime.Authorize`). A stop that isn't an interruption is logged as `browser.runtime.stopped` (Error, `error.type`) through `options.telemetry`, and the tab is told. While it runs, an error nothing caught or a rejection nothing handled on the worker's global is logged as `browser.runtime.uncaught` (Error, `kind` `error` or `rejection`, `error.type`, never the message). Returns the fiber. |
 | `BrowserRuntime.serve(options, engine)`                                                                           | worker | Waits for the lock, builds `engine`, wakes unfinished runs, announces itself, answers requests and runs tabs' statements. Stops leading if its lock is stolen.                                                                                                                                                                                                                                                                                                                       |
 | `BrowserRuntime.layerHost({ name, sqlite }, registerFlows)`                                                       | worker | `layer` over `BrowserSqlite.layer`: `engine.db` on a pool in the OPFS directory `smithers/<name>`, and the shared `app.db` beside it on a connection of its own.                                                                                                                                                                                                                                                                                                                     |
 | `BrowserRuntime.layer(options, registerFlows)`                                                                    | worker | `@smthrs/flows`' `Runtime.layer` over an injected `SqlClient`, with the run catalog, the run reads (`RunInspection`, rendering through `options.flows` when given) and the engine host: WebCrypto, the owner identity, `Path`, fetch, a refusing `Jj`, and `RunInspection` for registered flows.                                                                                                                                                                                     |
@@ -33257,6 +33429,9 @@ const serve: (options: {
   `outcome`, `smithers_browser_language_server_ms` by `method`,
   `smithers_browser_language_server_files`, and a span
   `browser.language_server.<method>` per request; none carries a path or text.
+  A worker that fails is logged as `browser.language_server.failed` at Error
+  with `error.type`, its error's name, or `ErrorEvent` when the browser gives
+  none.
 
 [Show code intelligence in a page](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/docs/guides/show-code-intelligence.md) wires
 it into a Vite app.
@@ -39433,6 +39608,19 @@ the box; the patch and bundle together are at most `limits.checkpointBytes` (8 M
 the working copy lacks comes from the bundle, whose base commits are fetched from `origin` first, else is fetched from
 `origin` by its id; `not_found` when neither has it, and `ToolUnavailable` with code `unavailable` when `origin` can't be
 reached. A checkpoint without a `bundle` restores as one with an empty bundle.
+
+`rebaseCall({ branch, onto, expect?, timeoutSeconds? })` is the `run` call that moves the working copy onto commit
+`onto` of `branch`, fetched from `origin` when the working copy lacks it: every tracked and untracked change, commits
+not on `onto` included, merged onto it with git's own merge base (`merge-tree --write-tree`, git 2.38 or later), so a
+change both sides made alike merges clean. Without `expect` it only plans; with `expect`, the tree its plan answered,
+it applies a clean merge: `HEAD` moves to `onto` and the working copy's own changes stay on top, uncommitted, its
+commits flattened into them. A conflict changes nothing. `rebased(result)` decodes the run: `Current` (`HEAD` is
+`onto`), `Unrelated` (no common commit), `Conflicted`, `Planned`, `Moved` (the working copy is no longer `expect`) or
+`Applied`, each with the working copy's tree and, where it says, a count of paths; `not_a_repository` and `not_found`
+(a commit `origin` doesn't serve) are refusals, an unreachable `origin` `ToolUnavailable` `unavailable`. The paths,
+conflicted or changed, are left NUL-separated in `REBASE_PATHS` (`.git/smithers-rebase`); read them with the `read` tool
+and `rebasePaths`. Because it runs through `run`, it keeps that tool's at-most-once fence and its working-copy
+checkpoint.
 
 ## SandboxCommand
 
