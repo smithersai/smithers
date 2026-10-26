@@ -30,6 +30,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
+import * as Elections from "./internal/elections.ts"
 import type { Registry } from "./Migrations.ts"
 import type { Lock } from "./Outbox.ts"
 import { errorName } from "./internal/errorName.ts"
@@ -145,7 +146,8 @@ export const writeFailures = Metric.counter("persistence_write_failures", {
 /**
  * Times a persisted synced collection's source took a role in this program,
  * by `collection` and `role`: `writer` (it stores what it syncs) or `watcher`
- * (another program does, and this one's rows come from the device).
+ * (another program does, and this one's rows come from the device). Every
+ * role counts, first or not, whatever level its log line has.
  *
  * @category metrics
  * @since 0.2.0
@@ -167,6 +169,37 @@ export const syncRoles = Metric.counter("persistence_sync_roles", {
 export const restoreFailures = Metric.counter("persistence_restore_failures", {
   description: "Persisted collections whose rows couldn't be restored from SQLite, by collection kind",
   incremental: true
+})
+
+/**
+ * How many of a program's persisted synced collections first took each role,
+ * as `reportRoles` reports them: `writers` store what they sync, `watchers`
+ * show what another program stores.
+ *
+ * @category models
+ * @since 0.3.0
+ */
+export type Roles = Elections.Roles
+
+/**
+ * Waits until every persisted synced collection made so far with this
+ * `Persistence` has taken its first role, or stopped without one, then logs
+ * `persisted sync roles` at Info with how many first took each role
+ * (`writers`, `watchers`), and answers them. A program calls it once, after
+ * building its collections: each first role it counts is logged at Debug, so a
+ * program that makes many collections logs one line, not one per collection.
+ * A collection made after it, and every later change of role, such as a
+ * watcher taking the lock when the writing program closes, is logged at Info
+ * as `persisted sync role`. A first role comes as soon as the lock answers
+ * whether it is free, so a watcher's is not held up by the program that holds
+ * the lock. With no database or no `lock`, no collection takes a role, and it
+ * answers zero of each.
+ *
+ * @category reporting
+ * @since 0.3.0
+ */
+export const reportRoles: Effect.Effect<Roles, never, Persistence> = Effect.gen(function*() {
+  return yield* Elections.of(yield* Persistence).report
 })
 
 /**

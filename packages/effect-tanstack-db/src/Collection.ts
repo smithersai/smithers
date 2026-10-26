@@ -39,6 +39,7 @@ import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import type * as Stream from "effect/Stream"
 import { errorName } from "./internal/errorName.ts"
+import * as Elections from "./internal/elections.ts"
 import { type Change, type Key, LoadFailed, type MutationRefused, type Transaction } from "./internal/model.ts"
 import { oneWriter } from "./internal/oneWriter.ts"
 import { awaitRow, changes, mutate, preload, release, toArray } from "./internal/readers.ts"
@@ -171,8 +172,10 @@ const indexing = { autoIndex: "eager", defaultIndexType: BasicIndex } as const
  * its source watching: nothing it syncs is stored or shown, so its rows come
  * from the database through the coordinator, and its source still reports the
  * network and marks the collection ready. A watcher that comes to hold the
- * lock starts its source again, writing. Each role is logged as
- * `persisted sync role` and counted in `Persistence.syncRoles`. So a
+ * lock starts its source again, writing. Each role is counted in
+ * `Persistence.syncRoles` and logged as `persisted sync role`: at Debug for a
+ * first role `Persistence.reportRoles` counts, which sums them in one line,
+ * and at Info for any other, such as a change of role. So a
  * program's late snapshot never erases rows another program stored, and a
  * row reaches a watcher through the database: wait for it with `awaitRow`,
  * not with a sync adapter's own receipts.
@@ -197,15 +200,18 @@ export function make<A extends object, K extends Key, U extends UtilsRecord = Ut
   const config = { ...options, ...indexing, gcTime: 0, schema: Schema.toStandardSchemaV1(schema) }
   if (settings === undefined) return create<A, K, U>(config)
   return Effect.gen(function*() {
-    const { persistence, registry, lock } = yield* Persistence
+    const service = yield* Persistence
+    const { persistence, registry, lock } = service
     yield* mustBeDeclared(registry, options.id, "synced", settings.persist.schemaVersion)
     if (Option.isNone(persistence)) return yield* create<A, K, U>(config)
     // Each of the source's transactions reaches the persisted core whole, so none crosses a hydration cycle; with a
-    // lock, the source stores what it syncs in one program only. A persisted synced collection is always eager: its
-    // network-first restore refuses on-demand sync.
-    const sync = lock === undefined
-      ? wholeTransactions(options.sync)
-      : yield* elected(options.sync, lock, `persisted-sync:${options.id}`, options.id!)
+    // lock, the source stores what it syncs in one program only, chosen by an election a report of the program's
+    // first roles waits for. A persisted synced collection is always eager: its network-first restore refuses
+    // on-demand sync.
+    const elect = lock === undefined
+      ? undefined
+      : yield* elected(options.sync, lock, `persisted-sync:${options.id}`, options.id!, Elections.of(service))
+    const sync = elect === undefined ? wholeTransactions(options.sync) : elect.sync
     // Network-first with no wait: restored rows show at once, and the readiness of the restore is observable.
     return yield* timedRestore(
       create<A, K, U>(
@@ -219,35 +225,53 @@ export function make<A extends object, K extends Key, U extends UtilsRecord = Ut
           } as never),
           onSyncCommit: options.onSyncCommit
         }
-      )
+      ).pipe(Effect.tap((made) => elect === undefined ? Effect.void : endsOnError(made.tanstack, elect.election)))
     )
   })
 }
 
+// A collection that fails ends its election: one whose database can't be read fails before its source starts, so it
+// never takes a role. Subscribed before the restore starts the collection, so no failure comes before it.
+const endsOnError = <A extends object, K extends Key, U extends UtilsRecord>(
+  tanstack: TanStackCollection<A, K, U>,
+  election: Elections.Election
+) =>
+  Effect.gen(function*() {
+    const run = Effect.runSyncWith(yield* Effect.context<never>())
+    const off = tanstack.on("status:error", () => run(election.ended))
+    yield* Effect.addFinalizer(() => Effect.sync(off))
+  })
+
 // `sync`, writing only in the program that holds the collection's lock (internal/oneWriter.ts), its turn at the lock
-// run in the background with the program's services, and each role it takes logged and counted.
+// run in the background with the program's services, and each role it takes counted and logged: a first role a
+// report counts at Debug (`Persistence.reportRoles` sums them), any other at Info. Its election ends when the turn
+// ends, as one whose source threw does, or the collection closes, before a first role, so a report never waits for it.
 const elected = <C extends { readonly sync: (params: never) => unknown }>(
   sync: C,
   lock: Lock,
   name: string,
-  id: string
+  id: string,
+  elections: Elections.Elections
 ) =>
   Effect.gen(function*() {
     const context = yield* Effect.context<never>()
     const fork = Effect.runForkWith(context)
     const run = Effect.runSyncWith(context)
-    return oneWriter(sync, {
+    const election = yield* elections.begin
+    yield* Effect.addFinalizer(() => election.ended)
+    const writing = oneWriter(sync, {
       lock,
       name,
       fork: (turn) => {
-        const fiber = fork(turn)
+        const fiber = fork(Effect.ensuring(turn, election.ended))
         return () => fiber.interruptUnsafe()
       },
       became: (role) =>
-        run(Effect.andThen(
-          Metric.update(Metric.withAttributes(syncRoles, { collection: id, role }), 1),
-          Effect.logInfo("persisted sync role").pipe(Effect.annotateLogs({ collection: id, role }))
-        )),
+        run(Effect.gen(function*() {
+          yield* Metric.update(Metric.withAttributes(syncRoles, { collection: id, role }), 1)
+          const level = (yield* election.took(role)) ? Effect.logInfo : Effect.logDebug
+          yield* level("persisted sync role").pipe(Effect.annotateLogs({ collection: id, role }))
+        })),
       // A turn that failed, such as a source that throws as it starts, fails the collection: logged by its kind (the id
       // up to the first `:`) and the error's name, never its message.
       failed: (error) =>
@@ -255,6 +279,7 @@ const elected = <C extends { readonly sync: (params: never) => unknown }>(
           Effect.annotateLogs({ collection: id.split(":", 1)[0]!, error: errorName(error) })
         )
     })
+    return { sync: writing, election }
   })
 
 // A persisted collection the registry doesn't declare, at this version and kind, is a defect: it would skip its

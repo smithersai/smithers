@@ -111,9 +111,12 @@ its commits lands after the next writer's. A source that throws as it starts
 fails the collection (`markError`), as it would alone, logged as `persisted
 sync failed` at Warn level with `collection` (its kind: the id up to its first
 `:`) and `error` (the error's name, never its message), and the program lets
-the lock go. Each role a program's source takes is
-logged as `persisted sync role` at Info level, with `collection` and `role`
-(`writer` or `watcher`), and counted in `Persistence.syncRoles`. So one
+the lock go. Each role a program's source takes is counted in
+`Persistence.syncRoles` and logged as `persisted sync role`, with `collection`
+and `role` (`writer` or `watcher`): at Debug for a first role
+[`Persistence.reportRoles`](#persistencereportroles) counts, which sums them in
+one Info line, and at Info for any other, such as a watcher taking the lock when
+the writing program closes. So one
 program's snapshot, taken before a row arrived and committed after another
 program stored that row, never erases it. A row reaches a watcher through the
 database, so wait for one with `awaitRow`, not with the sync adapter's own
@@ -362,6 +365,30 @@ const memory: Layer.Layer<Persistence>
 No database: every persisted collection keeps its rows in memory. For a program
 or test that persists nothing.
 
+### `Persistence.reportRoles`
+
+```ts
+const reportRoles: Effect.Effect<Persistence.Roles, never, Persistence>
+```
+
+Waits until every persisted synced collection made so far with this
+`Persistence` has taken its first role, or stopped without one, then logs
+`persisted sync roles` at Info with `writers` and `watchers`, how many first
+took each role, and answers `{ writers, watchers }`. Call it once, after the
+program has built its collections: a program with 23 synced collections logs
+one line instead of 23. A first role comes as soon as the lock answers whether
+it is free, so a watcher's first role does not wait for the program holding
+the lock. Each first role it counts is logged at Debug. A collection made after
+it logs its first role at Info, as does every later change of role. With no
+database or no `lock`, it answers zero of each.
+
+```ts
+const booted = Effect.gen(function*() {
+  // ...build the program's collections, then:
+  const { writers, watchers } = yield* Persistence.reportRoles
+})
+```
+
 ### Models
 
 | Type          | Is                                                                                                                                                                                           |
@@ -369,6 +396,7 @@ or test that persists nothing.
 | `Persistence` | The service: `{ readonly persistence: Option.Option<PersistedCollectionPersistence>; readonly registry?: Migrations.Registry; readonly lock?: Outbox.Lock }`, none when rows stay in memory. |
 | `Database`    | `{ readonly close?: () => Promise<void> \| void }`: whatever `open` returns and `make` builds on.                                                                                            |
 | `Coordinator` | TanStack DB's `PersistedCollectionCoordinator` with an optional `dispose`, run as the layer closes, before the database.                                                                     |
+| `Roles`       | `{ readonly writers: number; readonly watchers: number }`: how many of a program's persisted synced collections first took each role, as `reportRoles` answers.                              |
 
 ### Metrics and errors
 

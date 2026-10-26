@@ -162,6 +162,7 @@ export const CHAT_TELEMETRY = {
     "persisted write failed",
     "persistence_write_failures",
     "persisted sync role",
+    "persisted sync roles",
     "persistence_sync_roles",
     "persisted sync failed",
     // Bringing the device store to this build's versions (@smthrs/effect-tanstack-db Migrations).
@@ -215,5 +216,7 @@ export const CHAT_TELEMETRY = {
     "dropped",
     "errorCode",
     "feature",
+    "writers",
+    "watchers",
   ],
 } as const

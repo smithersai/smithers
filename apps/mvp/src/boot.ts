@@ -628,6 +628,9 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
     yield* buttonShortcuts(options.target)
     yield* pluginKeys(options.target, options.mac ?? false)
     yield* bindConnectivity(options.target)
+    // One line for the device store's synced collections once each has taken its first role (writer or watcher),
+    // instead of one per collection; each comes as soon as the lock answers, so this never waits on another tab.
+    yield* Persistence.reportRoles
     yield* requestPersistentStorage(options.storage).pipe(Effect.forkScoped)
     yield* store.messages.restored.pipe(
       Effect.andThen(Clock.currentTimeMillis),

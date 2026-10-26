@@ -149,6 +149,13 @@ test("renders the chat, sign-in, theme, repository, slash-command, views, web-pa
   expect(records.log("chat ready")).toEqual([
     expect.objectContaining({ severity: "Info", attributes: { feature: "app" } }),
   ])
+  // The device store's synced collections: one line once each has taken its first role, never one per collection.
+  const roles = records.log("persisted sync roles")
+  expect(roles).toEqual([
+    expect.objectContaining({ severity: "Info", attributes: { feature: "app", writers: expect.any(Number), watchers: 0 } }),
+  ])
+  expect(roles[0]!.attributes["writers"]).toBeGreaterThan(1)
+  expect(records.log("persisted sync role")).toEqual([])
   expect(records.point("smithers_web_boot_ms")?.count).toBe(1)
   expect(records.log("persistent storage requested")).toEqual([
     expect.objectContaining({ attributes: { granted: "true", feature: "app" } }),

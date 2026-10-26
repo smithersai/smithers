@@ -208,10 +208,10 @@ describe("one writer per persisted synced collection", () => {
     const third = await program(on)
     await third.notes.restored.pipe(Effect.runPromise)
     expect(ids(third.notes)).toEqual(["a", "b"])
-    expect(second.logs.map(({ message, annotations }) => [message, annotations.role])).toContainEqual([
-      ["persisted sync role"],
-      "watcher"
-    ])
+    // Its first role, watching, is Debug, out of these Info lines; taking the lock is a change, at Info.
+    const lines = second.logs.map(({ message, annotations }) => [message, annotations.role])
+    expect(lines).toContainEqual([["persisted sync role"], "writer"])
+    expect(lines).not.toContainEqual([["persisted sync role"], "watcher"])
   })
 
   test("a writer whose lock is stolen watches, and writes again once the lock comes back", async () => {
