@@ -11,7 +11,7 @@ const list = new URL(location.href).searchParams.get("list")
 const pullPage = listPageOf([], { owner: "smithersai", name: "smithers" }, { syncedAt: "2026-10-23" }, { status: "allowed" }, list !== "pending")
 const screen = new URL(location.href).searchParams.get("screen")
 createRoot(document.getElementById("app")!).render(screen === null ? <>
-  {list === null ? null : <section id="pulls"><IssuesView repo="smithersai/smithers" issues={pullPage.pulls} loading={pullPage.loading} emptyTitle="No pull requests" /></section>}
+  {list === null ? null : <section id="pulls"><IssuesView repo="smithersai/smithers" issues={pullPage.pulls} loading={pullPage.loading} unknown={pullPage.unknown} emptyTitle="No pull requests" /></section>}
   <SmithersUiStyles withTheme />
   <RepoViewStyles />
   <section id="tap-controls">

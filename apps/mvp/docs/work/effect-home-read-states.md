@@ -16,4 +16,4 @@ Validation: Latitude typecheck, importRules and focused lint pass. The 102 focus
 
 About remains unresolved: its required GitHub read can answer rate_limited or github_unavailable; a cold first-read wait or a caught defect answers unavailable. Missing optional parts already return a successful partial answer. Existing injected-service tests cover those distinctions. The reported production 503 has no saved response code or matching log in the available evidence, so it cannot yet be classified and has not been suppressed.
 
-Both new refs regressions fail against 66ebecb6: the handler returns 404 instead of 204, and the browser client refuses 204 without the missing-mirror result. Decision 0112 records the wire contract.
+Both new refs regressions fail against 66ebecb6: the handler returns 404 instead of 204, and the browser client refuses 204 without the missing-mirror result. Decision 0113 records the wire contract.

@@ -1,4 +1,4 @@
-# 0112 — Refs before import
+# 0113 — Refs before import
 
 A repository without a ready mirror head answers `GET /api/repos/<owner>/<name>/refs` with `204`, `X-Repo-State: not_imported` and `Cache-Control: private, no-store`. This includes a mirror still importing. A missing mirror says nothing about GitHub's repository or the person's access there.
 

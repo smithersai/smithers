@@ -142,6 +142,7 @@ test("a completed GitHub sync cannot show an empty pull list while the device is
   try {
     await page.goto(`${origin}?list=pending`)
     await page.locator("#pulls [data-slot=issues-view]").waitFor()
+    expect(await page.locator("#pulls [aria-busy=true]").count()).toBe(0)
     expect(await page.locator("#pulls").textContent()).not.toContain("No pull requests")
     await page.goto(`${origin}?list=empty`)
     await page.getByText("No pull requests", { exact: true }).waitFor()
