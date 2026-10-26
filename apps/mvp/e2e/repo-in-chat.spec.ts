@@ -1,7 +1,7 @@
-import type { Page } from "@playwright/test"
+import type { Page, Request } from "@playwright/test"
 import { step } from "./fixtures"
 import { expect, test } from "./devices"
-import { requires, scriptedAgent } from "./target"
+import { ownPlace, requires, scriptedAgent } from "./target"
 
 // A repository lives in the chat shell (ruling FE-9; docs/features/views.md#a-repository-and-its-issues, decision 0004
 // §3), end to end: the real app, ChatApi, RepoApi and GitHub. `/repo` adds a repository's own view to the conversation,
@@ -19,38 +19,59 @@ const appViews = (page: Page, template: "repo" | "issues", name: string) =>
 /** The page's Back to chat. */
 const backToChat = (page: Page) => page.getByRole("link", { name: "Back to chat" }).first()
 
-test("open a repository from chat and toggle full screen: small in the chat, its own page full screen, and back", {
-  annotation: {
-    type: "summary",
-    description: "/repo shows the repository small in the chat; Full screen opens its page; Back to chat minimizes it back.",
-  },
-}, async ({ devices }) => {
-  requires("member", "ownConversation")
-  test.setTimeout(180_000)
-  const [a] = await devices.open("A")
-  await a.ready()
-  const chat = a.page.url()
-  const spoonKnife = appViews(a.page, "repo", "Spoon-Knife")
-  const before = await spoonKnife.count()
+for (const fromBranch of [false, true]) {
+  test(`${fromBranch ? "branch: " : ""}open a repository from chat and toggle full screen: small in the chat, its own page full screen, and back`, {
+    annotation: {
+      type: "summary",
+      description: "/repo shows the repository small in the chat; Full screen opens its page; Back to chat minimizes it back.",
+    },
+  }, async ({ devices }) => {
+    requires("member", "ownConversation")
+    test.setTimeout(180_000)
+    const [a] = await devices.open("A")
+    await a.ready()
+    if (fromBranch) {
+      await a.page.goto(ownPlace()?.path ?? "/octocat/Spoon-Knife/tree/test-branch")
+      await expect(a.page.getByRole("navigation", { name: "Branch" })).toBeVisible({ timeout: 60_000 })
+      await expect(a.page.getByRole("progressbar", { name: "Loading page" })).toHaveCount(0, { timeout: 60_000 })
+    }
+    const chat = a.page.url()
+    // The route can be ready before Electric delivers older views. Identify this command's
+    // view from its real write receipt, rather than counting a still-syncing conversation.
+    const writes = new Set<string>()
+    const isRepoWrite = (request: Request) => {
+      if (request.method() !== "POST" || new URL(request.url()).pathname !== "/api/views") return false
+      const body = request.postDataJSON()
+      return body.template === "repo" && body.props?.repo === "octocat/Spoon-Knife"
+    }
+    const written = (request: Request) => {
+      if (isRepoWrite(request)) writes.add(request.postDataJSON().id)
+    }
+    a.page.context().on("request", written)
+    const receipt = a.page.context().waitForEvent("response", {
+      predicate: response => isRepoWrite(response.request()) && response.ok(),
+    })
+    await a.send("/repo octocat/Spoon-Knife")
+    const viewId = (await receipt).request().postDataJSON().id as string
+    const added = a.page.locator(`.conversation-view[data-view="${viewId}"]`)
+    await step("the repository shows small in the chat, with its README", async () => {
+      await expect(added).toHaveCount(1, { timeout: 60_000 })
+      await expect(added.getByRole("article", { name: "README.md" })).toBeVisible({ timeout: 60_000 })
+    })
 
-  await a.send("/repo octocat/Spoon-Knife")
-  const view = spoonKnife.nth(before)
-  await step("the repository shows small in the chat, with its README", async () => {
-    await expect(view).toBeVisible({ timeout: 60_000 })
-    await expect(view.getByRole("article", { name: "README.md" })).toBeVisible({ timeout: 60_000 })
+    await step("A: Full screen", () => added.getByRole("link", { name: "Full screen" }).click())
+    await expect(a.page).toHaveURL(/\/octocat\/Spoon-Knife\/tree\/main$/)
+    await expect(a.page.getByRole("heading", { name: "octocat / Spoon-Knife" })).toBeVisible({ timeout: 30_000 })
+
+    await step("A: Back to chat", () => backToChat(a.page).click())
+    await expect(a.page).toHaveURL(chat)
+    // Minimized: the same view, still once.
+    await expect(added).toBeVisible({ timeout: 30_000 })
+    await expect(added).toHaveCount(1)
+    expect([...writes]).toEqual([viewId])
+    a.page.context().off("request", written)
   })
-  await expect(spoonKnife).toHaveCount(before + 1)
-
-  await step("A: Full screen", () => view.getByRole("link", { name: "Full screen" }).click())
-  await expect(a.page).toHaveURL(/\/octocat\/Spoon-Knife\/tree\/main$/)
-  await expect(a.page.getByRole("heading", { name: "octocat / Spoon-Knife" })).toBeVisible({ timeout: 30_000 })
-
-  await step("A: Back to chat", () => backToChat(a.page).click())
-  await expect(a.page).toHaveURL(chat)
-  // Minimized: the same view, still once.
-  await expect(spoonKnife.nth(before)).toBeVisible({ timeout: 30_000 })
-  await expect(spoonKnife).toHaveCount(before + 1)
-})
+}
 
 test("a repository's own URL is its full-screen view: Back to chat leaves it in the chat", {
   annotation: {
