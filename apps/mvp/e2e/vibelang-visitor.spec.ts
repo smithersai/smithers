@@ -141,7 +141,8 @@ for (const who of ["visitor", "contributor"] as const) {
           await expect(page.getByRole("button", { name: "Create issue", exact: true })).toHaveCount(0)
         }
         if (path === "stack") await expect(page.getByText("Members can make TODOs.", { exact: true })).toBeVisible()
-        if (path === "settings/secrets") await expect(page.getByRole("heading", { name: "You can't see this repository's secrets.", exact: true })).toBeVisible()
+        // The refusal is the page's empty state, whose title is text, as the stack's is.
+        if (path === "settings/secrets") await expect(page.getByText("You can't see this repository's secrets.", { exact: true })).toBeVisible()
       })
     }
     await page.goto(REPO)
