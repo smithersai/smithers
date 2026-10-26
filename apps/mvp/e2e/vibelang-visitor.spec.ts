@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test"
-import { expect, step, test, visibleText } from "./fixtures"
+import { expect, step, test } from "./fixtures"
 import { requires, target } from "./target"
 import { as, homeOf, landing, openHome, readCode, readDocs, REPO, tabsOf, viewsOf } from "./vibelang"
 
@@ -25,11 +25,11 @@ test.describe("VibeLang on Smithers", () => {
       })
       await step("Home, Code and Docs tabs", async () => {
         await expect(tabsOf(page).getByRole("link")).toHaveText(["Home", "Code", "Docs"])
-        await expect(tabsOf(page).getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page")
+        await expect(tabsOf(page).getByRole("link", { name: "Home", exact: true })).toHaveAttribute("aria-current", "page")
       })
       await readDocs(page)
       await step("Home comes back", async () => {
-        await tabsOf(page).getByRole("link", { name: "Home" }).click()
+        await tabsOf(page).getByRole("link", { name: "Home", exact: true }).click()
         await expect(page).toHaveURL(new RegExp(`${REPO}$`))
         await expect(homeOf(page)).toHaveAttribute("data-audience", "everyone")
       })
@@ -65,8 +65,8 @@ const cloned = (page: Page) =>
   step("VibeLang is cloned", async () => {
     await page.goto(`${REPO}/tree/main`)
     const picker = page.getByRole("button", { name: "main", exact: true })
-    const clone = page.locator('header[aria-label="Repository"]').getByRole("button", { name: "Clone" })
-    await expect(picker.or(clone)).toBeVisible({ timeout: 60_000 })
+    const clone = page.locator('header[aria-label="Repository"]').getByRole("button", { name: "Clone", exact: true })
+    await expect.poll(async () => (await picker.isVisible()) || (await clone.isVisible()), { timeout: 60_000 }).toBe(true)
     if (await clone.isVisible()) await clone.click()
     await expect(picker).toBeVisible({ timeout: 180_000 })
   })
@@ -97,7 +97,7 @@ test.describe("VibeLang's files on Smithers", () => {
       await page.goto(`${REPO}/blob/main/README.md`)
       await step("The README, as a document", async () => {
         const readme = page.locator('article[aria-label="README.md"]')
-        await expect(readme.getByRole("heading", { name: "VibeLang", level: 1 })).toBeVisible({ timeout: 30_000 })
+        await expect(readme.getByRole("heading", { name: "VibeLang", exact: true, level: 1 })).toBeVisible({ timeout: 30_000 })
         await expect(readme.getByRole("button", { name: "Preview", exact: true })).toHaveAttribute("aria-pressed", "true")
       })
       test.info().annotations.push({ type: "file shown", description: `${Date.now() - openedAt} ms after the page opened` })
@@ -108,9 +108,12 @@ test.describe("VibeLang's files on Smithers", () => {
         const path = "examples/react-vite/vite.config.ts"
         await page.goto(`${REPO}/blob/main/${path}`)
         const file = page.locator(`article[aria-label="${path}"]`)
-        await expect(file.locator('.sui-code-view[data-language="typescript"]')).toBeVisible({ timeout: 30_000 })
-        await expect(visibleText(file, "defineConfig")).toBeVisible()
-        await expect(file.locator('.sui-code-view[data-state="ready"]')).toBeVisible()
+        const code = file.locator('.sui-code-view[data-language="typescript"]')
+        await expect(code).toBeVisible({ timeout: 30_000 })
+        // Find the call on the export line, rather than also matching its import.
+        const exportedConfig = code.locator("[data-line]").filter({ hasText: /^export default defineConfig/ })
+        await expect(exportedConfig.getByText("defineConfig", { exact: true })).toBeVisible()
+        await expect(code).toHaveAttribute("data-state", "ready")
         await expect(tabsOf(page).locator('[aria-current="page"]')).toHaveText(["Code"])
       })
       await step("No request a visitor can't make", () => Promise.resolve(expect(sent).toEqual([])))
@@ -137,7 +140,7 @@ for (const who of ["visitor", "contributor"] as const) {
           await expect(page.getByRole("navigation", { name: "Commitment" })).toHaveCount(0)
         }
         if (path === "issues/new") {
-          await expect(page.getByRole("link", { name: "Open an issue on GitHub" })).toHaveAttribute("href", "https://github.com/smithersai/vibelang/issues/new")
+          await expect(page.getByRole("link", { name: "Open an issue on GitHub", exact: true })).toHaveAttribute("href", "https://github.com/smithersai/vibelang/issues/new")
           await expect(page.getByRole("button", { name: "Create issue", exact: true })).toHaveCount(0)
         }
         if (path === "stack") await expect(page.getByText("Members can make TODOs.", { exact: true })).toBeVisible()
