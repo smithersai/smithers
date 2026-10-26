@@ -175,6 +175,8 @@ describe("cloning from a tab", () => {
 describe("reading a ready repository", () => {
   test("a file as text with its line anchor, a binary, one too large, and one that isn't there", async () => {
     const h = await repoHarness(server)
+    // This case classifies files at a ready commit; don't inject sync_in_progress during its background refresh.
+    h.scripted.syncPolls = 0
     const { id, headSha } = await h.seed("octocat", "Spoon-Knife")
     const tab = await open(h)
     const blob = (path: string, L?: string) =>
@@ -356,12 +358,20 @@ describe("branches, tags and commits", () => {
     at(tab, "tree", "main")
     await waitFor(() => expect(tab.refs().refs?.state).toBe("ready"))
     const before = tab.view().repository?.refsChangedAt
-    // What worker/branch/Branches.ts does for a new branch: make it on the forge, then record the change.
-    await Effect.runPromise(h.scripted.client.createBranch(id, { branch: "made", from: "main" }))
+    // A new upstream branch survives the refresh a view starts. Creating a default-namespace branch only in
+    // the mirror is not a GitHub branch: the next upstream pull replaces that namespace (workspace branches
+    // use the separate ephemeral namespace). Keep the default head fixed while its refs change.
+    const upstream = branched()
+    h.scripted.publish("octocat", "Spoon-Knife", {
+      ...upstream,
+      branches: [...upstream.branches!, { name: "made", sha: upstream.commit.sha, files: upstream.files }],
+    })
+    await Effect.runPromise(h.scripted.client.pullUpstream(id))
     await server.runPromise(Repos.refsChanged(id))
     await waitFor(() => expect(tab.view().repository?.refsChangedAt).not.toBe(before))
     at(tab, "tree", "main")
     await waitFor(() => expect(tab.refs().refs?.branches.map((branch) => branch.name)).toContain("made"))
+    expect(tab.view().repository?.headSha).toBe(upstream.commit.sha)
   })
 
   test("a ref chosen in the picker runs app/navigate, which moves this tab", async () => {
@@ -717,6 +727,8 @@ describe("what GitHub says, cloned or not", () => {
     at(tab, "blob", "main", "docs/guide.md")
     await waitFor(() => expect(tab.manifest().manifest?.state).toBe("text"))
     await waitFor(() => expect(tab.file().file?.state).toBe("text"))
+    // RepoApi can deliver files before Electric delivers the repository needed to build their links.
+    await waitFor(() => expect(tab.view().repository?.status).toBe("ready"))
     const { view, repository } = tab.view()
     expect(generatedLinksFor(view, repository, view.path, tab.file().file?.contents ?? undefined, tab.manifest().manifest, tab.tree().tree))
       .toEqual({

@@ -85,6 +85,8 @@ const declared = JSON.stringify({
 
 /** A ready repository whose default branch holds `files`. */
 const seeded = async (h: RepoHarness, files: Record<string, string | Uint8Array>, defaultBranch = "main") => {
+  // These scenarios read a ready home, with outages injected explicitly by each unhappy-path test.
+  h.scripted.syncPolls = 0
   await h.seed("maya", "tinyhttp", fixture({ branch: defaultBranch, files: { "README.md": "# tinyhttp\n", ...files } }))
 }
 
@@ -180,26 +182,22 @@ describe("a repository's home", () => {
     expect(page(tab)).toMatchObject({ page: { kind: "tree", notice: null }, tabs: { owner: "maya", repo: "tinyhttp", ref: "main", _splat: "", docs: false } })
   })
 
-  // Five repositories, each with its own harness and tab.
-  test("a home that isn't one is the tree under `Home is invalid`, by its reason", { timeout: 120_000 }, async () => {
-    const cases: ReadonlyArray<readonly [string | Uint8Array, string]> = [
-      ["{ not json", "json"],
-      ['{"blocks":[{"type":"text","text":"<b>bold</b>"}]}', "block"],
-      [JSON.stringify({ blocks: Array.from({ length: 33 }, () => ({ type: "text", text: "x" })) }), "blocks"],
-      [new Uint8Array([0, 1, 2, 3]), "binary"],
-      ["x".repeat(512 * 1024 + 1), "too_large"],
-    ]
-    for (const [body, reason] of cases) {
-      await resetRepos(server)
-      const h = await repoHarness(server, { roles: "maya/tinyhttp" })
-      await seeded(h, { [HOME_FILE]: body })
-      const tab = await open(h)
-      tab.home.actions.open("maya", "tinyhttp")
-      await waitFor(() => expect(page(tab).home?.state).toBe("invalid"))
-      expect([reason, page(tab).home?.reason, page(tab).page]).toEqual([reason, reason, { kind: "tree", notice: HOME_INVALID }])
-      expect(page(tab).tabs).toEqual({ owner: "maya", repo: "tinyhttp", ref: "main", _splat: "", docs: false })
-      expect(tab.lines("home.resolve")[0]!.annotations).toMatchObject({ outcome: "invalid", reason })
-    }
+  // Each scenario gets the full tab and harness teardown before the next fixture reset.
+  test.each([
+    { body: "{ not json", reason: "json" },
+    { body: '{"blocks":[{"type":"text","text":"<b>bold</b>"}]}', reason: "block" },
+    { body: JSON.stringify({ blocks: Array.from({ length: 33 }, () => ({ type: "text", text: "x" })) }), reason: "blocks" },
+    { body: new Uint8Array([0, 1, 2, 3]), reason: "binary" },
+    { body: "x".repeat(512 * 1024 + 1), reason: "too_large" },
+  ])("a home that isn't one is the tree under `Home is invalid`, by its reason: $reason", async ({ body, reason }) => {
+    const h = await repoHarness(server, { roles: "maya/tinyhttp" })
+    await seeded(h, { [HOME_FILE]: body })
+    const tab = await open(h)
+    tab.home.actions.open("maya", "tinyhttp")
+    await waitFor(() => expect(page(tab).home?.state).toBe("invalid"))
+    expect([reason, page(tab).home?.reason, page(tab).page]).toEqual([reason, reason, { kind: "tree", notice: HOME_INVALID }])
+    expect(page(tab).tabs).toEqual({ owner: "maya", repo: "tinyhttp", ref: "main", _splat: "", docs: false })
+    expect(tab.lines("home.resolve")[0]!.annotations).toMatchObject({ outcome: "invalid", reason })
   })
 
   test("RepoApi couldn't read it: the tree under `Couldn't read home`, read again on the next open", async () => {
@@ -469,7 +467,7 @@ describe("Smithers' curated home", () => {
     expect(kinds(visitor)).toEqual([["hero"]])
   })
 
-  test("a repository's own home wins over the curated one; without one, the curated home shows", async () => {
+  test("a repository's own home wins over the curated one", async () => {
     const h = await repoHarness(server, { homes: [curatedFor("maya/tinyhttp")], roles: "maya/tinyhttp" })
     await seeded(h, { [HOME_FILE]: declared, "docs/intro.md": "# Intro\n" })
     const tab = await open(h)
@@ -477,8 +475,9 @@ describe("Smithers' curated home", () => {
     await waitFor(() => expect(page(tab).home?.state).toBe("declared"))
     await waitFor(() => expect(page(tab).curated?.state).toBe("declared"))
     expect(page(tab).page).toMatchObject({ source: "declared" })
+  })
 
-    await resetRepos(server)
+  test("without a repository's own home, the curated home shows", async () => {
     const bare = await repoHarness(server, { homes: [curatedFor("maya/tinyhttp")], roles: "maya/tinyhttp" })
     await seeded(bare, {})
     const other = await open(bare)
