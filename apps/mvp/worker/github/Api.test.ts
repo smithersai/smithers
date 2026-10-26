@@ -996,7 +996,7 @@ test("cached public visibility cannot authorize rows after GitHub becomes privat
   for (const route of [ITEMS_SHAPE_ROUTE, COMMENTS_SHAPE_ROUTE, SYNC_SHAPE_ROUTE]) {
     expect((await h.fetch(`${route}?offset=-1`)).status).toBe(401)
   }
-  expect(h.count(Metrics.visibilityReads, { outcome: "private" })).toBe(3)
+  expect(h.count(Metrics.visibilityReads, { outcome: "private", statusClass: "4xx", rateLimited: "false", remaining: "unknown", errorCode: "delivery-failed" })).toBe(3)
   expect(h.line("github.visibility")).toHaveLength(3)
 })
 
@@ -1007,7 +1007,7 @@ test("a cached public grant fails closed when current GitHub metadata is unavail
   github.faults.push({ match: (method, path) => method === "GET" && path === "/repos/acme/widgets", status: 502 })
   const h = await githubHarness(runtime, { actor: null, github })
   expect((await h.fetch(`${COMMENTS_SHAPE_ROUTE}?offset=-1`)).status).toBe(503)
-  expect(h.count(Metrics.visibilityReads, { outcome: "unavailable" })).toBe(1)
+  expect(h.count(Metrics.visibilityReads, { outcome: "unavailable", statusClass: "5xx", rateLimited: "false", remaining: "unknown", errorCode: "delivery-failed" })).toBe(1)
   expect(h.line("github.visibility")[0]!.annotations).toMatchObject({ outcome: "unavailable" })
 })
 
@@ -1077,7 +1077,7 @@ test("the production metadata transport uses the configured read token and refus
     } })
     expect((await h.fetch(`${COMMENTS_SHAPE_ROUTE}?offset=-1`)).status).toBe(401)
     expect(seen).toEqual([{ path: "/repos/acme/widgets", authorization: "Bearer test-metadata-token" }])
-    expect(h.count(Metrics.visibilityReads, { outcome: "private" })).toBe(1)
+    expect(h.count(Metrics.visibilityReads, { outcome: "private", statusClass: "2xx", rateLimited: "false", remaining: "unknown", errorCode: "none" })).toBe(1)
   } finally {
     server.closeAllConnections()
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))

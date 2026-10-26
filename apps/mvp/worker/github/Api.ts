@@ -86,6 +86,7 @@ import { Merge } from "./Merge.ts"
 import * as Metrics from "./Metrics.ts"
 import { Reconcile } from "./Reconcile.ts"
 import * as ReadToken from "./ReadToken.ts"
+import * as Visibility from "./Visibility.ts"
 import * as RepoRoles from "./RepoRoles.ts"
 import * as Store from "./Store.ts"
 import { TriageRun } from "./Triage.ts"
@@ -389,24 +390,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       Effect.orDie,
     )
     const metadataApiUrl = Option.isSome(options.app) ? options.app.value.apiBaseUrl : (yield* apiUrl)
-    const metadataClient = Effect.flatMap(readToken, (token) => GitHub.GitHubClient.make({
-      apiBaseUrl: metadataApiUrl,
-      token: Option.isSome(token) ? Redacted.value(token.value) : undefined,
-    }, {})).pipe(
-      options.http === undefined ? Effect.provide(FetchHttpClient.layer) : Effect.provideService(HttpClient.HttpClient, options.http),
-      Effect.orDie,
-    )
-    const visibility = (target: Repository) => Effect.gen(function* () {
-      const client = yield* metadataClient
-      const result = yield* client.request("GET", `/repos/${GitHub.Repository.repositoryPath(target.owner, target.name)}`,
-        undefined, { schema: Schema.Struct({ private: Schema.Boolean }) }).pipe(Effect.result)
-      const visible = result._tag === "Success" ? Option.some(!result.success.private)
-        : statusOf(result.failure) === 404 || statusOf(result.failure) === 410 ? Option.some(false) : Option.none<boolean>()
-      const outcome = Option.isNone(visible) ? "unavailable" : visible.value ? "public" : "private"
-      yield* Metric.update(Metric.withAttributes(Metrics.visibilityReads, { outcome }), 1)
-      yield* Effect.logInfo("github.visibility").pipe(Effect.annotateLogs({ repoId: target.id, outcome }))
-      return visible
-    }).pipe(Effect.withSpan("github.visibility"))
+    const metadataHttp = options.http ?? (yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer)))
+    const visibility = (target: Repository) => Visibility.read(target, metadataApiUrl, readToken, metadataHttp)
     // A pull request's files (worker/github/Compare.ts), read with the App's token: none without the App.
     const compare = Option.isSome(options.app)
       ? Option.some(yield* Compare.make(options.app.value, Option.fromUndefinedOr(options.http)))
