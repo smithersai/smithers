@@ -71,14 +71,17 @@ export const SUMMARY_TOKENS = 24
 
 /**
  * Claims the answer's one summary, then asks the summary role's model (`/api/model/summary`, a cheap model's tier) and
- * records what it wrote on the message. A claim another tab, device or person holds fails `taken` before any call. No
+ * records what it wrote on the message. A claim another tab, device or person holds completes `taken` before any call. No
  * reasoning effort is sent: a model that doesn't reason refuses the parameter, and the endpoint chooses the effort.
  */
 export const summarize = (payload: SummaryPayload) => Effect.gen(function* () {
   const ledger = yield* SummaryLedger
   const reason = payload.reason ?? "long_answer"
   const claimed = yield* ledger.claim({ messageId: payload.id, revision: payload.revision, reason })
-  if (!claimed) return yield* new SummaryFailed({ code: "taken" })
+  if (!claimed) {
+    yield* Effect.logDebug("timeline.summary").pipe(Effect.annotateLogs({ outcome: "taken", reason }))
+    return { outcome: "taken" as const }
+  }
   const seat = yield* SummarySeat
   yield* Metric.update(summaryCalls, 1)
   const result = yield* ModelStep.run({

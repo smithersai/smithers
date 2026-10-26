@@ -17,12 +17,15 @@ export const SummaryPayload = {
 export type SummaryPayload = Schema.Struct<typeof SummaryPayload>["Type"]
 /**
  * A safe reason: outage, rejected output, provider policy, an unconfigured summary role, another tab, device or person
- * already summarizing this answer (`taken`), or the person's daily summaries spent (`capped`).
+ * already summarizing this answer (`taken`, retained for recorded failures), or the person's daily summaries spent (`capped`).
  */
 export class SummaryFailed extends Schema.TaggedError<SummaryFailed>()("timeline/SummaryFailed", {
   code: Schema.Literals(["unavailable", "invalid", "unconfigured", "refused", "taken", "capped"]),
 }) {}
-export const SummaryValue = Schema.Struct({ summary: Schema.String })
+export const SummaryValue = Schema.Union([
+  Schema.Struct({ summary: Schema.String }),
+  Schema.Struct({ outcome: Schema.Literal("taken") }),
+])
 export const SummarizeEntry = Action.make("timeline/SummarizeEntry", {
   payload: SummaryPayload, success: SummaryValue, error: SummaryFailed, tier: "sealed",
 })

@@ -2,7 +2,7 @@ import { HarnessError } from "@smthrs/harness"
 import { ModelStep } from "@smthrs/agent"
 import { Action, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Model, ModelError, ModelEvent } from "@smthrs/model"
-import { Cause, Context, Effect, Exit, Layer, Logger, Metric, Schema, Scope, Stream } from "effect"
+import { Cause, Context, Effect, Exit, Layer, Logger, Metric, References, Schema, Scope, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, expect, test } from "vitest"
 import { build } from "../../../worker/test/flowHost"
@@ -152,13 +152,14 @@ const answering = (text = "Release retry check completed") => {
   } })
   return { requests, model }
 }
-const executeWith = async (ledger: Layer.Layer<SummaryLedger>, model: Model.Model, input: SummaryPayload, executionId: string) => {
+const executeWith = async (ledger: Layer.Layer<SummaryLedger>, model: Model.Model, input: SummaryPayload, executionId: string, lines: Array<{ level: string; message: unknown; annotations: unknown }> = []) => {
+  const logger = Logger.make(options => { lines.push(Logger.formatStructured.log(options)) })
   const scope = Effect.runSync(Scope.make()); scopes.push(scope)
   const { context } = await Effect.runPromise(Scope.provide(scope)(build(registration.pipe(
     Layer.provide(Layer.merge(SummarySeat.layer("https://summary.test", model), ledger)), Layer.provideMerge(Action.layerImplementations),
-  ))))
+  ))).pipe(Effect.provideService(Logger.CurrentLoggers, new Set([logger])), Effect.provideService(References.MinimumLogLevel, "Debug")))
   const runtime = Context.get(context, FlowRuntime.FlowRuntime)
-  return Effect.runPromise(Effect.exit(runtime.execute(Summarize, { executionId, payload: input })).pipe(Effect.provide(context)))
+  return Effect.runPromise(Effect.exit(runtime.execute(Summarize, { executionId, payload: input })).pipe(Effect.provide(context), Effect.provideService(Logger.CurrentLoggers, new Set([logger])), Effect.provideService(References.MinimumLogLevel, "Debug")))
 }
 
 test("claims before the model, records what it wrote, and sends a bounded exchange with no reasoning effort", async () => {
@@ -177,11 +178,14 @@ test("claims before the model, records what it wrote, and sends a bounded exchan
   expect(sent.question.startsWith("Did the release retry?")).toBe(true)
 })
 
-test("an answer another tab, device or person claimed fails taken without a model call", async () => {
+test("an answer another tab, device or person claimed completes taken without a model call", async () => {
   const { requests, model } = answering()
   const taken = Layer.succeed(SummaryLedger, SummaryLedger.of({ claim: () => Effect.succeed(false), record: () => Effect.die("never recorded") }))
-  const exit = await executeWith(taken, model, payload, "summary-taken")
-  expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toEqual(new SummaryFailed({ code: "taken" }))
+  const lines: Array<{ level: string; message: unknown; annotations: unknown }> = []
+  const exit = await executeWith(taken, model, payload, "summary-taken", lines)
+  expect(exit).toEqual(Exit.succeed({ outcome: "taken" }))
+  expect(lines).toContainEqual(expect.objectContaining({ level: "DEBUG", annotations: expect.objectContaining({ outcome: "taken" }) }))
+  expect(lines.filter(line => line.level === "ERROR")).toEqual([])
   expect(requests).toHaveLength(0)
 })
 
