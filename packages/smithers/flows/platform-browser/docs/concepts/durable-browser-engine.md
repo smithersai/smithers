@@ -19,8 +19,14 @@ SQLite on the origin private file system.
 
 `BrowserSqlite.layerSqlite` loads `@journeyapps/wa-sqlite`'s synchronous build
 and opens its access-handle pool VFS, and `BrowserSqlite.layer` opens the
-database on it. Every commit flushes its access handles,
-so a recorded step survives a killed browser.
+database on it. Each database keeps its writes in a write-ahead log under an
+exclusive lock (`locking_mode = EXCLUSIVE`, `journal_mode = WAL`,
+`synchronous = FULL`): the pool has no shared memory, and its one worker opens
+each file once. Every commit appends to the log and flushes it, so a recorded
+step survives a killed browser, at a third of the rollback journal's cost per
+transaction. A build from before the write-ahead log (1.0.0-rc.16 and earlier)
+cannot open a database left in write-ahead mode; its worker runs on memory
+until a newer build serves the device.
 
 The worker hands the build over as lazy imports, and `BrowserRuntime` imports
 the engine itself only when a worker builds one. A waiting worker loads

@@ -11,9 +11,18 @@
  * `test/browser`.
  */
 
+/**
+ * A file: `size` bytes at the front of `bytes`, whose capacity grows by
+ * doubling, so appending to a file costs what it costs Chromium rather than a
+ * copy of the whole file each time (a write-ahead log grows a frame at a
+ * time). Bytes past `size` are always zero. `flushed` is the file as its last
+ * `flush()` left it: what survives {@link loseUnflushed}.
+ */
 interface Contents {
   bytes: Uint8Array
+  size: number
   held: boolean
+  flushed: Uint8Array
 }
 
 class SyncAccessHandle {
@@ -24,30 +33,37 @@ class SyncAccessHandle {
   }
 
   getSize(): number {
-    return this.file.bytes.length
+    return this.file.size
   }
 
   read(buffer: Uint8Array, { at }: { readonly at: number }): number {
     const view = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength)
-    const chunk = this.file.bytes.subarray(at, at + view.length)
+    const chunk = this.file.bytes.subarray(Math.min(at, this.file.size), Math.min(at + view.length, this.file.size))
     view.set(chunk)
     return chunk.length
   }
 
   write(buffer: Uint8Array, { at }: { readonly at: number }): number {
     const view = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength)
-    if (at + view.length > this.file.bytes.length) this.truncate(at + view.length)
+    if (at + view.length > this.file.size) this.truncate(at + view.length)
     this.file.bytes.set(view, at)
     return view.length
   }
 
   truncate(size: number): void {
-    const bytes = new Uint8Array(size)
-    bytes.set(this.file.bytes.subarray(0, size))
-    this.file.bytes = bytes
+    if (size > this.file.bytes.length) {
+      const bytes = new Uint8Array(Math.max(size, this.file.bytes.length * 2))
+      bytes.set(this.file.bytes.subarray(0, this.file.size))
+      this.file.bytes = bytes
+    } else if (size < this.file.size) {
+      this.file.bytes.fill(0, size, this.file.size)
+    }
+    this.file.size = size
   }
 
-  flush(): void {}
+  flush(): void {
+    this.file.flushed = this.file.bytes.slice(0, this.file.size)
+  }
 
   close(): void {
     if (!this.closed) this.file.held = false
@@ -90,10 +106,16 @@ class DirectoryHandle {
     let file = this.files.get(name)
     if (file === undefined) {
       if (options?.create !== true) throw new DOMException(name, "NotFoundError")
-      file = { bytes: new Uint8Array(0), held: false }
+      file = { bytes: new Uint8Array(0), size: 0, held: false, flushed: new Uint8Array(0) }
       this.files.set(name, file)
     }
     return new FileHandle(name, file)
+  }
+
+  /** Every file under this directory, at any depth. */
+  *contents(): Generator<Contents> {
+    yield* this.files.values()
+    for (const directory of this.directories.values()) yield* directory.contents()
   }
 
   async removeEntry(name: string): Promise<void> {
@@ -111,13 +133,30 @@ class DirectoryHandle {
  * Installs a fresh in-memory OPFS as `navigator.storage` and returns the
  * function that removes it.
  */
+let installed: DirectoryHandle | undefined
+
 export const install = (): () => void => {
   const root = new DirectoryHandle()
+  installed = root
   Object.defineProperty(navigator, "storage", {
     configurable: true,
     value: { getDirectory: async () => root }
   })
   return () => {
     delete (navigator as { storage?: unknown }).storage
+  }
+}
+
+/**
+ * A power loss: every file of the installed OPFS goes back to what its last
+ * `flush()` left, as a disk keeps only what was synced to it. Writes since
+ * then are gone; the handles stay open, as a dead process's would until the
+ * next start takes the files.
+ */
+export const loseUnflushed = (): void => {
+  for (const file of installed?.contents() ?? []) {
+    file.bytes = new Uint8Array(Math.max(file.flushed.length, 1))
+    file.bytes.set(file.flushed)
+    file.size = file.flushed.length
   }
 }

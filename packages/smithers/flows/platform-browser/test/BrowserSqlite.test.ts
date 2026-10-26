@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { affectedRows } from "@smthrs/database/DurableWriter"
+import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
@@ -104,6 +105,78 @@ describe("BrowserSqlite over OPFS", () => {
       const rows = yield* Effect.flatMap(sql, (client) => client`SELECT id FROM t`).pipe(Effect.provide(database()))
       expect(rows).toEqual([{ id: 7 }])
     }))
+
+  it.effect("journals in a write-ahead log under an exclusive lock, syncing the log at every commit", () =>
+    Effect.gen(function*() {
+      const client = yield* sql
+      expect(yield* client`PRAGMA journal_mode`).toEqual([{ journal_mode: "wal" }])
+      expect(yield* client`PRAGMA locking_mode`).toEqual([{ locking_mode: "exclusive" }])
+      expect(yield* client`PRAGMA synchronous`).toEqual([{ synchronous: 2 }])
+    }).pipe(Effect.provide(database())))
+
+  it.effect("keeps every committed transaction through a power loss, syncing the log at each commit", () =>
+    Effect.gen(function*() {
+      // The worker's pool and a connection it never closes: a power loss takes the process and every unsynced write.
+      const worker = yield* Scope.make()
+      const pool = yield* Layer.buildWithScope(sqlite(), worker)
+      const opened = yield* BrowserSqlite.open("engine.db").pipe(Effect.provideContext(pool), Scope.provide(yield* Scope.make()))
+      const exec = (statements: string) => Effect.promise(() => opened.sqlite3.exec(opened.db, statements))
+      yield* exec("CREATE TABLE t (id INTEGER PRIMARY KEY); INSERT INTO t (id) VALUES (7)")
+      // A commit that skips the sync shows the power loss takes what wasn't synced.
+      yield* exec("PRAGMA synchronous = OFF; INSERT INTO t (id) VALUES (8)")
+      MemoryOpfs.loseUnflushed()
+      yield* Scope.close(worker, Exit.void)
+      const rows = yield* Effect.flatMap(sql, (client) => client`SELECT id FROM t`).pipe(Effect.provide(database()))
+      expect(rows).toEqual([{ id: 7 }])
+    }))
+
+  it.effect("opens a database an earlier build left in a rollback journal, keeping its rows", () =>
+    Effect.gen(function*() {
+      const shared = yield* Layer.build(sqlite())
+      const { sqlite3, vfs } = Context.get(shared, BrowserSqlite.Sqlite)
+      // A VFS that isn't exclusive keeps SQLite's rollback journal, as every build before the write-ahead log did.
+      const earlier = BrowserSqlite.layer({ filename: "app.db" }).pipe(
+        Layer.provide(Layer.succeed(BrowserSqlite.Sqlite)({ sqlite3, vfs }))
+      )
+      yield* Effect.gen(function*() {
+        const client = yield* sql
+        yield* client`CREATE TABLE t (id INTEGER PRIMARY KEY)`
+        yield* client`INSERT INTO t (id) VALUES (7)`
+        expect(yield* client`PRAGMA journal_mode`).toEqual([{ journal_mode: "delete" }])
+      }).pipe(Effect.provide(earlier))
+      const now = BrowserSqlite.layer({ filename: "app.db" }).pipe(Layer.provide(Layer.succeedContext(shared)))
+      yield* Effect.gen(function*() {
+        const client = yield* sql
+        expect(yield* client`PRAGMA journal_mode`).toEqual([{ journal_mode: "wal" }])
+        expect(yield* client`SELECT id FROM t`).toEqual([{ id: 7 }])
+      }).pipe(Effect.provide(now))
+    }).pipe(Effect.scoped))
+
+  it.effect("fails a database it can't journal, and closes it", () =>
+    Effect.gen(function*() {
+      const shared = yield* Layer.build(sqlite())
+      const real = Context.get(shared, BrowserSqlite.Sqlite)
+      let closed = 0
+      // The build refuses the journal's statements as a full disk would.
+      const faulty = BrowserSqlite.Sqlite.of({
+        ...real,
+        sqlite3: {
+          ...real.sqlite3,
+          statements: (db, statements, options) =>
+            statements.startsWith("PRAGMA locking_mode")
+              ? (async function*(): AsyncGenerator<number> {
+                throw new Error("database or disk is full")
+              })()
+              : real.sqlite3.statements(db, statements, options),
+          close: (db) => (closed++, real.sqlite3.close(db))
+        }
+      })
+      const refused = yield* Layer.build(
+        BrowserSqlite.layer({ filename: "engine.db" }).pipe(Layer.provide(Layer.succeed(BrowserSqlite.Sqlite)(faulty)))
+      ).pipe(Effect.scoped, Effect.flip)
+      expect(refused.message).toContain("Failed to journal database")
+      expect(closed).toBe(1)
+    }).pipe(Effect.scoped))
 
   it.effect("opens two databases on one build and one VFS, each with its own connection", () =>
     Effect.gen(function*() {

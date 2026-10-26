@@ -56,7 +56,11 @@ export type Database = Statements.Database
 
 /**
  * A loaded synchronous wa-sqlite build with a VFS registered under `vfs`,
- * which every database {@link layer} opens uses.
+ * which every database {@link layer} opens uses. With `exclusive`, the VFS
+ * has one owner and one connection per file, as {@link layerSqlite}'s
+ * access-handle pool does, and {@link open} journals each database in a
+ * write-ahead log under an exclusive lock; without it, SQLite's default
+ * rollback journal, which connections sharing a file need.
  *
  * @category services
  * @since 1.0.0
@@ -64,6 +68,7 @@ export type Database = Statements.Database
 export class Sqlite extends Context.Service<Sqlite, {
   readonly sqlite3: SQLiteAPI
   readonly vfs: string
+  readonly exclusive?: boolean
 }>()("@smthrs/platform-browser/BrowserSqlite/Sqlite") {}
 
 /**
@@ -234,7 +239,8 @@ export const layerSqlite = (options: SqliteOptions): Layer.Layer<Sqlite, SqlErro
       const sqlite3 = Factory(module)
       const vfs = yield* openPool(options.directory, module, Vfs)
       sqlite3.vfs_register(vfs as unknown as SQLiteVFS, false)
-      return { sqlite3, vfs: options.directory }
+      // The pool's one worker holds every file, and opens each once: `engine.db` and the app's database.
+      return { sqlite3, vfs: options.directory, exclusive: true }
     })
   )
 
@@ -254,15 +260,30 @@ const opening = (sqlite3: SQLiteAPI): Semaphore.Semaphore => {
 }
 
 /**
+ * How a database on an `exclusive` VFS keeps its writes: in a write-ahead log,
+ * which commits a transaction by appending to the log and syncing it once,
+ * where SQLite's default rollback journal creates, syncs and deletes a journal
+ * file around every commit. On the access-handle pool that default cost a cold
+ * app start about 4 ms a transaction. The pool has no shared memory and no
+ * locks, so the connection keeps the WAL index itself and holds the file until
+ * it closes (`EXCLUSIVE`): correct only while it is the file's one connection,
+ * as the pool's one worker guarantees. `FULL` syncs the log at every commit, as
+ * `@smthrs/database`'s Node and Bun hosts do. A build without this cannot open
+ * a database left in write-ahead mode.
+ */
+const JOURNAL = "PRAGMA locking_mode = EXCLUSIVE; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;"
+
+/**
  * Opens `filename` on the {@link Sqlite} service's VFS and closes it with the
- * scope. Opens on one build run one at a time.
+ * scope; on an `exclusive` VFS, journaled in a write-ahead log under an
+ * exclusive lock. Opens on one build run one at a time.
  *
  * @category constructors
  * @since 1.0.0
  */
 export const open = (filename: string): Effect.Effect<Database, SqlError, Sqlite | Scope.Scope> =>
   Effect.gen(function*() {
-    const { sqlite3, vfs } = yield* Sqlite
+    const { exclusive, sqlite3, vfs } = yield* Sqlite
     const db = yield* Effect.acquireRelease(
       opening(sqlite3).withPermits(1)(Effect.tryPromise({
         try: () => sqlite3.open_v2(filename, undefined, vfs),
@@ -270,6 +291,12 @@ export const open = (filename: string): Effect.Effect<Database, SqlError, Sqlite
       })),
       (db) => Effect.promise(() => sqlite3.close(db))
     )
+    if (exclusive === true) {
+      yield* Effect.tryPromise({
+        try: () => Statements.runAll({ sqlite3, db }, JOURNAL, [], "array"),
+        catch: (cause) => Statements.failed(cause, "Failed to journal database", "connect")
+      })
+    }
     return { sqlite3, db }
   })
 
