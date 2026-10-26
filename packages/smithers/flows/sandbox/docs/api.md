@@ -336,6 +336,19 @@ the working copy lacks comes from the bundle, whose base commits are fetched fro
 `origin` by its id; `not_found` when neither has it, and `ToolUnavailable` with code `unavailable` when `origin` can't be
 reached. A checkpoint without a `bundle` restores as one with an empty bundle.
 
+`rebaseCall({ branch, onto, expect?, timeoutSeconds? })` is the `run` call that moves the working copy onto commit
+`onto` of `branch`, fetched from `origin` when the working copy lacks it: every tracked and untracked change, commits
+not on `onto` included, merged onto it with git's own merge base (`merge-tree --write-tree`, git 2.38 or later), so a
+change both sides made alike merges clean. Without `expect` it only plans; with `expect`, the tree its plan answered,
+it applies a clean merge: `HEAD` moves to `onto` and the working copy's own changes stay on top, uncommitted, its
+commits flattened into them. A conflict changes nothing. `rebased(result)` decodes the run: `Current` (`HEAD` is
+`onto`), `Unrelated` (no common commit), `Conflicted`, `Planned`, `Moved` (the working copy is no longer `expect`) or
+`Applied`, each with the working copy's tree and, where it says, a count of paths; `not_a_repository` and `not_found`
+(a commit `origin` doesn't serve) are refusals, an unreachable `origin` `ToolUnavailable` `unavailable`. The paths,
+conflicted or changed, are left NUL-separated in `REBASE_PATHS` (`.git/smithers-rebase`); read them with the `read` tool
+and `rebasePaths`. Because it runs through `run`, it keeps that tool's at-most-once fence and its working-copy
+checkpoint.
+
 ## SandboxCommand
 
 A sandbox command as durable external work: `SandboxTools`' `start`, `observe`, `collect` and `cancel` behind

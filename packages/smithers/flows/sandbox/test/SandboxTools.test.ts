@@ -756,6 +756,186 @@ describe("SandboxTools checkpoint and restore", () => {
   )
 })
 
+describe("SandboxTools rebase", () => {
+  type Run = typeof SandboxTools.RunResult.Type
+  type Read = typeof SandboxTools.ReadResult.Type
+
+  /**
+   * An origin serving `try-1` at `base` (A, X, M), the working copy a clone of it at `base`, and `onto`: what the
+   * branch's remote reached since, `push` (A changed) merged with `main` (X and M changed), the way GitHub's Update
+   * branch merges. The origin serves `try-1` at `onto` from then on.
+   */
+  const remote = () => {
+    const origin = join(root, `rebase-origin-${++sessions}`)
+    mkdirSync(origin)
+    git(origin, "init", "-q", "-b", "try-1")
+    writeFileSync(join(origin, "A"), "a\nb\nc\n")
+    writeFileSync(join(origin, "X"), "x1\nx2\n")
+    writeFileSync(join(origin, "M"), "m\n")
+    writeFileSync(join(origin, "gone"), "deleted on main\n")
+    git(origin, "add", ".")
+    git(origin, "commit", "-q", "-m", "base")
+    const base = git(origin, "rev-parse", "HEAD").trim()
+    return { origin, base }
+  }
+
+  const move = (origin: string, base: string) => {
+    git(origin, "checkout", "-q", "-b", "main", base)
+    writeFileSync(join(origin, "X"), "x1\nx2 main\n")
+    writeFileSync(join(origin, "M"), "m main\n")
+    rmSync(join(origin, "gone"))
+    git(origin, "add", "-A")
+    git(origin, "commit", "-q", "-m", "main")
+    git(origin, "checkout", "-q", "try-1")
+    writeFileSync(join(origin, "A"), "a pushed\nb\nc\n")
+    git(origin, "commit", "-q", "-am", "push")
+    git(origin, "merge", "-q", "--no-edit", "main")
+    return git(origin, "rev-parse", "HEAD").trim()
+  }
+
+  const run = (session: Sandbox.Session, options: SandboxTools.RebaseOptions) =>
+    Effect.flatMap(exec(session, SandboxTools.rebaseCall(options)), (result) => SandboxTools.rebased(result as Run))
+
+  const paths = (session: Sandbox.Session) =>
+    Effect.map(exec(session, { tool: "read", path: SandboxTools.REBASE_PATHS }), (read) =>
+      SandboxTools.rebasePaths(read as Read))
+
+  const status = (cwd: string) => git(cwd, "status", "--porcelain=v1", "--untracked-files=all").split("\n").filter(Boolean).sort()
+
+  it.effect("plans, then applies: the working copy's changes and commits on top of the moved branch", () =>
+    Effect.gen(function*() {
+      const { base, origin } = remote()
+      yield* onMachine((session) =>
+        Effect.gen(function*() {
+          const wc = session.workdir
+          git(wc, "clone", "-q", "--branch", "try-1", "--single-branch", origin, ".")
+          const onto = move(origin, base)
+          // Saved as published (A, alike), a commit made in the terminal (L), an edit (X's first line), and a new file.
+          writeFileSync(join(wc, "L"), "local\n")
+          git(wc, "add", "L")
+          git(wc, "commit", "-q", "-m", "terminal")
+          writeFileSync(join(wc, "A"), "a pushed\nb\nc\n")
+          writeFileSync(join(wc, "N"), "new\n")
+          const planned = yield* run(session, { branch: "try-1", onto })
+          expect(planned).toMatchObject({ _tag: "Planned", paths: 3 })
+          expect([...(yield* paths(session))].sort()).toEqual(["M", "X", "gone"])
+          // Planning changed nothing.
+          expect(status(wc)).toEqual([" M A", "?? N"])
+          const tree = (planned as { readonly tree: string }).tree
+          const applied = yield* run(session, { branch: "try-1", onto, expect: tree })
+          expect(applied).toEqual({ ...planned, _tag: "Applied" })
+          expect(git(wc, "rev-parse", "HEAD").trim()).toBe(onto)
+          expect(readFileSync(join(wc, "A"), "utf8")).toBe("a pushed\nb\nc\n")
+          expect(readFileSync(join(wc, "X"), "utf8")).toBe("x1\nx2 main\n")
+          expect(readFileSync(join(wc, "M"), "utf8")).toBe("m main\n")
+          expect(existsSync(join(wc, "gone"))).toBe(false)
+          // What GitHub lacks stays, uncommitted: the terminal's commit and the new file.
+          expect(status(wc)).toEqual(["?? L", "?? N"])
+          // Again: HEAD is there already.
+          expect(yield* run(session, { branch: "try-1", onto })).toMatchObject({ _tag: "Current" })
+          expect(yield* paths(session)).toEqual([])
+        }), { git: false })
+    }), slow)
+
+  it.effect("a conflict lists its files and changes nothing; a plan that went stale applies nothing", () =>
+    Effect.gen(function*() {
+      const { base, origin } = remote()
+      yield* onMachine((session) =>
+        Effect.gen(function*() {
+          const wc = session.workdir
+          git(wc, "clone", "-q", "--branch", "try-1", "--single-branch", origin, ".")
+          const onto = move(origin, base)
+          writeFileSync(join(wc, "M"), "m mine\n")
+          writeFileSync(join(wc, "X"), "x1\nx2 mine\n")
+          expect(yield* run(session, { branch: "try-1", onto })).toMatchObject({ _tag: "Conflicted", paths: 2 })
+          expect([...(yield* paths(session))].sort()).toEqual(["M", "X"])
+          expect(git(wc, "rev-parse", "HEAD").trim()).toBe(base)
+          expect(readFileSync(join(wc, "M"), "utf8")).toBe("m mine\n")
+          // Resolved by hand: X back as it was, M alike to main's. The plan holds no conflict; then a save moves on.
+          writeFileSync(join(wc, "X"), "x1\nx2\n")
+          writeFileSync(join(wc, "M"), "m main\n")
+          const planned = yield* run(session, { branch: "try-1", onto })
+          expect(planned).toMatchObject({ _tag: "Planned" })
+          writeFileSync(join(wc, "S"), "saved meanwhile\n")
+          const moved = yield* run(session, { branch: "try-1", onto, expect: (planned as { readonly tree: string }).tree })
+          expect(moved).toMatchObject({ _tag: "Moved" })
+          expect(git(wc, "rev-parse", "HEAD").trim()).toBe(base)
+          expect(status(wc)).toEqual([" M M", "?? S"])
+        }), { git: false })
+    }), slow)
+
+  it.effect("refuses a commit origin doesn't serve, an origin it can't reach, unrelated history and no repository", () =>
+    Effect.gen(function*() {
+      const { origin } = remote()
+      yield* onMachine((session) =>
+        Effect.gen(function*() {
+          const wc = session.workdir
+          git(wc, "clone", "-q", "--branch", "try-1", "--single-branch", origin, ".")
+          expect(yield* Effect.flip(run(session, { branch: "try-1", onto: "0".repeat(40) }))).toEqual(
+            new SandboxTools.ToolRefused({ reason: "not_found" })
+          )
+          expect(yield* Effect.flip(run(session, { branch: "nope", onto: "0".repeat(40) }))).toEqual(
+            new SandboxTools.ToolRefused({ reason: "not_found" })
+          )
+          // An orphan branch on origin shares no commit with HEAD.
+          git(origin, "checkout", "-q", "--orphan", "other")
+          writeFileSync(join(origin, "O"), "o\n")
+          git(origin, "add", "-A")
+          git(origin, "commit", "-q", "-m", "orphan")
+          const orphan = git(origin, "rev-parse", "HEAD").trim()
+          expect(yield* run(session, { branch: "other", onto: orphan })).toMatchObject({ _tag: "Unrelated" })
+          git(wc, "remote", "set-url", "origin", "http://127.0.0.1:9/gone.git")
+          expect(yield* Effect.flip(run(session, { branch: "try-1", onto: "1".repeat(40) }))).toEqual(
+            new SandboxTools.ToolUnavailable({ code: "unavailable" })
+          )
+        }), { git: false })
+      yield* onMachine((session) =>
+        Effect.gen(function*() {
+          expect(yield* Effect.flip(run(session, { branch: "try-1", onto: "0".repeat(40) }))).toEqual(
+            new SandboxTools.ToolRefused({ reason: "not_a_repository" })
+          )
+        }), { git: false })
+    }), slow)
+
+  it.effect("decodes what a run answered, and only what the script prints", () =>
+    Effect.gen(function*() {
+      const ran = (overrides: Partial<Run>): Run => ({
+        tool: "run",
+        exitCode: 0,
+        timedOut: false,
+        stdout: "",
+        stderr: "",
+        stdoutBytes: 0,
+        stderrBytes: 0,
+        truncated: false,
+        ...overrides
+      })
+      const decode = (overrides: Partial<Run>) => Effect.result(SandboxTools.rebased(ran(overrides)))
+      expect(yield* decode({ stdout: "current t1\n" })).toMatchObject({ success: { _tag: "Current", tree: "t1" } })
+      expect(yield* decode({ stdout: "unrelated t1\n" })).toMatchObject({ success: { _tag: "Unrelated" } })
+      expect(yield* decode({ stdout: "conflict t1 4\n" })).toMatchObject({ success: { _tag: "Conflicted", paths: 4 } })
+      expect(yield* decode({ stdout: "clean t1 r1 2\n" })).toMatchObject({
+        success: { _tag: "Planned", tree: "t1", result: "r1", paths: 2 }
+      })
+      expect(yield* decode({ stdout: "moved t2\n" })).toMatchObject({ success: { _tag: "Moved", tree: "t2" } })
+      expect(yield* decode({ stdout: "applied t1 r1 0\n" })).toMatchObject({ success: { _tag: "Applied", paths: 0 } })
+      expect(yield* decode({ stdout: "merged t1\n" })).toMatchObject({ failure: { code: "unknown" } })
+      expect(yield* decode({ stdout: "current\n" })).toMatchObject({ failure: { code: "unknown" } })
+      expect(yield* decode({ timedOut: true, exitCode: 124 })).toMatchObject({ failure: { code: "timeout" } })
+      expect(yield* decode({ exitCode: 125 })).toMatchObject({ failure: { code: "unknown", exitCode: 125 } })
+      expect(
+        SandboxTools.rebasePaths({ tool: "read", path: SandboxTools.REBASE_PATHS, content: "a\0b c\0a\0", bytes: 8, truncated: false })
+      ).toEqual(["a", "b c"])
+      const call = SandboxTools.rebaseCall({ branch: "it's", onto: "abc", expect: "t1", timeoutSeconds: 30 })
+      expect(call).toMatchObject({ tool: "run", timeoutSeconds: 30 })
+      expect(call.command.endsWith(`'.' 'it'\\''s' 'abc' 't1'`)).toBe(true)
+      expect(SandboxTools.rebaseCall({ branch: "b", onto: "abc" })).toMatchObject({
+        timeoutSeconds: SandboxTools.limits.maxTimeoutSeconds
+      })
+      expect(SandboxTools.rebaseCall({ branch: "b", onto: "abc" }).command.endsWith(`'abc' ''`)).toBe(true)
+    }))
+})
+
 describe("SandboxTools on a failing session", () => {
   it.effect("fails ToolUnavailable with the provider's code", () =>
     onMachine((session) =>

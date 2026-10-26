@@ -1247,3 +1247,169 @@ export const restore = (session: Session, saved: Checkpoint): Effect.Effect<void
     )
     if (code !== 0) return yield* Effect.fail(failedWith(code) as ToolRefused | ToolUnavailable)
   }).pipe(Effect.withSpan("sandbox.restore"))
+
+/**
+ * Where {@link rebaseCall}'s script leaves the paths it found, relative to
+ * the workdir, NUL-separated: the files that conflict, or the files whose
+ * contents the move changes. Read it with the `read` tool and
+ * {@link rebasePaths}.
+ *
+ * @category constants
+ * @since 1.0.0-rc.17
+ */
+export const REBASE_PATHS = ".git/smithers-rebase"
+
+/**
+ * Moving a working copy onto commit `onto` of `branch`, which `origin` serves.
+ * Without `expect` the call only plans; with it, the call applies the plan if
+ * the working copy's tree is still `expect`, the tree its plan answered.
+ *
+ * @category models
+ * @since 1.0.0-rc.17
+ */
+export interface RebaseOptions {
+  readonly branch: string
+  readonly onto: string
+  readonly expect?: string | undefined
+  readonly timeoutSeconds?: number | undefined
+}
+
+/**
+ * How a {@link rebaseCall} ended, each with the working copy's tree (`tree`,
+ * every tracked and untracked change staged, ignored files left out):
+ *
+ * - `Current`: `HEAD` is `onto` already; nothing to do.
+ * - `Unrelated`: `onto` and `HEAD` share no commit.
+ * - `Conflicted`: `paths` files conflict, listed in {@link REBASE_PATHS};
+ *   nothing changed.
+ * - `Planned`: the move is clean; it would change `paths` files' contents
+ *   (listed) and leave the working copy at tree `result`.
+ * - `Moved`: the working copy is no longer `expect`; nothing changed.
+ * - `Applied`: `HEAD` is `onto` and the working copy is `result`, its own
+ *   changes on top of `onto` as uncommitted ones; `paths` files changed.
+ *
+ * @category models
+ * @since 1.0.0-rc.17
+ */
+export type Rebased =
+  | { readonly _tag: "Current"; readonly tree: string }
+  | { readonly _tag: "Unrelated"; readonly tree: string }
+  | { readonly _tag: "Conflicted"; readonly tree: string; readonly paths: number }
+  | { readonly _tag: "Planned"; readonly tree: string; readonly result: string; readonly paths: number }
+  | { readonly _tag: "Moved"; readonly tree: string }
+  | { readonly _tag: "Applied"; readonly tree: string; readonly result: string; readonly paths: number }
+
+// Fetches `$2` from origin unless commit `$3` is here (76 when origin can't be reached, 44 when it hasn't the commit),
+// stages the working copy into a scratch index as `checkpoint` does, and merges it onto `$3` with git's own merge base,
+// as a commit of that tree on `HEAD` (`merge-tree`, git 2.38 or later, changing nothing). Local commits not on `$3`
+// merge as the working copy's own changes. With `$4`, the tree the plan saw, it applies a clean merge: `HEAD` moves to
+// `$3` and the working copy becomes the merge, its changes uncommitted. Each failing step exits with its own code.
+const REBASE = `cd -- "$1" 2>/dev/null && [ -d .git ] && git rev-parse --verify -q HEAD >/dev/null 2>&1 || exit 69
+dir=$(mktemp -d) || exit 120
+trap 'rm -rf -- "$dir"' EXIT
+has() { git cat-file -e "$1^{commit}" 2>/dev/null; }
+commit() { git -c user.name=Smithers -c user.email=smithers@localhost commit-tree "$@" </dev/null; }
+count() { tr -cd '\\000' <"$1" | wc -c | tr -d ' '; }
+if ! has "$3"; then
+  if ! out=$(git fetch -q origin "$2" 2>&1); then
+    case "$out" in *"unable to access"*|*"returned error: 5"*|*"RPC failed"*|*"early EOF"*|*"Could not resolve"*|*"timed out"*) exit 76 ;; esac
+  fi
+  has "$3" || exit 44
+fi
+head=$(git rev-parse HEAD) || exit 121
+own=$(git rev-parse --git-path index) || exit 121
+{ [ -f "$own" ] && cp -- "$own" "$dir/index" 2>/dev/null; } || GIT_INDEX_FILE="$dir/index" git read-tree HEAD || exit 121
+GIT_INDEX_FILE="$dir/index" git add -A || exit 122
+tree=$(GIT_INDEX_FILE="$dir/index" git write-tree) || exit 122
+paths=${REBASE_PATHS}
+: >"$paths" || exit 121
+if [ "$head" = "$3" ]; then printf 'current %s\\n' "$tree"; exit 0; fi
+git merge-base "$3" "$head" >/dev/null 2>&1 || { printf 'unrelated %s\\n' "$tree"; exit 0; }
+w=$(commit "$tree" -p "$head" -m rebase) || exit 123
+git merge-tree --write-tree --name-only --no-messages -z "$3" "$w" >"$dir/merge"
+code=$?
+[ "$code" -le 1 ] || exit 124
+result=$(tr '\\000' '\\n' <"$dir/merge" | head -n 1)
+if [ "$code" = 1 ]; then
+  tail -c +$((\${#result} + 2)) "$dir/merge" >"$paths" || exit 124
+  printf 'conflict %s %s\\n' "$tree" "$(count "$paths")"
+  exit 0
+fi
+git diff -z --name-only --no-renames "$tree" "$result" >"$paths" || exit 124
+n=$(count "$paths")
+if [ -z "$4" ]; then printf 'clean %s %s %s\\n' "$tree" "$result" "$n"; exit 0; fi
+[ "$4" = "$tree" ] || { printf 'moved %s\\n' "$tree"; exit 0; }
+umask 002
+r=$(commit "$result" -p "$3" -m rebase) || exit 125
+git add -A && git reset -q --hard "$r" && git reset -q "$3" || exit 125
+printf 'applied %s %s %s\\n' "$tree" "$result" "$n"`
+
+/**
+ * The `run` call that moves the working copy onto commit `options.onto` of
+ * `options.branch`, fetched from `origin` when the working copy lacks it:
+ * every change the working copy holds, local commits included, merged onto
+ * `onto` with git's own merge base, so a change both sides made alike merges
+ * clean. It plans unless `options.expect` names the tree its plan answered;
+ * then it applies a clean merge and leaves the working copy's own changes
+ * uncommitted on top of `onto`, its commits flattened into them. A conflict
+ * changes nothing. Decode its result with {@link rebased}.
+ *
+ * Git 2.38 or later (`merge-tree --write-tree`). It runs as long as
+ * `options.timeoutSeconds`, at most `limits.maxTimeoutSeconds` (the default):
+ * a remote that answers the whole history again for every fetch takes as
+ * long as a clone.
+ *
+ * @category operations
+ * @since 1.0.0-rc.17
+ */
+export const rebaseCall = (options: RebaseOptions): typeof Run.Type => ({
+  tool: "run",
+  command: script(REBASE, [".", options.branch, options.onto, options.expect ?? ""]),
+  timeoutSeconds: options.timeoutSeconds ?? limits.maxTimeoutSeconds
+})
+
+/**
+ * How a {@link rebaseCall} ended, from its `run` result: a refusal for a
+ * workdir that isn't a git working copy (`not_a_repository`) or a commit
+ * `origin` doesn't serve (`not_found`); `ToolUnavailable` for an `origin`
+ * that couldn't be reached (`unavailable`), a run its timeout stopped
+ * (`timeout`), or a step that failed (`unknown`, with its exit code).
+ *
+ * @category operations
+ * @since 1.0.0-rc.17
+ */
+export const rebased = (
+  result: typeof RunResult.Type
+): Effect.Effect<Rebased, ToolRefused | ToolUnavailable> => {
+  if (result.timedOut) return Effect.fail(new ToolUnavailable({ code: "timeout" }))
+  if (result.exitCode !== 0) return Effect.fail(failedWith(result.exitCode) as ToolRefused | ToolUnavailable)
+  const [kind, tree = "", second = "", third = ""] = result.stdout.split("\n", 1)[0]!.split(" ")
+  const count = Number(second)
+  const rebased: Rebased | undefined = kind === "current"
+    ? { _tag: "Current", tree }
+    : kind === "unrelated"
+    ? { _tag: "Unrelated", tree }
+    : kind === "conflict"
+    ? { _tag: "Conflicted", tree, paths: count }
+    : kind === "clean"
+    ? { _tag: "Planned", tree, result: second, paths: Number(third) }
+    : kind === "moved"
+    ? { _tag: "Moved", tree }
+    : kind === "applied"
+    ? { _tag: "Applied", tree, result: second, paths: Number(third) }
+    : undefined
+  return rebased === undefined || tree === ""
+    ? Effect.fail(new ToolUnavailable({ code: "unknown" }))
+    : Effect.succeed(rebased)
+}
+
+/**
+ * The paths a {@link rebaseCall} left in {@link REBASE_PATHS}, read with the
+ * `read` tool: each once, in git's order.
+ *
+ * @category operations
+ * @since 1.0.0-rc.17
+ */
+export const rebasePaths = (read: typeof ReadResult.Type): ReadonlyArray<string> => [
+  ...new Set(read.content.split("\0").filter((path) => path !== ""))
+]
