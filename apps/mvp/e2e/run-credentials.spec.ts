@@ -2,6 +2,7 @@ import type { Page } from "@playwright/test"
 import { expect, test } from "./devices"
 import { step } from "./fixtures"
 import { requires, scriptedAgent } from "./target"
+import { expectServerError } from "./watch"
 
 // Run credentials, end to end (decision 0017 slice 0, docs/features/sign-in.md#run-credentials): the server tells the
 // person from the agent. The agent asks the person a question (`app/agent/ask`, the scripted agent in the asking
@@ -32,6 +33,9 @@ const send = (page: Page, path: string, body: unknown, token?: string) =>
 
 test("the agent's credential can't answer for the person; the person's own press does", async ({ devices }) => {
   test.setTimeout(240_000)
+  // The refusals this test asks for, which Chrome reports as console errors.
+  expectServerError(403, "/api/runs/*/answer")
+  expectServerError(403, "/api/runs/*/credential")
   const [a] = await devices.open("A")
   await a.page.goto(scriptedAgent("needs-you"))
   await a.ready()

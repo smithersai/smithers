@@ -1,5 +1,4 @@
 import { expect, step, test } from "./fixtures"
-import { target } from "./target"
 import { as, contribute, homeOf, landing, openHome, ownView, readCode, readDocs, REPO, viewsOf } from "./vibelang"
 
 // The contributor's journey on the VibeLang repository (rulings SCOPE-13, SCOPE-14): a contributor opens
@@ -33,15 +32,11 @@ test.describe("VibeLang on Smithers", () => {
         await viewsOf(page).getByRole("radio", { name: "Contributor" }).click()
         await expect(homeOf(page)).toHaveAttribute("data-audience", "contributor")
       })
-      await step("Contribute: set up, how a change lands, where to ask, ask about the code", async () => {
+      await step("Contribute: set up, how a change lands, where to ask; no asking off the deployment's own repository", async () => {
         const section = await contribute(page)
         await expect(section.getByText("Contributors", { exact: true })).toBeVisible()
+        await expect(section.getByRole("link", { name: "Ask about VibeLang's compiler…" })).toHaveCount(0)
         await expect(page.getByRole("region", { name: "Today" })).toHaveCount(0)
-      })
-      await step("The home offers asking only on the deployment’s own repository", async () => {
-        const ask = page.getByRole("region", { name: "Contribute" }).getByRole("link", { name: "Ask about VibeLang's compiler…" })
-        if (target === "deployment") await expect(ask).toHaveCount(0)
-        else await expect(ask).toHaveAttribute("href", `${REPO}/tree/main`)
       })
       await step("Below: the landing page", () => landing(page))
       await step("View as User: the landing page alone", async () => {

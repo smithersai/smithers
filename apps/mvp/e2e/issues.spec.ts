@@ -23,8 +23,10 @@ import { requires, scratchRepository } from "./target"
 //   (e2e/deployment/sign-in.setup.ts), on a scratch repository Will owns with the Smithers GitHub App installed, never
 //   `smithersai/*`: E2E_ISSUES_REPOSITORY, `owner/name` of that repository (`requires("syncedScratch")`,
 //   e2e/target.ts). A local stack with the GitHub App runs it as a deployment (`E2E_TARGET=deployment`).
-// - "who triages" runs wherever the app runs without the App, like "who reads": a Maintainer gets Enable triage beside
-//   New issue, and a signed-out device gets neither (docs/features/issues.md#triage). It presses nothing.
+// - "who triages" runs wherever the app runs without the App, like "who reads": a Maintainer gets New issue but no
+//   triage switch, which waits for the repository's first complete issue sync (decision 0079,
+//   src/features/issues/view.ts `mayManageTriageOnList`) that only the App brings, and a signed-out device gets
+//   neither (docs/features/issues.md#triage). It presses nothing. "triage" below proves Enable triage once synced.
 // - "triage" is G7: a Maintainer enables triage, opens an issue, runs triage on it, sees the flow's label, overrides it
 //   on another device, and runs triage again. It needs what "two devices" needs, with the test account a Maintainer
 //   on the scratch repository, and the deployment's model for the judge.
@@ -173,17 +175,18 @@ test("two devices: A opens an issue, B sees GitHub number it and comments, A see
   await expect(a.page.getByText(comment)).toBeVisible({ timeout: 120_000 })
 })
 
-test("who triages: a Maintainer gets Enable triage beside New issue; signed out, neither", { annotation: { type: "summary", description: "A Maintainer can turn on triage; a signed-out person can't." } }, async ({ devices }) => {
+test("who triages: a Maintainer gets New issue, and no triage switch before the issues sync; signed out, neither", { annotation: { type: "summary", description: "A Maintainer's triage switch waits for the issue sync; a signed-out person gets neither." } }, async ({ devices }) => {
   // As "who reads": local development's Admin and a visitor who signed out of it, without the GitHub App.
   requires("devSignIn", "noGitHubApp")
   const maintainer = await devices.open("Maintainer")
   const visitor = await devices.open("signed out")
-  // alchemy dev's local developer is an Admin: the list's header has Enable triage and New issue, nothing else.
+  // alchemy dev's local developer is an Admin: the list's header has New issue. Without the App the repository's
+  // issues never finish a sync, so neither Enable triage nor Pause triage shows.
   await maintainer.page.goto(`/${READ_REPOSITORY}/issues`)
   const list = maintainer.page.getByRole("region", { name: `${READ_REPOSITORY} issues` })
   await expect(list).toBeVisible({ timeout: 30_000 })
-  await expect(list.getByRole("button", { name: ENABLE_TRIAGE })).toBeVisible()
   await expect(list.getByRole("link", { name: NEW_ISSUE })).toBeVisible()
+  await expect(list.getByRole("button", { name: ENABLE_TRIAGE })).toHaveCount(0)
   await expect(list.getByRole("button", { name: PAUSE_TRIAGE })).toHaveCount(0)
   // The repository's triage settings are a shape of their own, refused like the issues to a person who may not read.
   expect((await maintainer.page.request.get("/api/shapes/triage-settings?offset=-1")).status()).toBe(200)
@@ -197,7 +200,7 @@ test("who triages: a Maintainer gets Enable triage beside New issue; signed out,
     timeout: 30_000,
   })
   await expect(visitor.page.getByRole("button", { name: ENABLE_TRIAGE })).toHaveCount(0)
-  await expect(list.getByRole("button", { name: ENABLE_TRIAGE })).toBeVisible()
+  await expect(list.getByRole("link", { name: NEW_ISSUE })).toBeVisible()
 })
 
 test("triage: a Maintainer enables it, the flow labels a new issue, another device overrides it, and runs it again", { annotation: { type: "summary", description: "With triage on, the flow labels a new issue, another device overrides it, and it runs again." } }, async ({ devices }) => {

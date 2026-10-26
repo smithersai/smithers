@@ -25,7 +25,11 @@ export interface Frame {
   readonly placeholder: boolean
   /** The start of the repository page's body's markup, to say what a failing frame showed. */
   readonly markup: string | undefined
-  /** The repository header's box, when it was on screen. */
+  /**
+   * The repository header's box within the repository page, when it was on screen. Measured from the page's own top
+   * left: live notices above the page (src/screens/app/Toasts.tsx) push the whole page down by design, which is not the
+   * header moving.
+   */
   readonly header: readonly [number, number, number, number] | undefined
 }
 
@@ -54,6 +58,7 @@ export const recordFrames = (page: Page) =>
       const main = document.querySelector('main[aria-label="Repository"]')
       const header = main?.querySelector('header[aria-label="Repository"]') ?? null
       const box = header?.getBoundingClientRect()
+      const origin = main?.getBoundingClientRect()
       const parts = main === null ? [] : [...main.children].filter((child) => child !== header)
       const body = main === null ? undefined : parts.map((child) => (child as HTMLElement).innerText).join(" ").trim()
       frames.push({
@@ -67,7 +72,7 @@ export const recordFrames = (page: Page) =>
         repository: body,
         placeholder: parts.some((child) => child.matches('[data-slot="skeleton"]') || child.querySelector('[data-slot="skeleton"]') !== null),
         markup: main === null ? undefined : parts.map((child) => child.outerHTML).join("").slice(0, 240),
-        header: box === undefined ? undefined : [box.x, box.y, box.width, box.height],
+        header: box === undefined || origin === undefined ? undefined : [box.x - origin.x, box.y - origin.y, box.width, box.height],
       })
       requestAnimationFrame(frame)
     }

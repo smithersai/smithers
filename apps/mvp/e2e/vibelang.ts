@@ -87,22 +87,20 @@ export const landing = async (page: Page) => {
   await expect(home.getByRole("heading", { name: "Why VibeLang" })).toBeVisible()
 }
 
-/** The contributors' section: how to set up, how a change lands, where to ask, and the way to ask about the code. */
+/**
+ * The contributors' section: how to set up, how a change lands and where to ask. Its prompt block, Ask about the code,
+ * is not drawn: asking from a home acts only on the deployment's own repository (decision 0079,
+ * src/features/home/components/HomePage.tsx `askHref`), which smithersai/vibelang is not.
+ */
 export const contribute = async (page: Page) => {
   const section = page.getByRole("region", { name: "Contribute" })
   await expect(section.getByText("sh scripts/setup.sh", { exact: true })).toBeVisible()
   await expect(section.getByRole("heading", { name: "How a change lands" })).toBeVisible()
   await expect(section.getByText("A pull request; a person merges")).toBeVisible()
   await expect(section.getByRole("link", { name: "Issues" })).toHaveAttribute("href", "https://github.com/smithersai/vibelang/issues")
-  // Decision 0079 fences asking from a home to the deployment's own repository.
-  // VibeLang is another repository on the hosted deployment, even for a signed-in contributor.
-  if (target === "deployment") {
-    await expect(section.getByRole("heading", { name: "Ask about the code" })).toHaveCount(0)
-    await expect(section.getByRole("link", { name: "Ask about VibeLang's compiler…" })).toHaveCount(0)
-    await expect(section.getByText("Add your model", { exact: true })).toHaveCount(0)
-  } else {
-    await expect(section.getByRole("heading", { name: "Ask about the code" })).toBeVisible()
-  }
+  await expect(section.getByRole("heading", { name: "Ask about the code" })).toHaveCount(0)
+  await expect(section.getByRole("link", { name: "Ask about VibeLang's compiler…" })).toHaveCount(0)
+  await expect(section.getByText("Add your model", { exact: true })).toHaveCount(0)
   return section
 }
 
@@ -130,7 +128,8 @@ export const readDocs = async (page: Page) => {
 export const readCode = (page: Page) =>
   step("Code: the tree at main, with the README", async () => {
     const code = tabsOf(page).getByRole("link", { name: "Code" })
-    await expect(code).toHaveAttribute("href", `${REPO}/tree/main`)
+    // Callers open the repository with a full page load, which boots the app again: seconds on a busy dev server.
+    await expect(code).toHaveAttribute("href", `${REPO}/tree/main`, { timeout: 30_000 })
     await code.click()
     await expect(page).toHaveURL(new RegExp(`${REPO}/tree/main`))
     await expect(tabsOf(page).getByRole("link")).toHaveText(["Home", "Code", "Docs"])

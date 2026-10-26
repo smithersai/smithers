@@ -6,6 +6,7 @@ import { renderSource, SOURCE_PATH } from "../src/features/flows-ui/source"
 import { recordActions, writeManifest } from "./fixtures"
 import { desktopBaseline } from "./mobile-baseline"
 import { openComposer } from "./composer"
+import { serveFramedPage } from "./framed-page"
 import { shapeRows } from "./shape"
 import { redactRequestErrors } from "./redact"
 import { baseURL, requires, scriptedAgent, target, writeHeaders, me, stackRepository, syncedRepository, ownPlace, signedOut, sessionFiles } from "./target"
@@ -359,16 +360,23 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           requires("member", "ownConversation")
           const id = crypto.randomUUID()
           const place = ownPlace()
-          const response = await page.request.post("/api/views", { headers: writeHeaders(), data: {
-            id, template: "webpage", ...(place === undefined ? {} : { conversationId: place.conversationId }),
-            props: { url: "https://example.com/", title: "A repository page with a long title on a narrow screen", description: "A persisted page opened at full size." },
-          } })
-          expect(response.status()).toBe(202)
-          await page.goto(`/app/views/${id}${place === undefined ? "" : `?conversation=${place.conversationId}`}`)
-          await expect(page.locator('[data-slot="web-page-view"]')).toBeVisible({ timeout: 30_000 })
-          await audit(page, info, "view")
-          await page.getByRole("link", { name: "Back to chat", exact: true }).click()
-          await expect(page).toHaveURL(/\/app$/)
+          // Locally a page this machine serves, so the frame loads; a deployment can't read it, so there a real site.
+          const served = target === "local" ? await serveFramedPage("A framed page") : undefined
+          try {
+            const response = await page.request.post("/api/views", { headers: writeHeaders(), data: {
+              id, template: "webpage", ...(place === undefined ? {} : { conversationId: place.conversationId }),
+              props: { url: served?.url ?? "https://example.com/", title: "A repository page with a long title on a narrow screen", description: "A persisted page opened at full size." },
+            } })
+            expect(response.status()).toBe(202)
+            await page.goto(`/app/views/${id}${place === undefined ? "" : `?conversation=${place.conversationId}`}`)
+            await expect(page.locator('[data-slot="web-page-view"]')).toBeVisible({ timeout: 30_000 })
+            if (served !== undefined) await expect(page.frameLocator(".sui-web-page-frame").getByRole("heading", { name: "A framed page" })).toBeVisible()
+            await audit(page, info, "view")
+            await page.getByRole("link", { name: "Back to chat", exact: true }).click()
+            await expect(page).toHaveURL(/\/app$/)
+          } finally {
+            await served?.close()
+          }
         })
         if (signedIn) test("your model: controls and text fit", async ({ page }, info) => {
           requires("member")

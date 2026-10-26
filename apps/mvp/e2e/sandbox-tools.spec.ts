@@ -48,6 +48,8 @@ const ask = async (page: Page, question: string) => {
 }
 
 test("agent tools: the agent writes a file on the branch's machine, runs a test command and shows the diff", async ({ devices }) => {
+  // The real model picks the tools: no scripted agent here.
+  requires("liveModel")
   test.setTimeout(8 * 60_000)
   const word = devices.word
   const [a] = await devices.open("A")

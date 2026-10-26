@@ -51,7 +51,9 @@ test("queue: the agent asks three times, and the person answers each from the qu
   // queue once the one before it is answered.
   const asks = [`deploy ${word}-one`, `deploy ${word}-two`, `approve ${word}-three`]
   for (const ask of asks) await a.askAndWaitTaken(ask)
-  await expect(a.answerTo(asks[0]!).locator('[data-slot="needs-you"]')).toBeVisible({ timeout: 30_000 })
+  // The run's question shows as its own card after the question it answers, named by the run (as status.spec.ts reads it).
+  const first = a.asked.find((asked) => asked.text === asks[0])!.answerId
+  await expect(a.page.locator(`[data-slot="needs-you"][data-run="${first}"]`)).toBeVisible({ timeout: 30_000 })
   await expect(a.page.getByRole("button", { name: /^Queue/ }).getByLabel("1 waiting")).toBeVisible({ timeout: 15_000 })
 
   const { item, strip, empty } = queue(a.page)

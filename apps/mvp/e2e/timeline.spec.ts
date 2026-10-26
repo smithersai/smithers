@@ -129,9 +129,17 @@ test("Branch timeline: question, reply, run and TODO name their objects", {
     const rail = a.page.getByRole("navigation", { name: "Conversation timeline" })
     if (!(await rail.isVisible())) await a.page.locator(".sui-timeline-disclosure > summary").click()
     const rows = rail.locator('ol[data-level="0"] button')
-    await expect(rows.filter({ hasText: "chat/Answer · completed" })).toHaveCount(1, { timeout: 30_000 })
+    // The branch's conversation is shared with every spec that asks on octocat/Spoon-Knife's main, so earlier entries
+    // can sit above this test's: its own are its question's row and every row after it.
+    const ours = async () => {
+      const labels = await rows.allTextContents()
+      const first = labels.findIndex((label) => label.includes(`todo-draft octocat/Spoon-Knife ${word}`))
+      return first === -1 ? [] : labels.slice(first)
+    }
+    await expect.poll(async () => (await ours()).filter((label) => label.includes("chat/Answer · completed")).length, { timeout: 30_000 })
+      .toBe(1)
     await expect(rows.filter({ hasText: `README release ${word} · draft` })).toHaveCount(1)
-    await expect(rows).toHaveCount(4)
+    await expect.poll(async () => (await ours()).length).toBe(4)
     for (const label of await rows.allTextContents()) {
       expect(label.trim()).not.toMatch(/^(?:(?:Reply|Question|Answer|Tool|Run|TODO) (?:sent|completed|done|failed|queued|opened)|Working|Waiting(?: to send| for reply)?|Needs you|Not sent|Done|Failed|Queued)$/i)
       expect(label.trim().length).toBeGreaterThan(0)

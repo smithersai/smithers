@@ -1,4 +1,5 @@
 import { answerTo, questionIn } from "./messages"
+import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA } from "../src/features/auth/contract"
 import { test as base, type APIRequestContext, type Browser, type BrowserContext, type Locator, type Page, type TestInfo } from "@playwright/test"
 import { writeFile } from "node:fs/promises"
 import { DEV_URL } from "../dev/https"
@@ -7,7 +8,7 @@ import { describeCrashes, watchCrashes } from "./crashes"
 import { devReload } from "./devReload"
 import { faultyApp, faults } from "./faults"
 import { allServerRows, type Row } from "./shape"
-import { appHome, atOwnPlace, guard, requires, target, UndeclaredNeed } from "./target"
+import { appHome, atOwnPlace, guard, requires, target, UndeclaredNeed, writeHeaders } from "./target"
 import { expectOfflineErrors, problems, UNDECLARED, type Watched } from "./watch"
 import {
   COULDNT_ANSWER,
@@ -587,6 +588,16 @@ class Devices {
         await save(`${slug}-thread.json`, JSON.stringify({ thread, asked: tab.asked }, null, 2), "application/json")
       }
     }
+    // A run this test left unsettled holds the shared conversation's turn: one that awaits its person keeps its place
+    // however old (worker/Answers.ts), and every later answer, in any test, waits behind it. Each device settles what
+    // its tabs asked as unfinished, as its cookie's person (`NO_DEVICE_DATA`: the request carries none of the device's
+    // data, worker/RunCredentials.ts); an answer that already settled stays as it landed.
+    const settle = { ...writeHeaders(), [DEVICE_PERSON_HEADER]: NO_DEVICE_DATA }
+    await Promise.all(tabs.flatMap((tab) => tab.asked.map(({ answerId }) =>
+      tab.device.context.request
+        .post(`/api/answers/${answerId}`, { data: { status: "failed", failure: "unfinished" }, headers: settle })
+        .catch(() => undefined)
+    )))
     await Promise.all(this.all.map((device) => device.context.close().catch(() => undefined)))
     // What e2e/gifs.mjs needs to lay the videos side by side, each starting when its tab opened.
     const videos = await Promise.all(

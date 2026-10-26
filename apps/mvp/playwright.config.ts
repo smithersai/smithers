@@ -47,6 +47,13 @@ const deployment = (): PlaywrightTestConfig => {
   }
 }
 
+/** The specs whose scripted agent answers in the local shared conversation and waits for its turn there. */
+const TAKES_TURNS = [
+  "answer-ordering", "coedit", "factory", "files", "forms", "generated-view", "model-quota", "notifications", "pin-message",
+  "queue", "repo-in-chat", "run-credentials", "run-graph", "sandbox-tools", "status", "sync", "timeline", "toast-overlap",
+  "todos",
+].map((name) => `**/${name}.spec.ts`)
+
 export default defineConfig({
   testDir: "e2e",
   // `.vibe` modules go to VibeLang's loader, not Playwright's TypeScript transform.
@@ -65,7 +72,19 @@ export default defineConfig({
     ignoreHTTPSErrors: devCertificate,
     launchOptions: { args: devCertificate ? ["--ignore-certificate-errors"] : [] },
   },
-  ...(target === "deployment" ? deployment() : { projects: [{ name: "local" }] }),
+  ...(target === "deployment"
+    ? deployment()
+    : {
+      projects: [
+        // The dev server's sandbox limits for its one person (e2e/local/sandbox-limits.setup.ts).
+        { name: "local-setup", testMatch: /local\/[^/]+\.setup\.ts$/, use: { video: "off", trace: "off" } },
+        { name: "local", dependencies: ["local-setup"], testIgnore: TAKES_TURNS },
+        // Locally every spec asks in one shared conversation, which answers one question at a time (worker/Answers.ts):
+        // specs whose scripted agent waits for its answer, or for its person, take turns instead of timing out behind
+        // each other's runs.
+        { name: "local-turns", dependencies: ["local-setup"], testMatch: TAKES_TURNS, workers: 1 },
+      ],
+    }),
   webServer: process.env.BASE_URL
     ? undefined
     : { command: "pnpm dev", url: baseURL, ignoreHTTPSErrors: true, reuseExistingServer: true, timeout: 120_000 },

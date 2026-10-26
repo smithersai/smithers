@@ -8,7 +8,8 @@ test.use(signedOut)
 
 test("landing: a first-time visitor sees the landing and clicks Get started for free", { annotation: { type: "summary", description: "A first-time visitor sees the landing page and starts with Get started for free." } }, async ({ page }) => {
   await page.goto("/")
-  await expect(page.getByRole("heading", { name: "Smithers" })).toBeVisible()
+  // A dev server's first page compiles the app's modules as it loads, which takes seconds.
+  await expect(page.getByRole("heading", { name: "Smithers" })).toBeVisible({ timeout: 30_000 })
   await expect(page.getByText("Automate maintaining your codebase")).toBeVisible()
   await expect(page.getByRole("link", { name: "GitHub" })).toHaveAttribute("href", "https://github.com/smithersai/smithers")
 

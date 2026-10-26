@@ -177,7 +177,7 @@ test("a page that refuses framing shows as a card: title, description, domain, i
 })
 
 test("the agent asked to embed a page that refuses framing adds the card instead", { annotation: { type: "summary", description: "The agent's call checks the page too, and never claims an embed" } }, async ({ devices }) => {
-  requires("localServer")
+  requires("localServer", "liveModel")
   const word = devices.word
   const [a] = await devices.open("A")
   const added = viewsAdded(a.device.context)
@@ -190,7 +190,7 @@ test("the agent asked to embed a page that refuses framing adds the card instead
 })
 
 test("the agent's tab card shows the page's domain, and its Open in new tab opens the page", async ({ devices }) => {
-  requires("localServer")
+  requires("localServer", "liveModel")
   const word = devices.word
   const [a] = await devices.open("A")
   const added = viewsAdded(a.device.context)
