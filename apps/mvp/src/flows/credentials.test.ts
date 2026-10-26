@@ -361,6 +361,16 @@ describe("who a run's requests go as", () => {
     expect(d.seen.filter((request) => request.path.endsWith("/credential"))).toEqual([])
   })
 
+  test("a signed-out tab's agent root and nested runs ask for no credentials", async () => {
+    const d = await device(null, { tabSignedOut: true })
+    const answerId = crypto.randomUUID()
+    expect(await d.run(Agent, answerId, { answerId }, "view")).toMatchObject({ report: { status: 401 }, nested: { status: 401 } })
+    expect(d.seen.filter((request) => request.path.endsWith("/credential"))).toEqual([])
+    expect(d.seenFor(`/api/runs/${answerId}`)).toEqual([
+      { path: `/api/runs/${answerId}`, bearer: false, credentials: "omit" },
+    ])
+  })
+
   test("a credential the server can't mint, or a lineage the engine can't read, sends nothing", async () => {
     const d = await device(member, {
       fault: (path) => (path.endsWith("/credential") ? new Response("{}", { status: 503 }) : undefined),

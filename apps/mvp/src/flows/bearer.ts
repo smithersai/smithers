@@ -1,6 +1,7 @@
 import { Effect, Option, Result, Schema } from "effect"
 import { Base64Url } from "effect/encoding"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { signedOut } from "../features/auth/store"
 import { credentialRoute } from "./contract"
 
 // How a request goes as a run rather than as the person (decision 0017 slice 0, docs/features/sign-in.md#run-credentials):
@@ -40,6 +41,7 @@ export const renewalOf = (token: string): Option.Option<{ readonly run: string; 
  */
 export const renewed = (origin: string, credential: string) =>
   Effect.gen(function* () {
+    if (yield* signedOut) return yield* Effect.fail({ status: 401 as number | undefined })
     const renewal = renewalOf(credential)
     if (Option.isNone(renewal)) return yield* Effect.fail({ status: 403 as number | undefined })
     const client = yield* HttpClient.HttpClient

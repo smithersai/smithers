@@ -135,8 +135,9 @@ export const layer = (options: {
       /**
        * How run `run`'s requests go. The person's own press, a parentless run of a person's flow its tab started through
        * a person door (or whose tab is silent, for a flow only the person may run), goes in their session, for good.
-       * Any other run asks for a credential: in the person's session when it has no parent or its parent is the
-       * person's press, else under its parent's, which it gets first. A run under a parent that can't act gets nothing
+       * Every root asks its tab, including flows marked as agents or flows. Any other run asks for a credential: in
+       * the person's session when it has no parent or its parent is the person's press, else under its parent's,
+       * which it gets first. A run under a parent that can't act gets nothing
        * more: the parent's refusal, or its signed-out state. A door nobody answered in time is a log line
        * `auth.run_credential` with `outcome: door_timeout`.
        */
@@ -145,12 +146,12 @@ export const layer = (options: {
           Effect.gen(function* () {
             const { flow, parent } = yield* runOf(run)
             let ownPress = false
-            if (parent === null && personFlow(registry, flow)) {
+            if (parent === null) {
               const answered = yield* askDoor(run, {})
               if (Option.isNone(answered)) {
                 yield* Effect.logWarning("auth.run_credential").pipe(Effect.annotateLogs({ flow, outcome: "door_timeout" }))
               }
-              ownPress = Option.match(answered, {
+              ownPress = personFlow(registry, flow) && Option.match(answered, {
                 onNone: () => refusesCredential(flow),
                 onSome: (answer) => PERSON_DOORS.includes(answer.door),
               })
