@@ -1,16 +1,16 @@
 ---
 title: Publish as the person
-status: done
+status: in-review
 area: github
 owner: codex-publish-as-person
 updated: 2026-10-26
 links: [../features/branch-publish.md]
 ---
 
-Guard a person's Publish against a session credential that acts as the App. Verify the GitHub identity before writing; refuse sign_in_required and retain refresh handling. Use the catalog entries @smthrs/integrations and @smthrs/flow.
+Cause: the old credential guard admitted only immediate Publish/Update children. `OperationStart.to(OperationProgram)` records the preceding round as parent. Program consequently minted a flow credential, and ChatApi stored the person's write as `via: agent` with no session. Latitude reproduces this on the app's real Publish dispatch, repository-selected flow and write handler, as well as the durable-engine lineage tests. Instrumented old-policy records show Publish=person, Start=person, Program=app.
 
-Cause: Publish/Update execute the compiled branch-operation subflow as a nested run. RunCredentials minted it a flow credential, and github/Api classifies every credential-backed write as the agent's (App). Preserve the session only for those exact compiled parent/child flows, only when the parent itself used a session; agents and unrelated nested flows retain credentials.
+Fix: preserve an already-proven session throughout the compiled operation chain; never promote a bearer parent. Recover a resumed root's persisted person dispatch door when its tab is gone. Log `branch.write.identity` with run, parent, flow, principal kind and identity; the telemetry relay preserves those fields. Server attempts still count actual person/App writes, with no token or login. Existing GitHub user-token validation, missing/expired/refused token refusal and durable refresh remain in force. Catalog: @smthrs/flow durable workflows and @smthrs/integrations GitHub writes.
 
-Defense: verify the opened session credential with GitHub /user and the actor's numeric account id before any branch write. Missing, rejected, wrong-account and bot credentials refuse sign_in_required. The existing durable refresh remains the only token redeemer.
+Regressions: direct implementation child, repeated real `Flow.to` continuations, `retryFrom`, durable timer park/resume without an answering tab, and bearer/unrelated-parent refusal to inherit a session. The app's real Publish path additionally checks `via: person` and the person's session id. Old code fails the continuation, missing-tab and real Publish path assertions. The relay test proves the lineage fields survive export. Existing Publish tests prove token identity validation and missing/expired/refused credentials make no App write.
 
-Validation: Latitude typecheck, importRules and lint passed; 163 focused tests passed with 100% statements, branches, functions and lines in Publish.ts and credentials.ts. Original-code regressions fail for credential/session identity and misbound tokens. E2E now checks commit and PR author; no production requests or deployment were made. Standard Astra/Fable review remains for the lander: the local smthrs launcher fails loading the missing devalue package.
+Validation receipts are in the builder report. No production requests, push or deployment. Production E2E and final Astra/Fable review remain with the lander.

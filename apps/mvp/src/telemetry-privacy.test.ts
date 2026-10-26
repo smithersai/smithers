@@ -36,6 +36,10 @@ test("the relay preserves pending-act failures, silent doors and report refusal 
       subject: "run:attention-relay", version: 1, act: "hide", outcome: "dropped", reason: "@smthrs/mvp/attention/ActRefused",
     }))
     yield* Metric.update(Metric.withAttributes(dropped, { act: "hide", reason: "@smthrs/mvp/attention/ActRefused" }), 1)
+    yield* Effect.logInfo("branch.write.identity").pipe(Effect.annotateLogs({
+      runId: "operation-round", parentRunId: "operation-start", flow: "branch/operation/program",
+      principal: "Session", identity: "person",
+    }))
     yield* Effect.logWarning("auth.run_credential").pipe(Effect.annotateLogs({ flow: "notification/ack", outcome: "door_timeout" }))
     for (const reason of ["settled", "other_launcher", "no_row"]) {
       yield* Effect.logInfo("agent.status.report").pipe(Effect.annotateLogs({
@@ -54,6 +58,10 @@ test("the relay preserves pending-act failures, silent doors and report refusal 
   }))
   expect(fields("smithers_notification_acts_dropped")).toContainEqual(expect.objectContaining({
     act: "hide", reason: "@smthrs/mvp/attention/ActRefused", "otlp.value": 1,
+  }))
+  expect(fields("branch.write.identity")).toContainEqual(expect.objectContaining({
+    runId: "operation-round", parentRunId: "operation-start", flow: "branch/operation/program",
+    principal: "Session", identity: "person",
   }))
   expect(fields("auth.run_credential")).toContainEqual(expect.objectContaining({ flow: "notification/ack", outcome: "door_timeout" }))
   expect(fields("agent.status.report").map((line) => line.reason)).toEqual(["settled", "other_launcher", "no_row"])

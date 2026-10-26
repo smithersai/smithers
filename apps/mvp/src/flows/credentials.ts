@@ -15,7 +15,9 @@ import { requesterOf } from "./requests"
 // compiled-in application code, decides who each request acts as; the model, realm code and frames never choose. A
 // request a run makes to ChatApi goes with the person's session only when the run is the person's own press: a root
 // run of a person's flow (the registry's `acts` unset) that the tab started through a person door (`PERSON_DOORS`).
-// The compiled branch-operation subflows retain their Publish/Update caller’s session. Every other run, nested ones included, sends a credential the server minted for that very run, and its session
+// The compiled branch-operation subflows and continuations retain their Publish/Update caller’s session.
+// A resumed root can recover its person door from the engine’s persisted origin. Every other run sends
+// a credential the server minted for that very run, and its session
 // cookie never rides along (`credentials: "omit"`). A nested run's credential is minted under its parent's, so the
 // server narrows it at every hop and refuses one a person-only flow or a wider callee asks for; that refusal is the
 // request's answer. A run whose person is signed out sends its requests with no credential at all; a root run whose
@@ -124,7 +126,7 @@ export const layer = (options: {
           const { run: summary } = yield* inspection.inspect(run, { limit: 1 }).pipe(Effect.mapError(lineage))
           const requester = requesterOf(run)
           if (summary.parentRunId !== null || requester === run) {
-            return { flow: summary.flowName, parent: summary.parentRunId }
+            return { flow: summary.flowName, parent: summary.parentRunId, origin: summary.origin }
           }
           const named = yield* inspection.payload(requester).pipe(
             Effect.as(true),
@@ -132,7 +134,7 @@ export const layer = (options: {
             Effect.catchTag("@smthrs/engine-store/RunNotFound", () => Effect.succeed(false)),
             Effect.mapError(lineage),
           )
-          return { flow: summary.flowName, parent: named ? requester : null }
+          return { flow: summary.flowName, parent: named ? requester : null, origin: summary.origin }
         })
 
       /**
@@ -147,7 +149,7 @@ export const layer = (options: {
       const credentials: Cache.Cache<string, Credential, CredentialUnavailable> = yield* Cache.makeWith(
         (run: string): Effect.Effect<Credential, CredentialUnavailable> =>
           Effect.gen(function* () {
-            const { flow, parent } = yield* runOf(run)
+            const { flow, parent, origin } = yield* runOf(run)
             let ownPress = false
             if (parent === null) {
               const answered = yield* askDoor(run, {})
@@ -155,7 +157,7 @@ export const layer = (options: {
                 yield* Effect.logWarning("auth.run_credential").pipe(Effect.annotateLogs({ flow, outcome: "door_timeout" }))
               }
               ownPress = personFlow(registry, flow) && Option.match(answered, {
-                onNone: () => refusesCredential(flow),
+                onNone: () => refusesCredential(flow) || (origin?.actor === "person" && PERSON_DOORS.some((door) => door === origin.door)),
                 onSome: (answer) => PERSON_DOORS.includes(answer.door),
               })
               // Nobody is signed in on the tab that started it: the server would refuse the credential with 401.
@@ -167,17 +169,21 @@ export const layer = (options: {
             }
             const under = parent === null ? sessionCredential : yield* Cache.get(credentials, parent)
             // These compiled implementation flows are the person's Publish/Update, not a delegated agent.
-            // Only this exact parent/child pair inherits a session; a bearer parent never gains one.
+            // Only the compiled operation chain inherits a session; a bearer parent never gains one.
             const implementation = parent !== null &&
               (flow === "branch/operation/start" || flow === "branch/operation/program") &&
-              ["branch/publish", "branch/update"].includes((yield* runOf(parent)).flow)
-            return ownPress || (implementation && under._tag === "Session")
+              ["branch/publish", "branch/update", "branch/operation/start", "branch/operation/program"].includes((yield* runOf(parent)).flow)
+            const resolved = ownPress || (implementation && under._tag === "Session")
               ? sessionCredential
               : under._tag === "Session"
               ? yield* mint(run, flow, undefined)
               : under._tag === "Token"
               ? yield* mint(run, flow, under.token)
               : under
+            if (flow.startsWith("branch/")) yield* Effect.logInfo("branch.write.identity").pipe(Effect.annotateLogs({
+              runId: run, flow, parentRunId: parent ?? "root", principal: resolved._tag, identity: ({ Session: "person", Token: "app", Anonymous: "refused", Refused: "refused" } as const)[resolved._tag],
+            }))
+            return resolved
           }).pipe(Effect.withSpan("auth.run_credential", { attributes: { "smithers.execution.id": run } })),
         {
           capacity: REMEMBERED,

@@ -115,8 +115,8 @@ const device = async (runtime: Runtime) => {
     /** The write's status and payload, as ChatApi recorded it. */
     recorded: async (id: string) =>
       (await sql(Effect.flatMap(SqlClient.SqlClient, (sql) =>
-        sql<{ readonly op: string; readonly status: string; readonly payload: Record<string, unknown> }>`
-          SELECT op, status, payload FROM github_writes WHERE id = ${id}::uuid`)))[0],
+        sql<{ readonly op: string; readonly status: string; readonly via: string; readonly session_id: string | null; readonly payload: Record<string, unknown> }>`
+          SELECT op, status, via, session_id, payload FROM github_writes WHERE id = ${id}::uuid`)))[0],
     /** What `branch/Publish` writes once GitHub took the change: the publication, and its write settled with it. */
     published: (branchId: string, writeId: string, base: string, head: string) =>
       sql(Store.settleWrite(writeId, { status: "done", itemNumber: 7, githubId: null }, Effect.flatMap(SqlClient.SqlClient, (sql) =>
@@ -193,6 +193,8 @@ describe("Publish", () => {
     expect(await tab.recorded(writeId)).toMatchObject({
       op: "branch/publish",
       status: "pending",
+      via: "person",
+      session_id: maya.session,
       payload: expect.objectContaining({ branchId, title: "Add a line", body: "Why it helps" }),
     })
     expect(tab.api.github.starts.map((start) => start.executionId)).toContain(publishExecutionId(writeId))

@@ -45,6 +45,7 @@ export const FLOWS_TELEMETRY = {
     "smithers_device_identity_checks",
     // Run credentials on the device (src/flows/credentials.ts).
     "auth.run_credential",
+    "branch.write.identity",
     "smithers_run_credential_mints",
     // Reads a run's approvals and scope depend on (src/flows/approvals.ts, src/flows/catalog.ts).
     "flow.approvals.read",
@@ -135,6 +136,8 @@ export const FLOWS_TELEMETRY = {
     "flows_model_tokens",
   ],
   fields: [
+    "parentRunId",
+    "identity",
     "flow",
     "door",
     "executionId",

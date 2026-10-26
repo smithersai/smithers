@@ -4,7 +4,7 @@ import { FlowRegistry } from "./registry"
 // session; an agent's run and every run nested in it, a run nobody pressed and a run whose tab is gone each go with a
 // credential the server minted for that run and no cookie; a person-only call inside an agent's run is refused by the
 // server before it is sent. The steps here are test flows named as the registry's, so their marks are the registry's.
-import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Action, DurableClock, Flow, FlowRuntime, Interpreter, RunMetrics } from "@smthrs/flow"
 import { EngineStore } from "@smthrs/flows"
 import { TabChannel } from "@smthrs/platform-browser"
 import { Node } from "@smthrs/plan"
@@ -118,8 +118,20 @@ const inner = (payload: { readonly path: string; readonly body: unknown }) =>
     ))
 
 // Compiled branch implementations are nested by a person's Publish/Update press. Their HTTP must retain that press.
-const Operation = sending("branch/operation/start")
-const OperationProgram = sending("branch/operation/program")
+const Operation = Flow.make("branch/operation/start", {
+  payload: { path: Schema.String, body: Schema.Unknown }, success: Got,
+  body: Node.capture({}, (payload) => OperationProgram.to(payload)),
+})
+const OperationProgram: Flow.Flow<"branch/operation/program", Schema.Struct<{ path: typeof Schema.String; body: typeof Schema.Unknown }>, typeof Got, typeof Schema.Never, Action.Requirement<"test/send">> = Flow.make("branch/operation/program", {
+  payload: { path: Schema.String, body: Schema.Unknown }, success: Got,
+  body: Node.capture({ send: Send.name }, (payload) => Send.call(payload).pipe(
+    Node.branch({
+      if: Node.capture({}, (result) => result.status === 201),
+      then: Node.capture({}, () => OperationProgram.to({ path: "/api/watches", body: { conversationId: null } })),
+      else: Node.capture({}, (result) => Flow.done(result)),
+    }),
+  )),
+})
 const BranchOperation = Action.make("test/branch-operation", { payload: { path: Schema.String, body: Schema.Unknown }, success: Got })
 const publishFlow = (tag: string) => Flow.make(tag, {
   payload: { path: Schema.String, body: Schema.Unknown }, success: Got,
@@ -128,10 +140,15 @@ const publishFlow = (tag: string) => Flow.make(tag, {
 const PublishBranch = publishFlow("branch/publish")
 const UpdateBranch = publishFlow("branch/update")
 const OtherBranch = publishFlow("repo/about")
-const branchOperation = (payload: { path: string; body: unknown }) => Effect.flatMap(FlowRuntime.FlowRuntime, (runtime) =>
-  runtime.execute(payload.path.endsWith("/program") ? OperationProgram : Operation, {
-    executionId: `branch-operation:${crypto.randomUUID()}`, payload: { ...payload, path: "/api/watches" },
-  }).pipe(Effect.orDie))
+const branchOperation = (payload: { path: string; body: unknown }) => Effect.gen(function* () {
+  if (payload.path === "/api/resume") {
+    yield* DurableClock.sleep({ name: "before-operation", duration: "10 millis", inMemoryThreshold: 0 })
+  }
+  const runtime = yield* FlowRuntime.FlowRuntime
+  return yield* runtime.execute(payload.path.endsWith("/program") ? OperationProgram : Operation, {
+    executionId: `branch-operation:${crypto.randomUUID()}`, payload: { ...payload, path: payload.path === "/api/round" ? payload.path : "/api/watches" },
+  }).pipe(Effect.orDie)
+})
 
 /** One request as the transport saw it: its path, whether it carried a credential, and its cookie policy. */
 interface Seen {
@@ -154,6 +171,7 @@ const device = async (
   options: {
     readonly fault?: (path: string) => Response | "unreachable" | undefined
     readonly inspection?: boolean
+    readonly forgetDoors?: boolean
     /** The tab's sign-in row says nobody is signed in, as a visitor's does once ChatApi said so. */
     readonly tabSignedOut?: boolean
     /** Records every line the engine and its runs log, in place of the default loggers. */
@@ -193,7 +211,7 @@ const device = async (
     Interpreter.layerWithImplementations(OtherBranch, BranchOperation.toLayer(branchOperation)),
     Interpreter.layerWithImplementations(PublishBranch, BranchOperation.toLayer(branchOperation)),
     Interpreter.layerWithImplementations(UpdateBranch, BranchOperation.toLayer(branchOperation)),
-    Interpreter.layerWithImplementations(Operation, Send.toLayer(send)),
+    Interpreter.layerWithImplementations(Operation, Layer.empty),
     Interpreter.layerWithImplementations(OperationProgram, Send.toLayer(send)),
     Interpreter.layerWithImplementations(Answer, Send.toLayer(send)),
     Interpreter.layerWithImplementations(Watch, Send.toLayer(send)),
@@ -217,7 +235,7 @@ const device = async (
     Layer.provideMerge(RunCredentials.layer({ origin: ORIGIN, name, flows }).pipe(Layer.provide(FlowRegistry.layer))),
     Layer.provideMerge(requests),
     Layer.provide(TabChannel.layer),
-    Layer.provide(
+    Layer.provideMerge(
       options.inspection === false
         ? Layer.succeed(
           EngineStore.RunInspection.RunInspection,
@@ -239,12 +257,21 @@ const device = async (
     h,
     seen,
     credentials,
+    flowRuntime,
+    context: built.context,
+    tab,
+    inspect: (run: string) => Effect.runPromise(EngineStore.RunInspection.RunInspection.pipe(
+      Effect.flatMap((inspection) => inspection.inspect(run)), Effect.provide(built.context),
+    )),
     /** Sends `path` through this engine's client outside any run, as host code would. */
     sendOutside: (path: string, body: unknown) => Effect.runPromise(send({ path, body }).pipe(Effect.provideService(Sender, sender))),
     /** Runs `flow` as `executionId`, started by the tab through `door`, or by nobody, and answers its value. */
     run: async (flow: Flow.Any, executionId: string, payload: unknown, door?: (typeof DOORS)[number]) => {
-      if (door !== undefined) await Effect.runPromise(tab.add(executionId, door))
-      return Effect.runPromise(logging(flowRuntime.execute(flow as never, { executionId, payload: payload as never }) as Effect.Effect<unknown>))
+      if (door !== undefined && !options.forgetDoors) await Effect.runPromise(tab.add(executionId, door))
+      const running = flowRuntime.execute(flow as never, { executionId, payload: payload as never }) as Effect.Effect<unknown>
+      return Effect.runPromise(logging(door === undefined ? running : running.pipe(
+        RunMetrics.withOrigin({ door, actor: door === "agent" || door === "sync" ? "app" : "person" }),
+      )))
     },
     /** The requests the transport saw to `path`. */
     seenFor: (path: string) => seen.filter((request) => request.path === path),
@@ -269,6 +296,42 @@ describe("who a run's requests go as", () => {
       { path: "/api/watches", bearer: false, credentials: undefined },
     ])
     expect(d.seen.filter((request) => request.path.endsWith("/credential"))).toEqual([])
+  })
+
+  test("a person's repeated operation continuations retain their session", async () => {
+    const d = await device(member, { fault: (path) => path === "/api/round" ? new Response("{}", { status: 201 }) : undefined })
+    // Start -> Program -> Program uses real Flow.to durable continuation edges.
+    expect(await d.run(PublishBranch, crypto.randomUUID(), { path: "/api/round", body: {} }, "button")).toEqual({ status: 200 })
+    expect(d.seenFor("/api/round")[0]).toMatchObject({ bearer: false, credentials: undefined })
+    expect(d.seenFor("/api/watches")[0]).toMatchObject({ bearer: false, credentials: undefined })
+    expect(d.seen.filter((request) => request.path.endsWith("/credential"))).toEqual([])
+  })
+
+  test.each([PublishBranch, UpdateBranch])("a resumed person's operation recovers its persisted door without a tab", async (flow) => {
+    const d = await device(member, { forgetDoors: true })
+    expect(await d.run(flow, crypto.randomUUID(), { path: "/api/resume", body: { conversationId: null } }, "button")).toEqual({ status: 200 })
+    expect(d.seenFor("/api/watches")).toEqual([{ path: "/api/watches", bearer: false, credentials: undefined }])
+    expect(d.seen.filter((request) => request.path.endsWith("/credential"))).toEqual([])
+  })
+
+  test("a persisted view door cannot turn a delegated operation into a person's press", async () => {
+    const d = await device(member, { forgetDoors: true })
+    expect(await d.run(PublishBranch, crypto.randomUUID(), { path: "/api/watches", body: { conversationId: null } }, "view")).toEqual({ status: 200 })
+    expect(d.seenFor("/api/watches")[0]).toMatchObject({ bearer: true, credentials: "omit" })
+  })
+
+  test("retrying a person's operation from its durable step retains their identity", async () => {
+    const d = await device(member)
+    const source = crypto.randomUUID()
+    expect(await d.run(PublishBranch, source, { path: "/api/watches", body: { conversationId: null } }, "button")).toEqual({ status: 200 })
+    const inspection = await d.inspect(source)
+    const step = inspection.steps.find((step) => step.action === BranchOperation.name)!.nodeId
+    const executionId = `retry:${source}:1`
+    await Effect.runPromise(PublishBranch.retryFrom(source, { step, executionId }).pipe(
+      Effect.provide(d.context), RunMetrics.withOrigin({ door: "button", actor: "person" }),
+    ))
+    expect(await d.run(PublishBranch, executionId, { path: "/api/watches", body: { conversationId: null } }, "button")).toEqual({ status: 200 })
+    expect(d.seenFor("/api/watches").every((request) => !request.bearer && request.credentials === undefined)).toBe(true)
   })
 
   test("a branch operation through a non-person door keeps its run credential; unrelated parents cannot inherit a session", async () => {
