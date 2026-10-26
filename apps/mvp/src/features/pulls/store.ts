@@ -1,6 +1,6 @@
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
-import { Cache, Context, Effect, Exit, Layer, Ref, Scope, Stream } from "effect"
+import { Cache, Context, Effect, Exit, Layer, Option, Ref, Scope, Stream } from "effect"
 import type { Comment, Item } from "../issues/schema"
 import { AuthStore } from "../auth/store"
 import { repositoryAccessChanges, repositoryShapeSource, syncStatusAfter } from "../issues/source"
@@ -176,6 +176,12 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
       const repoIssues = yield* issues.forRepo(id)
       const authority = repositoryAccessChanges(auth, repos, id)
       const guarded = repositoryShapeSource(source, authority)
+      // A pull request's commits, reviews and checks open only while the route shows one (decision 0112): the
+      // repository's pages and its list of pull requests never ask for them.
+      const detail = ShapeSource.gated(
+        source,
+        Stream.zipLatestWith(authority, detailShown(view), (status, shown) => status === "allowed" && shown),
+      )
       const pulls = yield* ElectricCollection.make<PullRow>({
         id: `pull-rows:${id}`,
         schema: PullRow,
@@ -190,21 +196,21 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
         getKey: commitKey,
         shape: shape(PULL_COMMITS_SHAPE_ROUTE, id),
         ...kept,
-      }).pipe(Effect.provideService(ShapeSource.ShapeSource, guarded))
+      }).pipe(Effect.provideService(ShapeSource.ShapeSource, detail))
       const reviews = yield* ElectricCollection.make<ReviewRow>({
         id: `pull-reviews:${id}`,
         schema: ReviewRow,
         getKey: byId,
         shape: shape(REVIEWS_SHAPE_ROUTE, id),
         ...kept,
-      }).pipe(Effect.provideService(ShapeSource.ShapeSource, guarded))
+      }).pipe(Effect.provideService(ShapeSource.ShapeSource, detail))
       const checks = yield* ElectricCollection.make<CheckRow>({
         id: `pull-checks:${id}`,
         schema: CheckRow,
         getKey: byId,
         shape: shape(CHECKS_SHAPE_ROUTE, id),
         ...kept,
-      }).pipe(Effect.provideService(ShapeSource.ShapeSource, guarded))
+      }).pipe(Effect.provideService(ShapeSource.ShapeSource, detail))
       const status = yield* Ref.make<PullStatus>({ pullStatus: "unknown", installed: false })
       // The session and the repository's role decide whether this person may read its pull requests at all.
       yield* authority.pipe(
@@ -283,3 +289,11 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
     scope,
   })
 })
+
+/** Whether the route shows one pull request: its number, current first, then each change. */
+export const detailShown = (view: Collection.Collection<PullsView, string>): Stream.Stream<boolean> =>
+  view.changes({ initial: true }).pipe(
+    Stream.mapEffect(() => view.get(VIEW)),
+    Stream.map((row) => Option.isSome(row) && row.value.number !== null),
+    Stream.changes,
+  )

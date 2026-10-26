@@ -1,5 +1,5 @@
 import { ShapeSource } from "@smthrs/effect-electric"
-import { Effect, Stream } from "effect"
+import { Stream } from "effect"
 import type { Session, RepoRole } from "../auth/schema"
 import type { AuthStore } from "../auth/store"
 import type { RepoStore } from "../repo/store"
@@ -24,15 +24,7 @@ export const repositoryAccess = (session: Session, roles: ReadonlyArray<RepoRole
 export const repositoryShapeSource = (
   source: ShapeSource.Source,
   access: Stream.Stream<Access["status"]>,
-): ShapeSource.Source => ({
-  cacheNamespace: source.cacheNamespace,
-  request: (url, init) => access.pipe(
-    Stream.filter((status) => status === "allowed"),
-    Stream.take(1),
-    Stream.runDrain,
-    Effect.andThen(source.request(url, init)),
-  ),
-})
+): ShapeSource.Source => ShapeSource.gated(source, Stream.map(access, (status) => status === "allowed"))
 
 /** Session and repository `id`'s role changes decide its access independently of transport success or refusal. */
 export const repositoryAccessChanges = (auth: AuthStore["Service"], repos: RepoStore["Service"], id: string) =>

@@ -1,7 +1,8 @@
-import { ElectricCollection } from "@smthrs/effect-electric"
+import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection } from "@smthrs/effect-tanstack-db"
 import { Clock, Context, Duration, Effect, Exit, FiberHandle, Layer, Metric, Option, Queue, type Scope, Stream } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
+import { signedInShapeSource } from "../auth/source"
 import { AuthStore } from "../auth/store"
 import { ChatStore } from "../chat/store"
 import { StatusStore } from "../status/store"
@@ -85,7 +86,7 @@ export class AttentionStore extends Context.Service<
             url: `${config.origin}${NOTIFICATIONS_SHAPE_ROUTE}`,
             columnMapper: ElectricCollection.snakeCamelMapper(),
           },
-        })
+        }).pipe(Effect.provideService(ShapeSource.ShapeSource, signedInShapeSource(yield* ShapeSource.ShapeSource, auth)))
         const pending = yield* Collection.persisted<Pending, string>({
           id: "attention-pending",
           schema: Pending,

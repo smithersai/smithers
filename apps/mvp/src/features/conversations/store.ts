@@ -1,6 +1,8 @@
-import { ElectricCollection } from "@smthrs/effect-electric"
+import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, Layer, Metric, type Scope, Stream } from "effect"
+import { signedInShapeSource } from "../auth/source"
+import { AuthStore } from "../auth/store"
 import { MY_CONVERSATIONS_SHAPE_ROUTE } from "./contract"
 import { observeShape } from "../issues/shapeSync"
 import { listUpdates, shapeTransitions } from "./metrics"
@@ -57,7 +59,7 @@ export class ConversationsStore extends Context.Service<
             url: `${config.origin}${MY_CONVERSATIONS_SHAPE_ROUTE}`,
             columnMapper: ElectricCollection.snakeCamelMapper(),
           },
-        })
+        }).pipe(Effect.provideService(ShapeSource.ShapeSource, signedInShapeSource(yield* ShapeSource.ShapeSource, yield* AuthStore)))
         yield* observeShape(mine.sync, "conversations.shape.sync", shapeTransitions).pipe(Effect.forkIn(scope, { startImmediately: true }))
         const pending = yield* Collection.persisted<Pending, string>({
           id: "conversation-pending",

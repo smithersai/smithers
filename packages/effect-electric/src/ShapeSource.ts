@@ -28,7 +28,9 @@ import * as Effect from "effect/Effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as Latch from "effect/Latch"
 import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
 import * as Ref from "effect/Ref"
+import * as Stream from "effect/Stream"
 
 /**
  * A shape request failed on the network (`status` absent) or with a 5xx or
@@ -102,6 +104,32 @@ export const ShapeSource: Context.Reference<Source> = Context.Reference<Source>(
   "@smthrs/effect-electric/ShapeSource",
   { defaultValue: () => fetchSource }
 )
+
+/**
+ * `source`, each request (the first, a live one, a reconnect) waiting until
+ * `open`'s latest value is `true`. While it waits, nothing reaches the
+ * network, and the collection stays loading: it never reads as empty. A
+ * request already sent runs to its end; the next one waits again.
+ *
+ * Use it to open a shape only on demand: when someone is signed in, when a
+ * view shows the shape's rows. `open` must give its current value first, as
+ * a `SubscriptionRef`'s `changes` or a live query's rows do; a stream that
+ * ends without `true` leaves requests waiting until the collection closes.
+ *
+ * @category combinators
+ * @since 0.2.0
+ */
+export const gated = (source: Source, open: Stream.Stream<boolean>): Source => {
+  const opened = open.pipe(
+    Stream.filter((value) => value),
+    Stream.runHead,
+    Effect.flatMap((first) => Option.isSome(first) ? Effect.void : Effect.never)
+  )
+  return {
+    cacheNamespace: source.cacheNamespace,
+    request: (url, init) => Effect.andThen(opened, source.request(url, init))
+  }
+}
 
 /**
  * Which requests a fault applies to: every one, or only live requests (the

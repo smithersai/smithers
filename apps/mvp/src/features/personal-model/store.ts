@@ -7,7 +7,7 @@ import { PERSONAL_MODEL_SHAPE_ROUTE } from "./contract"
 import { record } from "./metrics"
 import { formQuery, hiddenQuery, rowsQuery, testQuery } from "./queries"
 import { FORM, Form, Hidden, PersonalModelRow, TestRow } from "./schema"
-import { signedInShapeSource } from "./source"
+import { signedInShapeSource } from "../auth/source"
 import { awaiting, landed } from "./view"
 
 // A person's own models on this tab (decisions 0096 and 0107, docs/features/personal-model.md#the-settings-section):

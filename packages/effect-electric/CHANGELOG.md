@@ -12,6 +12,9 @@
 - `ShapeProxy.Upstream`: an `HttpClient` the proxy calls Electric with in
   place of the request's own, for Electric reached through a private binding
   while the host's other requests keep their client.
+- `ShapeSource.gated(source, open)`: a source whose requests wait until
+  `open` says `true`, so a collection opens its shape only on demand (signed
+  in, or a view showing its rows) and stays loading until then.
 - `persist: { schemaVersion }` on `ElectricCollection.make`: the rows and
   Electric's resume state are kept through `@smthrs/effect-tanstack-db`'s
   `Persistence`, restored before the network answers (`restored`), and the

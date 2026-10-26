@@ -2,7 +2,7 @@ import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { LiveQuery } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, Layer } from "effect"
 import { AuthStore } from "../auth/store"
-import { signedInShapeSource } from "../personal-model/source"
+import { signedInShapeSource } from "../auth/source"
 import { BUG_REPORTS_SHAPE_ROUTE } from "./contract"
 import { BugReport } from "./schema"
 

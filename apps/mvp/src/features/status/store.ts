@@ -1,8 +1,10 @@
 import { agentStatusTitle } from "@smthrs/ui"
-import { ElectricCollection } from "@smthrs/effect-electric"
+import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, Layer, Metric, Scope, Stream } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
+import { signedInShapeSource } from "../auth/source"
+import { AuthStore } from "../auth/store"
 import { ChatStore } from "../chat/store"
 import { RUNS_SHAPE_ROUTE } from "./contract"
 import { deliveriesQuery, latestQuery, statusesQuery, waitsQuery } from "./queries"
@@ -85,7 +87,7 @@ export class StatusStore extends Context.Service<
             url: `${config.origin}${RUNS_SHAPE_ROUTE}`,
             columnMapper: ElectricCollection.snakeCamelMapper(),
           },
-        })
+        }).pipe(Effect.provideService(ShapeSource.ShapeSource, signedInShapeSource(yield* ShapeSource.ShapeSource, yield* AuthStore)))
         const local = yield* Collection.local<Local, string>({ id: "status-local", schema: Local, getKey: (row) => row.id })
         const statuses = yield* statusesQuery(messages, runs, local)
         const waits = yield* waitsQuery(messages, runs)

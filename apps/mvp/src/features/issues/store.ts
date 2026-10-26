@@ -1,6 +1,7 @@
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
 import { Cache, Clock, Context, Effect, Exit, Layer, Option, Ref, Scope, Stream } from "effect"
+import { signedInChanges, signedInShapeSource } from "../auth/source"
 import { AuthStore } from "../auth/store"
 import { ChatStore } from "../chat/store"
 import { role } from "../repo/actions"
@@ -164,7 +165,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     shape: shape(WRITES_SHAPE_ROUTE),
     syncMode: "eager",
     persist: { schemaVersion: 2 },
-  })
+  }).pipe(Effect.provideService(ShapeSource.ShapeSource, signedInShapeSource(source, auth)))
   const drafts = yield* Collection.persisted<Draft, string>({
     id: "issue-drafts",
     schema: Draft,
@@ -269,7 +270,10 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
         getKey: byRepo,
         shape: shape(TRIAGE_SETTINGS_SHAPE_ROUTE, id),
         ...kept,
-      }).pipe(Effect.provideService(ShapeSource.ShapeSource, guarded))
+      }).pipe(Effect.provideService(ShapeSource.ShapeSource, ShapeSource.gated(
+        source,
+        Stream.zipLatestWith(signedInChanges(auth), authority, (signedIn, status) => signedIn && status === "allowed"),
+      )))
       const access = yield* accessFor(id)
       // The session and the repository's role decide whether this person may read its issues at all. A tab with no
       // answer for it yet asks ChatApi (a route asks too, `repo.role`): until then nothing is requested.

@@ -120,14 +120,14 @@ interface ElectricCollection<A extends object>
 Everything a `Collection` from `@smthrs/effect-tanstack-db` has, `restored`
 included, and:
 
-| Field        | Does                                                                                                                                                                     |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `sync`       | The shape's sync status: each request's outcome, and the shape stopping. A stream started late begins with the latest event.                                             |
-| `applied`    | Installed sync transactions whose resume cursor matches the latest accepted response, after schema decoding; no replay.                                                  |
+| Field            | Does                                                                                                                                                                          |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sync`           | The shape's sync status: each request's outcome, and the shape stopping. A stream started late begins with the latest event.                                                  |
+| `applied`        | Installed sync transactions whose resume cursor matches the latest accepted response, after schema decoding; no replay.                                                       |
 | `currentApplied` | Waits for the latest accepted response's rows and resume cursor to be installed, including an empty batch. A late caller also observes an already installed current response. |
-| `reconnect`  | Sends every request waiting out the policy now, and restarts a stopped shape where it stopped.                                                                           |
-| `awaitTxId`  | Waits until Electric delivers Postgres transaction `txid` and TanStack DB has applied it.                                                                                |
-| `awaitMatch` | Waits until Electric delivers a change `match` accepts and TanStack DB has applied it. A change already applied and still among the collection's recent messages counts. |
+| `reconnect`      | Sends every request waiting out the policy now, and restarts a stopped shape where it stopped.                                                                                |
+| `awaitTxId`      | Waits until Electric delivers Postgres transaction `txid` and TanStack DB has applied it.                                                                                     |
+| `awaitMatch`     | Waits until Electric delivers a change `match` accepts and TanStack DB has applied it. A change already applied and still among the collection's recent messages counts.      |
 
 Both waits fail with `AwaitTimeout` after `timeout`, and with `SyncFailed` when
 the wait ends any other way, such as the collection being cleaned up.
@@ -255,6 +255,29 @@ class RequestFailed extends Data.TaggedError("RequestFailed")<{ readonly status?
 | `ShapeSource`   | The service, a `Context.Reference` whose default is `fetchSource`.                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `fetchSource`   | The real source: each request sent with the `fetch` in Effect's `FetchHttpClient.Fetch`, the global one unless a program provides one, with `cache: "no-store"`, so the HTTP cache never answers or keeps a shape request. A live request (a long poll) is sent with `priority: "low"`, so on a page whose shapes hold all six of a browser's HTTP/1.1 connections to an origin, its other requests take the next free connection instead of queueing behind the long polls. |
 | `RequestFailed` | A shape request failed on the network (no `status`) or with a 5xx or 429. The sync policy is stepped with it.                                                                                                                                                                                                                                                                                                                                                                |
+
+### Opening a shape on demand: `gated`
+
+```ts
+const gated: (source: Source, open: Stream.Stream<boolean>) => Source
+```
+
+`gated` is `source` with each request (the first, a live one, a reconnect)
+waiting until `open`'s latest value is `true`. While it waits nothing reaches
+the network and the collection stays loading; it never reads as empty. A
+request already sent runs to its end, and the next one waits again. Give it a
+stream that starts with its current value, such as a `SubscriptionRef`'s
+`changes` or a live query's rows: open while someone is signed in, or while a
+view shows the shape's rows. A stream that ends without `true` leaves requests
+waiting until the collection closes.
+
+```ts
+const runs = Effect.gen(function*() {
+  const signedIn = SubscriptionRef.changes(session).pipe(Stream.map((session) => session.signedIn))
+  const source = ShapeSource.gated(yield* ShapeSource.ShapeSource, signedIn)
+  return yield* ElectricCollection.make(options).pipe(Effect.provideService(ShapeSource.ShapeSource, source))
+})
+```
 
 `fetchSource` combines the caller's abort signal with Effect interruption.
 Interruption before headers cancels the request; the caller's signal remains

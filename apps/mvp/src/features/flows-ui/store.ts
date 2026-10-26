@@ -1,8 +1,10 @@
-import { ElectricCollection } from "@smthrs/effect-electric"
+import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Persistence, Query } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Context, Deferred, Duration, Effect, Layer, Option, Schema, Stream } from "effect"
 import { codeOf } from "../../errorCode"
+import { signedInShapeSource } from "../auth/source"
+import { AuthStore } from "../auth/store"
 import { FLOW_DRAFTS_SHAPE_ROUTE, FLOWS_SHAPE_ROUTE } from "./contract"
 import * as Following from "./following"
 import { roundExecutionId, type RunStatus } from "./round"
@@ -185,6 +187,8 @@ export class FlowsUiStore extends Context.Service<
             timestamptz: (value: string) => new Date(value).toISOString(),
           },
         })
+        // A person's own flows and drafts: a tab signed out never asks for them.
+        const personal = signedInShapeSource(yield* ShapeSource.ShapeSource, yield* AuthStore)
         const flows = yield* ElectricCollection.make<FlowRow>({
           id: "flows",
           schema: FlowRow,
@@ -193,7 +197,7 @@ export class FlowsUiStore extends Context.Service<
           // 2: rows carry where the flow runs (`placement`).
           persist: { schemaVersion: 2 },
           shape: shape(FLOWS_SHAPE_ROUTE),
-        })
+        }).pipe(Effect.provideService(ShapeSource.ShapeSource, personal))
         const drafts = yield* ElectricCollection.make<Draft>({
           id: "flow-drafts",
           schema: Draft,
@@ -201,7 +205,7 @@ export class FlowsUiStore extends Context.Service<
           syncMode: "eager",
           persist: { schemaVersion: 1 },
           shape: shape(FLOW_DRAFTS_SHAPE_ROUTE),
-        })
+        }).pipe(Effect.provideService(ShapeSource.ShapeSource, personal))
         const formSeed = (): Form => ({ id: formId, name: "", request: "", draftId: crypto.randomUUID(), seeded: false })
         const form = yield* Collection.persisted<Form, string>({
           id: "flow-form",

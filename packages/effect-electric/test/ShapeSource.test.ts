@@ -1,4 +1,4 @@
-import { Effect, Exit, Fiber, Schedule } from "effect"
+import { Effect, Exit, Fiber, Schedule, Stream, SubscriptionRef } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
@@ -159,6 +159,50 @@ describe("the real source", () => {
     )
     expect(error).toMatchObject({ _tag: "RequestFailed" })
     expect(error.status).toBeUndefined()
+  })
+})
+
+describe("a gated source", () => {
+  test("sends nothing while closed, each request once open, and waits again when closed", async () => {
+    const sent: Array<string> = []
+    const recording: ShapeSource.Source = {
+      cacheNamespace: "realm",
+      request: (url) => Effect.sync(() => (sent.push(url), new Response("[]")))
+    }
+    await Effect.runPromise(Effect.gen(function*() {
+      const open = yield* SubscriptionRef.make(false)
+      const source = ShapeSource.gated(recording, SubscriptionRef.changes(open))
+      expect(source.cacheNamespace).toBe("realm")
+      const first = yield* Effect.forkChild(source.request("https://example.test/v1/shape?offset=-1", {}))
+      yield* Effect.yieldNow
+      expect(sent).toEqual([])
+      yield* SubscriptionRef.set(open, true)
+      expect((yield* Fiber.join(first)).status).toBe(200)
+      yield* source.request("https://example.test/v1/shape?offset=0_0&live=true", {})
+      yield* SubscriptionRef.set(open, false)
+      const later = yield* Effect.forkChild(source.request("https://example.test/v1/shape?offset=1_0&live=true", {}))
+      yield* Effect.yieldNow
+      expect(sent).toHaveLength(2)
+      yield* SubscriptionRef.set(open, true)
+      yield* Fiber.join(later)
+    }))
+    expect(sent).toEqual([
+      "https://example.test/v1/shape?offset=-1",
+      "https://example.test/v1/shape?offset=0_0&live=true",
+      "https://example.test/v1/shape?offset=1_0&live=true"
+    ])
+  })
+
+  test("a stream that ends without opening leaves the request waiting, never sent", async () => {
+    let sent = 0
+    const recording: ShapeSource.Source = { request: () => Effect.sync(() => (sent += 1, new Response("[]"))) }
+    const exit = await Effect.runPromise(Effect.exit(
+      ShapeSource.gated(recording, Stream.make(false)).request("https://example.test/v1/shape", {}).pipe(
+        Effect.timeout("20 millis")
+      )
+    ))
+    expect(Exit.isFailure(exit)).toBe(true)
+    expect(sent).toBe(0)
   })
 })
 

@@ -56,9 +56,11 @@ test("a repository the deployment doesn't sync is elsewhere for anyone, whatever
 // A real app and stores, with a recording Effect source that delegates every authorized request to the real server.
 // A signed-out cold boot used to send all eight and learn authority from their 401s.
 for (const [who, actor] of [["signed out", null], ["without a role", { subject: { kind: "person", id: "person-outsider" }, login: "outsider", role: null }]] as const) {
-for (const [name, paths] of [
-  ["issues", ["items", "comments", "github-sync", "triage-settings"]],
-  ["pulls", ["pulls", "pull-commits", "reviews", "checks"]],
+// A receipt releases only what the page reads: triage settings need someone signed in, and a pull request's commits,
+// reviews and checks wait for its page (decision 0112, src/features/auth/source.test.ts).
+for (const [name, paths, released] of [
+  ["issues", ["items", "comments", "github-sync", "triage-settings"], actor === null ? ["items", "comments", "github-sync"] : ["items", "comments", "github-sync", "triage-settings"]],
+  ["pulls", ["pulls", "pull-commits", "reviews", "checks"], ["pulls"]],
 ] as const) {
   test(`${name}: ${who} never requests member shapes; a public receipt releases them`, async () => {
     const requests: string[] = []
@@ -78,7 +80,7 @@ for (const [name, paths] of [
     expect(requests.filter((path) => paths.some((name) => path === `/api/shapes/${name}`))).toEqual([])
     await Effect.runPromise(api.github.run(GitHubStore.recordRepository(id, { githubId: 1, private: false })))
     await runtime.runPromise(readRole(owner, repository))
-    await vi.waitFor(() => expect(paths.every((name) => requests.includes(`/api/shapes/${name}`))).toBe(true), { timeout: 15_000 })
+    await vi.waitFor(() => expect(released.every((name) => requests.includes(`/api/shapes/${name}`))).toBe(true), { timeout: 15_000 })
   }, 90_000)
 }
 }
