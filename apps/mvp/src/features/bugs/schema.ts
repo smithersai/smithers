@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { LIST_MAX, MAX_RECENT, MAX_WHAT_LENGTH } from "./contract"
+import { LIST_MAX, MAX_ERRORS, MAX_RECENT, MAX_WHAT_LENGTH } from "./contract"
 
 // Bug reports' rows and wire shapes (docs/features/bugs.md): what a tab says it shows, the request that files a
 // report, the row Electric delivers and the read route answers, and the flows' payloads and answers. A report carries
@@ -21,12 +21,29 @@ export const Failure = Schema.Struct({
 })
 export type Failure = typeof Failure.Type
 
+/** A record's name: a log record's (`flow.dispatch`), a request's method and path (`GET /api/runs`), `page error`. */
+export const ErrorName = Schema.String.check(Schema.isPattern(/^[\w ./:@+%~!$&'()*,;=-]{1,200}$/))
+
+/**
+ * Something that went wrong in the tab lately (src/flows/errors.ts): when, what kind, its record's name, its stable
+ * code and the trace it happened in. Never a message, an argument, a query or what anyone wrote.
+ */
+export const ErrorEntry = Schema.Struct({
+  at: Schema.String.check(Schema.isMaxLength(40)),
+  kind: Schema.Literals(["log", "http", "page"]),
+  name: ErrorName,
+  code: Schema.NullOr(Schema.String.check(Schema.isPattern(/^[\w./:-]{1,64}$/))),
+  traceId: Schema.NullOr(TraceId),
+})
+export type ErrorEntry = typeof ErrorEntry.Type
+
 /** A repository as `owner/name`. */
 export const Repository = Schema.String.check(Schema.isPattern(/^[\w.-]{1,100}\/[\w.-]{1,100}$/))
 
 /**
  * What the tab that asked shows, captured when the report is filed: its page (the last one before the form), the
- * repository on it, the build, its latest trace ids, run ids and failure codes, and the browser and window size.
+ * repository on it, the build, its latest trace ids, run ids and failure codes, what went wrong in it lately, and the
+ * browser and window size.
  */
 export const ReportContext = Schema.Struct({
   route: Schema.NullOr(bounded(2_048)),
@@ -35,6 +52,7 @@ export const ReportContext = Schema.Struct({
   traces: Schema.Array(TraceId).check(Schema.isMaxLength(MAX_RECENT)),
   runs: Schema.Array(RunId).check(Schema.isMaxLength(MAX_RECENT)),
   failures: Schema.Array(Failure).check(Schema.isMaxLength(MAX_RECENT)),
+  errors: Schema.Array(ErrorEntry).check(Schema.isMaxLength(MAX_ERRORS)),
   browser: bounded(512),
   viewport: bounded(32),
 })
@@ -78,6 +96,7 @@ export const BugReport = Schema.Struct({
   traces: Schema.Array(Schema.String),
   runs: Schema.Array(Schema.String),
   failures: Schema.Array(Failure),
+  errors: Schema.Array(ErrorEntry),
   browser: Schema.String,
   viewport: Schema.String,
   createdAt: Schema.String,

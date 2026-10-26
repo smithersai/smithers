@@ -42,6 +42,9 @@ export const issueUrl = (report: ReportRequest): string => {
     ...(report.failures.length === 0
       ? []
       : [`Failures: ${report.failures.slice(0, 5).map(({ flow, code }) => `${flow} ${code}`).join(", ")}`]),
+    ...(report.errors.length === 0
+      ? []
+      : [`Errors: ${report.errors.slice(0, 5).map(({ name, code }) => (code === null ? name : `${name} ${code}`)).join(", ")}`]),
     `Browser: ${report.browser}`,
     `Window: ${report.viewport}`,
   ].join("\n")

@@ -91,6 +91,9 @@ test("bug report: /bug opens the form, Send files it with the page and the tab's
       expect(report!.traces.every((trace) => /^[0-9a-f]{32}$/.test(trace))).toBe(true)
       expect(report!.browser).toContain("Mozilla")
       expect(report!.viewport).toMatch(/^\d+x\d+$/)
+      // What went wrong in the tab, by record name and code from its own observability (src/flows/errors.ts).
+      expect(Array.isArray(report!.errors)).toBe(true)
+      expect(report!.errors.every((error) => error.code === null || /^[\w./:-]{1,64}$/.test(error.code))).toBe(true)
       const stored = JSON.stringify(report)
       for (const text of chat) expect(stored, "a chat message in the stored report").not.toContain(text)
     })

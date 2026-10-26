@@ -66,3 +66,13 @@
 .bugs-empty {
   margin-block: 3rem;
 }
+
+.bugs-entry-errors {
+  font-size: 0.8125rem;
+}
+
+.bugs-entry-errors td,
+.bugs-entry-errors th {
+  padding-block: 0.125rem;
+  white-space: nowrap;
+}

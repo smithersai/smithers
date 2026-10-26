@@ -27,6 +27,7 @@ export const BUG_REPORT_COLUMNS = [
   "traces",
   "runs",
   "failures",
+  "errors",
   "browser",
   "viewport",
   "created_at",
@@ -41,8 +42,11 @@ export const MAX_WHAT_LENGTH = 4_000
 /** The most trace ids, run ids or failures one report carries: the tab's latest. */
 export const MAX_RECENT = 20
 
+/** The most error records one report carries: the tab's latest (src/flows/errors.ts `ERRORS_KEPT`). */
+export const MAX_ERRORS = 30
+
 /** The largest `POST /api/bugs` body, in bytes. */
-export const MAX_REPORT_BODY_BYTES = 32 * 1_024
+export const MAX_REPORT_BODY_BYTES = 48 * 1_024
 
 /** How many reports one read answers by default, and at most. */
 export const LIST_DEFAULT = 50
@@ -120,6 +124,21 @@ export const BUG_REPORT_ROW = {
         additionalProperties: false,
       },
     },
+    errors: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          at: { type: "string" },
+          kind: { type: "string", enum: ["log", "http", "page"] },
+          name: { type: "string" },
+          code: { type: ["string", "null"] },
+          traceId: { type: ["string", "null"] },
+        },
+        required: ["at", "kind", "name", "code", "traceId"],
+        additionalProperties: false,
+      },
+    },
     browser: { type: "string" },
     viewport: { type: "string" },
     createdAt: { type: "string" },
@@ -138,6 +157,7 @@ export const BUG_REPORT_ROW = {
     "traces",
     "runs",
     "failures",
+    "errors",
     "browser",
     "viewport",
     "createdAt",

@@ -186,9 +186,10 @@ export default defineConfig({
         "db/migrations/0024_sandbox_calls.ts",
         // Sandbox budgets: the limits, the ledger and a terminal's wait (docs/features/sandbox-budgets.md).
         "db/migrations/0062_sandbox_budgets.ts",
-        // Bug reports: filing one, the Admins' read and the reports' shape (docs/features/bug-reports.md).
+        // Bug reports: filing one, the Admins' read and the reports' shape (docs/features/bugs.md).
         "worker/bugs/*.ts",
         "db/migrations/0064_bug_reports.ts",
+        "db/migrations/0067_bug_report_errors.ts",
         // Co-editing: the texts people edit together (docs/features/coedit.md).
         "db/migrations/0026_text_updates.ts",
         // What the Electric gateway lets through (docs/infrastructure.md).

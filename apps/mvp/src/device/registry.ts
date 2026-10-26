@@ -191,7 +191,8 @@ const synced = [
   Migrations.synced({ id: "alert-channels", version: 1, schema: AlertChannel }),
   Migrations.synced({ id: "alert-deliveries", version: 1, schema: AlertDelivery }),
   Migrations.synced({ id: "sandbox-limits", version: 1, schema: SandboxLimitsRow }),
-  Migrations.synced({ id: "bug-reports", version: 1, schema: BugReport }),
+  // Version 2: each report's error records (docs/features/bugs.md#what-a-report-carries).
+  Migrations.synced({ id: "bug-reports", version: 2, schema: BugReport }),
   Migrations.synced({ id: "todos", version: 4, schema: Todo, family: true }),
   Migrations.synced({ id: "todo-requests", version: 1, schema: TodoRequest, family: true }),
   Migrations.synced({ id: "text-updates", version: 1, schema: TextUpdate, family: true }),

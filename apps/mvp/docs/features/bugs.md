@@ -2,6 +2,8 @@
 
 A person reports a bug from any page in a few words, and the deployment's Admins and agents read it with the ids that find it in our records. Will, 2026-10-25: "Can we add an in app bug report feature?" It is how he reports what he finds while using smithers.sh for a day, and how the lead, an agent, finds and fixes it.
 
+Will, Telegram 2026-10-25 19:45: "Can we add an in app way of reporting bugs in the app to the Smithers team? It should be built into our general observability on frontend so the agent adding this can do a general sweep to make sure we collect good metrics especially on errors". So a report carries the tab's latest error records, taken from the same records the tab relays to ChatApi ([below](#what-a-report-carries)).
+
 ## Doors
 
 | Door | What it does |
@@ -28,6 +30,7 @@ the tab that asked (src/features/bugs/tab.ts):  │
   its repository              octocat/Spoon-Knife
   the build                   38569d55ad79         (dev/build.ts)
   its latest 20 run ids, trace ids, failure codes  (src/flows/history.ts)
+  its latest 30 error records                       (src/flows/errors.ts)
   the browser and the window  Mozilla/5.0 …, 1280x800
 ChatApi, from the session:    the reporter's id, login and role; `agent` when the agent filed it
 ```
@@ -35,6 +38,7 @@ ChatApi, from the session:    the reporter's id, login and role; `agent` when th
 - **Never** a message, an answer, a flow's payload, a page's text or a credential. The tab's context is built from ids, codes and the window alone (`contextOf`), and every record of a report carries counts, never the words (OBS-5).
 - **The tab that asked.** The report's first step asks over the engine's bug channel; only the tab whose request started the run answers (src/flows/askingTab.ts). The agent's call belongs to the answer whose tab asked, so it names that tab's page. A tab that is gone leaves the report with `route: null` and `build: "unknown"`, and it is filed anyway.
 - **The tab's history.** Every dispatch keeps its flow, run id, the trace id of its `flow.dispatch` span, its outcome and a failure's stable code, newest first, the latest 50, in the tab's memory (`TabHistory`). A trace id joins the person's words to the relayed browser records and the Worker's logs.
+- **The tab's error records.** Beside the OTLP exporter that relays the tab's logs, spans and metrics to ChatApi (`src/boot.ts`), a logger and a tracer keep its latest 30 error records, newest first, in the tab's memory (`TabErrors`, `src/flows/errors.ts`): error- and warning-level log events by record name and stable code (the first of `errorCode`, `code`, `refusal`, `reason`, `error.type`, `exception.type`), failed `/api/` requests by method, path and status (`network` when no answer came), and uncaught errors and unhandled rejections (`page error`, `unhandled rejection`) by the error's name. Each has its trace id and time. A log event counts only when the relay keeps its record (`src/telemetry.ts`), and a code is a token without spaces: never a message, an argument, a URL's query or anything a person wrote. Every frontend error path logs and counts with a stable code (the `fe-errors` sweep), so the ring holds what went wrong. The inbox shows them as a table: time, kind, record, code and trace.
 
 ## The build
 
@@ -95,7 +99,7 @@ GitHub's own new-issue form, prefilled: the title is the first line of the words
 
 | Table | Columns | |
 |---|---|---|
-| `bug_reports` | `id` (uuid, key), `reporter_id`, `reporter_login`, `reporter_role`, `acted_by` (`agent`, `flow`, `app`, `sandbox` or null), `what` (1 to 4,000 characters), `route`, `repo`, `build`, `traces`, `runs`, `failures` (jsonb), `browser`, `viewport`, `created_at` | one row per report; synced whole. Migration `0064_bug_reports` (`pnpm db:migrate`) |
+| `bug_reports` | `id` (uuid, key), `reporter_id`, `reporter_login`, `reporter_role`, `acted_by` (`agent`, `flow`, `app`, `sandbox` or null), `what` (1 to 4,000 characters), `route`, `repo`, `build`, `traces`, `runs`, `failures`, `errors` (jsonb), `browser`, `viewport`, `created_at` | one row per report; synced whole. Migrations `0064_bug_reports` and `0067_bug_report_errors` (`pnpm db:migrate`) |
 | `notifications.kind` | adds `bug` | the same migration |
 
 ## Observability
@@ -109,6 +113,7 @@ ChatApi: `bug.request` and `smithers_bug_requests` (op, outcome, status), `bug.s
 | `plugins/bugs/` | the plugin: manifest, tab (`core/bug-reports`, Send), the form, the inbox, the header's entry |
 | `src/features/bugs/` | the contract, the schemas, the flows and steps, the tab's context, GitHub's form, the store |
 | `src/flows/history.ts` | the tab's latest dispatches, kept by `makeDispatch` |
+| `src/flows/errors.ts` | the tab's latest error records, kept by a logger and a tracer beside the OTLP exporter |
 | `dev/build.ts` | the build's name and `/version.json` |
 | `worker/bugs/Api.ts` | the routes and the shape |
 | `worker/flows/BugReport.ts` | `ops/BugReport`: the bell and the deliveries |
@@ -119,6 +124,7 @@ ChatApi: `bug.request` and `smithers_bug_requests` (op, outcome, status), `bug.s
 |---|---|
 | `src/features/bugs/bugs.test.ts` | the page before the form, its repository, the ids kept and left out, GitHub's form; the tab that asked answers over the real bug channel and another tab's request gets none |
 | `src/features/bugs/api.test.ts` | the client against every answer the routes give; the flows on the Node host: filed with what the step knows when the tab is gone, refused once, retried while offline; their records without the words |
+| `src/flows/errors.test.ts` | the records a log event and an ended span become; the ring over Effect's HTTP client with an injected failing `fetch` (TEST-7): a 503 and no network kept by method, path and code, an error log with its trace, a page error by its name, newest first, at most 30; never a message, a non-code annotation or a query |
 | `src/flows/dispatch.test.ts` "this tab's history" | each dispatch's run, trace, outcome and code, newest first, never its payload |
 | `plugins/bugs/src/tab.test.ts` | the form's words and when a Send is Sent; over an injected host whose runs fail (TEST-7): Not sent with the reason, the words kept, Retry under the same id, new words a new report, a refused press |
 | `src/plugins/plugins.test.ts` "how a plugin's run ended" | `settled` for a run done, a declared failure's code or kind, dispatch's refusal or reason, interrupted, a defect; never a message |

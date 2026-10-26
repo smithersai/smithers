@@ -48,6 +48,7 @@ const report: ReportRequest = {
   traces: ["0123456789abcdef0123456789abcdef"],
   runs: ["run-1"],
   failures: [{ flow: "app/web/open", code: "refused" }],
+  errors: [{ at: "2026-10-25T20:00:00.000Z", kind: "http", name: "GET /api/runs", code: "503", traceId: null }],
   browser: "Test/1.0",
   viewport: "1280x800",
 }
@@ -236,6 +237,7 @@ describe("app/bug/report on the Node host", () => {
       traces: [],
       runs: [],
       failures: [],
+      errors: [],
       browser: "unknown",
       viewport: "unknown",
     })

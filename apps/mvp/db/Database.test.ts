@@ -1419,3 +1419,30 @@ describe("0066_timeline_summaries", () => {
       expect(await on(through("0066"))).toEqual([])
     }))
 })
+
+describe("0067_bug_report_errors", () => {
+  test("gives every report its error records, an array, empty for one filed before", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+      const taken = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        on(effect.pipe(Effect.as("taken"), Effect.orElseSucceed(() => "refused")))
+      await on(through("0066"))
+      const before = crypto.randomUUID()
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        INSERT INTO bug_reports (id, reporter_id, what, build, browser, viewport)
+        VALUES (${before}, 'p', 'Before.', 'b1', 'Firefox', '1280x800')`))
+      expect((await on(through("0067"))).map(([id, name]) => `${id}_${name}`)).toEqual(["67_bug_report_errors"])
+      const [old] = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ errors: unknown }>`
+        SELECT errors FROM bug_reports WHERE id = ${before}`))
+      expect(old).toEqual({ errors: [] })
+      const report = (errors: string) =>
+        taken(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          INSERT INTO bug_reports (id, reporter_id, what, build, errors, browser, viewport)
+          VALUES (${crypto.randomUUID()}, 'p', 'It broke.', 'b1', ${errors}::jsonb, 'Firefox', '1280x800')`))
+      expect(await report('[{"at":"2026-10-25T20:00:00.000Z","kind":"http","name":"GET /api/runs","code":"503","traceId":null}]'))
+        .toBe("taken")
+      expect(await report("{}")).toBe("refused")
+      expect(await on(through("0067"))).toEqual([])
+    }))
+})

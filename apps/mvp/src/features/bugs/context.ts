@@ -1,11 +1,12 @@
+import type { ErrorRecord } from "../../flows/errors"
 import type { Ran } from "../../flows/history"
-import { BUG_INBOX_PATH, MAX_RECENT } from "./contract"
-import type { Failure, ReportContext } from "./schema"
+import { BUG_INBOX_PATH, MAX_ERRORS, MAX_RECENT } from "./contract"
+import type { ErrorEntry, Failure, ReportContext } from "./schema"
 
 // What a report says the tab showed (docs/features/bugs.md#what-a-report-carries), as a pure function of what
 // the tab recorded: the page the person was on before the form, the repository on it, the build, the latest trace
-// ids, run ids and failure codes of this tab's runs, and the browser and window. Ids and codes only: nothing here
-// reads a message, an answer, a payload or a page's text.
+// ids, run ids and failure codes of this tab's runs, its latest error records (src/flows/errors.ts), and the browser
+// and window. Ids, names and codes only: nothing here reads a message, an answer, a payload or a page's text.
 
 /** The pages a report never names as where the bug was: the bug inbox and its form. */
 export const isBugPage = (path: string): boolean => path === BUG_INBOX_PATH || path.startsWith(`${BUG_INBOX_PATH}/`)
@@ -37,6 +38,13 @@ const RUN = /^[\w.:@/+-]{1,200}$/
 const FLOW = /^[\w./-]{1,128}$/
 const CODE = /^[\w./:-]{1,64}$/
 
+const ERROR_NAME = /^[\w ./:@+%~!$&'()*,;=-]{1,200}$/
+
+/** Whether an error record fits a report's shape (`ErrorEntry`): one that doesn't is left out, never cut. */
+const fits = (record: ErrorRecord): record is ErrorEntry =>
+  record.at.length <= 40 && ERROR_NAME.test(record.name) && (record.code === null || CODE.test(record.code)) &&
+  (record.traceId === null || TRACE.test(record.traceId))
+
 /** The first `MAX_RECENT` distinct values, in order. */
 const latest = (values: ReadonlyArray<string>): ReadonlyArray<string> => [...new Set(values)].slice(0, MAX_RECENT)
 
@@ -48,6 +56,8 @@ export interface Recorded {
   readonly pages: ReadonlyArray<string>
   /** This tab's latest dispatches, newest first. */
   readonly ran: ReadonlyArray<Ran>
+  /** This tab's latest error records, newest first. */
+  readonly errors: ReadonlyArray<ErrorRecord>
   readonly build: string
   readonly browser: string
   readonly viewport: string
@@ -72,6 +82,7 @@ export const contextOf = (recorded: Recorded): ReportContext => {
     traces: latest(recorded.ran.flatMap(({ traceId }) => (traceId !== undefined && TRACE.test(traceId) ? [traceId] : []))),
     runs: latest(recorded.ran.flatMap(({ executionId }) => (RUN.test(executionId) ? [executionId] : []))),
     failures,
+    errors: recorded.errors.filter(fits).slice(0, MAX_ERRORS),
     browser: recorded.browser.slice(0, 512),
     viewport: recorded.viewport.slice(0, 32),
   }
@@ -85,6 +96,7 @@ export const UNANSWERED: ReportContext = {
   traces: [],
   runs: [],
   failures: [],
+  errors: [],
   browser: "unknown",
   viewport: "unknown",
 }

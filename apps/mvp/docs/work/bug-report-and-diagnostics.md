@@ -23,6 +23,7 @@ Will, Telegram 2026-10-25 17:38 PDT: "Can we add an in app bug report feature?" 
 - **Read:** an Admin's inbox at `/app/bugs` (a person sees their own), `app/bug/list`, and `GET /api/bugs` with `BUG_REPORTS_READ_TOKEN` for an agent outside the app.
 - **Open on GitHub:** GitHub's prefilled new-issue form on the page's repository, else smithersai/smithers; nothing reaches GitHub without the person's submit.
 - **The build:** `/version.json` and the bundle name the deployed revision (`dev/build.ts`).
+- **Error records** (Will, Telegram 19:45: "built into our general observability on frontend"): a report carries the tab's latest 30 error records from its own logger and tracer (`src/flows/errors.ts`, migration 0067), shown as a table in the inbox. The `fe-errors` builder sweeps every frontend error path to log and count with a stable code.
 
 ## Left
 

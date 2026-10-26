@@ -145,6 +145,10 @@ const report = (overrides: Record<string, unknown> = {}) => ({
   traces: ["0123456789abcdef0123456789abcdef"],
   runs: ["8a6d2a52-3f2e-4f7e-9e0e-2f1c0e4b7a11"],
   failures: [{ flow: "chat/Answer", code: "model:rate_limited" }],
+  errors: [
+    { at: "2026-10-25T20:00:00.000Z", kind: "http", name: "GET /api/runs", code: "503", traceId: "0123456789abcdef0123456789abcdef" },
+    { at: "2026-10-25T19:59:00.000Z", kind: "page", name: "page error", code: "TypeError", traceId: null },
+  ],
   browser: "Firefox 140",
   viewport: "1280x800",
   ...overrides,
@@ -170,8 +174,8 @@ const rows = () =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql<Record<string, unknown>>`
       SELECT id::text AS id, reporter_id AS "reporterId", reporter_login AS "reporterLogin",
-        reporter_role AS "reporterRole", acted_by AS "actedBy", what, route, repo, build, traces, runs, failures, browser,
-        viewport
+        reporter_role AS "reporterRole", acted_by AS "actedBy", what, route, repo, build, traces, runs, failures, errors,
+        browser, viewport
       FROM bug_reports ORDER BY created_at, id`))
 
 const at = (id: string, createdAt: string) =>
@@ -204,6 +208,7 @@ describe("POST /api/bugs", () => {
       traces: body.traces,
       runs: body.runs,
       failures: body.failures,
+      errors: body.errors,
       browser: "Firefox 140",
       viewport: "1280x800",
     }])
@@ -357,6 +362,8 @@ describe("POST /api/bugs", () => {
     ["a trace id that isn't one", report({ traces: ["XYZ"] }), 400, "invalid"],
     ["21 trace ids", report({ traces: Array.from({ length: 21 }, () => "0123456789abcdef0123456789abcdef") }), 400, "invalid"],
     ["a failure's message in place of its code", report({ failures: [{ flow: "chat/Answer", code: WHAT }] }), 400, "invalid"],
+    ["an error record's message in place of its code", report({ errors: [{ at: "x", kind: "log", name: "flow.dispatch", code: WHAT, traceId: null }] }), 400, "invalid"],
+    ["more than 30 error records", report({ errors: Array.from({ length: 31 }, () => ({ at: "x", kind: "log", name: "flow.dispatch", code: null, traceId: null })) }), 400, "invalid"],
     ["no build", (() => {
       const { build: _, ...rest } = report()
       return rest
@@ -436,6 +443,7 @@ describe("GET /api/bugs", () => {
       traces: first.traces,
       runs: first.runs,
       failures: first.failures,
+      errors: first.errors,
       browser: "Firefox 140",
       viewport: "1280x800",
       createdAt: "2026-10-25T10:00:00.123Z",

@@ -4,9 +4,10 @@
 import { TabChannel } from "@smthrs/platform-browser"
 import { Effect, Exit, Layer, Option, Scope } from "effect"
 import { describe, expect, test } from "vitest"
+import { type ErrorRecord, TabErrors } from "../../flows/errors"
 import { type Ran, TabHistory } from "../../flows/history"
 import { TabRequests } from "../../flows/requests"
-import { MAX_RECENT } from "./contract"
+import { MAX_ERRORS, MAX_RECENT } from "./contract"
 import { contextOf, isBugPage, type Recorded, repoOf, routeOf, UNANSWERED } from "./context"
 import { BugTabs } from "./flows"
 import { issueUrl, MAX_ISSUE_WORDS, routeKind, titleOf } from "./github"
@@ -29,6 +30,7 @@ const recorded = (overrides: Partial<Recorded> = {}): Recorded => ({
   current: "/octocat/Spoon-Knife",
   pages: [],
   ran: [],
+  errors: [],
   build: "38569d55ad79",
   browser: "Test/1.0",
   viewport: "1280x800",
@@ -84,9 +86,33 @@ describe("what a report carries", () => {
       traces: [OTHER_TRACE, TRACE],
       runs: ["run-3", "run-2", "run-1"],
       failures: [{ flow: "app/bug/report", code: "BugRefused" }, { flow: "app/theme/set", code: "person_only" }],
+      errors: [],
       browser: "Test/1.0",
       viewport: "1280x800",
     })
+  })
+
+  test("the tab's latest error records, at most thirty; one that doesn't fit a report is left out", () => {
+    const record = (overrides: Partial<ErrorRecord> = {}): ErrorRecord => ({
+      at: "2026-10-25T20:00:00.000Z",
+      kind: "log",
+      name: "flow.dispatch",
+      code: "refused",
+      traceId: TRACE,
+      ...overrides,
+    })
+    const errors = [
+      record({ kind: "http", name: "GET /api/repos/octocat/Spoon-Knife%20x", code: "503", traceId: null }),
+      record({ kind: "page", name: "page error", code: "TypeError" }),
+      record({ name: "said <b>hi</b>" }),
+      record({ code: "two words" }),
+      record({ traceId: "nope" }),
+      record({ at: "x".repeat(41) }),
+      ...Array.from({ length: 40 }, () => record()),
+    ]
+    const kept = contextOf(recorded({ errors })).errors
+    expect(kept).toHaveLength(MAX_ERRORS)
+    expect(kept.slice(0, 3)).toEqual([errors[0], errors[1], record()])
   })
 
   test("an id or code that doesn't fit its shape is left out; a failure without a code isn't one; text is cut", () => {
@@ -132,6 +158,7 @@ describe("what a report carries", () => {
       traces: [],
       runs: [],
       failures: [],
+      errors: [],
       browser: "unknown",
       viewport: "unknown",
     })
@@ -147,6 +174,10 @@ const report: ReportRequest = {
   traces: [TRACE, OTHER_TRACE],
   runs: ["run-1"],
   failures: [{ flow: "run/retry", code: "refused" }],
+  errors: [
+    { at: "2026-10-25T20:00:00.000Z", kind: "http", name: "GET /api/runs", code: "503", traceId: null },
+    { at: "2026-10-25T19:59:00.000Z", kind: "page", name: "page error", code: null, traceId: null },
+  ],
   browser: "Test/1.0",
   viewport: "1280x800",
 }
@@ -184,6 +215,7 @@ describe("Open on GitHub", () => {
       "Build: 38569d55ad79",
       `Traces: ${TRACE} ${OTHER_TRACE}`,
       "Failures: run/retry refused",
+      "Errors: GET /api/runs 503, page error",
       "Browser: Test/1.0",
       "Window: 1280x800",
     ].join("\n"))
@@ -192,12 +224,13 @@ describe("Open on GitHub", () => {
   })
 
   test("smithersai/smithers when the page showed no repository; long words cut; no empty lines for ids", () => {
-    const url = new URL(issueUrl({ ...report, repo: null, route: null, what: "w".repeat(3_000), traces: [], failures: [] }))
+    const url = new URL(issueUrl({ ...report, repo: null, route: null, what: "w".repeat(3_000), traces: [], failures: [], errors: [] }))
     expect(url.pathname).toBe("/smithersai/smithers/issues/new")
     const body = url.searchParams.get("body")!
     expect(body.startsWith(`${"w".repeat(MAX_ISSUE_WORDS)}…\n`)).toBe(true)
     expect(body).not.toContain("Traces:")
     expect(body).not.toContain("Failures:")
+    expect(body).not.toContain("Errors:")
     expect(body).toContain("Page: unknown")
   })
 })
@@ -205,13 +238,17 @@ describe("Open on GitHub", () => {
 /** A tab answering the bug channel of engine `name` with `host`, and its history and requests, in `scope`. */
 const openTab = async (scope: Scope.Scope, host: BugHost, options: { readonly history?: boolean } = {}) => {
   const layer = tabBugContext(host).pipe(
-    Layer.provideMerge(Layer.mergeAll(TabRequests.layer(), options.history === false ? Layer.empty : TabHistory.layer())),
+    Layer.provideMerge(Layer.mergeAll(
+      TabRequests.layer(),
+      options.history === false ? Layer.empty : Layer.merge(TabHistory.layer(), TabErrors.ring()),
+    )),
     Layer.provide(TabChannel.layer),
   )
   const context = await Effect.runPromise(Scope.provide(scope)(Layer.build(layer)))
   return {
     requests: Effect.runSync(Effect.service(TabRequests).pipe(Effect.provide(context))),
     history: Option.getOrUndefined(Effect.runSync(Effect.serviceOption(TabHistory).pipe(Effect.provide(context)))),
+    errors: Option.getOrUndefined(Effect.runSync(Effect.serviceOption(TabErrors).pipe(Effect.provide(context)))),
   }
 }
 
@@ -255,6 +292,7 @@ describe("the tab that asked answers", () => {
       await show("/app/bugs/report")
       await Effect.runPromise(tab.requests.add("report-1", "button"))
       await Effect.runPromise(tab.history!.record(ran({ executionId: "nav-1", flow: "app/navigate" })))
+      tab.errors!.record({ at: "2026-10-25T20:00:00.000Z", kind: "http", name: "POST /api/bugs", code: "503", traceId: null })
       const bugs = await asking(scope, name)
       expect(await Effect.runPromise(bugs.ask("report-1"))).toEqual(Option.some({
         route: "/octocat/Spoon-Knife/issues",
@@ -263,6 +301,7 @@ describe("the tab that asked answers", () => {
         traces: [TRACE],
         runs: ["nav-1"],
         failures: [],
+        errors: [{ at: "2026-10-25T20:00:00.000Z", kind: "http", name: "POST /api/bugs", code: "503", traceId: null }],
         browser: "Test/1.0",
         viewport: "1280x800",
       }))
@@ -314,6 +353,7 @@ describe("the tab that asked answers", () => {
         traces: [],
         runs: [],
         failures: [],
+        errors: [],
         browser: "unknown",
         viewport: "unknown",
       }))

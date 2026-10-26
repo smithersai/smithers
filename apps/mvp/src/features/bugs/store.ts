@@ -44,7 +44,8 @@ export class BugsStore extends Context.Service<
           schema: BugReport,
           getKey: (row) => row.id,
           syncMode: "eager",
-          persist: { schemaVersion: 1 },
+          // Version 2: each report's error records (src/device/registry.ts).
+          persist: { schemaVersion: 2 },
           shape: {
             url: `${config.origin}${BUG_REPORTS_SHAPE_ROUTE}`,
             columnMapper: ElectricCollection.snakeCamelMapper(),

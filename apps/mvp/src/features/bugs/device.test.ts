@@ -112,6 +112,12 @@ describe("a bug report on a real device", { timeout: 120_000 }, () => {
     })
     // The tab's latest runs: at least the form's own navigation, with its trace.
     expect(sent.report.runs.length).toBeGreaterThan(0)
+    // And what went wrong in the tab, from its own observability (src/flows/errors.ts): the refused report's dispatch,
+    // by its record's name and code, never its words.
+    expect(sent.report.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "log", name: "flow.dispatch", code: "refused" }),
+    ]))
+    expect(JSON.stringify(sent.report.errors)).not.toContain("The page went blank")
     const github = new URL(sent.report.github)
     expect(github.pathname).toBe("/octocat/Spoon-Knife/issues/new")
     expect(github.searchParams.get("body")).toContain("Page: issues")

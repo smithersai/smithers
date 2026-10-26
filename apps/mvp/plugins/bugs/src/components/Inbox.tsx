@@ -1,6 +1,6 @@
-import { EmptyState, RelativeTime } from "@smthrs/ui"
+import { EmptyState, RelativeTime, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@smthrs/ui"
 import { useSyncExternalStore } from "react"
-import type { BugsTab, Report } from "../tab"
+import type { BugsTab, ErrorItem, Report } from "../tab"
 import "./bugs.css"
 
 // The inbox (docs/features/bugs.md#the-inbox): the reports the viewer may see, newest first, every one for an
@@ -49,11 +49,41 @@ function Entry({ row }: { readonly row: Report }) {
           <dd>{row.runs.length === 0 ? "none" : row.runs.join(" ")}</dd>
           <dt>Failures</dt>
           <dd>{row.failures.length === 0 ? "none" : row.failures.map(({ flow, code }) => `${flow} ${code}`).join(", ")}</dd>
+          <dt>Errors</dt>
+          <dd>{row.errors.length === 0 ? "none" : <Errors errors={row.errors} />}</dd>
           <dt>Report</dt>
           <dd>{row.id}</dd>
         </dl>
         <a href={row.github} target="_blank" rel="noopener noreferrer">Open on GitHub</a>
       </details>
     </li>
+  )
+}
+
+// What went wrong in the reporter's tab, newest first: the time (UTC), the kind, the record and its code, and the trace.
+function Errors({ errors }: { readonly errors: ReadonlyArray<ErrorItem> }) {
+  return (
+    <Table className="bugs-entry-errors" aria-label="Errors">
+      <TableHeader>
+        <TableRow>
+          <TableHead>Time</TableHead>
+          <TableHead>Kind</TableHead>
+          <TableHead>Record</TableHead>
+          <TableHead>Code</TableHead>
+          <TableHead>Trace</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {errors.map((error, index) => (
+          <TableRow key={`${error.at}-${index}`}>
+            <TableCell><time dateTime={error.at}>{error.at.slice(11, 19)}</time></TableCell>
+            <TableCell>{error.kind}</TableCell>
+            <TableCell>{error.name}</TableCell>
+            <TableCell>{error.code ?? ""}</TableCell>
+            <TableCell>{error.traceId ?? ""}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   )
 }

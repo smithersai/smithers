@@ -662,6 +662,8 @@ A person's bug report, its intake and the Admins' notice ([bugs.md](features/bug
 | `bug.list`, `smithers_web_bug_lists` | browser | the tab's engine, `app/bug/list/read` | `outcome` (`read`, `refused`, `unsent`), `count`, `status` |
 | `bug.file`, `bug.read` | browser span | `BugsClient` | `http.response.status_code` |
 
+A bug report also carries the tab's latest 30 error records (`TabErrors`, `src/flows/errors.ts`): a logger and a tracer beside the tab's OTLP exporter keep each error- or warning-level log of a relayed record, by name and stable code, each failed `/api/` request by method, path and status, and each uncaught error or rejection by the error's name, with trace ids and times. They add no record of their own and never keep a message, an argument or a query.
+
 ### Secrets
 
 An Admin's writes of repository secrets, their shape, and a box's requests through the egress ([secrets.md](features/secrets.md#observability)). No record carries a value, a ciphertext, a header, a path or a body; records name secrets by name only, and no metric label carries a name or an id.

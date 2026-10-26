@@ -18,6 +18,7 @@ const report = (id: string): Report => ({
   traces: [],
   runs: [],
   failures: [],
+  errors: [],
   browser: "Test/1.0",
   viewport: "1280x800",
   createdAt: "2026-10-25T20:00:00.000Z",

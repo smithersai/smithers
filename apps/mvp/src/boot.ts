@@ -100,12 +100,13 @@ import { Views, type ViewsView } from "./features/views/views"
 import { type WebHost, WebTab } from "./features/web/actions"
 import { Web, type WebView } from "./features/web/web"
 import { type ClientEngine, FlowDispatch } from "./flows/dispatch"
+import { TabErrors } from "./flows/errors"
 import { failFastOnEngine, tabAnswers, tabEngine } from "./flows/engine"
 import type { Endpoint } from "./flows/tabPort"
 import { deviceRegistry } from "./device/registry"
 import { Page } from "./page"
 import { markStage, recordStages, type Timeline } from "./bootStages"
-import { EXPORTED_SPANS, TELEMETRY_LIMITS, WEB_SERVICE } from "./telemetry"
+import { BROWSER_TELEMETRY, EXPORTED_SPANS, TELEMETRY_LIMITS, WEB_SERVICE } from "./telemetry"
 
 /** From the page's start to the conversation shown from the device (`performance.timeOrigin` to restored). */
 export const bootTime = Metric.histogram("smithers_web_boot_ms", {
@@ -394,14 +395,20 @@ export const appLayer = <S = never>(
     Layer.provideMerge(tabEngine(host.engineWorker, host.engineName)),
     Layer.provideMerge(Page.layer(reload)),
     Layer.provide(FetchHttpClient.layer),
-    // Only the spans the relay keeps: a tab's engine requests, hundreds per answer, stay in the tab.
+    // Only the spans the relay keeps: a tab's engine requests, hundreds per answer, stay in the tab. Over the exporter,
+    // what went wrong in this tab lately, which a bug report carries (src/flows/errors.ts): the error records the
+    // exporter relays, kept in a ring built on it, so it sees what the exporter sees.
     Layer.provideMerge(
-      Otlp.layerFetch({
-        baseUrl: `${origin}${TELEMETRY_ROUTE}`,
-        serviceName: WEB_SERVICE,
-        spans: EXPORTED_SPANS,
-        ...TELEMETRY_LIMITS,
-      }),
+      TabErrors.observing(new Set(BROWSER_TELEMETRY.records)).pipe(
+        Layer.provideMerge(
+          Otlp.layerFetch({
+            baseUrl: `${origin}${TELEMETRY_ROUTE}`,
+            serviceName: WEB_SERVICE,
+            spans: EXPORTED_SPANS,
+            ...TELEMETRY_LIMITS,
+          }),
+        ),
+      ),
     ),
     Layer.provide(Layer.succeed(FetchHttpClient.Fetch, options.fetch)),
   )

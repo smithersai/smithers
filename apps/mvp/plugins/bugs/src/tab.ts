@@ -14,6 +14,15 @@ export interface Failure {
   readonly code: string
 }
 
+/** Something that went wrong in the reporter's tab: when, what kind, its record's name, its code and its trace. */
+export interface ErrorItem {
+  readonly at: string
+  readonly kind: "log" | "http" | "page"
+  readonly name: string
+  readonly code: string | null
+  readonly traceId: string | null
+}
+
 /** One report, as `core/bug-reports` has it: the row, and GitHub's prefilled new-issue form for it. */
 export interface Report {
   readonly id: string
@@ -27,6 +36,7 @@ export interface Report {
   readonly traces: ReadonlyArray<string>
   readonly runs: ReadonlyArray<string>
   readonly failures: ReadonlyArray<Failure>
+  readonly errors: ReadonlyArray<ErrorItem>
   readonly browser: string
   readonly viewport: string
   readonly createdAt: string

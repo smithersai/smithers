@@ -91,11 +91,11 @@ export const file = (report: ReportRequest, actor: Actor) =>
     const reporter = actor.subject.id
     const written = yield* sql<{ readonly txid: string }>`
       INSERT INTO bug_reports (id, reporter_id, reporter_login, reporter_role, acted_by, what, route, repo, build, traces,
-        runs, failures, browser, viewport)
+        runs, failures, errors, browser, viewport)
       VALUES (${report.id}, ${reporter}, ${actor.login ?? null}, ${actor.role}, ${actor.act?.kind ?? null},
         ${report.what}, ${report.route}, ${report.repo}, ${report.build}, ${JSON.stringify(report.traces)}::jsonb,
-        ${JSON.stringify(report.runs)}::jsonb, ${JSON.stringify(report.failures)}::jsonb, ${report.browser},
-        ${report.viewport})
+        ${JSON.stringify(report.runs)}::jsonb, ${JSON.stringify(report.failures)}::jsonb,
+        ${JSON.stringify(report.errors)}::jsonb, ${report.browser}, ${report.viewport})
       ON CONFLICT (id) DO NOTHING
       RETURNING pg_current_xact_id()::xid::text AS txid`
     if (written[0] !== undefined) return Number(written[0].txid)
@@ -109,7 +109,7 @@ export const latest = (limit: number) =>
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql<Report>`
       SELECT id::text AS id, reporter_id AS "reporterId", reporter_login AS "reporterLogin", reporter_role AS "reporterRole",
-        acted_by AS "actedBy", what, route, repo, build, traces, runs, failures, browser, viewport,
+        acted_by AS "actedBy", what, route, repo, build, traces, runs, failures, errors, browser, viewport,
         to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt"
       FROM bug_reports ORDER BY created_at DESC, id DESC LIMIT ${limit}`)
 

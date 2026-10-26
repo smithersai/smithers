@@ -1,5 +1,6 @@
 import { Effect, Layer, Option, Queue, Schema, Stream } from "effect"
 import { answerAskingTab } from "../../flows/askingTab"
+import { TabErrors } from "../../flows/errors"
 import { TabHistory } from "../../flows/history"
 import { bugContextChannel } from "./contract"
 import { contextOf } from "./context"
@@ -7,7 +8,8 @@ import { contextOf } from "./context"
 // The tab's side of `app/bug/report` (docs/features/bugs.md#what-a-report-carries): every tab keeps the pages it
 // showed and listens on the engine's bug channel, and only the tab that started a report's request answers it
 // (src/flows/askingTab.ts), with what it shows: the page before the form, the build, its latest runs' ids, trace ids and
-// failure codes (src/flows/history.ts), and the browser and window. It reads no message, answer, payload or page text.
+// failure codes (src/flows/history.ts), its latest error records (src/flows/errors.ts), and the browser and window. It
+// reads no message, answer, payload or page text.
 
 /** The call the step makes: what does this tab show? */
 export const ContextCall = Schema.Struct({ kind: Schema.Literal("context") })
@@ -34,7 +36,7 @@ const UNKNOWN_SCREEN = { browser: "unknown", viewport: "unknown" } as const
 
 /**
  * Keeps this tab's pages and answers the bug channel for its requests until its scope closes. Needs this tab's
- * `TabHistory` and `TabRequests`, which dispatch provides.
+ * `TabRequests`, which dispatch provides, and reads its `TabHistory` and `TabErrors` when it has them.
  */
 export const tabBugContext = (host: BugHost) =>
   Layer.effectDiscard(
@@ -59,16 +61,26 @@ export const tabBugContext = (host: BugHost) =>
         )
       }
       const history = yield* Effect.serviceOption(TabHistory)
+      const errors = yield* Effect.serviceOption(TabErrors)
       yield* answerAskingTab({
         channel: bugContextChannel(host.name),
         input: ContextCall,
         answer: () =>
           Effect.gen(function* () {
             const ran = Option.isSome(history) ? yield* history.value.recent : []
+            const recentErrors = Option.isSome(errors) ? yield* errors.value.recent : []
             const { browser, viewport } = host.screen?.() ?? UNKNOWN_SCREEN
             // The router's page now; the pages it showed before the form keep where the bug was.
             const current = host.pathname?.()
-            return contextOf({ current, pages: current === pages[0] ? pages.slice(1) : pages, ran, build: host.build, browser, viewport })
+            return contextOf({
+              current,
+              pages: current === pages[0] ? pages.slice(1) : pages,
+              ran,
+              errors: recentErrors,
+              build: host.build,
+              browser,
+              viewport,
+            })
           }),
       })
     }),
