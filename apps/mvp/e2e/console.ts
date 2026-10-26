@@ -1,4 +1,5 @@
 import type { ConsoleMessage, Page } from "@playwright/test"
+import type { Observation } from "./problems"
 
 // The browser's console, whole, for each test's browser log (e2e/fixtures.ts, e2e/devices.ts). Playwright's
 // `ConsoleMessage.text()` renders an object argument as Chrome's preview, which keeps its first five properties and
@@ -29,16 +30,24 @@ export const wholeText = (message: ConsoleMessage): Promise<string> =>
     () => message.text(),
   )
 
+/** Where a page's errors go to be checked: e2e/watch.ts's Problems. */
+export type ErrorSink = { readonly note: (observation: Observation) => void }
+
 /**
  * Records `page`'s console into `log`, each line where it came, as `<prefix><type>: <text>`: `text()` at once, so the
- * order and the time are the message's, then the whole text once its values are read.
+ * order and the time are the message's, then the whole text once its values are read. With `errors`, each console
+ * error (with the URL it names) and each uncaught page error also goes there, at once, for the test's check
+ * (e2e/problems.ts); without `log`, only that.
  */
-export const recordConsole = (page: Page, log: Array<string>, prefix: () => string = () => "") => {
+export const recordConsole = (page: Page, log: Array<string> | undefined, prefix: () => string = () => "", errors?: ErrorSink) => {
   page.on("console", (message) => {
+    if (message.type() === "error") errors?.note({ kind: "console", text: message.text(), url: message.location().url || undefined })
+    if (log === undefined) return
     const head = `${prefix()}${message.type()}: `
     const index = log.push(`${head}${message.text()}`) - 1
     void wholeText(message).then((text) => {
       log[index] = `${head}${text}`
     })
   })
+  if (errors !== undefined) page.on("pageerror", (error) => errors.note({ kind: "page", text: error.message }))
 }

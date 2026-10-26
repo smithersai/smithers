@@ -1,4 +1,5 @@
-import { expect, type Page, test, type TestInfo } from "@playwright/test"
+import { expect, type Page, type TestInfo } from "@playwright/test"
+import { strictTest as test } from "./watch"
 import { recordActions, step, themeOf, writeManifest } from "./fixtures"
 import { requires, scriptedAgent } from "./target"
 

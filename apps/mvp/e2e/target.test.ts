@@ -511,6 +511,15 @@ describe("the specs", () => {
     expect(offenders, "use requires(...) from e2e/target.ts instead of test.skip").toEqual([])
   })
 
+  // docs/rules.md, test.e2e-fails-on-server-errors: a spec's test comes from e2e/fixtures.ts, e2e/devices.ts or
+  // e2e/watch.ts, each of which fails it on a server, console or page error it didn't declare.
+  it("build on a test that checks for server, console and page errors, never Playwright's own", async () => {
+    const offenders = (await specs())
+      .filter(({ source }) => /import\s*\{[^}]*\btest\b[^}]*\}\s*from\s*"@playwright\/test"/.test(source))
+      .map(({ name }) => name)
+    expect(offenders, "import test from ./fixtures, ./devices or ./watch (strictTest)").toEqual([])
+  })
+
   it("never tell local from deployed by the URL themselves", async () => {
     const offenders = (await specs()).filter(({ source }) => /localhost\|127|process\.env\.BASE_URL|E2E_SESSION_COOKIE|\bDEV_URL\b/.test(source)).map(({ name }) => name)
     expect(offenders, "use target, requires and the stored session from e2e/target.ts").toEqual([])

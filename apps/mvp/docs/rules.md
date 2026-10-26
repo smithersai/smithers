@@ -392,6 +392,14 @@ Every e2e test runs against every target or declares, with `requires(...)` from 
 - **Scope:** `apps/mvp/e2e/**`.
 - **Enforced:** `e2e/target.test.ts` scans the specs for `test.skip(`, a localhost check and `E2E_SESSION_COOKIE`. The deployment run's summary (`e2e/summary.ts`) fails on a skip that names no declared need. A helper that needs a dev build or local people throws `UndeclaredNeed` where its need is unmet.
 
+### test.e2e-fails-on-server-errors
+
+Every e2e test fails on a response of 500 or above from the app, a failed `/api/` request, a console error or a page error that any of its browsers reports, unless the test causes it on purpose and declares it with `expectServerError` or `expectConsoleError` (`e2e/watch.ts`).
+
+- **Will:** "Please make sure we are testing production works" (2026-10-25 18:50), after his console showed shape reads answered `500` that no spec had failed on.
+- **Scope:** `apps/mvp/e2e/**`.
+- **Enforced:** the test fixtures (`e2e/fixtures.ts`, `e2e/devices.ts`, `strictTest` in `e2e/watch.ts`) check every test at teardown. `e2e/target.test.ts` fails a spec that imports `test` from `@playwright/test`. [infrastructure.md](infrastructure.md#server-and-console-errors) says what counts and how to declare.
+
 ### test.gif-per-flow
 
 Every e2e test records video, so every user flow has a GIF on request (`pnpm e2e:gifs`).

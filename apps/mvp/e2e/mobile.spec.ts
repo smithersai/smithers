@@ -1,4 +1,5 @@
-import { test as base, expect, request as apiRequests, type Page, type TestInfo, type Locator } from "@playwright/test"
+import { expect, request as apiRequests, type Page, type TestInfo, type Locator } from "@playwright/test"
+import { expectServerError, strictTest as base } from "./watch"
 import { writeFile } from "node:fs/promises"
 import { digestSync } from "@smthrs/crypto"
 import { renderSource, SOURCE_PATH } from "../src/features/flows-ui/source"
@@ -263,6 +264,12 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           test(`${screen.name}: controls and text fit`, async ({ page, request }, info) => {
             const files = screen.name === "files" || screen.name === "file-tabs"
             if (files) requires("codeStorage", "member")
+            // A run that doesn't exist, or a member's page opened signed out: the server refuses it, and Chrome logs that.
+            if (screen.name === "action-run" || screen.name === "run-unavailable") {
+              expectServerError(signedIn ? 404 : 401, "/api/remote-runs/*")
+              expectServerError(signedIn ? 403 : 401, "/api/shapes/remote-runs")
+            }
+            if (screen.name === "runs" && !signedIn) expectServerError(401, "/api/cloud-runs")
             await test.step(`Open ${screen.name}`, async () => {
               if (screen.name === "conversations" && signedIn) {
                 requires("personalModel", "member", "ownConversation")

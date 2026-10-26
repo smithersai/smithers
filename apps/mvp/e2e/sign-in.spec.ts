@@ -5,6 +5,7 @@ import { faultyApp, faults } from "./faults"
 import { expect, QUEUED, type Tab, test } from "./devices"
 import { step, test as pageTest } from "./fixtures"
 import { appHome, baseURL, me, requires, sessionFiles, signedOut } from "./target"
+import { expectServerError } from "./watch"
 
 // Sign-in, end to end (docs/features/sign-in.md): the real app, ChatApi and Postgres. Under `alchemy dev` without the
 // GitHub App, a local developer is signed in as an Admin until they sign out, and "Sign in with GitHub" signs them in
@@ -294,6 +295,8 @@ test("a tab sealed while its owner was signed out opens their data once a sessio
 
 test("an old tab's pending person write cannot use a different account's cookie", { annotation: { type: "summary", description: "A question queued offline remains bound to its author while the browser changes accounts." } }, async ({ devices }) => {
   requires("devPeople")
+  // The other account's cookie refuses the old tab's write: Chrome logs that 401.
+  expectServerError(401, QUESTIONS_ROUTE)
   test.setTimeout(180_000)
   const [alice] = await devices.open("Alice")
   await alice.device.offline()

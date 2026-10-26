@@ -219,7 +219,13 @@ Leave `SESSION_SECRET` unset: Alchemy generates it once (`infra/SignIn.ts`) and 
 1. Set the credentials above.
 2. `pnpm plan` shows what `pnpm run deploy` would create, update or run, and changes nothing.
 3. `pnpm run deploy` (`pnpm deploy` is pnpm's own command, not this script) asks before it changes anything; `pnpm run deploy --yes` doesn't, and a terminal that can't prompt needs it. It creates the Neon project, runs the migrations, then creates Hyperdrive, Electric's container and gateway, ChatApi and the site. It prints the site's URL.
-4. Check it:
+4. Check it. First the health spec, which cold-loads the landing page and both repositories, signed out and signed in, in eight browsers at once, and fails on any server error, failed request, console error or page error ([Server and console errors](#server-and-console-errors)):
+
+   ```sh
+   E2E_PROD_URL=https://<site> pnpm e2e:prod health.spec.ts
+   ```
+
+   Then by hand:
 
    ```sh
    curl -i https://<site>/api/auth/session                                       # 200 {"signedIn":false,"available":true}
@@ -311,6 +317,37 @@ E2E_PROD_URL=<the production URL> pnpm e2e:prod [spec…] [playwright options…
 - Two workers, no retries and no traces: a trace holds the session cookie.
 
 **Rehearsal.** A local stack that signs in through GitHub runs as a deployment: `E2E_TARGET=deployment BASE_URL=http://localhost:1338 pnpm exec playwright test`.
+
+### Server and console errors
+
+Every e2e test, locally and against a deployment, fails on each of these that its browsers report and it didn't declare (`e2e/watch.ts`, `e2e/problems.ts`):
+
+- a response of 500 or above from the app's origin, to any request;
+- a failed `/api/` request, such as a reset connection, an empty response or an HTTP/2 error. A request the page cancelled itself (`net::ERR_ABORTED`: a navigation, a closed page, an interrupted fetch, the telemetry exporter giving up after 10 s) doesn't count, and neither does one an offline device couldn't send;
+- a console error, including Chrome's line about a refused response, such as a 401. Electric's 409 on a shape, which tells its client to start the shape again, doesn't count, and neither does a failed load from a server on this machine that isn't the app: a test fixture an earlier test stopped;
+- an uncaught page error.
+
+The check watches every browser context a test opens: the default page's, each device's (`e2e/devices.ts`) and any the test opens itself. A failing test's `browser.log` ends with the list. Each problem shows its status, method and path, with the query's parameter names but no values, then its count, marked `declared` or `UNDECLARED`.
+
+A test that causes one on purpose declares it, in its body or in a file or describe block:
+
+```ts
+import { expectConsoleError, expectServerError } from "./watch"
+
+expectServerError(503, "/api/auth/session") // a 503 response on that path; * stands for any characters
+expectServerError("failed", "/api/runs/*/credential") // a request that got no response
+expectServerError(401, "/api/shapes/pulls") // Chrome's console error about a refused response
+expectConsoleError("Sync failed") // a console or page error containing the text
+```
+
+Two declarations come from outside the test body:
+
+- **The environment.** A local dev server without Code Storage answers its clones and repository reads `503 not_configured`. Without a model key, its model endpoint answers `502`. Without the GitHub App, GitHub's anonymous allowance runs out during a suite and About reads answer `503 rate_limited`. Every test on such a server has those declared (`environmentAnnotations`, `e2e/problems.ts`), and its `browser.log` says so. A deployment has all three services, so nothing is declared there.
+- **Going offline.** `Device.offline()` declares each WebSocket that can't connect. On a dev build it also declares what the dev server's service worker never cached: Vite's client, and modules, workers and fonts no page fetched while online (`expectOfflineErrors`).
+
+Nothing else may declare one, and `e2e/health.spec.ts` declares none. A spec builds on `test` from `e2e/fixtures.ts` or `e2e/devices.ts`, or on `strictTest` from `e2e/watch.ts`, never on Playwright's own; `e2e/target.test.ts` checks. The reason: from 2026-10-24 smithers.sh answered its shapes `500` 60 to 600 times an hour and no spec failed, because the browser retries a failed shape and the specs checked only what rendered in the end.
+
+**Health.** `e2e/health.spec.ts` cold-loads `/`, `/smithersai/smithers` and `/smithersai/vibelang`, signed out and signed in, in eight fresh browsers at once per case. It waits until every shape each page asked for is up to date, which is when a response to it carries Electric's `electric-up-to-date` header (`e2e/sync.ts`). Locally, the repository pages need Code Storage (`codeStorage`), since their refs come from it. Run it first after every deploy ([Deploy](#deploy), step 4).
 
 ### Limits
 

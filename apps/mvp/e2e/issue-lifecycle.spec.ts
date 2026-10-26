@@ -1,4 +1,5 @@
-import { test, expect, type Page, type TestInfo } from "@playwright/test"
+import { expect, type Page, type TestInfo } from "@playwright/test"
+import { strictTest as test } from "./watch"
 import { recordActions, step, themeOf, writeManifest } from "./fixtures"
 import { NEEDS_REPRO_COMMENT, NEEDS_REPRO_LABEL, COMMITMENTS, COMMITMENT_COPY } from "../src/features/issues/lifecycle"
 import { requires, scratchRepository } from "./target"

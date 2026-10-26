@@ -8,6 +8,7 @@ import { devReload } from "./devReload"
 import { faultyApp, faults } from "./faults"
 import { allServerRows, type Row } from "./shape"
 import { appHome, atOwnPlace, guard, requires, target, UndeclaredNeed } from "./target"
+import { expectOfflineErrors, problems, UNDECLARED, type Watched } from "./watch"
 import {
   COULDNT_ANSWER,
   expect,
@@ -42,6 +43,8 @@ export type Message = { role: string; text: string; state: "pending" | "streamin
 // A small device label in each video, so a GIF shows which device is which and which is offline.
 // It sits outside the app's root, ignores the pointer and is hidden from assistive technology.
 const label = (name: string) => {
+  // The top page only: a frame inside it, such as the sandboxed terminal, has no badge.
+  if (window !== window.top) return
   const paint = () => {
     if (!document.body) return
     let badge = document.getElementById("e2e-device")
@@ -62,7 +65,13 @@ const label = (name: string) => {
       })
       document.body.append(badge)
     }
-    const state = sessionStorage.getItem("e2e-network") ?? ""
+    // A document with an opaque origin (a sandboxed or data: page) may not read sessionStorage: it shows no state.
+    let state = ""
+    try {
+      state = sessionStorage.getItem("e2e-network") ?? ""
+    } catch {
+      state = ""
+    }
     badge.textContent = state === "" ? name : `${name} · ${state}`
     badge.style.background = state === "" ? "#1f2937" : "#b42318"
   }
@@ -114,9 +123,10 @@ export class Device {
     readonly faulty: boolean,
   ) {}
 
-  // The device loses its network: no sync and no asking.
+  // The device loses its network: no sync and no asking. What it then logs offline is the test's doing (e2e/watch.ts).
   offline() {
     return step(`${this.name} goes offline`, async () => {
+      expectOfflineErrors()
       await this.context.setOffline(true)
       await this.paint("offline")
     })
@@ -440,6 +450,8 @@ class Devices {
   constructor(
     private readonly browser: Browser,
     private readonly testInfo: TestInfo,
+    // Every device's context, watched for server, console and page errors (e2e/watch.ts).
+    private readonly problems: Watched,
   ) {}
 
   // Opens one device per name, in parallel, each on /app with its conversation open, on the real services.
@@ -553,6 +565,9 @@ class Devices {
         .soft(tab.devReloads, `${tab.name}: the dev server never reloaded it mid-test (a watched file changed); a run through one is void`)
         .toEqual([])
     }
+    // Every device's server, console and page errors, while their pages are still open: a closing page cancels its requests.
+    const problemLog: Array<string> = []
+    expect.soft(this.problems.check(this.testInfo, problemLog), UNDECLARED).toEqual([])
     const failed = this.testInfo.status !== this.testInfo.expectedStatus
     if (failed) {
       // Saved beside the test's videos and attached: each tab's browser and network log, screenshot, and what it showed.
@@ -561,6 +576,7 @@ class Devices {
         await writeFile(path, body)
         await this.testInfo.attach(name, { path, contentType })
       }
+      await save("browser.log", problemLog.join("\n"), "text/plain")
       for (const tab of tabs) {
         const slug = tab.name.replace(/\W+/g, "-")
         await save(`${slug}-browser.log`, tab.log.join("\n"), "text/plain")
@@ -582,12 +598,13 @@ class Devices {
 
 // Built on Playwright's own test, not fixtures.ts': a device test opens its own contexts and saves each tab's log,
 // so it needs no default page.
-export const test = base.extend<{ devices: Devices; spendGuard: void }, { redactedRequests: void }>({
+export const test = base.extend<{ devices: Devices; spendGuard: void; problems: Watched }, { redactedRequests: void }>({
   redactedRequests: [...redactedRequests],
+  problems: [...problems],
   // A deployment run stops asking once its answers spent the run's token budget (e2e/spend.ts).
   spendGuard: [async ({ playwright }, use) => use(await guardSpend(() => playwright.request.newContext())), { auto: true }],
-  devices: async ({ browser }, use, testInfo) => {
-    const devices = new Devices(browser, testInfo)
+  devices: async ({ browser, problems }, use, testInfo) => {
+    const devices = new Devices(browser, testInfo, problems)
     await use(devices)
     await devices.teardown()
   },

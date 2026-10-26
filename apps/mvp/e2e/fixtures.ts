@@ -8,6 +8,7 @@ import { redactRequestErrors } from "./redact"
 import { allServerRows } from "./shape"
 import { runStartedAt, spendGuard, tokenBudget } from "./spend"
 import { meets, target } from "./target"
+import { problems, UNDECLARED, type Watched } from "./watch"
 
 // The status copy (docs/decisions/0002-local-first.md §2) and how many messages show before Load earlier: chat's
 // contract, which the app and these tests share.
@@ -228,9 +229,11 @@ const writeLog = async (path: string, log: Array<string>) => {
   return path
 }
 
-// Every test keeps the browser's console and page errors; a failing test saves them as browser.log. Every test also
-// writes flow.json beside its video, so e2e/gifs.mjs makes one video and GIF per flow. A test that opens its own
-// contexts instead (repo.spec.ts "clone") leaves the default page blank: its manifest lists those contexts' videos.
+// Every test keeps the browser's console and page errors; a failing test saves them as browser.log, with the list of
+// server, console and page errors its browsers reported (e2e/watch.ts). It fails on each of those it didn't declare.
+// Every test also writes flow.json beside its video, so e2e/gifs.mjs makes one video and GIF per flow. A test that
+// opens its own contexts instead (repo.spec.ts "clone") leaves the default page blank: its manifest lists those
+// contexts' videos.
 /**
  * This worker's spend guard (e2e/spend.ts): in a deployment, once the run's answers spent its token budget, every later
  * test fails before it asks. It reads the conversation through `request`, signed in as the run.
@@ -273,14 +276,17 @@ export const redactedRequests = [
   { scope: "worker", auto: true },
 ] as const
 
-export const test = base.extend<{ browserLog: Array<string>; spendGuard: void }, { redactedRequests: void }>({
+export const test = base.extend<{ browserLog: Array<string>; spendGuard: void; problems: Watched }, { redactedRequests: void }>({
   redactedRequests: [...redactedRequests],
+  // Every context the test opens, watched for server, console and page errors (e2e/watch.ts).
+  problems: [...problems],
   // A deployment run stops asking once its answers spent the run's token budget (e2e/spend.ts).
   spendGuard: [async ({ playwright }, use) => use(await guardSpend(() => playwright.request.newContext())), { auto: true }],
   // The default page's mode, from its first frame: `themeOf`.
   colorScheme: async ({}, use, testInfo) => use(themeOf(testInfo)),
   browserLog: [
-    async ({ page }, use, testInfo) => {
+    async ({ page, problems }, use, testInfo) => {
+      problems.watch(page.context())
       const startedAt = Date.now()
       await page.addInitScript(watchForSpinners)
       await recordActions(page, testInfo)
@@ -295,6 +301,7 @@ export const test = base.extend<{ browserLog: Array<string>; spendGuard: void },
       const failures = crashes.failure === undefined ? [] : [crashes.failure]
       describeCrashes(testInfo, failures)
       expect.soft(failures, failures.join("\n") || "no page crashed").toEqual([])
+      expect.soft(problems.check(testInfo, log), UNDECLARED).toEqual([])
       if (!page.isClosed() && crashes.failure === undefined) expect(await spinnersSeen(page), "the page never showed a loading state").toEqual([])
       if (testInfo.status !== testInfo.expectedStatus) {
         await testInfo.attach("browser-log", { path: await writeLog(testInfo.outputPath("browser.log"), log), contentType: "text/plain" })

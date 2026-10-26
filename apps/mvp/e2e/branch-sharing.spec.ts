@@ -2,6 +2,7 @@ import { questionIn } from "./messages"
 import type { Page } from "@playwright/test"
 import { expect, type Tab, test } from "./devices"
 import { requires } from "./target"
+import { expectServerError } from "./watch"
 
 // Sharing a branch, Google Docs style, end to end (decision 0013 §2, §4 and §5, docs/features/branch-workspace.md#sharing):
 // real browsers on separate devices against the real app, ChatApi, the branch's room, its machine, Postgres and
@@ -206,6 +207,9 @@ test("branch sharing: anyone in the repository with the link reaches Ben but nev
   },
 }, async ({ devices }) => {
   test.setTimeout(5 * 60_000)
+  // Gus, a Guest, is refused the repository's TODOs.
+  expectServerError(403, "/api/shapes/todos")
+  expectServerError(403, "/api/shapes/todo-requests")
   const [maya] = await devices.open("Maya")
   const [ben] = await devices.openTeammate("Ben")
   const [gus] = await devices.openAs("guest", "Gus")

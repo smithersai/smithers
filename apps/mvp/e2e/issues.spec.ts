@@ -1,4 +1,5 @@
-import { test as base, expect, type Browser, type BrowserContext, type Page, type TestInfo } from "@playwright/test"
+import { expect, type Browser, type BrowserContext, type Page, type TestInfo } from "@playwright/test"
+import { strictTest as base } from "./watch"
 import { writeFile } from "node:fs/promises"
 import { SIGN_IN, SIGN_OUT } from "../src/features/auth/contract"
 import {
