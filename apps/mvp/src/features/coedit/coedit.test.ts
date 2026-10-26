@@ -550,7 +550,26 @@ describe("a shared file", () => {
     expect(fileOf(faulty.texts(), conversation, "b.txt")?.shown).toBe(false)
   }, WITHIN)
 
-  test("a file too large to edit, one the person may not read, and a Save that fails say so", async () => {
+  test("a path with nothing at it opens empty, a new file its first Save makes", async () => {
+    const opened = await open()
+    const { owner } = opened
+    const branchId = (await owner.branch.actions.open("octo", "hello", "feature/one"))!
+    const conversation = owner.branch.queries.current.toArray[0]!.conversationId!
+    const fileId = (await owner.coedit.showFile(branchId, "notes/new.md"))!
+    const read = await call(opened, "read")
+    await opened.run(settle(read.callId, { status: "failed", failure: "not_found" }))
+    await until(() => expect(fileOf(owner.texts(), conversation, "notes/new.md")).toMatchObject({ status: "ready", text: "" }))
+    owner.coedit.type(fileId, "# New\n", { base: "", selection: { anchor: 6, head: 6 } })
+    await until(() => expect(fileOf(owner.texts(), conversation, "notes/new.md")?.text).toBe("# New\n"))
+    const saving = owner.coedit.save(fileId)
+    const write = await call(opened, "write")
+    expect(write.call).toEqual({ tool: "write", path: "notes/new.md", content: "# New\n" })
+    await opened.run(settle(write.callId, { status: "done", result: { tool: "write", path: "notes/new.md", bytes: 6 }, generation: 1 }))
+    await saving
+    expect(fileOf(owner.texts(), conversation, "notes/new.md")).toMatchObject({ saving: false, saveFailed: false, saved: true })
+  }, WITHIN)
+
+  test("a file too large to edit, a path that isn't a file, and a Save that fails say so", async () => {
     const opened = await open()
     const { owner } = opened
     const branchId = (await owner.branch.actions.open("octo", "hello", "feature/one"))!
@@ -564,10 +583,10 @@ describe("a shared file", () => {
     }))
     await until(() => expect(fileOf(owner.texts(), conversation, "huge.bin")).toMatchObject({ status: "failed", failure: "too_large" }))
 
-    await owner.coedit.showFile(branchId, "gone.txt")
-    const gone = await call(opened, "read", 2)
-    await opened.run(settle(gone.callId, { status: "failed", failure: "not_found" }))
-    await until(() => expect(fileOf(owner.texts(), conversation, "gone.txt")).toMatchObject({ status: "failed", failure: "unavailable" }))
+    await owner.coedit.showFile(branchId, "dir")
+    const dir = await call(opened, "read", 2)
+    await opened.run(settle(dir.callId, { status: "failed", failure: "not_a_file" }))
+    await until(() => expect(fileOf(owner.texts(), conversation, "dir")).toMatchObject({ status: "failed", failure: "unavailable" }))
 
     const fileId = (await owner.coedit.showFile(branchId, "ok.txt"))!
     const ok = await call(opened, "read", 3)

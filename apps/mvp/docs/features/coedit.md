@@ -23,7 +23,7 @@ A text is `@smthrs/sync`'s `SharedText`: one Yjs document holding one text, wrap
   | A file of a branch's working copy | `branch:<id>` | whoever may view the branch | whoever may edit it |
   | A run's answer box, per question | `run:<id>` | the person who started the run | the same |
 
-- **A file's first content** is one seed: the working copy's text when someone who may edit first opens it, read through `sandbox/read` and written as `SharedText`'s seed replica. ChatApi keeps one seed per text (`text_updates_seed`), and a device applies a seed only as ChatApi stored it, so two people opening a file at once start from the same text. A file the sandbox reads only in part (over 1 MiB) isn't opened: `Too large`.
+- **A file's first content** is one seed: the working copy's text when someone who may edit first opens it, read through `sandbox/read` and written as `SharedText`'s seed replica. ChatApi keeps one seed per text (`text_updates_seed`), and a device applies a seed only as ChatApi stored it, so two people opening a file at once start from the same text. A path with nothing at it (the read settles `not_found`) opens empty: a new file, which its first Save makes, parent folders included. A file the sandbox reads only in part (over 1 MiB) isn't opened: `Too large`.
 
 ## The prompt
 

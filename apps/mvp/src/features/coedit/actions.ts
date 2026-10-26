@@ -226,7 +226,8 @@ export const followPrompt = (current: Ref.Ref<ShownPrompt | undefined>, pending:
  * Shows file `path` of branch `branchId`'s working copy to edit together, and joins its room; `undefined` leaves the
  * room of the file shown. A file nobody has opened yet starts from what the working copy holds: this tab reads it
  * (`sandbox/read`) and sends it as the text's one seed; whoever's seed ChatApi took first, every device starts from
- * it. A file over the sandbox's limit, or one this person may not read, fails. Resolves with the file's text id.
+ * it. A path with nothing at it opens empty, a new file its first Save makes. A file over the sandbox's limit, or one this
+ * person may not read, fails. Resolves with the file's text id.
  */
 export const showFile = (branchId: string, path: string | undefined) =>
   Effect.gen(function* () {
@@ -252,17 +253,21 @@ const seed = (live: Live, conversation: string, path: string) =>
     // The sandbox refuses a read to anyone who may not edit the branch: they see a file only once someone who may has
     // opened it.
     if (read._tag === "Failure") return yield* setRow(live, { status: "failed", failure: "unavailable" })
-    if (read.success._tag === "Failed") {
+    // Nothing at the path yet: a new file, which starts empty and is made by its first Save.
+    const missing = read.success._tag === "Failed" &&
+      read.success.error._tag === "@smthrs/mvp/sandbox/SandboxCallFailed" && read.success.error.failure === "not_found"
+    if (read.success._tag === "Failed" && !missing) {
       const refused = read.success.error._tag === "@smthrs/mvp/sandbox/SandboxCallRefused"
       return yield* setRow(live, { status: "failed", failure: refused ? "forbidden" : "unavailable" })
     }
-    if (read.success.value.truncated) return yield* setRow(live, { status: "failed", failure: "too_large" })
+    const content = read.success._tag === "Done" ? read.success.value : { content: "", truncated: false }
+    if (content.truncated) return yield* setRow(live, { status: "failed", failure: "too_large" })
     const chat = yield* ChatStore
     const row: Sending = {
       id: crypto.randomUUID(),
       textId: live.id,
       scope: live.scope,
-      data: Base64.encode(SharedText.seed(read.success.value.content)),
+      data: Base64.encode(SharedText.seed(content.content)),
       seed: true,
     }
     // Only a tab that doesn't lead is refused at once: it takes the lead first. A tab that leads is never refused.
