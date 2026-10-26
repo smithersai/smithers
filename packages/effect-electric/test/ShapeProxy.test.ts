@@ -205,9 +205,9 @@ describe("refusals: no Electric needed", () => {
     await h.request("?offset=-1&who=person-1&params%5B1%5D=person-2")
     expect([...h.upstream[0]!.searchParams]).toEqual([
       ["offset", "-1"],
+      ["params[1]", "person-1"],
       ["table", "items"],
-      ["where", "owner = $1"],
-      ["params[1]", "person-1"]
+      ["where", "owner = $1"]
     ])
   })
 
@@ -266,7 +266,7 @@ describe("faults: no Electric needed", () => {
     }
     const response = await h.request(`?${new URLSearchParams({ offset: "-1", ...subset, handle: "h-1" })}`)
     expect(response.status).toBe(502)
-    expect([...h.upstream[0]!.searchParams]).toEqual([["offset", "-1"], ["handle", "h-1"], ["table", "items"]])
+    expect([...h.upstream[0]!.searchParams]).toEqual([["handle", "h-1"], ["offset", "-1"], ["table", "items"]])
     expect(h.line()?.annotations).toEqual({
       status: 502,
       route: "electric.shape",
@@ -303,7 +303,7 @@ describe("faults: no Electric needed", () => {
     const h = harness({ secret: Redacted.make(sentinel), secretAs: "bearer", sourceId: "source-1" })
     h.fault({ _tag: "down" })
     await h.request(`?offset=-1&secret=${sentinel}x`)
-    expect([...h.upstream[0]!.searchParams]).toEqual([["offset", "-1"], ["table", "items"], ["source_id", "source-1"]])
+    expect([...h.upstream[0]!.searchParams]).toEqual([["offset", "-1"], ["source_id", "source-1"], ["table", "items"]])
     expect(h.upstreamHeaders[0]!.get("authorization")).toBe(`Bearer ${sentinel}`)
     expect(JSON.stringify(h.logs)).not.toContain(sentinel)
     expect(h.spans.length).toBeGreaterThan(1)
@@ -400,7 +400,7 @@ describe("caching: no Electric needed", () => {
 })
 
 describe.skipIf(!electricUp)("through Electric", () => {
-  test("forwards only the protocol parameters, the first of each, then the host's shape, its columns, and credentials", async () => {
+  test("forwards only the protocol parameters, the first of each, with the host's shape, its columns, and credentials, sorted by name", async () => {
     const secret = "electric-secret-4b2d"
     const h = harness({
       secret: Redacted.make(secret),
@@ -413,21 +413,21 @@ describe.skipIf(!electricUp)("through Electric", () => {
         "&params%5B1%5D=x&secret=stolen&source_id=mine&subset__where_expr=%7B%7D&subset__order_by_expr=%5B%5D"
     )
     expect([...h.upstream[0]!.searchParams]).toEqual([
-      ["offset", "-1"],
-      ["handle", "h-1"],
-      ["live", "false"],
+      ["cache-buster", "b"],
+      ["columns", "id,position"],
       ["cursor", "7"],
-      ["live_sse", "false"],
       ["experimental_live_sse", "false"],
       ["expired_handle", "h-0"],
+      ["handle", "h-1"],
+      ["live", "false"],
+      ["live_sse", "false"],
       ["log", "full"],
-      ["cache-buster", "b"],
-      ["table", "items"],
-      ["where", "\"position\" > $1"],
+      ["offset", "-1"],
       ["params[1]", "0"],
-      ["columns", "id,position"],
       ["secret", secret],
-      ["source_id", "source-1"]
+      ["source_id", "source-1"],
+      ["table", "items"],
+      ["where", "\"position\" > $1"]
     ])
     expect(`${h.upstream[0]!.origin}${h.upstream[0]!.pathname}`).toBe(`${ELECTRIC_URL}/v1/shape`)
     await until(() => expect(h.logs).toHaveLength(1))

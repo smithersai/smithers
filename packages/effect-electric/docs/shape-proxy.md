@@ -80,17 +80,22 @@ on a `401` or `403`.
 
 ## What reaches Electric
 
-The proxy builds every upstream request itself, in this order:
+The proxy builds every upstream request itself from:
 
-1. The Electric client's protocol parameters, in the order the browser sent
-   them, the first value of each: `offset`, `handle`, `live`, `live_sse`,
-   `experimental_live_sse`, `cursor`, `expired_handle`, `log` and
-   `cache-buster`.
-2. The host's shape: `table`, then `where` and its `params` when `shape` sets
-   them, as `params[1]`, `params[2]` and so on, then `columns`, comma-separated,
-   when `shape` lists them.
+1. The Electric client's protocol parameters, the first value of each:
+   `offset`, `handle`, `live`, `live_sse`, `experimental_live_sse`, `cursor`,
+   `expired_handle`, `log` and `cache-buster`.
+2. The host's shape: `table`, `where` and its `params` when `shape` sets them,
+   as `params[1]`, `params[2]` and so on, and `columns`, comma-separated, when
+   `shape` lists them.
 3. `secret` and `source_id`, when the connection has them; `secret` only when
    `secretAs` is `"parameter"`, the default.
+
+The URL is canonical: its parameters are sorted by name and each value is
+encoded once. Two requests for the same shape at the same `handle`, `offset`
+and `cursor` send Electric the same URL, whatever order the browser sent its
+parameters in, and two different shapes never send the same URL. A cache
+between the proxy and Electric can key on that URL.
 
 Every other parameter the browser sends is dropped, including `table`,
 `where`, `params`, `columns`, `replica`, `secret`, `source_id` and every
@@ -104,6 +109,26 @@ Electric's status, headers and body stream back. `content-encoding` and
 `content-length` are dropped, because `fetch` has already decoded the body, and
 so is every `access-control-*` header, because the proxy serves the browser's
 own origin.
+
+## Call Electric another way
+
+The proxy calls Electric with the request's `HttpClient`. When Electric is
+reached some other way than the rest of your server's requests, for example
+through a platform's private binding to a gateway in front of Electric,
+provide that client as `ShapeProxy.Upstream`. The proxy calls it instead, and
+every other request keeps your `HttpClient`:
+
+```ts
+import { ShapeProxy } from "@smthrs/effect-electric"
+import * as Effect from "effect/Effect"
+import type * as HttpClient from "effect/http/HttpClient"
+
+declare const gateway: HttpClient.HttpClient
+
+const handler = ShapeProxy.make({ url: "http://electric-gateway", shape: { table: "items" } }).pipe(
+  Effect.provideService(ShapeProxy.Upstream, gateway)
+)
+```
 
 ## Caching
 

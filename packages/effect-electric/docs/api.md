@@ -347,6 +347,10 @@ const config: (options?: { readonly url?: string }) => Config.Config<Connection>
 const defaultMetric: Metric.Counter<number>
 const responses: Metric.Counter<number>
 
+class Upstream extends Context.Service<Upstream, HttpClient.HttpClient>()(
+  "@smthrs/effect-electric/ShapeProxy/Upstream"
+) {}
+
 class Refused extends Data.TaggedError("Refused")<{
   readonly status: 401 | 403 | 503
   readonly upstream?: "database" | "access"
@@ -365,5 +369,8 @@ class Refused extends Data.TaggedError("Refused")<{
 `make` serves one shape, fixed or decided per request, and answers a
 `Refused` with its status; `config` reads `ELECTRIC_URL`, `ELECTRIC_SECRET`,
 `ELECTRIC_SECRET_AS` and `ELECTRIC_SOURCE_ID`; `defaultMetric` is the `electric_shape_requests` counter
-`make` updates when `metric` is omitted. See
+`make` updates when `metric` is omitted; `Upstream` is the `HttpClient`
+`make` calls Electric with in place of the request's own, when the host
+provides one. `make` sends Electric one canonical URL per request, its
+parameters sorted by name. See
 [Proxy shapes through your server](shape-proxy.md).

@@ -9,11 +9,23 @@
 
 ### Added
 
+- `ShapeProxy.Upstream`: an `HttpClient` the proxy calls Electric with in
+  place of the request's own, for Electric reached through a private binding
+  while the host's other requests keep their client.
 - `persist: { schemaVersion }` on `ElectricCollection.make`: the rows and
   Electric's resume state are kept through `@smthrs/effect-tanstack-db`'s
   `Persistence`, restored before the network answers (`restored`), and the
   shape resumes from its stored handle and offset.
 - Peer dependency `@tanstack/db-sqlite-persistence-core` 0.4.11.
+
+### Changed
+
+- `ShapeProxy` sends Electric a canonical URL: the forwarded protocol
+  parameters and the host's shape and credentials sorted by name, each encoded
+  once, so the same shape at the same point of its log is one URL whatever
+  order the browser sent, and a cache between the proxy and Electric can key
+  on it. Before, protocol parameters went in the browser's order, ahead of
+  the shape.
 
 ### Removed
 

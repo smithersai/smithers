@@ -17,6 +17,12 @@
  *   a browser reads the whole shape or nothing;
  * - adds Electric's `secret`, as a parameter or a bearer token, and Electric
  *   Cloud's `source_id`;
+ * - sends one canonical URL per request (parameters sorted by name, each
+ *   encoded once), so the same shape at the same point of its log is the same
+ *   URL whatever order the browser sent, for a cache between the proxy and
+ *   Electric to key on;
+ * - calls Electric with the host's `Upstream` client when it provides one,
+ *   for example a platform's private binding to Electric's gateway;
  * - tells browsers and CDNs not to keep a response (`cache-control: private,
  *   no-store`), unless the host opts a public shape in with `cache`;
  * - records one span, one log line and one count per request with plain
@@ -27,6 +33,7 @@
 
 import * as Clock from "effect/Clock"
 import * as Config from "effect/Config"
+import * as Context from "effect/Context"
 import * as Data from "effect/Data"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -188,6 +195,22 @@ const protocolParameters: ReadonlyArray<string> = [
 ]
 
 /**
+ * The `HttpClient` the proxy calls Electric with, when the host provides one;
+ * otherwise the proxy uses the request's own `HttpClient`.
+ *
+ * Provide it when Electric is reached another way than the rest of the
+ * host's requests, for example through a platform's private binding to a
+ * gateway in front of Electric, while every other call keeps the host's
+ * `HttpClient`.
+ *
+ * @category services
+ * @since 0.2.0
+ */
+export class Upstream extends Context.Service<Upstream, HttpClient.HttpClient>()(
+  "@smthrs/effect-electric/ShapeProxy/Upstream"
+) {}
+
+/**
  * The counter `make` updates when `Options.metric` is omitted:
  * `electric_shape_requests`, by `status` and `live`.
  *
@@ -254,13 +277,18 @@ const noStore = { "cache-control": "private, no-store" } as const
 
 /**
  * The handler for one shape. Requires the `HttpServerRequest` it answers and
- * the `HttpClient` it calls Electric with.
+ * the `HttpClient` it calls Electric with, unless the context holds an
+ * `Upstream`, which the proxy calls instead.
  *
  * - `GET` only; another method is 405.
  * - The browser's parameters outside the Electric client's protocol are
  *   dropped, never forwarded: the shape's own (`table`, `where`, `params`,
  *   `columns`, `replica`), the credentials, and a subset request's
  *   `subset__*`.
+ * - Electric's URL is canonical: the first value of each protocol parameter
+ *   and the host's shape and credentials, sorted by name and each encoded
+ *   once, so two requests for the same shape at the same `handle`, `offset`
+ *   and `cursor` send the same URL, and two different shapes never do.
  * - A `shape` Effect that fails with `Refused` is answered with its status,
  *   and Electric is never called.
  * - Electric unreachable is 502. Otherwise Electric's status, headers and body
@@ -378,14 +406,13 @@ export const make = <R = never>(
     }
     const shape = decided.success
 
-    let upstream = HttpClientRequest.get(shapeUrl)
-    const forwarded = new Set<string>()
+    // The first value of each protocol parameter, then the host's shape and credentials. The two sets of names never
+    // overlap, so every name appears once and sorting them gives one URL per request whatever the browser's order.
+    const parameters: Array<readonly [string, string | Redacted.Redacted<string>]> = []
     for (const [key, value] of incoming) {
-      if (!protocolParameters.includes(key) || forwarded.has(key)) continue
-      forwarded.add(key)
-      upstream = HttpClientRequest.appendUrlParam(upstream, key, value)
+      if (protocolParameters.includes(key) && !parameters.some(([name]) => name === key)) parameters.push([key, value])
     }
-    const host: Array<readonly [string, string | Redacted.Redacted<string>]> = [
+    parameters.push(
       ["table", shape.table],
       ...(shape.where === undefined ? [] : [["where", shape.where] as const]),
       ...Object.entries(shape.params ?? {}).map(([key, value]) => [`params[${key}]`, value] as const),
@@ -393,14 +420,17 @@ export const make = <R = never>(
       // Redacted, so the client span's `url.full` shows `secret=REDACTED`; the request carries the value.
       ...(options.secret === undefined || options.secretAs === "bearer" ? [] : [["secret", options.secret] as const]),
       ...(options.sourceId === undefined ? [] : [["source_id", options.sourceId] as const])
-    ]
-    for (const [key, value] of host) upstream = HttpClientRequest.appendUrlParam(upstream, key, value)
+    )
+    parameters.sort(([a], [b]) => (a < b ? -1 : 1))
+    let upstream = HttpClientRequest.get(shapeUrl)
+    for (const [key, value] of parameters) upstream = HttpClientRequest.appendUrlParam(upstream, key, value)
     // The client span records an `authorization` header redacted.
     if (options.secret !== undefined && options.secretAs === "bearer") {
       upstream = HttpClientRequest.bearerToken(upstream, options.secret)
     }
 
-    const client = yield* HttpClient.HttpClient
+    const injected = yield* Effect.serviceOption(Upstream)
+    const client = Option.isSome(injected) ? injected.value : yield* HttpClient.HttpClient
     const response = yield* client.execute(upstream).pipe(
       Effect.option,
       // The browser went away before Electric answered, as it does with a live request it no longer needs.
