@@ -62,9 +62,12 @@ export const syncAge = Metric.gauge("github_sync_age_seconds", {
   description: "Seconds since the repository's issues last synced",
 })
 
-/** Tokens a step asked for, by `kind` (`user`, `app`) and `outcome`. */
+/**
+ * Tokens asked for, by `kind` and `outcome`: a step's (`user`, `app`; worker/github/Tokens.ts), and the deployment's
+ * read token (`read`, outcome `minted` or `anonymous`; worker/github/ReadToken.ts).
+ */
 export const tokenMints = Metric.counter("github_token_mints", {
-  description: "GitHub tokens a step asked for, by kind and outcome",
+  description: "GitHub tokens asked for, by kind and outcome",
   incremental: true,
 })
 

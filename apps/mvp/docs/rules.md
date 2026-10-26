@@ -607,3 +607,34 @@ asynchronous; a cached signer initialization was not safe to share.
 `worker/RepoAbout.workerd.test.ts` exercises thirty concurrent cold reads through
 the real bundled RepoApi route, real Postgres and GitHub in workerd. Each must
 return 200 with the repository's name; Node cannot reproduce this ownership fault.
+
+Waiting counts as sharing (2026-10-25 ReadToken incident). `github/ReadToken.ts`
+held one `Semaphore.make(1)` per isolate around the GitHub App token's mint, so
+a signed-out shape read waiting on another request's permit was cancelled as
+hung. The rule also rejects `Semaphore.make/makeUnsafe`, `TxSemaphore.make`,
+`Latch.make/makeUnsafe`, `Queue` and `TxQueue` constructors
+(`make/bounded/unbounded/dropping/sliding`), `PubSub` and `TxPubSub`
+constructors, `SynchronizedRef.make/makeUnsafe` (a permit around each update)
+and `SubscriptionRef.make` (a PubSub), with the same alias, `effect/<Module>`
+import and pipe-form resolution. `Ref.make/makeUnsafe` stays allowed for plain
+values and is rejected when its type arguments, or the initial value's, name
+`Effect`, `Promise`, `PromiseLike`, `Deferred` or `Fiber`, or when the initial
+value calls or names an Effect, Deferred or Fiber member or a `Promise`. A
+function in the initial value is a thunk, and a `yield*` or `await` hands over a
+completed value; neither is rejected. Share completed values only, such as a
+minted token and its expiry in a plain `Ref`, and let each request do its own
+waiting and I/O. `worker/GitHubShapes.workerd.test.ts` fires eight signed-out
+and eight signed-in first reads of the GitHub shapes at a cold isolate, then
+each reader's 16 catch-up and live reads at once, through the bundled routes,
+sign-in's sessions, real Postgres and Electric; each must answer 200. The old
+permit failed 7 of the 8 signed-out first reads. Bursts stay at 16 requests: each
+holds a Postgres connection, and test files running side by side share the
+fixture's 100.
+
+Both workerd tests read each body as its response arrives
+(`worker/test/workerd/bundle.ts` `answer`) and run with Miniflare's
+`MINIFLARE_ASSERT_BODIES_CONSUMED`. Miniflare's `dispatchFetch` re-wraps
+undici's response body and drops the original, and undici cancels that body when
+the original is garbage-collected. A test that awaited every response before
+reading any body lost one under a loaded host's collection ("Body has already
+been read"); the guard makes such a read fail every run.

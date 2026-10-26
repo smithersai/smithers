@@ -26,3 +26,19 @@ also runs separately per request: WebCrypto key import must not be awaited from
 a shared cached Effect. Catalog entries used: @smthrs/integrations for GitHub,
 @smthrs/database PostgresDatabase and @smthrs/targets NodeTest, with Effect
 HttpClient. No additional dependency.
+
+## Addendum, 2026-10-25: waiting counts as sharing
+
+`worker/github/ReadToken.ts` kept one `Semaphore.make(1)` per isolate around the
+GitHub App read token's mint. A signed-out read of the GitHub shapes that waited
+on another request's permit was cancelled as hung: 60 to 600 times an hour in
+production since 10-24, hidden by the browser's retries. Effect's own scheduler
+notes say why: the waiter's wake-up timer is created in the releasing request,
+and workerd drops it when that request ends. So a request never waits on a
+permit, latch, queue, pubsub or synchronized ref that another request releases.
+The isolate keeps only completed values (the minted token and its expiry in a
+plain `Ref`), and a read that finds none fresh mints for itself; a cold isolate
+may mint a few tokens at once. `worker.request-owned-io` rejects those
+constructors and a `Ref` of pending work. `worker/GitHubShapes.workerd.test.ts`
+proves the shapes signed out and signed in under workerd.
+

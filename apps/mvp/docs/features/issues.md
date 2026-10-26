@@ -223,12 +223,13 @@ Every route, step and token logs, traces and counts itself; no record carries a 
 | `github.apply` | log, span | `deliveryId`, `repoId`, `number`, `event`, `outcome`, `changed`, `lagMs` |
 | `github.reconcile`, `github.reconcile.start` | log, span | `repoId`, `outcome`, `pages`, `issues`, `comments`, `skipped`, `failure`, `errorCode` |
 | `github.token.mint` | log, span | `kind`, `outcome`, `access`, `status`, `reason` |
+| `github.read_token` | log, span | the deployment's read token for visibility checks (worker/github/ReadToken.ts), once per mint: `outcome` (`minted`, `anonymous`), `durationMs` or `errorCode` |
 | `github.config` | log | `errorCode` (a private key that doesn't import) |
 | `github.shape.<table>` | log, span | Electric's request records; a refused read: `status` |
 | `github_webhooks{event,outcome}`, `github_delivery_lag_ms` | counter, histogram | |
 | `github_write_requests{op,outcome}`, `github_writes{op,outcome,token}`, `github_write_ms{op}`, `github_write_unknown{op}` | counters, histogram | |
 | `github_applies{outcome}`, `github_reconciles{outcome}`, `github_reconcile_changed{kind}`, `github_sync_age_seconds` | counters, gauge | |
-| `github_token_mints{kind,outcome}`, `github_shape_requests{table,status,live}` | counters | |
+| `github_token_mints{kind,outcome}`, `github_shape_requests{table,status,live}` | counters | `kind`: `user`, `app`, or `read` (the read token) |
 | `issues.write.queue`, `issues.write.send`, `issues.pending`; `smithers_issue_writes`, `smithers_issue_write_sends`, `smithers_issue_pending_actions` | browser logs, spans, counters | `op`, `door`, `outcome`, `status`, `writeId`, `reason`, `action` |
 | `issues.shape.sync`, `smithers_issue_shape_transitions` | browser log, span, counter at first send, changed result or changed failure status | finite `phase` (`sent`, `ready`, `failed`, `stopped`), `status` when supplied, `durationMs` since observation began; no repository, issue, payload or error text |
 

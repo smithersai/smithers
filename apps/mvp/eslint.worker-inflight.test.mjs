@@ -50,6 +50,43 @@ const bad = [
   'import { Effect } from "effect"; Effect["cached"](work)',
   'import { Effect } from "effect"; Effect.cachedWithTTL(work, "1 minute")',
   'import { Deferred } from "effect"; Deferred.makeUnsafe()',
+
+  // Waiting on another request's permit, latch, queue or pubsub is waiting on its work (2026-10-25 ReadToken).
+  'import { Semaphore } from "effect"; const gate = Semaphore.make(1)',
+  'import { Semaphore } from "effect"; Semaphore.makeUnsafe(1)',
+  'import * as S from "effect/Semaphore"; S.make(1)',
+  'import { make as permits } from "effect/Semaphore"; permits(1)',
+  'import * as Fx from "effect"; Fx.Semaphore.make(1)',
+  'import { Effect, Semaphore } from "effect"; const layer = Effect.gen(function* () { return yield* Semaphore.make(1) })',
+  'import { TxSemaphore } from "effect"; TxSemaphore.make(1)',
+  'import { Latch } from "effect"; Latch.make()',
+  'import { Latch } from "effect"; Latch.makeUnsafe(false)',
+  'import { Queue } from "effect"; Queue.make()',
+  'import { Queue } from "effect"; Queue.bounded(16)',
+  'import { Queue } from "effect"; Queue.unbounded()',
+  'import { Queue } from "effect"; Queue.dropping(16)',
+  'import { Queue } from "effect"; Queue.sliding(16)',
+  'import { Queue } from "effect"; capacity.pipe(Queue.bounded)',
+  'import { TxQueue } from "effect"; TxQueue.unbounded()',
+  'import { PubSub } from "effect"; PubSub.unbounded()',
+  'import { PubSub } from "effect"; PubSub.makeAtomicBounded(8)',
+  'import * as P from "effect/PubSub"; P.sliding(8)',
+  'import { TxPubSub } from "effect"; TxPubSub.bounded(8)',
+  'import { SynchronizedRef } from "effect"; SynchronizedRef.make(0)',
+  'import { SubscriptionRef } from "effect"; SubscriptionRef.make(0)',
+
+  // A Ref is safe only while it holds plain values.
+  'import { Effect, Ref } from "effect"; Ref.make(Effect.succeed(1))',
+  'import { Effect, Ref } from "effect"; Ref.make(Effect.void)',
+  'import { Option, Ref } from "effect"; Ref.make(Option.none<Effect.Effect<string>>())',
+  'import { Ref } from "effect"; Ref.make<Promise<string> | undefined>(undefined)',
+  'import { Ref } from "effect"; Ref.makeUnsafe(new Map<string, Promise<string>>())',
+  'import { Ref } from "effect"; Ref.make(new Promise(() => {}))',
+  'import { Ref } from "effect"; Ref.make(Promise.resolve(1))',
+  'import { Ref } from "effect"; Ref.make({ pending: undefined as Fiber.Fiber<void> | undefined })',
+  'import { Option, Ref } from "effect"; Ref.make(Option.some(work as PromiseLike<void>))',
+  'import * as R from "effect/Ref"; import { Deferred, Option } from "effect"; R.make(Option.some(Deferred.await(done)))',
+  'import { Fiber, Ref as Cell } from "effect"; const gen = function* () { return yield* Cell.make([Fiber.join(fiber)]) }',
 ]
 for (const source of bad) test(`rejects ${source}`, () => {
   assert.equal(lint(source).filter((entry) => entry.ruleId === "worker/io").length, 1)
@@ -70,5 +107,20 @@ const good = [
   'import { Effect } from "effect"; const f = (x) => x; f(1)',
   'import { Schema } from "effect"; const schema = Schema.String',
   'import { Effect } from "effect"; let memo; memo = 1',
+
+  // The read token's shape after the fix: a plain value, minted by each request that finds none.
+  'import { Option, Ref } from "effect"; Ref.make(Option.none<GitHub.AppAuth.InstallationToken>())',
+  'import { Ref } from "effect"; Ref.make({ token: "", expiresAt: 0 })',
+  'import { Ref } from "effect"; Ref.make()',
+  'import { Ref } from "effect"; Ref.make(new Map<string, number>())',
+  'import { Ref } from "effect"; Ref.make(new (factory())())',
+  'import { Ref } from "effect"; Ref.make({ at: Date.now() as number, read: read(), first: values[0], size: other.size })',
+  'import { Effect, Ref } from "effect"; Ref.make(() => Effect.succeed(1))',
+  'import { Effect, Ref } from "effect"; Effect.gen(function* () { return yield* Ref.make(yield* Effect.succeed(1)) })',
+  'import { Ref } from "effect"; async () => Ref.make(await load())',
+  'import { Effect, Ref } from "effect"; Effect.flatMap(read, Ref.make)',
+  'const Semaphore = { make: () => 1 }; Semaphore.make()',
+  'import { Semaphore } from "other"; Semaphore.make(1)',
+  'import { Queue } from "effect"; function request(Queue) { return Queue.unbounded() }',
 ]
 for (const source of good) test(`allows ${source}`, () => assert.deepEqual(lint(source), []))

@@ -1,8 +1,9 @@
 import { GitHub } from "@smthrs/integrations"
-import { Clock, Config, Effect, Option, Redacted, Ref, Semaphore } from "effect"
+import { Clock, Config, Effect, Metric, Option, Redacted, Ref } from "effect"
 import type { HttpClient } from "effect/http"
 import { codeOf } from "../ErrorCode.ts"
 import * as GitHubConfig from "./Config.ts"
+import * as Metrics from "./Metrics.ts"
 
 // What GitHub REST reads of public repositories go out as (docs/features/repo.md#configuration): the clone's size call
 // (worker/RepoUpstream.ts) and a repository's About (worker/RepoAbout.ts). GitHub allows an unauthenticated caller 60
@@ -16,10 +17,13 @@ import * as GitHubConfig from "./Config.ts"
 //   until 5 minutes before it expires.
 // - neither: anonymous.
 //
-// Concurrent reads through the same token provider share one cache check and mint.
+// A Worker request never waits on another request's work: workerd cancels a request that awaits another's permit or
+// I/O as hung (decision 0104; the GitHub shapes' signed-out reads, 2026-10-25). So the isolate keeps only the minted
+// token and its expiry, a plain value, and a read that finds none, or one about to expire, mints its own. Concurrent
+// first reads on a cold isolate may each mint; the last one minted is kept.
 //
-// An App token that can't be minted now leaves that read anonymous and logs `github.read_token` with GitHub's code; the
-// next read mints again.
+// Each mint counts `github_token_mints{kind="read"}` by outcome and logs `github.read_token`. An App token that can't be
+// minted now leaves that read anonymous (outcome `anonymous`, with GitHub's code); the next read mints again.
 
 /** The token one read goes out with, or none: anonymous. */
 export type ReadToken = Effect.Effect<Option.Option<Redacted.Redacted<string>>>
@@ -32,14 +36,16 @@ export const fixed = (token: Option.Option<Redacted.Redacted<string>>): ReadToke
 
 /**
  * The App's installation token for `repository`, minted with `metadata: read` and narrowed to that repository, held in
- * this isolate until `REFRESH_BEFORE_MS` before it expires. One permit covers the check and mint so concurrent first
- * reads use the same token instead of spending multiple installation-token requests.
+ * this isolate until `REFRESH_BEFORE_MS` before it expires. Only the token is shared: a read that finds none fresh
+ * mints in its own request, never waiting on another's.
  */
 export const fromApp = (app: GitHub.AppAuth.AppAuth, repository: { readonly owner: string; readonly name: string }) =>
   Effect.gen(function* () {
     const held = yield* Ref.make(Option.none<GitHub.AppAuth.InstallationToken>())
-    const gate = yield* Semaphore.make(1)
+    const counted = (outcome: "minted" | "anonymous") =>
+      Metric.update(Metric.withAttributes(Metrics.tokenMints, { kind: "read", outcome }), 1)
     const mint = Effect.gen(function* () {
+      const startedAt = yield* Clock.currentTimeMillis
       const installation = yield* app.installation(repository.owner, repository.name)
       const minted = yield* app.installationToken({
         installationId: installation.id,
@@ -47,21 +53,29 @@ export const fromApp = (app: GitHub.AppAuth.AppAuth, repository: { readonly owne
         permissions: { metadata: "read" },
       })
       yield* Ref.set(held, Option.some(minted))
+      yield* counted("minted")
+      yield* Effect.logInfo("github.read_token").pipe(
+        Effect.annotateLogs({ outcome: "minted", durationMs: (yield* Clock.currentTimeMillis) - startedAt }),
+      )
       return Option.some(minted.token)
     }).pipe(
       Effect.catch((error) =>
         Effect.as(
-          Effect.logWarning("github.read_token").pipe(Effect.annotateLogs({ outcome: "anonymous", errorCode: codeOf(error) })),
+          Effect.andThen(
+            counted("anonymous"),
+            Effect.logWarning("github.read_token").pipe(Effect.annotateLogs({ outcome: "anonymous", errorCode: codeOf(error) })),
+          ),
           Option.none<Redacted.Redacted<string>>(),
         )
       ),
+      Effect.withSpan("github.read_token"),
     )
     const token: ReadToken = Effect.gen(function* () {
       const current = yield* Ref.get(held)
       const now = yield* Clock.currentTimeMillis
       if (Option.isSome(current) && current.value.expiresAt - now > REFRESH_BEFORE_MS) return Option.some(current.value.token)
       return yield* mint
-    }).pipe(Semaphore.withPermits(gate, 1))
+    })
     return token
   })
 
