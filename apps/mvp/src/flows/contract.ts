@@ -78,7 +78,8 @@ export const FLOWS_TELEMETRY = {
     "flows.runtime.phase",
     "FlowEngine.execute",
     "Action.execute",
-    // A run's admission and its claim, with when each happened, and how long recovering a registration took.
+    // A run's admission and its claim, with when each happened, and, once per engine start, how many registrations
+    // recovered and how long that took.
     "flow.run.created",
     "flow.run.claimed",
     "engine-store.registration.recovered",
@@ -153,6 +154,7 @@ export const FLOWS_TELEMETRY = {
     "smithers.flow",
     "createdAtMs",
     "claimedAtMs",
+    "registrations",
     "smithers.request",
     "smithers.request.outcome",
     "smithers.wake",

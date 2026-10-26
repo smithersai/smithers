@@ -128,7 +128,7 @@ describe("cloning from a tab", () => {
           ].includes(line.message)).slice(-80).map((line) => ({
             message: line.message,
             annotations: Object.fromEntries(Object.entries(line.annotations).filter(([key]) =>
-              ["flow", "smithers.flow", "durationMs", "outcome", "reason", "refusal"].includes(key))),
+              ["flow", "smithers.flow", "durationMs", "registrations", "outcome", "reason", "refusal"].includes(key))),
           })),
         }))
       }

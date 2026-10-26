@@ -1,10 +1,14 @@
 # Hosted registration cost
 
-`engine-store.registration.recovered` records the flow tag and `durationMs`
-for clock and deferred recovery during registration. It contains no payload.
-The duration includes database reads and any recovery writes, not just CPU.
-Compare these records with `cloudflare.execution.ready` before attributing
-startup time to module compilation or a cold object.
+`engine-store.registration.recovered` records, once per runtime start, how
+many registrations recovered clocks and deferred completions (`registrations`)
+and how long they took in all (`durationMs`). Each registration's own recovery
+is `engine-store.registration.flow.recovered` at Debug, with the flow tag and
+its `durationMs`. Neither contains a payload. A duration includes database
+reads and any recovery writes, not just CPU. On Cloudflare the summary
+precedes `cloudflare.execution.ready`; compare the two before attributing
+startup time to module compilation or a cold object. See
+[Registration recovery](./api.md#registration-recovery).
 
 The retained catalog benchmark is the `32-flow catalog` case in
 `test/HostedEngine.test.ts`: real storage, 32 registered flows, and a

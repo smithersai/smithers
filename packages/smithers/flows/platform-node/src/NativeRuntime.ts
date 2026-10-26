@@ -32,6 +32,7 @@ import {
 } from "@smthrs/kernel"
 import type { Ownership } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
+import * as Context from "effect/Context"
 import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -495,6 +496,8 @@ export const make = (platform: Platform) => {
       // ordinary path unchanged: closing the caller's scope closes this one.
       const runtime = yield* Scope.fork(parent)
       const context = yield* Effect.provideService(Layer.build(composed), Scope.Scope, runtime)
+      // As in `Runtime.layer`: one line says what every registration's recovery did.
+      yield* Context.get(context, EngineStore.Driver).reportRecovery
       yield* onSignal(
         validated.signals,
         runtime,

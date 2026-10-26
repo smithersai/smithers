@@ -11,7 +11,7 @@ import * as Jj from "@smthrs/jj/Jj"
 import { Workspace } from "@smthrs/kernel"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import { Migrations as RunMigrations, RunStore } from "@smthrs/run-store"
-import { Context, Effect, Exit, Layer, Logger, Metric, Option, Schema } from "effect"
+import { Context, Effect, Exit, Layer, Logger, Metric, Option, References, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -272,6 +272,56 @@ it("runs a flow on a host with no filesystem, from injected services alone", asy
   expect(outcome.wake).toEqual(Option.none())
   // The step ran under the engine's fence, as its first attempt.
   expect(fenced).toEqual([1])
+})
+
+// A browser engine registers hundreds of flows per start. At Info per registration, every cold page load wrote one
+// `engine-store.registration.recovered` line per registration (446 in production on 2026-10-25).
+it("logs registration recovery once at Info when registration finishes, and each registration at Debug", async () => {
+  const Bye = Flow.make("Runtime/Bye", {
+    payload: { name: Schema.String },
+    success: Schema.String,
+    body: ({ name }) => Greet.call({ name })
+  })
+  const recovery = async (runtimeOptions: Runtime.Options) => {
+    const lines: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+    const logger = Logger.make((entry) => {
+      lines.push(Logger.formatStructured.log(entry))
+    })
+    const runtime = Runtime.layer(
+      runtimeOptions,
+      StepBoundary.layerUnsupported,
+      WorkspaceSandbox.layerUnsupported,
+      Layer.mergeAll(Interpreter.layer(Hello), Interpreter.layer(Bye)).pipe(
+        Layer.provideMerge(Greet.toLayer(({ name }) => Effect.succeed(`hello ${name}`))),
+        Layer.provideMerge(Action.layerImplementations)
+      )
+    ).pipe(Layer.provide(OwnerIdentity.layerWithoutPid.pipe(Layer.provideMerge(Layer.mergeAll(
+      NodeDatabase.layer({ filename: ":memory:" }),
+      NodeCrypto.layer,
+      Jj.layerNoop({})
+    )))))
+    await Effect.runPromise(
+      Effect.scoped(Layer.build(runtime)).pipe(
+        Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
+        Effect.provideService(References.MinimumLogLevel, "Debug")
+      )
+    )
+    const summary = lines.filter((line) => line.message === "engine-store.registration.recovered")
+    const detail = lines.filter((line) => line.message === "engine-store.registration.flow.recovered")
+    expect(summary).toHaveLength(1)
+    expect(summary[0]!.level).toBe("INFO")
+    expect(summary[0]!.annotations).toEqual({ registrations: detail.length, durationMs: expect.any(Number) })
+    expect(detail.every((line) => line.level === "DEBUG")).toBe(true)
+    // The summary follows every registration.
+    expect(lines.indexOf(summary[0]!)).toBeGreaterThan(lines.indexOf(detail.at(-1)!))
+    return detail.map((line) => line.annotations["smithers.flow"])
+  }
+  const all = await recovery(options)
+  expect(all).toEqual(expect.arrayContaining([Hello._tag, Bye._tag]))
+  // Each flow and each system flow its interpreter registers.
+  expect(all.length).toBeGreaterThan(2)
+  // A hosted store recovers only its execution's flow, and counts that one.
+  expect(await recovery({ ...options, sweep: { host: "hello-1", flow: Hello._tag } })).toEqual([Hello._tag])
 })
 
 it("provides a declared cache environment under the engine, where an action reads it", async () => {

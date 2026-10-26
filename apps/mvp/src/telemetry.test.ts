@@ -116,6 +116,12 @@ describe("the relay keeps everything the browser exports", () => {
         (name === "flows_runs_started" || fields.outcome === "succeeded")
       ), name).toBe(true)
     }
+    // The engine's start says once how many registrations recovered and how long that took, never once per flow.
+    expect(kept(fromEngine.kept, "engine-store.registration.recovered")).toEqual([
+      expect.objectContaining({
+        fields: expect.objectContaining({ registrations: expect.any(Number), durationMs: expect.any(Number) }),
+      }),
+    ])
     expect(kept(fromEngine.kept, "agent_model_step_calls")).toContainEqual(
       expect.objectContaining({
         fields: expect.objectContaining({ step: "harness/sealStep", outcome: "sealed", "otlp.value": expect.any(Number) }),

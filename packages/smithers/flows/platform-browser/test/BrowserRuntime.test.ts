@@ -181,6 +181,11 @@ describe("BrowserRuntime over OPFS", () => {
       expect(yield* engine.result(Steps, "observed")).toEqual(Exit.succeed("o:three"))
       yield* Fiber.interrupt(worker)
       expect(telemetry.lines("browser.runtime.leader")).toHaveLength(1)
+      // One line for every flow the engine registered; each registration's own line stays at Debug, out of telemetry.
+      const recovered = telemetry.lines("engine-store.registration.recovered")
+      expect(recovered.map((line) => line.level)).toEqual(["INFO"])
+      expect(recovered[0]!.annotations["registrations"]).toBeGreaterThanOrEqual(flows.length)
+      expect(telemetry.lines("engine-store.registration.flow.recovered")).toEqual([])
       expect(telemetry.named("browser.runtime.elect")).toHaveLength(1)
       expect(telemetry.named("browser.runtime.request").length).toBeGreaterThan(0)
       expect(telemetry.count(BrowserRuntime.leaderships, {})).toBe(1)
@@ -428,7 +433,8 @@ describe("BrowserRuntime.serve", () => {
 
         const failingDriver = Layer.succeed(EngineStore.Driver)({
           admit: () => Effect.die("admission not used by this fault service"),
-          drive: () => Effect.die("drive failed")
+          drive: () => Effect.die("drive failed"),
+          reportRecovery: Effect.die("recovery reports not used by this fault service")
         })
         const second = yield* Engines.leader(
           name,
@@ -472,9 +478,10 @@ describe("BrowserRuntime.serve", () => {
           )
       })
       const recording = Layer.succeed(EngineStore.Driver)({
-          admit: () => Effect.die("admission not used by this fault service"),
+        admit: () => Effect.die("admission not used by this fault service"),
         drive: (_flow, { executionId }) =>
-          Effect.sync(() => driven.push(executionId)).pipe(Effect.as({ _tag: "Parked", wakeAtMs: undefined } as const))
+          Effect.sync(() => driven.push(executionId)).pipe(Effect.as({ _tag: "Parked", wakeAtMs: undefined } as const)),
+        reportRecovery: Effect.die("recovery reports not used by this fault service")
       })
       yield* Engines.leader(
         name,

@@ -1,13 +1,17 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { expect, it } from "@effect/vitest"
+import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Jj } from "@smthrs/jj"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
+import * as Logger from "effect/Logger"
 import * as PlatformError from "effect/PlatformError"
+import * as References from "effect/References"
+import * as Schema from "effect/Schema"
 import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
@@ -44,6 +48,45 @@ it("builds the host before the runtime creates its repository and database paren
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
+})
+
+it("logs what registration recovered once, at Info, when the host starts", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "flows-startup-recovery-"))
+  const Step = Action.make("startup-recovery/step", { payload: {}, success: Schema.String })
+  const Started = Flow.make("startup-recovery/flow", { payload: {}, success: Schema.String, body: () => Step.call({}) })
+  const lines: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+  const logger = Logger.make((entry) => {
+    lines.push(Logger.formatStructured.log(entry))
+  })
+  try {
+    await Effect.runPromise(
+      Effect.void.pipe(
+        Effect.provide(
+          NodeRuntime.layerHost(
+            {
+              filename: join(directory, "engine.sqlite"),
+              workspaceRoot: directory,
+              owner: { hostId: "recovery" },
+              signals: []
+            },
+            Interpreter.layer(Started).pipe(
+              Layer.provideMerge(Step.toLayer(() => Effect.succeed("done"))),
+              Layer.provideMerge(Action.layerImplementations)
+            )
+          )
+        ),
+        Effect.scoped,
+        Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
+        Effect.provideService(References.MinimumLogLevel, "Debug")
+      )
+    )
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+  const summary = lines.filter((line) => line.message === "engine-store.registration.recovered")
+  const detail = lines.filter((line) => line.message === "engine-store.registration.flow.recovered")
+  expect(summary.map((line) => [line.level, line.annotations["registrations"]])).toEqual([["INFO", detail.length]])
+  expect(detail.map((line) => line.annotations["smithers.flow"])).toContain(Started._tag)
 })
 
 /** The injected filesystem a host confines to its workspace, which refuses any

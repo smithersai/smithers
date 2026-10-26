@@ -17,7 +17,9 @@
  * `registerFlows` finishes before the resulting services are exposed. The
  * engine's own registration hook then re-arms durable clocks and deferred
  * wakes, so a persisted run cannot resume through this composition before its
- * flow has been registered.
+ * flow has been registered. Once every flow is registered, the runtime logs
+ * that recovery once, as `engine-store.registration.recovered` with
+ * `registrations` and `durationMs` (`EngineStore.Driver.reportRecovery`).
  *
  * @since 0.1.0
  */
@@ -34,6 +36,7 @@ import { Action, RunMetrics } from "@smthrs/flow"
 import { RedactedLogger, SqlJournal } from "@smthrs/journal"
 import { AttemptStore, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
+import * as Context from "effect/Context"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -163,13 +166,18 @@ export const layer = <
   // Constant store and registration layers must belong to this runtime's SQL
   // context. An enclosing control plane can build the same layer values over
   // another database; sharing their memoized instances crosses that boundary.
-  return Layer.effectContext(Layer.build(
-    observed("registration", registerFlows).pipe(
-      Layer.provideMerge(observed("registry", registryLayer(registry))),
-      Layer.provideMerge(engine),
-      Layer.fresh
+  return Layer.effectContext(
+    Layer.build(
+      observed("registration", registerFlows).pipe(
+        Layer.provideMerge(observed("registry", registryLayer(registry))),
+        Layer.provideMerge(engine),
+        Layer.fresh
+      )
+    ).pipe(
+      // Registration is the last phase: one line says what every registration's recovery did.
+      Effect.tap((context) => Context.get(context, EngineStore.Driver).reportRecovery)
     )
-  ))
+  )
 }
 
 /** Build the runtime in the caller's scope.

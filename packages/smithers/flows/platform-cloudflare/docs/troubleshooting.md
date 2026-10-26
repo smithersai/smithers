@@ -130,8 +130,12 @@ writes, so a drive should have none once the schema is installed.
 
 `cloudflare.execution.ready` follows runtime layer construction, including
 database opening, migration checks, store construction and flow registration.
-`engine-store.registration.recovered` reports each registration's recovery
-duration, so a large catalog's repeated reads are visible.
+Just before it, `engine-store.registration.recovered` reports how many
+registrations recovered clocks and completions (`registrations`) and how long
+they took in all (`durationMs`). Given the intent's flow tag (`flow`), a
+runtime recovers only that flow's registrations, so a count near the catalog's
+size means it was built without one. Each registration's own duration,
+`engine-store.registration.flow.recovered`, is logged at Debug.
 
 `lockWaitMs` adds client-side acquisition durations. It includes BEGIN and
 network round trips, so dividing it by the transaction count is only an

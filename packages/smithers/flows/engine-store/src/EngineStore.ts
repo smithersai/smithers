@@ -29,6 +29,7 @@ import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
+import * as Ref from "effect/Ref"
 import * as Result from "effect/Result"
 import type * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
@@ -146,8 +147,24 @@ export const defaultHoldMs = 5_000
 const maxHeldDrives = 64
 
 /**
+ * The clock and deferred recovery an engine's registrations did, as
+ * `Driver.reportRecovery` reports it: how many registrations recovered, and
+ * how long they took in all, in milliseconds. A registration a hosted store
+ * skips (`sweep: { host, flow }` naming another flow) recovers nothing and is
+ * not counted.
+ *
+ * @since 1.0.0-rc.17
+ * @category models
+ */
+export interface Recovery {
+  readonly registrations: number
+  readonly durationMs: number
+}
+
+/**
  * Drives one execution as far as it can go now, for a host that wakes it
- * from outside. See {@link drive}.
+ * from outside, and reports what the engine's registrations recovered. See
+ * {@link drive}.
  *
  * @since 1.0.0
  * @category hosting
@@ -162,6 +179,21 @@ export class Driver extends Context.Service<Driver, {
     flow: Flow.Any,
     options: DriveOptions
   ) => Effect.Effect<Driven, FlowRuntime.FlowCycleDetected | RunStore.RunStoreError>
+  /**
+   * Logs `engine-store.registration.recovered` at Info with the
+   * {@link Recovery} the registrations since the last report did
+   * (`registrations`, `durationMs`), and answers it. Each registration's own
+   * recovery is logged at Debug as `engine-store.registration.flow.recovered`
+   * (`smithers.flow`, `durationMs`).
+   *
+   * A host reports once its registrations are built, so one engine start
+   * logs one line however many flows it registers: `@smthrs/flows`
+   * `Runtime.layer` and the native hosts' `layerHost` do. A report with
+   * nothing new answers zero registrations.
+   *
+   * @since 1.0.0-rc.17
+   */
+  readonly reportRecovery: Effect.Effect<Recovery>
 }>()("@smthrs/engine-store/EngineStore/Driver") {}
 
 /**
@@ -459,6 +491,9 @@ type PlanProvenance = { readonly lineageId: string; readonly sourceRevision: str
 /** A plan row this run already holds: its provenance and what it says. */
 type RecordedPlan = { readonly provenance: PlanProvenance; readonly payload: Readonly<Record<string, unknown>> }
 
+/** No registration has recovered anything yet. */
+const noRecovery: Recovery = { registrations: 0, durationMs: 0 }
+
 /**
  * Opens one engine store: the services it captures at composition, the
  * in-process tables its dispatches share, its run driver, and its deferred
@@ -571,6 +606,8 @@ const openStore = Effect.fnUntraced(function*(options: Options) {
     hostedExecution: typeof options.sweep === "object" ? options.sweep.host : undefined,
     hostedFlow: typeof options.sweep === "object" ? options.sweep.flow : undefined,
     deferred,
+    // What registrations recovered since the host last asked (`Driver.reportRecovery`); milliseconds unrounded.
+    recovery: yield* Ref.make(noRecovery),
     // The budget of each execution a budgeted `drive` is driving now.
     budgets: new Map<string, DriveBudget.DriveBudget>(),
     // The instances action dispatches run their bodies under. A dispatch
@@ -1171,14 +1208,17 @@ const adapter = (store: Store): FlowEngine.Encoded => ({
           ? Effect.void
           : store.deferred.sweepDue(flow._tag, store.hostedExecution).pipe(
             Effect.timed,
-            Effect.flatMap(([elapsed]) =>
-              Effect.logInfo("engine-store.registration.recovered").pipe(
-                Effect.annotateLogs({
-                  "smithers.flow": flow._tag,
-                  durationMs: Math.round(Duration.toMillis(elapsed))
-                })
+            // At Debug: a catalog registers hundreds of flows per start, and the host reports their sum at Info.
+            Effect.flatMap(([elapsed]) => {
+              const durationMs = Duration.toMillis(elapsed)
+              return Ref.update(store.recovery, (recovered) => ({
+                registrations: recovered.registrations + 1,
+                durationMs: recovered.durationMs + durationMs
+              })).pipe(
+                Effect.andThen(Effect.logDebug("engine-store.registration.flow.recovered")),
+                Effect.annotateLogs({ "smithers.flow": flow._tag, durationMs: Math.round(durationMs) })
               )
-            )
+            })
           )
       )
     ),
@@ -1387,7 +1427,16 @@ const hostDriver = (store: Store) =>
       }
       yield* Effect.annotateCurrentSpan({ outcome: outcome._tag })
       return outcome
-    }, CapabilitySet.attenuateGroups(store.host.groups))
+    }, CapabilitySet.attenuateGroups(store.host.groups)),
+    reportRecovery: Effect.gen(function*() {
+      const recovered = yield* Ref.getAndSet(store.recovery, noRecovery)
+      const report: Recovery = {
+        registrations: recovered.registrations,
+        durationMs: Math.round(recovered.durationMs)
+      }
+      yield* Effect.logInfo("engine-store.registration.recovered").pipe(Effect.annotateLogs({ ...report }))
+      return report
+    })
   })
 
 /**

@@ -14,6 +14,13 @@ Database opening supplied outside Runtime is not included. These are elapsed
 construction intervals, not CPU measurements; do not sum overlapping builds
 or compare them to a transaction timestamp as though they shared a clock.
 
+After the registration phase, the runtime logs `engine-store.registration.recovered`
+once, at Info, with how many registrations recovered clocks and deferred
+completions (`registrations`) and how long that took in all (`durationMs`).
+Each registration's own recovery is `engine-store.registration.flow.recovered`
+at Debug. A runtime that registers hundreds of flows therefore writes one Info
+line, not one per registration.
+
 The observer uses the caller's layer memo map and resource scope. Observing a phase must not fork the memo map or change the
 sharing of services and registrations within the composition.
 The runtime's existing isolation between databases remains unchanged.
