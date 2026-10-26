@@ -1,10 +1,11 @@
 import { Bind, type Contribution, Host, JsonSchema, Load } from "@smthrs/plugin"
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, Exit, Layer, Metric, Option, PubSub, Result, type Scope, Stream } from "effect"
+import { Cause, Context, Deferred, Effect, Exit, Layer, Metric, Option, PubSub, Result, type Scope, Stream } from "effect"
 import { issueUrl } from "../features/bugs/github"
 import { BugsStore } from "../features/bugs/store"
 import { StatusStore } from "../features/status/store"
 import { FlowDispatch } from "../flows/dispatch"
+import { codeOfFailure } from "../flows/history"
 import type { FlowName } from "../flows/registry"
 import { BUILTIN, type BuiltIn } from "./builtin"
 import { hostFacts } from "./facts"
@@ -359,6 +360,31 @@ export const deliver = (view: string, name: string, fields: unknown) =>
 const misfit = (payload: JsonSchema.Resolved | undefined, fields: unknown) =>
   payload === undefined ? Option.none<string>() : JsonSchema.validate(payload, fields)
 
+/** A declared failure's stable code: its `code` when it carries one (a refusal's), else its kind. */
+const failureCode = (error: unknown): string =>
+  typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
+    ? error.code
+    : codeOfFailure(error) ?? "failed"
+
+/**
+ * How a plugin's dispatched run ended, as `Dispatched.settled` answers it: `Done`, or `Failed` with its stable code:
+ * the flow's declared failure's (`BugRefused`'s `authentication`), dispatch's refusal or reason, or `interrupted`.
+ * Never a message.
+ */
+export const settledOf = (
+  exit: Exit.Exit<
+    { readonly _tag: "Done" } | { readonly _tag: "Failed"; readonly error: unknown },
+    { readonly reason: string; readonly refusal?: string | undefined }
+  >,
+): Host.Settled => {
+  if (Exit.isSuccess(exit)) {
+    return exit.value._tag === "Done" ? { _tag: "Done" } : { _tag: "Failed", code: failureCode(exit.value.error) }
+  }
+  const error = Cause.findErrorOption(exit.cause)
+  if (Option.isSome(error)) return { _tag: "Failed", code: error.value.refusal ?? error.value.reason }
+  return { _tag: "Failed", code: Cause.hasInterruptsOnly(exit.cause) ? "interrupted" : "defect" }
+}
+
 /** A refusal of plugin `plugin`'s request. */
 const refuse = (plugin: string, reason: Host.PluginRefused["reason"], detail: string) =>
   Effect.fail(new Host.PluginRefused({ plugin, reason, detail }))
@@ -418,11 +444,14 @@ export const hostFor = (plugin: string) =>
           if (Result.isFailure(payload)) return yield* refuse(plugin, "invalid_fields", payload.failure)
           const runId = crypto.randomUUID()
           const flows = yield* provide(FlowDispatch)
+          // The view hears how its run ended, failed or interrupted included, so it never says Sending for good.
+          const settled = yield* Deferred.make<Host.Settled>()
           yield* flows.dispatch(event.flow as FlowName, payload.success as never, { door: "view", executionId: runId }).pipe(
+            Effect.onExit((exit) => Deferred.succeed(settled, settledOf(exit))),
             Effect.ignore,
             Effect.forkIn(plugins.scope),
           )
-          return { runId }
+          return { runId, settled: Deferred.await(settled) }
         }),
       open: (id: string) =>
         Effect.gen(function* () {

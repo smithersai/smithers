@@ -28,7 +28,6 @@ Will, Telegram 2026-10-25 17:38 PDT: "Can we add an in app bug report feature?" 
 
 - Deploy, set `BUG_REPORTS_READ_TOKEN` in production's environment, and run `e2e/bug-report.spec.ts` against smithers.sh with `E2E_BUG_READ_TOKEN`.
 - The "include a screenshot" toggle: needs a DOM-to-image library behind an Effect wrapper in `@smthrs/platform-browser`.
-- The form can't say why a Send failed for good: `PluginHost.dispatch` answers a run id, not the run's end.
 - Old app parity still open: Failure Details with the code and trace id, `debug.errors`, Admin dev tools, `/debug-api`, the startup watchdog.
 
 ## Old app

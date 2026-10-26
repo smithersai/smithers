@@ -36,3 +36,13 @@ describe("PluginHost", () => {
     expect(Host.PluginHost.key).toBe("@smthrs/plugin/PluginHost")
   })
 })
+
+describe("Settled", () => {
+  it("is Done, or Failed with a code, and nothing else", () => {
+    const decode = Schema.decodeUnknownSync(Host.Settled)
+    expect(decode({ _tag: "Done" })).toEqual({ _tag: "Done" })
+    expect(decode({ _tag: "Failed", code: "authentication" })).toEqual({ _tag: "Failed", code: "authentication" })
+    expect(() => decode({ _tag: "Failed" })).toThrow()
+    expect(() => decode({ _tag: "Running" })).toThrow()
+  })
+})

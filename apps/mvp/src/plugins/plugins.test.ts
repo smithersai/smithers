@@ -4,7 +4,7 @@
 // ChatApi's real handler over the compose Postgres and Electric; only the model is scripted. Proves decision 0017 slice
 // 1's host contract and its trust boundaries at run time (docs/features/plugins.md).
 import { Host } from "@smthrs/plugin"
-import { Effect, Exit, Fiber, Metric, Stream } from "effect"
+import { Cause, Effect, Exit, Fiber, Metric, Stream } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import queue from "../../plugins/queue/plugin.json" with { type: "json" }
 import type { QueueTab } from "../../plugins/queue/src/tab"
@@ -14,7 +14,7 @@ import { dispatches } from "../flows/dispatch"
 import { nodeDevice, openTab, openTestApp, TestChatApi } from "../test/chatApi"
 import type { BuiltIn } from "./builtin"
 import { pluginKeys } from "./keymap"
-import { hostFor, loads, pathOf, Plugins, presses, viewAt, viewById } from "./plugins"
+import { hostFor, loads, pathOf, Plugins, presses, settledOf, viewAt, viewById } from "./plugins"
 import { draftKey } from "./schema"
 import { PluginsUi } from "./ui"
 
@@ -286,7 +286,9 @@ describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
           // The run goes on in the host's scope, which this test closes at its end: wait for it there.
           const done = Metric.withAttributes(dispatches, { flow: "app/navigate", door: "view", outcome: "done" })
           yield* Effect.promise(() => until(() => expect(a.count(done)).toBe(1)))
-          return { ids: plugins.contributions.plugins.map((plugin) => plugin.id), refused: plugins.refused, dispatched, bad }
+          // The view hears how its run ended (`Dispatched.settled`).
+          const settled = yield* dispatched.settled
+          return { ids: plugins.contributions.plugins.map((plugin) => plugin.id), refused: plugins.refused, dispatched, bad, settled }
         }).pipe(Effect.provide(Plugins.layer([broken, nameless, probe]))),
       ),
     )
@@ -297,6 +299,7 @@ describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
     ]))
     expect(outcome.refused).toHaveLength(2)
     expect(outcome.dispatched.runId).toEqual(expect.any(String))
+    expect(outcome.settled).toEqual({ _tag: "Done" })
     expect(outcome.bad.reason).toBe("invalid_fields")
     expect(a.count(Metric.withAttributes(loads, { outcome: "refused", tier: "built-in", reason: "invalid" }))).toBe(2)
   })
@@ -328,5 +331,21 @@ describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
     a.plugins.actions.press(VIEW, { event: "next", fields: {}, label: "" })
     expect(a.state()).toBeUndefined()
     expect(a.plugins.actions.core("core/runs")).toBeUndefined()
+  })
+})
+
+describe("how a plugin's run ended (Dispatched.settled)", () => {
+  test("done, a declared failure's code or kind, dispatch's refusal or reason, interrupted, and never a message", () => {
+    expect(settledOf(Exit.succeed({ _tag: "Done" }))).toEqual({ _tag: "Done" })
+    // `BugRefused` carries ChatApi's code; a failure without one is known by its kind.
+    expect(settledOf(Exit.succeed({ _tag: "Failed", error: { _tag: "@smthrs/mvp/bugs/BugRefused", status: 401, code: "authentication" } })))
+      .toEqual({ _tag: "Failed", code: "authentication" })
+    expect(settledOf(Exit.succeed({ _tag: "Failed", error: { _tag: "@smthrs/mvp/bugs/BugUnsent", message: "a secret" } })))
+      .toEqual({ _tag: "Failed", code: "BugUnsent" })
+    expect(settledOf(Exit.succeed({ _tag: "Failed", error: "no tag" }))).toEqual({ _tag: "Failed", code: "failed" })
+    expect(settledOf(Exit.fail({ reason: "refused", refusal: "person_only" }))).toEqual({ _tag: "Failed", code: "person_only" })
+    expect(settledOf(Exit.fail({ reason: "unavailable" }))).toEqual({ _tag: "Failed", code: "unavailable" })
+    expect(settledOf(Exit.failCause(Cause.interrupt()))).toEqual({ _tag: "Failed", code: "interrupted" })
+    expect(settledOf(Exit.die(new Error("a secret")))).toEqual({ _tag: "Failed", code: "defect" })
   })
 })

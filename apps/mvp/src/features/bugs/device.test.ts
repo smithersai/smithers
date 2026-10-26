@@ -1,7 +1,7 @@
 // Bug reports on real devices (docs/features/bugs.md): the browser's own layer on Node devices whose engines lead,
 // against ChatApi's real handler over the compose Postgres and Electric. A Member presses Send in the bug plugin's
 // form, built from `PluginHost` alone: `app/bug/report` asks the tab what it showed, ChatApi files the row, Electric
-// brings it back, and the form says Sent. The Admin sees every report and reads them with `app/bug/list`; a Member
+// brings it back, and the form says Sent; a report ChatApi refuses for good says Not sent and why. The Admin sees every report and reads them with `app/bug/list`; a Member
 // sees only their own and is refused the read.
 import { Effect } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
@@ -84,6 +84,16 @@ describe("a bug report on a real device", { timeout: 120_000 }, () => {
     // Only spaces send nothing.
     member.tab.actions.send("   ")
     expect(member.sending()).toEqual({ status: "idle" })
+
+    // A report refused for good is Not sent, says why and keeps its words; it never stays Sending, and nothing is filed.
+    // A NUL is refused wherever it lands: this Node device's engine journals into Postgres, which can't hold one, so
+    // the run is refused at its start; a browser's journal takes it and ChatApi answers 400 invalid
+    // (worker/bugs/Api.test.ts).
+    member.tab.actions.send("The page went blank\u0000")
+    await until(() =>
+      expect(member.sending()).toMatchObject({ status: "failed", code: "refused", what: "The page went blank\u0000" })
+    )
+    expect(api.bugs.starts).toEqual([])
 
     member.tab.actions.send("  The run page stayed blank after Retry  ")
     expect(member.sending().status).toBe("sending")

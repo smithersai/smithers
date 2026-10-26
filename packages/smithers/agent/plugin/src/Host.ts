@@ -89,13 +89,36 @@ export interface EventRef {
 }
 
 /**
- * The run a dispatch started.
+ * How a dispatched run ended: `Done`, or `Failed` with the failure's stable
+ * code (a refusal's code, else its kind), never its message. A schema, so a
+ * framed app's bridge carries it as data.
+ *
+ * @category models
+ * @since 1.1.0
+ */
+export const Settled = Schema.Union([
+  Schema.TaggedStruct("Done", {}),
+  Schema.TaggedStruct("Failed", { code: Schema.String })
+])
+
+/**
+ * How a dispatched run ended.
+ *
+ * @category models
+ * @since 1.1.0
+ */
+export type Settled = typeof Settled.Type
+
+/**
+ * The run a dispatch started, and how it ended: `settled` waits for its end,
+ * so a view can say a run failed, why, and offer to run it again.
  *
  * @category models
  * @since 1.1.0
  */
 export interface Dispatched {
   readonly runId: string
+  readonly settled: Effect.Effect<Settled>
 }
 
 /**
@@ -123,7 +146,11 @@ export interface PluginHost {
   readonly select: (item: ItemRef) => Effect.Effect<void, PluginRefused>
   /** Prefill an event's fields in the action strip. Nothing runs until the person presses. */
   readonly propose: (event: EventRef, fields: unknown) => Effect.Effect<void, PluginRefused>
-  /** Run an event whose flow is not person-only: the host fills `$item` and `$event` and mints the invocation context. */
+  /**
+   * Run an event whose flow is not person-only: the host fills `$item` and
+   * `$event` and mints the invocation context. Answers once the run started,
+   * with its id and `settled`, which waits for its end.
+   */
   readonly dispatch: (event: EventRef, fields: unknown) => Effect.Effect<Dispatched, PluginRefused>
   /** Open a view the manifest declares. */
   readonly open: (view: string) => Effect.Effect<void>

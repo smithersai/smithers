@@ -15,7 +15,9 @@ All of them are the first-party plugin `plugins/bugs/` on the public plugin inte
 
 ## The form
 
-One field, **What happened?**, and **Send**. Send runs the form's `send` event, which the manifest binds to `app/bug/report`. The form says **Sending** until the report's row comes back from Postgres through sync, then **Sent** and **Open on GitHub**. A press the host refuses says **Not sent**. A report filed offline is sent when the device is back, for an hour.
+One field, **What happened?**, and **Send**. Send runs the form's `send` event, which the manifest binds to `app/bug/report`. The form says **Sending** until the report's row comes back from Postgres through sync, then **Sent** and **Open on GitHub**, and the field starts empty. A report filed offline is sent when the device is back, for an hour.
+
+A report that isn't sent never stays **Sending**. The form hears how the run ended (`PluginHost.dispatch`'s `settled`, [plugins](plugins.md#the-host-contract)) and says **Not sent** with the reason: `signed out` (401), `not allowed`, `not accepted` (ChatApi refused the report, or the host refused the press), `too long`, `couldn't reach Smithers` (an hour offline), else the failure's code. The words stay in the field and the button says **Retry**: the same words file the same report again under its id, so a retry never makes a second copy; changed words are a new report.
 
 ## What a report carries
 
@@ -118,7 +120,9 @@ ChatApi: `bug.request` and `smithers_bug_requests` (op, outcome, status), `bug.s
 | `src/features/bugs/bugs.test.ts` | the page before the form, its repository, the ids kept and left out, GitHub's form; the tab that asked answers over the real bug channel and another tab's request gets none |
 | `src/features/bugs/api.test.ts` | the client against every answer the routes give; the flows on the Node host: filed with what the step knows when the tab is gone, refused once, retried while offline; their records without the words |
 | `src/flows/dispatch.test.ts` "this tab's history" | each dispatch's run, trace, outcome and code, newest first, never its payload |
-| `plugins/bugs/src/tab.test.ts` | the form's words and when a Send is Sent |
+| `plugins/bugs/src/tab.test.ts` | the form's words and when a Send is Sent; over an injected host whose runs fail (TEST-7): Not sent with the reason, the words kept, Retry under the same id, new words a new report, a refused press |
+| `src/plugins/plugins.test.ts` "how a plugin's run ended" | `settled` for a run done, a declared failure's code or kind, dispatch's refusal or reason, interrupted, a defect; never a message |
+| `src/features/bugs/device.test.ts` | on real devices: a report refused for good (a NUL, which this Node device's Postgres journal refuses) is Not sent and keeps its words, nothing filed; a Member's Send files with the page before the form and comes back Sent; a Member is refused the read; an Admin sees every report and reads it |
 | `dev/build.test.ts` | the build's name, and the Vite plugin built for real |
 | `worker/bugs/Api.test.ts`, `worker/flows/BugReport.test.ts` | the routes, the shape and `ops/BugReport` against the compose Postgres and Electric |
 | `e2e/bug-report.spec.ts` | `/bug`, the words and Send: Sent, the inbox lists it, and an Admin reads it with its page and runs and none of the chat; locally and against a deployment (the Admin read needs `E2E_BUG_READ_TOKEN` there) |
@@ -126,4 +130,3 @@ ChatApi: `bug.request` and `smithers_bug_requests` (op, outcome, status), `bug.s
 ## Not built
 
 - **The screenshot.** The form has no "include a screenshot" toggle yet: capturing only the page's own render needs a DOM-to-image library behind an Effect wrapper in `@smthrs/platform-browser`.
-- **Why a Send failed, in the form.** `PluginHost.dispatch` answers a run id, not how the run ended, so a report ChatApi refused for good stays **Sending** in the form; the run shows its failure on the Runs page. The public host contract gains the run's end when a plugin needs it.

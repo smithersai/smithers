@@ -612,13 +612,14 @@ like a secret (`secret`, `password`, `token`, `credential`) refuses
 
 ## Host
 
-| Export                                           | Summary                                                                      |
-| ------------------------------------------------ | ---------------------------------------------------------------------------- |
-| `PluginHost`                                     | The interface and its `Context.Service` key `"@smthrs/plugin/PluginHost"`.   |
-| `PluginRefused`, `RefusedReason`                 | `Schema.TaggedError` `"plugin/PluginRefused"`: `{ plugin, reason, detail }`. |
-| `Live<R>`                                        | `{ current, subscribe }`, a framework-free live source.                      |
-| `ItemRef`, `EventRef`, `Dispatched`, `Delivered` | `{ query, key }`, `{ view, name }`, `{ runId }`, `{ name, fields }`.         |
-| `PluginTab<Q, A>`                                | `{ queries, actions }`, what a tab layer gives its components.               |
+| Export                                           | Summary                                                                       |
+| ------------------------------------------------ | ----------------------------------------------------------------------------- |
+| `PluginHost`                                     | The interface and its `Context.Service` key `"@smthrs/plugin/PluginHost"`.    |
+| `PluginRefused`, `RefusedReason`                 | `Schema.TaggedError` `"plugin/PluginRefused"`: `{ plugin, reason, detail }`.  |
+| `Live<R>`                                        | `{ current, subscribe }`, a framework-free live source.                       |
+| `ItemRef`, `EventRef`, `Dispatched`, `Delivered` | `{ query, key }`, `{ view, name }`, `{ runId, settled }`, `{ name, fields }`. |
+| `Settled`                                        | Schema: `{ _tag: "Done" }` or `{ _tag: "Failed", code }`, how a run ended.    |
+| `PluginTab<Q, A>`                                | `{ queries, actions }`, what a tab layer gives its components.                |
 
 ```ts
 export interface PluginHost {
@@ -634,6 +635,11 @@ export interface PluginHost {
 `events` is the declared local events of a view the host's keymap delivered, in
 order; person-only events are never delivered. `dispatch` of a person-only
 event is refused `person_only`: the host's action strip owns it.
+
+`dispatch` answers once the run started. Its `settled` waits for the run's end:
+`Done`, or `Failed` with the failure's stable code (a refusal's `code`, else
+its kind), never its message, so a view can say a run failed, why, and offer to
+run it again.
 
 ## Bind, When and Keys
 

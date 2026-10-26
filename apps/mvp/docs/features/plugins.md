@@ -68,7 +68,7 @@ Compiled UI plugin chunks run with the app's full power: the import rules are hy
 | `query(name)` | The rows of a declared query, live: `core/waits` is the viewer's open waits, oldest first (from the synced `runs`, [agent status](agent-status.md)). |
 | `select(item)` | The row the person is looking at; the strip under every view of the plugin that reads its query acts on it. A key that isn't a row is refused `not_in_reads`. |
 | `propose(event, fields)` | Prefills the strip's note from a strip event's text field. Nothing runs until the person presses. |
-| `dispatch(event, fields)` | Runs an event whose flow isn't person-only, door `view`. |
+| `dispatch(event, fields)` | Runs an event whose flow isn't person-only, door `view`. Answers the run's id and `settled`, which waits for its end: `Done`, or `Failed` with the failure's stable code (a refusal's `code`, else its kind, dispatch's refusal, `interrupted`), never a message. |
 | `open(view)` | Navigates to one of the plugin's views (`app/navigate`). |
 | `events(view)` | The view's local events the keymap delivered (`j`, `k`). |
 
