@@ -361,3 +361,8 @@ does not produce a failed browser request.
 ## Visibility of repository rows
 
 For visitors, a current GitHub metadata read must say the repository is public (decision 0012). “Current” means at most 60 seconds old. Each Worker isolate shares only completed answers by repository ID, retaining public and private-or-gone answers for 60 seconds. A cache miss makes its own request, including concurrent misses; no request waits on another request's I/O. Unavailable answers are never cached and refuse reads with 503. A private-or-gone answer refuses visitors.
+
+Curated public repository homes use the deployment read token for visitors too. These repositories are explicitly
+listed by the deployment, so arbitrary visitor input cannot spend that quota. They use REST, including its private
+repository refusal, since the deployment installation token need not have GraphQL access to that repository.
+The existing shared About cache and rate-limit holds still apply; real upstream failures remain errors.

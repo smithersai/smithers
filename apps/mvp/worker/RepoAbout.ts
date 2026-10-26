@@ -10,6 +10,7 @@ import * as GitHubConfig from "./github/Config.ts"
 import * as ReadToken from "./github/ReadToken.ts"
 import { allowed as allowedRepositories } from "./github/RepoRoles.ts"
 import * as Tokens from "./github/Tokens.ts"
+import * as Curated from "./home/Curated.ts"
 import * as RepoMetrics from "./RepoMetrics.ts"
 
 // What GitHub says of a repository (docs/features/repo.md#about): the answer the repository page, its home before a
@@ -26,7 +27,8 @@ import * as RepoMetrics from "./RepoMetrics.ts"
 // - **Read with the App's quota where its owner let Smithers act**: on a repository the Smithers App is installed on
 //   and `GITHUB_ALLOWED_REPOSITORIES` doesn't leave out, with an installation token minted for that repository, for
 //   everyone, visitors included. Elsewhere a Member's read uses the deployment's read token, and anyone else's is
-//   anonymous, so naming arbitrary repositories can't spend the App's quota.
+//   anonymous, so naming arbitrary repositories can't spend the App's quota. Curated public homes use the
+//   deployment read token over REST, avoiding Cloudflare's exhausted shared anonymous quota.
 // - **Few calls**: with a token, one GraphQL query and the contributors; anonymously, a slimmer REST read
 //   (worker/about/GitHubRead.ts).
 //
@@ -248,7 +250,9 @@ export const make = <E, R>(
             tokenError = minted.failure instanceof Tokens.TokenUnavailable ? `token:${minted.failure.reason}` : codeOf(minted.failure)
           }
         }
-        const deployment = (yield* member) ? yield* options.token : Option.none<Redacted.Redacted<string>>()
+        // Curated repositories are deployment-owned public entry points, not arbitrary caller input.
+        const deployment = (Curated.find(owner, name) !== undefined || (yield* member))
+          ? yield* options.token : Option.none<Redacted.Redacted<string>>()
         return {
           via: Option.isSome(deployment) ? "deployment" : "anonymous",
           token: deployment,
@@ -273,7 +277,7 @@ export const make = <E, R>(
           // An explicit, empty environment: no ambient GITHUB_TOKEN chooses the account.
           {},
         ).pipe(Effect.provideService(HttpClient.HttpClient, http), Effect.orDie)
-        const read = yield* (Option.isSome(token) ? graphql : rest)(client, owner, name, options.appSlug).pipe(Effect.result)
+        const read = yield* (Option.isSome(token) && Curated.find(owner, name) === undefined ? graphql : rest)(client, owner, name, options.appSlug).pipe(Effect.result)
         return { read, rateRemaining: yield* Ref.get(remaining) }
       })
 

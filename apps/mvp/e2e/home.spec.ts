@@ -91,7 +91,7 @@ test("declared: a repository's own home draws its blocks, Code opens its tree, a
   })
 })
 
-test("absent: a repository without a home opens on its tree, with no tabs", async ({ page }) => {
+test("absent: a repository without a home opens on its tree, with repository navigation", async ({ page }) => {
   const header = page.locator('header[aria-label="Repository"]')
   const readme = page.getByText("Well hello there!")
 
@@ -104,8 +104,11 @@ test("absent: a repository without a home opens on its tree, with no tabs", asyn
     await expect(readme).toBeVisible({ timeout: 120_000 })
   })
 
-  await step("No Home or Code tabs", async () => {
-    await expect(page.getByRole("navigation", { name: "Repository pages" })).toHaveCount(0)
+  await step("The repository frame keeps Home and Code navigation", async () => {
+    const tabs = page.getByRole("navigation", { name: "Repository pages" })
+    await expect(tabs.getByRole("link", { name: "Home", exact: true })).toHaveAttribute("href", "/octocat/Spoon-Knife")
+    await expect(tabs.getByRole("link", { name: "Code", exact: true })).toHaveAttribute("href", "/octocat/Spoon-Knife/tree/main")
+    await expect(tabs.getByRole("link", { name: "Docs", exact: true })).toHaveCount(0)
     await expect(page.getByRole("region", { name: "Home" })).toHaveCount(0)
     await expect(page.getByRole("link", { name: "README.md" }).first()).toBeVisible()
   })

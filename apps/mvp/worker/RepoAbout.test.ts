@@ -209,6 +209,47 @@ describe("whose quota a read spends", () => {
     expect(github.calls).not.toContain("/installation")
   })
 
+  test("a curated public home uses the deployment read token over REST for visitors", async () => {
+    const github = scriptedGitHub()
+    github.publish("Effect-TS", "effect")
+    const one = await isolate(github, { config: { GITHUB_TOKEN: "ghp_curated" } })
+    expect(answered(await one.answer("Effect-TS", "effect"))).toMatchObject({ via: "deployment", maxAgeSeconds: 600 })
+    expect(github.calls).not.toContain("graphql")
+    expect(new Set(github.authorizations)).toEqual(new Set(["Bearer ghp_curated"]))
+    expect(JSON.stringify(one.logs)).not.toContain("ghp_curated")
+  })
+
+  test("a curated visitor falls back to the configured App's metadata read token when its own installation is absent", async () => {
+    const github = scriptedGitHub()
+    github.publish("Effect-TS", "effect")
+    github.install("acme", "home")
+    const one = await isolate(github, { config: await appConfig() })
+    expect(answered(await one.answer("Effect-TS", "effect"))).toMatchObject({ via: "deployment" })
+    expect(github.calls).not.toContain("graphql")
+    expect(github.minted).toEqual([{ token: "ghs_about_1", repositories: ["home"], permissions: { metadata: "read" } }])
+    expect(one.reads()[0]).toMatchObject({ via: "deployment", outcome: "answered" })
+  })
+
+  test("a curated repository becoming private is refused even with the deployment token", async () => {
+    const github = scriptedGitHub()
+    github.publish("Effect-TS", "effect", spoonKnife({ private: true }))
+    const one = await isolate(github, { config: { GITHUB_TOKEN: "ghp_curated" } })
+    expect(await one.answer("Effect-TS", "effect")).toMatchObject({ _tag: "Refused", code: "not_found" })
+    expect(github.calls).toEqual([""])
+  })
+
+  test("a curated read records an upstream connection failure without an HTTP status", async () => {
+    const github = scriptedGitHub()
+    github.publish("Effect-TS", "effect")
+    github.fail("", "network")
+    const one = await isolate(github, { config: { GITHUB_TOKEN: "ghp_curated" } })
+    expect(await one.answer("Effect-TS", "effect")).toMatchObject({
+      _tag: "Refused", code: "github_unavailable",
+      read: { via: "deployment", stage: "repository", outcome: "github_unavailable" },
+    })
+    expect(one.reads()[0]).not.toHaveProperty("upstreamStatus")
+  })
+
   test("a Member's read of a repository without the App uses the deployment's token; nobody's spends it otherwise", async () => {
     const github = scriptedGitHub()
     github.publish("octocat", "Spoon-Knife")
