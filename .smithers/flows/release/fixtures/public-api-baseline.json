@@ -3642,7 +3642,7 @@
         "DeferredClockFold.d.ts": "60f7ee9d38d712e21e1b35f217786c58d3c94939fbd97965300fd5941a1bd904",
         "DisasterRecovery.d.ts": "bed744cf4cf459bfeb090f05d0fceb9fd90fbbe38798df0e816297c5a4c145da",
         "DurableEngineState.d.ts": "ad16b01161c5f6dd9c3777aba584903f852d22574439437aff9a4bd2b2d161dd",
-        "EngineStore.d.ts": "b7b0d7b3c7189e01c1030e3de1590e57ee514166ee9fad07462a5d4b9f56ab03",
+        "EngineStore.d.ts": "3c8e5183aee5717c8ed11f338c23cab814a4e74017773dee4e22d5ed9f6cbdc3",
         "EngineStoreMetrics.d.ts": "b39565362baaf6440411c179b6814372b745b4522d53be21d2f569d6105f254d",
         "Errors.d.ts": "9013130829b7f8df2e986e3b259c282797f3ce0b44c3bcf8f4de311815965d7b",
         "EventTypes.d.ts": "d6cc09404bc4e1afe2f014ee07eab7e83818bf7e5e7bb96bba5dd369604b8a23",
@@ -4271,7 +4271,7 @@
         "./SandboxedFlow": null
       },
       "declarations": {
-        "Runtime.d.ts": "83a502773e1fba1c68298d26c898af03f507763e02c3bad94f5c41fe2839b64b",
+        "Runtime.d.ts": "5c19db6534415407df5e73b4446443b8ec60f55069f1aca3d9cd43c3acb83655",
         "index.d.ts": "a1e5e55c06e030fb6948f7b5767417abda4930b4f7b3252b669f4b7a31eed266",
         "internal/RegistryArgs.d.ts": "50a11574418857393368200faca06dfd3f6cf8f85a91faa3cfbe17f34ba1c31d",
         "internal/RuntimeOptions.d.ts": "4a4692fc4a65e5075ce0a5d778c20b5aa4102b8062f206ebc44dface5309704b"
@@ -8484,7 +8484,7 @@
         "EgressHttpClient.d.ts": "fa54cc7e689b6359d4f153e4d26a84351bb5770076e6316ef1e8459d8e54ee24",
         "FetchTransport.d.ts": "cc836e4cbd7e997475d5a37f486ddbc4d1c517dd3b473d2f08b094df1c21d753",
         "HostLiveness.d.ts": "fc8622dd5e4c57dcf717f211390d0599f547e13fa6d75a032f3e7544906a90ea",
-        "NativeRuntime.d.ts": "85d2ddc88a5ec562105bf64cb9e2b21f1bd2099af9449e8bd553ab59f73f83ab",
+        "NativeRuntime.d.ts": "424054b426339252c2c3f4eca4dfbcbf9ad659161ed307e81eb760c75e189d5f",
         "NodeGarbageCollector.d.ts": "eabc3bb1d5cc1fc3b215fddcff37acd9705c76d154aefdae7dfe14cf21d61066",
         "NodeHost.d.ts": "0b7294c6c5759fe3e5d533859278e0fa1d33d01ef7238cb46fd27e1f7e374340",
         "NodeLanguageServer.d.ts": "af1f024ba73ed84161961561126d5eba2c30929f4e1f01e3d61e1499c8a7e278",
