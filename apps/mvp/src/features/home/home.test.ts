@@ -168,6 +168,7 @@ describe("a repository's home", () => {
     await waitFor(() => expect(page(tab).home?.state).toBe("absent"))
     expect(page(tab)).toMatchObject({ page: { kind: "tree", notice: null }, tabs: { owner: "maya", repo: "tinyhttp", ref: "main", _splat: "", docs: false } })
     expect(tab.lines("home.resolve")[0]!.annotations).toMatchObject({ outcome: "absent", status: 404, blocks: 0 })
+    expect(h.line("repo.blob").map((line) => line.annotations.status)).toEqual([204])
   })
 
   test("a home declaring no blocks is the tree too", async () => {

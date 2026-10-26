@@ -347,7 +347,14 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
               }),
             )
             : reads.value.blob(target.owner, target.name, target.sha, target.file).pipe(
-              Effect.map(({ bytes, metadata }) => {
+              Effect.catchTag("ReadRefused", (error) =>
+                target.kind === "blob" && new URL(request.url, "http://localhost").searchParams.get("optional") === "true" && error.code === "not_found"
+                  // A missing repository or unreadable commit remains an error. Only a file's absence is normal.
+                  ? reads.value.tree(target.owner, target.name, target.sha).pipe(Effect.as(null))
+                  : Effect.fail(error)),
+              Effect.map((file) => {
+                if (file === null) return HttpServerResponse.empty({ status: 204, headers: immutable })
+                const { bytes, metadata } = file
                 fields.bytes = bytes.length
                 return HttpServerResponse.uint8Array(bytes, {
                   headers: {

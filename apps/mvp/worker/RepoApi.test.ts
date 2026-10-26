@@ -463,6 +463,15 @@ describe("reads", () => {
     const missing = await h.fetch(blobRoute("octocat", "Spoon-Knife", headSha, "nope.md"))
     expect(missing.status).toBe(404)
     expect(await missing.json()).toEqual({ code: "not_found" })
+    const absent = await h.fetch(`${blobRoute("octocat", "Spoon-Knife", headSha, ".smithers/home.json")}?optional=true`)
+    expect(absent.status).toBe(204)
+    expect(await absent.text()).toBe("")
+    const present = await h.fetch(`${blobRoute("octocat", "Spoon-Knife", headSha, "README.md")}?optional=true`)
+    expect(present.status).toBe(200)
+    expect(await present.text()).toContain("# Fixture")
+    expect((await h.fetch(`${blobRoute("octocat", "Missing", headSha, ".smithers/home.json")}?optional=true`)).status).toBe(404)
+    h.scripted.fail("readFile", h.scripted.error("readFile", "internal_error", 500))
+    expect((await h.fetch(`${blobRoute("octocat", "Spoon-Knife", headSha, ".smithers/home.json")}?optional=true`)).status).toBe(503)
   })
 
   test("refuses bad input: a method, a SHA, a path, a name, a route", async () => {

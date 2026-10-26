@@ -350,3 +350,8 @@ Records: `repo.refresh.inspect`, `.pull`, `.settle` spans, `repo.refresh` logs w
 Regression coverage is in `worker/flows/RepoRefresh.test.ts`, webhook API tests and the repository device suite.
 `e2e/vibelang-highlighting.spec.ts` additionally obtains GitHub's newest commit and compares its README with
 Smithers' tree/blob responses; it runs locally or against a deployment with the declared Code Storage/member needs.
+
+Optional blob reads use `?optional=true`: an absent file at a readable commit returns
+204 with no body. Missing repositories, unsynced commits and provider failures retain
+their error responses. Repository homes use this query so an absent `.smithers/home.json`
+does not produce a failed browser request.

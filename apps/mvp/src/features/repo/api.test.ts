@@ -140,6 +140,37 @@ describe("RepoClient against a gateway", () => {
     expect(failureOf(await withClient(bad.origin, (client) => client.refs("o", "n")))).toMatchObject({ status: 200 })
   })
 
+  test("clone launches decode accepted and settled receipts, and refuse unexpected statuses", async () => {
+    for (const [status, body] of [[202, { launched: true }], [200, { launched: false, status: "ready" }], [503, {}]] as const) {
+      const s = await serve((_request, response) => response.writeHead(status).end(JSON.stringify(body)))
+      const result = await withClient(s.origin, (client) => client.launch("o", "n", "attempt"))
+      expect(s.paths).toEqual(["POST /api/repos/launch"])
+      if (status === 503) expect(failureOf(result)).toMatchObject({ status: 503 })
+      else {
+        expect(result._tag).toBe("Success")
+        expect(result._tag === "Success" ? result.success : undefined).toEqual(body)
+      }
+    }
+  })
+
+  test("repository roles decode the access receipt and preserve refusals", async () => {
+    const body = { role: "member", own: false, readable: true }
+    const s = await serve((_request, response) => response.writeHead(200).end(JSON.stringify(body)))
+    const result = await withClient(s.origin, (client) => client.role("o", "n"))
+    expect(result._tag).toBe("Success")
+    expect(result._tag === "Success" ? result.success : undefined).toEqual(body)
+    const refused = await serve((_request, response) => response.writeHead(503).end())
+    expect(failureOf(await withClient(refused.origin, (client) => client.role("o", "n")))).toMatchObject({ status: 503 })
+  })
+
+  test("an optional home requests absence as a successful response", async () => {
+    const s = await serve((request, response) => {
+      expect(request.url).toBe(`/api/repos/o/n/blob/${SHA}/.smithers/home.json?optional=true`)
+      response.writeHead(204).end()
+    })
+    expect(failureOf(await withClient(s.origin, (client) => client.blob("o", "n", SHA, ".smithers/home.json")))).toMatchObject({ status: 404, code: "not_found" })
+  })
+
   test("a file's bytes arrive as they were sent", async () => {
     const bytes = new Uint8Array([0, 1, 2, 255])
     const s = await serve((_request, response) => response.writeHead(200).end(bytes))
