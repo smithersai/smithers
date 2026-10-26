@@ -42,7 +42,7 @@ test("open a repository from chat and toggle full screen: small in the chat, its
   await expect(spoonKnife).toHaveCount(before + 1)
 
   await step("A: Full screen", () => view.getByRole("link", { name: "Full screen" }).click())
-  await expect(a.page).toHaveURL(/\/octocat\/Spoon-Knife$/)
+  await expect(a.page).toHaveURL(/\/octocat\/Spoon-Knife\/tree\/main$/)
   await expect(a.page.getByRole("heading", { name: "octocat / Spoon-Knife" })).toBeVisible({ timeout: 30_000 })
 
   await step("A: Back to chat", () => backToChat(a.page).click())

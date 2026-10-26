@@ -81,6 +81,16 @@ describe("embedShown", () => {
 })
 
 describe("fullScreenHref", () => {
+  test("keeps the displayed branch explicit even when it is the synced default", () => {
+    const target = { repo: "octocat/Spoon-Knife" }
+    const ready = { state: "ready" as const, revision: "main" }
+    const repository = { owner: "octocat", name: "Spoon-Knife", defaultBranch: "main" }
+    expect(fullScreenHref(target, row(ready))).toBe("/octocat/Spoon-Knife/tree/main")
+    expect(fullScreenHref(target, row(ready, { repository }))).toBe("/octocat/Spoon-Knife/tree/main")
+    expect(fullScreenHref(target, row({ ...ready, revision: "dev" }, { repository })))
+      .toBe("/octocat/Spoon-Knife/tree/dev")
+  })
+
   test("opens what the view shows once known, else what its props name", () => {
     expect(fullScreenHref({ repo: "octocat/Spoon-Knife" }, undefined)).toBe("/octocat/Spoon-Knife")
     // A path without a ref waits for the default branch's name: the root until the view knows it.

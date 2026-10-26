@@ -55,7 +55,7 @@ describe("a cloned repository's view", () => {
     await waitFor(() => expect(tab.repo.queries.embeds.toArray.find((row) => row.embed.key === "v-root")?.body?.state).toBe("text"))
     const shownRoot = embedShown(tab.repo.queries.embeds.toArray.find((row) => row.embed.key === "v-root"))
     expect(shownRoot).toMatchObject({ kind: "view", location: { kind: "tree", path: "" }, readme: { path: "README.md" } })
-    expect(fullScreenHref({ repo: SPOON }, root)).toBe("/octocat/Spoon-Knife")
+    expect(fullScreenHref({ repo: SPOON }, root)).toBe("/octocat/Spoon-Knife/tree/main")
 
     // A path the repository lists as a file opens as one; its README-less directory as a directory.
     const file = await load(tab, "v-file", { repo: SPOON, path: "src/index.ts" })
@@ -90,6 +90,29 @@ describe("a cloned repository's view", () => {
     expect(h.scripted.calls).toHaveLength(reads)
     expect((await load(tab, "v-bad", { repo: "app/widgets" })).embed.state).toBe("missing")
     expect((await load(tab, "v-no-name", { repo: "octocat" })).embed).toMatchObject({ state: "missing", name: "" })
+  })
+
+  test("Full screen keeps the displayed revision before and after the repository shape arrives", async () => {
+    const h = await repoHarness(server)
+    await h.seed("octocat", "Spoon-Knife")
+    // Hold Electric through its injected Effect ShapeSource: RepoApi can resolve the head independently.
+    const tab = await openTab({ origin: h.origin, fetch: h.fetch, shapes: "stalled" })
+    tabs.push(tab)
+    const target = { repo: SPOON }
+    const before = await load(tab, "v-cold", target)
+    expect(before.embed).toMatchObject({ state: "ready", revision: "main" })
+    expect(before.repository).toBeUndefined()
+    expect(fullScreenHref(target, before)).toBe("/octocat/Spoon-Knife/tree/main")
+
+    await tab.heal()
+    const after = await waitFor(() => {
+      const row = tab.repo.queries.embeds.toArray.find((each) => each.embed.key === "v-cold")
+      expect(row?.repository?.defaultBranch).toBe("main")
+      return row!
+    })
+    expect(fullScreenHref(target, after)).toBe("/octocat/Spoon-Knife/tree/main")
+    // A previously read query result must name the same destination too.
+    expect(fullScreenHref(target, before)).toBe(fullScreenHref(target, after))
   })
 
   test("a ref whose branches Code Storage couldn't list says why", async () => {

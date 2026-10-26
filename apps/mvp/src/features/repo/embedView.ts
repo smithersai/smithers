@@ -93,7 +93,11 @@ export const fullScreenHref = (
   row: EmbedQueryRow | undefined,
 ): string => {
   const shown = embedShown(row)
-  if (row !== undefined && shown.kind === "view") return embedHref(row.embed, shown, shown.location)
+  // Full screen preserves the displayed revision. Collapsing the default root to /owner/name would
+  // depend on the asynchronously joined repository row and could open a different default branch later.
+  if (row !== undefined && shown.kind === "view") {
+    return hrefFor({ owner: row.embed.owner, name: row.embed.name, defaultBranch: null }, shown.revision, shown.location)
+  }
   const base = `/${target.repo.split("/").map(encodeURIComponent).join("/")}`
   if (target.ref === undefined) return base
   const path = target.path ?? ""
