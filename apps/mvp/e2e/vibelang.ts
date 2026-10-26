@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test"
 import { expect, step, test } from "./fixtures"
+import { liveDocs, renderedDocs } from "./live-docs"
 import { baseURL, describeNeed, requires, target } from "./target"
 
 // The VibeLang repository on Smithers (rulings SCOPE-12, SCOPE-13): what the visitor, contributor and maintainer
@@ -99,18 +100,21 @@ export const contribute = async (page: Page) => {
 
 /** VibeLang's docs, in the Docs tab: the index, a search, and a page drawn in the app (docs/features/docs.md). */
 export const readDocs = async (page: Page) => {
+  const source = await liveDocs(page)
   await step("Docs: VibeLang's docs index, in the app", async () => {
     await tabsOf(page).getByRole("link", { name: "Docs", exact: true }).click()
     await expect(page).toHaveURL(new RegExp(`${REPO}/docs$`))
-    await expect(page.getByRole("heading", { name: "VibeLang", exact: true })).toBeVisible({ timeout: 60_000 })
-    await expect(page.getByRole("link", { name: "Installation", exact: true })).toBeVisible()
+    await expect(page.getByRole("heading", { name: source.index.title, exact: true })).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByRole("link", { name: source.selected.title, exact: true })).toBeVisible()
   })
-  await step("Search the docs for retry, and open Retrying", async () => {
-    await page.getByRole("searchbox", { name: "Search docs" }).pressSequentially("retry", { delay: 40 })
-    await page.getByRole("link", { name: "Retrying", exact: true }).click({ timeout: 30_000 })
-    await expect(page).toHaveURL(new RegExp(`${REPO}/docs/error-management/018-retrying\\.md$`))
-    const docs = page.getByRole("region", { name: "Docs", exact: true })
-    await expect(docs.getByRole("heading", { name: "Retrying" }).first()).toBeVisible({ timeout: 60_000 })
+  await step(`Search the docs for ${source.query}, and open ${source.selected.title}`, async () => {
+    await page.getByRole("searchbox", { name: "Search docs" }).pressSequentially(source.query, { delay: 40 })
+    const link = page.locator(`a[href="${REPO}/docs${source.selected.path}"]`)
+    await expect(link).toBeVisible({ timeout: 30_000 })
+    await expect(page.locator(`a[href="${REPO}/docs${source.excluded.path}"]`)).toHaveCount(0)
+    await link.click()
+    await expect(page).toHaveURL((url) => url.pathname === `${REPO}/docs${source.selected.path}`)
+    await renderedDocs(page.getByRole("region", { name: "Docs", exact: true }), source)
   })
 }
 

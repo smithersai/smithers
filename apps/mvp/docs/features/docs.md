@@ -98,10 +98,12 @@ No record carries a query, a path, a URL, a title or a page's text.
 | `src/features/docs/search.test.ts` | the steps on the Node host's engine against ChatApi's real routes: one page and three, a lost page left out, text bounded, nothing matched, refusals, passing failures tried again, conversations by door, records; the agent's `ctx.call` as a journaled step whose answer carries the page's text; the client |
 | `src/features/views/views.test.ts` | `/docs` on a Node device shows the page inline with its Markdown and at full size |
 | `db/Database.test.ts` "0043_docs_views" | the template's check |
-| `e2e/docs.spec.ts` | on `smithersai/vibelang`, live: a visitor's Docs tab lists vibelang.sh's index, `Search docs` finds "Retrying" as they type, and the page renders with its site; `/docs` shows it in the chat and at full size; with the real model (`requires("liveModel")`), the agent asked how to retry shows a docs page |
+| `e2e/docs.spec.ts` | on `smithersai/vibelang`, live: a visitor's Docs tab lists vibelang.sh's index, `Search docs` finds a page selected from the live index as they type, and its heading and code body match the live Markdown with its site; `/docs` shows it in the chat and at full size; with the real model (`requires("liveModel")`), the agent asked how to retry shows a docs page |
 
 Run them with the compose Postgres and Electric up: `pnpm exec vitest run worker/docs worker/Views.test.ts src/features/docs src/features/views`, and `pnpm exec playwright test e2e/docs.spec.ts` against `pnpm dev`.
 
 ## Plugin
 
 The feature is self-contained, as a first-party plugin will be once the plugin host lands ([decision 0017](../decisions/0017-everything-is-a-plugin.md)): a docs source a repository declares (its home), ChatApi's docs routes, the `docs` card, the flow and its `/docs` command, and the Docs tab. `src/features/docs/plugin.json` declares those contributions; until the loader exists, the app wires them explicitly.
+
+The docs e2e oracle (`e2e/live-docs.ts`) reads vibelang.sh’s live index and selected Markdown independently of ChatApi. Titles, paths, search words and expected body come from that source; a failed source read fails the test rather than choosing a different page. Production’s reported Retrying read failure was not reproducible on 2026-10-25: the listed URL and ChatApi both returned its Markdown.

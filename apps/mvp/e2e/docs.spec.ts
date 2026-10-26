@@ -2,16 +2,15 @@ import type { BrowserContext, Page, Request } from "@playwright/test"
 import { VIEWS_ROUTE } from "../src/features/views/contract"
 import { expect, test } from "./devices"
 import { step } from "./fixtures"
+import { liveDocs, renderedDocs } from "./live-docs"
 import { baseURL, requires, target } from "./target"
 
 // A repository's docs (ruling AGENT-6, docs/features/docs.md) against the real app, ChatApi, Postgres and Electric, and
 // the real outside world: GitHub says what `smithersai/vibelang`'s own home names (`"docs":
 // "https://vibelang.sh/llms.txt"`), and ChatApi reads that index and its pages from vibelang.sh. Nothing here is
-// scripted, so a page title is the docs site's own: "Retrying" is `/error-management/018-retrying.md`.
+// scripted; expected titles, paths and Markdown come from the live index and page at run time.
 
 const REPO = "/smithersai/vibelang"
-const PAGE = "/error-management/018-retrying.md"
-const SITE_PAGE = `https://vibelang.sh${PAGE}`
 
 /** Typing a person can follow in the video. */
 const typing = { delay: 40 }
@@ -39,6 +38,7 @@ test.describe("smithersai/vibelang's docs", () => {
     "visitor: the Docs tab lists the index, finds pages as you type, and opens one",
     { annotation: { type: "summary", description: "Signed out, VibeLang's Docs tab lists vibelang.sh's pages, searches them and shows one." } },
     async ({ page }) => {
+      const source = await liveDocs(page)
       const docs = page.getByRole("region", { name: "Docs", exact: true })
       await step("Open smithersai/vibelang signed out", async () => {
         await signOut(page)
@@ -53,56 +53,54 @@ test.describe("smithersai/vibelang's docs", () => {
         await expect(tabs.getByRole("link", { name: "Docs", exact: true })).toHaveAttribute("aria-current", "page")
       })
       await step("The index: every page, by section", async () => {
-        await expect(page.getByRole("heading", { name: "VibeLang", exact: true })).toBeVisible({ timeout: 60_000 })
-        await expect(page.getByRole("link", { name: "Installation", exact: true })).toBeVisible()
+        await expect(page.getByRole("heading", { name: source.index.title, exact: true })).toBeVisible({ timeout: 60_000 })
+        await expect(page.getByRole("link", { name: source.excluded.title, exact: true })).toBeVisible()
       })
-      await step("Search docs for retry: matches as you type", async () => {
+      await step(`Search docs for ${source.query}: matches as you type`, async () => {
         const search = page.getByRole("searchbox", { name: "Search docs" })
-        await search.pressSequentially("retry", typing)
-        await expect(page.getByRole("link", { name: "Retrying", exact: true })).toBeVisible({ timeout: 30_000 })
+        await search.pressSequentially(source.query, typing)
+        await expect(page.getByRole("link", { name: source.selected.title, exact: true })).toBeVisible({ timeout: 30_000 })
         // The index's other pages are gone: only matches show.
-        await expect(page.getByRole("link", { name: "Installation", exact: true })).toHaveCount(0)
+        await expect(page.getByRole("link", { name: source.excluded.title, exact: true })).toHaveCount(0)
       })
-      await step("Open Retrying: the page, rendered, with its site", async () => {
-        await page.getByRole("link", { name: "Retrying", exact: true }).click()
-        await expect(page).toHaveURL(new RegExp(`${REPO}/docs${PAGE}$`))
-        await expect(docs.getByRole("heading", { name: "Retrying" }).first()).toBeVisible({ timeout: 60_000 })
+      await step(`Open ${source.selected.title}: the page, rendered, with its site`, async () => {
+        await page.getByRole("link", { name: source.selected.title, exact: true }).click()
+        await expect(page).toHaveURL((url) => url.pathname === `${REPO}/docs${source.selected.path}`)
         await expect(docs.locator('[data-slot="docs-page-origin"]')).toHaveText("https://vibelang.sh")
-        await expect(docs.getByRole("link", { name: "Open on site" })).toHaveAttribute("href", SITE_PAGE)
-        // Rendered Markdown: code blocks, never the raw fences.
-        await expect(docs.locator("pre").first()).toBeVisible()
-        await expect(docs).not.toContainText("```")
+        await expect(docs.getByRole("link", { name: "Open on site" })).toHaveAttribute("href", source.selected.url)
+        await renderedDocs(docs, source)
       })
       await step("The page by its own URL, after a reload", async () => {
         await page.reload()
-        await expect(docs.getByRole("heading", { name: "Retrying" }).first()).toBeVisible({ timeout: 60_000 })
+        await renderedDocs(docs, source)
       })
     },
   )
 
   test(
     "member: /docs shows a page of VibeLang's docs in the chat, rendered, and at full size",
-    { annotation: { type: "summary", description: "/docs smithersai/vibelang retry adds the Retrying page to the chat, its Markdown kept for every device." } },
+    { annotation: { type: "summary", description: "/docs adds a live indexed page to the chat, its Markdown kept for every device." } },
     async ({ devices }) => {
       requires("personalModel", "ownConversation")
       const [a] = await devices.open("A")
+      const source = await liveDocs(a.page)
       const added = viewsAdded(a.device.context)
-      await step("A sends /docs smithersai/vibelang retry", async () => {
+      await step(`A searches docs for ${source.query}`, async () => {
         await a.openComposer()
-        await a.composer.pressSequentially("/docs smithersai/vibelang retry", typing)
+        await a.composer.pressSequentially(`/docs smithersai/vibelang ${source.query}`, typing)
         await a.composer.press("Enter")
       })
       await expect.poll(() => added.length, { timeout: 60_000 }).toBe(1)
-      expect(added[0]).toMatchObject({ template: "docs", props: { repository: "smithersai/vibelang", path: PAGE } })
+      expect(added[0]).toMatchObject({ template: "docs", props: { repository: "smithersai/vibelang", path: source.selected.path } })
       const view = a.page.locator(`[data-view="${added[0]!.id}"][data-template="docs"]`)
       await step("The page shows in the chat with its site", async () => {
-        await expect(view.getByRole("heading", { name: "Retrying" }).first()).toBeVisible({ timeout: 60_000 })
-        await expect(view.getByRole("link", { name: "Open on site" })).toHaveAttribute("href", SITE_PAGE)
+        await renderedDocs(view, source)
+        await expect(view.getByRole("link", { name: "Open on site" })).toHaveAttribute("href", source.selected.url)
       })
       await step("Full screen: the same page at full size", async () => {
         await view.getByRole("link", { name: "Full screen" }).click()
         await expect(a.page).toHaveURL(new RegExp(`/app/views/${added[0]!.id}`))
-        await expect(a.page.getByRole("heading", { name: "Retrying", level: 1 })).toBeVisible({ timeout: 30_000 })
+        await expect(a.page.getByRole("heading", { name: source.heading, exact: true, level: 1 })).toBeVisible({ timeout: 30_000 })
       })
     },
   )
