@@ -100,3 +100,27 @@ export const start = async (entry: string, name: string) => {
   })
   return { worker, wasm: output.filter((file) => file.fileName.endsWith(".wasm")).map((file) => file.fileName) }
 }
+
+/**
+ * One request to `worker`, its body read at once. Miniflare's `dispatchFetch` wraps undici's response body in a new
+ * `Response` and drops the original, which undici cancels when the garbage collector reclaims it: a body still unread
+ * then reads as "Body has already been read". A test that awaits many responses before reading any of them loses one
+ * whenever a collection runs in between, as it did once under a loaded host (2026-10-25).
+ */
+export const answer = async (worker: Miniflare, url: string, init?: Parameters<Miniflare["dispatchFetch"]>[1]) => {
+  const response = await worker.dispatchFetch(url, init)
+  return { status: response.status, headers: response.headers, body: await response.text() }
+}
+
+/**
+ * Makes Miniflare fail a test that leaves a body unread past the current turn (`MINIFLARE_ASSERT_BODIES_CONSUMED`),
+ * so a late read fails every run instead of only when a collection happens to run first. Returns the restore.
+ */
+export const assertBodiesConsumed = () => {
+  const before = process.env.MINIFLARE_ASSERT_BODIES_CONSUMED
+  process.env.MINIFLARE_ASSERT_BODIES_CONSUMED = "true"
+  return () => {
+    if (before === undefined) delete process.env.MINIFLARE_ASSERT_BODIES_CONSUMED
+    else process.env.MINIFLARE_ASSERT_BODIES_CONSUMED = before
+  }
+}
