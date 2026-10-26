@@ -169,3 +169,5 @@ repository's audience: a role elsewhere grants nothing there. Returning to a rep
 authorized view again. This applies to GitHub's declared home before cloning and to curated homes.
 
 A preview selects its home and default branch in one conditional store update. If the clone has selected its home meanwhile, the preview leaves both unchanged. `home.test.ts` pauses that write, lets the real clone finish, then releases it; the clone’s `release/1.0` branch remains selected.
+
+Asking from a home stays fenced to the deployment’s own repository (decision 0079). On another repository, including VibeLang on the hosted deployment, Contribute retains setup, contribution and issue links but omits prompt blocks entirely. It does not show the composer’s Add your model state there; BYOK (decision 0099) gates the composer where asking is available. The contributor e2e asserts both the retained content and the absent prompt.

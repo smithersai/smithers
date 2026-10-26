@@ -94,7 +94,15 @@ export const contribute = async (page: Page) => {
   await expect(section.getByRole("heading", { name: "How a change lands" })).toBeVisible()
   await expect(section.getByText("A pull request; a person merges")).toBeVisible()
   await expect(section.getByRole("link", { name: "Issues" })).toHaveAttribute("href", "https://github.com/smithersai/vibelang/issues")
-  await expect(section.getByRole("heading", { name: "Ask about the code" })).toBeVisible()
+  // Decision 0079 fences asking from a home to the deployment's own repository.
+  // VibeLang is another repository on the hosted deployment, even for a signed-in contributor.
+  if (target === "deployment") {
+    await expect(section.getByRole("heading", { name: "Ask about the code" })).toHaveCount(0)
+    await expect(section.getByRole("link", { name: "Ask about VibeLang's compiler…" })).toHaveCount(0)
+    await expect(section.getByText("Add your model", { exact: true })).toHaveCount(0)
+  } else {
+    await expect(section.getByRole("heading", { name: "Ask about the code" })).toBeVisible()
+  }
   return section
 }
 
