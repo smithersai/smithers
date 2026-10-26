@@ -1,6 +1,6 @@
 # Pull requests
 
-GitHub is the truth for pull requests, as for issues ([issues](issues.md)): Postgres holds a projection that only the server's GitHub flows write, and Electric syncs it to every device. A person merges, never the agent; a pull request's checks are Smithers runs on its head, never GitHub check runs (decision [0012](../decisions/0012-git-end-to-end.md) decisions 6 and 12), each reported on the head as the write-only commit status `smithers/<name>` (ruling GH-10). The `todo` run opens the pull requests ([TODOs](todos.md#the-run)).
+GitHub is the truth for pull requests, as for issues ([issues](issues.md)): Postgres holds a projection that only the server's GitHub flows write, and Electric syncs it to every device. A person merges, never the agent; a pull request's checks are Smithers runs on its head, never GitHub check runs (decision [0012](../decisions/0012-git-end-to-end.md) decisions 6 and 12), each reported on the head as the write-only commit status `smithers/<name>` (ruling GH-10). The `todo` run opens pull requests ([TODOs](todos.md#the-run)), and so does a person's Publish of a branch ([branch publish](branch-publish.md)).
 
 ```
 GitHub ── pull_request, pull_request_review ─▶ POST /api/github/webhook ─▶ github/Apply (re-read the pull request)
@@ -36,7 +36,7 @@ GET /api/repos/<o>/<n>/compare/<base>...<head> ─▶ the files two commits diff
 | Route | Answers |
 |---|---|
 | `POST /api/repos/<owner>/<name>/writes` `{ writeId, op: "pr/merge", number, headSha, baseSha, method? }` | `202 { txid, writeId }` and `pr/Merge` started (`pr-merge:<writeId>`); refusals as issues' writes: `403 forbidden` for a Member, a Guest or anyone acting for the person, `401 authentication` without a session |
-| `GET /api/repos/<owner>/<name>/compare/<base>...<head>` | `200 { files, truncated }`, `Cache-Control: private, max-age=31536000, immutable`; `404 not_found` (no such commits, another repository), `401`/`403` as the shapes, `503 not_configured` (no App) or `unavailable` |
+| `GET /api/repos/<owner>/<name>/compare/<base>...<head>` | `200 { files, truncated, commits, commitsTruncated }`, `Cache-Control: private, max-age=31536000, immutable`, on any repository the person may read as the shapes allow (a published branch's lives on its own); `404 not_found` (no such commits), `401`/`403` as the shapes, `503 not_configured` (no App) or `unavailable` |
 | `GET /api/shapes/pulls`, `/api/shapes/pull-commits`, `/api/shapes/reviews` | the repository's rows, `PULL_COLUMNS`, `PULL_COMMIT_COLUMNS`, `REVIEW_COLUMNS` |
 | `GET /api/shapes/checks` | the repository's `runs` with a commit (`CHECK_COLUMNS`): never who launched them |
 
@@ -151,7 +151,7 @@ No record carries a title, a body, a diff, a finding, a command's output or a lo
 ## Not built yet
 
 - The pages' end-to-end run with its chaptered recording, against a live instance with the GitHub App ([pull requests](../work/pull-request-list-and-tabs.md)).
-- Opening a pull request by hand from a branch, Update branch and the branches page: deferred; GH-6 asks for them, and GH-11 needs an explicit publish for a Smithers-only branch.
+- The branches page: deferred; GH-6 and GH-11 still require it. Opening a pull request from a branch (Publish), Update branch and a branch's compare view are built ([branch publish](branch-publish.md)).
 - The configurable merge flow (BR-7): merging into the default branch runs a flow a repository can override, whose default admits Maintainers and Admins. Today the gate is fixed in the writes route and `pr/Merge`.
 
 ### Projection and merge recovery

@@ -29,19 +29,19 @@ use    a slot draws · a view opens · a key or command fires ─▶ the plugin'
 - **A refused plugin never blocks boot.** It is logged as `plugin.refused` with its reason and the field (`contributes.keybindings[2].event`), and the rest load. A component that throws, or a chunk that fails, shows one line naming the plugin, and the shell stays (`Boundary.tsx`).
 - **Lazy.** No component, tab or flow body loads at boot. A plugin's tab is built on first use, in the host's scope, from `PluginHost` alone.
 
-## Branch creation flows
+## Branch flows
 
-New conversations use `branch/creation/start`, which selects a plugin implementation before executing its code. The default is `plugins/branches`: its public `Flow.make("branches/create", …)` calls `branches/ephemeral`, creating a Smithers-only branch. It does not publish to GitHub.
+New conversations use `branch/creation/start`, which selects a plugin implementation before executing its code. The default is `plugins/branches`: its public `Flow.make("branches/create", …)` calls `branches/ephemeral`, creating a Smithers-only branch. It does not publish to GitHub. Publish and Update branch select and run the same plugin's `branches/publish` and `branches/update` the same way, through `branch/operation/start` ([branch publish](branch-publish.md#overriding-the-flows)).
 
 A repository selects an implementation in `.smithers/branch.json`:
 
 ```json
-{ "plugin": "team-branches", "flow": "create" }
+{ "plugin": "team-branches", "flow": "create", "publish": "ship", "update": "sync" }
 ```
 
-Members and above use `GET /api/branches/creation`, which reads that configuration, `.smithers/plugins/team-branches/plugin.json`, and `.smithers/flows/team-branches/create/flow.ts` at one default-branch commit. The manifest must own `create`, match its plugin id, and pass the same public `Manifest` and `Load` checks. This host advertises only the `flows` point; UI contributions remain unsupported here. Missing configuration selects the default; malformed, missing or unavailable installation files fail without falling back.
+`flow` names the creation flow; `publish` and `update` the operations' flows. An operation the configuration names no flow for runs the first-party one. Members and above use `GET /api/branches/creation?operation=<create|publish|update>`, which reads that configuration, `.smithers/plugins/team-branches/plugin.json`, and `.smithers/flows/team-branches/create/flow.ts` at one default-branch commit. The manifest must own `create`, match its plugin id, and pass the same public `Manifest` and `Load` checks. This host advertises only the `flows` point; UI contributions remain unsupported here. Missing configuration selects the default; malformed, missing or unavailable installation files fail without falling back.
 
-The browser's durable engine journals the selected source, commit, digest and interpreter version. Repository source runs in the SDK realm, with host operations limited to the manifest's declared `uses`: `branches/ephemeral` (`git:write`) and, when explicitly selected, `branches/github` (`github:write`). The host fixes the repository, request identity and permissions; the plugin supplies the branch name. Completion requires the matching durable write receipt. Source cannot replace a system action, widen its capabilities, read credentials or install itself in the global UI catalog.
+The browser's durable engine journals the selected source, commit, digest and interpreter version. Repository source runs in the SDK realm, with host operations limited to the manifest's declared `uses` and to its operation's own actions (`OPERATION_ACTIONS`): for creation `branches/ephemeral` (`git:write`) and, when explicitly selected, `branches/github` (`github:write`); for Publish `branches/github-publish`, for Update branch `branches/github-update` (both `github:write`). The host fixes the repository, request identity and permissions; the plugin supplies the branch name. Completion requires the matching durable write receipt. Source cannot replace a system action, widen its capabilities, read credentials or install itself in the global UI catalog.
 
 This execution point supports repository-owned branch creation flows. General repository flow contributions to `Plugins.layer`, custom UI code and other execution points remain unavailable.
 

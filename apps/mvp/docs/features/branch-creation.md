@@ -8,7 +8,7 @@ Install a replacement on the repository's default branch with these three files.
 The selector reads them at one commit. Invalid configuration or a missing file
 refuses creation rather than silently selecting the default.
 
-`.smithers/branch.json`:
+`.smithers/branch.json` (it may also name the plugin's Publish and Update branch flows, `publish` and `update`; see [branch publish](branch-publish.md#overriding-the-flows)):
 
 ```json
 { "plugin": "team-branches", "flow": "create" }
