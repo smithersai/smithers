@@ -148,7 +148,8 @@ describe("the catalog", () => {
       { name: "queue", flow: "app/navigate", minimum: "member", description: "Queue", fields: [], args: { to: "/app/queue" } },
       { name: "home", flow: "app/navigate", minimum: "anyone", description: "Home", fields: [] },
     ])
-    expect(PLUGIN_COMMANDS.map(({ name }) => name)).toEqual(["queue"])
+    // The built-ins' (src/plugins/builtin.ts): the bug plugin's form and inbox, and the queue.
+    expect(PLUGIN_COMMANDS.map(({ name }) => name)).toEqual(["bug", "bugs", "queue"])
   })
 
   test("names are command syntax, one per flow, and each slash door's flow carries a description", () => {

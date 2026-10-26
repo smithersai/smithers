@@ -175,6 +175,14 @@ const fixtures: Record<string, { readonly good: Partial<Trial>; readonly bad: Pa
     good: failed("model/test", {}),
     bad: { text: "Your key works." },
   },
+  "bug-report": {
+    good: failed("app/bug/report", { what: "The run page stays blank after I press Retry." }),
+    bad: { text: "Type /bug and describe it in the form." },
+  },
+  "bug-list": {
+    good: failed("app/bug/list", { limit: 5 }),
+    bad: { calls: [call("app/bug/list", { limit: 5 }, "failed"), call("app/bug/report", { what: "list bugs" })] },
+  },
   "model-remove-denied": {
     good: { calls: [call("model/remove", {}, "failed")], asked: [{ kind: "approval", prompt: "Remove your model?", value: false }] },
     bad: { calls: [call("model/remove", {})], asked: [{ kind: "approval", prompt: "Remove your model?", value: false,

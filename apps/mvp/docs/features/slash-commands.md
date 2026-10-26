@@ -49,6 +49,8 @@ A registry entry with a `slash` door is a command ([the registry](flows.md#the-r
 
 Other features add their own commands the same way ([navigation](flows.md#navigation) adds `/navigate`; [web pages](web-pages.md) add `/web <url> [embed|tab]`, for a Member and up; [repositories](repo.md#cloning) add `/clone <owner/name>`, for a Member and up). `/web` is the one command that does something in the keypress itself: its `tab` opens straight from Enter when the browser allows it, and a page the app won't open stays in the composer saying why, before anything runs.
 
+Plugins add commands in their manifests, with a payload the manifest fixes, so they take no arguments ([plugins](plugins.md#views-slots-and-commands)): `/queue` opens the queue, for a Member and up; `/bug` opens the bug report form and `/bugs` the bug inbox, for anyone signed in ([bug reports](bugs.md#doors)).
+
 ## The keys
 
 | Key | List open | List closed |
