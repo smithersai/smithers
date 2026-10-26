@@ -17,7 +17,7 @@ import { codeSaveable, formReady, savedRefusal, writtenRefusal } from "./actions
 import { codePath, draftFailureWords, draftPath, FLOWS_PATH, NEW_FLOW_PATH, writeRefusalWords } from "./contract"
 import { type RunStatus, shownRound } from "./round"
 import { FlowsUi } from "./flowsUi"
-import { awaitEditorWrites } from "./editorWrites"
+import { awaitEditorWrites, hasPendingEditorWrites } from "./editorWrites"
 import { placementOf, renderSource, SOURCE_PATH } from "./source"
 import { FlowsUiStore } from "./store"
 
@@ -155,6 +155,8 @@ test("a late code keystroke cannot replace a pending editor stash or leave the r
   }).pipe(Layer.provideMerge(Layer.succeedContext(await t.runtime.context()))))
   runtimes.push(isolated)
   const store = await isolated.runPromise(Effect.service(FlowsUiStore))
+  // The editor's rows restore in the background; its row exists once it is ready.
+  expect(await isolated.runPromise(store.editorReady)).toBe(true)
   await isolated.runPromise(store.code.update(store.codeId, (row) => {
     row.name = "first"
     row.state = "read"
@@ -207,6 +209,7 @@ test("leaving an editor replaces a stash retained by an interrupted earlier depa
   }).pipe(Layer.provideMerge(Layer.succeedContext(await t.runtime.context()))))
   runtimes.push(runtime)
   const store = await runtime.runPromise(Effect.service(FlowsUiStore))
+  expect(await runtime.runPromise(store.editorReady)).toBe(true)
   const stashId = `${store.codeId}:draft:first`
   // A recovered editor can have both its active row and an older departure's persisted stash.
   await runtime.runPromise(Effect.gen(function* () {
@@ -236,15 +239,24 @@ test("an unretained tab identity refuses flow edits without blocking chat", asyn
   const unretained = openTab(t.api, { host: { ...t.host, editorTabId: crypto.randomUUID(), editorTabPersistent: false } })
   runtimes.push(unretained)
   const flows = await unretained.runPromise(Effect.service(FlowsUi))
-  flows.queries.form.startSyncImmediate()
-  expect(flows.editorAvailable).toBe(false)
+  await flows.queries.editor.preload()
+  expect(flows.queries.editor.toArray[0]?.state).toBe("unavailable")
   flows.actions.setRequest("Must not be stranded")
   flows.actions.setAnswer("draft", "question", "Must not be stranded")
   flows.actions.answer()
   await flows.actions.openCode("hello")
   flows.actions.editCode("hello", "Must not be stranded")
+  // Opening the form, drafting from it and saving code read rows an unavailable editor never restored: each does nothing.
+  await flows.actions.openNew("hello")
+  flows.actions.startDraft()
+  await flows.actions.saveCode()
   await awaitEditorWrites()
-  expect(flows.queries.form.toArray[0]?.request).toBe("")
+  await flows.queries.form.preload()
+  expect(flows.queries.form.toArray).toEqual([])
+  for (const id of ["flow-form", "flow-answers", "flow-code"]) {
+    expect(t.host.storedRows(id)).not.toContainEqual(expect.objectContaining({ request: "Must not be stranded" }))
+    expect(t.host.storedRows(id)).not.toContainEqual(expect.objectContaining({ value: "Must not be stranded" }))
+  }
   expect(await unretained.runPromise(Effect.service(Chat))).toBeDefined()
 }, WITHIN)
 
@@ -261,11 +273,12 @@ test("a database open failure refuses memory-only edits without blocking chat", 
   const failed = openTab(t.api, { host: failedHost })
   runtimes.push(failed)
   const flows = await failed.runPromise(Effect.service(FlowsUi))
-  flows.queries.form.startSyncImmediate()
-  expect(flows.editorAvailable).toBe(false)
+  await flows.queries.editor.preload()
+  expect(flows.queries.editor.toArray[0]?.state).toBe("unavailable")
   flows.actions.setRequest("Memory-only edit")
   await awaitEditorWrites()
-  expect(flows.queries.form.toArray[0]?.request).toBe("")
+  await flows.queries.form.preload()
+  expect(flows.queries.form.toArray).toEqual([])
   expect(await failed.runPromise(Effect.service(Chat))).toBeDefined()
   await failed.dispose()
 
@@ -273,8 +286,53 @@ test("a database open failure refuses memory-only edits without blocking chat", 
   runtimes.push(recovered)
   const restored = await recovered.runPromise(Effect.service(FlowsUi))
   restored.queries.form.startSyncImmediate()
-  expect(restored.editorAvailable).toBe(true)
+  restored.queries.editor.startSyncImmediate()
+  await until(() => expect(restored.queries.editor.toArray[0]?.state).toBe("available"))
   await until(() => expect(restored.queries.form.toArray[0]?.request).toBe("Retained on device"))
+}, WITHIN)
+
+test("the app is up before the editors' rows are restored, and an edit made meanwhile lands once they are", async () => {
+  const t = await open()
+  await t.runtime.dispose()
+  // The form's rows come back from the device only when the test says so.
+  let release!: () => void
+  const held = new Promise<void>((resolve) => void (release = resolve))
+  const originalMake = t.host.persistence.make
+  const heldHost = { ...t.host, persistence: { ...t.host.persistence,
+    make: (database: Parameters<typeof originalMake>[0], coordinator: Parameters<typeof originalMake>[1]) => {
+      const normal = originalMake(database, coordinator)
+      return { ...normal, resolvePersistenceForCollection: (selection: { collectionId: string; mode: "sync-absent" | "sync-present"; schemaVersion?: number }) => {
+        const resolved = normal.resolvePersistenceForCollection?.(selection) ?? normal
+        const waiting = (adapter: object): object => new Proxy(adapter, { get: (target, property) => {
+          const value = Reflect.get(target, property)
+          if ((property === "loadResumeSnapshot" || property === "loadSubset") && typeof value === "function") {
+            return (...args: Array<unknown>) => held.then(() => value.apply(target, args))
+          }
+          if (property === "runInHydrationScope" && typeof value === "function") {
+            return (task: (scoped: object) => Promise<unknown>) => value.call(target, (scoped: object) => task(waiting(scoped)))
+          }
+          return typeof value === "function" ? value.bind(target) : value
+        } })
+        return selection.collectionId === "flow-form"
+          ? { ...resolved, adapter: waiting(resolved.adapter) as typeof resolved.adapter }
+          : resolved
+      } }
+    },
+  } }
+  const tab = openTab(t.api, { host: heldHost })
+  runtimes.push(tab)
+  const flows = await tab.runPromise(Effect.service(FlowsUi))
+  expect(await tab.runPromise(Effect.service(Chat))).toBeDefined()
+  await flows.queries.editor.preload()
+  expect(flows.queries.editor.toArray[0]?.state).toBe("restoring")
+  flows.actions.setRequest("Typed while restoring")
+  // The edit holds the update's reload until it is stored, through the restore it waits for.
+  await until(() => expect(hasPendingEditorWrites()).toBe(true))
+  release()
+  await until(() => expect(flows.queries.editor.toArray[0]?.state).toBe("available"))
+  await until(() => expect(t.host.storedRows("flow-form")).toContainEqual(expect.objectContaining({ request: "Typed while restoring" })))
+  await awaitEditorWrites()
+  expect(hasPendingEditorWrites()).toBe(false)
 }, WITHIN)
 
 test.each(["flow-form", "flow-answers", "flow-code"])("a %s restore failure keeps retained text and leaves chat usable", async (failedCollection) => {
@@ -322,8 +380,10 @@ test.each(["flow-form", "flow-answers", "flow-code"])("a %s restore failure keep
   const broken = openTab(t.api, { host: brokenHost })
   runtimes.push(broken)
   const flows = await broken.runPromise(Effect.service(FlowsUi))
-  expect(selected).toContain(failedCollection)
-  expect(flows.editorAvailable).toBe(false)
+  // The editors' rows restore after the app is up, and a failed one leaves the editors unavailable.
+  flows.queries.editor.startSyncImmediate()
+  await until(() => expect(selected).toContain(failedCollection))
+  await until(() => expect(flows.queries.editor.toArray[0]?.state).toBe("unavailable"))
   expect(await broken.runPromise(Effect.service(Chat))).toBeDefined()
   flows.actions.setRequest("Must not replace retained request")
   flows.actions.setAnswer(draftId, "question", "Must not replace retained answer")
@@ -335,8 +395,8 @@ test.each(["flow-form", "flow-answers", "flow-code"])("a %s restore failure keep
   const recovered = openTab(t.api, { host: t.host })
   runtimes.push(recovered)
   const restored = await recovered.runPromise(Effect.service(FlowsUi))
-  for (const query of [restored.queries.form, restored.queries.answers, restored.queries.code]) query.startSyncImmediate()
-  expect(restored.editorAvailable).toBe(true)
+  for (const query of [restored.queries.form, restored.queries.answers, restored.queries.code, restored.queries.editor]) query.startSyncImmediate()
+  await until(() => expect(restored.queries.editor.toArray[0]?.state).toBe("available"))
   await until(() => expect(restored.queries.form.toArray[0]?.request).toBe("Retained request"))
   expect(restored.queries.answers.toArray).toContainEqual(expect.objectContaining({ draftId, questionId: "question", value: "Retained answer" }))
   await restored.actions.openCode("hello")

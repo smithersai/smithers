@@ -22,9 +22,10 @@ export const formReady = (form: Pick<Form, "name" | "request">): boolean =>
 
 /** Sets fields of the form. */
 export const setForm = (fields: Partial<Omit<Form, "id">>) =>
-  Effect.flatMap(FlowsUiStore, ({ form, formId, editorAvailable }) => editorAvailable
-    ? trackEditorPersistence(Effect.flatMap(form.update(formId, (draft) => void Object.assign(draft, fields)), (write) => write.persisted))
-    : Effect.void).pipe(
+  // Tracked from the keystroke, through the editor's restore, to its receipt: an update never reloads in between.
+  Effect.flatMap(FlowsUiStore, ({ form, formId, editorReady }) => trackEditorPersistence(Effect.flatMap(editorReady, (ready) => ready
+    ? Effect.flatMap(form.update(formId, (draft) => void Object.assign(draft, fields)), (write) => write.persisted)
+    : Effect.void))).pipe(
     Effect.asVoid,
     // The form's row always exists, and its schema takes any text: a refusal is a bug.
     Effect.orDie,
@@ -64,7 +65,8 @@ const started = (run: (admitted: Deferred.Deferred<void, DispatchFailed>) => Eff
 /** The new-flow route's loader: keep typed text; clear only an untouched name supplied by an Edit link. */
 export const openNew = (name: string | undefined) =>
   Effect.gen(function* () {
-    const { form, formId } = yield* FlowsUiStore
+    const { form, formId, editorReady } = yield* FlowsUiStore
+    if (!(yield* editorReady)) return
     const current = Option.getOrThrow(yield* form.get(formId))
     if (name === undefined) {
       if (current.seeded && current.request === "") yield* setForm({ name: "", seeded: false })
@@ -83,6 +85,7 @@ export const openNew = (name: string | undefined) =>
  */
 export const startDraft = Effect.gen(function* () {
   const store = yield* FlowsUiStore
+  if (!(yield* store.editorReady)) return
   const form = Option.getOrThrow(yield* store.form.get(store.formId))
   if (!formReady(form)) return
   const { draftId } = form
@@ -108,11 +111,11 @@ export const openDraft = (draftId: string) =>
 /** An answer typed into a question's field. */
 export const setAnswer = (draftId: string, questionId: string, value: string) =>
   Effect.gen(function* () {
-    const { answers, editorTabId, editorAvailable } = yield* FlowsUiStore
-    if (!editorAvailable) return
+    const { answers, editorTabId, editorReady } = yield* FlowsUiStore
     const id = `${editorTabId}:${draftId}:${questionId}`
-    const current = yield* answers.get(id)
     yield* trackEditorPersistence(Effect.gen(function* () {
+      if (!(yield* editorReady)) return
+      const current = yield* answers.get(id)
       const write = yield* Option.isNone(current)
         ? answers.insert({ id, tabId: editorTabId, draftId, questionId, value })
         : answers.update(id, (draft) => void (draft.value = value))
@@ -139,7 +142,7 @@ const shownDraft = Effect.gen(function* () {
  * until the person types), start the draft's next round.
  */
 export const answer = Effect.gen(function* () {
-  if (!(yield* FlowsUiStore).editorAvailable) return
+  if (!(yield* (yield* FlowsUiStore).editorReady)) return
   const shown = yield* shownDraft
   if (Option.isNone(shown)) return
   const { draft, answers, ids } = shown.value
@@ -235,11 +238,11 @@ const synced = (saved: { readonly flowId: string; readonly revision: number }) =
 
 /** Applies a result only while the same opening still owns the editor. */
 const changeCodeIf = (epoch: number, name: string | undefined, change: (draft: Code) => void) =>
-  Effect.flatMap(FlowsUiStore, ({ code, codeId, codeEpoch, editorAvailable }) => editorAvailable
-    ? trackEditorPersistence(Effect.flatMap(code.update(codeId, (draft) => {
+  Effect.flatMap(FlowsUiStore, ({ code, codeId, codeEpoch, editorReady }) => trackEditorPersistence(Effect.flatMap(editorReady, (ready) => ready
+    ? Effect.flatMap(code.update(codeId, (draft) => {
       if (codeEpoch.current === epoch && (name === undefined || draft.name === name)) change(draft)
-    }), (write) => write.persisted))
-    : Effect.void).pipe(
+    }), (write) => write.persisted)
+    : Effect.void))).pipe(
     Effect.asVoid,
     Effect.orDie,
   )
@@ -257,7 +260,7 @@ const codeRow = Effect.flatMap(FlowsUiStore, ({ code, codeId }) => code.get(code
 export const openCode = (name: string, expectedEpoch?: number) =>
   Effect.gen(function* () {
     const store = yield* FlowsUiStore
-    if (!store.editorAvailable) return
+    if (!(yield* store.editorReady)) return
     if (expectedEpoch !== undefined && store.codeEpoch.current !== expectedEpoch) return
     const epoch = ++store.codeEpoch.current
     let before = yield* codeRow
@@ -349,6 +352,7 @@ export const codeSaveable = (code: Pick<Code, "state" | "busy" | "text" | "sourc
 /** Save: the edited code becomes the flow's next revision through `flow/write`; the list of flows opens. */
 export const saveCode = (confirmStale = false) => Effect.gen(function* () {
   const store = yield* FlowsUiStore
+  if (!(yield* store.editorReady)) return
   const epoch = store.codeEpoch.current
   const code = yield* codeRow
   if (store.codeEpoch.current !== epoch) return

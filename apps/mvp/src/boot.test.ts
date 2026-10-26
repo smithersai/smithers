@@ -3,6 +3,7 @@ import { SqlClient } from "effect/sql"
 import { afterEach, expect, test, vi } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import { boot, logPageErrors, realServices, start } from "./boot"
+import { markStage, stageTimes } from "./bootStages"
 import { Auth } from "./features/auth/auth"
 import { AuthStore, SESSION } from "./features/auth/store"
 import { Chat, type ChatView } from "./features/chat/chat"
@@ -74,10 +75,14 @@ test("renders the chat, sign-in, theme, repository, slash-command, views, web-pa
   const target = new EventTarget()
   const views: Array<ReadonlyArray<unknown>> = []
   const rendered: Array<ChatView> = []
+  // The page's own stages before the program runs, on the page's timeline (src/main.tsx).
+  performance.clearMarks()
+  markStage(performance, "page")
   const fiber = runtime.runFork(
     boot({
       target,
       startedAt: Date.now() - 1_000,
+      timeline: performance,
       render: (...view) => {
         views.push(view)
         rendered.push(view[0])
@@ -127,7 +132,17 @@ test("renders the chat, sign-in, theme, repository, slash-command, views, web-pa
   target.dispatchEvent(cmdK())
   expect(rendered[0]!.queries.composer.toArray[0]?.open).toBe(true)
 
+  // The boot's stages: marked once on the timeline, logged together, and counted by stage.
+  const stages = stageTimes(performance)
+  expect(Object.keys(stages)).toEqual(["page", "services", "render"])
+  expect(stages.services! <= stages.render!).toBe(true)
   const records = await exported()
+  expect(records.log("boot.stages").map(({ attributes }) => Object.keys(attributes).sort())).toEqual([
+    ["feature", "page", "render", "services"],
+  ])
+  for (const stage of ["page", "services", "render"]) {
+    expect(records.point("smithers_web_boot_stage_ms", { stage })?.count).toBe(1)
+  }
   expect(records.log("chat ready")).toEqual([
     expect.objectContaining({ severity: "Info", attributes: { feature: "app" } }),
   ])
@@ -327,11 +342,14 @@ test("start takes faulty services in place of the real ones, as the end-to-end e
   const api = await chatApi()
   const page = { origin: api.origin, fetch: api.fetch, reload: api.reload, host: nodeDevice() }
   const rendered: Array<ChatView> = []
+  performance.clearMarks()
   const { stop } = start(
-    { ...page, mac: false, target: new EventTarget(), startedAt: Date.now(), render: (chat) => rendered.push(chat) },
+    { ...page, mac: false, target: new EventTarget(), startedAt: Date.now(), timeline: performance, render: (chat) => rendered.push(chat) },
     faultyServices(page, (shapes) => shapes.refuse(400)),
   )
   await until(() => expect(rendered).toHaveLength(1))
+  // The page's timeline reaches the program: it marks when it rendered.
+  expect(Object.keys(stageTimes(performance))).toEqual(["services", "render"])
   await rendered[0]!.queries.connection.preload()
   await until(() => expect(rendered[0]!.queries.connection.toArray[0]).toMatchObject({ status: "failed", retry: true }))
   await stop()

@@ -104,6 +104,7 @@ import { failFastOnEngine, tabAnswers, tabEngine } from "./flows/engine"
 import type { Endpoint } from "./flows/tabPort"
 import { deviceRegistry } from "./device/registry"
 import { Page } from "./page"
+import { markStage, recordStages, type Timeline } from "./bootStages"
 import { EXPORTED_SPANS, TELEMETRY_LIMITS, WEB_SERVICE } from "./telemetry"
 
 /** From the page's start to the conversation shown from the device (`performance.timeOrigin` to restored). */
@@ -457,6 +458,11 @@ export interface BootOptions {
   readonly target: EventTarget
   /** The page's start, in epoch milliseconds: `performance.timeOrigin`. */
   readonly startedAt: number
+  /**
+   * Where the boot's stages are marked and read (src/bootStages.ts): the page's `performance`. Without one, nothing
+   * is marked or recorded.
+   */
+  readonly timeline?: Timeline
   /** Whether keys' `mod` is ⌘ (a Mac) rather than Ctrl. */
   readonly mac?: boolean
   readonly render: (
@@ -523,6 +529,8 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
     const personalModel = yield* PersonalModel
     const store = yield* ChatStore
     yield* bindSessionConnectivity(options.target)
+    const timeline = options.timeline
+    if (timeline !== undefined) markStage(timeline, "services")
     yield* Effect.sync(() =>
       options.render(
         chat,
@@ -552,6 +560,10 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
         personalModel,
       )
     )
+    if (timeline !== undefined) {
+      markStage(timeline, "render")
+      yield* recordStages(timeline)
+    }
     yield* chatShortcuts(options.target)
     yield* buttonShortcuts(options.target)
     yield* pluginKeys(options.target, options.mac ?? false)
@@ -575,8 +587,15 @@ export const start = <S = never>(
   options: AppOptions & BootOptions,
   services: Layer.Layer<ChatClient | AuthClient | S, never, HttpClient.HttpClient | ClientEngine>,
 ) => {
-  const { target, startedAt, render, mac, ...app } = options
+  const { target, startedAt, render, mac, timeline, ...app } = options
   const runtime = ManagedRuntime.make(appLayer(app, services))
-  const program = runtime.runFork(boot({ target, startedAt, render, ...(mac === undefined ? {} : { mac }), storage: app.host.storage }))
+  const program = runtime.runFork(boot({
+    target,
+    startedAt,
+    render,
+    ...(mac === undefined ? {} : { mac }),
+    ...(timeline === undefined ? {} : { timeline }),
+    storage: app.host.storage,
+  }))
   return { runtime, stop: () => runtime.runPromise(Fiber.interrupt(program)).then(() => runtime.dispose()) }
 }

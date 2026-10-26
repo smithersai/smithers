@@ -19,6 +19,7 @@
     "e2e:gifs:check": "node e2e/check-gifs.mjs",
     "bench": "node bench/run.ts",
     "bench:startup": "node bench/startup.ts",
+    "bench:first-load": "node bench/first-load.ts",
     "eval": "vitest run --config evals/vitest.config.ts",
     "eval:memory": "vitest run --config vitest.memory.config.ts",
     "test": "vitest run",

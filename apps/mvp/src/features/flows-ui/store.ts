@@ -1,7 +1,7 @@
 import { ElectricCollection } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Persistence, Query } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
-import { Context, Duration, Effect, Layer, Option, Schema, Stream } from "effect"
+import { Context, Deferred, Duration, Effect, Layer, Option, Schema, Stream } from "effect"
 import { FLOW_DRAFTS_SHAPE_ROUTE, FLOWS_SHAPE_ROUTE } from "./contract"
 import * as Following from "./following"
 import { roundExecutionId } from "./round"
@@ -26,8 +26,24 @@ export interface FlowsUiConfig {
 
 /** How often the shown draft's round is read again while the engine works or the drafts change. */
 export const FOLLOW_EVERY = Duration.millis(200)
-/** A failed editor store cannot hold the shared app layer at boot forever. Its rows stay untouched for a later reload. */
+/** How long the editors wait for the device to restore their rows before they say storage is unavailable. Its rows stay untouched for a later reload. */
 export const EDITOR_RESTORE_WITHIN = Duration.seconds(5)
+
+/**
+ * Whether this tab's editors (the form, the answers and the code) may write: `restoring` until the device store has
+ * restored and seeded their rows, in the background so the app renders without waiting (docs/decisions/0108-first-load.md);
+ * then `available`, or `unavailable` when it couldn't, the tab's identity can't survive a reload, or the device keeps
+ * nothing.
+ */
+export const EDITOR = "editor"
+export const EditorState = Schema.Literals(["restoring", "available", "unavailable"])
+export type EditorState = typeof EditorState.Type
+export const Editor = Schema.Struct({ id: Schema.Literal(EDITOR), state: EditorState })
+export type Editor = typeof Editor.Type
+
+/** The editors' state. */
+export const editorQuery = (editor: Collection.Collection<Editor, string>) =>
+  LiveQuery.make((q) => q.from({ editor: editor.tanstack }).findOne())
 
 /** A run's status on this device's engine, or `absent` when the engine doesn't hold it (another device, or none). */
 export const RoundStatus = Schema.Literals(["pending", "running", "suspended", "completed", "failed", "cancelled", "absent"])
@@ -102,8 +118,13 @@ export class FlowsUiStore extends Context.Service<
     readonly codeId: string
     /** Distinguishes successive openings, including A → B → A in one tab. */
     readonly codeEpoch: { current: number }
-    /** Unavailable device storage disables the editors; retained rows are never overwritten. */
-    readonly editorAvailable: boolean
+    /** Whether the editors may write, as the page shows it; unavailable device storage disables them (`Editor`). */
+    readonly editor: Collection.Collection<Editor, string>
+    /**
+     * Waits for the editors' rows to be restored and answers whether the editors may write. Unavailable device storage
+     * disables them; retained rows are never overwritten.
+     */
+    readonly editorReady: Effect.Effect<boolean>
     readonly form: Collection.Collection<Form, string>
     readonly answers: Collection.Collection<AnswerRow, string>
     readonly shown: Collection.Collection<Shown, string>
@@ -115,6 +136,7 @@ export class FlowsUiStore extends Context.Service<
     readonly formRow: Live<typeof formQuery>
     readonly answerList: Live<typeof answersQuery>
     readonly codeRow: Live<typeof codeQuery>
+    readonly editorRow: Live<typeof editorQuery>
     readonly roundRow: Live<typeof roundQuery>
     readonly confirmWithin: Duration.Input
     /** Reads the shown draft's round from this device's engine again. */
@@ -169,13 +191,13 @@ export class FlowsUiStore extends Context.Service<
           shape: shape(FLOW_DRAFTS_SHAPE_ROUTE),
         })
         const formSeed = (): Form => ({ id: formId, name: "", request: "", draftId: crypto.randomUUID(), seeded: false })
-        const savedForm = yield* Collection.persisted<Form, string>({
+        const form = yield* Collection.persisted<Form, string>({
           id: "flow-form",
           schema: Form,
           getKey: (row) => row.id,
           schemaVersion: 1,
         })
-        const savedAnswers = yield* Collection.persisted<AnswerRow, string>({
+        const answers = yield* Collection.persisted<AnswerRow, string>({
           id: "flow-answers",
           schema: AnswerRow,
           getKey: answerKey,
@@ -184,52 +206,56 @@ export class FlowsUiStore extends Context.Service<
         const codeSeed = (): Code => ({
           id: codeId, name: "", state: "loading", revision: 0, source: "", text: "", busy: false, refusal: null,
         })
-        const savedCode = yield* Collection.persisted<Code, string>({
+        const code = yield* Collection.persisted<Code, string>({
           id: "flow-code",
           schema: Code,
           getKey: (row) => row.id,
           schemaVersion: 1,
         })
-        // Restore independently so one unavailable store adds at most one deadline to app boot.
-        const [formReady, answersReady, codeReady] = yield* Effect.all([
-          Effect.result(Effect.gen(function* () {
-            yield* savedForm.restored
-            if (Option.isNone(yield* savedForm.get(formId))) {
-              yield* Effect.flatMap(savedForm.insert(formSeed()), (write) => write.persisted)
-            }
-          }).pipe(Effect.timeout(EDITOR_RESTORE_WITHIN))),
-          Effect.result(savedAnswers.restored.pipe(Effect.timeout(EDITOR_RESTORE_WITHIN))),
-          Effect.result(Effect.gen(function* () {
-            yield* savedCode.restored
-            if (Option.isNone(yield* savedCode.get(codeId))) {
-              yield* Effect.flatMap(savedCode.insert(codeSeed()), (write) => write.persisted)
-            }
-          }).pipe(Effect.timeout(EDITOR_RESTORE_WITHIN))),
-        ] as const, { concurrency: 3 })
-        if (formReady._tag === "Failure") yield* Effect.logWarning("flows.editor.storage").pipe(Effect.annotateLogs({ collection: "flow-form", outcome: "failed" }))
-        const form = formReady._tag === "Success" ? savedForm : yield* Collection.local<Form, string>({
-          id: "flow-form-unavailable", schema: Form, getKey: (row) => row.id, initialData: [formSeed()],
+        // The editors' rows restore in the background, each with its own deadline, so the app renders without waiting
+        // for them; the editors write only once all three are back.
+        const usable = config.editorTabPersistent && storageAvailable
+        const editor = yield* Collection.local<Editor, string>({
+          id: "flow-editor",
+          schema: Editor,
+          getKey: (row) => row.id,
+          initialData: [{ id: EDITOR, state: usable ? "restoring" : "unavailable" }],
         })
-        const answers = answersReady._tag === "Success" ? savedAnswers : yield* Effect.andThen(
-          Effect.logWarning("flows.editor.storage").pipe(
-            Effect.annotateLogs({ collection: "flow-answers", outcome: "failed" }),
-          ),
-          Collection.local<AnswerRow, string>({
-            // Read-only and empty while the editors are disabled; reuse the saved store's identity rule.
-            id: "flow-answers-unavailable", schema: AnswerRow, getKey: answerKey, initialData: [],
-          }),
-        )
+        const verdict = yield* Deferred.make<boolean>()
+        const restore = Effect.gen(function* () {
+          const [formReady, answersReady, codeReady] = yield* Effect.all([
+            Effect.result(Effect.gen(function* () {
+              yield* form.restored
+              if (Option.isNone(yield* form.get(formId))) {
+                yield* Effect.flatMap(form.insert(formSeed()), (write) => write.persisted)
+              }
+            }).pipe(Effect.timeout(EDITOR_RESTORE_WITHIN))),
+            Effect.result(answers.restored.pipe(Effect.timeout(EDITOR_RESTORE_WITHIN))),
+            Effect.result(Effect.gen(function* () {
+              yield* code.restored
+              if (Option.isNone(yield* code.get(codeId))) {
+                yield* Effect.flatMap(code.insert(codeSeed()), (write) => write.persisted)
+              }
+            }).pipe(Effect.timeout(EDITOR_RESTORE_WITHIN))),
+          ] as const, { concurrency: 3 })
+          for (const [collection, ready] of [["flow-form", formReady], ["flow-answers", answersReady], ["flow-code", codeReady]] as const) {
+            if (ready._tag === "Failure") {
+              yield* Effect.logWarning("flows.editor.storage").pipe(Effect.annotateLogs({ collection, outcome: "failed" }))
+            }
+          }
+          const available = formReady._tag === "Success" && answersReady._tag === "Success" && codeReady._tag === "Success"
+          // A local collection refuses only a row its own schema rejects, which a state never is.
+          yield* Effect.orDie(editor.update(EDITOR, (row) => void (row.state = available ? "available" : "unavailable")))
+          yield* Deferred.succeed(verdict, available)
+        })
+        if (usable) yield* Effect.forkScoped(restore)
+        else yield* Deferred.succeed(verdict, false)
         const shown = yield* Collection.local<Shown, string>({
           id: "flow-shown",
           schema: Shown,
           getKey: (row) => row.id,
           initialData: [{ id: SHOWN, draftId: null, refusal: null, busy: false }],
         })
-        if (codeReady._tag === "Failure") yield* Effect.logWarning("flows.editor.storage").pipe(Effect.annotateLogs({ collection: "flow-code", outcome: "failed" }))
-        const code = codeReady._tag === "Success" ? savedCode : yield* Collection.local<Code, string>({
-          id: "flow-code-unavailable", schema: Code, getKey: (row) => row.id, initialData: [codeSeed()],
-        })
-        const editorAvailable = config.editorTabPersistent && storageAvailable && formReady._tag === "Success" && answersReady._tag === "Success" && codeReady._tag === "Success"
         const round = yield* Collection.local<RoundRun, string>({
           id: "flow-round",
           schema: RoundRun,
@@ -283,7 +309,8 @@ export class FlowsUiStore extends Context.Service<
           formId,
           codeId,
           codeEpoch: { current: 0 },
-          editorAvailable,
+          editor,
+          editorReady: Deferred.await(verdict),
           form,
           answers,
           shown,
@@ -297,6 +324,7 @@ export class FlowsUiStore extends Context.Service<
           formRow: yield* formQuery(form, formId),
           answerList: yield* answersQuery(answers, editorTabId),
           codeRow: yield* codeQuery(code, codeId),
+          editorRow: yield* editorQuery(editor),
           roundRow: yield* roundQuery(round),
           confirmWithin: config.confirmWithin ?? Duration.seconds(15),
         })

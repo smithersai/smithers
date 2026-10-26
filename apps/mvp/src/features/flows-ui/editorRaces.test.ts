@@ -25,6 +25,8 @@ const open = async () => {
   }).pipe(Layer.provideMerge(Layer.succeedContext(await tab.context()))))
   runtimes.push(runtime)
   const store = await runtime.runPromise(Effect.service(FlowsUiStore))
+  // The editor's rows restore in the background; its rows exist once it is ready.
+  expect(await runtime.runPromise(store.editorReady)).toBe(true)
   const dispatch = await runtime.runPromise(Effect.service(FlowDispatch))
   const run = <A, E>(effect: Effect.Effect<A, E, FlowsUiStore | FlowDispatch | RunsNavigation>, faulty = store, flows = dispatch) =>
     runtime.runPromise(effect.pipe(

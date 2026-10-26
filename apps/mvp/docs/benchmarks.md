@@ -280,3 +280,37 @@ The retained [2026-10-23 local receipt](../bench/startup-results/2026-10-23.json
 observed a 63.3 ms median (60.7, 69.2, 63.3 ms) on Node 26.5.0, Apple M4 Pro.
 Its recorded load was about 30; it is a reproducibility receipt, not an idle-host
 or live-deployment performance claim.
+
+## First load
+
+`BASE_URL=https://smithers.sh pnpm bench:first-load` makes the cold, signed-out
+visit a launch visitor makes: five visits each to `/` and `/smithersai/vibelang`,
+each in a fresh Chromium context with no cookies, HTTP cache, service worker or
+device storage. It records first contentful paint, first meaningful content
+(when the route's heading joins the document: the landing's wordmark, the
+title of VibeLang's home), the boot's stage marks (`smithers.boot.*`,
+[decision 0108](decisions/0108-first-load.md)), and the requests and bytes
+fetched before the content. `--n` sets the visits and `--route <path>=<heading>`
+replaces the routes.
+
+On a built server it exits nonzero when a route's median first contentful paint
+exceeds **4.5 s** or its median content exceeds **5.0 s**
+(`--fcp-budget`, `--content-budget`). Against the dev server it reports the
+numbers and checks no budget: its modules are unbundled. Each run writes
+`bench/first-load-results/<timestamp>.json` with every sample, the summaries,
+the method, its limitations and the environment.
+
+The budget fails a regression of the boot, not a slow network: the numbers come
+from one machine and one network path, the content time is DOM insertion (a
+frame before its paint), and headless Chromium is not every browser.
+
+On 2026-10-25, production (9c0c4e4a53, before decision 0108) measured a median
+first contentful paint of 8,284 ms on `/` and 8,724 ms on
+`/smithersai/vibelang`, over budget
+([receipt](../bench/first-load-results/2026-10-25-production-before.json)).
+Decision 0108's build, served locally with `/api/*` on smithers.sh, measured
+2,080 ms and 3,084 ms, its stages at `page` 294, `worker` 304, `activation` 949,
+`store` 1,974 and `render` 2,037 ms
+([receipt](../bench/first-load-results/2026-10-25-local-after.json)); the build
+before it, served the same way, 7,064 ms and 7,372 ms
+([receipt](../bench/first-load-results/2026-10-25-local-before.json)).

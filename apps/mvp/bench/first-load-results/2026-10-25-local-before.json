@@ -1,0 +1,196 @@
+{
+  "ok": false,
+  "budget": {
+    "fcp": 4500,
+    "content": 5500,
+    "checked": true,
+    "statistic": "p50"
+  },
+  "method": "5 cold visits per route, each in a fresh Chromium context (no cookies, cache, service worker or device storage), signed out. FCP is Chromium's first-contentful-paint; content is when the route's heading joins the document; stages are the boot's smithers.boot.* marks. All in milliseconds from navigation.",
+  "limitations": "One machine and one network path; headless Chromium; the content time is DOM insertion, which precedes its paint by a frame. Against a dev server the modules are unbundled and the budget is not checked.",
+  "env": {
+    "commit": null,
+    "baseUrl": "http://localhost:4870",
+    "server": "built",
+    "machine": {
+      "cpu": "Apple M3 Max",
+      "cores": 16,
+      "memoryGiB": 64
+    },
+    "os": "Darwin 25.2.0, arm64",
+    "browser": "Chromium 151.0.7922.34 (headless)",
+    "playwright": "1.62.1",
+    "node": "v26.10.0",
+    "date": "2026-10-26T01:55:38.290Z",
+    "n": 5
+  },
+  "routes": {
+    "/": {
+      "heading": "Smithers",
+      "fcp": {
+        "n": 5,
+        "p50": 7064,
+        "p95": 8219.2,
+        "min": 6656,
+        "max": 8472
+      },
+      "content": {
+        "n": 5,
+        "p50": 7043,
+        "p95": 8197,
+        "min": 6637,
+        "max": 8450
+      },
+      "ttfb": {
+        "n": 5,
+        "p50": 1,
+        "p95": 3.6,
+        "min": 1,
+        "max": 4
+      },
+      "stages": {},
+      "requestsBeforeContent": {
+        "n": 5,
+        "p50": 17,
+        "p95": 19,
+        "min": 17,
+        "max": 19
+      },
+      "bytesBeforeContent": {
+        "n": 5,
+        "p50": 6910851,
+        "p95": 6911610,
+        "min": 6910804,
+        "max": 6911616
+      },
+      "withinBudget": false
+    },
+    "/smithersai/vibelang": {
+      "heading": "VibeLang",
+      "fcp": {
+        "n": 5,
+        "p50": 7372,
+        "p95": 8017.6,
+        "min": 7324,
+        "max": 8104
+      },
+      "content": {
+        "n": 5,
+        "p50": 7339,
+        "p95": 7984.4,
+        "min": 7289,
+        "max": 8071
+      },
+      "ttfb": {
+        "n": 5,
+        "p50": 1,
+        "p95": 3.4,
+        "min": 1,
+        "max": 4
+      },
+      "stages": {},
+      "requestsBeforeContent": {
+        "n": 5,
+        "p50": 22,
+        "p95": 26.4,
+        "min": 20,
+        "max": 27
+      },
+      "bytesBeforeContent": {
+        "n": 5,
+        "p50": 6985630,
+        "p95": 6988244,
+        "min": 6921214,
+        "max": 6988674
+      },
+      "withinBudget": false
+    }
+  },
+  "failures": [],
+  "samples": {
+    "/": [
+      {
+        "ttfb": 2,
+        "fcp": 7208,
+        "content": 7185,
+        "stages": {},
+        "requestsBeforeContent": 17,
+        "bytesBeforeContent": 6910841
+      },
+      {
+        "ttfb": 4,
+        "fcp": 8472,
+        "content": 8450,
+        "stages": {},
+        "requestsBeforeContent": 17,
+        "bytesBeforeContent": 6910804
+      },
+      {
+        "ttfb": 1,
+        "fcp": 7040,
+        "content": 7018,
+        "stages": {},
+        "requestsBeforeContent": 17,
+        "bytesBeforeContent": 6910851
+      },
+      {
+        "ttfb": 1,
+        "fcp": 6656,
+        "content": 6637,
+        "stages": {},
+        "requestsBeforeContent": 19,
+        "bytesBeforeContent": 6911616
+      },
+      {
+        "ttfb": 1,
+        "fcp": 7064,
+        "content": 7043,
+        "stages": {},
+        "requestsBeforeContent": 19,
+        "bytesBeforeContent": 6911586
+      }
+    ],
+    "/smithersai/vibelang": [
+      {
+        "ttfb": 1,
+        "fcp": 7672,
+        "content": 7638,
+        "stages": {},
+        "requestsBeforeContent": 27,
+        "bytesBeforeContent": 6988674
+      },
+      {
+        "ttfb": 1,
+        "fcp": 7328,
+        "content": 7293,
+        "stages": {},
+        "requestsBeforeContent": 22,
+        "bytesBeforeContent": 6986524
+      },
+      {
+        "ttfb": 4,
+        "fcp": 7372,
+        "content": 7339,
+        "stages": {},
+        "requestsBeforeContent": 20,
+        "bytesBeforeContent": 6985630
+      },
+      {
+        "ttfb": 1,
+        "fcp": 8104,
+        "content": 8071,
+        "stages": {},
+        "requestsBeforeContent": 24,
+        "bytesBeforeContent": 6921214
+      },
+      {
+        "ttfb": 1,
+        "fcp": 7324,
+        "content": 7289,
+        "stages": {},
+        "requestsBeforeContent": 20,
+        "bytesBeforeContent": 6985570
+      }
+    ]
+  }
+}

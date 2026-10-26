@@ -1,0 +1,6 @@
+# Each `pnpm bench:first-load` run writes <timestamp>.json here. Runs stay out of version control, except the receipts
+# docs/benchmarks.md#first-load cites.
+*.json
+!2026-10-25-production-before.json
+!2026-10-25-local-before.json
+!2026-10-25-local-after.json

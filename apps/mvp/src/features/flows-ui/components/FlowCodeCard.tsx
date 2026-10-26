@@ -10,10 +10,11 @@ import { useFlowsUi } from "./FlowsUiContext"
 // code runs in the QuickJS realm. A refused Save says why. Save sits in the card's header, by the file's name, so the toasts that stack at the
 // bottom of the screen never cover it below a long file.
 export function FlowCodeCard() {
-  const { queries, actions, editorAvailable } = useFlowsUi()
+  const { queries, actions } = useFlowsUi()
+  const { data: editor } = useLiveQuery(queries.editor)
   const { data: code } = useLiveQuery(queries.code)
-  if (!editorAvailable) return <EmptyState title={DEVICE_STORAGE_UNAVAILABLE} />
-  if (code === undefined || code.state === "loading") return null
+  if (editor?.state === "unavailable") return <EmptyState title={DEVICE_STORAGE_UNAVAILABLE} />
+  if (editor?.state !== "available" || code === undefined || code.state === "loading") return null
   if (code.state !== "read") return <EmptyState title={code.state === "not_found" ? NO_SUCH_FLOW : COULDNT_READ_FLOW} />
   return (
     <Card aria-label={code.name} className="flows-code">

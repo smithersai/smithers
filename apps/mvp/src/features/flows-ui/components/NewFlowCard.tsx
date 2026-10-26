@@ -8,10 +8,11 @@ import { useFlowsUi } from "./FlowsUiContext"
 // The new-flow form (decision 0014 §5, the draft card before its first round): the flow's name and what it should do,
 // then Draft. A name you already have drafts its next revision.
 export function NewFlowCard() {
-  const { queries, actions, editorAvailable } = useFlowsUi()
+  const { queries, actions } = useFlowsUi()
+  const { data: editor } = useLiveQuery(queries.editor)
   const { data: form } = useLiveQuery(queries.form)
-  if (!editorAvailable) return <EmptyState title={DEVICE_STORAGE_UNAVAILABLE} />
-  if (form === undefined) return null
+  if (editor?.state === "unavailable") return <EmptyState title={DEVICE_STORAGE_UNAVAILABLE} />
+  if (editor?.state !== "available" || form === undefined) return null
   return (
     <FlowDraftView
       where={MINE}

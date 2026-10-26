@@ -42,6 +42,10 @@ import { failedWorker, memoryStorage, pageWipe, unwiped } from "./wipe"
 import { claimEditorTabId } from "./device/editorTab"
 import { awaitEditorWrites, hasFailedEditorWrite, hasPendingEditorWrites } from "./features/flows-ui/editorWrites"
 import "./styles/fonts.css"
+import { markStage } from "./bootStages"
+
+// The boot's first stage: the bundle has loaded and runs (src/bootStages.ts).
+markStage(performance, "page")
 
 // The build this bundle is, which vite.config.ts names from the deployed revision (`version.json` beside the app);
 // `dev` under the dev server and wherever the build named none.
@@ -162,6 +166,7 @@ const activation = activationGate(() => {
   engineWorker?.terminate()
   engineWorker?.dispatchEvent(new ErrorEvent("error", { error: sealed() }))
 })
+void activation.ready.then(() => markStage(performance, "activation"))
 // Reopening loads every page again so a new activation checks the session the browser has now. Once a minute at most
 // from this tab: a second mismatch so soon settles on memory instead of reloading again.
 const REOPENED = "smithers-identity-reopened"
@@ -247,9 +252,14 @@ const outboxStorage = async () => {
 const host: Omit<Host, "editorTabId" | "editorTabPersistent"> = {
   persistence: {
     open: async () => {
-      await activation.ready
-      if (activation.state() !== "retained") throw sealed()
-      return SharedSqlite.open({ name: ENGINE_NAME })
+      try {
+        await activation.ready
+        if (activation.state() !== "retained") throw sealed()
+        return await SharedSqlite.open({ name: ENGINE_NAME })
+      } finally {
+        // Opened, or on memory from here on.
+        markStage(performance, "store")
+      }
     },
     make: (database, coordinator) => createBrowserWASQLitePersistence({ database, ...(coordinator ? { coordinator } : {}) }),
     coordinator: () => new BrowserCollectionCoordinator({ dbName: "smithers" }),
@@ -340,6 +350,7 @@ const host: Omit<Host, "editorTabId" | "editorTabPersistent"> = {
       type: "module",
     })
     engineWorker = worker
+    markStage(performance, "worker")
     // Its own receipt when it leads; a stopped engine or a failed worker sends none, and this page runs on memory.
     worker.addEventListener("message", (event) => {
       if (event.data?._tag === "@smthrs/platform-browser/EngineStopped") activation.refuse()
@@ -464,6 +475,7 @@ const page = {
   host,
   target: window,
   startedAt: performance.timeOrigin,
+  timeline: performance,
   // Keys' `mod` is ⌘ on a Mac, Ctrl elsewhere (src/plugins/keymap.ts).
   mac: /Mac|iPhone|iPad/.test(navigator.platform),
   render,

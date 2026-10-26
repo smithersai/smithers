@@ -26,8 +26,8 @@ import { FlowsUiStore } from "./store"
 type Store = FlowsUiStore["Service"]
 
 /**
- * What a frontend reads live: the person's flows and drafts, the form, the shown draft, the unsent answers and the
- * code it shows.
+ * What a frontend reads live: the person's flows and drafts, the form, the shown draft, the unsent answers, the code it
+ * shows, and whether the editors may write.
  */
 export interface FlowsUiQueries {
   readonly flows: Store["flowList"]["tanstack"]
@@ -38,6 +38,8 @@ export interface FlowsUiQueries {
   readonly code: Store["codeRow"]["tanstack"]
   /** The shown draft's round on this device's engine. */
   readonly round: Store["roundRow"]["tanstack"]
+  /** Whether the editors may write: `restoring`, `available` or `unavailable` (src/features/flows-ui/store.ts `Editor`). */
+  readonly editor: Store["editorRow"]["tanstack"]
 }
 
 /** What a person does, as plain functions. Each returns at once, or with a promise a route loader awaits. */
@@ -64,7 +66,7 @@ type Services = FlowsUiStore | FlowDispatch | RunsNavigation
 
 export class FlowsUi extends Context.Service<
   FlowsUi,
-  { readonly queries: FlowsUiQueries; readonly actions: FlowsUiActions; readonly editorAvailable: boolean }
+  { readonly queries: FlowsUiQueries; readonly actions: FlowsUiActions }
 >()("@smthrs/mvp/flows/FlowsUi") {
   /** Binds the store's queries and the actions, run with the services this layer was built with. */
   static readonly layer = Layer.effect(
@@ -78,7 +80,6 @@ export class FlowsUi extends Context.Service<
         return promise(effect)
       }
       return FlowsUi.of({
-        editorAvailable: store.editorAvailable,
         queries: {
           flows: store.flowList.tanstack,
           drafts: store.draftList.tanstack,
@@ -87,6 +88,7 @@ export class FlowsUi extends Context.Service<
           answers: store.answerList.tanstack,
           code: store.codeRow.tanstack,
           round: store.roundRow.tanstack,
+          editor: store.editorRow.tanstack,
         },
         actions: {
           openNew: (name) => editor(openNew(name)),
