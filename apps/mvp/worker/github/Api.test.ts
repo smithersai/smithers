@@ -2,6 +2,7 @@
 // file's schema of the compose Postgres and Electric (`pnpm db:up`), with remote flows recorded or run on the Node host
 // against the scripted GitHub (worker/github/test/harness.ts). Unhappy paths give the routes a faulty service; nothing
 // intercepts a request.
+import { BranchRoles } from "../branch/Access.ts"
 import { ConfigProvider, Effect, Layer, Option, Redacted } from "effect"
 import { FetchHttpClient, HttpEffect } from "effect/http"
 import { createServer } from "node:http"
@@ -957,9 +958,11 @@ test.each([undefined, "metadata-fixture-token"])("default metadata transport che
     })
     await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
       const scratch = yield* TestDatabase.Scratch
-      const routes = yield* make(scratch.database, { repository: REPOSITORY, app: Option.none(), roles: rolesThatRead(REPOSITORY, "member") })
+      const roles = rolesThatRead(REPOSITORY, "member")
+      const routes = yield* make(scratch.database, { repository: REPOSITORY, app: Option.none(), roles })
       const handler = HttpEffect.toWebHandler(routes.fetch.pipe(
         Effect.provide(Actor.signedOut),
+        Effect.provide(BranchRoles.layer(roles)),
         Effect.provideService(FlowStarter, FlowStarter.of({ start: () => Effect.void })),
         Effect.provide(FetchHttpClient.layer),
       ))

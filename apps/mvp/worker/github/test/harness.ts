@@ -1,4 +1,5 @@
 import * as GitHubCreation from "../../branch/GitHubCreation.ts"
+import { BranchRoles } from "../../branch/Access.ts"
 // The git loop's routes (worker/github/Api.ts) for the tests, on a test file's own schema of the compose Postgres and
 // Electric (`pnpm db:up`), as ChatApi serves them: who is asking from a `Sessions` layer, remote flows from a
 // `FlowStarter` that records each start in an in-memory Durable Object storage (the same intent again is a no-op,
@@ -220,6 +221,8 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
         Effect.provide(
           options.sessions ?? (options.actor === null ? Actor.signedOut : signedInAs(options.actor ?? member())),
         ),
+        // Branch routes the GitHub routes reach (Publish, Compare) ask the person's role through BranchRoles.
+        Effect.provide(BranchRoles.layer(roles)),
         Effect.provideService(FlowStarter, starter),
         Effect.provide(FetchHttpClient.layer),
         Effect.provideService(FetchHttpClient.Fetch, electric),

@@ -9,6 +9,7 @@ import * as Pg from "@effect/sql-pg"
 import { PostgresDatabase } from "@smthrs/database"
 import { ConfigProvider, Effect, Layer, Option, Redacted, Scope } from "effect"
 import { FetchHttpClient, HttpClient, HttpEffect } from "effect/http"
+import { BranchRoles } from "../../branch/Access.ts"
 import { FlowStarter } from "../../Flows.ts"
 import * as GitHubApi from "../../github/Api.ts"
 import * as GitHubConfig from "../../github/Config.ts"
@@ -47,12 +48,12 @@ const initialize = async (env: Env) => {
   const database = PostgresDatabase.layer({ url: env.HYPERDRIVE.connectionString, driver: Pg, schema: env.SCHEMA })
   // The isolate's scope, as ChatApi's program has: it outlives every request.
   const scope = await Effect.runPromise(Scope.make())
-  const { routes, signIn } = await Effect.runPromise(Effect.gen(function* () {
+  const { routes, signIn, roles } = await Effect.runPromise(Effect.gen(function* () {
     const repository = yield* GitHubConfig.repository
     const app = yield* GitHubConfig.configured
     const roles = yield* RepoRoles.make(database, { repository, app, allowed: Option.none(), http: latent })
     const signIn = yield* SignIn.make(database).pipe(Effect.provide(FetchHttpClient.layer))
-    return { routes: yield* GitHubApi.make(database, { repository, app, roles, http: latent }), signIn }
+    return { routes: yield* GitHubApi.make(database, { repository, app, roles, http: latent }), signIn, roles }
   }).pipe(Effect.provideService(Scope.Scope, scope), Effect.provideService(ConfigProvider.ConfigProvider, config)))
   // Who is asking, as ChatApi's `signedIn` layer gives it (worker/ChatApiProgram.ts), with role checks counted.
   const checks = Layer.succeed(SignIn.RoleChecks, SignIn.RoleChecks.of({ start: () => Effect.sync(() => void roleChecks++) }))
@@ -66,6 +67,8 @@ const initialize = async (env: Env) => {
   }
   handle = HttpEffect.toWebHandler(routes.fetch.pipe(
     Effect.provide(signedIn),
+    // Branch routes the GitHub routes reach (Publish, Compare) ask the person's role through BranchRoles.
+    Effect.provide(BranchRoles.layer(roles)),
     Effect.provideService(FlowStarter, FlowStarter.of({ start: () => Effect.void })),
     Effect.provide(FetchHttpClient.layer),
     Effect.provideService(FetchHttpClient.Fetch, electric),
