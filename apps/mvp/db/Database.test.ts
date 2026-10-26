@@ -1507,3 +1507,51 @@ describe("0068_branch_publish", () => {
       expect(await on(through("0068"))).toEqual([])
     }))
 })
+
+describe("0069_branch_resync", () => {
+  test("takes Resync as a branch's write, one pending per branch, and keeps how the working copy follows GitHub", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0068"))
+      expect((await on(through("0069"))).map(([id, name]) => `${id}_${name}`)).toEqual(["69_branch_resync"])
+      const attempt = (statement: Effect.Effect<unknown, unknown, SqlClient.SqlClient>) =>
+        on(statement.pipe(Effect.as("taken"), Effect.orElseSucceed(() => "refused")))
+      const hash = "0".repeat(64)
+      const write = (op: string, branch: string | null, status = "pending") =>
+        attempt(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          INSERT INTO github_writes (id, repo_id, actor_id, session_id, via, op, payload, payload_hash, status, failure, branch_id, settled_at)
+          VALUES (${crypto.randomUUID()}, 'github/acme/widgets', 'p', ${crypto.randomUUID()}, 'person', ${op}, '{}',
+            ${hash}, ${status}, ${status === "refused" ? "conflict" : null}, ${branch}::uuid,
+            ${status === "pending" ? null : new Date().toISOString()}::timestamptz)`))
+      const once = crypto.randomUUID()
+      expect(await write("branch/resync", null)).toBe("refused")
+      expect(await write("branch/resync", once)).toBe("taken")
+      expect(await write("branch/resync", once)).toBe("refused")
+      expect(await write("branch/resync", once, "refused")).toBe("taken")
+      // A Publish and an Update keep their own rules beside it.
+      expect(await write("branch/publish", once)).toBe("taken")
+      expect(await write("branch/update", once)).toBe("taken")
+      expect(await write("branch/sync", once)).toBe("refused")
+      const branchId = crypto.randomUUID()
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        INSERT INTO branches (id, repo_id, name, created_by) VALUES (${branchId}, 'github/acme/widgets', 'try-1', 'p')`))
+      const sha = "a".repeat(40)
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        INSERT INTO branch_publications (branch_id, repo_id, github_ref, base_ref, base_sha, head_sha, pr_number, write_id, pushed_sha)
+        VALUES (${branchId}, 'github/acme/widgets', 'try-1-0123456789ab', 'main', ${sha}, ${sha}, 7, ${crypto.randomUUID()}, ${sha})`))
+      const set = (fields: Record<string, string | null>) =>
+        attempt(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          UPDATE branch_publications SET synced_sha = ${fields.syncedSha ?? null}, sync_state = ${fields.state ?? null},
+            sync_conflicts = ${fields.conflicts ?? null}::jsonb, syncing = ${fields.syncing ?? null}::jsonb
+          WHERE branch_id = ${branchId}`))
+      expect(await set({ syncedSha: sha, state: "synced" })).toBe("taken")
+      expect(await set({ state: "conflict", conflicts: '["a.ts"]', syncing: '{"a.ts":"x"}' })).toBe("taken")
+      expect(await set({})).toBe("taken")
+      const refusals: ReadonlyArray<Record<string, string>> = [{ syncedSha: "main" }, { state: "behind" }, { conflicts: '{"a":1}' }, { syncing: "[]" }]
+      for (const refused of refusals) {
+        expect(await set(refused), JSON.stringify(refused)).toBe("refused")
+      }
+      expect(await on(through("0069"))).toEqual([])
+    }))
+})

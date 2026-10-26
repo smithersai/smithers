@@ -226,6 +226,7 @@ export const WritePayload = Schema.Union([
   }),
   Schema.Struct({ op: Schema.Literal("branch/publish"), branchId: Schema.String, title: Schema.String, body: Schema.String }),
   Schema.Struct({ op: Schema.Literal("branch/update"), branchId: Schema.String, method: Schema.Literals(UPDATE_METHODS) }),
+  Schema.Struct({ op: Schema.Literal("branch/resync"), branchId: Schema.String }),
 ])
 export type WritePayload = typeof WritePayload.Type
 const decodePayload = Schema.decodeUnknownSync(WritePayload)
@@ -241,9 +242,11 @@ export type Inserted =
   /** The write id is another repository's or another person's write: a resend names the same of both. */
   | { readonly kind: "taken" }
 
-/** The branch a write acts on: Publish's and Update branch's (docs/features/branch-publish.md), else none. */
+/** The branch a write acts on: Publish's, Update branch's and Resync's (docs/features/branch-publish.md), else none. */
 const branchOf = (payload: WritePayload): string | null =>
-  payload.op === "branch/publish" || payload.op === "branch/update" ? payload.branchId : null
+  payload.op === "branch/publish" || payload.op === "branch/update" || payload.op === "branch/resync"
+    ? payload.branchId
+    : null
 
 /**
  * Records a write the route admitted, once per write id. A new write is recorded only while `holds` answers true in

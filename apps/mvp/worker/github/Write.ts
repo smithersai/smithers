@@ -132,7 +132,7 @@ const tokenFailure = (failure: TokenUnavailable): WriteFailure | undefined =>
 /** Which token a write runs with: none for the settings writes and the ops this flow refuses, else the actor's. */
 const tokenKindOf = (write: Store.Write): "user" | "app" | "none" =>
   write.op === "triage/enable" || write.op === "triage/pause" || write.op === "triage/run" || write.op === "pr/merge" ||
-    write.op === "branch/publish" || write.op === "branch/update"
+    write.op === "branch/publish" || write.op === "branch/update" || write.op === "branch/resync"
     ? "none"
     : write.via === "person"
     ? "user"
@@ -211,8 +211,9 @@ export const steps = <E, R>(services: Services<E, R>) => {
       if (payload.op === "triage/run") return yield* settled(write, "none", { status: "refused", failure: "invalid" })
       // A merge is admitted for `pr/Merge` (worker/github/Merge.ts), which settles it; this flow never runs one.
       if (payload.op === "pr/merge") return yield* settled(write, "none", { status: "refused", failure: "invalid" })
-      // Publish and Update branch are admitted for `branch/Publish` and `branch/Update` (worker/branch/Publish.ts).
-      if (payload.op === "branch/publish" || payload.op === "branch/update") {
+      // Publish, Update branch and Resync are admitted for `branch/Publish`, `branch/Update` and `branch/Resync`
+      // (worker/branch/Publish.ts).
+      if (payload.op === "branch/publish" || payload.op === "branch/update" || payload.op === "branch/resync") {
         return yield* settled(write, "none", { status: "refused", failure: "invalid" })
       }
       const kind = write.via === "person" ? "user" as const : "app" as const

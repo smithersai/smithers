@@ -1,13 +1,13 @@
-// Publish's and Update branch's doors on the server (docs/features/branch-publish.md#routes): the writes route
-// (worker/github/Api.ts) admitting `branch/publish` and `branch/update` through its real handler, with flow starts
-// recorded (worker/github/test/harness.ts), and the branch's publication shape (worker/branch/Publications.ts) through
-// the branch workspace's real routes and the compose Electric (worker/test/branch.ts).
+// Publish's, Update branch's and Resync's doors on the server (docs/features/branch-publish.md#routes): the writes route
+// (worker/github/Api.ts) admitting `branch/publish`, `branch/update` and `branch/resync` through its real handler, with
+// flow starts recorded (worker/github/test/harness.ts), and the branch's publication shape (worker/branch/Publications.ts)
+// through the branch workspace's real routes and the compose Electric (worker/test/branch.ts).
 import { Effect, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeAll, beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
-import { PUBLICATIONS_SHAPE_ROUTE, publishExecutionId, updateExecutionId } from "../../src/features/branch/contract.ts"
+import { PUBLICATIONS_SHAPE_ROUTE, publishExecutionId, resyncExecutionId, updateExecutionId } from "../../src/features/branch/contract.ts"
 import { writesRoute } from "../../src/features/issues/contract.ts"
 import type * as Actor from "../Actor.ts"
 import { REPOSITORY, reset, sql } from "../github/test/fixtures.ts"
@@ -115,6 +115,50 @@ describe("Publish and Update branch through the writes route", () => {
     expect((await h.fetch(writesRoute("acme", "widgets"), post(first))).status).toBe(200)
     expect((await h.fetch(writesRoute("acme", "widgets"), post(publishBody(branchId)))).status).toBe(202)
     expect(h.starts).toHaveLength(2)
+  })
+
+  test("Resync: the owner's and the agent's started under their ids; one at a time, and never beside a Publish on its way", async () => {
+    const actor = member()
+    const branchId = await ephemeral(actor.subject.id)
+    const h = await githubHarness(runtime, { actor })
+    const resync = () => ({ writeId: crypto.randomUUID(), op: "branch/resync", branchId: branchId.toUpperCase() })
+    const first = resync()
+    expect((await h.fetch(writesRoute("acme", "widgets"), post(first))).status).toBe(202)
+    expect(h.starts).toEqual([{ flow: "branch/Resync", executionId: resyncExecutionId(first.writeId), payload: { writeId: first.writeId } }])
+    expect(await writes()).toEqual([{ via: "person", op: "branch/resync", payload: { op: "branch/resync", branchId }, status: "pending" }])
+    // A resend answers as it stands; a second Resync waits for the first.
+    expect((await h.fetch(writesRoute("acme", "widgets"), post(first))).status).toBe(200)
+    const second = await h.fetch(writesRoute("acme", "widgets"), post(resync()))
+    expect([second.status, await second.json()]).toEqual([409, { code: "conflict" }])
+    // A Publish waits for a Resync, and a Resync for a Publish.
+    const blocked = await h.fetch(writesRoute("acme", "widgets"), post(publishBody(branchId)))
+    expect([blocked.status, await blocked.json()]).toEqual([409, { code: "conflict" }])
+    await sql(runtime, `UPDATE github_writes SET status = 'done', settled_at = now() WHERE id = '${first.writeId}'`)
+    expect((await h.fetch(writesRoute("acme", "widgets"), post(publishBody(branchId)))).status).toBe(202)
+    expect((await h.fetch(writesRoute("acme", "widgets"), post(resync()))).status).toBe(409)
+    // The agent resyncs for the person, as the App reads GitHub.
+    const other = await ephemeral(actor.subject.id, REPOSITORY.id, "try-2")
+    const agent = await githubHarness(runtime, { actor: { ...actor, act: { kind: "agent", id: "answer-1" } } })
+    const asked = { writeId: crypto.randomUUID(), op: "branch/resync", branchId: other }
+    expect((await agent.fetch(writesRoute("acme", "widgets"), post(asked))).status).toBe(202)
+    expect(agent.starts.map((start) => [start.flow, start.executionId])).toEqual([["branch/Resync", resyncExecutionId(asked.writeId)]])
+    expect((await writes()).at(-1)).toMatchObject({ via: "agent", op: "branch/resync" })
+  })
+
+  test("Resync is refused to someone who may only view the branch, on another repository's, and without a session", async () => {
+    const owner = crypto.randomUUID()
+    const branchId = await ephemeral(owner)
+    await shared(runtime, branchId, "viewer", "view")
+    const body = { writeId: crypto.randomUUID(), op: "branch/resync", branchId }
+    const viewer = await githubHarness(runtime, { actor: member("viewer") })
+    expect((await viewer.fetch(writesRoute("acme", "widgets"), post(body))).status).toBe(403)
+    const elsewhere = await ephemeral(owner, "github/acme/other")
+    const ownerHarness = await githubHarness(runtime, { actor: member(owner) })
+    expect((await ownerHarness.fetch(writesRoute("acme", "widgets"), post({ ...body, branchId: elsewhere }))).status).toBe(404)
+    const signedOut = await githubHarness(runtime, { actor: member(owner, null) })
+    expect((await signedOut.fetch(writesRoute("acme", "widgets"), post(body))).status).toBe(401)
+    expect((await ownerHarness.fetch(writesRoute("acme", "widgets"), post({ ...body, branchId: "not-a-branch" }))).status).toBe(400)
+    expect(await writes()).toEqual([])
   })
 
   test.each<readonly [string, (owner: string) => Promise<string>, Actor.Actor | ((owner: string) => Actor.Actor), number, string]>([

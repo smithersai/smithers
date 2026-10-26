@@ -381,6 +381,8 @@ describe("POST /api/branches with create: a new branch", () => {
 
   test("an injected Forge refusal records only its safe cause and the failed call", async () => {
     const h = await open({ forge: Forge.of({
+      move: () => Effect.die("no resync"),
+      pull: () => Effect.die("no resync"),
       upstream: () => Effect.succeed({ url: "https://github.com/octocat/Spoon-Knife.git" }),
       create: () => Effect.fail(new CreateRefused({
         code: "unavailable",
@@ -419,6 +421,8 @@ describe("POST /api/branches with create: a new branch", () => {
   test.each([401, 403])("Code Storage %s refuses branch creation with no tracked row and safe cause records", async (status) => {
     const code = status === 401 ? "unauthorized" : "insufficient_scope"
     const h = await open({ forge: Forge.of({
+      move: () => Effect.die("no resync"),
+      pull: () => Effect.die("no resync"),
       upstream: () => Effect.succeed({ url: "https://github.com/octocat/Spoon-Knife.git" }),
       create: () => Effect.fail(new CreateRefused({
         code: "forbidden", errorTag: "@smthrs/effect-code-storage/CodeStorageError",
@@ -748,6 +752,8 @@ test("creation refuses an untracked ordinary ref before writing an ephemeral ref
 test("creation fails closed when ordinary ref collision visibility is unavailable", async () => {
   let reads = 0
   const h = await open({ forge: Forge.of({
+    move: () => Effect.die("no resync"),
+    pull: () => Effect.die("no resync"),
     upstream: () => Effect.succeed({ url: ++reads === 1
       ? "https://github.com/octocat/Spoon-Knife.git"
       : "https://github.com/octocat/inaccessible.git" }),

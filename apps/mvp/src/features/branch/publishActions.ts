@@ -2,15 +2,16 @@ import { Effect, FiberHandle, Metric, Option, type Result, Stream } from "effect
 import { type DispatchFailed, type Dispatched, FlowDispatch } from "../../flows/dispatch"
 import { MAX_BODY_LENGTH, MAX_TITLE_LENGTH } from "../issues/contract"
 import { readComparison } from "../pulls/comparison"
-import { publishes, updates } from "./metrics"
+import { publishes, resyncs, updates } from "./metrics"
 import type { PressRefusal, PublicationRow, PublishPress } from "./publishSchema"
 import { PublishStore } from "./publishStore"
 import { CURRENT } from "./schema"
 import { BranchStore } from "./store"
 
 // What a person does about GitHub on a branch's page (docs/features/branch-publish.md#the-branch-page, rulings GH-6 and
-// GH-11): Publish a Smithers-only branch through `branch/publish`, the only way GitHub hears of it, and Update branch
-// through `branch/update` once it is published; both door `button`, as the agent and the slash commands run them too.
+// GH-11): Publish a Smithers-only branch through `branch/publish`, the only way GitHub hears of it, Update branch
+// through `branch/update` once it is published, and Resync through `branch/resync`, which brings its working copy to the
+// GitHub branch's head; each door `button`, as the agent and the slash commands run them too.
 // Each press is a span, a log line and a count by outcome, never a title or a description. The route shows the branch's
 // publication while its page shows it, and its Compare reads the publication's base and head once per pair.
 
@@ -22,6 +23,9 @@ const EMPTY: Omit<PublishPress, "branchId"> = {
   updating: false,
   updateWriteId: null,
   updateRefused: null,
+  resyncing: false,
+  resyncWriteId: null,
+  resyncRefused: null,
 }
 
 /** The branch this tab shows, once it is ready. */
@@ -122,7 +126,11 @@ const settled = (dispatched: Result.Result<Dispatched<"branch/publish">, Dispatc
 }
 
 /** Counts a press by `outcome` and logs it: content-free. */
-const record = (counter: typeof publishes, name: "branch.publish.press" | "branch.update.press", outcome: string) =>
+const record = (
+  counter: typeof publishes,
+  name: "branch.publish.press" | "branch.update.press" | "branch.resync.press",
+  outcome: string,
+) =>
   Effect.gen(function* () {
     yield* Metric.update(Metric.withAttributes(counter, { outcome }), 1)
     yield* Effect.annotateCurrentSpan({ outcome })
@@ -174,3 +182,22 @@ export const update = Effect.gen(function* () {
   yield* record(updates, "branch.update.press", refused ?? "sent")
   return true
 }).pipe(Effect.withSpan("branch.update.press"), Effect.annotateLogs({ feature: "branch" }))
+
+/**
+ * Resync on the shown branch: `branch/resync`. The page says Resyncing… until the write settles, then the files a
+ * conflict listed, or why not. A Resync this tab is still running presses nothing. Answers whether it pressed.
+ */
+export const resync = Effect.gen(function* () {
+  const branch = yield* shownBranch
+  if (Option.isNone(branch)) return false
+  const { branchId, owner, repo, name } = branch.value
+  if ((yield* pressOf(branchId))?.resyncing === true) return false
+  yield* setPress(branchId, { resyncing: true, resyncWriteId: null, resyncRefused: null })
+  const dispatched = yield* Effect.result(
+    (yield* FlowDispatch).dispatch("branch/resync", { repo: `${owner}/${repo}`, branch: name }, { door: "button" }),
+  )
+  const { writeId, refused } = settled(dispatched)
+  yield* setPress(branchId, { resyncing: false, resyncWriteId: writeId, resyncRefused: refused })
+  yield* record(resyncs, "branch.resync.press", refused ?? "sent")
+  return true
+}).pipe(Effect.withSpan("branch.resync.press"), Effect.annotateLogs({ feature: "branch" }))

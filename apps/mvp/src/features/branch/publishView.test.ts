@@ -1,9 +1,18 @@
-// What the branch page shows of Publish, Update branch and Compare (src/features/branch/publishView.ts,
+// What the branch page shows of Publish, Update branch, Resync and Compare (src/features/branch/publishView.ts,
 // docs/features/branch-publish.md#the-branch-page): every state's words and what shows, for each kind of person.
 import { describe, expect, test } from "vitest"
 import type { FilesRow } from "../pulls/schema"
 import type { PublicationRow, PublishPress } from "./publishSchema"
-import { type BranchWrite, compareCommitsOf, compareOf, comparesOf, latestOf, type PublishBar, publishBarOf } from "./publishView"
+import {
+  type BranchWrite,
+  compareCommitsOf,
+  compareOf,
+  comparesOf,
+  conflictOf,
+  latestOf,
+  type PublishBar,
+  publishBarOf,
+} from "./publishView"
 
 const BRANCH = "6b9f3e2a-1c4d-4e5f-8a7b-9c0d1e2f3a4b"
 const BASE = "b".repeat(40)
@@ -18,6 +27,9 @@ const publication = (fields: Partial<PublicationRow> = {}): PublicationRow => ({
   headSha: HEAD,
   prNumber: 7,
   updateState: null,
+  syncedSha: HEAD,
+  syncState: "synced",
+  syncConflicts: null,
   updatedAt: "2026-10-25 10:00:00+00",
   ...fields,
 })
@@ -31,6 +43,9 @@ const press = (fields: Partial<PublishPress> = {}): PublishPress => ({
   updating: false,
   updateWriteId: null,
   updateRefused: null,
+  resyncing: false,
+  resyncWriteId: null,
+  resyncRefused: null,
   ...fields,
 })
 
@@ -63,6 +78,8 @@ const reads = (shown: PublishBar): ReadonlyArray<string> => [
   ...(shown.publish ? [shown.publishBusy ? "[Publish]" : "Publish"] : []),
   ...(shown.updateStatus === undefined ? [] : [shown.updateStatus]),
   ...(shown.update ? [shown.updateBusy ? "[Update branch]" : "Update branch"] : []),
+  ...(shown.resyncStatus === undefined ? [] : [shown.resyncStatus]),
+  ...(shown.resync ? [shown.resyncBusy ? "[Resync]" : "Resync"] : []),
   ...(shown.form ? [`form: ${shown.formTitle}${shown.formDescription ? " + description" : ""}`] : []),
   ...(shown.compare ? ["Compare"] : []),
 ]
@@ -131,7 +148,7 @@ describe("before the branch is published", () => {
     expect(reads(bar({ press: press({ publishRefused: "exists" }), writes: [write("branch/publish", "done")] })))
       .toEqual(["Publishing…", "[Publish]"])
     expect(reads(bar({ press: press({ publishRefused: "exists" }), publication: publication(), writes: [write("branch/publish", "done")] })))
-      .toEqual(["#7", "Publish", "Update branch", "Compare"])
+      .toEqual(["#7", "Publish", "Update branch", "Resync", "Compare"])
     expect(reads(bar({ press: press({ publishRefused: "exists" }), writes: [write("branch/publish", "refused", "too_large")] })))
       .toEqual(["Too large", "Publish"])
   })
@@ -151,8 +168,8 @@ describe("before the branch is published", () => {
 
 describe("once the branch is published", () => {
   test("anyone who may view it gets the pull request's link and Compare; an editor also Publish and Update branch", () => {
-    expect(reads(bar({ publication: publication() }))).toEqual(["#7", "Publish", "Update branch", "Compare"])
-    expect(reads(bar({ access: "edit", publication: publication() }))).toEqual(["#7", "Publish", "Update branch", "Compare"])
+    expect(reads(bar({ publication: publication() }))).toEqual(["#7", "Publish", "Update branch", "Resync", "Compare"])
+    expect(reads(bar({ access: "edit", publication: publication() }))).toEqual(["#7", "Publish", "Update branch", "Resync", "Compare"])
     expect(reads(bar({ access: "view", publication: publication() }))).toEqual(["#7", "Compare"])
     expect(reads(bar({ mode: "locked", publication: publication() }))).toEqual(["#7", "Compare"])
     expect(reads(bar({ access: "none", publication: publication() }))).toEqual([])
@@ -161,39 +178,39 @@ describe("once the branch is published", () => {
 
   test("Publish again asks only for the commit's title: the pull request's, else the branch's name", () => {
     expect(reads(bar({ publication: publication(), pullTitle: "Add a line", press: press({ form: true }) })))
-      .toEqual(["#7", "Update branch", "form: Add a line", "Compare"])
+      .toEqual(["#7", "Update branch", "Resync", "form: Add a line", "Compare"])
     expect(reads(bar({ publication: publication(), press: press({ form: true }) })))
-      .toEqual(["#7", "Update branch", "form: try-1", "Compare"])
+      .toEqual(["#7", "Update branch", "Resync", "form: try-1", "Compare"])
   })
 
   test("the first Publish done says nothing more; a later one on its way, or refused, says so", () => {
     const first = write("branch/publish", "done")
-    expect(reads(bar({ publication: publication(), writes: [first] }))).toEqual(["#7", "Publish", "Update branch", "Compare"])
+    expect(reads(bar({ publication: publication(), writes: [first] }))).toEqual(["#7", "Publish", "Update branch", "Resync", "Compare"])
     expect(reads(bar({ publication: publication(), writes: [first, write("branch/publish", "pending")] })))
-      .toEqual(["#7", "Publishing…", "[Publish]", "Update branch", "Compare"])
+      .toEqual(["#7", "Publishing…", "[Publish]", "Update branch", "Resync", "Compare"])
     expect(reads(bar({ publication: publication(), writes: [first, write("branch/publish", "refused", "conflict")] })))
-      .toEqual(["#7", "Conflict", "Publish", "Update branch", "Compare"])
+      .toEqual(["#7", "Conflict", "Publish", "Update branch", "Resync", "Compare"])
   })
 
   test("Updating… while the flow runs, until its write syncs, and while it is pending; Update branch waits", () => {
     const shown = publication()
     expect(reads(bar({ publication: shown, press: press({ updating: true }) })))
-      .toEqual(["#7", "Publish", "Updating…", "[Update branch]", "Compare"])
+      .toEqual(["#7", "Publish", "Updating…", "[Update branch]", "Resync", "Compare"])
     const sent = crypto.randomUUID()
     expect(reads(bar({ publication: shown, press: press({ updateWriteId: sent }) })))
-      .toEqual(["#7", "Publish", "Updating…", "[Update branch]", "Compare"])
+      .toEqual(["#7", "Publish", "Updating…", "[Update branch]", "Resync", "Compare"])
     expect(reads(bar({ publication: shown, writes: [write("branch/update", "pending")] })))
-      .toEqual(["#7", "Publish", "Updating…", "[Update branch]", "Compare"])
+      .toEqual(["#7", "Publish", "Updating…", "[Update branch]", "Resync", "Compare"])
   })
 
   test("then how the last Update branch ended, by anyone: Up to date, Updated, Conflict, or nothing yet", () => {
     const done = write("branch/update", "done")
     expect(reads(bar({ publication: publication({ updateState: "up_to_date" }), writes: [done] })))
-      .toEqual(["#7", "Publish", "Up to date", "Update branch", "Compare"])
+      .toEqual(["#7", "Publish", "Up to date", "Update branch", "Resync", "Compare"])
     expect(reads(bar({ publication: publication({ updateState: "updated" }) })))
-      .toEqual(["#7", "Publish", "Updated", "Update branch", "Compare"])
+      .toEqual(["#7", "Publish", "Updated", "Update branch", "Resync", "Compare"])
     expect(reads(bar({ publication: publication({ updateState: "conflict" }) })))
-      .toEqual(["#7", "Publish", "Conflict", "Update branch", "Compare"])
+      .toEqual(["#7", "Publish", "Conflict", "Update branch", "Resync", "Compare"])
     // A viewer reads none of it.
     expect(reads(bar({ access: "view", publication: publication({ updateState: "conflict" }) }))).toEqual(["#7", "Compare"])
   })
@@ -209,7 +226,7 @@ describe("once the branch is published", () => {
     ["unavailable", "Couldn't update"],
   ] as const)("an Update refused or failed %s says %s", (failure, words) => {
     expect(reads(bar({ publication: publication(), writes: [write("branch/update", "refused", failure)] })))
-      .toEqual(["#7", "Publish", words, "Update branch", "Compare"])
+      .toEqual(["#7", "Publish", words, "Update branch", "Resync", "Compare"])
   })
 
   test.each([
@@ -219,7 +236,73 @@ describe("once the branch is published", () => {
     ["unavailable", "Couldn't update"],
   ] as const)("an Update press its flow refused %s says %s", (reason, words) => {
     expect(reads(bar({ publication: publication({ updateState: "updated" }), press: press({ updateRefused: reason }) })))
-      .toEqual(["#7", "Publish", words, "Update branch", "Compare"])
+      .toEqual(["#7", "Publish", words, "Update branch", "Resync", "Compare"])
+  })
+})
+
+describe("Resync, once the branch is published", () => {
+  test("an editor sees Resync, nothing beside it while the working copy is at GitHub's head; a viewer sees neither", () => {
+    expect(reads(bar({ publication: publication() }))).toEqual(["#7", "Publish", "Update branch", "Resync", "Compare"])
+    expect(reads(bar({ access: "view", publication: publication() }))).toEqual(["#7", "Compare"])
+    expect(reads(bar({ mode: "locked", publication: publication({ syncState: "conflict", syncConflicts: ["a"] }) })))
+      .toEqual(["#7", "Compare"])
+  })
+
+  test("Behind while GitHub's head is one the working copy hasn't reached, a resync not run yet included", () => {
+    expect(reads(bar({ publication: publication({ syncedSha: BASE }) })))
+      .toEqual(["#7", "Publish", "Update branch", "Behind", "Resync", "Compare"])
+    expect(reads(bar({ publication: publication({ syncedSha: null, syncState: null }) })))
+      .toEqual(["#7", "Publish", "Update branch", "Behind", "Resync", "Compare"])
+  })
+
+  test("Resyncing… while the flow runs, until its write syncs, and while it is pending; Resync waits", () => {
+    const shown = publication({ syncedSha: BASE })
+    expect(reads(bar({ publication: shown, press: press({ resyncing: true }) })))
+      .toEqual(["#7", "Publish", "Update branch", "Resyncing…", "[Resync]", "Compare"])
+    const sent = crypto.randomUUID()
+    expect(reads(bar({ publication: shown, press: press({ resyncWriteId: sent }) })))
+      .toEqual(["#7", "Publish", "Update branch", "Resyncing…", "[Resync]", "Compare"])
+    expect(reads(bar({ publication: shown, writes: [write("branch/resync", "pending")] })))
+      .toEqual(["#7", "Publish", "Update branch", "Resyncing…", "[Resync]", "Compare"])
+    // Settled: the publication says where the working copy is.
+    expect(reads(bar({ publication: publication(), press: press({ resyncWriteId: sent }), writes: [write("branch/resync", "done", null, sent)] })))
+      .toEqual(["#7", "Publish", "Update branch", "Resync", "Compare"])
+  })
+
+  test("a conflict lists its files, after an Update branch's resync too, whoever pressed; it outranks Behind", () => {
+    const conflicted = (paths: ReadonlyArray<string>) =>
+      reads(bar({ publication: publication({ syncedSha: BASE, syncState: "conflict", syncConflicts: paths }) }))
+    expect(conflicted(["README.md"])).toEqual(["#7", "Publish", "Update branch", "Conflict · README.md", "Resync", "Compare"])
+    expect(conflicted(["a", "b", "c", "d", "e"])).toEqual(["#7", "Publish", "Update branch", "Conflict · a, b, c +2", "Resync", "Compare"])
+    expect(conflicted([])).toEqual(["#7", "Publish", "Update branch", "Conflict", "Resync", "Compare"])
+    expect(reads(bar({ publication: publication({ syncState: "conflict", syncConflicts: null }) })))
+      .toEqual(["#7", "Publish", "Update branch", "Conflict", "Resync", "Compare"])
+    expect(conflictOf(["a", "b", "c"])).toBe("Conflict · a, b, c")
+  })
+
+  test.each([
+    ["sign_in", "Sign in"],
+    ["forbidden", "Not allowed"],
+    ["exists", "Couldn't resync"],
+    ["unavailable", "Couldn't resync"],
+  ] as const)("a Resync press its flow refused %s says %s", (reason, words) => {
+    expect(reads(bar({ publication: publication(), press: press({ resyncRefused: reason }) })))
+      .toEqual(["#7", "Publish", "Update branch", words, "Resync", "Compare"])
+  })
+
+  test("a Resync write refused says why until the publication moves; one refused for a conflict says nothing once synced", () => {
+    const refused = { ...write("branch/resync", "refused", "not_found"), createdAt: "2026-10-25 11:00:00+00" }
+    expect(reads(bar({ publication: publication(), writes: [refused] })))
+      .toEqual(["#7", "Publish", "Update branch", "Couldn't resync", "Resync", "Compare"])
+    expect(reads(bar({ publication: publication(), writes: [{ ...refused, failure: "sign_in_required" }] })))
+      .toEqual(["#7", "Publish", "Update branch", "Sign in", "Resync", "Compare"])
+    expect(reads(bar({ publication: publication(), writes: [{ ...refused, failure: "not_allowed" }] })))
+      .toEqual(["#7", "Publish", "Update branch", "Not allowed", "Resync", "Compare"])
+    // A resync since, after a Publish or an Update branch, moved the publication on.
+    expect(reads(bar({ publication: publication({ updatedAt: "2026-10-25 12:00:00+00" }), writes: [refused] })))
+      .toEqual(["#7", "Publish", "Update branch", "Resync", "Compare"])
+    expect(reads(bar({ publication: publication(), writes: [{ ...refused, failure: "conflict" }] })))
+      .toEqual(["#7", "Publish", "Update branch", "Resync", "Compare"])
   })
 })
 

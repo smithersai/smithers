@@ -424,6 +424,8 @@ describe("a new conversation", () => {
   test.each([401, 403])("/new stops after Code Storage %s: one write attempt, no navigation", async (status) => {
     let attempts = 0
     const api = await openApi(Forge.of({
+      move: () => Effect.die("no resync"),
+      pull: () => Effect.die("no resync"),
       upstream: () => Effect.succeed({ url: `https://github.com/${DEFAULT_REPOSITORY}.git` }),
       create: () => Effect.suspend(() => {
         attempts++

@@ -587,6 +587,8 @@ Tracking a branch, its conversation, its terminals, its machine, sharing it and 
 | `smithers_branch_share_shape_requests` | counter | ChatApi | `status`, `live` |
 | `branch.publish`, `branch.update` | log, span | the `FlowExecution` Durable Object ([branch-publish.md](features/branch-publish.md#observability)) | `writeId`, `outcome` (`done`, `updated`, `up_to_date`, or the refusal), `settled`, `method`, `projection`, `errorCode` |
 | `smithers_branch_publishes`, `smithers_branch_updates` | counters | the `FlowExecution` Durable Object | `outcome`, `method` |
+| `branch.resync` (log, span), `branch.resync.send`, `branch.resync.after` (spans) | log, span | the `FlowExecution` Durable Object ([branch-publish.md](features/branch-publish.md#resync)) | `writeId`, `outcome` (`synced`, `conflict`, `unavailable`, `invalid`, `too_large`, `mirror_pull_failed`), `files`, `errorCode` |
+| `smithers_branch_resyncs` | counter | the `FlowExecution` Durable Object | `outcome` |
 | `branch.change.collect` | span | the `FlowExecution` Durable Object | the working copy's read for a Publish |
 | `branch.publications.shape`, `smithers_branch_publication_shape_requests` | log, counter | ChatApi | `status`, `live` |
 | `branch.operation.evaluate`, `branch.operation.call`, `smithers_branch_operation_steps` | browser | the engine worker | `operation` (`publish`, `update`), `outcome` |
@@ -596,7 +598,7 @@ Tracking a branch, its conversation, its terminals, its machine, sharing it and 
 | `room.enforce` (log), `room.object.enforce` (span) | | `RoomObject` | `closed`, `errorCode` |
 | `smithers_presence_joins`, `_frames`, `_evictions`, `_open` | counters | `RoomObject` (`@smthrs/sync`'s `PresenceRoom`) | `outcome` |
 | `branch.share`, `branch.share.post`, `branch.share.press`, `smithers_web_branch_shares` | browser | the engine worker and the tab | `outcome`, `change`, `status` |
-| `branch.publish.press`, `branch.update.press` (log, span), `smithers_web_branch_publishes`, `smithers_web_branch_updates` (counters) | browser | the tab ([branch-publish.md](features/branch-publish.md#the-branch-page)) | `outcome` (`sent`, the refusal's reason, or `unavailable`) |
+| `branch.publish.press`, `branch.update.press`, `branch.resync.press` (log, span), `smithers_web_branch_publishes`, `smithers_web_branch_updates`, `smithers_web_branch_resyncs` (counters) | browser | the tab ([branch-publish.md](features/branch-publish.md#the-branch-page)) | `outcome` (`sent`, the refusal's reason, or `unavailable`) |
 | `presence.join`, `presence.closed`, `smithers_web_presence_joins`, `smithers_web_presence_closes` | browser | the tab | `outcome`, `code` |
 
 ### Co-editing

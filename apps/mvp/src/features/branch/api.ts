@@ -79,8 +79,9 @@ export class BranchClient extends Context.Service<
 export type BranchWrite =
   | { readonly writeId: string; readonly op: "branch/publish"; readonly branchId: string; readonly title: string; readonly body: string }
   | { readonly writeId: string; readonly op: "branch/update"; readonly branchId: string; readonly method: "merge" | "rebase" }
+  | { readonly writeId: string; readonly op: "branch/resync"; readonly branchId: string }
 
-/** Sends Publish and Update branch writes to ChatApi's writes route on `origin`, in the person's session. */
+/** Sends Publish, Update branch and Resync writes to ChatApi's writes route on `origin`, in the person's session. */
 export class BranchWrites extends Context.Service<
   BranchWrites,
   {

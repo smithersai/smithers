@@ -6,11 +6,12 @@ import { step } from "./fixtures"
 import { github, pollGitHub } from "./github"
 import { me, requires, scratchRepository } from "./target"
 
-// Publish and Update branch end to end (docs/features/branch-publish.md, rulings GH-6 and GH-11): the real app, ChatApi,
-// the branch's machine, the `branch/Publish` and `branch/Update` flows on Cloudflare, Code Storage and GitHub itself.
-// `/new` makes a Smithers-only branch of the scratch repository; a file edited and saved in its live editor reaches
-// GitHub only when the person presses Publish, as one commit and a pull request opened as them; after main moves on
-// GitHub, Update branch takes it in. It writes to GitHub as the test account, so it runs against a deployment signed in
+// Publish, Update branch and Resync end to end (docs/features/branch-publish.md, rulings GH-6 and GH-11): the real app,
+// ChatApi, the branch's machine, the `branch/Publish` and `branch/Update` flows and their resync on Cloudflare, Code
+// Storage and GitHub itself. `/new` makes a Smithers-only branch of the scratch repository; a file edited and saved in its
+// live editor reaches GitHub only when the person presses Publish, as one commit and a pull request opened as them; after
+// main moves on GitHub, Update branch takes it in and the working copy follows, so the file main added opens, takes an
+// edit, saves, and Publish again pushes it. It writes to GitHub as the test account, so it runs against a deployment signed in
 // as that account, on the scratch repository E2E_ISSUES_REPOSITORY (roninjin10/smithers-github-tests on smithers.sh),
 // which the account can write. Main moves, and the run cleans up after itself, as the App installation
 // (GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY from the vault's environment wrapper), outside Playwright, so no key or token
@@ -49,7 +50,11 @@ const pushToMain = async (app: ReturnType<typeof asApp>, defaultBranch: string, 
 }
 
 test("publish: a Smithers-only branch reaches GitHub only through Publish, as a pull request by the person; Update branch takes main in", {
-  annotation: { type: "summary", description: "/new, edit and save a file, Publish: the pull request is on GitHub as you; main moves; Update branch takes it in." },
+  annotation: {
+    type: "summary",
+    description: "/new, edit and save a file, Publish: the pull request is on GitHub as you; main moves; Update branch takes it in; " +
+      "edit the file main added, save, Publish again.",
+  },
 }, async ({ devices }) => {
   requires("githubScratch", "member", "githubAppKey")
   test.setTimeout(15 * 60_000)
@@ -114,7 +119,8 @@ test("publish: a Smithers-only branch reaches GitHub only through Publish, as a 
       return found
     })
 
-    const moved = await step("Main moves on GitHub", () => pushToMain(app, facts.default_branch, `e2e/base-${devices.word}.md`, "moved\n"))
+    const mains = `e2e/base-${devices.word}.md`
+    const moved = await step("Main moves on GitHub", () => pushToMain(app, facts.default_branch, mains, "moved\n"))
 
     await step("Maya presses Update branch, and the branch takes main in", async () => {
       const header = page.getByRole("navigation", { name: "Branch" })
@@ -125,6 +131,40 @@ test("publish: a Smithers-only branch reaches GitHub only through Publish, as a 
         (value) => value.behind_by === 0,
       )
       expect(compared.ahead_by).toBeGreaterThan(0)
+    })
+
+    await step("The working copy follows GitHub's branch: no longer Behind, and no conflict", async () => {
+      const header = page.getByRole("navigation", { name: "Branch" })
+      await expect(header).not.toContainText("Behind", { timeout: MACHINE })
+      await expect(header).not.toContainText("Resyncing")
+      await expect(header).not.toContainText("Conflict")
+    })
+
+    await step("Maya edits the file main added, and it saves", async () => {
+      await page.goto(`/${repo}/tree/${branch}?edit=${mains}`)
+      const region = page.getByRole("region", { name: mains })
+      const editor = region.locator(".cm-content")
+      await expect(editor).toContainText("moved", { timeout: MACHINE })
+      await editor.click()
+      await page.keyboard.press("ControlOrMeta+End")
+      await page.keyboard.type(`Edited after Update ${devices.word}`)
+      await region.getByRole("button", { name: "Save", exact: true }).click()
+      await expect(region.getByRole("button", { name: "Saved", exact: true })).toBeVisible({ timeout: MACHINE })
+    })
+
+    await step("Publish again pushes it: GitHub's branch holds main's line and Maya's", async () => {
+      await page.goto(`/${repo}/tree/${branch}`)
+      const header = page.getByRole("navigation", { name: "Branch" })
+      await expect(header.getByRole("link", { name: `#${number}` })).toBeVisible({ timeout: 60_000 })
+      await header.getByRole("button", { name: "Publish", exact: true }).click()
+      await page.getByRole("form", { name: "Publish" }).getByRole("button", { name: "Publish", exact: true }).click()
+      const pushed = await pollGitHub(
+        () => github<{ content: string }>(page, `/repos/${repo}/contents/${mains}?ref=${encodeURIComponent(ref!)}`),
+        (value) => Buffer.from(value.content, "base64").toString("utf8").includes(`Edited after Update ${devices.word}`),
+      )
+      expect(Buffer.from(pushed.content, "base64").toString("utf8")).toMatch(new RegExp(`^moved\\n.*Edited after Update ${devices.word}`, "s"))
+      await expect(header).not.toContainText("Conflict")
+      await expect(header).not.toContainText("Couldn't publish")
     })
 
     await step("Compare lists the branch's commits and its file", async () => {

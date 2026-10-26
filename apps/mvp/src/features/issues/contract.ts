@@ -85,8 +85,8 @@ export const commentId = (repoId: string, githubId: number): string => `${repoId
 /**
  * The writes the route takes (decision 0012 §3): open an issue, comment on one, and triage's: a person's Accept or Not
  * accepted (`issue/triage`), Run triage again (`triage/run`), and Enable and Pause (`triage/enable`, `triage/pause`); a
- * person's merge (`pr/merge`); and a Smithers-only branch's Publish and Update branch (`branch/publish`, `branch/update`,
- * docs/features/branch-publish.md).
+ * person's merge (`pr/merge`); and a Smithers-only branch's Publish, Update branch and Resync (`branch/publish`,
+ * `branch/update`, `branch/resync`, docs/features/branch-publish.md).
  */
 export const WRITE_OPS = [
   "issue/create",
@@ -99,12 +99,13 @@ export const WRITE_OPS = [
   "pr/merge",
   "branch/publish",
   "branch/update",
+  "branch/resync",
 ] as const
 export type WriteOp = (typeof WRITE_OPS)[number]
 
 /**
- * The writes the issues outbox (`issue-sending`) may hold, as its persisted payload names them: Publish and Update
- * branch never go through it (they are the branch's own flows, docs/features/branch-publish.md), so the outbox's schema
+ * The writes the issues outbox (`issue-sending`) may hold, as its persisted payload names them: Publish, Update branch
+ * and Resync never go through it (they are the branch's own flows, docs/features/branch-publish.md), so the outbox's schema
  * stays the one devices already store.
  */
 export const OUTBOX_WRITE_OPS = [

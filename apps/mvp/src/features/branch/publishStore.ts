@@ -37,6 +37,9 @@ export const publicationQuery = (current: Branches, shown: Collection.Collection
         headSha: publication.headSha,
         prNumber: publication.prNumber,
         updateState: publication.updateState,
+        syncedSha: publication.syncedSha,
+        syncState: publication.syncState,
+        syncConflicts: publication.syncConflicts,
         updatedAt: publication.updatedAt,
       }))
       .findOne()
@@ -73,17 +76,22 @@ export const pressQuery = (current: Branches, presses: Collection.Collection<Pub
         updating: press.updating,
         updateWriteId: press.updateWriteId,
         updateRefused: press.updateRefused,
+        resyncing: press.resyncing,
+        resyncWriteId: press.resyncWriteId,
+        resyncRefused: press.resyncRefused,
       }))
       .findOne()
   )
 
-/** The person's own Publish and Update branch writes of the shown branch, whoever started them. */
+/** The person's own Publish, Update branch and Resync writes of the shown branch, whoever started them. */
 export const writesQuery = (current: Branches, writes: ElectricCollection.ElectricCollection<WriteRow>) =>
   LiveQuery.make((q) =>
     q
       .from({ current: current.tanstack })
       .innerJoin({ write: writes.tanstack }, ({ current, write }) => Query.eq(current.branchId, write.branchId))
-      .where(({ write }) => Query.or(Query.eq(write.op, "branch/publish"), Query.eq(write.op, "branch/update")))
+      .where(({ write }) =>
+        Query.or(Query.eq(write.op, "branch/publish"), Query.eq(write.op, "branch/update"), Query.eq(write.op, "branch/resync"))
+      )
       .select(({ write }) => ({
         id: write.id,
         op: write.op,

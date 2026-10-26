@@ -62,9 +62,14 @@ import {
   SHA,
 } from "../../src/features/pulls/contract.ts"
 import { isRepository, REPOS_ROUTE, repoId } from "../../src/features/repo/contract.ts"
-import { publishExecutionId, UPDATE_METHODS, updateExecutionId } from "../../src/features/branch/contract.ts"
+import {
+  publishExecutionId,
+  resyncExecutionId,
+  UPDATE_METHODS,
+  updateExecutionId,
+} from "../../src/features/branch/contract.ts"
 import { branchAccess, canEdit } from "../branch/Access.ts"
-import { Publish, publishBlocked, Update } from "../branch/Publish.ts"
+import { Publish, publishBlocked, Resync, Update } from "../branch/Publish.ts"
 import { type Actor, canAsk, refusesPersonOnly, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
@@ -136,7 +141,13 @@ const refuse = (status: number, code: WriteRefusal | "not_configured" | "invalid
  * The writes any repository the deployment may act on takes (decision 0079, Slice 1); the rest only its own. Publish
  * and Update branch act on the branch's own repository, wherever `/new` made it (docs/features/branch-publish.md).
  */
-const ANY_REPOSITORY: ReadonlySet<string> = new Set(["issue/create", "issue/comment", "branch/publish", "branch/update"])
+const ANY_REPOSITORY: ReadonlySet<string> = new Set([
+  "issue/create",
+  "issue/comment",
+  "branch/publish",
+  "branch/update",
+  "branch/resync",
+])
 
 /** No person's id: what a signed-out writes shape filters on, so it holds no rows. */
 const NOBODY = ""
@@ -190,6 +201,7 @@ const WriteBody = Schema.Union([
     branchId: WriteId,
     method: Schema.optional(Schema.Literals(UPDATE_METHODS)),
   }),
+  Schema.Struct({ writeId: WriteId, op: Schema.Literal("branch/resync"), branchId: WriteId }),
 ])
 type WriteBody = typeof WriteBody.Type
 
@@ -205,9 +217,10 @@ const mayWrite = (who: Actor, write: WriteBody): boolean => {
       return who.role !== null
     case "issue/triage":
     case "triage/run":
-    // Publish and Update branch are a Member's (`repo:branch-create`), on a branch they may edit.
+    // Publish, Update branch and Resync are a Member's (`repo:branch-create`), on a branch they may edit.
     case "branch/publish":
     case "branch/update":
+    case "branch/resync":
       return canAsk(who)
     case "issue/commitment":
     case "triage/enable":
@@ -229,7 +242,7 @@ const withPersonToken = (write: WriteBody, via: WriteVia): boolean =>
   via === "person" &&
   (write.op === "issue/create" || write.op === "issue/comment" || write.op === "issue/triage" ||
     write.op === "issue/commitment" || write.op === "pr/merge" || write.op === "branch/publish" ||
-    write.op === "branch/update")
+    write.op === "branch/update" || write.op === "branch/resync")
 
 /** A write's payload as it is recorded and hashed. */
 const payloadOf = (write: WriteBody): Store.WritePayload => {
@@ -260,6 +273,8 @@ const payloadOf = (write: WriteBody): Store.WritePayload => {
       return { op: write.op, branchId: write.branchId.toLowerCase(), title: write.title.trim(), body: write.body }
     case "branch/update":
       return { op: write.op, branchId: write.branchId.toLowerCase(), method: write.method ?? "merge" }
+    case "branch/resync":
+      return { op: write.op, branchId: write.branchId.toLowerCase() }
   }
 }
 const decodeWrite = Schema.decodeUnknownOption(Schema.fromJsonString(WriteBody))
@@ -574,7 +589,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           // Triage is the person's own act: anyone acting for them is refused, and counted as such (decision 0017).
           if (
             write.op !== "issue/create" && write.op !== "issue/comment" && write.op !== "branch/publish" &&
-            write.op !== "branch/update" && (yield* refusesPersonOnly(who, write.op))
+            write.op !== "branch/update" && write.op !== "branch/resync" && (yield* refusesPersonOnly(who, write.op))
           ) {
             return refused(403, "forbidden")
           }
@@ -586,14 +601,15 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           if (!mayWrite(who, write)) return refused(403, "forbidden")
           // The App writes triage under the role of the person who enabled it, re-checked by their GitHub login.
           if (write.op === "triage/enable" && who.login === undefined) return refused(401, "authentication")
-          // Publish and Update branch: a branch of this repository the writer may edit; Publish, once per branch.
-          if (write.op === "branch/publish" || write.op === "branch/update") {
+          // Publish, Update branch and Resync: a branch of this repository the writer may edit; Publish and Resync, one
+          // at a time per branch.
+          if (write.op === "branch/publish" || write.op === "branch/update" || write.op === "branch/resync") {
             const branchId = write.branchId.toLowerCase()
             fields.branchId = branchId
             const branch = yield* branchAccess(Option.some(who), branchId).pipe(Effect.provide(database))
             if (branch === undefined || branch.repoId !== repo.id) return refused(404, "not_found")
             if (!canEdit(branch.access)) return refused(403, "forbidden")
-            if (write.op === "branch/publish") {
+            if (write.op === "branch/publish" || write.op === "branch/resync") {
               const blocked = yield* publishBlocked(branchId, write.writeId).pipe(Effect.provide(database))
               if (blocked !== undefined) {
                 fields.blocked = blocked
@@ -645,6 +661,11 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
               : write.op === "branch/update"
               ? (yield* FlowStarter).start(Update, {
                 executionId: updateExecutionId(write.writeId),
+                payload: { writeId: write.writeId },
+              })
+              : write.op === "branch/resync"
+              ? (yield* FlowStarter).start(Resync, {
+                executionId: resyncExecutionId(write.writeId),
                 payload: { writeId: write.writeId },
               })
               : (yield* FlowStarter).start(Write, {

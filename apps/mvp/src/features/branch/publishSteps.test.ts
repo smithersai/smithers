@@ -1,7 +1,7 @@
 // Publish's and Update branch's steps on a device engine (src/features/branch/publishSteps.ts,
 // docs/features/branch-publish.md): the first-party flows run in the real realm, their host action sent to a ChatApi
-// stand-in on a real socket through the real HTTP clients, and the registry's `branch/publish` and `branch/update` run
-// to their write on the Node host's engine.
+// stand-in on a real socket through the real HTTP clients, and the registry's `branch/publish`, `branch/update` and
+// `branch/resync` run to their write on the Node host's engine.
 import { digestSync } from "@smthrs/crypto"
 import { Action, FlowRuntime, Graph } from "@smthrs/flow"
 import { RealmFlow } from "@smthrs/harness"
@@ -18,7 +18,7 @@ import { BranchWrites, TrackRefused } from "./api"
 import type { CreationSelection } from "./creation"
 import type { RealmRequest } from "./creationFlows"
 import { BranchTrackRefused, BranchTrackUnavailable } from "./flows"
-import { BranchPublish, BranchUpdate, type OperationRequest } from "./publishFlows"
+import { BranchPublish, BranchResync, BranchUpdate, type OperationRequest } from "./publishFlows"
 import { call, evaluate, registrationAt, run, select, writeFailure } from "./publishSteps"
 
 const BRANCH = "6b9f3e2a-1c4d-4e5f-8a7b-9c0d1e2f3a4b"
@@ -261,7 +261,7 @@ describe("the selection", () => {
   })
 })
 
-describe("branch/publish and branch/update on the engine", { timeout: 60_000 }, () => {
+describe("branch/publish, branch/update and branch/resync on the engine", { timeout: 60_000 }, () => {
   /** ChatApi: the branch tracked, the operation's first-party flow selected, the write taken. */
   const chatApi = () =>
     serve((incoming, _, response) => {
@@ -290,6 +290,45 @@ describe("branch/publish and branch/update on the engine", { timeout: 60_000 }, 
     const ran = await runFlow(BranchUpdate, { repo: "octo/hello", branch: "try-1" }, registration, { maxConnections: 2 })
     expect(Exit.isSuccess(ran.exit)).toBe(true)
     expect(server.seen.filter((seen) => seen.url.endsWith("/writes")).map((seen) => JSON.parse(seen.body).method)).toEqual(["merge"])
+  })
+
+  test("Resync sends one write, under an id the run keeps, with no flow selected", async () => {
+    const server = await chatApi()
+    const registration = registrationAt(server.origin).pipe(Layer.provide(FetchHttpClient.layer), Layer.provideMerge(Action.layerImplementations))
+    const ran = await runFlow(BranchResync, { repo: "octo/hello", branch: "try-1" }, registration, { executionId: "resync-1", maxConnections: 2 })
+    const writeId = Exit.isSuccess(ran.exit) ? ran.exit.value.writeId : undefined
+    expect(Exit.isSuccess(ran.exit) && ran.exit.value.branchId).toBe(BRANCH)
+    expect(server.seen.filter((seen) => seen.url.endsWith("/writes")).map((seen) => JSON.parse(seen.body)))
+      .toEqual([{ writeId, op: "branch/resync", branchId: BRANCH }])
+    expect(server.seen.filter((seen) => seen.url.startsWith("/api/branches/creation"))).toEqual([])
+    const again = await runFlow(BranchResync, { repo: "octo/hello", branch: "try-1" }, registration, { executionId: "resync-1", maxConnections: 2 })
+    expect(Exit.isSuccess(again.exit) && again.exit.value.writeId).toBe(writeId)
+  })
+
+  test("a Resync while ChatApi can't answer is sent again under the same id", async () => {
+    let sends = 0
+    const server = await serve((incoming, _, response) => {
+      if (new URL(incoming.url!, "http://x").pathname === "/api/branches") {
+        return answer(response, 200, { branchId: BRANCH, conversationId: "c", repoId: "github/octo/hello", name: "try-1", mode: "open", access: "owner", shared: false })
+      }
+      return ++sends === 1 ? answer(response, 503, { code: "unavailable" }) : answer(response, 202, {})
+    })
+    const registration = registrationAt(server.origin).pipe(Layer.provide(FetchHttpClient.layer), Layer.provideMerge(Action.layerImplementations))
+    const ran = await runFlow(BranchResync, { repo: "octo/hello", branch: "try-1" }, registration, { maxConnections: 2 })
+    expect(Exit.isSuccess(ran.exit)).toBe(true)
+    const sent = server.seen.filter((seen) => seen.url.endsWith("/writes")).map((seen) => JSON.parse(seen.body).writeId)
+    expect(sent).toHaveLength(2)
+    expect(new Set(sent).size).toBe(1)
+  })
+
+  test("a Resync the writes route refuses says why: one on its way is exists", async () => {
+    const server = await serve((incoming, _, response) =>
+      new URL(incoming.url!, "http://x").pathname === "/api/branches"
+        ? answer(response, 200, { branchId: BRANCH, conversationId: "c", repoId: "github/octo/hello", name: "try-1", mode: "open", access: "owner", shared: false })
+        : answer(response, 409, { code: "conflict" }))
+    const registration = registrationAt(server.origin).pipe(Layer.provide(FetchHttpClient.layer), Layer.provideMerge(Action.layerImplementations))
+    const ran = await runFlow(BranchResync, { repo: "octo/hello", branch: "try-1" }, registration, { maxConnections: 2 })
+    expect(Exit.isFailure(ran.exit) && Cause.squash(ran.exit.cause)).toEqual(new BranchTrackRefused({ reason: "exists" }))
   })
 
   test("a branch the person may not open is refused before any selection or write", async () => {

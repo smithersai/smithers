@@ -62,6 +62,8 @@ A change of sharing holds the rooms of the branch's texts to the new list, as it
 
 A Save marks what it wrote in the text itself: `SharedText.mark("saved", "<length>:<SHA-256>")`, sent through the outbox like any edit. Every replica gets the mark with the text, so every editor, on every device and after a reload, says `Saved` while its text is what was written, and `Save` once anyone edits it. A Save that missed an edit arriving while it ran marks what it wrote, which isn't the text: nobody's screen says `Saved`. `saving` and a failure are the saving tab's own.
 
+A published branch's [resync](branch-publish.md#resync) changes files under open texts: ChatApi brings each text that holds what the working copy held to the file's new contents, as one more update with the mark moved along when the text was saved, so the editors show GitHub's change and still say `Saved`. A text with typing the working copy hasn't, on a file GitHub changed, stops the resync and is listed; nothing overwrites it. The mark is `src/features/coedit/saved.ts`'s, shared by the browser and ChatApi.
+
 What isn't covered yet:
 
 - **Overlapping Saves.** The last mark wins, by when each saving tab heard its write was done, not by when the write reached the disk. Two Saves of different text running at once can leave the mark of the write that landed first, so the screens say `Saved` for text the working copy doesn't hold, until the next edit. Ordering the mark by the machine's write order closes it.

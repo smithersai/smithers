@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import type { FlowDispatch } from "../../flows/dispatch"
 import type { PullsClient } from "../pulls/api"
-import { closeForm, openForm, publish, show, update } from "./publishActions"
+import { closeForm, openForm, publish, resync, show, update } from "./publishActions"
 import { type PublishConfig, PublishStore } from "./publishStore"
 import type { BranchStore } from "./store"
 
@@ -33,6 +33,8 @@ export interface PublishingActions {
   readonly publish: (title: string, body: string) => Promise<boolean>
   /** Update branch: whether it pressed. */
   readonly update: () => Promise<boolean>
+  /** Resync: whether it pressed. */
+  readonly resync: () => Promise<boolean>
 }
 
 export class Publishing extends Context.Service<
@@ -60,6 +62,7 @@ export class Publishing extends Context.Service<
             closeForm: () => run(closeForm),
             publish: (title, body) => run(publish(title, body)),
             update: () => run(update),
+            resync: () => run(resync),
           },
         })
       }),

@@ -35,3 +35,9 @@ export const updates = Metric.counter("smithers_web_branch_updates", {
   description: "Update branch presses on a branch page, by outcome",
   incremental: true,
 })
+
+/** Resync presses on a branch page, by `outcome`: `sent`, the refusal's reason, or `unavailable`. */
+export const resyncs = Metric.counter("smithers_web_branch_resyncs", {
+  description: "Resync presses on a branch page, by outcome",
+  incremental: true,
+})

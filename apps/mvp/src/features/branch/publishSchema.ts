@@ -1,8 +1,8 @@
 import { Schema } from "effect"
-import { UPDATE_STATES } from "./contract"
+import { SYNC_STATES, UPDATE_STATES } from "./contract"
 
-// Publish's and Update branch's rows on the branch page (docs/features/branch-publish.md#the-branch-page): a branch's
-// publication as Electric delivers it, and this tab's own presses of Publish and Update branch.
+// Publish's, Update branch's and Resync's rows on the branch page (docs/features/branch-publish.md#the-branch-page): a
+// branch's publication as Electric delivers it, and this tab's own presses of Publish, Update branch and Resync.
 
 /** One row of Postgres `branch_publications` (`PUBLICATION_COLUMNS`), columns in camelCase. */
 export const PublicationRow = Schema.Struct({
@@ -14,6 +14,9 @@ export const PublicationRow = Schema.Struct({
   headSha: Schema.String,
   prNumber: Schema.Number,
   updateState: Schema.NullOr(Schema.Literals(UPDATE_STATES)),
+  syncedSha: Schema.NullOr(Schema.String),
+  syncState: Schema.NullOr(Schema.Literals(SYNC_STATES)),
+  syncConflicts: Schema.NullOr(Schema.Array(Schema.String)),
   updatedAt: Schema.String,
 })
 export type PublicationRow = typeof PublicationRow.Type
@@ -27,8 +30,8 @@ export const PRESS_REFUSALS = ["exists", "sign_in", "forbidden", "not_found", "i
 export type PressRefusal = (typeof PRESS_REFUSALS)[number]
 
 /**
- * This tab's presses on one branch, by its id: whether Publish's form shows, and for each of Publish and Update branch
- * whether its flow runs now (`publishing`, `updating`), the write it answered, or why it refused.
+ * This tab's presses on one branch, by its id: whether Publish's form shows, and for each of Publish, Update branch and
+ * Resync whether its flow runs now (`publishing`, `updating`, `resyncing`), the write it answered, or why it refused.
  */
 export const PublishPress = Schema.Struct({
   branchId: Schema.String,
@@ -39,5 +42,8 @@ export const PublishPress = Schema.Struct({
   updating: Schema.Boolean,
   updateWriteId: Schema.NullOr(Schema.String),
   updateRefused: Schema.NullOr(Schema.Literals(PRESS_REFUSALS)),
+  resyncing: Schema.Boolean,
+  resyncWriteId: Schema.NullOr(Schema.String),
+  resyncRefused: Schema.NullOr(Schema.Literals(PRESS_REFUSALS)),
 })
 export type PublishPress = typeof PublishPress.Type

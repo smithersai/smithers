@@ -4,7 +4,7 @@ import type { Access, Mode } from "./contract"
 import type { PressRefusal, PublicationRow, PublishPress } from "./publishSchema"
 import { writes as canWrite } from "./view"
 
-// What the branch page shows of Publish, Update branch and Compare (docs/features/branch-publish.md#the-branch-page):
+// What the branch page shows of Publish, Update branch, Resync and Compare (docs/features/branch-publish.md#the-branch-page):
 // the words and what shows, from the branch's publication, this tab's presses and the person's own writes. Pure, so
 // the header and the Compare view only render it. The fewest words to act (MINIMAL TEXT).
 
@@ -15,10 +15,13 @@ export const TITLE = "Title"
 export const DESCRIPTION = "Description"
 export const PUBLISHING = "Publishing…"
 export const UPDATING = "Updating…"
+export const RESYNC = "Resync"
+export const RESYNCING = "Resyncing…"
+export const BEHIND = "Behind"
 export const NO_CHANGES = "No changes"
 export const COULDNT_LOAD = "Couldn't load"
 
-/** A Publish or Update branch write of the shown branch, as the writes query selects it. */
+/** A Publish, Update branch or Resync write of the shown branch, as the writes query selects it. */
 export interface BranchWrite {
   readonly id: string
   readonly op: WriteOp
@@ -47,6 +50,12 @@ export interface PublishBar {
   readonly updateBusy: boolean
   /** Where the last Update branch is: `Updating…`, how it ended, or why not. */
   readonly updateStatus: string | undefined
+  /** Resync shows: for an editor of a published branch that isn't locked. */
+  readonly resync: boolean
+  /** Resync can't be pressed: its write is on its way. */
+  readonly resyncBusy: boolean
+  /** Where the working copy is: `Resyncing…`, a conflict and its files, `Behind` GitHub's head, or why a Resync didn't land. */
+  readonly resyncStatus: string | undefined
   /** The published branch's pull request, for anyone who may view it. */
   readonly pull: number | undefined
   /** The Compare tab shows: once the branch is published. */
@@ -86,6 +95,20 @@ const updateRefusalOf = (reason: WriteFailure | PressRefusal | null): string =>
     : reason === "sign_in_required" || reason === "sign_in"
     ? "Sign in"
     : "Couldn't update"
+
+/** A Resync that didn't land, other than a conflict, which lists its files. */
+const resyncRefusalOf = (reason: WriteFailure | PressRefusal | null): string =>
+  reason === "not_allowed" || reason === "forbidden"
+    ? "Not allowed"
+    : reason === "sign_in_required" || reason === "sign_in"
+    ? "Sign in"
+    : "Couldn't resync"
+
+/** A resync's conflict: its first three files, then how many more. */
+export const conflictOf = (paths: ReadonlyArray<string>): string =>
+  paths.length === 0
+    ? "Conflict"
+    : `Conflict · ${paths.slice(0, 3).join(", ")}${paths.length > 3 ? ` +${paths.length - 3}` : ""}`
 
 /** How the publication's last Update branch ended, by anyone. */
 const UPDATE_STATE_WORDS: Readonly<Record<NonNullable<PublicationRow["updateState"]>, string>> = {
@@ -147,6 +170,27 @@ const updateStatusOf = (
   return publication.updateState === null ? undefined : UPDATE_STATE_WORDS[publication.updateState]
 }
 
+/**
+ * Where the published branch's working copy is: a Resync on its way, a conflict the last resync listed (after an
+ * Update branch or a Publish too), why the person's last Resync didn't land unless the publication moved since, or
+ * `Behind` while GitHub's head is one the working copy hasn't reached.
+ */
+const resyncStatusOf = (
+  publication: PublicationRow,
+  press: PublishPress | undefined,
+  writes: ReadonlyArray<BranchWrite>,
+): string | undefined => {
+  const latest = latestOf(writes, "branch/resync")
+  if (waiting(press?.resyncing === true, press?.resyncWriteId ?? null, writes)) return RESYNCING
+  if (latest?.status === "pending") return RESYNCING
+  if (publication.syncState === "conflict") return conflictOf(publication.syncConflicts ?? [])
+  if (press?.resyncRefused != null) return resyncRefusalOf(press.resyncRefused)
+  if (latest !== undefined && latest.status !== "done" && latest.failure !== "conflict" && latest.createdAt >= publication.updatedAt) {
+    return resyncRefusalOf(latest.failure)
+  }
+  return publication.syncedSha === publication.headSha ? undefined : BEHIND
+}
+
 /** Whether the Compare tab shows: to anyone who may view the branch, once it is published. */
 export const comparesOf = (access: Access | "none" | undefined, publication: PublicationRow | undefined): boolean =>
   access !== undefined && access !== "none" && publication !== undefined
@@ -173,6 +217,7 @@ export const publishBarOf = (input: {
   const publishBusy = publishStatus === PUBLISHING
   const form = edits && press?.form === true && !publishBusy
   const updateStatus = edits && published ? updateStatusOf(publication, press, writes) : undefined
+  const resyncStatus = edits && published ? resyncStatusOf(publication, press, writes) : undefined
   return {
     publish: edits && !form,
     publishBusy,
@@ -183,6 +228,9 @@ export const publishBarOf = (input: {
     update: edits && published,
     updateBusy: updateStatus === UPDATING,
     updateStatus,
+    resync: edits && published,
+    resyncBusy: resyncStatus === RESYNCING,
+    resyncStatus,
     pull: compare && published ? publication.prNumber : undefined,
     compare,
   }

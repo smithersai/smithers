@@ -21,6 +21,7 @@ import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import { machines } from "../test/todoMachines.ts"
 import * as Conversations from "./Conversations.ts"
+import { Forge } from "./Forge.ts"
 import { Machines } from "./Machines.ts"
 import * as Publish from "./Publish.ts"
 
@@ -117,7 +118,7 @@ describe("branch/Publish", { timeout: 60_000 }, () => {
     await edit(machine, branchId, maya.personId, { "README.md": "# Widgets\n\nA line\n", "docs/new.md": "new\n" })
     const writeId = await publishing(maya, branchId)
     const { services: built } = await services(runtime, github)
-    const ran = await runFlow(Publish.Publish, { writeId }, Publish.registration(built, machine.layer), {
+    const ran = await runFlow(Publish.Publish, { writeId }, Publish.registration(built, machine.layer, Forge.gitHub), {
       executionId: publishExecutionId(writeId),
       maxConnections: 2,
     })
@@ -558,11 +559,12 @@ describe("branch/Publish", { timeout: 60_000 }, () => {
     expect(await runtime.runPromise(Publish.steps(built).giveUp({ writeId: crypto.randomUUID() }))).toEqual({ status: "missing", prNumber: null })
   })
 
-  test("github/Write never runs a Publish or an Update: either settles refused there", async () => {
+  test("github/Write never runs a Publish, an Update or a Resync: each settles refused there", async () => {
     const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
     const { maya, branchId } = await tracked(github)
     const { services: built } = await services(runtime, github)
-    for (const writeId of [await publishing(maya, branchId), await updating(maya, branchId)]) {
+    const resyncing = admit(runtime, { actorId: maya.personId, sessionId: maya.sessionId, via: "person", payload: { op: "branch/resync", branchId } })
+    for (const writeId of [await publishing(maya, branchId), await updating(maya, branchId), await resyncing]) {
       const ran = await runFlow(Write.Write, { writeId }, Write.registration(built), { maxConnections: 2 })
       expect(ran.exit).toEqual(Exit.succeed({ status: "refused", itemNumber: null }))
       expect(await writeRow(runtime, writeId)).toMatchObject({ status: "refused", failure: "invalid" })
@@ -581,7 +583,7 @@ describe("branch/Update", { timeout: 60_000 }, () => {
     const { maya, branchId, ref, number, built } = await published(github)
     github.push("main", { "CHANGELOG.md": "1.1\n" })
     const writeId = await updating(maya, branchId)
-    const ran = await runFlow(Publish.Update, { writeId }, Publish.registration(built, machines(github).layer), {
+    const ran = await runFlow(Publish.Update, { writeId }, Publish.registration(built, machines(github).layer, Forge.gitHub), {
       executionId: updateExecutionId(writeId),
       maxConnections: 2,
     })
@@ -739,8 +741,9 @@ describe("the remote host", { timeout: 60_000 }, () => {
       ExecutionHost.remote({ database: await database(runtime), expiry: Expire.DEFAULT_EXPIRY }),
       Effect.succeed(built),
       machine.layer,
+      Forge.gitHub,
     )
-    expect(flows.flows.slice(-2)).toEqual([Publish.Publish, Publish.Update])
+    expect(flows.flows.slice(-3)).toEqual([Publish.Publish, Publish.Update, Publish.Resync])
     const values = new Map<string, unknown>()
     const storage: ExecutionHost.Storage = {
       get: <A>(key: string) => Effect.sync(() => structuredClone(values.get(key)) as A | undefined),

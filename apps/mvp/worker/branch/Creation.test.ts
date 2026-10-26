@@ -167,6 +167,8 @@ const configured = async () => ({ CODE_STORAGE_ORG: "acme", CODE_STORAGE_KEY: aw
 const upstream = {
   upstream: () => Effect.succeed({ url: "https://github.com/octocat/spoon-knife.git" }),
   create: () => Effect.fail(new CreateRefused({ code: "not_configured" })),
+  move: () => Effect.fail(new CreateRefused({ code: "not_configured" })),
+  pull: () => Effect.fail(new CreateRefused({ code: "not_configured" })),
 }
 const hostWithHead = () => {
   const host = gitHost()

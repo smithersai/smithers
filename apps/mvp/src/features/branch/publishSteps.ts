@@ -11,6 +11,7 @@ import { selection } from "./creationSteps"
 import { BranchTrackRefused, BranchTrackUnavailable } from "./flows"
 import {
   BranchPublish,
+  BranchResync,
   BranchUpdate,
   CallOperation,
   EvaluateOperation,
@@ -18,6 +19,7 @@ import {
   type OperationRequest,
   OperationStart,
   PublishRequest,
+  ResyncRequest,
   SelectOperation,
   Submitted,
   Title,
@@ -165,13 +167,39 @@ export const requestPublish = (request: typeof PublishRequest.payloadSchema.Type
 export const requestUpdate = (request: typeof UpdateRequest.payloadSchema.Type) => operate("update", request)
 
 /**
- * Registers `branch/publish`, `branch/update` and the selection lineage they run, asking ChatApi on `origin`. Needs the
- * host's `HttpClient`.
+ * `branch/resync/request`: the write's id as `operate` derives one, the branch as the person may open it, and the write,
+ * sent under that id so every retry sends the same one.
+ */
+export const requestResync = (request: typeof ResyncRequest.payloadSchema.Type) =>
+  Effect.gen(function* () {
+    const { executionId } = yield* FlowRuntime.FlowInstance
+    const writeId = yield* Uuid.v5(CONVERSATION_NAMESPACE, `resync:${executionId}`).pipe(Effect.orDie)
+    const tracked = yield* requestTrack({ repo: request.repo, branch: request.branch })
+    const [owner, name] = parts(request.repo)
+    const sent = yield* Effect.result(
+      (yield* BranchWrites).send(owner, name, { writeId, op: "branch/resync", branchId: tracked.branchId }),
+    )
+    const outcome = sent._tag === "Success" ? "sent" : (() => {
+      const failure = writeFailure(sent.failure)
+      return failure._tag === "@smthrs/mvp/branch/BranchTrackRefused" ? failure.reason : "unavailable"
+    })()
+    yield* Metric.update(Metric.withAttributes(steps, { operation: "resync", outcome }), 1)
+    yield* Effect.logWithLevel(sent._tag === "Success" ? "Info" : "Warn")("branch.operation.call").pipe(
+      Effect.annotateLogs({ operation: "resync", outcome }),
+    )
+    if (sent._tag === "Failure") return yield* writeFailure(sent.failure)
+    return { writeId, branchId: tracked.branchId }
+  }).pipe(Effect.withSpan("branch.resync"))
+
+/**
+ * Registers `branch/publish`, `branch/update`, `branch/resync` and the selection lineage the first two run, asking
+ * ChatApi on `origin`. Needs the host's `HttpClient`.
  */
 export const registrationAt = (origin: string) =>
   Layer.mergeAll(
     Interpreter.layerWithImplementations(BranchPublish, PublishRequest.toLayer(requestPublish)),
     Interpreter.layerWithImplementations(BranchUpdate, UpdateRequest.toLayer(requestUpdate)),
+    Interpreter.layerWithImplementations(BranchResync, ResyncRequest.toLayer(requestResync)),
     Layer.unwrap(Effect.map(HttpClient.HttpClient, (client) =>
       Interpreter.layerWithImplementations(
         OperationStart,

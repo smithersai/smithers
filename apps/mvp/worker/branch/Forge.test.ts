@@ -322,3 +322,57 @@ test("forge diagnostics fall back to the typed refusal and retain direct read fa
     forgeOperation: "refs_read", forgeErrorTag: "@smthrs/effect-code-storage/GitRemoteError", forgeErrorCode: "not_found", forgeStatus: 404,
   })
 })
+
+test("a resync moves the ephemeral branch with force, and asks the mirror to sync; one sync already running is no failure", async () => {
+  const sent: Array<unknown> = []
+  const answers = {
+    create: Effect.succeed<CodeStorage.CreatedBranch>({ branch: "try-1", sha: "a".repeat(40) }) as Effect.Effect<CodeStorage.CreatedBranch, CodeStorage.CodeStorageError>,
+    pull: Effect.void as Effect.Effect<void, CodeStorage.CodeStorageError>,
+  }
+  const moves = await Effect.runPromise(Effect.gen(function* () {
+    const client = yield* CodeStorage.CodeStorage
+    const scripted: CodeStorage.Client = {
+      ...client,
+      createBranch: (repo, input) => Effect.suspend(() => {
+        sent.push({ repo, ...input })
+        return answers.create
+      }),
+      pullUpstream: (repo) => Effect.suspend(() => {
+        sent.push({ pull: repo })
+        return answers.pull
+      }),
+    }
+    const forge = yield* Effect.service(Forge).pipe(Effect.provide(Forge.codeStorage(scripted)))
+    const repository = { owner: "Acme", name: "Widgets" }
+    const outcome = (effect: Effect.Effect<void, CreateRefused>) =>
+      effect.pipe(Effect.as("ok"), Effect.catchTag("CreateRefused", (refused) => Effect.succeed(refused.code)))
+    const results: Array<string> = []
+    results.push(yield* outcome(forge.move(repository, "try-1", "a".repeat(40))))
+    results.push(yield* outcome(forge.pull(repository)))
+    answers.pull = Effect.fail(new CodeStorage.CodeStorageError({ operation: "pullUpstream", code: "sync_in_progress", status: 409 }))
+    results.push(yield* outcome(forge.pull(repository)))
+    answers.pull = Effect.fail(new CodeStorage.CodeStorageError({ operation: "pullUpstream", code: "insufficient_scope", status: 403 }))
+    results.push(yield* outcome(forge.pull(repository)))
+    // The mirror hasn't the commit yet.
+    answers.create = Effect.fail(new CodeStorage.CodeStorageError({ operation: "createBranch", code: "ref_not_found", status: 404 }))
+    results.push(yield* outcome(forge.move(repository, "try-1", "b".repeat(40))))
+    answers.create = Effect.fail(new CodeStorage.CodeStorageError({ operation: "createBranch", code: "transport" }))
+    results.push(yield* outcome(forge.move(repository, "try-1", "b".repeat(40))))
+    return results
+  }).pipe(Effect.provide(CodeStorage.CodeStorage.layer({ org: "acme", key: Redacted.make(await pem()) }).pipe(
+    Layer.provide(FetchHttpClient.layer),
+  ))))
+  expect(moves).toEqual(["ok", "ok", "ok", "forbidden", "not_found", "unavailable"])
+  expect(sent[0]).toEqual({ repo: "github/acme/widgets", branch: "try-1", from: "a".repeat(40), namespace: "ephemeral", force: true })
+  expect(sent[1]).toEqual({ pull: "github/acme/widgets" })
+})
+
+test("GitHub's forge moves no branch and syncs no mirror: it holds no credential", async () => {
+  const exit = await Effect.runPromiseExit(Effect.gen(function* () {
+    const forge = yield* Forge
+    const moved = yield* Effect.flip(forge.move({ owner: "o", name: "r" }, "b", "a".repeat(40)))
+    const pulled = yield* Effect.flip(forge.pull({ owner: "o", name: "r" }))
+    return [moved.code, pulled.code]
+  }).pipe(Effect.provide(Forge.gitHub)))
+  expect(value(exit)).toEqual(["not_configured", "not_configured"])
+})

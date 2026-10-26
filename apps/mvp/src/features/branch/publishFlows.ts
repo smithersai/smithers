@@ -7,11 +7,13 @@ import { CreationSelection } from "./creation"
 import { Receipt, RealmRequest } from "./creationFlows"
 import { BranchName, TrackFailure } from "./flows"
 
-// Publish and Update branch on this device's engine (docs/features/branch-publish.md): the registry's `branch/publish`
-// and `branch/update`, which a person's press on the branch page, a slash command and the agent run alike (ruling
-// FLOW-3). Each selects the repository's flow for the operation (the first-party `branches` plugin's unless
-// `.smithers/branch.json` names its own), runs it in the realm as branch creation runs its flow, and sends the one write
-// its host action asks for to ChatApi's writes route. The write settles on the server; this device's answer is its id.
+// Publish, Update branch and Resync on this device's engine (docs/features/branch-publish.md): the registry's
+// `branch/publish`, `branch/update` and `branch/resync`, which a person's press on the branch page, a slash command and
+// the agent run alike (ruling FLOW-3). Publish and Update branch select the repository's flow for the operation (the
+// first-party `branches` plugin's unless `.smithers/branch.json` names its own), run it in the realm as branch creation
+// runs its flow, and send the one write its host action asks for to ChatApi's writes route. Resync writes nothing to
+// GitHub and chooses nothing a repository's flow could, so it sends its write directly. Each write settles on the
+// server; this device's answer is its id.
 
 /** A pull request's title: GitHub's limit, never blank. */
 export const Title = Schema.String.check(
@@ -149,4 +151,28 @@ export const BranchUpdate = Flow.make("branch/update", {
   success: Submitted,
   error: TrackFailure,
   body: Node.capture({ request: UpdateRequest.name }, (request) => UpdateRequest.call(request)),
+}).annotate(Flow.Placement, Placement.client())
+
+const resyncPayload = { repo: RepoName, branch: BranchName }
+
+/** `branch/resync`'s one step: find the branch, then send its Resync. */
+export const ResyncRequest = Action.make("branch/resync/request", {
+  payload: resyncPayload,
+  success: Submitted,
+  error: TrackFailure,
+  retryPolicy: WRITE_RETRY,
+})
+
+/** `branch/resync { repo, branch }` (docs/features/branch-publish.md#resync). */
+export const BranchResync = Flow.make("branch/resync", {
+  description: "Bring a published branch's working copy of a GitHub repository (owner/name) to the head its GitHub " +
+    "branch reached (after a push, a commit on github.com or an Update branch), keeping its own changes; a file both " +
+    "changed stops it as a conflict, never resolved. Answers { writeId, branchId } once the write is admitted; it " +
+    "settles on the branch page. BranchTrackRefused says why not: not_found, sign_in, forbidden, invalid, " +
+    "not_configured, or exists (a Publish or a Resync is on its way).",
+  modelInvocable: true,
+  payload: resyncPayload,
+  success: Submitted,
+  error: TrackFailure,
+  body: Node.capture({ request: ResyncRequest.name }, (request) => ResyncRequest.call(request)),
 }).annotate(Flow.Placement, Placement.client())

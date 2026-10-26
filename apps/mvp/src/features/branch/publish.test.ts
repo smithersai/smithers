@@ -1,4 +1,4 @@
-// Publish, Update branch and Compare on the branch page (src/features/branch/publish*.ts,
+// Publish, Update branch, Resync and Compare on the branch page (src/features/branch/publish*.ts,
 // docs/features/branch-publish.md#the-branch-page), driven as React drives them: the branch layer's `publishing` actions
 // and live queries, read through the page's own view, with no React. The browser's own layer (`appLayer`) on a Node
 // device whose engine leads, against ChatApi's real handler: `branch/publish` and `branch/update` run on the device's
@@ -22,8 +22,8 @@ import { PullsClient, PullsRequestFailed } from "../pulls/api"
 import { repoId } from "../repo/contract"
 import { Terminal } from "../terminal/terminal"
 import { Branch } from "./branch"
-import { publishExecutionId, updateExecutionId } from "./contract"
-import { publishes, updates } from "./metrics"
+import { publishExecutionId, resyncExecutionId, updateExecutionId } from "./contract"
+import { publishes, resyncs, updates } from "./metrics"
 import { openBranchPage } from "./navigation"
 import { compareOf, type PublishBar, publishBarOf } from "./publishView"
 
@@ -249,6 +249,55 @@ describe("Publish", () => {
     expect(tab.count(updates, "sent")).toBe(2)
   }, WITHIN)
 
+  test("Resync: Behind once published, Resyncing… while its write is on its way, a conflict's files, then nothing", async () => {
+    const tab = await open()
+    const branchId = (await tab.branch.actions.open("octo", "hello", "feature/one"))!
+    await tab.actions.show(branchId)
+    expect(await tab.actions.publish("Add a line", "")).toBe(true)
+    const writeId = tab.press()!.publishWriteId!
+    const base = tab.api.github.scripted.refs.get("main")!
+    const head = tab.api.github.scripted.push("feature/one-0123456789ab", { "A.md": "a\n" })
+    await tab.published(branchId, writeId, base, head)
+    // The working copy hasn't reached the head the Publish made.
+    await until(() => expect(tab.bar()).toMatchObject({ resync: true, resyncBusy: false, resyncStatus: "Behind" }))
+
+    expect(await tab.actions.resync()).toBe(true)
+    const first = tab.press()!.resyncWriteId!
+    expect(first).toMatch(UUID)
+    expect(await tab.recorded(first)).toMatchObject({ op: "branch/resync", status: "pending", payload: { op: "branch/resync", branchId } })
+    expect(tab.api.github.starts.map((start) => start.executionId)).toContain(resyncExecutionId(first))
+    await until(() => expect(tab.bar()).toMatchObject({ resyncBusy: true, resyncStatus: "Resyncing…" }))
+    // A second press while the first is on its way: the route keeps one Resync of a branch at a time.
+    expect(await tab.actions.resync()).toBe(true)
+    expect(tab.press()).toMatchObject({ resyncWriteId: null, resyncRefused: "exists" })
+    // branch/Resync finds a file both sides changed: the write refused, the files on the publication.
+    await tab.sql(Effect.andThen(
+      Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`UPDATE branch_publications SET sync_state = 'conflict', sync_conflicts = '["README.md"]'::jsonb, updated_at = now()
+          WHERE branch_id = ${branchId}::uuid`),
+      Store.settleWrite(first, { status: "refused", failure: "conflict" }),
+    ))
+    await until(() => expect(tab.bar().resyncStatus).toBe("Conflict · README.md"))
+
+    expect(await tab.actions.resync()).toBe(true)
+    const second = tab.press()!.resyncWriteId!
+    await until(() => expect(tab.writes().find((write) => write.id === second)?.status).toBe("pending"))
+    await tab.sql(Store.settleWrite(second, { status: "done", itemNumber: 7, githubId: null }, Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`UPDATE branch_publications SET synced_sha = ${head}, sync_state = 'synced', sync_conflicts = NULL, updated_at = now()
+        WHERE branch_id = ${branchId}::uuid`)))
+    await until(() => expect(tab.bar()).toMatchObject({ resync: true, resyncBusy: false, resyncStatus: undefined }))
+    expect(tab.publication()).toMatchObject({ syncedSha: head, syncState: "synced", syncConflicts: null })
+    expect(tab.count(resyncs, "sent")).toBe(2)
+    expect(tab.count(resyncs, "exists")).toBe(1)
+
+    // While a Publish again is on its way, Resync waits for it: refused, and the page says so.
+    expect(await tab.actions.publish("Two", "")).toBe(true)
+    await until(() => expect(tab.writes().some((write) => write.op === "branch/publish" && write.status === "pending")).toBe(true))
+    expect(await tab.actions.resync()).toBe(true)
+    expect(tab.press()).toMatchObject({ resyncRefused: "exists" })
+    expect(tab.bar().resyncStatus).toBe("Couldn't resync")
+  }, WITHIN)
+
   test("a Publish GitHub refuses says why, with Publish available again; the next press starts a new write", async () => {
     const tab = await open()
     const branchId = (await tab.branch.actions.open("octo", "hello", "feature/one"))!
@@ -272,6 +321,8 @@ describe("Publish", () => {
     const runtime = openFaultyApp({}, undefined, { actor: maya, forge: "code-storage" })
     const tab = await device(runtime)
     const engine = await runtime.runPromise(Effect.service(EngineFaults))
+    // No branch shown yet: nothing to resync.
+    expect(await tab.actions.resync()).toBe(false)
     const branchId = (await tab.branch.actions.open("octo", "hello", "feature/one"))!
     await tab.actions.show(branchId)
 
@@ -284,9 +335,18 @@ describe("Publish", () => {
     const updating = tab.actions.update()
     await until(() => expect(tab.press()).toMatchObject({ updating: true }))
     expect(await tab.actions.update()).toBe(false)
+    const resyncing = tab.actions.resync()
+    await until(() => expect(tab.press()).toMatchObject({ resyncing: true }))
+    expect(await tab.actions.resync()).toBe(false)
     await runtime.runPromise(engine.releaseStarts)
     expect(await publishing).toBe(true)
     expect(await updating).toBe(true)
+    expect(await resyncing).toBe(true)
+
+    await runtime.runPromise(engine.refuseStarts("branch/resync"))
+    expect(await tab.actions.resync()).toBe(true)
+    expect(tab.press()).toMatchObject({ resyncing: false, resyncRefused: "unavailable", resyncWriteId: null })
+    expect(tab.count(resyncs, "unavailable")).toBe(1)
 
     await runtime.runPromise(Effect.andThen(engine.refuseStarts("branch/publish"), engine.refuseStarts("branch/update")))
     expect(await tab.actions.publish("Add a line", "")).toBe(true)

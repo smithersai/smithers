@@ -23,7 +23,9 @@ import { permissionOf } from "../github/RepoRoles.ts"
 import * as Store from "../github/Store.ts"
 import type { SandboxTools } from "@smthrs/sandbox"
 import { base64Of, type Change, collect } from "./Change.ts"
+import type { Forge } from "./Forge.ts"
 import { Machines } from "./Machines.ts"
+import { resync, ResyncRefused, ResyncUnavailable } from "./Resync.ts"
 import type { SandboxBranch } from "./Sandboxes.ts"
 
 // Publish and Update branch (docs/features/branch-publish.md; rulings GH-6 and GH-11). A Smithers-only branch lives in
@@ -40,6 +42,11 @@ import type { SandboxBranch } from "./Sandboxes.ts"
 //     send      the published pull request's base taken into its branch: a merge commit (`POST /merges`, keyed by the
 //               write's trailer), or a rebase fenced by the head it read (GraphQL `updatePullRequestBranch`) ─▶
 //               `updated`, `up_to_date`, or refused `conflict`
+//     give-up   as Publish's
+//   after Publish and Update settle `done`: resync, the branch's Smithers branch and working copy brought to the head
+//               GitHub's branch reached (worker/branch/Resync.ts); it never changes how the write settled
+//   branch/Resync { writeId }    the writes route admitted `branch/resync` (GitHub's branch moved for any reason)
+//     send      GitHub's head read as the person ─▶ resync ─▶ `done`, or refused `conflict` with its files listed
 //     give-up   as Publish's
 //
 // Nothing here merges a pull request, approves, or forces a ref. Records carry ids, numbers and outcomes, never a title,
@@ -65,6 +72,30 @@ export type Settled = typeof Settled.Type
 /** The steps' implementation versions; a run parked on another stops with `plan_changed`. */
 export const PUBLISH_VERSION = "branch-publish/send/v1"
 export const UPDATE_VERSION = "branch-update/send/v1"
+export const RESYNC_VERSION = "branch-resync/send/v1"
+
+/** A resync after a Publish or an Update: 1 s doubling to a minute, for at most half an hour, through the mirror's sync. */
+export const RESYNC_RETRY = RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000, expirationMs: 30 * 60_000 })
+
+/** After a Publish settled `done`: the working copy follows the GitHub branch it made or pushed. Answers the write. */
+export const PublishResync = Action.make("branch/Publish/resync", {
+  payload: Request,
+  success: Settled,
+  error: PublishUnavailable,
+  tier: "irreversible",
+  idempotencyKey: ({ writeId }) => ({ publishResync: writeId }),
+  retryPolicy: RESYNC_RETRY,
+})
+
+/** After an Update branch settled `done`: the working copy takes in what GitHub merged or rebased. Answers the write. */
+export const UpdateResync = Action.make("branch/Update/resync", {
+  payload: Request,
+  success: Settled,
+  error: PublishUnavailable,
+  tier: "irreversible",
+  idempotencyKey: ({ writeId }) => ({ updateResync: writeId }),
+  retryPolicy: RESYNC_RETRY,
+})
 
 export const PublishSend = Action.make("branch/Publish/send", {
   payload: Request,
@@ -87,13 +118,22 @@ export const PublishGiveUp = Action.make("branch/Publish/give-up", {
 export const Publish = Flow.make("branch/Publish", {
   description: "Publish a Smithers-only branch to GitHub: its working copy's change as one commit on a new GitHub " +
     "branch at its base, and a pull request into the default branch, as the person who pressed Publish.",
-  capabilities: ["db:write:github_writes", "db:write:branch_publications", "db:write:items", "db:write:pulls"],
+  capabilities: [
+    "db:write:github_writes",
+    "db:write:branch_publications",
+    "db:write:items",
+    "db:write:pulls",
+    "db:write:text_updates",
+  ],
   modelInvocable: false,
   payload: Request,
   success: Settled,
   error: PublishUnavailable,
-  body: Node.capture({ send: PublishSend.name, giveUp: PublishGiveUp.name }, (request) =>
-    PublishSend.call(request).pipe(Node.catch({ onFailure: () => PublishGiveUp.call(request) }))),
+  body: Node.capture({ send: PublishSend.name, giveUp: PublishGiveUp.name, resync: PublishResync.name }, (request) =>
+    PublishSend.call(request).pipe(
+      Node.catch({ onFailure: () => PublishGiveUp.call(request) }),
+      Node.andThen(PublishResync.call(request).pipe(Node.catch({ onFailure: () => PublishGiveUp.call(request) }))),
+    )),
 })
 
 export const UpdateSend = Action.make("branch/Update/send", {
@@ -117,13 +157,52 @@ export const UpdateGiveUp = Action.make("branch/Update/give-up", {
 export const Update = Flow.make("branch/Update", {
   description: "Bring a published branch up to date with its pull request's base on GitHub, by a merge commit or a " +
     "rebase, as the person who pressed Update branch; a conflict is reported, never resolved.",
-  capabilities: ["db:write:github_writes", "db:write:branch_publications", "db:write:items", "db:write:pulls"],
+  capabilities: [
+    "db:write:github_writes",
+    "db:write:branch_publications",
+    "db:write:items",
+    "db:write:pulls",
+    "db:write:text_updates",
+  ],
   modelInvocable: false,
   payload: Request,
   success: Settled,
   error: PublishUnavailable,
-  body: Node.capture({ send: UpdateSend.name, giveUp: UpdateGiveUp.name }, (request) =>
-    UpdateSend.call(request).pipe(Node.catch({ onFailure: () => UpdateGiveUp.call(request) }))),
+  body: Node.capture({ send: UpdateSend.name, giveUp: UpdateGiveUp.name, resync: UpdateResync.name }, (request) =>
+    UpdateSend.call(request).pipe(
+      Node.catch({ onFailure: () => UpdateGiveUp.call(request) }),
+      Node.andThen(UpdateResync.call(request).pipe(Node.catch({ onFailure: () => UpdateGiveUp.call(request) }))),
+    )),
+})
+
+export const ResyncSend = Action.make("branch/Resync/send", {
+  payload: Request,
+  success: Settled,
+  error: PublishUnavailable,
+  implementationVersion: RESYNC_VERSION,
+  tier: "irreversible",
+  idempotencyKey: ({ writeId }) => ({ resync: writeId }),
+  retryPolicy: PUBLISH_RETRY,
+})
+
+export const ResyncGiveUp = Action.make("branch/Resync/give-up", {
+  payload: Request,
+  success: Settled,
+  error: PublishUnavailable,
+  retryPolicy: RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000 }),
+})
+
+/** `branch/Resync`: brings a published branch's Smithers branch and working copy to its GitHub branch's head. */
+export const Resync = Flow.make("branch/Resync", {
+  description: "Bring a published branch's Smithers branch and working copy to the head its GitHub branch reached, " +
+    "keeping the working copy's own changes; a conflict is reported with its files, never resolved.",
+  capabilities: ["db:write:github_writes", "db:write:branch_publications", "db:write:text_updates"],
+  modelInvocable: false,
+  payload: Request,
+  success: Settled,
+  error: PublishUnavailable,
+  body: Node.capture({ send: ResyncSend.name, giveUp: ResyncGiveUp.name }, (request) =>
+    ResyncSend.call(request).pipe(Node.catch({ onFailure: () => ResyncGiveUp.call(request) }))),
 })
 
 /** Publishes, by `outcome`: `done`, or the failure. */
@@ -216,6 +295,13 @@ export interface Publication {
   /** The push on its way, and the head it commits onto, recorded before it writes. */
   readonly pushingWrite: string | null
   readonly pushingFrom: string | null
+  /** The GitHub commit the working copy was last brought to (worker/branch/Resync.ts); null until a resync. */
+  readonly syncedSha: string | null
+  /** How the last resync ended, and the files a conflict listed. */
+  readonly syncState: "synced" | "conflict" | null
+  readonly syncConflicts: ReadonlyArray<string> | null
+  /** The texts a resync on its way brings along, by path: their contents' SHA-256 before it, recorded before it applies. */
+  readonly syncing: Readonly<Record<string, string>> | null
 }
 
 /** Branch `branchId`'s publication, or `undefined` before it is published. */
@@ -226,21 +312,23 @@ export const publicationOf = (branchId: string) =>
       SELECT branch_id::text AS "branchId", repo_id AS "repoId", github_ref AS "githubRef", base_ref AS "baseRef",
         base_sha AS "baseSha", head_sha AS "headSha", pr_number AS "prNumber", write_id::text AS "writeId",
         update_state AS "updateState", pushed, pushed_sha AS "pushedSha", pushing_write::text AS "pushingWrite",
-        pushing_from AS "pushingFrom"
+        pushing_from AS "pushingFrom", synced_sha AS "syncedSha", sync_state AS "syncState",
+        sync_conflicts AS "syncConflicts", syncing
       FROM branch_publications WHERE branch_id = ${branchId}::uuid`
     return row
   })
 
 /**
- * Whether branch `branchId` may take Publish `writeId` now: `pending` while another Publish of it is on its way. A
- * write's own id is never its own obstacle, so a resend answers as it stands.
+ * Whether branch `branchId` may take Publish or Resync `writeId` now: `pending` while another Publish or Resync of it is
+ * on its way, since both move what the working copy is measured from. A write's own id is never its own obstacle, so a
+ * resend answers as it stands.
  */
 export const publishBlocked = (branchId: string, writeId: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const pending = yield* sql`
-      SELECT id FROM github_writes WHERE op = 'branch/publish' AND status = 'pending' AND branch_id = ${branchId}::uuid
-        AND id <> ${writeId}::uuid LIMIT 1`
+      SELECT id FROM github_writes WHERE op IN ('branch/publish', 'branch/resync') AND status = 'pending'
+        AND branch_id = ${branchId}::uuid AND id <> ${writeId}::uuid LIMIT 1`
     return pending.length > 0 ? "pending" as const : undefined
   })
 
@@ -263,6 +351,10 @@ class Refused extends Schema.TaggedError<Refused>()("@smthrs/mvp/branch/PublishR
     "not_mergeable",
   ]),
 }) {}
+
+/** A write's log and span name: `branch.publish`, `branch.update` or `branch.resync`. */
+const labelOf = (op: string): string =>
+  op === "branch/update" ? "branch.update" : op === "branch/resync" ? "branch.resync" : "branch.publish"
 
 /** What GitHub's refusal of a Publish or an Update means. */
 export const refusalOf = (status: number): WriteFailure =>
@@ -288,17 +380,20 @@ export const steps = <E, R>(services: GitHubServices<E, R>) => {
     Effect.gen(function* () {
       const now = yield* Store.settleWrite(write.id, settlement, project)
       const outcome = settlement.status === "done" ? state ?? "done" : settlement.failure
-      const update = write.payload.op === "branch/update"
+      const op = write.payload.op
       if (now) {
-        yield* Metric.update(
-          update
-            ? Metric.withAttributes(updates, { outcome, method: method! })
-            : Metric.withAttributes(publishes, { outcome }),
-          1,
-        )
+        // A resync counts its own outcomes (`smithers_branch_resyncs`).
+        if (op !== "branch/resync") {
+          yield* Metric.update(
+            op === "branch/update"
+              ? Metric.withAttributes(updates, { outcome, method: method! })
+              : Metric.withAttributes(publishes, { outcome }),
+            1,
+          )
+        }
         yield* Metric.update(Metric.withAttributes(Metrics.writeMs, { op: write.op }), (yield* Clock.currentTimeMillis) - write.createdAt)
       }
-      yield* Effect.logWithLevel(settlement.status === "done" ? "Info" : "Warn")(update ? "branch.update" : "branch.publish").pipe(
+      yield* Effect.logWithLevel(settlement.status === "done" ? "Info" : "Warn")(labelOf(write.op)).pipe(
         Effect.annotateLogs({ writeId: write.id, outcome, settled: now, ...(method === undefined ? {} : { method }) }),
       )
       return {
@@ -385,7 +480,7 @@ export const steps = <E, R>(services: GitHubServices<E, R>) => {
       if (classify(error).kind === "unknown") {
         yield* Metric.update(Metric.withAttributes(Metrics.writeUnknown, { op: write.op }), 1)
       }
-      yield* Effect.logWarning(write.op === "branch/update" ? "branch.update" : "branch.publish").pipe(
+      yield* Effect.logWarning(labelOf(write.op)).pipe(
         Effect.annotateLogs({ writeId: write.id, outcome: "retry", errorCode: codeOf(error) }),
       )
       return yield* Effect.fail(failure) as Effect.Effect<A, PublishUnavailable>
@@ -516,11 +611,12 @@ export const steps = <E, R>(services: GitHubServices<E, R>) => {
         }
         const callId = (name: string) =>
           Uuid.v5(CALL_NAMESPACE, `${write.id}:${name}`).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
-        // Publishing again, a working copy back at its base still has something to push: the files it reverted.
+        // Publishing again, a working copy back at its base still has something to push: the files it reverted. Once a
+        // resync brought the working copy to GitHub's head, the change is measured from that head.
         const change = yield* collect({
           branch: machine,
           ownerId: write.actorId,
-          base: baseSha,
+          base: existing?.syncedSha ?? baseSha,
           maxFiles: MAX_PUBLISH_FILES,
           maxBytes: MAX_PUBLISH_BYTES,
           callId,
@@ -734,6 +830,109 @@ export const steps = <E, R>(services: GitHubServices<E, R>) => {
       Effect.withSpan("branch.update", { attributes: { "smithers.github.write": writeId } }),
     )
 
+  /** A resync's failure as a step's: a refusal settles, an outage is tried again. */
+  const resyncFailure = (error: ResyncRefused | ResyncUnavailable): Refused | PublishUnavailable =>
+    error._tag === "@smthrs/mvp/branch/ResyncRefused"
+      ? new Refused({ failure: error.failure })
+      : new PublishUnavailable(error.retryAfterMillis === undefined ? {} : { retryAfterMillis: error.retryAfterMillis })
+
+  /**
+   * `branch/Resync`: GitHub's branch moved (a push, a commit on github.com, an Update another device ran), and the
+   * person asks the working copy to follow. GitHub's head is read as them (as the App for the agent); a conflict
+   * settles `refused conflict` and lists its files on the publication.
+   */
+  const resyncSend = ({ writeId }: typeof ResyncSend.payloadSchema.Type) =>
+    Effect.gen(function* () {
+      const found = yield* Store.writeOf(writeId)
+      if (Option.isNone(found) || found.value.payload.op !== "branch/resync") {
+        return { status: "missing", prNumber: null } satisfies Settled
+      }
+      const write = found.value
+      const payload = found.value.payload
+      if (write.status !== "pending") return { status: write.status, prNumber: write.itemNumber } satisfies Settled
+      return yield* Effect.gen(function* () {
+        const repository = repositoryOf(write.repoId.replace(/^github\//, ""))
+        const branch = yield* branchOf(payload.branchId)
+        const publication = yield* publicationOf(payload.branchId)
+        if (branch === undefined || publication === undefined || publication.repoId !== write.repoId) {
+          return yield* new Refused({ failure: "not_published" })
+        }
+        const token = yield* tokenOf(write, repository)
+        yield* Store.beginAttempt(write.id)
+        const head = yield* GitHub.Refs.getBranch(repository.owner, repository.name, publication.githubRef).pipe(
+          withToken(token, services.apiBaseUrl),
+        )
+        if (Option.isNone(head)) return yield* new Refused({ failure: "not_found" })
+        const resynced = yield* resync({
+          branch,
+          publication,
+          repository,
+          onto: head.value.sha,
+          actorId: write.actorId,
+          key: write.id,
+        }).pipe(Effect.mapError(resyncFailure))
+        if (resynced.state === "conflict") return yield* new Refused({ failure: "conflict" })
+        return yield* settled(write, { status: "done", itemNumber: publication.prNumber, githubId: null })
+      }).pipe(Effect.catch(ended<Settled>(write)))
+    }).pipe(
+      Effect.provideService(HttpClient.HttpClient, services.http),
+      Effect.provide(services.database),
+      Effect.catch((error) =>
+        error instanceof PublishUnavailable
+          ? Effect.fail(error)
+          : Effect.logWarning("branch.resync").pipe(
+            Effect.annotateLogs({ writeId, outcome: "failed", errorCode: codeOf(error) }),
+            Effect.andThen(Effect.fail(new PublishUnavailable({}))),
+          )
+      ),
+      Effect.withSpan("branch.resync.send", { attributes: { "smithers.github.write": writeId } }),
+    )
+
+  /**
+   * After a Publish or an Update settled `done`: the working copy follows the head GitHub's branch reached, as
+   * `branch/Resync` does, with the head the write recorded. It answers how the write settled whatever the resync
+   * found: a conflict is on the publication, and a refusal is logged. An outage is tried again.
+   */
+  const afterSettled = ({ writeId }: { readonly writeId: string }) =>
+    Effect.gen(function* () {
+      const found = yield* Store.writeOf(writeId)
+      if (Option.isNone(found)) return { status: "missing", prNumber: null } satisfies Settled
+      const write = found.value
+      // Its send settles it or fails, and a failed send's give-up settles it: one still pending is tried again.
+      if (write.status === "pending") return yield* new PublishUnavailable({})
+      const answer = { status: write.status, prNumber: write.itemNumber } satisfies Settled
+      const payload = write.payload
+      if (write.status !== "done" || (payload.op !== "branch/publish" && payload.op !== "branch/update")) return answer
+      const branch = yield* branchOf(payload.branchId)
+      const publication = yield* publicationOf(payload.branchId)
+      if (branch === undefined || publication === undefined) return answer
+      // Followed already: an Update that found the branch up to date with its working copy there.
+      if (publication.syncedSha === publication.headSha && publication.syncState === "synced") return answer
+      yield* resync({
+        branch,
+        publication,
+        repository: repositoryOf(write.repoId.replace(/^github\//, "")),
+        onto: publication.headSha,
+        actorId: write.actorId,
+        key: write.id,
+      }).pipe(
+        Effect.catchTag("@smthrs/mvp/branch/ResyncRefused", () => Effect.void),
+        Effect.mapError((error) => resyncFailure(error) as PublishUnavailable),
+      )
+      return answer
+    }).pipe(
+      Effect.provide(services.database),
+      Effect.catch((error) =>
+        error instanceof PublishUnavailable
+          ? Effect.fail(error)
+          : Effect.logWarning("branch.resync").pipe(
+            Effect.annotateLogs({ writeId, outcome: "failed", errorCode: codeOf(error) }),
+            Effect.andThen(Effect.fail(new PublishUnavailable({}))),
+          )
+      ),
+      Effect.withSpan("branch.resync.after", { attributes: { "smithers.github.write": writeId } }),
+    )
+
   /** Settles a write still pending once its send gave up: `failed unavailable`. One another run settled answers that. */
   const giveUp = ({ writeId }: { readonly writeId: string }) =>
     Effect.gen(function* () {
@@ -748,29 +947,42 @@ export const steps = <E, R>(services: GitHubServices<E, R>) => {
       Effect.withSpan("branch.publish.give_up", { attributes: { "smithers.github.write": writeId } }),
     )
 
-  return { publish, update, giveUp }
+  return { publish, update, resync: resyncSend, afterSettled, giveUp }
 }
 
-/** Registers `branch/Publish` and `branch/Update` with their steps over `services` and the branches' `machines`. */
-export const registration = <E, R, ME, MR>(
+/**
+ * Registers `branch/Publish`, `branch/Update` and `branch/Resync` with their steps over `services`, the branches'
+ * `machines` and the deployment's `forge`.
+ */
+export const registration = <E, R, ME, MR, FE, FR>(
   services: GitHubServices<E, R>,
   machines: Layer.Layer<Machines, ME, MR>,
+  forge: Layer.Layer<Forge, FE, FR>,
 ) => {
   const implementation = steps(services)
-  return Layer.merge(
+  return Layer.mergeAll(
     Interpreter.layerWithImplementations(
       Publish,
-      Layer.merge(
+      Layer.mergeAll(
         PublishSend.toLayer(implementation.publish, { implementationVersion: PUBLISH_VERSION }),
         PublishGiveUp.toLayer(implementation.giveUp),
+        PublishResync.toLayer(implementation.afterSettled),
       ),
     ),
     Interpreter.layerWithImplementations(
       Update,
-      Layer.merge(
+      Layer.mergeAll(
         UpdateSend.toLayer(implementation.update, { implementationVersion: UPDATE_VERSION }),
         UpdateGiveUp.toLayer(implementation.giveUp),
+        UpdateResync.toLayer(implementation.afterSettled),
       ),
     ),
-  ).pipe(Layer.provide(machines), Layer.provideMerge(Action.layerImplementations))
+    Interpreter.layerWithImplementations(
+      Resync,
+      Layer.merge(
+        ResyncSend.toLayer(implementation.resync, { implementationVersion: RESYNC_VERSION }),
+        ResyncGiveUp.toLayer(implementation.giveUp),
+      ),
+    ),
+  ).pipe(Layer.provide(machines), Layer.provide(forge), Layer.provideMerge(Action.layerImplementations))
 }

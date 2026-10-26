@@ -1,4 +1,4 @@
-import { digestSync, Uuid, WebCrypto } from "@smthrs/crypto"
+import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { ElectricCollection } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Persistence } from "@smthrs/effect-tanstack-db"
 import { type PresenceProtocol, PresenceSocket, SharedText } from "@smthrs/sync"
@@ -7,6 +7,7 @@ import { Base64 } from "effect/encoding"
 import * as Socket from "effect/socket/Socket"
 import { scopeOf, scopeParams, TEXT_NAMESPACE, textName, type TextOf, textRoomRoute, TEXTS_SHAPE_ROUTE, type TextScope } from "./contract"
 import { opens } from "./metrics"
+import { SAVED_MARK, savedMarkOf } from "./saved"
 import { type Collaborator, type Selection, Shared, TextUpdate } from "./schema"
 import { TextWrites } from "./writes"
 
@@ -67,11 +68,7 @@ export const textIdOf = (of: TextOf) =>
 export const keyOf = (of: TextOf) =>
   of.kind === "prompt" ? of.conversation : of.kind === "file" ? `${of.conversation}/${of.path}` : `${of.run}/${of.version}`
 
-/** The mark a Save leaves on a file's text: what it wrote, as its length and SHA-256, the same on every device. */
-export const SAVED_MARK = "saved"
-
-/** The `saved` mark of `text`: its length, then its SHA-256, so a text of another length is told apart unhashed. */
-export const savedMarkOf = (text: string): string => `${text.length}:${digestSync(text)}`
+export { SAVED_MARK, savedMarkOf } from "./saved"
 
 /** Whether `text` is what the `saved` mark `mark` says a Save wrote. */
 const isSaved = (mark: string | undefined, text: string): boolean =>

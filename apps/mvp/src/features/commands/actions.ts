@@ -107,12 +107,12 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>, draft
     else {
       // A sandbox tool runs on the branch of the conversation this tab shows now (src/features/sandbox/actions.ts), and
       // `/docs`, `/repo` and `/issues` show their views in that conversation. `/new` starts the conversation in the repository of the branch this
-      // tab shows (src/features/conversations); `/publish` and `/branch.update` act on that branch.
+      // tab shows (src/features/conversations); `/publish`, `/branch.update` and `/branch.resync` act on that branch.
       const pinned = command.flow.startsWith("sandbox/") || PINNED_FLOWS.has(command.flow)
         ? yield* pinConversation(payload)
         : command.flow === "conversation/new"
         ? yield* pinRepository(payload)
-        : command.flow === "branch/publish" || command.flow === "branch/update"
+        : command.flow === "branch/publish" || command.flow === "branch/update" || command.flow === "branch/resync"
         ? yield* pinBranch(payload)
         : payload
       const dispatch = flows.dispatch(command.flow, { ...pinned, ...command.args } as never, { door: "slash" })

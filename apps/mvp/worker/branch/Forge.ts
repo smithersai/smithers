@@ -31,7 +31,24 @@ const gitHubForge = {
   upstream: ({ owner, name }: Repository): Effect.Effect<GitRemote.Upstream> =>
     Effect.succeed({ url: `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(name)}.git` }),
   create: (): Effect.Effect<void, CreateRefused> => Effect.fail(new CreateRefused({ code: "not_configured" })),
+  move: (): Effect.Effect<void, CreateRefused> => Effect.fail(new CreateRefused({ code: "not_configured" })),
+  pull: (): Effect.Effect<void, CreateRefused> => Effect.fail(new CreateRefused({ code: "not_configured" })),
 }
+
+/** A Code Storage failure as the forge's refusal, keeping its safe cause. */
+const refusedOf = (error: CodeStorage.CodeStorageError) =>
+  new CreateRefused({
+    errorTag: error._tag,
+    errorCode: error.code,
+    ...(error.status === undefined ? {} : { errorStatus: error.status }),
+    code: error.status === 401 || error.status === 403
+      ? "forbidden"
+      : error.code === "conflict"
+      ? "exists"
+      : ["not_found", "repository_not_found", "ref_not_found", "branch_not_found"].includes(error.code)
+      ? "not_found"
+      : "unavailable",
+  })
 
 /** The remote a branch's git is read from, with its credential. */
 export class Forge extends Context.Service<
@@ -40,11 +57,19 @@ export class Forge extends Context.Service<
     readonly upstream: (repository: Repository, namespace?: CodeStorage.RefNamespace) => Effect.Effect<GitRemote.Upstream>
     /** Creates `branch` at the commit `from` names, on the forge. */
     readonly create: (repository: Repository, branch: string, from: string) => Effect.Effect<void, CreateRefused>
+    /**
+     * Moves ephemeral `branch` to commit `to`, fast-forward or not: a resync brings a Smithers branch to the head its
+     * GitHub branch reached ([branch publish](../../docs/features/branch-publish.md#resync)). A commit the mirror hasn't
+     * synced yet is `not_found`.
+     */
+    readonly move: (repository: Repository, branch: string, to: string) => Effect.Effect<void, CreateRefused>
+    /** Starts the mirror's sync from GitHub. One already running is no failure. */
+    readonly pull: (repository: Repository) => Effect.Effect<void, CreateRefused>
   }
 >()("@smthrs/mvp/branch/Forge") {
   /**
-   * The repository's Code Storage mirror: read with a `git:read` token, and a new branch made there with a `git:write`
-   * one in the ephemeral namespace (`CodeStorage.createBranch`). Ordinary mirror refs are read-only.
+   * The repository's Code Storage mirror: read with a `git:read` token, and a new branch made or moved there with a
+   * `git:write` one in the ephemeral namespace (`CodeStorage.createBranch`). Ordinary mirror refs are read-only.
    * Nothing reaches GitHub until a person explicitly publishes (Will, 2026-10-23 14:09).
    */
   static readonly codeStorage = (client: CodeStorage.Client) =>
@@ -55,20 +80,18 @@ export class Forge extends Context.Service<
         create: ({ owner, name }, branch, from) =>
           client.createBranch(repoId(owner, name), { branch, from, namespace: "ephemeral" }).pipe(
             Effect.asVoid,
-            Effect.mapError((error) =>
-              new CreateRefused({
-                errorTag: error._tag,
-                errorCode: error.code,
-                ...(error.status === undefined ? {} : { errorStatus: error.status }),
-                code: error.status === 401 || error.status === 403
-                  ? "forbidden"
-                  : error.code === "conflict"
-                  ? "exists"
-                  : ["not_found", "repository_not_found", "ref_not_found", "branch_not_found"].includes(error.code)
-                  ? "not_found"
-                  : "unavailable",
-              })
-            ),
+            Effect.mapError(refusedOf),
+          ),
+        // The commit is any the repository holds: a mirror's GitHub branch shares its objects with the ephemeral refs.
+        move: ({ owner, name }, branch, to) =>
+          client.createBranch(repoId(owner, name), { branch, from: to, namespace: "ephemeral", force: true }).pipe(
+            Effect.asVoid,
+            Effect.mapError(refusedOf),
+          ),
+        pull: ({ owner, name }) =>
+          client.pullUpstream(repoId(owner, name)).pipe(
+            Effect.catchIf((error) => error.code === "sync_in_progress", () => Effect.void),
+            Effect.mapError(refusedOf),
           ),
       }),
     )

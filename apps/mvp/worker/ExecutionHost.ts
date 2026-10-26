@@ -28,6 +28,7 @@ import * as SecretFlows from "./secrets/SecretFlows.ts"
 import * as ModelFlows from "./personal/ModelFlows.ts"
 import * as SpendAlert from "./flows/SpendAlert.ts"
 import * as TerminalOpen from "./flows/TerminalOpen.ts"
+import type { Forge } from "./branch/Forge.ts"
 import type { Machines } from "./branch/Machines.ts"
 import * as BranchPublish from "./branch/Publish.ts"
 import type * as Apply from "./github/Apply.ts"
@@ -158,19 +159,21 @@ export const withTodos = <ROut, E, R, SE, SR, DE, DR, ME, MR, IE, IR>(
 })
 
 /**
- * `flows`, plus Publish and Update branch (`branch/Publish`, `branch/Update`, docs/features/branch-publish.md) over the
- * git loop's `services` and the branches' machines (`machines`), whose working copies Publish reads, when this
+ * `flows`, plus Publish, Update branch and Resync (`branch/Publish`, `branch/Update`, `branch/Resync`,
+ * docs/features/branch-publish.md) over the git loop's `services`, the branches' machines (`machines`), whose working
+ * copies Publish reads and Resync moves, and the deployment's `forge`, where Resync moves the Smithers branch, when this
  * deployment has the GitHub App. `services` is built when each execution's registration is, as `withGitHub`'s is.
  */
-export const withBranchPublish = <ROut, E, R, GE, GR, SE, SR, ME, MR>(
+export const withBranchPublish = <ROut, E, R, GE, GR, SE, SR, ME, MR, FE, FR>(
   flows: Flows<ROut, E, R>,
   services: Effect.Effect<Apply.Services<GE, GR>, SE, SR>,
   machines: Layer.Layer<Machines, ME, MR>,
+  forge: Layer.Layer<Forge, FE, FR>,
 ) => ({
-  flows: [...flows.flows, BranchPublish.Publish, BranchPublish.Update],
+  flows: [...flows.flows, BranchPublish.Publish, BranchPublish.Update, BranchPublish.Resync],
   registration: Layer.merge(
     flows.registration,
-    Layer.unwrap(Effect.map(services, (built) => BranchPublish.registration(built, machines))),
+    Layer.unwrap(Effect.map(services, (built) => BranchPublish.registration(built, machines, forge))),
   ),
 })
 

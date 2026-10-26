@@ -68,6 +68,7 @@ import modelTiers from "./migrations/0065_model_tiers.ts"
 import timelineSummaries from "./migrations/0066_timeline_summaries.ts"
 import bugReportErrors from "./migrations/0067_bug_report_errors.ts"
 import branchPublish from "./migrations/0068_branch_publish.ts"
+import branchResync from "./migrations/0069_branch_resync.ts"
 
 /** The compose Postgres (`docker-compose.yml`): what `DATABASE_URL` defaults to, and the only one tests use. */
 export const LOCAL_URL = "postgresql://smithers:smithers@localhost:54321/smithers"
@@ -173,6 +174,7 @@ export const migrations = {
   "0066_timeline_summaries": timelineSummaries,
   "0067_bug_report_errors": bugReportErrors,
   "0068_branch_publish": branchPublish,
+  "0069_branch_resync": branchResync,
 }
 
 /** Applies every migration in `db/migrations` that hasn't run, in order; returns the ones it applied. */

@@ -155,6 +155,9 @@ export const PUBLICATION_COLUMNS = [
   "head_sha",
   "pr_number",
   "update_state",
+  "synced_sha",
+  "sync_state",
+  "sync_conflicts",
   "updated_at",
 ] as const
 
@@ -169,6 +172,13 @@ export type UpdateMethod = (typeof UPDATE_METHODS)[number]
 export const UPDATE_STATES = ["updated", "up_to_date", "conflict"] as const
 export type UpdateState = (typeof UPDATE_STATES)[number]
 
+/**
+ * How the last resync of a published branch's working copy ended (docs/features/branch-publish.md#resync): `synced`
+ * (at GitHub's head), or `conflict`, its files listed in `sync_conflicts`.
+ */
+export const SYNC_STATES = ["synced", "conflict"] as const
+export type SyncState = (typeof SYNC_STATES)[number]
+
 /** The most files one Publish commits. */
 export const MAX_PUBLISH_FILES = 50
 
@@ -180,3 +190,6 @@ export const publishExecutionId = (writeId: string): string => `branch-publish:$
 
 /** An Update branch write's run: one per write id. */
 export const updateExecutionId = (writeId: string): string => `branch-update:${writeId}`
+
+/** A Resync write's run: one per write id. */
+export const resyncExecutionId = (writeId: string): string => `branch-resync:${writeId}`

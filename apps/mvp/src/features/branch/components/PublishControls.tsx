@@ -5,13 +5,14 @@ import type { FormEvent, KeyboardEvent } from "react"
 import { MAX_BODY_LENGTH, MAX_TITLE_LENGTH } from "../../issues/contract"
 import { pullPath } from "../../pulls/contract"
 import type { Access } from "../contract"
-import { DESCRIPTION, PUBLISH, publishBarOf, TITLE, UPDATE_BRANCH } from "../publishView"
+import { DESCRIPTION, PUBLISH, publishBarOf, RESYNC, TITLE, UPDATE_BRANCH } from "../publishView"
 import { useBranch } from "./BranchContext"
 import "./publish.css"
 
-// Publish and Update branch in the branch's chrome (rulings GH-6 and GH-11, docs/features/branch-publish.md#the-branch-page):
-// a Smithers-only branch reaches GitHub only through Publish, whose inline form takes a title (the branch's name to
-// start) and a description; Esc closes it. Once published: the pull request's link, Update branch, and Publish again,
+// Publish, Update branch and Resync in the branch's chrome (rulings GH-6 and GH-11,
+// docs/features/branch-publish.md#the-branch-page): a Smithers-only branch reaches GitHub only through Publish, whose
+// inline form takes a title (the branch's name to start) and a description; Esc closes it. Once published: the pull
+// request's link, Update branch, Resync, which brings the working copy to the GitHub branch's head, and Publish again,
 // which pushes the working copy's new changes as one commit headed by its title (the pull request's to start). Beside
 // each button, where its last write is, in a word or two.
 export function PublishControls({ access }: { readonly access: Access | "none" | undefined }) {
@@ -44,6 +45,10 @@ export function PublishControls({ access }: { readonly access: Access | "none" |
       {bar.updateStatus === undefined ? null : <span role="status" className="branch-publish-status">{bar.updateStatus}</span>}
       {bar.update
         ? <Button variant="outline" disabled={bar.updateBusy} onClick={() => void publishing.actions.update()}>{UPDATE_BRANCH}</Button>
+        : null}
+      {bar.resyncStatus === undefined ? null : <span role="status" className="branch-publish-status">{bar.resyncStatus}</span>}
+      {bar.resync
+        ? <Button variant="outline" disabled={bar.resyncBusy} onClick={() => void publishing.actions.resync()}>{RESYNC}</Button>
         : null}
       {bar.form ? (
         <form className="branch-publish-form" aria-label={PUBLISH} onSubmit={submit} onKeyDown={escape}>

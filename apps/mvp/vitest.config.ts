@@ -180,6 +180,8 @@ export default defineConfig({
         "worker/branch/*.{ts,vibe}",
         "db/migrations/0014_branch_workspace.ts",
         "db/migrations/0023_branch_sharing.ts",
+        // Resync (docs/features/branch-publish.md#resync).
+        "db/migrations/0069_branch_resync.ts",
         // Your conversations (docs/features/conversations.md).
         "db/migrations/0047_conversation_people.ts",
         // The sandbox tools: their calls on a branch's machine (docs/features/sandbox-tools.md).

@@ -34,6 +34,7 @@ import * as TodoMachine from "./flows/TodoMachine.ts"
 import * as Placement from "./Placement.ts"
 import * as RepoRuns from "./RepoRuns.ts"
 import * as RepoConfig from "./RepoConfig.ts"
+import { Forge } from "./branch/Forge.ts"
 import * as SignIn from "./SignIn.ts"
 import { commandMaxSeconds } from "../src/features/sandbox/config.ts"
 import { keepExecutionId } from "../src/features/sandbox/contract.ts"
@@ -160,6 +161,11 @@ const object = <E, R>(
       const repoClone = yield* RepoConfig.cloneServices(appDatabase, EdgeCache.layer({ name: "repo" }).pipe(Layer.orDie)).pipe(
         Effect.provide(FetchHttpClient.layer),
         Effect.orDie,
+      )
+      // Resync moves a published branch's Smithers branch on the deployment's forge (docs/features/branch-publish.md#resync).
+      const forge = Layer.succeed(
+        Forge,
+        yield* Effect.service(Forge).pipe(Effect.provide(Forge.layerConfig), Effect.provide(FetchHttpClient.layer)),
       )
       // The git loop's flows (`github/Apply`, `github/Reconcile`, `github/Write`, `triage/Run`) run here when the GitHub
       // App is configured (docs/features/issues.md#remote-flows). Triage decides with the `judge` model role, admitted
@@ -326,11 +332,12 @@ const object = <E, R>(
               // requests start them through `triggers/Dispatch`, on each run's own object.
               ExecutionHost.withTriggers(ExecutionHost.withRepoFlows(ExecutionHost.withTodos(
                 // Publish and Update branch (docs/features/branch-publish.md) read a branch's working copy on its
-                // machine and write GitHub as the person who pressed.
+                // machine and write GitHub as the person who pressed; Resync moves the working copy to GitHub's head.
                 ExecutionHost.withBranchPublish(
                   ExecutionHost.withGitHub(flows, githubServices(github.value)),
                   githubServices(github.value),
                   machines,
+                  forge,
                 ),
                 todoServices(github.value),
                 machines,
