@@ -19,6 +19,7 @@ import { dirname, join } from "node:path"
 import ts from "typescript"
 import { BrowserLanguageServer } from "../src/index.ts"
 import * as TypeScriptWorkspace from "../src/internal/TypeScriptWorkspace.ts"
+import * as Telemetry from "./fixtures/Telemetry.ts"
 
 const libDirectory = dirname(createRequire(import.meta.url).resolve("typescript"))
 const lib = (name: string) => readFile(join(libDirectory, name), "utf8").catch(() => undefined)
@@ -394,8 +395,9 @@ describe("BrowserLanguageServer", () => {
       expect(yield* server.definition(at("/src/main.ts", 3, 23))).toHaveLength(1)
     }).pipe(Effect.scoped))
 
-  it.effect("a worker that fails fails what waits and everything after it", () =>
-    Effect.gen(function*() {
+  it.effect("a worker that fails fails what waits and everything after it, logged by its error's name", () => {
+    const telemetry = Telemetry.make()
+    return Effect.gen(function*() {
       const listeners: Array<(event: never) => void> = []
       const server = yield* BrowserLanguageServer.make({
         worker: () => ({
@@ -409,13 +411,40 @@ describe("BrowserLanguageServer", () => {
       })
       const waiting = yield* Effect.forkChild(Effect.flip(server.hover(at("/a.ts", 0, 0))))
       yield* Effect.yieldNow
-      for (const listener of listeners) listener(undefined as never)
+      for (const listener of listeners) listener({ error: new TypeError("SENTINEL") } as never)
       expect((yield* Fiber.join(waiting)).code).toBe("provider_unavailable")
       expect((yield* Effect.flip(server.diagnostics("/a.ts"))).code).toBe("provider_unavailable")
       // A second failure changes nothing.
       for (const listener of listeners) listener(undefined as never)
       expect((yield* Effect.flip(server.diagnostics("/a.ts"))).message).toBe("The language server stopped")
-    }).pipe(Effect.scoped))
+      expect(telemetry.lines("browser.language_server.failed").map(({ annotations }) => annotations)).toEqual([
+        expect.objectContaining({ "error.type": "TypeError" })
+      ])
+      expect(Telemetry.dump(telemetry)).not.toContain("SENTINEL")
+    }).pipe(Effect.scoped, telemetry.observed)
+  })
+
+  it.effect("a worker error the browser gives no error for is logged as ErrorEvent", () => {
+    const telemetry = Telemetry.make()
+    return Effect.gen(function*() {
+      const listeners: Array<(event: never) => void> = []
+      const server = yield* BrowserLanguageServer.make({
+        worker: () => ({
+          postMessage: () => {},
+          terminate: () => {},
+          addEventListener: (type: "message" | "error", listener: (event: never) => void) => {
+            if (type === "error") listeners.push(listener)
+          }
+        }),
+        workspace: { paths: [], read: () => Effect.succeed(undefined) }
+      })
+      for (const listener of listeners) listener({ error: null } as never)
+      expect((yield* Effect.flip(server.diagnostics("/a.ts"))).code).toBe("provider_unavailable")
+      expect(telemetry.lines("browser.language_server.failed").map(({ annotations }) => annotations)).toEqual([
+        expect.objectContaining({ "error.type": "ErrorEvent" })
+      ])
+    }).pipe(Effect.scoped, telemetry.observed)
+  })
 
   it.effect("a request the worker doesn't answer in time times out, and its late answer is dropped", () =>
     Effect.gen(function*() {

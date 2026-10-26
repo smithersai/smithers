@@ -213,7 +213,12 @@ export const make = (options: Options): Effect.Effect<LanguageServer.LanguageSer
       Effect.sync(() => {
         const worker = options.worker()
         worker.addEventListener("message", (event) => Queue.offerUnsafe(inbox, { _tag: "Message", data: event.data }))
-        worker.addEventListener("error", () => Queue.offerUnsafe(inbox, { _tag: "Failed" }))
+        // The worker's error event, by its error's name when the browser gives one (often only `ErrorEvent`).
+        worker.addEventListener("error", (event) =>
+          Queue.offerUnsafe(inbox, {
+            _tag: "Failed",
+            error: String((event as Partial<ErrorEvent> | undefined)?.error?.name ?? "ErrorEvent")
+          }))
         return worker
       }),
       (worker) => Effect.sync(() => worker.terminate())
@@ -250,7 +255,7 @@ export const make = (options: Options): Effect.Effect<LanguageServer.LanguageSer
             message: "The language server stopped"
           })
           failed = stopped
-          yield* Effect.logError("browser.language_server.failed")
+          yield* Effect.logError("browser.language_server.failed").pipe(Effect.annotateLogs({ "error.type": event.error }))
           return yield* Effect.forEach(pending.values(), (waiting) => Deferred.fail(waiting, stopped), {
             discard: true
           })

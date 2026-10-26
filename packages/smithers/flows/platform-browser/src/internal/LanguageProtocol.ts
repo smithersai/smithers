@@ -108,7 +108,9 @@ export type FromWorker =
  * @category models
  * @since 1.0.0
  */
-export type Event = { readonly _tag: "Message"; readonly data: unknown } | { readonly _tag: "Failed" }
+export type Event =
+  | { readonly _tag: "Message"; readonly data: unknown }
+  | { readonly _tag: "Failed"; readonly error: string }
 
 /**
  * The worker's side of the channel: its global scope, or a `MessagePort`,

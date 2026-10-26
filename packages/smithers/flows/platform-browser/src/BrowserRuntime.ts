@@ -303,21 +303,70 @@ export const run = <
   options: RunOptions<Registered, RegistrationError, RegistrationRequirements>
 ): Fiber.Fiber<never, unknown> =>
   Effect.runFork(
-    Effect.flatMap(engine, (module) => module.program(options)).pipe(
-      Effect.provide(Layer.mergeAll(WebLock.layer, TabChannel.layer, options.telemetry ?? Layer.empty)),
+    Effect.scoped(Effect.andThen(uncaught, Effect.flatMap(engine, (module) => module.program(options)))).pipe(
+      // Inside the telemetry, so the stop reaches the worker's exporter: an engine that couldn't be built included. An
+      // interruption from outside never reaches here.
       Effect.tapCause((cause) =>
         Effect.logError("browser.runtime.stopped").pipe(
-          Effect.annotateLogs({ "error.type": RetryPolicy.failureType(cause) }),
-          Effect.andThen(Effect.sync(() => {
-            if (typeof (globalThis as { readonly WorkerGlobalScope?: unknown }).WorkerGlobalScope !== "function") return
-            ;(globalThis as unknown as { postMessage(message: unknown): void }).postMessage(
-              Schema.encodeSync(Protocol.Stopped)({
-                _tag: "@smthrs/platform-browser/EngineStopped",
-                error: RetryPolicy.failureType(cause)
-              })
-            )
-          }))
+          Effect.annotateLogs({ "error.type": RetryPolicy.failureType(cause) })
         )
+      ),
+      Effect.provide(Layer.mergeAll(WebLock.layer, TabChannel.layer, options.telemetry ?? Layer.empty)),
+      Effect.tapCause((cause) =>
+        Effect.sync(() => {
+          if (typeof (globalThis as { readonly WorkerGlobalScope?: unknown }).WorkerGlobalScope !== "function") return
+          ;(globalThis as unknown as { postMessage(message: unknown): void }).postMessage(
+            Schema.encodeSync(Protocol.Stopped)({
+              _tag: "@smthrs/platform-browser/EngineStopped",
+              error: RetryPolicy.failureType(cause)
+            })
+          )
+        })
       )
     )
   )
+
+/** The worker scope's listeners for what nothing caught: `addEventListener` on the global, when it has one. */
+interface WorkerEvents {
+  readonly addEventListener?: (type: string, listener: (event: unknown) => void) => void
+  readonly removeEventListener?: (type: string, listener: (event: unknown) => void) => void
+}
+
+/** A thrown value's name for a log line: an error's name or a tagged value's tag, never its message. */
+const nameOf = (thrown: unknown): string =>
+  typeof thrown === "object" && thrown !== null && "_tag" in thrown
+    ? String(thrown._tag)
+    : thrown instanceof Error
+    ? thrown.name
+    : typeof thrown
+
+/**
+ * While the worker runs: an error nothing caught, or a rejection nothing handled, on the worker's global, logged as
+ * `browser.runtime.uncaught` at Error with `kind` (`error` or `rejection`) and `error.type`, never its message. A tab
+ * hears a worker's uncaught error as its `Worker`'s `error` event, but never its unhandled rejection.
+ */
+const uncaught = Effect.gen(function*() {
+  const target = globalThis as WorkerEvents
+  if (typeof target.addEventListener !== "function") return
+  const log = Effect.runSyncWith(yield* Effect.context<never>())
+  const listener = (event: unknown) => {
+    const { type, error, reason } = event as { readonly type: string; readonly error?: unknown; readonly reason?: unknown }
+    log(Effect.logError("browser.runtime.uncaught").pipe(
+      Effect.annotateLogs({
+        kind: type === "error" ? "error" : "rejection",
+        "error.type": nameOf(type === "error" ? error : reason)
+      })
+    ))
+  }
+  yield* Effect.acquireRelease(
+    Effect.sync(() => {
+      target.addEventListener!("error", listener)
+      target.addEventListener!("unhandledrejection", listener)
+    }),
+    () =>
+      Effect.sync(() => {
+        target.removeEventListener!("error", listener)
+        target.removeEventListener!("unhandledrejection", listener)
+      })
+  )
+})

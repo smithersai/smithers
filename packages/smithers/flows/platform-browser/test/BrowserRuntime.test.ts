@@ -186,6 +186,22 @@ describe("BrowserRuntime over OPFS", () => {
       expect(telemetry.count(BrowserRuntime.leaderships, {})).toBe(1)
     }).pipe(Effect.scoped))
 
+  it.live("run logs its stop to its telemetry, by the failure's tag", () =>
+    Effect.gen(function*() {
+      const telemetry = Telemetry.make()
+      const worker = BrowserRuntime.run({
+        name: Engines.name(),
+        sqlite: { ...MemorySqlite.build, wasm: () => Promise.resolve(new Uint8Array([0])) },
+        flows,
+        registerFlows: registration(Effect.succeed),
+        telemetry: telemetry.layer
+      })
+      yield* Fiber.await(worker)
+      expect(telemetry.lines("browser.runtime.stopped").map(({ level, annotations }) => [level, annotations])).toEqual([
+        ["ERROR", expect.objectContaining({ "error.type": "SqlError" })]
+      ])
+    }))
+
   it.live("run ends, releasing the lock, when the engine cannot be built", () =>
     Effect.gen(function*() {
       const worker = BrowserRuntime.run({
@@ -232,6 +248,37 @@ describe("BrowserRuntime over OPFS", () => {
         expect(Exit.isFailure(yield* Fiber.await(worker))).toBe(true)
         expect(posted).toEqual([{ _tag: "@smthrs/platform-browser/EngineStopped", error: "TelemetryUnavailable" }])
       }))
+
+    it.live("run logs what nothing caught on the worker's global while it runs, by kind and name, never the message", () =>
+      Effect.gen(function*() {
+        const listeners = new Map<string, (event: unknown) => void>()
+        vi.stubGlobal("addEventListener", (type: string, listener: (event: unknown) => void) => listeners.set(type, listener))
+        vi.stubGlobal("removeEventListener", (type: string) => listeners.delete(type))
+        const telemetry = Telemetry.make()
+        const name = Engines.name()
+        const worker = BrowserRuntime.run({
+          name,
+          sqlite: MemorySqlite.build,
+          flows,
+          registerFlows: registration(Effect.succeed),
+          telemetry: telemetry.layer
+        })
+        const engine = yield* Engines.tab(name)
+        yield* engine.start(Steps, { executionId: "uncaught", payload: { prefix: "u" } })
+        listeners.get("error")!({ type: "error", error: new TypeError("SENTINEL someone's words") })
+        listeners.get("unhandledrejection")!({ type: "unhandledrejection", reason: { _tag: "Refused" } })
+        listeners.get("unhandledrejection")!({ type: "unhandledrejection", reason: "SENTINEL a string" })
+        yield* Fiber.interrupt(worker)
+        expect(telemetry.lines("browser.runtime.uncaught").map(({ level, annotations }) => [level, annotations]))
+          .toEqual([
+            ["ERROR", expect.objectContaining({ kind: "error", "error.type": "TypeError" })],
+            ["ERROR", expect.objectContaining({ kind: "rejection", "error.type": "Refused" })],
+            ["ERROR", expect.objectContaining({ kind: "rejection", "error.type": "string" })]
+          ])
+        // The worker's listeners go with it.
+        expect(listeners.size).toBe(0)
+        expect(Telemetry.dump(telemetry)).not.toContain("SENTINEL")
+      }).pipe(Effect.scoped))
 
     it.live("run tells its tab nothing when it is only interrupted", () =>
       Effect.gen(function*() {
