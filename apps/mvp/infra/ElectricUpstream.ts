@@ -1,8 +1,8 @@
 // How ChatApi calls Electric's gateway at runtime: through its service binding, which infra/Electric.ts declares in
 // production. Every other request ChatApi sends keeps the global fetch.
 import { ShapeProxy } from "@smthrs/effect-electric"
-import { Effect, Layer } from "effect"
-import { FetchHttpClient, HttpClient } from "effect/http"
+import { Effect, Layer, Option } from "effect"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 
 /** The name of ChatApi's service binding to the gateway Worker. */
 export const GATEWAY_BINDING = "ELECTRIC_GATEWAY"
@@ -33,7 +33,19 @@ export const upstream = (env: Readonly<Record<string, unknown>>): Layer.Layer<ne
     // Provided around each call, innermost, so no `Fetch` the request's own context holds replaces the binding's.
     const client = Effect.map(
       Effect.service(HttpClient.HttpClient),
-      HttpClient.transform((effect) => Effect.provideService(effect, FetchHttpClient.Fetch, fetch)),
+      (client) => client.pipe(
+        // Old deployments can retain ELECTRIC_SECRET. The private binding needs no credentials, and none may
+        // enter its cache key or platform trace, even if the generic ShapeProxy connection still supplies one.
+        HttpClient.mapRequest((request) => {
+          const url = Option.getOrThrow(HttpClientRequest.toUrl(request))
+          url.searchParams.delete("secret")
+          return HttpClientRequest.setUrl(request, url).pipe(
+            HttpClientRequest.removeHeader("authorization"),
+            HttpClientRequest.removeHeader("cookie"),
+          )
+        }),
+        HttpClient.transform((effect) => Effect.provideService(effect, FetchHttpClient.Fetch, fetch)),
+      ),
     )
     return Layer.effect(ShapeProxy.Upstream, client).pipe(Layer.provide(FetchHttpClient.layer))
   }))

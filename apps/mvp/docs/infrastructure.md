@@ -387,3 +387,26 @@ Nothing else may declare one, and `e2e/health.spec.ts` declares none. A spec bui
 
   The first 5xx moved from 3 visitors to between 16 and 32 with 18 routes, and to between 32 and 50 with a signed-out tab's 8. At 32 and 50 visitors the 500s are not the object's: Cloudflare counted every object and gateway invocation in those windows a success, so the 500s came from Electric's container or ChatApi; the 503s are the gateway's answer to an overloaded object. No row meets the launch bar (zero 5xx, every route up to date within 10 s), so the next step is the cache in front of the gateway.
 - **HTTP/1.1 at http://localhost:1337.** A browser opens at most six connections to it, fewer than a tab's shapes, so a change can take up to 40 seconds to reach another device there, and Electric's client warns about plain `http://`. Use https://localhost:1443, which speaks HTTP/2 as Cloudflare does ([HTTPS and HTTP/2](#https-and-http2)).
+
+
+### Electric S5 cache trials (2026-10-26)
+
+**S5 is not ready to land.** Workers Cache was accepted by the account through Alchemy beta.83. A non-live `items`-only trial returned 40/40 HTTP 200 responses (eight concurrent), all browser `private, no-store`. A sampled ChatApi tail recorded cache hits. This verifies availability and finite cache hits, not live collapsing or isolation.
+
+The earlier 32-device, 18-route reproducer returned 2,160 responses in 60 seconds: 846 HTTP 500, 230 HTTP 503, no 429. The gateway tail itself contained HTTP 500 responses, and captured Electric error bodies included an internal-server error and a replication-client readiness timeout. These errors originate below ChatApi; successful Worker invocation outcomes do not imply successful HTTP responses. Container CPU utilization peaked at a raw `cpuUtilization` value of 1.544 in the surrounding load windows. CPU pressure is a hypothesis supported by these observations and the sizing trial, not proof of every failure's cause.
+
+The private-hop trace also exposed a retained legacy Electric secret parameter. Removing a declared resource had not guaranteed a credential-free request. `infra/ElectricUpstream.ts` now removes `secret`, Authorization and Cookie before invoking the private binding; ordinary upstream connections keep their configured credentials. Its regression fails without that transformation. No secret value is recorded here.
+
+Trials used 50 signed-out devices on the eight-route pulls page and 20 signed-in tabs of the test person, for 120 seconds, across three networks. Every 5xx and 429 is counted, including responses the clients subsequently retry. All trials used the same Workers Cache policy: cache only public HTTP 200 responses, never errors or 409s, retain Electric's lifetimes, bypass SSE and isolate cache generations by Worker version. Browser responses remained private and uncached.
+
+| Trial | Responses | 5xx (of them 503) | 429 | Up-to-date p99 | Device/route pairs over 10 s |
+|---|---:|---:|---:|---:|---:|
+| `basic` with cache | 3,413 | 685 (140) | 0 | 42,668 ms | 313 |
+| `standard-1`, size rollout overlapping load | 5,589 | 1,775 (1,739) | 0 | 26,932 ms | 115 |
+| `standard-1`, after rollout delay and 40 successful initial reads | 2,789 | 25 (0) | 0 | 19,267 ms | 44 |
+
+The size rollout caused many handle resets, so its first row is not steady-state capacity evidence. The settled trial improves headroom but still fails the launch bar. In the `basic` cache window, Cloudflare analytics counted 3,198 object requests and 4,214 ChatApi invocations (including non-shape requests and disconnections); this does not establish the required signed-out collapse ratio of at most 0.1. Gateway observations on the larger instance confirmed public five-second live policies, so the live miss rate is not explained by a missing cache header. No write-to-all-devices latency was measured.
+
+At [Cloudflare's published rates](https://developers.cloudflare.com/containers/platform/pricing/), `standard-1` supplies half a vCPU, 4 GiB RAM and 8 GB disk. Thirty days continuously provisioned cost about $27.37 for RAM and disk versus $7.21 for `basic` (roughly $20 more), before allowances. CPU costs $0.000020 per active vCPU-second; continuous full allocation would add $25.92 versus $12.96 per month. These are estimates excluding Workers, Durable Objects and egress. No sizing change is retained.
+
+Each trial restored the then-current main revision through Alchemy under the production lock. The final restoration used `cc6dee07`; afterward, initial reads of `items`, `pulls`, `github-sync` and `comments` each returned HTTP 200. Cache activation and the larger instance remain experimental. Abort and deliberate mid-load restart runs were not executed after the failed load gates. The two-person, twenty-tabs-each isolation run additionally needs a second real production test account: the saved production sessions identify the same person. No isolation, restart, abort or launch-capacity pass is claimed. Decision [0114](decisions/0114-electric-cache-trial.md) records the boundary and the remaining gates.
