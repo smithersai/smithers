@@ -19,6 +19,7 @@ import * as HostedModel from "./HostedModel.ts"
 import * as ModelEndpoint from "./ModelEndpoint.ts"
 import * as ModelSpend from "./ModelSpend.ts"
 import * as ModelRoles from "./ModelRoles.ts"
+import * as ModelTiers from "./ModelTiers.ts"
 import * as ModelUsage from "./ModelUsage.ts"
 import { PersonalModels } from "./personal/Models.ts"
 import * as SetModel from "./SetModel.ts"
@@ -866,11 +867,16 @@ describe("a role's routing and reasoning", () => {
     expect(h.requests).toEqual([])
   })
 
-  test("the deployment's default model runs at each role's effort: a judge low, a plain chat turn the request's own", async () => {
-    const h = await harness(runtime, answering, { actor: member })
-    await call(h, ask("is this a bug?"), "judge")
-    await call(h, ask("hi"), "agent")
-    expect(h.requests.map((request) => request.params.reasoningEffort ?? null)).toEqual(["low", null])
+  test("the deployment's default model gets a role's effort only when it takes one: a judge low, else none", async () => {
+    const reasoning = await harness(runtime, answering, { actor: member, modelId: "gpt-oss-120b" })
+    await call(reasoning, ask("is this a bug?"), "judge")
+    await call(reasoning, ask("hi"), "agent")
+    const plain = await harness(runtime, answering, { actor: member, modelId: "qwen-3.8-27b" })
+    await call(plain, ask("is this a bug?"), "judge")
+    expect(reasoning.requests.map((request) => request.params.reasoningEffort ?? null)).toEqual(["low", null])
+    expect(plain.requests.map((request) => request.params.reasoningEffort ?? null)).toEqual([null])
+    expect(reasoning.count(ModelTiers.effortHints, { role: "judge", outcome: "sent" })).toBe(1)
+    expect(plain.count(ModelTiers.effortHints, { role: "judge", outcome: "dropped" })).toBe(1)
   })
 })
 

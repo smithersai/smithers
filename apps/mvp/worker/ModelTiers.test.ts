@@ -2,7 +2,7 @@
 // The endpoint's use of them, on real routes, is in worker/personal/PersonalModels.test.ts and worker/ModelEndpoint.test.ts.
 import { ModelRequest } from "@smthrs/model"
 import { describe, expect, test } from "vitest"
-import { effortOf, heavy, ROLE_TIERS } from "./ModelTiers.ts"
+import { acceptsEffort, effortOf, heavy, ROLE_TIERS } from "./ModelTiers.ts"
 
 const request = (messages: ReadonlyArray<ModelRequest.Message>, reasoningEffort?: ModelRequest.ReasoningEffort) =>
   ModelRequest.ModelRequest.make({
@@ -31,14 +31,30 @@ describe("heavy", () => {
   })
 })
 
+describe("acceptsEffort", () => {
+  test("Claude and reasoning models take an effort, after any gateway prefix; other models don't", () => {
+    for (const id of ["claude-haiku-4-5", "o3", "o4-mini", "gpt-5", "gpt-6.1-sol", "gpt-oss-120b", "openai/gpt-5", "anthropic/claude-opus-5-5"]) {
+      expect(acceptsEffort(id), id).toBe(true)
+    }
+    for (const id of ["gpt-4.1-mini", "gpt-4o", "qwen-3.8-27b", "llama-4", "ollama", "openai/gpt-4.1-mini"]) {
+      expect(acceptsEffort(id), id).toBe(false)
+    }
+  })
+})
+
 describe("effortOf", () => {
-  test("a record's effort wins, then the role's heavy effort on a heavy turn, then the role's, then the request's", () => {
+  test("a record's effort wins, then the role's hint where the model takes one (heavy first), then the request's", () => {
     const working = request([user, called, result], "medium")
     const chatting = request([user], "medium")
-    expect(effortOf(ROLE_TIERS.agent, working, "minimal")).toBe("minimal")
-    expect(effortOf(ROLE_TIERS.agent, working)).toBe("high")
-    expect(effortOf(ROLE_TIERS.agent, chatting)).toBe("medium")
-    expect(effortOf(ROLE_TIERS.judge, working)).toBe("low")
-    expect(effortOf(ROLE_TIERS.coding, request([user]))).toBeUndefined()
+    expect(effortOf(ROLE_TIERS.agent, working, "gpt-6-luna", "minimal")).toBe("minimal")
+    expect(effortOf(ROLE_TIERS.agent, working, "gpt-6-luna")).toBe("high")
+    expect(effortOf(ROLE_TIERS.agent, chatting, "gpt-6-luna")).toBe("medium")
+    expect(effortOf(ROLE_TIERS.judge, working, "gpt-6-luna")).toBe("low")
+    expect(effortOf(ROLE_TIERS.coding, request([user]), "gpt-6-luna")).toBeUndefined()
+    // A model that refuses an effort gets no hint: the request's own, or none.
+    expect(effortOf(ROLE_TIERS.judge, working, "gpt-4.1-mini")).toBe("medium")
+    expect(effortOf(ROLE_TIERS.judge, request([user]), "gpt-4.1-mini")).toBeUndefined()
+    // A record's effort is its author's choice for that model: it stands.
+    expect(effortOf(ROLE_TIERS.judge, request([user]), "gpt-4.1-mini", "none")).toBe("none")
   })
 })

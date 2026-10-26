@@ -21,6 +21,7 @@ import {
 import * as Actor from "../Actor.ts"
 import * as Flows from "../Flows.ts"
 import * as ModelEndpoint from "../ModelEndpoint.ts"
+import * as ModelTiers from "../ModelTiers.ts"
 import * as SpendAlert from "../flows/SpendAlert.ts"
 import { SecretKeys } from "../secrets/Keys.ts"
 import { eventually, harness, PERSONAL_KEYS, recorded, testFile } from "../test/harness.ts"
@@ -627,8 +628,8 @@ describe("the model endpoint answers a person with their own model", () => {
         { protocol: "openai-chat", baseUrl: OPENAI_ORIGIN },
       ],
       models: {
-        fast: { protocol: "openai-chat", modelId: "gpt-fast" },
-        implement: { protocol: "openai-chat", modelId: "gpt-implement" },
+        fast: { protocol: "openai-chat", modelId: "gpt-6-luna" },
+        implement: { protocol: "openai-chat", modelId: "gpt-6.1-sol" },
         hard: { protocol: "anthropic-messages", modelId: "claude-hard" },
       },
     }, PERSONAL_KEYS)
@@ -655,12 +656,12 @@ describe("the model endpoint answers a person with their own model", () => {
     ]
     expect(answered.map((each) => each.status)).toEqual([200, 200, 200, 200, 200, 200, 200, 200])
     expect(provider.seen.map((seen) => [new URL(seen.url).origin, seen.body.model, seen.body.reasoning_effort ?? null])).toEqual([
-      [OPENAI_ORIGIN, "gpt-fast", null],
-      [OPENAI_ORIGIN, "gpt-fast", "high"],
-      [OPENAI_ORIGIN, "gpt-fast", "low"],
-      [OPENAI_ORIGIN, "gpt-fast", "low"],
-      [OPENAI_ORIGIN, "gpt-fast", null],
-      [OPENAI_ORIGIN, "gpt-implement", null],
+      [OPENAI_ORIGIN, "gpt-6-luna", null],
+      [OPENAI_ORIGIN, "gpt-6-luna", "high"],
+      [OPENAI_ORIGIN, "gpt-6-luna", "low"],
+      [OPENAI_ORIGIN, "gpt-6-luna", "low"],
+      [OPENAI_ORIGIN, "gpt-6-luna", null],
+      [OPENAI_ORIGIN, "gpt-6.1-sol", null],
       [ANTHROPIC_ORIGIN, "claude-hard", null],
       [ANTHROPIC_ORIGIN, "claude-hard", null],
     ])
@@ -695,14 +696,46 @@ describe("the model endpoint answers a person with their own model", () => {
     expect((await call(moved, "judge")).status).toBe(200)
     const broken = await harness(runtime, deployment, { actor: member, fetch: provider.fetch, config: { MODEL_ROLE_TIERS: "{\"renderer\":{\"tier\":\"strong\"}}" } })
     expect((await call(broken, "renderer")).status).toBe(200)
+    // `gpt-fast` is no model known to take an effort: the judge's hint never reaches it.
     expect(provider.seen.map((seen) => [seen.body.model, seen.body.output_config ?? seen.body.reasoning_effort ?? null])).toEqual([
       ["claude-hard", null],
-      ["gpt-fast", "low"],
+      ["gpt-fast", null],
       ["gpt-fast", null],
     ])
     expect(broken.line("model.endpoint").map(({ annotations }) => String(annotations.errorCode))).toEqual([
       expect.stringMatching(/^role_tiers:/),
     ])
+  })
+
+  test("a model that refuses a reasoning effort never gets the role's hint: Jev and summaries on it still answer", async () => {
+    await seedKeys(runtime, "person-member", {
+      keys: [{ protocol: "openai-chat", baseUrl: OPENAI_ORIGIN }],
+      models: { fast: { protocol: "openai-chat", modelId: "gpt-4.1-mini" }, hard: { protocol: "openai-chat", modelId: "openai/gpt-5" } },
+    }, PERSONAL_KEYS)
+    // A provider that refuses any call carrying `reasoning_effort`, as a non-reasoning model does.
+    const provider = scriptedProvider((_, body) =>
+      "reasoning_effort" in body && body.model === "gpt-4.1-mini"
+        ? { status: 400, error: { type: "invalid_request_error", message: "Unsupported parameter: 'reasoning_effort'" } }
+        : { text: "answered" }
+    )
+    const h = await harness(runtime, deployment, {
+      actor: member,
+      fetch: provider.fetch,
+      config: { MODEL_ROLE_TIERS: JSON.stringify({ review: { tier: "hard", reasoningEffort: "medium" } }) },
+    })
+    for (const role of ["judge", "summary", "review"]) {
+      const answered = await call(h, role)
+      expect(answered.lines, role).toContainEqual(expect.objectContaining({ type: "text-delta", text: "answered" }))
+    }
+    // A gateway's prefixed id of a model that takes one still gets it.
+    expect(provider.seen.map((seen) => [seen.body.model, seen.body.reasoning_effort ?? null])).toEqual([
+      ["gpt-4.1-mini", null],
+      ["gpt-4.1-mini", null],
+      ["openai/gpt-5", "medium"],
+    ])
+    expect(h.count(ModelTiers.effortHints, { role: "judge", outcome: "dropped" })).toBe(1)
+    expect(h.count(ModelTiers.effortHints, { role: "summary", outcome: "dropped" })).toBe(1)
+    expect(h.count(ModelTiers.effortHints, { role: "review", outcome: "sent" })).toBe(1)
   })
 
   test("timeline summaries are the person's too: their model answers them, never the deployment's", async () => {

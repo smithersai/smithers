@@ -53,9 +53,14 @@ the release path ([0099](0099-hosted-inference-flag.md)), so a person's own keys
    | `plan` (drafting a flow) | `hard` | the request's |
 
    A turn is heavy when the agent has used a tool since the person's last message: it is working through a task, not
-   answering in conversation. The model package sets the effort only where the protocol carries it (`reasoning_effort`
-   on OpenAI-compatible Chat Completions, `output_config.effort` on Claude models that accept one) and drops it for an
-   Anthropic model with no effort control. A model record that sets its own effort wins.
+   answering in conversation. The role's effort is a hint, sent only to a model whose id takes one (`EFFORT_MODELS`, data
+   in `worker/ModelTiers.ts`: Claude models, `o1` to `o9`, `gpt-5`, `gpt-6`, `gpt-oss`, after any gateway prefix): a
+   non-reasoning model such as `gpt-4.1-mini` refuses a call that carries `reasoning_effort`, which would fail every
+   Jev and summary call of a person whose `fast` model it is. A hint is counted sent or dropped, by role. Learning it
+   from the provider's refusal instead would mean a second call and remembered state per model; a list is simpler, and
+   a model it misses only runs at its provider's default. The model package sets an effort only where the protocol
+   carries it (`reasoning_effort` on OpenAI-compatible Chat Completions, `output_config.effort` on Claude models that
+   accept one). A model record that sets its own effort wins and is sent as set.
 6. **Two new roles.** `review` (`checks/Review`, until now the `judge` role) and `plan` (`flow/new/draft`, until now the
    `agent` role), so a free-text code review and a plan run on `hard` while Jev's labels stay on `fast`. With no
    setting of their own, the deployment answers them with the `judge` and `agent` roles' settings, as before.
@@ -66,7 +71,7 @@ the release path ([0099](0099-hosted-inference-flag.md)), so a person's own keys
    key. An empty key field keeps the saved key at the same base URL; a saved key moves to another base URL only when
    typed again (`key_required`). A save replaces the whole configuration, so clearing a key's base URL removes that
    key. Placeholders show what an unnamed tier resolves to.
-9. **Existing rows migrate unchanged** (`db/migrations/0065_model_tiers.ts`): a saved model becomes the person's `fast`
+9. **Existing rows migrate unchanged** (`db/migrations/0063_model_tiers.ts`): a saved model becomes the person's `fast`
    model, and every tier falls back to it.
 
 ## The audit: every model call the app makes

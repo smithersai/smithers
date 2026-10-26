@@ -54,10 +54,11 @@ const anthropicStream = (text: string, usage: { readonly input: number; readonly
 
 /**
  * The scripted providers at `origins` (an Anthropic-compatible one at {@link ANTHROPIC_ORIGIN}, OpenAI-compatible ones
- * at the rest): `reply` answers each request (a function sees how many came before), `seen` records them.
+ * at the rest): `reply` answers each request (a function sees how many came before, and the request's body), `seen`
+ * records them.
  */
 export const scriptedProvider = (
-  reply: Reply | ((index: number) => Reply),
+  reply: Reply | ((index: number, body: Record<string, unknown>) => Reply),
   passthrough: typeof globalThis.fetch = globalThis.fetch,
   origins: ReadonlyArray<string> = [OPENAI_ORIGIN, ANTHROPIC_ORIGIN],
 ) => {
@@ -69,7 +70,7 @@ export const scriptedProvider = (
     const body = JSON.parse(await request.text()) as Record<string, unknown>
     const index = seen.length
     seen.push({ url: request.url, headers: request.headers, body })
-    const answer = typeof reply === "function" ? reply(index) : reply
+    const answer = typeof reply === "function" ? reply(index, body) : reply
     if (answer.hang === true) {
       return new Promise<Response>((_, reject) =>
         request.signal.addEventListener("abort", () => reject(request.signal.reason), { once: true })

@@ -219,7 +219,7 @@ const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, hosted
               request: ModelRequest.ModelRequest.make({
                 ...request,
                 modelId: opened.value.modelId,
-                params: withEffort(params, ModelTiers.effortOf(route, request)),
+                params: withEffort(params, yield* ModelTiers.effortFor(role, route, request, opened.value.modelId)),
               }),
             },
           } satisfies Admitted
@@ -266,8 +266,11 @@ const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, hosted
             request: ModelRequest.ModelRequest.make({
               ...request,
               modelId: resolved.modelId,
-              // The record's effort when it sets one, else the role's: a summary or a judge needn't reason.
-              params: withEffort(params, ModelTiers.effortOf(route, request, resolved.reasoningEffort)),
+              // The record's effort when it sets one, else the role's hint where the model takes one.
+              params: withEffort(
+                params,
+                yield* ModelTiers.effortFor(role, route, request, resolved.modelId, resolved.reasoningEffort),
+              ),
             }),
           },
         } satisfies Admitted
