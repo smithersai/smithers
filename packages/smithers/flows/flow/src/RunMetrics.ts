@@ -473,6 +473,18 @@ export const steps = Metric.counter("flows_steps", {
 })
 
 /**
+ * Step attempts that failed, by `flow` and `code`: the failure's code (a
+ * typed failure's `code` or tag, a defect's tag or name), never its message.
+ *
+ * @category metrics
+ * @since 1.0.0-rc.17
+ */
+export const stepFailures = Metric.counter("flows_step_failures", {
+  description: "Flow step attempts that failed, by flow and code",
+  incremental: true
+})
+
+/**
  * Step attempts after a step's first, by `flow`.
  *
  * @category metrics
@@ -622,7 +634,10 @@ export const recordFirstStep = (
 
 /**
  * Records one step attempt that ran its body: {@link steps}, and
- * {@link stepRetries} when it is not the step's first attempt.
+ * {@link stepRetries} when it is not the step's first attempt. A failed
+ * attempt also counts {@link stepFailures} by its `code` (`failed` when the
+ * caller names none) and writes the line `flow.step.failed` (Warn where run
+ * lines are Info) with `flow`, `attempt`, `code` and, when given, `runId`.
  *
  * @category recording
  * @since 1.0.0-rc.17
@@ -632,13 +647,28 @@ export const recordStep = (
     readonly flow: string
     readonly attempt: number
     readonly outcome: "succeeded" | "failed" | "interrupted"
+    readonly code?: string | undefined
+    readonly runId?: string | undefined
   }
 ): Effect.Effect<void> => {
   const label = flow(labels.flow)
   return Metric.update(Metric.withAttributes(steps, { flow: label, outcome: labels.outcome }), 1).pipe(
     Effect.andThen(
       labels.attempt > 1 ? Metric.update(Metric.withAttributes(stepRetries, { flow: label }), 1) : Effect.void
-    )
+    ),
+    Effect.andThen(Effect.suspend(() => {
+      if (labels.outcome !== "failed") return Effect.void
+      const failure = code(labels.code ?? "failed")
+      return Metric.update(Metric.withAttributes(stepFailures, { flow: label, code: failure }), 1).pipe(
+        Effect.andThen(line("flow.step.failed", true)),
+        Effect.annotateLogs({
+          flow: label,
+          attempt: labels.attempt,
+          code: failure,
+          ...(labels.runId === undefined ? {} : { runId: labels.runId })
+        })
+      )
+    }))
   )
 }
 

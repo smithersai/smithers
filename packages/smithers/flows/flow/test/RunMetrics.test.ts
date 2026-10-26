@@ -261,6 +261,31 @@ describe("RunMetrics recorders", () => {
       expect(series(snapshot, "flows_wait_ms")[0]!.state).toMatchObject({ count: 2, sum: 500 })
     }))
 
+  it.effect("records a failed step attempt by its code: flow.step.failed at Warn and flows_step_failures", () =>
+    Effect.gen(function*() {
+      const steps = Effect.gen(function*() {
+        yield* RunMetrics.recordStep({ flow: "repo/clone", attempt: 1, outcome: "failed", code: "sql:Connection", runId: "r-1" })
+        yield* RunMetrics.recordStep({ flow: "repo/clone", attempt: 2, outcome: "failed" })
+        yield* RunMetrics.recordStep({ flow: "repo/clone", attempt: 3, outcome: "succeeded", code: "ignored" })
+        yield* RunMetrics.recordStep({ flow: "repo/clone", attempt: 4, outcome: "interrupted" })
+      })
+      const { lines, snapshot } = yield* observe(steps)
+      expect(lines.map((line) => [line.message, line.level, line.annotations])).toEqual([
+        ["flow.step.failed", "WARN", { flow: "repo/clone", attempt: 1, code: "sql:Connection", runId: "r-1" }],
+        ["flow.step.failed", "WARN", { flow: "repo/clone", attempt: 2, code: "failed" }]
+      ])
+      expect(series(snapshot, "flows_step_failures")).toEqual([
+        { attributes: { flow: "repo/clone", code: "sql:Connection" }, state: { count: 1, incremental: true } },
+        { attributes: { flow: "repo/clone", code: "failed" }, state: { count: 1, incremental: true } }
+      ])
+      // Where run lines are Debug, so is a failed step's.
+      const quiet = yield* observe(steps, "Debug")
+      expect(quiet.lines.map((line) => [line.message, line.level])).toEqual([
+        ["flow.step.failed", "DEBUG"],
+        ["flow.step.failed", "DEBUG"]
+      ])
+    }))
+
   it.effect("records a model call, its tokens and a flow.model.call line; no tokens reported, none counted", () =>
     Effect.gen(function*() {
       const { lines, snapshot } = yield* observe(Effect.gen(function*() {

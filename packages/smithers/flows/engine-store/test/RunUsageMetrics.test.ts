@@ -296,6 +296,19 @@ describe("usage metrics", () => {
         { flow: "Usage/Fails", outcome: "failed", count: 1 }
       ]))
       expect(counts(snapshot, "flows_step_retries")).toEqual([{ flow: "Usage/Gated", count: 1 }])
+      // Each failed attempt is one count and one Warn line by its code, never its message: the flaky step's string
+      // failure has none, the declared failure is its tag.
+      expect(counts(snapshot, "flows_step_failures")).toEqual(expect.arrayContaining([
+        { flow: "Usage/Gated", code: "failed", count: 1 },
+        { flow: "Usage/Fails", code: "Usage/Boom", count: 1 }
+      ]))
+      const stepFailures = lines.filter((line) => line.message === "flow.step.failed")
+      expect(stepFailures.map((line) => [line.level, line.annotations.flow, line.annotations.code, line.annotations.attempt]))
+        .toEqual(expect.arrayContaining([
+          ["WARN", "Usage/Gated", "failed", 1],
+          ["WARN", "Usage/Fails", "Usage/Boom", 1]
+        ]))
+      expect(stepFailures.every((line) => typeof line.annotations.runId === "string")).toBe(true)
       // The gate is a signal wait, parked once and ended once; the cancelled run parked and never resumed.
       expect(counts(snapshot, "flows_waits")).toEqual(expect.arrayContaining([
         { flow: "Usage/Gated", kind: "signal", count: 1 },

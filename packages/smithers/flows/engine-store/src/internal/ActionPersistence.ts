@@ -917,7 +917,10 @@ const runBody = (dispatch: Dispatch, adopted: boolean) => {
           Option.isNone(instance) ? Effect.void : RunMetrics.recordStep({
             flow: instance.value.flow._tag,
             attempt: input.attempt,
-            outcome: stepOutcome(exit)
+            outcome: stepOutcome(exit),
+            // A failed attempt's code, never its message (`flow.step.failed`).
+            ...(Exit.isFailure(exit) ? { code: RunMetrics.settlement(exit).code } : {}),
+            runId: deps.runId
           })
       )
     ),
