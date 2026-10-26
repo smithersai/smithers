@@ -200,6 +200,8 @@ export default defineConfig({
         "infra/ElectricUpstream.ts",
         // Electric's container kept running between visits (docs/infrastructure.md#electric).
         "infra/ElectricAwake.ts",
+        // An overloaded Electric object answered 503, and the gateway's record of each request (docs/infrastructure.md#electric).
+        "infra/ElectricRelay.ts",
         // A shape request the server can't decide is refused, never narrowed (docs/features/chat.md).
         "worker/ShapeAccess.ts",
         // The agent evals' cases, checks, judge and report (docs/features/agent-evals.md). evals/session.ts and

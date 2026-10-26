@@ -76,23 +76,37 @@ const logs = Logger.layerStructuredJson()
 export const isLive = (url: string): boolean => new URL(url, "http://electric").searchParams.get("live") === "true"
 
 /**
- * Wakes Electric, then sends the request, recording one log line `electric.object.request`: whether it was live, the
- * milliseconds waking took (`awakeMs`) and then Electric's headers (`headersMs`), Electric's status, and whether the
- * request started the container or set the hold. A failure records the stage it failed at and the error's tag; never
- * a URL, a parameter, a header or a body.
+ * The requests one object instance is forwarding: each counts from its arrival until Electric's headers or its failure.
+ * A live request's body, which streams for up to Electric's long poll after its headers, isn't counted.
+ */
+export interface InFlight {
+  current: number
+}
+
+/** A count of nothing in flight, made once per object instance. */
+export const makeInFlight = (): InFlight => ({ current: 0 })
+
+/**
+ * Wakes Electric, then sends the request, recording one log line `electric.object.request`: whether it was live, how
+ * many requests the object was forwarding when it arrived, itself included (`inFlight`), the milliseconds waking took
+ * (`awakeMs`) and then Electric's headers (`headersMs`), Electric's status, and whether the request started the
+ * container or set the hold. A failure records the stage it failed at and the error's tag; never a URL, a parameter, a
+ * header or a body.
  */
 export const forward = <A extends { readonly status: number }, E1, R1, E2, R2>(
   wake: Effect.Effect<Woken, E1, R1>,
   send: Effect.Effect<A, E2, R2>,
   live: boolean,
+  inFlight: InFlight,
 ): Effect.Effect<A, E1 | E2, R1 | R2> =>
   Effect.gen(function* () {
     const startedAt = yield* Clock.currentTimeMillis
+    const arrived = ++inFlight.current
     const failed = (stage: "awake" | "electric") => (error: E1 | E2) =>
       Effect.gen(function* () {
         const durationMs = (yield* Clock.currentTimeMillis) - startedAt
         yield* Effect.logError("electric.object.request").pipe(
-          Effect.annotateLogs({ live, outcome: "failed", stage, error: tagOf(error), durationMs }),
+          Effect.annotateLogs({ live, inFlight: arrived, outcome: "failed", stage, error: tagOf(error), durationMs }),
         )
       })
     const woken = yield* wake.pipe(Effect.tapError(failed("awake")))
@@ -102,6 +116,7 @@ export const forward = <A extends { readonly status: number }, E1, R1, E2, R2>(
     yield* Effect.logInfo("electric.object.request").pipe(
       Effect.annotateLogs({
         live,
+        inFlight: arrived,
         outcome: "answered",
         status: response.status,
         awakeMs: awokeAt - startedAt,
@@ -111,10 +126,28 @@ export const forward = <A extends { readonly status: number }, E1, R1, E2, R2>(
       }),
     )
     return response
-  })
+  }).pipe(Effect.ensuring(Effect.sync(() => void inFlight.current--)))
+
+/**
+ * Sends a request `direct`ly to Electric's port, or, when that fails before Electric answers, the `waited` way, which
+ * waits until the port accepts connections. The direct way hands back the container's own response, which the object
+ * returns as it is, so its body never passes through the object's JavaScript: re-streaming each body through Effect cost
+ * the one object about 15 ms of CPU per request in production on 2026-10-26, and overloaded it
+ * (docs/infrastructure.md#electric). Only a container still starting fails it; each fallback is logged as
+ * `electric.object.port` with the error's tag.
+ */
+export const directOr = <A, E1, R1, E2, R2>(
+  direct: Effect.Effect<A, E1, R1>,
+  waited: Effect.Effect<A, E2, R2>,
+): Effect.Effect<A, E2, R1 | R2> =>
+  direct.pipe(
+    Effect.catch((error) =>
+      Effect.logWarning("electric.object.port").pipe(Effect.annotateLogs({ error: tagOf(error) }), Effect.andThen(waited))
+    ),
+  )
 
 /** An error's tag or class name, which carries no request content. */
-const tagOf = (error: unknown): string => {
+export const tagOf = (error: unknown): string => {
   if (typeof error === "object" && error !== null) {
     const tag = (error as { readonly _tag?: unknown })._tag
     if (typeof tag === "string") return tag

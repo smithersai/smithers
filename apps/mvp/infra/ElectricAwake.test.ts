@@ -3,7 +3,7 @@
 import { Deferred, Effect, Fiber, Logger } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, test } from "vitest"
-import { forward, type Host, isLive, logged, makeAwake, type Woken } from "./ElectricAwake.ts"
+import { directOr, forward, type Host, isLive, logged, makeAwake, makeInFlight, type Woken } from "./ElectricAwake.ts"
 
 /** Cloudflare's bound on `setInactivityTimeout`: greater than 0 and at most 6 hours, or the call rejects. */
 const PLATFORM_MAX_MS = 21_600_000
@@ -133,18 +133,18 @@ describe("forward", () => {
   }
 
   test("records how long waking and then Electric's headers took, Electric's status, and what waking did", async () => {
-    const { exit, log } = await run(forward(taking(2_000, woken), taking(3_000, { status: 200 }), true))
+    const { exit, log } = await run(forward(taking(2_000, woken), taking(3_000, { status: 200 }), true, makeInFlight()))
     expect(exit).toMatchObject({ _tag: "Success", value: { status: 200 } })
     expect(log).toHaveLength(1)
     expect(log[0]).toMatchObject({
       message: "electric.object.request",
       level: "INFO",
-      annotations: { live: true, outcome: "answered", status: 200, awakeMs: 2_000, headersMs: 3_000, started: false, held: true },
+      annotations: { live: true, inFlight: 1, outcome: "answered", status: 200, awakeMs: 2_000, headersMs: 3_000, started: false, held: true },
     })
   })
 
   test("a refusal from Electric is recorded with its status like any answer", async () => {
-    const { log } = await run(forward(Effect.succeed({ started: true, held: true }), Effect.succeed({ status: 400 }), false))
+    const { log } = await run(forward(Effect.succeed({ started: true, held: true }), Effect.succeed({ status: 400 }), false, makeInFlight()))
     expect(log[0]!.annotations).toMatchObject({ live: false, status: 400, awakeMs: 0, headersMs: 0, started: true })
   })
 
@@ -160,6 +160,7 @@ describe("forward", () => {
         return { status: 200 }
       }),
       false,
+      makeInFlight(),
     ))
     expect(exit._tag).toBe("Failure")
     expect(sent).toBe(false)
@@ -173,11 +174,62 @@ describe("forward", () => {
 
   test("a request Electric's port fails records the electric stage with the error's class, or its type", async () => {
     for (const [error, name] of [[new RangeError("port 3000 at 10.0.0.1"), "RangeError"], ["closed", "string"]] as const) {
-      const { exit, log } = await run(forward(Effect.succeed(woken), Effect.fail(error), true))
+      const { exit, log } = await run(forward(Effect.succeed(woken), Effect.fail(error), true, makeInFlight()))
       expect(exit._tag).toBe("Failure")
       expect(log[0]!.annotations).toMatchObject({ live: true, outcome: "failed", stage: "electric", error: name })
       expect(JSON.stringify(log)).not.toContain("10.0.0.1")
     }
+  })
+  test("records how many requests the object was forwarding when one arrived, and counts each out when it ends", async () => {
+    const inFlight = makeInFlight()
+    const released = Effect.runSync(Deferred.make<void>())
+    const held = forward(Effect.succeed(woken), Effect.as(Deferred.await(released), { status: 200 }), true, inFlight)
+    const { log } = await run(Effect.gen(function* () {
+      const first = yield* Effect.forkChild(held)
+      const second = yield* Effect.forkChild(held)
+      yield* Effect.yieldNow
+      expect(inFlight.current).toBe(2)
+      yield* Effect.exit(forward(Effect.succeed(woken), Effect.fail(new RangeError("refused")), false, inFlight))
+      expect(inFlight.current).toBe(2)
+      yield* Deferred.succeed(released, undefined)
+      yield* Fiber.join(first)
+      yield* Fiber.join(second)
+    }))
+    expect(inFlight.current).toBe(0)
+    expect(log.map((record) => [record.annotations.outcome, record.annotations.inFlight])).toEqual([
+      ["failed", 3],
+      ["answered", 1],
+      ["answered", 2],
+    ])
+  })
+})
+
+describe("directOr", () => {
+  test("Electric's answer the direct way is the answer, and the waited way is never tried", () => {
+    let waited = false
+    const { exit, log } = runLogged(directOr(Effect.succeed("direct"), Effect.sync(() => {
+      waited = true
+      return "waited"
+    })))
+    expect(exit).toMatchObject({ _tag: "Success", value: "direct" })
+    expect(waited).toBe(false)
+    expect(log).toEqual([])
+  })
+
+  test("a direct send that fails, as one to a container still starting does, is logged and sent the waited way", () => {
+    class UnknownError extends Error {
+      readonly _tag = "UnknownError"
+    }
+    const { exit, log } = runLogged(directOr(Effect.fail(new UnknownError("connect 10.0.0.1:3000 refused")), Effect.succeed("waited")))
+    expect(exit).toMatchObject({ _tag: "Success", value: "waited" })
+    expect(log).toMatchObject([{ message: "electric.object.port", level: "WARN", annotations: { error: "UnknownError" } }])
+    expect(JSON.stringify(log)).not.toContain("10.0.0.1")
+  })
+
+  test("when the waited way fails too, its failure is the request's", () => {
+    const { exit } = runLogged(directOr(Effect.fail("refused"), Effect.fail("not ready")))
+    expect(exit).toMatchObject({ _tag: "Failure" })
+    expect(JSON.stringify(exit)).toContain("not ready")
   })
 })
 
@@ -187,7 +239,7 @@ describe("logged", () => {
     const log = console.log
     console.log = (...args: Array<unknown>) => void lines.push(args.length === 1 ? args[0] : args)
     try {
-      await Effect.runPromise(logged(forward(Effect.succeed({ started: false, held: true }), Effect.succeed({ status: 200 }), false)))
+      await Effect.runPromise(logged(forward(Effect.succeed({ started: false, held: true }), Effect.succeed({ status: 200 }), false, makeInFlight())))
     } finally {
       console.log = log
     }

@@ -314,3 +314,30 @@ Decision 0108's build, served locally with `/api/*` on smithers.sh, measured
 ([receipt](../bench/first-load-results/2026-10-25-local-after.json)); the build
 before it, served the same way, 7,064 ms and 7,372 ms
 ([receipt](../bench/first-load-results/2026-10-25-local-before.json)).
+
+## Electric load
+
+`bench/electric-load` measures how many devices a deployment's Electric serves at once. Each device follows every
+shape route one page follows, from offset `-1` as a first visit does, speaking Electric's HTTP protocol the way the
+app's collections do (`protocol.ts`): catch-up requests until a response says it is up to date, then 20 s live
+long-polls with the cursor; a `409` starts the shape over, and a 5xx, a `429` or no response is sent again after the
+collections' default sync policy (1 s doubling to 10 s, jittered) or `retry-after`, whichever is longer. Every response
+is counted, the ones a retry hides included.
+
+```sh
+# Once per page: the shape routes it follows, from real Chromium (add --storage-state <file> to sign in).
+node bench/electric-load/routes.ts --target https://smithers.sh --page /smithersai/smithers --out routes.json
+# On each host: its share of the devices. The edge throttle counts per /24 network (worker/Throttle.ts, 3,000 shape
+# requests a minute), so spread devices over several networks.
+node bench/electric-load/run.ts --routes routes.json --devices 17 --seconds 60 --host <label> --out <label>.json
+# The run: one table row and its window, then what the window cost the Workers and the Electric object.
+node bench/electric-load/report.ts "50 signed out" *.json
+CLOUDFLARE_ACCOUNT_ID=… CLOUDFLARE_API_TOKEN=… node bench/electric-load/objects.ts <from> <to>
+```
+
+A run passes with no 5xx, no `429`, every request answered and every route up to date within 10 s. `--write-at`,
+`--write-cmd` and `--write-route` run a command mid-run (a write) and record, per device, how long until a change
+reached it on that route. `objects.ts` reads Cloudflare's analytics, which trail by about a minute: ChatApi's and the
+gateway's invocations by status, the Electric object's requests by status, and its CPU per request. The pure parts
+are proved by `node --test bench/electric-load/*.test.ts`. Measured results are in
+[infrastructure.md](infrastructure.md#limits).
