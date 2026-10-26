@@ -1,6 +1,6 @@
 # The metered model endpoint
 
-Every model call the browser's agent makes goes through one server endpoint, `POST /api/model/<role>` on ChatApi. The endpoint refuses callers who may not ask Smithers and answers with the person's own model when they saved one ([Your model](personal-model.md#answering)): for every role, their timeline summaries and TODO runs included, with their key, outside the deployment's budget. That is how Smithers answers. The deployment's own model ("hosted inference", below) answers anyone else only while an Admin or the Worker's environment turns it on; then the endpoint holds the provider key, picks the role's model, reserves each call's worst case against the deployment's budget and settles it to what the call spent. Decisions: [0011](../decisions/0011-the-agent-runs-in-the-browser.md) §3, [0004](../decisions/0004-agent-ui-codemode-and-rendering.md) question 2, [0008](../decisions/0008-auth.md) §11, [0096](../decisions/0096-personal-models.md).
+Every model call the browser's agent makes goes through one server endpoint, `POST /api/model/<role>` on ChatApi. The endpoint refuses callers who may not ask Smithers and answers with the person's own models when they saved a key ([Your model](personal-model.md#answering)): each role with its [tier](#tiers)'s model among their keys, their timeline summaries and TODO runs included, outside the deployment's budget. That is how Smithers answers. The deployment's own model ("hosted inference", below) answers anyone else only while an Admin or the Worker's environment turns it on; then the endpoint holds the provider key, picks the role's model, reserves each call's worst case against the deployment's budget and settles it to what the call spent. Decisions: [0011](../decisions/0011-the-agent-runs-in-the-browser.md) §3, [0004](../decisions/0004-agent-ui-codemode-and-rendering.md) question 2, [0008](../decisions/0008-auth.md) §11, [0096](../decisions/0096-personal-models.md), [0107](../decisions/0107-model-tiers.md).
 
 ## Hosted inference
 
@@ -19,12 +19,14 @@ browser agent (a durable ModelStep) ── ModelProxy.layerClient ── POST /a
                                 └ Guest, no role ──▶ 403 authentication
               bound the request ─ bad ──▶ 400 invalid_request      (over MODEL_MAX_REQUEST_BYTES: 413, before prepare)
                 (caps: maxTokens a whole number above 0, thinkingBudget one of at least 0)
-              personal_models[person] ─ row ──▶ their model, their ledger, no budget   (personal-model.md; every role)
-                                      └ can't be used ──▶ 409 no_route   (never the deployment's model)
+              role ──▶ tier and effort                (ModelTiers: ROLE_TIERS, MODEL_ROLE_TIERS)
+              personal_models[person] ─ keys ──▶ the tier's model among them, its key, their ledger, no budget
+                                       └ can't be used ──▶ 409 no_route   (never the deployment's model)
               hosted inference off ──▶ 409 no_route "Add your model…"   (hosted_model row, else HOSTED_MODEL_ENABLED)
               model_roles[role] ─ row ──▶ HostModel.make(row) ─ unusable ──▶ 409 no_route
-                                └ none ─▶ HostModel (CHAT_MODEL); summary: SUMMARY_MODEL, else 409 no_route
-                the record's reasoningEffort ──▶ set on the call
+                                └ none ─▶ summary: SUMMARY_MODEL ─▶ TIER_MODELS[tier] ─▶ the inherited role's row
+                                          ─▶ HostModel (CHAT_MODEL); summary: 409 no_route
+                the record's reasoningEffort, else the role's ──▶ set on the call
               reserve bytes + caps, one statement:
                 today's committed ≥ budget ──▶ 429 quota_exceeded
                 else committed += reservation; model_usage row by the invocation id, expiring in an hour
@@ -39,7 +41,7 @@ browser agent (a durable ModelStep) ── ModelProxy.layerClient ── POST /a
 
 - **The SDK does the HTTP.** `ModelProxy.serve` from `@smthrs/model` reads the request, runs the app's `prepare`, streams the events and observes the call. The browser's agent reads it with `ModelProxy.layerClient`, a `Model` like any other. See [Proxy a model](../../../../packages/smithers/agent/model/docs/guides/proxy-a-model.md).
 - **The call is durable in the browser, not here.** A model call is a durable step in the browser's engine; this endpoint serves one attempt of it. A crash mid-call runs that call again on resume, and a sealed result is never fetched again ([0011](../decisions/0011-the-agent-runs-in-the-browser.md) §3).
-- **Code:** `worker/ModelEndpoint.ts` (the handler and its policy), `worker/ModelRoles.ts` (role lookup and `set`), `worker/ModelUsage.ts` (the budget's reservation and settle), `worker/SetModel.ts` (`admin/SetModel`), `worker/Actor.ts` (who is acting, and `canAsk`, who may ask; sign-in in `worker/SignIn.ts` provides the actor), and the route in `worker/Chat.ts`. The route and role names the browser shares are in `src/features/model/contract.ts`.
+- **Code:** `worker/ModelEndpoint.ts` (the handler and its policy), `worker/ModelTiers.ts` (each role's tier and effort), `worker/ModelRoles.ts` (role lookup and `set`), `worker/ModelUsage.ts` (the budget's reservation and settle), `worker/SetModel.ts` (`admin/SetModel`), `worker/Actor.ts` (who is acting, and `canAsk`, who may ask; sign-in in `worker/SignIn.ts` provides the actor), and the route in `worker/Chat.ts`. The route and role names the browser shares are in `src/features/model/contract.ts`.
 
 ## Sign-in
 
@@ -70,7 +72,32 @@ The body is at most `MODEL_MAX_REQUEST_BYTES`, 192 KiB unless set, counted while
 
 ## Roles
 
-Each model call names its role: `agent`, `coding`, `renderer`, `judge` or `summary`. A role is answered by the model an admin set for it, read from Postgres on every call, or by the deployment's default model (`CHAT_MODEL`, through `HostModel`) when no admin has. A change applies on the next call, with no deploy. Two roles default differently: `summary` to its own `SUMMARY_MODEL`, and `coding`, the `todo` run's agent, to the `agent` role's model, its setting included, until an admin sets `coding` itself ([decision 0033](../decisions/0033-coding-model-role.md)).
+Each model call names its role: `agent` (chat, and a person's flow's agent steps), `coding` (the `todo` run's agent), `renderer` (views), `judge` (Jev, the memory opening and triage), `summary` (timeline labels), `review` (a pull request's review) or `plan` (drafting a flow). A role is answered by the model an admin set for it, read from Postgres on every call; without one, the deployment's defaults answer it, in this order:
+
+1. `SUMMARY_MODEL`, for the `summary` role only.
+2. Its tier's model in `TIER_MODELS` ([tiers](#tiers)).
+3. The setting of the role it inherits from: `agent` for `coding` ([decision 0033](../decisions/0033-coding-model-role.md)) and `plan`, `judge` for `review`, so a role answers as it did before it had a name.
+4. `CHAT_MODEL`, through `HostModel`; never for `summary`, which is `409 no_route` (`unusable:unconfigured`) instead.
+
+A change applies on the next call, with no deploy.
+
+### Tiers
+
+Each role maps to a tier, the strength of model it needs, and to how hard that model thinks ([decision 0107](../decisions/0107-model-tiers.md)). A person's own models answer by tier ([Your model](personal-model.md#tiers)), and so do the deployment's when `TIER_MODELS` names one.
+
+| Role | Tier | Reasoning effort |
+|---|---|---|
+| `agent` | `fast` | the request's; `high` on a heavy turn |
+| `renderer` | `fast` | the request's |
+| `judge` | `fast` | `low` |
+| `summary` | `fast` | `low` |
+| `coding` | `implement` | the request's |
+| `review` | `hard` | the request's |
+| `plan` | `hard` | the request's |
+
+- **One place:** `ROLE_TIERS` in `worker/ModelTiers.ts`. `MODEL_ROLE_TIERS`, a JSON object of roles to `{ tier, reasoningEffort?, heavyReasoningEffort? }`, replaces a role's entry, such as `{ "judge": { "tier": "implement" } }`; a value that doesn't parse keeps the defaults and logs `model.endpoint` with `errorCode: role_tiers:<code>` once, when the endpoint builds.
+- **A heavy turn** is a call in which the agent has used a tool since the person's last message: it is working through a task, not chatting. It runs at the role's `heavyReasoningEffort`.
+- **Which effort wins:** a model record's own `reasoningEffort` (an admin's setting, `SUMMARY_MODEL`, a `TIER_MODELS` record), else the role's, else the request's. The model package sends it only where the protocol carries it, and drops it for an Anthropic-compatible model with no effort control.
 
 The coding role is the seam for pointing a deployment's coding agent at a model of its own choosing: any endpoint that speaks one of the configured-model protocols (Anthropic Messages, OpenAI Responses or Chat Completions), with a key the Worker holds under a name of the deployment's own and pins to that endpoint's origin (`SMITHERS_MODEL_KEY_<NAME>` and `SMITHERS_MODEL_KEY_<NAME>_ORIGIN`). What serves that endpoint is the deployment's business, at its own risk; the product names no vendor.
 
@@ -112,7 +139,7 @@ Every refusal is a JSON body `{ code, message, requestId }` with a `ModelError` 
 | `400` | `invalid_request` | the body isn't a `ModelRequest`, or the request breaks a bound above, a cap included |
 | `401` | `authentication` | nobody is signed in |
 | `403` | `authentication` | the caller is a Guest, or has no role on the repository |
-| `404` | none (empty) | the role isn't `agent`, `coding`, `renderer`, `judge` or `summary` |
+| `404` | none (empty) | the role isn't `agent`, `coding`, `renderer`, `judge`, `summary`, `review` or `plan` |
 | `405` | `invalid_request` | not a `POST` |
 | `413` | `invalid_request` | the body is over `MODEL_MAX_REQUEST_BYTES` |
 | `429` | `quota_exceeded` | today's budget is spent |
@@ -127,7 +154,7 @@ Migrations `0004_model_roles`, `0012_model_reservations`, `0017_model_charges`, 
 
 | Table | Columns | |
 |---|---|---|
-| `model_roles` | `role` (key: `agent`, `coding`, `renderer`, `judge`, `summary`), `model` (jsonb record), `updated_by`, `updated_at` | the admin's setting per role |
+| `model_roles` | `role` (key: `agent`, `coding`, `renderer`, `judge`, `summary`, `review`, `plan`; the last two since `0065_model_tiers`), `model` (jsonb record), `updated_by`, `updated_at` | the admin's setting per role |
 | `model_role_changes` | `id`, `invocation_key` (unique), `role`, `model`, `changed_by`, `changed_at` | the audit of `admin/SetModel` |
 | `model_usage` | `invocation_id` (key, the server's id for the call), `request_id` (the caller's), `role`, `model_id`, `day` (the UTC day it reserved on), `reserved_tokens`, `input_tokens`, `output_tokens` (what the model reported: 0 until settled, and for a count it never reported), `charged_tokens` (what the call counts against its day: its reservation until it settles, then what it spent, or its reservation when that is unknown), `expires_at` (when an unsettled reservation becomes final), `settled_at` (null while the call runs, and for a reservation that expired), `spend_alert_id` (the spend alert that carried the call, migration `0019_spend_alerts`, [spend-alerts.md](spend-alerts.md)), `outcome`, `error_code`, `http_status` (how it ended, migration `0057_model_usage_outcome`, above), `created_at` (indexed) | the ledger: what each served call reserved, reported and was charged, and how it ended |
 | `model_budget_days` | `day` (key, a UTC date), `committed` (settled spend plus open reservations, never negative) | the budget's counter, one row per day |
@@ -147,6 +174,8 @@ Migrations `0004_model_roles`, `0012_model_reservations`, `0017_model_charges`, 
 | `MODEL_RESERVATION_EXPIRY` | `1 hour` | a duration: how long a call's reservation lasts before it is final. The longest call the caps allow writes 16,000 tokens, about 27 minutes at 10 tokens a second |
 | `HOSTED_MODEL_ENABLED` | off; on under `alchemy dev` | whether the deployment's own model answers when no Admin set the `hosted_model` row ([hosted inference](#hosted-inference)); a value that doesn't parse is off |
 | `CHAT_MODEL` | Cerebras `qwen-3.8-27b` | the default model for every role without a setting but `summary`; see [chat.md](chat.md#configuration) |
+| `MODEL_ROLE_TIERS` | `ROLE_TIERS` | a JSON object of roles to `{ tier, reasoningEffort?, heavyReasoningEffort? }`, each replacing that role's entry ([tiers](#tiers)); a value that doesn't parse keeps the defaults, logged |
+| `TIER_MODELS` | none | a JSON object of tiers (`fast`, `implement`, `hard`) to model records: the deployment's model for each tier it names, for a role without a setting ([roles](#roles)). Captured when the endpoint builds; a malformed value is refused per call as `unusable:config` for every role without a setting |
 | `SUMMARY_MODEL` | none | the `summary` role's model when no admin set one: a model record as JSON, with its own `extraBody` and `reasoningEffort` when it names them, captured when the endpoint builds so Alchemy binds it. Unset, the role has no model (`unusable:unconfigured`); a malformed value is refused per call as `unusable:config`, without failing the build |
 | `ANSWER_TURN_LIVE_SECONDS` | `30` | the `agent` role's liveness bound: how long a live run of the role may go without writing its answer, read beside the roles (`src/features/model/contract.ts`); the evidence for the default is in [agent.md](agent.md#turn-by-turn) |
 | a setting's credential | none | the key a `model_roles` record names, for example `CEREBRAS_API_KEY`; a custom credential `NAME` reads `SMITHERS_MODEL_KEY_NAME` and `SMITHERS_MODEL_KEY_NAME_ORIGIN` |
@@ -158,6 +187,7 @@ Migrations `0004_model_roles`, `0012_model_reservations`, `0017_model_charges`, 
 - A signed-out call is refused with `401`, and a Guest's or a roleless person's with `403`; neither reaches a model or meters anything. A Member's call streams, and the browser's `ModelProxy.layerClient` reads it as a `Model`.
 - The request bounds: model id, output tokens, thinking budget, provider-run tools, message counts, and the body's size (`413`, never reaching a model or the budget). A cap that is negative, 0 for `maxTokens`, or fractional is `400` before any reservation; eight concurrent calls with a thinking budget of −8,000 never run (the regression from Opus review 4, P2-1); a thinking budget of 0 runs.
 - A role change by `admin/SetModel` applies on the next call, with the key sent only to the setting's origin; the other roles keep the default.
+- Tiers: `plan` and `review` answer with the `agent`'s and the `judge`'s settings; `TIER_MODELS` answers each role without a setting on its tier, before the role it inherits from, with its record's effort; a malformed `TIER_MODELS` is `409 unusable:config`; the default model runs a judge at `low` effort and a plain chat turn at the request's. A person's own keys by tier are in `worker/personal/PersonalModels.test.ts` ([Your model](personal-model.md#tests)).
 - An agent acting for an Admin, and a Member, can't run `admin/SetModel`, and nothing is written. A database failure fails its run as a defect (`worker/SetModel.test.ts`).
 - Usage rows and `smithers_model_tokens` per role and model; calls that repeat one request id each book a row and count against the budget; `429` once today's spend reaches the budget; yesterday's spend doesn't count.
 - Reservations: eight concurrent calls against a budget of 46 admit exactly one, call the model once and commit 46 (the regression from Fable review 2, P2-2); a call reserves bytes plus its caps before the model runs and settles to what it spent; a settle that runs again changes nothing; a reservation is refused only once committed reaches the budget, and one larger than the whole budget always, the day's first included; a settle Postgres refuses is logged and counted and leaves the reservation counted; a reservation Postgres refuses is `503 provider_internal` before any model.
@@ -169,7 +199,7 @@ Migrations `0004_model_roles`, `0012_model_reservations`, `0017_model_charges`, 
 
 The SDK's own suite (`packages/smithers/agent/model/test/ModelProxy.test.ts`) covers the wire format, the client's typed failures, cancellation, `onEnd` finishing when the client goes away while it runs, request ids, a fresh invocation id for every served call when callers repeat a request id, the `Admission` `prepare` receives: the same invocation id `onEnd` gets, and the body's bytes; and what `End` says of a failure (its code, its provider status, whether the model produced output) and which failures `refusedCleanly` reads as clean. `db/Database.test.ts` covers `0012_model_reservations`: earlier rows become settled and seed their days' counters; and `0017_model_charges`: earlier rows are charged what they settled to, or their reservation while open, and expire an hour after they were made.
 
-The optional `summary` role is for conversation navigation. It is answered by an Admin's model setting, else by `SUMMARY_MODEL`, and never falls back to the main agent model. Calls use the same reservations and metering; see [timeline](timeline.md).
+The optional `summary` role is for conversation navigation. It is answered by an Admin's model setting, else by `SUMMARY_MODEL`, else by the `fast` tier's `TIER_MODELS` record, and never falls back to the main agent model. Calls use the same reservations and metering; see [timeline](timeline.md).
 
 ## Provider quota and credit
 

@@ -266,9 +266,9 @@ export const appLayer = <S = never>(
       origin,
       ...(chat.confirmWithin === undefined ? {} : { confirmWithin: chat.confirmWithin }),
     }))),
-    // A person's own model (docs/features/personal-model.md): their row, synced once they are signed in, and their own
-    // Save straight to ChatApi (`PersonalModelClient`, below), never through the outbox, which would keep the key on
-    // the device. Test and Remove are flows.
+    // A person's own models (docs/features/personal-model.md): their keys' rows, synced once they are signed in, and
+    // their own Save straight to ChatApi (`PersonalModelClient`, below), never through the outbox, which would keep a
+    // key on the device. Test and Remove are flows.
     PersonalModel.layer.pipe(Layer.provideMerge(PersonalModelStore.layer({
       origin,
       ...(chat.confirmWithin === undefined ? {} : { confirmWithin: chat.confirmWithin }),

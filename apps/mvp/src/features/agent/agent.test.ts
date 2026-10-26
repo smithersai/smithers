@@ -16,7 +16,7 @@ import { AnswerRun } from "../status/flows"
 import { AnswerSettled } from "./answers"
 import { MAX_FRAMES } from "./contract"
 import { WORD_CORRECTIONS } from "./flows"
-import { AGENT_SEAT, LIMITS, seats } from "./host"
+import { AGENT_SEAT, LIMITS, PLAN_SEAT, seats } from "./host"
 
 const runtime = testFile("agent")
 
@@ -792,12 +792,16 @@ describe("the agent's sandbox commands", () => {
   })
 })
 
-describe("the agent's seat", () => {
-  test("is the model endpoint's agent role, and resolves no other seat", async () => {
+describe("the agent's seats", () => {
+  test("are the model endpoint's agent and plan roles, and resolve no other seat", async () => {
     const resolved = await Effect.runPromise(
       Effect.gen(function* () {
         const resolver = yield* SeatResolver.SeatResolver
-        return [yield* resolver.resolve(AGENT_SEAT), yield* Effect.flip(resolver.resolve("anthropic:other"))] as const
+        return [
+          yield* resolver.resolve(AGENT_SEAT),
+          yield* resolver.resolve(PLAN_SEAT),
+          yield* Effect.flip(resolver.resolve("anthropic:other")),
+        ] as const
       }).pipe(Effect.provide(seats("http://chat.test")), Effect.provide(FetchHttpClient.layer)),
     )
 
@@ -805,6 +809,11 @@ describe("the agent's seat", () => {
     expect(await Effect.runPromise(resolved[0].route.prepare(probe))).toMatchObject({
       url: "http://chat.test/api/model/agent",
     })
-    expect(resolved[1]).toMatchObject({ seat: "anthropic:other" })
+    // Drafting a flow is a plan: its calls go to the `plan` role, which the endpoint answers on the `hard` tier.
+    expect(resolved[1]).toMatchObject({ id: "plan", modelId: "plan" })
+    expect(await Effect.runPromise(resolved[1].route.prepare(probe))).toMatchObject({
+      url: "http://chat.test/api/model/plan",
+    })
+    expect(resolved[2]).toMatchObject({ seat: "anthropic:other" })
   })
 })

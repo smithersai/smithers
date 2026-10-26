@@ -42,7 +42,7 @@ test("withTodos registers the todo run and a head's checks, and the object runs 
   }))
   const flows = ExecutionHost.withTodos(
     ExecutionHost.remote({ database: services.database, expiry: Expire.DEFAULT_EXPIRY }),
-    Effect.succeed({ ...services, judgeFor: () => seat, start: () => Effect.void }),
+    Effect.succeed({ ...services, reviewerFor: () => seat, start: () => Effect.void }),
     machines,
     TodoAgent.registration(seat, services.database, Agent.layerSandbox),
   )

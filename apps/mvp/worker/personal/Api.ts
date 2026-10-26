@@ -5,12 +5,10 @@ import { Cause, Clock, Duration, Effect, Exit, type Layer, Metric, Option, Redac
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
+import { MODEL_TIERS, type ModelTier } from "../../src/features/model/contract.ts"
 import {
-  baseUrlOf,
-  isModelId,
-  isProtocol,
+  checkSave,
   keyTail,
-  longEnough,
   MAX_PUT_BODY_BYTES,
   PERSONAL_MODEL_ROUTE,
   PERSONAL_MODEL_SHAPE_COLUMNS,
@@ -30,21 +28,23 @@ import * as Flows from "../Flows.ts"
 import { SecretKeys } from "../secrets/Keys.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"
 import * as ModelFlows from "./ModelFlows.ts"
-import { PersonalModels, PersonalModelUnusable, sealContext } from "./Models.ts"
+import { type Opened, PersonalModels, PersonalModelUnusable, sealContext } from "./Models.ts"
+import * as Store from "./Store.ts"
 import * as PersonalUsage from "./Usage.ts"
 
-// A person's own model's routes (decision 0096, docs/features/personal-model.md). The key is write-only: no route
-// answers it.
+// A person's own models' routes (decisions 0096 and 0107, docs/features/personal-model.md). Keys are write-only: no
+// route answers one.
 //
-// - `PUT /api/me/model { protocol, baseUrl, modelId, key }`: saves or replaces the person's model. It admits the write
-//   (signed in, Member or above, the person in person: never an agent, flow or sandbox, since the key would pass through
-//   them), checks every field, seals the key under SECRETS_KEY and starts `model/Put` with only the ciphertext. The base
-//   URL changes only with a key, so nobody points a saved key at another host.
-// - `DELETE /api/me/model`: removes it through `model/Delete`, for anyone signed in. The agent may, for the person
-//   (FLOW-3).
-// - `POST /api/me/model/test`: one tiny real call with the person's model, answered as a `TestResult`, Member or above.
-//   The agent may.
-// - `GET /api/shapes/personal-model`: the person's own row, never another's, never the sealed key.
+// - `PUT /api/me/model { keys, models }`: saves the person's keys, one per protocol, and the models their tiers use,
+//   replacing what they saved. It admits the write (signed in, Member or above, the person in person: never an agent,
+//   flow or sandbox, since a key would pass through them), checks every field (`checkSave`), seals each key typed under
+//   SECRETS_KEY and starts `model/Put` with only ciphertext. A key's base URL changes only with the key, so nobody
+//   points a saved key at another host.
+// - `DELETE /api/me/model`: removes every key through `model/Delete`, for anyone signed in. The agent may, for the
+//   person (FLOW-3).
+// - `POST /api/me/model/test`: one tiny real call with each key the tiers use, answered as one `TestResult`, Member or
+//   above. The agent may.
+// - `GET /api/shapes/personal-model`: the person's own rows, never another's, never a sealed key.
 //
 // No log line, span, metric or answer carries a key, and a refusal names a code, never the input.
 
@@ -68,10 +68,8 @@ export const handles = (path: string): boolean =>
   path === PERSONAL_MODEL_ROUTE || path === PERSONAL_MODEL_TEST_ROUTE || path === PERSONAL_MODEL_SHAPE_ROUTE
 
 const PutBody = Schema.Struct({
-  protocol: Schema.String,
-  baseUrl: Schema.String,
-  modelId: Schema.String,
-  key: Schema.String,
+  keys: Schema.Array(Schema.Struct({ protocol: Schema.String, baseUrl: Schema.String, key: Schema.optional(Schema.String) })),
+  models: Schema.Record(Schema.String, Schema.Struct({ protocol: Schema.String, modelId: Schema.String })),
 })
 const decodePut = Schema.decodeUnknownEffect(Schema.fromJsonString(PutBody))
 
@@ -115,29 +113,58 @@ export const make = <E, R>(
     metric: shapes,
   })
 
-  /** One tiny real call with the person's own model, settled in their ledger as any of their calls is. */
+  /**
+   * One tiny real call with each of the person's keys the tiers use, the first tier on each key, each settled in their
+   * ledger as any of their calls is: the first failure, else the `fast` tier's answer. None when they saved no key.
+   */
   const test = (personId: string) =>
     Effect.gen(function* () {
       const personal = yield* PersonalModels
-      const opened = yield* personal.open(personId).pipe(Effect.result)
       const startedAt = yield* Clock.currentTimeMillis
       const latency = Effect.map(Clock.currentTimeMillis, (now) => now - startedAt)
-      if (opened._tag === "Failure") {
-        const failure = opened.failure
-        // Postgres couldn't say: the route answers 503.
-        if (!(failure instanceof PersonalModelUnusable)) return yield* failure
-        return Option.some<TestResult>({
-          ok: false,
-          latencyMs: yield* latency,
-          code: "unusable",
-          status: null,
-          host: failure.host,
-        })
+      const calls: Array<Opened> = []
+      for (const tier of MODEL_TIERS) {
+        const opened = yield* personal.open(personId, tier).pipe(Effect.result)
+        if (opened._tag === "Failure") {
+          const failure = opened.failure
+          // Postgres couldn't say: the route answers 503.
+          if (!(failure instanceof PersonalModelUnusable)) return yield* failure
+          return Option.some<TestResult>({
+            ok: false,
+            latencyMs: yield* latency,
+            code: "unusable",
+            status: null,
+            host: failure.host,
+          })
+        }
+        if (Option.isNone(opened.success)) return Option.none<TestResult>()
+        const model = opened.success.value
+        if (!calls.some((call) => call.protocol === model.protocol)) calls.push(model)
       }
-      if (Option.isNone(opened.success)) return Option.none<TestResult>()
-      const { model, modelId, host } = opened.success.value
+      let first: TestResult | undefined
+      for (const opened of calls) {
+        const result = yield* testCall(personId, opened, latency)
+        if (!result.ok) return Option.some(result)
+        first ??= result
+      }
+      return Option.some(first!)
+    })
+
+  /** One tiny real call with `opened`, settled in the person's ledger: how it went. */
+  const testCall = (personId: string, opened: Opened, latency: Effect.Effect<number>) =>
+    Effect.gen(function* () {
+      const { model, modelId, host, protocol } = opened
       const invocationId = crypto.randomUUID()
-      const call: PersonalUsage.Call = { invocationId, requestId: invocationId, personId, role: "test", modelId, host }
+      const call: PersonalUsage.Call = {
+        invocationId,
+        requestId: invocationId,
+        personId,
+        role: "test",
+        modelId,
+        host,
+        protocol,
+        tier: undefined,
+      }
       yield* PersonalUsage.begin(call).pipe(Effect.provide(database), Effect.provideContext(context))
       let usage: ModelEvent.Usage = {}
       let text = ""
@@ -172,11 +199,9 @@ export const make = <E, R>(
         ...(failure ?? {}),
       }, database).pipe(Effect.provideContext(context))
       const latencyMs = yield* latency
-      return Option.some<TestResult>(
-        failure === undefined
-          ? { ok: true, latencyMs, sample: sampleOf(text) }
-          : { ok: false, latencyMs, code: failure.errorCode, status: failure.httpStatus ?? null, host },
-      )
+      return failure === undefined
+        ? { ok: true, latencyMs, sample: sampleOf(text) } satisfies TestResult
+        : { ok: false, latencyMs, code: failure.errorCode, status: failure.httpStatus ?? null, host } satisfies TestResult
     })
 
   /** `PUT`, `DELETE /api/me/model` and `POST /api/me/model/test`. */
@@ -232,25 +257,28 @@ export const make = <E, R>(
       // A decoding failure would quote its input, the key: it is dropped whole.
       const decoded = yield* decodePut(body.success).pipe(Effect.option)
       if (Option.isNone(decoded)) return refuse(400, "invalid")
-      const { protocol, modelId, key } = decoded.value
-      if (!isProtocol(protocol)) return refuse(400, "invalid_protocol")
-      const baseUrl = baseUrlOf(decoded.value.baseUrl)
-      if (baseUrl === undefined) return refuse(400, "invalid_base_url")
-      if (!isModelId(modelId)) return refuse(400, "invalid_model")
-      const problem = Binding.valueProblem(key)
-      if (problem !== undefined) return refuse(400, problem)
-      // The browser sees the key's last characters again: they must be a small part of it.
-      if (!longEnough(key)) return refuse(400, "too_short")
+      // A key kept without its value must be the one saved at the same base URL: read what the person saved.
+      const saved = yield* Store.saved(personId).pipe(Effect.provide(database), Effect.provideContext(context))
+      // The browser sees each key's last characters again: they must be a small part of it (`too_short`).
+      const checked = checkSave(decoded.value, saved, Binding.valueProblem)
+      if (typeof checked === "string") return refuse(400, checked)
       const { cipher, version } = keys.value
-      const sealed = yield* cipher.seal(Redacted.make(key), sealContext(personId, version))
+      const writes = yield* Effect.forEach(checked.keys, ({ protocol, baseUrl, key }) =>
+        key === undefined
+          ? Effect.succeed({ protocol, baseUrl })
+          : Effect.map(
+            cipher.seal(Redacted.make(key), sealContext(personId, version)),
+            (sealed) => ({ protocol, baseUrl, sealed: { ...sealed, keyVersion: version, keyLast4: keyTail(key) } }),
+          ))
       const started = yield* starter.start(ModelFlows.Put, {
         executionId,
-        payload: { personId, protocol, baseUrl, modelId, sealed, keyVersion: version, keyLast4: keyTail(key) },
+        payload: { personId, keys: writes, models: checked.models },
       }).pipe(Effect.result)
       if (started._tag === "Failure") return refuse(503, "unavailable")
       fields.outcome = "putting"
-      fields.protocol = protocol
-      return HttpServerResponse.jsonUnsafe({ baseUrl }, { status: 202, headers: noStore })
+      fields.keys = checked.keys.length
+      fields.tiers = (Object.keys(checked.models) as ReadonlyArray<ModelTier>).join(",")
+      return HttpServerResponse.jsonUnsafe({}, { status: 202, headers: noStore })
     }).pipe(
       Effect.catchCause((cause) =>
         Effect.sync(() => {

@@ -197,7 +197,7 @@ How a run of code fails, by the tag the run page shows (`src/features/flows-ui/r
 ```
 /app/flows/new: Name + What it should do ─ Draft ─▶ flow/new { name, request }   execution <draftId>:<round>
   flow/new/open   the draft row (drafting); a name you have edits that flow, from its latest source
-  flow/new/draft  AgentAction, role agent: description, instructions, flows, questions ≤ 5 (corrected twice at most)
+  flow/new/draft  AgentAction, role plan (hard tier): description, instructions, flows, questions ≤ 5 (corrected twice at most)
   flow/new/write  the flow.ts it makes, the static checks, the row: ready, needs_you (a blocking question), or failed with a closed code
 /app/flows/drafts/<id>: the draft card
   Answer ─▶ flow/answer ─▶ changed answers + each unanswered blocking question's shown value (its default)

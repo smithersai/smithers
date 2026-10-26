@@ -1,3 +1,4 @@
+import type { ModelTier } from "../model/contract"
 import type { Protocol, Refusal } from "./contract"
 
 // What the Your model section and its toast say (docs/features/personal-model.md#the-settings-section): the fewest
@@ -6,20 +7,31 @@ import type { Protocol, Refusal } from "./contract"
 /** The section's heading, and the toast's word. */
 export const YOUR_MODEL = "Your model"
 
-/** The fields. */
-export const PROTOCOL = "Protocol"
+/** Each key's fields. */
 export const BASE_URL = "Base URL"
-export const MODEL = "Model"
 export const KEY = "Key"
 
-/** The base URL field's example. */
-export const BASE_URL_PLACEHOLDER = "https://api.openai.com"
+/** Each protocol's base URL example. */
+export const BASE_URL_PLACEHOLDER: Record<Protocol, string> = {
+  "openai-chat": "https://api.openai.com",
+  "anthropic-messages": "https://api.anthropic.com",
+}
 
-/** Each protocol as the select names it. */
+/** Each protocol as its key's group and a tier's select name it. */
 export const PROTOCOL_LABEL: Record<Protocol, string> = {
   "openai-chat": "OpenAI-compatible",
   "anthropic-messages": "Anthropic-compatible",
 }
+
+/** Each tier's model field. */
+export const TIER_LABEL: Record<ModelTier, string> = {
+  fast: "Fast",
+  implement: "Implement",
+  hard: "Hard",
+}
+
+/** A tier's key select, as a screen reader names it. */
+export const tierKeyLabel = (tier: ModelTier): string => `${TIER_LABEL[tier]} key`
 
 /** The buttons. */
 export const SAVE = "Save"
@@ -51,6 +63,9 @@ export const REFUSAL_COPY: Record<Refusal, string> = {
   control_character: "Keys can't contain line breaks or control characters",
   malformed_text: "Keys must be plain text",
   too_large: "Keys are at most 16 KiB",
+  key_required: "Enter the key for this base URL",
+  no_key: "Save a key for that model",
+  no_model: "Name a Fast model",
   none: "No model saved",
   off: "Your own model is off on this deployment",
   unavailable: "Unavailable; try again",

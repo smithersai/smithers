@@ -1,6 +1,7 @@
 import { Context, Data, type Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
-import { PERSONAL_MODEL_ROUTE, PERSONAL_MODEL_TEST_ROUTE, type Protocol, REFUSALS, type Refusal } from "./contract"
+import type { ModelTier } from "../model/contract"
+import { PERSONAL_MODEL_ROUTE, PERSONAL_MODEL_TEST_ROUTE, type Protocol, REFUSALS, type Refusal, type TierChoice } from "./contract"
 import { RECORD } from "./metrics"
 import { TestResult } from "./schema"
 
@@ -25,26 +26,29 @@ export class ModelNotTaken extends Data.TaggedError("ModelNotTaken")<{
   readonly code?: Refusal
 }> {}
 
-/** What Save sends: the protocol, the base URL, the model id and the key, `Redacted` until the body is made. */
+/**
+ * What Save sends: every key the person keeps, each with its protocol, its base URL and, unless the saved one stays,
+ * the key, `Redacted` until the body is made; and the model of each tier they named.
+ */
 export interface ModelPut {
-  readonly protocol: Protocol
-  readonly baseUrl: string
-  readonly modelId: string
-  readonly key: Redacted.Redacted<string>
+  readonly keys: ReadonlyArray<{
+    readonly protocol: Protocol
+    readonly baseUrl: string
+    readonly key: Redacted.Redacted<string> | undefined
+  }>
+  readonly models: Readonly<Partial<Record<ModelTier, TierChoice>>>
 }
 
 const Refused = Schema.Struct({ code: Schema.Literals(REFUSALS) })
 const decodeRefused = Schema.decodeUnknownEffect(Refused)
-const Saved = Schema.Struct({ baseUrl: Schema.String })
-const decodeSaved = Schema.decodeUnknownEffect(Saved)
 const decodeTested = Schema.decodeUnknownEffect(TestResult)
 
 /** ChatApi's routes for a person's own model, as a service. Tests of a route that fails provide a faulty one. */
 export class PersonalModelClient extends Context.Service<
   PersonalModelClient,
   {
-    /** `PUT /api/me/model`: `202` took it, answering the base URL as ChatApi normalized it. */
-    readonly put: (put: ModelPut) => Effect.Effect<{ readonly baseUrl: string }, ModelNotTaken>
+    /** `PUT /api/me/model`: `202` took it. */
+    readonly put: (put: ModelPut) => Effect.Effect<void, ModelNotTaken>
     /** `DELETE /api/me/model`: `202` took it. */
     readonly remove: Effect.Effect<void, ModelNotTaken>
     /** `POST /api/me/model/test`: `200` with how one tiny call with the saved model went. */
@@ -96,14 +100,14 @@ export class PersonalModelClient extends Context.Service<
               "put",
               HttpClientRequest.put(url).pipe(
                 HttpClientRequest.bodyJsonUnsafe({
-                  protocol: put.protocol,
-                  baseUrl: put.baseUrl,
-                  modelId: put.modelId,
-                  key: Redacted.value(put.key),
+                  keys: put.keys.map(({ protocol, baseUrl, key }) =>
+                    key === undefined ? { protocol, baseUrl } : { protocol, baseUrl, key: Redacted.value(key) }
+                  ),
+                  models: put.models,
                 }),
               ),
               202,
-              (response) => Effect.flatMap(response.json, decodeSaved),
+              () => Effect.void,
               within,
             ),
           remove: send("delete", HttpClientRequest.delete(url), 202, () => Effect.void, within),

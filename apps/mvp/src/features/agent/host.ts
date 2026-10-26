@@ -30,6 +30,9 @@ import type { AnswerWrite } from "./schema"
 /** The seat `chat/Respond` declares: the model endpoint's `agent` role. */
 export const AGENT_SEAT = "agent"
 
+/** The seat drafting a flow declares: the model endpoint's `plan` role, on the `hard` tier (decision 0107). */
+export const PLAN_SEAT = "plan"
+
 /**
  * The context window the agent compacts against. The endpoint picks the model, so the device can't ask it; this is a
  * floor every model the `agent` role may use is expected to meet.
@@ -55,25 +58,33 @@ export interface HostOptions {
   readonly model?: Model.Model
 }
 
-/** One seat, `agent`, answered by the model endpoint on `origin` (or `scripted`); any other seat is unresolved. */
+/**
+ * Two seats, `agent` and `plan`, each answered by its role of the model endpoint on `origin` (or `scripted`); any other
+ * seat is unresolved.
+ */
 export const seats = (origin: string, scripted?: Model.Model) =>
   Layer.effect(
     SeatResolver.SeatResolver,
     Effect.gen(function* () {
-      const url = `${origin}${MODEL_ROUTE}/${AGENT_SEAT}`
-      const model = scripted ?? (yield* ModelProxy.makeClient({ url }))
-      const seat = Seat.make({
-        id: AGENT_SEAT,
-        modelId: AGENT_SEAT,
-        model,
-        route: { prepare: ModelProxy.prepare({ url }) },
-        contextWindowTokens: CONTEXT_WINDOW_TOKENS,
-      })
+      const seatOf = (id: string) =>
+        Effect.gen(function* () {
+          const url = `${origin}${MODEL_ROUTE}/${id}`
+          return Seat.make({
+            id,
+            modelId: id,
+            model: scripted ?? (yield* ModelProxy.makeClient({ url })),
+            route: { prepare: ModelProxy.prepare({ url }) },
+            contextWindowTokens: CONTEXT_WINDOW_TOKENS,
+          })
+        })
+      const known = new Map([[AGENT_SEAT, yield* seatOf(AGENT_SEAT)], [PLAN_SEAT, yield* seatOf(PLAN_SEAT)]])
       return SeatResolver.make({
-        resolve: (id) =>
-          id === AGENT_SEAT
-            ? Effect.succeed(seat)
-            : Effect.fail(new Seat.SeatUnresolved({ seat: id, message: "The app's agent has one seat, agent." })),
+        resolve: (id) => {
+          const seat = known.get(id)
+          return seat === undefined
+            ? Effect.fail(new Seat.SeatUnresolved({ seat: id, message: "The app's agent has two seats, agent and plan." }))
+            : Effect.succeed(seat)
+        },
       })
     }),
   )

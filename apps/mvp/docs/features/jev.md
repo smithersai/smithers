@@ -1,6 +1,6 @@
 # Jev
 
-The agent asks Jev, Smithers' judge, for decisions over a list: which issues are bugs, which messages need a reply, which label fits each change. Two client flows put it in the agent's hands, and each judgment is one durable model step through the server's metered endpoint, role `judge`. Decisions: [0003](../decisions/0003-flows-and-the-agent.md), [0011](../decisions/0011-the-agent-runs-in-the-browser.md).
+The agent asks Jev, Smithers' judge, for decisions over a list: which issues are bugs, which messages need a reply, which label fits each change. Two client flows put it in the agent's hands, and each judgment is one durable model step through the server's metered endpoint, role `judge`, on the cheap `fast` tier at low reasoning effort. Decisions: [0003](../decisions/0003-flows-and-the-agent.md), [0011](../decisions/0011-the-agent-runs-in-the-browser.md), [0107](../decisions/0107-model-tiers.md).
 
 ## The flows
 
@@ -41,7 +41,8 @@ app/jev/classify { question, items, labels? }
 
 - **State and questions.** The items go in the state under their ids, and each question reads `<id>: <question>`, because the judge answers from a question's instructions and the state. `app/jev/evaluate` puts the text in the state and asks `criterion<k>: Does the text meet this criterion? <criterion>`.
 - **Durable.** `ModelStep.model` makes each call the judge makes one sealed step of the run, keyed by what the endpoint is sent, so a run resumed after a crash reads the judgment back instead of paying for it again. Its retries are `ModelStep`'s: transport faults inside the step, capacity refusals for up to two minutes.
-- **The endpoint.** The `judge` role is answered by the model an admin set with `admin/SetModel`, or by `CHAT_MODEL`. It holds the key, bounds the request and meters it against the day's budget ([model endpoint](model-endpoint.md)). The device never calls a provider.
+- **The endpoint.** The `judge` role maps to the `fast` tier at `low` reasoning effort (Will, 2026-10-25: "We use haiku or Luna low for Jev replacement if no Jev"; [tiers](model-endpoint.md#tiers)). A person's own `fast` model answers it with their key: by default Claude Haiku with an Anthropic key, else the OpenAI-compatible cheap model ([Your model](personal-model.md#tiers)). Otherwise, while hosted inference is on, the model an admin set with `admin/SetModel`, else the `fast` tier's `TIER_MODELS` record, else `CHAT_MODEL`, which holds the key, bounds the request and meters it against the day's budget ([model endpoint](model-endpoint.md)). `MODEL_ROLE_TIERS` can point it at another tier. The device never calls a provider.
+- **Every closed answer is Jev.** The app's calls whose answer is a label, a yes or no, or a state the UI routes on already run through Jev: these two flows, the memory opening's judge and issue triage. A pull request's free-text review is the `review` role on the `hard` tier, not a judgment ([decision 0107](../decisions/0107-model-tiers.md#the-audit-every-model-call-the-app-makes)).
 
 | File | What it holds |
 |---|---|

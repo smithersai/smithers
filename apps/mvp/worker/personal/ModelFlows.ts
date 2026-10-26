@@ -6,9 +6,9 @@ import { PROTOCOLS } from "../../src/features/personal-model/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as Store from "./Store.ts"
 
-// `model/Put` and `model/Delete` (decision 0096, docs/features/personal-model.md#saving): a person saves or removes
-// their own model. The route admits the write and seals the key before it starts the flow, so the payload, and with it
-// the journal, holds only ciphertext. Each flow is one durable step that writes the row and records the change once,
+// `model/Put` and `model/Delete` (decisions 0096 and 0107, docs/features/personal-model.md#saving): a person saves or
+// removes their own keys and the models their tiers use. The route admits the write and seals each key typed before it
+// starts the flow, so the payload, and with it the journal, holds only ciphertext. Each flow is one durable step that writes the row and records the change once,
 // under its invocation key. They run on any host; the deployment runs them on the Cloudflare host (`FlowExecution`).
 
 /** Postgres couldn't record the write. Retried. */
@@ -20,7 +20,7 @@ export class StoreUnavailable extends Schema.TaggedError<StoreUnavailable>()(
 /** The step couldn't tell which step it is, so it couldn't record its change once. */
 export class NoInvocationKey extends Schema.TaggedError<NoInvocationKey>()("@smthrs/mvp/personal/NoInvocationKey", {}) {}
 
-/** Writes, by `op` (`put`, `delete`) and `change` (`set`, `replace`, `deleted`, `missing`, `repeat`). */
+/** Writes, by `op` (`put`, `delete`) and `change` (`set`, `replace`, `stale`, `deleted`, `missing`, `repeat`). */
 export const writes = Metric.counter("smithers_personal_model_writes", {
   description: "Personal model saves and removals, by op and change",
   incremental: true,
@@ -29,22 +29,38 @@ export const writes = Metric.counter("smithers_personal_model_writes", {
 /** Recording: 1 s doubling to a minute, for at most 30 minutes, while Postgres is unreachable. */
 export const STORE_RETRY = RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000, expirationMs: 30 * 60_000 })
 
+const Protocol = Schema.Literals(PROTOCOLS)
+
+/** A key the save keeps: sealed when the person typed it again, else the one saved at the same base URL stays. */
+const KeyWrite = Schema.Struct({
+  protocol: Protocol,
+  baseUrl: Schema.String,
+  sealed: Schema.optional(Schema.Struct({
+    ciphertext: Schema.String,
+    nonce: Schema.String,
+    keyVersion: Schema.Int,
+    keyLast4: Schema.String,
+  })),
+})
+
+const TierChoice = Schema.Struct({ protocol: Protocol, modelId: Schema.String })
+
 const putPayload = {
   personId: Schema.String,
-  protocol: Schema.Literals(PROTOCOLS),
-  baseUrl: Schema.String,
-  modelId: Schema.String,
-  sealed: Schema.Struct({ ciphertext: Schema.String, nonce: Schema.String }),
-  keyVersion: Schema.Int,
-  keyLast4: Schema.String,
+  keys: Schema.Array(KeyWrite),
+  models: Schema.Struct({
+    fast: Schema.optional(TierChoice),
+    implement: Schema.optional(TierChoice),
+    hard: Schema.optional(TierChoice),
+  }),
 }
 
 const deletePayload = { personId: Schema.String }
 
-/** Writes the model and its sealed key, and records `set` or `replace`. */
+/** Writes the keys and the tiers' models, and records `set` or `replace`. */
 export const Store_ = Action.make("model/Store", {
   payload: putPayload,
-  success: Schema.Struct({ change: Schema.Literals(["set", "replace", "repeat"]) }),
+  success: Schema.Struct({ change: Schema.Literals(["set", "replace", "repeat", "stale"]) }),
   error: StoreUnavailable,
   capabilities: ["db:write:personal_models"],
   retryPolicy: STORE_RETRY,
@@ -59,9 +75,9 @@ export const Erase = Action.make("model/Erase", {
   retryPolicy: STORE_RETRY,
 })
 
-/** `model/Put`: saves or replaces a person's own model, its key sealed. */
+/** `model/Put`: saves or replaces a person's own keys, sealed, and the models their tiers use. */
 export const Put = Flow.make("model/Put", {
-  description: "Save or replace a person's own model and its sealed key; the person acting in person only.",
+  description: "Save or replace a person's own keys, sealed, and their tiers' models; the person acting in person only.",
   capabilities: ["db:write:personal_models"],
   modelInvocable: false,
   payload: putPayload,
@@ -70,9 +86,9 @@ export const Put = Flow.make("model/Put", {
   body: Node.capture({ store: Store_.name }, (write) => Store_.call(write)),
 })
 
-/** `model/Delete`: removes a person's own model, so the deployment's model answers them again. */
+/** `model/Delete`: removes a person's own keys, so the deployment's model answers them again. */
 export const Delete = Flow.make("model/Delete", {
-  description: "Remove a person's own model, so the deployment's model answers them again.",
+  description: "Remove a person's own keys, so the deployment's model answers them again.",
   capabilities: ["db:write:personal_models"],
   modelInvocable: false,
   payload: deletePayload,
@@ -118,13 +134,8 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       const key = yield* invocationKey
       const change = yield* Store.put({
         personId: write.personId,
-        protocol: write.protocol,
-        baseUrl: write.baseUrl,
-        modelId: write.modelId,
-        ciphertext: write.sealed.ciphertext,
-        nonce: write.sealed.nonce,
-        keyVersion: write.keyVersion,
-        keyLast4: write.keyLast4,
+        keys: write.keys,
+        models: write.models,
         invocationKey: key,
       }).pipe(Effect.provide(database), Effect.catch(unavailable))
       return { change }

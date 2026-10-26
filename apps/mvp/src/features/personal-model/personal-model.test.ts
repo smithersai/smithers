@@ -1,4 +1,4 @@
-// A person's own model on the tab (docs/features/personal-model.md#the-settings-section), driven as React drives it:
+// A person's own models on the tab (docs/features/personal-model.md#the-settings-section), driven as React drives it:
 // the personal model layer's plain actions and its live queries, with no React. Each tab runs the browser's own layer
 // (`appLayer`) on a Node device (src/test/chatApi.ts) against ChatApi's real handler over the compose Postgres and
 // Electric, and its device's engine runs `model/test` and `model/remove` as a browser's leading engine worker does.
@@ -26,12 +26,13 @@ import {
 } from "../../test/chatApi"
 import { EngineFaults } from "../../test/faults"
 import { AuthStore, SESSION } from "../auth/store"
+import { MODEL_TIERS } from "../model/contract"
 import { ModelNotTaken, PersonalModelClient } from "./api"
 import { keyTail, PERSONAL_MODEL_SHAPE_ROUTE } from "./contract"
 import { writes } from "./metrics"
 import { PersonalModel } from "./personalModel"
 import { PersonalModelStore } from "./store"
-import { statusOf, toastOf } from "./view"
+import { type SaveForm, statusOf, tierView, toastOf } from "./view"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -78,7 +79,7 @@ const faultyClient = () => {
               case "lost":
                 return Effect.andThen(real.put(put), Effect.fail(new ModelNotTaken({})))
               case "taken":
-                return Effect.succeed({ baseUrl: put.baseUrl })
+                return Effect.void
             }
           }),
       })),
@@ -152,62 +153,94 @@ const bind = async (
     actions,
     queries,
     session: () => session.tanstack.get(SESSION),
-    row: () => queries.row.toArray[0],
+    rows: () => queries.saved.toArray,
+    /** The saved key of `protocol`, OpenAI-compatible unless named. */
+    row: (protocol = "openai-chat") => queries.saved.toArray.find((row) => row.protocol === protocol),
     form: () => queries.form.toArray[0],
     test: () => queries.test.toArray[0],
     hidden: () => queries.hidden.toArray[0],
-    status: () => statusOf(queries.row.toArray[0], queries.form.toArray[0], queries.test.toArray[0]),
-    toast: () => toastOf(session.tanstack.get(SESSION), queries.row.toArray[0], queries.hidden.toArray[0]),
+    status: () => statusOf(queries.saved.toArray, queries.form.toArray[0], queries.test.toArray[0]),
+    toast: () => toastOf(session.tanstack.get(SESSION), queries.saved.toArray, queries.hidden.toArray[0]),
     count: (attributes: Record<string, string>) => runtime.runSync(Metric.value(Metric.withAttributes(writes, attributes))).count,
     dispatched: (flow: string, outcome: string) =>
       runtime.runSync(Metric.value(Metric.withAttributes(dispatches, { flow, door: "button", outcome }))).count,
   }
 }
 
-/** The scripted OpenAI-compatible provider, as a person types it: its `/v1` goes, as the protocol's path follows. */
-const SCRIPTED = ["openai-chat", `${OPENAI_ORIGIN}/v1/`, "gpt-test"] as const
+/** A save of one key, Fast named `model` on it (none when `""`), every other tier falling back to it. */
+const one = (protocol: string, baseUrl: string, model: string, key: string): SaveForm => ({
+  keys: [{ protocol, baseUrl, key }],
+  models: model === "" ? {} : { fast: { protocol, modelId: model } },
+})
 
-const OPENAI = ["openai-chat", "https://api.openai.com/v1/", "gpt-5"] as const
+/** The scripted OpenAI-compatible provider, as a person types it: its `/v1` goes, as the protocol's path follows. */
+const SCRIPTED = (key: string) => one("openai-chat", `${OPENAI_ORIGIN}/v1/`, "gpt-test", key)
+
+const OPENAI = (key: string) => one("openai-chat", "https://api.openai.com/v1/", "gpt-5", key)
+
+/** Both scripted providers' keys: Fast and Hard on the Anthropic-compatible one, Implement on the OpenAI-compatible. */
+const BOTH = (openai: string, anthropic: string): SaveForm => ({
+  keys: [
+    { protocol: "openai-chat", baseUrl: OPENAI_ORIGIN, key: openai },
+    { protocol: "anthropic-messages", baseUrl: ANTHROPIC_ORIGIN, key: anthropic },
+  ],
+  models: {
+    fast: { protocol: "anthropic-messages", modelId: "claude-test" },
+    implement: { protocol: "openai-chat", modelId: "gpt-test" },
+    hard: { protocol: "anthropic-messages", modelId: "claude-hard" },
+  },
+})
 
 describe("Save on the tab", () => {
   test("refuses on the tab what ChatApi would, with its code, and sends nothing", async () => {
     const faulty = faultyClient()
     const tab = await open({ replace: faulty.layer })
-    const refused = (protocol: string, baseUrl: string, modelId: string, key: string) => {
-      expect(tab.actions.save(protocol, baseUrl, modelId, key)).toBe(false)
+    const refused = (form: SaveForm) => {
+      expect(tab.actions.save(form)).toBe(false)
       return tab.form()?.failure
     }
-    expect(refused("gpt", "https://api.openai.com", "gpt-5", KEY)).toBe("invalid_protocol")
-    expect(refused("openai-chat", "http://api.openai.com", "gpt-5", KEY)).toBe("invalid_base_url")
-    expect(refused("openai-chat", "https://localhost", "gpt-5", KEY)).toBe("invalid_base_url")
-    expect(refused("openai-chat", "https://api.openai.com:8443", "gpt-5", KEY)).toBe("invalid_base_url")
-    expect(refused("anthropic-messages", "https://api.anthropic.com", "claude 5", KEY)).toBe("invalid_model")
-    expect(refused("anthropic-messages", "https://api.anthropic.com", "  ", KEY)).toBe("invalid_model")
-    expect(refused("anthropic-messages", "https://api.anthropic.com", "-claude", KEY)).toBe("invalid_model")
-    expect(refused("anthropic-messages", "https://api.anthropic.com", "c".repeat(82), KEY)).toBe("invalid_model")
-    expect(refused(...OPENAI, "")).toBe("too_short")
+    expect(refused(one("gpt", "https://api.openai.com", "gpt-5", KEY))).toBe("invalid_protocol")
+    expect(refused(one("openai-chat", "http://api.openai.com", "gpt-5", KEY))).toBe("invalid_base_url")
+    expect(refused(one("openai-chat", "https://localhost", "gpt-5", KEY))).toBe("invalid_base_url")
+    expect(refused(one("openai-chat", "https://api.openai.com:8443", "gpt-5", KEY))).toBe("invalid_base_url")
+    expect(refused(one("anthropic-messages", "https://api.anthropic.com", "claude 5", KEY))).toBe("invalid_model")
+    expect(refused(one("anthropic-messages", "https://api.anthropic.com", "  ", KEY))).toBe("invalid_model")
+    expect(refused(one("anthropic-messages", "https://api.anthropic.com", "-claude", KEY))).toBe("invalid_model")
+    expect(refused(one("anthropic-messages", "https://api.anthropic.com", "c".repeat(82), KEY))).toBe("invalid_model")
+    // An empty key keeps a saved one, and none is saved here.
+    expect(refused(OPENAI(""))).toBe("key_required")
     // Eight bytes, but four characters: all of it would show as its last four.
-    expect(refused(...OPENAI, "éééé")).toBe("too_short")
-    expect(refused(...OPENAI, "x".repeat(15))).toBe("too_short")
+    expect(refused(OPENAI("éééé"))).toBe("too_short")
+    expect(refused(OPENAI("x".repeat(15)))).toBe("too_short")
+    // No key, two keys of one protocol, or a tier this build doesn't know.
+    expect(refused({ keys: [], models: {} })).toBe("invalid")
+    expect(refused({ ...OPENAI(KEY), keys: [...OPENAI(KEY).keys, ...OPENAI(ROTATED).keys] })).toBe("invalid")
+    expect(refused({ ...OPENAI(KEY), models: { cheap: { protocol: "openai-chat", modelId: "gpt-5" } } })).toBe("invalid")
+    // A tier on a key it doesn't save, and a key at a host with no preset whose tiers name no model.
+    expect(refused({ ...OPENAI(KEY), models: { fast: { protocol: "anthropic-messages", modelId: "claude-5" } } })).toBe("no_key")
+    expect(refused(one("openai-chat", OPENAI_ORIGIN, "", KEY))).toBe("no_model")
     expect(tab.form()).toMatchObject({ op: "save", state: "failed", sent: null, saved: 0 })
     expect(faulty.state.puts).toBe(0)
-    expect(tab.count({ op: "put", outcome: "refused" })).toBe(11)
+    expect(tab.count({ op: "put", outcome: "refused" })).toBe(16)
   }, WITHIN)
 
   test("no whole answer is an unknown outcome; a save on its way can't be sent twice, nor a test or a remove", async () => {
     const faulty = faultyClient()
     const tab = await open({ replace: faulty.layer })
     faulty.state.next.push("network")
-    expect(tab.actions.save(...OPENAI, KEY)).toBe(true)
-    // What it sent: the base URL as ChatApi keeps it; never the key.
+    expect(tab.actions.save(OPENAI(KEY))).toBe(true)
+    // What it sent: the base URL as ChatApi keeps it and the tiers' models; never the key.
     await until(() => expect(tab.form()).toMatchObject({ state: "unknown", failure: null, saved: 0 }))
-    expect(tab.form()?.sent).toEqual({ protocol: "openai-chat", baseUrl: "https://api.openai.com", modelId: "gpt-5" })
+    expect(tab.form()?.sent).toEqual({
+      keys: [{ protocol: "openai-chat", baseUrl: "https://api.openai.com" }],
+      models: { fast: { protocol: "openai-chat", modelId: "gpt-5" } },
+    })
     expect(tab.count({ op: "put", outcome: "unknown" })).toBe(1)
 
     faulty.state.next.push("hold")
-    expect(tab.actions.save("anthropic-messages", "https://api.anthropic.com", " claude-5 ", KEY)).toBe(true)
-    expect(tab.form()).toMatchObject({ state: "sending", sent: { modelId: "claude-5" } })
-    expect(tab.actions.save(...OPENAI, KEY)).toBe(false)
+    expect(tab.actions.save(one("anthropic-messages", "https://api.anthropic.com", " claude-5 ", KEY))).toBe(true)
+    expect(tab.form()).toMatchObject({ state: "sending", sent: { models: { fast: { modelId: "claude-5" } } } })
+    expect(tab.actions.save(OPENAI(KEY))).toBe(false)
     expect(tab.actions.test()).toBe(false)
     expect(tab.actions.remove()).toBe(false)
     expect(faulty.state.puts).toBe(2)
@@ -217,7 +250,7 @@ describe("Save on the tab", () => {
     const faulty = faultyClient()
     const tab = await open({ replace: faulty.layer, confirmWithin: "2 seconds" })
     faulty.state.next.push("taken")
-    expect(tab.actions.save(...OPENAI, KEY)).toBe(true)
+    expect(tab.actions.save(OPENAI(KEY))).toBe(true)
     await until(() => expect(tab.form()).toMatchObject({ state: "confirming", saved: 1 }))
     const taken = Date.now()
     await until(() => expect(tab.form()).toMatchObject({ state: "late", saved: 1 }), 15_000)
@@ -226,7 +259,7 @@ describe("Save on the tab", () => {
     expect(tab.count({ op: "put", outcome: "late" })).toBe(1)
     // A later save's deadline is its own: the earlier one, passing meanwhile, changes nothing.
     faulty.state.next.push("taken")
-    expect(tab.actions.save(...OPENAI, KEY)).toBe(true)
+    expect(tab.actions.save(OPENAI(KEY))).toBe(true)
     await until(() => expect(tab.form()).toMatchObject({ state: "confirming", saved: 2 }))
   }, WITHIN)
 })
@@ -274,15 +307,17 @@ describe("the failure toast's Hide", () => {
 describe("a Member's own model, on ChatApi's real routes", () => {
   test("Save: Saving until the row shows it, the key clears, Save again replaces it; the key is kept nowhere", async () => {
     const tab = await open({ confirmWithin: "3 seconds" })
-    expect(tab.row()).toBeUndefined()
-    expect(tab.actions.save(...SCRIPTED, KEY)).toBe(true)
+    expect(tab.rows()).toEqual([])
+    expect(tab.actions.save(SCRIPTED(KEY))).toBe(true)
     expect(tab.status()).toEqual({ _tag: "Text", text: "Saving" })
     await until(() =>
       expect(tab.row()).toMatchObject({
         personId: "person-member",
         protocol: "openai-chat",
         baseUrl: OPENAI_ORIGIN,
-        modelId: "gpt-test",
+        fastModel: "gpt-test",
+        implementModel: null,
+        hardModel: null,
         keyLast4: keyTail(KEY),
         failureStatus: null,
         failedAt: null,
@@ -292,14 +327,16 @@ describe("a Member's own model, on ChatApi's real routes", () => {
     await until(() => expect(tab.form()).toMatchObject({ op: "save", state: "done", failure: null, saved: 1 }))
     expect(tab.status()).toEqual({ _tag: "None" })
 
-    // Another provider, another key: Save replaces the model.
+    // Another provider, another key: Save replaces the configuration, and the key it left out goes.
     const before = tab.row()!.updatedAt
-    expect(tab.actions.save("anthropic-messages", ANTHROPIC_ORIGIN, "claude-test", ROTATED)).toBe(true)
+    expect(tab.actions.save(one("anthropic-messages", ANTHROPIC_ORIGIN, "claude-test", ROTATED))).toBe(true)
     await until(() =>
-      expect(tab.row()).toMatchObject({ protocol: "anthropic-messages", baseUrl: ANTHROPIC_ORIGIN, keyLast4: keyTail(ROTATED) })
+      expect(tab.rows()).toMatchObject([
+        { protocol: "anthropic-messages", baseUrl: ANTHROPIC_ORIGIN, fastModel: "claude-test", keyLast4: keyTail(ROTATED) },
+      ])
     )
     await until(() => expect(tab.form()).toMatchObject({ state: "done", saved: 2 }))
-    expect(tab.row()!.updatedAt).not.toBe(before)
+    expect(tab.row("anthropic-messages")!.updatedAt).not.toBe(before)
     // The deadlines passing after both landed change nothing.
     await tab.runtime.runPromise(Effect.sleep("3500 millis"))
     expect(tab.form()).toMatchObject({ state: "done", saved: 2 })
@@ -324,24 +361,91 @@ describe("a Member's own model, on ChatApi's real routes", () => {
     }
   }, WITHIN)
 
+  test("two keys: each tier lands on its key and shows; an empty key keeps the saved one; a new base URL needs its key", async () => {
+    const tab = await open({ provider: { text: "ok" } })
+    expect(tab.actions.save(BOTH(KEY, ROTATED))).toBe(true)
+    await until(() => expect(tab.form()).toMatchObject({ op: "save", state: "done", saved: 1 }))
+    expect(tab.rows()).toMatchObject([
+      {
+        protocol: "anthropic-messages",
+        baseUrl: ANTHROPIC_ORIGIN,
+        fastModel: "claude-test",
+        implementModel: null,
+        hardModel: "claude-hard",
+        keyLast4: keyTail(ROTATED),
+      },
+      {
+        protocol: "openai-chat",
+        baseUrl: OPENAI_ORIGIN,
+        fastModel: null,
+        implementModel: "gpt-test",
+        hardModel: null,
+        keyLast4: keyTail(KEY),
+      },
+    ])
+    // What Settings shows: each tier's model on its key, and what it would use if left empty.
+    expect(MODEL_TIERS.map((tier) => tierView(tab.rows(), tier))).toEqual([
+      { model: "claude-test", placeholder: "gpt-test", protocol: "anthropic-messages" },
+      { model: "gpt-test", placeholder: "claude-hard", protocol: "openai-chat" },
+      { model: "claude-hard", placeholder: "gpt-test", protocol: "anthropic-messages" },
+    ])
+
+    // Both keys kept without typing them again, Fast moved to the OpenAI-compatible one, the rest falling back to it.
+    expect(tab.actions.save({
+      keys: [
+        { protocol: "openai-chat", baseUrl: `${OPENAI_ORIGIN}/v1`, key: "" },
+        { protocol: "anthropic-messages", baseUrl: ANTHROPIC_ORIGIN, key: "" },
+      ],
+      models: { fast: { protocol: "openai-chat", modelId: "gpt-test" } },
+    })).toBe(true)
+    await until(() => expect(tab.form()).toMatchObject({ state: "done", saved: 2 }))
+    expect(tab.rows()).toMatchObject([
+      { protocol: "anthropic-messages", fastModel: null, implementModel: null, hardModel: null, keyLast4: keyTail(ROTATED) },
+      { protocol: "openai-chat", fastModel: "gpt-test", implementModel: null, hardModel: null, keyLast4: keyTail(KEY) },
+    ])
+    // The kept key still answers, with the key typed the first time.
+    expect(tab.actions.test()).toBe(true)
+    await until(() => expect(tab.test()).toMatchObject({ state: "done", result: { ok: true } }))
+    expect(tab.api.providerCalls.map((call) => [new URL(call.url).origin, call.headers.get("authorization")]))
+      .toContainEqual([OPENAI_ORIGIN, `Bearer ${KEY}`])
+
+    // A saved key never goes to another base URL unless typed again.
+    expect(tab.actions.save({
+      keys: [{ protocol: "openai-chat", baseUrl: "https://other.example.com", key: "" }],
+      models: { fast: { protocol: "openai-chat", modelId: "gpt-test" } },
+    })).toBe(false)
+    expect(tab.form()).toMatchObject({ state: "failed", failure: "key_required" })
+    expect(leaks(tab.kept(), [KEY, ROTATED])).toEqual([])
+  }, WITHIN)
+
+  test("a key at a provider's own host saves with no model named, and each tier shows the preset it uses", async () => {
+    const tab = await open()
+    expect(tab.actions.save(one("openai-chat", "https://api.openai.com/v1", "", KEY))).toBe(true)
+    await until(() => expect(tab.form()).toMatchObject({ state: "done", saved: 1 }))
+    expect(tab.rows()).toMatchObject([
+      { protocol: "openai-chat", baseUrl: "https://api.openai.com", fastModel: null, implementModel: null, hardModel: null },
+    ])
+    expect(MODEL_TIERS.map((tier) => tierView(tab.rows(), tier).placeholder)).toEqual(["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"])
+  }, WITHIN)
+
   test("ChatApi's refusal says why; no whole answer shows landed once the row has it", async () => {
     const faulty = faultyClient()
     const tab = await open({ replace: faulty.layer })
     // A key ChatApi refuses, which the tab doesn't check: only ChatApi knows what a key may hold.
-    expect(tab.actions.save(...SCRIPTED, `${KEY}\n`)).toBe(true)
+    expect(tab.actions.save(SCRIPTED(`${KEY}\n`))).toBe(true)
     await until(() => expect(tab.form()).toMatchObject({ state: "failed", failure: "control_character", saved: 0 }))
     expect(tab.status()).toEqual({ _tag: "Text", text: "Keys can't contain line breaks or control characters" })
     expect(tab.count({ op: "put", outcome: "refused" })).toBe(1)
 
     // A gateway's answer with no code: the outcome is unknown.
     faulty.state.next.push("gateway")
-    expect(tab.actions.save(...SCRIPTED, KEY)).toBe(true)
+    expect(tab.actions.save(SCRIPTED(KEY))).toBe(true)
     await until(() => expect(tab.form()).toMatchObject({ state: "unknown", saved: 0 }))
     expect(tab.status()).toEqual({ _tag: "Text", text: "Couldn't confirm the save" })
 
     // ChatApi took it, and the answer was lost: once the row shows it, it landed.
     faulty.state.next.push("lost")
-    expect(tab.actions.save(...SCRIPTED, KEY)).toBe(true)
+    expect(tab.actions.save(SCRIPTED(KEY))).toBe(true)
     await until(() => expect(tab.form()).toMatchObject({ state: "done", saved: 1 }))
     expect(tab.row()).toMatchObject({ keyLast4: keyTail(KEY) })
     expect([tab.count({ op: "put", outcome: "unknown" }), tab.count({ op: "put", outcome: "started" })]).toEqual([2, 1])
@@ -350,7 +454,7 @@ describe("a Member's own model, on ChatApi's real routes", () => {
   test("Test through its flow: OK; the provider's refusal, recorded on the row, toasts until hidden; OK clears it", async () => {
     let answer: Reply = { text: "ok" }
     const tab = await open({ provider: () => answer })
-    expect(tab.actions.save(...SCRIPTED, KEY)).toBe(true)
+    expect(tab.actions.save(SCRIPTED(KEY))).toBe(true)
     await until(() => expect(tab.form()).toMatchObject({ state: "done" }))
 
     expect(tab.actions.test()).toBe(true)
@@ -386,10 +490,10 @@ describe("a Member's own model, on ChatApi's real routes", () => {
 
   test("a save made while a test runs drops the test's answer, which was about the model before", async () => {
     const tab = await open()
-    expect(tab.actions.save(...SCRIPTED, KEY)).toBe(true)
+    expect(tab.actions.save(SCRIPTED(KEY))).toBe(true)
     await until(() => expect(tab.form()).toMatchObject({ state: "done" }))
     expect(tab.actions.test()).toBe(true)
-    expect(tab.actions.save(...SCRIPTED, ROTATED)).toBe(true)
+    expect(tab.actions.save(SCRIPTED(ROTATED))).toBe(true)
     expect(tab.test()).toBeUndefined()
     await until(() => expect(tab.dispatched("model/test", "done")).toBe(1))
     await until(() => expect(tab.form()).toMatchObject({ state: "done", saved: 2 }))
@@ -398,11 +502,11 @@ describe("a Member's own model, on ChatApi's real routes", () => {
 
   test("Remove through its flow: the row goes; a test then says no model is saved", async () => {
     const tab = await open()
-    expect(tab.actions.save(...SCRIPTED, KEY)).toBe(true)
+    expect(tab.actions.save(SCRIPTED(KEY))).toBe(true)
     await until(() => expect(tab.form()).toMatchObject({ state: "done", saved: 1 }))
     expect(tab.actions.remove()).toBe(true)
     expect(tab.form()).toMatchObject({ op: "remove", state: "sending" })
-    await until(() => expect(tab.row()).toBeUndefined())
+    await until(() => expect(tab.rows()).toEqual([]))
     await until(() => expect(tab.form()).toMatchObject({ op: "remove", state: "done", saved: 2 }))
     expect([tab.count({ op: "delete", outcome: "landed" }), tab.dispatched("model/remove", "done")]).toEqual([1, 1])
     // The agent may still call it: ChatApi says there's nothing to test.
@@ -415,10 +519,10 @@ describe("a Member's own model, on ChatApi's real routes", () => {
 describe("who has a model of their own", () => {
   test("a Guest's save is refused, as the server decides, and nothing syncs", async () => {
     const tab = await open({ actor: guest })
-    expect(tab.actions.save(...SCRIPTED, KEY)).toBe(true)
+    expect(tab.actions.save(SCRIPTED(KEY))).toBe(true)
     await until(() => expect(tab.form()).toMatchObject({ state: "failed", failure: "forbidden" }))
     expect(tab.status()).toEqual({ _tag: "Text", text: "Only Members can use their own model" })
-    expect(tab.row()).toBeUndefined()
+    expect(tab.rows()).toEqual([])
   }, WITHIN)
 
   test("a tab signed out never asks for the row; its Test and Remove are refused for want of a session", async () => {

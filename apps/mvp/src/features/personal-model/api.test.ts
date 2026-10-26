@@ -39,16 +39,26 @@ const refusalOf = (exit: Exit.Exit<unknown, unknown>) =>
 const json = (body: unknown, status: number) =>
   Promise.resolve(new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }))
 
-const put = { protocol: "openai-chat", baseUrl: "https://api.openai.com", modelId: "gpt-5", key: Redacted.make(KEY) } as const
+const put = {
+  keys: [
+    { protocol: "openai-chat", baseUrl: "https://api.openai.com", key: Redacted.make(KEY) },
+    // The key saved at this base URL stays: the body carries no key for it.
+    { protocol: "anthropic-messages", baseUrl: "https://api.anthropic.com", key: undefined },
+  ],
+  models: {
+    fast: { protocol: "anthropic-messages", modelId: "claude-haiku-4-5" },
+    implement: { protocol: "openai-chat", modelId: "gpt-6.1-sol" },
+  },
+} as const
 
 const ok: TestResult = { ok: true, latencyMs: 412, sample: "ok" }
 const refusedByProvider: TestResult = { ok: false, latencyMs: 98, code: "authentication", status: 401, host: "api.openai.com" }
 
 describe("PersonalModelClient", () => {
-  test("Save puts the protocol, base URL, model and key once; Remove deletes with no body; Test posts", async () => {
-    const answers = [json({ baseUrl: "https://api.openai.com" }, 202), json({}, 202), json(ok, 200), json(refusedByProvider, 200)]
+  test("Save puts each key's protocol and base URL, a typed key once, and the tiers; Remove deletes; Test posts", async () => {
+    const answers = [json({}, 202), json({}, 202), json(ok, 200), json(refusedByProvider, 200)]
     const { run, seen } = client(() => answers.shift()!)
-    expect(await run((c) => c.put(put))).toEqual(Exit.succeed({ baseUrl: "https://api.openai.com" }))
+    expect(await run((c) => c.put(put))).toEqual(Exit.succeed(undefined))
     expect(await run((c) => c.remove)).toEqual(Exit.succeed(undefined))
     expect(await run((c) => c.test)).toEqual(Exit.succeed(ok))
     expect(await run((c) => c.test)).toEqual(Exit.succeed(refusedByProvider))
@@ -56,7 +66,16 @@ describe("PersonalModelClient", () => {
       {
         method: "PUT",
         url: "http://chat.test/api/me/model",
-        body: JSON.stringify({ protocol: "openai-chat", baseUrl: "https://api.openai.com", modelId: "gpt-5", key: KEY }),
+        body: JSON.stringify({
+          keys: [
+            { protocol: "openai-chat", baseUrl: "https://api.openai.com", key: KEY },
+            { protocol: "anthropic-messages", baseUrl: "https://api.anthropic.com" },
+          ],
+          models: {
+            fast: { protocol: "anthropic-messages", modelId: "claude-haiku-4-5" },
+            implement: { protocol: "openai-chat", modelId: "gpt-6.1-sol" },
+          },
+        }),
       },
       { method: "DELETE", url: "http://chat.test/api/me/model", body: "" },
       { method: "POST", url: "http://chat.test/api/me/model/test", body: "" },
@@ -82,7 +101,7 @@ describe("PersonalModelClient", () => {
     expect(refusalOf(await client(() => Promise.resolve(new Response("", { status: 503 }))).run((c) => c.remove)))
       .toEqual({ _tag: "ModelNotTaken", status: 503 })
     // A save is answered 202 once its flow started, and a test 200 once its call came back: no other success.
-    expect(refusalOf(await client(() => json({ baseUrl: "https://api.openai.com" }, 200)).run((c) => c.put(put))))
+    expect(refusalOf(await client(() => json({}, 200)).run((c) => c.put(put))))
       .toEqual({ _tag: "ModelNotTaken", status: 200 })
     expect(refusalOf(await client(() => json(ok, 202)).run((c) => c.test))).toEqual({ _tag: "ModelNotTaken", status: 202 })
   })
@@ -90,10 +109,6 @@ describe("PersonalModelClient", () => {
   test("no network, a body that isn't the route's, and no answer within the deadline are not taken", async () => {
     expect(refusalOf(await client(() => Promise.reject(new TypeError("offline"))).run((c) => c.put(put)))).toEqual({
       _tag: "ModelNotTaken",
-    })
-    expect(refusalOf(await client(() => json({ base: 1 }, 202)).run((c) => c.put(put)))).toEqual({
-      _tag: "ModelNotTaken",
-      status: 202,
     })
     expect(refusalOf(await client(() => json({ ok: "yes" }, 200)).run((c) => c.test))).toEqual({
       _tag: "ModelNotTaken",

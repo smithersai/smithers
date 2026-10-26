@@ -168,10 +168,10 @@ export interface Services<E, R> {
   readonly http: HttpClient.HttpClient
   readonly apiBaseUrl: string
   /**
-   * The `judge` role for the review of `ownerId`'s TODO: their own model when they saved one, as their TODO run's agent
-   * is; else the deployment's while hosted inference is on, else refused (decision 0099).
+   * The `review` role for the review of `ownerId`'s TODO: their own model's `hard` tier when they saved one, as their
+   * TODO run's agent is; else the deployment's while hosted inference is on, else refused (decisions 0099 and 0107).
    */
-  readonly judgeFor: (ownerId: string) => Seat
+  readonly reviewerFor: (ownerId: string) => Seat
 }
 
 /**
@@ -385,7 +385,7 @@ export const steps = <E, R>(
         return yield* Effect.gen(function* () {
           // The judge's findings come from a durable model step, so a step run again after a lost answer replays them.
           const compared = yield* GitHub.Commits.compare(repository.owner, repository.name, request.baseSha, request.sha)
-          const result = yield* ModelStep.run({ name: "checks/Review/model", ...services.judgeFor(request.ownerId), request: reviewRequest(compared.files) })
+          const result = yield* ModelStep.run({ name: "checks/Review/model", ...services.reviewerFor(request.ownerId), request: reviewRequest(compared.files) })
           if (result.error !== undefined) return "failed" as const
           const message = ModelEvent.settledMessage(result.events).message
           const findings = message.content.filter((part) => part.type === "text").map((part) => part.text).join("")

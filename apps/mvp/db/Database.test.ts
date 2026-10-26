@@ -1327,3 +1327,54 @@ describe("0064_bug_reports", () => {
       expect(await on(through("0064"))).toEqual([])
     }))
 })
+
+describe("0065_model_tiers", () => {
+  test("keeps a saved model as the person's fast model, keys a person's models by protocol, and holds tiers to their rules", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+      const taken = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        on(effect.pipe(Effect.as("taken"), Effect.orElseSucceed(() => "refused")))
+      await on(through("0064"))
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        INSERT INTO personal_models (person_id, protocol, base_url, model_id, ciphertext, nonce, key_version, key_last4)
+        VALUES ('p', 'openai-chat', 'https://api.example.com', 'm-1', 'c', 'n', 1, 'abcd')`))
+      expect((await on(through("0065"))).map(([id, name]) => `${id}_${name}`)).toEqual(["65_model_tiers"])
+      const rows = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        SELECT person_id AS "personId", protocol, fast_model AS "fastModel", implement_model AS "implementModel",
+          hard_model AS "hardModel" FROM personal_models`))
+      expect(rows).toEqual([
+        { personId: "p", protocol: "openai-chat", fastModel: "m-1", implementModel: null, hardModel: null },
+      ])
+      const save = (overrides: Record<string, unknown> = {}) => {
+        const row = { person: "p", protocol: "anthropic-messages", fast: null, implement: null, hard: "h", ...overrides }
+        return taken(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          INSERT INTO personal_models (person_id, protocol, base_url, fast_model, implement_model, hard_model, ciphertext,
+            nonce, key_version, key_last4)
+          VALUES (${row.person}, ${row.protocol}, 'https://api.example.com', ${row.fast}, ${row.implement}, ${row.hard},
+            'c', 'n', 1, 'abcd')`))
+      }
+      // A second protocol is a second key; the same protocol twice is not.
+      expect(await save()).toBe("taken")
+      expect(await save()).toBe("refused")
+      expect(await save({ person: "q", protocol: "openai-chat", fast: null, hard: null })).toBe("taken")
+      for (const refused of [{ fast: "" }, { implement: "m".repeat(82) }, { hard: "" }]) {
+        expect(await save({ person: crypto.randomUUID(), ...refused }), JSON.stringify(refused)).toBe("refused")
+      }
+      const ledger = (protocol: string | null, tier: string | null) =>
+        taken(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          INSERT INTO personal_model_usage (invocation_id, request_id, person_id, role, model_id, protocol, tier)
+          VALUES (${crypto.randomUUID()}, 'r', 'p', 'agent', 'm', ${protocol}, ${tier})`))
+      expect(await ledger(null, null)).toBe("taken")
+      expect(await ledger("anthropic-messages", "hard")).toBe("taken")
+      expect(await ledger("openai-responses", "fast")).toBe("refused")
+      expect(await ledger("openai-chat", "strong")).toBe("refused")
+      const role = (name: string) =>
+        taken(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          INSERT INTO model_roles (role, model, updated_by) VALUES (${name}, '{}'::jsonb, 'admin')`))
+      expect(await role("review")).toBe("taken")
+      expect(await role("plan")).toBe("taken")
+      expect(await role("strong")).toBe("refused")
+      expect(await on(through("0065"))).toEqual([])
+    }))
+})

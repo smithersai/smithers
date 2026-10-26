@@ -4,18 +4,18 @@ import { Context, type Duration, Effect, Layer, type Scope, Stream } from "effec
 import { AuthStore } from "../auth/store"
 import { PERSONAL_MODEL_SHAPE_ROUTE } from "./contract"
 import { record } from "./metrics"
-import { formQuery, hiddenQuery, rowQuery, testQuery } from "./queries"
+import { formQuery, hiddenQuery, rowsQuery, testQuery } from "./queries"
 import { FORM, Form, Hidden, PersonalModelRow, TestRow } from "./schema"
 import { signedInShapeSource } from "./source"
 import { awaiting, landed } from "./view"
 
-// A person's own model on this tab (decision 0096, docs/features/personal-model.md#the-settings-section): their row in
-// Postgres, synced by Electric once they are signed in and kept on the device; the form's last write and the last test,
+// A person's own models on this tab (decisions 0096 and 0107, docs/features/personal-model.md#the-settings-section):
+// their saved keys' rows in Postgres, synced by Electric once they are signed in and kept on the device; the form's last write and the last test,
 // in memory; and the failure whose toast this device hid, kept on the device. No collection here has a field for a
 // key, so none can hold one: the key lives in the form's password field until Save (actions.ts), and nowhere after.
 
 /**
- * Where the row syncs from: ChatApi's origin; and how long a write ChatApi took may take to show in the row before the
+ * Where the rows sync from: ChatApi's origin; and how long a write ChatApi took may take to show in the rows before the
  * section says it hasn't yet (`confirmWithin`, 60 s unless set).
  */
 export interface PersonalModelConfig {
@@ -27,19 +27,19 @@ type Query<F extends (...args: never) => unknown> = Effect.Success<ReturnType<F>
 
 /**
  * The state of a person's own model on one tab:
- * - `rows`: their row, synced while they are signed in, kept on the device; `row`, its live query;
+ * - `rows`: their saved keys' rows, synced while they are signed in, kept on the device; `saved`, their live query;
  * - `form` and `formState`: the form's last write; `tests` and `testState`: the last test;
  * - `hidden` and `hiddenState`: the failure whose toast this device hid;
  * - `scope`, where a write runs; `confirmWithin`, how long a taken write may take to show in the row.
  *
- * A follower watches the row beside the form: a write ChatApi took, or whose answer never came, is `done` once the row
- * shows it landed (`landed`): a save's row with what it sent, a remove's row gone.
+ * A follower watches the rows beside the form: a write ChatApi took, or whose answer never came, is `done` once the rows
+ * show it landed (`landed`): a save's rows with what it sent, a remove's rows gone.
  */
 export class PersonalModelStore extends Context.Service<
   PersonalModelStore,
   {
     readonly rows: ElectricCollection.ElectricCollection<PersonalModelRow>
-    readonly row: Query<typeof rowQuery>
+    readonly saved: Query<typeof rowsQuery>
     readonly form: Collection.Collection<Form, string>
     readonly formState: Query<typeof formQuery>
     readonly tests: Collection.Collection<TestRow, string>
@@ -61,15 +61,16 @@ const make = Effect.fnUntraced(function* (config: PersonalModelConfig) {
   const rows = yield* ElectricCollection.make<PersonalModelRow>({
     id: "personal-model",
     schema: PersonalModelRow,
-    getKey: (row) => row.personId,
-    // ChatApi's proxy of the person's own row, never another's, and never the sealed key's columns.
+    // One row per saved key: the person's, by protocol.
+    getKey: (row) => `${row.personId}:${row.protocol}`,
+    // ChatApi's proxy of the person's own rows, never another's, and never the sealed key's columns.
     shape: {
       url: `${config.origin}${PERSONAL_MODEL_SHAPE_ROUTE}`,
       columnMapper: ElectricCollection.snakeCamelMapper(),
       parser: { timestamptz: (value: string) => new Date(value).toISOString() },
     },
     syncMode: "eager",
-    persist: { schemaVersion: 1 },
+    persist: { schemaVersion: 2 },
   }).pipe(Effect.provideService(ShapeSource.ShapeSource, signedInShapeSource(source, auth)))
   const form = yield* Collection.local<Form, string>({ id: "personal-model-form", schema: Form, getKey: (row) => row.id })
   const tests = yield* Collection.local<TestRow, string>({
@@ -83,14 +84,14 @@ const make = Effect.fnUntraced(function* (config: PersonalModelConfig) {
     getKey: (row) => row.id,
     schemaVersion: 1,
   })
-  const row = yield* rowQuery(rows)
+  const saved = yield* rowsQuery(rows)
   const formState = yield* formQuery(form)
 
-  /** The form's write the row shows landed: `done`. */
+  /** The form's write the rows show landed: `done`. */
   const settle = (write: Form) =>
     Effect.gen(function* () {
       const op = write.op === "remove" ? "delete" : "put"
-      // A lost answer left the outcome unknown; the row now proves ChatApi took the write.
+      // A lost answer left the outcome unknown; the rows now prove ChatApi took the write.
       if (write.state === "unknown") yield* record(op, "started")
       yield* record(op, "landed")
       yield* form.update(FORM, (draft) => {
@@ -98,8 +99,8 @@ const make = Effect.fnUntraced(function* (config: PersonalModelConfig) {
         draft.state = "done"
       })
     }).pipe(Effect.ignore)
-  yield* Stream.zipLatest(row.rows, formState.rows).pipe(
-    Stream.runForEach(([[synced], [write]]) =>
+  yield* Stream.zipLatest(saved.rows, formState.rows).pipe(
+    Stream.runForEach(([synced, [write]]) =>
       write !== undefined && awaiting(write) && landed(write, synced) ? settle(write) : Effect.void
     ),
     Effect.forkIn(scope, { startImmediately: true }),
@@ -107,7 +108,7 @@ const make = Effect.fnUntraced(function* (config: PersonalModelConfig) {
 
   return PersonalModelStore.of({
     rows,
-    row,
+    saved,
     form,
     formState,
     tests,

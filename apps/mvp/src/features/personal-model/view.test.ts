@@ -1,17 +1,50 @@
 // What the Your model section and its toast show (docs/features/personal-model.md#the-settings-section), as the pure
-// rules their views read: who sees the section, the one status line, when a write landed, when the buttons wait, and
-// when the failure toast shows. Every word is checked here too.
+// rules their views read: who sees the section, the one status line, when a write landed, what each key and tier field
+// shows, what the form sends, when the buttons wait, and when the failure toast shows. Every word is checked here too.
 import { describe, expect, test } from "vitest"
+import { MODEL_TIERS } from "../model/contract"
 import { PROTOCOLS, REFUSALS } from "./contract"
-import { codeText, keyPlaceholder, LATE, OK, PROTOCOL_LABEL, REFUSAL_COPY, REMOVING, SAVING, UNKNOWN, YOUR_MODEL } from "./copy"
-import { type Form, type FormState, type PersonalModelRow, type TestRow, testResultMatchesContract } from "./schema"
-import { awaiting, busy, canSave, landed, onItsWay, refusalText, statusOf, testText, toastOf } from "./view"
+import {
+  BASE_URL_PLACEHOLDER,
+  codeText,
+  keyPlaceholder,
+  LATE,
+  OK,
+  PROTOCOL_LABEL,
+  REFUSAL_COPY,
+  REMOVING,
+  SAVING,
+  TIER_LABEL,
+  tierKeyLabel,
+  UNKNOWN,
+  YOUR_MODEL,
+} from "./copy"
+import { type Form, type FormState, type PersonalModelRow, rowIsSavedKey, type TestRow, testResultMatchesContract } from "./schema"
+import {
+  awaiting,
+  busy,
+  canSave,
+  FIELDS,
+  keyOf,
+  landed,
+  lastFailure,
+  latestUpdate,
+  onItsWay,
+  readForm,
+  refusalText,
+  statusOf,
+  testText,
+  tierView,
+  toastOf,
+} from "./view"
 
 const row = (fields: Partial<PersonalModelRow> = {}): PersonalModelRow => ({
   personId: "person-member",
   protocol: "openai-chat",
   baseUrl: "https://api.openai.com",
-  modelId: "gpt-5",
+  fastModel: "gpt-5",
+  implementModel: null,
+  hardModel: null,
   keyLast4: "x7Qz",
   failureStatus: null,
   failedAt: null,
@@ -28,7 +61,10 @@ const form = (fields: Partial<Form> = {}): Form => ({
   state: "sending",
   failure: null,
   before: null,
-  sent: { protocol: "openai-chat", baseUrl: "https://api.openai.com", modelId: "gpt-5" },
+  sent: {
+    keys: [{ protocol: "openai-chat", baseUrl: "https://api.openai.com" }],
+    models: { fast: { protocol: "openai-chat", modelId: "gpt-5" } },
+  },
   saved: 0,
   quiet: false,
   ...fields,
@@ -65,23 +101,55 @@ describe("a write's state", () => {
     expect(STATES.filter((state) => awaiting({ state }))).toEqual(["confirming", "late", "unknown"])
   })
 
-  test("a remove landed once there is no row", () => {
-    expect(landed(form({ op: "remove", sent: null }), undefined)).toBe(true)
-    expect(landed(form({ op: "remove", sent: null }), row())).toBe(false)
+  test("a remove landed once there are no rows", () => {
+    expect(landed(form({ op: "remove", sent: null }), [])).toBe(true)
+    expect(landed(form({ op: "remove", sent: null }), [row()])).toBe(false)
   })
 
-  test("a save landed once the row has what it sent and a new updatedAt; the server's clock is never compared", () => {
+  test("a save landed once the rows have what it sent and a new latest updatedAt; the server's clock is never compared", () => {
     const before = "2026-10-24T10:00:00.000Z"
     const later = { updatedAt: "2026-10-24T10:00:05.000Z" }
-    expect(landed(form({ before: null }), undefined)).toBe(false)
-    expect(landed(form({ before: null }), row())).toBe(true)
-    expect(landed(form({ before }), row())).toBe(false)
-    expect(landed(form({ before }), row(later))).toBe(true)
+    expect(landed(form({ before: null }), [])).toBe(false)
+    expect(landed(form({ before: null }), [row()])).toBe(true)
+    expect(landed(form({ before }), [row()])).toBe(false)
+    expect(landed(form({ before }), [row(later)])).toBe(true)
     // Another device's save, with other values, isn't this one.
-    expect(landed(form({ before }), row({ ...later, protocol: "anthropic-messages" }))).toBe(false)
-    expect(landed(form({ before }), row({ ...later, baseUrl: "https://api.anthropic.com" }))).toBe(false)
-    expect(landed(form({ before }), row({ ...later, modelId: "gpt-5-mini" }))).toBe(false)
-    expect(landed(form({ before, sent: null }), row(later))).toBe(false)
+    expect(landed(form({ before }), [row({ ...later, protocol: "anthropic-messages" })])).toBe(false)
+    expect(landed(form({ before }), [row({ ...later, baseUrl: "https://api.anthropic.com" })])).toBe(false)
+    expect(landed(form({ before }), [row({ ...later, fastModel: "gpt-5-mini" })])).toBe(false)
+    expect(landed(form({ before }), [row({ ...later, implementModel: "gpt-5" })])).toBe(false)
+    expect(landed(form({ before, sent: null }), [row(later)])).toBe(false)
+    // A key it left out is still there: not yet.
+    expect(landed(form({ before }), [row(later), row({ ...later, protocol: "anthropic-messages", fastModel: null })])).toBe(false)
+  })
+
+  test("a save of two keys landed once each has its row and its tiers, wherever they are", () => {
+    const before = "2026-10-24T10:00:00.000Z"
+    const sent: Form["sent"] = {
+      keys: [{ protocol: "openai-chat", baseUrl: "https://api.openai.com" }, {
+        protocol: "anthropic-messages",
+        baseUrl: "https://api.anthropic.com",
+      }],
+      models: {
+        fast: { protocol: "anthropic-messages", modelId: "claude-haiku-4-5" },
+        implement: { protocol: "openai-chat", modelId: "gpt-6.1-sol" },
+      },
+    }
+    const openai = row({ fastModel: null, implementModel: "gpt-6.1-sol", updatedAt: "2026-10-24T10:00:05.000Z" })
+    const anthropic = row({ protocol: "anthropic-messages", baseUrl: "https://api.anthropic.com", fastModel: "claude-haiku-4-5" })
+    expect(landed(form({ before, sent }), [anthropic, openai])).toBe(true)
+    // One key still missing, or Fast still on the other key.
+    expect(landed(form({ before, sent }), [openai])).toBe(false)
+    expect(landed(form({ before, sent }), [{ ...anthropic, fastModel: null }, { ...openai, fastModel: "claude-haiku-4-5" }]))
+      .toBe(false)
+    // Neither row moved past `before`.
+    expect(landed(form({ before: "2026-10-24T10:00:05.000Z", sent }), [anthropic, openai])).toBe(false)
+  })
+
+  test("the latest updatedAt across the rows, none with no row", () => {
+    expect(latestUpdate([])).toBeNull()
+    expect(latestUpdate([row({ updatedAt: "2026-10-24T10:00:05.000Z" }), row()])).toBe("2026-10-24T10:00:05.000Z")
+    expect(latestUpdate([row(), row({ updatedAt: "2026-10-24T10:00:05.000Z" })])).toBe("2026-10-24T10:00:05.000Z")
   })
 
   test("the buttons wait while a write is on its way or a test runs", () => {
@@ -92,70 +160,163 @@ describe("a write's state", () => {
   })
 })
 
+describe("what each key and tier field shows", () => {
+  const anthropic = (fields: Partial<PersonalModelRow> = {}) =>
+    row({ protocol: "anthropic-messages", baseUrl: "https://api.anthropic.com", fastModel: null, ...fields })
+
+  test("a key's fields show its saved row, by protocol", () => {
+    expect(keyOf([row(), anthropic()], "anthropic-messages")).toMatchObject({ baseUrl: "https://api.anthropic.com" })
+    expect(keyOf([row()], "anthropic-messages")).toBeUndefined()
+  })
+
+  test("with nothing saved, a tier shows nothing and starts on the first protocol", () => {
+    for (const tier of MODEL_TIERS) {
+      expect(tierView([], tier)).toEqual({ model: "", placeholder: undefined, protocol: "openai-chat" })
+    }
+  })
+
+  test("a named tier shows its model; a tier left empty shows, as its placeholder, the preset its key's host has", () => {
+    const rows = [row()]
+    expect(tierView(rows, "fast")).toEqual({ model: "gpt-5", placeholder: "gpt-6-luna", protocol: "openai-chat" })
+    expect(tierView(rows, "implement")).toEqual({ model: "", placeholder: "gpt-6.1-sol", protocol: "openai-chat" })
+    expect(tierView(rows, "hard")).toEqual({ model: "", placeholder: "gpt-6-astra", protocol: "openai-chat" })
+  })
+
+  test("with both providers' keys and nothing named, each tier's preset picks its key", () => {
+    const rows = [anthropic(), row({ fastModel: null })]
+    expect(tierView(rows, "fast")).toEqual({ model: "", placeholder: "claude-haiku-4-5", protocol: "anthropic-messages" })
+    expect(tierView(rows, "implement")).toEqual({ model: "", placeholder: "gpt-6.1-sol", protocol: "openai-chat" })
+    expect(tierView(rows, "hard")).toEqual({ model: "", placeholder: "claude-opus-5-5", protocol: "anthropic-messages" })
+  })
+
+  test("at a host with no preset, an empty tier shows the tier it falls back to; a key nothing names starts the select", () => {
+    const rows = [row({ baseUrl: "https://models.example.com", fastModel: "m-1" })]
+    expect(tierView(rows, "fast")).toEqual({ model: "m-1", placeholder: undefined, protocol: "openai-chat" })
+    expect(tierView(rows, "implement")).toEqual({ model: "", placeholder: "m-1", protocol: "openai-chat" })
+    expect(tierView([anthropic({ baseUrl: "https://gateway.example.com", hardModel: "h-1" })], "implement")).toEqual({
+      model: "",
+      placeholder: "h-1",
+      protocol: "anthropic-messages",
+    })
+    // Nothing would answer it, and its key is the only one saved.
+    expect(tierView([anthropic({ baseUrl: "https://gateway.example.com", implementModel: "i-1" })], "implement")).toEqual({
+      model: "i-1",
+      placeholder: undefined,
+      protocol: "anthropic-messages",
+    })
+    expect(tierView([anthropic({ baseUrl: "https://gateway.example.com" })], "fast")).toEqual({
+      model: "",
+      placeholder: undefined,
+      protocol: "anthropic-messages",
+    })
+  })
+})
+
+describe("what the form sends", () => {
+  test("each key whose base URL is filled in, with its key as typed; each tier whose model is, on its select's key", () => {
+    const fields: Record<string, string> = {
+      [FIELDS.baseUrl("openai-chat")]: "https://api.openai.com/v1",
+      [FIELDS.key("openai-chat")]: "sk-typed",
+      [FIELDS.baseUrl("anthropic-messages")]: "  ",
+      [FIELDS.key("anthropic-messages")]: "ignored",
+      [FIELDS.model("fast")]: " gpt-5 ",
+      [FIELDS.tierKey("fast")]: "openai-chat",
+      [FIELDS.model("implement")]: "",
+      [FIELDS.tierKey("implement")]: "openai-chat",
+      [FIELDS.model("hard")]: "claude-opus-5-5",
+      [FIELDS.tierKey("hard")]: "anthropic-messages",
+    }
+    expect(readForm((name) => fields[name] ?? "")).toEqual({
+      keys: [{ protocol: "openai-chat", baseUrl: "https://api.openai.com/v1", key: "sk-typed" }],
+      models: {
+        fast: { protocol: "openai-chat", modelId: " gpt-5 " },
+        hard: { protocol: "anthropic-messages", modelId: "claude-opus-5-5" },
+      },
+    })
+    expect(readForm(() => "")).toEqual({ keys: [], models: {} })
+  })
+
+  test("the fields' names", () => {
+    expect([FIELDS.baseUrl("openai-chat"), FIELDS.key("anthropic-messages"), FIELDS.model("fast"), FIELDS.tierKey("hard")])
+      .toEqual(["baseUrl:openai-chat", "key:anthropic-messages", "fastModel", "hardKey"])
+  })
+})
+
 describe("the status line", () => {
   test("says nothing with nothing to say", () => {
-    expect(statusOf(undefined, undefined, undefined)).toEqual({ _tag: "None" })
-    expect(statusOf(row(), form({ state: "done" }), undefined)).toEqual({ _tag: "None" })
+    expect(statusOf([], undefined, undefined)).toEqual({ _tag: "None" })
+    expect(statusOf([row()], form({ state: "done" }), undefined)).toEqual({ _tag: "None" })
   })
 
   test("Saving or Removing while a write is on its way, over everything else", () => {
     for (const state of ["sending", "confirming"] as const) {
-      expect(statusOf(failed(), form({ state }), tested())).toEqual({ _tag: "Text", text: SAVING })
+      expect(statusOf([failed()], form({ state }), tested())).toEqual({ _tag: "Text", text: SAVING })
     }
     // A remove that waits, such as one pressed offline, says so while its flow tries again.
-    expect(statusOf(row(), form({ op: "remove", state: "confirming" }), undefined)).toEqual({ _tag: "Text", text: REMOVING })
-    expect(statusOf(row(), form({ op: "remove", state: "sending" }), undefined)).toEqual({ _tag: "Text", text: REMOVING })
+    expect(statusOf([row()], form({ op: "remove", state: "confirming" }), undefined)).toEqual({ _tag: "Text", text: REMOVING })
+    expect(statusOf([row()], form({ op: "remove", state: "sending" }), undefined)).toEqual({ _tag: "Text", text: REMOVING })
   })
 
   test("a write's refusal, unknown outcome or lateness", () => {
-    expect(statusOf(failed(), form({ state: "failed", failure: "invalid_base_url" }), undefined)).toEqual({
+    expect(statusOf([failed()], form({ state: "failed", failure: "invalid_base_url" }), undefined)).toEqual({
       _tag: "Text",
       text: "Base URLs are https:// on a public host, with no port",
     })
-    expect(statusOf(row(), form({ op: "remove", state: "failed", failure: "unavailable" }), undefined)).toEqual({
+    expect(statusOf([row()], form({ op: "remove", state: "failed", failure: "unavailable" }), undefined)).toEqual({
       _tag: "Text",
       text: "Unavailable; try again",
     })
-    expect(statusOf(undefined, form({ state: "unknown" }), undefined)).toEqual({ _tag: "Text", text: UNKNOWN })
-    expect(statusOf(row(), form({ op: "remove", state: "late" }), undefined)).toEqual({ _tag: "Text", text: LATE })
+    expect(statusOf([], form({ state: "unknown" }), undefined)).toEqual({ _tag: "Text", text: UNKNOWN })
+    expect(statusOf([row()], form({ op: "remove", state: "late" }), undefined)).toEqual({ _tag: "Text", text: LATE })
     // A test since took the line.
-    expect(statusOf(row(), form({ state: "failed", failure: "invalid", quiet: true }), tested())).toEqual({
+    expect(statusOf([row()], form({ state: "failed", failure: "invalid", quiet: true }), tested())).toEqual({
       _tag: "Text",
       text: OK,
     })
   })
 
   test("the last test: OK, the host and status, the host and why, or why there was none", () => {
-    expect(statusOf(row(), undefined, tested())).toEqual({ _tag: "Text", text: OK })
+    expect(statusOf([row()], undefined, tested())).toEqual({ _tag: "Text", text: OK })
     const result = { ok: false as const, latencyMs: 90, code: "authentication", status: 401, host: "api.openai.com" }
-    expect(statusOf(row(), undefined, tested({ result }))).toEqual({ _tag: "Text", text: "api.openai.com · HTTP 401" })
-    expect(statusOf(row(), undefined, tested({ result: { ...result, code: "transport", status: null } }))).toEqual({
+    expect(statusOf([row()], undefined, tested({ result }))).toEqual({ _tag: "Text", text: "api.openai.com · HTTP 401" })
+    expect(statusOf([row()], undefined, tested({ result: { ...result, code: "transport", status: null } }))).toEqual({
       _tag: "Text",
       text: "api.openai.com · unreachable",
     })
-    expect(statusOf(row(), undefined, tested({ state: "failed", result: null, failure: "none" }))).toEqual({
+    expect(statusOf([row()], undefined, tested({ state: "failed", result: null, failure: "none" }))).toEqual({
       _tag: "Text",
       text: "No model saved",
     })
     // While it runs, nothing yet.
-    expect(statusOf(row(), undefined, tested({ state: "testing", result: null }))).toEqual({ _tag: "None" })
+    expect(statusOf([row()], undefined, tested({ state: "testing", result: null }))).toEqual({ _tag: "None" })
   })
 
   test("the row's failure, with when, unless the last test came after it", () => {
     const at = Date.parse("2026-10-24T11:00:00.000Z")
     const failure = { _tag: "Failure", text: "api.openai.com refused · HTTP 401", at }
-    expect(statusOf(failed(), undefined, undefined)).toEqual(failure)
-    expect(statusOf(failed({ failureStatus: 429, baseUrl: "https://openrouter.ai/api" }), undefined, undefined)).toEqual({
+    expect(statusOf([failed()], undefined, undefined)).toEqual(failure)
+    expect(statusOf([failed({ failureStatus: 429, baseUrl: "https://openrouter.ai/api" })], undefined, undefined)).toEqual({
       ...failure,
       text: "openrouter.ai refused · HTTP 429",
     })
     // The test saw this failure: its result is newer.
-    expect(statusOf(failed(), undefined, tested({ failedAt: "2026-10-24T11:00:00.000Z" }))).toEqual({ _tag: "Text", text: OK })
+    expect(statusOf([failed()], undefined, tested({ failedAt: "2026-10-24T11:00:00.000Z" }))).toEqual({ _tag: "Text", text: OK })
     // A real call failed after the test: the failure is newer.
-    expect(statusOf(failed(), undefined, tested({ failedAt: null }))).toEqual(failure)
-    expect(statusOf(failed(), undefined, tested({ failedAt: "2026-10-24T10:30:00.000Z" }))).toEqual(failure)
+    expect(statusOf([failed()], undefined, tested({ failedAt: null }))).toEqual(failure)
+    expect(statusOf([failed()], undefined, tested({ failedAt: "2026-10-24T10:30:00.000Z" }))).toEqual(failure)
+    // Of two keys' refusals, the latest: its host and status.
+    const anthropic = failed({
+      protocol: "anthropic-messages",
+      baseUrl: "https://api.anthropic.com",
+      failureStatus: 402,
+      failedAt: "2026-10-24T12:00:00.000Z",
+    })
+    const latest = { _tag: "Failure", text: "api.anthropic.com refused · HTTP 402", at: Date.parse("2026-10-24T12:00:00.000Z") }
+    expect(statusOf([failed(), anthropic], undefined, undefined)).toEqual(latest)
+    expect(statusOf([anthropic, failed()], undefined, undefined)).toEqual(latest)
+    expect(statusOf([anthropic, failed()], undefined, tested({ failedAt: "2026-10-24T11:00:00.000Z" }))).toEqual(latest)
     // A failed write's refusal is newer than either.
-    expect(statusOf(failed(), form({ state: "failed", failure: "off" }), undefined)).toEqual({
+    expect(statusOf([failed()], form({ state: "failed", failure: "off" }), undefined)).toEqual({
       _tag: "Text",
       text: "Your own model is off on this deployment",
     })
@@ -166,23 +327,33 @@ describe("the failure toast", () => {
   const session = { status: "signed_in", role: "member" as const }
 
   test("shows while the signed-in person's row records a failure this device hasn't hidden", () => {
-    expect(toastOf(session, failed(), undefined)).toEqual({
+    expect(toastOf(session, [failed()], undefined)).toEqual({
       detail: "api.openai.com · HTTP 401",
       failedAt: "2026-10-24T11:00:00.000Z",
     })
     // A later failure than the one hidden shows again.
-    expect(toastOf(session, failed(), { id: "failure", failedAt: "2026-10-24T09:00:00.000Z" })).toMatchObject({
+    expect(toastOf(session, [failed()], { id: "failure", failedAt: "2026-10-24T09:00:00.000Z" })).toMatchObject({
       failedAt: "2026-10-24T11:00:00.000Z",
     })
   })
 
+  test("of two keys' refusals, the latest; hiding it hides the earlier one too", () => {
+    const anthropic = failed({ protocol: "anthropic-messages", baseUrl: "https://api.anthropic.com", failedAt: "2026-10-24T12:00:00.000Z" })
+    expect(toastOf(session, [failed(), anthropic], undefined)).toEqual({
+      detail: "api.anthropic.com · HTTP 401",
+      failedAt: "2026-10-24T12:00:00.000Z",
+    })
+    expect(toastOf(session, [failed(), anthropic], { id: "failure", failedAt: "2026-10-24T12:00:00.000Z" })).toBeUndefined()
+    expect(lastFailure([row(), failed({ failedAt: null })])).toBeUndefined()
+  })
+
   test("hides once hidden, with no failure, with no row, and for anyone signed out", () => {
-    expect(toastOf(session, failed(), { id: "failure", failedAt: "2026-10-24T11:00:00.000Z" })).toBeUndefined()
-    expect(toastOf(session, row(), undefined)).toBeUndefined()
-    expect(toastOf(session, row({ failureStatus: 401 }), undefined)).toBeUndefined()
-    expect(toastOf(session, undefined, undefined)).toBeUndefined()
-    expect(toastOf({ status: "signed_out", role: null }, failed(), undefined)).toBeUndefined()
-    expect(toastOf(undefined, failed(), undefined)).toBeUndefined()
+    expect(toastOf(session, [failed()], { id: "failure", failedAt: "2026-10-24T11:00:00.000Z" })).toBeUndefined()
+    expect(toastOf(session, [row()], undefined)).toBeUndefined()
+    expect(toastOf(session, [row({ failureStatus: 401 })], undefined)).toBeUndefined()
+    expect(toastOf(session, [], undefined)).toBeUndefined()
+    expect(toastOf({ status: "signed_out", role: null }, [failed()], undefined)).toBeUndefined()
+    expect(toastOf(undefined, [failed()], undefined)).toBeUndefined()
   })
 })
 
@@ -210,10 +381,31 @@ describe("the words", () => {
     expect(refusalText("invalid_model")).toBe("Model ids are letters, digits and . _ / : -, at most 81")
   })
 
-  test("the heading, the protocols and the saved key's placeholder", () => {
+  test("the heading, the protocols, their base URLs' examples, the tiers and the saved key's placeholder", () => {
     expect(YOUR_MODEL).toBe("Your model")
     expect(PROTOCOLS.map((protocol) => PROTOCOL_LABEL[protocol])).toEqual(["OpenAI-compatible", "Anthropic-compatible"])
+    expect(PROTOCOLS.map((protocol) => BASE_URL_PLACEHOLDER[protocol])).toEqual([
+      "https://api.openai.com",
+      "https://api.anthropic.com",
+    ])
+    expect(MODEL_TIERS.map((tier) => [TIER_LABEL[tier], tierKeyLabel(tier)])).toEqual([
+      ["Fast", "Fast key"],
+      ["Implement", "Implement key"],
+      ["Hard", "Hard key"],
+    ])
     expect(keyPlaceholder("x7Qz")).toBe("····x7Qz")
+  })
+
+  test("the new refusals: a key to type again, a key to save, a model to name", () => {
+    expect([refusalText("key_required"), refusalText("no_key"), refusalText("no_model")]).toEqual([
+      "Enter the key for this base URL",
+      "Save a key for that model",
+      "Name a Fast model",
+    ])
+  })
+
+  test("a synced row is a saved key as the tiers read it", () => {
+    expect(rowIsSavedKey).toBe(true)
   })
 
   test("the test result's schema is the contract's type", () => {

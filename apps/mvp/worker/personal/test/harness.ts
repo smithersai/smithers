@@ -39,8 +39,11 @@ export const roleless: Actor.Actor = { subject: { kind: "person", id: "person-ro
 /** An agent acting for the Member. */
 export const agent: Actor.Actor = { ...member, act: { kind: "agent", id: "agent-run-1" } }
 
-/** A valid save of the scripted OpenAI-compatible provider. */
-export const SAVE = { protocol: "openai-chat", baseUrl: `${OPENAI_ORIGIN}/v1`, modelId: "gpt-test", key: VALUE }
+/** A valid save of the scripted OpenAI-compatible provider: its key, and `gpt-test` as the fast model. */
+export const SAVE = {
+  keys: [{ protocol: "openai-chat", baseUrl: `${OPENAI_ORIGIN}/v1`, key: VALUE }],
+  models: { fast: { protocol: "openai-chat", modelId: "gpt-test" } },
+}
 
 /** Every form an echo of `values` may take that `text` contains: none when nothing leaked. */
 export const leaks = (text: string, values: ReadonlyArray<string> = [VALUE]) =>
@@ -227,17 +230,19 @@ export const rows = (runtime: Runtime) =>
         readonly personId: string
         readonly protocol: string
         readonly baseUrl: string
-        readonly modelId: string
+        readonly fastModel: string | null
+        readonly implementModel: string | null
+        readonly hardModel: string | null
         readonly ciphertext: string
         readonly keyVersion: number
         readonly keyLast4: string
         readonly failureStatus: number | null
         readonly failedAt: Date | null
       }>`
-        SELECT person_id AS "personId", protocol, base_url AS "baseUrl", model_id AS "modelId", ciphertext,
-          key_version AS "keyVersion", key_last4 AS "keyLast4", failure_status AS "failureStatus",
-          failed_at AS "failedAt"
-        FROM personal_models ORDER BY person_id`),
+        SELECT person_id AS "personId", protocol, base_url AS "baseUrl", fast_model AS "fastModel",
+          implement_model AS "implementModel", hard_model AS "hardModel", ciphertext, key_version AS "keyVersion",
+          key_last4 AS "keyLast4", failure_status AS "failureStatus", failed_at AS "failedAt"
+        FROM personal_models ORDER BY person_id, protocol`),
   )
 
 /** The audit's rows, oldest first. */
@@ -256,6 +261,8 @@ export const usage = (runtime: Runtime) =>
         readonly personId: string
         readonly role: string
         readonly modelId: string
+        readonly protocol: string | null
+        readonly tier: string | null
         readonly inputTokens: number
         readonly outputTokens: number
         readonly outcome: string | null
@@ -263,36 +270,60 @@ export const usage = (runtime: Runtime) =>
         readonly httpStatus: number | null
         readonly settled: boolean
       }>`
-        SELECT person_id AS "personId", role, model_id AS "modelId", input_tokens AS "inputTokens",
+        SELECT person_id AS "personId", role, model_id AS "modelId", protocol, tier, input_tokens AS "inputTokens",
           output_tokens AS "outputTokens", outcome, error_code AS "errorCode", http_status AS "httpStatus",
           settled_at IS NOT NULL AS settled
         FROM personal_model_usage ORDER BY created_at, invocation_id`),
   )
 
+/** One key a seeded configuration keeps: its protocol, base URL and key text (`VALUE` unless set). */
+export interface SeedKey {
+  readonly protocol: Protocol
+  readonly baseUrl: string
+  readonly key?: string
+}
+
 /**
- * Saves `person`'s model straight through the store, its key sealed under `key` (`KEY` unless set), as `model/Put`
- * would: for a test of what reads a saved model.
+ * Saves `person`'s keys and tiers' models straight through the store, each key sealed under `key` (`KEY` unless set),
+ * as `model/Put` would: for a test of what reads saved models.
+ */
+export const seedKeys = (
+  runtime: Runtime,
+  person: string,
+  saved: { readonly keys: ReadonlyArray<SeedKey>; readonly models: Store.Put["models"] },
+  key: Redacted.Redacted<string> = KEY,
+) =>
+  runtime.runPromise(
+    Effect.gen(function* () {
+      const keys = Option.getOrThrow(yield* Effect.service(SecretKeys).pipe(Effect.provide(SecretKeys.layer(key))))
+      const writes = yield* Effect.forEach(saved.keys, (each) => {
+        const value = each.key ?? VALUE
+        return Effect.map(
+          keys.cipher.seal(Redacted.make(value), sealContext(person, keys.version)),
+          (sealed) => ({
+            protocol: each.protocol,
+            baseUrl: each.baseUrl,
+            sealed: { ...sealed, keyVersion: keys.version, keyLast4: keyTail(value) },
+          }),
+        )
+      })
+      return yield* Store.put({ personId: person, keys: writes, models: saved.models, invocationKey: crypto.randomUUID() })
+    }),
+  )
+
+/**
+ * Saves `person`'s one key with its fast model (`gpt-test` at the scripted OpenAI-compatible provider unless set), as
+ * `model/Put` would.
  */
 export const seed = (
   runtime: Runtime,
   person: string,
   model: { readonly protocol?: Protocol; readonly baseUrl?: string; readonly modelId?: string; readonly key?: string } = {},
   key: Redacted.Redacted<string> = KEY,
-) =>
-  runtime.runPromise(
-    Effect.gen(function* () {
-      const keys = Option.getOrThrow(yield* Effect.service(SecretKeys).pipe(Effect.provide(SecretKeys.layer(key))))
-      const value = model.key ?? VALUE
-      const sealed = yield* keys.cipher.seal(Redacted.make(value), sealContext(person, keys.version))
-      return yield* Store.put({
-        personId: person,
-        protocol: model.protocol ?? "openai-chat",
-        baseUrl: model.baseUrl ?? OPENAI_ORIGIN,
-        modelId: model.modelId ?? "gpt-test",
-        ...sealed,
-        keyVersion: keys.version,
-        keyLast4: keyTail(value),
-        invocationKey: crypto.randomUUID(),
-      })
-    }),
-  )
+) => {
+  const protocol = model.protocol ?? "openai-chat"
+  return seedKeys(runtime, person, {
+    keys: [{ protocol, baseUrl: model.baseUrl ?? OPENAI_ORIGIN, ...(model.key === undefined ? {} : { key: model.key }) }],
+    models: { fast: { protocol, modelId: model.modelId ?? "gpt-test" } },
+  }, key)
+}

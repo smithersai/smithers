@@ -18,9 +18,9 @@ export function ComposerGate({ children }: { readonly children: ReactNode }) {
   const navigate = useNavigate()
   const { data: session } = useLiveQuery(queries.session)
   const { data: confirmed } = useLiveQuery(queries.confirmed)
-  const { data: row, isReady } = useLiveQuery(model.queries.row)
+  const { data: rows, isReady } = useLiveQuery(model.queries.saved)
   if (session === undefined) return null
-  const own: OwnModel = row !== undefined ? "saved" : isReady ? "none" : "loading"
+  const own: OwnModel = rows.length > 0 ? "saved" : isReady ? "none" : "loading"
   switch (composerAccess(session, confirmed, own)) {
     case "ask":
       return children

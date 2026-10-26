@@ -12,18 +12,24 @@ import { FlowStarter } from "./Flows.ts"
 import * as HostedModel from "./HostedModel.ts"
 import * as ModelRoles from "./ModelRoles.ts"
 import * as ModelSpend from "./ModelSpend.ts"
+import * as ModelTiers from "./ModelTiers.ts"
 import * as ModelUsage from "./ModelUsage.ts"
 import { PersonalModels, PersonalModelUnusable } from "./personal/Models.ts"
 import * as PersonalUsage from "./personal/Usage.ts"
 
 // The metered model endpoint (docs/features/model-endpoint.md): every model call the browser's agent makes is one
 // `POST /api/model/<role>`, served by `ModelProxy.serve` from @smthrs/model. Before the model runs it refuses a
-// signed-out request and one from a person who may not ask (a Guest, or no role) and bounds the request. A person who
-// saved a model of their own (docs/features/personal-model.md) is answered by it, for every role, with their key,
-// outside the budget, and their call is kept in their own ledger. Anyone else is answered by the role's deployment
+// signed-out request and one from a person who may not ask (a Guest, or no role) and bounds the request. Each role
+// maps to a tier and an effort (`ModelTiers`, decision 0107). A person who saved a key of their own
+// (docs/features/personal-model.md) is answered by the model the role's tier resolves to among their keys, with that
+// key, outside the budget, and their call is kept in their own ledger. Anyone else is answered by the role's deployment
 // model only while hosted inference is on (`HostedModel`, decision 0099): it reserves the call's worst case against
 // the deployment's daily budget and settles the reservation to what the call spent. Off, the call is refused, never
 // answered on the deployment's model. The key never leaves the Worker, and refusals carry codes, never provider text.
+
+/** `params` with `effort` set on them; unchanged when there is none. */
+const withEffort = (params: ModelRequest.GenerationParams, effort: ModelRequest.ReasoningEffort | undefined) =>
+  effort === undefined ? params : ModelRequest.GenerationParams.make({ ...params, reasoningEffort: effort })
 
 /** Terminal model quota and credit refusals, with no provider text or credentials. */
 export const quotaRefusals = Metric.counter("smithers_model_quota_refusals", { incremental: true })
@@ -119,9 +125,22 @@ const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, hosted
     // Whether the deployment's model answers when no Admin set it; a value that doesn't parse is off.
     const hostedDefault = yield* HostedModel.hostedModelDefault(hostedFallback).pipe(Effect.orElseSucceed(() => false))
     // Alchemy binds settings read while the program builds; keep a bad value as a per-call refusal.
-    const summary = yield* ModelRoles.summaryModel.pipe(
-      Effect.mapError(() => new HostModelUnusable({ reason: "config" })),
-      Effect.result,
+    const defaults: ModelRoles.Defaults = {
+      summary: yield* ModelRoles.summaryModel.pipe(
+        Effect.mapError(() => new HostModelUnusable({ reason: "config" })),
+        Effect.result,
+      ),
+      tiers: yield* ModelRoles.tierModels.pipe(
+        Effect.mapError(() => new HostModelUnusable({ reason: "config" })),
+        Effect.result,
+      ),
+    }
+    // Which tier answers each role; a value that doesn't parse leaves the defaults, logged once.
+    const routes = yield* ModelTiers.roleTiers.pipe(
+      Effect.tapError((error) =>
+        Effect.logError("model.endpoint").pipe(Effect.annotateLogs({ errorCode: `role_tiers:${codeOf(error)}` }))
+      ),
+      Effect.orElseSucceed(() => ModelTiers.ROLE_TIERS),
     )
     const fallback = yield* HostModel
 
@@ -165,7 +184,8 @@ const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, hosted
           maxTokens,
           ...(thinkingBudget === undefined ? {} : { thinkingBudget }),
         })
-        const opened = personId === undefined ? Option.none() : yield* (yield* PersonalModels).open(personId).pipe(
+        const route = routes[role]
+        const opened = personId === undefined ? Option.none() : yield* (yield* PersonalModels).open(personId, route.tier).pipe(
           Effect.tapError((error) =>
             logFailure(role, error instanceof PersonalModelUnusable ? `own_unusable:${error.reason}` : error.errorCode)
           ),
@@ -179,6 +199,8 @@ const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, hosted
             role,
             modelId: opened.value.modelId,
             host: opened.value.host,
+            protocol: opened.value.protocol,
+            tier: opened.value.tier,
           }
           yield* PersonalUsage.begin(own).pipe(
             Effect.provide(database),
@@ -194,7 +216,11 @@ const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, hosted
             own,
             prepared: {
               model: opened.value.model,
-              request: ModelRequest.ModelRequest.make({ ...request, modelId: opened.value.modelId, params }),
+              request: ModelRequest.ModelRequest.make({
+                ...request,
+                modelId: opened.value.modelId,
+                params: withEffort(params, ModelTiers.effortOf(route, request)),
+              }),
             },
           } satisfies Admitted
         }
@@ -208,7 +234,7 @@ const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, hosted
           yield* logFailure(role, "hosted_off")
           return yield* hostedOff
         }
-        const resolved = yield* ModelRoles.resolve(role, summary).pipe(
+        const resolved = yield* ModelRoles.resolve(role, route.tier, defaults).pipe(
           Effect.provide(database),
           Effect.provideService(HostModel, fallback),
           Effect.tapError((error) =>
@@ -240,10 +266,8 @@ const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, hosted
             request: ModelRequest.ModelRequest.make({
               ...request,
               modelId: resolved.modelId,
-              // The role's effort, when its record sets one: a summary or a judge needn't reason.
-              params: resolved.reasoningEffort === undefined
-                ? params
-                : ModelRequest.GenerationParams.make({ ...params, reasoningEffort: resolved.reasoningEffort }),
+              // The record's effort when it sets one, else the role's: a summary or a judge needn't reason.
+              params: withEffort(params, ModelTiers.effortOf(route, request, resolved.reasoningEffort)),
             }),
           },
         } satisfies Admitted

@@ -2,7 +2,7 @@ import { AgentAction } from "@smthrs/agent"
 import { Action, Flow, RetryPolicy } from "@smthrs/flow"
 import { Node, Placement, type Planned } from "@smthrs/plan"
 import { Schema } from "effect"
-import { FLOW_MODEL_ROLE, MAX_CALLS, MAX_FLOW_FRAMES, MAX_QUESTIONS } from "./contract"
+import { DRAFT_MODEL_ROLE, FLOW_MODEL_ROLE, MAX_CALLS, MAX_FLOW_FRAMES, MAX_QUESTIONS } from "./contract"
 import { PROMPT_CATALOG } from "./callable"
 import { AUTHOR_SYSTEM, authorPrompt, FLOW_SYSTEM } from "./instructions"
 import {
@@ -137,7 +137,7 @@ export const DraftFlow = AgentAction.make("flow/new/draft", {
     answers: Schema.Array(Answered),
   },
   output: Drafted,
-  seat: FLOW_MODEL_ROLE,
+  seat: DRAFT_MODEL_ROLE,
   system: AUTHOR_SYSTEM,
   profile: "conversation",
   prompt: (task) => authorPrompt({ ...task, catalog: PROMPT_CATALOG }),

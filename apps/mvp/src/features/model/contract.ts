@@ -10,12 +10,32 @@ export const MODEL_ROUTE = "/api/model"
 /**
  * What a model call is for. Each role is answered by the model an admin set for it (`admin/SetModel`), or by the
  * deployment's default model when no admin has. `coding` is the `todo` run's agent (decision 0033): until an admin
- * sets it, it answers with the `agent` role's model.
+ * sets it, it answers with the `agent` role's model. `review` is a pull request's review and `plan` drafting a flow
+ * (decision 0107): until an admin sets them, they answer with the `judge` and `agent` roles' models.
  */
-export const MODEL_ROLES = ["agent", "coding", "renderer", "judge", "summary"] as const
+export const MODEL_ROLES = ["agent", "coding", "renderer", "judge", "summary", "review", "plan"] as const
 
 /** One of {@link MODEL_ROLES}. */
 export type ModelRole = (typeof MODEL_ROLES)[number]
+
+/**
+ * How strong a model a call needs (decision 0107): `fast` for chat, Jev's judgments, views and summaries; `implement`
+ * for the `todo` run's coding agent; `hard` for plans and reviews. Each role maps to one (worker/ModelTiers.ts).
+ */
+export const MODEL_TIERS = ["fast", "implement", "hard"] as const
+
+/** One of {@link MODEL_TIERS}. */
+export type ModelTier = (typeof MODEL_TIERS)[number]
+
+/**
+ * The tiers that answer a tier when nothing of its own does, in order, itself first: a strong tier falls back to the
+ * other strong one before `fast`, and `fast` to the cheaper strong one. So one model saved answers every tier.
+ */
+export const TIER_FALLBACKS: Readonly<Record<ModelTier, ReadonlyArray<ModelTier>>> = {
+  fast: ["fast", "implement", "hard"],
+  implement: ["implement", "hard", "fast"],
+  hard: ["hard", "implement", "fast"],
+}
 
 /**
  * Lease window for an answer's durable host, renewed by confirmed engine

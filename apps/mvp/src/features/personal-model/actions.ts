@@ -1,31 +1,31 @@
 import { Effect, Exit, Option, Redacted } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { type ModelNotTaken, PersonalModelClient } from "./api"
-import { baseUrlOf, isModelId, isProtocol, longEnough, type Refusal } from "./contract"
+import { checkSave, type Refusal } from "./contract"
 import { record } from "./metrics"
 import { FORM, type Form, HIDDEN, type Sent, TEST } from "./schema"
 import { PersonalModelStore } from "./store"
-import { onItsWay } from "./view"
+import { lastFailure, latestUpdate, onItsWay, type SaveForm } from "./view"
 
 // What a person does in the Your model section (docs/features/personal-model.md#the-settings-section), as Effects that
-// finish synchronously. Save sends the key at once, in the person's own session, straight to ChatApi
+// finish synchronously. Save sends the keys at once, in the person's own session, straight to ChatApi
 // (`PersonalModelClient`), never through the device's outbox or a browser flow, either of which would keep it on the
-// device; the key is `Redacted` from the moment it reaches the action and lives only in the one request. Remove and
+// device; each key is `Redacted` from the moment it reaches the action and lives only in the one request. Remove and
 // Test dispatch `model/remove` and `model/test` (door `button`), the flows the agent calls too.
 //
-// ChatApi's 202 means a write's flow started, not that it landed: the form clears its key at once and says Saving until
-// the row shows the write (store.ts's follower), or that it hasn't shown up after `confirmWithin`. No whole answer is
-// an unknown outcome, never a failure: the row may still show it landed.
+// ChatApi's 202 means a write's flow started, not that it landed: the form clears its keys at once and says Saving
+// until the rows show the write (store.ts's follower), or that it hasn't shown up after `confirmWithin`. No whole answer
+// is an unknown outcome, never a failure: the rows may still show it landed.
 
-/** The person's row, if the device has it. */
-const current = Effect.flatMap(PersonalModelStore, (store) => Effect.map(store.row.toArray, ([row]) => row))
+/** The person's saved keys' rows, as the device has them. */
+const current = Effect.flatMap(PersonalModelStore, (store) => store.saved.toArray)
 
 /** Forgets the last test, which said how the model before this write answered. */
 const forgetTest = Effect.flatMap(PersonalModelStore, ({ tests }) => Effect.ignore(tests.delete(TEST)))
 
 /**
- * Marks a write `sending`, remembering the row's `updatedAt` now (`before`). Answers the form's row, or none while its
- * last write is on its way.
+ * Marks a write `sending`, remembering the rows' latest `updatedAt` now (`before`). Answers the form's row, or none
+ * while its last write is on its way.
  */
 const begin = (op: Form["op"], sent: Sent | null) =>
   Effect.gen(function* () {
@@ -37,7 +37,7 @@ const begin = (op: Form["op"], sent: Sent | null) =>
       op,
       state: "sending",
       failure: null,
-      before: (yield* current)?.updatedAt ?? null,
+      before: latestUpdate(yield* current),
       sent,
       saved: Option.isSome(held) ? held.value.saved : 0,
       quiet: false,
@@ -57,7 +57,7 @@ const refuse = (failure: Refusal) =>
     }))
 
 /**
- * ChatApi took the write: the form counts it (`saved`), which clears its key, and waits for the row, saying so after
+ * ChatApi took the write: the form counts it (`saved`), which clears its keys, and waits for the rows, saying so after
  * `confirmWithin`.
  */
 const confirm = (write: Form) =>
@@ -78,36 +78,40 @@ const confirm = (write: Form) =>
     yield* record(op, "late")
   })
 
-/** A local check of what Save sends: the same refusal ChatApi would answer, or none. */
-const checked = (protocol: string, baseUrl: string | undefined, modelId: string, key: string): Refusal | undefined => {
-  if (!isProtocol(protocol)) return "invalid_protocol"
-  if (baseUrl === undefined) return "invalid_base_url"
-  if (!isModelId(modelId)) return "invalid_model"
-  return longEnough(key) ? undefined : "too_short"
-}
-
 /**
- * Save: sets the person's model to `protocol` at `baseUrl`, with `modelId` and `key`. Always with a key, so a saved key
- * never goes to another host without the person typing it again. A field the server would refuse is refused here,
- * unsent, with the server's own code. Answers whether the save was sent: not while the last write is on its way, nor
- * when the section refused it.
+ * Save: sets the person's keys and their tiers' models to `form`'s, removing a saved key it leaves out. A key left
+ * empty keeps the one saved at the same base URL, so a saved key never goes to another host without the person typing
+ * it again. What the server would refuse is refused here, unsent, with the server's own code (`checkSave`). Answers
+ * whether the save was sent: not while the last write is on its way, nor when the section refused it.
  */
-export const save = (protocol: string, baseUrl: string, modelId: string, key: string) => {
-  const sealed = Redacted.make(key)
+export const save = (form: SaveForm) => {
+  const keys = form.keys.map(({ protocol, baseUrl, key }) => ({ protocol, baseUrl, key: Redacted.make(key) }))
   return Effect.gen(function* () {
     const store = yield* PersonalModelStore
-    const normalized = baseUrlOf(baseUrl)
-    const id = modelId.trim()
-    const local = checked(protocol, normalized, id, Redacted.value(sealed))
-    const sent = local === undefined ? { protocol: protocol as Sent["protocol"], baseUrl: normalized!, modelId: id } : null
+    const checked = checkSave({
+      keys: keys.map(({ protocol, baseUrl, key }) => ({ protocol, baseUrl, key: Redacted.value(key) })),
+      models: form.models,
+    }, yield* current)
+    const sent: Sent | null = typeof checked === "string"
+      ? null
+      : { keys: checked.keys.map(({ protocol, baseUrl }) => ({ protocol, baseUrl })), models: checked.models }
     const begun = yield* begin("save", sent)
     if (Option.isNone(begun)) return false
-    if (local !== undefined) {
-      yield* refuse(local)
-      yield* record("put", "refused", { code: local })
+    if (typeof checked === "string") {
+      yield* refuse(checked)
+      yield* record("put", "refused", { code: checked })
       return false
     }
-    yield* (yield* PersonalModelClient).put({ ...sent!, key: sealed }).pipe(
+    const put = {
+      // The key as typed, `Redacted`, beside the base URL ChatApi keeps; none where the saved one stays.
+      keys: checked.keys.map(({ protocol, baseUrl, key }) => ({
+        protocol,
+        baseUrl,
+        key: key === undefined ? undefined : keys.find((typed) => typed.protocol === protocol)!.key,
+      })),
+      models: checked.models,
+    }
+    yield* (yield* PersonalModelClient).put(put).pipe(
       Effect.matchEffect({
         onSuccess: () => confirm(begun.value),
         onFailure: (refused: ModelNotTaken) =>
@@ -126,7 +130,7 @@ export const save = (protocol: string, baseUrl: string, modelId: string, key: st
 }
 
 /**
- * Remove: dispatches `model/remove`, door `button`. It returns at once; the section waits until the row is gone, or
+ * Remove: dispatches `model/remove`, door `button`. It returns at once; the section waits until the rows are gone, or
  * says why it didn't go. Answers whether it was sent: not while the last write is on its way.
  */
 export const remove = Effect.gen(function* () {
@@ -172,7 +176,7 @@ export const test = Effect.gen(function* () {
         const now = yield* store.tests.get(TEST)
         // A write since forgot this test: its answer is about the model before.
         if (Option.isNone(now) || now.value.state !== "testing") return
-        const failedAt = (yield* current)?.failedAt ?? null
+        const failedAt = lastFailure(yield* current)?.failedAt ?? null
         if (Exit.isSuccess(exit) && exit.value._tag === "Done") {
           const result = exit.value.value
           return yield* store.tests.update(TEST, (draft) => void Object.assign(draft, { state: "done", result, failedAt }))

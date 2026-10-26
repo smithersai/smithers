@@ -261,7 +261,7 @@ const object = <E, R>(
         ), appDatabase), appDatabase, Layer.succeed(DomainProvider, domains)), BranchSandboxes.machinesLayer(sandboxObjects, keep))
         // A person's write whose GitHub token is about to expire starts the session's `auth/RecheckRole` on its own
         // object, the one redeemer of the refresh token, with the execution's own runtime context. Triage and a head's
-        // review judge with the `judge` role, admitted and metered as the endpoint's calls are.
+        // review run on the `judge` and `review` roles, admitted and metered as the endpoint's calls are.
         const githubServices = <GE, GR>(ready: GitHubHost.Ready<GE, GR>) =>
           Effect.gen(function* () {
             const runtime = yield* RuntimeContext
@@ -284,8 +284,9 @@ const object = <E, R>(
             }, judge)
             return {
               ...services,
-              // A head's review is its TODO owner's: their own model judges it when they saved one (decision 0099).
-              judgeFor: (ownerId: string) => seats("judge", started, () => Effect.succeed(Option.some(ownerId))),
+              // A head's review is its TODO owner's, on the `review` role (`hard` tier, decision 0107): their own model
+              // reviews it when they saved one (decision 0099).
+              reviewerFor: (ownerId: string) => seats("review", started, () => Effect.succeed(Option.some(ownerId))),
               invalidateTodo: (stop: typeof TodoBaseClosed.Request.Type) => ExecutionHost.intent(TodoBaseClosed.Invalidate, {
                 executionId: `todo-closed:${stop.attemptId}`, payload: stop,
               }).pipe(Effect.flatMap((intent) => executions.getByName(intent.executionId).start(intent)),

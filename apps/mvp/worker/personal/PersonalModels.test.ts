@@ -1,7 +1,7 @@
 import { final, finalFailure } from "../ModelRefusal.ts"
-// A person's own model end to end in the Worker (docs/features/personal-model.md): saving, removing and testing it
-// through the real routes, with `model/Put` and `model/Delete` on the Node host's engine; the shape of the person's own
-// row; and the model endpoint answering the person's calls with it. Postgres and Electric are the compose ones; the
+// A person's own models end to end in the Worker (docs/features/personal-model.md): saving their keys and tiers' models,
+// removing and testing them through the real routes, with `model/Put` and `model/Delete` on the Node host's engine; the
+// shape of the person's own rows; and the model endpoint answering each role with its tier's model. Postgres and Electric are the compose ones; the
 // person's provider is scripted at the network. Every test also searches what was recorded and stored for the key.
 import { Action, FlowRuntime } from "@smthrs/flow"
 import { type Model, ModelError, type ModelEvent, ModelRequest } from "@smthrs/model"
@@ -45,6 +45,7 @@ import {
   rows,
   SAVE,
   seed,
+  seedKeys,
   usage,
   VALUE,
 } from "./test/harness.ts"
@@ -76,32 +77,52 @@ const json = async (response: Response) => [response.status, await response.json
 const testCall = async (h: { readonly fetch: (path: string, init?: RequestInit) => Promise<Response> }) =>
   json(await h.fetch(PERSONAL_MODEL_TEST_ROUTE, { method: "POST" }))
 
+/** A save of one key at `baseUrl` speaking `protocol`, with `modelId` as its fast model. */
+const saveOne = (protocol: string, baseUrl: string, modelId: string, key: string = VALUE) => ({
+  keys: [{ protocol, baseUrl, key }],
+  models: { fast: { protocol, modelId } },
+})
+
+/** Both keys: Anthropic-compatible for `fast` and `hard`, OpenAI-compatible for `implement`. */
+const BOTH = {
+  keys: [
+    { protocol: "anthropic-messages", baseUrl: ANTHROPIC_ORIGIN, key: `${VALUE}-anthropic` },
+    { protocol: "openai-chat", baseUrl: OPENAI_ORIGIN, key: VALUE },
+  ],
+  models: {
+    fast: { protocol: "anthropic-messages", modelId: "claude-fast" },
+    implement: { protocol: "openai-chat", modelId: "gpt-implement" },
+    hard: { protocol: "anthropic-messages", modelId: "claude-hard" },
+  },
+}
+
 describe("PUT /api/me/model", () => {
-  test("a Member saves and replaces their model; Postgres and the journal hold only ciphertext and the key's tail", async () => {
+  test("a Member saves and replaces their key; Postgres and the journal hold only ciphertext and the key's tail", async () => {
     const h = await open({ actor: member })
 
-    expect(await json(await h.fetch(PERSONAL_MODEL_ROUTE, put(SAVE)))).toEqual([202, { baseUrl: OPENAI_ORIGIN }])
+    expect(await json(await h.fetch(PERSONAL_MODEL_ROUTE, put(SAVE)))).toEqual([202, {}])
     const [saved] = await rows(runtime)
     expect(saved).toMatchObject({
       personId: "person-member",
       protocol: "openai-chat",
       baseUrl: OPENAI_ORIGIN,
-      modelId: "gpt-test",
+      fastModel: "gpt-test",
+      implementModel: null,
+      hardModel: null,
       keyVersion: 1,
       keyLast4: '"~9Zq'.slice(-4),
       failureStatus: null,
       failedAt: null,
     })
 
-    // A replacement clears the last refusal its earlier key had.
+    // A replacement clears the last refusal its earlier key had, and a key it leaves out is removed.
     await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
       sql`UPDATE personal_models SET failure_status = 401, failed_at = now() WHERE person_id = 'person-member'`))
     expect(
-      (await h.fetch(PERSONAL_MODEL_ROUTE, put({ ...SAVE, protocol: "anthropic-messages", baseUrl: ANTHROPIC_ORIGIN, modelId: "claude-test" })))
-        .status,
+      (await h.fetch(PERSONAL_MODEL_ROUTE, put(saveOne("anthropic-messages", ANTHROPIC_ORIGIN, "claude-test")))).status,
     ).toBe(202)
     expect(await rows(runtime)).toEqual([
-      expect.objectContaining({ protocol: "anthropic-messages", baseUrl: ANTHROPIC_ORIGIN, modelId: "claude-test", failureStatus: null }),
+      expect.objectContaining({ protocol: "anthropic-messages", baseUrl: ANTHROPIC_ORIGIN, fastModel: "claude-test", failureStatus: null }),
     ])
     expect(await events(runtime)).toEqual([
       { personId: "person-member", action: "set" },
@@ -113,11 +134,51 @@ describe("PUT /api/me/model", () => {
     expect(leaks(h.recorded())).toEqual([])
   })
 
+  test("both keys, each tier on one of them; a later save keeps a key without its value and moves the tiers", async () => {
+    const h = await open({ actor: member })
+    expect(await json(await h.fetch(PERSONAL_MODEL_ROUTE, put(BOTH)))).toEqual([202, {}])
+    expect((await rows(runtime)).map((row) => [row.protocol, row.fastModel, row.implementModel, row.hardModel, row.keyLast4]))
+      .toEqual([
+        ["anthropic-messages", "claude-fast", null, "claude-hard", "opic"],
+        ["openai-chat", null, "gpt-implement", null, "~9Zq".slice(-4)],
+      ])
+    const [anthropic, openai] = await rows(runtime)
+
+    // Both keys kept as saved, no value sent: every tier now on the OpenAI-compatible key, named or not.
+    const kept = {
+      keys: [{ protocol: "anthropic-messages", baseUrl: ANTHROPIC_ORIGIN }, { protocol: "openai-chat", baseUrl: OPENAI_ORIGIN, key: "" }],
+      models: { fast: { protocol: "openai-chat", modelId: " gpt-fast " } },
+    }
+    expect(await json(await h.fetch(PERSONAL_MODEL_ROUTE, put(kept)))).toEqual([202, {}])
+    const after = await rows(runtime)
+    expect(after.map((row) => [row.protocol, row.fastModel, row.implementModel, row.hardModel])).toEqual([
+      ["anthropic-messages", null, null, null],
+      ["openai-chat", "gpt-fast", null, null],
+    ])
+    // The sealed keys stayed as they were.
+    expect(after.map((row) => row.ciphertext)).toEqual([anthropic!.ciphertext, openai!.ciphertext])
+    expect(h.line("personal_model.request").at(-1)).toMatchObject({ annotations: { keys: 2, tiers: "fast", outcome: "putting" } })
+    expect((await events(runtime)).map((event) => event.action)).toEqual(["set", "replace"])
+    expect(leaks(h.recorded(), [VALUE, `${VALUE}-anthropic`])).toEqual([])
+  })
+
+  test("a key on a provider's own host needs no model named: its tiers use the presets", async () => {
+    const h = await open({ actor: member })
+    const preset = { keys: [{ protocol: "openai-chat", baseUrl: "https://api.openai.com/v1", key: VALUE }], models: {} }
+    expect(await json(await h.fetch(PERSONAL_MODEL_ROUTE, put(preset)))).toEqual([202, {}])
+    expect(await rows(runtime)).toEqual([
+      expect.objectContaining({ baseUrl: "https://api.openai.com", fastModel: null, implementModel: null, hardModel: null }),
+    ])
+  })
+
   test("the base URL is https to one public DNS name, its host lowercased and a trailing /v1 dropped", async () => {
     const h = await open({ actor: member })
-    const saved = async (baseUrl: string) => json(await h.fetch(PERSONAL_MODEL_ROUTE, put({ ...SAVE, baseUrl })))
-    expect(await saved("https://API.Example.COM/openai/v1/")).toEqual([202, { baseUrl: "https://api.example.com/openai" }])
-    expect(await saved("  https://openrouter.ai/api/v1  ")).toEqual([202, { baseUrl: "https://openrouter.ai/api" }])
+    const saved = async (baseUrl: string) => {
+      const answered = await json(await h.fetch(PERSONAL_MODEL_ROUTE, put(saveOne("openai-chat", baseUrl, "gpt-test"))))
+      return answered[0] === 202 ? [202, (await rows(runtime))[0]!.baseUrl] as const : answered
+    }
+    expect(await saved("https://API.Example.COM/openai/v1/")).toEqual([202, "https://api.example.com/openai"])
+    expect(await saved("  https://openrouter.ai/api/v1  ")).toEqual([202, "https://openrouter.ai/api"])
     for (
       const refused of [
         "http://api.example.com",
@@ -144,27 +205,57 @@ describe("PUT /api/me/model", () => {
   test("every other bad field is refused by its code, and nothing is written", async () => {
     const h = await open({ actor: member })
     const refusal = async (init: RequestInit) => json(await h.fetch(PERSONAL_MODEL_ROUTE, init))
-    expect(await refusal(put({ ...SAVE, protocol: "openai-responses" }))).toEqual([400, { code: "invalid_protocol" }])
-    expect(await refusal(put({ ...SAVE, modelId: "has space" }))).toEqual([400, { code: "invalid_model" }])
-    expect(await refusal(put({ ...SAVE, modelId: "x".repeat(82) }))).toEqual([400, { code: "invalid_model" }])
-    expect(await refusal(put({ ...SAVE, key: "short" }))).toEqual([400, { code: "too_short" }])
+    const withKey = (key: string) => put(saveOne("openai-chat", OPENAI_ORIGIN, "gpt-test", key))
+    expect(await refusal(put(saveOne("openai-responses", OPENAI_ORIGIN, "m")))).toEqual([400, { code: "invalid_protocol" }])
+    expect(await refusal(put(saveOne("openai-chat", OPENAI_ORIGIN, "has space")))).toEqual([400, { code: "invalid_model" }])
+    expect(await refusal(put(saveOne("openai-chat", OPENAI_ORIGIN, "x".repeat(82))))).toEqual([400, { code: "invalid_model" }])
+    expect(await refusal(withKey("short"))).toEqual([400, { code: "too_short" }])
     // Eight bytes, so a value a secret may be, but four characters: its "last four" would be all of it.
-    expect(await refusal(put({ ...SAVE, key: "éééé" }))).toEqual([400, { code: "too_short" }])
-    expect(await refusal(put({ ...SAVE, key: "x".repeat(15) }))).toEqual([400, { code: "too_short" }])
-    expect(await refusal(put({ ...SAVE, key: "x".repeat(16 * 1024 + 1) }))).toEqual([400, { code: "too_long" }])
-    expect(await refusal(put({ ...SAVE, key: "sk-line\nbreak" }))).toEqual([400, { code: "control_character" }])
-    expect(await refusal(put({ ...SAVE, key: "sk-lone-\ud800-x" }))).toEqual([400, { code: "malformed_text" }])
+    expect(await refusal(withKey("éééé"))).toEqual([400, { code: "too_short" }])
+    expect(await refusal(withKey("x".repeat(15)))).toEqual([400, { code: "too_short" }])
+    expect(await refusal(withKey("x".repeat(16 * 1024 + 1)))).toEqual([400, { code: "too_long" }])
+    expect(await refusal(withKey("sk-line\nbreak"))).toEqual([400, { code: "control_character" }])
+    expect(await refusal(withKey("sk-lone-\ud800-x"))).toEqual([400, { code: "malformed_text" }])
+    // No key, three keys, the same protocol twice, or a tier no key serves.
+    expect(await refusal(put({ keys: [], models: {} }))).toEqual([400, { code: "invalid" }])
+    expect(await refusal(put({ ...BOTH, keys: [...BOTH.keys, BOTH.keys[0]] }))).toEqual([400, { code: "invalid" }])
+    expect(await refusal(put({ ...BOTH, keys: [BOTH.keys[1], BOTH.keys[1]] }))).toEqual([400, { code: "invalid" }])
+    expect(await refusal(put({ ...SAVE, models: { strong: { protocol: "openai-chat", modelId: "m" } } }))).toEqual([400, { code: "invalid" }])
+    expect(await refusal(put({ ...SAVE, models: { hard: { protocol: "anthropic-messages", modelId: "m" } } }))).toEqual([400, { code: "no_key" }])
+    expect(await refusal(put({ ...SAVE, models: { hard: { protocol: "openai-responses", modelId: "m" } } }))).toEqual([400, { code: "invalid_protocol" }])
+    // A key at a host no preset knows needs some model named.
+    expect(await refusal(put({ ...SAVE, models: {} }))).toEqual([400, { code: "no_model" }])
+    // A key not sent needs one saved for the same protocol and base URL: nothing is saved.
+    expect(await refusal(put({ ...SAVE, keys: [{ protocol: "openai-chat", baseUrl: OPENAI_ORIGIN }] }))).toEqual([400, { code: "key_required" }])
     expect(await refusal(put({ protocol: "openai-chat", baseUrl: OPENAI_ORIGIN, modelId: "m" }))).toEqual([
       400,
       { code: "invalid" },
     ])
     expect(await refusal(put(`{"key":"${VALUE.replaceAll('"', "")}`))).toEqual([400, { code: "invalid" }])
-    expect(await refusal(put("x".repeat(32 * 1024 + 1)))).toEqual([413, { code: "too_large" }])
+    expect(await refusal(put("x".repeat(48 * 1024 + 1)))).toEqual([413, { code: "too_large" }])
     expect(await refusal({ method: "PUT", body: new Uint8Array([0xff, 0xfe]) })).toEqual([400, { code: "invalid" }])
     expect((await h.fetch(PERSONAL_MODEL_ROUTE, { method: "POST" })).status).toBe(405)
     expect((await h.fetch(PERSONAL_MODEL_ROUTE, { method: "POST" })).headers.get("allow")).toBe("PUT, DELETE")
     expect(await rows(runtime)).toEqual([])
     expect(leaks(h.recorded())).toEqual([])
+  })
+
+  test("a saved key moves to another base URL only with its value typed again", async () => {
+    await seed(runtime, "person-member")
+    const h = await open({ actor: member })
+    const moved = { ...SAVE, keys: [{ protocol: "openai-chat", baseUrl: "https://elsewhere.example.com" }] }
+    expect(await json(await h.fetch(PERSONAL_MODEL_ROUTE, put(moved)))).toEqual([400, { code: "key_required" }])
+    expect(await rows(runtime)).toEqual([expect.objectContaining({ baseUrl: OPENAI_ORIGIN })])
+  })
+
+  test("Postgres that can't say what the person saved is 503 unavailable", async () => {
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`ALTER TABLE personal_models RENAME TO models_gone`))
+    try {
+      const h = await open({ actor: member })
+      expect(await json(await h.fetch(PERSONAL_MODEL_ROUTE, put(SAVE)))).toEqual([503, { code: "unavailable" }])
+    } finally {
+      await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`ALTER TABLE models_gone RENAME TO personal_models`))
+    }
   })
 
   test("signed out, a Guest, someone with no role, and an agent acting for the person are refused", async () => {
@@ -229,17 +320,13 @@ describe("DELETE /api/me/model", () => {
 
 describe("model/Put and model/Delete", () => {
   const scratchDatabase = async () => (await runtime.runPromise(Effect.service(TestDatabase.Scratch))).database
-  const write = {
+  const sealed = { ciphertext: "c", nonce: "n", keyVersion: 1, keyLast4: "abcd" }
+  const model = {
     personId: "person-member",
-    protocol: "openai-chat" as const,
-    baseUrl: OPENAI_ORIGIN,
-    modelId: "gpt-test",
-    ciphertext: "c",
-    nonce: "n",
-    keyVersion: 1,
-    keyLast4: "abcd",
-    invocationKey: "step-1",
+    keys: [{ protocol: "openai-chat" as const, baseUrl: OPENAI_ORIGIN, sealed }],
+    models: { fast: { protocol: "openai-chat" as const, modelId: "gpt-test" } },
   }
+  const write = { ...model, invocationKey: "step-1" }
 
   test("a step run again records its change once", async () => {
     const database = await scratchDatabase()
@@ -250,7 +337,19 @@ describe("model/Put and model/Delete", () => {
     expect(await run(Store.remove(remove))).toBe("deleted")
     expect(await run(Store.remove(remove))).toBe("repeat")
     expect((await events(runtime)).map((event) => event.action)).toEqual(["set", "delete"])
-    expect(await run(Store.saved("person-member"))).toEqual(Option.none())
+    expect(await run(Store.saved("person-member"))).toEqual([])
+  })
+
+  test("a kept key that was removed or moved since the route checked it writes nothing: stale", async () => {
+    const database = await scratchDatabase()
+    const run = <A>(effect: Effect.Effect<A, unknown, any>) => runtime.runPromise(Effect.provide(effect, database) as Effect.Effect<A>)
+    const kept = { ...model, keys: [{ protocol: "openai-chat" as const, baseUrl: OPENAI_ORIGIN }] }
+    expect(await run(Store.put({ ...kept, invocationKey: "step-3" }))).toBe("stale")
+    expect(await run(Store.put(write))).toBe("set")
+    expect(await run(Store.put({ ...kept, keys: [{ protocol: "openai-chat", baseUrl: "https://moved.example.com" }], invocationKey: "step-4" })))
+      .toBe("stale")
+    expect(await rows(runtime)).toEqual([expect.objectContaining({ baseUrl: OPENAI_ORIGIN, fastModel: "gpt-test" })])
+    expect((await events(runtime)).map((event) => event.action)).toEqual(["set"])
   })
 
   test("a step whose database can't be reached fails as StoreUnavailable, which the engine retries", async () => {
@@ -258,9 +357,7 @@ describe("model/Put and model/Delete", () => {
     const { store, erase } = ModelFlows.steps(unreachable)
     const keyed = <A, E>(effect: Effect.Effect<A, E, any>) =>
       Effect.runPromiseExit(Effect.provideService(effect, Action.CurrentInvocationKey, "step-1") as Effect.Effect<A, E>)
-    const sealed = { ciphertext: "c", nonce: "n" }
-    const { ciphertext: _c, nonce: _n, invocationKey: _k, ...model } = write
-    const saved = await keyed(store({ ...model, sealed }))
+    const saved = await keyed(store(model))
     const removed = await keyed(erase({ personId: "person-member" }))
     for (const exit of [saved, removed]) expect(JSON.stringify(exit)).toContain("@smthrs/mvp/personal/StoreUnavailable")
     expect(ModelFlows.STORE_RETRY).toMatchObject({ expirationMs: 30 * 60_000 })
@@ -268,9 +365,8 @@ describe("model/Put and model/Delete", () => {
 
   test("a step with no invocation key dies rather than record its change twice", async () => {
     const { store, erase } = ModelFlows.steps(await scratchDatabase())
-    const { ciphertext: _c, nonce: _n, invocationKey: _k, ...model } = write
     const exits = [
-      await Effect.runPromiseExit(store({ ...model, sealed: { ciphertext: "c", nonce: "n" } }) as Effect.Effect<unknown, unknown>),
+      await Effect.runPromiseExit(store(model) as Effect.Effect<unknown, unknown>),
       await Effect.runPromiseExit(erase({ personId: "person-member" }) as Effect.Effect<unknown, unknown>),
     ]
     for (const exit of exits) expect(JSON.stringify(exit)).toContain("NoInvocationKey")
@@ -294,7 +390,7 @@ describe("GET /api/shapes/personal-model", () => {
     expect(sent.searchParams.get("where")).toBe("person_id = $1")
     expect(sent.searchParams.get("params[1]")).toBe("person-member")
     expect(sent.searchParams.get("columns")).toBe(
-      "person_id,protocol,base_url,model_id,key_last4,failure_status,failed_at,updated_at",
+      "person_id,protocol,base_url,fast_model,implement_model,hard_model,key_last4,failure_status,failed_at,updated_at",
     )
     const out = await open()
     expect((await out.fetch(`${PERSONAL_MODEL_SHAPE_ROUTE}?offset=-1`)).status).toBe(200)
@@ -403,6 +499,40 @@ describe("POST /api/me/model/test", () => {
     expect(provider.seen).toEqual([])
   })
 
+  test("with two keys, Test calls each key the tiers use once, and answers the first failure", async () => {
+    await seedKeys(runtime, "person-member", {
+      keys: [{ protocol: "anthropic-messages", baseUrl: ANTHROPIC_ORIGIN }, { protocol: "openai-chat", baseUrl: OPENAI_ORIGIN }],
+      models: {
+        fast: { protocol: "openai-chat", modelId: "gpt-fast" },
+        implement: { protocol: "openai-chat", modelId: "gpt-implement" },
+        hard: { protocol: "anthropic-messages", modelId: "claude-hard" },
+      },
+    })
+    const fine = scriptedProvider({ text: "ok" })
+    const h = await open({ actor: member, provider: fine.fetch })
+    expect((await testCall(h))[1]).toMatchObject({ ok: true, sample: "ok" })
+    expect(fine.seen.map((seen) => [new URL(seen.url).origin, seen.body.model])).toEqual([
+      [OPENAI_ORIGIN, "gpt-fast"],
+      [ANTHROPIC_ORIGIN, "claude-hard"],
+    ])
+    expect((await usage(runtime)).map((row) => [row.role, row.protocol, row.tier])).toEqual([
+      ["test", "openai-chat", null],
+      ["test", "anthropic-messages", null],
+    ])
+    // The Anthropic-compatible key is refused: Test names it, and only its row is marked.
+    const refused = scriptedProvider((index) => index === 0 ? { text: "ok" } : { status: 401, error: { message: "bad key" } })
+    expect((await testCall(await open({ actor: member, provider: refused.fetch })))[1]).toMatchObject({
+      ok: false,
+      code: "authentication",
+      status: 401,
+      host: "anthropic.example.com",
+    })
+    expect((await rows(runtime)).map((row) => [row.protocol, row.failureStatus])).toEqual([
+      ["anthropic-messages", 401],
+      ["openai-chat", null],
+    ])
+  })
+
   test("a saved model the planner can't serve is unusable too", async () => {
     await seed(runtime, "person-member", { modelId: "has space" })
     const provider = scriptedProvider({ text: "ok" })
@@ -440,8 +570,8 @@ describe("the model endpoint answers a person with their own model", () => {
     })
   const body = (request: ModelRequest.ModelRequest) => JSON.stringify(Schema.encodeSync(ModelRequest.ModelRequest)(request))
   type H = Awaited<ReturnType<typeof harness>>
-  const call = async (h: H, role = "agent") => {
-    const response = await h.fetch(`/api/model/${role}`, { method: "POST", body: body(ask("hi")) })
+  const call = async (h: H, role = "agent", request = ask("hi")) => {
+    const response = await h.fetch(`/api/model/${role}`, { method: "POST", body: body(request) })
     const text = await response.text()
     return {
       status: response.status,
@@ -462,29 +592,117 @@ describe("the model endpoint answers a person with their own model", () => {
     const provider = scriptedProvider({ text: "mine", usage: { input: 7, output: 5 } })
     // A deployment budget no call fits in: the person's calls never reach it.
     const h = await harness(runtime, deployment, { actor: member, fetch: provider.fetch, config: { MODEL_DAILY_TOKEN_BUDGET: "1" } })
-    for (const role of ["agent", "coding", "renderer", "judge"]) {
+    for (const role of ["agent", "coding", "renderer", "judge", "review", "plan"]) {
       const answered = await call(h, role)
       expect(answered.status, role).toBe(200)
       expect(answered.lines).toContainEqual(expect.objectContaining({ type: "text-delta", text: "mine" }))
       expect(answered.lines.at(-1)).toEqual({ type: "end" })
     }
     expect(h.requests).toEqual([])
-    expect(provider.seen).toHaveLength(4)
+    expect(provider.seen).toHaveLength(6)
     expect(provider.seen.every((seen) => seen.headers.get("authorization") === `Bearer ${VALUE}`)).toBe(true)
+    // One model saved answers every tier: `implement` and `hard` fall back to `fast`.
     expect(provider.seen.every((seen) => seen.body.model === "gpt-test")).toBe(true)
     expect(await modelUsage()).toEqual([])
     await eventually(async () => (await usage(runtime)).every((row) => row.settled))
-    expect((await usage(runtime)).map((row) => [row.role, row.inputTokens, row.outputTokens, row.outcome])).toEqual([
-      ["agent", 7, 5, "success"],
-      ["coding", 7, 5, "success"],
-      ["renderer", 7, 5, "success"],
-      ["judge", 7, 5, "success"],
+    expect((await usage(runtime)).map((row) => [row.role, row.inputTokens, row.outputTokens, row.outcome, row.tier])).toEqual([
+      ["agent", 7, 5, "success", "fast"],
+      ["coding", 7, 5, "success", "fast"],
+      ["renderer", 7, 5, "success", "fast"],
+      ["judge", 7, 5, "success", "fast"],
+      ["review", 7, 5, "success", "fast"],
+      ["plan", 7, 5, "success", "fast"],
     ])
     expect(h.starts.filter((start) => start.flow === SpendAlert.SpendAlert._tag)).toEqual([])
     expect(h.count(PersonalUsage.calls, { role: "agent", outcome: "success" })).toBe(1)
     expect(h.count(PersonalUsage.tokens, { role: "agent", type: "input" })).toBe(7)
     expect(h.count(PersonalUsage.tokens, { role: "agent", type: "output" })).toBe(5)
     expect(leaks(JSON.stringify(h.logs))).toEqual([])
+  })
+
+  test("each role is answered by its tier's model across the person's two keys, at the role's effort", async () => {
+    await seedKeys(runtime, "person-member", {
+      keys: [
+        { protocol: "anthropic-messages", baseUrl: ANTHROPIC_ORIGIN, key: `${VALUE}-anthropic` },
+        { protocol: "openai-chat", baseUrl: OPENAI_ORIGIN },
+      ],
+      models: {
+        fast: { protocol: "openai-chat", modelId: "gpt-fast" },
+        implement: { protocol: "openai-chat", modelId: "gpt-implement" },
+        hard: { protocol: "anthropic-messages", modelId: "claude-hard" },
+      },
+    }, PERSONAL_KEYS)
+    const provider = scriptedProvider({ text: "tiered" })
+    const h = await harness(runtime, deployment, { actor: member, fetch: provider.fetch })
+    // A turn that already used a tool since the person's message is heavy.
+    const working = ModelRequest.ModelRequest.make({
+      ...ask("sort these"),
+      messages: [
+        ModelRequest.Message.user("sort these"),
+        ModelRequest.Message.assistant(ModelRequest.ToolCallPart.make({ id: "c1", name: "app/jev/classify", arguments: "{}" })),
+        ModelRequest.Message.tool(ModelRequest.ToolResultPart.make({ toolCallId: "c1", content: "{}" })),
+      ],
+    })
+    const answered = [
+      await call(h, "agent"),
+      await call(h, "agent", working),
+      await call(h, "judge"),
+      await call(h, "summary"),
+      await call(h, "renderer"),
+      await call(h, "coding"),
+      await call(h, "review"),
+      await call(h, "plan"),
+    ]
+    expect(answered.map((each) => each.status)).toEqual([200, 200, 200, 200, 200, 200, 200, 200])
+    expect(provider.seen.map((seen) => [new URL(seen.url).origin, seen.body.model, seen.body.reasoning_effort ?? null])).toEqual([
+      [OPENAI_ORIGIN, "gpt-fast", null],
+      [OPENAI_ORIGIN, "gpt-fast", "high"],
+      [OPENAI_ORIGIN, "gpt-fast", "low"],
+      [OPENAI_ORIGIN, "gpt-fast", "low"],
+      [OPENAI_ORIGIN, "gpt-fast", null],
+      [OPENAI_ORIGIN, "gpt-implement", null],
+      [ANTHROPIC_ORIGIN, "claude-hard", null],
+      [ANTHROPIC_ORIGIN, "claude-hard", null],
+    ])
+    expect(provider.seen.slice(6).map((seen) => seen.headers.get("x-api-key"))).toEqual([`${VALUE}-anthropic`, `${VALUE}-anthropic`])
+    await eventually(async () => (await usage(runtime)).length === 8 && (await usage(runtime)).every((row) => row.settled))
+    expect((await usage(runtime)).map((row) => [row.role, row.protocol, row.tier])).toEqual([
+      ["agent", "openai-chat", "fast"],
+      ["agent", "openai-chat", "fast"],
+      ["judge", "openai-chat", "fast"],
+      ["summary", "openai-chat", "fast"],
+      ["renderer", "openai-chat", "fast"],
+      ["coding", "openai-chat", "implement"],
+      ["review", "anthropic-messages", "hard"],
+      ["plan", "anthropic-messages", "hard"],
+    ])
+    expect(leaks(recorded(h), [VALUE, `${VALUE}-anthropic`])).toEqual([])
+  })
+
+  test("MODEL_ROLE_TIERS moves a role to another tier; a value that doesn't parse keeps the defaults, logged", async () => {
+    await seedKeys(runtime, "person-member", {
+      keys: [{ protocol: "anthropic-messages", baseUrl: ANTHROPIC_ORIGIN }, { protocol: "openai-chat", baseUrl: OPENAI_ORIGIN }],
+      models: { fast: { protocol: "openai-chat", modelId: "gpt-fast" }, hard: { protocol: "anthropic-messages", modelId: "claude-hard" } },
+    }, PERSONAL_KEYS)
+    const provider = scriptedProvider({ text: "moved" })
+    const moved = await harness(runtime, deployment, {
+      actor: member,
+      fetch: provider.fetch,
+      config: { MODEL_ROLE_TIERS: JSON.stringify({ renderer: { tier: "hard", reasoningEffort: "medium" }, unknown: { tier: "fast" } }) },
+    })
+    expect((await call(moved, "renderer")).status).toBe(200)
+    // An unset role keeps its default.
+    expect((await call(moved, "judge")).status).toBe(200)
+    const broken = await harness(runtime, deployment, { actor: member, fetch: provider.fetch, config: { MODEL_ROLE_TIERS: "{\"renderer\":{\"tier\":\"strong\"}}" } })
+    expect((await call(broken, "renderer")).status).toBe(200)
+    expect(provider.seen.map((seen) => [seen.body.model, seen.body.output_config ?? seen.body.reasoning_effort ?? null])).toEqual([
+      ["claude-hard", null],
+      ["gpt-fast", "low"],
+      ["gpt-fast", null],
+    ])
+    expect(broken.line("model.endpoint").map(({ annotations }) => String(annotations.errorCode))).toEqual([
+      expect.stringMatching(/^role_tiers:/),
+    ])
   })
 
   test("timeline summaries are the person's too: their model answers them, never the deployment's", async () => {
@@ -560,6 +778,35 @@ describe("the model endpoint answers a person with their own model", () => {
     ])
     expect(leaks(JSON.stringify(answered))).toEqual([])
     expect(leaks(recorded(h))).toEqual([])
+  })
+
+  test("a refusal of one of the person's keys marks only that key", async () => {
+    await seedKeys(runtime, "person-member", {
+      keys: [{ protocol: "anthropic-messages", baseUrl: ANTHROPIC_ORIGIN }, { protocol: "openai-chat", baseUrl: OPENAI_ORIGIN }],
+      models: { fast: { protocol: "openai-chat", modelId: "gpt-fast" }, hard: { protocol: "anthropic-messages", modelId: "claude-hard" } },
+    }, PERSONAL_KEYS)
+    const provider = scriptedProvider((index) => index === 0 ? { status: 401, error: { message: "bad key" } } : { text: "fine" })
+    const h = await harness(runtime, deployment, { actor: member, fetch: provider.fetch })
+    expect((await call(h, "review")).lines.at(-1)).toMatchObject({ type: "error", code: "authentication" })
+    expect((await call(h, "agent")).lines).toContainEqual(expect.objectContaining({ type: "text-delta", text: "fine" }))
+    await eventually(async () => (await rows(runtime))[0]?.failureStatus === 401)
+    expect((await rows(runtime)).map((row) => [row.protocol, row.failureStatus])).toEqual([
+      ["anthropic-messages", 401],
+      ["openai-chat", null],
+    ])
+  })
+
+  test("keys whose tiers name no model, at a host with no presets, are 409 no_route (no_model)", async () => {
+    await seed(runtime, "person-member", {}, PERSONAL_KEYS)
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE personal_models SET fast_model = NULL`))
+    const provider = scriptedProvider({ text: "never" })
+    const h = await harness(runtime, deployment, { actor: member, fetch: provider.fetch })
+    const answered = await call(h)
+    expect(answered.status).toBe(409)
+    expect(provider.seen).toEqual([])
+    expect(h.line("model.endpoint")).toEqual([
+      expect.objectContaining({ annotations: expect.objectContaining({ errorCode: "own_unusable:no_model" }) }),
+    ])
   })
 
   test("a saved model that can't be used is 409 no_route, never the deployment's model", async () => {
@@ -744,7 +991,7 @@ describe("a refusal of a person's key is final", () => {
   test("Postgres the real models can't reach fails as unavailable, by its SQL reason", async () => {
     const unreachable = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
     const exit = await Effect.runPromiseExit(
-      Effect.flatMap(Effect.service(PersonalModels), (models) => models.open("person-member")).pipe(
+      Effect.flatMap(Effect.service(PersonalModels), (models) => models.open("person-member", "fast")).pipe(
         Effect.provide(PersonalModels.layer(unreachable).pipe(Layer.provide(SecretKeys.layer(KEY)))),
       ),
     )
@@ -753,7 +1000,7 @@ describe("a refusal of a person's key is final", () => {
   })
 
   test("nobody's model: PersonalModels.none opens nothing", async () => {
-    expect(await Effect.runPromise(Effect.flatMap(Effect.service(PersonalModels), (models) => models.open("x")).pipe(Effect.provide(PersonalModels.none))))
+    expect(await Effect.runPromise(Effect.flatMap(Effect.service(PersonalModels), (models) => models.open("x", "hard")).pipe(Effect.provide(PersonalModels.none))))
       .toEqual(Option.none())
     expect(new PersonalModelUnusable({ reason: "key", host: "h" }).reason).toBe("key")
   })
@@ -762,7 +1009,7 @@ describe("a refusal of a person's key is final", () => {
     const unreachable = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
     const exit = await Effect.runPromiseExit(
       PersonalUsage.end(
-        { invocationId: "i", requestId: "i", personId: "p", role: "agent", modelId: "m", host: "h" },
+        { invocationId: "i", requestId: "i", personId: "p", role: "agent", modelId: "m", host: "h", protocol: "openai-chat" as const, tier: "fast" as const },
         { outcome: "success", usage: {} },
         unreachable,
       ),
@@ -773,7 +1020,16 @@ describe("a refusal of a person's key is final", () => {
   test("a slow call on a key since replaced says nothing of the new key", async () => {
     const database = (await runtime.runPromise(Effect.service(TestDatabase.Scratch))).database
     await seed(runtime, "person-member")
-    const call = { invocationId: crypto.randomUUID(), requestId: "r", personId: "person-member", role: "agent", modelId: "m", host: "h" }
+    const call = {
+      invocationId: crypto.randomUUID(),
+      requestId: "r",
+      personId: "person-member",
+      role: "agent",
+      modelId: "m",
+      host: "h",
+      protocol: "openai-chat" as const,
+      tier: "fast" as const,
+    }
     await runtime.runPromise(Effect.provide(PersonalUsage.begin(call), database))
     // The call began a minute before the person replaced their key.
     await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
@@ -790,7 +1046,16 @@ describe("a refusal of a person's key is final", () => {
 
   test("a call settled already isn't counted again", async () => {
     const database = (await runtime.runPromise(Effect.service(TestDatabase.Scratch))).database
-    const call = { invocationId: crypto.randomUUID(), requestId: "r", personId: "person-member", role: "agent", modelId: "m", host: "h" }
+    const call = {
+      invocationId: crypto.randomUUID(),
+      requestId: "r",
+      personId: "person-member",
+      role: "agent",
+      modelId: "m",
+      host: "h",
+      protocol: "openai-chat" as const,
+      tier: "fast" as const,
+    }
     await runtime.runPromise(Effect.provide(PersonalUsage.begin(call), database))
     const ended = { outcome: "interrupted" as const, usage: { inputTokens: 1 } }
     await runtime.runPromise(PersonalUsage.end(call, ended, database))

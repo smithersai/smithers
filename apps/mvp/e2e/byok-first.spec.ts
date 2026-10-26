@@ -1,6 +1,6 @@
 import { expect, expectSameThread, pairs, test } from "./devices"
 import { step } from "./fixtures"
-import { personalModelConfig, restorePersonalModel } from "./personal-model"
+import { fillYourModel, keyGroup, personalModelConfig, restorePersonalModel } from "./personal-model"
 import { requires } from "./target"
 
 // People's own models first (decision 0099, docs/features/model-endpoint.md#hosted-inference): while the deployment's own
@@ -17,7 +17,7 @@ requires("member", "ownConversation", "personalModelKey", "hostedModelOff")
 test.use({ trace: "off" })
 
 const KEY = process.env.E2E_PERSONAL_MODEL_KEY || ""
-const { baseUrl: BASE_URL, modelId: MODEL } = personalModelConfig()
+const { baseUrl: BASE_URL, modelId: MODEL, protocol: PROTOCOL } = personalModelConfig()
 
 /** A save lands once `model/Put` ran and Electric brought the row back. */
 const SAVED_WITHIN = 30_000
@@ -72,12 +72,11 @@ test("byok first: no model shows Add your model; with one, the person's own mode
     await expect(section).toBeVisible({ timeout: 30_000 })
   })
 
-  await step("Fill Base URL, Model and Key, then Save", async () => {
-    await section.getByLabel("Base URL", { exact: true }).fill(BASE_URL)
-    await section.getByLabel("Model", { exact: true }).fill(MODEL)
-    await section.getByLabel("Key", { exact: true }).fill(KEY)
-    await section.getByRole("button", { name: "Save" }).click()
-    await expect(section.getByLabel("Key", { exact: true })).toHaveAttribute("placeholder", /····/, { timeout: SAVED_WITHIN })
+  await step("Fill Base URL, Key and Fast, then Save", async () => {
+    await fillYourModel(section, page, { protocol: PROTOCOL, baseUrl: BASE_URL, key: KEY, tiers: { fast: MODEL } })
+    await expect(keyGroup(section, PROTOCOL).getByLabel("Key", { exact: true })).toHaveAttribute("placeholder", /····/, {
+      timeout: SAVED_WITHIN,
+    })
   })
 
   await step("Ask: the person's own model answers, and writes the timeline's summary", async () => {

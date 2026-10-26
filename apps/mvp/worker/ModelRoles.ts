@@ -3,13 +3,14 @@ import { HostModel, HostModelUnusable } from "@smthrs/model-host"
 import { ConfiguredModel } from "@smthrs/rpc"
 import { Config, Effect, Option, Result, Schema } from "effect"
 import { SqlClient } from "effect/sql"
-import { MODEL_ROLES, type ModelRole } from "../src/features/model/contract.ts"
+import { MODEL_ROLES, type ModelRole, type ModelTier } from "../src/features/model/contract.ts"
 
-// Which model answers each role (docs/features/model-endpoint.md#roles): the model an admin set in `model_roles`, read
-// on every call, else the deployment's default (`HostModel`, from the `CHAT_MODEL` configuration). The summary role's
-// default is its own (`SUMMARY_MODEL`), never the agent's; the coding role's is the agent role's model, a row
-// included, so the `todo` run's agent changes only when an admin sets `coding` itself (decision 0033). Changing a role
-// needs no deploy.
+// Which of the deployment's models answers each role (docs/features/model-endpoint.md#roles): the model an admin set
+// in `model_roles`, read on every call, else the deployment's defaults. The summary role's own default comes first
+// (`SUMMARY_MODEL`), then the role's tier's (`TIER_MODELS`, decision 0107), then the row of the role it inherits from:
+// the agent role's for `coding` (decision 0033) and `plan`, the judge role's for `review`, so a new role answers as it
+// did before it had a name; then `HostModel` (the `CHAT_MODEL` configuration), never for the summary role. Changing a
+// role needs no deploy.
 
 /** One of the model roles, as a schema. */
 export const Role = Schema.Literals(MODEL_ROLES)
@@ -67,6 +68,31 @@ export const DEFAULT_CHAT_MODEL: ModelRecord = {
   credential: "CEREBRAS_API_KEY",
 }
 
+/**
+ * `TIER_MODELS`: a JSON object of tiers to model records, the deployment's model for each tier it names, such as a cheap
+ * model for `fast`. Read once when the endpoint builds; unset, no tier has one.
+ */
+export const TierModels = Schema.Struct({
+  fast: Schema.optional(ModelRecord),
+  implement: Schema.optional(ModelRecord),
+  hard: Schema.optional(ModelRecord),
+})
+
+/** The decoded form of {@link TierModels}. */
+export type TierModels = typeof TierModels.Type
+
+/** `TIER_MODELS` as {@link TierModels}; none when unset. */
+export const tierModels = Config.option(Config.schema(Schema.fromJsonString(TierModels), "TIER_MODELS"))
+
+/** The role whose row a role without its own answers with, after its tier's model: the role it was before it had a name. */
+const INHERITS: Partial<Record<ModelRole, ModelRole>> = { coding: "agent", plan: "agent", review: "judge" }
+
+/** The deployment's defaults the endpoint captured when it built, each kept as a failure when it doesn't parse. */
+export interface Defaults {
+  readonly summary: Result.Result<Option.Option<ModelRecord>, HostModelUnusable>
+  readonly tiers: Result.Result<Option.Option<TierModels>, HostModelUnusable>
+}
+
 /** The model that answers a role now, where the choice came from, and the effort its record sets on each call. */
 export interface Resolved {
   readonly source: "setting" | "default"
@@ -94,35 +120,38 @@ const fromRecord = (source: Resolved["source"], record: ModelRecord) =>
   }))
 
 /**
- * The model `role` uses: its `model_roles` row, built with the key the Worker holds, or the deployment default when
- * the role has no row: `SUMMARY_MODEL` for the summary role, the agent role's row for the coding role, else
- * `HostModel`. A row or default this Worker can't use fails with `HostModelUnusable` and the planner's reason
- * (`invalid` for a row that isn't a record, `unconfigured` for a summary role with neither a row nor `SUMMARY_MODEL`,
- * `config` for one that doesn't parse). `summary` is the deployment default captured when the endpoint built.
+ * The model `role` uses, on `tier`: its `model_roles` row, built with the key the Worker holds; else `SUMMARY_MODEL` for
+ * the summary role; else the tier's `TIER_MODELS` record; else the row of the role it inherits from (`INHERITS`); else
+ * `HostModel`, except for the summary role. A row or default this Worker can't use fails with `HostModelUnusable` and
+ * the planner's reason (`invalid` for a row that isn't a record, `unconfigured` for a summary role with nothing to
+ * answer it, `config` for a default that doesn't parse). `defaults` are those captured when the endpoint built.
  */
-export const resolve = (role: ModelRole, summary: Result.Result<Option.Option<ModelRecord>, HostModelUnusable>) =>
+export const resolve = (role: ModelRole, tier: ModelTier, defaults: Defaults) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const rowOf = (name: ModelRole) =>
       Effect.map(sql<{ readonly model: unknown }>`SELECT model FROM model_roles WHERE role = ${name}`, ([found]) => found)
+    const setting = (row: { readonly model: unknown }) =>
+      decodeRecord(row.model).pipe(
+        Effect.mapError(() => new HostModelUnusable({ reason: "invalid" })),
+        Effect.flatMap((record) => fromRecord("setting", record)),
+      )
     const own = yield* rowOf(role)
-    // The coding role answers as the agent role does, its row included, until an admin points it somewhere of its own.
-    const row = own === undefined && role === "coding" ? yield* rowOf("agent") : own
-    if (row === undefined) {
-      // Auxiliary navigation must not silently spend on the main agent model: only its own default answers it.
-      if (role === "summary") {
-        if (Result.isFailure(summary)) return yield* summary.failure
-        const configured = summary.success
-        if (Option.isNone(configured)) return yield* new HostModelUnusable({ reason: "unconfigured" })
-        return yield* fromRecord("default", configured.value)
-      }
-      const fallback = yield* HostModel
-      return { source: "default", modelId: fallback.modelId, model: fallback.model } satisfies Resolved
+    if (own !== undefined) return yield* setting(own)
+    if (role === "summary") {
+      if (Result.isFailure(defaults.summary)) return yield* defaults.summary.failure
+      if (Option.isSome(defaults.summary.success)) return yield* fromRecord("default", defaults.summary.success.value)
     }
-    const record = yield* decodeRecord(row.model).pipe(
-      Effect.mapError(() => new HostModelUnusable({ reason: "invalid" })),
-    )
-    return yield* fromRecord("setting", record)
+    if (Result.isFailure(defaults.tiers)) return yield* defaults.tiers.failure
+    const tiered = Option.flatMap(defaults.tiers.success, (tiers) => Option.fromNullishOr(tiers[tier]))
+    if (Option.isSome(tiered)) return yield* fromRecord("default", tiered.value)
+    const parent = INHERITS[role]
+    const inherited = parent === undefined ? undefined : yield* rowOf(parent)
+    if (inherited !== undefined) return yield* setting(inherited)
+    // Auxiliary navigation must not silently spend on the main agent model: only its own defaults answer it.
+    if (role === "summary") return yield* new HostModelUnusable({ reason: "unconfigured" })
+    const fallback = yield* HostModel
+    return { source: "default", modelId: fallback.modelId, model: fallback.model } satisfies Resolved
   })
 
 /**

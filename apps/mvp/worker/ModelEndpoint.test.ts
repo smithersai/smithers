@@ -807,6 +807,71 @@ describe("a role's routing and reasoning", () => {
     expect(texts((await call(h, ask("hi"), "summary")).lines)).toEqual(["Summary label"])
     expect(upstream.seen[0]!.body).toMatchObject({ model: "cheap", reasoning_effort: "minimal" })
   })
+
+  test("plan and review answer with the agent's and the judge's settings until a tier or an admin names their own", async () => {
+    const agentModel = await provider({ text: "agent row" })
+    const judgeModel = await provider({ text: "judge row" })
+    const h = await harness(runtime, answering, {
+      actor: member,
+      config: {
+        SMITHERS_MODEL_KEY_FIXTURE: "row-key",
+        SMITHERS_MODEL_KEY_FIXTURE_ORIGIN: agentModel.origin,
+        SMITHERS_MODEL_KEY_JUDGE: "judge-key",
+        SMITHERS_MODEL_KEY_JUDGE_ORIGIN: judgeModel.origin,
+      },
+    })
+    await setModel(admin, { role: "agent", model: rowModel(agentModel.origin, "agent-row") })
+    await setModel(admin, {
+      role: "judge",
+      model: { protocol: "openai-chat", baseUrl: judgeModel.origin, modelId: "judge-row", credential: "JUDGE" },
+    })
+    expect(texts((await call(h, ask("draft"), "plan")).lines)).toEqual(["agent row"])
+    expect(texts((await call(h, ask("review"), "review")).lines)).toEqual(["judge row"])
+    expect(h.line("model.proxy.serve").map(({ annotations }) => [annotations.role, annotations.modelId])).toEqual([
+      ["plan", "agent-row"],
+      ["review", "judge-row"],
+    ])
+  })
+
+  test("TIER_MODELS answers each role without its own setting on the role's tier, before any role it inherits from", async () => {
+    const upstream = await provider({ text: "tiered" })
+    const h = await harness(runtime, answering, {
+      actor: member,
+      modelId: "default-model",
+      config: {
+        TIER_MODELS: JSON.stringify({ hard: rowModel(upstream.origin, "hard-model"), fast: { ...rowModel(upstream.origin, "fast-model"), reasoningEffort: "minimal" } }),
+        ...keyConfig(upstream.origin),
+      },
+    })
+    await setModel(admin, { role: "judge", model: rowModel("https://judge.example", "judge-row") })
+    for (const role of ["review", "plan", "summary", "renderer"]) {
+      expect(texts((await call(h, ask(role), role)).lines), role).toEqual(["tiered"])
+    }
+    // No implement model: the coding role keeps the deployment's default.
+    await call(h, ask("code"), "coding")
+    expect(upstream.seen.map((seen) => [seen.body.model, seen.body.reasoning_effort ?? null])).toEqual([
+      ["hard-model", null],
+      ["hard-model", null],
+      // The tier record's effort wins over the role's.
+      ["fast-model", "minimal"],
+      ["fast-model", "minimal"],
+    ])
+    expect(h.requests.map((request) => request.modelId)).toEqual(["default-model"])
+  })
+
+  test("a TIER_MODELS that doesn't parse refuses each role without a setting 409, logged unusable:config", async () => {
+    const h = await harness(runtime, answering, { actor: member, config: { TIER_MODELS: "{\"hard\":{\"protocol\":\"\"}}" } })
+    expect((await call(h, ask("hi"), "review")).status).toBe(409)
+    expect(h.only("model.endpoint").annotations).toMatchObject({ role: "review", errorCode: "unusable:config" })
+    expect(h.requests).toEqual([])
+  })
+
+  test("the deployment's default model runs at each role's effort: a judge low, a plain chat turn the request's own", async () => {
+    const h = await harness(runtime, answering, { actor: member })
+    await call(h, ask("is this a bug?"), "judge")
+    await call(h, ask("hi"), "agent")
+    expect(h.requests.map((request) => request.params.reasoningEffort ?? null)).toEqual(["low", null])
+  })
 })
 
 describe("database failures", () => {

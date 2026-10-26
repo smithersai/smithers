@@ -92,6 +92,9 @@ export const CHECKS = ["parses", "name", "description", "calls", "model", "size"
 /** The model role every model call of a person's flow uses: the endpoint's `agent` (decision 0011 §3). */
 export const FLOW_MODEL_ROLE = "agent"
 
+/** The model role drafting a flow uses: the endpoint's `plan`, on the `hard` tier, since a draft is a plan (decision 0107). */
+export const DRAFT_MODEL_ROLE = "plan"
+
 /** The flows `flow/new`'s drafting agent may call while it drafts: reads only (decision 0014 §2). */
 export const AUTHOR_TOOLS = ["repo/tree", "repo/read"] as const
 

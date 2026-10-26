@@ -1,4 +1,5 @@
-import { personalModelConfig, restorePersonalModel } from "./personal-model"
+import { baseUrlOf, resolveTier } from "../src/features/personal-model/contract"
+import { fillYourModel, keyGroup, personalModelConfig, restorePersonalModel } from "./personal-model"
 import { expect, expectSameThread, pairs, test } from "./devices"
 import { step } from "./fixtures"
 import { requires } from "./target"
@@ -17,10 +18,11 @@ const HOST = new URL(BASE_URL).hostname
 /** A save lands once `model/Put` ran and Electric brought the row back. */
 const SAVED_WITHIN = 30_000
 
-test("your model: a refused key names the provider and status; a real key answers the person; Remove takes it off", {
+test("your model: tiers on a key show after a reload; a refused key names the provider and status; a real key answers; Remove takes it off", {
   annotation: {
     type: "summary",
-    description: "A Member saves their own model's key; a refused key shows the provider's 401, a real one tests OK and answers.",
+    description:
+      "A Member saves a key with Fast and Implement on it; a reload shows them and Hard's fallback; a refused key shows the provider's 401, a real one tests OK and answers.",
   },
 }, async ({ devices, request }) => {
   test.setTimeout(300_000)
@@ -31,19 +33,16 @@ test("your model: a refused key names the provider and status; a real key answer
   const section = page.getByRole("region", { name: "Your model" })
   const status = section.getByRole("status")
   const remove = section.getByRole("button", { name: "Remove" })
+  const keyField = keyGroup(section, PROTOCOL).getByLabel("Key", { exact: true })
 
-  /** Fills the form and saves: the key goes in one request, and the form clears once ChatApi takes it. */
+  /**
+   * Fills the key's Base URL and Key, Fast and Implement on it, and saves: the key goes in one request, and the form
+   * clears once ChatApi takes it.
+   */
   const save = (key: string) =>
-    step("Fill Base URL, Model and Key, then Save", async () => {
-      await section.getByRole("combobox").click()
-      await page.getByRole("option", { name: PROTOCOL === "openai-chat" ? "OpenAI-compatible" : "Anthropic-compatible", exact: true }).click()
-      await section.getByLabel("Base URL", { exact: true }).fill(BASE_URL)
-      await section.getByLabel("Model", { exact: true }).fill(MODEL)
-      await section.getByLabel("Key", { exact: true }).fill(key)
-      await section.getByRole("button", { name: "Save" }).click()
-      await expect(section.getByLabel("Key", { exact: true })).toHaveAttribute("placeholder", `····${[...key].slice(-4).join("")}`, {
-        timeout: SAVED_WITHIN,
-      })
+    step("Fill Base URL and Key, Fast and Implement, then Save", async () => {
+      await fillYourModel(section, page, { protocol: PROTOCOL, baseUrl: BASE_URL, key, tiers: { fast: MODEL, implement: MODEL } })
+      await expect(keyField).toHaveAttribute("placeholder", `····${[...key].slice(-4).join("")}`, { timeout: SAVED_WITHIN })
     })
 
   // The run's own conversation is a branch's page, whose header has no Settings link: Settings is a page of its own.
@@ -62,6 +61,18 @@ test("your model: a refused key names the provider and status; a real key answer
   }
 
   await save(`sk-smithers-e2e-refused-${word}`)
+
+  await step("Reload: Fast and Implement show the saved model; Hard shows the model it uses anyway", async () => {
+    await page.reload()
+    await expect(section).toBeVisible({ timeout: 30_000 })
+    await expect(section.getByLabel("Fast", { exact: true })).toHaveValue(MODEL, { timeout: SAVED_WITHIN })
+    await expect(section.getByLabel("Implement", { exact: true })).toHaveValue(MODEL)
+    const hard = section.getByLabel("Hard", { exact: true })
+    await expect(hard).toHaveValue("")
+    // A preset when the key is at its provider's own host, else the tier Hard falls back to: Implement's model.
+    const saved = { protocol: PROTOCOL, baseUrl: baseUrlOf(BASE_URL)!, fastModel: MODEL, implementModel: MODEL, hardModel: null }
+    await expect(hard).toHaveAttribute("placeholder", resolveTier([saved], "hard")!.modelId)
+  })
 
   await step("Test: the provider refuses the key, by its host and status", async () => {
     await section.getByRole("button", { name: "Test" }).click()
@@ -103,6 +114,6 @@ test("your model: a refused key names the provider and status; a real key answer
     await remove.click()
     await expect(remove).toHaveCount(0, { timeout: SAVED_WITHIN })
     await expect(section.getByRole("button", { name: "Test" })).toHaveCount(0)
-    await expect(section.getByLabel("Key", { exact: true })).not.toHaveAttribute("placeholder", /····/)
+    await expect(keyField).not.toHaveAttribute("placeholder", /····/)
   })
 })
