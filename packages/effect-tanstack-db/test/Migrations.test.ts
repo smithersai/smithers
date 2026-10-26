@@ -415,6 +415,8 @@ describe("apply", () => {
     expect(await readLocal(path, store)).toEqual([{ id: "a", text: "a", n: 1, tags: [] }])
     const line = logs.find((log) => (log.message as Array<unknown>)[0] === "device.migrate")!
     expect(line.annotations).toMatchObject({ collection, outcome: "migrated", from: 1, to: 2, migrated: 1, kept: 4 })
+    // Rows that no longer show are a failure the device records.
+    expect(line.level).toBe("Warn")
     // Never a row's content.
     expect(JSON.stringify(logs)).not.toContain("bee")
   })

@@ -128,7 +128,7 @@ describe("a write", () => {
 
   test("that doesn't get through is sent again, whatever its status, until it does", async () => {
     const world = await setup([new Outbox.Retry({}), new Outbox.Retry({ status: 400 })])
-    const statuses = await scoped(Effect.gen(function*() {
+    const { result: statuses, logs } = await withLogs(Effect.scoped(Effect.gen(function*() {
       const { notes, outbox } = yield* start(world)
       const seen: Array<Outbox.Status> = []
       yield* outbox.status.pipe(Stream.runForEach((status) => Effect.sync(() => seen.push(status))), Effect.forkScoped)
@@ -141,15 +141,20 @@ describe("a write", () => {
       yield* outbox.retryNow
       yield* write.settled
       return seen
-    }))
+    })).pipe(Effect.provide(ownMetrics())))
     expect(world.sent.map(({ idempotencyKey }) => idempotencyKey)).toEqual(["a", "a", "a"])
+    // Logged on its first retry only, by its status; every send is counted.
+    const retrying = logs.filter(({ message }) => (message as Array<unknown>)[0] === "outbox write retrying")
+    expect(retrying.map(({ level, annotations }) => [level, annotations])).toEqual([
+      ["Warn", { name: "save", status: "none", outcome: "retry" }]
+    ])
     expect(statuses.map(({ failing }) => failing)).toEqual(expect.arrayContaining(["network", "server", null]))
     expect(statuses.at(-1)).toEqual({ leader: true, failing: null })
   })
 
-  test("the server refuses is never sent again, rolls back and is counted", async () => {
+  test("the server refuses is never sent again, rolls back, and is logged and counted", async () => {
     const world = await setup([new Outbox.Refused({ status: 409 })])
-    const seen = await scoped(Effect.gen(function*() {
+    const { result: seen, logs } = await withLogs(Effect.scoped(Effect.gen(function*() {
       const { notes, outbox } = yield* start(world)
       const write = yield* save(outbox, notes, note("a", 1))
       const settled = yield* Effect.exit(write.settled)
@@ -159,8 +164,13 @@ describe("a write", () => {
         refused: (yield* Metric.value(Metric.withAttributes(Outbox.refused, { name: "save", status: "409" }))).count,
         left: [...world.storage.entries.keys()]
       }
-    }))
+    })).pipe(Effect.provide(ownMetrics())))
     expect(seen).toEqual({ settled: true, rows: [], refused: 1, left: [] })
+    expect(logs).toContainEqual(expect.objectContaining({
+      message: ["outbox write refused"],
+      level: "Warn",
+      annotations: { name: "save", status: "409", outcome: "refused" }
+    }))
     expect(world.sent).toHaveLength(1)
   })
 
@@ -185,8 +195,9 @@ describe("a write", () => {
     expect(logs).toContainEqual(expect.objectContaining({
       message: ["outbox write failed"],
       level: "Error",
-      annotations: { name: "save", outcome: "defect" }
+      annotations: { name: "save", outcome: "defect", "error.type": "Error" }
     }))
+    expect(JSON.stringify(logs)).not.toContain("boom")
   })
 
   test("queued by one program is restored and sent once by the next", async () => {
@@ -363,7 +374,11 @@ describe("admission", () => {
     const storage = { ...world.storage, keys: () => Promise.reject(new Error("blocked")) }
     const { logs } = await withLogs(Effect.scoped(start({ ...world, storage: storage as never })))
     expect(logs).toContainEqual(
-      expect.objectContaining({ message: ["outbox couldn't load its writes"], level: "Warn" })
+      expect.objectContaining({
+        message: ["outbox couldn't load its writes"],
+        level: "Warn",
+        annotations: { error: expect.stringMatching(/^\w+$/) }
+      })
     )
   })
 })

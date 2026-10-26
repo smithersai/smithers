@@ -164,7 +164,7 @@ describe("a write an older build stored", () => {
     expect(result.parked).toEqual([{ id: expect.any(String), name: "save", reason: "negative", rows: [note("a", -1)] }])
     expect(result.counted).toBe(1)
     const line = logs.find(({ message }) => (message as Array<unknown>)[0] === "outbox write parked")!
-    expect(line.annotations).toMatchObject({ name: "save", reason: "negative" })
+    expect(line.annotations).toMatchObject({ name: "save", reason: "negative", stage: "upgrade" })
     // Never the row's content.
     expect(JSON.stringify(line)).not.toContain("\"text\"")
     // The next program finds it parked still, and discards it.
@@ -183,14 +183,24 @@ describe("a write an older build stored", () => {
     const storage = memoryStorage()
     await oldBuild(storage, [note("a", -1)])
     const offered: Array<Outbox.Parked> = []
-    const left = await nextBuild(storage, ({ outbox }) => outbox.parked, {
+    const parkedLines = (logs: ReadonlyArray<{ readonly message: unknown; readonly annotations: unknown }>) =>
+      logs.filter(({ message }) => (message as Array<unknown>)[0] === "outbox write parked").map(({ annotations }) =>
+        annotations
+      )
+    const leaving = await withLogs(nextBuildProgram(storage, ({ outbox }) => outbox.parked, {
       save: (write) => Effect.sync(() => (offered.push(write), false))
-    })
-    expect(left).toHaveLength(1)
-    const taken = await nextBuild(storage, ({ outbox }) => outbox.parked, {
+    }))
+    expect(leaving.result).toHaveLength(1)
+    // Parked as the outbox upgraded it, then, left by its feature, logged again as it loads: never forgotten silently.
+    expect(parkedLines(leaving.logs)).toEqual([
+      { name: "save", reason: "negative", stage: "upgrade" },
+      { name: "save", reason: "negative", stage: "load" }
+    ])
+    const taking = await withLogs(nextBuildProgram(storage, ({ outbox }) => outbox.parked, {
       save: (write) => Effect.sync(() => (offered.push(write), true))
-    })
-    expect(taken).toEqual([])
+    }))
+    expect(taking.result).toEqual([])
+    expect(parkedLines(taking.logs)).toEqual([])
     expect(offered.map(({ reason, rows }) => [reason, rows])).toEqual([
       ["negative", [note("a", -1)]],
       ["negative", [note("a", -1)]]
@@ -238,9 +248,14 @@ describe("a storage that fails", () => {
       })))
     expect(result).toEqual([])
     expect([...storage.entries.entries()]).toEqual(before)
-    const messages = logs.map(({ message }) => (message as Array<unknown>)[0])
-    expect(messages).toContain("outbox couldn't upgrade its writes")
-    expect(messages).toContain("outbox couldn't discard a parked write")
+    const lines = logs.map(({ message, level, annotations }) => [(message as Array<unknown>)[0], level, annotations])
+    // Each by the storage's error name, never its message.
+    expect(lines).toEqual(expect.arrayContaining([
+      ["outbox couldn't upgrade its writes", "Warn", { error: "Error" }],
+      ["outbox couldn't read its parked writes", "Warn", { error: "Error" }],
+      ["outbox couldn't discard a parked write", "Warn", { error: "Error" }]
+    ]))
+    expect(JSON.stringify(logs)).not.toContain("quota")
   })
 
   test("a stored write that isn't a write is parked under no name, with no rows", async () => {

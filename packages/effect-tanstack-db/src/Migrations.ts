@@ -768,14 +768,21 @@ const bring = (sql: Sql, registry: Registry, stored: StoredCollection) => {
   return bringLocal(sql, store, stored)
 }
 
-/** Logs and counts one collection's outcome, without its rows. */
+/**
+ * Logs and counts one collection's outcome, without its rows: at Warn when a migration couldn't bring rows forward,
+ * so they were set aside or dropped and no longer show; Debug when it was current; Info otherwise.
+ */
 const record = (outcome: CollectionReport) =>
   Effect.all([
     Metric.update(
       Metric.withAttributes(migrations, { store: outcome.store ?? "undeclared", outcome: outcome.outcome }),
       1
     ),
-    (outcome.outcome === "current" ? Effect.logDebug : Effect.logInfo)("device.migrate").pipe(
+    (outcome.outcome === "current"
+      ? Effect.logDebug
+      : outcome.outcome === "migrated" && outcome.kept + outcome.dropped > 0
+      ? Effect.logWarning
+      : Effect.logInfo)("device.migrate").pipe(
       Effect.annotateLogs({ ...outcome, store: outcome.store ?? "undeclared", to: outcome.to ?? "none" })
     )
   ], { discard: true })

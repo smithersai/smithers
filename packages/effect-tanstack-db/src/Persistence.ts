@@ -32,6 +32,7 @@ import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import type { Registry } from "./Migrations.ts"
 import type { Lock } from "./Outbox.ts"
+import { errorName } from "./internal/errorName.ts"
 
 /**
  * The database could not be opened: no OPFS, no Web Worker, storage refused,
@@ -155,6 +156,20 @@ export const syncRoles = Metric.counter("persistence_sync_roles", {
 })
 
 /**
+ * Persisted collections whose rows couldn't be restored from the database, so
+ * they start from what the network or the program gives them, by `collection`:
+ * its kind, the id up to its first `:`, so an id that names a conversation, a
+ * repository or a branch after the kind is counted by the kind alone.
+ *
+ * @category metrics
+ * @since 0.3.0
+ */
+export const restoreFailures = Metric.counter("persistence_restore_failures", {
+  description: "Persisted collections whose rows couldn't be restored from SQLite, by collection kind",
+  incremental: true
+})
+
+/**
  * Milliseconds from a persisted collection's creation to its rows being
  * restored from the database, by `collection`.
  *
@@ -170,8 +185,8 @@ export const restoreMs = Metric.histogram("persistence_restore_ms", {
  * Opens the database and builds TanStack DB's persistence over it. When the
  * layer closes, the coordinator is disposed, then the database closed. When
  * `open` fails, collections keep their rows in memory: the layer logs
- * `persistence unavailable` with the error's tag, counts `unavailable`, and
- * succeeds.
+ * `persistence unavailable` with `error`, the name or tag of what `open`
+ * rejected with (never its message), counts `unavailable`, and succeeds.
  *
  * @category layers
  * @since 0.2.0
@@ -188,7 +203,9 @@ export const layer = <D extends Database>(options: Options<D>): Layer.Layer<Pers
           Effect.tapError((error) =>
             Effect.all([
               Metric.update(unavailable, 1),
-              Effect.logWarning("persistence unavailable").pipe(Effect.annotateLogs({ error: error._tag }))
+              Effect.logWarning("persistence unavailable").pipe(
+                Effect.annotateLogs({ error: errorName(error, ["PersistenceUnavailable", "UnknownError"]) })
+              )
             ])
           )
         )

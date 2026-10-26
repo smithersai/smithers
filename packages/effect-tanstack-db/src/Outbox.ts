@@ -56,6 +56,7 @@ import type * as Stream from "effect/Stream"
 import * as SubscriptionRef from "effect/SubscriptionRef"
 import * as Tracer from "effect/Tracer"
 import type { Collection } from "./Collection.ts"
+import { errorName } from "./internal/errorName.ts"
 import { type MutationRefused, TransactionFailed } from "./internal/model.ts"
 import type { OutboxUpgrade } from "./Migrations.ts"
 
@@ -399,14 +400,18 @@ const carry = (storage: StorageAdapter, upgrade: OutboxUpgrade) =>
       )
       yield* Effect.tryPromise(() => storage.delete(key))
       yield* Metric.update(Metric.withAttributes(carried, { name, outcome: "parked", reason: upgraded.reason }), 1)
-      yield* Effect.logWarning("outbox write parked").pipe(Effect.annotateLogs({ name, reason: upgraded.reason }))
+      yield* Effect.logWarning("outbox write parked").pipe(
+        Effect.annotateLogs({ name, reason: upgraded.reason, stage: "upgrade" })
+      )
     }
   }).pipe(
-    Effect.catch(() => Effect.logWarning("outbox couldn't upgrade its writes")),
+    Effect.catch((error) =>
+      Effect.logWarning("outbox couldn't upgrade its writes").pipe(Effect.annotateLogs({ error: errorName(error) }))
+    ),
     Effect.withSpan("outbox.carry")
   )
 
-/** The writes parked in `storage` that are `principal`'s. A storage that fails reads as none. */
+/** The writes parked in `storage` that are `principal`'s. A storage that fails reads as none, and is logged. */
 const parkedIn = (storage: StorageAdapter, principal: Principal | undefined): Effect.Effect<ReadonlyArray<Parked>> =>
   Effect.gen(function*() {
     const keys = yield* Effect.tryPromise(() => storage.keys())
@@ -424,7 +429,13 @@ const parkedIn = (storage: StorageAdapter, principal: Principal | undefined): Ef
       })
     }
     return writes
-  }).pipe(Effect.catch(() => Effect.succeed([])))
+  }).pipe(Effect.catch((error) =>
+    Effect.as(
+      Effect.logWarning("outbox couldn't read its parked writes").pipe(Effect.annotateLogs({ error: errorName(error) })),
+      []
+    )
+  ))
+
 
 // The error names a mutation's failure becomes. Their messages are fixed, so the library's substring rules never read
 // anything else, and `shouldRetry` decides on the name alone.
@@ -573,18 +584,29 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
               )
             })
           ),
-          Effect.tapError((error): Effect.Effect<void> =>
-            error._tag === "Refused"
-              ? Effect.andThen(
+          // A refusal is final and logged; a write that will be sent again is logged on its first retry only, so a long
+          // outage writes one line per write, while `attempts` counts every send.
+          Effect.tapError((error): Effect.Effect<void> => {
+            const status = String(error.status ?? "none")
+            return error._tag === "Refused"
+              ? Effect.all([
                 outcome("refused"),
-                Metric.update(Metric.withAttributes(refused, { name, status: String(error.status ?? "none") }), 1)
+                Metric.update(Metric.withAttributes(refused, { name, status }), 1),
+                Effect.logWarning("outbox write refused").pipe(Effect.annotateLogs({ name, status, outcome: "refused" }))
+              ], { discard: true })
+              : Effect.andThen(
+                outcome("retry"),
+                attempt === 1
+                  ? Effect.logWarning("outbox write retrying").pipe(Effect.annotateLogs({ name, status, outcome: "retry" }))
+                  : Effect.void
               )
-              : outcome("retry")
-          ),
-          Effect.tapDefect(() =>
+          }),
+          Effect.tapDefect((defect) =>
             Effect.all([
               outcome("defect"),
-              Effect.logError("outbox write failed").pipe(Effect.annotateLogs({ name, outcome: "defect" }))
+              Effect.logError("outbox write failed").pipe(
+                Effect.annotateLogs({ name, outcome: "defect", "error.type": errorName(defect) })
+              )
             ])
           )
         )
@@ -672,7 +694,9 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           Effect.sync(() => executor.dispose())
       )
       yield* Effect.tryPromise(() => executor.waitForInit()).pipe(
-        Effect.catch(() => Effect.logWarning("outbox couldn't load its writes"))
+        Effect.catch((error) =>
+          Effect.logWarning("outbox couldn't load its writes").pipe(Effect.annotateLogs({ error: errorName(error) }))
+        )
       )
 
       // Who a write is queued by, stamped into its metadata when the outbox has a principal.
@@ -790,12 +814,20 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           yield* Effect.logInfo("outbox write discarded").pipe(
             Effect.annotateLogs({ name: (JSON.parse(stored) as StoredParked).name })
           )
-        }).pipe(Effect.catch(() => Effect.logWarning("outbox couldn't discard a parked write")))
+        }).pipe(Effect.catch((error) =>
+          Effect.logWarning("outbox couldn't discard a parked write").pipe(Effect.annotateLogs({ error: errorName(error) }))
+        ))
 
       // Each parked write goes to its feature, which shows it Not sent; one it took leaves the outbox.
+      // One no feature takes stays parked, never sent: it is logged again on each load, so it is never forgotten silently.
       for (const write of yield* parkedIn(options.storage, options.principal)) {
         const take = options.parked?.[write.name]
         if (take !== undefined && (yield* take(write))) yield* discard(write.id)
+        else {
+          yield* Effect.logWarning("outbox write parked").pipe(
+            Effect.annotateLogs({ name: write.name, reason: write.reason, stage: "load" })
+          )
+        }
       }
 
       return Outbox.of({

@@ -296,6 +296,14 @@ describe("one writer per persisted synced collection", () => {
     const exit = await Effect.runPromiseExit(broken.notes.preload)
     expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({ _tag: "LoadFailed" })
     expect(broken.notes.tanstack.status).toBe("error")
+    // Logged by the collection and the error's name, never its message.
+    const failed = () =>
+      broken.logs.filter(({ message }) => (message as Array<unknown>)[0] === "persisted sync failed")
+    await until(() => failed().length > 0)
+    expect(failed().map(({ level, annotations }) => [level, annotations])).toEqual([
+      ["Warn", { collection: on.collection, error: "Error" }]
+    ])
+    expect(JSON.stringify(broken.logs)).not.toContain("the source broke")
     // Nobody holds the lock: the next program writes.
     const next = await program(on)
     await until(() => writes(next.now()))

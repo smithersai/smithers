@@ -82,8 +82,11 @@ state, through `Persistence`: TanStack DB's `persistedCollectionOptions` with
 network-first initial rendering that waits for no network
 (`networkTimeoutMs: 0`), so the rows restored from the device show at once and
 the network's rows follow. `restored` waits for them, and the milliseconds it
-took are recorded in `Persistence.restoreMs`. Without a database, the rows stay
-in memory.
+took are recorded in `Persistence.restoreMs`. A restore that fails, so the
+collection starts without its stored rows, is logged as `persisted restore
+failed` at Warn with `collection` (its kind: the id up to its first `:`) and
+`error` (the error's name, never its message), and counted in
+`Persistence.restoreFailures`. Without a database, the rows stay in memory.
 
 Each transaction the sync adapter opens reaches TanStack DB's persisted core
 whole, at its commit: begin, its writes and metadata in order, then the commit,
@@ -105,7 +108,9 @@ comes to hold the lock ends its watching session and starts its source again,
 writing, from what the database stored. A writer that stops lets the lock go
 only once the database has stored, or refused, what it committed, so none of
 its commits lands after the next writer's. A source that throws as it starts
-fails the collection (`markError`), as it would alone, and the program lets
+fails the collection (`markError`), as it would alone, logged as `persisted
+sync failed` at Warn level with `collection` (its kind: the id up to its first
+`:`) and `error` (the error's name, never its message), and the program lets
 the lock go. Each role a program's source takes is
 logged as `persisted sync role` at Info level, with `collection` and `role`
 (`writer` or `watcher`), and counted in `Persistence.syncRoles`. So one
@@ -371,6 +376,7 @@ or test that persists nothing.
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `unavailable`            | Counter `persistence_unavailable`: times the database couldn't open, so rows stayed in memory.                                                 |
 | `restoreMs`              | Histogram `persistence_restore_ms`, by `collection` (its id): milliseconds from making a persisted collection to its rows restored.            |
+| `restoreFailures`        | Counter `persistence_restore_failures`, by `collection` (its kind, the id up to its first `:`): persisted collections whose restore failed.    |
 | `writeFailures`          | Counter `persistence_write_failures`, by `collection` and `operation`: writes to a persisted collection the device couldn't store.             |
 | `syncRoles`              | Counter `persistence_sync_roles`, by `collection` and `role` (`writer` or `watcher`): roles a synced collection's source took in this program. |
 | `PersistenceUnavailable` | `Data.TaggedError` with `cause: unknown`: the database couldn't be opened. `cause` is what the host reported.                                  |
@@ -440,16 +446,16 @@ parked write.
 
 Starts the outbox and waits until it has loaded the writes stored earlier,
 restored their rows, and asked to lead; a storage it can't read at start is
-logged as `outbox couldn't load its writes` at Warn level. The outbox stops
-when the layer closes.
+logged as `outbox couldn't load its writes` at Warn level, with `error`, the
+storage error's name. The outbox stops when the layer closes.
 
 A mutation's typed failure becomes the library's retry decision:
 
 | Mutation fails with | The write                                                                                                                                                          |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Retry`             | Is sent again after the library's backoff, 1 second doubling to 60, jittered, or at once on `retryNow` or the browser coming back online.                          |
-| `Refused`           | Is never sent again; its optimistic rows roll back and `settled` fails.                                                                                            |
-| a defect            | Is never sent again; its rows roll back, and it is logged as `outbox write failed` at Error level with `name` and `outcome: "defect"`, never the defect's message. |
+| `Retry`             | Is sent again after the library's backoff, 1 second doubling to 60, jittered, or at once on `retryNow` or the browser coming back online. Its first retry is logged as `outbox write retrying` at Warn level with `name`, `status` (or `none`) and `outcome: "retry"`; later ones only count in `attempts`. |
+| `Refused`           | Is never sent again; its optimistic rows roll back and `settled` fails. It is logged as `outbox write refused` at Warn level with `name`, `status` (or `none`) and `outcome: "refused"`, and counted in `refused`. |
+| a defect            | Is never sent again; its rows roll back, and it is logged as `outbox write failed` at Error level with `name`, `outcome: "defect"` and `error.type`, the defect's name, never its message. |
 
 The outbox throws the library errors with fixed messages, and its
 `shouldRetry` retries only an error named `OutboxRetry`. So the library's own
@@ -498,8 +504,8 @@ interface Status {
 | `status`   | The outbox's state now, then each change: whether this program leads, and whether the last send failed on the `network` (no status) or at the `server`; null once a send gets through.                                                                                                                                                                                                                         |
 | `retryNow` | Sends every waiting write now instead of waiting out its backoff: the network detector's `notifyOnline`.                                                                                                                                                                                                                                                                                                       |
 | `withdraw` | Takes back a write not sent yet, by its idempotency key: deletes it from the storage, so it is never sent, and rolls back its optimistic rows. Fails with `NotWithdrawn` when it can't. See below.                                                                                                                                                                                                             |
-| `parked`   | The writes parked now: ones an older build stored that this build can't send as they were meant, with the mutation's `name`, the `reason` and the rows as stored, which no schema checked. A storage that can't be read reads as none.                                                                                                                                                                         |
-| `discard`  | Deletes parked write `id`, logged as `outbox write discarded` at Info level with its `name`. One that isn't parked changes nothing; a storage that fails is logged as `outbox couldn't discard a parked write`.                                                                                                                                                                                                |
+| `parked`   | The writes parked now: ones an older build stored that this build can't send as they were meant, with the mutation's `name`, the `reason` and the rows as stored, which no schema checked. A storage that can't be read reads as none, logged as `outbox couldn't read its parked writes` with `error`.                                                                                                       |
+| `discard`  | Deletes parked write `id`, logged as `outbox write discarded` at Info level with its `name`. One that isn't parked changes nothing; a storage that fails is logged as `outbox couldn't discard a parked write` with `error`.                                                                                                                                                                                  |
 
 `Write.admitted` succeeds once the write is stored, and fails with
 `NotAdmitted` (`reason: "storage"`) when the storage refused it, or
@@ -633,7 +639,7 @@ offline.
 | `leaderChanges`        | Counter `outbox_leader_changes`, by `leader` (`true` or `false`).                                                                                                                                                                                                                |
 | `carried`              | Counter `outbox_carried`, by `name`, `outcome` (`upgraded` or `parked`) and `reason` (`none` for an upgrade): stored writes from an older build the outbox brought forward or parked as it started.                                                                              |
 | `Parked`               | A parked write: its `id`, mutation `name`, `reason` and the `rows` as stored.                                                                                                                                                                                                    |
-| span `outbox.carry`    | One per start with `upgrade`: the pass over the stored writes. Each upgraded write is logged as `outbox write upgraded` (Info), each parked one as `outbox write parked` (Warn), with `name` and `reason`, never its rows.                                                       |
+| span `outbox.carry`    | One per start with `upgrade`: the pass over the stored writes. Each upgraded write is logged as `outbox write upgraded` (Info), each parked one as `outbox write parked` (Warn, `stage: "upgrade"`), with `name` and `reason`, never its rows. A parked write no feature takes is logged again as `outbox write parked` (`stage: "load"`) each time the outbox starts. A storage that fails is `outbox couldn't upgrade its writes` with `error`. |
 | span `outbox.send`     | One per send, with `name`, `attempt` and `outcome`, linked to the span the write was made in, so a send after a reload still points at the ask.                                                                                                                                  |
 | span `outbox.withdraw` | One per `withdraw`, with `outcome`: `withdrawn`, or the `NotWithdrawn` reason.                                                                                                                                                                                                   |
 

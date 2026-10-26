@@ -180,6 +180,31 @@ describe("a synced collection made with persist", () => {
     )
     expect(Exit.isFailure(exit) && exit.cause.toString()).toContain("LoadFailed")
   })
+
+  test("a restore that failed is logged by the collection's kind and the error's name, and counted", async () => {
+    const broken = Persistence.layer({
+      open: () => ({ execute: () => Promise.reject(new TypeError("SENTINEL disk")), close: () => undefined }),
+      make: (database) => createBrowserWASQLitePersistence({ database })
+    })
+    const kind = id("broken")
+    const { result, logs } = await withLogs(
+      Effect.scoped(Effect.gen(function*() {
+        // The id names a conversation after its kind; only the kind is recorded.
+        yield* synced(`${kind}:conversation-1`, [], false)
+        return yield* Metric.value(Metric.withAttributes(Persistence.restoreFailures, { collection: kind })).pipe(
+          Effect.map(({ count }) => count),
+          Effect.repeat({ until: (count) => count > 0, schedule: Schedule.spaced("5 millis"), times: 400 })
+        )
+      })).pipe(Effect.provide(broken), Effect.provide(ownMetrics()))
+    )
+    expect(result).toBe(1)
+    const failed = logs.filter(({ message }) => (message as Array<unknown>)[0] === "persisted restore failed")
+    expect(failed.map(({ level, annotations }) => ({ level, ...annotations }))).toEqual([
+      { level: "Warn", collection: kind, error: expect.stringMatching(/^[A-Za-z]+$/) }
+    ])
+    expect(JSON.stringify(logs)).not.toContain("SENTINEL")
+    expect(JSON.stringify(failed)).not.toContain("conversation-1")
+  })
 })
 
 describe("without a database", () => {
@@ -209,9 +234,11 @@ describe("without a database", () => {
       expect.objectContaining({
         message: ["persistence unavailable"],
         level: "Warn",
-        annotations: { error: "PersistenceUnavailable" }
+        // What `open` rejected with, by its name, never its message.
+        annotations: { error: "Error" }
       })
     )
+    expect(JSON.stringify(logs)).not.toContain("no OPFS")
   })
 
   test("memory keeps every persisted collection in memory", async () => {

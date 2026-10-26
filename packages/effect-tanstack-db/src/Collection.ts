@@ -38,13 +38,14 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import type * as Stream from "effect/Stream"
+import { errorName } from "./internal/errorName.ts"
 import { type Change, type Key, LoadFailed, type MutationRefused, type Transaction } from "./internal/model.ts"
 import { oneWriter } from "./internal/oneWriter.ts"
 import { awaitRow, changes, mutate, preload, release, toArray } from "./internal/readers.ts"
 import { wholeTransactions } from "./internal/wholeTransactions.ts"
 import { declared } from "./Migrations.ts"
 import type { Lock } from "./Outbox.ts"
-import { Persistence, restoreMs, syncRoles, writeFailures } from "./Persistence.ts"
+import { Persistence, restoreFailures, restoreMs, syncRoles, writeFailures } from "./Persistence.ts"
 
 export { LoadFailed, MutationRefused, TransactionFailed } from "./internal/model.ts"
 export type { Change, Key, Transaction } from "./internal/model.ts"
@@ -246,7 +247,13 @@ const elected = <C extends { readonly sync: (params: never) => unknown }>(
         run(Effect.andThen(
           Metric.update(Metric.withAttributes(syncRoles, { collection: id, role }), 1),
           Effect.logInfo("persisted sync role").pipe(Effect.annotateLogs({ collection: id, role }))
-        ))
+        )),
+      // A turn that failed, such as a source that throws as it starts, fails the collection: logged by its kind (the id
+      // up to the first `:`) and the error's name, never its message.
+      failed: (error) =>
+        Effect.logWarning("persisted sync failed").pipe(
+          Effect.annotateLogs({ collection: id.split(":", 1)[0]!, error: errorName(error) })
+        )
     })
   })
 
@@ -295,7 +302,9 @@ const create = <A extends object, K extends Key, U extends UtilsRecord>(
     release
   ).pipe(Effect.map(wrap))
 
-// Records how long the collection took to restore its rows, in the scope's background.
+// Records how long the collection took to restore its rows, in the scope's background. A restore that failed, so the
+// collection starts without its stored rows, is logged as `persisted restore failed` by the collection's kind (its id up
+// to the first `:`) and the error's name, never its message, and counted in `Persistence.restoreFailures`.
 const timedRestore = <A extends object, K extends Key, U extends UtilsRecord>(
   collection: Effect.Effect<Collection<A, K, U>, never, Scope.Scope>
 ) =>
@@ -305,7 +314,13 @@ const timedRestore = <A extends object, K extends Key, U extends UtilsRecord>(
     yield* made.restored.pipe(
       Effect.andThen(Clock.currentTimeMillis),
       Effect.flatMap((now) => Metric.update(Metric.withAttributes(restoreMs, { collection: made.id }), now - start)),
-      Effect.ignore,
+      Effect.catch(({ cause }) => {
+        const kind = made.id.split(":", 1)[0]!
+        return Metric.update(Metric.withAttributes(restoreFailures, { collection: kind }), 1).pipe(
+          Effect.andThen(Effect.logWarning("persisted restore failed")),
+          Effect.annotateLogs({ collection: kind, error: errorName(cause) })
+        )
+      }),
       Effect.forkScoped
     )
     return made

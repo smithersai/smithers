@@ -132,8 +132,9 @@ change a fingerprint.
 
 ## Observability
 
-Each collection's outcome is a log line `device.migrate` (Info, Debug when
-`current`) with `collection`, `store`, `outcome`, `from`, `to`, `migrated`,
+Each collection's outcome is a log line `device.migrate` (Info; Debug when
+`current`; Warn when a migration set rows aside or dropped them, since they no
+longer show) with `collection`, `store`, `outcome`, `from`, `to`, `migrated`,
 `kept` and `dropped`, and a count of `device_migrations` by `store` and
 `outcome`. Each row set aside counts in `device_rows_kept` by `store` and
 `reason`; the whole run is a span `device.migrate` and a `device_migrate_ms`

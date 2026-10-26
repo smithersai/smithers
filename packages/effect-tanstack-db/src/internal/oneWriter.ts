@@ -44,8 +44,9 @@ export type Role = "writer" | "watcher"
  * `config`, with its source writing only in the program that holds `lock`
  * `name`, and watching in every other. `fork` runs the program's turn at the
  * lock in the background and answers how to stop it; `became` hears each role
- * the program takes. A writer's transactions reach the persisted core whole
- * (`wholeTransactions`).
+ * the program takes, and `failed` the failure that ends its turn, before the
+ * collection is marked failed. A writer's transactions reach the persisted
+ * core whole (`wholeTransactions`).
  *
  * @category internal
  * @since 0.2.0
@@ -57,6 +58,7 @@ export const oneWriter = <C extends { readonly sync: (params: never) => unknown 
     readonly name: string
     readonly fork: (turn: Effect.Effect<void>) => () => void
     readonly became: (role: Role) => void
+    readonly failed: (error: unknown) => Effect.Effect<void>
   }
 ): C => {
   const writing = wholeTransactions(config).sync as (params: Params) => unknown
@@ -108,7 +110,7 @@ export const oneWriter = <C extends { readonly sync: (params: never) => unknown 
         yield* Effect.sync(stopSession)
       })).pipe(
         Effect.forever,
-        Effect.catch((error) => Effect.sync(() => params.markError(error)))
+        Effect.catch((error) => Effect.andThen(options.failed(error), Effect.sync(() => params.markError(error))))
       )
       const stop = options.fork(turn)
       return {
