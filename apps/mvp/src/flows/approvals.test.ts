@@ -2,7 +2,7 @@
 // as an engine's inspection records them.
 import { FlowRuntime } from "@smthrs/flow"
 import type { EngineStore } from "@smthrs/flows"
-import { Effect } from "effect"
+import { Effect, Logger, References } from "effect"
 import { describe, expect, test } from "vitest"
 import { asksApproval, denied, deniedHere } from "./approvals"
 
@@ -62,7 +62,16 @@ describe("denied", () => {
   test("a run with no no, or one it can't read, has refused nothing", async () => {
     const yes = inspecting([child("app/agent/ask", "a/call/0.0", { kind: "approval", prompt: "Go?" }, { answered: true, approved: true })])
     expect(await Effect.runPromise(denied(yes.inspection, "a"))).toEqual({ any: false, flows: new Set() })
-    expect(await Effect.runPromise(denied(inspecting(undefined).inspection, "a"))).toEqual({ any: false, flows: new Set() })
+    const lines: Array<{ readonly message: unknown; readonly level: string; readonly annotations: unknown }> = []
+    const logger = Logger.make(({ message, logLevel, fiber }) =>
+      void lines.push({ message: (message as ReadonlyArray<unknown>)[0], level: logLevel, annotations: fiber.getRef(References.CurrentLogAnnotations) }))
+    expect(await Effect.runPromise(denied(inspecting(undefined).inspection, "a").pipe(Effect.provide(Logger.layer([logger])))))
+      .toEqual({ any: false, flows: new Set() })
+    // The read that failed is logged once at Warn by its code, never its message.
+    expect(lines).toEqual([
+      { message: "flow.approvals.read", level: "Warn", annotations: { feature: "flows", outcome: "unreadable", errorCode: "unknown" } },
+    ])
+    expect(JSON.stringify(lines)).not.toContain("gone")
   })
 })
 

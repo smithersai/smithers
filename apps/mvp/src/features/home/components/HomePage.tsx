@@ -65,13 +65,16 @@ export function HomePage({ tree }: { readonly tree: ReactNode }) {
   }
   const ask = (flow: string | undefined) => {
     const draft = draftFor(flow)
-    void navigate({ href: page.askHref }).then(() => {
+    actions.watch("ask", navigate({ href: page.askHref }).then(() => {
       if (draft !== undefined) chat.actions.setDraft(draft)
       chat.actions.openComposer("button")
-    })
+    }))
   }
   const run = (flow: string) =>
-    void actions.run(flow, session?.login ?? null).then((href) => href === undefined ? undefined : navigate({ href }))
+    actions.watch(
+      "action",
+      actions.run(flow, session?.login ?? null).then((href) => href === undefined ? undefined : navigate({ href })),
+    )
   return (
     <>
     {page.views.length === 0 ? null : (

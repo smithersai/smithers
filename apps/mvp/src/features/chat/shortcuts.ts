@@ -1,4 +1,5 @@
 import { Effect } from "effect"
+import { runners } from "../../boundary"
 import { closeComposer, toggleComposer } from "./actions"
 import type { ChatStore } from "./store"
 
@@ -9,7 +10,7 @@ import type { ChatStore } from "./store"
 // after the element it was pressed in: one that handled Esc itself, such as the command menu closing, prevented its
 // default, and the composer stays.
 export const chatShortcuts = Effect.fnUntraced(function* (target: EventTarget) {
-  const run = Effect.runSyncWith(yield* Effect.context<ChatStore>())
+  const { runSync: run } = runners(yield* Effect.context<ChatStore>(), "chat")
   // Some keydown events carry no key, such as Chrome's autofill.
   const keyOf = (event: Event) => (event as Partial<KeyboardEvent>).key
   const onToggle = (event: Event) => {

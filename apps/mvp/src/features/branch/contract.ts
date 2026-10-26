@@ -132,8 +132,9 @@ export const BRANCH_TELEMETRY = {
     "branch.update.press",
     "smithers_web_branch_publishes",
     "smithers_web_branch_updates",
+    "branch.creation.defect",
   ],
-  fields: ["outcome", "status", "durationMs", "conversation", "conversationId"],
+  fields: ["outcome", "status", "durationMs", "conversation", "conversationId", "errorCode", "feature"],
 } as const
 
 /**

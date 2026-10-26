@@ -19,6 +19,7 @@ export const appPath = (to: string, origin: string): Target => {
   let url: URL
   try {
     url = new URL(to, `${origin}/`)
+    // expected: a path that isn't a URL is refused as invalid
   } catch {
     return { _tag: "Refused", reason: "invalid" }
   }

@@ -637,6 +637,15 @@ describe("admission", () => {
     tab.actions.resendUnsent(questionId)
     await until(() => expect(tab.shown()).toEqual(["user done hello", "assistant streaming "]))
     expect(tab.count(Metric.withAttributes(unsentActions, { action: "retry" }))).toBe(1)
+    await tab.close() // Flush the real exporter.
+    // The storage failing is a failure: one Warn line by its code, never the storage's message or the question.
+    expect(readTelemetry(tab.api.telemetry).log("question not admitted")).toEqual([
+      expect.objectContaining({
+        severity: "Warn",
+        attributes: expect.objectContaining({ feature: "chat", questionId, reason: "storage", outcome: "failed", errorCode: "NotAdmitted" }),
+      }),
+    ])
+    expect(JSON.stringify(readTelemetry(tab.api.telemetry).log("question not admitted"))).not.toMatch(/quota|hello/)
   })
 
   test("Retry preserves a form's values and source when device storage refuses its first submission", async () => {
@@ -699,6 +708,13 @@ describe("admission", () => {
     tab.actions.resendUnsent(questionId)
     expect(tab.shown()).toEqual(["user unsent hello"])
     expect(tab.count(Metric.withAttributes(askFailures, { reason: "not_admitted" }))).toBe(2)
+    await tab.close() // Flush the real exporter.
+    // A tab that doesn't lead is a state it leaves by taking the lead: Info, with no failure code.
+    const lines = readTelemetry(tab.api.telemetry).log("question not admitted")
+    expect(lines.map(({ severity, attributes }) => ({ severity, reason: attributes.reason, errorCode: attributes.errorCode }))).toEqual([
+      { severity: "Info", reason: "follower", errorCode: undefined },
+      { severity: "Info", reason: "follower", errorCode: undefined },
+    ])
   })
 })
 

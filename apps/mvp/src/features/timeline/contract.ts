@@ -10,7 +10,7 @@ export const TIMELINE_TELEMETRY = {
     "smithers_timeline_summary_calls",
     "smithers_timeline_summary_stops",
   ],
-  fields: ["outcome", "replayed", "role", "code", "reason"],
+  fields: ["outcome", "replayed", "role", "code", "errorCode", "reason"],
 } as const
 
 /**

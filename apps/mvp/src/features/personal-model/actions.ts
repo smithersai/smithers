@@ -1,4 +1,5 @@
 import { Effect, Exit, Option, Redacted } from "effect"
+import { recordUnhandled } from "../../boundary"
 import { FlowDispatch } from "../../flows/dispatch"
 import { type ModelNotTaken, PersonalModelClient } from "./api"
 import { checkSave, type Refusal } from "./contract"
@@ -16,6 +17,12 @@ import { lastFailure, latestUpdate, onItsWay, type SaveForm } from "./view"
 // ChatApi's 202 means a write's flow started, not that it landed: the form clears its keys at once and says Saving
 // until the rows show the write (store.ts's follower), or that it hasn't shown up after `confirmWithin`. No whole answer
 // is an unknown outcome, never a failure: the rows may still show it landed.
+
+/**
+ * A write's follow-up, for the store's scope: it writes only the form's row, which `begin` made and nothing deletes,
+ * so a refusal is a bug. It dies, and since no caller awaits the fork, it is logged as `app.unhandled`.
+ */
+const followUp = <A, E, R>(effect: Effect.Effect<A, E, R>) => recordUnhandled(Effect.orDie(effect), "personal-model", "fork")
 
 /** The person's saved keys' rows, as the device has them. */
 const current = Effect.flatMap(PersonalModelStore, (store) => store.saved.toArray)
@@ -122,7 +129,7 @@ export const save = (form: SaveForm) => {
             )
             : Effect.andThen(refuse(refused.code), record("put", "refused", { code: refused.code, status: refused.status! })),
       }),
-      Effect.ignore,
+      followUp,
       Effect.forkIn(store.scope),
     )
     return true
@@ -148,7 +155,7 @@ export const remove = Effect.gen(function* () {
         : undefined
       return refuse(refused ?? "unavailable")
     }),
-    Effect.ignore,
+    followUp,
     Effect.forkIn(store.scope),
   )
   return true
@@ -189,6 +196,7 @@ export const test = Effect.gen(function* () {
           void Object.assign(draft, { state: "failed", failure: refused ?? "unavailable", failedAt }))
       })
     ),
+    // expected: a save meanwhile can delete the test row (forgetTest), and its answer is then about the model before
     Effect.ignore,
     Effect.forkIn(store.scope),
   )

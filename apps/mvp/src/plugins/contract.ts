@@ -21,10 +21,12 @@ export const PLUGINS_TELEMETRY = {
     "plugin.refused",
     "plugin.press",
     "plugin.key",
+    "plugin.failed",
+    "plugin.request",
     "smithers_plugin_loads",
     "smithers_plugin_contributions",
     "smithers_plugin_presses",
     "smithers_plugin_keys",
   ],
-  fields: ["plugin", "version", "tier", "outcome", "reason", "point", "view", "event", "door", "key"],
+  fields: ["plugin", "version", "tier", "outcome", "reason", "point", "view", "event", "door", "key", "errorCode", "feature"],
 } as const

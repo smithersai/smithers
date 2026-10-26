@@ -49,6 +49,7 @@ export const setChannel = (channel: AlertChannelName, destinations: ReadonlyArra
           ? saves.delete(channel)
           : saves.update(channel, (draft) => void (draft.state = "failed"))
       ),
+      // expected: a second save of the channel shares the row, and the first to finish may have removed it
       Effect.ignore,
       Effect.forkIn(scope),
     )
@@ -76,6 +77,7 @@ export const setLimits = (limits: SandboxLimitsRequest) =>
           ? limitSaves.delete("sandbox")
           : limitSaves.update("sandbox", (draft) => void (draft.state = "failed"))
       ),
+      // expected: a second save of the limits shares the row, and the first to finish may have removed it
       Effect.ignore,
       Effect.forkIn(scope),
     )

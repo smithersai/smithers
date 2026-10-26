@@ -1,5 +1,6 @@
 import type { Interactions } from "@smthrs/views"
 import { Context, Effect, Layer } from "effect"
+import { runners } from "../../boundary"
 import { FlowDispatch } from "../../flows/dispatch"
 import type { AppTemplate } from "./contract"
 import { type Minimized, minimize, opened } from "./minimize"
@@ -78,8 +79,7 @@ export class Views extends Context.Service<Views, { readonly queries: ViewsQueri
     Effect.gen(function* () {
       const store = yield* ViewsStore
       const context = yield* Effect.context<ViewsStore | FlowDispatch>()
-      const run = Effect.runPromiseWith(context)
-      const sync = Effect.runSyncWith(context)
+      const { runPromise: run, runSync: sync } = runners(context, "views")
       return Views.of({
         queries: {
           shown: store.shown.tanstack,

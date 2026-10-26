@@ -623,7 +623,12 @@ describe("clone retry admission", { timeout: ENGINE_WITHIN }, () => {
     if (outcome === "started") Effect.runSync(Deferred.succeed(admission, undefined))
     else Effect.runSync(Deferred.fail(admission, new DispatchFailed({ flow: "repo/clone", reason: "unavailable" })))
     await until(() => expect(ann.count(Metric.withAttributes(panelActs, { act: "retry", outcome }))).toBe(1))
-    expect(logs).toContainEqual(expect.objectContaining({ message: "notifications.panel", annotations: expect.objectContaining({ act: "retry", subject, outcome }) }))
+    // A retry the engine didn't admit is a failure: Warn, by dispatch's reason, so the counting logger counts it.
+    expect(logs).toContainEqual(expect.objectContaining({
+      message: "notifications.panel",
+      level: outcome === "failed" ? "WARN" : "INFO",
+      annotations: expect.objectContaining({ act: "retry", subject, outcome, ...(outcome === "failed" ? { reason: "unavailable" } : {}) }),
+    }))
     expect(JSON.stringify(logs)).not.toContain("private title")
   })
 })

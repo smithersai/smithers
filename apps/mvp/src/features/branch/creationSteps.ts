@@ -3,6 +3,7 @@ import { FlowRuntime, Interpreter } from "@smthrs/flow"
 import { RealmFlow } from "@smthrs/harness"
 import { Effect, Layer, Metric, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
+import { codeOf } from "../../errorCode"
 import { CREATION_ROUTE, CreationSelection } from "./creation"
 import { BranchClient, TRACK_WITHIN } from "./api"
 import { CONVERSATION_NAMESPACE, isBranchName } from "./contract"
@@ -82,9 +83,19 @@ export const registration = (origin: string) => Layer.mergeAll(
   )),
 )
 
+/**
+ * A defect in the creation's child run: logged once at Error by its name, never its message, and turned into
+ * `BranchTrackUnavailable`, which the page shows as failed.
+ */
+const creationDefect = (defect: unknown) =>
+  Effect.logError("branch.creation.defect").pipe(
+    Effect.annotateLogs({ feature: "branch", outcome: "defect", errorCode: codeOf(defect) }),
+    Effect.andThen(Effect.fail(new BranchTrackUnavailable())),
+  )
+
 /** Run as a child of the caller's durable step, with a stable identity across its retries. */
 export const run = (request: Omit<CreationRequest, "request"> & { readonly request?: string }) => Effect.gen(function* () {
   const { executionId } = yield* FlowRuntime.FlowInstance
   const requestId = request.request ?? (yield* Uuid.v5(CONVERSATION_NAMESPACE, executionId).pipe(Effect.orDie))
-  return yield* (yield* FlowRuntime.FlowRuntime).execute(CreationStart, { executionId: `branch-creation:${requestId}`, payload: { ...request, request: requestId } }).pipe(Effect.catchDefect(() => Effect.fail(new BranchTrackUnavailable())), Effect.mapError((error) => error instanceof BranchTrackRefused || error instanceof BranchTrackUnavailable ? error : new BranchTrackUnavailable()))
+  return yield* (yield* FlowRuntime.FlowRuntime).execute(CreationStart, { executionId: `branch-creation:${requestId}`, payload: { ...request, request: requestId } }).pipe(Effect.catchDefect(creationDefect), Effect.mapError((error) => error instanceof BranchTrackRefused || error instanceof BranchTrackUnavailable ? error : new BranchTrackUnavailable()))
 })

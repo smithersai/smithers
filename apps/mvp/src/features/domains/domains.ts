@@ -1,4 +1,5 @@
 import { Context, Data, Effect, Layer } from "effect"
+import { runners } from "../../boundary"
 import type { Clipboard } from "../../clipboard"
 import type { FlowDispatch } from "../../flows/dispatch"
 import { add, copy, open, refresh, remove } from "./actions"
@@ -44,8 +45,7 @@ export class Domains extends Context.Service<
       Effect.gen(function* () {
         const store = yield* DomainsStore
         const context = yield* Effect.context<DomainsStore | FlowDispatch | Clipboard>()
-        const run = Effect.runSyncWith(context)
-        const promise = Effect.runPromiseWith(context)
+        const { runSync: run, runPromise: promise } = runners(context, "domains")
         return Domains.of({
           queries: { page: store.pageState.tanstack, domains: store.listState.tanstack, saves: store.savesState.tanstack },
           actions: {

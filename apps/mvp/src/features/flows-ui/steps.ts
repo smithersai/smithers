@@ -5,6 +5,7 @@ import { EngineStore } from "@smthrs/flows"
 import { RealmFlow } from "@smthrs/harness"
 import { Evaluator } from "@smthrs/model"
 import { Clock, Effect, Layer, Option, Schema } from "effect"
+import { codeOf } from "../../errorCode"
 import { callFlow, publicError } from "../../flows/catalog"
 import { declarationOf } from "../../flows/declarations"
 import { entryOf, type FlowName } from "../../flows/registry"
@@ -88,6 +89,7 @@ export const open = ({ name, request }: { readonly name: string; readonly reques
       // A name the person already has: this draft edits that flow, from its latest revision.
       const existing = yield* client.source(name).pipe(
         Effect.map(Option.some),
+        // expected: a new name has no flow to edit
         Effect.catchTag("@smthrs/mvp/flows/FlowNotFound", () => Effect.succeed(Option.none())),
       )
       const flowId = Option.match(existing, { onNone: () => null, onSome: (flow) => flow.flowId })
@@ -440,12 +442,20 @@ export const removeDraft = ({ draftId }: { readonly draftId: string }) =>
     // Gone, or not the person's: nothing to delete. Any other refusal (signed out, say) fails the step.
     const draft = yield* client.draft(draftId).pipe(
       Effect.map(Option.some),
+      // expected: a draft gone or not the person's deletes nothing
       Effect.catchTag("@smthrs/mvp/flows/FlowsRefused", (refused) =>
         refused.status === 404 || refused.status === 403 ? Effect.succeed(Option.none()) : Effect.fail(refused)),
     )
     if (Option.isNone(draft)) return { deleted: false }
-    // An id this engine doesn't hold is ignored; a stop the store couldn't record leaves a round whose write is refused.
-    yield* Effect.ignore((yield* FlowRuntime.FlowRuntime).interrupt(FlowNew, roundExecutionId(draftId, draft.value.round)))
+    // An id this engine doesn't hold is ignored; a stop the store couldn't record leaves a round whose write is refused,
+    // and is logged by its code.
+    yield* (yield* FlowRuntime.FlowRuntime).interrupt(FlowNew, roundExecutionId(draftId, draft.value.round)).pipe(
+      Effect.catch((failure) =>
+        Effect.logWarning("flow.draft.interrupt").pipe(
+          Effect.annotateLogs({ feature: "flows", outcome: "failed", errorCode: codeOf(failure) }),
+        )
+      ),
+    )
     return { deleted: yield* client.deleteDraft(draftId) }
   })
 

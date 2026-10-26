@@ -14,6 +14,7 @@ import type { Actor } from "../../../worker/Actor.ts"
 import * as PullStore from "../../../worker/github/Pulls.ts"
 import * as Store from "../../../worker/github/Store.ts"
 import { CHATAPI_ORIGIN, openTab, openTestApp, type TabOptions, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
+import { read } from "../../test/otlp"
 import { itemId } from "../issues/contract"
 import { ISSUES_STREAM } from "../issues/contract"
 import { Issues } from "../issues/issues"
@@ -475,14 +476,31 @@ describe("the Files tab", () => {
     const scripted = tab.api.github.scripted
     const base = scripted.refs.get("main")!
     const head = scripted.push("smithers/t2", { "B.md": "b\n" })
-    client.state.compare.push(503)
+    client.state.compare.push("network", 503)
     tab.actions.loadFiles(OWNER, NAME, base, head)
+    await until(() => expect(tab.queries.files.toArray.map(({ status }) => status)).toEqual(["failed"]))
+    tab.actions.loadFiles(OWNER, NAME, base, head)
+    await until(() => expect(client.state.compare).toEqual([]))
     await until(() => expect(tab.queries.files.toArray.map(({ status }) => status)).toEqual(["failed"]))
     tab.actions.loadFiles(OWNER, NAME, base, head)
     await until(() =>
       expect(tab.queries.files.toArray.map(({ status, files }) => ({ status, names: files.map((file) => file.filename) })))
         .toEqual([{ status: "ready", names: ["B.md"] }])
     )
+    // Each failed read was logged once, by its code, and by its status when ChatApi answered.
+    for (const each of runtimes.splice(0).reverse()) await each.dispose()
+    const lines = read(tab.api.telemetry).log("pulls.files.load")
+    expect(lines).toEqual([
+      expect.objectContaining({
+        severity: "Warn",
+        attributes: expect.objectContaining({ feature: "pulls", outcome: "failed", errorCode: "PullsRequestFailed" }),
+      }),
+      expect.objectContaining({
+        severity: "Warn",
+        attributes: expect.objectContaining({ feature: "pulls", outcome: "failed", status: 503, errorCode: "PullsRequestFailed" }),
+      }),
+    ])
+    expect(lines[0]!.attributes).not.toHaveProperty("status")
   }, WITHIN)
 })
 
@@ -534,5 +552,14 @@ describe("Merge", () => {
     // Pressed again, the refusal clears while the new press is on its way.
     offline.actions.merge(SHA_HEAD, SHA_BASE, 2)
     expect(offline.view()).toMatchObject({ merging: true, mergeRefused: null })
+    // Each refusal is logged once, by why and the status ChatApi answered.
+    for (const each of runtimes.splice(0).reverse()) await each.dispose()
+    const refusals = (tab: { readonly api: { readonly telemetry: Parameters<typeof read>[0] } }) =>
+      read(tab.api.telemetry).log("pulls.merge").map(({ severity, attributes }) => ({ severity, ...attributes }))
+    expect(refusals(member)).toEqual([expect.objectContaining({ severity: "Warn", feature: "pulls", outcome: "forbidden", status: 403 })])
+    expect(refusals(signedOut)).toEqual([expect.objectContaining({ severity: "Warn", outcome: "sign_in", status: 401 })])
+    expect(refusals(offline)[0]).toEqual(
+      expect.objectContaining({ severity: "Warn", outcome: "unavailable", errorCode: "PullsRequestFailed" }),
+    )
   }, WITHIN)
 })

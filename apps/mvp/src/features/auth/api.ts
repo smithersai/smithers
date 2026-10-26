@@ -4,35 +4,39 @@ import { SESSION_ROUTE, type SessionState as State, SIGN_OUT_ROUTE } from "./con
 import { SessionState } from "./schema"
 
 /**
- * ChatApi couldn't answer within the deadline (`status` absent), or answered outside the contract (`status`, the
- * HTTP status it answered with).
+ * ChatApi couldn't answer within the deadline (`code` `timeout`), the request never reached it (`unreachable`), or it
+ * answered outside the contract: `status`, the HTTP status it answered with, and `code` `status`, or `malformed` for a
+ * 200 whose body isn't a session. A log line names the failure by `code` (src/errorCode.ts).
  */
-export class AuthUnreachable extends Data.TaggedError("AuthUnreachable")<{ readonly status?: number }> {}
+export class AuthUnreachable extends Data.TaggedError("AuthUnreachable")<{
+  readonly status?: number
+  readonly code?: "timeout" | "unreachable" | "status" | "malformed"
+}> {}
 
 /** `GET /api/auth/session`: who this browser is signed in as. */
 export const getSession = Effect.fn("auth.session.get")(function* (origin: string, within: Duration.Input) {
   const client = yield* HttpClient.HttpClient
   return yield* Effect.gen(function* () {
     const response = yield* client.execute(HttpClientRequest.get(`${origin}${SESSION_ROUTE}`)).pipe(
-      Effect.mapError(() => new AuthUnreachable({})),
+      Effect.mapError(() => new AuthUnreachable({ code: "unreachable" })),
     )
     yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-    if (response.status !== 200) return yield* new AuthUnreachable({ status: response.status })
+    if (response.status !== 200) return yield* new AuthUnreachable({ status: response.status, code: "status" })
     return yield* HttpClientResponse.schemaBodyJson(SessionState)(response).pipe(
-      Effect.mapError(() => new AuthUnreachable({ status: 200 })),
+      Effect.mapError(() => new AuthUnreachable({ status: 200, code: "malformed" })),
     )
-  }).pipe(Effect.timeoutOrElse({ duration: within, orElse: () => Effect.fail(new AuthUnreachable({})) }))
+  }).pipe(Effect.timeoutOrElse({ duration: within, orElse: () => Effect.fail(new AuthUnreachable({ code: "timeout" })) }))
 })
 
 /** `POST /api/auth/sign-out`: ends this browser's session; `204` when it did. */
 export const postSignOut = Effect.fn("auth.sign_out.post")(function* (origin: string, within: Duration.Input) {
   const client = yield* HttpClient.HttpClient
   const response = yield* client.execute(HttpClientRequest.post(`${origin}${SIGN_OUT_ROUTE}`)).pipe(
-    Effect.mapError(() => new AuthUnreachable({})),
-    Effect.timeoutOrElse({ duration: within, orElse: () => Effect.fail(new AuthUnreachable({})) }),
+    Effect.mapError(() => new AuthUnreachable({ code: "unreachable" })),
+    Effect.timeoutOrElse({ duration: within, orElse: () => Effect.fail(new AuthUnreachable({ code: "timeout" })) }),
   )
   yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-  if (response.status !== 204) return yield* new AuthUnreachable({ status: response.status })
+  if (response.status !== 204) return yield* new AuthUnreachable({ status: response.status, code: "status" })
 })
 
 /**

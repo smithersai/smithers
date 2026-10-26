@@ -246,7 +246,12 @@ describe("theme regressions", () => {
     const defects = Metric.counter("smithers_theme_toggle_defects", { incremental: true })
     expect((await Effect.runPromise(Metric.value(defects).pipe(Effect.provideService(Metric.MetricRegistry, registry)))).count).toBe(1)
     expect(logs).toHaveLength(1)
-    expect(JSON.stringify(logs)).toContain("theme.toggle.defect")
+    // The defect is a string, which names no code: it is logged as unknown, never by its content.
+    expect(logs[0]).toMatchObject({
+      message: "theme.toggle.defect",
+      level: "ERROR",
+      annotations: { feature: "theme", errorCode: "unknown" },
+    })
     expect(spans.map((span) => span.name)).toEqual(["theme.toggle.defect"])
     expect(JSON.stringify(logs)).not.toContain("private defect sentinel")
     expect(spans[0]!.attributes.size).toBe(0)

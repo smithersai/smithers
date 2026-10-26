@@ -81,5 +81,5 @@ export const ATTENTION_TELEMETRY = {
     "notifications.panel",
     "smithers_notifications_panel",
   ],
-  fields: ["subject", "act", "outcome", "status", "surface", "state", "kind", "version", "errorCode", "reason", "via"],
+  fields: ["subject", "act", "outcome", "status", "surface", "state", "kind", "version", "errorCode", "reason", "via", "feature"],
 } as const

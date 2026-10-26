@@ -16,10 +16,10 @@ test.each([false, true])("draft persistence records correlated stages without co
     spans.push(span)
     return span
   } })
-  const records: Array<{ message: unknown; attributes: Record<string, unknown> }> = []
+  const records: Array<{ message: unknown; level: string; attributes: Record<string, unknown> }> = []
   const logger = Logger.make((entry) => {
     const formatted = Logger.formatStructured.log(entry)
-    records.push({ message: formatted.message, attributes: formatted.annotations })
+    records.push({ message: formatted.message, level: formatted.level, attributes: formatted.annotations })
   })
   const persistence = Persistence.layer({
     ...host.persistence,
@@ -48,8 +48,15 @@ test.each([false, true])("draft persistence records correlated stages without co
   expect(stages.map(({ message }) => message)).toEqual(["chat draft saving", fault ? "chat draft failed" : "chat draft stored"])
   expect(stages.map(({ attributes }) => attributes)).toEqual([
     { feature: "chat", transactionId: result.writeId, conversation: fault ? "branch" : "home" },
-    { feature: "chat", transactionId: result.writeId, conversation: fault ? "branch" : "home" },
+    {
+      feature: "chat",
+      transactionId: result.writeId,
+      conversation: fault ? "branch" : "home",
+      // A failed write is named by its code, so the counting logger counts it; never the disk's message.
+      ...(fault ? { outcome: "failed", errorCode: "TransactionFailed" } : {}),
+    },
   ])
+  expect(stages.map(({ level }) => level)).toEqual(["INFO", fault ? "WARN" : "INFO"])
   expect(JSON.stringify(records)).not.toContain("private")
   const saved = spans.filter((span) => span.name === "chat.draft.save")
   expect(saved).toHaveLength(1)

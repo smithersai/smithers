@@ -6,6 +6,7 @@
 import { Deferred, Effect, Layer, ManagedRuntime } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { nodeDevice, openTab, openTestApp, TestChatApi } from "../../test/chatApi"
+import { read as readTelemetry } from "../../test/otlp"
 import { Chat } from "../chat/chat"
 import { RunsNavigation } from "../runs/actions"
 import { RUNS_PATH } from "../runs/contract"
@@ -236,7 +237,9 @@ test("leaving an editor replaces a stash retained by an interrupted earlier depa
 
 test("an unretained tab identity refuses flow edits without blocking chat", async () => {
   const t = await open()
-  const unretained = openTab(t.api, { host: { ...t.host, editorTabId: crypto.randomUUID(), editorTabPersistent: false } })
+  const unretained = openTab(t.api, {
+    host: { ...t.host, editorTabId: crypto.randomUUID(), editorTabPersistent: false, editorTabRefusal: "lock_held" },
+  })
   runtimes.push(unretained)
   const flows = await unretained.runPromise(Effect.service(FlowsUi))
   await flows.queries.editor.preload()
@@ -258,6 +261,26 @@ test("an unretained tab identity refuses flow edits without blocking chat", asyn
     expect(t.host.storedRows(id)).not.toContainEqual(expect.objectContaining({ value: "Must not be stranded" }))
   }
   expect(await unretained.runPromise(Effect.service(Chat))).toBeDefined()
+  await unretained.dispose() // Flush the tab's exporter.
+  // A host that can't say why: the record names no reason.
+  const unexplained = openTab(t.api, {
+    host: { ...t.host, editorTabId: crypto.randomUUID(), editorTabPersistent: false },
+  })
+  runtimes.push(unexplained)
+  const unexplainedFlows = await unexplained.runPromise(Effect.service(FlowsUi))
+  await unexplainedFlows.queries.editor.preload()
+  expect(unexplainedFlows.queries.editor.toArray[0]?.state).toBe("unavailable")
+  await unexplained.dispose()
+  // Its editors refuse writes, and the record says so once per tab, by what isn't available and why (the host's claim).
+  const editorTab = readTelemetry(t.api.telemetry).log("flows.editor.storage").filter((line) => line.attributes.collection === "editor-tab")
+  expect(editorTab).toEqual([
+    expect.objectContaining({
+      severity: "Warn",
+      attributes: expect.objectContaining({ feature: "flows", outcome: "unavailable", reason: "lock_held" }),
+    }),
+    expect.objectContaining({ severity: "Warn", attributes: expect.objectContaining({ feature: "flows", outcome: "unavailable" }) }),
+  ])
+  expect(editorTab[1]!.attributes).not.toHaveProperty("reason")
 }, WITHIN)
 
 test("a database open failure refuses memory-only edits without blocking chat", async () => {

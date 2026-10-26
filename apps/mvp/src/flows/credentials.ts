@@ -2,6 +2,7 @@ import { Flow, FlowRuntime } from "@smthrs/flow"
 import { EngineStore } from "@smthrs/flows"
 import { Cache, Context, Data, Duration, Effect, Exit, Layer, Metric, Option, Schema } from "effect"
 import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http"
+import { codeOf } from "../errorCode"
 import { asker } from "./askingTab"
 import { withBearer, withoutCookie } from "./bearer"
 import { CREDENTIAL_TTL_MS, credentialRoute, doorChannel, PERSON_DOORS } from "./contract"
@@ -55,8 +56,9 @@ const anonymousCredential: Credential = { _tag: "Anonymous" }
 export class CredentialUnavailable extends Data.TaggedError("CredentialUnavailable")<{ readonly reason: string }> {}
 
 /**
- * Credentials minted on this device, by `outcome` (`minted`, `anonymous`, `refused`, `unavailable`, or `signed_out` for
- * one not asked for because the run's tab said nobody is signed in) and `act`.
+ * Credentials minted on this device, by `outcome` (`minted`, `anonymous`, `refused`, `unavailable`, `unreachable` for an
+ * ask that never reached ChatApi, or `signed_out` for one not asked for because the run's tab said nobody is signed in)
+ * and `act`.
  */
 export const mints = Metric.counter("smithers_run_credential_mints", {
   description: "Run credentials this device's engine asked for, by outcome and act",
@@ -126,6 +128,7 @@ export const layer = (options: {
           }
           const named = yield* inspection.payload(requester).pipe(
             Effect.as(true),
+            // expected: a requester this engine never held names no parent
             Effect.catchTag("@smthrs/engine-store/RunNotFound", () => Effect.succeed(false)),
             Effect.mapError(lineage),
           )
@@ -195,7 +198,17 @@ export const layer = (options: {
           const request = HttpClientRequest.post(`${options.origin}${credentialRoute(run)}`).pipe(
             HttpClientRequest.bodyJsonUnsafe({ flow, ...(ceiling.length === 0 ? {} : { ceiling }) }),
           )
+          const principal = parent === undefined ? "session" : "credential"
           const response = yield* (parent === undefined ? base.execute(request) : asRun(request, parent)).pipe(
+            // The ask never reached ChatApi: counted and logged like any other ask, by the transport's code.
+            Effect.tapError((failure) =>
+              Effect.andThen(
+                Metric.update(Metric.withAttributes(mints, { outcome: "unreachable", act: "none" }), 1),
+                Effect.logWarning("auth.run_credential").pipe(
+                  Effect.annotateLogs({ flow, outcome: "unreachable", act: "none", principal, errorCode: codeOf(failure) }),
+                ),
+              )
+            ),
             Effect.mapError(() => new CredentialUnavailable({ reason: "unreachable" })),
           )
           const body = yield* response.json.pipe(Effect.orElseSucceed(() => undefined))
@@ -227,7 +240,7 @@ export const layer = (options: {
               flow,
               outcome,
               act,
-              principal: parent === undefined ? "session" : "credential",
+              principal,
               status: response.status,
               ...(credential?._tag === "Refused" ? { code: credential.code } : {}),
             }),

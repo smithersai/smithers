@@ -7,7 +7,8 @@
 import { existsSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { type Duration, Effect, Layer, type ManagedRuntime, Metric } from "effect"
+import { Collection } from "@smthrs/effect-tanstack-db"
+import { type Duration, Effect, Layer, Logger, type ManagedRuntime, Metric } from "effect"
 import type { HttpClient } from "effect/http"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
@@ -27,6 +28,7 @@ import {
 import { EngineFaults } from "../../test/faults"
 import { AuthStore, SESSION } from "../auth/store"
 import { MODEL_TIERS } from "../model/contract"
+import { save } from "./actions"
 import { ModelNotTaken, PersonalModelClient } from "./api"
 import { keyTail, PERSONAL_MODEL_SHAPE_ROUTE } from "./contract"
 import { writes } from "./metrics"
@@ -261,6 +263,33 @@ describe("Save on the tab", () => {
     faulty.state.next.push("taken")
     expect(tab.actions.save(OPENAI(KEY))).toBe(true)
     await until(() => expect(tab.form()).toMatchObject({ state: "confirming", saved: 2 }))
+  }, WITHIN)
+})
+
+describe("a form write the device refuses", () => {
+  test("after a save ChatApi took is a defect, logged once as app.unhandled with its code", async () => {
+    const faulty = faultyClient()
+    const tab = await open({ replace: faulty.layer })
+    faulty.state.next.push("taken")
+    const store = await tab.runtime.runPromise(Effect.service(PersonalModelStore))
+    // The device refuses every update of the form's row, as only a bug in its key or schema would.
+    const refusing = PersonalModelStore.of({
+      ...store,
+      form: { ...store.form, update: () => Effect.fail(new Collection.MutationRefused({ operation: "update", cause: "refused" })) },
+    })
+    const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+    const saved = save(SCRIPTED(KEY)).pipe(
+      Effect.provideService(PersonalModelStore, refusing),
+      Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((entry) => void logs.push(Logger.formatStructured.log(entry)))])),
+    ) as unknown as Effect.Effect<boolean>
+    expect(await tab.runtime.runPromise(saved)).toBe(true)
+    await until(() =>
+      expect(logs.filter((log) => log.message === "app.unhandled")).toEqual([expect.objectContaining({
+        level: "ERROR",
+        annotations: expect.objectContaining({ feature: "personal-model", boundary: "fork", kind: "defect", "error.type": "MutationRefused" }),
+      })])
+    )
+    expect(JSON.stringify(logs)).not.toContain(KEY)
   }, WITHIN)
 })
 

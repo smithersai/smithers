@@ -1,5 +1,6 @@
 import { Collection, Outbox } from "@smthrs/effect-tanstack-db"
 import { Clock, Context, Effect, Layer, Metric, Option, Schema } from "effect"
+import { codeOf } from "../../errorCode"
 import { renewalOf } from "../../flows/bearer"
 import { OutboxWrites } from "../../outbox"
 import { IssuesClient, WriteNotTaken, type WriteRequest } from "./api"
@@ -64,6 +65,14 @@ export const keep = (
   row: Sending,
   status: Requested["status"],
   reason: NotSentReason | null,
+) => storeRow(requested, row, status, reason).pipe(Effect.mapError(() => new Outbox.Retry({})))
+
+/** `keep`, failing with what the device's store failed with. */
+const storeRow = (
+  requested: Collection.Collection<Requested, string>,
+  row: Sending,
+  status: Requested["status"],
+  reason: NotSentReason | null,
 ) =>
   Effect.gen(function* () {
     const kept = Option.isNone(yield* requested.get(row.id))
@@ -87,7 +96,7 @@ export const keep = (
         draft.reason = reason
       })
     yield* kept.persisted
-  }).pipe(Effect.mapError(() => new Outbox.Retry({})))
+  })
 
 /** What a parked write's row must still say to show as Not sent: its id, repository, operation and text. */
 const ParkedWrite = Schema.Struct({
@@ -110,8 +119,18 @@ export const keepParked = (requested: Collection.Collection<Requested, string>, 
   Effect.gen(function* () {
     const row = Schema.decodeUnknownOption(ParkedWrite)(write.rows[0])
     if (Option.isNone(row)) return false
-    const kept = yield* Effect.result(keep(requested, { ...row.value, v: 3 }, "not_sent", "not_allowed"))
-    if (kept._tag === "Failure") return false
+    const kept = yield* Effect.result(storeRow(requested, { ...row.value, v: 3 }, "not_sent", "not_allowed"))
+    if (kept._tag === "Failure") {
+      // The device couldn't store it, so it stays parked and doesn't show; the outbox offers it again next load.
+      yield* Effect.logWarning("issues.write.parked.keep").pipe(Effect.annotateLogs({
+        feature: "issues",
+        outcome: "not_kept",
+        errorCode: codeOf(kept.failure),
+        writeId: row.value.id,
+        op: row.value.op,
+      }))
+      return false
+    }
     yield* Effect.logWarning("issue write parked").pipe(
       Effect.annotateLogs({ feature: "issues", reason: write.reason, writeId: row.value.id, op: row.value.op }),
     )

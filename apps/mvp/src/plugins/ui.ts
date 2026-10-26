@@ -1,5 +1,7 @@
 import { type Contribution, Host } from "@smthrs/plugin"
 import { Context, Effect, Layer, Scope } from "effect"
+import { runners } from "../boundary"
+import { codeOf } from "../errorCode"
 import { FlowDispatch } from "../flows/dispatch"
 import { rankOf, type Viewer } from "../features/commands/catalog"
 import type { Minimum } from "../flows/registry"
@@ -41,6 +43,11 @@ export interface PluginsView {
     readonly components: (plugin: string) => Promise<Readonly<Record<string, unknown>>>
     /** Whether `viewer` may see a contribution that asks `minimum`. */
     readonly allows: (minimum: Minimum, viewer: Viewer) => boolean
+    /**
+     * Records that plugin `plugin`'s contribution failed: a component that threw, or a tab or chunk that didn't load
+     * (`Boundary`). Logged once at Error by the error's name, never its message.
+     */
+    readonly failed: (plugin: string, error: unknown) => void
   }
 }
 
@@ -65,8 +72,7 @@ export class PluginsUi extends Context.Service<PluginsUi, PluginsView>()("@smthr
     Effect.gen(function* () {
       const plugins = yield* Plugins
       const context = yield* Effect.context<Plugins | FlowDispatch>()
-      const run = Effect.runSyncWith(context)
-      const runPromise = Effect.runPromiseWith(context)
+      const { runSync: run, runPromise } = runners(context, "plugins")
       const tabs = new Map<string, Promise<unknown>>()
       const chunks = new Map<string, Promise<Readonly<Record<string, unknown>>>>()
       return PluginsUi.of({
@@ -81,7 +87,8 @@ export class PluginsUi extends Context.Service<PluginsUi, PluginsView>()("@smthr
           setDraft: (id, text) => run(setDraft(id, text)),
           core: (name) => plugins.core.get(name),
           tab: (plugin) => {
-            const built = tabs.get(plugin) ?? runPromise(buildTab(plugin))
+            // expected: a tab that can't be built rejects to its Boundary, which records it once (`failed`)
+            const built = tabs.get(plugin) ?? runPromise(Effect.catchDefect(buildTab(plugin), Effect.fail))
             tabs.set(plugin, built)
             return built
           },
@@ -94,6 +101,10 @@ export class PluginsUi extends Context.Service<PluginsUi, PluginsView>()("@smthr
             return loaded
           },
           allows: (minimum, viewer) => rankOf(viewer) >= RANKS[minimum],
+          failed: (plugin, error) =>
+            run(Effect.logError("plugin.failed").pipe(
+              Effect.annotateLogs({ feature: "plugins", plugin, outcome: "failed", errorCode: codeOf(error) }),
+            )),
         },
       })
     }),

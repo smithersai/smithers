@@ -66,6 +66,7 @@ export const parseDomainRoute = (
     const owner = decodeURIComponent(match[1]!)
     const name = decodeURIComponent(match[2]!)
     return match[3] === undefined ? { owner, name } : { owner, name, hostname: decodeURIComponent(match[3]) }
+    // expected: a path that does not decode names no domain
   } catch {
     return undefined
   }
@@ -135,7 +136,8 @@ export const DOMAINS_TELEMETRY = {
     "domain.request",
     "domain.add.send",
     "domain.remove.send",
+    "domain.copy",
     "smithers_web_domain_requests",
   ],
-  fields: ["op", "outcome", "status", "code", "feature"],
+  fields: ["op", "outcome", "status", "code", "feature", "errorCode"],
 } as const

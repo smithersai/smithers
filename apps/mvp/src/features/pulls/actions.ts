@@ -1,4 +1,5 @@
 import { Effect, Metric, Stream } from "effect"
+import { codeOf } from "../../errorCode"
 import { IssuesStore } from "../issues/store"
 import { open as openIssues, reconnectShapes as reconnectIssueShapes } from "../issues/actions"
 import { recordShapeRetry } from "../issues/shapeSync"
@@ -98,14 +99,18 @@ export const merge = (headSha: string, baseSha: string, number: number) =>
       method: DEFAULT_MERGE_METHOD,
     }).pipe(
       Effect.tap(() => Metric.update(Metric.withAttributes(mergePresses, { outcome: "sent" }), 1)),
-      Effect.catch((error) =>
-        Effect.andThen(
-          Metric.update(Metric.withAttributes(mergePresses, { outcome: String(error.status ?? "unreachable") }), 1),
-          store.view.update(VIEW, (row) => {
-            row.mergeRefused = error.status === 403 ? "forbidden" : error.status === 401 ? "sign_in" : "unavailable"
-          }),
+      Effect.catch((error) => {
+        const refused = error.status === 403 ? "forbidden" : error.status === 401 ? "sign_in" : "unavailable"
+        return Metric.update(Metric.withAttributes(mergePresses, { outcome: String(error.status ?? "unreachable") }), 1).pipe(
+          Effect.andThen(Effect.logWarning("pulls.merge").pipe(Effect.annotateLogs({
+            feature: "pulls",
+            outcome: refused,
+            errorCode: codeOf(error),
+            ...(error.status === undefined ? {} : { status: error.status }),
+          }))),
+          Effect.andThen(store.view.update(VIEW, (row) => void (row.mergeRefused = refused))),
         )
-      ),
+      }),
       Effect.ensuring(Effect.ignore(store.view.update(VIEW, (row) => void (row.merging = false)))),
       Effect.forkIn(store.scope),
     )

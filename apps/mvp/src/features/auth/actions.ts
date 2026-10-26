@@ -1,8 +1,9 @@
 import { Effect, Metric, Option, Ref } from "effect"
+import { codeOf } from "../../errorCode"
 import { FlowDispatch } from "../../flows/dispatch"
-import { AuthClient } from "./api"
+import { AuthClient, type AuthUnreachable } from "./api"
 import type { CheckOutcome } from "./contract"
-import { DeviceWipe } from "./device"
+import { DeviceWipe, type WipeFailed } from "./device"
 import { deviceWipes, sessionRefreshes, signInPresses, signOuts } from "./metrics"
 import type { Confirmed, Session } from "./schema"
 import { AuthStore, SESSION } from "./store"
@@ -15,6 +16,13 @@ const change = (fields: Partial<Omit<Session, "id">>) =>
     const { session } = yield* AuthStore
     yield* session.update(SESSION, (row) => void Object.assign(row, fields))
   }).pipe(Effect.orDie)
+
+/** A failure's log fields: `outcome` `failed`, its code (src/errorCode.ts), and the HTTP status when ChatApi answered. */
+const failed = (failure: AuthUnreachable | WipeFailed) => ({
+  outcome: "failed",
+  errorCode: codeOf(failure),
+  ...(failure._tag === "AuthUnreachable" && failure.status !== undefined ? { status: failure.status } : {}),
+})
 
 const current = Effect.flatMap(AuthStore, ({ session }) => Effect.map(session.get(SESSION), Option.getOrThrow))
 
@@ -52,9 +60,7 @@ export const load = Effect.gen(function* () {
   const answer = yield* Effect.result(client.session)
   if (answer._tag === "Failure") {
     yield* change({ status: "unreachable" })
-    yield* Effect.logWarning("session unreachable").pipe(
-      Effect.annotateLogs(answer.failure.status === undefined ? {} : { status: answer.failure.status }),
-    )
+    yield* Effect.logWarning("session unreachable").pipe(Effect.annotateLogs(failed(answer.failure)))
     return "unreachable" as CheckOutcome
   }
   const state = answer.success
@@ -121,7 +127,9 @@ const wipeDevice = Effect.gen(function* () {
   const wiped = yield* Effect.result((yield* DeviceWipe).wipe)
   const outcome = wiped._tag === "Success" ? "wiped" : "failed"
   yield* Metric.update(Metric.withAttributes(deviceWipes, { outcome }), 1)
-  yield* outcome === "wiped" ? Effect.logInfo("device wiped") : Effect.logWarning("device wipe failed")
+  yield* wiped._tag === "Success"
+    ? Effect.logInfo("device wiped")
+    : Effect.logWarning("device wipe failed").pipe(Effect.annotateLogs(failed(wiped.failure)))
 })
 
 /** Sends the sign-out and settles the tab's state when ChatApi answers; a sign-out ChatApi took wipes the device. */
@@ -131,9 +139,7 @@ const sendSignOut = Effect.gen(function* () {
   if (sent._tag === "Failure") {
     yield* change({ signingOut: false })
     yield* Metric.update(Metric.withAttributes(signOuts, { outcome: "failed" }), 1)
-    return yield* Effect.logWarning("sign out failed").pipe(
-      Effect.annotateLogs(sent.failure.status === undefined ? {} : { status: sent.failure.status }),
-    )
+    return yield* Effect.logWarning("sign out failed").pipe(Effect.annotateLogs(failed(sent.failure)))
   }
   yield* change({ status: "signed_out", login: null, role: null, signingOut: false })
   yield* confirm(null)

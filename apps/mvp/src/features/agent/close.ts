@@ -46,6 +46,7 @@ export const closeAnswer = ({ answerId }: { readonly answerId: string }) =>
   Effect.gen(function* () {
     return yield* (yield* AnswerApi).write(answerId, { status: "failed", failure: "unfinished" }).pipe(
       Effect.as({ closed: true }),
+      // expected: an answer settled already stays settled
       Effect.catchTag("@smthrs/mvp/agent/AnswerSettled", () => Effect.succeed({ closed: false })),
     )
   })

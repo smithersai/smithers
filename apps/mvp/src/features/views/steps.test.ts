@@ -4,7 +4,7 @@
 // or fails, and a renderer whose model fails. The happy paths, with the agent calling them, are agentViews.test.ts.
 import { Action, FlowRuntime } from "@smthrs/flow"
 import { Model, ModelError } from "@smthrs/model"
-import { Context, Effect, Exit, Layer, Scope, Stream } from "effect"
+import { Context, Effect, Exit, Layer, Logger, Scope, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test } from "vitest"
@@ -14,7 +14,7 @@ import { harness, stop, testFile, usage } from "../../../worker/test/harness.ts"
 import { ViewRefused, ViewsClient } from "./api"
 import { AskWithForm, RenderView, SetViewState, ShowIssues, ShowRepo } from "./flows"
 import { TIC_TAC_TOE, TIC_TAC_TOE_STATE } from "./renderer"
-import { registration, RendererSeat } from "./steps"
+import { registration, RendererSeat, sendState, showForm, showRepo } from "./steps"
 
 const runtime = testFile("views-steps")
 
@@ -236,4 +236,38 @@ describe("ui/repo and ui/issues", () => {
     expect(Exit.isFailure(await engine.repo({ repo: "octocat/Spoon-Knife", path: "../up" }))).toBe(true)
     expect(engine.h.line("chat.view.add")).toEqual([])
   }, WITHIN)
+})
+
+describe("records", () => {
+  // The steps alone, with a views client that fails as injected (test.faults-by-injection): no engine, no database.
+  test("ChatApi failing a view or a move logs it at Warn with its status and code; a refusal of the request stays Info", async () => {
+    const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+    // A status, or none when ChatApi never answered.
+    const client = (status: number | undefined) => ViewsClient.of({
+      add: () => Effect.fail(new ViewRefused(status === undefined ? {} : { status })),
+      setState: () => Effect.fail(new ViewRefused(status === undefined ? {} : { status })),
+    })
+    const run = (status: number | undefined, step: Effect.Effect<unknown, unknown, ViewsClient | FlowRuntime.FlowInstance>) =>
+      Effect.runPromise(Effect.exit(step).pipe(
+        Effect.provideService(ViewsClient, client(status)),
+        Effect.provideService(FlowRuntime.FlowInstance, { executionId: "e" } as FlowRuntime.FlowInstance["Service"]),
+        Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((entry) => void logs.push(Logger.formatStructured.log(entry)))])),
+      ))
+    const form = { viewId: crypto.randomUUID(), title: "T", schema: CLONE_FORM.schema, submitLabel: "Send" }
+    await run(503, showForm(form))
+    await run(403, sendState({ viewId: form.viewId, revision: 0, event: { name: "cell" } }))
+    await run(503, showRepo({ viewId: form.viewId, repo: "octocat/Spoon-Knife" } as never))
+    await run(400, showForm(form))
+    await run(undefined, showForm(form))
+    expect(logs.map(({ message, level, annotations }) => [message, level, annotations.outcome, annotations.status, annotations.errorCode]))
+      .toEqual([
+        ["views.form", "WARN", "unavailable", 503, "ViewRefused"],
+        ["views.move", "WARN", "forbidden", 403, "ViewRefused"],
+        ["views.template", "WARN", "unavailable", 503, "ViewRefused"],
+        ["views.form", "INFO", "refused", undefined, undefined],
+        ["views.form", "WARN", "unavailable", undefined, "ViewRefused"],
+      ])
+    expect(logs.at(-1)!.annotations).not.toHaveProperty("status")
+    expect(logs.every(({ annotations }) => annotations.feature === "views")).toBe(true)
+  })
 })

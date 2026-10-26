@@ -3,7 +3,7 @@
 // and an engine that can't be reached would take a real engine minutes to produce. The real engine's answers are proved
 // in src/features/flows-ui/tab.test.ts. A run on Cloudflare's answers are a test `RemoteRunsClient` here, for each
 // refusal ChatApi can answer; ChatApi's real ones, and following a run live, are proved in remote.test.ts.
-import { Persistence } from "@smthrs/effect-tanstack-db"
+import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Deferred, Effect, Layer, ManagedRuntime, Logger, Metric, Option, PubSub, Stream } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
@@ -13,7 +13,7 @@ import { VIEW } from "./schema"
 import { openList } from "./actions"
 import { Runs } from "./runs"
 import { flowSummary } from "./summary"
-import { followChanges, reads, RunsStore, stateOf } from "./store"
+import { followChanges, reads, repoRunsSynced, RunsStore, stateOf } from "./store"
 
 /** The tab's reads of results for the list, by outcome. */
 const outcomeReads = (outcome: string) =>
@@ -160,6 +160,41 @@ describe("readRun and readMore", () => {
     expect(await t.run(t.store.runs.toArray)).toEqual([])
   })
 
+  test("a read that can't reach the engine logs run.read at Warn with its code, never one about the run", async () => {
+    const t = open({
+      inspect: (runId, options) =>
+        runId === "gone"
+          ? refused("@smthrs/engine-store/RunNotFound")
+          : runId === "down"
+          ? Effect.fail(new BrowserEngine.EngineUnavailable({ reason: "worker-failed", error: "x" }))
+          : runId === "child"
+          ? refused("SchemaError")
+          : options?.afterSeq !== undefined
+          ? refused("PageError")
+          : Effect.succeed({
+            ...inspection(runId, [event(0)], true),
+            children: [{ ...summary("child"), parentRunId: runId, input: value("{}"), result: null }],
+          }),
+      list: () => refused("ListError"),
+    })
+    await t.run(t.store.readRun("gone"))
+    await t.run(t.store.readRun("down"))
+    // Its first page reads; the rest of its journal and the run it started don't, nor does More.
+    await t.run(t.store.readRun("a"))
+    await t.run(t.store.readMore("a"))
+    await t.run(t.store.readList)
+    const warnings = t.logs.filter((log) => log.message === "run.read" && log.level === "WARN")
+    expect(warnings.map(({ annotations }) => [annotations.act, annotations.outcome, annotations.errorCode])).toEqual([
+      ["run", "unavailable", "worker-failed"],
+      ["page", "unavailable", "PageError"],
+      ["child", "unavailable", "SchemaError"],
+      ["more", "unavailable", "PageError"],
+      ["list", "unavailable", "ListError"],
+    ])
+    expect(warnings.every(({ annotations }) => annotations.feature === "runs")).toBe(true)
+    expect(t.page("a")).toMatchObject({ state: "read", more: [] })
+  })
+
   test("More that the engine refuses keeps the page as it was", async () => {
     let refuse = false
     const t = open({
@@ -170,6 +205,24 @@ describe("readRun and readMore", () => {
     refuse = true
     await t.run(t.store.readMore("a"))
     expect(t.page("a")).toMatchObject({ more: [], hasMore: true })
+  })
+})
+
+describe("a repository's runs loading", () => {
+  // Electric waits out a stopped shape, so `preload` fails only when the collection itself fails; the rows' reads are
+  // injected failing here (test.faults-by-injection).
+  test("a first sync that fails still settles, logged as runs.repo_runs.load; a restore that fails is Collection's to log", async () => {
+    const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+    const failed = Effect.fail(new Collection.LoadFailed({ cause: new Error("private") }))
+    await Effect.runPromise(repoRunsSynced({ restored: failed, preload: failed }).pipe(
+      Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((entry) => void logs.push(Logger.formatStructured.log(entry)))])),
+    ))
+    expect(logs).toEqual([expect.objectContaining({
+      message: "runs.repo_runs.load",
+      level: "WARN",
+      annotations: expect.objectContaining({ feature: "runs", outcome: "failed", errorCode: "LoadFailed" }),
+    })])
+    expect(JSON.stringify(logs)).not.toContain("private")
   })
 })
 

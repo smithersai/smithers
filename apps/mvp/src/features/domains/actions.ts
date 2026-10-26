@@ -1,5 +1,6 @@
 import { Effect, FiberHandle, Option, Stream } from "effect"
 import { Clipboard } from "../../clipboard"
+import { codeOf } from "../../errorCode"
 import { FlowDispatch } from "../../flows/dispatch"
 import { repoId } from "../repo/contract"
 import { normalizeHostname } from "./contract"
@@ -104,6 +105,14 @@ export const refresh = (hostname: string) => write("refresh", hostname)
 /** Removes `hostname` from the page's repository. */
 export const remove = (hostname: string) => write("remove", hostname)
 
-/** Copies `text`, a DNS record's value, through the host's clipboard; `false` when it refused. */
+/** Copies `text`, a DNS record's value, through the host's clipboard; `false`, logged by its code, when it refused. */
 export const copy = (text: string) =>
-  Effect.flatMap(Clipboard, (clipboard) => clipboard.write(text)).pipe(Effect.as(true), Effect.orElseSucceed(() => false))
+  Effect.flatMap(Clipboard, (clipboard) => clipboard.write(text)).pipe(
+    Effect.as(true),
+    Effect.catch((refused) =>
+      Effect.logWarning("domain.copy").pipe(
+        Effect.annotateLogs({ feature: "domains", outcome: "failed", errorCode: codeOf(refused) }),
+        Effect.as(false),
+      )
+    ),
+  )

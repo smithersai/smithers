@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect"
+import { runners } from "../../boundary"
 import { IssuesStore } from "../issues/store"
 import { loadFiles, merge, open, retry, warm } from "./actions"
 import { PullsClient } from "./api"
@@ -40,7 +41,7 @@ export class Pulls extends Context.Service<Pulls, { readonly queries: PullsQueri
     Pulls,
     Effect.gen(function* () {
       const store = yield* PullsStore
-      const run = Effect.runSyncWith(yield* Effect.context<PullsStore | PullsClient | IssuesStore>())
+      const { runSync: run } = runners(yield* Effect.context<PullsStore | PullsClient | IssuesStore>(), "pulls")
       return Pulls.of({
         queries: {
           view: store.viewState.tanstack,

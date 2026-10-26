@@ -197,6 +197,9 @@ export const RUNS_TELEMETRY = {
     "run.inspect",
     "run.act",
     "run.read",
+    "run.retry.reserve",
+    "run.retry.revision",
+    "runs.repo_runs.load",
     "run.steer.send",
     "smithers_run_acts",
     "smithers_run_reads",
@@ -222,6 +225,7 @@ export const RUNS_TELEMETRY = {
     "via",
     "status",
     "code",
+    "errorCode",
   ],
 } as const
 

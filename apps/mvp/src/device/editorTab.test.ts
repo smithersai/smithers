@@ -51,34 +51,34 @@ test.each(["", "not-a-uuid", "ffffffff-ffff-ffff-ffff-ffffffffffff"])("validates
 test("a generated identity already held by another page refuses persistence", async () => {
   const first = await claimEditorTabId(host())
   sessionStorage.clear()
-  expect(await claimEditorTabId({ ...host(), randomId: () => first.id })).toEqual({ id: first.id, persistent: false })
+  expect(await claimEditorTabId({ ...host(), randomId: () => first.id })).toEqual({ id: first.id, persistent: false, reason: "lock_held" })
   expect(sessionStorage.getItem(KEY)).toBeNull()
 })
 
 test("missing Web Locks refuses persistence even with a valid stored identity", async () => {
   sessionStorage.setItem(KEY, crypto.randomUUID())
-  expect((await claimEditorTabId({ ...host(), locks: undefined })).persistent).toBe(false)
+  expect(await claimEditorTabId({ ...host(), locks: undefined })).toMatchObject({ persistent: false, reason: "locks_unavailable" })
 })
 
 test("rejected Web Lock requests refuse persistence without rejecting startup", async () => {
   sessionStorage.setItem(KEY, crypto.randomUUID())
   const unavailable: EditorTabHost["locks"] = { request: () => Promise.reject(new Error("locks unavailable")) }
-  expect((await claimEditorTabId({ ...host(), locks: unavailable })).persistent).toBe(false)
+  expect(await claimEditorTabId({ ...host(), locks: unavailable })).toMatchObject({ persistent: false, reason: "lock_refused" })
 })
 
 test("unreadable session storage cannot strand edits under a fresh claim", async () => {
   const storage = { getItem: (): string | null => { throw new Error("storage denied") }, setItem: sessionStorage.setItem.bind(sessionStorage) }
-  expect((await claimEditorTabId(host(storage))).persistent).toBe(false)
+  expect(await claimEditorTabId(host(storage))).toMatchObject({ persistent: false, reason: "storage_failed" })
 })
 
 test("a refused session-storage write disables persistence", async () => {
   const storage = { getItem: sessionStorage.getItem.bind(sessionStorage), setItem: () => { throw new Error("quota") } }
-  expect((await claimEditorTabId(host(storage))).persistent).toBe(false)
+  expect(await claimEditorTabId(host(storage))).toMatchObject({ persistent: false, reason: "storage_failed" })
   expect(sessionStorage.getItem(KEY)).toBeNull()
 })
 
 test("a storage write that cannot be read back disables persistence", async () => {
   const storage = { getItem: () => null, setItem: sessionStorage.setItem.bind(sessionStorage) }
-  expect((await claimEditorTabId(host(storage))).persistent).toBe(false)
+  expect(await claimEditorTabId(host(storage))).toMatchObject({ persistent: false, reason: "storage_unread" })
   expect(sessionStorage.getItem(KEY)).not.toBeNull()
 })

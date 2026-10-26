@@ -102,14 +102,25 @@ const setPanel = (change: Partial<Omit<Panel, "id">>) =>
   )
 
 /** Records what the person did in the panel: a log line and a count, with the entry's subject and never its words. */
-const recorded = (act: "open" | "expand" | "retry", fields: { readonly via?: PanelVia; readonly subject?: string; readonly outcome?: "started" | "failed" }) =>
+const recorded = (
+  act: "open" | "expand" | "retry",
+  fields: {
+    readonly via?: PanelVia
+    readonly subject?: string
+    readonly outcome?: "started" | "failed"
+    readonly reason?: DispatchFailed["reason"]
+  },
+) =>
   Effect.gen(function* () {
     yield* Metric.update(Metric.withAttributes(panelActs, {
       act,
       ...(fields.via === undefined ? {} : { via: fields.via }),
       ...(fields.outcome === undefined ? {} : { outcome: fields.outcome }),
     }), 1)
-    yield* Effect.logInfo("notifications.panel").pipe(Effect.annotateLogs({ act, ...fields }))
+    // A retry the engine didn't admit is a failure, by dispatch's reason; every other act is Info.
+    yield* (fields.outcome === "failed" ? Effect.logWarning : Effect.logInfo)("notifications.panel").pipe(
+      Effect.annotateLogs({ feature: "attention", act, ...fields }),
+    )
   })
 
 /**
@@ -205,7 +216,9 @@ export const retry = (subject: string) =>
           Effect.forkIn(scope),
         )
         const started = yield* Effect.result(Deferred.await(admitted))
-        yield* recorded("retry", { subject, outcome: started._tag === "Success" ? "started" : "failed" })
+        yield* recorded("retry", started._tag === "Success"
+          ? { subject, outcome: "started" }
+          : { subject, outcome: "failed", reason: started.failure.reason })
       }).pipe(Effect.forkIn(scope))
       return
     }

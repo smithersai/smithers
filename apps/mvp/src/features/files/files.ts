@@ -1,4 +1,5 @@
 import type { FileTabsFocusEvent } from "@smthrs/ui"
+import { runners } from "../../boundary"
 import { Context, Effect, Layer, Metric } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { closeTab, FilesPage, openTab } from "./actions"
@@ -27,15 +28,15 @@ export class Files extends Context.Service<Files, { readonly queries: FilesQueri
 ) {
   /**
    * Binds the store's query and the strip's actions for frontends. Each action runs with the services this layer was
-   * built with (`Effect.runPromiseWith`); a dispatch that fails is already logged and counted, so it resolves all the
+   * built with (`runners`, src/boundary.ts); a dispatch that fails is already logged and counted, so it resolves all the
    * same.
    */
   static readonly layer = Layer.effect(
     Files,
     Effect.gen(function* () {
       const store = yield* FilesStore
-      const run = Effect.runPromiseWith(yield* Effect.context<FilesStore | FilesPage | FlowDispatch>())
-      const record = Effect.runSyncWith(yield* Effect.context<never>())
+      const { runPromise: run } = runners(yield* Effect.context<FilesStore | FilesPage | FlowDispatch>(), "files")
+      const { runSync: record } = runners(yield* Effect.context<never>(), "files")
       return Files.of({
         queries: { tabs: store.all.tanstack },
         actions: {

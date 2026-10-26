@@ -128,6 +128,7 @@ export const readWritten = (text: string): Written | string => {
   let parsed: unknown = undefined
   try {
     parsed = head === undefined ? undefined : JSON.parse(head)
+    // expected: invalid JSON goes back to the renderer as its correction
   } catch {
     return "The ```json block isn't valid JSON."
   }

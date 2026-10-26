@@ -26,5 +26,5 @@ export const THEME_TELEMETRY = {
     "theme.toggle.defect",
     "smithers_theme_toggle_defects",
   ],
-  fields: ["gen_ai.tool.name", "gen_ai.tool.call.id"],
+  fields: ["gen_ai.tool.name", "gen_ai.tool.call.id", "errorCode"],
 } as const

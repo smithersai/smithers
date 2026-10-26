@@ -3,8 +3,8 @@
 // own layer (`appLayer`) on a Node device whose engine leads (src/test/chatApi.ts), against ChatApi's real stack routes
 // (worker/stack/Api.ts) and its one writer over the compose Postgres and Electric. Only the model is scripted. Unhappy
 // paths give the tab a faulty `StackClient`, the real one behind switches (test.faults-by-injection).
-import { Persistence, Outbox } from "@smthrs/effect-tanstack-db"
-import { Context, Deferred, Exit, Effect, Layer, type ManagedRuntime, Metric, Option } from "effect"
+import { Collection, Persistence, Outbox } from "@smthrs/effect-tanstack-db"
+import { Context, Deferred, Exit, Effect, Layer, Logger, type ManagedRuntime, Metric, Option } from "effect"
 import { ShapeSource } from "@smthrs/effect-electric"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
@@ -33,6 +33,7 @@ import { pendingActions, sends } from "./metrics"
 import type { Draft, Requested, Sending, Todo, TodoRequest } from "./schema"
 import { IssuesStore } from "../issues/store"
 import { TodosStore } from "./store"
+import { issuesSynced } from "./tab"
 import { Todos } from "./todos"
 import { accessFor, draftsOfAnswer, draftsOfRepo, notSentRows, stackRows, todoCardOf, todosByIssue } from "./view"
 import { keep } from "./writes"
@@ -601,6 +602,21 @@ describe("from an issue", () => {
     expect(dispatched).toEqual({ _tag: "Failed", error: new TodoStepRefused({ reason: "issue_not_found" }) })
     expect(tab.drafts()).toEqual([])
   }, WITHIN)
+
+  // Electric waits out a stopped shape, so `preload` fails only when the collection itself fails; it is injected failing
+  // here (test.faults-by-injection).
+  test("issues whose first sync fails are logged as todos.issue.load, which issue_not_found would otherwise hide", async () => {
+    const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+    await Effect.runPromise(issuesSynced(Effect.fail(new Collection.LoadFailed({ cause: new Error("private") }))).pipe(
+      Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((entry) => void logs.push(Logger.formatStructured.log(entry)))])),
+    ))
+    expect(logs).toEqual([expect.objectContaining({
+      message: "todos.issue.load",
+      level: "WARN",
+      annotations: expect.objectContaining({ feature: "todos", outcome: "failed", errorCode: "LoadFailed" }),
+    })])
+    expect(JSON.stringify(logs)).not.toContain("private")
+  })
 })
 
 describe("slash commands", () => {

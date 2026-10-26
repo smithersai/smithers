@@ -1,4 +1,5 @@
 import { Context, Effect, Layer, Option, Ref, Stream } from "effect"
+import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
 import type { RepoClient } from "../repo/api"
 import { RepoStore } from "../repo/store"
@@ -42,15 +43,16 @@ export class CodeIntel extends Context.Service<
 >()("@smthrs/mvp/code-intel/CodeIntel") {
   /**
    * Follows the routed file and binds the actions, each forked into the store's scope with the services this layer was
-   * built with (`Effect.runSyncWith`). `key` decides synchronously, so a DOM listener can keep a key from the page.
+   * built with (`runners`, src/boundary.ts). `key` decides synchronously, so a DOM listener can keep a key from the page.
    */
   static readonly layer = Layer.effect(
     CodeIntel,
     Effect.gen(function* () {
       const store = yield* CodeIntelStore
       const repo = yield* RepoStore
-      const run = Effect.runSyncWith(
+      const { runSync: run } = runners(
         yield* Effect.context<CodeIntelStore | RepoStore | RepoClient | LanguageServers | FlowDispatch>(),
+        "code-intel",
       )
       const background = (effect: Effect.Effect<void, never, CodeIntelStore | RepoClient | LanguageServers | FlowDispatch>) =>
         run(Effect.asVoid(Effect.forkIn(effect, store.scope)))

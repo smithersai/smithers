@@ -170,6 +170,7 @@ export class AnswerProgress extends Context.Service<
                   ...(progress.text === undefined ? {} : { text: progress.text }),
                 }).pipe(
                   Effect.tap(() => Metric.update(progressWrites, 1)),
+                  // expected: a settled answer forgets its progress
                   Effect.catchTag("@smthrs/mvp/agent/AnswerSettled", () => Effect.sync(() => void answers.delete(id))),
                   Effect.catchTag("@smthrs/mvp/agent/AnswersUnavailable", (error) =>
                     Effect.logWarning("chat.answer.progress.failed").pipe(Effect.annotateLogs({ answerId: id, status: error.status ?? 0 }))),

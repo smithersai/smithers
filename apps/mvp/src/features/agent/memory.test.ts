@@ -90,10 +90,12 @@ test("production sources preserve a real signed-out refusal", async () => {
 })
 
 
-test("catalog outage preserves recalled memory so chat can continue", async () => {
+test.each([
+  ["on the network", (() => Promise.reject(new Error("injected catalog outage"))) as typeof globalThis.fetch, undefined],
+  ["with a status", (async () => new Response("injected catalog outage", { status: 503 })) as typeof globalThis.fetch, 503],
+] as const)("a catalog outage %s preserves recalled memory so chat can continue", async (_how, brokenFetch, status) => {
   const logs: string[] = []
   const before = Effect.runSync(Metric.value(catalogUnavailable)).count
-  const brokenFetch = (() => Promise.reject(new Error("injected catalog outage"))) as typeof globalThis.fetch
   const result = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
     yield* Flows.runRemember({ bank: "agent-chat", key: "launch", text: "launch mascot is cobalt" })
     return yield* recall(turn)
@@ -103,7 +105,22 @@ test("catalog outage preserves recalled memory so chat can continue", async () =
     Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((options) => { logs.push(JSON.stringify(Logger.formatStructured.log(options))) })])),
   )))
   expect(Effect.runSync(Metric.value(catalogUnavailable)).count - before).toBe(1)
-  expect(logs.join("\n")).toContain("memory.catalog_unavailable")
+  // Once, at Warn, by the failure's code: the counting logger counts it by that code.
+  expect(logs.map((log) => JSON.parse(log)).filter((log) => log.message === "memory.catalog_unavailable")).toEqual([
+    expect.objectContaining({
+      level: "WARN",
+      annotations: expect.objectContaining({
+        feature: "agent",
+        outcome: "unavailable",
+        errorCode: "@smthrs/mvp/flows/FlowsUnavailable",
+        ...(status === undefined ? {} : { status }),
+      }),
+    }),
+  ])
+  if (status === undefined) {
+    expect(logs.map((log) => JSON.parse(log)).find((log) => log.message === "memory.catalog_unavailable").annotations)
+      .not.toHaveProperty("status")
+  }
   expect(logs.join("\n")).not.toContain("injected catalog outage")
   expect(logs.join("\n")).not.toContain("cobalt")
   expect(result.question).toBe(turn.question)

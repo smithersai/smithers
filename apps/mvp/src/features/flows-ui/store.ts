@@ -2,9 +2,10 @@ import { ElectricCollection } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Persistence, Query } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Context, Deferred, Duration, Effect, Layer, Option, Schema, Stream } from "effect"
+import { codeOf } from "../../errorCode"
 import { FLOW_DRAFTS_SHAPE_ROUTE, FLOWS_SHAPE_ROUTE } from "./contract"
 import * as Following from "./following"
-import { roundExecutionId } from "./round"
+import { roundExecutionId, type RunStatus } from "./round"
 import { AnswerRow, Code, CODE, Draft, FlowRow, Form, FORM } from "./schema"
 export { AnswerRow, Code, CODE, Form, FORM } from "./schema"
 
@@ -20,6 +21,8 @@ export interface FlowsUiConfig {
   /** Stable for one browser tab across reloads; different tabs never share unfinished editors. */
   readonly editorTabId: string
   readonly editorTabPersistent: boolean
+  /** Why the tab's id can't survive reload, when it can't (src/device/editorTab.ts `EditorTabRefusal`). */
+  readonly editorTabRefusal?: string
   /** How long Save waits for Electric to deliver the flow it saved before the list opens anyway. Default 15 s. */
   readonly confirmWithin?: Duration.Input
 }
@@ -162,6 +165,15 @@ export class FlowsUiStore extends Context.Service<
         if (!storageAvailable) yield* Effect.logWarning("flows.editor.storage").pipe(
           Effect.annotateLogs({ collection: "device", outcome: "unavailable" }),
         )
+        // A tab whose id can't survive reload refuses edits: logged once, with why when the host could say.
+        if (!config.editorTabPersistent) yield* Effect.logWarning("flows.editor.storage").pipe(
+          Effect.annotateLogs({
+            feature: "flows",
+            collection: "editor-tab",
+            outcome: "unavailable",
+            ...(config.editorTabRefusal === undefined ? {} : { reason: config.editorTabRefusal }),
+          }),
+        )
         const editorTabId = config.editorTabId
         const formId = `${FORM}:${editorTabId}`
         const codeId = `${CODE}:${editorTabId}`
@@ -267,7 +279,18 @@ export class FlowsUiStore extends Context.Service<
         const statusOf = (runId: string) =>
           engine.inspect(runId, { limit: 1 }).pipe(
             Effect.map((inspection): Option.Option<RoundStatus> => Option.some(inspection.run.status)),
-            Effect.catch((failure) => Effect.succeed(Following.refusedRead(failure))),
+            Effect.catch((failure): Effect.Effect<Option.Option<RunStatus>> => {
+              const status = Following.refusedRead(failure)
+              // A run the engine never held is `absent`; any other refusal is unreadable, logged by the engine's code.
+              return Option.isSome(status) ? Effect.succeed(status) : Effect.logWarning("flows.round.inspect").pipe(
+                Effect.annotateLogs({
+                  feature: "flows",
+                  outcome: "unreadable",
+                  errorCode: failure instanceof BrowserEngine.RequestRefused ? codeOf({ code: failure.error }) : codeOf(failure),
+                }),
+                Effect.as(status),
+              )
+            }),
           )
 
         const readRound = Following.readRound({

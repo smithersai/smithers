@@ -199,9 +199,14 @@ export const open = (owner: string, repo: string, ref: string, signal?: AbortSig
       ? dispatched.success.error
       : undefined
     return yield* refused(statusOf(error?._tag === "@smthrs/mvp/branch/BranchTrackRefused" ? error.reason : undefined))
-  }).pipe(Effect.catchTag("BranchOpenSuperseded", () => signal?.aborted === true
-    ? Metric.update(Metric.withAttributes(reopens, { outcome: "abandoned" }), 1).pipe(Effect.as(undefined))
-    : Effect.succeed(undefined)), Effect.withSpan("branch.open"), Effect.annotateLogs({ feature: "branch" }))
+  }).pipe(
+    // expected: a newer navigation took the page over
+    Effect.catchTag("BranchOpenSuperseded", () => signal?.aborted === true
+      ? Metric.update(Metric.withAttributes(reopens, { outcome: "abandoned" }), 1).pipe(Effect.as(undefined))
+      : Effect.succeed(undefined)),
+    Effect.withSpan("branch.open"),
+    Effect.annotateLogs({ feature: "branch" }),
+  )
 
 
 /** Leaves the branch: this tab shows and asks in the home conversation again. */

@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect"
+import { runners } from "../../boundary"
 import { answer, closePanel, dismiss, expand, hide, open, openPanel, read, retry, togglePanel } from "./actions"
 import type { PanelVia, Surface } from "./contract"
 import { AttentionStore } from "./store"
@@ -56,7 +57,7 @@ export class Attention extends Context.Service<
     Effect.gen(function* () {
       const store = yield* AttentionStore
       type Needs<A> = A extends (...args: never) => Effect.Effect<unknown, unknown, infer R> ? R : never
-      const run = Effect.runSyncWith(
+      const { runSync: run } = runners(
         yield* Effect.context<
           | Needs<typeof open>
           | Needs<typeof answer>
@@ -64,6 +65,7 @@ export class Attention extends Context.Service<
           | Needs<typeof togglePanel>
           | Needs<typeof expand>
         >(),
+        "attention",
       )
       return Attention.of({
         queries: {

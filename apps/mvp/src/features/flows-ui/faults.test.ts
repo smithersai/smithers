@@ -2,7 +2,8 @@
 // test.faults-by-injection): nothing opens a page for a run that never started, unsent answers stay, a refused Save
 // says it couldn't, and a refused act on a run says it was refused. Everything else is the real app.
 import { ShapeSource } from "@smthrs/effect-electric"
-import { Effect, Layer, ManagedRuntime, Metric } from "effect"
+import { BrowserEngine } from "@smthrs/platform-browser"
+import { Effect, Layer, Logger, ManagedRuntime, Metric, References } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { nodeDevice, openFaultyApp, openFaultyTab, type TabOptions, TestChatApi } from "../../test/chatApi"
 import { read } from "../../test/otlp"
@@ -221,6 +222,54 @@ const readyDraft = async (t: Awaited<ReturnType<typeof open>>) => {
   await t.flows.actions.openDraft(draftId)
   await until(() => expect(t.flows.queries.draft.toArray[0]?.draft.status).toBe("ready"))
 }
+
+describe("an engine that can't be read", () => {
+  test("a round it refuses to read is unreadable, logged once by the engine's code; one it never held is absent, unlogged", async () => {
+    const t = await open()
+    const real = await t.tab.runPromise(Effect.service(BrowserEngine.BrowserEngine))
+    /** The store over this tab's services, with an engine whose every read fails with `failure`. */
+    const failing = async (failure: BrowserEngine.RequestRefused | BrowserEngine.EngineUnavailable) => {
+      const engine = BrowserEngine.BrowserEngine.of({ ...real, inspect: () => Effect.fail(failure) })
+      const runtime = ManagedRuntime.make(
+        FlowsUiStore.layer({ origin: t.api.origin, editorTabId: t.host.editorTabId, editorTabPersistent: t.host.editorTabPersistent }).pipe(
+          Layer.provide(Layer.succeed(BrowserEngine.BrowserEngine, engine)),
+          Layer.provideMerge(Layer.succeedContext(await t.tab.context())),
+        ),
+      )
+      runtimes.push(runtime)
+      return { store: await runtime.runPromise(Effect.service(FlowsUiStore)), close: () => runtime.dispose() }
+    }
+    const refusing = (error: string) => failing(new BrowserEngine.RequestRefused({ request: "Inspect", error }))
+    const lines: Array<{ readonly message: unknown; readonly level: string; readonly annotations: unknown }> = []
+    const logger = Logger.make(({ message, logLevel, fiber }) =>
+      void lines.push({ message: (message as ReadonlyArray<unknown>)[0], level: logLevel, annotations: fiber.getRef(References.CurrentLogAnnotations) }))
+    const recorded = <A>(effect: Effect.Effect<A>) => Effect.runPromise(effect.pipe(Effect.provide(Logger.layer([logger]))))
+
+    const broken = await refusing("@smthrs/engine-store/SqlError")
+    expect(await recorded(broken.store.nextRound("d", 0))).toEqual({ _tag: "Unreadable" })
+    await broken.close()
+    expect(lines).toEqual([{
+      message: "flows.round.inspect",
+      level: "Warn",
+      annotations: { feature: "flows", outcome: "unreadable", errorCode: "@smthrs/engine-store/SqlError" },
+    }])
+
+    lines.length = 0
+    const empty = await refusing("@smthrs/engine-store/RunNotFound")
+    expect(await recorded(empty.store.nextRound("d", 0))).toEqual({ _tag: "Start", round: 1 })
+    expect(lines).toEqual([])
+
+    // An engine that is gone is unreadable too, by the failure's own tag.
+    const gone = await failing(new BrowserEngine.EngineUnavailable({ reason: "worker-failed", error: "TypeError" }))
+    expect(await recorded(gone.store.nextRound("d", 0))).toEqual({ _tag: "Unreadable" })
+    await gone.close()
+    expect(lines).toEqual([{
+      message: "flows.round.inspect",
+      level: "Warn",
+      annotations: { feature: "flows", outcome: "unreadable", errorCode: "@smthrs/platform-browser/EngineUnavailable" },
+    }])
+  }, 120_000)
+})
 
 describe("Electric slow to deliver the saved flow", () => {
   test("draft Save finishing after leaving its page does not redirect the person", async () => {

@@ -1,7 +1,7 @@
 // Latency, interruption and refusal are injected through the action's Effect services.
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
-import { Deferred, Effect, Fiber, Layer, ManagedRuntime, Option, Stream } from "effect"
+import { Deferred, Effect, Fiber, Layer, Logger, ManagedRuntime, Option, Stream } from "effect"
 import { afterEach, expect, test } from "vitest"
 import { DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { RemoteRunsClient } from "./api"
@@ -173,9 +173,23 @@ test.each(["engine", "refusal", "exhausted"])("retry fails closed when probing f
   const t = await setup({ exists: (id) => id === "a" || mode === "exhausted" ? Effect.succeed(inspection(id)) : mode === "engine"
     ? Effect.fail(new BrowserEngine.EngineUnavailable({ reason: "worker-failed", error: "fault" }))
     : Effect.fail(new BrowserEngine.RequestRefused({ request: "Inspect", error: "not-a-missing-run" })) })
-  await t.runtime.runPromise(actions.retry("pinned"))
+  const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+  await t.runtime.runPromise(actions.retry("pinned").pipe(
+    Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((entry) => void logs.push(Logger.formatStructured.log(entry)))])),
+  ))
   expect(t.calls).toEqual([])
   expect((await t.view()).refusal).toBe(mode === "exhausted" ? "refused" : "unavailable")
+  // An engine that can't say whether the id is taken is logged once with its code; running out of ids is an answer.
+  expect(logs.filter((log) => log.message === "run.retry.reserve")).toEqual(mode === "exhausted" ? [] : [
+    expect.objectContaining({
+      level: "WARN",
+      annotations: expect.objectContaining({
+        feature: "runs",
+        outcome: "unavailable",
+        errorCode: mode === "engine" ? "worker-failed" : "not-a-missing-run",
+      }),
+    }),
+  ])
 })
 
 test("Retry from here dispatches run/retry/from with the step as the next retry act, and opens its new run", async () => {

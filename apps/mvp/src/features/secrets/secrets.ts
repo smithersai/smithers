@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect"
+import { runners } from "../../boundary"
 import { cancel, open, put, remove, startDelete, startRotate, warm } from "./actions"
 import { SecretsClient } from "./api"
 import { SecretsStore } from "./store"
@@ -45,8 +46,7 @@ export class Secrets extends Context.Service<Secrets, { readonly queries: Secret
     Effect.gen(function* () {
       const store = yield* SecretsStore
       const context = yield* Effect.context<SecretsStore | SecretsClient>()
-      const run = Effect.runSyncWith(context)
-      const runAsync = Effect.runPromiseWith(context)
+      const { runSync: run, runPromise: runAsync } = runners(context, "secrets")
       return Secrets.of({
         queries: {
           view: store.viewState.tanstack,

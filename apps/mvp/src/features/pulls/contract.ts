@@ -182,8 +182,16 @@ export const CHECK_RUN_NAMESPACE = "3c1e9a52-7b0d-4f6e-8a21-5d9c4b7e2f10"
  * comparison's files (`pulls.compare.get`).
  */
 export const PULLS_TELEMETRY = {
-  records: ["pulls.merge.post", "pulls.compare.get", "pulls.shape.sync", "smithers_web_pull_merges", "smithers_pull_shape_transitions"],
-  fields: ["outcome", "phase", "status", "durationMs"],
+  records: [
+    "pulls.merge.post",
+    "pulls.compare.get",
+    "pulls.shape.sync",
+    "pulls.files.load",
+    "pulls.merge",
+    "smithers_web_pull_merges",
+    "smithers_pull_shape_transitions",
+  ],
+  fields: ["outcome", "phase", "status", "durationMs", "errorCode"],
 } as const
 
 /** The longest diff patch one file shows, in characters; GitHub leaves larger ones out. */

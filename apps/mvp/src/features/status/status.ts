@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect"
+import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
 import { answer, focus, setDraft } from "./actions"
 import type { AnswerValue } from "./schema"
@@ -43,7 +44,7 @@ export class Status extends Context.Service<Status, { readonly queries: StatusQu
     Status,
     Effect.gen(function* () {
       const store = yield* StatusStore
-      const run = Effect.runSyncWith(yield* Effect.context<StatusStore | FlowDispatch>())
+      const { runSync: run } = runners(yield* Effect.context<StatusStore | FlowDispatch>(), "status")
       const queriesOf = ({ statuses, latest }: { readonly statuses: Store["statuses"]; readonly latest: Store["latest"] }) => ({
         statuses: statuses.tanstack,
         latest: latest.tanstack,

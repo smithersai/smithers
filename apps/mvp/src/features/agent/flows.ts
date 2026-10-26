@@ -166,6 +166,7 @@ export const Answer = Flow.make(AnswerReference._tag, {
             Node.bindPlanned(Node.capture({ respond: Respond.name }, (prepared) => Respond.call(prepared))),
             Node.map(Node.capture({ timedOut: false }, (text: string): Ending => ({ text, timedOut: false }))),
             // Preserve a quota refusal in the sealed ending, including after the tab loses its progress.
+            // expected: a quota refusal becomes the sealed ending
             Node.catch({
               error: Schema.Union([
                 Schema.Struct({ _tag: Schema.Literal("@smthrs/mvp/memory/OpeningFailed"), quota: Schema.Literal(true) }),
@@ -178,10 +179,12 @@ export const Answer = Flow.make(AnswerReference._tag, {
               onFailure: Node.capture({ failure: "quota" }, () => Node.succeed<Ending>({ text: null, timedOut: false, failure: "quota" })),
             }),
             // The agent failed: the settle reads why from the run's progress.
+            // expected: the engine records the failed step
             Node.catch({
               onFailure: Node.capture({ text: null }, () => Node.succeed<Ending>({ text: null, timedOut: false })),
             }),
           ))),
+        // expected: a turn out of time settles as timed out
         Node.catch({
           // By its tag: a class schema has no identity that survives a process, so a resumed run couldn't match it.
           error: Schema.Struct({ _tag: Schema.Literal("@smthrs/mvp/agent/TurnOutOfTime") }),

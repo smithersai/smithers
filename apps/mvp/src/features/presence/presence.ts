@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect"
+import { runners } from "../../boundary"
 import { at, join, leave } from "./actions"
 import type { Where } from "./schema"
 import { type PresenceConfig, PresenceStore } from "./store"
@@ -31,7 +32,8 @@ export class Presence extends Context.Service<
   /** Binds frontend actions to the injected Effect services. */
   static readonly make = Effect.gen(function* () {
     const store = yield* PresenceStore
-    const run = Effect.runPromiseWith(yield* Effect.context<PresenceStore>())
+    // A route cancels these with its signal.
+    const { runPromise: run } = runners(yield* Effect.context<PresenceStore>(), "presence")
     return Presence.of({
       queries: { participants: store.participantsState.tanstack, room: store.roomState.tanstack },
       actions: {

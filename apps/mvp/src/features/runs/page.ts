@@ -287,6 +287,7 @@ const payloadOf = (event: { readonly payload: { readonly text: string; readonly 
   if (event.payload.clipped) return undefined
   try {
     return JSON.parse(event.payload.text)
+    // expected: a payload that isn't JSON shows as none
   } catch {
     return undefined
   }

@@ -1,4 +1,5 @@
 import { Context, Data, Effect, Layer, Option } from "effect"
+import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
 import { clone, copy, navigate, open, rawHref, retryAbout, retryClone, role, warm } from "./actions"
 import type { RepoClient } from "./api"
@@ -82,15 +83,14 @@ export class Repo extends Context.Service<
 >()("@smthrs/mvp/repo/Repo") {
   /**
    * Binds the store's queries and the actions for frontends. Each action runs its Effect with the services this layer
-   * was built with: `Effect.runSyncWith`, or `Effect.runPromiseWith` for one a caller awaits.
+   * was built with (`runners`): `runSync`, or `runPromise` for one a caller awaits.
    */
   static readonly layer = Layer.effect(
     Repo,
     Effect.gen(function* () {
       const store = yield* RepoStore
       const context = yield* Effect.context<RepoStore | RepoClient | FlowDispatch>()
-      const run = Effect.runSyncWith(context)
-      const promise = Effect.runPromiseWith(context)
+      const { runSync: run, runPromise: promise } = runners(context, "repo")
       const now = <A>(read: Effect.Effect<Option.Option<A>>) => Option.getOrUndefined(run(read))
       const device = reads(store)
       return Repo.of({

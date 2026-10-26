@@ -342,6 +342,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
         executionId: row.answerId,
         admitted,
       }).pipe(
+        // expected: an answer that cannot finish is closed instead
         Effect.catchIf(
           answerCannotFinish,
           () => flows.dispatch("chat/Close", { answerId: row.answerId }, {
@@ -479,6 +480,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
       yield* branchMessages.restored.pipe(
         Effect.andThen(branchMessages.toArray),
         Effect.flatMap((rows) => (rows.length > 0 ? Effect.void : branchMessages.preload)),
+        // expected: restore failures are logged by Collection
         Effect.catch(() => branchMessages.preload),
         Effect.andThen(branchHistory.update(HISTORY, (row) => void (row.opened = true))),
         Effect.ignore,
@@ -677,6 +679,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
   yield* background(conversation.rows, (rows) => markEarlier(history, rows.length))
   // The conversation has opened once the device's rows are restored, or, failing that, synced.
   yield* messages.restored.pipe(
+    // expected: restore failures are logged by Collection
     Effect.catch(() => messages.preload),
     Effect.andThen(
       history.update(HISTORY, (row) => {

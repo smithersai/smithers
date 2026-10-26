@@ -91,9 +91,10 @@ export const COEDIT_TELEMETRY = {
     "coedit.seed",
     "coedit.apply",
     "coedit.save",
+    "coedit.admit",
     "smithers_web_coedit_opens",
     "smithers_web_coedit_sends",
     "smithers_web_coedit_saves",
   ],
-  fields: ["kind", "outcome", "status", "bytes", "textId", "durationMs"],
+  fields: ["kind", "outcome", "status", "bytes", "textId", "durationMs", "reason", "errorCode", "feature"],
 } as const

@@ -1,6 +1,7 @@
 import { FlowRuntime } from "@smthrs/flow"
 import type { EngineStore } from "@smthrs/flows"
 import { Effect, Option } from "effect"
+import { codeOf } from "../errorCode"
 import { entryOf, names } from "./registry"
 
 // What the person already refused in one answer (the agent evals' `flow-delete-denied`, 2026-10-22: denied, the agent
@@ -29,6 +30,7 @@ const parsed = (value: { readonly text: string } | null): unknown => {
   if (value === null) return undefined
   try {
     return JSON.parse(value.text)
+    // expected: stored input that is not JSON reads as none
   } catch {
     return undefined
   }
@@ -62,7 +64,13 @@ export const denied = (
       }
       return { any, flows }
     }),
-    Effect.orElseSucceed(() => NONE),
+    // A run it can't read has no refusals, so the person is asked again; the read's failure is logged by its code.
+    Effect.catch((failure) =>
+      Effect.logWarning("flow.approvals.read").pipe(
+        Effect.annotateLogs({ feature: "flows", outcome: "unreadable", errorCode: codeOf(failure) }),
+        Effect.as(NONE),
+      )
+    ),
   )
 
 /**

@@ -51,6 +51,7 @@ export const linesOf = (line: number | null, lineEnd: number | null): string | n
 const decoded = (pathname: string): string | undefined => {
   try {
     return decodeURIComponent(pathname)
+    // expected: a path that does not decode shows no file
   } catch {
     return undefined
   }

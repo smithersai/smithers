@@ -4,6 +4,7 @@ import type { RunStatus } from "./schema"
 const decoded = (value: unknown): unknown => {
   if (typeof value !== "object" || value === null || !("text" in value) ||
     typeof value.text !== "string" || !("clipped" in value) || value.clipped !== false) return undefined
+  // expected: a value that isn't JSON identifies no retry
   try { return JSON.parse(value.text) } catch { return undefined }
 }
 

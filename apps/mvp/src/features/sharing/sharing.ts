@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect"
+import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
 import type { ShareAccess } from "../branch/contract"
 import { add, closeDialog, openDialog, set } from "./actions"
@@ -35,7 +36,7 @@ export class Sharing extends Context.Service<
       Sharing,
       Effect.gen(function* () {
         const store = yield* SharingStore
-        const run = Effect.runPromiseWith(yield* Effect.context<SharingStore | FlowDispatch>())
+        const { runPromise: run } = runners(yield* Effect.context<SharingStore | FlowDispatch>(), "sharing")
         return Sharing.of({
           origin: store.origin,
           queries: { dialog: store.dialogState.tanstack, shares: store.listState.tanstack },

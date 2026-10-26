@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect"
+import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
 import type { AuthStore } from "../auth/store"
 import type { DraftSelection } from "../chat/sharedPrompt"
@@ -38,13 +39,13 @@ export class Commands extends Context.Service<
 >()("@smthrs/mvp/commands/Commands") {
   /**
    * Binds the store's query and the actions for frontends. Each action runs its Effect with the services this layer was
-   * built with (`Effect.runSyncWith`); a command's flow runs on in the store's scope.
+   * built with (`runners`, src/boundary.ts); a command's flow runs on in the store's scope.
    */
   static readonly layer = Layer.effect(
     Commands,
     Effect.gen(function* () {
       const store = yield* CommandsStore
-      const run = Effect.runSyncWith(yield* Effect.context<CommandsStore | ChatStore | AuthStore | FlowDispatch | Plugins>())
+      const { runSync: run } = runners(yield* Effect.context<CommandsStore | ChatStore | AuthStore | FlowDispatch | Plugins>(), "commands")
       return Commands.of({
         queries: { menu: store.menuState.tanstack },
         actions: {

@@ -1,4 +1,6 @@
+import type { Collection } from "@smthrs/effect-tanstack-db"
 import { Effect, Layer } from "effect"
+import { codeOf } from "../../errorCode"
 import { answerAskingTab } from "../../flows/askingTab"
 import { IssuesStore } from "../issues/store"
 import { draftFromIssue, todosChannel } from "./contract"
@@ -14,6 +16,20 @@ import { TodosStore } from "./store"
 /** How long a draft from an issue waits for the issues' first answer when the device holds none of them yet. */
 const ISSUES_WITHIN = "5 seconds"
 
+/**
+ * Waits up to `ISSUES_WITHIN` for the issues' first sync (`preload`). One that fails leaves a draft's issue missing,
+ * which the step reports as `issue_not_found`, so the failure is logged as `todos.issue.load`.
+ */
+export const issuesSynced = (preload: Effect.Effect<void, Collection.LoadFailed>) =>
+  Effect.gen(function* () {
+    const loaded = yield* Effect.result(Effect.timeoutOption(preload, ISSUES_WITHIN))
+    if (loaded._tag === "Failure") {
+      yield* Effect.logWarning("todos.issue.load").pipe(
+        Effect.annotateLogs({ feature: "todos", outcome: "failed", errorCode: codeOf(loaded.failure) }),
+      )
+    }
+  })
+
 /** Answers the todos channel of engine `name` for this tab's requests until its scope closes. */
 export const tabTodos = (host: { readonly name: string }) =>
   Layer.effectDiscard(
@@ -27,11 +43,12 @@ export const tabTodos = (host: { readonly name: string }) =>
             issues.items.toArray,
             (rows) => rows.find((row) => row.repoId === draft.repoId && row.number === draft.issue && row.kind === "issue"),
           )
+          // expected: restore failures are logged by Collection
           yield* Effect.ignore(issues.items.restored)
           const kept = yield* find
           if (kept !== undefined) return kept
           yield* issues.activate
-          yield* Effect.ignore(Effect.timeoutOption(issues.items.preload, ISSUES_WITHIN))
+          yield* issuesSynced(issues.items.preload)
           return yield* find
         })
       const keep = (draft: Draft) =>

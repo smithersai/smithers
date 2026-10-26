@@ -2,6 +2,7 @@ import type { SharedSqlite } from "@smthrs/platform-browser"
 import { Cause, Data, Effect, Metric, Option, Schema } from "effect"
 import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA, SESSION_ROUTE, type SessionState as State } from "../features/auth/contract"
 import { Confirmed, SessionState } from "../features/auth/schema"
+import { codeOf } from "../errorCode"
 
 // Whose data this device holds (decision 0021, "Device ownership"; docs/features/sign-in.md#the-devices-owner). The
 // leading engine worker checks it before the engine starts (`BrowserRuntime.run({ authorize })`), on every activation,
@@ -185,7 +186,17 @@ export const authorizeDevice = (options: {
     }
     const fields: Record<string, string> = via === undefined ? { outcome } : { outcome, via }
     yield* Metric.update(Metric.withAttributes(checks, fields), 1)
-    yield* Effect.logInfo("auth.device_identity").pipe(Effect.annotateLogs(fields))
+    // A session read that failed names why by its code; one ChatApi answered outside the contract, such as a 5xx, is a
+    // failure (Warn) with its status, where no answer at all is this device being offline (Info).
+    const failed = session._tag === "Failure" ? session.failure : undefined
+    const status = (failed as { readonly status?: unknown } | undefined)?.status
+    yield* Effect.logWithLevel(typeof status === "number" ? "Warn" : "Info")("auth.device_identity").pipe(
+      Effect.annotateLogs(failed === undefined ? fields : {
+        ...fields,
+        errorCode: codeOf(failed),
+        ...(typeof status === "number" ? { status } : {}),
+      }),
+    )
     // Reload never turns a fresh claim or visitor adoption into authority over legacy writes.
     const continuous = owner !== undefined &&
       ((owner === recorded && (row as { ownsUnstamped: number }).ownsUnstamped === 1) || via === "legacy")
@@ -216,6 +227,7 @@ export const readSession = (value: unknown): State | undefined => {
 
 /** `GET /api/auth/session`'s response as `SessionNow`: not OK is unreachable, an answer it can't trust is malformed. */
 export const sessionNow = async (response: Response): Promise<SessionNow> =>
+  // expected: a body that is not JSON reads as malformed
   response.ok ? (readSession(await response.json().catch(() => undefined)) ?? "malformed") : "unreachable"
 
 /**
@@ -320,8 +332,10 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
     const answered = url.pathname === SESSION_ROUTE
       ? response.clone()
       : response.status === 401
+      // expected: a session read that fails tells nothing new
       ? await next(new Request(`${origin}${SESSION_ROUTE}`, { cache: "no-store" })).catch(() => undefined)
       : undefined
+    // expected: an unreadable session body names no session
     const session = answered?.ok === true ? readSession(await answered.json().catch(() => undefined)) : undefined
     if (stale(bound, reopensOnSignIn(), session)) {
       // The visitor's data this context opened becomes the person's in place: the answer goes on as theirs.

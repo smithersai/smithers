@@ -361,6 +361,7 @@ export const TODOS_TELEMETRY = {
     "todos.send",
     "todos.pending",
     "todos.inspect",
+    "todos.issue.load",
     "smithers_todo_drafts",
     "smithers_todo_queued",
     "smithers_todo_sends",
@@ -369,5 +370,5 @@ export const TODOS_TELEMETRY = {
     "execute_tool todo/draft",
     "execute_tool todo/inspect",
   ],
-  fields: ["op", "door", "via", "outcome", "status", "code", "opId", "draftId", "durationMs", "action"],
+  fields: ["op", "door", "via", "outcome", "status", "code", "opId", "draftId", "durationMs", "action", "errorCode"],
 } as const

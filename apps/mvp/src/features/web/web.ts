@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect"
+import { runners } from "../../boundary"
 import { cardOpened } from "./actions"
 
 // Web pages as a frontend sees them: plain functions to act, with no Effect in sight. A page's view and card render
@@ -12,11 +13,11 @@ export interface WebActions {
 }
 
 export class Web extends Context.Service<Web, { readonly actions: WebActions }>()("@smthrs/mvp/web/Web") {
-  /** Binds the actions for frontends, run with the services this layer was built with (`Effect.runSyncWith`). */
+  /** Binds the actions for frontends, run with the services this layer was built with (`runners`). */
   static readonly layer = Layer.effect(
     Web,
     Effect.gen(function* () {
-      const run = Effect.runSyncWith(yield* Effect.context<never>())
+      const { runSync: run } = runners(yield* Effect.context<never>(), "web")
       return Web.of({ actions: { cardOpened: () => run(cardOpened) } })
     }),
   )

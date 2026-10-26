@@ -194,6 +194,7 @@ export const textOf = (bytes: Uint8Array): string | undefined => {
   if (bytes.subarray(0, BINARY_SNIFF_BYTES).includes(0)) return undefined
   try {
     return utf8.decode(bytes)
+    // expected: bytes that aren't UTF-8 are a binary file
   } catch {
     return undefined
   }
@@ -347,6 +348,7 @@ export const REPO_TELEMETRY = {
     "repo.embed.load",
     "repo.about.get",
     "repo.clone.unconfirmed",
+    "repo.repositories.load",
     "repo.copy",
     "repo.clone.post",
     "repo.clone.launch",
@@ -374,5 +376,19 @@ export const REPO_TELEMETRY = {
     "execute_tool repo/copy",
     "execute_tool repo/clone",
   ],
-  fields: ["outcome", "status", "kind", "what", "door", "role", "own", "durationMs", "source", "smithers.repo.kind", "smithers.repo.copy"],
+  fields: [
+    "outcome",
+    "status",
+    "kind",
+    "what",
+    "door",
+    "role",
+    "own",
+    "durationMs",
+    "source",
+    "reason",
+    "errorCode",
+    "smithers.repo.kind",
+    "smithers.repo.copy",
+  ],
 } as const

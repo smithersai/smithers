@@ -1,4 +1,5 @@
 import { Effect } from "effect"
+import { runners } from "../../boundary"
 import { DEVICE_ADOPTED_EVENT } from "../auth/contract"
 import { type Page, reload } from "../../page"
 import { lead, retry, wentOffline } from "./actions"
@@ -15,7 +16,7 @@ import type { ChatStore } from "./store"
 // - `focus` (the person switched to this tab) and `focusin` (something in it took focus, such as the composer): this
 //   tab leads the outbox, so what the person asks here is sent from here (decision 0002 §1).
 export const bindConnectivity = Effect.fnUntraced(function* (target: EventTarget) {
-  const run = Effect.runSyncWith(yield* Effect.context<ChatStore | Page>())
+  const { runSync: run } = runners(yield* Effect.context<ChatStore | Page>(), "chat")
   const onOffline = () => run(wentOffline)
   const onOnline = () => run(retry("online"))
   const onAdopted = () => run(retry("adopted"))

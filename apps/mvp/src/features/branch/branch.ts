@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect"
+import { runners } from "../../boundary"
 import { ChatStore } from "../chat/store"
 import { FlowDispatch } from "../../flows/dispatch"
 import { Coedit, type CoeditView } from "../coedit/coedit"
@@ -63,13 +64,13 @@ export class Branch extends Context.Service<
       Effect.gen(function* () {
         const store = yield* BranchStore
         const context = yield* Effect.context<BranchRoute | BranchStore | ChatStore | ConversationsStore | FlowDispatch | SharingStore>()
-        const run = Effect.runPromiseWith(context)
+        const { runPromise: run, runSync } = runners(context, "branch")
         return Branch.of({
           queries: { current: store.currentState.tanstack },
           actions: {
             open: (owner, repo, ref, signal) => run(open(owner, repo, ref, signal)),
             leave: () => run(leave),
-            writable: () => Effect.runSyncWith(context)(writable),
+            writable: () => runSync(writable),
           },
           sharing: yield* Sharing,
           presence: yield* Presence,

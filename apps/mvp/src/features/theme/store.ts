@@ -112,6 +112,7 @@ export class ThemeStore extends Context.Service<
         // sees, even when the device lost the row the mirror came from.
         const shown = () => host.painted() ?? host.system()
         const current = preferences.restored.pipe(
+          // expected: restore failures are logged by Collection
           Effect.ignore,
           Effect.andThen(preferences.get(THEME)),
           Effect.map((row) => (row._tag === "Some" ? row.value.mode : shown())),

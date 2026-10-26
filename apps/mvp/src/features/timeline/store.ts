@@ -1,6 +1,7 @@
 import { ANSWER_EXCERPT, QUESTION_EXCERPT, revisionOf, summaryReason } from "./identity"
 import type { Collection } from "@smthrs/effect-tanstack-db"
 import { Deferred, Effect, Metric, Semaphore, Stream } from "effect"
+import { codeOf } from "../../errorCode"
 import type { FlowDispatch } from "../../flows/dispatch"
 import type { Message } from "../chat/schema"
 
@@ -119,8 +120,20 @@ export const followSummaries = (
         lane.pending.add(revision)
         yield* Effect.ensuring(summarize(row, revision, reason), Effect.sync(() => lane.pending.delete(revision)))
       }).pipe(
-        Effect.catch(() => Effect.logWarning("timeline.summary.unavailable")),
-        Effect.catchDefect(() => Effect.logWarning("timeline.summary.defect")),
+        Effect.catch((error) =>
+          Effect.logWarning("timeline.summary.unavailable").pipe(
+            Effect.annotateLogs({
+              feature: "timeline",
+              errorCode: codeOf(error),
+              ...("reason" in error ? { reason: error.reason } : {}),
+            }),
+          )
+        ),
+        Effect.catchDefect((defect) =>
+          Effect.logWarning("timeline.summary.defect").pipe(
+            Effect.annotateLogs({ feature: "timeline", errorCode: codeOf(defect) }),
+          )
+        ),
         Effect.forkScoped({ startImmediately: true }),
       )
       return true

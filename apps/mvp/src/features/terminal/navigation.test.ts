@@ -185,10 +185,18 @@ test.each(["empty", "mine", "watching"] as const)(
       message: "terminal.show", attributes: expect.objectContaining({ outcome: "cancelled" }),
     }))
     if (kind === "empty") {
-      expect(records.logs).toContainEqual(expect.objectContaining({ message: "terminal.show.failed" }))
+      // The callback that failed and the rows that couldn't load are each logged with a code, never the message.
       expect(records.logs).toContainEqual(expect.objectContaining({
-        message: "terminal.show", attributes: expect.objectContaining({ outcome: "failed" }),
+        message: "terminal.show.failed",
+        severity: "Error",
+        attributes: expect.objectContaining({ feature: "terminal", errorCode: expect.any(String) }),
       }))
+      expect(records.logs).toContainEqual(expect.objectContaining({
+        message: "terminal.show",
+        severity: "Warn",
+        attributes: expect.objectContaining({ outcome: "failed", errorCode: "LoadFailed" }),
+      }))
+      expect(JSON.stringify(records.logs)).not.toContain("callback failed")
     }
   },
   90_000,

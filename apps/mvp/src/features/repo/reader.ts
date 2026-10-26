@@ -45,6 +45,7 @@ export const readerLayer = Layer.effect(
             const size = blob.bytes.byteLength
             return contents === undefined ? { state: "binary", size } : { state: "text", contents, size }
           }),
+          // expected: a file too large to read is an answer; any other refusal fails the read
           Effect.catchTag("RepoRefused", (refused) =>
             refused.status === 413 && refused.size !== undefined
               ? Effect.succeed<FileRead>({ state: "too-large", size: refused.size })

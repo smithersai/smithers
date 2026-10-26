@@ -12,6 +12,7 @@ import { Chat } from "../features/chat/chat"
 import { StatusStore } from "../features/status/store"
 import { dispatches } from "../flows/dispatch"
 import { nodeDevice, openTab, openTestApp, TestChatApi } from "../test/chatApi"
+import { read as readTelemetry } from "../test/otlp"
 import type { BuiltIn } from "./builtin"
 import { pluginKeys } from "./keymap"
 import { hostFor, loads, pathOf, Plugins, presses, settledOf, viewAt, viewById } from "./plugins"
@@ -150,6 +151,16 @@ describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
     tab.actions.open()
     await until(() => expect(a.count(Metric.withAttributes(dispatches, { flow: "app/navigate", door: "view", outcome: "done" }))).toBe(1))
     expect(a.count(Metric.withAttributes(presses, { plugin: "queue", event: "option", door: "button", outcome: "done" }))).toBe(1)
+    // The press whose flow failed is a Warn by its code; the strip's own refusal of a note too long is Info. The tab's
+    // exporter sends its records each second.
+    await until(() => {
+      const pressed = readTelemetry(api.telemetry).log("plugin.press")
+      expect(pressed.filter((line) => line.attributes.outcome === "failed")).toEqual([expect.objectContaining({
+        severity: "Warn",
+        attributes: expect.objectContaining({ feature: "plugins", plugin: "queue", event: "reply", errorCode: expect.any(String) }),
+      })])
+      expect(pressed.filter((line) => line.attributes.outcome === "invalid").map((line) => line.severity)).toEqual(["Info"])
+    })
   })
 
   test("keys: g q opens the queue, j and k stay on its one item, a digit answers, i and a send an approval's note, ⌘↵ replies from the note", async () => {
@@ -252,6 +263,18 @@ describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
     await a.runtime.runPromise(host.open("other/view"))
     await a.runtime.runPromise(host.open(VIEW))
     await until(() => expect(a.count(Metric.withAttributes(dispatches, { flow: "app/navigate", door: "view", outcome: "done" }))).toBe(1))
+    // Each refusal is logged once at Warn by its reason, never its detail. The tab's exporter sends each second.
+    await until(() => {
+      const refused = readTelemetry(api.telemetry).log("plugin.request")
+      expect(refused.map((line) => line.attributes.reason).sort()).toEqual([
+        "invalid_fields", "not_in_reads", "not_in_reads", "person_only",
+        "undeclared_event", "undeclared_event", "undeclared_event", "undeclared_query",
+      ])
+      for (const line of refused) {
+        expect(line).toMatchObject({ severity: "Warn", attributes: { feature: "plugins", plugin: "queue", outcome: "refused" } })
+      }
+    })
+    expect(JSON.stringify(readTelemetry(api.telemetry).log("plugin.request"))).not.toContain("no-such-run")
   })
 
   test("a plugin's own event whose flow isn't person-only dispatches with door view; a refused built-in never blocks the rest", async () => {
@@ -331,6 +354,16 @@ describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
     a.plugins.actions.press(VIEW, { event: "next", fields: {}, label: "" })
     expect(a.state()).toBeUndefined()
     expect(a.plugins.actions.core("core/runs")).toBeUndefined()
+    // A contribution its Boundary caught is recorded once at Error, by the error's name, never its message.
+    a.plugins.actions.failed("queue", new TypeError("a component's private words"))
+    // The tab's exporter sends its records each second.
+    await until(() =>
+      expect(readTelemetry(api.telemetry).log("plugin.failed")).toEqual([expect.objectContaining({
+        severity: "Error",
+        attributes: expect.objectContaining({ feature: "plugins", plugin: "queue", outcome: "failed", errorCode: "TypeError" }),
+      })])
+    )
+    expect(JSON.stringify(readTelemetry(api.telemetry).log("plugin.failed"))).not.toContain("private words")
   })
 })
 

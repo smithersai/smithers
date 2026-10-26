@@ -325,6 +325,8 @@ export const ISSUES_TELEMETRY = {
     "issues.write.queue",
     "issues.write.send",
     "issues.pending",
+    "issues.write.parked.keep",
+    "issue write parked",
     "issues.shape.sync",
     "item.shape.retry",
     "smithers_issue_writes",
@@ -335,7 +337,7 @@ export const ISSUES_TELEMETRY = {
     "execute_tool issue/create",
     "execute_tool issue/comment",
   ],
-  fields: ["op", "door", "outcome", "status", "writeId", "durationMs", "reason", "action", "phase", "item"],
+  fields: ["op", "door", "outcome", "status", "writeId", "durationMs", "reason", "action", "phase", "item", "errorCode"],
 } as const
 
 // Triage (decision 0012 §5, docs/features/issues.md#triage): two GitHub labels carry an issue's triage state, which is

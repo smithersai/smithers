@@ -2,6 +2,7 @@ import { FlowRuntime } from "@smthrs/flow"
 import { EngineStore } from "@smthrs/flows"
 import { type Cell, FlowBinding } from "@smthrs/harness"
 import { Effect, Option, Schema } from "effect"
+import { codeOf } from "../errorCode"
 import { PROMPT_CALLABLE } from "../features/flows-ui/callable"
 import { AUTHOR_TOOLS } from "../features/flows-ui/contract"
 import { FlowPromptReference, FlowNewReference } from "../features/flows-ui/reference"
@@ -90,7 +91,13 @@ export const scopeFor = (
       Effect.map((payload) =>
         scopeOf(flow, Option.match(decodePinned(payload), { onNone: () => [], onSome: ({ allowed }) => allowed }))
       ),
-      Effect.orElseSucceed(() => scopeOf(flow, [])),
+      // The agent then calls nothing; the read's failure is logged by its code.
+      Effect.catch((failure) =>
+        Effect.logWarning("flow.scope.read").pipe(
+          Effect.annotateLogs({ feature: "flows", outcome: "unreadable", errorCode: codeOf(failure) }),
+          Effect.as(scopeOf(flow, [])),
+        )
+      ),
     )
     : Effect.succeed(scopeOf(flow, undefined))
 

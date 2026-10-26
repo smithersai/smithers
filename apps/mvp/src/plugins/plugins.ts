@@ -1,6 +1,7 @@
 import { Bind, type Contribution, Host, JsonSchema, Load } from "@smthrs/plugin"
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
 import { Cause, Context, Deferred, Effect, Exit, Layer, Metric, Option, PubSub, Result, type Scope, Stream } from "effect"
+import { codeOf } from "../errorCode"
 import { issueUrl } from "../features/bugs/github"
 import { BugsStore } from "../features/bugs/store"
 import { StatusStore } from "../features/status/store"
@@ -316,10 +317,19 @@ export const press = (
     const fields: Record<string, unknown> = { ...button.fields }
     const note = yield* draftOf(id, key)
     for (const field of textFields(event)) fields[field] = note
-    const outcome = (value: string) =>
+    // A press whose flow didn't run or failed is a failure, Warn by its code; every other outcome is Info.
+    const outcome = (value: string, failure?: unknown) =>
       Effect.andThen(
         Metric.update(Metric.withAttributes(presses, { plugin: view.plugin, event: event.name, door, outcome: value }), 1),
-        Effect.logInfo("plugin.press").pipe(Effect.annotateLogs({ plugin: view.plugin, view: id, event: event.name, door, outcome: value })),
+        (value === "failed" ? Effect.logWarning : Effect.logInfo)("plugin.press").pipe(Effect.annotateLogs({
+          feature: "plugins",
+          plugin: view.plugin,
+          view: id,
+          event: event.name,
+          door,
+          outcome: value,
+          ...(value === "failed" ? { errorCode: codeOf(failure) } : {}),
+        })),
       )
     const payload = Bind.bind(event.args, { item, event: fields })
     if (Option.isSome(misfit(event.payload, fields)) || Result.isFailure(payload)) {
@@ -329,14 +339,16 @@ export const press = (
     yield* touch(id, () => ({ sending: true, failed: false }))
     const flows = yield* FlowDispatch
     yield* flows.dispatch(event.flow as FlowName, payload.success as never, { door }).pipe(
+      // A flow that ran and failed is a failure like one that didn't run: either is named by its code.
+      Effect.flatMap((dispatched) => dispatched._tag === "Done" ? Effect.void : Effect.fail(dispatched.error)),
       Effect.exit,
       Effect.flatMap((exit) =>
-        Exit.isSuccess(exit) && exit.value._tag === "Done"
+        Exit.isSuccess(exit)
           ? Effect.andThen(
             Effect.andThen(touch(id, () => ({ sending: false })), dropDraft(id, key)),
             outcome("done"),
           )
-          : Effect.andThen(touch(id, () => ({ sending: false, failed: true })), outcome("failed"))
+          : Effect.andThen(touch(id, () => ({ sending: false, failed: true })), outcome("failed", Cause.squash(exit.cause)))
       ),
       Effect.forkIn(plugins.scope),
     )
@@ -385,9 +397,12 @@ export const settledOf = (
   return { _tag: "Failed", code: Cause.hasInterruptsOnly(exit.cause) ? "interrupted" : "defect" }
 }
 
-/** A refusal of plugin `plugin`'s request. */
+/** Refuses a request plugin `plugin` made of its host: logged once by the reason, never the detail, then failed. */
 const refuse = (plugin: string, reason: Host.PluginRefused["reason"], detail: string) =>
-  Effect.fail(new Host.PluginRefused({ plugin, reason, detail }))
+  Effect.logWarning("plugin.request").pipe(
+    Effect.annotateLogs({ feature: "plugins", plugin, outcome: "refused", reason }),
+    Effect.andThen(Effect.fail(new Host.PluginRefused({ plugin, reason, detail }))),
+  )
 
 /**
  * `PluginHost` for `plugin`, over this host: the one contract its tab reads and acts through (decision 0017, "The host

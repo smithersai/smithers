@@ -1,4 +1,6 @@
-import { Context, Effect, FiberHandle, Layer, Scope } from "effect"
+import { Cause, Context, Effect, FiberHandle, Layer, Scope } from "effect"
+import { runners } from "../../boundary"
+import { codeOf } from "../../errorCode"
 import type { FlowDispatch } from "../../flows/dispatch"
 import type { AuthStore } from "../auth/store"
 import { attach, detach, input, open, resize, show, type Sink } from "./actions"
@@ -40,20 +42,26 @@ export class Terminal extends Context.Service<
   static readonly make = Effect.gen(function* () {
     const store = yield* TerminalStore
     const context = yield* Effect.context<TerminalStore | AuthStore | FlowDispatch>()
-    const run = Effect.runSyncWith(context)
-    const runAsync = Effect.runPromiseWith(context)
+    const { runSync: run, runPromise: runAsync } = runners(context, "terminal")
+    // A route cancels a show with its signal.
+    const showAsync = <A, E>(effect: Effect.Effect<A, E, TerminalStore | AuthStore | FlowDispatch>, signal: AbortSignal | undefined) =>
+      runAsync(effect, { signal })
     const showing = yield* FiberHandle.make<void, never>().pipe(Scope.provide(store.scope))
     const runShowing = yield* FiberHandle.runtime(showing)<TerminalStore | AuthStore | FlowDispatch>()
     return Terminal.of({
       queries: { panel: store.panelState.tanstack, tabs: store.tabsState.tanstack },
       actions: {
-        show: (branchId, watching, signal) => runAsync(Effect.andThen(FiberHandle.clear(showing), show(branchId, watching)), { signal }),
+        show: (branchId, watching, signal) => showAsync(Effect.andThen(FiberHandle.clear(showing), show(branchId, watching)), signal),
         showInBackground: (branchId, watching, shown, signal) => {
           if (signal?.aborted) return
           runShowing(
             show(branchId, watching).pipe(
               Effect.flatMap((terminalId) => Effect.tryPromise(() => shown(terminalId))),
-              Effect.catchCause(() => Effect.logError("terminal.show.failed")),
+              Effect.catchCause((cause) =>
+                Effect.logError("terminal.show.failed").pipe(
+                  Effect.annotateLogs({ feature: "terminal", errorCode: codeOf(Cause.squash(cause)) }),
+                )
+              ),
             ),
             { signal },
           )

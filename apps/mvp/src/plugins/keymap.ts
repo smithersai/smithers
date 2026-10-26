@@ -1,4 +1,5 @@
 import { Bind, Keys, When } from "@smthrs/plugin"
+import { runners } from "../boundary"
 import { Effect, Metric, Result } from "effect"
 import { FlowDispatch } from "../flows/dispatch"
 import type { FlowName } from "../flows/registry"
@@ -84,7 +85,7 @@ const fire = (found: Exclude<NonNullable<Effect.Success<ReturnType<typeof resolv
 
 /** Binds the plugins' keys on `target` (the window) while the scope is open; `mac` maps `mod` to ⌘, else Ctrl. */
 export const pluginKeys = Effect.fnUntraced(function* (target: EventTarget, mac: boolean) {
-  const run = Effect.runSyncWith(yield* Effect.context<Plugins | FlowDispatch>())
+  const { runSync: run } = runners(yield* Effect.context<Plugins | FlowDispatch>(), "plugins")
   let recent: Array<{ readonly stroke: Keys.Pressed; readonly at: number }> = []
   const onKey = (event: Event) => {
     const key = event as Partial<KeyboardEvent>

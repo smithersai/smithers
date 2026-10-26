@@ -1,5 +1,5 @@
 import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Logger } from "effect"
 import { expect, test } from "vitest"
 import { OutboxWrites } from "../../outbox"
 import { IssuesClient } from "./api"
@@ -34,7 +34,15 @@ test("parked writes stay parked after storage failure and settle after persisten
     const real = yield* Collection.local<Requested, string>({ id: crypto.randomUUID(), schema: Requested, getKey: (r) => r.id })
     const faulty: Collection.Collection<Requested, string> = { ...real, insert: (value) => real.insert(value).pipe(Effect.map((transaction) => ({ ...transaction, persisted: Effect.fail(new Collection.TransactionFailed({ cause: "disk full" })) }))) }
     const parked = { id: row.id, name: ISSUE_WRITE, reason: "version", rows: [row] }
-    expect(yield* keepParked(faulty, parked)).toBe(false)
+    const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+    const logged = Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((entry) => void logs.push(Logger.formatStructured.log(entry)))]))
+    expect(yield* keepParked(faulty, parked).pipe(logged)).toBe(false)
+    // Not kept: logged once with the device's code, never the write's text.
+    expect(logs).toEqual([expect.objectContaining({
+      message: "issues.write.parked.keep",
+      level: "WARN",
+      annotations: expect.objectContaining({ feature: "issues", outcome: "not_kept", errorCode: "TransactionFailed", writeId: row.id, op: row.op }),
+    })])
     expect(yield* keepParked(real, parked)).toBe(true)
   })))
 })

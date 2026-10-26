@@ -190,5 +190,5 @@ export const AUTH_TELEMETRY = {
     "smithers_web_device_wipes",
   ],
   // `stage`, `reason` and `via` also carry the engine worker's owner check (src/device/identity.ts, FLOWS_TELEMETRY).
-  fields: ["signedIn", "status", "outcome", "stage", "reason", "via", "executionId", "durationMs", "smithers.auth.outcome"],
+  fields: ["signedIn", "status", "outcome", "stage", "reason", "via", "executionId", "durationMs", "smithers.auth.outcome", "errorCode", "feature"],
 } as const

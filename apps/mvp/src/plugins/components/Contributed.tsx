@@ -15,8 +15,9 @@ function Loaded({ plugin, name }: { readonly plugin: string; readonly name: stri
 }
 
 export function Contributed({ plugin, name }: { readonly plugin: string; readonly name: string }) {
+  const { actions } = usePlugins()
   return (
-    <Boundary plugin={plugin}>
+    <Boundary plugin={plugin} report={(error) => actions.failed(plugin, error)}>
       <Suspense fallback={null}>
         <Loaded plugin={plugin} name={name} />
       </Suspense>

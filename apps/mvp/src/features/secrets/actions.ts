@@ -149,6 +149,7 @@ const sendFrom = (
             )
             : Effect.andThen(refuse(form.id, error.code), record(op, form.secret, "refused", { ...counted, code: error.code })),
       }),
+      // expected: the list can show Rotate's or Delete's write before its 202, and settling closes the form first
       Effect.ignore,
       Effect.forkIn(store.scope),
     )

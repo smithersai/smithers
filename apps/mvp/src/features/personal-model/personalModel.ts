@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect"
+import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
 import { hide, remove, save, test } from "./actions"
 import type { PersonalModelClient } from "./api"
@@ -44,7 +45,7 @@ export class PersonalModel extends Context.Service<
     PersonalModel,
     Effect.gen(function* () {
       const store = yield* PersonalModelStore
-      const run = Effect.runSyncWith(yield* Effect.context<PersonalModelStore | PersonalModelClient | FlowDispatch>())
+      const { runSync: run } = runners(yield* Effect.context<PersonalModelStore | PersonalModelClient | FlowDispatch>(), "personal-model")
       return PersonalModel.of({
         queries: {
           saved: store.saved.tanstack,

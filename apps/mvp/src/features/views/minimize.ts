@@ -1,4 +1,5 @@
 import { Effect, Metric, Option } from "effect"
+import { codeOf } from "../../errorCode"
 import { FlowDispatch } from "../../flows/dispatch"
 import type { AppTemplate } from "./contract"
 import { type IssuesProps, OPENED, type RepoProps } from "./schema"
@@ -72,7 +73,13 @@ export const opened = (viewId: string, template: AppTemplate, repo: string, retu
 const leave = (target: Minimized) =>
   Effect.gen(function* () {
     const { views } = yield* ViewsStore
-    yield* Effect.ignore(Effect.timeout(views.preload, HOME_VIEWS_WITHIN))
+    // A slow first sync is waited on only so long; one that fails leaves the device's views as if they were all.
+    const loaded = yield* Effect.result(Effect.timeoutOption(views.preload, HOME_VIEWS_WITHIN))
+    if (loaded._tag === "Failure") {
+      yield* Effect.logWarning("views.home.load").pipe(
+        Effect.annotateLogs({ feature: "views", outcome: "failed", errorCode: codeOf(loaded.failure) }),
+      )
+    }
     const rows = yield* views.toArray
     if (rows.some((row) => row.template === target.template && sameTarget(target.template, row.props, target.props))) {
       return yield* record("chat", "kept", target.template)

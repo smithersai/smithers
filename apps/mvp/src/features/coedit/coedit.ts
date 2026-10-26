@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect"
+import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
 import type { ChatStore } from "../chat/store"
 import type { StatusStore } from "../status/store"
@@ -41,14 +42,14 @@ export class Coedit extends Context.Service<Coedit, { readonly queries: CoeditQu
   static readonly make = Effect.gen(function* () {
     const store = yield* CoeditStore
     const context = yield* Effect.context<CoeditStore | ChatStore | TextWrites | FlowDispatch | StatusStore>()
-    const sync = Effect.runSyncWith(context)
-    const run = Effect.runPromiseWith(context)
+    const { runSync: sync, runPromise: run } = runners(context, "coedit")
     yield* followAnswers
     return Coedit.of({
       queries: { texts: store.textsState.tanstack },
       actions: {
         type: (textId, value, edit) => sync(type(textId, value, edit)),
         select: (textId, selection) => sync(select(textId, selection)),
+        // A route cancels a file it no longer shows with its signal.
         showFile: (branchId, path, signal) => run(showFile(branchId, path), { signal }),
         hideFiles: () => run(hideFiles),
         save: (textId) => run(save(textId)),

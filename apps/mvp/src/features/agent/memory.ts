@@ -5,6 +5,7 @@ import { Relevance } from "@smthrs/harness"
 import { Flows, MemoryError, MemoryStore, Opening, Recall, RecallKeyword } from "@smthrs/memory"
 import { Evaluator, ModelError } from "@smthrs/model"
 import { Clock, Config, Data, Effect, Layer, Metric, Stream } from "effect"
+import { codeOf } from "../../errorCode"
 import { FlowsClient } from "../flows-ui/api"
 import { JudgeSeat } from "../jev/steps"
 import { OpeningFailed, OpeningRefused, prompt } from "./flows"
@@ -98,9 +99,12 @@ export const layer = (origin: string) => Layer.merge(
     return { recall: (query: string) => Effect.gen(function*() {
       const rows = yield* recall.recall({ banks: [MEMORY_BANK], query, maxTokens: 16_384 })
       const catalog = yield* flows.list.pipe(
-        Effect.catchTag("@smthrs/mvp/flows/FlowsUnavailable", () => Effect.gen(function*() {
+        Effect.catchTag("@smthrs/mvp/flows/FlowsUnavailable", (error) => Effect.gen(function*() {
           yield* Metric.update(catalogUnavailable, 1)
-          yield* Effect.logWarning("memory.catalog_unavailable")
+          yield* Effect.logWarning("memory.catalog_unavailable").pipe(Effect.annotateLogs({
+            feature: "agent", outcome: "unavailable", errorCode: codeOf(error),
+            ...(error.status === undefined ? {} : { status: error.status }),
+          }))
           return { flows: [] }
         }).pipe(Effect.withSpan("memory.catalog_unavailable"))),
         Effect.mapError(() => new MemoryError.MemoryError({

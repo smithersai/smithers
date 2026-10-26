@@ -19,6 +19,7 @@ const documentOf = (schema: Readonly<Record<string, unknown>>): Readonly<Record<
 const inputOf = (schema: Readonly<Record<string, unknown>>): Schema.Top | undefined => {
   try {
     return SchemaRepresentation.fromJsonSchemaDocument(documentOf(schema) as unknown as JsonSchema.Document<"draft-2020-12">)
+    // expected: a schema the importer can't read refuses the form
   } catch {
     return undefined
   }

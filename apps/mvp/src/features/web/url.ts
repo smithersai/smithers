@@ -52,6 +52,7 @@ const CONTROL = /[\t\n\r]/g
 const parse = (input: string): URL | undefined => {
   try {
     return new URL(input.replace(CONTROL, "").trim())
+    // expected: input that isn't a URL parses to nothing
   } catch {
     return undefined
   }

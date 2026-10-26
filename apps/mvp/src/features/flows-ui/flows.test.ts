@@ -3,7 +3,7 @@ import { FlowRegistry, registry as flowEntries } from "../../flows/registry"
 // runs as the browser's engine worker registers it (src/flows/registrations.ts), on the Node host over the compose
 // Postgres, against ChatApi's real handler on this file's schema. The model is the only scripted seam: the endpoint's
 // `agent` role answers with cells, which the drafting agent and the agent running a flow write.
-import { Effect, Exit, Stream } from "effect"
+import { Effect, Exit, Logger, References, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import { eventually, stop, testFile, usage } from "../../../worker/test/harness.ts"
@@ -782,6 +782,33 @@ describe("removeDraft", () => {
     ))
     return { exit, deleted }
   }
+
+  test("a stop the engine's store couldn't record is logged once by its code, and the draft is still deleted", async () => {
+    const deleted: Array<string> = []
+    const client = Layer.succeed(FlowsClient)(FlowsClient.of({
+      draft: () => Effect.succeed({ round: 2 }),
+      deleteDraft: (draftId: string) => Effect.sync(() => (deleted.push(draftId), true)),
+    } as unknown as FlowsClient["Service"]))
+    // The deliberately faulty runtime can't record a cancellation, as a durable store that lost its database.
+    const runtime = Layer.succeed(FlowRuntime.FlowRuntime)(FlowRuntime.FlowRuntime.of({
+      interrupt: (_flow: unknown, executionId: string) =>
+        Effect.fail(new FlowRuntime.CancelRequestFailed({ code: "cancel_request_failed", executionId, reason: "private store detail" })),
+    } as unknown as FlowRuntime.FlowRuntime["Service"]))
+    const lines: Array<{ readonly message: unknown; readonly level: string; readonly annotations: unknown }> = []
+    const logger = Logger.make(({ message, logLevel, fiber }) =>
+      void lines.push({ message: (message as ReadonlyArray<unknown>)[0], level: logLevel, annotations: fiber.getRef(References.CurrentLogAnnotations) }))
+    const exit = await Effect.runPromise(Effect.exit(
+      removeDraft({ draftId: "d" }).pipe(Effect.provide(client), Effect.provide(runtime), Effect.provide(Logger.layer([logger]))) as Effect.Effect<{ deleted: boolean }, unknown>,
+    ))
+    expect(exit).toEqual(Exit.succeed({ deleted: true }))
+    expect(deleted).toEqual(["d"])
+    expect(lines).toEqual([{
+      message: "flow.draft.interrupt",
+      level: "Warn",
+      annotations: { feature: "flows", outcome: "failed", errorCode: "cancel_request_failed" },
+    }])
+    expect(JSON.stringify(lines)).not.toContain("private store detail")
+  })
 
   test("a draft gone or not the person's deletes nothing; any other refusal, such as signed out, fails the step", async () => {
     for (const status of [403, 404]) {

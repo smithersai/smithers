@@ -91,6 +91,7 @@ export const baseUrlOf = (raw: string): string | undefined => {
   let url: URL
   try {
     url = new URL(text)
+    // expected: a base URL that isn't a URL is invalid input
   } catch {
     return undefined
   }

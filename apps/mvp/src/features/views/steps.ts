@@ -2,6 +2,7 @@ import { type FlowEngineLike, ModelStep } from "@smthrs/agent"
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
 import { type Model, ModelError, ModelEvent, ModelProxy, ModelRequest } from "@smthrs/model"
 import { Context, Effect, Layer, Metric } from "effect"
+import { codeOf } from "../../errorCode"
 import { requesterOf } from "../../flows/requests"
 import { MODEL_ROUTE } from "../model/contract"
 import { type ViewRefused, ViewsClient } from "./api"
@@ -96,10 +97,21 @@ const failureOf = (error: ViewRefused) =>
     ? { error: new ViewForbidden(), outcome: "forbidden" as const }
     : { error: new ViewUnavailable(), outcome: "unavailable" as const }
 
-const record = (counter: typeof shown, attributes: Record<string, string>, line: string) =>
+/**
+ * Counts and logs an outcome: at Info, or at Warn with its code and status when ChatApi couldn't take the request
+ * (`failure`: forbidden or unavailable).
+ */
+const record = (counter: typeof shown, attributes: Record<string, string>, line: string, failure?: ViewRefused) =>
   Effect.andThen(
     Metric.update(Metric.withAttributes(counter, attributes), 1),
-    Effect.logInfo(line).pipe(Effect.annotateLogs({ ...attributes, feature: "views" })),
+    failure === undefined
+      ? Effect.logInfo(line).pipe(Effect.annotateLogs({ ...attributes, feature: "views" }))
+      : Effect.logWarning(line).pipe(Effect.annotateLogs({
+        ...attributes,
+        feature: "views",
+        errorCode: codeOf(failure),
+        ...(failure.status === undefined ? {} : { status: failure.status }),
+      })),
   )
 
 /** `ui/form/check`: the form's schema renders fields and asks for no secret; a fresh id for the view. */
@@ -133,7 +145,7 @@ export const showForm = (form: CheckedForm) =>
         return yield* new FormRefused({ reason: "no_fields" })
       }
       const failed = failureOf(added.failure)
-      yield* record(shown, { template: "form", outcome: failed.outcome }, "views.form")
+      yield* record(shown, { template: "form", outcome: failed.outcome }, "views.form", added.failure)
       return yield* Effect.fail(failed.error)
     }
     yield* record(shown, { template: "form", outcome: "shown" }, "views.form")
@@ -199,11 +211,12 @@ export const writeView = (planned: PlannedView) =>
           ...place,
         }).pipe(
           Effect.map((view) => ({ _tag: "Added" as const, interactions: view.interactions ?? {} })),
+          // expected: a module ChatApi refuses (422) goes back to the renderer; anything else is recorded and fails
           Effect.catch((error) =>
             error.status === 422 && error.detail !== undefined
               ? Effect.succeed({ _tag: "NotRendered" as const, detail: error.detail })
               : Effect.flatMap(
-                record(shown, { template: "generated", outcome: failureOf(error).outcome }, "views.render"),
+                record(shown, { template: "generated", outcome: failureOf(error).outcome }, "views.render", error),
                 () => Effect.fail(failureOf(error).error),
               )
           ),
@@ -257,7 +270,7 @@ export const sendState = (move: {
       return yield* new MoveRefused()
     }
     const failed = failureOf(error)
-    yield* record(moves, { outcome: failed.outcome }, "views.move")
+    yield* record(moves, { outcome: failed.outcome }, "views.move", error)
     return yield* Effect.fail(failed.error)
   }).pipe(Effect.withSpan("views.move"))
 
@@ -284,7 +297,7 @@ const showTemplate = (
         return yield* new TemplateRefused()
       }
       const failed = failureOf(added.failure)
-      yield* record(shown, { template, outcome: failed.outcome }, "views.template")
+      yield* record(shown, { template, outcome: failed.outcome }, "views.template", added.failure)
       return yield* Effect.fail(failed.error)
     }
     yield* record(shown, { template, outcome: "shown" }, "views.template")

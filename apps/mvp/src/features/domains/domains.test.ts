@@ -17,6 +17,7 @@ import {
   TestChatApi,
 } from "../../test/chatApi"
 import { EngineFaults } from "../../test/faults"
+import { read as readTelemetry } from "../../test/otlp"
 import { Domains } from "./domains"
 import { DomainsStore } from "./store"
 
@@ -62,6 +63,9 @@ const openSettings = async (actor: Actor, clipboard?: NodeDevice["clipboard"]) =
     list: () => plain(store.listState.tanstack.toArray),
     saves: () => plain(store.savesState.tanstack.toArray),
     page: () => plain(store.pageState.tanstack.toArray),
+    api,
+    /** Closes the tab, which flushes its exporter. */
+    close: () => runtime.dispose(),
   }
 }
 
@@ -125,6 +129,16 @@ describe("a Maintainer's Settings page", () => {
   test("Copy rejects when the clipboard refuses, so the button says so", async () => {
     const tab = await openSettings(maintainer, () => Promise.reject(new Error("no focus")))
     await expect(tab.domains.actions.copy("domains.localhost")).rejects.toBeDefined()
+    await tab.close()
+    // Logged once at Warn by the refusal's code, never the value or the clipboard's message.
+    const lines = readTelemetry(tab.api.telemetry).log("domain.copy")
+    expect(lines).toEqual([
+      expect.objectContaining({
+        severity: "Warn",
+        attributes: expect.objectContaining({ feature: "domains", outcome: "failed", errorCode: "ClipboardRefused" }),
+      }),
+    ])
+    expect(JSON.stringify(lines)).not.toMatch(/domains\.localhost|no focus/)
   })
 })
 

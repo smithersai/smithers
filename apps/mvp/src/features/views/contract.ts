@@ -88,10 +88,11 @@ export const VIEWS_TELEMETRY = {
     "views.template",
     "views.template.show",
     "views.minimize",
+    "views.home.load",
     "smithers_views_shown",
     "smithers_renderer_corrections",
     "smithers_view_moves",
     "smithers_views_minimized",
   ],
-  fields: ["template", "outcome", "reason", "corrections", "smithers.view.size", "returned"],
+  fields: ["template", "outcome", "reason", "corrections", "smithers.view.size", "returned", "errorCode", "status"],
 } as const

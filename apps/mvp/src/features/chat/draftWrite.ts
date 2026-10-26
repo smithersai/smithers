@@ -1,5 +1,6 @@
 import type { Collection } from "@smthrs/effect-tanstack-db"
 import { Effect, Metric } from "effect"
+import { codeOf } from "../../errorCode"
 import { draftWrites } from "./metrics"
 import { HOME_DRAFT } from "./schema"
 
@@ -12,7 +13,12 @@ export const persistDraft = (write: Collection.Transaction, key: string) => {
     yield* Effect.logInfo("chat draft saving")
     yield* write.persisted.pipe(
       Effect.tap(() => Effect.andThen(count("stored"), Effect.logInfo("chat draft stored"))),
-      Effect.tapError(() => Effect.andThen(count("failed"), Effect.logWarning("chat draft failed"))),
+      Effect.tapError((failure) =>
+        Effect.andThen(
+          count("failed"),
+          Effect.logWarning("chat draft failed").pipe(Effect.annotateLogs({ outcome: "failed", errorCode: codeOf(failure) })),
+        )
+      ),
     )
   }).pipe(
     Effect.annotateLogs({ feature: "chat", transactionId: write.id, conversation: key === HOME_DRAFT ? "home" : "branch" }),

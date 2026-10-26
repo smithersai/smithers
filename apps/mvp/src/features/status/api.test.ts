@@ -61,13 +61,21 @@ describe("RunsClient", () => {
   test("a 200 whose receipt stalls still took the write, within the same deadline", async () => {
     const c = client(() => Promise.resolve(new Response(new ReadableStream())), "50 millis")
     expect(await c.run((c) => c.report("r", { status: "done" }))).toEqual(Exit.void)
-    expect(c.logs).toContainEqual(expect.objectContaining({ level: "WARN", message: "agent.status.malformed" }))
+    expect(c.logs).toContainEqual(expect.objectContaining({
+      level: "WARN",
+      message: "agent.status.malformed",
+      annotations: expect.objectContaining({ feature: "status", status: 200, outcome: "malformed", errorCode: "timeout_after_200" }),
+    }))
   })
 
   test.each(["invalid JSON", { nope: "private body" }])("a malformed 200 is written and warns without its body: %s", async (body) => {
     const c = client(() => typeof body === "string" ? Promise.resolve(new Response(body)) : json(body))
     expect(await c.run((c) => c.report("r", { status: "done" }))).toEqual(Exit.void)
-    expect(c.logs).toContainEqual(expect.objectContaining({ level: "WARN", message: "agent.status.malformed" }))
+    expect(c.logs).toContainEqual(expect.objectContaining({
+      level: "WARN",
+      message: "agent.status.malformed",
+      annotations: expect.objectContaining({ feature: "status", status: 200, outcome: "malformed", errorCode: "decode" }),
+    }))
     expect(JSON.stringify(c.logs)).not.toContain("private body")
   })
 

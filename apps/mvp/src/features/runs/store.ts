@@ -9,6 +9,7 @@ import { CloudRun, type Inspection, type RepoName, RepoRunRow, RepoRunsLoaded, R
 import { routeTiming, type RouteTiming } from "./timing"
 import { domainOutcomeOf, hasDomainOutcome } from "./todoRun"
 import { repoId } from "../repo/contract"
+import { codeOf } from "../../errorCode"
 
 // Runs on this tab (decision 0014 §1 and §3, docs/features/runs.md#the-browser): the list of this device's runs, each
 // open run's read, and the run view, all local collections read from this device's engine through `BrowserEngine`. A
@@ -122,17 +123,71 @@ const put = <A extends { readonly id: string }>(collection: Collection.Collectio
 
 type Read = "run" | "list" | "cloud" | "outcome"
 
-/** Counts and logs one read of the engine: its outcome and, for a run, how many events it held. */
-const recordRead = (read: Read, outcome: string, startedAt: number, events?: number) =>
+/**
+ * The reads that follow a run's first page: the rest of its journal (`page`), a run it started (`child`), the rest of
+ * that run's journal (`child_page`), and More (`more`). They aren't counted; one that fails is logged, and the page
+ * keeps what it read.
+ */
+type FollowingRead = "page" | "child" | "child_page" | "more"
+
+/**
+ * A failed read's code, never a message: the tag the engine refused it with, why the engine is down, else the
+ * failure's own (`codeOf`).
+ */
+export const readCode = (failure: unknown): string =>
+  failure instanceof BrowserEngine.RequestRefused
+    ? codeOf({ code: failure.error })
+    : failure instanceof BrowserEngine.EngineUnavailable
+    ? failure.reason
+    : codeOf(failure)
+
+/**
+ * Logs one read as `run.read`: at Warn with its `errorCode`, and ChatApi's `status` for a run on Cloudflare, when it
+ * couldn't reach the run (`unavailable`); else at Debug, since not found and not started are answers about the run.
+ */
+const logRead = (act: Read | FollowingRead, outcome: string, startedAt: number, events?: number, failure?: unknown) =>
   Effect.gen(function* () {
-    yield* Metric.update(Metric.withAttributes(reads, { read, outcome }), 1)
-    yield* Effect.logDebug("run.read").pipe(Effect.annotateLogs({
+    yield* (outcome === "unavailable" ? Effect.logWarning : Effect.logDebug)("run.read").pipe(Effect.annotateLogs({
       feature: "runs",
-      act: read,
+      act,
       outcome,
       durationMs: (yield* Clock.currentTimeMillis) - startedAt,
       ...(events === undefined ? {} : { events }),
+      ...(failure === undefined ? {} : { errorCode: readCode(failure) }),
+      ...(failure instanceof RemoteReadFailed && failure.status !== undefined ? { status: failure.status } : {}),
     }))
+  })
+
+/** Counts and logs one read of the engine: its outcome and, for a run, how many events it held. */
+const recordRead = (read: Read, outcome: string, startedAt: number, events?: number, failure?: unknown) =>
+  Effect.andThen(
+    Metric.update(Metric.withAttributes(reads, { read, outcome }), 1),
+    logRead(read, outcome, startedAt, events, failure),
+  )
+
+/** Logs a following read that failed (`FollowingRead`). */
+const recordFollowing = (act: FollowingRead, failure: unknown, startedAt: number) =>
+  logRead(act, stateOf(failure), startedAt, undefined, failure)
+
+/**
+ * Waits for a repository's runs to load: the device's rows restored and the first sync answered. A first sync that
+ * fails still settles the list, which then shows the device's rows as if loaded, so it is logged as
+ * `runs.repo_runs.load`.
+ */
+export const repoRunsSynced = (rows: {
+  readonly restored: Effect.Effect<void, Collection.LoadFailed>
+  readonly preload: Effect.Effect<void, Collection.LoadFailed>
+}) =>
+  Effect.gen(function* () {
+    // expected: restore failures are logged by Collection
+    yield* Effect.ignore(rows.restored)
+    yield* rows.preload.pipe(
+      Effect.catch((failure) =>
+        Effect.logWarning("runs.repo_runs.load").pipe(
+          Effect.annotateLogs({ feature: "runs", outcome: "failed", errorCode: codeOf(failure) }),
+        )
+      ),
+    )
   })
 
 /**
@@ -277,7 +332,10 @@ export class RunsStore extends Context.Service<
             if (inspection.run.lastSeq > after && inspection.journal.hasMore) kept = { ...kept, hasMore: true }
             while (kept.hasMore && after < inspection.run.lastSeq) {
               const next = yield* Effect.result(source(runId, { afterSeq: after, limit: JOURNAL_PAGE }))
-              if (next._tag === "Failure") break
+              if (next._tag === "Failure") {
+                yield* recordFollowing("page", next.failure, startedAt)
+                break
+              }
               const fresh = next.success.journal.events.filter((event) => event.seq > after)
               if (fresh.length === 0) break
               kept = { more: [...kept.more, ...fresh], hasMore: next.success.journal.hasMore }
@@ -298,7 +356,10 @@ export class RunsStore extends Context.Service<
                 continue
               }
               const child = yield* Effect.result(source(childId, { limit: JOURNAL_PAGE }))
-              if (child._tag === "Failure") continue
+              if (child._tag === "Failure") {
+                yield* recordFollowing("child", child.failure, startedAt)
+                continue
+              }
               const childIndex = descendants.length
               const firstEnd = child.success.journal.nextSeq
               const retained = child.success.journal.hasMore && previous !== undefined ? previous.journal.events.filter((event) => event.seq > firstEnd) : []
@@ -309,7 +370,10 @@ export class RunsStore extends Context.Service<
               yield* publish(descendants)
               while (hasMore && cursor < child.success.run.lastSeq) {
                 const next = yield* Effect.result(source(childId, { afterSeq: cursor, limit: JOURNAL_PAGE }))
-                if (next._tag === "Failure") break
+                if (next._tag === "Failure") {
+                  yield* recordFollowing("child_page", next.failure, startedAt)
+                  break
+                }
                 const fresh = next.success.journal.events.filter((event) => event.seq > cursor)
                 if (fresh.length === 0) break
                 events.push(...fresh); cursor = fresh.at(-1)!.seq; hasMore = next.success.journal.hasMore
@@ -347,7 +411,7 @@ export class RunsStore extends Context.Service<
           if (state !== "unavailable" || Option.isNone(shown) || shown.value.state !== "read") {
             yield* put(pages, { id: runId, state, inspection: null, more: [], hasMore: false })
           }
-          yield* recordRead("run", state, startedAt)
+          yield* recordRead("run", state, startedAt, undefined, read.failure)
         }).pipe(Effect.orDie)
 
       const readMore = (runId: string) =>
@@ -359,8 +423,9 @@ export class RunsStore extends Context.Service<
           const page = current.value
           const events = [...(page.inspection as Inspection).journal.events, ...(page.more as Inspection["journal"]["events"])]
           const afterSeq = events.at(-1)?.seq ?? -1
+          const startedAt = yield* Clock.currentTimeMillis
           const read = yield* Effect.result(reader(runId)(runId, { afterSeq, limit: JOURNAL_PAGE }))
-          if (read._tag === "Failure") return
+          if (read._tag === "Failure") return yield* recordFollowing("more", read.failure, startedAt)
           const latestView = Option.getOrThrow(yield* view.get(VIEW))
           if (latestView.runId === runId && latestView.at != null) return
           // More contributes events to the current page, never its pre-read snapshot.
@@ -385,7 +450,7 @@ export class RunsStore extends Context.Service<
         yield* view.update(VIEW, (row) => { row.listReady = false })
         const read = yield* Effect.result(engine.list({ limit: RUN_LIST_LIMIT }))
         yield* view.update(VIEW, (row) => { row.listLoaded = true })
-        if (read._tag === "Failure") return yield* recordRead("list", "unavailable", startedAt)
+        if (read._tag === "Failure") return yield* recordRead("list", "unavailable", startedAt, undefined, read.failure)
         const listedIds = new Set(read.success.runs.map((run) => run.runId))
         const previous = yield* runs.toArray
         const previousById = new Map(previous.map((row) => [row.id, row]))
@@ -421,7 +486,7 @@ export class RunsStore extends Context.Service<
         Effect.gen(function* () {
           const startedAt = yield* Clock.currentTimeMillis
           const read = yield* Effect.result(engine.inspect(row.id, { limit: 1 }))
-          if (read._tag === "Failure") return yield* recordRead("outcome", "unavailable", startedAt)
+          if (read._tag === "Failure") return yield* recordRead("outcome", "unavailable", startedAt, undefined, read.failure)
           const run = read.success.run
           const current = yield* runs.get(row.id)
           if (Option.isNone(current) || current.value.seq !== run.lastSeq || !hasDomainOutcome(run.flowName)) return
@@ -541,7 +606,7 @@ export class RunsStore extends Context.Service<
         const read = yield* Effect.result(remote.list)
         yield* view.update(VIEW, (row) => { row.cloudLoaded = true })
         // A list that couldn't be read keeps what it showed: signed out, a Guest, or ChatApi unreachable.
-        if (read._tag === "Failure") return yield* recordRead("cloud", stateOf(read.failure), startedAt)
+        if (read._tag === "Failure") return yield* recordRead("cloud", stateOf(read.failure), startedAt, undefined, read.failure)
         const listed = new Set(read.success.map((run) => run.runId))
         const stale = (yield* cloudRuns.toArray).filter((row) => !listed.has(row.runId)).map((row) => row.runId)
         if (stale.length > 0) yield* Effect.asVoid(cloudRuns.delete(stale))
@@ -608,8 +673,7 @@ export class RunsStore extends Context.Service<
         // Loaded: the device's rows restored and the first sync answered, or failed. A slow shape leaves the list saying
         // nothing rather than that the repository has no runs.
         yield* Effect.gen(function* () {
-          yield* Effect.ignore(rows.restored)
-          yield* Effect.ignore(rows.preload)
+          yield* repoRunsSynced(rows)
           yield* Effect.orDie(loadedRepoRuns.insert({ id: repoId(owner, name) }))
           yield* attempt.record("repo-runs", "loaded", (yield* rows.toArray).length)
         }).pipe(Effect.forkIn(scope, { startImmediately: true }))

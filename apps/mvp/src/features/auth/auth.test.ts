@@ -233,7 +233,10 @@ describe("sign-in on a tab", () => {
     const down = await signInHarness(server, { github: h.github, database: unreachable })
     const tab = await openTab(realClient(browser(down, b.jar)))
     await tab.settled("unreachable")
-    expect(tab.logs.find((log) => log.message === "session unreachable")!.annotations).toMatchObject({ status: 503 })
+    expect(tab.logs.find((log) => log.message === "session unreachable")).toMatchObject({
+      level: "WARN",
+      annotations: { feature: "auth", outcome: "failed", errorCode: "status", status: 503 },
+    })
   })
 
   test("an answer outside the contract, none in time, or no network is unreachable too", async () => {
@@ -243,7 +246,8 @@ describe("sign-in on a tab", () => {
         Layer.provide(Layer.succeed(FetchHttpClient.Fetch, (async () => Response.json({ signedIn: "yes" })) as typeof fetch)),
       ),
     )
-    await (await odd).settled("unreachable")
+    const malformed = await odd
+    await malformed.settled("unreachable")
     const silent = await openTab(
       AuthClient.layer({ origin: ORIGIN, within: "50 millis" }).pipe(
         Layer.provide(FetchHttpClient.layer),
@@ -279,6 +283,24 @@ describe("sign-in on a tab", () => {
     refused.actions.signOut()
     await vi.waitFor(() => expect(refused.count(signOuts, { outcome: "failed" })).toBe(1))
     expect(refused.logs.find((log) => log.message === "sign out failed")!.annotations).toMatchObject({ status: 403 })
+    // Each way ChatApi couldn't say is one Warn line by its own code, the status only when ChatApi answered.
+    const unreachable = (tab: typeof refused, message: string) => tab.logs.find((log) => log.message === message)
+    await vi.waitFor(() => {
+      expect(unreachable(malformed, "session unreachable")).toMatchObject({
+        level: "WARN", annotations: { feature: "auth", outcome: "failed", errorCode: "malformed", status: 200 },
+      })
+      for (const [tab, errorCode] of [[silent, "timeout"], [offline, "unreachable"]] as const) {
+        for (const message of ["session unreachable", "sign out failed"]) {
+          expect(unreachable(tab, message)).toMatchObject({ level: "WARN", annotations: { feature: "auth", outcome: "failed", errorCode } })
+          expect(unreachable(tab, message)!.annotations).not.toHaveProperty("status")
+        }
+      }
+      for (const message of ["session unreachable", "sign out failed"]) {
+        expect(unreachable(refused, message)).toMatchObject({
+          level: "WARN", annotations: { feature: "auth", outcome: "failed", errorCode: "status", status: 403 },
+        })
+      }
+    })
   })
 
   test("a sign-out ChatApi doesn't take keeps the person signed in, counted and logged", async () => {
@@ -296,6 +318,9 @@ describe("sign-in on a tab", () => {
     await vi.waitFor(() => expect(tab.count(signOuts, { outcome: "failed" })).toBe(1))
     expect(tab.session()).toMatchObject({ status: "signed_in", signingOut: false })
     expect(tab.logs.find((log) => log.message === "sign out failed")!.annotations).not.toHaveProperty("status")
+    expect(tab.logs.find((log) => log.message === "sign out failed")).toMatchObject({
+      level: "WARN", annotations: { feature: "auth", outcome: "failed", errorCode: "AuthUnreachable" },
+    })
   })
 
   test("its log lines carry whether someone is signed in, never who", async () => {
@@ -512,7 +537,7 @@ describe("signing out wipes the device", () => {
     await tab.settled("signed_out")
     await vi.waitFor(() => expect(tab.count(deviceWipes, { outcome: "failed" })).toBe(1), { interval: 10 })
     const line = tab.logs.find((log) => log.message === "device wipe failed")!
-    expect(line.annotations).toMatchObject({ feature: "auth" })
+    expect(line).toMatchObject({ level: "WARN", annotations: { feature: "auth", outcome: "failed", errorCode: "WipeFailed" } })
     expect(JSON.stringify(tab.logs)).not.toContain("storage blocked")
     expect(JSON.stringify(tab.logs)).not.toContain("octocat")
   })

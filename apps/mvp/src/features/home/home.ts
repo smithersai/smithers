@@ -1,10 +1,11 @@
 import type { Home as HomeDocument } from "@smthrs/views"
 import { Context, Effect, Layer, Option } from "effect"
+import { runners } from "../../boundary"
 import type { RepoClient } from "../repo/api"
 import type { RepoStore } from "../repo/store"
 import { TodosStore } from "../todos/store"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { open, runAction, view, warm } from "./actions"
+import { open, runAction, view, warm, watch } from "./actions"
 import type { HomeClient } from "./api"
 import { HomeStore } from "./store"
 
@@ -47,6 +48,11 @@ export interface HomeActions {
   readonly run: (flow: string, login: string | null) => Promise<string | undefined>
   /** The view switcher: shows the routed home as `audience`, the person's own or a lower one (SCOPE-14). */
   readonly view: (audience: HomeAudience) => void
+  /**
+   * Watches what a button on the page started (`ask`: opening the workspace's composer; `action`: an action and the
+   * page it opens): one that rejects is logged as `home.navigate` with its code, never left unhandled.
+   */
+  readonly watch: (what: "ask" | "action", started: Promise<unknown>) => void
 }
 
 export class Home extends Context.Service<Home, { readonly queries: HomeQueries; readonly actions: HomeActions }>()(
@@ -59,8 +65,7 @@ export class Home extends Context.Service<Home, { readonly queries: HomeQueries;
       const store = yield* HomeStore
       const todos = yield* Effect.serviceOption(TodosStore)
       const context = yield* Effect.context<HomeStore | HomeClient | RepoStore | RepoClient | FlowDispatch>()
-      const run = Effect.runSyncWith(context)
-      const promise = Effect.runPromiseWith(context)
+      const { runSync: run, runPromise: promise } = runners(context, "home")
       return Home.of({
         queries: {
           home: store.homeState.tanstack,
@@ -77,6 +82,7 @@ export class Home extends Context.Service<Home, { readonly queries: HomeQueries;
           warm: (owner, name) => promise(warm(owner, name)),
           run: (flow, login) => promise(runAction(flow, login)),
           view: (audience) => run(view(audience)),
+          watch: (what, started) => void promise(watch(what, started)),
         },
       })
     }),

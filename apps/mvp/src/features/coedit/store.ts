@@ -87,6 +87,7 @@ export const decodeCursor = (state: string | null): Mine | undefined => {
     const anchor = Base64.decode(a)
     const head = Base64.decode(h)
     return anchor._tag === "Success" && head._tag === "Success" ? { anchor: anchor.success, head: head.success } : undefined
+    // expected: a room state that is not JSON is no cursor
   } catch {
     return undefined
   }

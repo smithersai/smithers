@@ -46,7 +46,7 @@ const changeView = (fields: Partial<Omit<ViewRow, "id">>) =>
 /** Starts the repositories' shape, if nothing read it yet; a device that can't reach Electric keeps what it has. */
 export const startSync = Effect.flatMap(
   RepoStore,
-  (store) => Effect.forkIn(Effect.ignore(store.repositories.preload), store.scope, { startImmediately: true }),
+  (store) => Effect.forkIn(store.firstSync, store.scope, { startImmediately: true }),
 )
 
 // --- Cloning ---
@@ -77,11 +77,14 @@ const send = (row: CloneRow) =>
     // The repository's row reaches every tab of the device, the one that stores the shape's rows and the ones that
     // watch, so the wait is on the row, there already or once it shows. Rows show only once the device has restored
     // them, so the wait counts from then, and the restore waits as long at most.
+    // expected: restore failures are logged by Collection, and a slow restore is bounded by confirmWithin
     yield* Effect.ignore(Effect.timeout(store.repositories.restored, store.confirmWithin))
     const delivered = store.repositories.awaitRow((repository) => repository.id === accepted.id, store.confirmWithin)
     if ((yield* Effect.result(delivered))._tag === "Failure") {
       yield* put<CloneRow>(store.clones, row.id, { ...row, status: "failed" })
-      return yield* Effect.logWarning("repo.clone.unconfirmed")
+      return yield* Effect.logWarning("repo.clone.unconfirmed").pipe(
+        Effect.annotateLogs({ outcome: "unconfirmed", reason: "not_delivered" }),
+      )
     }
     yield* Effect.orDie(store.clones.delete(row.id))
   }).pipe(Effect.annotateLogs({ feature: "repo" }))
@@ -479,7 +482,7 @@ export const shown = (repository: Named) =>
     const now = yield* store.repositories.get(repository.id)
     if (Option.isSome(now)) return isReady(now) ? Option.some(fromRow(now.value)) : Option.none()
     yield* ensureHead(repository, true)
-    const synced = Effect.ignore(store.repositories.preload).pipe(
+    const synced = store.firstSync.pipe(
       Effect.andThen(store.repositories.get(repository.id)),
       Effect.map((row) => (isReady(row) ? Option.some(fromRow(row.value)) : Option.none())),
     )
@@ -578,7 +581,7 @@ export const shownRepository = (id: string) =>
     const store = yield* RepoStore
     const now = yield* store.repositories.get(id)
     if (Option.isSome(now)) return isReady(now) ? Option.some(now.value) : Option.none()
-    yield* Effect.ignore(store.repositories.preload)
+    yield* store.firstSync
     const synced = yield* store.repositories.get(id)
     return isReady(synced) ? Option.some(synced.value) : Option.none()
   })
@@ -697,7 +700,8 @@ export const rawHref = (target: Target) =>
     yield* open(target)
     const opened = Option.getOrThrow(yield* store.view.get(VIEW))
     if (opened.repoId === null || target.path === "") return undefined
-    yield* Effect.ignore(Effect.timeoutOption(store.repositories.preload, store.confirmWithin))
+    // Electric gets `confirmWithin` to deliver the row; the page then shows what the device has.
+    yield* Effect.timeoutOption(store.firstSync, store.confirmWithin)
     const row = yield* store.repositories.get(opened.repoId)
     if (Option.isNone(row) || row.value.status !== "ready") return undefined
     const view = yield* until(store.view, VIEW, (view) => view.missing || view.failure !== null || view.sha !== null)

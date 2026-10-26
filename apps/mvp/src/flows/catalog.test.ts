@@ -1,7 +1,7 @@
 // The agent's catalog, scoped to the run that asks (src/flows/catalog.ts, decision 0014 §2): reads only while a draft
 // is written, a person's flow's own list while one runs, and the whole catalog otherwise. The scope of a run's own
 // agent is proved end to end in src/features/flows-ui/flows.test.ts; these are the rules and the failure of the read.
-import { Effect } from "effect"
+import { Effect, Logger, References } from "effect"
 import { describe, expect, test } from "vitest"
 import { PROMPT_CATALOG } from "../features/flows-ui/callable"
 import { AUTHOR_TOOLS } from "../features/flows-ui/contract"
@@ -56,7 +56,17 @@ describe("scopeFor", () => {
 
   test("a payload without a list, or one that can't be read, leaves the agent nothing to call", async () => {
     expect(await Effect.runPromise(scopeFor("flow/run/prompt", "run-1", read({ name: "x" })))).toEqual([])
-    expect(await Effect.runPromise(scopeFor("flow/run/prompt", "run-1", () => Effect.fail("unreadable")))).toEqual([])
+    const lines: Array<{ readonly message: unknown; readonly level: string; readonly annotations: unknown }> = []
+    const logger = Logger.make(({ message, logLevel, fiber }) =>
+      void lines.push({ message: (message as ReadonlyArray<unknown>)[0], level: logLevel, annotations: fiber.getRef(References.CurrentLogAnnotations) }))
+    const store = Object.assign(new Error("private store detail"), { _tag: "RunStoreError" })
+    expect(await Effect.runPromise(scopeFor("flow/run/prompt", "run-1", () => Effect.fail(store)).pipe(Effect.provide(Logger.layer([logger])))))
+      .toEqual([])
+    // The read that failed is logged once at Warn by its code, never its message.
+    expect(lines).toEqual([
+      { message: "flow.scope.read", level: "Warn", annotations: { feature: "flows", outcome: "unreadable", errorCode: "RunStoreError" } },
+    ])
+    expect(JSON.stringify(lines)).not.toContain("private store detail")
   })
 })
 

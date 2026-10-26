@@ -1,6 +1,7 @@
 import { ElectricCollection, type ShapeSource } from "@smthrs/effect-electric"
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
-import { Context, Duration, Effect, FiberHandle, Layer, Option, type Schedule, Stream } from "effect"
+import { Context, Duration, Effect, FiberHandle, Layer, Option, Ref, type Schedule, Stream } from "effect"
+import { codeOf } from "../../errorCode"
 import { RepoRole } from "../auth/schema"
 import { AuthStore } from "../auth/store"
 import { REPOSITORIES_SHAPE_ROUTE } from "./contract"
@@ -30,6 +31,24 @@ export interface RepoConfig {
 /** Whether sign-in's row says someone is signed in; `null` while it doesn't know. */
 const signedInOf = (session: { readonly status: string }): boolean | null =>
   session.status === "signed_in" ? true : session.status === "signed_out" ? false : null
+
+/**
+ * The repositories' first sync as a page waits for it, from the collection's `preload`. One that fails leaves the page
+ * reading the rows the device has as all there are, so it is logged as `repo.repositories.load`, once per store: every
+ * later wait answers the same failure.
+ */
+export const firstSyncOf = (preload: Effect.Effect<void, Collection.LoadFailed>) =>
+  Effect.map(Ref.make(false), (logged) =>
+    preload.pipe(
+      Effect.catch((failure) =>
+        Effect.flatMap(Ref.getAndSet(logged, true), (already) =>
+          already
+            ? Effect.void
+            : Effect.logWarning("repo.repositories.load").pipe(
+              Effect.annotateLogs({ feature: "repo", outcome: "failed", errorCode: codeOf(failure) }),
+            ))
+      ),
+    ))
 
 const make = Effect.fnUntraced(function* (config: RepoConfig) {
   const repositories = yield* ElectricCollection.make<Repository>({
@@ -70,6 +89,8 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
     Effect.forkScoped,
   )
 
+  const firstSync = yield* firstSyncOf(repositories.preload)
+
   // Who is signed in, from sign-in's own row when the app has sign-in: Clone gives way to the sign-in link.
   const auth = yield* Effect.serviceOption(AuthStore)
   if (Option.isSome(auth)) {
@@ -84,6 +105,8 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
 
   return {
     repositories,
+    /** The repositories' first sync: done, or failed and logged (`repo.repositories.load`). */
+    firstSync,
     clones,
     trees,
     blobs,

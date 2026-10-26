@@ -1,4 +1,5 @@
 import { Effect, Metric } from "effect"
+import { runners } from "../../boundary"
 
 // One-key shortcuts (docs/features/todos.md#from-an-issue), as GitHub's single letters: a key presses the button on the
 // page that declares it in `aria-keyshortcuts`, such as Make TODO's `t` on an issue's page, or focuses the field that
@@ -30,7 +31,7 @@ export const buttonFor = (root: ParentNode, key: string): HTMLElement | undefine
 
 /** Binds the one-key shortcuts on `target` (the window) while the scope is open. */
 export const buttonShortcuts = Effect.fnUntraced(function* (target: EventTarget) {
-  const run = Effect.runSyncWith(yield* Effect.context<never>())
+  const { runSync: run } = runners(yield* Effect.context<never>(), "keys")
   const onKey = (event: Event) => {
     const { key, metaKey, ctrlKey, altKey } = event as Partial<KeyboardEvent>
     if (event.defaultPrevented || metaKey || ctrlKey || altKey || typeof key !== "string" || key.length !== 1) return

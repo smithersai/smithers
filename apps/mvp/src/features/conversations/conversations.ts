@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect"
+import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
 import { archive, resume, search, showArchived } from "./actions"
 import { type ConversationsConfig, ConversationsStore } from "./store"
@@ -39,7 +40,7 @@ export class Conversations extends Context.Service<
         const store = yield* ConversationsStore
         // Acts a closed tab left on the device follow their runs again, in the background.
         yield* Effect.forkIn(resume, store.scope)
-        const run = Effect.runPromiseWith(yield* Effect.context<ConversationsStore | FlowDispatch>())
+        const { runPromise: run } = runners(yield* Effect.context<ConversationsStore | FlowDispatch>(), "conversations")
         return Conversations.of({
           queries: { list: store.listState.tanstack, search: store.searchState.tanstack },
           actions: {

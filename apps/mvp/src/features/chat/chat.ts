@@ -1,4 +1,5 @@
 import { postgresTime } from "./view"
+import { runners } from "../../boundary"
 import { Clock, Option } from "effect"
 import { Context, Data, Effect, Layer, Stream } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
@@ -98,7 +99,7 @@ export class Chat extends Context.Service<Chat, { readonly queries: ChatQueries;
 ) {
   /**
    * Binds the store's queries and actions for frontends. Each action runs its Effect with the services this layer
-   * was built with (`Effect.runSyncWith`), so it shares the app's store, logger, tracer and metrics. Whenever this tab
+   * was built with (`runners`, src/boundary.ts), so it shares the app's store, logger, tracer and metrics. Whenever this tab
    * comes to lead the outbox, it sends the questions it couldn't before.
    */
   static readonly layer = Layer.effect(
@@ -106,8 +107,7 @@ export class Chat extends Context.Service<Chat, { readonly queries: ChatQueries;
     Effect.gen(function* () {
       const store = yield* ChatStore
       const context = yield* Effect.context<ChatStore | Page | FlowDispatch>()
-      const run = Effect.runSyncWith(context)
-      const runAsync = Effect.runPromiseWith(context)
+      const { runSync: run, runPromise: runAsync } = runners(context, "chat")
       // The draft this device kept goes back into the composer once the device store has restored it.
       yield* store.drafts.restored.pipe(
         Effect.ignore,

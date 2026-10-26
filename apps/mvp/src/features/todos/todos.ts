@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect"
+import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
 import { retry, commit, discard, discardDraft, drop, edit, fromIssue, newDraft, open, setPrompt, setTitle, warm } from "./actions"
 import { type RepoStack, TodosStore } from "./store"
@@ -61,8 +62,7 @@ export class Todos extends Context.Service<Todos, { readonly queries: TodosQueri
     Effect.gen(function* () {
       const store = yield* TodosStore
       const context = yield* Effect.context<TodosStore | FlowDispatch>()
-      const run = Effect.runSyncWith(context)
-      const runAsync = Effect.runPromiseWith(context)
+      const { runSync: run, runPromise: runAsync } = runners(context, "todos")
       const stackQueries = (stack: RepoStack): StackQueries => ({
         todos: stack.todos.tanstack,
         requests: stack.requests.tanstack,

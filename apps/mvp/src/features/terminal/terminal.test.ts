@@ -507,6 +507,7 @@ describe("the panel", () => {
       const mine = crypto.randomUUID()
       const createdAt = "2026-10-21T12:00:00.000Z"
       await tab.insert({ id: mine, branchId, ownerId: member.subject.id, status: "opening", createdAt })
+      const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
       await tab.runtime.runPromise(Effect.gen(function* () {
         yield* TestClock.setTime(Date.parse(createdAt) + age)
         expect(yield* show(branchId)).toBe(mine)
@@ -518,8 +519,15 @@ describe("the panel", () => {
         expect(panelViewOf(panel._tag === "Some" ? panel.value : undefined, tabs, true)).toEqual({
           badge: undefined, open: "button", screen: { kind: "open" },
         })
-      }).pipe(Effect.provide(TestClock.layer())))
+      }).pipe(
+        Effect.provide(TestClock.layer()),
+        Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((entry) => void logs.push(Logger.formatStructured.log(entry)))])),
+      ))
       expect(await tab.synced(branchId, mine)).toBe("opening")
+      // A row that never settled is logged once as it fails the panel.
+      expect(logs.filter((log) => log.message === "terminal.open.unsettled")).toEqual([
+        expect.objectContaining({ level: "WARN", annotations: expect.objectContaining({ feature: "terminal", outcome: "timeout" }) }),
+      ])
     }, WITHIN,
   )
 

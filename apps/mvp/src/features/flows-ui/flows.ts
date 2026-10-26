@@ -191,6 +191,7 @@ export const FlowNew = Flow.make(FlowNewReference._tag, {
             Node.map(Node.capture({ failure: null }, (drafted: Drafted): Outcome => ({ drafted, failure: null }))),
             // The agent couldn't draft (the model failed, or its answer never decoded): the round fails with the
             // agent's failure, whose code `flow/new/write` reads (./failure.ts), and the card offers another.
+            // expected: the round keeps the agent's failure
             Node.catch({
               onFailure: Node.capture({}, (failure) => Node.succeed({ drafted: null, failure })),
             }),

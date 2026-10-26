@@ -312,6 +312,25 @@ describe("observability", () => {
     for (const secret of [LOGIN, "person-secret-id", "intruder", "fresh-"]) expect(text).not.toContain(secret)
   })
 
+  test("a session read that failed is named by its code: a 5xx is a failure with its status, no answer is offline", async () => {
+    const registry: Metric.MetricRegistry = new Map()
+    const logs: Array<unknown> = []
+    const device = store()
+    await activate(device, signedIn("alice", "alice"))
+    const run = (session: Effect.Effect<SessionState, unknown>) =>
+      observe(authorizeDevice({ database: device.database, session, report: () => {} }), registry, logs)
+    await run(Effect.fail(new AuthUnreachable({ status: 503, code: "status" })))
+    await run(Effect.fail(new AuthUnreachable({ code: "unreachable" })))
+    // Both open the owner's data offline, counted by outcome alone.
+    expect(await count(registry, { outcome: "offline" })).toBe(2)
+    expect((logs as Array<{ message: unknown; level: string; annotations: Record<string, unknown> }>)
+      .filter((line) => line.message === "auth.device_identity")
+      .map(({ level, annotations }) => ({ level, annotations }))).toEqual([
+      { level: "WARN", annotations: { outcome: "offline", errorCode: "status", status: 503 } },
+      { level: "INFO", annotations: { outcome: "offline", errorCode: "unreachable" } },
+    ])
+  })
+
   test("a session without a stable person, an unreadable owner record or a broken store refuses, counted by stage, never with content", async () => {
     const registry: Metric.MetricRegistry = new Map()
     const logs: Array<unknown> = []
@@ -611,7 +630,7 @@ describe("requests", () => {
         expect(signal?.aborted).toBe(false)
         yield* TestClock.adjust("15 seconds")
         const result = yield* Fiber.join(reading)
-        expect(Exit.isFailure(result) ? Cause.squash(result.cause) : result).toEqual(new AuthUnreachable({}))
+        expect(Exit.isFailure(result) ? Cause.squash(result.cause) : result).toEqual(new AuthUnreachable({ code: "timeout" }))
       })).pipe(Effect.provide(TestClock.layer())))
       await vi.waitFor(() => expect(reauthorized).toBe(1))
       expect(signal?.aborted).toBe(true)

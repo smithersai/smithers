@@ -1,7 +1,9 @@
+import type { Outbox } from "@smthrs/effect-tanstack-db"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { SharedText } from "@smthrs/sync"
 import { Clock, Effect, Metric, Option, Ref, Stream } from "effect"
 import { Base64 } from "effect/encoding"
+import { codeOf } from "../../errorCode"
 import { FlowDispatch } from "../../flows/dispatch"
 import { mirrorDraft } from "../chat/actions"
 import { PLACE } from "../chat/schema"
@@ -60,7 +62,13 @@ const send = (live: Live, update: Uint8Array | undefined): Effect.Effect<void, n
       const left = yield* Ref.updateAndGet(live.admitting, (count) => count - 1)
       if (left === 0) yield* setRow(live, { stored: (yield* Ref.get(live.unsent)).length === 0 })
     })
-    yield* write.value.admitted.pipe(Effect.catch(() => keep), Effect.ensuring(settled), Effect.forkIn(scope))
+    // The outbox's storage refused the update: kept in this tab to go with the next, and logged by its code.
+    const refused = (failure: Outbox.NotAdmitted) =>
+      Effect.logWarning("coedit.admit").pipe(
+        Effect.annotateLogs({ feature: "coedit", outcome: "failed", reason: failure.reason, errorCode: codeOf(failure) }),
+        Effect.andThen(keep),
+      )
+    yield* write.value.admitted.pipe(Effect.catch(refused), Effect.ensuring(settled), Effect.forkIn(scope))
   }).pipe(Effect.orDie)
 
 /** Puts `row` in the outbox: its write, or nothing in a tab that doesn't lead the outbox. */
@@ -70,6 +78,7 @@ const admit = (row: Sending) =>
     const { sending } = yield* TextWrites
     return yield* chat.outbox.transact(TEXT_UPDATE, { idempotencyKey: row.id }, Effect.asVoid(sending.insert(row))).pipe(
       Effect.map(Option.some),
+      // expected: a follower tab takes the lead and sends later
       Effect.catchTag("NotAdmitted", () => Effect.succeedNone),
     )
   })

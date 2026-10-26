@@ -2,6 +2,7 @@ import { Uuid } from "@smthrs/crypto"
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
 import { EngineStore } from "@smthrs/flows"
 import { Clock, Context, type Duration, Effect, Layer, Metric, Option, Schema } from "effect"
+import { codeOf } from "../../errorCode"
 import { asker } from "../../flows/askingTab"
 import { RunCredentials } from "../../flows/credentials"
 import { declarationOf as declared } from "../../flows/declarations"
@@ -76,6 +77,7 @@ const summaryOf = (act: Act | undefined, runId: string) =>
     const inspection = yield* EngineStore.RunInspection.RunInspection
     const read = yield* inspection.inspect(runId, { limit: 1 }).pipe(
       Effect.map(Option.some),
+      // expected: a run the engine never held answers not_found, which the act refuses and records below
       Effect.catchTag("@smthrs/engine-store/RunNotFound", () => Effect.succeed(Option.none())),
       // A store that can't be read fails the act's step: the person's page says the engine couldn't be reached.
       Effect.orDie,
@@ -174,9 +176,15 @@ const ranRevision = (children: ReadonlyArray<{ readonly runId: string; readonly 
   Effect.gen(function* () {
     const child = children.find((each) => PINNED_CHILDREN.includes(each.flowName))
     if (child === undefined) return undefined
-    const read = yield* (yield* EngineStore.RunInspection.RunInspection).payload(child.runId).pipe(Effect.option)
-    if (Option.isNone(read)) return undefined
-    const { flowId, revision } = read.value.payload as { readonly flowId?: unknown; readonly revision?: unknown }
+    const read = yield* Effect.result((yield* EngineStore.RunInspection.RunInspection).payload(child.runId))
+    if (read._tag === "Failure") {
+      // The pinned child's payload couldn't be read, so the retry runs the run's own payload, without the revision.
+      yield* Effect.logWarning("run.retry.revision").pipe(
+        Effect.annotateLogs({ feature: "runs", outcome: "unread", errorCode: codeOf(read.failure) }),
+      )
+      return undefined
+    }
+    const { flowId, revision } = read.success.payload as { readonly flowId?: unknown; readonly revision?: unknown }
     return typeof flowId === "string" && typeof revision === "number" ? { flowId, revision } : undefined
   })
 

@@ -28,6 +28,7 @@ export const parseSecretRoute = (
   if (match === null) return undefined
   try {
     return { owner: decodeURIComponent(match[1]!), name: decodeURIComponent(match[2]!), secret: decodeURIComponent(match[3]!) }
+    // expected: a malformed route names no secret
   } catch {
     return undefined
   }

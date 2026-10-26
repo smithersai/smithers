@@ -1,5 +1,6 @@
 import type { Collection } from "@smthrs/effect-tanstack-db"
 import { Effect, Option, type Scope } from "effect"
+import { codeOf } from "../../errorCode"
 import { PullsClient } from "./api"
 import { SHA } from "./contract"
 import type { FilesRow } from "./schema"
@@ -28,16 +29,27 @@ export const readComparison = (
     if (Option.isSome(held)) yield* rows.delete(id)
     yield* rows.insert({ id, status: "loading", files: [], truncated: false, commits: [], commitsTruncated: false })
     yield* (yield* PullsClient).compare(owner, name, base, head).pipe(
-      Effect.flatMap((compared) =>
-        rows.update(id, (row) => {
-          row.status = "ready"
-          row.files = [...compared.files]
-          row.truncated = compared.truncated
-          row.commits = [...compared.commits]
-          row.commitsTruncated = compared.commitsTruncated
-        })
-      ),
-      Effect.catch(() => rows.update(id, (row) => void (row.status = "failed"))),
+      Effect.matchEffect({
+        onSuccess: (compared) =>
+          rows.update(id, (row) => {
+            row.status = "ready"
+            row.files = [...compared.files]
+            row.truncated = compared.truncated
+            row.commits = [...compared.commits]
+            row.commitsTruncated = compared.commitsTruncated
+          }),
+        // The comparison couldn't be read: the Files tab shows it failed, logged by its code and ChatApi's status.
+        onFailure: (failure) =>
+          Effect.andThen(
+            Effect.logWarning("pulls.files.load").pipe(Effect.annotateLogs({
+              feature: "pulls",
+              outcome: "failed",
+              errorCode: codeOf(failure),
+              ...(failure.status === undefined ? {} : { status: failure.status }),
+            })),
+            rows.update(id, (row) => void (row.status = "failed")),
+          ),
+      }),
       Effect.forkIn(scope),
     )
   }).pipe(Effect.orDie)

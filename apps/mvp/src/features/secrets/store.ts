@@ -99,6 +99,7 @@ const make = Effect.fnUntraced(function* (config: SecretsConfig) {
         if (row.rotating === form.secret && form.kind === "rotate") row.rotating = null
         if (row.deleting === form.secret && form.kind === "delete") row.deleting = null
       })
+      // expected: Discard can close a late form while the list settles it, and it is then gone already
     }).pipe(Effect.ignore)
 
   // The lists opened so far, by repository id, for frontends to read at once; each opens once (`opening`).

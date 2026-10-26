@@ -1,7 +1,7 @@
 import { digestSync, WebCrypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { RealmFlow } from "@smthrs/harness"
-import { Context, Deferred, Effect, Exit, Fiber, Latch, Layer, Schema, Scope } from "effect"
+import { Context, Deferred, Effect, Exit, Fiber, Latch, Layer, Logger, References, Schema, Scope } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
@@ -367,6 +367,55 @@ test("run preserves domain refusals and sanitizes a faulty child runtime's forei
   }
 })
 
+
+test("run logs a faulty child runtime's defect once at Error by its name and answers unavailable", async () => {
+  const instance = FlowRuntime.FlowInstance.of({
+    executionId: "caller",
+    lineageId: "caller",
+    flow: CreationStart,
+    scope: Scope.makeUnsafe(),
+    suspended: false,
+    interrupted: false,
+    waiting: undefined,
+    handoff: undefined,
+    cause: undefined,
+    actionState: {
+      count: 0,
+      latch: Latch.makeUnsafe(),
+      nextOrdinal: () => 1,
+      snapshots: new Map(),
+      keylessInFlight: new Set()
+    }
+  })
+  // The deliberately faulty runtime dies on every operation.
+  const faulty = FlowRuntime.FlowRuntime.of(
+    new Proxy({}, { get: () => () => Effect.die(new TypeError("private-runtime-defect")) }) as FlowRuntime.FlowRuntime["Service"]
+  )
+  const lines: Array<{ readonly message: unknown; readonly level: string; readonly annotations: unknown }> = []
+  const logger = Logger.make(({ message, logLevel, fiber }) =>
+    void lines.push({
+      message: (message as ReadonlyArray<unknown>)[0],
+      level: logLevel,
+      annotations: fiber.getRef(References.CurrentLogAnnotations)
+    })
+  )
+  const actual = await failure(
+    run(request).pipe(
+      Effect.provideService(FlowRuntime.FlowInstance, instance),
+      Effect.provideService(FlowRuntime.FlowRuntime, faulty),
+      Effect.provide(WebCrypto.layer),
+      Effect.provide(Logger.layer([logger]))
+    )
+  )
+  expect(actual).toBeInstanceOf(BranchTrackUnavailable)
+  expect(lines).toEqual([{
+    message: "branch.creation.defect",
+    level: "Error",
+    annotations: { feature: "branch", outcome: "defect", errorCode: "TypeError" }
+  }])
+  expect(JSON.stringify(lines)).not.toContain("private-runtime-defect")
+  await Effect.runPromise(Scope.close(instance.scope, Exit.void))
+})
 
 describe("durable creation recovery beyond the former child deadline", () => {
   test.each(["selection", "write"] as const)("recovers %s after more than 30 seconds with one child and request identity", async (phase) => {

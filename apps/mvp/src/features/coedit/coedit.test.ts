@@ -26,6 +26,7 @@ import {
   TestChatApi,
 } from "../../test/chatApi"
 import { EngineFaults } from "../../test/faults"
+import { read as readTelemetry } from "../../test/otlp"
 import { dialing, roomHost } from "../../test/rooms"
 import { AuthStore, SESSION } from "../auth/store"
 import { Branch } from "../branch/branch"
@@ -784,6 +785,17 @@ describe("sending", () => {
     await opened.owner.branch.actions.open("octo", "hello", "feature/one")
     await until(() => expect(opened.owner.prompt()?.key).toBe(tab.prompt()?.key))
     expect(opened.owner.draft()).toBe("")
+    await tab.close() // Flush the tab's exporter.
+    // Each update the outbox's storage refused is one Warn line by its code, never the text or the storage's message.
+    const refused = readTelemetry(opened.api.telemetry).log("coedit.admit")
+    expect(refused.length).toBeGreaterThan(0)
+    for (const line of refused) {
+      expect(line).toMatchObject({
+        severity: "Warn",
+        attributes: { feature: "coedit", outcome: "failed", reason: "storage", errorCode: "NotAdmitted" },
+      })
+    }
+    expect(JSON.stringify(refused)).not.toMatch(/lost|quota/)
   }, WITHIN)
 
   test("the route's answers a valid update never gets: no answer, a body that isn't the contract's, a bare refusal", async () => {

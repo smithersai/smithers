@@ -215,6 +215,20 @@ describe("a repository's home", () => {
     expect(tab.count(resolves, { outcome: "declared" })).toBe(1)
   })
 
+  test("a button's navigation that rejects is logged by its code, never its message, and one that resolves is not", async () => {
+    const h = await repoHarness(server, { roles: "maya/tinyhttp" })
+    const tab = await open(h)
+    tab.home.actions.watch("ask", Promise.reject(new TypeError("private navigation failure")))
+    tab.home.actions.watch("action", Promise.resolve("/maya/tinyhttp"))
+    await waitFor(() =>
+      expect(tab.lines("home.navigate")).toEqual([expect.objectContaining({
+        level: "WARN",
+        annotations: expect.objectContaining({ feature: "home", what: "ask", outcome: "failed", errorCode: "TypeError" }),
+      })])
+    )
+    expect(JSON.stringify(tab.logs)).not.toContain("private navigation failure")
+  })
+
   test("before the repository is ready the page is the tree's; another repository interrupts the wait", async () => {
     const h = await repoHarness(server, { roles: "maya/tinyhttp" })
     await seeded(h, { [HOME_FILE]: declared })

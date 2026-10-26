@@ -1,5 +1,7 @@
 import { TerminalSocket } from "@smthrs/platform-browser"
 import { Cause, Clock, Effect, FiberHandle, Metric, Option, Ref, Stream } from "effect"
+import { runners } from "../../boundary"
+import { codeOf } from "../../errorCode"
 import { FlowDispatch } from "../../flows/dispatch"
 import { AuthStore, SESSION } from "../auth/store"
 import { ADMIT_WAIT_SECONDS, DEFAULT_COLS, DEFAULT_ROWS, OPEN_DEADLINE_SECONDS, terminalSocketRoute } from "./contract"
@@ -97,7 +99,12 @@ export const show = (branchId: string | null, watching?: string) =>
           outcome: exit._tag === "Success" ? "ready" : Cause.hasInterrupts(exit.cause) ? "cancelled" : "failed",
         }
         yield* Effect.annotateCurrentSpan(fields)
-        yield* Effect.logInfo("terminal.show").pipe(Effect.annotateLogs(fields))
+        // Rows that couldn't load leave the panel loading: a failure, with its code.
+        yield* exit._tag === "Failure" && fields.outcome === "failed"
+          ? Effect.logWarning("terminal.show").pipe(
+            Effect.annotateLogs({ ...fields, errorCode: codeOf(Cause.squash(exit.cause)) }),
+          )
+          : Effect.logInfo("terminal.show").pipe(Effect.annotateLogs(fields))
       })),
       Effect.option,
     )
@@ -169,7 +176,13 @@ const awaitOpen = (branchId: string, terminalId: string, startedAt: number | und
     }
     const panel = yield* panelNow
     if (panel.terminalId !== terminalId) return
-    if (row === undefined || row.status === "opening") return yield* setPanel({ phase: "failed" })
+    if (row === undefined || row.status === "opening") {
+      // The row never settled within its wait, or it went: the panel shows the terminal failed.
+      yield* Effect.logWarning("terminal.open.unsettled").pipe(
+        Effect.annotateLogs({ feature: "terminal", outcome: row === undefined ? "missing" : "timeout" }),
+      )
+      return yield* setPanel({ phase: "failed" })
+    }
     yield* setPanel({ phase: row.status === "open" ? "connecting" : phaseOf(row) })
     if (row.status === "open" && startedAt !== undefined) yield* Ref.set((yield* TerminalStore).openedAt, startedAt)
   })
@@ -247,7 +260,7 @@ export const attach = (terminalId: string, sink: Sink) =>
   Effect.gen(function* () {
     const store = yield* TerminalStore
     // The socket calls back with each frame outside any fiber: its records run with this attach's services.
-    const record = Effect.runSyncWith(yield* Effect.context<TerminalStore>())
+    const { runSync: record } = runners(yield* Effect.context<TerminalStore>(), "terminal")
     const run = Effect.scoped(Effect.gen(function* () {
       const connection = yield* TerminalSocket.connect(socketUrl(store.origin, terminalId), {
         onOutput: (chunk) => {

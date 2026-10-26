@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect"
+import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
 import {
   setCommitment,
@@ -86,7 +87,7 @@ export class Issues extends Context.Service<Issues, { readonly queries: IssuesQu
     Issues,
     Effect.gen(function* () {
       const store = yield* IssuesStore
-      const run = Effect.runSyncWith(yield* Effect.context<IssuesStore | FlowDispatch>())
+      const { runSync: run } = runners(yield* Effect.context<IssuesStore | FlowDispatch>(), "issues")
       return Issues.of({
         queries: {
           view: store.viewState.tanstack,

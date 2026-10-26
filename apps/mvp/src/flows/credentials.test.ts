@@ -8,7 +8,7 @@ import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { EngineStore } from "@smthrs/flows"
 import { TabChannel } from "@smthrs/platform-browser"
 import { Node } from "@smthrs/plan"
-import { Context, Effect, Exit, Layer, Option, Schema, Scope, Stream } from "effect"
+import { Context, Effect, Exit, Layer, Logger, Metric, Option, Schema, Scope, Stream } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { afterEach, describe, expect, test } from "vitest"
 import type { Actor } from "../../worker/Actor.ts"
@@ -140,8 +140,15 @@ const device = async (
     readonly inspection?: boolean
     /** The tab's sign-in row says nobody is signed in, as a visitor's does once ChatApi said so. */
     readonly tabSignedOut?: boolean
+    /** Records every line the engine and its runs log, in place of the default loggers. */
+    readonly logs?: Array<ReturnType<typeof Logger.formatStructured.log>>
   } = {},
 ) => {
+  const logs = options.logs
+  const logging = <A, E>(effect: Effect.Effect<A, E>): Effect.Effect<A, E> =>
+    logs === undefined
+      ? effect
+      : Effect.provideService(effect, Logger.CurrentLoggers, new Set([Logger.make((entry) => void logs.push(Logger.formatStructured.log(entry)))]))
   const h = await harness(runtime, () => Stream.empty, actor === null ? {} : { actor })
   const seen: Array<Seen> = []
   // The host's transport, as the browser's fetch client is: it reads the fetch options a request runs with
@@ -201,7 +208,7 @@ const device = async (
     Layer.provide(Layer.succeed(HttpClient.HttpClient, transport)),
   )
   const scope = Effect.runSync(Scope.make())
-  const built = await Effect.runPromise(Scope.provide(scope)(build(registration)))
+  const built = await Effect.runPromise(logging(Scope.provide(scope)(build(registration))))
   engines.push(() => Effect.runPromise(Scope.close(scope, Exit.void)))
   const flowRuntime = Context.get(built.context, FlowRuntime.FlowRuntime)
   const tab = Context.get(built.context, TabRequests)
@@ -216,7 +223,7 @@ const device = async (
     /** Runs `flow` as `executionId`, started by the tab through `door`, or by nobody, and answers its value. */
     run: async (flow: Flow.Any, executionId: string, payload: unknown, door?: (typeof DOORS)[number]) => {
       if (door !== undefined) await Effect.runPromise(tab.add(executionId, door))
-      return Effect.runPromise(flowRuntime.execute(flow as never, { executionId, payload: payload as never }) as Effect.Effect<unknown>)
+      return Effect.runPromise(logging(flowRuntime.execute(flow as never, { executionId, payload: payload as never }) as Effect.Effect<unknown>))
     },
     /** The requests the transport saw to `path`. */
     seenFor: (path: string) => seen.filter((request) => request.path === path),
@@ -394,6 +401,29 @@ describe("who a run's requests go as", () => {
     const lost = await device(member, { inspection: false })
     expect(await lost.run(Watch, crypto.randomUUID(), { path: "/api/watches", body: {} }, "view")).toEqual({ status: 0 })
     expect(lost.seenFor("/api/watches")).toEqual([])
+  })
+
+  test("a mint that never reaches ChatApi is counted and logged unreachable once, by the transport's code", async () => {
+    const counted = () =>
+      Effect.runSync(Metric.value(Metric.withAttributes(RunCredentials.mints, { outcome: "unreachable", act: "none" }))).count
+    const before = counted()
+    const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+    const faulty = await device(member, { logs, fault: (path) => (path.endsWith("/credential") ? "unreachable" : undefined) })
+    expect(await faulty.run(Watch, crypto.randomUUID(), { path: "/api/watches", body: {} }, "view")).toEqual({ status: 0 })
+    expect(counted() - before).toBe(1)
+    expect(logs.filter((line) => line.message === "auth.run_credential")).toEqual([
+      expect.objectContaining({
+        level: "WARN",
+        annotations: expect.objectContaining({
+          flow: Watch._tag,
+          outcome: "unreachable",
+          act: "none",
+          principal: "session",
+          // The transport's failure, by the HTTP client error's reason.
+          errorCode: "http:TransportError",
+        }),
+      }),
+    ])
   })
 
   test("a run's credential, for a request the tab sends for it: none for the person's press, else one, or why not", async () => {

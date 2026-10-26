@@ -38,7 +38,11 @@ export class RunsClient extends Context.Service<
         const post = (path: string, body: unknown) =>
           Effect.suspend(() => {
             let written = false
-            const malformed = Effect.logWarning("agent.status.malformed").pipe(Effect.annotateLogs({ status: 200 }))
+            // ChatApi took the write (200), but its receipt was unreadable or didn't arrive in time.
+            const malformed = (errorCode: "decode" | "timeout_after_200") =>
+              Effect.logWarning("agent.status.malformed").pipe(
+                Effect.annotateLogs({ feature: "status", status: 200, outcome: "malformed", errorCode }),
+              )
             return Effect.gen(function* () {
               const response = yield* client.execute(
                 HttpClientRequest.post(`${options.origin}${RUNS_ROUTE}/${path}`).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
@@ -54,13 +58,13 @@ export class RunsClient extends Context.Service<
               }
               yield* response.json.pipe(
                 Effect.flatMap(decodeWritten),
-                Effect.catch(() => malformed),
+                Effect.catch(() => malformed("decode")),
               )
             }).pipe((effect) =>
               // Interrupting the request aborts its fetch, so a stalled body stops too.
               Effect.timeoutOrElse(effect, {
                 duration: options.within ?? RUNS_WITHIN,
-                orElse: () => written ? malformed : Effect.fail(new RunsRefused({ reason: "timeout" })),
+                orElse: () => written ? malformed("timeout_after_200") : Effect.fail(new RunsRefused({ reason: "timeout" })),
               })
             )
           })

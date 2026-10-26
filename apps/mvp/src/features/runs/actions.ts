@@ -6,7 +6,7 @@ import { todoRetryPayload } from "./todoRun"
 import { retriesOf } from "./page"
 import type { Inspection, RepoName, RunTab, RunView } from "./schema"
 import { VIEW } from "./schema"
-import { RunsStore } from "./store"
+import { readCode, RunsStore } from "./store"
 
 // What a person does on runs (decision 0014 §2 and §5, docs/features/runs.md#acts): opening the list or a run, which
 // read the engine; choosing a step or a tab, which only this tab sees; and Stop, Retry and Resume, which run the acts'
@@ -116,6 +116,7 @@ const acting = (
       yield* setView({ acting: act, actToken: token, refusal: null })
       const refresh = yield* restore(Effect.gen(function* () {
         const refused = yield* run(inspection.value, current).pipe(
+          // expected: flow.dispatch logs and counts every failed dispatch; the page shows its reason
           Effect.catch((error) => Effect.succeed(Option.some(error.reason))),
         )
         if (!(yield* current)) return false
@@ -175,6 +176,10 @@ const nextRetryAct = (
         const existing = yield* Effect.result(engine.inspect(id, { limit: 1 }))
         if (existing._tag === "Success") { reserved = true; break }
         if (!(existing.failure instanceof BrowserEngine.RequestRefused) || existing.failure.error !== "@smthrs/engine-store/RunNotFound") {
+          // The engine couldn't say whether this retry's id is taken, so Retry is refused as unavailable.
+          yield* Effect.logWarning("run.retry.reserve").pipe(
+            Effect.annotateLogs({ feature: "runs", outcome: "unavailable", errorCode: readCode(existing.failure) }),
+          )
           return { refusal: "unavailable" } as const
         }
       }

@@ -1,6 +1,7 @@
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection } from "@smthrs/effect-tanstack-db"
 import { Context, type Duration, Effect, Layer, type Scope, Stream } from "effect"
+import { recordUnhandled } from "../../boundary"
 import { AuthStore } from "../auth/store"
 import { PERSONAL_MODEL_SHAPE_ROUTE } from "./contract"
 import { record } from "./metrics"
@@ -98,11 +99,13 @@ const make = Effect.fnUntraced(function* (config: PersonalModelConfig) {
         if (draft.state === "unknown") draft.saved++
         draft.state = "done"
       })
-    }).pipe(Effect.ignore)
+      // The form's row is there (the follower read it) and nothing deletes it: a refusal is a bug.
+    }).pipe(Effect.orDie)
   yield* Stream.zipLatest(saved.rows, formState.rows).pipe(
     Stream.runForEach(([synced, [write]]) =>
       write !== undefined && awaiting(write) && landed(write, synced) ? settle(write) : Effect.void
     ),
+    (follower) => recordUnhandled(follower, "personal-model", "fork"),
     Effect.forkIn(scope, { startImmediately: true }),
   )
 

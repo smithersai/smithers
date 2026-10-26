@@ -1,5 +1,6 @@
 import { Home } from "@smthrs/views"
 import { Clock, Effect, FiberHandle, Option, Random, Semaphore } from "effect"
+import { codeOf } from "../../errorCode"
 import { FlowDispatch } from "../../flows/dispatch"
 import { aboutOf, isReady, put, ready, shownRepository } from "../repo/actions"
 import { RepoClient } from "../repo/api"
@@ -198,6 +199,7 @@ export const warm = (owner: string, name: string) =>
     const curated = Effect.gen(function* () {
       const store = yield* HomeStore
       if (Option.isSome(yield* store.curated.get(id))) return
+      // A warm that can't read it leaves it to `open`, which asks again and logs a failure (`home.answer`).
       const result = yield* Effect.result((yield* HomeClient).answer(owner, name))
       if (result._tag === "Success") yield* put<CuratedRow>(store.curated, id, curatedRowOf(id, result.success.curated))
     })
@@ -334,3 +336,14 @@ export const view = (audience: Home.Audience) =>
     if (page.kind !== "home" || !page.views.includes(audience)) return
     yield* setCurrent({ viewing: audience === page.audience ? null : audience })
   }).pipe(Effect.annotateLogs({ feature: "home" }))
+
+/** What a button on the page started, settled: a rejection is logged as `home.navigate` by its code, never its message. */
+export const watch = (what: "ask" | "action", started: Promise<unknown>) =>
+  Effect.tryPromise({ try: () => started, catch: (rejection) => rejection }).pipe(
+    Effect.catch((rejection) =>
+      Effect.logWarning("home.navigate").pipe(
+        Effect.annotateLogs({ feature: "home", what, outcome: "failed", errorCode: codeOf(rejection) }),
+      )
+    ),
+    Effect.asVoid,
+  )

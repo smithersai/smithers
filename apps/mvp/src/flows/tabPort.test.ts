@@ -1,6 +1,6 @@
 // The engine worker's line to its tab (src/flows/tabPort.ts), over a real `MessageChannel`: one port is the worker's
 // global scope, the other the tab's `Worker`.
-import { Deferred, Effect, Exit, ManagedRuntime, Scope, type Schema } from "effect"
+import { Deferred, Effect, Exit, Layer, Logger, ManagedRuntime, References, Scope, type Schema } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { answer, type Endpoint, type Handlers, TabCallFailed, TabPort } from "./tabPort"
 
@@ -17,14 +17,28 @@ afterEach(async () => {
 })
 
 /** A worker and its tab on one channel; the tab answers with `handlers` unless `answered` is false. */
-const open = async (handlers: Handlers, options: { readonly within?: number; readonly answered?: boolean } = {}) => {
+const open = async (
+  handlers: Handlers,
+  options: {
+    readonly within?: number
+    readonly answered?: boolean
+    /** Records what the tab's side logs. */
+    readonly lines?: Array<{ readonly message: unknown; readonly level: string; readonly annotations: unknown }>
+  } = {},
+) => {
   const channel = new MessageChannel()
   channels.push(channel)
   channel.port1.start()
   channel.port2.start()
   const scope = Effect.runSync(Scope.make())
   scopes.push(scope)
-  const stop = options.answered === false ? () => {} : await Effect.runPromise(answer(channel.port2, handlers).pipe(Scope.provide(scope)))
+  const lines = options.lines
+  const logged = lines === undefined ? Layer.empty : Logger.layer([Logger.make(({ message, logLevel, fiber }) =>
+    void lines.push({ message: (message as ReadonlyArray<unknown>)[0], level: logLevel, annotations: fiber.getRef(References.CurrentLogAnnotations) })
+  )])
+  const stop = options.answered === false
+    ? () => {}
+    : await Effect.runPromise(answer(channel.port2, handlers).pipe(Scope.provide(scope), Effect.provide(logged)))
   const runtime = ManagedRuntime.make(TabPort.layer(channel.port1, options.within ?? 2_000))
   runtimes.push(runtime)
   const call = (method: string, input: Schema.Json) =>
@@ -56,6 +70,30 @@ describe("TabPort", () => {
     expect(await silent.call("app/echo", null)).toEqual(
       Exit.fail(new TabCallFailed({ method: "app/echo", reason: "timeout" })),
     )
+  })
+
+  test("the tab logs each refusal once by its code, never its message: Warn for a failure or a missing method, Error for a defect", async () => {
+    const lines: Array<{ readonly message: unknown; readonly level: string; readonly annotations: unknown }> = []
+    const port = await open({
+      "app/fail": () => Effect.fail(new RangeError("the tab's own words")),
+      "app/die": () => Effect.die(new TypeError("the tab's own words")),
+      "app/echo": (input) => Effect.succeed(input),
+    }, { lines, within: 200 })
+
+    expect(await port.call("app/fail", null)).toEqual(Exit.fail(new TabCallFailed({ method: "app/fail", reason: "refused" })))
+    expect(await port.call("app/missing", null)).toEqual(
+      Exit.fail(new TabCallFailed({ method: "app/missing", reason: "unknown_method" })),
+    )
+    // A defect leaves the call unanswered, so the worker's side times out, as before.
+    expect(await port.call("app/die", null)).toEqual(Exit.fail(new TabCallFailed({ method: "app/die", reason: "timeout" })))
+    expect(await port.call("app/echo", 1)).toEqual(Exit.succeed(1))
+    await vi.waitFor(() => expect(lines).toHaveLength(3))
+    expect(lines).toEqual([
+      { message: "flow.tab.answer", level: "Warn", annotations: { feature: "flows", method: "app/fail", outcome: "refused", errorCode: "RangeError" } },
+      { message: "flow.tab.answer", level: "Warn", annotations: { feature: "flows", method: "app/missing", outcome: "unknown_method", errorCode: "unknown_method" } },
+      { message: "flow.tab.answer", level: "Error", annotations: { feature: "flows", method: "app/die", outcome: "defect", errorCode: "TypeError" } },
+    ])
+    expect(JSON.stringify(lines)).not.toContain("the tab's own words")
   })
 
   test("a handler's null answer arrives as null, and the tab stops answering once stopped", async () => {

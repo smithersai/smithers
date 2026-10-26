@@ -11,6 +11,7 @@ const parsed = (value: JsonValueData): unknown => {
   if (value.clipped) return undefined
   try {
     return JSON.parse(value.text)
+    // expected: a value that isn't JSON shows as none
   } catch {
     return undefined
   }

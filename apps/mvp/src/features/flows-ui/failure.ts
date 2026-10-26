@@ -40,6 +40,7 @@ const TAGS: Readonly<Record<string, DraftFailure>> = {
 const field = (value: object, name: string): unknown => {
   try {
     return Object.hasOwn(value, name) ? (value as Record<string, unknown>)[name] : undefined
+    // expected: a getter that throws reads as no field
   } catch {
     return undefined
   }

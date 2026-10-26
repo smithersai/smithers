@@ -126,6 +126,7 @@ export class FlowsClient extends Context.Service<
             exchange(post(`${FLOWS_ROUTE}/${flowId}/delete`, {}), Written, new FlowNotFound()).pipe(
               Effect.as(true),
               // Not the person's, or deleted already: nothing to delete.
+              // expected: a flow already gone answers false
               Effect.catchTag("@smthrs/mvp/flows/FlowNotFound", () => Effect.succeed(false)),
               Effect.withSpan("flow.client.delete"),
             ),
@@ -133,6 +134,7 @@ export class FlowsClient extends Context.Service<
             exchange(post(`${FLOW_DRAFTS_ROUTE}/${draftId}/delete`, {}), Written, new FlowNotFound()).pipe(
               Effect.as(true),
               // Gone already, or never the person's to read.
+              // expected: a draft already gone answers false
               Effect.catchTag("@smthrs/mvp/flows/FlowNotFound", () => Effect.succeed(false)),
               Effect.withSpan("flow.client.delete_draft"),
             ),

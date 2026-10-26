@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect"
+import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
 import type { RunsNavigation } from "../runs/actions"
 import {
@@ -74,8 +75,8 @@ export class FlowsUi extends Context.Service<
     Effect.gen(function* () {
       const store = yield* FlowsUiStore
       const context = yield* Effect.context<Services>()
-      const promise = Effect.runPromiseWith(context)
-      const fork = (effect: Effect.Effect<void, never, Services>) => void Effect.runForkWith(context)(effect)
+      const { runPromise: promise, runFork } = runners(context, "flows")
+      const fork = (effect: Effect.Effect<void, never, Services>) => void runFork(effect)
       const editor = (effect: Effect.Effect<void, never, Services>): Promise<void> => {
         return promise(effect)
       }

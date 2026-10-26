@@ -1,4 +1,5 @@
 import { Context, Deferred, Effect, Layer, Queue, Stream } from "effect"
+import { runners } from "../../boundary"
 import { check, load, pressSignIn, refresh, restore, signOut } from "./actions"
 import type { AuthClient } from "./api"
 import type { DeviceWipe } from "./device"
@@ -33,13 +34,13 @@ export class Auth extends Context.Service<Auth, { readonly queries: AuthQueries;
   /**
    * Binds the store's queries and actions for frontends and restores the device's confirmed session. The scoped
    * session lifecycle subscribes before its initial server read. Each action runs with this layer's services
-   * (`Effect.runSyncWith`). A sign-out ChatApi takes wipes the device through `DeviceWipe`.
+   * (`runners`, src/boundary.ts). A sign-out ChatApi takes wipes the device through `DeviceWipe`.
    */
   static readonly layer = Layer.effect(
     Auth,
     Effect.gen(function* () {
       const store = yield* AuthStore
-      const run = Effect.runSyncWith(yield* Effect.context<AuthStore | AuthClient | DeviceWipe>())
+      const { runSync: run } = runners(yield* Effect.context<AuthStore | AuthClient | DeviceWipe>(), "auth")
       const reload = Effect.asVoid(Effect.forkIn(load, store.scope, { startImmediately: true }))
       yield* Effect.forkIn(restore, store.scope, { startImmediately: true })
       return Auth.of({

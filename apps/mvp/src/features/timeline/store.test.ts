@@ -3,10 +3,10 @@ import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
 import { ModelStep } from "@smthrs/agent"
 import { Action, RetryPolicy } from "@smthrs/flow"
 import { Model, ModelError, type ModelEvent } from "@smthrs/model"
-import { Context, Deferred, Effect, Exit, Fiber, Layer, Metric, Scope, Semaphore, Stream } from "effect"
+import { Context, Deferred, Effect, Exit, Fiber, Layer, Logger, Metric, Scope, Semaphore, Stream } from "effect"
 import { expect, test, vi } from "vitest"
 import { build } from "../../../worker/test/flowHost"
-import { ClientEngine, FlowDispatch } from "../../flows/dispatch"
+import { ClientEngine, DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { Message } from "../chat/schema"
 import { Summarize } from "./flow"
 import { registration, SummaryLedger, SummarySeat } from "./steps"
@@ -225,13 +225,27 @@ test.each(["stall", "defect", "failure"] as const)("a dispatch %s cannot block l
   const { run, messages } = await store(scope, `isolation-${fault}`)
   const entered = Effect.runSync(Deferred.make<void>())
   const { dispatched, dispatch } = answering(id => id === "a"
-    ? Deferred.succeed(entered, undefined).pipe(Effect.andThen(fault === "stall" ? Effect.never : fault === "defect" ? Effect.die("private defect") : Effect.fail(new Error("engine unavailable"))))
+    ? Deferred.succeed(entered, undefined).pipe(Effect.andThen(
+      fault === "stall"
+        ? Effect.never
+        : fault === "defect"
+        ? Effect.die("private defect")
+        : Effect.fail(new DispatchFailed({ flow: "timeline/summarize", reason: "unavailable" })),
+    ))
     : done)
-  await run(Effect.forkIn(followSummaries(messages, messages, dispatch, await run(makeLane)), scope, { startImmediately: true }))
+  const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+  const logged = Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make(entry => void logs.push(Logger.formatStructured.log(entry)))]))
+  await run(Effect.forkIn(logged(followSummaries(messages, messages, dispatch, await run(makeLane))), scope, { startImmediately: true }))
   await run(messages.insert(answer("a")))
   await run(Deferred.await(entered))
   await run(messages.insert(answer("b")))
   await vi.waitFor(() => expect(dispatched).toEqual(["a", "b"]))
+  // A failed or defective summary is logged once with its code, never the defect's content.
+  const lines = () => logs.filter(log => String(log.message).startsWith("timeline.summary.")).map(({ message, level, annotations }) => ({ message, level, ...annotations }))
+  await vi.waitFor(() => expect(lines()).toEqual(fault === "stall" ? [] : [expect.objectContaining(fault === "defect"
+    ? { message: "timeline.summary.defect", level: "WARN", feature: "timeline", errorCode: "unknown" }
+    : { message: "timeline.summary.unavailable", level: "WARN", feature: "timeline", errorCode: "@smthrs/mvp/flows/DispatchFailed", reason: "unavailable" })]))
+  expect(JSON.stringify(logs)).not.toContain("private defect")
 }))
 
 test("a long window runs at most two summaries at once, each entry once", () => scoped(async scope => {

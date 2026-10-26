@@ -1,4 +1,6 @@
 import { Context, Effect, Layer, Metric } from "effect"
+import { runners } from "../../boundary"
+import { codeOf } from "../../errorCode"
 import { FlowDispatch } from "../../flows/dispatch"
 import { toggleTheme } from "./actions"
 import type { ThemeMode } from "./contract"
@@ -28,21 +30,23 @@ export class Theme extends Context.Service<Theme, { readonly queries: ThemeQueri
 ) {
   /**
    * Binds the store's query and the toggle for frontends. The toggle runs with the services this layer was built with
-   * (`Effect.runPromiseWith`); a dispatch that fails is already logged and counted, so it resolves all the same.
+   * (`runners`); a dispatch that fails is already logged and counted, so it resolves all the same.
    * Unexpected defects are counted and logged here without their content before the event handler resolves.
    */
   static readonly layer = Layer.effect(
     Theme,
     Effect.gen(function* () {
       const store = yield* ThemeStore
-      const run = Effect.runPromiseWith(yield* Effect.context<ThemeStore | FlowDispatch>())
+      const { runPromise: run } = runners(yield* Effect.context<ThemeStore | FlowDispatch>(), "theme")
       return Theme.of({
         queries: { theme: store.theme.tanstack, shown: store.shown, shownMode: store.shownMode.tanstack },
         actions: {
           toggle: () => run(toggleTheme.pipe(
             Effect.ignore,
-            Effect.catchDefect(() => Metric.update(toggleDefects, 1).pipe(
-              Effect.andThen(Effect.logError("theme.toggle.defect")),
+            Effect.catchDefect((defect) => Metric.update(toggleDefects, 1).pipe(
+              Effect.andThen(Effect.logError("theme.toggle.defect").pipe(
+                Effect.annotateLogs({ feature: "theme", errorCode: codeOf(defect) }),
+              )),
               Effect.withSpan("theme.toggle.defect"),
             )),
           )),

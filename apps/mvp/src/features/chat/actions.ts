@@ -1,5 +1,7 @@
+import type { Outbox } from "@smthrs/effect-tanstack-db"
 import { Clock, Effect, Metric, Option, Ref, type Types } from "effect"
 import { Clipboard } from "../../clipboard"
+import { codeOf } from "../../errorCode"
 import { FlowDispatch } from "../../flows/dispatch"
 import { MAX_QUESTION_LENGTH } from "./contract"
 import { persistDraft } from "./draftWrite"
@@ -155,13 +157,20 @@ export const share = (shared: boolean) =>
     yield* Effect.logInfo("chat prompt shared").pipe(Effect.annotateLogs({ shared }))
   }).pipe(Effect.annotateLogs({ feature: "chat" }))
 
-// A question the outbox couldn't take stays on the device as unsent, so it is never lost.
-const notAdmitted = (row: Asking) =>
+// A question the outbox couldn't take stays on the device as unsent, so it is never lost. Its storage failing is a
+// failure, Warn by its code; a tab that doesn't lead the outbox is a state the tab leaves by taking the lead, Info.
+const notAdmitted = (row: Asking, refused: Outbox.NotAdmitted) =>
   Effect.gen(function* () {
     const store = yield* ChatStore
     yield* keepUnsent(store.unsent, row, "not_admitted")
     yield* Metric.update(Metric.withAttributes(askFailures, { reason: "not_admitted" }), 1)
-    yield* Effect.logWarning("question not admitted").pipe(Effect.annotateLogs({ questionId: row.id }))
+    yield* (refused.reason === "follower" ? Effect.logInfo : Effect.logWarning)("question not admitted").pipe(
+      Effect.annotateLogs({
+        questionId: row.id,
+        reason: refused.reason,
+        ...(refused.reason === "storage" ? { outcome: "failed", errorCode: codeOf(refused) } : {}),
+      }),
+    )
   })
 
 /**
@@ -182,11 +191,14 @@ const admit = (row: Asking) =>
   Effect.gen(function* () {
     const store = yield* ChatStore
     const write = yield* store.outbox.transact("ask", { idempotencyKey: row.id }, Effect.asVoid(store.asking.insert(row)))
-    yield* write.admitted.pipe(Effect.catch(() => notAdmitted(row)), Effect.forkIn(store.scope))
+    yield* write.admitted.pipe(
+      Effect.catch((refused) => notAdmitted(row, refused)),
+      Effect.forkIn(store.scope),
+    )
     return true
   }).pipe(
     // `transact` refuses at once only in a tab that doesn't lead (`follower`); a refusing storage fails `admitted`.
-    Effect.catchTag("NotAdmitted", () => Effect.as(Effect.andThen(notAdmitted(row), lead), false)),
+    Effect.catchTag("NotAdmitted", (refused) => Effect.as(Effect.andThen(notAdmitted(row, refused), lead), false)),
     Effect.orDie,
   )
 
@@ -455,8 +467,10 @@ export const takeBack = (questionId?: string): Effect.Effect<EditAnswer["outcome
     }
     const withdraw = store.outbox.withdraw(question.id)
     const outcome = yield* withdraw.pipe(
+      // expected: a follower tab takes the lead and withdraws again
       Effect.catchIf((error) => error.reason === "follower", () => Effect.andThen(store.lead, withdraw)),
       Effect.as("edited" as const),
+      // expected: the edit logs this outcome as its own line
       Effect.catchTag("NotWithdrawn", ({ reason }) =>
         Effect.succeed(reason === "gone" || reason === "sending" ? "sent" as const : "failed" as const)),
     )

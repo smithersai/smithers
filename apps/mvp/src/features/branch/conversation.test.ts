@@ -4,6 +4,7 @@
 // /api/branches` records them; another device asks in a branch's conversation through ChatApi's real questions route.
 // Only the model is scripted. Unhappy paths get the faulty ChatApi client and shape source (src/test/faults.ts).
 import { ShapeSource, SyncPolicy } from "@smthrs/effect-electric"
+import { read as readTelemetry } from "../../test/otlp"
 import type { Outbox } from "@smthrs/effect-tanstack-db"
 import { Effect, type ManagedRuntime, Scheduler, Stream } from "effect"
 import { SqlClient } from "effect/sql"
@@ -377,8 +378,10 @@ describe("delivering to a branch's conversation", () => {
     expect(exports).toContain("chat load failed")
     expect(exports).toContain("chat load recovered")
     expect(exports).toContain("chat.messages")
-    expect(exports.match(/"stringValue":"chat load failed"/g)).toHaveLength(2)
-    expect(exports.match(/"stringValue":"chat load recovered"/g)).toHaveLength(2)
+    // One transition per surface, counted as log lines: the failure counter names the record too.
+    const lines = readTelemetry(tab.api.telemetry)
+    expect(lines.log("chat load failed")).toHaveLength(2)
+    expect(lines.log("chat load recovered")).toHaveLength(2)
     expect(exports).not.toContain("after recovery")
   }, WITHIN)
 

@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect"
+import { runners } from "../../boundary"
 import { open, search, warm } from "./actions"
 import type { DocsClient } from "./api"
 import { DocsStore } from "./store"
@@ -31,8 +32,7 @@ export class Docs extends Context.Service<Docs, { readonly queries: DocsQueries;
     Effect.gen(function* () {
       const store = yield* DocsStore
       const context = yield* Effect.context<DocsStore | DocsClient>()
-      const run = Effect.runSyncWith(context)
-      const promise = Effect.runPromiseWith(context)
+      const { runSync: run, runPromise: promise } = runners(context, "docs")
       return Docs.of({
         queries: { docs: store.docs.tanstack },
         actions: {

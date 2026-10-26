@@ -4,7 +4,8 @@
 // `ui/repo` and `ui/issues` do; the tab loads what a repository's view shows as it arrives (src/features/views/embeds.ts);
 // and Back to chat on a repository's page returns to the page its view was opened from, or leaves the repository in the
 // home conversation (src/features/views/minimize.ts).
-import { Effect, type ManagedRuntime, Metric } from "effect"
+import { Collection } from "@smthrs/effect-tanstack-db"
+import { Effect, Logger, type ManagedRuntime, Metric } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
 import { failingWorker, member, nodeDevice, openTestApp, type TabOptions } from "../../test/chatApi"
@@ -13,8 +14,9 @@ import { Chat } from "../chat/chat"
 import { ChatStore } from "../chat/store"
 import { Commands } from "../commands/commands"
 import { Repo } from "../repo/repo"
-import { CHAT_PATH, minimized, sameTarget } from "./minimize"
+import { CHAT_PATH, minimize, minimized, sameTarget } from "./minimize"
 import { issuesOf, repoOf } from "./rows"
+import { ViewsStore } from "./store"
 import { Views } from "./views"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
@@ -128,6 +130,30 @@ describe("Back to chat", () => {
     expect(tab.views.actions.minimize({ template: "repo", props: { repo: "octocat/Spoon-Knife" } })).toBe(CHAT_PATH)
     await until(() => expect(tab.count({ returned: "chat", outcome: "failed" })).toBe(1))
     expect(tab.shown()).toEqual([])
+  }, WITHIN)
+
+  test("views that couldn't sync still leave the repository in the chat, and the failed sync is logged", async () => {
+    const tab = await open()
+    // Electric waits out a stopped shape, so `preload` fails only when the collection itself fails: the views' is
+    // injected failing (test.faults-by-injection).
+    const store = await tab.runtime.runPromise(Effect.service(ViewsStore) as Effect.Effect<ViewsStore["Service"]>)
+    const failing = ViewsStore.of({
+      ...store,
+      views: { ...store.views, preload: Effect.fail(new Collection.LoadFailed({ cause: new Error("private") })) },
+    })
+    const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+    const path = await tab.runtime.runPromise(minimize({ template: "repo", props: { repo: "octocat/Spoon-Knife" } }).pipe(
+      Effect.provideService(ViewsStore, failing),
+      Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((entry) => void logs.push(Logger.formatStructured.log(entry)))])),
+      // The app's runtime holds the dispatch the left view runs through.
+    ) as Effect.Effect<string>)
+    expect(path).toBe(CHAT_PATH)
+    await until(() => expect(tab.count({ returned: "chat", outcome: "added" })).toBe(1))
+    expect(logs.filter((log) => log.message === "views.home.load")).toEqual([expect.objectContaining({
+      level: "WARN",
+      annotations: expect.objectContaining({ feature: "views", outcome: "failed", errorCode: "LoadFailed" }),
+    })])
+    expect(JSON.stringify(logs)).not.toContain("private")
   }, WITHIN)
 
   test("a tab with no engine still opens the chat; the view isn't added, and that is counted", async () => {

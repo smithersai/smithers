@@ -147,6 +147,8 @@ export const FLOWS_UI_TELEMETRY = {
     "flow.client.write",
     "flow.client.delete",
     "flows.editor.storage",
+    "flow.draft.interrupt",
+    "flows.round.inspect",
   ],
   fields: [
     "draftId",
@@ -162,6 +164,9 @@ export const FLOWS_UI_TELEMETRY = {
     "collection",
     "kind",
     "receipts",
+    "errorCode",
+    "feature",
+    "reason",
   ],
 } as const
 

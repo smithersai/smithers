@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect"
+import { runners } from "../../boundary"
 import { hide, setChannel, setLimits } from "./actions"
 import type { AlertChannelName, SandboxLimitsRequest } from "./schema"
 import { FlowDispatch } from "../../flows/dispatch"
@@ -42,7 +43,7 @@ export class Spend extends Context.Service<Spend, { readonly queries: SpendQueri
     Spend,
     Effect.gen(function* () {
       const store = yield* SpendStore
-      const run = Effect.runSyncWith(yield* Effect.context<SpendStore | FlowDispatch>())
+      const { runSync: run } = runners(yield* Effect.context<SpendStore | FlowDispatch>(), "spend")
       return Spend.of({
         queries: {
           open: store.open.tanstack,

@@ -1,5 +1,5 @@
-import { type Collection, Persistence } from "@smthrs/effect-tanstack-db"
-import { Effect, Layer, Option } from "effect"
+import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
+import { Effect, Layer, Logger, Option } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { openTab, type Tab } from "../../test/repoDevice"
 import { AuthStore } from "../auth/store"
@@ -8,7 +8,7 @@ import { CAPACITY_COPY, FAILURE_COPY, SIGN_IN_TO_CLONE } from "./contract"
 import { cloneClicks, clones, opens } from "./metrics"
 import { NotCopied } from "./repo"
 import { VIEW } from "./rows"
-import { RepoStore } from "./store"
+import { firstSyncOf, RepoStore } from "./store"
 import { headerOf } from "./view"
 
 // The repository state machine's unhappy paths, driven as React drives it, with no React: RepoApi refusing, unreachable
@@ -168,7 +168,10 @@ describe("cloning when RepoApi doesn't take it", () => {
     tab.repo.actions.clone("o", "n")
     await waitFor(() => expect(header(tab)).toEqual({ kind: "refused", text: FAILURE_COPY.unavailable }))
     expect(tab.count(clones, { outcome: "started" })).toBe(1)
-    expect(tab.lines("repo.clone.unconfirmed")[0]!.annotations).toMatchObject({ feature: "repo" })
+    expect(tab.lines("repo.clone.unconfirmed")[0]).toMatchObject({
+      level: "WARN",
+      annotations: { feature: "repo", outcome: "unconfirmed", reason: "not_delivered" },
+    })
   })
 
   test("this tab's engine refuses the run: Couldn't clone, with Try again", async () => {
@@ -195,6 +198,26 @@ describe("cloning when RepoApi doesn't take it", () => {
     release()
     await waitFor(() => expect(tab.count(clones, { outcome: "unavailable" })).toBe(1))
     expect(client.calls).toEqual(["o/n"])
+  })
+})
+
+describe("the repositories' first sync", () => {
+  // Electric waits out a stopped shape, so `preload` fails only when the collection itself fails; the collection's
+  // `preload` is injected failing here (test.faults-by-injection).
+  test("one that fails settles each wait on the device's rows, and is logged once", async () => {
+    const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+    const logged = Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((entry) => void logs.push(Logger.formatStructured.log(entry)))]))
+    const firstSync = await Effect.runPromise(firstSyncOf(Effect.fail(new Collection.LoadFailed({ cause: new Error("private") }))))
+    await Effect.runPromise(firstSync.pipe(logged))
+    await Effect.runPromise(firstSync.pipe(logged))
+    expect(logs).toEqual([
+      expect.objectContaining({
+        message: "repo.repositories.load",
+        level: "WARN",
+        annotations: expect.objectContaining({ feature: "repo", outcome: "failed", errorCode: "LoadFailed" }),
+      }),
+    ])
+    expect(JSON.stringify(logs)).not.toContain("private")
   })
 })
 
