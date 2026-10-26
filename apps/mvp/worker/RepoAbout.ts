@@ -1,5 +1,5 @@
 import { GitHub } from "@smthrs/integrations"
-import { Cache, Clock, Config, Context, Duration, Effect, Function, type Layer, Metric, Option, Redacted, Ref, Schema } from "effect"
+import { Clock, Config, Duration, Effect, Function, type Layer, Metric, Option, Redacted, Ref, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { repoId } from "../src/features/repo/contract.ts"
@@ -18,8 +18,11 @@ import * as RepoMetrics from "./RepoMetrics.ts"
 //
 // - **Kept for every data center** in Postgres (worker/about/Store.ts): a fresh answer serves everyone. When it goes
 //   stale, one request claims the next read and the rest keep serving the stale answer; when GitHub can't answer, the
-//   last good answer serves for up to `STALE_FOR`. In this isolate, concurrent requests for a repository share one
-//   lookup (Effect's `Cache`, kept for no time once it settles).
+//   last good answer serves for up to `STALE_FOR`. With nothing kept yet, the requests that didn't claim the read wait
+//   for the one that did, watching the store, so a crowd's first read is one call too.
+// - **Nothing is shared between requests.** A Worker isolate serves many requests at once, and a request may not
+//   resume on another's I/O: on 2026-10-25 a lookup shared through Effect's `Cache` answered 23 of 30 concurrent
+//   visitors 500. Each request reads the store, GitHub and the App's signer on its own; only the store is common.
 // - **Read with the App's quota where its owner let Smithers act**: on a repository the Smithers App is installed on
 //   and `GITHUB_ALLOWED_REPOSITORIES` doesn't leave out, with an installation token minted for that repository, for
 //   everyone, visitors included. Elsewhere a Member's read uses the deployment's read token, and anyone else's is
@@ -55,8 +58,12 @@ export const PARTIAL_FRESH = Duration.minutes(5)
 export const STALE_FOR = Duration.days(7)
 /** How long the App's absence from a repository is remembered before GitHub is asked again. */
 export const APP_RECHECK = Duration.hours(1)
-/** How long a request is asked to wait while another data center reads a repository for the first time. */
+/** How long a request asks the browser to wait when another request's first read didn't land in `WAIT_FOR`. */
 export const WAIT = Duration.seconds(1)
+/** How long a request waits for another request's first read of a repository, watching the store. */
+export const WAIT_FOR = Duration.seconds(10)
+/** How often a waiting request looks at the store. */
+export const POLL = Duration.millis(250)
 /** Each GitHub call's deadline. */
 export const REQUEST_TIMEOUT = Duration.seconds(8)
 /** How long a browser keeps a stale answer. */
@@ -139,17 +146,17 @@ export type Answer =
   )
   & { readonly read?: GitHubRead; readonly store?: ReadonlyArray<string> }
 
-/** One request's answer; `joined` says another request in this isolate was already reading the repository. */
-export type Outcome = Answer & { readonly joined: boolean }
+/** One request's answer; `waitedMs` says how long it waited for another request's first read. */
+export type Outcome = Answer & { readonly waitedMs?: number }
 
 /**
  * What an answer's `repo.about` line records: where it came from (`cache`), the token (`via`: this request's read of
- * GitHub's, else the kept answer's), whether it joined a read in flight, the store operations that failed, and the
- * read's outcome, stage, status and rate limit left. Never a token or the answer.
+ * GitHub's, else the kept answer's), how long it waited for another request's read, the store operations that failed,
+ * and the read's outcome, stage, status and rate limit left. Never a token or the answer.
  */
 export const fieldsOf = (outcome: Outcome): Record<string, string | number> => ({
   cache: outcome.cache,
-  joined: outcome.joined ? 1 : 0,
+  ...(outcome.waitedMs === undefined ? {} : { waitedMs: outcome.waitedMs }),
   ...(outcome._tag === "Answered" ? { via: outcome.via } : {}),
   ...(outcome.store === undefined ? {} : { store: outcome.store.join(",") }),
   ...(outcome.read === undefined ? {} : {
@@ -181,12 +188,6 @@ interface Chosen {
   readonly tokenError?: string
 }
 
-/** The first of concurrent requests in this isolate: the repository as it named it, and whether it is a Member. */
-class Asker extends Context.Service<
-  Asker,
-  { readonly owner: string; readonly name: string; readonly member: Effect.Effect<boolean> }
->()("@smthrs/mvp/RepoAbout/Asker") {}
-
 const ms = Duration.toMillis
 
 /** The least of the `x-ratelimit-remaining` values seen so far and `header`. */
@@ -195,18 +196,26 @@ const least = (current: number | undefined, header: string | undefined) => {
   return !Number.isFinite(value) ? current : current === undefined ? value : Math.min(current, value)
 }
 
+/** How long a waiting request waits for another's first read, and how often it looks: `WAIT_FOR` and `POLL`. */
+export interface Timing {
+  readonly waitFor: Duration.Duration
+  readonly poll: Duration.Duration
+}
+
 /** The about read over `settings`, keeping its answers in `store`; the App's installations live in `database`. */
-export const make = <E, R>(options: Settings, store: AboutStore<R>, database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
+export const make = <E, R>(
+  options: Settings,
+  store: AboutStore<R>,
+  database: Layer.Layer<SqlClient.SqlClient, E, R>,
+  timing: Timing = { waitFor: WAIT_FOR, poll: POLL },
+) =>
   Effect.gen(function* () {
-    // The App's JWT signer, built once on first use.
-    const app = Option.isNone(options.app) ? Option.none() : Option.some({
-      repository: options.app.value.repository,
-      auth: yield* Effect.cached(GitHub.AppAuth.make({
-        appId: options.app.value.appId,
-        privateKey: options.app.value.privateKey,
-        apiBaseUrl: options.app.value.apiBaseUrl,
-      })),
-    })
+    // The App's JWT signer, built for each read that mints a token: a signer one request built and another awaited
+    // would resume that request on the first one's I/O.
+    const app = Option.map(options.app, (configured) => ({
+      repository: configured.repository,
+      auth: GitHub.AppAuth.make({ appId: configured.appId, privateKey: configured.privateKey, apiBaseUrl: configured.apiBaseUrl }),
+    }))
 
     /** Whether the deployment may act on `id` with the App: its own repository, or one the allowed list doesn't leave out. */
     const mayAct = (own: GitHubConfig.Repository, id: string) =>
@@ -222,8 +231,9 @@ export const make = <E, R>(options: Settings, store: AboutStore<R>, database: La
       id: string,
       appAbsentUntilMs: number | null,
       nowMs: number,
+      member: Effect.Effect<boolean>,
       failed: Array<string>,
-    ): Effect.Effect<Chosen, never, Asker | HttpClient.HttpClient | R> =>
+    ): Effect.Effect<Chosen, never, HttpClient.HttpClient | R> =>
       Effect.gen(function* () {
         let tokenError: string | undefined
         if (Option.isSome(app) && mayAct(app.value.repository, id) && !(appAbsentUntilMs !== null && appAbsentUntilMs > nowMs)) {
@@ -238,8 +248,7 @@ export const make = <E, R>(options: Settings, store: AboutStore<R>, database: La
             tokenError = minted.failure instanceof Tokens.TokenUnavailable ? `token:${minted.failure.reason}` : codeOf(minted.failure)
           }
         }
-        const member = yield* (yield* Asker).member
-        const deployment = member ? yield* options.token : Option.none<Redacted.Redacted<string>>()
+        const deployment = (yield* member) ? yield* options.token : Option.none<Redacted.Redacted<string>>()
         return {
           via: Option.isSome(deployment) ? "deployment" : "anonymous",
           token: deployment,
@@ -307,10 +316,44 @@ export const make = <E, R>(options: Settings, store: AboutStore<R>, database: La
         )
       })
 
-    /** The answer for `id`, for the first of this isolate's concurrent requests for it. */
-    const resolve = (id: string): Effect.Effect<Answer, never, Asker | HttpClient.HttpClient | R> =>
+    /**
+     * Another request's first read of `id`, watched in the store from `startedMs` until it keeps an answer or a
+     * refusal, for `timing.waitFor` at most; then the browser is asked to come back in `WAIT`.
+     */
+    const awaitRead = (id: string, startedMs: number): Effect.Effect<Outcome, never, R> =>
       Effect.gen(function* () {
-        const { owner, name } = yield* Asker
+        while (true) {
+          yield* Effect.sleep(timing.poll)
+          const nowMs = yield* Clock.currentTimeMillis
+          const waitedMs = nowMs - startedMs
+          // A store that can't answer now is nothing yet; the wait still ends at its deadline.
+          const row = Option.getOrUndefined(Option.flatten(yield* store.get(id).pipe(Effect.option)))
+          const answer = row === undefined ? undefined : Option.getOrUndefined(row.answer)
+          const refusal = row?.refusal ?? null
+          if (answer !== undefined && answer.freshUntilMs > nowMs) return { ...answered(answer, "hit", nowMs), waitedMs }
+          if (refusal !== null) {
+            return {
+              _tag: "Refused" as const,
+              code: refusal,
+              cache: "refusal" as const,
+              retryAfterMillis: Math.max(1000, row!.nextReadAtMs! - nowMs),
+              waitedMs,
+            }
+          }
+          if (waitedMs >= ms(timing.waitFor)) {
+            return { _tag: "Refused" as const, code: "unavailable" as const, cache: "wait" as const, retryAfterMillis: ms(WAIT), waitedMs }
+          }
+        }
+      })
+
+    /** The answer for `id` (`owner/name` as the request named it) for one request. */
+    const resolve = (
+      id: string,
+      owner: string,
+      name: string,
+      member: Effect.Effect<boolean>,
+    ): Effect.Effect<Outcome, never, HttpClient.HttpClient | R> =>
+      Effect.gen(function* () {
         const nowMs = yield* Clock.currentTimeMillis
         const failed: Array<string> = []
         const storeDown = <A>(op: string, fallback: A) => () => Effect.sync(() => (failed.push(op), fallback))
@@ -328,24 +371,26 @@ export const make = <E, R>(options: Settings, store: AboutStore<R>, database: La
           onNone: () => true,
           onSome: (found) => found.nextReadAtMs === null || found.nextReadAtMs <= nowMs,
         })
-        const claimed = Option.isNone(kept) ||
-          (due && (yield* store.claim(id, nowMs, nowMs + ms(CLAIM)).pipe(Effect.catch(storeDown("claim", true)))))
+        // A claim the store can't answer reads GitHub only when there is nothing to serve: a crowd during a store
+        // outage serves the stale answer rather than all asking GitHub.
+        const claim = store.claim(id, nowMs, nowMs + ms(CLAIM)).pipe(Effect.catch(storeDown("claim", Option.isNone(usable))))
+        const claimed = Option.isNone(kept) || (due && (yield* claim))
         if (!claimed) {
           if (Option.isSome(usable)) return { ...answered(usable.value, "stale", nowMs), ...extra() }
           const found = Option.getOrUndefined(row)
           const refusal = found?.refusal ?? null
+          // Nothing to serve yet: another request is reading it for the first time.
+          if (refusal === null) return { ...(yield* awaitRead(id, nowMs)), ...extra() }
           // A kept refusal always has its wait: `refuse` writes both.
-          return refusal === null
-            ? { _tag: "Refused" as const, code: "unavailable" as const, cache: "wait" as const, retryAfterMillis: ms(WAIT), ...extra() }
-            : {
-              _tag: "Refused" as const,
-              code: refusal,
-              cache: "refusal" as const,
-              retryAfterMillis: Math.max(1000, found!.nextReadAtMs! - nowMs),
-              ...extra(),
-            }
+          return {
+            _tag: "Refused" as const,
+            code: refusal,
+            cache: "refusal" as const,
+            retryAfterMillis: Math.max(1000, found!.nextReadAtMs! - nowMs),
+            ...extra(),
+          }
         }
-        const chosen = yield* tokenFor(owner, name, id, Option.getOrUndefined(row)?.appAbsentUntilMs ?? null, nowMs, failed)
+        const chosen = yield* tokenFor(owner, name, id, Option.getOrUndefined(row)?.appAbsentUntilMs ?? null, nowMs, member, failed)
         const { read, rateRemaining } = yield* fromGitHub(owner, name, chosen.token)
         const durationMs = (yield* Clock.currentTimeMillis) - nowMs
         const facts = {
@@ -392,21 +437,8 @@ export const make = <E, R>(options: Settings, store: AboutStore<R>, database: La
         }
       })
 
-    // Concurrent requests for one repository in this isolate share one lookup, dropped as soon as it settles: the store
-    // is the cache.
-    const lookups = yield* Cache.makeWith((id: string) => resolve(id), {
-      capacity: 1024,
-      timeToLive: () => Duration.zero,
-      requireServicesAt: "lookup",
-    })
-
     const answer: Source<R>["answer"] = (owner, name, member) =>
-      Effect.gen(function* () {
-        const id = repoId(owner, name)
-        const joined = yield* Cache.has(lookups, id)
-        const answer = yield* Cache.get(lookups, id).pipe(Effect.provideService(Asker, { owner, name, member }))
-        return { ...answer, joined }
-      }).pipe(Effect.withSpan("repo.about.answer"))
+      resolve(repoId(owner, name), owner, name, member).pipe(Effect.withSpan("repo.about.answer"))
 
     return { answer } satisfies Source<R>
   })

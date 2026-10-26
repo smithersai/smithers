@@ -1,7 +1,7 @@
 // The about read (worker/RepoAbout.ts) over this file's schema of the compose Postgres (`pnpm db:up`) and the scripted
 // GitHub (worker/test/githubRest.ts): whose quota a read spends, the answer kept for every data center and served stale
 // while GitHub can't answer, the waits after GitHub refused, many visitors causing one read, in one isolate and across
-// two, and a store that fails, injected. The reads themselves are worker/about/GitHubRead.test.ts.
+// two, with no request resuming on another's work, and a store that fails, injected. The reads themselves are worker/about/GitHubRead.test.ts.
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { ConfigProvider, Duration, Effect, Layer, Logger, Metric, Option, Redacted } from "effect"
 import { FetchHttpClient, type HttpClient } from "effect/http"
@@ -40,7 +40,11 @@ const appConfig = async (): Promise<Record<string, string>> => {
  */
 const isolate = async (
   github: ScriptedGitHub,
-  options: { readonly config?: Record<string, string>; readonly store?: AboutStore.AboutStore } = {},
+  options: {
+    readonly config?: Record<string, string>
+    readonly store?: AboutStore.AboutStore
+    readonly timing?: RepoAbout.Timing
+  } = {},
 ) => {
   const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
   const logs: Array<StructuredLog> = []
@@ -58,7 +62,8 @@ const isolate = async (
     )
   const source = await Effect.runPromise(observed(Effect.flatMap(
     RepoAbout.settings,
-    (settings) => RepoAbout.make(settings, options.store ?? AboutStore.postgres(scratch.database), scratch.database),
+    (settings) =>
+      RepoAbout.make(settings, options.store ?? AboutStore.postgres(scratch.database), scratch.database, options.timing),
   )))
   return {
     answer: (owner: string, name: string, member = false) =>
@@ -95,6 +100,15 @@ const until = (check: () => boolean | Promise<boolean>) =>
   vi.waitFor(async () => {
     if (!(await check())) throw new Error("not yet")
   }, { timeout: 10_000, interval: 10 })
+
+/** This file's store, counting each look at a row: how a test sees a request waiting in it. */
+const watched = async () => {
+  const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+  const real = AboutStore.postgres(scratch.database)
+  const looks = { count: 0 }
+  const store: AboutStore.AboutStore = { ...real, get: (id) => Effect.suspend(() => (looks.count++, real.get(id))) }
+  return { store, looks }
+}
 
 /** Makes `id`'s answer stale and its next read due, as if it was read `ago` before. */
 const age = (id: string, ago = "11 minutes") =>
@@ -340,7 +354,7 @@ describe("kept for every data center", () => {
     expect(next).toBeGreaterThan(55_000)
     expect(next).toBeLessThanOrEqual(Duration.toMillis(RepoAbout.RATE_HOLD))
     expect(one.reads()[0]).not.toHaveProperty("rateRemaining")
-    expect(RepoAbout.fieldsOf(limited)).toEqual({ cache: "miss", joined: 0, via: "anonymous", read: "rate_limited", stage: "repository", upstreamStatus: 429 })
+    expect(RepoAbout.fieldsOf(limited)).toEqual({ cache: "miss", via: "anonymous", read: "rate_limited", stage: "repository", upstreamStatus: 429 })
     expect(one.gauge({ via: "anonymous" })).toBe(0)
   })
 
@@ -358,58 +372,101 @@ describe("kept for every data center", () => {
 })
 
 describe("many visitors, one read", () => {
-  test("in one isolate, fifty concurrent visitors share one read of GitHub, and the next fifty read the store", async () => {
+  test("thirty concurrent first reads: one request reads GitHub, the rest wait for its answer in the store, all answered", async () => {
+    // Production, 2026-10-25: thirty visitors at once got 23 answers of 500. A lookup shared through Effect's `Cache`
+    // resumed every request but the first on the first one's I/O, which a Worker refuses. Now no request awaits
+    // another's work: the ones that didn't claim the read watch the store until the claimed read lands.
     const github = scriptedGitHub()
     github.publish("smithersai", "vibelang", spoonKnife({ fullName: "smithersai/vibelang" }))
     github.install("smithersai", "vibelang")
     const one = await isolate(github, { config: await appConfig() })
     const release = github.hold()
-    const visitors = Promise.all(Array.from({ length: 50 }, () => one.answer("smithersai", "vibelang")))
+    const visitors = Promise.all(Array.from({ length: 30 }, () => one.answer("smithersai", "vibelang")))
     await until(() => github.holding() > 0)
     release()
     const outcomes = await visitors
-    expect(outcomes.every((outcome) => outcome._tag === "Answered" && outcome.cache === "miss")).toBe(true)
-    expect(outcomes.filter((outcome) => outcome.joined)).toHaveLength(49)
-    // What the route records of one that joined the read.
-    expect(RepoAbout.fieldsOf(outcomes.find((outcome) => outcome.joined)!)).toMatchObject({ cache: "miss", joined: 1, via: "app", read: "answered" })
+    expect(outcomes.every((outcome) => outcome._tag === "Answered")).toBe(true)
+    expect(outcomes.filter((outcome) => outcome.cache === "miss")).toHaveLength(1)
+    // The other twenty-nine answer from the store: having waited for the read, or, if they looked after it landed, at once.
+    expect(outcomes.filter((outcome) => outcome.cache === "hit")).toHaveLength(29)
+    const waited = outcomes.filter((outcome) => outcome.waitedMs !== undefined)
+    expect(waited.length).toBeGreaterThan(0)
+    expect(RepoAbout.fieldsOf(waited[0]!)).toMatchObject({ cache: "hit", via: "app", waitedMs: expect.any(Number) })
     expect(github.calls).toEqual(["/installation", "access_tokens", "graphql", "/contributors"])
     expect(one.reads()).toHaveLength(1)
-    const later = await Promise.all(Array.from({ length: 50 }, () => one.answer("smithersai", "vibelang")))
-    expect(later.every((outcome) => outcome._tag === "Answered" && outcome.cache === "hit")).toBe(true)
+    const later = await Promise.all(Array.from({ length: 30 }, () => one.answer("smithersai", "vibelang")))
+    expect(later.every((outcome) => outcome._tag === "Answered" && outcome.cache === "hit" && outcome.waitedMs === undefined)).toBe(true)
     expect(github.calls).toHaveLength(4)
   })
 
-  test("across data centers: while one reads, the other serves the stale answer, or asks to wait a second for the first", async () => {
+  test("across data centers: while one reads, the other waits for its first answer, then serves the stale one", async () => {
     const github = scriptedGitHub()
     github.publish("octocat", "Spoon-Knife")
-    const [east, west] = [await isolate(github), await isolate(github)]
-    // The first read ever: the other data center has nothing to serve, so it asks to wait.
+    const westStore = await watched()
+    const [east, west] = [await isolate(github), await isolate(github, { store: westStore.store })]
+    // The first read ever: the other data center has nothing to serve, so it waits for the one reading.
     let release = github.hold()
     const first = east.answer("octocat", "Spoon-Knife")
-    await until(async () => (await row(SPOON)) !== undefined)
-    expect(await west.answer("octocat", "Spoon-Knife")).toMatchObject({
-      _tag: "Refused",
-      code: "unavailable",
-      cache: "wait",
-      retryAfterMillis: Duration.toMillis(RepoAbout.WAIT),
-    })
+    await until(() => github.holding() > 0)
+    const waiting = west.answer("octocat", "Spoon-Knife")
+    // Its first look found nothing to serve; its second is the wait.
+    await until(() => westStore.looks.count >= 2)
     release()
     expect(answered(await first).cache).toBe("miss")
-    expect(answered(await west.answer("octocat", "Spoon-Knife")).cache).toBe("hit")
-    // Stale everywhere: of fifty visitors in each, one reads GitHub and the rest serve the stale answer.
+    expect(answered(await waiting)).toMatchObject({ cache: "hit", waitedMs: expect.any(Number) })
+    // Stale everywhere: of fifteen visitors in each, one reads GitHub and the rest serve the stale answer.
     await age(SPOON)
     const before = github.calls.length
     release = github.hold()
-    const crowd = Promise.all([east, west].flatMap((place) => Array.from({ length: 50 }, () => place.answer("octocat", "Spoon-Knife"))))
+    const crowd = Promise.all([east, west].flatMap((place) => Array.from({ length: 15 }, () => place.answer("octocat", "Spoon-Knife"))))
     await until(() => github.holding() > 0)
     release()
     const outcomes = await crowd
     expect(outcomes.every((outcome) => outcome._tag === "Answered")).toBe(true)
     expect(east.reads().length + west.reads().length).toBe(2)
     expect(github.calls.slice(before).filter((call) => call === "")).toHaveLength(1)
-    // The fifty that shared the read answer from GitHub; the other fifty from the store, stale or, if it landed, fresh.
-    expect(outcomes.filter((outcome) => outcome.cache === "miss")).toHaveLength(50)
-    expect(outcomes.filter((outcome) => outcome.cache === "stale" || outcome.cache === "hit")).toHaveLength(50)
+    expect(outcomes.filter((outcome) => outcome.cache === "miss")).toHaveLength(1)
+    expect(outcomes.filter((outcome) => outcome.cache === "stale" || outcome.cache === "hit")).toHaveLength(29)
+  })
+
+  test("a request waiting for another's first read gets GitHub's refusal when that read is refused", async () => {
+    const github = scriptedGitHub()
+    github.publish("octocat", "Down")
+    github.fail("", 502)
+    const westStore = await watched()
+    const [east, west] = [await isolate(github), await isolate(github, { store: westStore.store })]
+    const release = github.hold()
+    const first = east.answer("octocat", "Down")
+    await until(() => github.holding() > 0)
+    const waiting = west.answer("octocat", "Down")
+    await until(() => westStore.looks.count >= 2)
+    release()
+    expect(await first).toMatchObject({ _tag: "Refused", code: "github_unavailable", cache: "miss" })
+    expect(await waiting).toMatchObject({ _tag: "Refused", code: "github_unavailable", cache: "refusal", waitedMs: expect.any(Number) })
+    expect(github.calls).toEqual([""])
+  })
+
+  test("a first read that never lands: the waiting request asks the browser to come back, a store that fails included", async () => {
+    const github = scriptedGitHub()
+    github.publish("octocat", "Spoon-Knife")
+    // Another data center claimed the read and never finished it.
+    await sql(`INSERT INTO repo_about (repo_id, next_read_at) VALUES ('${SPOON}', now() + interval '30 seconds')`)
+    const timing = { waitFor: Duration.millis(300), poll: Duration.millis(20) }
+    const one = await isolate(github, { timing })
+    const waited = await one.answer("octocat", "Spoon-Knife")
+    expect(waited).toMatchObject({ _tag: "Refused", code: "unavailable", cache: "wait", retryAfterMillis: Duration.toMillis(RepoAbout.WAIT) })
+    expect(waited.waitedMs).toBeGreaterThanOrEqual(300)
+    expect(github.calls).toEqual([])
+    // A store that answers the first look and then fails: nothing to serve until the wait ends.
+    const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+    const real = AboutStore.postgres(scratch.database)
+    let looks = 0
+    const flaky = await isolate(github, {
+      timing,
+      store: { ...real, get: (id) => looks++ === 0 ? real.get(id) : Effect.fail(new AboutStore.StoreUnavailable({ op: "get" })) },
+    })
+    expect(await flaky.answer("octocat", "Spoon-Knife")).toMatchObject({ _tag: "Refused", cache: "wait" })
+    expect(looks).toBeGreaterThan(2)
   })
 })
 
@@ -429,7 +486,7 @@ describe("a store that fails", () => {
     const one = await isolate(github, { config: await appConfig(), store: down })
     const served = await one.answer("octocat", "Spoon-Knife")
     expect(served).toMatchObject({ _tag: "Answered", cache: "miss", store: ["get", "app_absent", "keep"] })
-    expect(RepoAbout.fieldsOf(served)).toMatchObject({ store: "get,app_absent,keep", joined: 0 })
+    expect(RepoAbout.fieldsOf(served)).toMatchObject({ store: "get,app_absent,keep" })
     expect(await one.answer("octocat", "Gone")).toMatchObject({ _tag: "Refused", code: "not_found", store: ["get", "app_absent", "refuse"] })
   })
 
@@ -441,5 +498,10 @@ describe("a store that fails", () => {
     const one = await isolate(github, { store: { ...real, claim: () => unavailable("claim") } })
     expect(await one.answer("octocat", "Spoon-Knife")).toMatchObject({ _tag: "Answered", cache: "miss", store: ["claim"] })
     expect(answered(await one.answer("octocat", "Spoon-Knife")).cache).toBe("hit")
+    // With a stale answer to serve, a claim the store can't answer serves it and leaves GitHub alone.
+    await age(SPOON)
+    const calls = github.calls.length
+    expect(await one.answer("octocat", "Spoon-Knife")).toMatchObject({ _tag: "Answered", cache: "stale", store: ["claim"] })
+    expect(github.calls).toHaveLength(calls)
   })
 })

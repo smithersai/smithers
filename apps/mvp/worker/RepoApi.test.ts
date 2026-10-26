@@ -767,7 +767,7 @@ describe("GET /api/repos/<owner>/<name>/about", () => {
     const response = await h.fetch(aboutRoute("smithersai", "vibelang"))
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ name: "smithersai/vibelang" })
-    expect(h.only("repo.about").annotations).toMatchObject({ status: 200, cache: "miss", via: "app", read: "answered", joined: 0 })
+    expect(h.only("repo.about").annotations).toMatchObject({ status: 200, cache: "miss", via: "app", read: "answered" })
     expect(h.count(RepoMetrics.aboutAnswers, { cache: "miss" })).toBe(1)
     expect(recorded(h)).not.toMatch(/ghs_about|PRIVATE KEY/)
   })
@@ -963,21 +963,29 @@ describe("GET /api/repos/<owner>/<name>/about", () => {
     ])
   })
 
-  test("while another data center reads a repository for the first time, a visitor is asked to wait a second", async () => {
+  test("thirty visitors' first reads at once, here and in another data center: every one 200, one read of GitHub", async () => {
+    // Production, 2026-10-25: 23 of 30 concurrent visitors got 500, because requests shared one lookup and resumed on
+    // the first request's I/O. Each request now reads on its own; those that didn't claim the read wait in the store.
     const github = scriptedGitHub()
-    github.publish("octocat", "Spoon-Knife")
-    const first = await repoHarness(runtime, { actor: null, github })
-    const second = await repoHarness(runtime, { actor: null, github, keepAbout: true })
+    github.publish("smithersai", "vibelang", spoonKnife({ fullName: "smithersai/vibelang" }))
+    const here = await repoHarness(runtime, { actor: null, github })
+    const there = await repoHarness(runtime, { actor: null, github, keepAbout: true })
     const release = github.hold()
-    const reading = first.fetch(aboutRoute("octocat", "Spoon-Knife"))
-    // The first data center has claimed the read and is waiting on GitHub.
+    const crowd = Promise.all(Array.from({ length: 30 }, (_, index) => (index % 2 === 0 ? here : there).fetch(aboutRoute("smithersai", "vibelang"))))
     await vi.waitFor(() => expect(github.holding()).toBeGreaterThan(0), { timeout: 10_000, interval: 10 })
-    const waiting = await second.fetch(aboutRoute("octocat", "Spoon-Knife"))
-    expect([waiting.status, waiting.headers.get("retry-after"), await waiting.json()]).toEqual([503, "1", { code: "unavailable" }])
-    expect(second.only("repo.about").annotations).toMatchObject({ cache: "wait", errorCode: "unavailable" })
     release()
-    expect((await reading).status).toBe(200)
-    expect((await second.fetch(aboutRoute("octocat", "Spoon-Knife"))).status).toBe(200)
+    const responses = await crowd
+    expect(responses.map((response) => response.status)).toEqual(Array.from({ length: 30 }, () => 200))
+    expect(new Set(await Promise.all(responses.map(async (response) => (await response.json() as { readonly name: string }).name))))
+      .toEqual(new Set(["smithersai/vibelang"]))
+    // One anonymous read: ten calls, the repository once.
+    expect(github.calls.filter((call) => call === "")).toHaveLength(1)
+    expect(github.calls).toHaveLength(10)
+    const lines = [...here.line("repo.about"), ...there.line("repo.about")].map((line) => line.annotations)
+    expect(lines.filter((line) => line.cache === "miss")).toHaveLength(1)
+    expect(lines.filter((line) => line.cache === "hit")).toHaveLength(29)
+    expect(lines.some((line) => typeof line.waitedMs === "number")).toBe(true)
+    expect([...here.line("repo.about.read"), ...there.line("repo.about.read")]).toHaveLength(1)
   })
 
   test("a deployment whose GitHub URL isn't one answers 503, logged by the defect's name", async () => {
