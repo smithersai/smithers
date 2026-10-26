@@ -6,6 +6,7 @@ import type { CuratedFile } from "../../../worker/home/Curated.ts"
 import { shaOf } from "../../../worker/test/branch.ts"
 import { openTestApp, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
 import { repoId } from "../repo/contract"
+import { Repo } from "../repo/repo"
 import type { Todo } from "../todos/schema"
 import { Todos } from "../todos/todos"
 import { Home } from "./home"
@@ -48,10 +49,14 @@ afterEach(async () => {
  * them; `forge` the branches' forge (GitHub unless set).
  */
 const open = async (actor: Actor | null, forge: "github" | "code-storage" = "github") => {
-  const runtime: ManagedRuntime.ManagedRuntime<Home | Todos | TestChatApi, unknown> = openTestApp({}, { actor, homes, forge })
+  const runtime: ManagedRuntime.ManagedRuntime<Home | Repo | Todos | TestChatApi, unknown> = openTestApp({}, { actor, homes, forge })
   runtimes.push(runtime)
   const home = await runtime.runPromise(Effect.service(Home))
   const api = await runtime.runPromise(Effect.service(TestChatApi))
+  // A repository route's loader asks the person's role there before opening the page (router.tsx `enterRepo`); the
+  // stack's shapes wait for that answer (decision 0110).
+  const repo = await runtime.runPromise(Effect.service(Repo))
+  repo.actions.role(OWNER, NAME)
   const { queries } = home
   for (const query of [queries.home, queries.files, queries.items, queries.syncs, queries.runs, queries.stackAccess]) {
     query.startSyncImmediate()
