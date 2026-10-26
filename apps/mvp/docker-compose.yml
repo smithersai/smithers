@@ -21,7 +21,7 @@ services:
     image: electricsql/electric:1.8.1
     environment:
       DATABASE_URL: postgresql://smithers:smithers@postgres:5432/smithers?sslmode=disable
-      # Local only: production sets ELECTRIC_SECRET, and only ChatApi holds it.
+      # As in production (infra/ElectricGateway.ts): Electric has no secret, and only ChatApi reaches it.
       ELECTRIC_INSECURE: "true"
     ports: ["30001:3000"]
     depends_on:

@@ -1,33 +1,22 @@
-// What the Electric gateway (infra/ElectricGateway.ts) lets through to Electric's container: `GET /v1/shape` carrying
-// Electric's secret as a bearer token, compared in constant time.
+// What the Electric gateway (infra/ElectricGateway.ts) lets through to Electric's container: `GET /v1/shape`, and
+// nothing else.
 //
-// ChatApi sends the secret that way (`ELECTRIC_SECRET_AS=bearer`, which `bind` in infra/Electric.ts sets), never in
-// the URL: Workers Logs' invocation logs and Workers Traces' `url.full` and `url.query` record a URL, and neither
-// records an `authorization` header. The admitted request goes on without the header, so the Durable Object and the
-// container never see the secret, and Electric runs without one of its own: its container has no way in but this
-// gateway (docs/infrastructure.md).
-import { Core } from "@smthrs/integrations"
-import { Redacted } from "effect"
-import { Headers, HttpServerRequest } from "effect/http"
+// The gateway has no public URL: ChatApi reaches it only through its service binding (infra/Electric.ts), after it has
+// authorized the person and fixed the shape. Electric runs without a secret of its own: its container has no way in but
+// this gateway (docs/infrastructure.md).
+import { HttpServerRequest } from "effect/http"
 
 /** The gateway's answer to one request: refused with a status before the container starts, or let through. */
 export type Admission =
-  | { readonly _tag: "Refused"; readonly status: 401 | 404 }
+  | { readonly _tag: "Refused"; readonly status: 404 }
   | { readonly _tag: "Admitted"; readonly request: HttpServerRequest.HttpServerRequest }
 
-const encoder = new TextEncoder()
-
 /**
- * Admits `request` when it is `GET /v1/shape` with `authorization: Bearer <secret>`. Anything else is 404; a shape
- * request with a wrong or missing token is 401, the secret as a `secret` parameter included. The admitted request is
- * a new `GET` to the same URL with every header but `authorization`.
+ * Admits `request` when it is `GET /v1/shape`; anything else is 404. The admitted request is a new `GET` to the same
+ * URL with the same headers.
  */
-export const admit = (request: HttpServerRequest.HttpServerRequest, secret: Redacted.Redacted<string>): Admission => {
+export const admit = (request: HttpServerRequest.HttpServerRequest): Admission => {
   const url = new URL(request.originalUrl, "http://electric")
   if (request.method !== "GET" || url.pathname !== "/v1/shape") return { _tag: "Refused", status: 404 }
-  const presented = encoder.encode(request.headers.authorization ?? "")
-  const expected = encoder.encode(`Bearer ${Redacted.value(secret)}`)
-  if (!Core.Signature.constantTimeEqual(presented, expected)) return { _tag: "Refused", status: 401 }
-  const headers = Object.entries(Headers.remove(request.headers, "authorization"))
-  return { _tag: "Admitted", request: HttpServerRequest.fromWeb(new Request(url, { method: "GET", headers })) }
+  return { _tag: "Admitted", request: HttpServerRequest.fromWeb(new Request(url, { method: "GET", headers: request.headers })) }
 }

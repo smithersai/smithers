@@ -10,6 +10,7 @@ import { Cause, Effect, Layer, Option, Predicate, Redacted } from "effect"
 import { FetchHttpClient, HttpServerRequest } from "effect/http"
 import * as Database from "../db/Database.ts"
 import * as Electric from "../infra/Electric.ts"
+import * as ElectricUpstream from "../infra/ElectricUpstream.ts"
 import * as SecretsInfra from "../infra/Secrets.ts"
 import * as SignInSecret from "../infra/SignIn.ts"
 import { AUTH_ROUTE } from "../src/features/auth/contract.ts"
@@ -351,7 +352,12 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
           Effect.provide(docsSource),
           Effect.provide(Layer.merge(FetchHttpClient.layer, webCache)),
         )
-      }).pipe(Effect.provideService(Conversations.homeRepositoryNames, homeRepository), Effect.provide(logs)),
+      }).pipe(
+        Effect.provideService(Conversations.homeRepositoryNames, homeRepository),
+        // Every shape route calls Electric through the gateway's service binding in production (infra/ElectricUpstream.ts).
+        Effect.provide(Layer.unwrap(Effect.map(Effect.service(Cloudflare.WorkerEnvironment), ElectricUpstream.upstream))),
+        Effect.provide(logs),
+      ),
     }
   }).pipe(
     Effect.provide(Executions.live(ChatDatabase, {

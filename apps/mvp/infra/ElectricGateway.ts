@@ -1,14 +1,13 @@
-// The Electric gateway Worker: answers `GET /v1/shape` carrying Electric's secret as a bearer token by forwarding it,
-// without the token, to the one Durable Object that runs Electric's container, and refuses everything else before the
-// container starts (infra/ElectricAccess.ts). alchemy.run.ts declares it in production only; ChatApi reaches it at its
-// workers.dev URL (infra/Electric.ts).
+// The Electric gateway Worker: answers `GET /v1/shape` by forwarding it to the one Durable Object that runs Electric's
+// container, and refuses everything else before the container starts (infra/ElectricAccess.ts). alchemy.run.ts
+// declares it in production only. It has no public URL: ChatApi reaches it through a service binding
+// (infra/Electric.ts).
 import type { RuntimeContext } from "alchemy"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as Output from "alchemy/Output"
 import { Config, Context, Effect, Option, Redacted } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { ELECTRIC_POOL_SIZE } from "./Connections.ts"
-import { ElectricSecret } from "./Electric.ts"
 import { admit } from "./ElectricAccess.ts"
 import { forward, type Host, isLive, logged, makeAwake } from "./ElectricAwake.ts"
 import { workerBuild } from "./WorkerBuild.ts"
@@ -40,8 +39,9 @@ export class DatabaseUrl extends Context.Service<
  * Electric then rebuilds its shapes and clients refetch (docs/infrastructure.md#limits).
  *
  * It runs without a secret of its own (`ELECTRIC_INSECURE`): a container has no way in but its Durable Object, and the
- * gateway checks the secret before the object is reached. Electric takes its secret only as a URL parameter, and
- * Workers Traces records a subrequest's URL, so a secret on the hop to the container would land in the traces.
+ * object none but the gateway, which only ChatApi's service binding reaches. Electric takes its secret only as a URL
+ * parameter, and Workers Traces records a subrequest's URL, so a secret on the hop to the container would land in the
+ * traces.
  * `DATABASE_URL` isn't here: the object passes it when it starts the container (`DATABASE_URL_BINDING`).
  */
 class Electric extends Cloudflare.Container<Electric>()("Electric", {
@@ -87,8 +87,8 @@ export const props = {
   main: "infra/ElectricGateway.ts",
   // Alchemy's Neon module, which the container's declaration names, imports node:crypto.
   compatibility: { date: "2026-10-01", flags: ["nodejs_compat"] },
-  // Only the stable workers.dev URL, which ChatApi calls; no per-version preview URLs.
-  workersDev: { enabled: true, previewsEnabled: false },
+  // No public URL at all, neither workers.dev nor per-version previews: ChatApi's service binding is the only way in.
+  workersDev: { enabled: false, previewsEnabled: false },
   build: workerBuild,
   observability: {
     enabled: true,
@@ -105,10 +105,9 @@ export default class ElectricGateway extends Cloudflare.Worker<ElectricGateway>(
     const databaseUrl = yield* Effect.serviceOption(DatabaseUrl)
     if (Option.isSome(databaseUrl)) yield* Output.named(databaseUrl.value.value, DATABASE_URL_BINDING)
     const objects = yield* ElectricObject
-    const secret = yield* (yield* ElectricSecret).text
     return {
       fetch: Effect.gen(function* () {
-        const admission = admit(yield* HttpServerRequest.HttpServerRequest, yield* secret)
+        const admission = admit(yield* HttpServerRequest.HttpServerRequest)
         if (admission._tag === "Refused") return HttpServerResponse.empty({ status: admission.status })
         return yield* objects.getByName(INSTANCE).fetch(admission.request)
       }),

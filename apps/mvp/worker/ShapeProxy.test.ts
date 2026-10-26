@@ -241,11 +241,11 @@ describe("GET /api/shapes/messages", () => {
     expect(`${sent!.origin}${sent!.pathname}`).toBe(`${await runtime.runPromise(TestDatabase.electricUrl)}/v1/shape`)
     // Signed out, nobody may watch the branch, so the shape is no conversation's.
     expect([...sent!.searchParams]).toEqual([
+      ["columns", SYNCED.join(",")],
       ["offset", "-1"],
+      ["params[1]", "00000000-0000-0000-0000-000000000000"],
       ["table", "messages"],
       ["where", "conversation_id = $1"],
-      ["params[1]", "00000000-0000-0000-0000-000000000000"],
-      ["columns", SYNCED.join(",")],
     ])
     // One line per request, once its body has ended, with the bytes it sent.
     await eventually(() => h.line("chat.shape").length === 1)

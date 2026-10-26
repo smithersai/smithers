@@ -12,8 +12,8 @@ import { workerBuild } from "../infra/WorkerBuild.ts"
 export const props = {
   main: "worker/ChatApi.ts",
   // @effect/sql-pg opens its sockets with node:net, which workerd provides under nodejs_compat.
-  // global_fetch_strictly_public: ChatApi fetches Electric's gateway at its workers.dev URL, and Cloudflare refuses a
-  // Worker's fetch to another Worker of the same account there (404, error code 1042) unless fetch goes out publicly.
+  // global_fetch_strictly_public: the global fetch always goes out to the public internet, never straight to a Worker
+  // of this account; Electric's gateway, which has no public URL, is reached by service binding (infra/Electric.ts).
   compatibility: {
     date: "2026-10-01",
     flags: ["nodejs_compat", "enable_request_signal", "global_fetch_strictly_public"],

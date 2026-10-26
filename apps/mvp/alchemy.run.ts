@@ -4,8 +4,8 @@
  * Production (`pnpm run deploy`, stage `prod`) declares every dependency:
  * - Postgres: a Neon project with logical replication on (infra/Postgres.ts), migrated by a deploy step.
  * - Hyperdrive: the `ChatDatabase` config in front of Postgres, created after the migrations ran (infra/ChatDatabase.ts).
- * - Electric: `electricsql/electric:1.8.1` in a Cloudflare Container behind the ElectricGateway Worker, which answers
- *   only shape requests that carry Electric's generated secret (infra/ElectricGateway.ts).
+ * - Electric: `electricsql/electric:1.8.1` in a Cloudflare Container behind the ElectricGateway Worker, which has no
+ *   public URL: ChatApi reaches it through a service binding (infra/ElectricGateway.ts, infra/Electric.ts).
  * - ChatApi (worker/ChatApi.ts): an Effect-native Worker that answers /api/*: questions, the Electric shape proxy,
  *   the browser's telemetry, the model endpoint and sign-in. It reaches Postgres through Hyperdrive. Alchemy runs its
  *   handlers.
@@ -55,14 +55,13 @@ const state = Layer.unwrap(Effect.gen(function* () {
   return stateFor(yield* Alchemy.ALCHEMY_DEV)
 })).pipe(Layer.orDie)
 
-/** Production: Electric's gateway URL and secret, for ChatApi to bind. `undefined` under `alchemy dev`. */
+/** Production: Electric's gateway, for ChatApi to bind. `undefined` under `alchemy dev`. */
 const electric = Effect.gen(function* () {
   if (yield* Alchemy.ALCHEMY_DEV) return undefined
   // Postgres' direct URL reaches Electric as the gateway's secret binding, never as container configuration.
   const databaseUrl = ElectricDatabaseUrl.of({ value: directUrl(yield* Postgres) })
   const gateway = yield* ElectricGateway.pipe(Effect.provideService(ElectricDatabaseUrl, databaseUrl))
-  const secret = yield* Electric.ElectricSecret
-  return Electric.Endpoint.of({ url: gateway.url, secret: secret.text })
+  return Electric.Endpoint.of({ service: gateway.workerName })
 })
 
 export default Alchemy.Stack(
