@@ -1,3 +1,4 @@
+import "./back-to-chat.css"
 import { Link, useNavigate } from "@tanstack/react-router"
 import { BACK_TO_CHAT } from "../contract"
 import type { Minimized } from "../minimize"

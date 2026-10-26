@@ -14,7 +14,8 @@ beforeAll(async () => {
     bundle: true, write: false, format: "esm", platform: "browser", target: "es2022",
     jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' },
   })
-  const css = (await Promise.all(["conversations/conversations-screen", "repo/repo-screen"].map((name) =>
+  const backCss = await readFile(new URL("../src/features/views/components/back-to-chat.css", import.meta.url), "utf8")
+  const css = backCss + (await Promise.all(["conversations/conversations-screen", "repo/repo-screen"].map((name) =>
     readFile(new URL(`../src/screens/${name}.css`, import.meta.url), "utf8")))).join("\n")
   server = createServer((request, response) => {
     response.setHeader("Content-Type", request.url === "/fixture.js" ? "text/javascript" : "text/html")
@@ -63,6 +64,20 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           const toolbar = element.querySelector("header")!.getBoundingClientRect()
           return toolbar.top >= element.getBoundingClientRect().top
         })).toBe(true)
+      }
+    } finally { await page.close() }
+  })
+  test(`${viewport.width}: back, sign-in, notification and release targets meet the control height`, async () => {
+    const page = await browser.newPage({ viewport })
+    try {
+      await page.goto(origin)
+      const controls = page.locator("#tap-controls a, #tap-controls button")
+      await controls.first().waitFor()
+      expect(await controls.count()).toBeGreaterThanOrEqual(5)
+      for (const control of await controls.all()) {
+        const box = (await control.boundingBox())!
+        expect.soft(box.height, await control.textContent() ?? "bell").toBeGreaterThanOrEqual(32)
+        expect.soft(box.width).toBeGreaterThanOrEqual(32)
       }
     } finally { await page.close() }
   })

@@ -300,3 +300,6 @@ collection, and the component revokes nothing on submit.
   task-shaped version of the `PromptInput` rules.
 - [API reference](../api.md): every public export.
 - [Troubleshooting](../troubleshooting.md): the symptoms these contracts explain.
+
+Repository release links and notification bells use the theme's `--ctl-h` minimum
+hit height at every viewport width, retaining their existing text size.

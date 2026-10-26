@@ -287,3 +287,9 @@ describe("geometry contract", () => {
     expect(tokens.radiusFull).toBe("var(--r-full, 999px)");
   });
 });
+
+// Tap height is shared with buttons; changing typography must not shrink links or bells.
+test("release links and notification bells retain the shared control height", () => {
+  expect(smithersUiCss).toContain(`a.sui-repo-about-release-name { display:inline-flex; align-items:center; min-height:${tokens.controlHeight}`);
+  expect(smithersUiCss).toContain(`.sui-notification-bell { position:relative; min-height:${tokens.controlHeight}; min-width:${tokens.controlHeight}; flex-shrink:0; }`);
+});

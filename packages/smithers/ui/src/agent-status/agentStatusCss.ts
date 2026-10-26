@@ -78,7 +78,7 @@ button.sui-notification-row:focus-visible { outline:none; box-shadow:0 0 0 3px $
 .sui-notification-note { margin:0; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:4; overflow:hidden; overflow-wrap:anywhere; white-space:pre-wrap; }
 .sui-notification[data-tone='failed'] .sui-notification-note { color:${t.destructive}; }
 .sui-notification-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
-.sui-notification-bell { position:relative; }
+.sui-notification-bell { position:relative; min-height:${t.controlHeight}; min-width:${t.controlHeight}; flex-shrink:0; }
 .sui-notification-bell[data-needs-you] { gap:6px; padding:0 8px; border:1px solid ${t.warningBorder}; border-radius:${t.radiusFull}; background:${t.warningSoft}; color:${t.warning}; }
 .sui-notification-needs { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:650; white-space:nowrap; }
 .sui-notification-needs-glyph { font-size:11px; line-height:1; }

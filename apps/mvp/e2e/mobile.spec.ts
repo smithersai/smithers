@@ -1,4 +1,4 @@
-import { expect, request as apiRequests, type Page, type TestInfo, type Locator } from "@playwright/test"
+import { expect, request as apiRequests, type Page, type TestInfo, type Locator, type Request } from "@playwright/test"
 import { expectServerError, strictTest as base } from "./watch"
 import { writeFile } from "node:fs/promises"
 import { digestSync } from "@smthrs/crypto"
@@ -56,31 +56,35 @@ const test = base.extend<{ recording: void; mobileViewport: { width: number; hei
     const docsReads: Array<{ status: number; code?: string; reason?: string }> = []
     const reads: Array<Promise<void>> = []
     const shapes: Array<{ shape: string; status: number; rows?: number; complete?: boolean }> = []
-    page.on("response", (response) => {
+    // A response event only means headers arrived. Electric may still be streaming
+    // its body when navigation abandons the page; reading it here can pin teardown.
+    // Inspect completed requests only, whose bodies can no longer wait on a stream.
+    const recordResponse = async (request: Request) => {
+      const response = await request.response()
+      if (response === null) return
       const url = new URL(response.url())
       if (url.pathname.startsWith("/api/shapes/") && url.searchParams.get("live") !== "true") {
-        reads.push((async () => {
-          const body = await response.json().catch(() => undefined) as Array<{ headers?: { operation?: string; control?: string } }> | undefined
-          shapes.push({ shape: url.pathname, status: response.status(), ...(Array.isArray(body) ? {
-            rows: body.filter((message) => message.headers?.operation !== undefined).length,
-            complete: body.some((message) => message.headers?.control === "up-to-date"),
-          } : {}) })
-        })())
+        const body = await response.json().catch(() => undefined) as Array<{ headers?: { operation?: string; control?: string } }> | undefined
+        shapes.push({ shape: url.pathname, status: response.status(), ...(Array.isArray(body) ? {
+          rows: body.filter((message) => message.headers?.operation !== undefined).length,
+          complete: body.some((message) => message.headers?.control === "up-to-date"),
+        } : {}) })
       }
       if (!new URL(response.url()).pathname.startsWith("/api/repos/smithersai/vibelang/docs")) return
-      reads.push((async () => {
-        const receipt: { status: number; code?: string; reason?: string } = { status: response.status() }
-        if (response.status() >= 400) {
-          const body = await response.json().catch(() => ({})) as { code?: string; reason?: string }
-          receipt.code = body.code
-          receipt.reason = body.reason
-        }
-        docsReads.push(receipt)
-      })())
-    })
+      const receipt: { status: number; code?: string; reason?: string } = { status: response.status() }
+      if (response.status() >= 400) {
+        const body = await response.json().catch(() => ({})) as { code?: string; reason?: string }
+        receipt.code = body.code
+        receipt.reason = body.reason
+      }
+      docsReads.push(receipt)
+    }
+    const onFinished = (request: Request) => { reads.push(recordResponse(request)) }
+    page.on("requestfinished", onFinished)
     page.on("pageerror", (error) => errors.push(error.message))
     await recordActions(page, info)
     await use()
+    page.off("requestfinished", onFinished)
     if (info.status === "skipped") return
     await Promise.all(reads)
     await writeFile(info.outputPath("shape-reads.json"), JSON.stringify(shapes, null, 2))
@@ -371,14 +375,19 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           await page.goto("/app/settings")
           const form = page.getByRole("form", { name: "Your model", exact: true })
           await expect(form).toBeVisible()
-          const protocol = form.getByRole("combobox", { name: "Protocol" })
-          await expect(protocol).toBeVisible()
+          for (const name of ["OpenAI-compatible", "Anthropic-compatible"]) {
+            const group = form.getByRole("group", { name, exact: true })
+            await expect(group.getByRole("textbox", { name: "Base URL", exact: true })).toBeVisible()
+            await expect(group.getByLabel("Key", { exact: true })).toBeVisible()
+          }
+          for (const tier of ["Fast", "Implement", "Hard"]) {
+            const key = form.getByRole("combobox", { name: `${tier} key`, exact: true })
+            await expect(key).toBeVisible()
+            await key.click()
+            await page.getByRole("option", { name: "Anthropic-compatible", exact: true }).click()
+            await expect(key).toHaveText("Anthropic-compatible")
+          }
           await audit(page, info, "your-model", form)
-          await protocol.click()
-          await page.getByRole("option", { name: "Anthropic-compatible", exact: true }).click()
-          await expect(protocol).toHaveText("Anthropic-compatible")
-          await expect.poll(() => form.evaluate((element) => new FormData(element as HTMLFormElement).get("protocol"))).toBe("anthropic-messages")
-          await audit(page, info, "your-model-selected", form)
         })
         if (signedIn) test("composer: controls and text fit", async ({ page }, info) => {
           requires("scriptedAgent")

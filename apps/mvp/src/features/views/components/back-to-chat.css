@@ -1,0 +1,6 @@
+.back-to-chat {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--ctl-h, 32px);
+  min-width: var(--ctl-h, 32px);
+}

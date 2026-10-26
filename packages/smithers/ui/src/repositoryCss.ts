@@ -79,6 +79,7 @@ export const repoAboutCss = `
 .sui-repo-about-stats { display:grid; gap:6px; margin:0; padding:0; list-style:none; color:${t.mutedForeground}; }
 .sui-repo-about-release { display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; }
 .sui-repo-about-release-name { color:${t.foreground}; font-weight:650; text-decoration:none; overflow-wrap:anywhere; }
+a.sui-repo-about-release-name { display:inline-flex; align-items:center; min-height:${t.controlHeight}; min-width:${t.controlHeight}; }
 a.sui-repo-about-release-name:hover { color:${t.primary}; text-decoration:underline; }
 .sui-repo-about-latest { padding:0 6px; border:1px solid ${t.successBorder}; border-radius:${t.radiusFull}; color:${t.success}; font-size:${t.fontSizeCompact}; font-weight:650; line-height:18px; }
 .sui-repo-about-muted { color:${t.mutedForeground}; }

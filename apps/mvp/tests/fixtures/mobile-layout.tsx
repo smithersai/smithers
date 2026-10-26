@@ -1,4 +1,4 @@
-import { Button, FileTabs, ItemAsideSection, ItemConversation, IssuesView, RepositoryHome, SmithersUiStyles } from "@smthrs/ui"
+import { Button, NotificationBell, RepoAbout, FileTabs, ItemAsideSection, ItemConversation, IssuesView, RepositoryHome, SmithersUiStyles } from "@smthrs/ui"
 import { RepoView, RepoViewStyles } from "@smthrs/repo-view"
 import { listPageOf } from "../../src/features/pulls/view"
 import { createRoot } from "react-dom/client"
@@ -13,6 +13,13 @@ createRoot(document.getElementById("app")!).render(<>
   {list === null ? null : <section id="pulls"><IssuesView repo="smithersai/smithers" issues={pullPage.pulls} loading={pullPage.loading} emptyTitle="No pull requests" /></section>}
   <SmithersUiStyles withTheme />
   <RepoViewStyles />
+  <section id="tap-controls">
+    <a className="back-to-chat" href="/app">Back to chat</a>
+    <Button asChild><a href="/api/auth/sign-in">Sign in with GitHub</a></Button>
+    <NotificationBell />
+    <NotificationBell needsYou={1} unread={3} />
+    <RepoAbout release={{ tag: "v1.0", name: "VibeLang v1.0", href: "https://example.com/release" }} />
+  </section>
   <main className="repo-screen" id="repository-home">
     <RepositoryHome sections={[{ blocks: [
       { type: "hero", title: "Smithers", install: "pnpm add @smthrs/flow @smthrs/platform-browser" },
