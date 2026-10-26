@@ -95,20 +95,23 @@ test.describe("Effect-TS/effect's home", () => {
 
   test(
     "contributor: their work above the landing page, and nothing of the maintainers'",
-    { annotation: { type: "summary", description: "A Member sees Your work (ask, the stack, New TODO) above Effect's landing page." } },
+    { annotation: { type: "summary", description: "A Member sees Your work (the stack) above Effect's landing page; asking waits for the deployment's own repository." } },
     async ({ page }) => {
       requires("devPeople")
       await step("Open Effect-TS/effect as a Member", async () => {
         await as(page, "teammate")
         await openHome(page, "contributor")
       })
-      await step("Your work, for contributors: ask, the stack, New TODO", async () => {
+      await step("Your work, for contributors: the stack; asking, New TODO and Open an issue only on the deployment's own repository", async () => {
         const work = page.getByRole("region", { name: "Your work" })
         await expect(work.getByText("Contributors", { exact: true })).toBeVisible()
-        await expect(work.getByRole("heading", { name: "What should we work on?" })).toBeVisible()
-        await expect(work.getByRole("link", { name: "Ask Smithers about Effect…" })).toHaveAttribute("href", `${REPO}/tree/main`)
         await expect(work.locator("[data-panel='stack']")).toBeVisible({ timeout: 30_000 })
-        await expect(work.getByRole("link", { name: "New TODO" })).toBeVisible()
+        // Asking from a home, and its prompt and app blocks, act only on the deployment's own repository
+        // (decision 0079, src/features/auth/viewer.ts `ownRepository`), which Effect-TS/effect is not.
+        await expect(work.getByRole("heading", { name: "What should we work on?" })).toHaveCount(0)
+        await expect(work.getByRole("link", { name: "Ask Smithers about Effect…" })).toHaveCount(0)
+        await expect(work.getByRole("link", { name: "New TODO" })).toHaveCount(0)
+        await expect(work.getByRole("link", { name: "Open an issue" })).toHaveCount(0)
       })
       await step("No maintainer section", async () => {
         await expect(page.getByRole("region", { name: "Today" })).toHaveCount(0)

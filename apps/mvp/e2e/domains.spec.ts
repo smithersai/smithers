@@ -84,7 +84,8 @@ test.describe("custom domains", () => {
 
     await test.step("Its Settings page shows no Domains section, and ChatApi sends no rows", async () => {
       await page.goto(`/${REPOSITORY}/settings`)
-      await expect(page.getByRole("main", { name: "Settings" })).toBeVisible()
+      // A full page load boots the app again, which takes seconds on a busy dev server.
+      await expect(page.getByRole("main", { name: "Settings" })).toBeVisible({ timeout: 30_000 })
       await expect(page.getByRole("region", { name: "Domains" })).toHaveCount(0)
       const repo = encodeURIComponent(`github/${REPOSITORY}`.toLowerCase())
       const shape = await page.request.get(`/api/shapes/domains?repo=${repo}&offset=-1`)

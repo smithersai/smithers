@@ -48,7 +48,8 @@ for (const width of [1280, 390]) {
       }
       await page.goto("/acme/widgets")
       const header = page.locator(".repo-header")
-      await expect(header).toBeVisible()
+      // A full page load boots the app again, which takes seconds on a busy dev server.
+      await expect(header).toBeVisible({ timeout: 30_000 })
       await page.getByRole("button", { name: /^Notifications/ }).click()
       const panel = page.getByRole("dialog", { name: "Notifications" })
       for (const id of answers) {
