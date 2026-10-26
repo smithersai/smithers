@@ -732,6 +732,20 @@ const workerIoLintTests = Smithers.NodeTest({
   cwd
 })
 
+/** Handler forms, helper resolution, the expected and recorded markers and Effect's imports, for the failure guard. */
+const failureLintTests = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("eslint.frontend-failures.test.mjs")]),
+  srcs: [Smithers.file("eslint.frontend-failures.js"), Smithers.file("eslint.config.js")],
+  deps: [],
+  cwd
+})
+
 export const Package = Smithers.Package({
-  targets: { workerIoLintTests, importRules: importRulesTarget, jevRules: jevRulesTarget, reviewDocsAgainstCode }
+  targets: {
+    workerIoLintTests,
+    failureLintTests,
+    importRules: importRulesTarget,
+    jevRules: jevRulesTarget,
+    reviewDocsAgainstCode
+  }
 })
