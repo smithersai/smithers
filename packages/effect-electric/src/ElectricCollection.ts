@@ -37,6 +37,7 @@ import * as Data from "effect/Data"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Latch from "effect/Latch"
+import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as PubSub from "effect/PubSub"
 import * as Schedule from "effect/Schedule"
@@ -77,6 +78,22 @@ export class SyncFailed extends Data.TaggedError("SyncFailed")<{
   readonly cause: unknown
   readonly status?: number
 }> {}
+
+/**
+ * Shapes Electric stopped (`SyncEvent` `Stopped`), by `collection`, the
+ * collection's kind (its id up to the first `:`, so an id that names a
+ * conversation or a repository after its kind is counted by the kind), and
+ * `status`, the HTTP status Electric or a proxy answered, or `none`. Each is
+ * also the log line `electric.shape.stopped` at Warn, with the same fields and
+ * `error`, the failure's tag or name.
+ *
+ * @category metrics
+ * @since 0.3.0
+ */
+export const stops = Metric.counter("electric_shape_stops", {
+  description: "Shapes Electric stopped, by collection kind and HTTP status",
+  incremental: true
+})
 
 /**
  * Electric didn't deliver what `awaitTxId` or `awaitMatch` waited for in time.
@@ -368,10 +385,19 @@ export function make<A extends Row<unknown>, E = never, R = never>(
         Effect.flatMap((answer) => answer instanceof Unreadable ? Effect.fail(answer) : Effect.succeed(answer))
       )
 
+    // A stopped shape is a failure the sync policy can't wait out: logged and counted by the collection's kind and
+    // the status Electric or a proxy answered, never the shape's URL or a message.
+    const kind = options.id.split(":", 1)[0]!
     const stopped = (error: Error) =>
       Effect.gen(function*() {
+        const failure = syncFailed(error)
+        const status = failure.status === undefined ? "none" : String(failure.status)
         yield* restart.close
-        yield* publish({ _tag: "Stopped", error: syncFailed(error) })
+        yield* Metric.update(Metric.withAttributes(stops, { collection: kind, status }), 1)
+        yield* Effect.logWarning("electric.shape.stopped").pipe(
+          Effect.annotateLogs({ collection: kind, status, error: nameOf(failure.cause as Error) })
+        )
+        yield* publish({ _tag: "Stopped", error: failure })
         yield* restart.await
       })
 
@@ -512,6 +538,9 @@ export const statusOf = (failure: unknown): Option.Option<number> => {
   }
   return Option.none()
 }
+
+/** A failure's name: a tagged error's tag, else its name, never its message. */
+const nameOf = (cause: Error): string => "_tag" in cause ? String(cause._tag) : cause.name
 
 const syncFailed = (cause: Error): SyncFailed =>
   new SyncFailed(cause instanceof FetchError ? { cause, status: cause.status } : { cause })

@@ -162,6 +162,15 @@ type SyncEvent =
 A request Electric aborts, and a 4xx or a batch that isn't whole before
 `Stopped`, report neither `Succeeded` nor `Failed`.
 
+Every `Stopped` is also recorded, whether or not anything reads `sync`: the
+log line `electric.shape.stopped` at Warn with `collection` (the collection's
+kind: its id up to the first `:`), `status` (the HTTP status, or `none`) and
+`error` (the failure's tag or name, never its message), and the counter
+`ElectricCollection.stops` (`electric_shape_stops`) by `collection` and
+`status`. A request that failed and waits on the policy is not recorded here;
+record those where the program's `fetch` is, for example with
+`@smthrs/observability`'s `FetchFailures`.
+
 ### `ElectricCollection.Delivered<A>`
 
 ```ts

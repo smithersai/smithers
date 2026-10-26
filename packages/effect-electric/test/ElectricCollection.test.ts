@@ -1,6 +1,6 @@
 import { FetchError } from "@electric-sql/client"
 import { Collection, LiveQuery, Persistence } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, Exit, Fiber, Latch, Layer, Option, Schedule, Schema, Scope, Stream, Tracer } from "effect"
+import { Context, Effect, Exit, Fiber, Latch, Layer, Logger, Metric, Option, References, Schedule, Schema, Scope, Stream, Tracer } from "effect"
 import { SqlClient } from "effect/sql"
 import { describe, expect, test } from "vitest"
 import { ElectricCollection, ShapeSource } from "../src/index.ts"
@@ -111,6 +111,41 @@ describe.skipIf(!electricUp)("make", () => {
       return events
     }))
     expect(events).toEqual(["Sent", `Stopped:${status}`])
+  })
+
+  test("a stopped shape is logged and counted by the collection's kind and status, never its id or URL", async () => {
+    const lines: Array<{ readonly message: unknown; readonly level: string; readonly annotations: unknown }> = []
+    const logger = Logger.make(({ message, logLevel, fiber }) =>
+      void lines.push({ message, level: logLevel, annotations: fiber.getRef(References.CurrentLogAnnotations) })
+    )
+    const kind = `notes-${crypto.randomUUID()}`
+    const counts = await run(Effect.gen(function*() {
+      const { table } = yield* scratchTable
+      const stopped = (id: string, status: number) =>
+        Effect.gen(function*() {
+          const notes = yield* notesOf(table, { id }).pipe(
+            Effect.provide(ShapeSource.layerFaulty((faults) => faults.refuse(status)))
+          )
+          const events = yield* record(notes)
+          yield* notes.preload.pipe(Effect.forkScoped)
+          yield* eventually(() => events.includes(`Stopped:${status}`))
+        })
+      yield* stopped(`${kind}:conversation-1`, 400)
+      yield* stopped(`${kind}:conversation-2`, 403)
+      const count = (status: string) =>
+        Metric.value(Metric.withAttributes(ElectricCollection.stops, { collection: kind, status })).pipe(
+          Effect.map(({ count }) => count)
+        )
+      return [yield* count("400"), yield* count("403")]
+    }).pipe(Effect.provide(Logger.layer([logger])), Effect.provideService(Metric.MetricRegistry, new Map())))
+    expect(counts).toEqual([1, 1])
+    const stops = lines.filter(({ message }) => (message as Array<unknown>)[0] === "electric.shape.stopped")
+    expect(stops.map(({ level, annotations }) => [level, annotations])).toEqual([
+      ["Warn", { collection: kind, status: "400", error: "FetchError" }],
+      ["Warn", { collection: kind, status: "403", error: "FetchError" }]
+    ])
+    expect(JSON.stringify(stops)).not.toContain("conversation-")
+    expect(JSON.stringify(stops)).not.toContain("/v1/shape")
   })
 
   test("loads the shape, decoded by the schema with int8 parsed, and follows later writes", async () => {
