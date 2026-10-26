@@ -20,7 +20,7 @@ const mapError = (context: IncurHost.Context, error: FsError): never =>
 // Incur's ok and error callbacks throw transport control signals, so each
 // settles the call as a defect, outside the program whose failures are
 // sanitized.
-function execute(selected: IncurHost.SelectedRoute, context: IncurHost.Context): unknown!!FlowInvoker.FlowInvoker {
+function execute(selected: IncurHost.SelectedRoute, context: IncurHost.Context): Effect<unknown, never, FlowInvoker.FlowInvoker> {
   const outcome = exit {
     const input = selected.schema.decode(selected.schema.assemble(context.args, context.options))
     const output = FlowInvoker.FlowInvoker.invoke(Object.freeze({
@@ -48,11 +48,11 @@ function execute(selected: IncurHost.SelectedRoute, context: IncurHost.Context):
   )
 }
 
-function refuse(context: IncurHost.Context, error: FsError): never!! {
+function refuse(context: IncurHost.Context, error: FsError): Effect<never> {
   return mapError(context, error)
 }
 
-function project(route: Route.Route): IncurHost.Projection!! {
+function project(route: Route.Route): Effect<IncurHost.Projection> {
   try {
     const selected = Effect.timeoutOrElse({
       duration: "5 seconds",
@@ -74,13 +74,13 @@ function project(route: Route.Route): IncurHost.Projection!! {
   }
 }
 
-function projectAll(tree: CommandTree.CommandTree): ReadonlyMap<Route.Route, IncurHost.Projection>!! {
+function projectAll(tree: CommandTree.CommandTree): Effect<ReadonlyMap<Route.Route, IncurHost.Projection>> {
   const projections = new Map<Route.Route, IncurHost.Projection>()
   for (const route of CommandTree.traverse(tree)) projections.set(route, project(route))
   return projections
 }
 
-function groupedRoutes(tree: CommandTree.CommandTree): ReadonlySet<Route.Route>!FsError {
+function groupedRoutes(tree: CommandTree.CommandTree): Effect<ReadonlySet<Route.Route>, FsError, infer R> {
   const grouped = new Set<Route.Route>()
   const stack: Array<CommandTree.CommandTree> = [tree]
   while (stack.length > 0) {
@@ -107,7 +107,7 @@ function hydrate(
   grouped: ReadonlySet<Route.Route>,
   tokens: ReadonlyArray<string>,
   dispatchTokens: ReadonlyArray<string>
-): Option.Option<IncurHost.Selection>!FsError {
+): Effect<Option.Option<IncurHost.Selection>, FsError, infer R> {
   // Only an unmatched name may fall back to metadata: every other typed
   // failure has to reach the caller.
   const resolved = CommandTree.resolve(tree, tokens) catch (error) =>
@@ -132,7 +132,7 @@ function select(
   grouped: ReadonlySet<Route.Route>,
   tokens: ReadonlyArray<string>,
   dispatchTokens: ReadonlyArray<string>
-): IncurHost.Outcome!! {
+): Effect<IncurHost.Outcome> {
   try {
     return { _tag: "Selection", selection: hydrate(tree, grouped, tokens, dispatchTokens) }
   } catch (error) {
@@ -156,7 +156,7 @@ function select(
 export function createCli(
   name: string,
   routes: ReadonlyArray<Route.Route>
-): (IncurCli.Cli & { close: () => Promise<void> })!FsError!FlowInvoker.FlowInvoker {
+): Effect<IncurCli.Cli & { close: () => Promise<void> }, FsError, FlowInvoker.FlowInvoker> {
   const validated = CommandTree.make(routes)
   const executable = CommandTree.traverse(validated).filter(Route.isCommandRoute)
   const tree = CommandTree.make(executable)

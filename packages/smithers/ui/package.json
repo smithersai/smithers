@@ -178,7 +178,7 @@
     "playwright": "1.62.1",
     "quickjs-emscripten-core": "0.32.0",
     "happy-dom": "20.13.2",
-    "vibelang": "0.0.3",
-    "vibelang-unplugin": "0.0.3"
+    "vibelang": "0.0.8",
+    "vibelang-unplugin": "0.0.8"
   }
 }

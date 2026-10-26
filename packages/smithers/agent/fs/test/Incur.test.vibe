@@ -17,12 +17,12 @@ import { failureOf, latchedInvoke, makeRoute, recordedImports, recordedModule, r
 type Cli = Effect.Success<ReturnType<typeof Incur.createCli>>
 
 /** Waits for a host promise; a rejection fails the test as a defect. */
-function awaited<A>(promise: PromiseLike<A>): A!! {
+function awaited<A>(promise: PromiseLike<A>): Effect<A> {
   return sync(async (promise) => promise, promise)
 }
 
 /** Fails the test when a host wait outlasts its real-time deadline. */
-function within<A, E>(program: A!E, milliseconds: number): A!E {
+function within<A, E>(program: Effect<A, E>, milliseconds: number): Effect<A, E, infer R> {
   return Effect.timeoutOrElse(program, {
     duration: milliseconds,
     orElse: () => die(new Error("Metadata wait exceeded test deadline"))
@@ -223,7 +223,7 @@ describe("Incur projection", () => {
     const controller = new AbortController()
     const reason = new Error("cancelled during startup")
     // The abort runs when the build calls `load`, before its program runs.
-    const load = vi.spyOn(Route, "load").mockImplementationOnce((): typeof visible!! => {
+    const load = vi.spyOn(Route, "load").mockImplementationOnce((): Effect<typeof visible> => {
       controller.abort(reason)
       return () => visible
     })
@@ -745,7 +745,7 @@ describe("Incur projection", () => {
         : kind === "die"
         ? () => die(new Error(sentinel))
         // A JavaScript host can violate the service's typed failure contract.
-        : ((): never!Error => {
+        : ((): Effect<never, Error, infer R> => {
           // @vibelang-diagnostics-next-line EK4804:off
           throw new Error(sentinel)
         }) as unknown as FlowInvoker.FlowInvoker["invoke"]

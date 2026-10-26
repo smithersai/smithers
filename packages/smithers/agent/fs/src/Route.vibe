@@ -137,7 +137,7 @@ const invalidRoute = (path: string, description = "Route metadata violates the c
 const text = (
   value: unknown,
   options: { path: string; maximum: number; empty?: boolean | undefined }
-): string!FsError! => {
+): Effect<string, FsError> => {
   if (
     typeof value !== "string" || (options.empty !== true && value.length === 0) ||
     value.length > options.maximum || value.includes("\0") || !Boundary.isWellFormedText(value)
@@ -149,7 +149,7 @@ const fields = (
   value: unknown,
   required: ReadonlyArray<string>,
   optional: ReadonlyArray<string> = []
-): Readonly<Record<string, unknown>>!FsError! => {
+): Effect<Readonly<Record<string, unknown>>, FsError> => {
   const admitted = Boundary.inspectRecord(value, required, optional)
   if (!admitted.ok) throw invalidRoute(admitted.path)
   return admitted.value
@@ -159,7 +159,7 @@ const schemaFields = (
   input: unknown,
   required: ReadonlyArray<string>,
   optional: ReadonlyArray<string> = []
-): Readonly<Record<string, unknown>>!FsError! => {
+): Effect<Readonly<Record<string, unknown>>, FsError> => {
   return try((input, required, optional, invalidRoute) => {
     if (typeof input !== "object" || input === null || Array.isArray(input)) throw invalidRoute("$")
     const prototype = Object.getPrototypeOf(input)
@@ -189,7 +189,7 @@ const schemaFields = (
 }
 
 // Inspect foreign Option values inside JavaScript so hostile proxy traps are normalized.
-const inspectOption = (input: unknown, path: string): Option.Option<unknown>!FsError! =>
+const inspectOption = (input: unknown, path: string): Effect<Option.Option<unknown>, FsError> =>
   try((input) => {
     if (!Option.isOption(input)) throw new Error("Invalid Option")
     // Reading the payload here also catches a hostile getter.
@@ -200,13 +200,13 @@ const optionText = (
   input: unknown,
   path: string,
   maximum: number
-): Option.Option<string>!FsError! => {
+): Effect<Option.Option<string>, FsError> => {
   const option = inspectOption(input, path)
   if (option.isNone()) return Option.none()
   return Option.some(text(option.value, { path, maximum }))
 }
 
-const optionPlacement = (input: unknown): Option.Option<Descriptor.Placement>!FsError! => {
+const optionPlacement = (input: unknown): Effect<Option.Option<Descriptor.Placement>, FsError> => {
   const option = inspectOption(input, "$.placement")
   if (option.isNone()) return Option.none()
   const placement = option.value
@@ -214,7 +214,7 @@ const optionPlacement = (input: unknown): Option.Option<Descriptor.Placement>!Fs
   return Option.some(placement)
 }
 
-const schemaRef = (input: unknown, path: string): Descriptor.SchemaRef!FsError! => {
+const schemaRef = (input: unknown, path: string): Effect<Descriptor.SchemaRef, FsError> => {
   const tagged = schemaFields(input, ["_tag"], ["path", "field", "document"])
   switch (tagged._tag) {
     case "MarkdownArgs":
@@ -238,7 +238,7 @@ const schemaRef = (input: unknown, path: string): Descriptor.SchemaRef!FsError! 
   }
 }
 
-const effectDeclaration = (input: unknown): Descriptor.EffectDeclaration!FsError! => {
+const effectDeclaration = (input: unknown): Effect<Descriptor.EffectDeclaration, FsError> => {
   const data = fields(input, ["reads", "writes", "mode", "onConflict", "tier"])
   const reads = Boundary.stringArray(data.reads, {
     maxItems: maximumCapabilities,
@@ -266,7 +266,7 @@ const isAbsolutePath = (value: string): boolean =>
   value.startsWith("file:///") || value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value)
 
 // Foreign inspection is bounded by hatches; validation fails with FsError.
-const copyRoute = (input: Route): Route!FsError! => {
+const copyRoute = (input: Route): Effect<Route, FsError> => {
   const data = fields(input, [
     "name",
     "segments",
@@ -366,7 +366,7 @@ const exportMissing = (): FsError => loadFailed("The selected flow module has no
  * @category constructors
  * @since 0.1.0
  */
-export function load(input: Route): Loaded!FsError {
+export function load(input: Route): Effect<Loaded, FsError, infer R> {
   const route = snapshot(input)
   if (route.kind !== "module") {
     throw new FsError({

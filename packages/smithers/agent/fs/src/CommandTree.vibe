@@ -70,7 +70,7 @@ const resourceLimit = (method: string, description: string): FsError =>
   new FsError({ code: "resource_limit", method, description })
 
 // Bound foreign reflection with a JavaScript try hatch and normalize to FsError.
-const routeReferences = (input: ReadonlyArray<Route.Route>): ReadonlyArray<Route.Route>!FsError! => {
+const routeReferences = (input: ReadonlyArray<Route.Route>): Effect<ReadonlyArray<Route.Route>, FsError> => {
   return try((input, maximumRoutes, resourceLimit) => {
     if (!Array.isArray(input) || Object.getPrototypeOf(input) !== Array.prototype) {
       throw new FsError({
@@ -141,7 +141,7 @@ const freezeTree = (root: MutableTree): CommandTree => {
  * @category constructors
  * @since 0.1.0
  */
-export function make(input: ReadonlyArray<Route.Route>): CommandTree!FsError {
+export function make(input: ReadonlyArray<Route.Route>): Effect<CommandTree, FsError, infer R> {
   const references = routeReferences(input)
   const routes = forEach(references, Route.snapshot)
   const totalSegments = routes.reduce((total, route) => total + route.segments.length, 0)
@@ -173,7 +173,7 @@ export function make(input: ReadonlyArray<Route.Route>): CommandTree!FsError {
   return freezeTree(root)
 }
 
-function resolutionTokens(input: ReadonlyArray<string>): ReadonlyArray<string>!FsError {
+function resolutionTokens(input: ReadonlyArray<string>): Effect<ReadonlyArray<string>, FsError, infer R> {
   const captured = Boundary.stringArray(input, {
     maxItems: maximumResolutionTokens,
     maxLength: CommandLine.maximumTokenLength,
@@ -189,7 +189,7 @@ function resolutionTokens(input: ReadonlyArray<string>): ReadonlyArray<string>!F
  * @category constructors
  * @since 0.1.0
  */
-export function resolve(tree: CommandTree, input: ReadonlyArray<string>): Resolved!FsError {
+export function resolve(tree: CommandTree, input: ReadonlyArray<string>): Effect<Resolved, FsError, infer R> {
   const argv = resolutionTokens(input)
   let node = tree
   let matched: { route: Route.Route; consumed: number } | undefined
@@ -226,7 +226,7 @@ export function resolve(tree: CommandTree, input: ReadonlyArray<string>): Resolv
  * @category constructors
  * @since 0.1.0
  */
-export function resolveExact(tree: CommandTree, argv: ReadonlyArray<string>): Route.Route!FsError {
+export function resolveExact(tree: CommandTree, argv: ReadonlyArray<string>): Effect<Route.Route, FsError, infer R> {
   const { rest, route } = resolve(tree, argv)
   if (rest.length !== 0) {
     throw new FsError({

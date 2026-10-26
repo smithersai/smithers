@@ -37,7 +37,7 @@ function request(
   cli: { fetch: (request: Request) => Promise<Response> },
   url: string,
   init: RequestInit = {}
-): Reply!! {
+): Effect<Reply> {
   return sync(async (cli, url, init) => {
     const response = await cli.fetch(new Request(url, init))
     return { status: response.status, body: await response.json() }

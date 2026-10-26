@@ -15,7 +15,6 @@ describe("the repository's dependency patches", () => {
   it("declares the upstream fixes and includes every patch in install inputs", async () => {
     const manifest = await read("pnpm-workspace.yaml")
     const patches = [
-      "patches/vibelang-unplugin@0.0.3.patch",
       "patches/@vitest__coverage-v8@5.0.0.patch"
     ]
     const inputs = await Input.expandPnpmWorkspace(repositoryRoot, "", Input.pnpmWorkspace("//pnpm-workspace.yaml"))

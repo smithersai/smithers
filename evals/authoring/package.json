@@ -12,6 +12,6 @@
     "@smthrs/targets": "workspace:*",
     "@types/node": "26.4.1",
     "typescript": "5.9.3",
-    "vibelang": "0.0.3"
+    "vibelang": "0.0.8"
   }
 }

@@ -29,7 +29,7 @@ export interface Invocation {
  * @since 0.1.0
  */
 export service FlowInvoker {
-  invoke(invocation: Invocation): unknown!FsError
+  invoke(invocation: Invocation): Effect<unknown, FsError>
 }
 
 /**

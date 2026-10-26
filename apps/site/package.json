@@ -51,8 +51,8 @@
     "@types/react": "^19.2.18",
     "effect": "4.0.5",
     "typescript": "~5.9.3",
-    "vibelang": "0.0.3",
-    "vibelang-vite": "0.0.3",
+    "vibelang": "0.0.8",
+    "vibelang-vite": "0.0.8",
     "wrangler": "4.151.2"
   },
   "dependencies": {

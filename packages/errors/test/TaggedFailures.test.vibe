@@ -16,7 +16,7 @@ error IntegrationError extends SmithersError {
   }
 }
 
-function raise<E>(error: E): never!E {
+function raise<E>(error: E): Effect<never, E, infer R> {
   throw error
 }
 
@@ -24,7 +24,7 @@ function raise<E>(error: E): never!E {
 // rather than a catch that matches by class. A SmithersError may be a
 // subclass, so its tag type is string and catching "SmithersError" leaves
 // SmithersError in the failure type.
-function recover(error: SmithersError | AdapterError): string!SmithersError {
+function recover(error: SmithersError | AdapterError): Effect<string, SmithersError, infer R> {
   return raise(error)
     // @vibelang-diagnostics-next-line EK4835:off — tag routing is the behavior under test.
     |> Effect.catchTag(%, "AdapterError", (caught) => `adapter:${caught.summary}`)

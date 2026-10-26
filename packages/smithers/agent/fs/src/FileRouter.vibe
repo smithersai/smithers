@@ -64,7 +64,7 @@ const discoveryFailure = (cause: unknown): FsError =>
 
 const readFailure = (): FsError => failure("read_failed", "A route companion could not be inspected")
 
-function snapshotRoot(config: ScanConfig, path: Path.Path): string!FsError {
+function snapshotRoot(config: ScanConfig, path: Path.Path): Effect<string, FsError, infer R> {
   const admitted = Boundary.inspectRecord(config, ["root"])
   const root = admitted.ok ? admitted.value.root : undefined
   if (
@@ -92,7 +92,7 @@ const warningSnapshot = (warning: Descriptor.DiscoveryWarning): Warning =>
  * @category constructors
  * @since 0.1.0
  */
-export function scan(config: ScanConfig): ScanResult!FsError!(FileSystem.FileSystem | Path.Path) {
+export function scan(config: ScanConfig): Effect<ScanResult, FsError, FileSystem.FileSystem | Path.Path> {
   const fileSystem = FileSystem.FileSystem()
   const path = Path.Path()
   const root = snapshotRoot(config, path)
@@ -104,7 +104,7 @@ export function scan(config: ScanConfig): ScanResult!FsError!(FileSystem.FileSys
     catch (cause) => throw discoveryFailure(cause)
   // Discovery confines entries, not companions: a UI module is recorded only
   // when its real path stays inside the root's real path.
-  const withinRoot = (location: string): boolean!FsError => {
+  const withinRoot = (location: string): Effect<boolean, FsError, infer R> => {
     const [realRoot, real] = all([fileSystem.realPath(root), fileSystem.realPath(location)]) catch throw readFailure()
     return real.startsWith(path.join(realRoot, path.sep))
   }

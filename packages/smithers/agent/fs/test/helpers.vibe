@@ -13,7 +13,7 @@ export const recordedImports = (): number => (globalThis as { fsRecordedImports?
  * The expected failure a program fails with; a success or a defect fails the
  * test. The program may need services that the enclosing block provides.
  */
-export function failureOf<E, R>(program: unknown!E!R): E!!R {
+export function failureOf<E, R>(program: Effect<unknown, E, R>): Effect<E, never, R> {
   return match (exit(program)) {
     when Exit.Failure(let cause): Cause.findErrorOption(cause).getOrThrow();
     default: assert.fail("expected the program to fail");

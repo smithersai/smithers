@@ -46,14 +46,14 @@ export interface CommandSurface {
   /** Lists executable model-visible module routes without loading them. */
   list: () => ReadonlyArray<ListedCommand>
   /** Loads the selected module and schema-decodes an agent command string. */
-  parse: (commandString: string) => ParsedCommand!FsError
+  parse: (commandString: string) => Effect<ParsedCommand, FsError>
   /** Parses, invokes, and output-encodes an agent command string. */
-  execute: (commandString: string) => unknown!FsError!FlowInvoker.FlowInvoker
+  execute: (commandString: string) => Effect<unknown, FsError, FlowInvoker.FlowInvoker>
   /** Validates decoded input and output for an exact named route. */
   call: <N extends Route.Name>(
     name: N,
     input: Route.Input<N>
-  ) => Route.Output<N>!FsError!FlowInvoker.FlowInvoker
+  ) => Effect<Route.Output<N>, FsError, FlowInvoker.FlowInvoker>
 }
 
 type Loaded = Pick<Flow.Any, "name" | "input" | "output"> & Partial<Pick<Flow.Any, "description">>
@@ -66,7 +66,7 @@ interface Prepared {
 }
 
 // Admit and detach even when the typed value contains native Date leaves.
-function snapshotDecoded(value: unknown): unknown!FsError {
+function snapshotDecoded(value: unknown): Effect<unknown, FsError, infer R> {
   const admitted = Boundary.admitDecoded(value)
   if (!admitted.ok) {
     throw new FsError({
@@ -78,7 +78,7 @@ function snapshotDecoded(value: unknown): unknown!FsError {
   return admitted.value
 }
 
-function validateDecoded(schema: Schema.Top, value: unknown, field: "input" | "output"): unknown!FsError {
+function validateDecoded(schema: Schema.Top, value: unknown, field: "input" | "output"): Effect<unknown, FsError, infer R> {
   const decoded = SchemaBridge.recover(
     Schema.decodeUnknownEffect(Schema.toType(schema))(snapshotDecoded(value)),
     () =>
@@ -106,12 +106,12 @@ const routeArgv = (argv: ReadonlyArray<string>): ReadonlyArray<string> => {
  * @category constructors
  * @since 0.1.0
  */
-export function make(routes: ReadonlyArray<Route.Route>): CommandSurface!FsError {
+export function make(routes: ReadonlyArray<Route.Route>): Effect<CommandSurface, FsError, infer R> {
   const validated = CommandTree.make(routes)
   const commandRoutes = CommandTree.traverse(validated).filter(Route.isCommandRoute)
   const tree = CommandTree.make(commandRoutes)
 
-  const prepare = (commandString: string): Prepared!FsError => {
+  const prepare = (commandString: string): Effect<Prepared, FsError, infer R> => {
     const argv = CommandLine.lex(commandString)
     const resolved = CommandTree.resolve(tree, routeArgv(argv))
     const flow = Route.load(resolved.route)

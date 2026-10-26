@@ -29,7 +29,7 @@ export const describeFailure = (failure: unknown): string | undefined =>
  *
  * @since 1.0.0
  */
-export function raiseFailure(): never!SmithersError {
+export function raiseFailure(): Effect<never, SmithersError, infer R> {
   throw makeFailure()
 }
 
@@ -39,6 +39,6 @@ export function raiseFailure(): never!SmithersError {
  * @returns The classified code; nothing escapes.
  * @since 1.0.0
  */
-export function recoverFailure(): string!! {
+export function recoverFailure(): Effect<string> {
   return raiseFailure() catch (failure) => `Recovered ${failure.code}`
 }

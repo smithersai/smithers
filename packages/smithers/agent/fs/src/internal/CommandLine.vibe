@@ -64,7 +64,7 @@ const resourceLimit = (description: string): FsError =>
  * @private
  * @since 0.1.0
  */
-export function lex(commandString: string): ReadonlyArray<string>!FsError {
+export function lex(commandString: string): Effect<ReadonlyArray<string>, FsError, infer R> {
   if (
     typeof commandString !== "string" || !Boundary.isWellFormedText(commandString) ||
     encoder.encode(commandString).byteLength > maximumCommandBytes
@@ -137,7 +137,7 @@ export function lex(commandString: string): ReadonlyArray<string>!FsError {
 
 const validFlagName = (name: string): boolean => flagName.test(name) && !reservedNames.has(name)
 
-const append = (options: Record<string, unknown>, name: string, value: unknown): void!FsError => {
+const append = (options: Record<string, unknown>, name: string, value: unknown): Effect<void, FsError, infer R> => {
   if (!validFlagName(name)) throw parseError("The command contains an invalid option name", `$.options.${name}`)
   const current = Object.hasOwn(options, name) ? options[name] : undefined
   options[name] = current === undefined ? value : Array.isArray(current) ? [...current, value] : [current, value]
@@ -149,7 +149,7 @@ const append = (options: Record<string, unknown>, name: string, value: unknown):
  * @private
  * @since 0.1.0
  */
-export function parseFlags(input: ReadonlyArray<string>): ParsedFlags!FsError {
+export function parseFlags(input: ReadonlyArray<string>): Effect<ParsedFlags, FsError, infer R> {
   const captured = Boundary.stringArray(input, {
     maxItems: maximumCommandTokens,
     maxLength: maximumTokenLength,

@@ -94,8 +94,8 @@
     "tinyglobby": "0.2.17",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.3",
-    "vibelang-unplugin": "0.0.3",
+    "vibelang": "0.0.8",
+    "vibelang-unplugin": "0.0.8",
     "vite": "^8.2.2",
     "ws": "8.22.0",
     "yaml": "2.9.0"

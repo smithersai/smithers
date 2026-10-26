@@ -1,7 +1,7 @@
 import { assert } from "@effect/vitest"
 
 /** The expected failure a program fails with; a success or a defect fails the test. */
-export function failureOf<E>(program: unknown!E): E!! {
+export function failureOf<E>(program: Effect<unknown, E>): Effect<E> {
   return match (exit(program)) {
     when Exit.Failure(let cause): Cause.findErrorOption(cause).getOrThrow();
     default: assert.fail("expected the program to fail");

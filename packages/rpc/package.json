@@ -44,8 +44,8 @@
     "eslint": "9.39.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "8.65.0",
-    "vibelang": "0.0.3",
-    "vibelang-vite": "0.0.3",
+    "vibelang": "0.0.8",
+    "vibelang-vite": "0.0.8",
     "vitest": "5.0.0"
   }
 }

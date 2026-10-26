@@ -5,7 +5,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { vi } from "vitest"
 
 const discovery = vi.hoisted(() => ({
-  scan: undefined as undefined | ((options: unknown) => unknown!unknown)
+  scan: undefined as undefined | ((options: unknown) => Effect<unknown, unknown>)
 }))
 
 vi.mock("@smthrs/registry/Discovery", (importOriginal) =>
@@ -35,7 +35,7 @@ const descriptor = (path: string): Descriptor.FlowDescriptor => ({
 const result = (entries: ReadonlyArray<Descriptor.FlowDescriptor>) => ({ entries, warnings: [] })
 
 // A stub whose methods may fail with a foreign error a real file system never raises.
-const fileSystem = (methods: { exists: () => boolean!unknown; realPath?: () => string!unknown }) =>
+const fileSystem = (methods: { exists: () => Effect<boolean, unknown>; realPath?: () => Effect<string, unknown> }) =>
   methods as unknown as FileSystem.FileSystem
 
 /** Scans `/flows` over the mocked discovery, a stub file system, and the real path service. */

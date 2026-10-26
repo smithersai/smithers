@@ -1,7 +1,7 @@
 diff --git a/register.mjs b/register.mjs
 --- a/register.mjs
 +++ b/register.mjs
-@@ -107,7 +107,9 @@
+@@ -110,7 +110,9 @@
      const inline = Buffer.from(JSON.stringify(map)).toString("base64")
      return {
        format: "module",

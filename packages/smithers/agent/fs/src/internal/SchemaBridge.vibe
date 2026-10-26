@@ -38,7 +38,7 @@ export interface CommandSchema {
   args: z.ZodObject<any> | undefined
   options: z.ZodObject<any> | undefined
   assemble: (args: Positional, options: Readonly<Record<string, unknown>>) => Assembly
-  decode: (assembly: Assembly) => unknown!FsError
+  decode: (assembly: Assembly) => Effect<unknown, FsError>
 }
 
 type JsonSchema = Readonly<Record<string, unknown>>
@@ -61,9 +61,9 @@ const schemaFailure = (code: "decode_failed" | "encode_failed", method: string):
  * @private
  * @since 0.1.0
  */
-export function recover<A>(program: A!unknown!unknown, failure: () => FsError!!): A!FsError {
+export function recover<A>(program: Effect<A, unknown, unknown>, failure: () => Effect<FsError>): Effect<A, FsError, infer R> {
   // @vibelang-diagnostics-next-line EK4810:off
-  return match (exit(program as A!unknown)) {
+  return match (exit(program as Effect<A, unknown>)) {
     when Exit.Success(let value): value;
     default: throw failure();
   }
@@ -94,7 +94,7 @@ const resolveReference = (
   input: unknown,
   definitions: JsonSchema,
   seen = new Set<unknown>()
-): JsonSchema!FsError! => {
+): Effect<JsonSchema, FsError> => {
   const schema = record(input)
   if (schema === undefined || seen.has(schema)) throw unsupportedSchema()
   if (schema.$ref === undefined) return schema
@@ -109,7 +109,7 @@ const objectFor = (
   schema: JsonSchema,
   definitions: JsonSchema,
   ancestors: ReadonlySet<JsonSchema>
-): z.ZodObject<any>!FsError! => {
+): Effect<z.ZodObject<any>, FsError> => {
   const properties = record(schema.properties) ?? {}
   const required = new Set(Array.isArray(schema.required) ? schema.required : [])
   const shape: Record<string, z.ZodType> = Object.create(null) as Record<string, z.ZodType>
@@ -127,7 +127,7 @@ const zodFor = (
   input: unknown,
   definitions: JsonSchema,
   ancestors: ReadonlySet<JsonSchema> = new Set()
-): z.ZodType!FsError! => {
+): Effect<z.ZodType, FsError> => {
   if (input === true) return z.unknown()
   if (input === false) return z.never()
   const schema = resolveReference(input, definitions)
@@ -135,7 +135,7 @@ const zodFor = (
   // Refuse them here rather than overflowing during discovery.
   if (ancestors.has(schema)) throw unsupportedSchema()
   const next = new Set(ancestors).add(schema)
-  const project = (node: unknown): z.ZodType!FsError! => zodFor(node, definitions, next)
+  const project = (node: unknown): Effect<z.ZodType, FsError> => zodFor(node, definitions, next)
   const variants = schema.anyOf ?? schema.oneOf
   if (Array.isArray(variants)) return z.union(forEach(variants, project))
   if (Object.hasOwn(schema, "const")) {
@@ -196,10 +196,10 @@ const documentOf = (schema: Schema.Top): {
 const objectDescriptors = (
   root: JsonSchema,
   definitions: JsonSchema
-): {
+): Effect<{
   args: z.ZodObject<any> | undefined
   options: z.ZodObject<any>
-}!FsError! => {
+}, FsError> => {
   const options = objectFor(root, definitions, new Set([root]))
   const shape = options.shape
   // Positionals are advertised only when the flow schema really has an `args`
@@ -258,7 +258,7 @@ const scalarRecord = (args: Positional, options: Readonly<Record<string, unknown
   return merged
 }
 
-function decodeWith(schema: Schema.Top, zodSchema: z.ZodType, assembly: Assembly): unknown!FsError {
+function decodeWith(schema: Schema.Top, zodSchema: z.ZodType, assembly: Assembly): Effect<unknown, FsError, infer R> {
   const parsed = zodSchema.safeParse(assembly.value)
   if (!parsed.success) throw schemaFailure("decode_failed", "SchemaBridge.decodeInput")
   return decodeInput(schema, parsed.data)
@@ -270,7 +270,7 @@ function decodeWith(schema: Schema.Top, zodSchema: z.ZodType, assembly: Assembly
  * @private
  * @since 0.1.0
  */
-export function decodeInput(schema: Schema.Top, value: unknown): unknown!FsError {
+export function decodeInput(schema: Schema.Top, value: unknown): Effect<unknown, FsError, infer R> {
   const decoded = recover(Schema.decodeUnknownEffect(schema)(value), () => schemaFailure("decode_failed", "SchemaBridge.decodeInput"))
   if (decoded === undefined) return undefined
   const admitted = Boundary.admitJson(decoded)
@@ -279,7 +279,7 @@ export function decodeInput(schema: Schema.Top, value: unknown): unknown!FsError
 }
 
 // Projects a schema with a JSON Schema document; anything it cannot project throws.
-const projectSchema = (schema: Schema.Top): CommandSchema!FsError! => {
+const projectSchema = (schema: Schema.Top): Effect<CommandSchema, FsError> => {
   const { definitions, root } = try((documentOf, schema) => documentOf(schema), unsupportedSchema, documentOf, schema)
   const resolved = resolveReference(root, definitions)
   if (record(resolved.properties) !== undefined) {
@@ -315,7 +315,7 @@ const projectSchema = (schema: Schema.Top): CommandSchema!FsError! => {
  * @private
  * @since 0.1.0
  */
-export function toCommandSchema(ref: Descriptor.SchemaRef, schema: Schema.Top): CommandSchema!FsError {
+export function toCommandSchema(ref: Descriptor.SchemaRef, schema: Schema.Top): Effect<CommandSchema, FsError, infer R> {
   if (ref._tag === "MarkdownOutput") {
     throw new FsError({
       code: "unsupported_schema",
@@ -358,7 +358,7 @@ export function toCommandSchema(ref: Descriptor.SchemaRef, schema: Schema.Top): 
  * @private
  * @since 0.1.0
  */
-export function encodeOutput(schema: Schema.Top, value: unknown): unknown!FsError {
+export function encodeOutput(schema: Schema.Top, value: unknown): Effect<unknown, FsError, infer R> {
   const encoded = recover(Schema.encodeUnknownEffect(schema)(value), () => schemaFailure("encode_failed", "SchemaBridge.encodeOutput"))
   if (encoded === undefined) return undefined
   const admitted = Boundary.admitJson(encoded)
@@ -372,7 +372,7 @@ export function encodeOutput(schema: Schema.Top, value: unknown): unknown!FsErro
  * @private
  * @since 0.1.0
  */
-export function snapshotInput(input: unknown): (Boundary.Json | undefined)!FsError {
+export function snapshotInput(input: unknown): Effect<Boundary.Json | undefined, FsError, infer R> {
   if (input === undefined) return undefined
   const admitted = Boundary.admitJson(input)
   if (!admitted.ok) throw schemaFailure("decode_failed", "SchemaBridge.snapshotInput")
