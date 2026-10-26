@@ -638,9 +638,13 @@ describe("branches and tags", () => {
     expect((await listed(await all.fetch(refsRoute("octocat", "Many")))).branches).toHaveLength(151)
   })
 
-  test("a repository that isn't ready is 404; Code Storage busy is 503, never cached; bad input is refused", async () => {
+  test("a repository that isn't ready is 204; Code Storage busy is 503, never cached; bad input is refused", async () => {
     const h = await repoHarness(runtime)
-    expect((await h.fetch(refsRoute("octocat", "Spoon-Knife"))).status).toBe(404)
+    const absent = await h.fetch(refsRoute("octocat", "Spoon-Knife"))
+    expect(absent.status).toBe(204)
+    expect(absent.headers.get("x-repo-state")).toBe("not_imported")
+    expect(absent.headers.get("cache-control")).toBe("private, no-store")
+    expect(await absent.text()).toBe("")
     await h.seed("octocat", "Spoon-Knife", branched())
     h.scripted.fail("listTags", h.scripted.error("listTags", "rate_limited", 429, { retryAfterMillis: 1_200 }))
     const busy = await h.fetch(refsRoute("octocat", "Spoon-Knife"))

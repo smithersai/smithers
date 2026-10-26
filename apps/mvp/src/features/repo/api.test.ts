@@ -136,6 +136,8 @@ describe("RepoClient against a gateway", () => {
     const refs = { defaultBranch: "main", head: SHA, branches: [{ name: "main", sha: SHA }], tags: [], truncated: false }
     const good = await serve((_request, response) => response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(refs)))
     expect(await withClient(good.origin, (client) => client.refs("o", "n"))).toMatchObject({ _tag: "Success", success: refs })
+    const absent = await serve((_request, response) => response.writeHead(204).end())
+    expect(failureOf(await withClient(absent.origin, (client) => client.refs("o", "n")))).toMatchObject({ status: 404, code: "not_found" })
     const bad = await serve((_request, response) => response.writeHead(200).end(JSON.stringify({ branches: [] })))
     expect(failureOf(await withClient(bad.origin, (client) => client.refs("o", "n")))).toMatchObject({ status: 200 })
   })

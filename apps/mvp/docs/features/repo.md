@@ -154,6 +154,8 @@ request ─▶ repo_about (each request on its own; nothing shared between reque
 
 The branches and tags (`CodeStorage.listBranches` and `listTags`) change when a clone attempt settles `ready` and when the app makes a branch on the forge (`worker/branch/Branches.ts`), which may leave the default branch's head where it was. Both write the row's `refs_changed_at`, and the listing is cached under `repo.refs` (`id`, the head commit Settle wrote, `refs_changed_at`). A refs read first reads the `ready` row's `default_branch`, `head_sha` and `refs_changed_at` from Postgres (`Repos.readyHead`), then the listing through the cache. A device keys the refs it keeps the same way (`refsKey`), so a new branch shows the next time the view opens.
 
+A refs read before a mirror has a ready head answers `204`, `X-Repo-State: not_imported`, with `private, no-store`. This says nothing about the repository's existence on GitHub. Missing refs in a ready mirror and provider failures retain their error responses. The browser treats the empty response as its existing missing-mirror state.
+
 ## Flows
 
 Every repository action is one registered client flow (`src/features/repo/flows.ts`), model-invocable, run on this device's engine by a person's button or slash command and by the agent's cell alike ([flows](flows.md#the-registry)). The engine worker registers them with `repoFlows(origin)` (`src/flows/registrations.ts` over `src/features/repo/steps.ts`): each step reaches RepoApi through `RepoClient` on the page's origin, with the worker's own `HttpClient` and `REQUEST_WITHIN` (15 s) for each whole request. The device never holds the Code Storage key.

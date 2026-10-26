@@ -148,8 +148,10 @@ export const getRefs = Effect.fn("repo.refs.get")(function* (
   return yield* exchange(
     HttpClientRequest.get(`${origin}${refsRoute(repository.owner, repository.name)}`),
     within,
-    (status) => status === 200,
-    json(Refs),
+    (status) => status === 200 || status === 204,
+    (response) => response.status === 204
+      ? Effect.fail(new RepoRefused({ status: 404, code: "not_found" }))
+      : json(Refs)(response),
   )
 })
 

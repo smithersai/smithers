@@ -24,7 +24,7 @@ import * as Repos from "./Repos.ts"
 
 /** Why a read couldn't answer: RepoApi's status and code, a file's size, and Code Storage's wait. */
 export class ReadRefused extends Data.TaggedError("ReadRefused")<{
-  readonly code: "not_found" | "not_synced" | "too_large" | "capacity" | "unavailable"
+  readonly code: "not_imported" | "not_found" | "not_synced" | "too_large" | "capacity" | "unavailable"
   readonly size?: number
   readonly retryAfterMillis?: number
 }> {}
@@ -213,7 +213,7 @@ export const make = <E, R>(services: Services<E, R>) => {
 
   /**
    * `owner/name`'s default branch, head commit, branches and tags: the ready row's head from Postgres, and the listing
-   * cached under it. A repository that isn't ready is `not_found`.
+   * cached under it. A repository that isn't ready is `not_imported`.
    */
   const refs = (owner: string, name: string, ephemeralNames: ReadonlyArray<string> = []) => {
     const id = repoId(owner, name)
@@ -222,7 +222,7 @@ export const make = <E, R>(services: Services<E, R>) => {
         Effect.provide(database),
         Effect.mapError(() => new ReadRefused({ code: "unavailable" })),
       )
-      if (Option.isNone(head)) return yield* new ReadRefused({ code: "not_found" })
+      if (Option.isNone(head)) return yield* new ReadRefused({ code: "not_imported" })
       const entry = yield* ImmutableCache.readThrough(
         ImmutableCache.key("repo.refs", id, head.value.sha, String(head.value.refsChangedAt)),
         Effect.gen(function* () {
@@ -263,7 +263,7 @@ export const make = <E, R>(services: Services<E, R>) => {
 
 /** A read's refusal as the flows declare it. */
 const flowFailure = (refused: ReadRefused) =>
-  refused.code === "not_found"
+  (refused.code === "not_found" || refused.code === "not_imported")
     ? new RepoNotFound()
     : refused.code === "capacity"
     ? new RepoReadsPaused()

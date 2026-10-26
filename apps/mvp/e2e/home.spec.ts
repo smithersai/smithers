@@ -1,5 +1,5 @@
 import { expect, step, test } from "./fixtures"
-import { requires } from "./target"
+import { requires, target } from "./target"
 
 // A repository's own home (docs/features/home.md, decision 0014 §4, F5), against the real app, Worker, Postgres,
 // Electric, GitHub and Code Storage. The fixture is the small public `smithersai/home-fixture`, whose
@@ -33,13 +33,19 @@ test("declared: a repository's own home draws its blocks, Code opens its tree, a
   })
 
   await step("The blocks .smithers/home.json declares, drawn as data", async () => {
-    await expect(home.getByRole("heading", { name: "What should we work on?" })).toBeVisible()
-    await expect(home.getByRole("link", { name: "Ask Smithers…" })).toHaveAttribute("href", `${REPO}/tree/main`)
+    if (target === "deployment") {
+      await expect(home.getByRole("heading", { name: "What should we work on?" })).toHaveCount(0)
+      await expect(home.getByRole("link", { name: "Ask Smithers…" })).toHaveCount(0)
+      await expect(home.getByRole("link", { name: "Make a flow" })).toHaveCount(0)
+    } else {
+      await expect(home.getByRole("heading", { name: "What should we work on?" })).toBeVisible()
+      await expect(home.getByRole("link", { name: "Ask Smithers…" })).toHaveAttribute("href", `${REPO}/tree/main`)
+    }
     await expect(home.getByRole("link", { name: "Smithers docs" })).toHaveAttribute("target", "_blank")
     // The Markdown block: the repository's own file at the same commit.
     await expect(home.getByRole("heading", { name: "Welcome home" })).toBeVisible({ timeout: 30_000 })
     // An app block shows only for a command the app has; a kind the app doesn't know is skipped.
-    await expect(home.getByRole("link", { name: "Make a flow" })).toBeVisible()
+    if (target !== "deployment") await expect(home.getByRole("link", { name: "Make a flow" })).toBeVisible()
     await expect(home.getByText("Fix an issue")).toHaveCount(0)
     // No tree on the home: it is one tab away.
     await expect(tabs.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page")
@@ -68,6 +74,8 @@ test("declared: a repository's own home draws its blocks, Code opens its tree, a
     await expect(page).toHaveURL(new RegExp(`${REPO}$`))
     await expect(home.getByRole("heading", { name: "Welcome home" })).toBeVisible({ timeout: 30_000 })
   })
+
+  if (target === "deployment") return
 
   await step("Ask Smithers…: the workspace at main, its composer open", async () => {
     await home.getByRole("link", { name: "Ask Smithers…" }).click()

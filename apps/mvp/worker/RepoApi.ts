@@ -375,6 +375,11 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
                     Effect.as(refuse(503, "not_synced", {}, { "retry-after": "2" })),
                     Effect.catch(() => Effect.succeed(refuse(503, "not_synced", {}, { "retry-after": "2" }))),
                   )
+                case "not_imported":
+                  return Effect.succeed(HttpServerResponse.empty({
+                    status: 204,
+                    headers: { "cache-control": "private, no-store", "x-repo-state": "not_imported" },
+                  }))
                 case "not_found":
                   return Effect.succeed(refuse(404, "not_found"))
                 case "too_large":
