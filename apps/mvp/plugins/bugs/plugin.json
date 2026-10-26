@@ -1,0 +1,82 @@
+{
+  "apiVersion": 1,
+  "id": "bugs",
+  "version": "0.1.0",
+  "title": "Bug reports",
+  "description": "Report a bug from any page; Admins read every report.",
+  "requires": { "api": "^1.0.0" },
+  "capabilities": [],
+  "uses": ["app/bug/report", "app/navigate"],
+  "$defs": {
+    "Report": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 36, "maxLength": 36 },
+        "what": { "type": "string", "minLength": 1, "maxLength": 4000 }
+      },
+      "required": ["id", "what"],
+      "additionalProperties": false
+    }
+  },
+  "contributes": {
+    "views": [
+      {
+        "id": "bugs/inbox",
+        "title": "Bug reports",
+        "scope": "app",
+        "path": "",
+        "sizes": ["full"],
+        "minimum": "guest",
+        "reads": ["core/bug-reports"],
+        "render": { "kind": "component", "export": "Inbox" }
+      },
+      {
+        "id": "bugs/report",
+        "title": "Report a bug",
+        "scope": "app",
+        "path": "report",
+        "sizes": ["full"],
+        "minimum": "guest",
+        "reads": ["core/bug-reports"],
+        "render": { "kind": "component", "export": "Report" },
+        "events": [
+          {
+            "name": "send",
+            "payload": { "$ref": "#/$defs/Report" },
+            "flow": "app/bug/report",
+            "args": { "id": "$event.id", "what": "$event.what" }
+          }
+        ]
+      }
+    ],
+    "slots": [
+      {
+        "slot": "shell.nav",
+        "id": "bugs/nav",
+        "order": 90,
+        "minimum": "guest",
+        "render": { "kind": "component", "export": "NavButton" }
+      }
+    ],
+    "commands": [
+      {
+        "id": "bugs/form",
+        "flow": "app/navigate",
+        "args": { "to": "/app/bugs/report" },
+        "title": "Report a bug",
+        "minimum": "guest",
+        "slash": { "name": "bug" },
+        "palette": true
+      },
+      {
+        "id": "bugs/list",
+        "flow": "app/navigate",
+        "args": { "to": "/app/bugs" },
+        "title": "Bug reports",
+        "minimum": "guest",
+        "slash": { "name": "bugs" },
+        "palette": true
+      }
+    ]
+  }
+}

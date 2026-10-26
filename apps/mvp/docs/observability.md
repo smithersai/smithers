@@ -645,6 +645,23 @@ How many machines are awake, who waits for one, and what a month of them costs (
 | `smithers_sandbox_spend_alert_deliveries` | counter | the same | `channel`, `outcome` |
 | `sandbox.limits.set`, `smithers_web_sandbox_limit_sets` | browser | the tab's engine, `sandbox/limits/request` | the limits, `outcome` (`sent`, `refused`, `unsent`), `status` |
 
+### Bug reports
+
+A person's bug report, its intake and the Admins' notice ([bugs.md](features/bugs.md)). Counts, codes and the report's random id only: never what the person wrote, a page, a login, an address or a token.
+
+| Record | Kind | Where | Fields |
+|---|---|---|---|
+| `bug.request` | log (Info, Warn refused, Error unavailable), span | ChatApi, `POST` and `GET /api/bugs` | `op` (`file`, `list`), `outcome` (`filed`, `listed`, or the refusal's `code`), `status`, `durationMs`; filing: `bytes`, `reportId`, `by` (the act's kind), `existing`; listing: `door` (`session`, `token`), `count`; `errorCode` |
+| `smithers_bug_requests` | counter | the same | `op`, `outcome` |
+| `bug.shape`, `smithers_bug_shape_requests` | log, counter | ChatApi, `GET /api/shapes/bug-reports` (`ShapeProxy`) | `status`, `live` |
+| `bug.report.bell` | log, span with `smithers.bug_report.id` | `ops/BellBugReport` | `alertId`, `admins` (how many bells it reached), `errorCode` |
+| `bug.report.delivery` | log, span | `ops/DeliverBugReport` | as `database.alert.delivery` |
+| `smithers_bug_report_deliveries` | counter | the same | `channel`, `outcome` |
+| `bug.context`, `smithers_web_bug_contexts` | browser | the tab's engine, `app/bug/report/context` | `outcome` (`answered`, `gone`), `door` (`tab`, `agent`), `traces`, `runs`, `failures` (counts) |
+| `bug.report`, `smithers_web_bug_reports` | browser | the tab's engine, `app/bug/report/send` | `outcome` (`filed`, `refused`, `unsent`), `door`, `status`, `code` |
+| `bug.list`, `smithers_web_bug_lists` | browser | the tab's engine, `app/bug/list/read` | `outcome` (`read`, `refused`, `unsent`), `count`, `status` |
+| `bug.file`, `bug.read` | browser span | `BugsClient` | `http.response.status_code` |
+
 ### Secrets
 
 An Admin's writes of repository secrets, their shape, and a box's requests through the egress ([secrets.md](features/secrets.md#observability)). No record carries a value, a ciphertext, a header, a path or a body; records name secrets by name only, and no metric label carries a name or an id.

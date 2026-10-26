@@ -3,6 +3,7 @@ import { FlowRuntime, Interpreter, RunMetrics } from "@smthrs/flow"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Cause, Clock, Context, Deferred, Effect, Exit, Layer, Metric, Option, Result, Schema } from "effect"
 import { type DOORS, PERSON_DOORS } from "./contract"
+import { codeOfFailure, TabHistory } from "./history"
 import { refusesCredential } from "./personOnly"
 import { type Entry, type FlowName, type FlowOf, FlowRegistry } from "./registry"
 import { TabRequests } from "./requests"
@@ -176,6 +177,8 @@ export const makeDispatch = <Entries extends Readonly<Record<string, Entry>>>(en
   Effect.gen(function* () {
     const engine = yield* ClientEngine
     const requests = yield* TabRequests
+    // What this tab ran lately, for a bug report (src/flows/history.ts); a dispatch without one keeps nothing.
+    const history = yield* Effect.serviceOption(TabHistory)
     return (
       name: keyof Entries & string,
       payload: unknown,
@@ -217,6 +220,23 @@ export const makeDispatch = <Entries extends Readonly<Record<string, Entry>>>(en
           fields.refusal = dispatched.failure.refusal
         }
         fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
+        if (Option.isSome(history)) {
+          // Inside `flow.dispatch`'s span, which is always there.
+          const span = yield* Effect.orDie(Effect.currentSpan)
+          const code = dispatched._tag === "Failure"
+            ? dispatched.failure.refusal ?? dispatched.failure.reason
+            : dispatched.success._tag === "Failed"
+            ? codeOfFailure(dispatched.success.error)
+            : undefined
+          yield* history.value.record({
+            flow: name,
+            executionId,
+            door: options.door,
+            outcome,
+            traceId: span.traceId,
+            ...(code === undefined ? {} : { code }),
+          })
+        }
         yield* Metric.update(
           Metric.withAttributes(dispatches, { flow: name, door: options.door, outcome }),
           1,
@@ -286,5 +306,5 @@ export class FlowDispatch extends Context.Service<
       const dispatch = yield* makeDispatch(registered.entries)
       return FlowDispatch.of({ dispatch: dispatch as never })
     }),
-  ).pipe(Layer.provideMerge(TabRequests.layer()))
+  ).pipe(Layer.provideMerge(Layer.merge(TabRequests.layer(), TabHistory.layer())))
 }

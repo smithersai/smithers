@@ -43,6 +43,11 @@ import { claimEditorTabId } from "./device/editorTab"
 import { awaitEditorWrites, hasFailedEditorWrite, hasPendingEditorWrites } from "./features/flows-ui/editorWrites"
 import "./styles/fonts.css"
 
+// The build this bundle is, which vite.config.ts names from the deployed revision (`version.json` beside the app);
+// `dev` under the dev server and wherever the build named none.
+declare const __SMITHERS_BUILD__: string | undefined
+const BUILD = typeof __SMITHERS_BUILD__ === "string" ? __SMITHERS_BUILD__ : "dev"
+
 // The page: `start` runs the app's one program, and React renders the chat, sign-in, theme, repository and slash-command
 // layers it hands over.
 // This is the browser's host: everything platform-specific the app's layers take as arguments
@@ -299,6 +304,10 @@ const host: Omit<Host, "editorTabId" | "editorTabPersistent"> = {
   navigate: (path) => router.navigate({ href: path }),
   reopenRoute: () => void router.invalidate(),
   pathname: () => router.state.location.pathname,
+  // A bug report names the page before its form, carries the build and the window (docs/features/bugs.md).
+  pages: (listener) => router.subscribe("onResolved", (event) => listener(event.toLocation.pathname)),
+  build: BUILD,
+  screen: () => ({ browser: navigator.userAgent, viewport: `${window.innerWidth}x${window.innerHeight}` }),
   // `app/web/open` (src/features/web/url.ts): `http:` pages on this machine open in a new tab only under the dev
   // server. A person's own `/web … tab` opens its tab here, inside their keypress, when the browser still allows it:
   // `window.open` takes the click's activation when it opens a tab, so an activation still there after it means the

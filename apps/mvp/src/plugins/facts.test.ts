@@ -43,7 +43,7 @@ describe("the host's facts", () => {
       expect(facts.tierCap[tier]("net:get")).toBe(true)
       expect(facts.tierCap[tier]("secret:read")).toBe(false)
     }
-    expect([...facts.queries.keys()]).toEqual(["core/waits"])
+    expect([...facts.queries.keys()]).toEqual(["core/waits", "core/bug-reports"])
   })
 
   test("a flow whose payload isn't a struct has no payload facts", () => {

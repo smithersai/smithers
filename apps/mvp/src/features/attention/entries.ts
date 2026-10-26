@@ -52,6 +52,8 @@ export const wordsOf = (notice: Notice): { readonly word: string | null; readonl
   if (notice.kind === "release") return { word: "Release", detail: notice.title ?? notice.ref }
   // A spend alert to an Admin: what the month's sandboxes cost so far, and the alert it reached.
   if (notice.kind === "spend") return { word: "Sandbox spend", detail: notice.title }
+  // A bug report to an Admin: who reported it, and on which page (docs/features/bugs.md).
+  if (notice.kind === "bug") return { word: "Bug report", detail: notice.title }
   // The person's clone: which repository, and how far it came or why it stopped (worker/CloneFeed.ts).
   if (notice.kind === "clone") return { word: "Clone", detail: join(" · ", notice.title, cloneDetail(notice.ref)) }
   return { word: null, detail: notice.mine ? notice.title : join(" · ", notice.actor, notice.title) }
@@ -99,8 +101,9 @@ export const feedOf = (
     // A failed run toasts as a finished one does, for 4 s: it stays where it can be retried, in its conversation with
     // Retry, and in the person's list until they dismiss it. Someone else's is theirs to retry, and leaves altogether.
     const shown = notice.state === "failed" ? "done" : notice.state
-    // A spend alert sits in the bell only: never a toast (docs/features/sandbox-budgets.md#the-spend-alert).
-    const stack = notice.kind !== "spend" && workNoticeVisible({ state: shown, updatedAtMs, open, hidden }, nowMs)
+    // A spend alert or a bug report sits in the bell only: never a toast (docs/features/sandbox-budgets.md#the-spend-alert,
+    // docs/features/bugs.md#the-admins-hear).
+    const stack = notice.kind !== "spend" && notice.kind !== "bug" && workNoticeVisible({ state: shown, updatedAtMs, open, hidden }, nowMs)
     if (stack && open && !hidden) due(updatedAtMs + noticeDismissDelay(shown))
     const settled = notice.state === "done" || notice.state === "update"
     const listed = !notice.quiet && open && (!settled || nowMs < updatedAtMs + LISTED_FOR_MS)

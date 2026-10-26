@@ -71,6 +71,8 @@ import * as RemoteRuns from "../../worker/RemoteRuns.ts"
 import * as RepoApi from "../../worker/RepoApi.ts"
 import * as RunCredentials from "../../worker/RunCredentials.ts"
 import * as PersonalApi from "../../worker/personal/Api.ts"
+import * as BugsApi from "../../worker/bugs/Api.ts"
+import { BUG_REPORTS_TABLE } from "../features/bugs/contract"
 import * as ModelFlows from "../../worker/personal/ModelFlows.ts"
 import { PersonalModels } from "../../worker/personal/Models.ts"
 import {
@@ -263,7 +265,8 @@ const SCHEMA_TABLES: ReadonlySet<string> = new Set([
   PULL_COMMITS_TABLE,
   REVIEWS_TABLE,
   SECRETS_TABLE,
-  PERSONAL_MODELS_TABLE
+  PERSONAL_MODELS_TABLE,
+  BUG_REPORTS_TABLE
 ])
 
 /** SECRETS_KEY in a test ChatApi: secrets are on. */
@@ -335,6 +338,8 @@ export class TestChatApi extends Context.Service<
      * every leader kept on it, goes when this ChatApi closes.
      */
     readonly engineStore: () => EngineStore
+    /** Bug reports' routes (worker/bugs/Api.ts): every `ops/BugReport` they started, recorded and never run. */
+    readonly bugs: { readonly starts: ReadonlyArray<Started> }
     /**
      * The git loop (worker/github/Api.ts) for `TEST_REPOSITORY`, with a GitHub App configured: every remote flow its
      * routes started (`starts`), and its Postgres, where a test writes what a remote flow would (`run`).
@@ -699,6 +704,14 @@ export class TestChatApi extends Context.Service<
         // through the same `PersonalModels`; its provider is the scripted one at the network (`options.provider`).
         const personalApi = yield* PersonalApi.make(database).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
         const personalModels = PersonalModels.layer(database).pipe(Layer.provide(SecretKeys.layer(TEST_SECRETS_KEY)))
+        // Bug reports (worker/bugs/Api.ts): filed into Postgres for real and synced back through Electric; the Admins'
+        // `ops/BugReport` start is recorded, never run (worker/flows/BugReport.test.ts runs it).
+        const bugsApi = yield* BugsApi.make(database).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
+        const bugStarts: Array<Started> = []
+        const bugStarter = Flows.FlowStarter.of({
+          start: (flow, { executionId, payload }) =>
+            Effect.sync(() => void bugStarts.push({ flow: flow._tag, executionId, payload })),
+        })
         const modelEngine = yield* Effect.cached(
           buildEngine(ModelFlows.registration(database), { maxConnections: 2 }).pipe(Scope.provide(layerScope), Effect.orDie),
         )
@@ -780,6 +793,9 @@ export class TestChatApi extends Context.Service<
               Effect.provide(SecretKeys.layer(TEST_SECRETS_KEY)),
               Effect.provide(personalModels),
             )
+          }
+          if (BugsApi.handles(path)) {
+            return bugsApi.fetch.pipe(Effect.provideService(Flows.FlowStarter, bugStarter), Effect.provide(FetchHttpClient.layer))
           }
           if (RemoteRuns.handles(path)) return remoteRuns.fetch
           if (HomeApi.handles(path)) return home.fetch
@@ -965,6 +981,7 @@ export class TestChatApi extends Context.Service<
             stores.push(store)
             return { url: server, schema: store, keep: (leader) => void leaders.push(leader) }
           },
+          bugs: { starts: bugStarts },
           github: {
             starts,
             run: (effect) => effect.pipe(Effect.provide(database), Effect.orDie),

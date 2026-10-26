@@ -1283,3 +1283,47 @@ describe("0063_app_template_views", () => {
       expect(await on(through("0063"))).toEqual([])
     }))
 })
+
+describe("0064_bug_reports", () => {
+  test("adds bug reports, each held to its bounds, and the bell's bug kind", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+      const taken = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        on(effect.pipe(Effect.as("taken"), Effect.orElseSucceed(() => "refused")))
+      await on(through("0063"))
+      expect((await on(through("0064"))).map(([id, name]) => `${id}_${name}`)).toEqual(["64_bug_reports"])
+
+      const report = (fields: { readonly what?: string; readonly route?: string | null; readonly actedBy?: string | null; readonly traces?: string } = {}) =>
+        taken(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          INSERT INTO bug_reports (id, reporter_id, acted_by, what, route, build, traces, browser, viewport)
+          VALUES (${crypto.randomUUID()}, 'p', ${fields.actedBy ?? null}, ${fields.what ?? "It broke."},
+            ${fields.route === undefined ? "/app" : fields.route}, 'b1', ${fields.traces ?? "[]"}::jsonb, 'Firefox', '1280x800')`))
+      expect(await report()).toBe("taken")
+      expect(await report({ what: "x".repeat(4000), route: "/".repeat(2048), actedBy: "agent" })).toBe("taken")
+      expect(await report({ route: null, actedBy: "sandbox" })).toBe("taken")
+      expect(await report({ what: "" })).toBe("refused")
+      expect(await report({ what: "x".repeat(4001) })).toBe("refused")
+      expect(await report({ route: "/".repeat(2049) })).toBe("refused")
+      expect(await report({ actedBy: "person" })).toBe("refused")
+      expect(await report({ traces: "{}" })).toBe("refused")
+      const [defaults] = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ traces: unknown; runs: unknown; failures: unknown; fresh: boolean }>`
+        SELECT traces, runs, failures, created_at > now() - interval '1 minute' AS fresh FROM bug_reports
+        WHERE route IS NULL`))
+      expect(defaults).toEqual({ traces: [], runs: [], failures: [], fresh: true })
+      const identity = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ identity: string }>`
+        SELECT relreplident AS identity FROM pg_class WHERE oid = 'bug_reports'::regclass`))
+      expect(identity).toEqual([{ identity: "f" }])
+
+      const notice = (kind: string, state: string) =>
+        taken(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          INSERT INTO notifications (recipient, subject, kind, state, href)
+          VALUES (${crypto.randomUUID()}, ${`s-${kind}-${state}`}, ${kind}, ${state}, '/app/bugs')`))
+      expect(await notice("bug", "update")).toBe("taken")
+      expect(await notice("bug", "working")).toBe("refused")
+      expect(await notice("spend", "update")).toBe("taken")
+      expect(await notice("release", "update")).toBe("taken")
+      expect(await notice("report", "update")).toBe("refused")
+      expect(await on(through("0064"))).toEqual([])
+    }))
+})

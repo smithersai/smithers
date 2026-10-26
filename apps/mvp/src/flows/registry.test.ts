@@ -138,6 +138,8 @@ describe("the parity law", () => {
       "todo/Retry",
       "watch/set",
       "model/test",
+      "app/bug/report",
+      "app/bug/list",
       "model/remove",
       "sandbox/run",
       "sandbox/read",
@@ -257,6 +259,8 @@ describe("names and placement", () => {
       "domain/add",
       "domain/remove",
       "model/test",
+      "app/bug/report",
+      "app/bug/list",
       "model/remove",
       "sandbox/run",
       "sandbox/read",
@@ -274,6 +278,7 @@ describe("side effects (the registry's `changes`)", () => {
   // cloning a repository it was only asked to open, and saving and running a flow it was only asked to create
   // (docs/features/agent-evals.md, 2026-10-20).
   const READS = [
+    "app/bug/list",
     "repo/tree",
     "repo/read",
     "repo/refs",

@@ -12,6 +12,7 @@ import * as RepoFlow from "./ci/RepoFlow.ts"
 import * as Checks from "./flows/Checks.ts"
 import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
 import * as SandboxSpend from "./flows/SandboxSpend.ts"
+import * as BugReport from "./flows/BugReport.ts"
 import * as CiJobMachine from "./flows/CiJobMachine.ts"
 import * as Expire from "./flows/Expire.ts"
 import * as Pause from "./flows/Pause.ts"
@@ -56,18 +57,26 @@ export interface Flows<ROut, E, R> {
 /**
  * The deployed remote flows: `probe/Pause`, whose steps log, `chat/Expire` over `app`: the app's own tables (not
  * the engine's schema) and how old a streaming answer gets before it settles (docs/features/agent.md#settling), and
- * `ops/SpendAlert`, `ops/DatabaseLoad` and `ops/SandboxSpend` over the app's tables, sending through `channels`, the
- * deployment's email and Telegram providers (none by default; docs/features/spend-alerts.md#channels,
- * docs/features/database-alerts.md, docs/features/sandbox-budgets.md#the-spend-alert).
+ * `ops/SpendAlert`, `ops/DatabaseLoad`, `ops/SandboxSpend` and `ops/BugReport` over the app's tables, sending through
+ * `channels`, the deployment's email and Telegram providers (none by default; docs/features/spend-alerts.md#channels,
+ * docs/features/database-alerts.md, docs/features/sandbox-budgets.md#the-spend-alert, docs/features/bugs.md).
  */
 export const remote = <E, R>(app: Expire.Services<E, R>, channels?: Layer.Layer<Channels.Channels>) => ({
-  flows: [Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, DatabaseLoad.DatabaseLoad, SandboxSpend.SandboxSpend],
+  flows: [
+    Pause.Pause,
+    Expire.Expire,
+    SpendAlert.SpendAlert,
+    DatabaseLoad.DatabaseLoad,
+    SandboxSpend.SandboxSpend,
+    BugReport.BugReport,
+  ],
   registration: Layer.mergeAll(
     Pause.registration(Pause.logged),
     Expire.registration(app),
     SpendAlert.registration(app.database, channels),
     DatabaseLoad.registration(app.database, channels),
     SandboxSpend.registration(app.database, channels),
+    BugReport.registration(app.database, channels),
   ),
 })
 

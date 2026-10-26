@@ -23,6 +23,8 @@ import { RemoteRunsClient } from "../features/runs/api"
 import * as Runs from "../features/runs/steps"
 import * as SharingSteps from "../features/sharing/steps"
 import * as SpendSteps from "../features/spend/steps"
+import * as BugSteps from "../features/bugs/steps"
+import { BugTabs } from "../features/bugs/flows"
 import * as DomainSteps from "../features/domains/steps"
 import * as PersonalModelSteps from "../features/personal-model/steps"
 import { RunsClient } from "../features/status/api"
@@ -101,10 +103,11 @@ export const jev = (origin: string) => Jev.registration.pipe(Layer.provide(Jev.J
 /**
  * Every client flow, registered with its steps: sign-in's refresh, the theme's, navigation's, web pages', docs search's,
  * the agent's, the repository's, Jev's, agent status's, your own flows', the acts on runs, the issue writes, chat's Copy
- * and Edit, the feed's, spend alerts' channels, custom domains' writes, and a person's own model's test and remove.
+ * and Edit, the feed's, spend alerts' channels, custom domains' writes, a person's own model's test and remove, and bug
+ * reports.
  * Needs the host's `FlowRuntime`, `Crypto`, `HttpClient` and `RunInspection`, the theme's `Preferences`, navigation's
  * `Tabs`, file tabs' `FileTabsTabs`, the repository's `TabClipboard`, the issues' `TabIssues`, the TODOs' `TabTodos`,
- * chat's `TabChat` and sign-in's `TabSession`.
+ * chat's `TabChat`, sign-in's `TabSession` and bug reports' `BugTabs`.
  */
 export const registrations = (options: HostOptions) =>
   Layer.mergeAll(
@@ -139,6 +142,7 @@ export const registrations = (options: HostOptions) =>
     SpendSteps.registrationAt(options.origin),
     DomainSteps.registrationAt(options.origin),
     PersonalModelSteps.registrationAt(options.origin),
+    BugSteps.registrationAt(options.origin),
   ).pipe(Layer.provide(FlowRegistry.layer), Layer.provide(statusReports(options.origin)), Layer.provideMerge(Action.layerImplementations))
 
 /**
@@ -177,5 +181,6 @@ export const workerRegistrations = (scope: Endpoint, options: WorkerOptions) =>
     Layer.provide(Runs.TabRuns.layerChannel({ name: options.name })),
     Layer.provide(ChatSteps.TabChat.layerChannel({ name: options.name })),
     Layer.provide(AuthSteps.TabSession.layerChannel({ name: options.name })),
+    Layer.provide(BugTabs.layerChannel({ name: options.name })),
     Layer.provide(TabChannel.layer),
   )

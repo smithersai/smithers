@@ -29,10 +29,11 @@ export const NoticeState = Schema.Literals(["working", "waiting", "needs_you", "
 export type NoticeState = typeof NoticeState.Type
 
 /**
- * What raised it: a run, the person's own clone of a repository, `main` moving, a new release, or a spend alert to an
- * Admin (the month's sandbox spend reached their alert; docs/features/sandbox-budgets.md).
+ * What raised it: a run, the person's own clone of a repository, `main` moving, a new release, a spend alert to an
+ * Admin (the month's sandbox spend reached their alert; docs/features/sandbox-budgets.md), or a bug report to an Admin
+ * (docs/features/bugs.md).
  */
-export const NoticeKind = Schema.Literals(["run", "clone", "main", "release", "spend"])
+export const NoticeKind = Schema.Literals(["run", "clone", "main", "release", "spend", "bug"])
 export type NoticeKind = typeof NoticeKind.Type
 
 /**

@@ -49,6 +49,7 @@ import { TodoCommit, TodoDraft, TodoDrop, TodoInspect, TodoIssue, TodoRetry } fr
 import { AskWithForm, RenderView, SetViewState, ShowIssues, ShowRepo } from "../features/views/flows"
 import { OpenWebPage } from "../features/web/flows"
 import { SearchDocs } from "../features/docs/flows"
+import { ListBugs, ReportBug } from "../features/bugs/flows"
 
 // The app's flows (docs/features/flows.md#the-registry): every action a person or the agent takes is one `Flow.make`
 // declaration, listed here once. The UI dispatches only a name from this list (`FlowDispatch`), and the agent's catalog
@@ -372,6 +373,14 @@ export const registry = {
     changes: "makes one tiny call with the person's own model, which spends a few of their tokens",
   },
   // Anyone signed in removes their own model, a person who lost their role included (decision 0096).
+  // Bug reports (docs/features/bugs.md): `/bug`, the header's Report a bug and the agent file one; an Admin and
+  // the agent read them. Anyone signed in reports; only an Admin reads every report.
+  "app/bug/report": {
+    flow: ReportBug,
+    minimum: "guest",
+    changes: "sends a bug report, with the page and the tab's latest run and trace ids, to the deployment's Admins",
+  },
+  "app/bug/list": { flow: ListBugs, minimum: "admin" },
   "model/remove": {
     flow: ModelRemove,
     changes: "removes the person's own model, so the deployment's model answers them",

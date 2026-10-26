@@ -14,6 +14,7 @@ import { tabPreferences, ThemeStore } from "../features/theme/store"
 import { clientFlows } from "./declarations"
 import { ClientEngine, dispatches, DispatchFailed, FlowDispatch, makeDispatch } from "./dispatch"
 import { registry } from "./registry"
+import { KEPT, TabHistory } from "./history"
 import { TabRequests } from "./requests"
 
 /** What an exit failed with, stack traces aside. */
@@ -49,6 +50,8 @@ const open = async (
     readonly engine?: Layer.Layer<ClientEngine>
     readonly declared?: ReadonlyArray<Flow.Any>
     readonly preferences?: Layer.Layer<Preferences>
+    /** Keep this tab's latest dispatches, at most this many (src/flows/history.ts); none kept without it. */
+    readonly history?: number
   } = {},
 ) => {
   const scope = Effect.runSync(Scope.make())
@@ -76,10 +79,15 @@ const open = async (
       ),
     ),
   )
-  const services = Layer.mergeAll(engine, TabRequests.layer())
+  const services = Layer.mergeAll(
+    engine,
+    TabRequests.layer(),
+    options.history === undefined ? Layer.empty : TabHistory.layer(options.history),
+  )
   const context = await Effect.runPromise(Scope.provide(scope)(Layer.build(services)))
   const dispatch = await Effect.runPromise(Effect.provide(makeDispatch(entries), context))
   const requests = Context.get(context, TabRequests)
+  const recent = () => Effect.runPromise(Effect.flatMap(TabHistory, (history) => history.recent).pipe(Effect.provide(context as unknown as Context.Context<TabHistory>)))
   const observed = <A, E>(effect: Effect.Effect<A, E>) =>
     Effect.runPromise(
       Effect.exit(effect).pipe(
@@ -106,7 +114,7 @@ const open = async (
         Effect.provideService(Metric.MetricRegistry, recorded.registry),
       ),
     ).count
-  return { dispatch, observed, recorded, count, painted, requests }
+  return { dispatch, observed, recorded, count, painted, requests, recent }
 }
 
 describe("a client flow", () => {
@@ -489,5 +497,59 @@ describe("FlowDispatch", () => {
     if (Exit.isSuccess(restricted)) throw new Error("unregistered reference was started")
     expect(Cause.findErrorOption(restricted.cause)).toEqual(Option.some(new DispatchFailed({ flow: "probe/NotRegistered", reason: "refused" })))
     expect(painted).toEqual(["light"])
+  })
+})
+
+describe("this tab's history (src/flows/history.ts)", () => {
+  test("keeps each dispatch newest first: its run, its trace, how it ended and a failure's code, never its payload", async () => {
+    const d = await open({ history: 5 })
+    await d.observed(d.dispatch("app/theme/set", { mode: "dark" }, { door: "button", executionId: "theme-1" }))
+    await d.observed(d.dispatch("probe/Pause", { label: "a secret note", pauseMs: 0 }, { door: "agent", executionId: "pause-1" }))
+    await d.observed(d.dispatch("notification/ack", { subject: "run:1", version: 1, act: "hide" }, { door: "view", executionId: "ack-1" }))
+    const ran = await d.recent()
+    const traces = d.recorded.spans.filter((span) => span.name === "flow.dispatch").map((span) => span.traceId)
+    expect(ran).toEqual([
+      { flow: "notification/ack", executionId: "ack-1", door: "view", outcome: "error", code: "person_only", traceId: traces[2] },
+      { flow: "probe/Pause", executionId: "pause-1", door: "agent", outcome: "error", code: expect.any(String), traceId: traces[1] },
+      { flow: "app/theme/set", executionId: "theme-1", door: "button", outcome: "done", traceId: traces[0] },
+    ])
+    expect(JSON.stringify(ran)).not.toContain("a secret note")
+  })
+
+  test("a declared failure keeps its kind as its code", async () => {
+    const d = await open({
+      history: 5,
+      preferences: Layer.succeed(Preferences, Preferences.of({ setTheme: () => Effect.fail(new PreferencesUnavailable()) })),
+    })
+    await d.observed(d.dispatch("app/theme/set", { mode: "dark" }, { door: "button", executionId: "theme-2" }))
+    expect(await d.recent()).toEqual([
+      expect.objectContaining({ flow: "app/theme/set", outcome: "failed", code: new PreferencesUnavailable()._tag.split("/").pop() }),
+    ])
+  })
+
+  test("keeps only its latest dispatches, and a tab without a history keeps none", async () => {
+    expect(KEPT).toBe(50)
+    const d = await open({ history: 2 })
+    for (const id of ["a", "b", "c"]) {
+      await d.observed(d.dispatch("app/theme/set", { mode: "light" }, { door: "button", executionId: id }))
+    }
+    expect((await d.recent()).map((ran) => ran.executionId)).toEqual(["c", "b"])
+    const without = await open()
+    const exit = await without.observed(without.dispatch("app/theme/set", { mode: "light" }, { door: "button" }))
+    expect(exit).toEqual(Exit.succeed({ _tag: "Done", value: { mode: "light" } }))
+  })
+
+  test("a failure with no tag has no code; the default layer keeps fifty", async () => {
+    const { codeOfFailure } = await import("./history")
+    expect(codeOfFailure(new Error("x"))).toBeUndefined()
+    expect(codeOfFailure("x")).toBeUndefined()
+    expect(codeOfFailure(null)).toBeUndefined()
+    expect(codeOfFailure({ _tag: 1 })).toBeUndefined()
+    expect(codeOfFailure({ _tag: "@smthrs/mvp/a/Refused" })).toBe("Refused")
+    const history = await Effect.runPromise(Effect.service(TabHistory).pipe(Effect.provide(TabHistory.layer())))
+    for (let index = 0; index < 60; index += 1) {
+      await Effect.runPromise(history.record({ flow: "f", executionId: `${index}`, door: "button", outcome: "done" }))
+    }
+    expect(await Effect.runPromise(history.recent)).toHaveLength(KEPT)
   })
 })

@@ -1,6 +1,8 @@
 import { Bind, type Contribution, Host, JsonSchema, Load } from "@smthrs/plugin"
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, Exit, Layer, Metric, Option, PubSub, Result, type Scope, Stream } from "effect"
+import { issueUrl } from "../features/bugs/github"
+import { BugsStore } from "../features/bugs/store"
 import { StatusStore } from "../features/status/store"
 import { FlowDispatch } from "../flows/dispatch"
 import type { FlowName } from "../flows/registry"
@@ -121,11 +123,21 @@ export class Plugins extends Context.Service<
           }),
         )
         const status = yield* StatusStore
+        const bugs = yield* BugsStore
         const core = new Map<string, CoreQuery>([
           ["core/waits", {
             key: "runId",
             live: (yield* liveOf(status.waits.rows)) as CoreQuery["live"],
             rows: status.waits.tanstack,
+          }],
+          // The bug reports the viewer may see, newest first, each with GitHub's prefilled form for it
+          // (docs/features/bugs.md). No strip acts on a report, so the strip never reads its rows.
+          ["core/bug-reports", {
+            key: "id",
+            live: (yield* liveOf(
+              Stream.map(bugs.newest.rows, (rows) => rows.map((row) => ({ ...row, github: issueUrl(row) }))),
+            )) as CoreQuery["live"],
+            rows: bugs.newest.tanstack as unknown as CoreQuery["rows"],
           }],
         ])
         const shown = yield* Collection.local<Shown, string>({

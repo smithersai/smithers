@@ -295,3 +295,36 @@ describe("a spend alert", () => {
     })
   })
 })
+
+describe("a bug report", () => {
+  // A bug report to an Admin (docs/features/bugs.md#the-admins-hear): in the bell only, opening the inbox.
+  const bug = notice({
+    subject: "bug:8d0f6c1e-2b7a-4c55-9f0e-0123456789ab",
+    kind: "bug",
+    state: "update",
+    mine: false,
+    runId: null,
+    repoId: null,
+    conversationId: null,
+    actor: null,
+    title: "@codeplanesmithers · /octocat/Spoon-Knife/issues",
+    href: "/app/bugs",
+  })
+
+  test("says who reported it and on which page", () => {
+    expect(wordsOf(bug)).toEqual({ word: "Bug report", detail: "@codeplanesmithers · /octocat/Spoon-Knife/issues" })
+  })
+
+  test("is listed and unread in the bell, opening the inbox, and never shows as a toast", () => {
+    expect(one(bug)).toMatchObject({
+      kind: "bug",
+      word: "Bug report",
+      action: "open",
+      href: "/app/bugs",
+      listed: true,
+      unread: true,
+      stack: false,
+      stackHere: false,
+    })
+  })
+})

@@ -48,6 +48,7 @@ import { TodoCommit, TodoDraft, TodoDrop, TodoInspect, TodoIssue, TodoRetry } fr
 import { AskWithForm, RenderView, SetViewState, ShowIssues, ShowRepo } from "../features/views/flows"
 import { OpenWebPage } from "../features/web/flows"
 import { SearchDocs } from "../features/docs/flows"
+import { ListBugs, ReportBug } from "../features/bugs/flows"
 import { type FlowName, type FlowOf, names } from "./registry"
 
 // Every registered flow's declaration, its body and steps included (docs/features/flows.md#the-registry): what an engine
@@ -133,6 +134,8 @@ export const declarations = {
   "domain/add": DomainAdd,
   "domain/remove": DomainRemove,
   "model/test": ModelTest,
+  "app/bug/report": ReportBug,
+  "app/bug/list": ListBugs,
   "model/remove": ModelRemove,
   "sandbox/run": SandboxRun,
   "sandbox/read": SandboxRead,

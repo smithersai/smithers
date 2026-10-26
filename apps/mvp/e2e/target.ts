@@ -307,6 +307,11 @@ const needs = {
     reason: "it needs a Maintainer or above; the test account's role on the deployment's repository is below that",
     blocked: true,
   },
+  bugReader: {
+    met: (run) => run.target === "local" || set(run, "E2E_BUG_READ_TOKEN"),
+    reason: "it reads the stored bug report as an Admin: locally as local development's Admin, in a deployment with " +
+      "E2E_BUG_READ_TOKEN set to the deployment's BUG_REPORTS_READ_TOKEN (docs/features/bugs.md#the-routes)",
+  },
   docsSite: {
     met: (run) => {
       const url = appURLOf(run.env)

@@ -85,12 +85,16 @@ Under a plugin's view, in host UI (`ActionStrip.tsx`, `src/plugins/strip.ts`): o
 ## Views, slots and commands
 
 - **Views** show at `/app/<plugin>/<path>` full size (`PluginScreen.tsx`), with the strip under them. A person below the view's `minimum` sees the page's header alone. Inline views in the conversation come later.
-- **Slots** are named places the shell draws: `shell.nav` holds the queue's count beside Flows, Runs and Settings.
+- **Slots** are named places the shell draws: `shell.nav` holds the queue's count and Report a bug beside Flows, Runs and Settings.
 - **Commands** with a `slash` join the composer's menu, running their flow with the payload the manifest fixes: `/queue` runs `app/navigate` to `/app/queue`.
 
 ## The queue
 
 The first plugin (`plugins/queue/`): everything that waits on you, one item at a time, oldest first, full screen, by keyboard. `g q` or `/queue` opens it; `j` and `k` move; the strip answers: `1`–`9` picks an option, `a` approves and `r` asks for changes (each with the note), `⌘↵` sends the note as a reply. Its only wiring is its manifest and `PluginHost`; it never dispatches `run/answer` itself.
+
+## Bug reports
+
+The second plugin (`plugins/bugs/`, [bugs.md](bugs.md)): `/bug` and the header's Report a bug open its form, whose Send runs its `send` event, bound to the core's `app/bug/report`; `/bugs` and a report's bell entry open its inbox, which reads the core's `core/bug-reports`. The flows are the core's: a plugin can't own an `app/` flow, and the UI host runs no owned flows yet.
 
 ## Observability
 

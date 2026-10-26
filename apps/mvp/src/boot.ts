@@ -86,6 +86,8 @@ import { pluginKeys } from "./plugins/keymap"
 import { Plugins } from "./plugins/plugins"
 import { PluginsUi, type PluginsView } from "./plugins/ui"
 import { SpendStore } from "./features/spend/store"
+import { BugsStore } from "./features/bugs/store"
+import { tabBugContext } from "./features/bugs/tab"
 import { Domains, type DomainsView } from "./features/domains/domains"
 import { PersonalModelClient } from "./features/personal-model/api"
 import { PersonalModel, type PersonalModelView } from "./features/personal-model/personalModel"
@@ -136,6 +138,12 @@ export interface Host extends ChatHost {
   readonly reopenRoute: () => void
   /** The router location: files open in the repository this page names. */
   readonly pathname?: () => string
+  /** Hears each page the router shows, until the returned function stops it: a bug report names the page before its form. */
+  readonly pages?: (listener: (path: string) => void) => () => void
+  /** The build this tab runs (`version.json`'s), which a bug report carries; `dev` unless the build names one. */
+  readonly build?: string
+  /** The browser and the window's size, as `1280x800`, which a bug report carries. */
+  readonly screen?: () => { readonly browser: string; readonly viewport: string }
   /** Which outside pages open, and a tab opened from the person's own click or key (src/features/web/actions.ts). */
   readonly web: WebHost
   /**
@@ -293,6 +301,8 @@ export const appLayer = <S = never>(
     // below the composer's commands, which offer the plugins' slash commands (decision 0017).
     Layer.provideMerge(
       Plugins.layer().pipe(
+        // The bug reports the viewer may see, which the host serves as `core/bug-reports` (docs/features/bugs.md).
+        Layer.provideMerge(BugsStore.layer({ origin })),
         Layer.provideMerge(
           AttentionStore.layer({ origin }).pipe(
             Layer.provideMerge(Layer.succeed(AttentionNavigation, AttentionNavigation.of({ navigate: host.navigate }))),
@@ -330,12 +340,21 @@ export const appLayer = <S = never>(
     // branch this tab's route shows: the branch layer's, and the composer's, whose `/new` starts a conversation in its
     // repository (src/features/commands/actions.ts).
     Layer.provideMerge(Layer.merge(AuthStore.layer, BranchStore.layer)),
-    // Above dispatch, which remembers this tab's requests: `app/navigate` moves only the tab that asked, and `repo/copy`
-    // writes only its clipboard. The door each run came through is answered with sign-in, above (`auth`).
+    // Above dispatch, which remembers this tab's requests and runs: `app/navigate` moves only the tab that asked,
+    // `repo/copy` writes only its clipboard, and a bug report reads only its page and runs. The door each run came
+    // through is answered with sign-in, above (`auth`).
     Layer.provideMerge(
       Layer.mergeAll(
         tabNavigation({ name: host.engineName, origin, navigate: host.navigate }),
         tabClipboard({ name: host.engineName }),
+        // What this tab shows, which only it answers a bug report's step with (docs/features/bugs.md).
+        tabBugContext({
+          name: host.engineName,
+          build: host.build ?? "dev",
+          ...(host.pathname === undefined ? {} : { pathname: host.pathname }),
+          ...(host.pages === undefined ? {} : { pages: host.pages }),
+          ...(host.screen === undefined ? {} : { screen: host.screen }),
+        }),
       ).pipe(Layer.provide(TabChannel.layer)),
     ),
     Layer.provideMerge(FlowDispatch.layer.pipe(Layer.provide(FlowRegistry.layer))),

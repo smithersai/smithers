@@ -21,6 +21,7 @@ import { Directory } from "./branch/People.ts"
 import { TerminalSockets } from "./branch/Sandboxes.ts"
 import * as BranchRooms from "./BranchRooms.ts"
 import * as BranchSandboxes from "./BranchSandboxes.ts"
+import * as BugsApi from "./bugs/Api.ts"
 import * as Chat from "./Chat.ts"
 import * as ViewRealm from "./ViewRealm.ts"
 import { codeOf } from "./ErrorCode.ts"
@@ -123,6 +124,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     })
     // A person's own model (docs/features/personal-model.md): saving, removing and testing it, and its shape.
     const personalApi = yield* PersonalApi.make(database)
+    // Bug reports (docs/features/bugs.md): filing one, the Admins' read and the reports' shape.
+    const bugsApi = yield* BugsApi.make(database)
     const signIn = yield* SignIn.make(database, options).pipe(Effect.provide(FetchHttpClient.layer))
     // Repositories (docs/features/repo.md): cloning into Code Storage, the `repositories` shape, reads at a commit,
     // cached in this Worker's Cache API, and what GitHub says of a repository, kept in Postgres for every data center.
@@ -289,6 +292,13 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
             Effect.provideService(Flows.FlowStarter, starter),
             Effect.provideService(SecretKeys, secretKeys),
             Effect.provide(personalModels),
+            Effect.provide(signedIn),
+            Effect.provide(FetchHttpClient.layer),
+          )
+        }
+        if (BugsApi.handles(path)) {
+          return yield* bugsApi.fetch.pipe(
+            Effect.provideService(Flows.FlowStarter, starter),
             Effect.provide(signedIn),
             Effect.provide(FetchHttpClient.layer),
           )

@@ -22,6 +22,7 @@ No route starts a remote flow by its name alone. Each remote flow is started by 
 | `chat/Expire` | ChatApi, when it takes a question | Neither a person nor the agent starts it. |
 | `ops/SpendAlert` | the model endpoint, when it admits a call, once per window ([spend-alerts.md](spend-alerts.md)) | Neither a person nor the agent starts it. |
 | `ops/DatabaseLoad` | every `FlowExecution` alarm, once it is done, once per window ([database-alerts.md](database-alerts.md)) | Neither a person nor the agent starts it. |
+| `ops/BugReport` | `POST /api/bugs`, once it filed the report, one execution per report ([bugs.md](bugs.md#the-admins-hear)) | The route admits it first: sign-in, the body's bounds and the stored row. |
 | `auth/RecheckRole`, `auth/RevokeGitHubToken` | sign-in | Neither a person nor the agent starts them. |
 | `github/Write` | `issue/create` and `issue/comment`, the client flows a person's buttons, `/issue`, `/comment` and the agent run, through the device's outbox and `POST /api/repos/<owner>/<name>/writes` ([issues.md](issues.md#writes)) | The writes route admits it first: sign-in, the role, the App, the repository, the bounds and the payload's hash, recorded in `github_writes` under the device's write id. |
 | `github/Apply` | `POST /api/github/webhook`, for a verified delivery naming an issue of the synced repository ([issues.md](issues.md#sync)) | GitHub's signature admits it; neither a person nor the agent starts it. |

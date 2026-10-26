@@ -1,0 +1,68 @@
+/* The bug plugin's form and inbox (docs/features/bugs.md). */
+.bugs-form {
+  display: grid;
+  gap: 0.75rem;
+  max-inline-size: 40rem;
+  margin: 1.5rem auto;
+  padding-inline: 1rem;
+}
+
+.bugs-form-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.bugs-form-status {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+.bugs-inbox {
+  list-style: none;
+  max-inline-size: 56rem;
+  margin: 1.5rem auto;
+  padding-inline: 1rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.bugs-entry summary {
+  display: grid;
+  gap: 0.125rem;
+  cursor: pointer;
+  padding-block: 0.5rem;
+}
+
+.bugs-entry-what {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.bugs-entry-meta {
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.bugs-entry-words {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.bugs-entry-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+  font-size: 0.875rem;
+}
+
+.bugs-entry-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.bugs-empty {
+  margin-block: 3rem;
+}

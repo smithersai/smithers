@@ -4,6 +4,7 @@ import { ConfigProvider, Effect } from "effect"
 import vibelang from "vibelang-vite"
 import { defineConfig } from "vite"
 import { VitePWA } from "vite-plugin-pwa"
+import { buildOf, smithersBuild } from "./dev/build.ts"
 import { devHttps } from "./dev/https.ts"
 import { commandMaxSeconds } from "./src/features/sandbox/config.ts"
 import { DOCS_SITE, FRAME_POLICY, PAGE_HEADERS, shellCaches } from "./src/pwa.ts"
@@ -39,6 +40,8 @@ export default defineConfig({
       },
     },
     react(),
+    // The build's name, from the deployed revision: in the bundle for bug reports, and in /version.json (dev/build.ts).
+    smithersBuild(buildOf(process.env, import.meta.dirname)),
     // The dev server over HTTPS and HTTP/2 at https://localhost:1443, as Cloudflare serves the app (dev/https.ts,
     // docs/infrastructure.md#https-and-http2). Its certificate is this machine's, kept beside the dev service worker.
     devHttps(join(import.meta.dirname, "node_modules", ".dev-https")),

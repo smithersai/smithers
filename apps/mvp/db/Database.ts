@@ -63,6 +63,7 @@ import textUpdates from "./migrations/0026_text_updates.ts"
 import todoIssue from "./migrations/0027_todo_issue.ts"
 import cloneProgress from "./migrations/0028_clone_progress.ts"
 import alertChannels from "./migrations/0029_alert_channels.ts"
+import bugReports from "./migrations/0064_bug_reports.ts"
 
 /** The compose Postgres (`docker-compose.yml`): what `DATABASE_URL` defaults to, and the only one tests use. */
 export const LOCAL_URL = "postgresql://smithers:smithers@localhost:54321/smithers"
@@ -163,6 +164,7 @@ export const migrations = {
   "0061_flow_placement_machine": flowPlacementMachine,
   "0062_sandbox_budgets": sandboxBudgets,
   "0063_app_template_views": appTemplateViews,
+  "0064_bug_reports": bugReports,
 }
 
 /** Applies every migration in `db/migrations` that hasn't run, in order; returns the ones it applied. */

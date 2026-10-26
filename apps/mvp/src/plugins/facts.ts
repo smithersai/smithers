@@ -1,4 +1,5 @@
 import { type Load, Manifest } from "@smthrs/plugin"
+import { BUG_REPORT_ROW } from "../features/bugs/contract"
 import { WAITS_ROW } from "../features/status/contract"
 import { type Entry, registry } from "../flows/registry"
 import { POINTS } from "./contract"
@@ -43,7 +44,7 @@ export const hostFacts = (catalog: Readonly<Record<string, Entry>> = registry): 
   api: Manifest.PLUGIN_API,
   points: POINTS,
   catalog: new Map(Object.entries(catalog).map(([name, entry]) => [name, factsOf(entry)])),
-  queries: new Map([["core/waits", WAITS_ROW as never]]),
+  queries: new Map([["core/waits", WAITS_ROW as never], ["core/bug-reports", BUG_REPORT_ROW as never]]),
   tierCap: {
     "built-in": (capability) => !ungranted(capability),
     repository: (capability) => !ungranted(capability),

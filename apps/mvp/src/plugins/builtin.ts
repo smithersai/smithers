@@ -1,3 +1,4 @@
+import bugs from "../../plugins/bugs/plugin.json" with { type: "json" }
 import queue from "../../plugins/queue/plugin.json" with { type: "json" }
 
 // The built-in plugins (decision 0017, "What stays hardcoded"): the one place the core names a plugin, as webpack's
@@ -20,5 +21,10 @@ export const BUILTIN: ReadonlyArray<BuiltIn> = [
     manifest: queue,
     tab: () => import("../../plugins/queue/src/tab"),
     components: () => import("../../plugins/queue/src/components/index"),
+  },
+  {
+    manifest: bugs,
+    tab: () => import("../../plugins/bugs/src/tab"),
+    components: () => import("../../plugins/bugs/src/components/index"),
   },
 ]
