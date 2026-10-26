@@ -36,7 +36,7 @@ const stepsOf = (row: Row | undefined): Array<{ flow: string; status: string }> 
 }
 
 test("ask: the browser's agent answers through the model endpoint, and the answer streams into the conversation", { annotation: { type: "summary", description: "The agent runs in the browser, asks the model through the metered endpoint, and the answer streams in." } }, async ({ devices }) => {
-  requires("personalModel", "member", "ownConversation")
+  requires("personalModel", "member", "ownConversation", "liveModel")
   const word = devices.word
   const [a] = await devices.open("A")
   const calls = modelCalls(a.device.context)
@@ -76,7 +76,7 @@ test("theme by button: the theme button switches the mode, and the device keeps 
 })
 
 test("theme by the agent: asking Smithers to switch to dark mode runs app/theme/set, the same flow as the button", { annotation: [{ type: "theme", description: "light" }, { type: "summary", description: "Asking Smithers for dark mode runs the same theme flow as the button." }] }, async ({ devices, request }) => {
-  requires("personalModel", "member", "ownConversation")
+  requires("personalModel", "member", "ownConversation", "liveModel")
   const word = devices.word
   const [a] = await devices.open("A")
   // The page it asks on may have no theme button (a branch's, in a deployment): the painted mode is the evidence, and
@@ -93,7 +93,7 @@ test("theme by the agent: asking Smithers to switch to dark mode runs app/theme/
 })
 
 test.describe("killed tab", () => {
-  requires("personalModel", "localLogs", "member", "ownConversation")
+  requires("personalModel", "localLogs", "member", "ownConversation", "liveModel")
 
   test("killed tab: the answer resumes when the app opens again, replaying sealed model calls from the journal, never calling them again", { annotation: [{ type: "theme", description: "light" }, { type: "summary", description: "An answer cut off by a closed tab finishes when the app opens again, without paying for finished model calls twice." }] }, async ({ devices, request }) => {
     test.setTimeout(240_000)

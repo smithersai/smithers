@@ -51,7 +51,7 @@ const sortTitles = (milestone: string) =>
 test("jev: asked to sort issue titles, the agent uses Jev unasked, and debug info shows its step", {
   annotation: { type: "summary", description: "The agent picks Jev on its own; debug info shows the Jev step, its output and its input." },
 }, async ({ devices, request }) => {
-  requires("personalModel", "member", "ownConversation")
+  requires("personalModel", "member", "ownConversation", "liveModel")
   test.setTimeout(240_000)
   const [a] = await devices.open("A")
   const calls = modelCalls(a.device.context)

@@ -89,7 +89,7 @@ test("needs you: the agent asks, every surface on every device shows it, and an 
 })
 
 test("needs you, live: two devices show the question, Hide reaches both, and an answer resumes the real model", { annotation: { type: "summary", description: "The real model asks on both devices; Hide reaches both, and teal from B resumes A's run." } }, async ({ devices }) => {
-  requires("personalModel", "member", "ownConversation")
+  requires("personalModel", "member", "ownConversation", "liveModel")
   test.setTimeout(540_000)
   const word = devices.word
   const [a, b] = await test.step("Open both devices", () => devices.open("A", "B"))

@@ -36,6 +36,7 @@ test("shortcut: ⌘K opens and hides chat, and Esc and the Hide button hide it t
 })
 
 test("ask: a user asks Smithers and gets a streamed answer", { annotation: { type: "summary", description: "A question gets a streamed answer." } }, async ({ page }) => {
+  requires("liveModel")
   await page.goto(home())
   await expect(page.getByRole("button", { name: /Chat/ })).toBeVisible({ timeout: 30_000 })
   await page.keyboard.press("ControlOrMeta+k")
@@ -51,6 +52,7 @@ test("ask: a user asks Smithers and gets a streamed answer", { annotation: { typ
 })
 
 test("reload mid-answer: the browser's agent resumes the answer after the reload and completes it, and the composer works", { annotation: { type: "summary", description: "A reload mid-answer loses nothing: the answer finishes and the composer still works." } }, async ({ page }) => {
+  requires("liveModel")
   await page.goto(home())
   await expect(page.getByRole("button", { name: /Chat/ })).toBeVisible({ timeout: 30_000 })
   await page.keyboard.press("ControlOrMeta+k")
@@ -88,7 +90,7 @@ test("reload mid-answer: the browser's agent resumes the answer after the reload
 // What a person sees, not just what is in the page: `toBeInViewport`, where `toBeVisible` passes for an element
 // scrolled out of sight. The conversation keeps its newest message in view, as the transcript's bottom anchor intends.
 deviceTest("in view: opening chat shows the newest message and the Chat button, and a new question and its answer stay in view", { annotation: { type: "summary", description: "The newest message and its answer stay in view." } }, async ({ devices }) => {
-  requires("personalModel", "ownConversation")
+  requires("personalModel", "ownConversation", "liveModel")
   const [a] = await devices.open("A")
   const page = a.page
   // A fresh branch can have no messages. Establish this test's own history, then open it again: opening must show
@@ -118,6 +120,7 @@ deviceTest("in view: opening chat shows the newest message and the Chat button, 
 // A message is one element from the moment it shows: a question syncing and its answer settling change it in place, so
 // its fade-in plays once, not again at each change of status.
 test("steady: a question and its answer keep their elements as the question syncs and the answer settles", { annotation: { type: "summary", description: "A question and its answer don't flicker as they sync and settle." } }, async ({ page }) => {
+  requires("liveModel")
   await page.goto(home())
   await expect(page.getByRole("button", { name: /Chat/ })).toBeVisible({ timeout: 30_000 })
   await page.keyboard.press("ControlOrMeta+k")

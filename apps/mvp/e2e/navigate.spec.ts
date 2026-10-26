@@ -50,7 +50,7 @@ const relayed = (records: Array<LogRecord>) =>
     .map((record) => [field(record, "door"), field(record, "outcome"), field(record, "reason")])
 
 test("navigate by the agent: asking to open octocat/Spoon-Knife takes the tab that asked there, and the other tab stays", async ({ devices, request }) => {
-  requires("personalModel", "member", "ownConversation")
+  requires("personalModel", "member", "ownConversation", "liveModel")
   const logs = partly("localLogs") ? await LogTail.start() : undefined
   const word = devices.word
   const [a] = await devices.open("A")
@@ -134,7 +134,7 @@ test("navigate by hover: Runs, hovered first, opens at the click with no loading
 })
 
 test("navigate refused: asking the agent to open an outside site is refused, and the page stays put", async ({ devices, request }) => {
-  requires("personalModel", "member", "ownConversation")
+  requires("personalModel", "member", "ownConversation", "liveModel")
   const logs = partly("localLogs") ? await LogTail.start() : undefined
   const word = devices.word
   const [a] = await devices.open("A")

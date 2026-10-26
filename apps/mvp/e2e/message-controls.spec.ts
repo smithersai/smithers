@@ -17,6 +17,7 @@ const shown = (message: Locator, what: string) => expect(controls(message), `${w
 const away = (page: Page) => page.mouse.move(4, 4)
 
 test("message copy: Copy puts an answer on the clipboard, and every message shows its time", async ({ devices }) => {
+  requires("liveModel")
   const word = devices.word
   const [a] = await devices.open("A")
   await a.device.context.grantPermissions(["clipboard-read", "clipboard-write"])

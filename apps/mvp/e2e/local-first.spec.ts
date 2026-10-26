@@ -21,6 +21,7 @@ const longQuestion = (start: string, end: string) =>
   `Write ${start} on the first line, then count from 1 to 120 in words, one number per line, then write ${end} on the last line.`
 
 test("offline ask: two questions asked offline queue, survive a reload offline, and are answered in order once online", { annotation: { type: "summary", description: "Questions asked offline wait on the device, survive a reload, and are answered in order once online." } }, async ({ devices, request }) => {
+  requires("liveModel")
   const word = devices.word
   const [a, b] = await devices.open("A", "B")
   await a.offline()
@@ -54,6 +55,7 @@ test("offline ask: two questions asked offline queue, survive a reload offline, 
 })
 
 test("restart offline: a question asked offline survives closing the app, and a page opened again sends it once", { annotation: { type: "summary", description: "A question asked offline survives closing the app and is sent once when it opens again." } }, async ({ devices, request }) => {
+  requires("liveModel")
   const word = devices.word
   const [a] = await devices.open("A")
   await a.offline()
@@ -107,7 +109,7 @@ test("offline branch: its queued questions and count survive a reload and closin
 })
 
 test("closed before its run started: a question ChatApi took, whose tab closed before its engine recorded the run, is answered when the app opens again", { annotation: { type: "summary", description: "A question whose tab closed before it was answered is answered when the app opens again." } }, async ({ devices, request }) => {
-  requires("faults")
+  requires("faults", "liveModel")
   const word = devices.word
   const [a] = await devices.openFaulty("A")
   // This tab's engine takes its time, as a worker still loading wa-sqlite: the run that answers isn't recorded yet.
@@ -175,6 +177,7 @@ test("late joiner: a device that opens later shows the same latest messages, and
 })
 
 test("two tabs: each keeps its own composer; the tab a person asks in leads, and sends at once", { annotation: { type: "summary", description: "Each tab keeps its own draft, and the tab a person asks in sends at once." } }, async ({ devices }) => {
+  requires("liveModel")
   const word = devices.word
   const [one] = await devices.open("Tab 1")
   const two = await devices.tab(one.device, "Tab 2")
@@ -208,6 +211,7 @@ test("two tabs: each keeps its own composer; the tab a person asks in leads, and
 })
 
 test("two tabs offline: the leading tab closes, and the other restores its queued question and sends it once online", { annotation: { type: "summary", description: "When the tab holding a queued question closes, the other tab sends it once online." } }, async ({ devices, request }) => {
+  requires("liveModel")
   const word = devices.word
   const [one] = await devices.open("Tab 1")
   const two = await devices.tab(one.device, "Tab 2")
@@ -225,6 +229,7 @@ test("two tabs offline: the leading tab closes, and the other restores its queue
 })
 
 test("concurrent asks: two devices ask at the same moment, and each question gets exactly one answer, in one order everywhere", { annotation: { type: "summary", description: "Two devices asking at the same moment each get one answer, in the same order everywhere." } }, async ({ devices, request }) => {
+  requires("liveModel")
   const word = devices.word
   const [a, b] = await devices.open("A", "B")
   const alpha = `Reply with exactly the word: alpha-${word}`
@@ -255,6 +260,7 @@ test("concurrent asks: two devices ask at the same moment, and each question get
 })
 
 test("tab closes mid-answer: the answer waits for the asking device, and completes on both devices once it opens the app again", { annotation: { type: "summary", description: "An answer whose tab closed finishes on every device once that device opens the app again." } }, async ({ devices, request }) => {
+  requires("liveModel")
   test.setTimeout(180_000)
   const word = devices.word
   const [a, b] = await devices.open("A", "B")
@@ -277,6 +283,7 @@ test("tab closes mid-answer: the answer waits for the asking device, and complet
 })
 
 test("reload mid-answer: the asking device reloads while another watches, and both see the answer complete", { annotation: { type: "summary", description: "A device that reloads mid-answer and another watching both see the answer finish." } }, async ({ devices }) => {
+  requires("liveModel")
   const word = devices.word
   const [a, b] = await devices.open("A", "B")
   const asked = longQuestion(`reload-${word}`, `end-${word}`)
@@ -295,6 +302,7 @@ test("reload mid-answer: the asking device reloads while another watches, and bo
 })
 
 test("long outage: a device offline catches up on everything asked meanwhile", { annotation: { type: "summary", description: "A device that was offline catches up on everything asked meanwhile." } }, async ({ devices }) => {
+  requires("liveModel")
   test.setTimeout(180_000)
   const word = devices.word
   const [a, b] = await devices.open("A", "B")
@@ -321,6 +329,7 @@ test("long outage: a device offline catches up on everything asked meanwhile", {
 })
 
 test("flapping network: a question asked during each drop queues, and every one reaches Postgres once, in order", { annotation: { type: "summary", description: "Questions asked while the network drops and returns each reach the server once, in order." } }, async ({ devices, request }) => {
+  requires("liveModel")
   test.setTimeout(180_000)
   const word = devices.word
   const [a, b] = await devices.open("A", "B")
@@ -344,7 +353,7 @@ test("flapping network: a question asked during each drop queues, and every one 
 })
 
 test("sync down while asking: a question ChatApi took stays queued until the device sees it, then shows once, answered", { annotation: { type: "summary", description: "A question the server took stays queued on the device until sync shows it, then shows once, answered." } }, async ({ devices }) => {
-  requires("faults")
+  requires("faults", "liveModel")
   test.setTimeout(180_000)
   const word = devices.word
   const [[a], [b]] = await Promise.all([devices.openFaulty("A"), devices.open("B")])
@@ -369,7 +378,7 @@ test("sync down while asking: a question ChatApi took stays queued until the dev
 })
 
 test("Retry: syncs at once instead of waiting out the backoff", { annotation: { type: "summary", description: "Retry syncs at once instead of waiting out the backoff." } }, async ({ devices }) => {
-  requires("faults")
+  requires("faults", "liveModel")
   test.setTimeout(120_000)
   const [[a]] = await Promise.all([devices.openFaulty("A")])
   await a.device.syncDown()
@@ -389,6 +398,7 @@ test("Retry: syncs at once instead of waiting out the backoff", { annotation: { 
 })
 
 test("offline mid-answer: the text so far stays, and the whole answer arrives once back online", { annotation: { type: "summary", description: "Going offline mid-answer keeps the text so far, and the rest arrives once back online." } }, async ({ devices }) => {
+  requires("liveModel")
   test.setTimeout(180_000)
   const word = devices.word
   const [a] = await devices.open("A")
@@ -403,7 +413,7 @@ test("offline mid-answer: the text so far stays, and the whole answer arrives on
 })
 
 test("Electric down at boot: after one visit, the conversation shows from the device, and the pill says so", { annotation: { type: "summary", description: "With sync down at boot, the conversation still shows from the device, and the pill says so." } }, async ({ devices }) => {
-  requires("faults")
+  requires("faults", "liveModel")
   test.setTimeout(120_000)
   const word = devices.word
   const [a] = await devices.open("A")
@@ -418,6 +428,7 @@ test("Electric down at boot: after one visit, the conversation shows from the de
 })
 
 test("back/forward: leaving the app and coming back shows the same conversation, and it still asks", { annotation: { type: "summary", description: "Leaving the app and coming back shows the same conversation, and asking still works." } }, async ({ devices }) => {
+  requires("liveModel")
   const word = devices.word
   const [a] = await devices.open("A")
   const asked = `Reply with exactly the word: before-${word}`

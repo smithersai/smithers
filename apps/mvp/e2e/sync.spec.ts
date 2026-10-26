@@ -7,6 +7,7 @@ requires("personalModel", "member", "ownConversation")
 
 // Two separate browsers hold the conversation Electric syncs from Postgres; the asking browser's agent answers.
 test("sync: a message and Smithers' answer sent in one browser appear in another", { annotation: { type: "summary", description: "A question and its answer from one browser show in another." } }, async ({ devices }) => {
+  requires("liveModel")
   const word = devices.word
   const [alice, bob] = await devices.open("Alice", "Bob")
   const question = `Reply with exactly the word: sync-${word}`

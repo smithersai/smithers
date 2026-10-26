@@ -56,6 +56,7 @@ test.describe("Local-first conflicts", () => {
       description: "Two writers claim one question id: Postgres keeps the first, A keeps its own Not sent, and Edit asks it again under a new id.",
     },
   }, async ({ devices, request }) => {
+    requires("liveModel")
     const word = devices.word
     const [a, b] = await devices.open("A", "B")
     const mine = question(`mine-${word}`)
@@ -169,6 +170,7 @@ test.describe("Local-first conflicts", () => {
       description: "A and B ask offline twice; B comes back first, then A first: Postgres' arrival order decides, the same on both devices.",
     },
   }, async ({ devices, request }) => {
+    requires("liveModel")
     const word = devices.word
     const [a, b] = await devices.open("A", "B")
     const asked = { a1: question(`a1-${word}`), b1: question(`b1-${word}`), a2: question(`a2-${word}`), b2: question(`b2-${word}`) }
@@ -201,7 +203,7 @@ test.describe("Local-first conflicts", () => {
       description: "A's question reaches ChatApi but the reply is lost, so A sends it again: ChatApi says it has it, and everyone sees it once.",
     },
   }, async ({ devices, request }) => {
-    requires("faults")
+    requires("faults", "liveModel")
     const word = devices.word
     const [[a], [b]] = await Promise.all([devices.openFaulty("A"), devices.open("B")])
     const asked = question(`once-${word}`)
@@ -243,6 +245,7 @@ test.describe("Local-first conflicts", () => {
       description: "Tab 1 queues a question, tab 2 takes the lead and sends it, tab 1 leads again: the question is sent once, everywhere once.",
     },
   }, async ({ devices, request }) => {
+    requires("liveModel")
     const word = devices.word
     const [one, b] = await devices.open("Tab 1", "B")
     const two = await devices.tab(one.device, "Tab 2")
@@ -286,6 +289,7 @@ test.describe("Local-first conflicts", () => {
       description: "Tab 2 leads the outbox holding tab 1's question; Edit in tab 1 takes it back first, so it never reaches Postgres or B.",
     },
   }, async ({ devices, request }) => {
+    requires("liveModel")
     const word = devices.word
     const [one, b] = await devices.open("Tab 1", "B")
     const two = await devices.tab(one.device, "Tab 2")
@@ -371,7 +375,7 @@ test.describe("Local-first conflicts", () => {
       },
     ],
   }, async ({ devices, request }) => {
-    requires("faults")
+    requires("faults", "liveModel")
     const word = devices.word
     const [[a], [b]] = await Promise.all([devices.openFaulty("A"), devices.open("B")])
     const asked = question(`twice-${word}`)
@@ -415,7 +419,7 @@ test.describe("Local-first conflicts", () => {
       description: "A's answer was parked when a new build shipped that can't resume it: it ends Couldn't answer on both devices, and Retry answers.",
     },
   }, async ({ devices, request }) => {
-    requires("faults")
+    requires("faults", "liveModel")
     const word = devices.word
     const [[a], [b]] = await Promise.all([devices.openFaulty("A"), devices.open("B")])
     const asked = question(`build-${word}`)
@@ -450,6 +454,7 @@ test.describe("Local-first conflicts", () => {
       description: "A's clock is a day behind: its offline question still shows last, and lands after B's, by when Postgres got it.",
     },
   }, async ({ devices, request }) => {
+    requires("liveModel")
     const word = devices.word
     const [a, b] = await devices.open("A", "B")
     await step("A's clock is a day behind", async () => {
@@ -494,6 +499,7 @@ test.describe("Local-first conflicts", () => {
       },
     ],
   }, async ({ devices, request }) => {
+    requires("liveModel")
     const word = devices.word
     const [a, b] = await devices.open("A", "B")
     // Playwright's clock sets the device's clock: approved for the clock tests only (TEST-12).

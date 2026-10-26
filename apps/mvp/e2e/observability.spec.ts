@@ -27,6 +27,7 @@ const openChat = async (page: Page, path = "/app") => {
 const isQuestions = (request: Request) => new URL(request.url()).pathname === "/api/questions"
 
 test("correlation: the browser's ask, its agent's dispatch and ChatApi's chat.question and chat.answer.write records share the answer id; the ask shares one trace", { annotation: { type: "summary", description: "One ask's records, in the browser and on the server, share its answer id and one trace." } }, async ({ page }) => {
+  requires("liveModel")
   const logs = await LogTail.start({ postOnly: true, isolated: true })
   try {
     await page.context().setExtraHTTPHeaders(logs.captureHeaders)
@@ -88,7 +89,7 @@ test("correlation: the browser's ask, its agent's dispatch and ChatApi's chat.qu
 })
 
 test("redaction: a sentinel word in questions never appears in ChatApi's log or the browser's relayed records", { annotation: { type: "summary", description: "A word from a question never appears in the server's log or the browser's relayed records." } }, async ({ page }) => {
-  requires("faults")
+  requires("faults", "liveModel")
   const logs = await LogTail.start({ postOnly: true, isolated: true })
   try {
     await page.context().setExtraHTTPHeaders(logs.captureHeaders)
