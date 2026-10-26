@@ -45,9 +45,21 @@ export * as Endpoint from "./Endpoint.ts"
 
 /**
  * @category observability
+ * @since 1.0.0-rc.17
+ */
+export * as FetchFailures from "./FetchFailures.ts"
+
+/**
+ * @category observability
  * @since 0.1.0
  */
 export * as JournalLogger from "./JournalLogger.ts"
+
+/**
+ * @category observability
+ * @since 1.0.0-rc.17
+ */
+export * as LogFailures from "./LogFailures.ts"
 
 /**
  * @category observability

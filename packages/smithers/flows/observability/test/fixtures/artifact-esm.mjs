@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import * as root from "../../dist/esm/index.js"
 
-const rootModules = ["JournalLogger", "Logger", "Metric", "Otel", "Otlp", "Resource"]
+const rootModules = ["FetchFailures", "JournalLogger", "LogFailures", "Logger", "Metric", "Otel", "Otlp", "Resource"]
 for (const name of rootModules) {
   const subpath = await import(`../../dist/esm/${name}.js`)
   for (const [key, value] of Object.entries(subpath)) {

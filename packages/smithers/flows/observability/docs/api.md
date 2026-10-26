@@ -1,13 +1,24 @@
 ---
 title: "API reference"
-description: "Every public export of @smthrs/observability: the Otlp exporter layers, endpoint and resource validation, the logger layers, the journal forwarder and its durable schema, the runtime metric handles, and the three OpenTelemetry SDK bridges."
+description: "Every public export of @smthrs/observability: the Otlp exporter layers, endpoint and resource validation, the logger layers, failure counting from the log and from fetch, the journal forwarder and its durable schema, the runtime metric handles, and the three OpenTelemetry SDK bridges."
 ---
 
-`@smthrs/observability` exports eight modules from its root entry point.
+`@smthrs/observability` exports ten modules from its root entry point.
 Import them from the root:
 
 ```ts
-import { Endpoint, JournalLogger, Logger, Metric, Otel, Otlp, OtlpRelay, Resource } from "@smthrs/observability"
+import {
+  Endpoint,
+  FetchFailures,
+  JournalLogger,
+  LogFailures,
+  Logger,
+  Metric,
+  Otel,
+  Otlp,
+  OtlpRelay,
+  Resource
+} from "@smthrs/observability"
 ```
 
 Two more modules are subpath-only, because each binds a host-specific
@@ -578,6 +589,164 @@ const layer: (logger: Logger.Logger<unknown, unknown>, options?: Options) => Lay
 ```
 
 Installs a caller-supplied logger under the same two rules.
+
+## LogFailures
+
+Counts what went wrong from the log: every line at `Warn` or above, by its
+record, its code and its area, and keeps the latest of them. A program that
+logs each failure once, by a stable record name and a code, gets every failure
+counted without a counter at each call site.
+
+```ts
+import { LogFailures, Otlp } from "@smthrs/observability"
+
+const telemetry = LogFailures.layer({ records: ["question not sent", "page error"] }).pipe(
+  Layer.provideMerge(Otlp.layerFetch({ baseUrl: "/api/telemetry", serviceName: "web" }))
+)
+```
+
+### LogFailures.layer
+
+```ts
+const layer: (options?: Options) => Layer.Layer<Recent>
+```
+
+Adds a logger to the ambient set (it never replaces one) and provides
+`Recent`. Each line at `Warn`, `Error` or `Fatal` adds one to `failures` and
+becomes the newest `Entry`. Provide it above the exporter's layer, so the set
+it extends already holds the exporter's logger.
+
+### LogFailures.Options
+
+```ts
+interface Options {
+  readonly records?: Iterable<string> | undefined
+  readonly codes?: ReadonlyArray<string> | undefined
+  readonly area?: string | undefined
+  readonly keep?: number | undefined
+}
+```
+
+- `records`: the record names a line keeps as its `record`, its message when
+  it is one of these; any other line is `other`. Omitted, a message of up to
+  96 letters, digits, spaces and `_ . : ' / @ -` is kept, up to `maxRecords`
+  (200) distinct ones.
+- `codes`: the annotations read for a line's code, first present first.
+  Defaults to `defaultCodeFields`: `errorCode`, `code`, `reason`, `outcome`,
+  `error.type`, `error`, `name`, `status`. A value counts when it is an identifier of up
+  to 64 characters (letters, digits, `_ . : / @ -`) or a finite number. With
+  none, the code is the `code`, `_tag` or name (not plain `Error`) of the first
+  failure or defect in the line's cause, else `none`.
+- `area`: the annotation naming a line's area, `feature` by default; absent or
+  not an identifier, `none`.
+- `keep`: how many of the latest lines `Recent` keeps, 50 by default; 0 keeps
+  none and still counts.
+
+Codes and areas are capped at `maxCodes` (200) and `maxAreas` (50) distinct
+values; past a cap a new value reads `other`. A message is never a code, so a
+line that quotes what someone wrote costs `other`, never a new series.
+
+### LogFailures.failures
+
+```ts
+const failures: Metric.Counter<number>
+```
+
+Counter `flows_observability_log_failures`, by `level` (`warn`, `error`,
+`fatal`), `record`, `code` and `area`.
+
+### LogFailures.Recent and LogFailures.Entry
+
+```ts
+class Recent extends Context.Service<Recent, { readonly entries: Effect.Effect<ReadonlyArray<Entry>> }>() {}
+
+interface Entry {
+  readonly at: number
+  readonly level: "warn" | "error" | "fatal"
+  readonly record: string
+  readonly code: string
+  readonly area: string
+  readonly traceId?: string
+  readonly spanId?: string
+}
+```
+
+The latest lines at `Warn` or above, oldest first: when (epoch milliseconds
+from the program's clock), how bad, the same `record`, `code` and `area` the
+counter has, and the ids of the span the line was logged in. A bug report can
+carry them as they are.
+
+## FetchFailures
+
+Records every request a program's `fetch` sends that fails, by its route
+template, its status class and whether it repeats a request that failed. It
+wraps the `fetch` in Effect's `FetchHttpClient.Fetch`, which Effect's
+`HttpClient` and `@smthrs/effect-electric`'s shape source send through, so a
+client that retries quietly still leaves a record.
+
+```ts
+import { FetchFailures } from "@smthrs/observability"
+
+const observed = FetchFailures.layer({
+  route: (url) => url.pathname.startsWith("/api/") ? url.pathname.replace(/\/\d+/g, "/:id") : undefined
+})
+```
+
+### FetchFailures.layer
+
+```ts
+const layer: (options: Options) => Layer.Layer<never>
+```
+
+Replaces `FetchHttpClient.Fetch` with a `fetch` that records the failures of
+the requests `route` names, through the loggers and metrics the layer is built
+with, and keeps the wrapped `fetch`'s own properties. Provide it above the
+exporter's layer, so the exporter keeps the `fetch` below and its own requests
+are never recorded through themselves.
+
+- A response with status 400 or above failed, and so did a request that got no
+  answer (`network`): rejected, or answered with status 0 that isn't an opaque
+  redirect. A request its caller aborted did not fail.
+- Each failure adds one to `failures`, with `retried: "true"` when the same
+  request (method and full URL) failed before and hasn't succeeded since.
+- A run of failures of one request writes `http.request.failed` once when it
+  starts, and again when its status changes: at Error for a 5xx, Warn for a
+  4xx or no answer, with `route`, `method`, `status` (0 for `network`), `statusClass`,
+  `retried` and `failures` (the run's count so far). When the request succeeds
+  again, `http.request.recovered` at Info with `route`, `method` and
+  `failures`.
+
+The full URL is kept in memory only to tell a retry from a first failure, for
+the latest `remember` failing requests; no record carries a path or query.
+
+### FetchFailures.Options
+
+```ts
+interface Options {
+  readonly route: (url: URL) => string | undefined
+  readonly remember?: number | undefined
+}
+```
+
+- `route`: the template of a request it records, such as
+  `/api/repos/:owner/:repo/stack`, or `undefined` to leave it alone. A
+  relative request is resolved against the page's location where there is
+  one. The template is a record's only name for the request, so it holds no
+  id, name or query value.
+- `remember`: how many failing requests it remembers; past it the oldest is
+  forgotten and its next failure starts a new run. 256 by default.
+
+### FetchFailures.failures and FetchFailures.statusClass
+
+```ts
+const failures: Metric.Counter<number>
+const statusClass: (response: Pick<Response, "status" | "type">) => StatusClass | undefined
+type StatusClass = "4xx" | "5xx" | "network"
+```
+
+Counter `flows_observability_http_failures`, by `route`, `method`,
+`statusClass` and `retried`. `statusClass` names a response's class, or
+`undefined` when it didn't fail.
 
 ## JournalLogger
 

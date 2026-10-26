@@ -37,7 +37,9 @@
     ".": "./src/index.ts",
     "./BrowserOtel": "./src/BrowserOtel.ts",
     "./Endpoint": "./src/Endpoint.ts",
+    "./FetchFailures": "./src/FetchFailures.ts",
     "./JournalLogger": "./src/JournalLogger.ts",
+    "./LogFailures": "./src/LogFailures.ts",
     "./Logger": "./src/Logger.ts",
     "./Metric": "./src/Metric.ts",
     "./NodeOtel": "./src/NodeOtel.ts",
@@ -94,6 +96,16 @@
           "default": "./dist/cjs/Endpoint.js"
         }
       },
+      "./FetchFailures": {
+        "import": {
+          "types": "./dist/esm/FetchFailures.d.ts",
+          "default": "./dist/esm/FetchFailures.js"
+        },
+        "require": {
+          "types": "./dist/cjs/FetchFailures.d.ts",
+          "default": "./dist/cjs/FetchFailures.js"
+        }
+      },
       "./JournalLogger": {
         "import": {
           "types": "./dist/esm/JournalLogger.d.ts",
@@ -102,6 +114,16 @@
         "require": {
           "types": "./dist/cjs/JournalLogger.d.ts",
           "default": "./dist/cjs/JournalLogger.js"
+        }
+      },
+      "./LogFailures": {
+        "import": {
+          "types": "./dist/esm/LogFailures.d.ts",
+          "default": "./dist/esm/LogFailures.js"
+        },
+        "require": {
+          "types": "./dist/cjs/LogFailures.d.ts",
+          "default": "./dist/cjs/LogFailures.js"
         }
       },
       "./Logger": {

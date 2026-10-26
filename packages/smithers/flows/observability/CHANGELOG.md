@@ -4,6 +4,16 @@
 
 ### Added
 
+- `LogFailures.layer` counts every log line at `Warn` or above in
+  `flows_observability_log_failures` by `level`, `record`, `code` and `area`,
+  bounded and never from a message, and keeps the latest lines for a report
+  through the `Recent` service.
+- `FetchFailures.layer` wraps `FetchHttpClient.Fetch` and records each failed
+  request by route template, method, status class and whether it repeats a
+  failed one: `flows_observability_http_failures` for every failure, and one
+  `http.request.failed` line per run of failures, then
+  `http.request.recovered`.
+
 - `OtlpRelay.serve` is an `effect/http` handler that receives OTLP/HTTP JSON
   exports, such as a browser's from `Otlp.layerFetch`, and re-emits each log
   record, span and metric data point as one Effect log line. It removes
