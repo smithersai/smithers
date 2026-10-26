@@ -40,6 +40,7 @@ import { DocsScreen } from "./screens/docs/DocsScreen"
 import { RepoHomeScreen } from "./screens/repo/RepoHomeScreen"
 import { RepoScreen } from "./screens/repo/RepoScreen"
 import { Root } from "./screens/root/Root"
+import { RouteError } from "./screens/root/RouteError"
 import { RunScreen } from "./screens/runs/RunScreen"
 import { ConversationsScreen } from "./screens/conversations/ConversationsScreen"
 import { runsSearch } from "./features/runs/page"
@@ -659,6 +660,8 @@ export const router = createRouter({
     todoRoute,
     secretsRoute,
   ]),
+  // A page that fails to load or render shows Retry in the shell; React reports the error (main.tsx).
+  defaultErrorComponent: RouteError,
   // A link's hover or focus preloads its page: its route's `beforeLoad` warms what it shows (`enter`).
   defaultPreload: "intent",
   defaultPreloadDelay: PRELOAD_DELAY_MS,

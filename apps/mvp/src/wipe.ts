@@ -93,6 +93,7 @@ export const pageWipe = (host: WipeHost, targets: WipeTargets): PageWipe => {
 
   const leave = () =>
     (leaving ??= Promise.resolve().then(() => stop?.())
+      // expected: the page reloads whether its program stopped or not
       .catch(() => undefined)
       .then(() => host.reload()))
   const hearing = host.channel(WIPE)
@@ -102,6 +103,7 @@ export const pageWipe = (host: WipeHost, targets: WipeTargets): PageWipe => {
     try {
       return host.marks.getItem(WIPE) !== null
     } catch {
+      // recorded: an unreadable mark starts the page unwiped, browser.engine.unavailable WipeUnfinished
       return undefined
     }
   }
@@ -132,6 +134,7 @@ export const pageWipe = (host: WipeHost, targets: WipeTargets): PageWipe => {
           host.locks.request(targets.engine, { mode: "exclusive" }, remove))
         return true
       } catch {
+        // recorded: a wipe that failed starts the page unwiped, browser.engine.unavailable WipeUnfinished
         return false
       }
     })

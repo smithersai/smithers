@@ -10,7 +10,7 @@ import { getSession } from "../features/auth/api"
 import { NO_DEVICE_DATA, SESSION_ROUTE } from "../features/auth/contract"
 import { ENGINE_NAME } from "./contract"
 import { clientFlows } from "./declarations"
-import { engineTelemetry } from "./engine"
+import { engineRequests, engineTelemetry } from "./engine"
 import { workerRegistrations } from "./registrations"
 
 // The engine worker each tab starts (src/flows/engine.ts `tabEngine`): a program boundary, like src/main.tsx, which
@@ -102,7 +102,10 @@ const run = (model?: Model.Model, summaryModel?: Model.Model, rendererModel?: Mo
       ...(summaryModel === undefined ? {} : { summaryModel }),
       ...(rendererModel === undefined ? {} : { rendererModel }),
     }),
-    telemetry: identityRequests.pipe(Layer.provideMerge(engineTelemetry(self.location.origin))),
+    telemetry: identityRequests.pipe(
+      Layer.provideMerge(engineRequests(self.location.origin)),
+      Layer.provideMerge(engineTelemetry(self.location.origin)),
+    ),
   })
 
 // Under the dev server, `?agent=<script>` answers with a scripted model for the end-to-end tests

@@ -1,10 +1,11 @@
-import { Otlp } from "@smthrs/observability"
+import { FetchFailures, LogFailures, Otlp } from "@smthrs/observability"
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Context, Deferred, Effect, Fiber, Layer } from "effect"
 import { TELEMETRY_ROUTE } from "../features/chat/contract"
 import { tabHandlers } from "../features/theme/store"
-import { ENGINE_SERVICE, EXPORTED_SPANS, TELEMETRY_LIMITS } from "../telemetry"
+import { apiRoute } from "../apiRoutes"
+import { BROWSER_TELEMETRY, ENGINE_SERVICE, EXPORTED_SPANS, TELEMETRY_LIMITS } from "../telemetry"
 import { ENGINE_NAME } from "./contract"
 import { ClientEngine } from "./dispatch"
 import { answer, type Endpoint } from "./tabPort"
@@ -17,15 +18,28 @@ import { answer, type Endpoint } from "./tabPort"
 /**
  * Where the engine worker's records go: ChatApi's relay on `origin` (docs/observability.md#browser), as
  * `smithers-mvp-engine`, with only the spans the relay keeps but a request's (src/telemetry.ts `EXPORTED_SPANS`). The
- * engine's storage spans and one span per poll, hundreds per answer, stay in the worker.
+ * engine's storage spans and one span per poll, hundreds per answer, stay in the worker. As in the tab, every line at
+ * Warn or above is counted (`LogFailures`).
  */
 export const engineTelemetry = (origin: string) =>
-  Otlp.layerFetch({
-    baseUrl: `${origin}${TELEMETRY_ROUTE}`,
-    serviceName: ENGINE_SERVICE,
-    spans: EXPORTED_SPANS,
-    ...TELEMETRY_LIMITS,
-  })
+  LogFailures.layer({ records: BROWSER_TELEMETRY.records }).pipe(
+    Layer.provideMerge(
+      Otlp.layerFetch({
+        baseUrl: `${origin}${TELEMETRY_ROUTE}`,
+        serviceName: ENGINE_SERVICE,
+        spans: EXPORTED_SPANS,
+        ...TELEMETRY_LIMITS,
+      }),
+    ),
+  )
+
+/**
+ * The engine worker's requests to the app's own /api/ on `origin`, the agent's model calls included, recorded by their
+ * route template when they fail (`FetchFailures`, docs/observability.md#failed-requests): the `fetch` the worker's
+ * program sends through, wrapped. The worker provides it above `engineTelemetry`, whose loggers it records through
+ * and whose exporter keeps its own fetch.
+ */
+export const engineRequests = (origin: string) => FetchFailures.layer({ route: apiRoute(origin) })
 
 /** The engine worker this tab started: the other end of its tab port, which `tabAnswers` answers. */
 export class TabWorker extends Context.Service<TabWorker, Endpoint>()("@smthrs/mvp/flows/TabWorker") {}
@@ -68,7 +82,7 @@ export const failFastOnEngine = <D extends Persistence.Database>(options: Persis
     const failed = Effect.runPromiseWith(yield* Effect.context<never>())(Fiber.join(watching)).then(() => {
       throw new EngineFailed()
     })
-    // The race below handles it; until `open` runs, nothing else would.
+    // expected: the race below handles this rejection; until `open` runs, nothing else would
     failed.catch(() => {})
     return { ...options, open: () => Promise.race([Promise.resolve(options.open()), failed]) } satisfies Persistence.Options<D>
   })

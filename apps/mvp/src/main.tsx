@@ -1,4 +1,5 @@
-import { watchUpdates } from "./pwa"
+import { hostRecords, thrownName } from "./hostRecords"
+import { watchInstalls, watchUpdates } from "./pwa"
 import { SmithersUiStyles } from "@smthrs/ui"
 import { BrowserCollectionCoordinator, createBrowserWASQLitePersistence } from "@tanstack/browser-db-sqlite-persistence"
 import { SharedSqlite, StoragePersistence, WebLock } from "@smthrs/platform-browser"
@@ -36,6 +37,7 @@ import { TodosProvider } from "./features/todos/components/TodosContext"
 import { ViewsProvider } from "./features/views/components/ViewsContext"
 import { WebProvider } from "./features/web/components/WebContext"
 import { router } from "./router"
+import { AppErrorBoundary } from "./screens/root/AppErrorBoundary"
 import { activationGate, type Adoption, boundFetch, outboxPrincipal, DeviceIdentityRefused, IDENTITY_MESSAGE, readReceipt, type Receipt, VISITOR } from "./device/identity"
 import { DEVICE_ADOPTED_EVENT, NO_DEVICE_DATA, type SessionState } from "./features/auth/contract"
 import { failedWorker, memoryStorage, pageWipe, unwiped } from "./wipe"
@@ -80,15 +82,19 @@ const awaitSafeInputs = (): Promise<void> => {
   })
 }
 
+// What this host sees go wrong, for the app's program to log once it starts (src/hostRecords.ts, src/boot.ts): the
+// service worker's registration, install, update checks and held reloads, and React's render errors.
+const records = hostRecords()
 let updateReloading = false
 const editorUpdateParked = () => {
-  console.warn("pwa.update", { outcome: "editor_unpersisted" })
+  records.record({ _tag: "pwa.update", outcome: "editor_unpersisted" })
   window.alert("Couldn't save your edit on this device. Copy it before reloading.")
 }
 registerSW({
   immediate: true,
   onRegistered: (registration) => {
     if (!registration) return
+    watchInstalls(registration, () => records.record({ _tag: "pwa.install" }))
     watchUpdates(registration, {
       visible: () => document.visibilityState === "visible",
       listen: (trigger, check) => {
@@ -98,13 +104,17 @@ registerSW({
         target.addEventListener(event, check)
         return () => target.removeEventListener(event, check)
       },
-      record: (trigger, outcome) => console.info("pwa.update.check", { trigger, outcome }),
+      // The console line is the release end-to-end test's (e2e/pwa-update.spec.ts); a failed check is the app's record.
+      record: (trigger, outcome) => {
+        console.info("pwa.update.check", { trigger, outcome })
+        if (outcome === "failed") records.record({ _tag: "pwa.update.check", trigger })
+      },
     })
   },
   onNeedReload: () => {
     if (updateReloading) return
     updateReloading = true
-    console.info("pwa.update", { outcome: "activated" })
+    records.record({ _tag: "pwa.update", outcome: "activated" })
     void (async () => {
       for (;;) {
         await awaitEditorWrites()
@@ -123,9 +133,20 @@ registerSW({
       }
     })()
   },
-  onRegisterError: () => console.warn("pwa.register", { outcome: "failed" }),
+  onRegisterError: (error: unknown) => records.record({ _tag: "pwa.register", name: thrownName(error) }),
 })
-const root = createRoot(document.getElementById("root")!)
+// React reports every render error here: one a boundary caught (a page's, a plugin's, or the app's own, which shows
+// instead of a blank page) and one nothing caught. Under the dev server the console keeps React's own report.
+const root = createRoot(document.getElementById("root")!, {
+  onCaughtError: (error, info) => {
+    records.record({ _tag: "render", boundary: "caught", name: thrownName(error) })
+    if (import.meta.env.DEV) console.error(error, info.componentStack)
+  },
+  onUncaughtError: (error, info) => {
+    records.record({ _tag: "render", boundary: "uncaught", name: thrownName(error) })
+    if (import.meta.env.DEV) console.error(error, info.componentStack)
+  },
+})
 
 // Sign-out's wipe (src/wipe.ts, decision 0008 §4.6): this page hears wipes from the start and holds the device's data
 // while it runs. A boot a sign-out marked deletes the engine's OPFS directory (the engine's store and the device store)
@@ -175,7 +196,9 @@ const reopen = () => {
   try {
     last = Number(sessionStorage.getItem(REOPENED) ?? 0)
     sessionStorage.setItem(REOPENED, String(Date.now()))
-  } catch {}
+  } catch {
+    // expected: blocked storage only skips the once-a-minute check
+  }
   if (Date.now() - last < 60_000) return
   console.info("auth.device_identity", { outcome: "reopened" })
   wipe.reopen()
@@ -249,7 +272,7 @@ const outboxStorage = async () => {
 // The device store: the app's shared SQLite database in the engine worker's OPFS pool (@smthrs/platform-browser's
 // `SharedSqlite`), one per origin, reached by every tab through the leading tab's worker. The outbox: IndexedDB,
 // sending when the browser says it can, led by one tab through @smthrs/platform-browser's Web Lock service.
-const host: Omit<Host, "editorTabId" | "editorTabPersistent"> = {
+const host: Omit<Host, "editorTabId" | "editorTabPersistent" | "editorTabRefusal"> = {
   persistence: {
     open: async () => {
       try {
@@ -298,7 +321,7 @@ const host: Omit<Host, "editorTabId" | "editorTabPersistent"> = {
         if (mode === undefined) localStorage.removeItem(THEME_MIRROR_KEY)
         else localStorage.setItem(THEME_MIRROR_KEY, mode)
       } catch {
-        // Storage blocked: the store still has the mode, and the next load paints it once the store opens.
+        // expected: blocked storage keeps the mode in the store, which the next load paints once it opens
       }
     },
     systemChanges: matchMedia("(prefers-color-scheme: dark)"),
@@ -397,6 +420,7 @@ const render: BootOptions["render"] = (
   root.render(
     <StrictMode>
       <SmithersUiStyles withTheme />
+      <AppErrorBoundary reload={() => window.location.reload()}>
       <ChatProvider value={chat}>
         <AuthProvider value={auth}>
           <ThemeProvider value={theme}>
@@ -455,6 +479,7 @@ const render: BootOptions["render"] = (
           </ThemeProvider>
         </AuthProvider>
       </ChatProvider>
+      </AppErrorBoundary>
     </StrictMode>,
   )
 
@@ -478,6 +503,7 @@ const page = {
   timeline: performance,
   // Keys' `mod` is ⌘ on a Mac, Ctrl elsewhere (src/plugins/keymap.ts).
   mac: /Mac|iPhone|iPad/.test(navigator.platform),
+  records,
   render,
 }
 
@@ -490,7 +516,12 @@ void Promise.all([wipe.open(), claimEditorTabId({
   locks: navigator.locks, page: window, randomId: () => crypto.randomUUID(),
 })]).then(([wiped, editorTab]) => {
   if (!wiped) activation.refuse()
-  const tabHost: Host = { ...host, editorTabId: editorTab.id, editorTabPersistent: editorTab.persistent }
+  const tabHost: Host = {
+    ...host,
+    editorTabId: editorTab.id,
+    editorTabPersistent: editorTab.persistent,
+    ...(editorTab.reason === undefined ? {} : { editorTabRefusal: editorTab.reason }),
+  }
   const opened = { ...page, host: wiped ? tabHost : unwiped(tabHost) }
   const leaving = (stop: () => Promise<void>) =>
     wipe.started(() => {

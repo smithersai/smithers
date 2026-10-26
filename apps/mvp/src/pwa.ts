@@ -88,6 +88,35 @@ export interface UpdateHost {
 }
 export type UpdateTrigger = "visible" | "focus" | "navigation"
 
+/** A service worker as {@link watchInstalls} reads it: its state and when it changes. */
+export interface WorkerState {
+  readonly state: string
+  readonly addEventListener: (type: "statechange", listener: () => void) => void
+}
+
+/** A registration as {@link watchInstalls} reads it: the worker installing now, and when a new one starts to. */
+export interface Installs {
+  readonly installing: WorkerState | null
+  readonly addEventListener: (type: "updatefound", listener: () => void) => void
+}
+
+/**
+ * Calls `failed` when a service worker that was installing becomes redundant before it installed: Workbox couldn't
+ * precache the shell, or the script threw as it ran. One that installed, then was replaced, didn't fail.
+ */
+export const watchInstalls = (registration: Installs, failed: () => void): void => {
+  const watch = (worker: WorkerState | null) => {
+    if (worker === null) return
+    let installed = false
+    worker.addEventListener("statechange", () => {
+      if (worker.state === "redundant" && !installed) failed()
+      else installed = true
+    })
+  }
+  watch(registration.installing)
+  registration.addEventListener("updatefound", () => watch(registration.installing))
+}
+
 /** Each browser signal asks the browser to check its worker script, including its HTTP cache rules. */
 export const watchUpdates = (registration: { readonly update: () => Promise<unknown> }, host: UpdateHost): (() => void) => {
   let checking = false
@@ -100,6 +129,7 @@ export const watchUpdates = (registration: { readonly update: () => Promise<unkn
         await registration.update()
         host.record(trigger, "checked")
       } catch {
+        // recorded: the host logs a failed check as pwa.update.check
         host.record(trigger, "failed")
       } finally {
         checking = false

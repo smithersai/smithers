@@ -5,7 +5,8 @@
 // tab's store is open.
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine, TabChannel } from "@smthrs/platform-browser"
-import { Context, Effect, Exit, Fiber, Layer, ManagedRuntime, Option, Scope, Stream } from "effect"
+import { Context, Effect, Exit, Fiber, Layer, Logger, ManagedRuntime, Option, References, Scope, Stream } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { stop, testFile, usage } from "../../worker/test/harness.ts"
 import { Answer } from "../features/agent/flows"
@@ -18,7 +19,7 @@ import { WriteTheme } from "../features/theme/flows"
 import { ThemeStore } from "../features/theme/store"
 import { answerRow, cell, openAgent } from "../test/agent"
 import { openDevice } from "../test/device"
-import { EngineFailed, failFastOnEngine, tabAnswers, tabEngine, TabWorker } from "./engine"
+import { EngineFailed, engineRequests, failFastOnEngine, tabAnswers, tabEngine, TabWorker } from "./engine"
 import { ClientEngine } from "./dispatch"
 import { AnswerReference } from "../features/agent/reference"
 import { type Endpoint, TabCallFailed, TabPort } from "./tabPort"
@@ -231,5 +232,29 @@ describe("an engine worker that fails", () => {
     expect(persistence.persistence).toEqual(Option.none())
     await Effect.runPromise(Scope.close(scope, Exit.void))
     await runtime.dispose()
+  })
+})
+
+describe("the engine worker's requests", () => {
+  test("a failed request to the app's own /api/ is logged by its route template; another origin's isn't", async () => {
+    const lines: Array<{ readonly message: unknown; readonly annotations: unknown }> = []
+    const logger = Logger.make(({ message, fiber }) =>
+      void lines.push({ message: (message as ReadonlyArray<unknown>)[0], annotations: fiber.getRef(References.CurrentLogAnnotations) })
+    )
+    // The provider is down: the deployment's model endpoint answers 503, and another origin refuses too.
+    const down: typeof globalThis.fetch = async () => new Response(null, { status: 503 })
+    await Effect.runPromise(Effect.gen(function* () {
+      const fetch = yield* FetchHttpClient.Fetch
+      yield* Effect.promise(() => fetch("https://chat.test/api/model/agent", { method: "POST" }))
+      yield* Effect.promise(() => fetch("https://elsewhere.test/api/model/agent"))
+    }).pipe(
+      Effect.provide(engineRequests("https://chat.test")),
+      Effect.provide(Logger.layer([logger])),
+      Effect.provideService(FetchHttpClient.Fetch, down),
+    ))
+    expect(lines).toEqual([{
+      message: "http.request.failed",
+      annotations: { route: "/api/model/:id", method: "POST", status: 503, statusClass: "5xx", retried: false, failures: 1 },
+    }])
   })
 })

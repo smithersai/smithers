@@ -2,7 +2,17 @@
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, test } from "vitest"
-import { DOCS_SITE, DOCS_SITE_PATHS, FRAME_POLICY, PAGE_HEADERS, shellCaches, watchUpdates, type UpdateTrigger } from "./pwa"
+import {
+  DOCS_SITE,
+  DOCS_SITE_PATHS,
+  FRAME_POLICY,
+  PAGE_HEADERS,
+  shellCaches,
+  watchInstalls,
+  watchUpdates,
+  type UpdateTrigger,
+  type WorkerState,
+} from "./pwa"
 
 const APP = "https://app.smithers.sh"
 
@@ -114,5 +124,45 @@ describe("open tabs check for releases", () => {
     ])
     stop()
     expect(listeners.size).toBe(0)
+  })
+})
+
+describe("a service worker's install", () => {
+  /** A worker whose state the test moves, as the browser does, telling its listeners. */
+  const worker = () => {
+    const listeners: Array<() => void> = []
+    const self = {
+      state: "installing",
+      addEventListener: (_type: "statechange", listener: () => void) => void listeners.push(listener),
+      to: (state: string) => {
+        self.state = state
+        for (const listener of listeners) listener()
+      },
+    }
+    return self
+  }
+
+  test("that fails, now or after an update starts, is reported once each; one that installed and was replaced isn't", () => {
+    const failures: Array<string> = []
+    const first = worker()
+    const registration = {
+      installing: first as WorkerState | null,
+      updates: [] as Array<() => void>,
+      addEventListener: (_type: "updatefound", listener: () => void) => void registration.updates.push(listener),
+    }
+    watchInstalls(registration, () => failures.push("failed"))
+    first.to("installed")
+    first.to("activated")
+    first.to("redundant")
+    expect(failures).toEqual([])
+    const second = worker()
+    registration.installing = second
+    for (const update of registration.updates) update()
+    second.to("redundant")
+    expect(failures).toEqual(["failed"])
+    // An update that found no installing worker watches nothing.
+    registration.installing = null
+    for (const update of registration.updates) update()
+    expect(failures).toEqual(["failed"])
   })
 })

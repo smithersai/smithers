@@ -1,9 +1,12 @@
+import { LogFailures } from "@smthrs/observability"
 import { Effect, Fiber, Layer, ManagedRuntime, Metric } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, expect, test, vi } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
-import { boot, logPageErrors, realServices, start } from "./boot"
+import { boot, logHostRecords, logPageErrors, realServices, start } from "./boot"
 import { markStage, stageTimes } from "./bootStages"
+import { hostRecords } from "./hostRecords"
 import { Auth } from "./features/auth/auth"
 import { AuthStore, SESSION } from "./features/auth/store"
 import { Chat, type ChatView } from "./features/chat/chat"
@@ -217,9 +220,11 @@ test("when the device's conversation can't be restored, it logs that, records no
   await runtimes.pop()!.dispose()
 
   const records = read(api.telemetry)
+  // By the failure's code, never its message.
   expect(records.log("chat couldn't restore")).toEqual([
-    expect.objectContaining({ severity: "Error", attributes: { feature: "app" } }),
+    expect.objectContaining({ severity: "Error", attributes: { feature: "app", errorCode: expect.stringMatching(/^[\w.:/@-]+$/) } }),
   ])
+  expect(JSON.stringify(records.logs)).not.toContain("disk")
   expect(records.log("chat ready")).toEqual([])
   expect(records.points.some(({ metric }) => metric === "smithers_web_boot_ms")).toBe(false)
 })
@@ -261,6 +266,105 @@ test("logs an uncaught error by name and place, and an unhandled rejection by na
   expect(records.log("unhandled rejection").map(({ attributes }) => attributes)).toEqual([
     { name: "RangeError", feature: "app" },
     { name: "string", feature: "app" },
+  ])
+  expect(JSON.stringify(records.logs)).not.toContain(secret)
+})
+
+test("a request to the app's /api/ that fails is logged once per run of failures and counted by route, class and retry", async () => {
+  const { runtime, api, exported } = await app()
+  const statuses = await runtime.runPromise(Effect.gen(function* () {
+    // The fetch every client and Electric's shape requests send through.
+    const fetch = yield* FetchHttpClient.Fetch
+    const send = Effect.promise(() => fetch(`${api.origin}/api/nothing-here/acme-private`).then((response) => response.status))
+    return [yield* send, yield* send]
+  }))
+  const records = await exported()
+  expect(statuses[0]).toBe(statuses[1])
+  expect(statuses[0]).toBeGreaterThanOrEqual(400)
+  const statusClass = statuses[0]! >= 500 ? "5xx" : "4xx"
+  // The template names no segment the app's routes don't: never the repository or the path's own words.
+  expect(records.log("http.request.failed").map(({ attributes }) => attributes)).toEqual([
+    { route: "/api/:id/:id", method: "GET", status: statuses[0], statusClass, retried: false, failures: 1 },
+  ])
+  const counted = (retried: string) =>
+    records.point("flows_observability_http_failures", { route: "/api/:id/:id", method: "GET", statusClass, retried })?.value
+  expect([counted("false"), counted("true")]).toEqual([1, 1])
+  expect(JSON.stringify(records)).not.toContain("acme-private")
+})
+
+test("every line at Warn or above is counted by record, code and feature, and the latest kept for a bug report", async () => {
+  const { runtime, exported } = await app()
+  const recent = await runtime.runPromise(Effect.gen(function* () {
+    yield* Effect.logWarning("question not sent").pipe(Effect.annotateLogs({ reason: "conflict", feature: "chat" }))
+    return yield* (yield* LogFailures.Recent).entries
+  }))
+  expect(recent).toContainEqual(
+    expect.objectContaining({ level: "warn", record: "question not sent", code: "conflict", area: "chat" }),
+  )
+  const records = await exported()
+  expect(
+    records.point("flows_observability_log_failures", { level: "warn", record: "question not sent", code: "conflict", area: "chat" })
+      ?.value,
+  ).toBe(1)
+})
+
+test("logs what the page's host saw, those from before it listened first: render errors and the service worker's", async () => {
+  const { runtime, exported } = await app()
+  const host = hostRecords()
+  host.record({ _tag: "render", boundary: "caught", name: "TypeError" })
+  await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+    yield* logHostRecords(host)
+    host.record({ _tag: "render", boundary: "uncaught", name: "RangeError" })
+    host.record({ _tag: "pwa.register", name: "SecurityError" })
+    host.record({ _tag: "pwa.install" })
+    host.record({ _tag: "pwa.update.check", trigger: "navigation" })
+    host.record({ _tag: "pwa.update", outcome: "activated" })
+    host.record({ _tag: "pwa.update", outcome: "editor_unpersisted" })
+  })))
+  // Once the program stops listening, nothing it hears is logged.
+  host.record({ _tag: "pwa.install" })
+  const records = await exported()
+  const lines = (message: string) => records.log(message).map(({ severity, attributes }) => ({ severity, attributes }))
+  expect(lines("render error")).toEqual([
+    { severity: "Error", attributes: { feature: "app", boundary: "caught", name: "TypeError" } },
+    { severity: "Error", attributes: { feature: "app", boundary: "uncaught", name: "RangeError" } },
+  ])
+  expect(lines("pwa.register")).toEqual([
+    { severity: "Warn", attributes: { feature: "app", outcome: "failed", name: "SecurityError" } },
+  ])
+  expect(lines("pwa.install")).toEqual([{ severity: "Warn", attributes: { feature: "app", outcome: "failed" } }])
+  expect(lines("pwa.update.check")).toEqual([
+    { severity: "Warn", attributes: { feature: "app", outcome: "failed", trigger: "navigation" } },
+  ])
+  expect(lines("pwa.update")).toEqual([
+    { severity: "Info", attributes: { feature: "app", outcome: "activated" } },
+    { severity: "Warn", attributes: { feature: "app", outcome: "editor_unpersisted" } },
+  ])
+})
+
+test("start logs a defect that ends the program, by its name, never its message", async () => {
+  const api = await chatApi()
+  const page = { origin: api.origin, fetch: api.fetch, reload: api.reload, host: nodeDevice() }
+  const secret = `sentinel-${crypto.randomUUID()}`
+  let rendering = false
+  // The host's records, which the program listens to before its first render.
+  const host = hostRecords()
+  const { stop } = start(
+    { ...page, records: host, target: new EventTarget(), startedAt: Date.now(), render: () => {
+      rendering = true
+      host.record({ _tag: "render", boundary: "caught", name: "TypeError" })
+      throw new TypeError(secret)
+    } },
+    realServices(page),
+  )
+  await until(() => expect(rendering).toBe(true))
+  await stop()
+  const records = read(api.telemetry)
+  expect(records.log("app.unhandled").map(({ severity, attributes }) => ({ severity, attributes }))).toEqual([
+    { severity: "Error", attributes: { feature: "app", boundary: "fork", kind: "defect", "error.type": "TypeError" } },
+  ])
+  expect(records.log("render error").map(({ attributes }) => attributes)).toEqual([
+    { feature: "app", boundary: "caught", name: "TypeError" },
   ])
   expect(JSON.stringify(records.logs)).not.toContain(secret)
 })

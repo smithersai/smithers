@@ -46,6 +46,11 @@ export const FLOWS_TELEMETRY = {
     // Run credentials on the device (src/flows/credentials.ts).
     "auth.run_credential",
     "smithers_run_credential_mints",
+    // Reads a run's approvals and scope depend on (src/flows/approvals.ts, src/flows/catalog.ts).
+    "flow.approvals.read",
+    "flow.scope.read",
+    // A tab's refusal of its engine worker's call (src/flows/tabPort.ts).
+    "flow.tab.answer",
     // The tab's side of the engine (@smthrs/platform-browser BrowserEngine, StoragePersistence).
     "browser.engine.storage",
     "browser.engine.unavailable",
@@ -61,10 +66,14 @@ export const FLOWS_TELEMETRY = {
     "browser.runtime.statement",
     "browser.runtime.lost",
     "browser.runtime.stopped",
+    "browser.runtime.uncaught",
     "smithers_browser_runtime_leaderships",
     "smithers_browser_runtime_wakes",
     "smithers_browser_runtime_requests",
     "smithers_browser_runtime_statements",
+    // A tab channel that ended a subscriber that fell behind (@smthrs/platform-browser TabChannel).
+    "browser.tab_channel.overflow",
+    "smithers_browser_tab_channel_overflows",
     // The durable engine (@smthrs/flows): each flow run and each step, and its warnings and counts.
     "flows.runtime.phase",
     "FlowEngine.execute",
@@ -117,6 +126,8 @@ export const FLOWS_TELEMETRY = {
     "flows_run_first_step_ms",
     "flows_steps",
     "flows_step_retries",
+    "flow.step.failed",
+    "flows_step_failures",
     "flows_waits",
     "flows_wait_ms",
     "flows_model_calls",
@@ -172,5 +183,9 @@ export const FLOWS_TELEMETRY = {
     "direction",
     "inputTokens",
     "outputTokens",
+    "errorCode",
+    "feature",
+    "capacity",
+    "method",
   ],
 } as const

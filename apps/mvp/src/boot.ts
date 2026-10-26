@@ -1,5 +1,5 @@
 import { FlowRegistry } from "./flows/registry"
-import { Otlp } from "@smthrs/observability"
+import { FetchFailures, LogFailures, Otlp } from "@smthrs/observability"
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import {
   type BrowserEngine,
@@ -105,7 +105,11 @@ import { failFastOnEngine, tabAnswers, tabEngine } from "./flows/engine"
 import type { Endpoint } from "./flows/tabPort"
 import { deviceRegistry } from "./device/registry"
 import { Page } from "./page"
+import { apiRoute } from "./apiRoutes"
+import { recordUnhandled } from "./boundary"
 import { markStage, recordStages, type Timeline } from "./bootStages"
+import { codeOf } from "./errorCode"
+import type { HostRecord, HostRecords } from "./hostRecords"
 import { BROWSER_TELEMETRY, EXPORTED_SPANS, TELEMETRY_LIMITS, WEB_SERVICE } from "./telemetry"
 
 /** From the page's start to the conversation shown from the device (`performance.timeOrigin` to restored). */
@@ -126,6 +130,8 @@ export interface Host extends ChatHost {
   readonly editorTabId: string
   /** False when the tab id cannot survive reload; editors refuse writes. */
   readonly editorTabPersistent: boolean
+  /** Why the tab id can't survive reload, when it can't: `flows.editor.storage` logs it. */
+  readonly editorTabRefusal?: string
   /** Asks the browser to keep this site's storage: `@smthrs/platform-browser`'s `StoragePersistence`. */
   readonly storage: StoragePersistence.Service
   /** Where the theme paints, mirrors and reads the system's mode (src/features/theme/store.ts). */
@@ -290,6 +296,7 @@ export const appLayer = <S = never>(
       origin,
       editorTabId: host.editorTabId,
       editorTabPersistent: host.editorTabPersistent,
+      ...(host.editorTabRefusal === undefined ? {} : { editorTabRefusal: host.editorTabRefusal }),
       ...(chat.confirmWithin === undefined ? {} : { confirmWithin: chat.confirmWithin }),
     }))))
       .pipe(Layer.provide(Layer.succeed(RunsNavigation, RunsNavigation.of({
@@ -395,18 +402,29 @@ export const appLayer = <S = never>(
     Layer.provideMerge(tabEngine(host.engineWorker, host.engineName)),
     Layer.provideMerge(Page.layer(reload)),
     Layer.provide(FetchHttpClient.layer),
-    // Only the spans the relay keeps: a tab's engine requests, hundreds per answer, stay in the tab. Over the exporter,
-    // what went wrong in this tab lately, which a bug report carries (src/flows/errors.ts): the error records the
+    // What went wrong in this tab lately, which a bug report carries (src/flows/errors.ts): the error records the
     // exporter relays, kept in a ring built on it, so it sees what the exporter sees.
     Layer.provideMerge(
       TabErrors.observing(new Set(BROWSER_TELEMETRY.records)).pipe(
         Layer.provideMerge(
-          Otlp.layerFetch({
-            baseUrl: `${origin}${TELEMETRY_ROUTE}`,
-            serviceName: WEB_SERVICE,
-            spans: EXPORTED_SPANS,
-            ...TELEMETRY_LIMITS,
-          }),
+          Layer.mergeAll(
+            // Every request to the app's own /api/ that fails, Electric's shape requests the sync client sends again
+            // included, logged once per run of failures and counted by route template, status class and whether it was a
+            // retry (docs/observability.md#failed-requests). Above the exporter, which sends through the fetch below it.
+            FetchFailures.layer({ route: apiRoute(origin) }),
+            // Every line at Warn or above counted by record, code and feature, and the latest kept for a bug report.
+            LogFailures.layer({ records: BROWSER_TELEMETRY.records }),
+          ).pipe(
+            // Only the spans the relay keeps: a tab's engine requests, hundreds per answer, stay in the tab.
+            Layer.provideMerge(
+              Otlp.layerFetch({
+                baseUrl: `${origin}${TELEMETRY_ROUTE}`,
+                serviceName: WEB_SERVICE,
+                spans: EXPORTED_SPANS,
+                ...TELEMETRY_LIMITS,
+              }),
+            ),
+          ),
         ),
       ),
     ),
@@ -445,6 +463,37 @@ export const logPageErrors = Effect.fnUntraced(function* (target: EventTarget) {
   )
 })
 
+/** One record of the host's as a log line: never an error's message or a component's props. */
+const logHostRecord = (record: HostRecord): Effect.Effect<void> => {
+  switch (record._tag) {
+    case "render":
+      return Effect.logError("render error").pipe(Effect.annotateLogs({ boundary: record.boundary, name: record.name }))
+    case "pwa.register":
+      return Effect.logWarning("pwa.register").pipe(Effect.annotateLogs({ outcome: "failed", name: record.name }))
+    case "pwa.install":
+      return Effect.logWarning("pwa.install").pipe(Effect.annotateLogs({ outcome: "failed" }))
+    case "pwa.update.check":
+      return Effect.logWarning("pwa.update.check").pipe(Effect.annotateLogs({ outcome: "failed", trigger: record.trigger }))
+    case "pwa.update":
+      return (record.outcome === "activated" ? Effect.logInfo : Effect.logWarning)("pwa.update").pipe(
+        Effect.annotateLogs({ outcome: record.outcome }),
+      )
+  }
+}
+
+/**
+ * Logs what the page's host saw (src/hostRecords.ts): React's render errors as `render error`, and the service
+ * worker's failed registration, install and update check and a reload an editor held back as `pwa.*`, those it saw
+ * before the program started first. The listener runs each log with the services it was bound with.
+ */
+export const logHostRecords = Effect.fnUntraced(function* (records: HostRecords) {
+  const run = Effect.runSyncWith(yield* Effect.context<never>())
+  yield* Effect.acquireRelease(
+    Effect.sync(() => records.listen((record) => run(logHostRecord(record).pipe(Effect.annotateLogs({ feature: "app" }))))),
+    (stop) => Effect.sync(stop),
+  )
+})
+
 /** Asks the browser to keep this site's storage, so it isn't cleared after days unused, and counts its answer. */
 export const requestPersistentStorage = (storage: StoragePersistence.Service) =>
   storage.persist.pipe(
@@ -463,6 +512,8 @@ export const requestPersistentStorage = (storage: StoragePersistence.Service) =>
  */
 export interface BootOptions {
   readonly target: EventTarget
+  /** What the page's host saw go wrong, React's render errors and the service worker's, for the program to log. */
+  readonly records?: HostRecords
   /** The page's start, in epoch milliseconds: `performance.timeOrigin`. */
   readonly startedAt: number
   /**
@@ -509,6 +560,8 @@ export interface BootOptions {
 export const boot = (options: BootOptions & { readonly storage: StoragePersistence.Service }) =>
   Effect.gen(function* () {
     yield* logPageErrors(options.target)
+    // Before the first render, whose errors React reports through them.
+    if (options.records !== undefined) yield* logHostRecords(options.records)
     const chat = yield* Chat
     const auth = yield* Auth
     const theme = yield* Theme
@@ -580,7 +633,9 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
       Effect.andThen(Clock.currentTimeMillis),
       Effect.flatMap((now) => Metric.update(bootTime, now - options.startedAt)),
       Effect.andThen(Effect.logInfo("chat ready")),
-      Effect.catchTag("LoadFailed", () => Effect.logError("chat couldn't restore")),
+      Effect.catchTag("LoadFailed", (failure) =>
+        Effect.logError("chat couldn't restore").pipe(Effect.annotateLogs({ errorCode: codeOf(failure.cause) }))
+      ),
     )
     return yield* Effect.never
   }).pipe(Effect.scoped, Effect.annotateLogs({ feature: "app" }))
@@ -594,15 +649,21 @@ export const start = <S = never>(
   options: AppOptions & BootOptions,
   services: Layer.Layer<ChatClient | AuthClient | S, never, HttpClient.HttpClient | ClientEngine>,
 ) => {
-  const { target, startedAt, render, mac, timeline, ...app } = options
+  const { target, startedAt, render, mac, timeline, records, ...app } = options
   const runtime = ManagedRuntime.make(appLayer(app, services))
-  const program = runtime.runFork(boot({
-    target,
-    startedAt,
-    render,
-    ...(mac === undefined ? {} : { mac }),
-    ...(timeline === undefined ? {} : { timeline }),
-    storage: app.host.storage,
-  }))
+  // Nothing awaits the program: a failure or defect that ends it is logged as `app.unhandled` (src/boundary.ts).
+  const program = runtime.runFork(recordUnhandled(
+    boot({
+      target,
+      startedAt,
+      render,
+      ...(mac === undefined ? {} : { mac }),
+      ...(timeline === undefined ? {} : { timeline }),
+      ...(records === undefined ? {} : { records }),
+      storage: app.host.storage,
+    }),
+    "app",
+    "fork",
+  ))
   return { runtime, stop: () => runtime.runPromise(Fiber.interrupt(program)).then(() => runtime.dispose()) }
 }

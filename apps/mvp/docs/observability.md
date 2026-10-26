@@ -57,7 +57,7 @@ Logs:
 | Message | When | Level | Fields |
 |---|---|---|---|
 | `chat ready` | the conversation was restored from the device (or, without a device store, synced) | Info | |
-| `chat couldn't restore` | the device store couldn't restore the conversation; it still syncs | Error | |
+| `chat couldn't restore` | the device store couldn't restore the conversation; it still syncs | Error | `errorCode` (the failure's code, never its message) |
 | `persistent storage requested` | boot asked the browser to keep the site's storage | Info | `granted` (`true`, `false`) |
 | `question asked` | `ask` put a question into the outbox | Info | `questionId`, `answerId`, `question.length`, `queued` (whether the pill showed) |
 | `question stored` | a send got the question into Postgres, this device's engine recorded the run that answers it, and Electric delivered it | Info | `questionId`, `answerId`, `taken` (`inserted`, or `existing` for a resend ChatApi answered 200) |
@@ -73,18 +73,18 @@ Logs:
 | `chat connection changed` | the connection pill changed | Info | `status` (`up`, `offline`, `failed`, `stopped`) |
 | `browser.engine.unavailable` | this tab's engine is unavailable (`@smthrs/platform-browser` `BrowserEngine`): its worker threw, as when a module can't load in a worker (`reason: worker-failed`), or couldn't build the engine (`engine-failed`); or its sign-out wipe couldn't delete the device's stores (`worker-failed`, `error.type` `WipeUnfinished`, src/wipe.ts); the device store opens in memory and the pill says Smithers can't run here | Error | `reason`, `error.type` (the failure's name, never its message) |
 | `chat retried` | Retry on the pill, the browser came back online, or the device was adopted in place by the person signed in ([sign-in](features/sign-in.md#the-devices-owner)) | Info | `via` (`button`, `online`, `adopted`) |
-| `page error` | an uncaught error on the window | Error | `name`, `source` (`file:line:column`); never the message |
+| `page error` | an uncaught error on the window; counted by `LogFailures` ([Errors](#errors)) | Error | `name`, `source` (`file:line:column`); never the message |
 | `unhandled rejection` | a rejection nothing handled | Error | `name`; never the message |
 | `page reloaded` | a page restored from the back/forward cache, just before it reloads | Info | none. It reaches the relay only if an export runs before the page unloads; the console always keeps it |
 | `collection cleanup failed` | a collection's cleanup rejected as its scope closed (`@smthrs/effect-tanstack-db`) | Warn | `collection` (its id), `error` (the error's name, never its message) |
-| `persistence unavailable` | the device store's database couldn't open, so rows stay in memory (`@smthrs/effect-tanstack-db`) | Warn | `error` (the error's tag) |
+| `persistence unavailable` | the device store's database couldn't open, so rows stay in memory (`@smthrs/effect-tanstack-db`) | Warn | `error` (the name or tag of what `open` rejected with) |
 | `flows.editor.storage` | a flow editor's SQLite service could not open or its collection could not restore; editors refuse writes and keep retained rows for recovery | Warn | `collection` (`device`, `flow-form`, `flow-answers`, `flow-code`), `outcome` (`unavailable`, `failed`) |
 | `persisted write failed` | the device couldn't store a write to a persisted collection, such as an unsent question, so it rolled back; TanStack DB fails one whose coordinator tab closed mid-write (`IndeterminateCommitError`) (`@smthrs/effect-tanstack-db`) | Warn | `collection` (its id), `operation` (`insert`, `update`, `delete`), `error` (the error's name, never its message) |
 | `persisted sync role` | this tab's source for a synced collection took a role: `writer`, the one tab of the device that stores what the shape syncs (it holds the collection's lock, `persisted-sync:<id>`), or `watcher`, a tab whose rows come from the device store while its shape only tells it how the network is (`@smthrs/effect-tanstack-db`, decision 0002 §1) | Info | `collection` (its id), `role` |
 | `outbox lock refused` | the browser's lock manager refused the outbox's lock request, so this tab doesn't lead; it asks again on its next focus (`@smthrs/effect-tanstack-db`) | Warn | `error` (the error's name) |
 | `outbox write sealed` | a queued write another owner of this device queued was kept out of this tab's outbox as it loaded (`stage: load`), or came up to be sent after the tab's owner changed (`stage: send`); it stays in IndexedDB, never sent as anyone else (`@smthrs/effect-tanstack-db` `Outbox.Principal`, decision 0023 rule 6) | Warn | `name`, `stage`; never the write's rows |
-| `outbox couldn't load its writes` | the outbox's storage couldn't be read at start (`@smthrs/effect-tanstack-db`) | Warn | |
-| `outbox write failed` | a send died with a defect; it is never sent again (`@smthrs/effect-tanstack-db`) | Error | `name`, `outcome: defect` |
+| `outbox couldn't load its writes` | the outbox's storage couldn't be read at start (`@smthrs/effect-tanstack-db`) | Warn | `error` (the storage error's name) |
+| `outbox write failed` | a send died with a defect; it is never sent again (`@smthrs/effect-tanstack-db`) | Error | `name`, `outcome: defect`, `error.type` (the defect's name) |
 | `session loaded` | the tab learned who is signed in (`features/auth`) | Info | `feature: auth`, `signedIn`; never the login |
 | `session unreachable` | ChatApi couldn't say who is signed in | Warn | `feature: auth`, `status` when ChatApi answered outside the contract |
 | `sign in pressed` | Sign in with GitHub pressed | Info | `feature: auth` |
@@ -170,6 +170,113 @@ Each tab's engine worker (`src/flows/engine.worker.ts`) passes `BrowserRuntime.r
 The full lists are `FLOWS_TELEMETRY` (`src/flows/contract.ts`), `AGENT_TELEMETRY` (`src/features/agent/contract.ts`), `THEME_TELEMETRY` (`src/features/theme/contract.ts`, the agent's `execute_tool app/theme/set`) and `NAVIGATION_TELEMETRY` (`src/features/navigation/contract.ts`, with the agent's `execute_tool app/navigate`) and `WEB_TELEMETRY` (`src/features/web/contract.ts`, with the agent's `execute_tool app/web/open`). None of their fields carries a flow's input, a prompt, an answer or a provider's text: a step key and a tool call's id are digests.
 
 An answer's writes are ChatApi's to record, through the answer routes ([agent.md](features/agent.md#observability)).
+
+### Errors
+
+Every frontend error is logged once, at Warn or Error, with a stable code, and counted, so a bug report's records, the relayed browser logs and ChatApi's own logs can answer what went wrong (Will, 2026-10-25: "make sure we collect good metrics especially on errors"). The rule is a lint rule, [obs.frontend-failure-observed](rules.md#obsfrontend-failure-observed), and [decision 0109](decisions/0109-frontend-failures-recorded-once.md) says why it is built this way. None of these records carries a message, a URL's path or query, a collection's full id, or what anyone wrote.
+
+**Counted from the log.** The tab and the engine worker each install `LogFailures` (`@smthrs/observability`, `src/boot.ts`, `src/flows/engine.ts`) beside the exporter: every line at Warn, Error or Fatal adds one to `flows_observability_log_failures` by `level` (`warn`, `error`, `fatal`), `record` (the line's message when it is in `BROWSER_TELEMETRY`, else `other`), `code` (the first of the annotations `errorCode`, `code`, `reason`, `outcome`, `error.type`, `error`, `name`, `status` that is an identifier, else the tag or name of the failure in the line's cause, else `none`) and `area` (the line's `feature`, else `none`). Codes and areas are capped at 200 and 50 distinct values. So a failure needs a log line with a code, never a counter of its own. The latest 50 such lines stay in the tab as `LogFailures.Recent` (`at`, `level`, `record`, `code`, `area`, `traceId`, `spanId`), for a bug report to carry.
+
+#### Failed requests
+
+Every request to the app's own `/api/` that fails, Electric's shape requests included, is recorded where the app's `fetch` is: `FetchFailures` (`@smthrs/observability`) wraps the `fetch` in `FetchHttpClient.Fetch`, which every Effect `HttpClient` and `@smthrs/effect-electric`'s shape source send through, in the tab (`src/boot.ts`) and in the engine worker, the agent's model calls included (`src/flows/engine.ts`). A sync client that sends a request again on its own, as Electric does for a day of 500s, still leaves a record. The telemetry export's own requests are left out.
+
+| Record | Kind | Level | Fields |
+|---|---|---|---|
+| `http.request.failed` | log | Error for a 5xx, Warn for a 4xx or no answer (most often a device offline) | `route` (the template, below), `method`, `status` (0 when no answer came), `statusClass` (`4xx`, `5xx`, `network`), `retried` (the same request failed before and hasn't succeeded since), `failures` (this run's count so far). Once when a run of failures of one request starts, and again when its status changes, never once per retry |
+| `http.request.recovered` | log | Info | `route`, `method`, `failures`: the request succeeded again after a run of failures |
+| `flows_observability_http_failures` | counter | | `route`, `method`, `statusClass`, `retried` (`true`, `false`): every failed request |
+
+A request is the same request when its method and full URL are; a request its caller aborted didn't fail. The route template is `routeTemplate` (`src/apiRoutes.ts`): each path segment that is one of the app's route words (`ROUTE_WORDS`) stays, the two after `repos` are `:owner` and `:repo`, and any other is `:id`, so `/api/repos/acme/widgets/stack` is `/api/repos/:owner/:repo/stack`. `src/apiRoutes.test.ts` fails when a route in `src/` or `worker/` has a word the list lacks.
+
+#### Uncaught errors, in every context
+
+| Context | Record | Level | Fields |
+|---|---|---|---|
+| the page | `page error`, `unhandled rejection` (`src/boot.ts` `logPageErrors`) | Error | `name`, and `source` (`file:line:column`) for an error; never the message |
+| the engine worker | `browser.runtime.uncaught` (`@smthrs/platform-browser` `BrowserRuntime.run`): an error nothing caught, or a rejection nothing handled, on the worker's global | Error | `kind` (`error`, `rejection`), `error.type`. The tab also hears an uncaught error as the worker's `error` event: `browser.engine.unavailable` with `reason: worker-failed` |
+| the engine worker | `browser.runtime.stopped`, now logged through the worker's exporter, an engine that couldn't be built included | Error | `error.type` |
+| the language worker | `browser.language_server.failed` (`@smthrs/platform-browser` `BrowserLanguageServer`), in the tab, when the worker fails | Error | `error.type`: its error's name, or `ErrorEvent` when the browser gives none |
+| the service worker | Workbox's generated worker runs no app code, so its failures are what the page sees (`src/hostRecords.ts`, logged by `src/boot.ts` `logHostRecords`): `pwa.register` (it couldn't be registered), `pwa.install` (a worker that was installing became redundant before it installed: the shell couldn't be precached, or the script threw), `pwa.update.check` (asking the browser to check for a new one failed) | Warn | `outcome: failed`; `name` for `pwa.register`, `trigger` (`visible`, `focus`, `navigation`) for `pwa.update.check` |
+| the page | `pwa.update` (`src/hostRecords.ts`): a new release activated and the page reloads into it, or an editor's unsaved write held the reload back | Info `activated`, Warn `editor_unpersisted` | `outcome` |
+
+A request a service worker failed to answer shows as a failed fetch or module load in the page: `http.request.failed` for `/api/`, which the worker never answers, and a render error or an unhandled rejection for a module.
+
+#### Render errors
+
+React reports every render error to the page's host (`main.tsx`, `createRoot`'s `onCaughtError` and `onUncaughtError`), which hands it to the program through `src/hostRecords.ts` before the first render: `render error` at Error with `boundary` (`caught` when a boundary caught it, `uncaught` when nothing did) and `name` (the error's name), never its message or a component's props. A page that fails to load or render shows "Couldn't show this page" and Retry in the shell (`src/screens/root/RouteError.tsx`, the router's `defaultErrorComponent`); one no page caught shows the same and Reload instead of a blank page (`src/screens/root/AppErrorBoundary.tsx`). Under the dev server the console keeps React's own report.
+
+#### What an Effect left unhandled
+
+| Record | When | Level | Fields |
+|---|---|---|---|
+| `app.unhandled` | the app's program (`src/boot.ts` `start`) ended with a failure or a defect; a view's action or a host callback, run through `runners` (`src/boundary.ts`), died; a forked one failed, which nobody awaits | Error | `feature`, `boundary` (`sync`, `promise`, `fork`), `kind` (`defect`, `failure`), `error.type` (the failure's code, `src/errorCode.ts` `codeOf`) |
+
+A sync or promise runner's typed failure is its caller's to handle; an interruption is never logged.
+
+#### Flows, the outbox and the device store
+
+| Record | Kind | From | Level | Fields |
+|---|---|---|---|---|
+| `flow.step.failed` | log | `@smthrs/flow` `RunMetrics.recordStep`, for each step attempt whose body failed, in the engine worker and on Cloudflare | Warn | `flow`, `attempt`, `code` (the failure's code: a typed failure's `code` or tag, a defect's tag or name), `runId` |
+| `flows_step_failures` | counter | the same | | `flow`, `code` |
+| `outbox write retrying` | log | `@smthrs/effect-tanstack-db` `Outbox`: a write's first send that will be sent again | Warn | `name`, `status` (or `none`), `outcome: retry`; later retries only count in `outbox_attempts` |
+| `outbox write refused` | log | the same: the server refused a write for good; its rows roll back | Warn | `name`, `status` (or `none`), `outcome: refused` |
+| `outbox write parked` | log | the same: a write an older build stored that this build can't send (`stage: upgrade`), and again on each load while no feature takes it (`stage: load`) | Warn | `name`, `reason`, `stage` |
+| `outbox couldn't upgrade its writes`, `outbox couldn't read its parked writes`, `outbox couldn't discard a parked write` | log | the same: the outbox's storage failed | Warn | `error`: the storage error's name |
+| `persisted restore failed` | log | `@smthrs/effect-tanstack-db` `Collection`: a persisted collection couldn't restore its rows from the device | Warn | `collection` (its kind: the id up to its first `:`), `error` |
+| `persistence_restore_failures` | counter | the same | | `collection` (its kind) |
+| `persisted sync failed` | log | the same: a persisted synced collection's source failed as it started, so the collection failed | Warn | `collection` (its kind), `error` |
+| `device.migrate` | log | `@smthrs/effect-tanstack-db` `Migrations`: each collection brought to this build's version as the leader prepares the device store, relayed since 2026-10-25 | Warn when a migration set rows aside or dropped them (they no longer show), Info otherwise | `collection`, `store`, `outcome`, `from`, `to`, `migrated`, `kept`, `dropped`; `device_rows_kept` counts each row set aside by `store` and `reason` |
+| `electric.shape.stopped` | log | `@smthrs/effect-electric` `ElectricCollection`: Electric stopped a shape (a 4xx, or a batch it couldn't read), until `reconnect` | Warn | `collection` (its kind), `status` (or `none`), `error` (the failure's tag or name) |
+| `electric_shape_stops` | counter | the same | | `collection` (its kind), `status` |
+
+`outbox write failed` now carries `error.type`, the defect's name; `outbox couldn't load its writes` carries `error`; and `persistence unavailable`'s `error` is the name or tag of what the database's `open` rejected with (such as `DeviceIdentityRefused`, `EngineFailed`, `WipeUnfinished`), no longer always `PersistenceUnavailable`.
+
+#### Features
+
+What each feature lost when something failed, logged once with its code (the 2026-10-25 sweep). Every line also carries `feature`; `errorCode` is `codeOf` (`src/errorCode.ts`), never a message.
+
+| Record | Level | Fields | When |
+|---|---|---|---|
+| `run.read` | Warn when `unavailable`, else Debug | `act` (`run`, `list`, `cloud`, `outcome`, `page`, `child`, `child_page`, `more`), `outcome`, `durationMs`, `events`, `errorCode`, `status` (ChatApi's, for a run on Cloudflare) | a read of a run, a page of its journal, a child or the list failed |
+| `run.retry.reserve` | Warn | `outcome: unavailable`, `errorCode` | the engine couldn't say whether a retry's id is taken, so Retry was refused |
+| `run.retry.revision` | Warn | `outcome: unread`, `errorCode` | engine worker: a pinned Retry couldn't read its pinned child's payload and used the run's own |
+| `runs.repo_runs.load`, `repo.repositories.load`, `views.home.load`, `todos.issue.load` | Warn | `outcome: failed`, `errorCode` | a list's first sync failed: a repository's runs, the repositories, the home's views, the issues while drafting from one |
+| `pulls.files.load` | Warn | `outcome: failed`, `errorCode`, `status` | a pull request's comparison couldn't be read; the Files tab shows it failed |
+| `pulls.merge` | Warn | `outcome` (`forbidden`, `sign_in`, `unavailable`), `errorCode`, `status` | a merge press was refused or unreachable |
+| `repo.clone.unconfirmed` | Warn | `outcome: unconfirmed`, `reason: not_delivered` | Electric didn't deliver a clone's row in time |
+| `terminal.show` | Warn with `errorCode` when `failed`, else Info | as before | the terminals' rows couldn't load |
+| `terminal.show.failed` | Error | `errorCode` | a background show or its callback failed |
+| `terminal.open.unsettled` | Warn | `outcome` (`timeout`, `missing`) | an opening terminal's row never settled; the panel shows it failed |
+| `theme.toggle.defect` | Error | `errorCode` | a defect in the theme's toggle |
+| `timeline.summary.unavailable`, `timeline.summary.defect` | Warn | `errorCode`; `reason` (the dispatch's) for `unavailable` | an entry's summary failed |
+| `agent.status.malformed` | Warn | `outcome: malformed`, `errorCode` (`decode`, `timeout_after_200`), `status: 200` | ChatApi took a status write but its receipt was unreadable or late |
+| `issues.write.parked.keep`, `issue write parked` (now relayed) | Warn | `outcome: not_kept`, `errorCode`, `writeId`, `op` | the device couldn't keep a parked issue write, so it stays parked |
+| `views.form`, `views.render`, `views.move`, `views.template` | Warn with `errorCode` and `status` for `forbidden` or `unavailable`, else Info | as before | ChatApi couldn't take a view or a move |
+| `home.navigate` | Warn | `what` (`ask`, `action`), `outcome: failed`, `errorCode` | a home button's navigation rejected |
+| `memory.catalog_unavailable`, `smithers_memory_catalog_unavailable` (now relayed) | Warn | `outcome: unavailable`, `errorCode`, `status` when known | the agent's skill catalog couldn't be read; the opening goes on with no skills |
+| `notifications.panel` | Warn when a retry failed, else Info | `reason` (the dispatch's) | the engine didn't admit a clone retry |
+| `session unreachable`, `sign out failed` | Warn | `outcome: failed`, `errorCode` (`timeout`, `unreachable`, `status`, `malformed`), `status` | ChatApi couldn't say who is signed in, or didn't take a sign-out |
+| `device wipe failed` | Warn | `outcome: failed`, `errorCode: WipeFailed` | the host couldn't wipe the device after a sign-out |
+| `branch.creation.defect` | Error | `outcome: defect`, `errorCode` (the defect's name) | a branch's creation run died; the page shows it failed |
+| `chat draft failed` | Warn | `outcome: failed`, `errorCode` | a draft write rolled back |
+| `question not admitted` | Warn for `storage`, Info for `follower` | `questionId`, `reason`; `outcome: failed`, `errorCode` for `storage` | the outbox couldn't take a question |
+| `coedit.admit` | Warn | `outcome: failed`, `reason`, `errorCode` | the outbox's storage refused a shared text's update; the tab keeps it for the next send |
+| `domain.copy` | Warn | `outcome: failed`, `errorCode: ClipboardRefused` | the clipboard refused a DNS value |
+| `flow.draft.interrupt` | Warn | `outcome: failed`, `errorCode` | deleting a draft couldn't record stopping its round; the draft is still deleted |
+| `flows.round.inspect` | Warn | `outcome: unreadable`, `errorCode` | the engine refused to read a round (one it doesn't have stays silent, as absent) |
+| `flows.editor.storage` (`collection: editor-tab`) | Warn | `outcome: unavailable`, `reason` (`locks_unavailable`, `lock_refused`, `lock_held`, `storage_failed`, `storage_unread`; `src/device/editorTab.ts`) | the tab's editor id can't survive a reload, so its editors refuse writes |
+| `auth.device_identity` | Warn when the session read failed with an HTTP status, else Info | adds `errorCode`, `status` | the owner check opened offline or unverified after a failed session read |
+| `auth.run_credential`, `smithers_run_credential_mints{outcome: unreachable}` | Warn | `outcome: unreachable`, `act: none`, `principal`, `errorCode` (such as `http:TransportError`) | a credential's mint never reached ChatApi |
+| `flow.approvals.read`, `flow.scope.read` | Warn | `outcome: unreadable`, `errorCode` | a run's earlier approvals, or a person's flow's pinned scope, couldn't be read; the person is asked again, or the agent calls nothing |
+| `flow.tab.answer` | Warn (`refused`, `unknown_method`), Error (`defect`) | `method`, `outcome`, `errorCode` | the tab's handler for an engine worker's call failed |
+| `plugin.press` | Warn when `failed`, else Info | `errorCode` when failed | a plugin's press whose flow failed |
+| `plugin.failed` | Error | `plugin`, `outcome: failed`, `errorCode` | a plugin's error boundary caught a component, tab or chunk that failed |
+| `plugin.request` | Warn | `plugin`, `outcome: refused`, `reason` | the host refused a plugin's request |
+| `browser.tab_channel.overflow`, `smithers_browser_tab_channel_overflows` (now relayed) | Warn | `channel`, `capacity` | a tab fell behind a channel |
+
+The tests: `packages/smithers/flows/observability/test/LogFailures.test.ts` and `FetchFailures.test.ts` (a real local server and the real `fetch`), `src/boot.test.ts` (a failed `/api/` request through the app's own `fetch`, a counted Warn line and `LogFailures.Recent`, the host's records, a boot defect), `src/boundary.test.ts`, `src/apiRoutes.test.ts`, `src/hostRecords.test.ts`, `src/pwa.test.ts` (`watchInstalls`), `packages/smithers/flows/flow/test/RunMetrics.test.ts` and `engine-store/test/RunUsageMetrics.test.ts` (a failed step through the real engine), `packages/effect-tanstack-db/test/Outbox.test.ts`, `OutboxCarry.test.ts`, `Persistence.test.ts` and `OneWriter.test.ts`, `packages/effect-electric/test/ElectricCollection.test.ts`, `packages/smithers/flows/platform-browser/test/BrowserRuntime.test.ts` and `BrowserLanguageServer.test.ts`, and `eslint.frontend-failures.test.mjs` for the lint rule.
 
 ### ChatApi Worker
 
