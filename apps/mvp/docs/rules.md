@@ -580,3 +580,30 @@ Version control is jj; never the git CLI.
 
 - **Will (`/Users/williamcory/AGENTS.md`, 2026-10-05):** "Use Jujutsu (`jj`) for every repository version-control operation".
 - **Enforced:** process only.
+
+## worker.request-owned-io
+
+Worker requests own their I/O. A module or service layer must never retain an
+in-flight lookup for another request to await (2026-10-25 About incident).
+`eslint.worker-inflight.js`, run by `pnpm lint:worker-io`, rejects Effect
+`Cache.make/makeWith`, `Deferred.make/makeUnsafe`,
+`Effect.cached/cachedWithTTL/cachedInvalidateWithTTL`, `ScopedCache.make/makeWith`,
+`RcMap.make`, `RcRef.make` and `Pool.make/makeWithTTL/makeWithStrategy` in production Worker sources. It
+resolves import aliases, forward-declared local aliases, assignment and
+destructuring aliases, including pipe-form calls. Factory
+functions are checked too: a function can be called once during layer construction.
+This deliberately conservative rule does not attempt whole-program reachability.
+The sole memoization allowlist is `Effect.cached(Effect.succeed(<literal constant>))`;
+arrays and objects must contain only literal constants. Schema declarations,
+constants, persisted `DurableDeferred` tokens and storage-backed caches are safe
+and outside the ban. Tests and test hosts are excluded. Raw promises and arbitrary
+user-written sharing still require review; this is a guard against known Effect
+primitives, not a proof of every request's ownership.
+
+The other two current hits, `github/RepoRoles.ts` and `github/Compare.ts`, now
+create each request's signer independently. No other current calls to the guarded
+constructors occur in production Worker sources. Importing a signer's WebCrypto key is
+asynchronous; a cached signer initialization was not safe to share.
+`worker/RepoAbout.workerd.test.ts` exercises thirty concurrent cold reads through
+the real bundled RepoApi route, real Postgres and GitHub in workerd. Each must
+return 200 with the repository's name; Node cannot reproduce this ownership fault.

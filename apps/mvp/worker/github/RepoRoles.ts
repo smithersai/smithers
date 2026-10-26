@@ -151,18 +151,18 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       http === undefined
         ? Effect.provide(effect, FetchHttpClient.layer)
         : Effect.provideService(effect, HttpClient.HttpClient, http)
-    // The App's JWT signer, built once on first use.
+    // Build the signer in each request; never share its in-flight key import.
     const app: Option.Option<{
       readonly config: GitHubApp
       readonly auth: Effect.Effect<GitHub.AppAuth.AppAuth, unknown>
     }> = Option.isSome(options.app)
       ? Option.some({
         config: options.app.value,
-        auth: yield* GitHub.AppAuth.make({
+        auth: GitHub.AppAuth.make({
           appId: options.app.value.appId,
           privateKey: options.app.value.privateKey,
           apiBaseUrl: options.app.value.apiBaseUrl,
-        }).pipe(client, Effect.cached),
+        }).pipe(client),
       })
       : Option.none()
 

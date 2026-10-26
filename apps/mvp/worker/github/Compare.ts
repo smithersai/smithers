@@ -43,8 +43,7 @@ const noStore = { "cache-control": "no-store" }
  */
 export const make = (app: GitHubApp, http: Option.Option<HttpClient.HttpClient> = Option.none()) =>
   Effect.gen(function* () {
-    const appAuth = yield* GitHub.AppAuth.make({ appId: app.appId, privateKey: app.privateKey, apiBaseUrl: app.apiBaseUrl })
-      .pipe(Effect.cached)
+    const appAuth = GitHub.AppAuth.make({ appId: app.appId, privateKey: app.privateKey, apiBaseUrl: app.apiBaseUrl })
     return (repository: Repository, base: string, head: string) =>
       Effect.gen(function* () {
         const outcome = yield* Effect.gen(function* () {
