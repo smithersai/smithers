@@ -423,6 +423,13 @@ export interface CreateBranchOptions {
   readonly fromNamespace?: RefNamespace | undefined
   readonly branch: string
   readonly from: string
+  /**
+   * Moves `branch` to `from` when it exists, fast-forward or not, instead of
+   * failing `conflict`: the provider's `force`.
+   *
+   * @since 0.2.0
+   */
+  readonly force?: boolean | undefined
 }
 
 /**
@@ -451,7 +458,8 @@ export interface CreatedBranch {
  * - `listFiles`, `readFile`, `listCommits`, `listBranches`, `listTags`:
  *   reads, as their options say.
  * - `createBranch`: creates a branch at the commit another ref names, with no
- *   clone and no push. A branch that exists fails with `conflict`.
+ *   clone and no push. A branch that exists fails with `conflict`, unless
+ *   `force` moves it there.
  *
  * @category services
  * @since 0.1.0
@@ -832,7 +840,8 @@ const make = (credentials: Credentials): Effect.Effect<Client, CodeStorageError,
                 ...(options.fromNamespace === undefined
                   ? {}
                   : { base_is_ephemeral: options.fromNamespace === "ephemeral" }),
-                ...(options.namespace === undefined ? {} : { target_is_ephemeral: options.namespace === "ephemeral" })
+                ...(options.namespace === undefined ? {} : { target_is_ephemeral: options.namespace === "ephemeral" }),
+                ...(options.force === true ? { force: true } : {})
               })
             )
             const response = yield* send("createBranch", repo, ["git:write"], request)

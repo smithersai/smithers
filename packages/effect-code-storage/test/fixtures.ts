@@ -166,13 +166,18 @@ export const codeStorage = (publicKey: CryptoKey) => {
       return Response.json({ message: "queued" }, { status: 202 })
     }
     if (request.method === "POST" && action === "/branches/create") {
-      const { base_ref, target_branch } = body as { base_ref: string; target_branch: string }
-      const base = repo.branches.find((branch) => branch.name === base_ref)
+      const { base_ref, target_branch, force } = body as { base_ref: string; target_branch: string; force?: boolean }
+      // A ref is a branch's name, or a commit some branch is at.
+      const base = repo.branches.find((branch) => branch.name === base_ref) ??
+        repo.branches.find((branch) => branch.head_sha === base_ref)
       if (base === undefined) return problem(404, "ref_not_found")
-      if (repo.branches.some((branch) => branch.name === target_branch)) {
+      const existing = repo.branches.findIndex((branch) => branch.name === target_branch)
+      if (existing >= 0 && force !== true) {
         return problem(409, "conflict", `Branch ${target_branch} exists`)
       }
-      repo.branches.push({ name: target_branch, head_sha: base.head_sha, created_at: "2026-10-20T18:00:00Z" })
+      const made = { name: target_branch, head_sha: base.head_sha, created_at: "2026-10-20T18:00:00Z" }
+      if (existing >= 0) repo.branches[existing] = made
+      else repo.branches.push(made)
       return Response.json({
         message: "created",
         target_branch,

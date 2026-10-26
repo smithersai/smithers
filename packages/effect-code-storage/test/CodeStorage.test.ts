@@ -327,6 +327,36 @@ describe("createBranch", () => {
       "invalid_response"
     )
   })
+
+  test("force moves a branch that exists to the commit another names, fast-forward or not", async () => {
+    const h = harness()
+    await h.run((client) => client.createRepo({ name: "acme/r" }))
+    const [older, newer] = ["a".repeat(40), "b".repeat(40)]
+    h.repos.get("acme/r")!.branches = [
+      { name: "main", head_sha: older, created_at: "2026-10-18T10:00:00Z" },
+      { name: "try-1-0123456789ab", head_sha: newer, created_at: "2026-10-18T10:00:00Z" }
+    ]
+    await h.run((client) => client.createBranch("acme/r", { branch: "try-1", from: "main" }))
+    const moved = await h.run((client) => client.createBranch("acme/r", { branch: "try-1", from: newer, force: true }))
+    expect(moved).toEqual({ branch: "try-1", sha: newer })
+    expect(h.seen.at(-1)!.body).toEqual({ base_ref: newer, target_branch: "try-1", force: true })
+    // Moving it to where it is changes nothing and answers the same.
+    expect(await h.run((client) => client.createBranch("acme/r", { branch: "try-1", from: newer, force: true }))).toEqual(
+      moved
+    )
+    // Back, which no fast-forward allows.
+    await h.run((client) => client.createBranch("acme/r", { branch: "try-1", from: older, force: true }))
+    expect(h.repos.get("acme/r")!.branches.find((branch) => branch.name === "try-1")!.head_sha).toBe(older)
+    // A commit it can't resolve is still ref_not_found, and nothing moves.
+    expect(
+      await h.fail((client) => client.createBranch("acme/r", { branch: "try-1", from: "c".repeat(40), force: true }))
+    ).toMatchObject({ code: "ref_not_found", status: 404 })
+    expect(h.repos.get("acme/r")!.branches.find((branch) => branch.name === "try-1")!.head_sha).toBe(older)
+    // `force: false` is the default: a branch that exists is conflict.
+    expect(await h.fail((client) => client.createBranch("acme/r", { branch: "try-1", from: "main", force: false })))
+      .toMatchObject({ code: "conflict" })
+    expect(h.seen.at(-1)!.body).toEqual({ base_ref: "main", target_branch: "try-1" })
+  })
 })
 
 describe("listBranches", () => {

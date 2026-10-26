@@ -73,7 +73,9 @@ interface Client {
   `POST /api/repos/<repo>/branches/create`: no clone, no push. It answers
   `{ branch, sha }`, `sha` the commit Code Storage reports, `undefined` when it
   doesn't. A branch that exists fails `conflict`; a `from` it can't resolve,
-  `ref_not_found`.
+  `ref_not_found`. `force: true` moves a branch that exists to `from` instead,
+  fast-forward or not (the provider's `force`); moving it to where it is
+  changes nothing.
 
 ### `CodeStorage.Credentials` and `CodeStorage.config`
 
@@ -398,7 +400,10 @@ outcome, the status and the duration.
 `ListRefsOptions` with optional `namespace`. `ListFilesOptions`,
 `ReadFileOptions`, and `ListCommitsOptions` also accept `namespace`.
 `CreateBranchOptions.namespace` selects the destination and `fromNamespace`
-selects the source. Omitted options use the default namespace.
+selects the source. Omitted options use the default namespace. `force` maps to
+the provider's `force` ("Allow non-fast-forward updates when recreating an
+existing named branch"): Smithers moves a conversation's ephemeral ref to the
+commit its published GitHub branch reached this way.
 
 The [provider OpenAPI](https://code.storage/docs/openapi.json) maps these to
 `ephemeral` on reads, `base_is_ephemeral` and `target_is_ephemeral` on create.
