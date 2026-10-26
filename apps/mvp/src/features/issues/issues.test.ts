@@ -32,6 +32,7 @@ import {
   commentId,
   commentDraftKey,
   ITEMS_SHAPE_ROUTE,
+  ITEM_SUMMARIES_SHAPE_ROUTE,
   ISSUES_STREAM,
   issuePath,
   itemId,
@@ -56,7 +57,7 @@ import {
   syncsHere,
   triageSwitchOf,
 } from "./view"
-import type { Item } from "./schema"
+import type { ItemSummary } from "./schema"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -513,7 +514,7 @@ describe("loading", () => {
     // A link's warm opens the repository's issues, whose items shape installs its first batch.
     await tab.actions.warm(OWNER, NAME)
     await until(() => expect(tab.count(shapeTransitions, { phase: "ready" })).toBeGreaterThan(0))
-    await tab.runtime.runPromise(Effect.flatMap(tab.store.forRepo(REPO_ID), (repo) => (repo.items as ElectricCollection.ElectricCollection<Item>).sync.pipe(
+    await tab.runtime.runPromise(Effect.flatMap(tab.store.forRepo(REPO_ID), (repo) => (repo.items as ElectricCollection.ElectricCollection<ItemSummary>).sync.pipe(
       Stream.filter((event) => event._tag === "Sent"),
       Stream.runHead,
       Effect.timeout("10 seconds"),
@@ -1045,3 +1046,56 @@ describe("records", () => {
     expect(JSON.stringify(tab.api.spans.map((span) => [...span.attributes]))).not.toContain(secret)
   }, WITHIN)
 })
+
+
+test("a cold repository list syncs summary facts only; detail opens persisted bodies and comments", async () => {
+  const requested: string[] = []
+  const source = { ...ShapeSource.fetchSource, request: (url: string, init: Parameters<ShapeSource.Source["request"]>[1]) =>
+    Effect.suspend(() => { requested.push(new URL(url).pathname); return ShapeSource.fetchSource.request(url, init) }) }
+  const runtime = openTestApp({ replace: Layer.succeed(ShapeSource.ShapeSource, source) }, { actor: maya })
+  runtimes.push(runtime)
+  const tab = await tabOf(runtime)
+  const api = await runtime.runPromise(Effect.service(TestChatApi))
+  await server(api).seed(42, "Full facts")
+  await Effect.runPromise(api.github.run(Store.upsertComment(REPO_ID, 42, comment(420, "Detail conversation"), Date.now())))
+  await tab.actions.open(OWNER, NAME)
+  await until(() => expect(tab.issues.queries.list.toArray).toContainEqual(expect.objectContaining({ number: 42, title: "Full facts" })))
+  expect(requested).toContain(ITEM_SUMMARIES_SHAPE_ROUTE)
+  expect(requested).not.toContain(ITEMS_SHAPE_ROUTE)
+  expect(requested).not.toContain("/api/shapes/comments")
+  const repo = await runtime.runPromise(tab.store.forRepo(REPO_ID))
+  expect(await runtime.runPromise(repo.items.toArray)).toEqual([expect.not.objectContaining({ body: expect.anything() })])
+  await tab.actions.open(OWNER, NAME, 42)
+  await until(() => {
+    expect(tab.issues.queries.item.toArray[0]).toMatchObject({ number: 42, body: "Body" })
+    expect(tab.comments()).toContainEqual(expect.objectContaining({ body: "Detail conversation" }))
+  })
+  expect(requested).toContain(ITEMS_SHAPE_ROUTE)
+  expect(requested).toContain("/api/shapes/comments")
+  await tab.actions.open(OWNER, NAME)
+  await tab.actions.open(OWNER, NAME, 42)
+  expect(tab.issues.queries.item.toArray[0]).toMatchObject({ number: 42, body: "Body" })
+}, WITHIN)
+
+
+test("a failed body shape cannot mark the healthy list unavailable after navigation", async () => {
+  let failBody = false
+  const source = ShapeSource.ShapeSource.of({ request: (url, init) =>
+    new URL(url).pathname === ITEMS_SHAPE_ROUTE && failBody
+      ? Effect.succeed(new Response(null, { status: 503 }))
+      : ShapeSource.fetchSource.request(url, init),
+  })
+  const runtime = openTestApp({ replace: Layer.succeed(ShapeSource.ShapeSource, source) }, { actor: maya })
+  runtimes.push(runtime)
+  const api = await runtime.runPromise(Effect.service(TestChatApi))
+  const tab = await tabOf(runtime)
+  await server(api).seed(45, "Available list")
+  await tab.actions.open(OWNER, NAME)
+  await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "allowed", installed: true }))
+  failBody = true
+  await tab.actions.open(OWNER, NAME, 45)
+  await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "unavailable", installed: false }))
+  await tab.actions.open(OWNER, NAME)
+  await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "allowed", installed: true }))
+  expect(tab.issues.queries.list.toArray).toContainEqual(expect.objectContaining({ number: 45 }))
+}, WITHIN)

@@ -59,7 +59,7 @@ for (const [who, actor] of [["signed out", null], ["without a role", { subject: 
 // A receipt releases only what the page reads: triage settings need someone signed in, and a pull request's commits,
 // reviews and checks wait for its page (decision 0112, src/features/auth/source.test.ts).
 for (const [name, paths, released] of [
-  ["issues", ["items", "comments", "github-sync", "triage-settings"], actor === null ? ["items", "comments", "github-sync"] : ["items", "comments", "github-sync", "triage-settings"]],
+  ["issues", ["item-summaries", "items", "comments", "github-sync", "triage-settings"], actor === null ? ["item-summaries", "github-sync"] : ["item-summaries", "github-sync", "triage-settings"]],
   ["pulls", ["pulls", "pull-commits", "reviews", "checks"], ["pulls"]],
 ] as const) {
   test(`${name}: ${who} never requests member shapes; a public receipt releases them`, async () => {

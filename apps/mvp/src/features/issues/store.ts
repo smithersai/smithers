@@ -12,6 +12,7 @@ import { repositoryAccessChanges, repositoryShapeSource, syncStatusAfter, type T
 import {
   COMMENTS_SHAPE_ROUTE,
   ITEMS_SHAPE_ROUTE,
+  ITEM_SUMMARIES_SHAPE_ROUTE,
   SYNC_SHAPE_ROUTE,
   TRIAGE_SETTINGS_SHAPE_ROUTE,
   WRITES_SHAPE_ROUTE,
@@ -39,6 +40,7 @@ import {
   Draft,
   IssueView,
   Item,
+  ItemSummary,
   OpenedRepository,
   type QueuedWrite,
   type Requested,
@@ -79,13 +81,15 @@ type Rows<A extends object> = Collection.Collection<A, any, any>
  */
 export interface RepoIssues {
   readonly id: string
-  readonly items: Rows<Item>
+  readonly items: Rows<ItemSummary>
+  readonly details: Rows<Item>
+  readonly requestDetails: Effect.Effect<void>
   readonly comments: Rows<Comment>
   readonly sync: Rows<SyncRow>
   readonly triageSettings: Rows<TriageSettings>
   readonly access: Collection.Collection<Access, string>
   /** Its issues and pull requests, and its sync rows, every row, live: a home's `issues` block reads them. */
-  readonly itemRows: LiveRows<Item>
+  readonly itemRows: LiveRows<ItemSummary>
   readonly syncRows: LiveRows<SyncRow>
   /** Its issues and pull requests newest first, and its sync rows whose walk completed: its issues view in a conversation. */
   readonly newestFirst: Query<typeof allIssuesQuery>
@@ -179,9 +183,16 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     initialData: [{ id: VIEW, owner: "", name: "", repoId: "", number: null, draftKey: "", submitting: false }],
   })
 
+  const requestedDetails = yield* Collection.local<OpenedRepository, string>({
+    id: "issue-detail-demand",
+    schema: OpenedRepository,
+    getKey: byId,
+  })
+
   /** The live queries over one repository's rows, for the routed page. */
   const queriesOf = (
-    items: Rows<Item>,
+    items: Rows<ItemSummary>,
+    details: Rows<Item>,
     comments: Rows<Comment>,
     sync: Rows<SyncRow>,
     triageSettings: Rows<TriageSettings>,
@@ -193,7 +204,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
       newestFirst: allIssuesQuery(items),
       walked: syncedRepositoriesQuery(sync),
       list: listQuery(view, items, requested, sending, writes),
-      item: itemQuery(view, items),
+      item: itemQuery(view, details),
       conversation: conversationQuery(view, items, comments, requested, sending, writes),
       synced: syncedQuery(view, sync),
       unsynced: unsyncedQuery(sync),
@@ -212,7 +223,8 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     })
 
   // A repository nobody opened: no rows, never a request.
-  const emptyItems = yield* Collection.local<Item, string>({ id: "issue-items-none", schema: Item, getKey: byId })
+  const emptyItems = yield* Collection.local<ItemSummary, string>({ id: "issue-items-none", schema: ItemSummary, getKey: byId })
+  const emptyDetails = yield* Collection.local<Item, string>({ id: "issue-details-none", schema: Item, getKey: byId })
   const emptyComments = yield* Collection.local<Comment, string>({ id: "issue-comments-none", schema: Comment, getKey: byId })
   const emptySync = yield* Collection.local<SyncRow, string>({ id: "issue-sync-none", schema: SyncRow, getKey: syncKey })
   const emptyTriage = yield* Collection.local<TriageSettings, string>({
@@ -224,11 +236,13 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
   const empty: RepoIssues = {
     id: "",
     items: emptyItems,
+    details: emptyDetails,
+    requestDetails: Effect.void,
     comments: emptyComments,
     sync: emptySync,
     triageSettings: emptyTriage,
     access: emptyAccess,
-    ...(yield* queriesOf(emptyItems, emptyComments, emptySync, emptyTriage, emptyAccess)),
+    ...(yield* queriesOf(emptyItems, emptyDetails, emptyComments, emptySync, emptyTriage, emptyAccess)),
     reconnect: Effect.void,
   }
 
@@ -240,23 +254,44 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     Effect.gen(function* () {
       const authority = repositoryAccessChanges(auth, repos, id)
       const guarded = repositoryShapeSource(source, authority)
-      // Version 3: items carry their triage state, pin and commitment (decision 0012 §5).
-      const items = yield* ElectricCollection.make<Item>({
+      // Lists retain all count/search facts; large bodies and comments wait for a detail page.
+      const items = yield* ElectricCollection.make<ItemSummary>({
+        id: `issue-summaries:${id}`,
+        schema: ItemSummary,
+        getKey: byId,
+        shape: shape(ITEM_SUMMARIES_SHAPE_ROUTE, id),
+        ...kept,
+      }).pipe(Effect.provideService(ShapeSource.ShapeSource, guarded))
+      const detail = ShapeSource.gated(source, Stream.zipLatestWith(
+        authority,
+        view.changes({ initial: true }).pipe(Stream.mapEffect(() => view.get(VIEW))),
+        (status, shown) => status === "allowed" && Option.isSome(shown) && shown.value.repoId === id && shown.value.number !== null,
+      ))
+      const bodyDemand = ShapeSource.gated(source, Stream.zipLatestWith(
+        authority,
+        Stream.zipLatestWith(
+          view.changes({ initial: true }).pipe(Stream.mapEffect(() => view.get(VIEW))),
+          requestedDetails.changes({ initial: true }).pipe(Stream.mapEffect(() => Effect.map(requestedDetails.get(id), Option.isSome))),
+          (shown, requested) => requested || (Option.isSome(shown) && shown.value.repoId === id && shown.value.number !== null),
+        ),
+        (status, needed) => status === "allowed" && needed,
+      ))
+      const details = yield* ElectricCollection.make<Item>({
         id: `issue-items:${id}`,
         schema: Item,
         getKey: byId,
         shape: shape(ITEMS_SHAPE_ROUTE, id),
         syncMode: "eager",
         persist: { schemaVersion: 3 },
-      }).pipe(Effect.provideService(ShapeSource.ShapeSource, guarded))
-      yield* observeIssueShape(items.sync).pipe(Effect.forkIn(scope, { startImmediately: true }))
+      }).pipe(Effect.provideService(ShapeSource.ShapeSource, bodyDemand))
+      yield* observeIssueShape(items.sync).pipe(Effect.annotateLogs({ projection: "summary" }), Effect.forkIn(scope, { startImmediately: true }))
       const comments = yield* ElectricCollection.make<Comment>({
         id: `issue-comments:${id}`,
         schema: Comment,
         getKey: byId,
         shape: shape(COMMENTS_SHAPE_ROUTE, id),
         ...kept,
-      }).pipe(Effect.provideService(ShapeSource.ShapeSource, guarded))
+      }).pipe(Effect.provideService(ShapeSource.ShapeSource, detail))
       const sync = yield* ElectricCollection.make<SyncRow>({
         id: `issue-sync:${id}`,
         schema: SyncRow,
@@ -292,37 +327,55 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
         }))),
         Effect.forkIn(scope, { startImmediately: true }),
       )
-      // The items shape's answers say only whether it is available, once the device allowed it.
-      const awaitingItems = yield* Ref.make(false)
-      yield* items.sync.pipe(
-        Stream.runForEach((event) => Effect.gen(function* () {
-          const status = syncStatusOf(event)
-          if (status === undefined) return
-          // An installed batch stays readable through a failed live poll. A cold shape has no such receipt.
-          yield* Effect.ignore(access.update(ACCESS, (row) => {
-            row.status = syncStatusAfter(row.status, status)
-          }))
-          // A 2xx precedes installation. Restored rows can also make `preload` ready before the network answers.
-          if (status !== "allowed" || (yield* Ref.getAndSet(awaitingItems, true))) return
-          yield* items.currentApplied.pipe(
-            Effect.flatMap(() => Effect.ignore(access.update(ACCESS, (row) => {
-              row.installed = row.status === "allowed"
-            }))),
-            Effect.ensuring(Ref.set(awaitingItems, false)),
+      // Availability follows the shape the page reads. A summary receipt never certifies a missing detail body.
+      const followAvailability = (collection: ElectricCollection.ElectricCollection<ItemSummary> | ElectricCollection.ElectricCollection<Item>, forDetail: boolean) =>
+        Effect.gen(function* () {
+          const installed = yield* Ref.make(false)
+          const lastTransport = yield* Ref.make<Transport>("allowed")
+          const active = Effect.map(view.get(VIEW), (shown) =>
+            Option.isSome(shown) && shown.value.repoId === id && shown.value.number !== null)
+          const publish = Effect.gen(function* () {
+            if ((yield* active) !== forDetail) return
+            const status = yield* Ref.get(lastTransport)
+            const hasRows = yield* Ref.get(installed)
+            yield* Effect.ignore(access.update(ACCESS, (row) => {
+              row.status = syncStatusAfter(row.status, status)
+              row.installed = hasRows && ["allowed", "unavailable", "elsewhere"].includes(row.status)
+            }))
+          })
+          const certify = Effect.gen(function* () {
+            yield* Ref.set(installed, true)
+            yield* publish
+          })
+          // Navigating between a list and a detail selects that projection's last receipt immediately.
+          yield* view.changes({ initial: true }).pipe(
+            Stream.runForEach(() => publish),
             Effect.forkIn(scope, { startImmediately: true }),
           )
-        })),
-        Effect.forkIn(scope, { startImmediately: true }),
-      )
-      // A fast first batch can be followed by a live Sent before this listener subscribes. Its installed receipt remains
-      // current until a refusal or failed request invalidates it. currentApplied only resumes for the latest accepted,
-      // decoded and installed cursor (ElectricCollection.certify); a refused request cannot release either waiter.
-      yield* items.currentApplied.pipe(
-        Effect.flatMap(() => Effect.ignore(access.update(ACCESS, (row) => {
-          row.installed = row.status === "allowed"
-        }))),
-        Effect.forkIn(scope, { startImmediately: true }),
-      )
+          const awaiting = yield* Ref.make(false)
+          yield* collection.sync.pipe(
+            Stream.runForEach((event) => Effect.gen(function* () {
+              const status = syncStatusOf(event)
+              if (status === undefined) return
+              yield* Ref.set(lastTransport, status)
+              yield* publish
+              if (status !== "allowed" || (yield* Ref.getAndSet(awaiting, true))) return
+              yield* collection.currentApplied.pipe(
+                Effect.andThen(certify),
+                Effect.ensuring(Ref.set(awaiting, false)),
+                Effect.forkIn(scope, { startImmediately: true }),
+              )
+            })),
+            Effect.forkIn(scope, { startImmediately: true }),
+          )
+          yield* collection.currentApplied.pipe(
+            Effect.andThen(certify),
+            Effect.forkIn(scope, { startImmediately: true }),
+          )
+        })
+      yield* followAvailability(items, false)
+      yield* followAvailability(details, true)
+      yield* observeIssueShape(details.sync).pipe(Effect.annotateLogs({ projection: "detail" }), Effect.forkIn(scope, { startImmediately: true }))
       // The follower: a requested write of this repository whose GitHub row arrived goes, and the synced row shows in
       // its place.
       const delivered = yield* deliveredQuery(requested, items, comments, writes)
@@ -333,12 +386,14 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
       const repo: RepoIssues = {
         id,
         items,
+        details,
+        requestDetails: Effect.ignore(requestedDetails.insert({ id })),
         comments,
         sync,
         triageSettings,
         access,
-        ...(yield* queriesOf(items, comments, sync, triageSettings, access)),
-        reconnect: Effect.all([items.reconnect, comments.reconnect, sync.reconnect, triageSettings.reconnect], {
+        ...(yield* queriesOf(items, details, comments, sync, triageSettings, access)),
+        reconnect: Effect.all([items.reconnect, details.reconnect, comments.reconnect, sync.reconnect, triageSettings.reconnect], {
           discard: true,
         }),
       }

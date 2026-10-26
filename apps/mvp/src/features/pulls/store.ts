@@ -1,7 +1,7 @@
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
 import { Cache, Context, Effect, Exit, Layer, Option, Ref, Scope, Stream } from "effect"
-import type { Comment, Item } from "../issues/schema"
+import type { Comment, Item, ItemSummary } from "../issues/schema"
 import { AuthStore } from "../auth/store"
 import { repositoryAccessChanges, repositoryShapeSource, syncStatusAfter } from "../issues/source"
 import { IssuesStore, syncStatusOf } from "../issues/store"
@@ -123,7 +123,8 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
 
   /** The live queries over one repository's rows and its issues, for the routed page. */
   const queriesOf = (
-    items: Rows<Item>,
+    items: Rows<ItemSummary>,
+    details: Rows<Item>,
     comments: Rows<Comment>,
     pulls: Rows<PullRow>,
     commits: Rows<PullCommitRow>,
@@ -132,7 +133,7 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
   ) =>
     Effect.all({
       list: listQuery(view, items, pulls),
-      pull: pullQuery(view, items, pulls),
+      pull: pullQuery(view, details, pulls),
       comments: commentsQuery(view, items, comments),
       reviewList: reviewsQuery(view, items, reviews),
       commitList: commitsQuery(view, items, commits),
@@ -150,7 +151,7 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
     commits: emptyCommits,
     reviews: emptyReviews,
     checks: emptyChecks,
-    ...(yield* queriesOf(issues.empty.items, issues.empty.comments, emptyPulls, emptyCommits, emptyReviews, emptyChecks)),
+    ...(yield* queriesOf(issues.empty.items, issues.empty.details, issues.empty.comments, emptyPulls, emptyCommits, emptyReviews, emptyChecks)),
     status: Effect.succeed({ pullStatus: "unknown", installed: false }),
     reconnect: Effect.void,
   }
@@ -249,7 +250,7 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
         commits,
         reviews,
         checks,
-        ...(yield* queriesOf(repoIssues.items, repoIssues.comments, pulls, commits, reviews, checks)),
+        ...(yield* queriesOf(repoIssues.items, repoIssues.details, repoIssues.comments, pulls, commits, reviews, checks)),
         status: Ref.get(status),
         reconnect: Effect.all([pulls.reconnect, commits.reconnect, reviews.reconnect, checks.reconnect], { discard: true }),
       }

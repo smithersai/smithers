@@ -10,7 +10,7 @@ export const ROUTE_WORDS: ReadonlySet<string> = new Set([
   "about", "ack", "actions", "alert-channels", "alert-deliveries", "answers", "api", "archive", "auth", "blob",
   "branch-publications", "branches", "bug-reports", "bugs", "call", "callback", "calls", "checks", "cloud-runs",
   "comments", "compare", "conversations", "create", "creation", "credential", "delete", "docs", "domains", "file",
-  "flow-drafts", "flows", "github", "github-sync", "github-writes", "home", "items", "launch", "logs", "me", "merge",
+  "flow-drafts", "flows", "github", "github-sync", "github-writes", "home", "item-summaries", "items", "launch", "logs", "me", "merge",
   "message-pin", "message-pins", "messages", "metrics", "model", "my-conversations", "notifications", "personal-model",
   "preview", "pull-commits", "pulls", "questions", "raw", "refs", "remote-runs", "renderer", "repos", "repositories",
   "reviews", "room", "run", "runs", "sandbox", "sandbox-limits", "save", "secrets", "session", "shapes", "shares",

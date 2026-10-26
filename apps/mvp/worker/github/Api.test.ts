@@ -15,6 +15,7 @@ import {
   COMMENTS_SHAPE_ROUTE,
   GITHUB_WEBHOOK_ROUTE,
   ITEMS_SHAPE_ROUTE,
+  ITEM_SUMMARIES_SHAPE_ROUTE,
   MAX_WEBHOOK_BYTES,
   MAX_WRITE_BYTES,
   reconcileBucketStart,
@@ -79,7 +80,7 @@ describe("paths", () => {
     expect(parseWritesPath("/api/repos/acme/widgets/tree")).toBeUndefined()
     expect(parseWritesPath("/api/other/acme/widgets/writes")).toBeUndefined()
     expect(parseWritesPath("/api/repos/%E0%A4%A/widgets/writes")).toBeUndefined()
-    expect(handles(GITHUB_WEBHOOK_ROUTE) && handles(ITEMS_SHAPE_ROUTE) && handles(writesRoute("a", "b"))).toBe(true)
+    expect(handles(GITHUB_WEBHOOK_ROUTE) && handles(ITEM_SUMMARIES_SHAPE_ROUTE) && handles(ITEMS_SHAPE_ROUTE) && handles(writesRoute("a", "b"))).toBe(true)
     expect(handles("/api/repos/acme/widgets/tree/abc")).toBe(false)
   })
 })
@@ -671,6 +672,13 @@ describe("the shapes", () => {
     expect(item).toMatchObject({ id: `${REPOSITORY.id}#1`, title: "One" })
     expect(Object.keys(item!)).not.toContain("source_updated_at")
     expect(Object.keys(item!)).not.toContain("fetched_at")
+    const summary = await shape(h, ITEM_SUMMARIES_SHAPE_ROUTE)
+    expect(summary.status).toBe(200)
+    const summaries = values(summary.rows)
+    expect(summaries).toEqual([expect.objectContaining({ id: item!.id, title: "One" })])
+    expect(Object.keys(summaries[0]!)).not.toContain("body")
+    const { body: _body, github_id: _githubId, state_reason: _stateReason, created_at: _createdAt, closed_at: _closedAt, triage_pinned: _triagePinned, ...facts } = item!
+    expect(summaries).toEqual([facts])
     const listedComments = values((await shape(h, COMMENTS_SHAPE_ROUTE)).rows)
     expect(listedComments).toEqual([expect.objectContaining({ id: `${REPOSITORY.id}/comment/5`, body: "Hi" })])
     expect(Object.keys(listedComments[0]!)).not.toContain("fetched_at")
@@ -786,7 +794,7 @@ describe("the shapes", () => {
     await seed()
     const visitor = await githubHarness(runtime, { actor: null })
     // Not yet known: refused, though the read still starts the sync that will find out.
-    for (const route of [ITEMS_SHAPE_ROUTE, COMMENTS_SHAPE_ROUTE, SYNC_SHAPE_ROUTE]) {
+    for (const route of [ITEM_SUMMARIES_SHAPE_ROUTE, ITEMS_SHAPE_ROUTE, COMMENTS_SHAPE_ROUTE, SYNC_SHAPE_ROUTE]) {
       const response = await visitor.fetch(`${route}?offset=-1`)
       expect(response.status).toBe(401)
       expect(await response.json()).toEqual({ code: "authentication" })
@@ -802,7 +810,7 @@ describe("the shapes", () => {
     expect(await forbidden.json()).toEqual({ code: "forbidden" })
     const insider = await githubHarness(runtime)
     await expect.poll(async () => values((await shape(insider, ITEMS_SHAPE_ROUTE)).rows), { timeout: 10_000 }).toEqual([expect.objectContaining({ title: "One" })])
-    expect(visitor.count(Metrics.shapes, { table: "items", status: "401", live: "false" })).toBe(2)
+    expect(visitor.count(Metrics.shapes, { table: "items", status: "401", live: "false" })).toBe(3)
     // Public: anyone reads.
     await sql(runtime, `UPDATE github_repositories SET private = false`)
     await expect.poll(async () => values((await shape(visitor, ITEMS_SHAPE_ROUTE)).rows), { timeout: 10_000 }).toEqual([expect.objectContaining({ title: "One" })])
@@ -993,7 +1001,7 @@ test("a private metadata answer refuses every shape and is shared across request
   const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
   github.private = true
   const h = await githubHarness(runtime, { actor: null, github, app: app({ privateKey: await import("./test/scriptedGitHub.ts").then((m) => m.appKey()) }) })
-  for (const route of [ITEMS_SHAPE_ROUTE, COMMENTS_SHAPE_ROUTE, SYNC_SHAPE_ROUTE]) {
+  for (const route of [ITEM_SUMMARIES_SHAPE_ROUTE, ITEMS_SHAPE_ROUTE, COMMENTS_SHAPE_ROUTE, SYNC_SHAPE_ROUTE]) {
     expect((await h.fetch(`${route}?offset=-1`)).status).toBe(401)
   }
   expect(h.count(Metrics.visibilityReads, { outcome: "private", statusClass: "4xx", rateLimited: "false", remaining: "unknown", errorCode: "delivery-failed" })).toBe(1)

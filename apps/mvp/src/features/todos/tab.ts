@@ -42,7 +42,9 @@ export const tabTodos = (host: { readonly name: string }) =>
        */
       const issueOf = (draft: Draft) =>
         Effect.gen(function* () {
-          const { items } = yield* issues.forRepo(draft.repoId)
+          const repo = yield* issues.forRepo(draft.repoId)
+          yield* repo.requestDetails
+          const items = repo.details
           const find = Effect.map(
             items.toArray,
             (rows) => rows.find((row) => row.repoId === draft.repoId && row.number === draft.issue && row.kind === "issue"),

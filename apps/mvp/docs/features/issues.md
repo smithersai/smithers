@@ -309,3 +309,7 @@ The device opens a repository's items, comments, GitHub sync, triage settings an
 The role answer uses the same server read policy as the repository shapes, preserving decision 0012's public reads. Libraries: `@smthrs/effect-electric` and `@smthrs/effect-tanstack-db`.
 
 The lazily opened TODO and prompt shapes separately require Member authority on their named repository. They also wait before requesting and never infer authority from a refusal.
+
+### Cold list payloads
+
+Repository homes and lists sync `item-summaries`, a server-defined projection of `items` without bodies or detail-only metadata. Exact home counts and list search/filtering still have all summary rows. Bodies (`items`) and `comments` start only on an issue or pull detail page, with the same repository authority gate and server authorization. Each collection remains persisted; opening a full list never substitutes a recent-items subset. Detail queries read full items, so missing text is never rendered as an empty body. `e2e/shape-payload.spec.ts` asserts signed-out page demand and decoded initial bytes/rows against a deployment. Catalog: `@smthrs/effect-electric`, `@smthrs/effect-tanstack-db`.

@@ -7,6 +7,7 @@ import type {
   Draft,
   IssueView,
   Item,
+  ItemSummary,
   Requested,
   Sending,
   SyncRow,
@@ -48,7 +49,7 @@ const pendingOf = (mine: { readonly status: unknown }, write: { readonly status:
  */
 export const listQuery = (
   view: View,
-  items: Synced<Item>,
+  items: Synced<ItemSummary>,
   requested: Local<Requested>,
   sending: Local<Sending>,
   writes: Synced<WriteRow>,
@@ -129,7 +130,7 @@ export const listQuery = (
  * repository's issues view in a conversation lists, filtered to its repository (view.ts `embeddedIssues`). Synced rows
  * only: a person's own new issue shows on the repository's issues page.
  */
-export const allIssuesQuery = (items: Synced<Item>) =>
+export const allIssuesQuery = (items: Synced<ItemSummary>) =>
   LiveQuery.make((q) =>
     q
       .from({ item: items.tanstack })
@@ -188,7 +189,7 @@ export const itemQuery = (view: View, items: Synced<Item>) =>
 /** The routed issue's comments: GitHub's in its order, then this device's own, in the order made. */
 export const conversationQuery = (
   view: View,
-  items: Synced<Item>,
+  items: Synced<ItemSummary>,
   comments: Synced<Comment>,
   requested: Local<Requested>,
   sending: Local<Sending>,
@@ -326,7 +327,7 @@ const isTriage = (write: { readonly op: unknown }) =>
  */
 export const deliveredQuery = (
   requested: Local<Requested>,
-  items: Synced<Item>,
+  items: Synced<ItemSummary>,
   comments: Synced<Comment>,
   writes: Synced<WriteRow>,
 ) =>

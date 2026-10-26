@@ -1,5 +1,5 @@
 import { type Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
-import type { Comment, Item, WriteRow } from "../issues/schema"
+import type { Comment, Item, ItemSummary, WriteRow } from "../issues/schema"
 import type { CheckRow, FilesRow, PullCommitRow, PullRow, PullsView, ReviewRow } from "./schema"
 
 // What every frontend reads of pull requests (decision 0012 §6). Each is a live query over this device's collections,
@@ -12,7 +12,7 @@ type View = Collection.Collection<PullsView, string>
 type Synced<A extends object> = Collection.Collection<A, any, any>
 
 /** The routed repository's pull requests, newest first, with their head, draft and merge state. */
-export const listQuery = (view: View, items: Synced<Item>, pulls: Synced<PullRow>) =>
+export const listQuery = (view: View, items: Synced<ItemSummary>, pulls: Synced<PullRow>) =>
   LiveQuery.make((q) =>
     q
       .from({ listed: view.tanstack })
@@ -72,7 +72,7 @@ export const pullQuery = (view: View, items: Synced<Item>, pulls: Synced<PullRow
   )
 
 /** The routed pull request's conversation comments, in GitHub's order. */
-export const commentsQuery = (view: View, items: Synced<Item>, comments: Synced<Comment>) =>
+export const commentsQuery = (view: View, items: Synced<ItemSummary>, comments: Synced<Comment>) =>
   LiveQuery.make((q) =>
     q
       .from({ page: view.tanstack })
@@ -90,7 +90,7 @@ export const commentsQuery = (view: View, items: Synced<Item>, comments: Synced<
   )
 
 /** The routed pull request's reviews, oldest first. */
-export const reviewsQuery = (view: View, items: Synced<Item>, reviews: Synced<ReviewRow>) =>
+export const reviewsQuery = (view: View, items: Synced<ItemSummary>, reviews: Synced<ReviewRow>) =>
   LiveQuery.make((q) =>
     q
       .from({ page: view.tanstack })
@@ -110,7 +110,7 @@ export const reviewsQuery = (view: View, items: Synced<Item>, reviews: Synced<Re
   )
 
 /** The routed pull request's commits, in order. */
-export const commitsQuery = (view: View, items: Synced<Item>, commits: Synced<PullCommitRow>) =>
+export const commitsQuery = (view: View, items: Synced<ItemSummary>, commits: Synced<PullCommitRow>) =>
   LiveQuery.make((q) =>
     q
       .from({ page: view.tanstack })
@@ -128,7 +128,7 @@ export const commitsQuery = (view: View, items: Synced<Item>, commits: Synced<Pu
   )
 
 /** The routed pull request's checks: the Smithers runs on its head, oldest first (decision 0012 decision 12). */
-export const checksQuery = (view: View, items: Synced<Item>, pulls: Synced<PullRow>, checks: Synced<CheckRow>) =>
+export const checksQuery = (view: View, items: Synced<ItemSummary>, pulls: Synced<PullRow>, checks: Synced<CheckRow>) =>
   LiveQuery.make((q) =>
     q
       .from({ page: view.tanstack })

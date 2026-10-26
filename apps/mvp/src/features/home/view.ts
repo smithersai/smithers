@@ -10,7 +10,7 @@ import { Home } from "@smthrs/views"
 import { COMMANDS } from "../commands/catalog"
 import type { FlowRow } from "../flows-ui/schema"
 import { issuePath, issuesPath } from "../issues/contract"
-import type { Item } from "../issues/schema"
+import type { ItemSummary } from "../issues/schema"
 import { pullPath } from "../pulls/contract"
 import type { Run } from "../status/schema"
 import { stackPath, TODO_STATE_WORDS, type TodoState, todoPath } from "../todos/contract"
@@ -165,7 +165,7 @@ const listOf = (entries: ReadonlyArray<RepositoryHomeEntry>, href?: string): Rep
  * this deployment doesn't sync says so instead.
  */
 export const issuesOf = (
-  items: ReadonlyArray<Item>,
+  items: ReadonlyArray<ItemSummary>,
   owner: string,
   name: string,
   repoId: string,
@@ -174,7 +174,7 @@ export const issuesOf = (
   if (!synced) return { notice: NOT_SYNCED }
   const open = items.filter((item) => item.repoId === repoId && item.state === "open" && item.deletedAt === null)
   const issues = open.filter((item) => item.kind === "issue")
-  const entry = (item: Item): RepositoryHomeEntry => ({
+  const entry = (item: ItemSummary): RepositoryHomeEntry => ({
     key: item.id,
     label: `#${item.number}`,
     title: item.title,

@@ -42,6 +42,11 @@ export const Item = Schema.Struct({
 })
 export type Item = typeof Item.Type
 
+/** List and home facts; body text belongs to the detail shape. */
+const { body: _body, githubId: _githubId, stateReason: _stateReason, createdAt: _createdAt, closedAt: _closedAt, triagePinned: _triagePinned, ...summaryFields } = Item.fields
+export const ItemSummary = Schema.Struct(summaryFields)
+export type ItemSummary = typeof ItemSummary.Type
+
 /** One row of Postgres `comments` (`COMMENT_COLUMNS`). */
 export const Comment = Schema.Struct({
   id: Schema.String,

@@ -23,6 +23,7 @@ describe("routeTemplate", () => {
     expect(routeTemplate("/api/runs/run-1/credential")).toBe("/api/runs/:id/credential")
     expect(routeTemplate("/api/branches/b-1/shares")).toBe("/api/branches/:id/shares")
     expect(routeTemplate("/api/shapes/items")).toBe("/api/shapes/items")
+    expect(routeTemplate("/api/shapes/item-summaries")).toBe("/api/shapes/item-summaries")
     expect(routeTemplate("/api/shapes/")).toBe("/api/shapes/")
     expect(routeTemplate("/api/answers/a-1/x/y")).toBe("/api/answers/:id/:id/:id")
   })

@@ -1,7 +1,7 @@
 import { Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, FiberHandle, Layer, Option, Semaphore, type Schema } from "effect"
 import { CuratedHomesStore, HomesStore } from "../../device/registry"
-import { Item, SyncRow, syncKey } from "../issues/schema"
+import { ItemSummary, SyncRow, syncKey } from "../issues/schema"
 import { Run } from "../status/schema"
 import { StatusStore } from "../status/store"
 import { Access, Todo } from "../todos/schema"
@@ -69,7 +69,7 @@ const make = Effect.gen(function* () {
   const status = yield* Effect.serviceOption(StatusStore)
   const runs = yield* liveRows(status, (store) => store.runs, { id: "home-no-runs", schema: Run, getKey: rowId })
   // What an `issues` block reads on a tab with no issues store: no issues, and no sync.
-  const noItems = yield* rowsOf(yield* Collection.local<Item, string>({ id: "home-no-items", schema: Item, getKey: rowId }))
+  const noItems = yield* rowsOf(yield* Collection.local<ItemSummary, string>({ id: "home-no-items", schema: ItemSummary, getKey: rowId }))
   const noSyncs = yield* rowsOf(yield* Collection.local<SyncRow, string>({ id: "home-no-syncs", schema: SyncRow, getKey: syncKey }))
   // What a `stack` block reads on a tab with no TODOs store: no TODOs, and no word on access.
   const noTodos = yield* rowsOf(yield* Collection.local<Todo, string>({ id: "home-no-todos", schema: Todo, getKey: rowId }))

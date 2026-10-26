@@ -11,7 +11,7 @@ import { baseURL, requires, signedOut, target } from "./target"
 /** A person's own shapes and the repository's triage settings: none of them a signed-out page's. */
 const PERSONAL = ["runs", "flows", "flow-drafts", "notifications", "my-conversations", "github-writes", "triage-settings"]
 /** A pull request's own shapes: its page's, not the repository's. */
-const DETAIL = ["pull-commits", "reviews", "checks"]
+const DETAIL = ["items", "comments", "pull-commits", "reviews", "checks"]
 
 /** The shape routes `page` asks for, by name, and a wait until each it asked for is up to date. */
 const follow = (page: Page) => {
@@ -67,7 +67,7 @@ test.describe("shape demand", () => {
         })
         test.info().annotations.push({ type: "shapes", description: `${routes.size}: ${[...routes].sort().join(" ")}` })
         expect(asked(routes, [...PERSONAL, ...DETAIL])).toEqual([])
-        if (path !== "/") expect(routes.has("items"), "the repository's own shapes still sync").toBe(true)
+        if (path !== "/") expect(routes.has("item-summaries"), "the repository's own shapes still sync").toBe(true)
       } finally {
         await context.close()
       }

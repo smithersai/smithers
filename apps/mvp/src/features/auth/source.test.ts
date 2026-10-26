@@ -17,7 +17,7 @@ import { AuthStore, SESSION } from "./store"
 /** A person's own shapes, and the repository's triage settings: none of them a signed-out page's. */
 const PERSONAL = ["runs", "flows", "flow-drafts", "notifications", "my-conversations", "github-writes", "triage-settings"]
 /** A pull request's own shapes: its page's, not the repository's. */
-const DETAIL = ["pull-commits", "reviews", "checks"]
+const DETAIL = ["items", "comments", "pull-commits", "reviews", "checks"]
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => { for (const runtime of runtimes.splice(0)) await runtime.dispose() })
@@ -46,7 +46,7 @@ test("signed out on a public repository's pull requests: no personal, admin or p
   await Effect.runPromise(api.github.run(GitHubStore.recordRepository(repoId(owner, name), { githubId: 1, private: false })))
   await runtime.runPromise(readRole(owner, name))
   pulls.actions.open(owner, name)
-  await vi.waitFor(() => expect(requests).toEqual(expect.arrayContaining(["items", "pulls"])), { timeout: 30_000 })
+  await vi.waitFor(() => expect(requests).toEqual(expect.arrayContaining(["item-summaries", "pulls"])), { timeout: 30_000 })
   // Long enough for every other store's first request, which used to go out on boot.
   await runtime.runPromise(Effect.sleep("300 millis"))
   expect(asked([...PERSONAL, ...DETAIL])).toEqual([])

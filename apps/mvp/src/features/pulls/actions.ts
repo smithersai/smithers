@@ -53,7 +53,7 @@ export const open = (owner: string, name: string, number?: number, tab: PullTab 
       }
     })
     // Sync status is shared with issues and must follow this route's repository too.
-    yield* openIssues(owner, name)
+    yield* openIssues(owner, name, number)
     yield* store.route(repoId(owner, name))
     // The Files tab reads its comparison once the device has the pull request's base and head.
     if (number !== undefined && tab === "files") {

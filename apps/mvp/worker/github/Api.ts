@@ -16,6 +16,8 @@ import {
   ISSUES_STREAM,
   ITEM_COLUMNS,
   ITEMS_SHAPE_ROUTE,
+  ITEM_SUMMARIES_SHAPE_ROUTE,
+  ITEM_SUMMARY_COLUMNS,
   ITEMS_TABLE,
   MAX_BODY_LENGTH,
   MAX_REASON_LENGTH,
@@ -121,6 +123,7 @@ const noStore = { "cache-control": "no-store" }
 
 /** The shapes of one repository's rows, by route: each table, its columns, and its filter on `$1`, the repository's id. */
 const REPOSITORY_SHAPES: Readonly<Record<string, { readonly table: string; readonly columns: ReadonlyArray<string>; readonly where: string }>> = {
+  [ITEM_SUMMARIES_SHAPE_ROUTE]: { table: ITEMS_TABLE, columns: ITEM_SUMMARY_COLUMNS, where: "repo_id = $1" },
   [ITEMS_SHAPE_ROUTE]: { table: ITEMS_TABLE, columns: ITEM_COLUMNS, where: "repo_id = $1" },
   [COMMENTS_SHAPE_ROUTE]: { table: COMMENTS_TABLE, columns: COMMENT_COLUMNS, where: "repo_id = $1" },
   [SYNC_SHAPE_ROUTE]: { table: SYNC_TABLE, columns: SYNC_COLUMNS, where: "repo_id = $1" },
@@ -295,6 +298,7 @@ export const parseWritesPath = (path: string): { readonly owner: string; readonl
 }
 
 const SHAPES: ReadonlySet<string> = new Set([
+  ITEM_SUMMARIES_SHAPE_ROUTE,
   ITEMS_SHAPE_ROUTE,
   COMMENTS_SHAPE_ROUTE,
   WRITES_SHAPE_ROUTE,
@@ -876,7 +880,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           }
         }
         const read = readable(repositoryShape.table, repositoryShape.columns, repositoryShape.where, target.success)
-        if (path === ITEMS_SHAPE_ROUTE) {
+        if (path === ITEMS_SHAPE_ROUTE || path === ITEM_SUMMARIES_SHAPE_ROUTE) {
           // Admission runs beside the shape read inside this request, bounded at `RECONCILE_START_TIMEOUT`.
           // Reconcile's work stays on the durable engine; no admission outlives the request (decision 0104).
           const [, response] = yield* Effect.all([reconcileIfStale(target.success), read], { concurrency: 2 })

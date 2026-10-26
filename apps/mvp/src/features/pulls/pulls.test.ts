@@ -224,7 +224,7 @@ describe("the list and a pull request's page", () => {
   test("a cold list with a sync receipt shows unknown counts until its items arrive, never a spinner", async () => {
     const release = Deferred.makeUnsafe<void>()
     const source = ShapeSource.ShapeSource.of({ request: (url, init) =>
-      new URL(url).pathname === "/api/shapes/items"
+      new URL(url).pathname === "/api/shapes/item-summaries"
         ? Effect.andThen(Deferred.await(release), ShapeSource.fetchSource.request(url, init))
         : ShapeSource.fetchSource.request(url, init),
     })
@@ -328,6 +328,7 @@ describe("the list and a pull request's page", () => {
 
   test("a fresh signed-out device hydrates a chunked issue snapshot without losing its pulls", async () => {
     const source = await open({}, null)
+    expect(source.queries.list.toArray).toEqual([])
     await Effect.runPromise(source.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
       yield* Store.recordRepository(REPO_ID, { githubId: 1, private: false })
       // Production-size counts, with a multi-chunk items snapshot. The pull
@@ -341,12 +342,21 @@ describe("the list and a pull request's page", () => {
       yield* Store.finishSync(REPO_ID, ISSUES_STREAM, { complete: true, failure: null })
     })))))
     let itemChunks = 0
+    let initialBytes = 0
+    let rows = 0
+    let bodies = 0
+    let commentRequests = 0
     let itemsComplete = false
     const fresh = openTab({ ...source.api, fetch: async (input, init) => {
       const response = await source.api.fetch(input, init)
       const url = new URL(input instanceof Request ? input.url : String(input))
-      if (url.pathname === "/api/shapes/items" && url.searchParams.get("live") !== "true") {
-        const messages = await response.clone().json() as Array<{ headers: { control?: string } }>
+      if (url.pathname === "/api/shapes/comments") commentRequests++
+      if (url.pathname === "/api/shapes/item-summaries" && url.searchParams.get("live") !== "true") {
+        const bytes = await response.clone().arrayBuffer()
+        initialBytes += bytes.byteLength
+        const messages = JSON.parse(new TextDecoder().decode(bytes)) as Array<{ headers: { control?: string }; value?: Record<string, unknown> }>
+        rows += messages.filter((message) => message.value !== undefined).length
+        bodies += messages.filter((message) => message.value !== undefined && "body" in message.value).length
         itemChunks++
         itemsComplete ||= messages.some((message) => message.headers.control === "up-to-date")
       }
@@ -359,6 +369,11 @@ describe("the list and a pull request's page", () => {
     await until(() => expect(pulls.queries.list.toArray.map((row) => row.number)).toEqual([3845, 3844, 3843, 3842, 3841]))
     expect(itemChunks).toBeGreaterThan(1)
     expect(itemsComplete).toBe(true)
+    expect(rows).toBe(3845)
+    expect(bodies).toBe(0)
+    expect(commentRequests).toBe(0)
+    expect(initialBytes).toBeLessThan(3_000_000)
+    console.info("shape.payload", { initialBytes, rows, bodies, commentRequests })
     expect(pulls.queries.list.isReady()).toBe(true)
     const page = listPageOf(pulls.queries.list.toArray, { owner: OWNER, name: NAME }, { syncedAt: "now" }, { status: "allowed" }, pulls.queries.list.isReady())
     expect(page.loading).toBe(false)

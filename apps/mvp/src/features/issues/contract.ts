@@ -15,6 +15,7 @@ export const writesRoute = (owner: string, name: string): string =>
   `${REPOS_ROUTE}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${WRITES_SEGMENT}`
 
 /** Electric shape proxies: `GET`. Each serves one table with an explicit column list. */
+export const ITEM_SUMMARIES_SHAPE_ROUTE = "/api/shapes/item-summaries"
 export const ITEMS_SHAPE_ROUTE = "/api/shapes/items"
 export const COMMENTS_SHAPE_ROUTE = "/api/shapes/comments"
 export const WRITES_SHAPE_ROUTE = "/api/shapes/github-writes"
@@ -51,6 +52,10 @@ export const ITEM_COLUMNS = [
   "triage_pinned",
   "commitment",
 ] as const
+
+/** List and home columns: every visible fact, without detail text. */
+export const ITEM_SUMMARY_COLUMNS = ITEM_COLUMNS.filter((column) =>
+  !["body", "github_id", "state_reason", "created_at", "closed_at", "triage_pinned"].includes(column))
 
 /** The `comments` columns a device syncs. */
 export const COMMENT_COLUMNS = [
