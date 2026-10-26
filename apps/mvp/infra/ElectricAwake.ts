@@ -11,6 +11,7 @@
 // a call into the container's control plane on each shape request through the one object every device shares. That day
 // production served about 2 shape requests a second at most: 20 at once, even malformed ones Electric refuses at once,
 // waited up to 26 s, while Electric's container used at most a fifth of its CPU (docs/infrastructure.md#electric).
+import { Logger } from "@smthrs/observability"
 import { Clock, Duration, Effect } from "effect"
 
 /**
@@ -61,6 +62,15 @@ export const makeAwake = <E, R>(host: Host<E, R>): Effect.Effect<Woken, E, R> =>
     return { started, held }
   })
 }
+
+/**
+ * `effect` with its log lines written as one structured JSON line each, as ChatApi's are. Workers Logs keeps a JSON line
+ * whole; Effect's default console logger writes each annotation as a line of its own, which Workers Logs stores as
+ * separate events (production, 2026-10-25), so a record's fields couldn't be counted together.
+ */
+export const logged = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> => Effect.provide(effect, logs)
+
+const logs = Logger.layerStructuredJson()
 
 /** Whether a shape request is a live one, which Electric holds open until the shape changes or its timeout. */
 export const isLive = (url: string): boolean => new URL(url, "http://electric").searchParams.get("live") === "true"

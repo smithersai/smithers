@@ -10,7 +10,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { ELECTRIC_POOL_SIZE } from "./Connections.ts"
 import { ElectricSecret } from "./Electric.ts"
 import { admit } from "./ElectricAccess.ts"
-import { forward, type Host, isLive, makeAwake } from "./ElectricAwake.ts"
+import { forward, type Host, isLive, logged, makeAwake } from "./ElectricAwake.ts"
 import { workerBuild } from "./WorkerBuild.ts"
 
 /** The Electric release the app is built against; docker-compose.yml runs the same one. */
@@ -73,10 +73,10 @@ class ElectricObject extends Cloudflare.DurableObject<ElectricObject>()(
         setInactivityTimeout: (ms) => electric.setInactivityTimeout(ms),
       } satisfies Host<unknown, RuntimeContext>)
       return {
-        fetch: Effect.gen(function* () {
+        fetch: logged(Effect.gen(function* () {
           const request = yield* HttpServerRequest.HttpServerRequest
           return yield* forward(wake, port.fetch(request), isLive(request.url))
-        }),
+        })),
       }
     })
   }),

@@ -3,7 +3,7 @@
 import { Deferred, Effect, Fiber, Logger } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, test } from "vitest"
-import { forward, type Host, isLive, makeAwake, type Woken } from "./ElectricAwake.ts"
+import { forward, type Host, isLive, logged, makeAwake, type Woken } from "./ElectricAwake.ts"
 
 /** Cloudflare's bound on `setInactivityTimeout`: greater than 0 and at most 6 hours, or the call rejects. */
 const PLATFORM_MAX_MS = 21_600_000
@@ -32,7 +32,7 @@ const collecting = <A, E>(effect: Effect.Effect<A, E>, log: Array<Record>) =>
   )
 
 /** Runs `effect` synchronously, collecting its log lines. */
-const logged = <A, E>(effect: Effect.Effect<A, E>) => {
+const runLogged = <A, E>(effect: Effect.Effect<A, E>) => {
   const log: Array<Record> = []
   return { exit: Effect.runSyncExit(collecting(effect, log)), log }
 }
@@ -78,7 +78,7 @@ describe("makeAwake", () => {
         refusals-- > 0 ? Effect.fail(new TypeError("timeout out of range")) : self.setInactivityTimeout(ms),
     }
     const wake = makeAwake(refusing)
-    const first = logged(wake)
+    const first = runLogged(wake)
     expect(first.exit).toMatchObject({ _tag: "Success", value: { started: false, held: false } })
     expect(first.log).toMatchObject([{ message: "electric.hold", level: "WARN", annotations: { error: "TypeError: timeout out of range" } }])
     expect(Effect.runSync(wake)).toEqual({ started: false, held: true })
@@ -178,5 +178,24 @@ describe("forward", () => {
       expect(log[0]!.annotations).toMatchObject({ live: true, outcome: "failed", stage: "electric", error: name })
       expect(JSON.stringify(log)).not.toContain("10.0.0.1")
     }
+  })
+})
+
+describe("logged", () => {
+  test("each record reaches Workers Logs whole: one JSON line carrying every field, not a line per field", async () => {
+    const lines: Array<unknown> = []
+    const log = console.log
+    console.log = (...args: Array<unknown>) => void lines.push(args.length === 1 ? args[0] : args)
+    try {
+      await Effect.runPromise(logged(forward(Effect.succeed({ started: false, held: true }), Effect.succeed({ status: 200 }), false)))
+    } finally {
+      console.log = log
+    }
+    expect(lines).toHaveLength(1)
+    expect(JSON.parse(lines[0] as string)).toMatchObject({
+      message: "electric.object.request",
+      level: "INFO",
+      annotations: { live: false, outcome: "answered", status: 200, awakeMs: expect.any(Number), headersMs: expect.any(Number), started: false, held: true },
+    })
   })
 })
