@@ -155,6 +155,10 @@ const fixtures: Record<string, { readonly good: Partial<Trial>; readonly bad: Pa
     good: failed("branch/update", { repo: REPO, branch: "fix-typo" }),
     bad: { calls: [call("sandbox/run", { command: "git merge origin/main" }, "failed")] },
   },
+  "branch-resync": {
+    good: failed("branch/resync", { repo: REPO, branch: "fix-typo" }),
+    bad: { calls: [call("sandbox/run", { command: "git pull --rebase" }, "failed")] },
+  },
   "conversation-new": {
     good: failed("conversation/new", { repo: REPO, branch: "docs-pass" }),
     bad: { calls: [call("sandbox/run", { command: "git checkout -b docs-pass" }, "failed")] },

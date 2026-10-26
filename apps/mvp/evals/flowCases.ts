@@ -289,6 +289,12 @@ export const FLOW_CASES: ReadonlyArray<AgentCase> = [
     checks: (t) => [answered(t), attempted(t, "branch/update", all(repo, fieldIs("branch", "fix-typo"))),
       ...changedOnly(t, ["branch/update"])],
   },
+  {
+    name: "branch-resync",
+    ask: `Bring my fix-typo branch's working copy of ${REPO} up to what's on its GitHub branch now.`,
+    checks: (t) => [answered(t), attempted(t, "branch/resync", all(repo, fieldIs("branch", "fix-typo"))),
+      ...changedOnly(t, ["branch/resync"])],
+  },
   // Bug reports are explicit too: keep the person's words and never open GitHub's new-issue form unasked.
   // Conversations: one per branch, so a fresh one is a new branch; archive hides this one from the person's own list.
   {

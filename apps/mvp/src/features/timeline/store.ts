@@ -125,7 +125,7 @@ export const followSummaries = (
             Effect.annotateLogs({
               feature: "timeline",
               errorCode: codeOf(error),
-              ...("reason" in error ? { reason: error.reason } : {}),
+              reason: error.reason,
             }),
           )
         ),

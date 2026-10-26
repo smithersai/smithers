@@ -8,14 +8,15 @@
  */
 export const ROUTE_WORDS: ReadonlySet<string> = new Set([
   "about", "ack", "actions", "alert-channels", "alert-deliveries", "answers", "api", "archive", "auth", "blob",
-  "branches", "call", "callback", "calls", "checks", "cloud-runs", "comments", "compare", "conversations", "create",
-  "creation", "credential", "delete", "docs", "domains", "file", "flow-drafts", "flows", "github", "github-sync",
-  "github-writes", "home", "items", "launch", "logs", "me", "merge", "message-pin", "message-pins", "messages", "metrics",
-  "model", "my-conversations", "notifications", "personal-model", "preview", "pull-commits", "pulls", "questions", "raw",
-  "refs", "remote-runs", "renderer", "repos", "repositories", "reviews", "room", "run", "runs", "sandbox",
-  "sandbox-limits", "save", "secrets", "session", "shapes", "shares", "sign-in", "sign-out", "source", "spend-alerts",
-  "stack", "stamp", "state", "steers", "stop", "telemetry", "terminals", "test", "texts", "todo-requests", "todos",
-  "traces", "tree", "triage-settings", "v1", "views", "watches", "web", "webhook", "write", "writes",
+  "branch-publications", "branches", "bug-reports", "bugs", "call", "callback", "calls", "checks", "cloud-runs",
+  "comments", "compare", "conversations", "create", "creation", "credential", "delete", "docs", "domains", "file",
+  "flow-drafts", "flows", "github", "github-sync", "github-writes", "home", "items", "launch", "logs", "me", "merge",
+  "message-pin", "message-pins", "messages", "metrics", "model", "my-conversations", "notifications", "personal-model",
+  "preview", "pull-commits", "pulls", "questions", "raw", "refs", "remote-runs", "renderer", "repos", "repositories",
+  "reviews", "room", "run", "runs", "sandbox", "sandbox-limits", "save", "secrets", "session", "shapes", "shares",
+  "sign-in", "sign-out", "source", "spend-alerts", "stack", "stamp", "state", "steers", "stop", "summaries",
+  "telemetry", "terminals", "test", "texts", "timeline", "todo-requests", "todos", "traces", "tree", "triage-settings",
+  "v1", "views", "watches", "web", "webhook", "write", "writes",
 ])
 
 /** Where the app's telemetry export goes: its own requests are never recorded through themselves. */
