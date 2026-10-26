@@ -9,6 +9,7 @@ import { ACTIONS_SHAPE_ROUTE } from "../src/features/actions/contract"
 import { REMOTE_RUN_SHAPE_ROUTE } from "../src/features/runs/contract"
 import { RemoteRunsClient } from "../src/features/runs/api"
 import { RunsProvider } from "../src/features/runs/components/RunsContext"
+import { Repo } from "../src/features/repo/repo"
 import { Runs } from "../src/features/runs/runs"
 import type { Inspection } from "../src/features/runs/schema"
 import { ActionRunScreen } from "../src/screens/actions/ActionRunScreen"
@@ -62,13 +63,15 @@ test("a reloaded run shows its frame and persisted header within five seconds wh
     await seed.dispose()
     // This fresh tab opens the deep link directly; it never visits the repository list.
     const runs = await device.runPromise(Effect.service(Runs))
+    // Every repository route asks who the person is on its repository (router.tsx `enterRepo`, decision 0079).
+    const repo = await device.runPromise(Effect.service(Repo))
     const { router: appRouter } = await import("../src/router")
     const root = createRootRoute({ component: Outlet })
     const route = createRoute({ getParentRoute: () => root, path: "/$owner/$repo/actions/runs/$runId", component: ActionRunScreen,
       beforeLoad: appRouter.routesById["/$owner/$repo/actions/runs/$runId"].options.beforeLoad,
     })
     const router = createRouter({ isServer: false, routeTree: root.addChildren([route]),
-      context: { runs }, history: createMemoryHistory({ initialEntries: [`/octo/hello/actions/runs/${encodeURIComponent(runId)}`] }),
+      context: { runs, repo }, history: createMemoryHistory({ initialEntries: [`/octo/hello/actions/runs/${encodeURIComponent(runId)}`] }),
     })
     let loaded = false
     const startedAt = performance.now()
