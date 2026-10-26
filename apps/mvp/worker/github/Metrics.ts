@@ -107,6 +107,12 @@ export const triageTokens = Metric.counter("triage_tokens", {
   incremental: true,
 })
 
+/** Reconcile starts a stale read of the issues awaited, by `outcome`: `started`, `timed_out` or `not_started`. */
+export const reconcileStarts = Metric.counter("github_reconcile_starts", {
+  description: "github/Reconcile starts a stale issues read awaited, by outcome",
+  incremental: true,
+})
+
 /** Live anonymous visibility checks, by a bounded outcome. */
 export const visibilityReads = Metric.counter("github_visibility_reads", {
   description: "Current anonymous repository visibility checks, by outcome",

@@ -42,3 +42,10 @@ may mint a few tokens at once. `worker.request-owned-io` rejects those
 constructors and a `Ref` of pending work. `worker/GitHubShapes.workerd.test.ts`
 proves the shapes signed out and signed in under workerd.
 
+Nothing a request starts runs on in the isolate either. A stale read of the
+issues forked `github/Reconcile`'s admission into the program's never-closed
+scope, so the admission's I/O belonged to whichever request forked it and could
+be dropped with it. The read now awaits the admission beside its own work,
+bounded at 2 seconds, and `github/Api.ts` no longer takes a scope (no
+`waitUntil`: DUR-3).
+

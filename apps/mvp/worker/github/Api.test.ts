@@ -3,7 +3,7 @@
 // against the scripted GitHub (worker/github/test/harness.ts). Unhappy paths give the routes a faulty service; nothing
 // intercepts a request.
 import { BranchRoles } from "../branch/Access.ts"
-import { ConfigProvider, Effect, Layer, Option, Redacted } from "effect"
+import { ConfigProvider, Duration, Effect, Layer, Option, Redacted } from "effect"
 import { FetchHttpClient, HttpEffect } from "effect/http"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
@@ -27,9 +27,9 @@ import {
 } from "../../src/features/issues/contract.ts"
 import { CHECKS_SHAPE_ROUTE, compareRoute, PULLS_SHAPE_ROUTE } from "../../src/features/pulls/contract.ts"
 import * as Actor from "../Actor.ts"
-import { FlowStarter, StartUnavailable } from "../Flows.ts"
+import { FlowStarter, StartConflict, StartUnavailable } from "../Flows.ts"
 import { testFile } from "../test/harness.ts"
-import { handles, make, parseWritesPath } from "./Api.ts"
+import { handles, make, parseWritesPath, RECONCILE_START_TIMEOUT } from "./Api.ts"
 import * as Metrics from "./Metrics.ts"
 import * as RepoRoles from "./RepoRoles.ts"
 import { comments, items, REPOSITORY, reset, rolesThatRead, signedIn, sql, writeRow } from "./test/fixtures.ts"
@@ -678,33 +678,77 @@ describe("the shapes", () => {
 
   test("a read of stale issues starts github/Reconcile once per 5 minutes; fresh ones start nothing", async () => {
     const h = await githubHarness(runtime)
-    await shape(h, ITEMS_SHAPE_ROUTE)
-    await shape(h, ITEMS_SHAPE_ROUTE)
-    await expect.poll(() => h.starts.map((start) => start.flow), { timeout: 10_000 }).toEqual(["github/Reconcile", "github/Reconcile"])
-    expect(new Set(h.starts.map((start) => start.executionId)).size).toBe(1)
+    // The read answers once the start is admitted: it is recorded before the response, with no waiting after it.
+    expect((await shape(h, ITEMS_SHAPE_ROUTE)).status).toBe(200)
+    expect(h.starts.map((start) => start.flow)).toEqual(["github/Reconcile"])
     expect(h.starts[0]!.executionId).toBe(reconcileExecutionId(REPOSITORY.id, Date.now()))
     // Every read in the bucket asks with the bucket's start, so their starts are one intent.
-    expect(h.starts.map((start) => start.payload)).toEqual([0, 1].map(() => ({
+    expect(h.starts[0]!.payload).toEqual({
       repo: `${REPOSITORY.owner}/${REPOSITORY.name}`,
       requestedAtMs: reconcileBucketStart(Date.now()),
-    })))
+    })
+    expect(h.line("github.reconcile.start").map((line) => ({ level: line.level, ...line.annotations }))).toMatchObject([
+      { level: "INFO", repoId: REPOSITORY.id, outcome: "started", durationMs: expect.any(Number) },
+    ])
+    expect(h.count(Metrics.reconcileStarts, { outcome: "started" })).toBe(1)
+    // A bucket this isolate saw admitted isn't asked again.
+    await shape(h, ITEMS_SHAPE_ROUTE)
+    expect(h.starts).toHaveLength(1)
     await sql(runtime, `INSERT INTO github_sync (repo_id, stream, synced_at, complete) VALUES ('${REPOSITORY.id}', 'issues', now(), true)`)
     await shape(h, ITEMS_SHAPE_ROUTE)
-    expect(h.starts).toHaveLength(2)
+    expect(h.starts).toHaveLength(1)
     const synced = values((await shape(h, SYNC_SHAPE_ROUTE)).rows)
     expect(synced).toEqual([{ repo_id: REPOSITORY.id, stream: "issues", synced_at: expect.any(String), complete: "true", failure: null }])
-    // Without the App nothing starts, and a failed start still serves the rows.
+    // Without the App nothing starts, and a failed start still serves the rows; the next stale read asks again.
     const off = await githubHarness(runtime, { app: null })
     await sql(runtime, `UPDATE github_sync SET synced_at = now() - interval '1 hour'`)
     expect((await shape(off, ITEMS_SHAPE_ROUTE)).status).toBe(200)
     expect(off.starts).toEqual([])
     const actor = member()
+    let asked = 0
     const refusing = await githubHarness(runtime, {
       actor,
-      starter: FlowStarter.of({ start: () => Effect.fail(new StartUnavailable({ errorCode: "down" })) }),
+      starter: FlowStarter.of({ start: () => Effect.suspend(() => (asked++, Effect.fail(new StartUnavailable({ errorCode: "down" })))) }),
     })
     expect((await shape(refusing, ITEMS_SHAPE_ROUTE)).status).toBe(200)
-    await expect.poll(() => refusing.line("github.reconcile.start")[0]?.annotations, { timeout: 10_000 }).toMatchObject({ outcome: "not_started" })
+    expect((await shape(refusing, ITEMS_SHAPE_ROUTE)).status).toBe(200)
+    expect(asked).toBe(2)
+    expect(refusing.line("github.reconcile.start").map((line) => ({ level: line.level, ...line.annotations }))).toMatchObject([
+      { level: "WARN", outcome: "not_started", errorCode: "down" },
+      { level: "WARN", outcome: "not_started", errorCode: "down" },
+    ])
+    expect(refusing.count(Metrics.reconcileStarts, { outcome: "not_started" })).toBe(2)
+  })
+
+  test("concurrent stale reads start exactly one github/Reconcile execution for the bucket", async () => {
+    const h = await githubHarness(runtime, { run: true })
+    h.github.open("Reconciled issue", "", "sam")
+    const reads = await Promise.all(Array.from({ length: 10 }, () => h.fetch(`${ITEMS_SHAPE_ROUTE}?offset=-1`)))
+    expect(reads.map((read) => read.status)).toEqual(Array(10).fill(200))
+    await Promise.all(reads.map((read) => read.arrayBuffer()))
+    // Each read that found no admitted bucket asked, with the bucket's one execution id: one execution.
+    expect(new Set(h.starts.map((start) => start.executionId))).toEqual(new Set([reconcileExecutionId(REPOSITORY.id, Date.now())]))
+    expect(h.starts.length).toBeGreaterThanOrEqual(1)
+    expect(h.starts.length).toBeLessThanOrEqual(10)
+    const asked = h.starts.length
+    await h.settled()
+    expect(await items(runtime)).toEqual([expect.objectContaining({ number: 1, title: "Reconciled issue" })])
+    expect(h.github.calls.filter((call) => call.method === "GET" && call.path === "/repos/acme/widgets/issues")).toHaveLength(1)
+    await shape(h, ITEMS_SHAPE_ROUTE)
+    expect(h.starts).toHaveLength(asked)
+  })
+
+  test.each([
+    { name: "conflicting intent", start: Effect.fail(new StartConflict()), errorCode: "@smthrs/mvp/flows/StartConflict" },
+    { name: "defect", start: Effect.die(new Error(SENTINEL)), errorCode: "unknown" },
+  ])("a starter $name is counted and logged without failing the read or leaking error text", async ({ start, errorCode }) => {
+    const h = await githubHarness(runtime, { starter: FlowStarter.of({ start: () => start }) })
+    expect((await shape(h, ITEMS_SHAPE_ROUTE)).status).toBe(200)
+    expect(h.line("github.reconcile.start").map((line) => ({ level: line.level, ...line.annotations }))).toMatchObject([
+      { level: "WARN", repoId: REPOSITORY.id, outcome: "not_started", errorCode },
+    ])
+    expect(h.count(Metrics.reconcileStarts, { outcome: "not_started" })).toBe(1)
+    expect(JSON.stringify({ logs: h.logs, spans: h.spans.map((span) => [...span.attributes]) })).not.toContain(SENTINEL)
   })
 
   test("github-writes: only the signed-in person's own writes, their status only; signed out, none; sessions down, 503", async () => {
@@ -815,6 +859,15 @@ describe("the shapes", () => {
       }
       // Without `?repo=`, the deployment's own.
       expect(values((await shape(h, ITEMS_SHAPE_ROUTE)).rows).map((row) => row.title)).toEqual(["Home"])
+      expect(h.starts.map((start) => start.payload)).toEqual([
+        { repo: "acme/gadgets", requestedAtMs: reconcileBucketStart(Date.now()) },
+        { repo: "acme/home", requestedAtMs: reconcileBucketStart(Date.now()) },
+      ])
+      // Admitting one repository never suppresses another, and both completed buckets remain cached.
+      expect((await shapeOf(h, ITEMS_SHAPE_ROUTE, "acme/gadgets")).status).toBe(200)
+      expect((await shape(h, ITEMS_SHAPE_ROUTE)).status).toBe(200)
+      expect(h.starts).toHaveLength(2)
+      expect(h.count(Metrics.reconcileStarts, { outcome: "started" })).toBe(2)
     })
 
     test("a name GitHub couldn't have is 400; one the deployment doesn't act on is 404", async () => {
@@ -890,21 +943,29 @@ test("Apply starts only after its delivery's received time is durable", async ()
   expect(seen).toEqual([[{ delivery_id: id }]])
 })
 
-test("item reads finish while reconciliation launch remains unresolved", async () => {
+test("an item read whose Reconcile start never resolves answers at the timeout, and the start doesn't outlive it", async () => {
   let launchPending = false
+  let interrupted = false
   const h = await githubHarness(runtime, {
-    starter: FlowStarter.of({ start: () => Effect.sync(() => { launchPending = true }).pipe(Effect.andThen(Effect.never)) }),
+    starter: FlowStarter.of({
+      start: () =>
+        Effect.sync(() => { launchPending = true }).pipe(
+          Effect.andThen(Effect.never),
+          Effect.onInterrupt(() => Effect.sync(() => { interrupted = true })),
+        ),
+    }),
   })
-  const controller = new AbortController()
-  try {
-    const response = await h.fetch(`${ITEMS_SHAPE_ROUTE}?offset=-1`, {
-      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
-    })
-    expect(response.status).toBe(200)
-    await expect.poll(() => launchPending, { timeout: 10_000 }).toBe(true)
-  } finally {
-    controller.abort()
-  }
+  const startedAt = Date.now()
+  const response = await h.fetch(`${ITEMS_SHAPE_ROUTE}?offset=-1`, { signal: AbortSignal.timeout(10_000) })
+  expect(response.status).toBe(200)
+  await response.arrayBuffer()
+  expect(Date.now() - startedAt).toBeGreaterThanOrEqual(Duration.toMillis(RECONCILE_START_TIMEOUT))
+  // Nothing keeps running after the read: the start was interrupted with it, not left in a scope that outlives requests.
+  expect({ launchPending, interrupted }).toEqual({ launchPending: true, interrupted: true })
+  expect(h.line("github.reconcile.start").map((line) => ({ level: line.level, ...line.annotations }))).toMatchObject([
+    { level: "WARN", outcome: "timed_out", errorCode: "TimeoutError", durationMs: expect.any(Number) },
+  ])
+  expect(h.count(Metrics.reconcileStarts, { outcome: "timed_out" })).toBe(1)
 })
 
 test("cached public visibility cannot authorize rows after GitHub becomes private", async () => {

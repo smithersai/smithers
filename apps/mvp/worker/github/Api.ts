@@ -2,7 +2,7 @@ import { COMMITMENTS } from "../../src/features/issues/lifecycle.ts"
 import { digestSync } from "@smthrs/crypto"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { Core, GitHub } from "@smthrs/integrations"
-import { Cause, Clock, Effect, type Layer, Metric, Option, Redacted, Result, Schema, Scope } from "effect"
+import { Cause, Clock, Duration, Effect, type Layer, Metric, Option, Redacted, Ref, Result, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
@@ -74,7 +74,7 @@ import { type Actor, canAsk, refusesPersonOnly, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as Dispatch from "../ci/Dispatch.ts"
-import { FlowStarter } from "../Flows.ts"
+import { FlowStarter, StartUnavailable } from "../Flows.ts"
 import * as Notifications from "../Notifications.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"
 import { Apply, PULL_EVENTS } from "./Apply.ts"
@@ -103,7 +103,8 @@ import { Write } from "./Write.ts"
 //   the deployment may act on; every other write only to its own.
 // - `GET /api/shapes/{items,comments,github-sync}`: the synced repository's rows, each with its column list, for a
 //   signed-in person with a role on it, or for anyone once GitHub said the repository is public. A read of `items`
-//   that finds the sync older than 5 minutes starts `github/Reconcile` without waiting.
+//   that finds the sync older than 5 minutes starts `github/Reconcile`, once per repository and 5-minute bucket, and
+//   waits at most `RECONCILE_START_TIMEOUT` for admission beside its own work.
 // - `GET /api/shapes/github-writes`: the signed-in person's own writes, their status only.
 // - Triage (§5): the writes route takes a person's Accept or Not accepted, Run triage again, and Enable and Pause, each
 //   at its own minimum role; `issues.opened` starts `triage/Run` while triage is on; and `GET
@@ -309,6 +310,13 @@ export const handles = (path: string): boolean =>
   path === GITHUB_WEBHOOK_ROUTE || SHAPES.has(path) || parseWritesPath(path) !== undefined ||
   Compare.parseComparePath(path) !== undefined
 
+/**
+ * How long a stale read of the issues waits for `github/Reconcile`'s start to be admitted: one idempotent Durable Object
+ * call, keyed by the bucket's execution id. A slower admission is dropped with the read's answer, and the next stale
+ * read asks again.
+ */
+export const RECONCILE_START_TIMEOUT = Duration.seconds(2)
+
 /** The bounds of a delivery id: GitHub's are UUIDs; anything up to 128 characters is taken. */
 const DELIVERY_ID = /^[A-Za-z0-9-]{1,128}$/
 
@@ -374,7 +382,6 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
     const mayAct = (id: string) =>
       id === repository.id ||
       (Option.isSome(options.app) && Option.match(allowed, { onNone: () => true, onSome: (ids) => ids.has(id) }))
-    const scope = yield* Scope.Scope
     // Check current metadata for anonymous readers, using the shared metadata token policy.
     const readToken = yield* ReadToken.fromConfig.pipe(
       options.http === undefined ? Effect.provide(FetchHttpClient.layer) : Effect.provideService(HttpClient.HttpClient, options.http),
@@ -712,9 +719,15 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         return response
       }).pipe(Effect.withSpan("github.write.request", { kind: "server" }))
 
+    // The last admitted bucket per repository: completed values only. Each request that finds a bucket behind
+    // starts it itself, without sharing pending work (decision 0104).
+    const admitted = yield* Ref.make<ReadonlyMap<string, number>>(new Map())
+
     /**
-     * Starts `github/Reconcile` of `target` when its issues are older than `SYNC_STALE_MS`, one execution per
-     * repository and 5-minute bucket, without waiting. A failure here is logged and the read goes on.
+     * Starts `github/Reconcile` when `target`'s issues are older than `SYNC_STALE_MS`, one execution per repository and
+     * 5-minute bucket, and waits at most `RECONCILE_START_TIMEOUT` for admission. A bucket admitted for that repository
+     * isn't asked again. It never fails the read: each start logs `github.reconcile.start` and counts
+     * `github_reconcile_starts` by outcome (`started`, `timed_out`, `not_started` with its error code).
      */
     const reconcileIfStale = (target: Repository) => Effect.gen(function* () {
       if (Option.isNone(options.app)) return
@@ -722,16 +735,38 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       const state = yield* Store.syncState(target.id, ISSUES_STREAM).pipe(Effect.provide(database))
       if (state.syncedAt !== null) yield* Metric.update(Metrics.syncAge, Math.round((now - state.syncedAt) / 1000))
       if (state.syncedAt !== null && now - state.syncedAt < SYNC_STALE_MS) return
-      yield* (yield* FlowStarter).start(Reconcile, {
+      const bucket = reconcileBucketStart(now)
+      if ((yield* Ref.get(admitted)).get(target.id) === bucket) return
+      const started = yield* (yield* FlowStarter).start(Reconcile, {
         executionId: reconcileExecutionId(target.id, now),
-        payload: { repo: `${target.owner}/${target.name}`, requestedAtMs: reconcileBucketStart(now) },
-      })
+        payload: { repo: `${target.owner}/${target.name}`, requestedAtMs: bucket },
+      }).pipe(Effect.timeoutOption(RECONCILE_START_TIMEOUT))
+      const outcome = Option.isSome(started) ? "started" : "timed_out"
+      if (Option.isSome(started)) yield* Ref.update(admitted, (buckets) => new Map(buckets).set(target.id, bucket))
+      yield* Metric.update(Metric.withAttributes(Metrics.reconcileStarts, { outcome }), 1)
+      yield* Effect.logWithLevel(outcome === "started" ? "Info" : "Warn")("github.reconcile.start").pipe(
+        Effect.annotateLogs({
+          repoId: target.id,
+          outcome,
+          durationMs: (yield* Clock.currentTimeMillis) - now,
+          ...(Option.isNone(started) ? { errorCode: "TimeoutError" } : {}),
+        }),
+      )
     }).pipe(
-      Effect.catchCause((cause) =>
-        Effect.logWarning("github.reconcile.start").pipe(
-          Effect.annotateLogs({ repoId: target.id, outcome: "not_started", errorCode: codeOf(Cause.squash(cause)) }),
+      Effect.catchCause((cause) => {
+        const error = Cause.squash(cause)
+        return Effect.andThen(
+          Metric.update(Metric.withAttributes(Metrics.reconcileStarts, { outcome: "not_started" }), 1),
+          Effect.logWarning("github.reconcile.start").pipe(
+            Effect.annotateLogs({
+              repoId: target.id,
+              outcome: "not_started",
+              errorCode: error instanceof StartUnavailable ? error.errorCode : codeOf(error),
+            }),
+          ),
         )
-      ),
+      }),
+      Effect.withSpan("github.reconcile.start"),
     )
 
     /**
@@ -849,10 +884,14 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             return refuse(404, "app_not_installed")
           }
         }
-        // Only admission runs in the Worker's scope; Reconcile's work stays on the durable engine.
-        // A read never waits for admission, and a later stale read can request the same bucket again.
-        if (path === ITEMS_SHAPE_ROUTE) yield* Effect.forkIn(reconcileIfStale(target.success), scope)
-        return yield* readable(repositoryShape.table, repositoryShape.columns, repositoryShape.where, target.success)
+        const read = readable(repositoryShape.table, repositoryShape.columns, repositoryShape.where, target.success)
+        if (path === ITEMS_SHAPE_ROUTE) {
+          // Admission runs beside the shape read inside this request, bounded at `RECONCILE_START_TIMEOUT`.
+          // Reconcile's work stays on the durable engine; no admission outlives the request (decision 0104).
+          const [, response] = yield* Effect.all([reconcileIfStale(target.success), read], { concurrency: 2 })
+          return response
+        }
+        return yield* read
       }
       if (path === ACTIONS_SHAPE_ROUTE) {
         const named = new URL(request.url, "http://localhost").searchParams.get("repo")

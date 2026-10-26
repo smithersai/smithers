@@ -147,7 +147,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
     await Effect.runPromise(Scope.close(scope, Exit.void))
   })
 
-  // The Node host's engine with the GitHub flows, built when the first flow starts.
+  // Build the Node host before concurrent requests arrive, as a Durable Object host is ready before admission.
   let engine: Context.Context<FlowRuntime.FlowRuntime> | undefined
   const engineFor = Effect.gen(function* () {
     if (engine !== undefined) return engine
@@ -161,6 +161,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
     engine = built.context
     return built.context
   })
+  if (options.run === true) await runtime.runPromise(observed(engineFor))
 
   const objects = new Map<string, ExecutionHost.Storage>()
   const starts: Array<{ readonly flow: string; readonly executionId: string; readonly payload: unknown }> = []
@@ -195,7 +196,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
     http: github.http,
   })))
   const routes = await runtime.runPromise(
-    observed(Api.make(database, { repository: own, app: configured, roles, ...(options.metadata === undefined ? { http: github.http } : {}), repoFlows: options.repoFlows === true, allowed: Option.fromUndefinedOr(options.allowed) }).pipe(Effect.provideService(Scope.Scope, scope))),
+    observed(Api.make(database, { repository: own, app: configured, roles, ...(options.metadata === undefined ? { http: github.http } : {}), repoFlows: options.repoFlows === true, allowed: Option.fromUndefinedOr(options.allowed) })),
   )
   // Electric, as the routes call it: each table in this file's schema.
   const tables = new Set([

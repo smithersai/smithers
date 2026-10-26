@@ -21,8 +21,10 @@ answered) and green after (48 of 48). The About workerd flake under load was the
 re-wraps undici's response body, and undici cancels it when the dropped original is collected. Both workerd tests now
 read each body on arrival under `MINIFLARE_ASSERT_BODIES_CONSUMED`.
 
-Open: `github/Api.ts` forks `reconcileIfStale` into the never-closed isolate scope; its I/O belongs to the forking
-request, so Reconcile may silently not start when that request ends first. No request waits on it.
+`github/Api.ts` forked `reconcileIfStale` into the never-closed isolate scope, so its I/O belonged to the forking
+request and Reconcile could silently not start. The read now awaits the admission beside its own work, at most 2 seconds,
+once per bucket in an isolate, and logs and counts `started`, `timed_out` or `not_started` (the lead's call: no
+`waitUntil`, DUR-3).
 
 Catalog entries used: @smthrs/integrations (GitHub AppAuth, GitHubClient), @smthrs/database PostgresDatabase,
 @smthrs/effect-electric ShapeProxy, @smthrs/targets NodeTest, Effect Metric and HttpClient. No new dependency.

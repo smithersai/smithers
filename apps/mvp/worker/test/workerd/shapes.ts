@@ -7,7 +7,7 @@
 // Initialization finishes before visitors arrive; no initialization promise crosses requests.
 import * as Pg from "@effect/sql-pg"
 import { PostgresDatabase } from "@smthrs/database"
-import { ConfigProvider, Effect, Layer, Option, Redacted, Scope } from "effect"
+import { ConfigProvider, Effect, Layer, Option, Redacted } from "effect"
 import { FetchHttpClient, HttpClient, HttpEffect } from "effect/http"
 import { BranchRoles } from "../../branch/Access.ts"
 import { FlowStarter } from "../../Flows.ts"
@@ -46,15 +46,13 @@ const initialize = async (env: Env) => {
     SESSION_SECRET,
   })
   const database = PostgresDatabase.layer({ url: env.HYPERDRIVE.connectionString, driver: Pg, schema: env.SCHEMA })
-  // The isolate's scope, as ChatApi's program has: it outlives every request.
-  const scope = await Effect.runPromise(Scope.make())
   const { routes, signIn, roles } = await Effect.runPromise(Effect.gen(function* () {
     const repository = yield* GitHubConfig.repository
     const app = yield* GitHubConfig.configured
     const roles = yield* RepoRoles.make(database, { repository, app, allowed: Option.none(), http: latent })
     const signIn = yield* SignIn.make(database).pipe(Effect.provide(FetchHttpClient.layer))
     return { routes: yield* GitHubApi.make(database, { repository, app, roles, http: latent }), signIn, roles }
-  }).pipe(Effect.provideService(Scope.Scope, scope), Effect.provideService(ConfigProvider.ConfigProvider, config)))
+  }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config)))
   // Who is asking, as ChatApi's `signedIn` layer gives it (worker/ChatApiProgram.ts), with role checks counted.
   const checks = Layer.succeed(SignIn.RoleChecks, SignIn.RoleChecks.of({ start: () => Effect.sync(() => void roleChecks++) }))
   const signedIn = Layer.merge(checks, signIn.sessions.pipe(Layer.provide(checks)))

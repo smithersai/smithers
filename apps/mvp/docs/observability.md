@@ -592,7 +592,7 @@ The git loop's routes, flows and tokens, triage, and the browser's issue writes,
 |---|---|---|
 | `github.webhook`, `github.write.request`, `github.shape.<table>`, `github.reconcile.start` | log, span | ChatApi |
 | `github.write`, `github.write.give_up`, `github.apply`, `github.reconcile`, `github.token.mint`, `github.config` | log, span | the `FlowExecution` Durable Object |
-| `github_webhooks`, `github_delivery_lag_ms`, `github_write_requests`, `github_writes`, `github_write_ms`, `github_write_unknown`, `github_applies`, `github_reconciles`, `github_reconcile_changed`, `github_sync_age_seconds`, `github_token_mints`, `github_shape_requests` | counters, histograms, gauge | ChatApi and the Durable Object |
+| `github_webhooks`, `github_delivery_lag_ms`, `github_write_requests`, `github_writes`, `github_write_ms`, `github_write_unknown`, `github_applies`, `github_reconciles`, `github_reconcile_starts`, `github_reconcile_changed`, `github_sync_age_seconds`, `github_token_mints`, `github_shape_requests` | counters, histograms, gauge | ChatApi and the Durable Object |
 | `triage.read`, `triage.decide`, `triage.apply`, `triage.comment` | log, span | the `FlowExecution` Durable Object ([triage](features/issues.md#triage)); `triage.apply` with `dropped: enabler_demoted` is an Error |
 | `triage_runs{outcome}`, `triage_decisions{decision,via}`, `triage_dropped{reason}`, `triage_overrides{from,to}`, `triage_tokens` | counters | the Durable Object; a person's override is counted by `github/Write`. Overrides of the flow are its error rate |
 | `issues.write.queue`, `issues.write.send`, `issues.pending`, `smithers_issue_writes`, `smithers_issue_write_sends`, `smithers_issue_pending_actions` | browser | the engine worker and the tab |

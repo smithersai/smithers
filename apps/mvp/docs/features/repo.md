@@ -268,6 +268,8 @@ ChatApi and the Durable Object read them with Effect `Config` (`worker/RepoConfi
 
 The App read token is shared in an isolate only as a value: the minted token and its expiry. A read that finds none, or one within 5 minutes of expiry, mints its own and never waits on another request's mint, since workerd cancels a request that waits on another request's permit or I/O as hung (decision [0104](../decisions/0104-request-owned-worker-io.md)). Concurrent first reads on a cold isolate may each mint one token; the last one minted is kept. A failed mint leaves that read anonymous and the next read mints again. Each mint counts `github_token_mints{kind="read",outcome}` (`minted` or `anonymous`) and logs `github.read_token` with its `outcome`, and `durationMs` or GitHub's `errorCode`. GitHub calls remain through the library catalog's `@smthrs/integrations` AppAuth and GitHubClient.
 
+An [issues read](issues.md#sync) with stale sync state also awaits `github/Reconcile` admission inside its request, for at most 2 seconds beside its shape read. The Durable Object admits one execution per repository and 5-minute bucket. The isolate remembers admitted buckets as completed values; failed or timed-out admission leaves the read usable and can be requested again. No admission runs in an isolate scope. `github.reconcile.start` and `github_reconcile_starts{outcome}` record `started`, `timed_out` or `not_started`, with an error code on timeout or failure.
+
 ## Tests
 
 | Test | Proves |
