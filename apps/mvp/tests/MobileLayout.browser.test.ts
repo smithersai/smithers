@@ -15,7 +15,7 @@ beforeAll(async () => {
     jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' },
   })
   const backCss = await readFile(new URL("../src/features/views/components/back-to-chat.css", import.meta.url), "utf8")
-  const css = backCss + (await Promise.all(["conversations/conversations-screen", "repo/repo-screen"].map((name) =>
+  const css = backCss + (await Promise.all(["conversations/conversations-screen", "repo/repo-screen", "root/root", "branch/branch-screen", "issues/issues-screen", "pulls/pulls-screen", "stack/stack-screen"].map((name) =>
     readFile(new URL(`../src/screens/${name}.css`, import.meta.url), "utf8")))).join("\n")
   server = createServer((request, response) => {
     response.setHeader("Content-Type", request.url === "/fixture.js" ? "text/javascript" : "text/html")
@@ -147,3 +147,33 @@ test("a completed GitHub sync cannot show an empty pull list while the device is
     await page.getByText("No pull requests", { exact: true }).waitFor()
   } finally { await page.close() }
 })
+
+for (const width of [390, 768, 1280]) {
+  for (const screen of ["pulls", "stack", "branch", "issues"]) test(`${width}: ${screen} targets are unobstructed inside their scrollport`, async () => {
+    const page = await browser.newPage({ viewport: { width, height: 800 } })
+    try {
+      await page.goto(`${origin}?screen=${screen}`)
+      const controls = page.locator("a, button")
+      await controls.first().waitFor()
+      for (const control of await controls.all()) {
+        await control.scrollIntoViewIfNeeded()
+        const result = await control.evaluate((element) => {
+          const box = element.getBoundingClientRect()
+          const points = [[box.left + 4, box.top + box.height / 2], [box.right - 4, box.top + box.height / 2], [box.left + box.width / 2, box.top + 4], [box.left + box.width / 2, box.bottom - 4]]
+          let clipped = false
+          for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+            const style = getComputedStyle(parent)
+            const bounds = parent.getBoundingClientRect()
+            if (["auto", "hidden", "scroll"].includes(style.overflowY) && (box.top < bounds.top || box.bottom > bounds.bottom)) clipped = true
+          }
+          return { height: box.height, width: box.width, clipped, covered: points.some(([x, y]) => !element.contains(document.elementFromPoint(x!, y!))) }
+        })
+        expect.soft(result, await control.textContent() ?? "bell").toMatchObject({ clipped: false, covered: false })
+        if (width <= 960) {
+          expect.soft(result.height).toBeGreaterThanOrEqual(32)
+          expect.soft(result.width).toBeGreaterThanOrEqual(32)
+        }
+      }
+    } finally { await page.close() }
+  })
+}

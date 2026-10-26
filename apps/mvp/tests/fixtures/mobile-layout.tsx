@@ -1,4 +1,4 @@
-import { Button, NotificationBell, RepoAbout, FileTabs, ItemAsideSection, ItemConversation, IssuesView, RepositoryHome, SmithersUiStyles } from "@smthrs/ui"
+import { Button, LinkTabs, NotificationBell, RepoAbout, FileTabs, ItemAsideSection, ItemConversation, IssuesView, RepositoryHome, SmithersUiStyles } from "@smthrs/ui"
 import { RepoView, RepoViewStyles } from "@smthrs/repo-view"
 import { listPageOf } from "../../src/features/pulls/view"
 import { createRoot } from "react-dom/client"
@@ -9,7 +9,8 @@ const path = new URL(location.href).searchParams.get("file") ?? "README.md"
 const markdown = `### Well hello there!\n\n${"A repository document remains readable below its toolbar. ".repeat(15)}\n\n[Read the guide](https://example.com/guide)\n`
 const list = new URL(location.href).searchParams.get("list")
 const pullPage = listPageOf([], { owner: "smithersai", name: "smithers" }, { syncedAt: "2026-10-23" }, { status: "allowed" }, list !== "pending")
-createRoot(document.getElementById("app")!).render(<>
+const screen = new URL(location.href).searchParams.get("screen")
+createRoot(document.getElementById("app")!).render(screen === null ? <>
   {list === null ? null : <section id="pulls"><IssuesView repo="smithersai/smithers" issues={pullPage.pulls} loading={pullPage.loading} emptyTitle="No pull requests" /></section>}
   <SmithersUiStyles withTheme />
   <RepoViewStyles />
@@ -50,4 +51,17 @@ createRoot(document.getElementById("app")!).render(<>
         </li>)}
     </ul>
   </main>
+</> : <>
+  <SmithersUiStyles withTheme />
+  {screen === "branch" ? <main className="branch-screen" data-workspace="false">
+    <header className="repo-header"><h1>octocat / Spoon-Knife</h1><NotificationBell /></header>
+    <div className="branch-screen-view"><LinkTabs className="home-tabs"><a href="#home">Home</a><a href="#code">Code</a></LinkTabs><div style={{ minHeight: "1200px" }}>Files</div></div>
+  </main> : screen === "issues" ? <main className="issues-screen">
+    <header className="repo-header"><h1 className="repo-header-name">smithersai / smithers</h1>
+      {["Issues", "Pull requests", "Runs", "Stack", "Secrets"].map(name => <Button key={name} variant="ghost">{name}</Button>)}
+      <span className="repo-header-bell"><NotificationBell /></span>
+    </header>
+    <p><a href="https://github.com/smithersai/smithers/issues/new">Open an issue on GitHub</a></p>
+    <RepositoryHome sections={[{ blocks: [{ type: "hero", title: "VibeLang", announcement: { label: "v0: the language will change", url: "https://example.com/announcement" } }] }]} />
+  </main> : <><main className={`${screen}-screen`}><Button asChild><a href="/api/auth/sign-in">Sign in with GitHub</a></Button></main><div className="root-bell"><NotificationBell /></div></>}
 </>)

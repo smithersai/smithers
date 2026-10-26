@@ -33,6 +33,8 @@
 .branch-header-views > a[aria-current="page"] { font-weight: 650; text-decoration-thickness: 2px; text-underline-offset: 0.4rem; }
 .branch-header-views > a:not([aria-current="page"]) { text-decoration: none; }
 
+.branch-screen-view > .home-tabs { margin-top: 0; flex-shrink: 0; }
+
 .branch-screen-view { grid-area: view; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
 
 /* The terminal fills the view: its tabs and state above, its screen below. */
