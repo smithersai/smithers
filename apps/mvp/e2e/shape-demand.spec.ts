@@ -50,7 +50,8 @@ const signedOutPage = async (browser: Browser) => {
 }
 
 test.describe("shape demand", () => {
-  for (const path of ["/", "/smithersai/smithers"] as const) {
+  // A repository's issues open with the page that reads them (decision 0079 slice 1b): its home asks for none.
+  for (const path of ["/", "/smithersai/smithers/issues"] as const) {
     test(`${path}, signed out: no personal, admin or pull request shape`, {
       annotation: { type: "summary", description: `Signed out, ${path} asks for none of a person's shapes or a pull request's.` },
     }, async ({ browser }) => {
