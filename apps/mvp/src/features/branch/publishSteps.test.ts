@@ -3,22 +3,23 @@
 // stand-in on a real socket through the real HTTP clients, and the registry's `branch/publish` and `branch/update` run
 // to their write on the Node host's engine.
 import { digestSync } from "@smthrs/crypto"
-import { Action, FlowRuntime } from "@smthrs/flow"
+import { Action, FlowRuntime, Graph } from "@smthrs/flow"
 import { RealmFlow } from "@smthrs/harness"
 import { Cause, Effect, Exit, Layer } from "effect"
-import { FetchHttpClient } from "effect/http"
+import { FetchHttpClient, HttpClient } from "effect/http"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
 import { afterEach, describe, expect, test } from "vitest"
 import { runFlow } from "../../../worker/test/flowHost.ts"
+import publishFlow from "../../../plugins/branches/src/publish"
+import updateFlow from "../../../plugins/branches/src/update"
 import { BRANCH_FLOWS } from "../../plugins/builtinFlows"
-import { BranchWrites } from "./api"
+import { BranchWrites, TrackRefused } from "./api"
 import type { CreationSelection } from "./creation"
 import type { RealmRequest } from "./creationFlows"
 import { BranchTrackRefused, BranchTrackUnavailable } from "./flows"
 import { BranchPublish, BranchUpdate, type OperationRequest } from "./publishFlows"
 import { call, evaluate, registrationAt, run, select, writeFailure } from "./publishSteps"
-import { TrackRefused } from "./api"
 
 const BRANCH = "6b9f3e2a-1c4d-4e5f-8a7b-9c0d1e2f3a4b"
 const WRITE = "0e1d2c3b-4a59-4687-9a8b-7c6d5e4f3a2b"
@@ -86,6 +87,13 @@ const answer = (response: ServerResponse, status: number, body: unknown = {}) =>
 const writesLayer = (origin: string) => BranchWrites.layer({ origin }).pipe(Layer.provide(FetchHttpClient.layer))
 
 describe("the first-party flows in the realm", () => {
+  test("the compiled defaults declare exactly their public host actions", () => {
+    expect(Graph.build(publishFlow, { title: "Add a line", body: "Why" }).diagnostics).toEqual([])
+    expect(Graph.inspect(publishFlow).steps.map((step) => step.label)).toEqual(["branches/github-publish"])
+    expect(Graph.build(updateFlow, {}).diagnostics).toEqual([])
+    expect(Graph.inspect(updateFlow).steps.map((step) => step.label)).toEqual(["branches/github-update"])
+  })
+
   test("Publish asks its host action with the person's title and body, and completes only with the matching receipt", async () => {
     const initial = state("publish")
     const asked = await outcome(drive(initial))
@@ -192,6 +200,20 @@ describe("the host call", () => {
     })
     expect(await outcome(call({ state: state("publish"), call: asked }).pipe(Effect.provide(writesLayer(garbled.origin)))))
       .toEqual(new BranchTrackUnavailable())
+  })
+
+  test("an unreadable refusal body keeps the HTTP status without inventing a refusal code", async () => {
+    const faulty = HttpClient.make(() => Effect.succeed({
+      status: 503,
+      text: Effect.fail(new Error("response body interrupted")),
+    } as never))
+    const got = await outcome(Effect.flatMap(BranchWrites, (writes) => writes.send("octo", "hello", {
+      writeId: WRITE, op: "branch/update", branchId: BRANCH, method: "merge",
+    })).pipe(Effect.provide(BranchWrites.layer({ origin: "http://unreachable.test" }).pipe(
+      Layer.provide(Layer.succeed(HttpClient.HttpClient, faulty)),
+    ))))
+    expect(got).toEqual(new TrackRefused({ status: 503 }))
+    expect(writeFailure(got as TrackRefused)).toEqual(new BranchTrackUnavailable())
   })
 
   test("an action outside the operation, one the selection doesn't allow, or a payload that isn't one is refused before sending", async () => {

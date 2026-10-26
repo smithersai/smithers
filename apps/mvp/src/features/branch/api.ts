@@ -101,8 +101,8 @@ export class BranchWrites extends Context.Service<
             ).pipe(Effect.mapError(() => new TrackRefused({})))
             yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, op: write.op })
             if (response.status === 200 || response.status === 202) return
-            const text = yield* Effect.orElseSucceed(response.text, () => "")
-            const code = Option.getOrUndefined(decodeWriteRefusal(text))?.code
+            // A body that can't be read, or isn't a refusal, names no code.
+            const code = Option.getOrUndefined(Option.flatMap(yield* Effect.option(response.text), decodeWriteRefusal))?.code
             return yield* new TrackRefused({
               status: response.status,
               ...(code === "not_configured" ? { code } : {}),
