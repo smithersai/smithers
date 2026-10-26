@@ -355,3 +355,7 @@ Optional blob reads use `?optional=true`: an absent file at a readable commit re
 204 with no body. Missing repositories, unsynced commits and provider failures retain
 their error responses. Repository homes use this query so an absent `.smithers/home.json`
 does not produce a failed browser request.
+
+## Visibility of repository rows
+
+For visitors, a current GitHub metadata read must say the repository is public (decision 0012). “Current” means at most 60 seconds old. Each Worker isolate shares only completed answers by repository ID, retaining public and private-or-gone answers for 60 seconds. A cache miss makes its own request, including concurrent misses; no request waits on another request's I/O. Unavailable answers are never cached and refuse reads with 503. A private-or-gone answer refuses visitors.

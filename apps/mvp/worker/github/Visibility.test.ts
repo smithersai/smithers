@@ -1,5 +1,6 @@
-import { Effect, Logger, Metric, Option, Redacted } from "effect"
+import { Deferred, Effect, Logger, Metric, Option, Redacted } from "effect"
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http"
+import { TestClock } from "effect/testing"
 import { expect, test } from "vitest"
 import * as Visibility from "./Visibility.ts"
 import * as Metrics from "./Metrics.ts"
@@ -30,6 +31,7 @@ test.each([
   const attributes = { outcome, statusClass: `${Math.floor(status / 100)}xx`, rateLimited: String(limited), remaining,
     errorCode: status === 200 ? outcome === "unavailable" ? "decode-failed" : "none" : "delivery-failed" }
   expect(logs[0]!.annotations).toMatchObject({ repoId: repository.id, ...attributes })
+  expect(JSON.stringify(logs)).not.toContain("fixture-token")
   expect(Effect.runSync(Metric.value(Metric.withAttributes(Metrics.visibilityReads, attributes)).pipe(
     Effect.provideService(Metric.MetricRegistry, registry)))).toMatchObject({ count: 1 })
 })
@@ -48,4 +50,87 @@ test("transport failures record a code without provider text or credentials", as
 
 test.each([[undefined, "unknown"], ["no", "unknown"], ["0", "0"], ["1", "1-9"], ["9", "1-9"], ["10", "10-99"], ["99", "10-99"], ["100", "100+"]])("buckets remaining %s", (raw, expected) => {
   expect(Visibility.remainingBucket(raw)).toBe(expected)
+})
+
+
+test("public answers are shared through 59999ms, expire at 60s, and keep repositories separate", async () => {
+  let calls = 0
+  let privateRepo = false
+  const http = HttpClient.make((request) => Effect.sync(() => {
+    calls++
+    return HttpClientResponse.fromWeb(request, new Response(JSON.stringify({ private: privateRepo })))
+  }))
+  await Effect.runPromise(Effect.gen(function* () {
+    const visibility = Visibility.make("https://github.test", Effect.succeed(Option.none()), http)
+    expect(yield* visibility(repository)).toEqual(Option.some(true))
+    yield* TestClock.adjust("59999 millis")
+    privateRepo = true
+    expect(yield* visibility(repository)).toEqual(Option.some(true))
+    expect(calls).toBe(1)
+    expect(yield* visibility({ ...repository, id: "acme/other", name: "other" })).toEqual(Option.some(false))
+    expect(calls).toBe(2)
+    yield* TestClock.adjust("1 millis")
+    expect(yield* visibility(repository)).toEqual(Option.some(false))
+    expect(calls).toBe(3)
+    expect(yield* visibility(repository)).toEqual(Option.some(false))
+    expect(calls).toBe(3)
+    yield* TestClock.adjust("60 seconds")
+    privateRepo = false
+    expect(yield* visibility(repository)).toEqual(Option.some(true))
+    expect(calls).toBe(4)
+  }).pipe(Effect.provide(TestClock.layer())))
+})
+
+test("unavailable answers are never cached, including after a public answer expires", async () => {
+  let status = 502
+  let calls = 0
+  const http = HttpClient.make((request) => Effect.sync(() => {
+    calls++
+    return HttpClientResponse.fromWeb(request, new Response(JSON.stringify({ private: false }), { status }))
+  }))
+  await Effect.runPromise(Effect.gen(function* () {
+    const visibility = Visibility.make("https://github.test", Effect.succeed(Option.none()), http)
+    expect(yield* visibility(repository)).toEqual(Option.none())
+    expect(yield* visibility(repository)).toEqual(Option.none())
+    expect(calls).toBe(2)
+    status = 200
+    expect(yield* visibility(repository)).toEqual(Option.some(true))
+    yield* TestClock.adjust("60 seconds")
+    status = 503
+    expect(yield* visibility(repository)).toEqual(Option.none())
+    expect(yield* visibility(repository)).toEqual(Option.none())
+    expect(calls).toBe(5)
+  }).pipe(Effect.provide(TestClock.layer())))
+})
+
+test.each([404, 410])("a gone answer (%s) is cached as private", async (status) => {
+  let calls = 0
+  const http = HttpClient.make((request) => Effect.sync(() => {
+    calls++
+    return HttpClientResponse.fromWeb(request, new Response("{}", { status }))
+  }))
+  const visibility = Visibility.make("https://github.test", Effect.succeed(Option.none()), http)
+  expect(await Effect.runPromise(visibility(repository))).toEqual(Option.some(false))
+  expect(await Effect.runPromise(visibility(repository))).toEqual(Option.some(false))
+  expect(calls).toBe(1)
+})
+
+test("concurrent misses each read GitHub without sharing in-flight work", async () => {
+  let calls = 0
+  await Effect.runPromise(Effect.gen(function* () {
+    const entered = yield* Deferred.make<void>()
+    const http = HttpClient.make((request) => Effect.gen(function* () {
+      calls++
+      if (calls === 2) yield* Deferred.succeed(entered, undefined)
+      yield* Deferred.await(entered)
+      return HttpClientResponse.fromWeb(request, new Response('{"private":false}'))
+    }))
+    const visibility = Visibility.make("https://github.test", Effect.succeed(Option.none()), http)
+    expect(yield* Effect.all([visibility(repository), visibility(repository)], { concurrency: "unbounded" }).pipe(
+      Effect.timeout("2 seconds"),
+    )).toEqual([Option.some(true), Option.some(true)])
+    expect(calls).toBe(2)
+    expect(yield* visibility(repository)).toEqual(Option.some(true))
+    expect(calls).toBe(2)
+  }))
 })

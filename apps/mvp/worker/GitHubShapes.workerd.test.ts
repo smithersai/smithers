@@ -1,5 +1,5 @@
 // Real GitHub shape routes + sign-in's sessions + Postgres + Electric under workerd's request-owned I/O rules, while the
-// deployment has the GitHub App. A signed-out read checks GitHub's current visibility with the App's read token
+// deployment has the GitHub App. A signed-out cache miss checks GitHub's visibility with the App's read token
 // (worker/github/ReadToken.ts); a Member's read takes the role path, through a session whose role check is due. Node's
 // concurrent tests can't detect a request waiting on another request's permit or mint; workerd cancels it as hung
 // (2026-10-25 production incident).
@@ -49,7 +49,7 @@ beforeAll(async () => {
   const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
   const url = await runtime.runPromise(TestDatabase.serverUrl)
   const electric = await runtime.runPromise(TestDatabase.electricUrl)
-  // GitHub said the repository is public; each signed-out read still asks GitHub again.
+  // A database public flag alone cannot authorize a visitor; the isolate starts without a metadata answer.
   await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
     INSERT INTO github_repositories (repo_id, github_id, private)
     VALUES (${repoId(REPOSITORY.owner, REPOSITORY.name)}, 1, false)`))

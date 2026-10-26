@@ -801,12 +801,12 @@ describe("the shapes", () => {
     expect(forbidden.status).toBe(403)
     expect(await forbidden.json()).toEqual({ code: "forbidden" })
     const insider = await githubHarness(runtime)
-    expect(values((await shape(insider, ITEMS_SHAPE_ROUTE)).rows)).toEqual([expect.objectContaining({ title: "One" })])
+    await expect.poll(async () => values((await shape(insider, ITEMS_SHAPE_ROUTE)).rows), { timeout: 10_000 }).toEqual([expect.objectContaining({ title: "One" })])
     expect(visitor.count(Metrics.shapes, { table: "items", status: "401", live: "false" })).toBe(2)
     // Public: anyone reads.
     await sql(runtime, `UPDATE github_repositories SET private = false`)
-    expect(values((await shape(visitor, ITEMS_SHAPE_ROUTE)).rows)).toEqual([expect.objectContaining({ title: "One" })])
-    expect(values((await shape(visitor, COMMENTS_SHAPE_ROUTE)).rows)).toEqual([expect.objectContaining({ body: "Hi" })])
+    await expect.poll(async () => values((await shape(visitor, ITEMS_SHAPE_ROUTE)).rows), { timeout: 10_000 }).toEqual([expect.objectContaining({ title: "One" })])
+    await expect.poll(async () => values((await shape(visitor, COMMENTS_SHAPE_ROUTE)).rows), { timeout: 10_000 }).toEqual([expect.objectContaining({ body: "Hi" })])
     // Sessions or Postgres down: neither signed in nor signed out, so nothing is served.
     const sessionsDown = await githubHarness(runtime, {
       sessions: Layer.succeed(Actor.Sessions, Actor.Sessions.of({ resolve: Effect.fail(new Actor.SessionsUnavailable()) })),
@@ -988,7 +988,7 @@ test("an item read whose Reconcile start never resolves answers at the timeout, 
   expect(h.count(Metrics.reconcileStarts, { outcome: "timed_out" })).toBe(1)
 })
 
-test("cached public visibility cannot authorize rows after GitHub becomes private", async () => {
+test("a private metadata answer refuses every shape and is shared across requests", async () => {
   await sql(runtime, `INSERT INTO github_repositories (repo_id, github_id, private) VALUES ('${REPOSITORY.id}', 1, false)`)
   const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
   github.private = true
@@ -996,8 +996,8 @@ test("cached public visibility cannot authorize rows after GitHub becomes privat
   for (const route of [ITEMS_SHAPE_ROUTE, COMMENTS_SHAPE_ROUTE, SYNC_SHAPE_ROUTE]) {
     expect((await h.fetch(`${route}?offset=-1`)).status).toBe(401)
   }
-  expect(h.count(Metrics.visibilityReads, { outcome: "private", statusClass: "4xx", rateLimited: "false", remaining: "unknown", errorCode: "delivery-failed" })).toBe(3)
-  expect(h.line("github.visibility")).toHaveLength(3)
+  expect(h.count(Metrics.visibilityReads, { outcome: "private", statusClass: "4xx", rateLimited: "false", remaining: "unknown", errorCode: "delivery-failed" })).toBe(1)
+  expect(h.line("github.visibility")).toHaveLength(1)
 })
 
 
@@ -1053,7 +1053,7 @@ test.each([undefined, "metadata-fixture-token"])("default metadata transport che
         expect(yield* Effect.promise(() => response.json())).toEqual({ code: "authentication" })
       }
     })).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config)))
-    expect(seen).toEqual(Array(3).fill(token === undefined ? undefined : `Bearer ${token}`))
+    expect(seen).toEqual([token === undefined ? undefined : `Bearer ${token}`])
   } finally {
     server.closeAllConnections()
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))

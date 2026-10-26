@@ -434,3 +434,7 @@ Both designs were written independently, then Opus merged them. Claims adopted f
 - [GH-jwt] https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app
 - [GH-key] https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/managing-private-keys-for-github-apps
 - [GH-rate] https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api
+
+## Addendum — 2026-10-26: current visibility
+
+For visitor reads of repository rows, “a current GitHub metadata read says the repository is public” means a definite answer at most 60 seconds old. Each isolate caches only completed public/private-or-gone values by repository ID for 60 seconds; concurrent misses read independently, and unavailable answers are never cached.

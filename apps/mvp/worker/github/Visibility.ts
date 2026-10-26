@@ -1,5 +1,5 @@
 import { GitHub } from "@smthrs/integrations"
-import { Effect, Metric, Option, Redacted, Schema } from "effect"
+import { Clock, Effect, Metric, Option, Redacted, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import { isRateLimited } from "./Calls.ts"
 import type { Repository } from "./Config.ts"
@@ -42,3 +42,19 @@ export const read = (target: Repository, apiBaseUrl: string, readToken: ReadToke
     yield* Effect.logInfo("github.visibility").pipe(Effect.annotateLogs({ repoId: target.id, ...attributes }))
     return visible
   }).pipe(Effect.withSpan("github.visibility"))
+
+/** A current metadata answer is less than 60 seconds old. Only completed values cross requests. */
+export const TTL_MS = 60_000
+
+/** Construct once per isolate's routes. Concurrent misses each own a GitHub request. */
+export const make = (apiBaseUrl: string, readToken: ReadToken, http: HttpClient.HttpClient) => {
+  const held = new Map<string, { readonly public: boolean; readonly at: number }>()
+  return (target: Repository) => Effect.gen(function* () {
+    const now = yield* Clock.currentTimeMillis
+    const cached = held.get(target.id)
+    if (cached !== undefined && now - cached.at < TTL_MS) return Option.some(cached.public)
+    const answer = yield* read(target, apiBaseUrl, readToken, http)
+    if (Option.isSome(answer)) held.set(target.id, { public: answer.value, at: now })
+    return answer
+  })
+}

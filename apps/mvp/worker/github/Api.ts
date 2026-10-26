@@ -391,7 +391,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
     )
     const metadataApiUrl = Option.isSome(options.app) ? options.app.value.apiBaseUrl : (yield* apiUrl)
     const metadataHttp = options.http ?? (yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer)))
-    const visibility = (target: Repository) => Visibility.read(target, metadataApiUrl, readToken, metadataHttp)
+    const visibility = Visibility.make(metadataApiUrl, readToken, metadataHttp)
     // A pull request's files (worker/github/Compare.ts), read with the App's token: none without the App.
     const compare = Option.isSome(options.app)
       ? Option.some(yield* Compare.make(options.app.value, Option.fromUndefinedOr(options.http)))
@@ -791,7 +791,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
     /**
      * Who may read the repository's rows (decision 0012, Consequences: until shapes are authorized per request, only a
      * public repository's rows reach a visitor): a signed-in person with a role on it, which GitHub granted because
-     * they can see it; anyone else only when a current GitHub metadata read says the repository is public. `None` when they may read,
+     * they can see it; anyone else only when a GitHub metadata answer less than 60 seconds old says the repository is public. `None` when they may read,
      * else the refusal: signed out `401`, no role `403`, unavailable checks `503`.
      */
     const readRefusal = (target = repository) => Effect.gen(function* () {
