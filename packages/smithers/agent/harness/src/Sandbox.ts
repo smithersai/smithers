@@ -168,7 +168,8 @@ export const mintUnavailable: Minter = () =>
  *
  * A {@link Cell.CallResult} of `failure` resolves in the cell as
  * `{ ok: false, error }`, where `error` contains `code`, `message`, and `hint`;
- * it does not throw. Success resolves with the flow's own value, unwrapped.
+ * it does not throw. Success resolves with the flow's own value, unwrapped;
+ * an object or array value also answers `.ok` as `true` (not enumerable).
  * Branch on `.ok === false` and `.error.code` to recover. For a flow whose
  * successful result has a `stdout` field, a cell can retry a timed-out call:
  *

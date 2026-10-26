@@ -424,7 +424,8 @@ export interface EngineLike {
    * A flow that fails settles as a `failure` {@link Cell.CallResult}, which the
    * cell observes as a resolved `{ ok: false, error }` envelope, not a throw.
    * It branches on `.ok === false` and `.error.code` to recover; success
-   * resolves with the flow's own value, unwrapped. A permission requirement, an
+   * resolves with the flow's own value, unwrapped, an object or array value also
+   * answering `.ok` as `true`. A permission requirement, an
    * abort, or an engine failure travels in the error channel instead, so the
    * cell never sees — and can never swallow — a park.
    */

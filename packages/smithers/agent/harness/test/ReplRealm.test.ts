@@ -737,6 +737,96 @@ describe("QuickJSSandbox.openRealm", () => {
     expect(frames[0]!.prints).toBe("false unknown_flow")
   })
 
+  describe("a successful call answers .ok as true", () => {
+    const answering = (value: Schema.Json): Sandbox.Handler => () =>
+      Effect.succeed(new Cell.CallResult({ outcome: "success", value }))
+
+    it("passes the !result.ok guard a model wrote against the failure envelope", async () => {
+      // The cell gpt-4.1-mini wrote on smithers.sh on 2026-10-25, cut to its first call: the machine wrote the file,
+      // and the cell answered "I couldn't write the file." because `{ path, bytes }` had no `ok`.
+      const frames = await session([
+        `const writeResult = await ctx.call("echo", { path: "sandbox-word.txt", content: "hello word\\n" })
+         if (!writeResult.ok) {
+           ctx.done("I couldn't write the file.")
+         }
+         ctx.done("Wrote " + writeResult.path + " (" + writeResult.bytes + " bytes).")`
+      ], { call: answering({ path: "sandbox-word.txt", bytes: 11 }) })
+      expect(frames[0]!.outcome).toMatchObject({
+        _tag: "settled",
+        transition: { _tag: "complete", output: "Wrote sandbox-word.txt (11 bytes)." }
+      })
+    })
+
+    it("still reads a failure as one", async () => {
+      const frames = await session([
+        `const got = await ctx.call("echo", {})
+         ctx.done(got.ok ? "wrote it" : "couldn't: " + got.error.code)`
+      ], {
+        call: () =>
+          Effect.succeed(new Cell.CallResult({ outcome: "failure", value: null, code: "invalid_input", message: "no" }))
+      })
+      expect(frames[0]!.outcome).toMatchObject({
+        _tag: "settled",
+        transition: { _tag: "complete", output: "couldn't: invalid_input" }
+      })
+    })
+
+    it("keeps the value the flow answered: its JSON, keys, spread and panel size", async () => {
+      const frames = await session([
+        `const got = await ctx.call("echo", {})
+         console.log(JSON.stringify(got), Object.keys(got).join(","), JSON.stringify({ ...got }), got.ok, "ok" in got)`
+      ], { call: answering({ path: "a.txt", bytes: 6 }) })
+      expect(frames[0]!.prints).toBe(`{"path":"a.txt","bytes":6} path,bytes {"path":"a.txt","bytes":6} true true`)
+      expect(named(frames[0]!.bindings, "got")).toMatchObject({ type: "object", size: "2 keys" })
+    })
+
+    it("marks an array too, and leaves its elements as they were", async () => {
+      const frames = await session([
+        `const got = await ctx.call("echo", {})
+         console.log(got.ok, JSON.stringify(got), got.length)`
+      ], { call: answering([{ name: "a" }, { name: "b" }]) })
+      expect(frames[0]!.prints).toBe(`true [{"name":"a"},{"name":"b"}] 2`)
+    })
+
+    it("keeps a value's own ok, false or true", async () => {
+      const frames = await session([
+        `const refused = await ctx.call("echo", { n: 1 })
+         const fine = await ctx.call("echo", { n: 2 })
+         console.log(refused.ok, refused.host, fine.ok, JSON.stringify(fine))`
+      ], {
+        call: (invocation) =>
+          Effect.succeed(
+            new Cell.CallResult({
+              outcome: "success",
+              value: (invocation.input as { n: number }).n === 1
+                ? { ok: false, host: "api.example.com" }
+                : { ok: true, sample: "ok" }
+            })
+          )
+      })
+      expect(frames[0]!.prints).toBe(`false api.example.com true {"ok":true,"sample":"ok"}`)
+    })
+
+    it("leaves null and primitive values as they are", async () => {
+      const values: Array<Schema.Json> = [null, "text", 7, false]
+      const frames = await session([
+        `const got = []
+         for (let index = 0; index < 4; index++) got.push(await ctx.call("echo", { index }))
+         console.log(JSON.stringify(got), typeof got[1], got[1].ok)`
+      ], { call: (invocation) => answering(values[(invocation.input as { index: number }).index]!)(invocation) })
+      expect(frames[0]!.prints).toBe(`[null,"text",7,false] string undefined`)
+    })
+
+    it("lets the cell write its own ok over the mark", async () => {
+      const frames = await session([
+        `const got = await ctx.call("echo", {})
+         got.ok = "checked"
+         console.log(got.ok, Object.keys(got).join(","))`
+      ], { call: answering({ path: "a.txt" }) })
+      expect(frames[0]!.prints).toBe("checked path")
+    })
+  })
+
   it("leaves an inner const scoped to its block", async () => {
     const frames = await session([
       "for (const item of [1, 2]) { const doubled = item * 2 }\nconsole.log(typeof doubled)"

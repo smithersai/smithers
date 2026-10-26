@@ -866,7 +866,9 @@ export const decodeTransition = decodeBoundary(Transition, "transition")
  * The shape is fixed and small — `{ ok: false, error: { code, message, hint } }`
  * — because a cell branches on `.ok` and reads `.error.code`. A successful call
  * still resolves with the flow's own value, unwrapped, so the ordinary
- * `result.stdout` shape a cell is trained on is unchanged.
+ * `result.stdout` shape a cell is trained on is unchanged; an object or array
+ * value also answers `.ok` as `true` (not enumerable), so a cell that guards
+ * with `!result.ok` reads it as the success it is.
  *
  * @category conversions
  * @since 0.1.0

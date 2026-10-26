@@ -105,10 +105,24 @@ const preludeHelpers = `${preludeIntrinsics}
     visit(input)
     return stringify(input)
   }
+  // A success resolves the flow's value unwrapped, and an object or array value
+  // also answers \`.ok\` as true. A failure resolves \`{ ok: false, error }\`, and
+  // the guard models write against that is \`if (!result.ok)\`: on a bare
+  // \`{ path, bytes }\` it read every success as a failure. On smithers.sh a
+  // write the machine had made was answered "I couldn't write the file." by a
+  // cell that went on to \`ctx.done\` on that guard (2026-10-25). The property is
+  // not enumerable, so printing, JSON, spreading and the panel see the value as
+  // the flow answered it; a value that has its own \`ok\` keeps it.
+  var succeeded = function (value) {
+    if (value !== null && typeof value === "object" && descriptorOf(value, "ok") === undefined) {
+      define(value, "ok", { value: true, writable: true, enumerable: false, configurable: true })
+    }
+    return value
+  }
   var settleEnvelope = function (settled) {
     // A failed call RESOLVES with the failure envelope; only teardown throws.
     // See Cell.callFailure for why.
-    if (settled.ok) return settled.value
+    if (settled.ok) return succeeded(settled.value)
     if (settled.aborted) throw new Error(settled.failure.error.message)
     return settled.failure
   }

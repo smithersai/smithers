@@ -660,7 +660,10 @@ projects a failed result into the fixed envelope the cell observes:
 
 A failed call resolves with this value rather than throwing, so the recovery
 branch the model already wrote still runs; a successful call resolves with the
-flow's own value, unwrapped. `Cell.callFailureHint` maps each of the 13 codes
+flow's own value, unwrapped, and an object or array value also answers `.ok`
+as `true` through a non-enumerable property, so a cell's `if (!result.ok)`
+guard reads a success as one while the value prints, serializes and spreads as
+the flow answered it. A value with its own `ok` keeps it. `Cell.callFailureHint` maps each of the 13 codes
 to the one action that recovers it. The codes and hints are tabulated in
 [troubleshooting](./troubleshooting.md#a-flow-call-fails).
 

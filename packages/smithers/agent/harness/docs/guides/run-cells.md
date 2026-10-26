@@ -126,7 +126,9 @@ The failure split is the contract `EngineLike.call` declares:
   down.
 
 Ordinary failures do not throw. Check `.ok === false`, then `.error.code` to
-choose a recovery. Success resolves with the flow's own value, unwrapped.
+choose a recovery. Success resolves with the flow's own value, unwrapped; an
+object or array value also answers `.ok` as `true` (not enumerable, so it never
+prints or serializes), so `if (!result.ok)` reads a success correctly too.
 For a flow whose successful result has a `stdout` field:
 
 ```ts
