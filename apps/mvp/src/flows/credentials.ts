@@ -159,7 +159,7 @@ export const layer = (options: {
                 onSome: (answer) => PERSON_DOORS.includes(answer.door),
               })
               // Nobody is signed in on the tab that started it: the server would refuse the credential with 401.
-              if (!ownPress && Option.isSome(answered) && answered.value.output.signedOut === true) {
+              if (Option.isSome(answered) && answered.value.output.signedOut === true) {
                 yield* Metric.update(Metric.withAttributes(mints, { outcome: "signed_out", act: "none" }), 1)
                 yield* Effect.logDebug("auth.run_credential").pipe(Effect.annotateLogs({ flow, outcome: "signed_out" }))
                 return anonymousCredential

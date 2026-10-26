@@ -364,8 +364,16 @@ describe("who a run's requests go as", () => {
     expect(d.seenFor("/api/watches")).toEqual([{ path: "/api/watches", bearer: false, credentials: "omit" }])
     expect(d.seen.filter((request) => request.path.endsWith("/credential"))).toEqual([])
     expect(await d.run(Watch, crypto.randomUUID(), watch, "button")).toMatchObject({ status: 401 })
-    expect(d.seenFor("/api/watches").at(-1)).toEqual({ path: "/api/watches", bearer: false, credentials: undefined })
+    expect(d.seenFor("/api/watches").at(-1)).toEqual({ path: "/api/watches", bearer: false, credentials: "omit" })
     expect(d.seen.filter((request) => request.path.endsWith("/credential"))).toEqual([])
+  })
+
+  test("signed out, a child of the person's press inherits anonymity instead of minting a credential", async () => {
+    const d = await device(null, { tabSignedOut: true })
+    expect(await d.run(Outer, crypto.randomUUID(), { path: "/api/watches", body: { conversationId: null } }, "button"))
+      .toMatchObject({ status: 401 })
+    expect(d.seen.filter((request) => request.path.endsWith("/credential"))).toEqual([])
+    expect(d.seenFor("/api/watches")).toEqual([{ path: "/api/watches", bearer: false, credentials: "omit" }])
   })
 
   test("a signed-out tab's agent root and nested runs ask for no credentials", async () => {
