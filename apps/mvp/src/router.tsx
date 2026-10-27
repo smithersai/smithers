@@ -555,6 +555,16 @@ const pullParams = {
   }),
 }
 
+/** GitHub-style plural item links open the canonical pull request page. */
+const pluralPullRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/$owner/$repo/pulls/$number",
+  params: pullParams,
+  beforeLoad: ({ params, location }) => {
+    throw redirect({ to: "/$owner/$repo/pull/$number", params, replace: true, hash: location.hash })
+  },
+})
+
 /** `/$owner/$repo/pull/$number`: one pull request's conversation, with Merge for a Maintainer. */
 const pullRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -715,6 +725,7 @@ export const router = createRouter({
     pullsRoute,
     actionsRoute,
     actionRunRoute,
+    pluralPullRoute,
     pullRoute,
     pullTabRoute,
     stackRoute,
