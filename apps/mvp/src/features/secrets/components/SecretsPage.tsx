@@ -84,7 +84,7 @@ export function SecretsPage({ owner, repo }: { readonly owner: string; readonly 
           </form>
         )
         : null}
-      {rows.length === 0 ? <EmptyState title="No secrets" /> : null}
+      {rows.length === 0 ? <EmptyState title={admin ? "No secrets" : "No secrets · Admins add secrets"} /> : null}
       <ul className="secrets-list" aria-label={SECRETS}>
         {rows.map((row) => {
           const rotating = admin && view?.repoId === id && view.rotating === row.name

@@ -99,3 +99,6 @@ SECRETS_KEY is a Worker secret Alchemy generates once (`infra/Secrets.ts`, 32 ra
 - **Main-only secrets** (D-24) and **secret files** (M-42).
 - **The forge token and model routing** in the egress (0005 §4 steps 3 and 4), which the forge proxy and the model endpoint do today on their own routes.
 - **Path scoping** of a secret, beyond hosts and methods.
+
+An empty read-only list says **No secrets · Admins add secrets**; an Admin's empty list says **No secrets** beside
+the existing add form. The hint grants no new permission and exposes no values.

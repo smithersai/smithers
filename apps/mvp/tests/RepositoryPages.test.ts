@@ -141,7 +141,22 @@ test("direct feature pages keep navigation, fence the deployment's own repositor
       await vi.waitFor(() => {
       const html = renderRepositoryPages(router, services)
       expect(html).toContain(expected)
+      if (path === "settings/secrets") expect(html).not.toContain("Admins add secrets")
       expect(html).not.toContain(">Sign in</")
+      })
+    }
+
+    // A Member reads the names but needs an Admin to add the first secret.
+    await app.runPromise(put(repo.roles, "github/smithersai/vibelang", { id: "github/smithersai/vibelang", role: "member", own: true }))
+    {
+      const root = createRootRoute()
+      const route = createRoute({ getParentRoute: () => root, path: "/$owner/$repo/settings/secrets", component: SecretsScreen })
+      const router = createRouter({ routeTree: root.addChildren([route]), history: createMemoryHistory({ initialEntries: ["/smithersai/vibelang/settings/secrets"] }) })
+      await router.load()
+      await vi.waitFor(() => {
+        const html = renderRepositoryPages(router, services)
+        expect(html).toContain("No secrets · Admins add secrets")
+        expect(html).not.toContain('aria-label="Add secret"')
       })
     }
 
