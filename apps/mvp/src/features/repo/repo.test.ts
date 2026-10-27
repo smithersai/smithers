@@ -608,7 +608,7 @@ describe("what GitHub says, cloned or not", () => {
     // that are already imported". Before, GitHub down showed "Couldn't load".
     ["github_unavailable", GITHUB_DOWN],
     ["unavailable", COULDNT_LOAD],
-  ])("an exhausted %s About read shows its refusal and retries successfully", async (code, message) => {
+  ])("the first %s About refusal is visible and can be retried", async (code, message) => {
     const h = await repoHarness(server)
     h.github.publish("octocat", "Spoon-Knife")
     const real = RepoClient.layer({ origin: h.origin, within: "10 seconds" }).pipe(
@@ -627,10 +627,9 @@ describe("what GitHub says, cloned or not", () => {
     const tab = await openTab({ origin: h.origin, fetch: h.fetch, client: faulty })
     tabs.push(tab)
     tab.repo.actions.open(root("octocat", "Spoon-Knife"))
-    // Exercise the real durable retry budget, including the terminal answer after it expires.
-    await waitFor(() => expect(attempts).toBeGreaterThan(1))
-    expect(tab.about().about?.state).toBe("loading")
-    await waitFor(() => expect(tab.about().about).toMatchObject({ state: "failed", message }), { timeout: 150_000 })
+    // A person sees the real refusal immediately; only Try again starts another durable read.
+    await waitFor(() => expect(tab.about().about).toMatchObject({ state: "failed", message }))
+    expect(attempts).toBe(1)
     expect(tab.histogramCount(aboutLoadMs, { outcome: "failed" })).toBe(1)
     const exhausted = attempts
     tab.repo.actions.open(root("octocat", "Spoon-Knife"))
@@ -694,7 +693,7 @@ describe("what GitHub says, cloned or not", () => {
     expect(h.github.calls).toHaveLength(calls)
   })
 
-  test("one GitHub doesn't have is missing; one GitHub can't answer for a moment shows once it answers, with no reopen", async () => {
+  test("GitHub absence stays missing and an unavailable repository explains why until retried", async () => {
     const h = await repoHarness(server)
     const tab = await open(h)
     tab.repo.actions.openRoute("tree", { owner: "octocat", repo: "Gone" }, {})
@@ -708,13 +707,14 @@ describe("what GitHub says, cloned or not", () => {
     h.github.fail("", 502)
     const before = h.github.calls.length
     tab.repo.actions.openRoute("tree", { owner: "octocat", repo: "Spoon-Knife" }, {})
-    // RepoApi answered 503: `repo/about`'s step waits and asks again under its retry policy, and the panel shows it
-    // loading meanwhile. Before, the panel showed Couldn't load until the page was opened again.
     await waitFor(() => expect(h.github.calls.length).toBeGreaterThan(before))
-    expect(tab.about().about?.state).toBe("loading")
+    await waitFor(() => expect(tab.about().about).toMatchObject({ state: "failed", message: GITHUB_DOWN }))
+    expect(tab.histogramCount(aboutLoadMs, { outcome: "failed" })).toBe(1)
     h.github.clear()
+    // The server keeps its refusal until Retry-After; advance the persisted deadline, without a wall-clock sleep.
+    await server.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE repo_about SET next_read_at = now() - interval '1 second' WHERE repo_id = 'github/octocat/spoon-knife'`))
+    tab.repo.actions.retryAbout("octocat", "Spoon-Knife")
     await waitFor(() => expect(tab.about().about?.state).toBe("ready"), { timeout: 30_000 })
-    expect(tab.histogramCount(aboutLoadMs, { outcome: "failed" })).toBe(0)
   })
 
   test("a file the repository's manifest lists: the manifest loads beside it, and links its flow and sources", async () => {

@@ -124,7 +124,7 @@ export const ReadAbout = Action.make("repo/ReadAbout", {
   payload: refsPayload,
   success: About,
   error: ReadFailure,
-  retryPolicy: READ_RETRY,
+  retryPolicy: RetryPolicy.make({ initialMs: 1_000, factor: 1, maxMs: 1_000, maxAttempts: 1 }),
 })
 
 /**

@@ -322,3 +322,5 @@ The scoped auth lifecycle owns the initial session read: it subscribes to networ
 A newly dispatched run uses anonymous reads until this tab confirms sign-in. Loading and unreachable session states do not request a session credential; signed-out visitors never POST a credential merely by opening a repository.
 
 Personal settings, repository settings and secrets offer signed-out visitors a sign-in link returning to that page. Signed-in people without permission retain the access explanation.
+
+A repository that is absent or unavailable also offers visitors sign-in, without claiming that a private repository exists. An upstream outage remains an outage.

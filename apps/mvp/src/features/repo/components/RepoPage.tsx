@@ -4,6 +4,7 @@ import {
   Card,
   CopyButton,
   EmptyState,
+  NotFound,
   LoadingBar,
   Popover,
   PopoverContent,
@@ -52,6 +53,7 @@ import {
   revisionLabel,
   treeProps,
 } from "../view"
+import { SignInButton } from "../../auth/components/SignInButton"
 import { useBranch } from "../../branch/components/BranchContext"
 import { codeIntelParts, useCodeIntelRow } from "../../code-intel/components/CodeIntelView"
 import { markdownInPlace, saveLabelOf } from "../../coedit/view"
@@ -150,13 +152,13 @@ export function RepoPage({ editFiles = false, liveMarkdown }: {
         <Link to="/$owner/$repo" params={{ owner: view.owner, repo: view.name }}>Code</Link>
       </Button>
     } />
-  ) : <EmptyState title={NOT_FOUND} />
+  ) : <NotFound title="Repository not found" back={view.signedIn === false ? <SignInButton /> : null} />
   if (page.kind === "failure") return <EmptyState title={page.text} />
   if (page.kind === "retry") return (
     <Card className="repo-page-empty">
       <EmptyState
         title={page.text}
-        action={<Button variant="outline" onClick={() => actions.retryAbout(view.owner, view.name)}>{TRY_AGAIN}</Button>}
+        action={<><Button variant="outline" onClick={() => actions.retryAbout(view.owner, view.name)}>{TRY_AGAIN}</Button>{view.signedIn === false ? <SignInButton /> : null}</>}
       />
     </Card>
   )
