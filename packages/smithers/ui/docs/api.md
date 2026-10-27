@@ -19,7 +19,7 @@ it takes an explicit props bag instead.
 | Specifier                              | Contents                                                      | Heavy dependency |
 | -------------------------------------- | ------------------------------------------------------------- | ---------------- |
 | `@smthrs/ui`                           | Everything on this page except the adapter sections           | None             |
-| `@smthrs/ui/copy` | `copyText`, `CopyResult`, `CopyFailureCode` (clipboard only) | None |
+| `@smthrs/ui/copy` | `copyText`, `canCopyText`, `reserveCopyText`, `CopyResult`, `CopyFailureCode` (clipboard only) | None |
 | `@smthrs/ui/status`                    | [The status vocabulary](#the-status-vocabulary)               | None             |
 | `@smthrs/ui/time`                      | [Time](#time)                                                 | None             |
 | `@smthrs/ui/calendar`                  | [Calendar](#calendar)                                         | None             |
@@ -65,6 +65,8 @@ type SmithersUiStylesProps = { withTheme?: boolean; extra?: string }
 
 `useInjectUiCss` is deliberately not exported from the barrel: components call
 it internally, and it is not a consumer styling API.
+
+`DataAttributes` accepts `data-*` keys with `string | number | boolean | undefined` values. Pass-through props intersect it so hosts can supply data attributes without other element props.
 
 ## Theming
 
@@ -327,6 +329,24 @@ and `title` rather than throwing.
 | `CompactGroup`, `ConversationCheckpoint`                                                                                                                 | `CompactGroupProps`, `ConversationCheckpointProps`                                          | Collapsed history and a conversation marker.       |
 | `Marker`, `Shimmer`                                                                                                                                      | `MarkerProps`, `ShimmerProps`                                                               | Inline divider and the text shimmer.               |
 
+`useMessageBand(order, onBand?)` requires a `MessageScrollerProvider` and
+returns the first and last visible message ids, or `undefined`. `onBand`
+receives the same band when visibility changes.
+
+`ChatTimelineProps` supplies `entries`, optional `onJump`, `onActivate`,
+`groupSummaries` and `onGroupsChange`. Each `ChatTimelineEntry` has `id`,
+`kind` (`ask`, `answer`, `tool`, `flow`) and `state` (`done`, `working`,
+`waiting`, `failed`, `queued`), with optional summary, label, actor, time,
+duration, tokens and cost. See [conversation navigation](./chat-timeline.md).
+
+| Helper | Contract |
+| --- | --- |
+| `timelineCapacity(height, rowHeight = 32)` | Number of rows that fit, at least two. |
+| `timelineLevelCount(count, height, rowHeight = 32)` | Zoom levels needed; zero for an empty list. |
+| `timelineLevels(ids, height, first, last, rowHeight = 32)` | `ReadonlyArray<TimelineLevel>` around the inclusive visible entry range. |
+| `TimelineBlock` | `{ id, start, end }`; entry indices form a half-open range. |
+| `TimelineLevel` | `{ level, start, end, blocks, band: { top, height } }`; band values are proportions. |
+
 ## Prompt input
 
 | Export                                                                                                                                                                                                              | Types                                                                                                       |
@@ -356,13 +376,26 @@ const TOOL_CALL_STATE_LABELS: Readonly<Record<ToolCallState, string>>
 | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | `Reasoning`, `ReasoningTrigger`, `ReasoningContent`, `ReasoningSummary`                                            | `ReasoningProps`, `ReasoningTriggerProps`, `ReasoningContentProps`, `ReasoningSummaryProps`                                  | Provider-disclosed summaries only. The parts throw outside `<Reasoning composed>`. |
 | `ChainOfThought`, `ChainOfThoughtStep`                                                                             | `ChainOfThoughtProps`, `ChainOfThoughtStepProps`, `ChainOfThoughtStepStatus`                                                | Ordered thought steps.                                                             |
-| `ToolCall`, `ToolCallHeader`, `ToolCallContent`, `ToolCallInput`, `ToolCallOutput`, `ToolCallError`, `ToolCallApproval` | `ToolCallProps`, `ToolCallState`, `ToolResultPart`, and one props type per part                                        | Eight lifecycle states from `input-streaming` to `output-denied`.                  |
-| `CodeBlock`, `CodeBlockHeader`, `CodeBlockFilename`, `CodeBlockGroup`, `CodeBlockTabs`                              | `CodeBlockProps`, `CodeBlockHighlighter`, `HighlightLine`, `HighlightedToken`, `CodeBlockGroupItem`, and one props type per part | Copy, wrapping, line numbers, and a `highlight` seam that needs no adapter.     |
+| `ToolCall`, `ToolCallHeader`, `ToolCallContent`, `ToolCallInput`, `ToolCallOutput`, `ToolCallError`, `ToolCallApproval` | `ToolCallProps`, `ToolCallState`, `ToolResultPart`, `ToolCallHeaderProps`, `ToolCallContentProps`, `ToolCallInputProps`, `ToolCallOutputProps`, `ToolCallErrorProps`, `ToolCallApprovalProps` | Eight lifecycle states from `input-streaming` to `output-denied`.                  |
+| `CodeBlock`, `CodeBlockHeader`, `CodeBlockFilename`, `CodeBlockGroup`, `CodeBlockTabs`                              | `CodeBlockProps`, `CodeBlockHighlighter`, `HighlightLine`, `HighlightedToken`, `CodeBlockGroupItem`, `CodeBlockHeaderProps`, `CodeBlockFilenameProps`, `CodeBlockGroupProps`, `CodeBlockTabsProps` | Copy, wrapping, line numbers, and a `highlight` seam that needs no adapter.     |
 | `MessageResponse`                                                                                                  | `MessageResponseProps`                                                                                                      | Streaming markdown over the `Markdown` primitive.                                  |
 | `AgentOutput`                                                                                                      | `AgentOutputProps`, `AgentOutputModel`, `AgentOutputToolCall`                                                               | Renders a parsed model: response, reasoning summary, and tool calls.               |
 
 `CodeBlockHighlighter` is
 `(code: string, language: string | undefined) => readonly HighlightLine[] | null`.
+
+The tool parts use `<div>` attributes. `ToolCallHeaderProps`,
+`ToolCallContentProps` and `ToolCallApprovalProps` add no fields.
+`ToolCallInputProps` adds optional `args`, `argsText`, `partial` and `children`;
+`ToolCallOutputProps` adds `result`, `resultText`, `parts` and `children`;
+`ToolCallErrorProps` adds `message` and `children`.
+
+`CodeBlockHeaderProps` is `<div>` attributes. `CodeBlockFilenameProps` replaces
+`<span>` children with required `name` and optional `icon`. `CodeBlockTabsProps`
+replaces `<div>` children with `items: readonly { id, label }[]`, `activeId`
+and `onActiveIdChange`. `CodeBlockGroupProps` replaces `<div>` children with
+`items: readonly CodeBlockGroupItem[]`, optional `activeId`, `defaultActiveId`,
+`onActiveIdChange`, `showLineNumbers` and `highlight`.
 
 ## Plans, tasks, and queues
 
@@ -441,13 +474,20 @@ function useCommitModel(): CommitModel | null
 | `SchemaDisplay`                                                                                                                                                              | `SchemaDisplayProps`                                                                             |
 | `StackTrace`, `StackFrame`                                                                                                                                                   | `StackTraceProps`, `StackFrameProps`, `StackFrameData`                                           |
 | `TestResults`, `TestResultsHeader`, `TestResultsSummary`, `TestResultsDuration`, `TestResultsProgress`, `TestResultsContent`, `TestSuite`, `TestSuiteName`, `TestSuiteStats`, `TestSuiteContent`, `TestRow`, `TestStatus`, `TestName` | `TestResultsProps`, `TestResultsDurationProps`, `TestSuiteProps`, `TestRowProps`, `TestStatusProps`, `TestCaseStatus`, `TestCaseModel`, `TestSuiteModel` |
-| `Commit`, `CommitHeader`, `CommitAuthor`, `CommitInfo`, `CommitMessage`, `CommitMetadata`, `CommitHash`, `CommitTimestamp`, `CommitActions`, `CommitFiles`, `CommitFile`, `CommitFileStatus`, `CommitFilePath` | `CommitProps`, `CommitModel`, `CommitFileModel`, `CommitFileStatusKind`, and one props type per part |
+| `Commit`, `CommitHeader`, `CommitAuthor`, `CommitInfo`, `CommitMessage`, `CommitMetadata`, `CommitHash`, `CommitTimestamp`, `CommitActions`, `CommitFiles`, `CommitFile`, `CommitFileStatus`, `CommitFilePath` | `CommitProps`, `CommitModel`, `CommitFileModel`, `CommitFileStatusKind`, `CommitHashProps`, `CommitTimestampProps`, `CommitFileProps`, `CommitFileStatusProps`, `CommitFilePathProps` |
 | `ChangeSummary`                                                                                                                                                              | `ChangeSummaryProps`                                                                             |
 | `EnvironmentVariables`, `EnvironmentVariable`                                                                                                                                | `EnvironmentVariablesProps`, `EnvironmentVariableProps`, `EnvironmentVariableModel`              |
 | `SecretField`                                                                                                                                                                | `SecretFieldProps`                                                                               |
 
 `SchemaDisplay` and `SecretField` enforce bounds documented in
 [Failure codes and limits](./reference/contracts.md).
+
+The commit part props replace host children. `CommitHashProps` adds required
+`hash`, optional `changeId` and `short` (default `true`) to `<span>` attributes;
+`changeId` takes precedence. `CommitTimestampProps` adds `timestampMs`.
+`CommitFileStatusProps` adds `status: CommitFileStatusKind` and
+`CommitFilePathProps` adds `path` and optional `oldPath`, all on `<span>`.
+`CommitFileProps` adds `file: CommitFileModel` to `<li>` attributes.
 
 ## Sandbox previews
 
@@ -846,6 +886,10 @@ what a composer's draft completes to and read a submitted line as a command
 run, a refusal or a prompt
 ([complete slash commands](./guides/complete-slash-commands.md)).
 
+`flowFormViewCss` and `issuesViewCss` are the templates' CSS strings, already
+included in `smithersUiCss`. `IssuesViewState` is `"open" | "closed"`, the
+state of an `IssuesViewIssue` and its Open/Closed filter.
+
 ## Issues
 
 One issue's page and the new-issue form (apps/mvp decision 0012). Both are
@@ -983,6 +1027,36 @@ state only.
 | `conflict` | Accept · Not accepted · Run triage again |
 
 `triageControlCss` is part of `smithersUiCss`.
+
+## Shared carets
+
+```ts
+type FieldSelection = { readonly anchor: number; readonly head: number }
+type Collaborator = FieldSelection & { readonly id: string; readonly name: string }
+type CollaboratorCaretsProps = {
+  readonly field: RefObject<HTMLTextAreaElement | HTMLInputElement | null>
+  readonly value: string
+  readonly collaborators: ReadonlyArray<Collaborator>
+}
+function CollaboratorCarets(props: CollaboratorCaretsProps): JSX.Element | null
+function selectionOf(field: HTMLTextAreaElement | HTMLInputElement): FieldSelection
+function useSharedSelection(
+  field: RefObject<HTMLTextAreaElement | HTMLInputElement | null>,
+  value: string,
+  selection: FieldSelection | undefined
+): (typed: string) => void
+const PERSON_LANES: 6
+function personLane(id: string): number
+const collaboratorsCss: string
+```
+
+Render `CollaboratorCarets` beside its field in a positioned parent. It draws
+other people's carets and selections; an empty list renders nothing.
+`selectionOf` preserves selection direction. `useSharedSelection` restores a
+focused field's supplied selection after an outside edit; call its returned
+function for each locally typed value. `personLane` maps a stable id to one
+of `PERSON_LANES` colors (`0`–`5`). `collaboratorsCss` is included in
+`smithersUiCss`.
 
 ## Sharing
 
@@ -1185,6 +1259,8 @@ pulsing), `waiting` (`○ Waiting`, quiet), `needs_you` (`◆ Needs you`, gold:
 
 `agentStatusCss` is part of `smithersUiCss`.
 
+`NeedsYouKind` is `"question" | "approval"`, the `kind` of a `NeedsYouCard`.
+
 ## Runs and flows
 
 A run's page and the card a flow is drafted in (apps/mvp decision 0014). The
@@ -1218,6 +1294,11 @@ The pure helpers the components use, for a terminal or a test:
 | `draftStatusLine`, `questionValue`, `isAssumed`, `changedAnswers`, `answersToSend` | `◌ Drafting · round 2`, `◆ Needs you`, `✓ Ready`, `✕ Failed`, `✓ Saved`, `✓ Proposed`; what a question's field shows; whether it shows the assumed default; the answers that change the draft; what Answer sends: the changed answers and each unanswered blocking question at the value its field shows (its default until a person types), never an empty field. |
 
 `jsonValueCss`, `runPageCss` and `flowDraftViewCss` are part of `smithersUiCss`.
+
+`RunState` is `"pending" | "running" | "suspended" | "completed" | "failed" | "cancelled"`.
+`RunTone` is `"default" | "muted" | "warning" | "destructive" | "success"`,
+the value selected by `RUN_WORD_TONES`. `DraftFile` is the immutable
+`{ path: string, text: string }` file in a flow draft.
 
 ## Repository home
 
@@ -1288,7 +1369,8 @@ nothing draws, it renders `null`. `repositoryHomeCss` is part of
 `smithersUiCss`.
 
 ```ts
-function LinkTabs(props: ComponentProps<"nav">): JSX.Element
+type LinkTabsProps = ComponentProps<"nav">
+function LinkTabs(props: LinkTabsProps): JSX.Element
 ```
 
 `LinkTabs` is a row of page tabs that are links, such as a repository's Home
@@ -1298,12 +1380,13 @@ Name it with `aria-label`.
 
 ```ts
 type FileTab = { key: string; label: string; title?: string; href: string; active: boolean }
-function FileTabs(props: Omit<ComponentProps<"div">, "children" | "role"> & {
+type FileTabsProps = Omit<ComponentProps<"div">, "children" | "role"> & {
   tabs: ReadonlyArray<FileTab>
   onOpen: (tab: FileTab) => void
   onClose: (tab: FileTab) => void
   onFocusLifecycle?: (event: FileTabsFocusEvent) => void
-}): JSX.Element | null
+}
+function FileTabs(props: FileTabsProps): JSX.Element | null
 ```
 
 `FileTabs` is a strip of open files above a code view, as an editor's tabs. Each
@@ -1397,6 +1480,9 @@ the same dialog; only its action runs `onConfirm`.
 
 `actionMenuCss` is part of `smithersUiCss`.
 
+`NotFoundProps` supplies optional `title` (default `"Not found"`) and required
+`back: ReactNode`, the recovery link rendered by `NotFound`.
+
 ## Related
 
 - [Failure codes and limits](./reference/contracts.md): the codes and bounds
@@ -1407,11 +1493,33 @@ the same dialog; only its action runs `onConfirm`.
 
 ## Clipboard (`@smthrs/ui/copy`)
 
-This isolated entry point exports `copyText`, `CopyResult`, and `CopyFailureCode` without importing Vault or autosave. Views import `copyText` from this subpath. The root export remains available. See [clipboard contracts](./reference/contracts.md#clipboard).
+This isolated entry point exports `copyText`, `canCopyText`, `reserveCopyText`, `CopyResult`, and `CopyFailureCode` without importing Vault or autosave. Views import `copyText` from this subpath. The root export remains available. See [clipboard contracts](./reference/contracts.md#clipboard).
+
+`canCopyText(): boolean` reports whether the browser offers Clipboard
+`writeText` or the `execCommand` fallback. It does not guarantee permission.
+`reserveCopyText()` reserves native clipboard activation synchronously, before
+asynchronous admission. It returns `{ copyText(text): Promise<void>, release(): void }`
+or `undefined` when ClipboardItem/write is unavailable. Copy the admitted text;
+call `release()` if admission is refused. The copy promise reports clipboard
+failure.
 
 ### Read-only run graphs
 
-`FlowGraph` takes `nodes`, `edges`, `selected`, `onSelect` and `onInspect`. Nodes use the canonical monitor's `next`, `current`, `done`, `failed` and `waiting` states. Edges optionally carry the recorded `value`, `continuation` or `failure` reason; an unknown reason remains unspecified. Arrow keys follow dependencies, Enter or `i` inspects, and the canvas supports pan, zoom and fit. `graphLayout` and `fitGraph` are pure, deterministic longest-path/barycenter layout functions. The layout follows the approved small-DAG exception: there is no catalogued layout library, and adding a second node-state store is unnecessary for tens of nodes.
+`FlowGraphProps` replaces `<div>` children and `onSelect` with required
+`nodes: ReadonlyArray<GraphNode>` and `edges: ReadonlyArray<GraphEdge>`, plus
+optional `selected: string | null`, `onSelect(id)` and `onInspect(id)`.
+`FlowGraph` takes these props. Nodes use the canonical monitor's `next`, `current`, `done`, `failed`, `waiting`, `cancelled` and `skipped` states. Edges optionally carry the recorded `value`, `continuation` or `failure` reason; an unknown reason remains unspecified. Arrow keys follow dependencies, Enter or `i` inspects, and the canvas supports pan, zoom and fit. `graphLayout` and `fitGraph` are pure, deterministic longest-path/barycenter layout functions. The layout follows the approved small-DAG exception: there is no catalogued layout library, and adding a second node-state store is unnecessary for tens of nodes.
+
+| Export | Contract |
+| --- | --- |
+| `GraphDirection` | `"LR" \| "TB"`; left-to-right or top-to-bottom layout. |
+| `GraphPosition` | Immutable `{ id: string, x: number, y: number }`. |
+| `GraphLayout` | Immutable `nodes: ReadonlyArray<GraphPosition>`, ranked id arrays in `ranks`, `width`, `height` and `direction`. |
+| `graphNeighbour(nodes, edges, selected, forward)` | Follow a dependency, else the adjacent node in list order; `undefined` for an empty list. |
+| `StepInspectorProps` | `<section>` attributes without children, plus required `step`, `input`, `output`, `logs`, `attempts`, `now`, and optional `wait` and `actions`. |
+| `StepLogLine` | A parsed `record` with time, level, message, fields, error and attempt; an `attempt` marker; or a `text` line. Returned by `stepLogLines`. |
+| `JournalTick` | Immutable `{ seq: number, emittedAtMs: number, eventType: string }`. |
+| `JournalScrubberProps` | `<div>` attributes without children or `onChange`, plus `events: ReadonlyArray<JournalTick>`, `at: number \| null` and `onChange(at)`. |
 
 `StepInspector` accepts a `StepRow`, redacted `input`, `output`, `logs`, `attempts`, `now` and optional wait/actions. Its tabs are Output, Input, Logs and Attempts. It renders input and output through `JsonValue` and the Logs tab through `StepLogs`, and never executes them.
 

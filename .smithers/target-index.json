@@ -82712,6 +82712,27 @@
     }
   },
   {
+    "label": "//packages/smithers/ui:docs",
+    "package": "packages/smithers/ui",
+    "name": "docs",
+    "rule": "DocsParity",
+    "kinds": [
+      "docs"
+    ],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/README.md"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/ui/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//packages/smithers/ui:docsFiles",
     "package": "packages/smithers/ui",
     "name": "docsFiles",

@@ -117,6 +117,23 @@ const docsFiles = Smithers.Filegroup({
   cwd
 })
 
+/** Every named root export needs documentation, including erased props types. */
+const docs = Smithers.DocsParity({
+  readme: Smithers.file("README.md"),
+  cwd,
+  deps: [
+    Smithers.Shell.Test({
+      shell: "node --test packages/smithers/ui/scripts/reference-docs.test.mjs",
+      data: [
+        Smithers.file("scripts/reference-docs.test.mjs"),
+        ...sources,
+        Smithers.glob("src/**/*.vibe"),
+        Smithers.glob("docs/**/*.md")
+      ]
+    })
+  ]
+})
+
 /**
  * The component sources as a file group, for the packages that compose these
  * components (`@smthrs/repo-view`, `@smthrs/terminal-frame`), reached by
@@ -299,6 +316,7 @@ export const Package = Smithers.Package({
   targets: {
     solidCodegenInputs,
     check,
+    docs,
     docsFiles,
     sourceFiles,
     importRules,
