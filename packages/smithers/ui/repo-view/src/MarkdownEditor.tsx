@@ -169,6 +169,9 @@ const hostCss = `
 @media (max-width:960px) {
   .sui-markdown-editor[data-readonly] .ProseMirror a { display:inline-block; min-width:32px; min-height:32px; line-height:32px; max-width:100%; overflow-wrap:anywhere; }
 }
+.sui-markdown-editor[data-readonly] .milkdown-table-block { max-width:100%; overflow-x:auto; }
+.sui-markdown-editor[data-readonly] .ProseMirror table { table-layout:auto; width:auto; min-width:100%; overflow:visible; }
+.sui-markdown-editor[data-readonly] .ProseMirror th, .sui-markdown-editor[data-readonly] .ProseMirror td { min-width:12rem; max-width:28rem; word-break:normal; overflow-wrap:normal; }
 .sui-markdown-editor-fallback { display:block; box-sizing:border-box; width:100%; min-height:180px; height:100%; padding:16px 20px; border:0; outline:none; resize:none; background:transparent; color:inherit; font:inherit; font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; font-size:13px; line-height:1.6; tab-size:2; }
 .sui-markdown-editor-fallback:read-only { cursor:default; }
 .sui-markdown-editor[data-readonly] .cm-editor, .sui-markdown-editor[data-readonly] .cm-gutters, .sui-markdown-editor[data-readonly] .cm-activeLine { background:transparent; color:inherit; }

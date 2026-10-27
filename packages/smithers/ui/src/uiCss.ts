@@ -610,6 +610,7 @@ export const markdownCss = `
 .sui-md-h4 { font-size:1em; }
 .sui-md-h5 { font-size:.9em; }
 .sui-md-h6 { font-size:.85em; color:${t.mutedForeground}; }
+.sui-md-table th, .sui-md-table td { min-width:12rem; max-width:28rem; word-break:normal; overflow-wrap:normal; }
 .sui-md-list { margin:6px 0; padding-left:22px; }
 .sui-md-list li { margin:2px 0; }
 .sui-md-inline-code { padding:2px 6px; border-radius:${t.radiusControl}; background:color-mix(in srgb, ${t.foreground} 7%, transparent); font-family:${t.fontMono}; font-size:.9em; }

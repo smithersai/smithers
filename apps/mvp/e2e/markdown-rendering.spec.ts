@@ -23,3 +23,18 @@ test("repository Markdown hides YAML metadata", async ({ page }) => {
   await expect(preview).not.toContainText('title: "Quickstart"')
   await expect(preview.getByRole("heading", { name: "Quickstart", exact: true })).toBeVisible()
 })
+
+test("phone tables scroll inside the document without splitting words", async ({ page }) => {
+  requires("codeStorage")
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto("/smithersai/smithers/blob/main/docs/design/agent-flow-health.md")
+  const table = page.locator(".sui-markdown-editor .milkdown-table-block").first()
+  await expect(table).toBeVisible({ timeout: 30_000 })
+  expect(await table.evaluate(element => ({
+    scrolls: element.scrollWidth > element.clientWidth,
+    overflow: getComputedStyle(element).overflowX,
+    layout: getComputedStyle(element.querySelector("table")!).tableLayout,
+    words: getComputedStyle(element.querySelector("th")!).overflowWrap,
+  }))).toEqual({ scrolls: true, overflow: "auto", layout: "auto", words: "normal" })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
