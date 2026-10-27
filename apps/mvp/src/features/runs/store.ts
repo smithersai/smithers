@@ -1,4 +1,4 @@
-import { ElectricCollection } from "@smthrs/effect-electric"
+import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Persistence, Query } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Clock, Context, Duration, Effect, Layer, Metric, Option, Scope, Semaphore, Stream } from "effect"
@@ -9,6 +9,9 @@ import { CloudRun, type Inspection, type RepoName, RepoRunRow, RepoRunsLoaded, R
 import { routeTiming, type RouteTiming } from "./timing"
 import { domainOutcomeOf, hasDomainOutcome } from "./todoRun"
 import { repoId } from "../repo/contract"
+import { AuthStore } from "../auth/store"
+import { RepoStore } from "../repo/store"
+import { memberRunSource } from "./source"
 import { codeOf } from "../../errorCode"
 
 // Runs on this tab (decision 0014 §1 and §3, docs/features/runs.md#the-browser): the list of this device's runs, each
@@ -247,6 +250,8 @@ export class RunsStore extends Context.Service<
   static readonly layer = (config: RunsConfig) => Layer.effect(
     RunsStore,
     Effect.gen(function* () {
+      const auth = yield* Effect.serviceOption(AuthStore)
+      const repos = yield* Effect.serviceOption(RepoStore)
       const timing = yield* routeTiming
       const attempts = new Map<string, RouteTiming>()
       const scope = yield* Effect.scope
@@ -653,7 +658,9 @@ export class RunsStore extends Context.Service<
           syncMode: "eager",
           persist: { schemaVersion: 1 },
           shape: { url: `${config.origin}${ACTIONS_SHAPE_ROUTE}?repo=${encodeURIComponent(repo)}`, columnMapper: ElectricCollection.snakeCamelMapper() },
-        }).pipe(Scope.provide(scope), Effect.provideService(Persistence.Persistence, persistence), Effect.orDie)
+        }).pipe(
+          Effect.provideService(ShapeSource.ShapeSource, memberRunSource(yield* ShapeSource.ShapeSource, auth, repos, repoId(owner, name))),
+          Scope.provide(scope), Effect.provideService(Persistence.Persistence, persistence), Effect.orDie)
         yield* attempt.record("repo-runs", "ready")
         let firstRows = true
         opened.add(repo)

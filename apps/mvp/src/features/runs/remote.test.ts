@@ -20,6 +20,9 @@ import { actsOf, hostOf, listRows, missingOf, repoRunRows, repoRunsLoaded, steer
 import { Runs } from "./runs"
 import { REMOTE_RUN_SHAPE_ROUTE, stopRoute } from "./contract"
 import { RunSteers } from "./steers"
+import { AuthStore } from "../auth/store"
+import { role as readRole } from "../repo/actions"
+import { RepoStore } from "../repo/store"
 import { RunsStore } from "./store"
 import { openRun } from "./actions"
 import { RemoteRunsClient } from "./api"
@@ -60,6 +63,7 @@ const open = async (person?: string, engine = false) => {
   const host = engine ? nodeDevice({ agent: as }) : nodeDevice()
   const tab = openTab(observed, { host })
   runtimes.push(tab)
+  await tab.runPromise(readRole(...TEST_REPOSITORY.split("/") as [string, string]))
   const runs = await tab.runPromise(Effect.service(Runs))
   for (const query of Object.values(runs.queries)) query.startSyncImmediate()
   return {
@@ -96,7 +100,9 @@ describe("a TODO's run on Cloudflare", () => {
     const shapes = await t.tab.runPromise(Effect.service(ShapeSource.ShapeSource))
     const runtime = ManagedRuntime.make(RunsStore.layer({ origin: CHATAPI_ORIGIN }).pipe(Layer.provideMerge(Layer.mergeAll(
       Layer.succeed(BrowserEngine.BrowserEngine, engine), Layer.succeed(RemoteRunsClient, remote),
-      Layer.succeed(ShapeSource.ShapeSource, shapes), Persistence.memory,
+      Layer.succeed(ShapeSource.ShapeSource, shapes),
+      Layer.succeed(AuthStore, await t.tab.runPromise(Effect.service(AuthStore))),
+      Layer.succeed(RepoStore, await t.tab.runPromise(Effect.service(RepoStore))), Persistence.memory,
       Layer.succeed(FetchHttpClient.Fetch, t.api.fetch),
       logger,
     ))))
@@ -293,12 +299,15 @@ describe("a repository's run on Cloudflare", () => {
     const tab = openFaultyTab(api)
     runtimes.push(tab)
     const faults = await tab.runPromise(Effect.service(ShapeSource.Faults))
+    await tab.runPromise(readRole(...TEST_REPOSITORY.split("/") as [string, string]))
     // The tab's own store, over its faulty shape source, with its log lines collected.
     const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
     const runtime = ManagedRuntime.make(RunsStore.layer({ origin: CHATAPI_ORIGIN }).pipe(Layer.provideMerge(Layer.mergeAll(
       Layer.succeed(BrowserEngine.BrowserEngine, await tab.runPromise(Effect.service(BrowserEngine.BrowserEngine))),
       Layer.succeed(RemoteRunsClient, await tab.runPromise(Effect.service(RemoteRunsClient))),
       Layer.succeed(ShapeSource.ShapeSource, await tab.runPromise(Effect.service(ShapeSource.ShapeSource))),
+      Layer.succeed(AuthStore, await tab.runPromise(Effect.service(AuthStore))),
+      Layer.succeed(RepoStore, await tab.runPromise(Effect.service(RepoStore))),
       Persistence.memory,
       Layer.succeed(FetchHttpClient.Fetch, api.fetch),
       Logger.layer([Logger.make((options) => void logs.push(Logger.formatStructured.log(options)))]),
@@ -334,6 +343,7 @@ describe("a repository's run on Cloudflare", () => {
     await t.runs.actions.openRepoRuns("octo", "hello")
     await until(() => expect(repoRunRows(t.runs.queries.repoRuns.toArray as ReadonlyArray<RepoRunRow>, "octo", "hello"))
       .toEqual([expect.objectContaining({ href: actionRunPath("octo", "hello", ownRun) })]))
+    await t.tab.runPromise(readRole("elsewhere", "project"))
     await t.runs.actions.openRepoRuns("elsewhere", "project")
     const listed = () => repoRunRows(t.runs.queries.repoRuns.toArray as ReadonlyArray<RepoRunRow>, "elsewhere", "project")
     await until(() => expect(listed()).toEqual([
@@ -353,6 +363,7 @@ describe("a repository's run on Cloudflare", () => {
     await t.tab.dispose()
     const reloaded = openTab(t.api, { host: t.host })
     runtimes.push(reloaded)
+    await reloaded.runPromise(readRole("elsewhere", "project"))
     const runs = await reloaded.runPromise(Effect.service(Runs))
     for (const query of Object.values(runs.queries)) query.startSyncImmediate()
     await runs.actions.openRepoRuns("elsewhere", "project")

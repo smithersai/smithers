@@ -9,3 +9,10 @@ Issues and pulls derive access from these device records. A refused or failed sh
 Library catalog entries: `@smthrs/effect-electric`, `@smthrs/effect-tanstack-db`.
 
 TODO and prompt shapes use the same request gate, with Member authority resolved for their named repository. Public repository visibility alone does not grant stack access.
+
+## W9 follow-up: repository actions
+
+Repository flow runs remain Member-only, including on a public repository (actions feature and decision 0012).
+The actions shape waits for a signed-in Member, Maintainer or Admin on its named repository. An absent authority
+store fails closed. The deployment's session role applies only to its own repository; a public-read receipt does
+not grant access to runs. The browser uses the catalog's `@smthrs/effect-electric` `ShapeSource.gated`.

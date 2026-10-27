@@ -127,6 +127,10 @@ for (const who of ["visitor", "contributor"] as const) {
     test.setTimeout(180_000)
     const synced = !meets("noGitHubApp")
     await as(page, who)
+    const actionsRequests: string[] = []
+    page.on("request", (request) => {
+      if (new URL(request.url()).pathname === "/api/shapes/actions") actionsRequests.push(request.url())
+    })
     for (const path of ["issues", "pulls", "stack", "issues/new", "settings/secrets", "actions", "tree/main"]) {
       await step(`Open ${path}`, async () => {
         await page.goto(`${REPO}/${path}`)
@@ -165,5 +169,6 @@ for (const who of ["visitor", "contributor"] as const) {
     await page.goto(REPO)
     await expect(homeOf(page)).toBeVisible({ timeout: 60_000 })
     await expect(page.getByRole("link", { name: "Ask about this repository", exact: true })).toHaveCount(0)
+    expect(actionsRequests).toEqual([])
   })
 }
