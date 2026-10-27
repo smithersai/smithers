@@ -93,30 +93,17 @@ const stores = (filename: string, root: string) =>
 `StepBoundary.layer` measures the declared read and write sets of each step.
 `WorkspaceSandbox.layerFileSystem()` runs each sealed body in an isolated
 workspace, which is what lets the boundary honestly claim it observed the whole
-tree. `Jj` records compensable snapshots; this flow uses a sealed action, so a
-stub keeps the wiring honest without requiring a `jj` binary:
+tree. `NodeHost.layer` supplies the real host services, including Jujutsu. This
+sealed flow does not take a snapshot, so it does not invoke the `jj` binary:
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { EngineStore, StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
-import { Jj } from "@smthrs/kernel"
+import { NodeHost } from "@smthrs/platform-node"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import { Ownership } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
-
-const stubJj = Layer.succeed(
-  Jj.Jj,
-  Jj.make({
-    snapshot: () =>
-      Effect.succeed({ changeId: "quickstart-snapshot" as never, commitId: "quickstart-commit" as never }),
-    restore: () => Effect.void,
-    diff: () => Effect.succeed(""),
-    workspaceAdd: () => Effect.void,
-    workspaceForget: () => Effect.void,
-    status: () => Effect.succeed("")
-  })
-)
 
 const engine = (filename: string, root: string, hostId: string) =>
   EngineStore.layer({
@@ -125,7 +112,7 @@ const engine = (filename: string, root: string, hostId: string) =>
     isAlive: Ownership.sameHostPidProbe
   }).pipe(
     Layer.provideMerge(
-      Layer.mergeAll(StepBoundary.layer, WorkspaceSandbox.layerFileSystem(), stubJj)
+      Layer.mergeAll(StepBoundary.layer, WorkspaceSandbox.layerFileSystem(), NodeHost.layer)
     ),
     Layer.provideMerge(stores(filename, root)),
     Layer.provideMerge(Layer.mergeAll(NodeCrypto.layer, AtomicFileSystem.layer, NodePath.layer))
@@ -152,12 +139,19 @@ driven by two independently built engines over one file. Count the executions
 to see the replay:
 
 ```ts
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import * as FileSystem from "effect/FileSystem"
+import * as Path from "effect/Path"
+
 export const main = (filename: string, root: string): Effect.Effect<{
   readonly first: string
   readonly second: string
   readonly executions: number
 }> =>
   Effect.gen(function*() {
+    const fileSystem = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    yield* fileSystem.makeDirectory(path.dirname(filename), { recursive: true })
     let executions = 0
 
     const implementation = Measure.toLayer(() =>
@@ -184,7 +178,7 @@ export const main = (filename: string, root: string): Effect.Effect<{
     )
 
     return { first, second, executions }
-  }).pipe(Effect.orDie)
+  }).pipe(Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)), Effect.orDie)
 ```
 
 Run it against a real file and print the result:

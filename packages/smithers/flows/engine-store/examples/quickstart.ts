@@ -10,6 +10,7 @@
  */
 
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import { DurableWriter } from "@smthrs/database"
@@ -24,13 +25,15 @@ import {
 } from "@smthrs/engine-store"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { SqlJournal } from "@smthrs/journal"
-import { Jj } from "@smthrs/kernel"
 import * as Workspace from "@smthrs/kernel/Workspace"
+import { NodeHost } from "@smthrs/platform-node"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import { AttemptStore, Ownership, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import * as Effect from "effect/Effect"
+import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
+import * as Path from "effect/Path"
 import * as Schema from "effect/Schema"
 
 const Measure = Action.make("quickstart/Measure", {
@@ -65,21 +68,6 @@ const stores = (filename: string, root: string) =>
     ArtifactStore.layerFileSystem({ directory: `${root}/.flows/objects` })
   ).pipe(Layer.provideMerge(database(filename)))
 
-// The flow uses a sealed action only, so no snapshot is ever taken; the stub
-// keeps the composition complete without requiring a `jj` binary.
-const stubJj = Layer.succeed(
-  Jj.Jj,
-  Jj.make({
-    snapshot: () =>
-      Effect.succeed({ changeId: "quickstart-snapshot" as never, commitId: "quickstart-commit" as never }),
-    restore: () => Effect.void,
-    diff: () => Effect.succeed(""),
-    workspaceAdd: () => Effect.void,
-    workspaceForget: () => Effect.void,
-    status: () => Effect.succeed("")
-  })
-)
-
 const engine = (filename: string, root: string, hostId: string) =>
   EngineStore.layer({
     owner: { hostId },
@@ -87,7 +75,7 @@ const engine = (filename: string, root: string, hostId: string) =>
     isAlive: Ownership.sameHostPidProbe
   }).pipe(
     Layer.provideMerge(
-      Layer.mergeAll(StepBoundary.layer, WorkspaceSandbox.layerFileSystem(), stubJj)
+      Layer.mergeAll(StepBoundary.layer, WorkspaceSandbox.layerFileSystem(), NodeHost.layer)
     ),
     Layer.provideMerge(stores(filename, root)),
     Layer.provideMerge(Layer.mergeAll(NodeCrypto.layer, AtomicFileSystem.layer, NodePath.layer))
@@ -123,6 +111,9 @@ export interface QuickstartResult {
  */
 export const quickstart = (filename: string, root: string): Promise<QuickstartResult> => {
   const program = Effect.gen(function*() {
+    const fileSystem = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    yield* fileSystem.makeDirectory(path.dirname(filename), { recursive: true })
     let executions = 0
 
     const implementation = Measure.toLayer(() =>
@@ -149,7 +140,7 @@ export const quickstart = (filename: string, root: string): Promise<QuickstartRe
     )
 
     return { first, second, executions }
-  }).pipe(Effect.orDie)
+  }).pipe(Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)), Effect.orDie)
 
   return Effect.runPromise(program)
 }
