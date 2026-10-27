@@ -9,6 +9,9 @@ The CLI writes one document to stdout and everything else to stderr, so a
 `--json` reader never finds a diagnostic inside its document. The status the
 process exits on comes from the document, not from the renderer.
 
+This includes `eval run --format json`: durable engine logs go to stderr,
+and `--silent` suppresses those logs. Stdout contains only the result document.
+
 ## The two renderings
 
 `Output.Format` has two values, and every handler produces both from one value:

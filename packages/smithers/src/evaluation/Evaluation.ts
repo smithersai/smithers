@@ -11,6 +11,7 @@ import { EngineStore } from "@smthrs/engine-store"
 import { Baseline, CaseExecutor, Gate, Regression, Runner, Suite } from "@smthrs/evals"
 import { EvalError } from "@smthrs/evals/EvalError"
 import { Action, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
+import * as RedactedLogger from "@smthrs/journal/RedactedLogger"
 import { Node } from "@smthrs/plan"
 import { NodeRuntime } from "@smthrs/platform-node"
 import { Sampling } from "@smthrs/scorers"
@@ -18,12 +19,13 @@ import type { ScorerError } from "@smthrs/scorers/ScorerError"
 import * as ScoreStore from "@smthrs/scorers/ScoreStore"
 import * as Scoring from "@smthrs/scorers/Scoring"
 import * as SqlScoreStore from "@smthrs/scorers/SqlScoreStore"
-import { Effect, Layer, Option, Schema } from "effect"
+import { Effect, Layer, Logger, Option, Schema } from "effect"
 import { z } from "incur"
 import { randomUUID } from "node:crypto"
 import { link, mkdir, open, readdir, readFile, realpath, rename, unlink } from "node:fs/promises"
 import { dirname, isAbsolute, join, resolve, sep } from "node:path"
 import { pathToFileURL } from "node:url"
+import * as Presentation from "../cli/Presentation.ts"
 import * as CliError from "../CliError.ts"
 import type * as Environment from "../Environment.ts"
 import * as DatabaseLocation from "../internal/DatabaseLocation.ts"
@@ -424,13 +426,16 @@ export const execute = async (
   },
   runtime: RuntimeConfig = {}
 ): Promise<RunArtifact> => {
+  const logging = Presentation.current()?.policy.progress === "silent" ? Logger.layer([]) : RedactedLogger.layer()
   const { root, ...runOptions } = options
   if (root === undefined) {
     return artifactOf(
       await Effect.runPromise(
         Runner.run(suite, runOptions).pipe(
           Effect.provideService(CaseExecutor.CaseExecutor, executor),
-          Effect.provide(Runner.layerInline)
+          Effect.provide(Runner.layerInline),
+          Effect.provide(logging),
+          Effect.provideService(Logger.LogToStderr, true)
         ),
         { signal: runtime.signal }
       )
@@ -518,6 +523,8 @@ export const execute = async (
       return yield* result.value.exit
     }).pipe(
       Effect.provide(host),
+      Effect.provide(logging),
+      Effect.provideService(Logger.LogToStderr, true),
       Effect.scoped
     ),
     { signal: runtime.signal }
