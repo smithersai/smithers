@@ -34,7 +34,7 @@ import { keyTail, PERSONAL_MODEL_SHAPE_ROUTE } from "./contract"
 import { writes } from "./metrics"
 import { PersonalModel } from "./personalModel"
 import { PersonalModelStore } from "./store"
-import { type SaveForm, statusOf, tierView, toastOf } from "./view"
+import { type SaveForm, statusOf, tierView } from "./view"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -160,9 +160,7 @@ const bind = async (
     row: (protocol = "openai-chat") => queries.saved.toArray.find((row) => row.protocol === protocol),
     form: () => queries.form.toArray[0],
     test: () => queries.test.toArray[0],
-    hidden: () => queries.hidden.toArray[0],
     status: () => statusOf(queries.saved.toArray, queries.form.toArray[0], queries.test.toArray[0]),
-    toast: () => toastOf(session.tanstack.get(SESSION), queries.saved.toArray, queries.hidden.toArray[0]),
     count: (attributes: Record<string, string>) => runtime.runSync(Metric.value(Metric.withAttributes(writes, attributes))).count,
     dispatched: (flow: string, outcome: string) =>
       runtime.runSync(Metric.value(Metric.withAttributes(dispatches, { flow, door: "button", outcome }))).count,
@@ -318,21 +316,6 @@ describe("an engine that can't run Test or Remove", () => {
   }, WITHIN)
 })
 
-describe("the failure toast's Hide", () => {
-  test("marks that failure hidden on this device, through a reload; a later Hide moves the mark", async () => {
-    const tab = await open()
-    tab.actions.hide("2026-10-24T11:00:00.000Z")
-    expect(tab.hidden()).toMatchObject({ failedAt: "2026-10-24T11:00:00.000Z" })
-    await until(() => expect(tab.device.stored("personal-model-hidden")).toBe(1))
-    await tab.runtime.dispose()
-    runtimes.splice(runtimes.indexOf(tab.runtime), 1)
-    const reloaded = await open({ api: tab.api, device: tab.device })
-    await until(() => expect(reloaded.hidden()).toMatchObject({ failedAt: "2026-10-24T11:00:00.000Z" }))
-    reloaded.actions.hide("2026-10-24T12:00:00.000Z")
-    expect(reloaded.hidden()).toMatchObject({ failedAt: "2026-10-24T12:00:00.000Z" })
-  }, WITHIN)
-})
-
 describe("a Member's own model, on ChatApi's real routes", () => {
   test("Save: Saving until the row shows it, the key clears, Save again replaces it; the key is kept nowhere", async () => {
     const tab = await open({ confirmWithin: "3 seconds" })
@@ -480,7 +463,7 @@ describe("a Member's own model, on ChatApi's real routes", () => {
     expect([tab.count({ op: "put", outcome: "unknown" }), tab.count({ op: "put", outcome: "started" })]).toEqual([2, 1])
   }, WITHIN)
 
-  test("Test through its flow: OK; the provider's refusal, recorded on the row, toasts until hidden; OK clears it", async () => {
+  test("Test through its flow: OK; the provider's refusal, recorded on the row, shows in Settings; OK clears it", async () => {
     let answer: Reply = { text: "ok" }
     const tab = await open({ provider: () => answer })
     expect(tab.actions.save(SCRIPTED(KEY))).toBe(true)
@@ -495,19 +478,15 @@ describe("a Member's own model, on ChatApi's real routes", () => {
     expect(tab.api.providerCalls[0]!.headers.get("authorization")).toBe(`Bearer ${KEY}`)
     expect(tab.form()).toMatchObject({ state: "done", saved: 1, quiet: true })
 
-    // The provider refuses the key: the test says so, and the row records it, which the toast shows.
+    // The provider refuses the key: the test says so, and the row records it, which Settings shows.
     answer = { status: 401, error: { message: "Incorrect API key" } }
     expect(tab.actions.test()).toBe(true)
     await until(() =>
       expect(tab.test()).toMatchObject({ state: "done", result: { ok: false, status: 401, host: "models.example.com" } })
     )
     await until(() => expect(tab.row()).toMatchObject({ failureStatus: 401 }))
-    const failedAt = tab.row()!.failedAt!
-    await until(() => expect(tab.toast()).toEqual({ detail: "models.example.com · HTTP 401", failedAt }))
     // The status line names the host and the status, from the test or the row, whichever is newer.
     expect(tab.status()).toMatchObject({ text: expect.stringMatching(/^models\.example\.com .*HTTP 401$/) })
-    tab.actions.hide(failedAt)
-    expect(tab.toast()).toBeUndefined()
 
     // It passes again: the row's failure clears.
     answer = { text: "ok again" }
@@ -568,6 +547,5 @@ describe("who has a model of their own", () => {
     expect(tab.actions.test()).toBe(true)
     await until(() => expect(tab.test()).toMatchObject({ state: "failed", failure: "authentication" }))
     expect(requested).not.toContain(PERSONAL_MODEL_SHAPE_ROUTE)
-    expect(tab.toast()).toBeUndefined()
   }, WITHIN)
 })

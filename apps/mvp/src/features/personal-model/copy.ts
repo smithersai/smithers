@@ -1,10 +1,10 @@
 import type { ModelTier } from "../model/contract"
 import type { Protocol, Refusal } from "./contract"
 
-// What the Your model section and its toast say (docs/features/personal-model.md#the-settings-section): the fewest
+// What the Your model section say (docs/features/personal-model.md#the-settings-section): the fewest
 // words to act, in product words.
 
-/** The section's heading, and the toast's word. */
+/** The section's heading. */
 export const YOUR_MODEL = "Your model"
 
 /** Each key's fields. */

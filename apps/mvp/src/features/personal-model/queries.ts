@@ -1,5 +1,5 @@
 import { type Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
-import type { Form, Hidden, PersonalModelRow, TestRow } from "./schema"
+import type { Form, PersonalModelRow, TestRow } from "./schema"
 
 // What every frontend reads of a person's own models (docs/features/personal-model.md#the-settings-section). Each is a
 // live query over this device's collections; none waits for the network, and none can carry a key: no collection holds
@@ -20,6 +20,3 @@ export const formQuery = (form: Collection.Collection<Form, string>) =>
 export const testQuery = (test: Collection.Collection<TestRow, string>) =>
   LiveQuery.make((q) => q.from({ test: test.tanstack }).findOne())
 
-/** The failure whose toast this device hid. */
-export const hiddenQuery = (hidden: Collection.Collection<Hidden, string>) =>
-  LiveQuery.make((q) => q.from({ hidden: hidden.tanstack }).findOne())

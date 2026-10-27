@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { hide, remove, save, test } from "./actions"
+import { remove, save, test } from "./actions"
 import type { PersonalModelClient } from "./api"
 import { PersonalModelStore } from "./store"
 import type { SaveForm } from "./view"
@@ -20,8 +20,6 @@ export interface PersonalModelQueries {
   readonly form: Store["formState"]["tanstack"]
   /** The last test: running, its result, or why there was none. */
   readonly test: Store["testState"]["tanstack"]
-  /** The failure whose toast this device hid. */
-  readonly hidden: Store["hiddenState"]["tanstack"]
 }
 
 /** What a person does, as plain functions. Each returns at once. */
@@ -32,8 +30,6 @@ export interface PersonalModelActions {
   readonly remove: () => boolean
   /** Test: whether it was sent. */
   readonly test: () => boolean
-  /** Hide on the failure toast, by the failure's `failedAt`. */
-  readonly hide: (failedAt: string) => void
 }
 
 export class PersonalModel extends Context.Service<
@@ -51,13 +47,11 @@ export class PersonalModel extends Context.Service<
           saved: store.saved.tanstack,
           form: store.formState.tanstack,
           test: store.testState.tanstack,
-          hidden: store.hiddenState.tanstack,
         },
         actions: {
           save: (form) => run(save(form)),
           remove: () => run(remove),
           test: () => run(test),
-          hide: (failedAt) => run(hide(failedAt)),
         },
       })
     }),

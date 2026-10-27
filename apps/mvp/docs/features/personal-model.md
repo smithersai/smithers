@@ -20,7 +20,7 @@ POST /api/model/<role>  (every role; and a todo run's coding seat and its review
   signed in, may ask ─ personal_models[person]?
     yes ─▶ the role's tier ─▶ its model among their keys ─▶ open that key in memory ─▶ its provider, key pinned
            personal_model_usage row · no budget · no spend alert
-           401 / 402 / 403 / 429 ─▶ the call fails · failure_status marked · toast   (never the deployment's model)
+           401 / 402 / 403 / 429 ─▶ the call fails · failure_status marked · inline failure   (never the deployment's model)
            the key doesn't open ─▶ 409 no_route
     no  ─▶ hosted inference on ─▶ the deployment's model (model-endpoint.md)
            off ─▶ 409 no_route "Add your model in Settings to ask Smithers."  (the composer shows "Add your model")
@@ -157,9 +157,7 @@ each a model id and the key it runs on ("Fast key"). A tier's model field shows 
 placeholder the model it resolves to (a preset or a fallback). Save sends every group whose Base URL is filled, so
 clearing a Base URL removes that key, and every tier whose model is filled. Remove and Test show once a key is saved. Someone signed in who may no longer save one, such as a person who lost their role, sees
 only Remove while their model is saved. One status line says Saving or Removing, a refusal, the test's result, or the
-provider's last refusal with when it happened. While
-the person's row has a refusal their device hasn't hidden, the shell's toast stack shows it (`<host> · HTTP <status>`),
-opening Settings. The key is read from the form once, held `Redacted`, sent in one `PUT`, and never kept on the device:
+provider's last refusal with when it happened. Chat shows the failure beside its answer; Settings shows the provider detail. No persistent model-error toast follows the person onto unrelated pages. Legacy hide marks remain readable by the device schema but are no longer used. The key is read from the form once, held `Redacted`, sent in one `PUT`, and never kept on the device:
 not in a collection, the outbox, a browser flow's journal or a record.
 
 ## Flows
@@ -208,7 +206,7 @@ carry ops, outcomes, codes, statuses, roles and counts: never a key, a base URL,
 - `worker/PersonOnly.test.ts`: `PUT /api/me/model` refuses an agent, a flow and a frame.
 - `db/Database.test.ts`: `0056_personal_models`' tables and their rules; `0065_model_tiers` keeping a saved model as
   the fast model, two protocols per person, and the tier and ledger columns' rules.
-- `src/features/personal-model/`: the Settings section, the toast and the two browser flows against ChatApi's real
+- `src/features/personal-model/`: the Settings section and the two browser flows against ChatApi's real
   handler.
 - `e2e/personal-model.spec.ts`: a real provider, saved with Fast and Implement named, shown again after a reload with
   Hard's resolved placeholder, tested, asked and removed in the browser, locally and in production.

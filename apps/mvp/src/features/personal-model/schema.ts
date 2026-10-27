@@ -120,6 +120,6 @@ export type TestRow = typeof TestRow.Type
 /** The one hidden row's key. */
 export const HIDDEN = "failure"
 
-/** The failure whose toast this device hid, by its row's `failedAt`: a later failure shows again. */
+/** Legacy device rows remain decodable; model failures now stay inline and no longer write hide marks. */
 export const Hidden = Schema.Struct({ id: Schema.String, failedAt: Schema.String })
 export type Hidden = typeof Hidden.Type

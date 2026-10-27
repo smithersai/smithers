@@ -10,8 +10,8 @@ import { MODEL_TIERS } from "../src/features/model/contract"
 import { PROTOCOLS, resolveTier } from "../src/features/personal-model/contract"
 import { tierKeyLabel } from "../src/features/personal-model/copy"
 import type { PersonalModelView } from "../src/features/personal-model/personalModel"
-import { formQuery, hiddenQuery, rowsQuery, testQuery } from "../src/features/personal-model/queries"
-import { Form, Hidden, PersonalModelRow, TestRow } from "../src/features/personal-model/schema"
+import { formQuery, rowsQuery, testQuery } from "../src/features/personal-model/queries"
+import { Form, PersonalModelRow, TestRow } from "../src/features/personal-model/schema"
 import type { SaveForm } from "../src/features/personal-model/view"
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -61,12 +61,10 @@ const section = async (initial: ReadonlyArray<PersonalModelRow>, canSave = true)
     })
     const form = yield* Collection.local({ id: "settings-personal-model-form", schema: Form, getKey: (row) => row.id })
     const tests = yield* Collection.local({ id: "settings-personal-model-test", schema: TestRow, getKey: (row) => row.id })
-    const hidden = yield* Collection.local({ id: "settings-personal-model-hidden", schema: Hidden, getKey: (row) => row.id })
     const queries: PersonalModelView["queries"] = {
       saved: (yield* rowsQuery(rows)).tanstack,
       form: (yield* formQuery(form)).tanstack,
       test: (yield* testQuery(tests)).tanstack,
-      hidden: (yield* hiddenQuery(hidden)).tanstack,
     }
     return { rows, form, queries }
   })))
@@ -86,9 +84,6 @@ const section = async (initial: ReadonlyArray<PersonalModelRow>, canSave = true)
       test: () => {
         pressed.push("test")
         return true
-      },
-      hide: () => {
-        throw new Error("Settings has no Hide")
       },
     },
   }

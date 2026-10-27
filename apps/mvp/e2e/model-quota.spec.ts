@@ -20,6 +20,7 @@ test("model quota: a refusal ends Working promptly with a reason and Retry", {
     const answer = a.answerTo(question)
     await expect(answer.locator(".sui-chat-bubble")).toHaveText(MODEL_QUOTA_SPENT, { timeout: 15_000 })
     await expect(answer.getByRole("button", { name: "Retry", exact: true })).toBeVisible()
+    await expect(a.page.locator("[data-personal-model]")).toHaveCount(0)
     await expect(answer.locator('[data-slot="message-response"]')).toHaveAttribute("data-streaming", "false")
   })
   await test.step("A late heartbeat leaves the finished answer alone", async () => {

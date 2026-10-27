@@ -5,14 +5,14 @@ import { recordUnhandled } from "../../boundary"
 import { AuthStore } from "../auth/store"
 import { PERSONAL_MODEL_SHAPE_ROUTE } from "./contract"
 import { record } from "./metrics"
-import { formQuery, hiddenQuery, rowsQuery, testQuery } from "./queries"
-import { FORM, Form, Hidden, PersonalModelRow, TestRow } from "./schema"
+import { formQuery, rowsQuery, testQuery } from "./queries"
+import { FORM, Form, PersonalModelRow, TestRow } from "./schema"
 import { signedInShapeSource } from "../auth/source"
 import { awaiting, landed } from "./view"
 
 // A person's own models on this tab (decisions 0096 and 0107, docs/features/personal-model.md#the-settings-section):
 // their saved keys' rows in Postgres, synced by Electric once they are signed in and kept on the device; the form's last write and the last test,
-// in memory; and the failure whose toast this device hid, kept on the device. No collection here has a field for a
+// in memory. No collection here has a field for a
 // key, so none can hold one: the key lives in the form's password field until Save (actions.ts), and nowhere after.
 
 /**
@@ -30,7 +30,6 @@ type Query<F extends (...args: never) => unknown> = Effect.Success<ReturnType<F>
  * The state of a person's own model on one tab:
  * - `rows`: their saved keys' rows, synced while they are signed in, kept on the device; `saved`, their live query;
  * - `form` and `formState`: the form's last write; `tests` and `testState`: the last test;
- * - `hidden` and `hiddenState`: the failure whose toast this device hid;
  * - `scope`, where a write runs; `confirmWithin`, how long a taken write may take to show in the row.
  *
  * A follower watches the rows beside the form: a write ChatApi took, or whose answer never came, is `done` once the rows
@@ -45,8 +44,6 @@ export class PersonalModelStore extends Context.Service<
     readonly formState: Query<typeof formQuery>
     readonly tests: Collection.Collection<TestRow, string>
     readonly testState: Query<typeof testQuery>
-    readonly hidden: Collection.Collection<Hidden, string>
-    readonly hiddenState: Query<typeof hiddenQuery>
     readonly scope: Scope.Scope
     readonly confirmWithin: Duration.Input
   }
@@ -79,12 +76,6 @@ const make = Effect.fnUntraced(function* (config: PersonalModelConfig) {
     schema: TestRow,
     getKey: (row) => row.id,
   })
-  const hidden = yield* Collection.persisted<Hidden, string>({
-    id: "personal-model-hidden",
-    schema: Hidden,
-    getKey: (row) => row.id,
-    schemaVersion: 1,
-  })
   const saved = yield* rowsQuery(rows)
   const formState = yield* formQuery(form)
 
@@ -116,8 +107,6 @@ const make = Effect.fnUntraced(function* (config: PersonalModelConfig) {
     formState,
     tests,
     testState: yield* testQuery(tests),
-    hidden,
-    hiddenState: yield* hiddenQuery(hidden),
     scope,
     confirmWithin: config.confirmWithin ?? "60 seconds",
   })

@@ -1,6 +1,6 @@
-// What the Your model section and its toast show (docs/features/personal-model.md#the-settings-section), as the pure
+// What the Your model section show (docs/features/personal-model.md#the-settings-section), as the pure
 // rules their views read: who sees the section, the one status line, when a write landed, what each key and tier field
-// shows, what the form sends, when the buttons wait, and when the failure toast shows. Every word is checked here too.
+// shows, what the form sends, when the buttons wait, and how failures read. Every word is checked here too.
 import { describe, expect, test } from "vitest"
 import { MODEL_TIERS } from "../model/contract"
 import { PROTOCOLS, REFUSALS } from "./contract"
@@ -35,7 +35,6 @@ import {
   statusOf,
   testText,
   tierView,
-  toastOf,
 } from "./view"
 
 const row = (fields: Partial<PersonalModelRow> = {}): PersonalModelRow => ({
@@ -323,38 +322,8 @@ describe("the status line", () => {
   })
 })
 
-describe("the failure toast", () => {
-  const session = { status: "signed_in", role: "member" as const }
-
-  test("shows while the signed-in person's row records a failure this device hasn't hidden", () => {
-    expect(toastOf(session, [failed()], undefined)).toEqual({
-      detail: "api.openai.com · HTTP 401",
-      failedAt: "2026-10-24T11:00:00.000Z",
-    })
-    // A later failure than the one hidden shows again.
-    expect(toastOf(session, [failed()], { id: "failure", failedAt: "2026-10-24T09:00:00.000Z" })).toMatchObject({
-      failedAt: "2026-10-24T11:00:00.000Z",
-    })
-  })
-
-  test("of two keys' refusals, the latest; hiding it hides the earlier one too", () => {
-    const anthropic = failed({ protocol: "anthropic-messages", baseUrl: "https://api.anthropic.com", failedAt: "2026-10-24T12:00:00.000Z" })
-    expect(toastOf(session, [failed(), anthropic], undefined)).toEqual({
-      detail: "api.anthropic.com · HTTP 401",
-      failedAt: "2026-10-24T12:00:00.000Z",
-    })
-    expect(toastOf(session, [failed(), anthropic], { id: "failure", failedAt: "2026-10-24T12:00:00.000Z" })).toBeUndefined()
-    expect(lastFailure([row(), failed({ failedAt: null })])).toBeUndefined()
-  })
-
-  test("hides once hidden, with no failure, with no row, and for anyone signed out", () => {
-    expect(toastOf(session, [failed()], { id: "failure", failedAt: "2026-10-24T11:00:00.000Z" })).toBeUndefined()
-    expect(toastOf(session, [row()], undefined)).toBeUndefined()
-    expect(toastOf(session, [row({ failureStatus: 401 })], undefined)).toBeUndefined()
-    expect(toastOf(session, [], undefined)).toBeUndefined()
-    expect(toastOf({ status: "signed_out", role: null }, [failed()], undefined)).toBeUndefined()
-    expect(toastOf(undefined, [failed()], undefined)).toBeUndefined()
-  })
+test("a settings failure needs both a recorded status and time", () => {
+  expect(lastFailure([row(), failed({ failedAt: null })])).toBeUndefined()
 })
 
 describe("the words", () => {

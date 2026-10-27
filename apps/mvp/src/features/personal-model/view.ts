@@ -2,9 +2,9 @@ import { mayAsk, type Role } from "../auth/contract"
 import { MODEL_TIERS, type ModelTier } from "../model/contract"
 import { hostOf, type Protocol, PROTOCOLS, type Refusal, resolveTier, type SavedKey, TIER_FIELDS } from "./contract"
 import { codeText, LATE, OK, REFUSAL_COPY, REMOVING, SAVING, UNKNOWN } from "./copy"
-import type { Form, Hidden, PersonalModelRow, TestResult, TestRow } from "./schema"
+import type { Form, PersonalModelRow, TestResult, TestRow } from "./schema"
 
-// What the Your model section and its toast show, as pure rules their views read
+// What the Your model section show, as pure rules their views read
 // (docs/features/personal-model.md#the-settings-section). ChatApi is the authority on every write and on the rows;
 // these only decide which controls, values and words show, and what the form sends.
 
@@ -179,22 +179,3 @@ export const statusOf = (
 export const busy = (form: Form | undefined, test: TestRow | undefined): boolean =>
   (form !== undefined && onItsWay(form)) || test?.state === "testing"
 
-/** The toast a failure shows: its detail, `<host> · HTTP <status>`, and the `failedAt` its Hide marks. */
-export interface FailureToast {
-  readonly detail: string
-  readonly failedAt: string
-}
-
-/**
- * The failure toast: while one of the signed-in person's rows records a failure this device hasn't hidden, the latest.
- * Hiding marks that `failedAt`, so the next failure shows again.
- */
-export const toastOf = (
-  session: Reader | undefined,
-  rows: ReadonlyArray<PersonalModelRow>,
-  hidden: Hidden | undefined,
-): FailureToast | undefined => {
-  const failure = lastFailure(rows)
-  if (session?.status !== "signed_in" || failure === undefined || hidden?.failedAt === failure.failedAt) return undefined
-  return { detail: `${failure.host} · HTTP ${failure.status}`, failedAt: failure.failedAt }
-}

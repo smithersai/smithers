@@ -4,7 +4,7 @@ import { FlowDispatch } from "../../flows/dispatch"
 import { type ModelNotTaken, PersonalModelClient } from "./api"
 import { checkSave, type Refusal } from "./contract"
 import { record } from "./metrics"
-import { FORM, type Form, HIDDEN, type Sent, TEST } from "./schema"
+import { FORM, type Form, type Sent, TEST } from "./schema"
 import { PersonalModelStore } from "./store"
 import { lastFailure, latestUpdate, onItsWay, type SaveForm } from "./view"
 
@@ -203,13 +203,3 @@ export const test = Effect.gen(function* () {
   return true
 }).pipe(Effect.orDie)
 
-/** Hide on the failure toast: this device stops showing that failure; a later one shows again. */
-export const hide = (failedAt: string) =>
-  Effect.gen(function* () {
-    const { hidden } = yield* PersonalModelStore
-    if (Option.isSome(yield* hidden.get(HIDDEN))) yield* hidden.update(HIDDEN, (draft) => void (draft.failedAt = failedAt))
-    else yield* hidden.insert({ id: HIDDEN, failedAt })
-  }).pipe(
-    // A device collection refuses only a row its own schema rejects, which these never are: a bug, not a state.
-    Effect.orDie,
-  )
