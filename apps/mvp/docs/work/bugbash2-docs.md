@@ -1,9 +1,9 @@
 ---
 title: Bug bash W12 docs accuracy
-status: in-progress
+status: done
 area: docs
 owner: bb2-docs
-updated: 2026-10-26
+updated: 2026-10-27
 links: []
 ---
 
@@ -15,4 +15,4 @@ Coordination with bb2-notfound: the quickstart now distinguishes “Sign in to c
 
 Nine source regressions fail on the fetched baseline and pass on the changed source. Production specs: docs-site, docs-copy, docs and the scheduling navigation in issue-lifecycle. Production remains unchanged until the lander deploys the site and app and updates the hosted repository home.
 
-Latitude app typecheck, importRules and lint pass; 71 focused tests pass with 100% statements, branches, functions and lines on docs/contract.ts, issues/lifecycle.ts and personal-model/copy.ts. TSX/CSS remain outside configured instrumentation. Site typecheck, lint and 17 focused tests pass. The first root docs sync and check completed; all 51 published tarballs passed. Final root sync/check is running after the Node API documentation label fix. No mini run, deployment or changed-build production pass is claimed.
+Latitude app typecheck, importRules and lint pass; 71 focused tests pass with 100% statements, branches, functions and lines on docs/contract.ts, issues/lifecycle.ts and personal-model/copy.ts. TSX/CSS remain outside configured instrumentation. Site typecheck, lint and 17 focused tests pass. The first root docs sync and check completed; all 51 published tarballs passed. Final root sync/check also completed after the Node API documentation label fix: 51 tarballs passed, flow status completed, runner exit 0. No mini run, deployment or changed-build production pass is claimed.
