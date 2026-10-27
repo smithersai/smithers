@@ -137,3 +137,8 @@ test("waterfall accepts attempt segments, waits, children and replay cursor with
   expect(get('[data-slot="span-detail"]').textContent).toContain("Provider unavailable");
   expect(get('[role="tabpanel"][data-state="active"]').getAttribute("data-state")).toBe("active");
 });
+
+test("a skipped graph node uses the inspector's state word", async () => {
+  await render(<FlowGraph nodes={[{ id: "unused", label: "Collect", state: "skipped" }]} edges={[]} />);
+  expect(get('[data-node="unused"]').getAttribute("aria-label")).toBe("Collect, Skipped");
+});

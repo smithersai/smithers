@@ -149,3 +149,5 @@ import { isTerminalRunStatus, statusClass } from "@smthrs/ui/status"
 - [API reference](../api.md): the full export list.
 
 A failed `StepInspector` shows its recorded attempt reasons above the tabs.
+
+`GraphNode.state` accepts `skipped` for journal-confirmed unrun branches.

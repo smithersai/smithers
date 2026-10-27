@@ -3,7 +3,7 @@ export interface GraphNode {
   readonly id: string;
   readonly label: string;
   readonly kind?: string;
-  readonly state: "next" | "current" | "done" | "failed" | "waiting" | "cancelled";
+  readonly state: "next" | "current" | "done" | "failed" | "waiting" | "cancelled" | "skipped";
 }
 export interface GraphEdge {
   readonly from: string;

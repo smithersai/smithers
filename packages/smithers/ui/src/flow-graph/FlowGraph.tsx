@@ -2,6 +2,7 @@
 import { useCallback, useId, useRef, useState, type ComponentProps } from "react";
 import { Button } from "../button";
 import { cn } from "../cn";
+import { STEP_WORDS, STEP_GLYPHS } from "../run-page/runPage";
 import { useInjectUiCss } from "../styles";
 import { fitGraph, graphNeighbour, type GraphEdge, type GraphNode } from "./graphLayout";
 
@@ -12,8 +13,8 @@ export type FlowGraphProps = Omit<ComponentProps<"div">, "onSelect" | "children"
   onSelect?: (id: string) => void;
   onInspect?: (id: string) => void;
 };
-const words = { next: "Queued", current: "Working", done: "Done", failed: "Failed", waiting: "Waiting", cancelled: "Stopped" };
-const glyphs = { next: "○", current: "◌", done: "✓", failed: "✕", waiting: "◷", cancelled: "■" };
+const words = { next: STEP_WORDS.pending, current: STEP_WORDS.running, done: STEP_WORDS.completed, failed: STEP_WORDS.failed, waiting: STEP_WORDS.waiting, cancelled: STEP_WORDS.cancelled, skipped: STEP_WORDS.skipped };
+const glyphs = { next: "○", current: "◌", done: "✓", failed: "✕", waiting: "◷", cancelled: "■", skipped: STEP_GLYPHS.skipped };
 /** A read-only view of recorded graph data. All selection belongs to the host. */
 export function FlowGraph({ nodes, edges, selected = null, onSelect, onInspect, className, ...props }: FlowGraphProps) {
   useInjectUiCss();

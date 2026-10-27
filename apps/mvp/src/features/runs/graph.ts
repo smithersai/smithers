@@ -261,7 +261,9 @@ export const graphOf = (page: RunPage, at: number | null, now: number, pathOf: (
       state: wait.row.state === "cancelled" ? "cancelled" : "waiting"
     }))
   ]
-  const shownNodes = nodes.map((node) => stoppedAt !== null && (node.state === "current" || node.state === "waiting")
+  const shownNodes = nodes.map((node) => steps.find((step) => step.row.id === node.id)?.row.state === "skipped"
+    ? { ...node, state: "skipped" as const }
+    : stoppedAt !== null && (node.state === "current" || node.state === "waiting")
     ? { ...node, state: "cancelled" as const }
     : node)
   return { nodes: shownNodes, edges, steps: [...steps, ...cells, ...waits], timeline, segments, events, time, trace }

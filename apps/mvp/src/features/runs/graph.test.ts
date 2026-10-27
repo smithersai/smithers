@@ -254,6 +254,7 @@ test("a queued step is distinct from a branch the journal skipped", () => {
   expect(graphOf(page(), 2, 2000).steps[1]!.row.state).toBe("pending")
   const skipped = event(5, "flows.engine.node-settled", { nodeId: "b", outcome: "skipped", attempts: 1 })
   expect(graphOf(page({}, [skipped]), null, 2000).steps[1]!.row.state).toBe("skipped")
+  expect(graphOf(page({}, [skipped]), null, 2000).nodes[1]!.state).toBe("skipped")
 })
 
 test("recorded sleep segments retain historical waits after the current run has moved on", () => {
