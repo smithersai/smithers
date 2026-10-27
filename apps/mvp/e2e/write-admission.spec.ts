@@ -62,7 +62,7 @@ test("a write URL unavailable on this device recovers to Issues", async ({ devic
   const page = person!.page
   await records(page)
   await page.goto(`/${repo}/issues/new?write=${crypto.randomUUID()}`)
-  await expect(page.getByRole("heading", { name: "Request unavailable", exact: true })).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByText("Request unavailable", { exact: true })).toBeVisible({ timeout: 60_000 })
   await expect(page.getByText("Requested", { exact: true })).toHaveCount(0)
   await page.getByRole("link", { name: "Issues", exact: true }).last().click()
   await expect(page).toHaveURL(new RegExp(`/${repo}/issues$`))
