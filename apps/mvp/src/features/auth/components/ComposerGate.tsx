@@ -5,7 +5,6 @@ import type { ReactNode } from "react"
 import { usePersonalModel } from "../../personal-model/components/PersonalModelContext"
 import { ADD_YOUR_MODEL, composerAccess, MEMBERS_ASK, OPEN_SETTINGS, type OwnModel, SIGN_IN_TO_ASK } from "../contract"
 import { useAuth } from "./AuthContext"
-import { SignInButton } from "./SignInButton"
 
 // Asking Smithers is for Members and above (decision 0007 §2, `repo:ask`; decision 0008 §11): the composer for them,
 // even offline after a reload; a short line for a signed-in Guest or a person with no role; and the sign-in prompt for
@@ -27,7 +26,7 @@ export function ComposerGate({ children }: { readonly children: ReactNode }) {
     case "members_only":
       return <EmptyState title={MEMBERS_ASK} />
     case "sign_in":
-      return <EmptyState title={SIGN_IN_TO_ASK} action={<SignInButton />} />
+      return <EmptyState title={SIGN_IN_TO_ASK} />
     case "add_model":
       return (
         <EmptyState
