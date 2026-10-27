@@ -2,7 +2,7 @@
 import { act, createElement } from "react"
 import { createRoot } from "react-dom/client"
 import { expect, test } from "vitest"
-import { PageFocus } from "../src/features/navigation/components/PageFocus"
+import { PageFocus } from "@smthrs/ui"
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 

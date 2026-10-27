@@ -969,3 +969,5 @@ export * from "./flow-graph";
 
 export { ChatTimeline, timelineKey, timelineLabel, timelineCapacity, timelineLevelCount, timelineLevels, type TimelineBlock, type TimelineLevel, type ChatTimelineEntry, type ChatTimelineProps } from "./chat/ChatTimeline";
 export { NotFound, type NotFoundProps } from "./not-found";
+
+export { PageFocus } from "./page-focus";
