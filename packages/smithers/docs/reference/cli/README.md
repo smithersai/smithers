@@ -343,6 +343,9 @@ count (`--keep`); `--dry-run` previews it.
 role and text. When `--at` is omitted, a retry keeps the saved timestamp;
 an explicitly different `--at` is a conflict.
 
+`triggers register --input` requires valid JSON. `--file` must name a readable
+JSON trigger declaration; syntax and file errors identify that flag and file.
+
 Credential encryption requires `SMITHERS_CREDENTIAL_KEY`, a base64-encoded
 32-byte host key. Keep that key outside the database. Integrations read
 `.smithers/integrations.json` (version 1 with an `integrations` array), or

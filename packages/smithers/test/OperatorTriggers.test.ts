@@ -33,6 +33,29 @@ const serve = async (root: string, args: ReadonlyArray<string>) => {
 }
 
 describe("trigger CLI", () => {
+  it("reports an unexpected declaration read failure without registering a trigger", async () => {
+    const directory = await root()
+    await Fs.symlink("loop.json", Path.join(directory, "loop.json"))
+    const result = await serve(directory, ["register", "daily", "--file", "loop.json"])
+    expect(result.code).toBe(1)
+    expect(result.data.code).toBe("operator_failed")
+    expect(result.data.message).toContain("Something went wrong on our side")
+    expect((await serve(directory, ["list"])).data).toEqual([])
+  })
+
+  it("classifies invalid input JSON and missing or invalid declaration files as user errors", async () => {
+    const directory = await root()
+    await Fs.writeFile(Path.join(directory, "invalid.json"), "{not json")
+    for (const flags of [["--input", "{not json"], ["--file", "nope.json"], ["--file", "invalid.json"]]) {
+      const result = await serve(directory, ["register", "daily", "--flow", "check", "--cron", "0 9 * * *", ...flags])
+      expect(result.code).toBe(1)
+      expect(result.data.message).toContain(flags[0])
+      if (flags[0] === "--file") expect(result.data.message).toContain(flags[1])
+      expect(result.output).not.toContain("Something went wrong on our side")
+    }
+    expect((await serve(directory, ["list"])).data).toEqual([])
+  })
+
   it("persists registrations and enablement across command invocations", async () => {
     const directory = await root()
     const registered = await serve(directory, [

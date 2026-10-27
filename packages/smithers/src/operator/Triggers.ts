@@ -21,6 +21,28 @@ import * as TriggerPlans from "./TriggerPlans.ts"
 const refused = (message: string, fault: CliError.Fault = "user"): CliError.Refused =>
   new CliError.Refused({ fault, code: "operator_failed", message })
 
+const jsonInput = (text: string, flag: string): unknown => {
+  try {
+    return JSON.parse(text)
+  } catch {
+    throw refused(`${flag} must contain valid JSON`)
+  }
+}
+
+const declarationFile = (root: string, file: string): unknown => {
+  let text: string
+  try {
+    text = readFileSync(resolve(root, file), "utf8")
+  } catch (cause) {
+    // The resolved filename is a string; Node's read errors always carry a code.
+    if (["ENOENT", "ENOTDIR", "EISDIR", "EACCES", "EPERM"].includes((cause as NodeJS.ErrnoException).code!)) {
+      throw refused(`Cannot read --file ${JSON.stringify(file)}`)
+    }
+    throw cause
+  }
+  return jsonInput(text, `--file ${JSON.stringify(file)}`)
+}
+
 // Every operator command reports failures as operator_failed.
 const execute = <A>(context: Presentation.Failing, body: () => Promise<A>) =>
   Presentation.guard(context, body, {
@@ -135,14 +157,14 @@ export const createTriggersCli = (runtime: { readonly signal?: AbortSignal | und
               id: context.args.id,
               flowId: context.options.flow,
               cron: context.options.cron,
-              input: JSON.parse(context.options.input),
+              input: jsonInput(context.options.input, "--input"),
               timezone: context.options.timezone,
               overlap: context.options.overlap,
               catchUp: context.options.catchUp,
               maxCatchUp: context.options.maxCatchUp,
               enabled: context.options.enabled
             } :
-            JSON.parse(readFileSync(resolve(localRoot(context.options), context.options.file), "utf8"))
+            declarationFile(localRoot(context.options), context.options.file)
           return withTriggers(
             context.options,
             Effect.gen(function*() {
