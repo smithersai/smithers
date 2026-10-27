@@ -244,9 +244,15 @@ export const graphOf = (page: RunPage, at: number | null, now: number, pathOf: (
       }
     }
   }
-  const timeline = [...steps.filter((step) => step.attempts.length > 0), ...cells, ...waits]
+  // Alternative cleanup branches declare the same action twice. Once the journal
+  // proves which branch ran, keep that occurrence instead of a second skipped node.
+  const occurrence = (step: PageStep) => `${step.row.id.slice(0, step.row.id.lastIndexOf(":"))}:${step.row.label}`
+  const executed = new Set(steps.filter((step) => step.row.state !== "skipped" && step.row.state !== "pending").map(occurrence))
+  const visibleSteps = steps.filter((step) => step.row.state !== "skipped" || step.row.label !== "ci/job/Release" || !executed.has(occurrence(step)))
+  const visibleIds = new Set(visibleSteps.map((step) => step.row.id))
+  const timeline = [...visibleSteps.filter((step) => step.attempts.length > 0), ...cells, ...waits]
   const segments = [
-    ...steps.flatMap((step) =>
+    ...visibleSteps.flatMap((step) =>
       step.attempts.map((a) => ({
         stepId: step.row.id,
         startedAtMs: a.startedAtMs,
@@ -261,10 +267,10 @@ export const graphOf = (page: RunPage, at: number | null, now: number, pathOf: (
       state: wait.row.state === "cancelled" ? "cancelled" : "waiting"
     }))
   ]
-  const shownNodes = nodes.map((node) => steps.find((step) => step.row.id === node.id)?.row.state === "skipped"
+  const shownNodes = nodes.filter((node) => visibleIds.has(node.id)).map((node) => steps.find((step) => step.row.id === node.id)?.row.state === "skipped"
     ? { ...node, state: "skipped" as const }
     : stoppedAt !== null && (node.state === "current" || node.state === "waiting")
     ? { ...node, state: "cancelled" as const }
     : node)
-  return { nodes: shownNodes, edges, steps: [...steps, ...cells, ...waits], timeline, segments, events, time, trace }
+  return { nodes: shownNodes, edges: edges.filter((edge) => visibleIds.has(edge.from) && visibleIds.has(edge.to)), steps: [...visibleSteps, ...cells, ...waits], timeline, segments, events, time, trace }
 }

@@ -476,3 +476,37 @@ test("complete journal results retain debug fields instead of sealed outcome met
   expect(graphOf(missing, null, 2000).steps[0]!.output).toEqual(sealed)
   expect(graphOf({ ...missing, inspection: { ...missing.inspection!, steps: [] } }, null, 2000).steps[0]!.output).toBeNull()
 })
+
+test("alternative cleanup branches show the journal-selected occurrence once", () => {
+  const plan = event(1, "flows.engine.plan-recorded", { generation: 0, graph: { nodes: [
+    { id: "root", kind: "FlowCall", tier: "sealed", action: "flow/run", dependsOn: [] },
+    { id: "a", kind: "ActionCall", tier: "sealed", action: "ci/job/Release", dependsOn: ["root"] },
+    { id: "b", kind: "ActionCall", tier: "sealed", action: "ci/job/Release", dependsOn: ["a"] },
+    { id: "c", kind: "ActionCall", tier: "sealed", action: "Other", dependsOn: ["b"] },
+    { id: "d", kind: "ActionCall", tier: "sealed", action: "Other", dependsOn: [] },
+  ] } })
+  const data = page({ journal: { events: [plan, ...events.slice(1),
+    event(5, "flows.engine.node-settled", { nodeId: "b", outcome: "skipped", attempts: 1 }),
+    event(6, "flows.engine.node-settled", { nodeId: "c", outcome: "skipped", attempts: 1 }),
+  ], afterSeq: -1, nextSeq: 6, hasMore: false } })
+  const live = graphOf(data, null, 2000)
+  expect(live.nodes.filter((node) => node.label === "ci/job/Release")).toHaveLength(1)
+  expect(live.steps.filter((step) => step.row.label === "ci/job/Release")).toHaveLength(1)
+  expect(live.timeline.filter((step) => step.row.label === "ci/job/Release")).toHaveLength(1)
+  expect(live.nodes.filter((node) => node.label === "Other")).toHaveLength(2)
+  expect(live.edges).toEqual([])
+  expect(graphOf(data, 4, 2000).nodes.filter((node) => node.label === "ci/job/Release")).toHaveLength(2)
+})
+
+test("distinct skipped calls to the same ordinary action remain separate", () => {
+  const plan = event(1, "flows.engine.plan-recorded", { graph: { nodes: [
+    { id: "a", kind: "ActionCall", tier: "sealed", action: "Repeat", dependsOn: [] },
+    { id: "b", kind: "ActionCall", tier: "sealed", action: "Repeat", dependsOn: ["a"] },
+  ] } })
+  const data = page({ journal: { events: [plan, ...events.slice(1),
+    event(5, "flows.engine.node-settled", { nodeId: "b", outcome: "skipped", attempts: 1 }),
+  ], afterSeq: -1, nextSeq: 5, hasMore: false } })
+  const shown = graphOf(data, null, 2000)
+  expect(shown.nodes.map((node) => node.state)).toEqual(["done", "skipped"])
+  expect(shown.edges).toHaveLength(1)
+})
