@@ -74,7 +74,7 @@ test("byok first: no model shows Add your model; with one, the person's own mode
 
   await step("Fill Base URL, Key and Fast, then Save", async () => {
     await fillYourModel(section, page, { protocol: PROTOCOL, baseUrl: BASE_URL, key: KEY, tiers: { fast: MODEL } })
-    await expect(keyGroup(section, PROTOCOL).getByLabel("Key", { exact: true })).toHaveAttribute("placeholder", /····/, {
+    await expect(keyGroup(section, PROTOCOL).getByLabel(/compatible Key$/)).toHaveAttribute("placeholder", /····/, {
       timeout: SAVED_WITHIN,
     })
   })

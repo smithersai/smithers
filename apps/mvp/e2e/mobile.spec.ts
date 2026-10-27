@@ -385,8 +385,8 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           await expect(form).toBeVisible()
           for (const name of ["OpenAI-compatible", "Anthropic-compatible"]) {
             const group = form.getByRole("group", { name, exact: true })
-            await expect(group.getByRole("textbox", { name: "Base URL", exact: true })).toBeVisible()
-            await expect(group.getByLabel("Key", { exact: true })).toBeVisible()
+            await expect(group.getByRole("textbox", { name: `${name} Base URL`, exact: true })).toBeVisible()
+            await expect(group.getByLabel(`${name} Key`, { exact: true })).toBeVisible()
           }
           for (const tier of ["Fast", "Implement", "Hard"]) {
             const key = form.getByRole("combobox", { name: `${tier} key`, exact: true })

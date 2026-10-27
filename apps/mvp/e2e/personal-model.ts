@@ -38,8 +38,8 @@ export const fillYourModel = async (
   },
 ) => {
   const group = section.getByRole("group", { name: PROTOCOL_LABEL[fill.protocol], exact: true })
-  await group.getByLabel("Base URL", { exact: true }).fill(fill.baseUrl)
-  await group.getByLabel("Key", { exact: true }).fill(fill.key)
+  await group.getByLabel(`${PROTOCOL_LABEL[fill.protocol]} Base URL`, { exact: true }).fill(fill.baseUrl)
+  await group.getByLabel(`${PROTOCOL_LABEL[fill.protocol]} Key`, { exact: true }).fill(fill.key)
   for (const [tier, model] of Object.entries(fill.tiers) as Array<[ModelTier, string]>) {
     await section.getByLabel(TIER_LABEL[tier], { exact: true }).fill(model)
     await section.getByRole("combobox", { name: tierKeyLabel(tier), exact: true }).click()

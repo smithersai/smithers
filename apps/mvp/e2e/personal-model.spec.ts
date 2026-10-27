@@ -33,7 +33,7 @@ test("your model: tiers on a key show after a reload; a refused key names the pr
   const section = page.getByRole("region", { name: "Your model" })
   const status = section.getByRole("status")
   const remove = section.getByRole("button", { name: "Remove" })
-  const keyField = keyGroup(section, PROTOCOL).getByLabel("Key", { exact: true })
+  const keyField = keyGroup(section, PROTOCOL).getByLabel(/compatible Key$/)
 
   /**
    * Fills the key's Base URL and Key, Fast and Implement on it, and saves: the key goes in one request, and the form

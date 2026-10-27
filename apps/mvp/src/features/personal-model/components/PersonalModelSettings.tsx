@@ -88,6 +88,7 @@ export function PersonalModelSettings({ canSave }: { readonly canSave: boolean }
                 <Label htmlFor={`personal-model-${protocol}-base-url`}>{BASE_URL}</Label>
                 <Input
                   id={`personal-model-${protocol}-base-url`}
+                  aria-label={`${PROTOCOL_LABEL[protocol]} ${BASE_URL}`}
                   name={FIELDS.baseUrl(protocol)}
                   type="text"
                   inputMode="url"
@@ -102,6 +103,7 @@ export function PersonalModelSettings({ canSave }: { readonly canSave: boolean }
                 <Label htmlFor={`personal-model-${protocol}-key`}>{KEY}</Label>
                 <Input
                   id={`personal-model-${protocol}-key`}
+                  aria-label={`${PROTOCOL_LABEL[protocol]} ${KEY}`}
                   name={FIELDS.key(protocol)}
                   type="password"
                   autoComplete="off"

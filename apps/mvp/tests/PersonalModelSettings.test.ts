@@ -253,3 +253,12 @@ test("Test submits the visible draft, including unsaved keys, only to the synchr
   }])
   expect(tab.saved).toEqual([])
 })
+
+
+test("provider fields have distinct accessible names without relying on group context", async () => {
+  const tab = await section([])
+  for (const [protocol, label] of [["openai-chat", "OpenAI-compatible"], ["anthropic-messages", "Anthropic-compatible"]]) {
+    expect(tab.input(`personal-model-${protocol}-base-url`).getAttribute("aria-label")).toBe(`${label} Base URL`)
+    expect(tab.input(`personal-model-${protocol}-key`).getAttribute("aria-label")).toBe(`${label} Key`)
+  }
+})
