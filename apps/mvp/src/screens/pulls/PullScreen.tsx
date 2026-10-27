@@ -1,11 +1,10 @@
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
-import { Badge, Button, EmptyState, ItemConversation, LinkTabs, RunList } from "@smthrs/ui"
+import { Badge, Button, EmptyState, NotFound, ItemConversation, LinkTabs, RunList } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link, useParams } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
 import { SignInButton } from "../../features/auth/components/SignInButton"
 import { useIssues } from "../../features/issues/components/IssuesContext"
-import { NOT_FOUND } from "../../features/issues/contract"
 import { pageOf } from "../../features/issues/view"
 import { usePulls } from "../../features/pulls/components/PullsContext"
 import { githubPullUrl, type PullTab, pullTabPath } from "../../features/pulls/contract"
@@ -41,7 +40,7 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
   const back = <Button asChild variant="ghost"><Link to="/$owner/$repo/pulls" params={{ owner, repo }}>Pull requests</Link></Button>
   const page = pageOf(pull, synced, pullReady && view?.installed === true, syncedReady, pageAccess)
   if (page === "sign_in") return <main className="pulls-screen"><RepoHeader />{back}<SignInButton /></main>
-  if (page === "missing") return <main className="pulls-screen"><RepoHeader />{back}<EmptyState title={NOT_FOUND} /></main>
+  if (page === "missing") return <main className="pulls-screen"><RepoHeader /><NotFound title="Pull request not found" back={back} /></main>
 
   if (page === "unknown") return (
     <main className="pulls-screen"><RepoHeader />{back}

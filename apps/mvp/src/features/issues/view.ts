@@ -184,6 +184,8 @@ export const pageOf = (
     ? "missing"
     : item !== undefined
     ? "shown"
+    : access?.status === "elsewhere"
+    ? "unknown"
     : access?.status === "unavailable" && access.installed !== true
     ? "unknown"
     : !itemReady || !syncedReady || access?.installed !== true

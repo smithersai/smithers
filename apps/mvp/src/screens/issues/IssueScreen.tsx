@@ -1,5 +1,5 @@
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
-import { Button, EmptyState, ItemAsideSection, ItemConversation, Kbd, TriageControl } from "@smthrs/ui"
+import { Button, EmptyState, NotFound, ItemAsideSection, ItemConversation, Kbd, TriageControl } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
@@ -9,7 +9,7 @@ import { useIssues } from "../../features/issues/components/IssuesContext"
 import { useTodos } from "../../features/todos/components/TodosContext"
 import { MAKE_TODO, MAKE_TODO_KEY, TODO } from "../../features/todos/contract"
 import { mayChange, mayMakeTodo, todosByIssue } from "../../features/todos/view"
-import { DISCARD, EDIT, githubIssueUrl, NOT_FOUND } from "../../features/issues/contract"
+import { DISCARD, EDIT, githubIssueUrl } from "../../features/issues/contract"
 import {
   conversationProps,
   draftOf,
@@ -52,7 +52,7 @@ export function IssueScreen() {
   const back = <Button asChild variant="ghost"><Link to="/$owner/$repo/issues" params={{ owner, repo }}>Issues</Link></Button>
   const page = pageOf(item, synced, itemReady, syncedReady, access)
   if (page === "sign_in") return <main className="issues-screen"><RepoHeader />{back}<SignInButton /></main>
-  if (page === "missing") return <main className="issues-screen"><RepoHeader />{back}<EmptyState title={NOT_FOUND} /></main>
+  if (page === "missing") return <main className="issues-screen"><RepoHeader /><NotFound title="Issue not found" back={back} /></main>
 
   if (page === "unknown") return (
     <main className="issues-screen"><RepoHeader />{back}

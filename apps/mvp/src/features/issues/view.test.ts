@@ -376,3 +376,22 @@ test("commitment chips reflect GitHub labels and preserve a conflict", () => {
   }
   for (const commitment of [null, undefined, "wrong"]) expect(issueOf({ ...synced, commitment }).labels).toBeUndefined()
 })
+
+
+test("an item outside this deployment's sync settles without inventing absence", () => {
+  for (const itemReady of [false, true]) {
+    for (const syncedReady of [false, true]) {
+      expect(pageOf(undefined, undefined, itemReady, syncedReady, { status: "elsewhere" })).toBe("unknown")
+      expect(pageOf({ number: 1 }, undefined, itemReady, syncedReady, { status: "elsewhere" })).toBe("shown")
+    }
+  }
+})
+
+
+test("unavailable item transport settles or retains only a completely installed source", () => {
+  for (const installed of [undefined, false, true]) {
+    const access = installed === undefined ? { status: "unavailable" } : { status: "unavailable", installed }
+    expect(pageOf(undefined, undefined, true, true, access)).toBe("unknown")
+    expect(pageOf(undefined, { syncedAt: "x" }, true, true, access)).toBe(installed === true ? "missing" : "unknown")
+  }
+})
