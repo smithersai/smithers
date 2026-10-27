@@ -58,6 +58,12 @@ test("Conversation timeline: scroll, jump by key and receive durable summaries",
     await expect(preview).toBeVisible()
     await expect(preview).toContainText("Person")
     await expect(preview).toContainText("Enter to jump")
+    const transcript = (await a.conversation.boundingBox())!
+    const box = (await preview.boundingBox())!
+    expect(box.x).toBeGreaterThanOrEqual(0)
+    expect(box.x + box.width).toBeLessThanOrEqual(transcript.x)
+    await expect(first.locator("span")).toHaveCSS("white-space", "nowrap")
+    await expect(first.locator("span")).toHaveCSS("overflow", "hidden")
     await a.page.mouse.move(1100, 20)
     await expect(preview).toBeHidden()
     await first.focus()

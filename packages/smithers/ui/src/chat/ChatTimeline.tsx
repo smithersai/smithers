@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { type CSSProperties, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { timelineLevels, type TimelineBlock } from "./timelineZoom";
 export { timelineCapacity, timelineLevelCount, timelineLevels, type TimelineBlock, type TimelineLevel } from "./timelineZoom";
 import { useInjectUiCss } from "../styles";
@@ -104,7 +104,7 @@ export function ChatTimeline({ entries, onJump, onActivate, groupSummaries = {},
     target.scrollIntoView({ block: "center", behavior: "instant" });
   };
   return <nav ref={rail} className="sui-chat-timeline" aria-label="Conversation timeline">
-    {[...levels].reverse().map(level => <ol key={level.level} data-level={level.level} aria-label={`Zoom level ${level.level}`}>
+    {[...levels].reverse().map((level, column) => <ol key={level.level} data-level={level.level} aria-label={`Zoom level ${level.level}`} style={{ "--sui-timeline-column": column, "--sui-timeline-columns": levels.length } as CSSProperties}>
       <i className="sui-timeline-band" aria-hidden="true" style={{ top: `${level.band.top * 100}%`, height: `${level.band.height * 100}%` }} />
       {level.blocks.map((block, index) => {
         const members = entries.slice(block.start, block.end);

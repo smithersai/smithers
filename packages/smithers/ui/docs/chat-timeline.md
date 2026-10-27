@@ -13,3 +13,5 @@ Native buttons activate with Enter or Space. Arrow keys and J/K move to the neig
 `timelineKey` and `timelineLabel` are pure helpers. Supply `label` with the recorded object and outcome while a summary is unavailable. A nonempty `summary` takes precedence over `label`; legacy callers without either retain state labels. Its host must invalidate summaries when entry content changes and must never supply secrets as labels or summaries.
 
 Zoom levels share a horizontal flex row on desktop, with blocks distributed vertically within each level. `onGroupsChange` reports changed visible groups; an inline callback may update parent summaries without requesting the same groups again. Enabling the callback requests the current groups.
+
+Each zoom column shows its label. Compact row labels use an ellipsis instead of splitting words or painting outside their boxes; focus or hover reveals the full summary. Desktop previews remain within the rail beside the transcript.
