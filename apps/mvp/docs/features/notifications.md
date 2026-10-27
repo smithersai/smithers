@@ -180,3 +180,5 @@ An empty panel, including a visitor's, says `No notifications`. Empty spend-aler
 Commit entries open the tree at their recorded revision, including entries synced before this change; later pushes cannot change that destination.
 
 Failed clones keep their reason and Retry in the panel, without an Open link to a repository that could not be imported. Notification rows open their subject directly; Details and E expand other entries.
+
+The panel contains the full synced list and scrolls independently; its unread count excludes read entries. Timeline previews format recorded times for the viewer instead of showing database timestamp strings.

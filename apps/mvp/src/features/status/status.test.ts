@@ -12,6 +12,7 @@ import { dispatches } from "../../flows/dispatch"
 import { nodeDevice, openFaultyTab, openTab, openTestApp, TestChatApi } from "../../test/chatApi"
 import { plain } from "../../test/deviceFixture"
 import { EngineFaults } from "../../test/faults"
+import { renderHeaderStatus } from "./header-render"
 import { Status } from "./status"
 import { shown, StatusStore } from "./store"
 
@@ -268,5 +269,8 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
     ;(await Effect.runPromise(api.answerTo("Fail, please"))).fail()
     await until(() => expect(a.statusOf(answerId)?.state).toBe("failed"))
     expect(a.latest()).toMatchObject({ id: answerId, state: "failed" })
+    const header = await renderHeaderStatus(a.chat, a.status)
+    expect(header).toContain(`href="/app/runs/${answerId}"`)
+    expect(header).toContain("Answer failed — view run")
   })
 })

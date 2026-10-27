@@ -151,3 +151,5 @@ committed records; the crashed incarnation cannot flush pending records into it.
 | `worker/Runs.test.ts` | Every route and status, the CHECK-backed transitions, the shape's filter and columns, records without the question or answer |
 | `packages/smithers/ui/tests/agent-status.test.tsx` | The pill, the card, the toasts and the title |
 | `e2e/status.spec.ts` | In real browsers: the scripted agent asks; the card, the top bar's bell, toast and title show it on two devices; the second device answers from the toast; the first device's run goes on; and a real-model run on two devices, locally or on the deployment's own branch: card, toast, bell and title on both, Hide on B clears both toasts while entries stay listed, and answering teal on B resumes A's run |
+
+A failed header pill links to the failed answer's run, with the accessible name “Answer failed — view run”.

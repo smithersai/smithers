@@ -1,4 +1,5 @@
 import { AgentStatusPill } from "@smthrs/ui"
+import { Link } from "@tanstack/react-router"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useChat } from "../../../AppContext"
 import { useStatus } from "./StatusContext"
@@ -10,5 +11,10 @@ export function HeaderStatus() {
   const { data: place } = useLiveQuery(useChat().queries.place)
   const { data: latest } = useLiveQuery(useStatus().queries.of(place?.conversationId).latest)
   const state = latest[0]?.state
-  return state === "working" || state === "waiting" || state === "failed" ? <AgentStatusPill state={state} /> : null
+  if (state === "failed") return (
+    <Link to="/app/runs/$runId" params={{ runId: latest[0]!.id }} aria-label="Answer failed — view run">
+      <AgentStatusPill state="failed" />
+    </Link>
+  )
+  return state === "working" || state === "waiting" ? <AgentStatusPill state={state} /> : null
 }

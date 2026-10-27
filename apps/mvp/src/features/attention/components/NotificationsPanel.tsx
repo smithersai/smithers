@@ -11,7 +11,7 @@ import type { Detail, Entry } from "../schema"
 import { useAttention } from "./AttentionContext"
 
 // The notifications panel (decision 0009, docs/features/notifications.md#the-panel), on every page: the person's
-// entries newest first, unread ones dotted. Clicking an entry expands it in place: the run's last steps, its question
+// entries newest first, unread ones dotted. A row opens its subject; Details expands the run's last steps, its question
 // with Answer, why it failed with Retry, or who pushed or published; Open goes there. The bell, `+N`, a toast's E and
 // Alt+N open it; Escape, × or a click outside close it.
 export function NotificationsPanel() {
