@@ -305,6 +305,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
         getKey: byId,
         shape: shape(ITEM_SUMMARIES_SHAPE_ROUTE, id),
         ...kept,
+        persist: { schemaVersion: 2 },
       }).pipe(Effect.provideService(ShapeSource.ShapeSource, guarded))
       const bodyDemand = ShapeSource.gated(source, Stream.zipLatestWith(
         authority,

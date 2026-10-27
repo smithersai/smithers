@@ -16,3 +16,6 @@
 @media (max-width: 60rem) {
   .pulls-screen > .sui-button { align-self: flex-start; }
 }
+
+.pulls-screen .list-search-tools { display: flex; align-items: center; gap: 0.5rem; }
+.pulls-screen .list-search-tools input { flex: 1; min-width: 0; }

@@ -26,6 +26,7 @@ export const listQuery = (view: View, items: Synced<ItemSummary>, pulls: Synced<
         state: item.state,
         author: Query.coalesce(item.authorLogin, ""),
         comments: item.comments,
+        createdAt: item.createdAt,
         updatedAt: item.updatedAt,
         draft: Query.coalesce(pull?.draft, false),
         merged: Query.coalesce(pull?.merged, false),

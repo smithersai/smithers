@@ -55,7 +55,7 @@ export const ITEM_COLUMNS = [
 
 /** List and home columns: every visible fact, without detail text. */
 export const ITEM_SUMMARY_COLUMNS = ITEM_COLUMNS.filter((column) =>
-  !["body", "github_id", "state_reason", "created_at", "closed_at", "triage_pinned"].includes(column))
+  !["body", "github_id", "state_reason", "closed_at", "triage_pinned"].includes(column))
 
 /** The `comments` columns a device syncs. */
 export const COMMENT_COLUMNS = [

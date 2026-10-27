@@ -332,3 +332,5 @@ Create issue stays with its request instead of returning to the list. Once the d
 Missing item details use the shared not-found view, naming Issue or Pull request and linking to its list. A repository this deployment does not sync settles as unavailable here with the GitHub source link; it never waits for a sync that cannot arrive or claims absence without a source receipt.
 
 The No commitment list includes issues with no commitment label as well as the explicit `smithers:commit-none` label. Setting a commitment still requires acceptance and a Maintainer; empty Now, Next and Later lists do not imply triage acceptance.
+
+Issue and pull request lists search synced titles and numbers locally with `?q=`. `?sort=newest|oldest|updated` orders by creation or update date and displays that same date; Recently updated is the default. Pending issue writes stay first. Search, sort and commitment filters can be combined and shared by URL.

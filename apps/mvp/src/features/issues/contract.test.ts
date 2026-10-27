@@ -2,6 +2,7 @@
 // and the GitHub flows share.
 import { describe, expect, test } from "vitest"
 import {
+  ITEM_SUMMARY_COLUMNS,
   agentAttribution,
   applyExecutionId,
   commentDraftKey,
@@ -153,4 +154,10 @@ describe("triage", () => {
     }
     expect(triageRunExecutionId("d-1")).toBe("triage-run:d-1")
   })
+})
+
+
+test("list summaries include their creation date for chronological sorting", () => {
+  expect(ITEM_SUMMARY_COLUMNS).toContain("created_at")
+  expect(ITEM_SUMMARY_COLUMNS).not.toContain("body")
 })

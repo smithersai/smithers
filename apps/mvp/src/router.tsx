@@ -30,6 +30,7 @@ import { PullScreen } from "./screens/pulls/PullScreen"
 import { PullsScreen } from "./screens/pulls/PullsScreen"
 import { StackScreen } from "./screens/stack/StackScreen"
 import { TodoScreen } from "./screens/stack/TodoScreen"
+import { listSearch } from "./features/issues/list"
 import { commitmentSearch } from "./features/issues/lifecycle"
 import { ActionRunScreen } from "./screens/actions/ActionRunScreen"
 import { ActionsScreen } from "./screens/actions/ActionsScreen"
@@ -460,7 +461,7 @@ const issuesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/$owner/$repo/issues",
   component: IssuesScreen,
-  validateSearch: commitmentSearch,
+  validateSearch: (search) => ({ ...commitmentSearch(search), ...listSearch(search) }),
   beforeLoad: ({ context, params, ...load }) =>
     enterRepository(context, params,
       load,
@@ -534,6 +535,7 @@ const pullsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/$owner/$repo/pulls",
   component: PullsScreen,
+  validateSearch: listSearch,
   beforeLoad: ({ context, params, ...load }) =>
     enterRepository(context, params, load, () => context.pulls.actions.warm(params.owner, params.repo), () => context.pulls.actions.open(params.owner, params.repo)),
 })

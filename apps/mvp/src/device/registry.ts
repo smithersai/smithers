@@ -177,7 +177,7 @@ const synced = [
   // Version 2: an approval's answer may carry a note (`Decision`).
   Migrations.synced({ id: "runs", version: 2, schema: Run }),
   Migrations.synced({ id: "repo-repositories", version: 4, schema: Repository }),
-  Migrations.synced({ id: "issue-summaries", version: 1, schema: ItemSummary, family: true }),
+  Migrations.synced({ id: "issue-summaries", version: 2, schema: ItemSummary, family: true }),
   Migrations.synced({ id: "issue-items", version: 3, schema: Item, family: true }),
   Migrations.synced({ id: "issue-comments", version: 1, schema: Comment, family: true }),
   Migrations.synced({ id: "issue-sync", version: 1, schema: SyncRow, family: true }),

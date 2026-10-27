@@ -19,3 +19,6 @@
   .issues-screen > p > a { display: inline-flex; align-items: center; min-height: 32px; }
 }
 
+
+.issues-screen .list-search-tools { display: flex; align-items: center; gap: 0.5rem; }
+.issues-screen .list-search-tools input { flex: 1; min-width: 0; }

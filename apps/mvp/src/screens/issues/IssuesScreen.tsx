@@ -1,7 +1,8 @@
+import { visibleRows } from "../../features/issues/list"
 import { githubList } from "../../features/repo/scope"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
 import { HomeTabs } from "../../features/home/components/HomeTabs"
-import { Badge, Button, EmptyState, IssuesView } from "@smthrs/ui"
+import { Badge, Button, EmptyState, Input, IssuesView } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
@@ -48,7 +49,7 @@ export function IssuesScreen() {
   const navigate = useNavigate()
   const search = useSearch({ from: "/$owner/$repo/issues" })
   const list = listProps(rows ?? [], synced, access, triage !== undefined && !triage.paused)
-  const visible = listProps(filterCommitment(rows ?? [], search.commitment), synced, access, triage !== undefined && !triage.paused).issues
+  const visible = listProps(visibleRows(filterCommitment(rows ?? [], search.commitment), search), synced, access, triage !== undefined && !triage.paused).issues
   const triageSwitch = triageSwitchOf(triage, triagePending ?? [])
   // The full-screen size of the repository's issues view in the chat (ruling FE-9): Back to chat minimizes it.
   const header = <RepoHeader backTarget={{ template: "issues", props: { repo: `${owner}/${repo}` } }} />
@@ -67,13 +68,21 @@ export function IssuesScreen() {
       <nav aria-label="Commitment">
         {[undefined, ...COMMITMENTS].map((commitment) => (
           <Button key={commitment ?? "all"} variant={search.commitment === commitment ? "secondary" : "ghost"} size="sm" asChild>
-            <Link to="/$owner/$repo/issues" params={{ owner, repo }} search={{ commitment }} aria-current={search.commitment === commitment ? "page" : undefined}>
+            <Link to="/$owner/$repo/issues" params={{ owner, repo }} search={{ ...search, commitment }} aria-current={search.commitment === commitment ? "page" : undefined}>
               {commitment === undefined ? "All" : COMMITMENT_COPY[commitment]}
             </Link>
           </Button>
         ))}
       </nav>
       {(list.unknown || !isReady) ? <p role="status" data-list-sync="">Syncing issues…</p> : null}
+      <div className="list-search-tools" role="search" aria-label="Search issues">
+        <Input aria-label="Search issues" placeholder="Search issues" value={search.q ?? ""}
+          onChange={(event) => void navigate({ to: "/$owner/$repo/issues", params: { owner, repo }, search: { ...search, q: event.currentTarget.value }, replace: true, resetScroll: false })} />
+        <select aria-label="Sort" value={search.sort ?? "updated"}
+          onChange={(event) => void navigate({ to: "/$owner/$repo/issues", params: { owner, repo }, search: { ...search, sort: event.currentTarget.value as "newest" | "oldest" | "updated" }, resetScroll: false })}>
+          <option value="newest">Newest</option><option value="oldest">Oldest</option><option value="updated">Recently updated</option>
+        </select>
+      </div>
       <IssuesView
         repo={`${owner}/${repo}`}
         size="full"
