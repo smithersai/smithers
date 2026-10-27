@@ -1,3 +1,4 @@
+import { applyDocumentLocale } from "./documentLocale"
 import { hostRecords, thrownName } from "./hostRecords"
 import { watchInstalls, watchUpdates } from "./pwa"
 import { SmithersUiStyles } from "@smthrs/ui"
@@ -53,6 +54,9 @@ markStage(performance, "page")
 // The build this bundle is, which vite.config.ts names from the deployed revision (`version.json` beside the app);
 // `dev` under the dev server and wherever the build named none.
 declare const __SMITHERS_BUILD__: string | undefined
+applyDocumentLocale(document.documentElement, navigator.language)
+window.addEventListener("languagechange", () => applyDocumentLocale(document.documentElement, navigator.language))
+
 const BUILD = typeof __SMITHERS_BUILD__ === "string" ? __SMITHERS_BUILD__ : "dev"
 
 // The page: `start` runs the app's one program, and React renders the chat, sign-in, theme, repository and slash-command
