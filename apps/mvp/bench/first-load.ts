@@ -18,11 +18,12 @@ const CONTENT_TIMEOUT_MS = 60_000
 
 /**
  * The budgets, in milliseconds from navigation, for the median cold visit: first contentful paint, and the route's
- * first meaningful content (its heading). On 2026-10-25 smithers.sh measured 8.3 to 8.7 s for both before decision 0108,
- * and its build 2.1 and 3.1 s with assets served locally: the budget fails a regression of the boot, not the network's
- * noise.
+ * first meaningful content (its heading). On 2026-10-25 smithers.sh measured 8.3 to 8.7 s for both before decision 0108.
+ * On 2026-10-26 the build before decision 0117 measured 2.3 and 3.3 s with assets served locally over HTTP/2, and its
+ * own build 1.5 and 2.4 s: the budget fails a regression of the boot, such as the engine worker's fibers waiting on
+ * nested timers again, not the network's noise.
  */
-const BUDGET = { fcp: 4_500, content: 5_000 }
+const BUDGET = { fcp: 3_000, content: 3_000 }
 
 /**
  * The routes a launch visitor opens cold, each with the heading that is its first meaningful content: the landing's

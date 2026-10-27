@@ -294,7 +294,7 @@ fetched before the content. `--n` sets the visits and `--route <path>=<heading>`
 replaces the routes.
 
 On a built server it exits nonzero when a route's median first contentful paint
-exceeds **4.5 s** or its median content exceeds **5.0 s**
+exceeds **3.0 s** or its median content exceeds **3.0 s**
 (`--fcp-budget`, `--content-budget`). Against the dev server it reports the
 numbers and checks no budget: its modules are unbundled. Each run writes
 `bench/first-load-results/<timestamp>.json` with every sample, the summaries,
@@ -314,6 +314,18 @@ Decision 0108's build, served locally with `/api/*` on smithers.sh, measured
 ([receipt](../bench/first-load-results/2026-10-25-local-after.json)); the build
 before it, served the same way, 7,064 ms and 7,372 ms
 ([receipt](../bench/first-load-results/2026-10-25-local-before.json)).
+
+On 2026-10-26, production (before decision 0117) measured 2,920 ms and
+3,720 ms ([receipt](../bench/first-load-results/2026-10-26-production-before-cold-start.json)).
+Served locally over HTTP/2 with `/api/*` on smithers.sh, the build before it
+measured 2,308 ms and 3,284 ms, its device store opening at 2,198 ms
+([receipt](../bench/first-load-results/2026-10-26-local-before-cold-start.json)),
+and [decision 0117](decisions/0117-cold-start.md)'s build 1,476 ms and
+2,428 ms, its store at 1,359 to 1,396 ms
+([receipt](../bench/first-load-results/2026-10-26-local-after-cold-start.json)).
+The benchmark drives Chromium through DevTools, which makes every thrown
+exception slower; the decision also records the same builds measured with no
+DevTools attached.
 
 ## Electric load
 

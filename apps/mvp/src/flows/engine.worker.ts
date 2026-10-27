@@ -1,3 +1,6 @@
+// First: the worker's first session read starts before the rest of its bundle evaluates
+// (src/flows/sessionStart.worker.ts).
+import { started as sessionStarted } from "./sessionStart.worker"
 import wasmUrl from "@journeyapps/wa-sqlite/dist/wa-sqlite.wasm?url"
 import { Migrations } from "@smthrs/effect-tanstack-db"
 import type { Model } from "@smthrs/model"
@@ -9,6 +12,7 @@ import { deviceRegistry } from "../device/registry"
 import { getSession } from "../features/auth/api"
 import { NO_DEVICE_DATA, SESSION_ROUTE } from "../features/auth/contract"
 import { ENGINE_NAME } from "./contract"
+import { firstReadFrom } from "./sessionRead"
 import { clientFlows } from "./declarations"
 import { engineRequests, engineTelemetry } from "./engine"
 import { workerRegistrations } from "./registrations"
@@ -28,11 +32,17 @@ const identity = new BroadcastChannel(IDENTITY_MESSAGE)
 const unbound = self.fetch.bind(self)
 // Under the dev server, the end-to-end tests' parameters, which main.tsx names this worker with (`dev:<parameters>`).
 const dev = import.meta.env.DEV && self.name.startsWith("dev:") ? new URLSearchParams(self.name.slice("dev:".length)) : undefined
+const scripted = dev?.get("agent") ?? undefined
+const faulted = dev?.get("faults") === "session-503"
 // Who the browser is signed in as, read for the device's owner check; behind the page's switch under
-// `?faults=session-503` (src/test/authFaults.ts).
+// `?faults=session-503` (src/test/authFaults.ts). The first read takes the one the worker started as it loaded
+// (src/flows/sessionRead.ts), except behind that switch, whose refused reads never reach it.
 let session = getSession(self.location.origin, "10 seconds").pipe(
   Effect.provide(FetchHttpClient.layer),
-  Effect.provideService(FetchHttpClient.Fetch, unbound),
+  Effect.provideService(
+    FetchHttpClient.Fetch,
+    firstReadFrom(unbound, `${self.location.origin}${SESSION_ROUTE}`, faulted ? undefined : sessionStarted),
+  ),
 )
 // While this worker leads: the device store its activation checked, which it checks again to adopt a visitor's data.
 let database: SharedSqlite.Service | undefined
@@ -111,8 +121,6 @@ const run = (model?: Model.Model, summaryModel?: Model.Model, rendererModel?: Mo
 // Under the dev server, `?agent=<script>` answers with a scripted model for the end-to-end tests
 // (src/test/scriptedAgent.ts), and `?faults=session-503` opens the session read refused until the page heals it
 // (src/test/authFaults.ts). A production build drops these branches, and the modules with them.
-const scripted = dev?.get("agent") ?? undefined
-const faulted = dev?.get("faults") === "session-503"
 if (scripted === undefined && !faulted) run()
 else {
   void Promise.all([

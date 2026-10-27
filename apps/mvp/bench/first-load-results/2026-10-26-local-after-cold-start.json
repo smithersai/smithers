@@ -1,0 +1,352 @@
+{
+  "ok": true,
+  "budget": {
+    "fcp": 4500,
+    "content": 5000,
+    "checked": true,
+    "statistic": "p50"
+  },
+  "method": "5 cold visits per route, each in a fresh Chromium context (no cookies, cache, service worker or device storage), signed out. FCP is Chromium's first-contentful-paint; content is when the route's heading joins the document; stages are the boot's smithers.boot.* marks. All in milliseconds from navigation.",
+  "limitations": "One machine and one network path; headless Chromium; the content time is DOM insertion, which precedes its paint by a frame. Against a dev server the modules are unbundled and the budget is not checked.",
+  "env": {
+    "commit": null,
+    "baseUrl": "https://localhost:4903",
+    "server": "built",
+    "machine": {
+      "cpu": "Apple M3 Max",
+      "cores": 16,
+      "memoryGiB": 64
+    },
+    "os": "Darwin 25.2.0, arm64",
+    "browser": "Chromium 151.0.7922.34 (headless)",
+    "playwright": "1.62.1",
+    "node": "v26.10.0",
+    "date": "2026-10-27T03:22:30.686Z",
+    "n": 5
+  },
+  "routes": {
+    "/": {
+      "heading": "Smithers",
+      "fcp": {
+        "n": 5,
+        "p50": 1476,
+        "p95": 1501.6,
+        "min": 1460,
+        "max": 1508
+      },
+      "content": {
+        "n": 5,
+        "p50": 1454,
+        "p95": 1479.6,
+        "min": 1438,
+        "max": 1486
+      },
+      "ttfb": {
+        "n": 5,
+        "p50": 3,
+        "p95": 20.8,
+        "min": 3,
+        "max": 25
+      },
+      "stages": {
+        "page": {
+          "n": 5,
+          "p50": 283,
+          "p95": 312.2,
+          "min": 279,
+          "max": 319
+        },
+        "worker": {
+          "n": 5,
+          "p50": 295,
+          "p95": 324,
+          "min": 291,
+          "max": 331
+        },
+        "activation": {
+          "n": 5,
+          "p50": 870,
+          "p95": 896.4,
+          "min": 855,
+          "max": 902
+        },
+        "store": {
+          "n": 5,
+          "p50": 1359,
+          "p95": 1386.6,
+          "min": 1345,
+          "max": 1393
+        },
+        "services": {
+          "n": 5,
+          "p50": 1430,
+          "p95": 1458.4,
+          "min": 1417,
+          "max": 1465
+        },
+        "render": {
+          "n": 5,
+          "p50": 1430,
+          "p95": 1458.6,
+          "min": 1417,
+          "max": 1465
+        }
+      },
+      "requestsBeforeContent": {
+        "n": 5,
+        "p50": 9,
+        "p95": 9.8,
+        "min": 9,
+        "max": 10
+      },
+      "bytesBeforeContent": {
+        "n": 5,
+        "p50": 7084247,
+        "p95": 7084515,
+        "min": 7084247,
+        "max": 7084582
+      },
+      "withinBudget": true
+    },
+    "/smithersai/vibelang": {
+      "heading": "VibeLang",
+      "fcp": {
+        "n": 5,
+        "p50": 2428,
+        "p95": 2494.4,
+        "min": 2372,
+        "max": 2500
+      },
+      "content": {
+        "n": 5,
+        "p50": 2394,
+        "p95": 2458.8,
+        "min": 2340,
+        "max": 2464
+      },
+      "ttfb": {
+        "n": 5,
+        "p50": 3,
+        "p95": 3.8,
+        "min": 3,
+        "max": 4
+      },
+      "stages": {
+        "page": {
+          "n": 5,
+          "p50": 283,
+          "p95": 291.4,
+          "min": 280,
+          "max": 293
+        },
+        "worker": {
+          "n": 5,
+          "p50": 295,
+          "p95": 302.4,
+          "min": 292,
+          "max": 304
+        },
+        "activation": {
+          "n": 5,
+          "p50": 864,
+          "p95": 870,
+          "min": 848,
+          "max": 871
+        },
+        "store": {
+          "n": 5,
+          "p50": 1396,
+          "p95": 1414.4,
+          "min": 1354,
+          "max": 1418
+        },
+        "services": {
+          "n": 5,
+          "p50": 1473,
+          "p95": 1491.6,
+          "min": 1429,
+          "max": 1496
+        },
+        "render": {
+          "n": 5,
+          "p50": 1473,
+          "p95": 1491.6,
+          "min": 1430,
+          "max": 1496
+        }
+      },
+      "requestsBeforeContent": {
+        "n": 5,
+        "p50": 18,
+        "p95": 19,
+        "min": 17,
+        "max": 19
+      },
+      "bytesBeforeContent": {
+        "n": 5,
+        "p50": 7819855,
+        "p95": 7820325,
+        "min": 7819555,
+        "max": 7820325
+      },
+      "withinBudget": true
+    }
+  },
+  "failures": [],
+  "samples": {
+    "/": [
+      {
+        "ttfb": 25,
+        "fcp": 1508,
+        "content": 1486,
+        "stages": {
+          "page": 319,
+          "worker": 331,
+          "activation": 902,
+          "store": 1393,
+          "services": 1465,
+          "render": 1465
+        },
+        "requestsBeforeContent": 9,
+        "bytesBeforeContent": 7084247
+      },
+      {
+        "ttfb": 3,
+        "fcp": 1476,
+        "content": 1454,
+        "stages": {
+          "page": 283,
+          "worker": 294,
+          "activation": 859,
+          "store": 1361,
+          "services": 1432,
+          "render": 1433
+        },
+        "requestsBeforeContent": 9,
+        "bytesBeforeContent": 7084247
+      },
+      {
+        "ttfb": 3,
+        "fcp": 1460,
+        "content": 1438,
+        "stages": {
+          "page": 279,
+          "worker": 291,
+          "activation": 855,
+          "store": 1345,
+          "services": 1417,
+          "render": 1417
+        },
+        "requestsBeforeContent": 9,
+        "bytesBeforeContent": 7084247
+      },
+      {
+        "ttfb": 4,
+        "fcp": 1476,
+        "content": 1454,
+        "stages": {
+          "page": 283,
+          "worker": 295,
+          "activation": 874,
+          "store": 1359,
+          "services": 1430,
+          "render": 1430
+        },
+        "requestsBeforeContent": 9,
+        "bytesBeforeContent": 7084247
+      },
+      {
+        "ttfb": 3,
+        "fcp": 1472,
+        "content": 1451,
+        "stages": {
+          "page": 285,
+          "worker": 296,
+          "activation": 870,
+          "store": 1359,
+          "services": 1430,
+          "render": 1430
+        },
+        "requestsBeforeContent": 10,
+        "bytesBeforeContent": 7084582
+      }
+    ],
+    "/smithersai/vibelang": [
+      {
+        "ttfb": 3,
+        "fcp": 2408,
+        "content": 2373,
+        "stages": {
+          "page": 283,
+          "worker": 294,
+          "activation": 866,
+          "store": 1355,
+          "services": 1432,
+          "render": 1432
+        },
+        "requestsBeforeContent": 17,
+        "bytesBeforeContent": 7819555
+      },
+      {
+        "ttfb": 4,
+        "fcp": 2372,
+        "content": 2340,
+        "stages": {
+          "page": 285,
+          "worker": 296,
+          "activation": 864,
+          "store": 1400,
+          "services": 1473,
+          "render": 1473
+        },
+        "requestsBeforeContent": 17,
+        "bytesBeforeContent": 7819555
+      },
+      {
+        "ttfb": 3,
+        "fcp": 2500,
+        "content": 2464,
+        "stages": {
+          "page": 293,
+          "worker": 304,
+          "activation": 871,
+          "store": 1418,
+          "services": 1496,
+          "render": 1496
+        },
+        "requestsBeforeContent": 18,
+        "bytesBeforeContent": 7819855
+      },
+      {
+        "ttfb": 3,
+        "fcp": 2428,
+        "content": 2394,
+        "stages": {
+          "page": 282,
+          "worker": 295,
+          "activation": 861,
+          "store": 1354,
+          "services": 1429,
+          "render": 1430
+        },
+        "requestsBeforeContent": 19,
+        "bytesBeforeContent": 7820325
+      },
+      {
+        "ttfb": 3,
+        "fcp": 2472,
+        "content": 2438,
+        "stages": {
+          "page": 280,
+          "worker": 292,
+          "activation": 848,
+          "store": 1396,
+          "services": 1474,
+          "render": 1474
+        },
+        "requestsBeforeContent": 19,
+        "bytesBeforeContent": 7820325
+      }
+    ]
+  }
+}

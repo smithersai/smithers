@@ -4,3 +4,6 @@
 !2026-10-25-production-before.json
 !2026-10-25-local-before.json
 !2026-10-25-local-after.json
+!2026-10-26-production-before-cold-start.json
+!2026-10-26-local-before-cold-start.json
+!2026-10-26-local-after-cold-start.json
