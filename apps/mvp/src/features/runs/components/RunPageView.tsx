@@ -32,7 +32,7 @@ import { RunSteers } from "./RunSteers"
 // output, its timeline and its journal. Every value is text the engine redacted and cut to 16 KiB before it left the
 // engine; nothing here renders a value as markup. A run on Cloudflare (a TODO's, ruling TODO-3) reads the same, with
 // `Cloud` in its header and Retry when failed, and lists the messages people sent its agent, with a composer while it works.
-export function RunPageView() {
+export function RunPageView({ fromRuns = false }: { readonly fromRuns?: boolean }) {
   const { queries, actions } = useRuns()
   const { data } = useLiveQuery(queries.page)
   const { data: repoRuns } = useLiveQuery(queries.repoRuns)
@@ -45,10 +45,10 @@ export function RunPageView() {
       now={view.now ?? Date.now()} />
   }
   if (page.state !== "read") return <EmptyState title={missingOf(page, view.repo != null)} />
-  return <ReadRunPage page={page} view={view} actions={actions} />
+  return <ReadRunPage page={page} view={view} actions={actions} fromRuns={fromRuns} />
 }
 
-function ReadRunPage({ page, view, actions }: { page: RunPage; view: RunView; actions: RunsActions }) {
+function ReadRunPage({ page, view, actions, fromRuns }: { page: RunPage; view: RunView; actions: RunsActions; fromRuns: boolean }) {
   const inspection = page.inspection as Inspection
   const { run } = inspection
   const now = view.now ?? Date.now()
@@ -57,8 +57,8 @@ function ReadRunPage({ page, view, actions }: { page: RunPage; view: RunView; ac
   const repo = view.repo ?? null
   // A repository's run opens the runs it started, its jobs, on its own pages (docs/features/actions.md).
   const frame = useMemo(
-    () => graphOf(page, at, run.createdAtMs, repo === null ? undefined : (id) => actionRunPath(repo.owner, repo.name, id)),
-    [page, at, run.createdAtMs, repo],
+    () => graphOf(page, at, run.createdAtMs, repo === null ? undefined : (id) => `${actionRunPath(repo.owner, repo.name, id)}${fromRuns ? "?from=runs" : ""}`),
+    [page, at, run.createdAtMs, repo, fromRuns],
   )
   const graph = { ...frame, time: at === null ? now : frame.time }
   const steps = graph.steps

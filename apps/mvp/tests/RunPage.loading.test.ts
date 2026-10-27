@@ -72,10 +72,11 @@ test.each([true, false])("a run shows its frame while inspection and sync are he
     const { router: appRouter } = await import("../src/router")
     const root = createRootRoute({ component: Outlet })
     const route = createRoute({ getParentRoute: () => root, path: "/$owner/$repo/actions/runs/$runId", component: ActionRunScreen,
+      validateSearch: appRouter.routesById["/$owner/$repo/actions/runs/$runId"].options.validateSearch,
       beforeLoad: appRouter.routesById["/$owner/$repo/actions/runs/$runId"].options.beforeLoad,
     })
     const router = createRouter({ isServer: false, routeTree: root.addChildren([route]),
-      context: { runs, repo }, history: createMemoryHistory({ initialEntries: [`/octo/hello/actions/runs/${encodeURIComponent(runId)}`] }),
+      context: { runs, repo }, history: createMemoryHistory({ initialEntries: [`/octo/hello/actions/runs/${encodeURIComponent(runId)}${persisted ? "?from=runs" : ""}`] }),
     })
     let loaded = false
     const startedAt = performance.now()
@@ -87,6 +88,8 @@ test.each([true, false])("a run shows its frame while inspection and sync are he
       expect(Effect.runSync(Deferred.isDone(shapeRequested))).toBe(true)
       expect(loaded).toBe(true)
       expect(container.querySelector('main[aria-label="Run"]')).not.toBeNull()
+      expect([...container.querySelectorAll("a")].find((link) => link.textContent === "Runs")?.getAttribute("href"))
+        .toBe(persisted ? "/app/runs" : "/octo/hello/actions")
       if (persisted) expect(container.querySelector("h1")?.textContent).toBe("ci")
       else expect(container.querySelector('[aria-label="Loading run"]')).not.toBeNull()
       expect(container.querySelector('header[aria-label="Repository"] a[href="/octo/hello"]')?.textContent).toBe("octo/hello")

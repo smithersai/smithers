@@ -153,7 +153,7 @@ export const cloudTrigger = (trigger: CloudRun["trigger"]): string => trigger ==
 export const cloudHref = (run: Pick<CloudRun, "runId" | "kind" | "repo">): string => {
   if (run.kind === "repo" && run.repo !== null) {
     const [owner, name] = run.repo.split("/") as [string, string]
-    return actionRunPath(owner, name, run.runId)
+    return `${actionRunPath(owner, name, run.runId)}?from=runs`
   }
   return runPath(run.runId)
 }
@@ -422,3 +422,7 @@ export const repoRunRows = (rows: ReadonlyArray<RepoRunRow>, owner: string, name
       }
     })
 }
+
+/** A repository run remembers when the person opened it from their Runs view. */
+export const runOriginSearch = (search: Record<string, unknown>): { readonly from?: "runs" } =>
+  search.from === "runs" ? { from: "runs" } : {}

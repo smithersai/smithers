@@ -19,6 +19,7 @@ import {
   retriesFrom,
   retriesOf,
   runsSearch,
+  runOriginSearch,
   selectedStep,
   STALLED_AFTER_MS,
 } from "./page"
@@ -296,7 +297,7 @@ describe("the list", () => {
     expect(rows.map((run) => [run.id, run.trigger, run.branch, run.actor, run.where, run.href])).toEqual([
       ["todo:a", "commit", "todo/fix", "maya", undefined, "/app/runs/todo%3Aa"],
       ["answer", "composer", null, "agent", undefined, "/app/runs/answer"],
-      ["ci:1", "pull request", "main", "github", undefined, "/octo/hello/actions/runs/ci%3A1"],
+      ["ci:1", "pull request", "main", "github", undefined, "/octo/hello/actions/runs/ci%3A1?from=runs"],
       ["spend-1", "system", null, null, undefined, "/app/runs/spend-1"],
       ["theme", "button", null, "you", undefined, "/app/runs/theme"],
       ["old", undefined, null, undefined, undefined, "/app/runs/old"],
@@ -369,6 +370,11 @@ test("failed system TODO runs have Retry while remote running TODOs do not", () 
   expect(actsOf(inspection, 0).retry).toBe(false)
   expect(actsOf({ ...inspection, run: { ...inspection.run, status: "completed", result: value(JSON.stringify({ state: "failed" })) } }, 0).retry).toBe(true)
   expect(actsOf({ ...inspection, run: { ...inspection.run, status: "completed", result: value(JSON.stringify({ state: "merged" })) } }, 0).retry).toBe(false)
+})
+
+test("only the known Runs origin survives search decoding", () => {
+  expect(runOriginSearch({ from: "runs" })).toEqual({ from: "runs" })
+  for (const from of [undefined, "other", "/external", 7]) expect(runOriginSearch({ from })).toEqual({})
 })
 
 test("cloud and repository rows strip transport prefixes from branch names", () => {

@@ -1,6 +1,6 @@
 import { useCallback } from "react"
 import { useRuns } from "../../features/runs/components/RunsContext"
-import { Link, useParams } from "@tanstack/react-router"
+import { Link, useParams, useSearch } from "@tanstack/react-router"
 import { actionsPath } from "../../features/actions/contract"
 import { RunPageView } from "../../features/runs/components/RunPageView"
 import "../runs/runs-screen.css"
@@ -9,15 +9,16 @@ import "../runs/runs-screen.css"
 // (docs/features/actions.md); its route's loader opens it.
 export function ActionRunScreen() {
   const { owner, repo, runId } = useParams({ from: "/$owner/$repo/actions/runs/$runId" })
+  const { from } = useSearch({ from: "/$owner/$repo/actions/runs/$runId" })
   const { actions } = useRuns()
   const rendered = useCallback((node: HTMLElement | null) => { if (node !== null) actions.rendered(runId) }, [actions, runId])
   return (
     <main ref={rendered} className="runs-screen" aria-label="Run">
       <header className="runs-screen-header" aria-label="Repository">
         <Link to="/$owner/$repo" params={{ owner, repo }}>{owner}/{repo}</Link>
-        <Link to={actionsPath(owner, repo) as never}>Runs</Link>
+        <Link to={(from === "runs" ? "/app/runs" : actionsPath(owner, repo)) as never}>Runs</Link>
       </header>
-      <RunPageView />
+      <RunPageView fromRuns={from === "runs"} />
     </main>
   )
 }

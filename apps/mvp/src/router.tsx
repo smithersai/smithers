@@ -47,7 +47,7 @@ import { RouteNotFound } from "./screens/root/RouteNotFound"
 import { RouteError } from "./screens/root/RouteError"
 import { RunScreen } from "./screens/runs/RunScreen"
 import { ConversationsScreen } from "./screens/conversations/ConversationsScreen"
-import { runsSearch } from "./features/runs/page"
+import { runOriginSearch, runsSearch } from "./features/runs/page"
 import { RunsScreen } from "./screens/runs/RunsScreen"
 import { SecretsScreen } from "./screens/secrets/SecretsScreen"
 import { RepoSettingsScreen } from "./screens/repo-settings/RepoSettingsScreen"
@@ -526,6 +526,7 @@ const actionRunRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/$owner/$repo/actions/runs/$runId",
   component: ActionRunScreen,
+  validateSearch: runOriginSearch,
   beforeLoad: (load) =>
     enterRepo(load.context, load.params, load, local, () =>
       load.context.runs.actions.openRun(load.params.runId, { owner: load.params.owner, name: load.params.repo })),
