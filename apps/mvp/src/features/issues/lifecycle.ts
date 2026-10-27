@@ -46,4 +46,4 @@ export const commitmentSearch = (search: Record<string, unknown>): { readonly co
   typeof search.commitment === "string" && (COMMITMENTS as ReadonlyArray<string>).includes(search.commitment)
     ? { commitment: search.commitment as Commitment } : {}
 export const filterCommitment = <A extends { readonly commitment?: string | null }>(rows: ReadonlyArray<A>, commitment?: Commitment): ReadonlyArray<A> =>
-  commitment === undefined ? rows : rows.filter((row) => row.commitment === commitment)
+  commitment === undefined ? rows : rows.filter((row) => (row.commitment || "none") === commitment)

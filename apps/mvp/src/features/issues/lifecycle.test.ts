@@ -60,3 +60,9 @@ test("commitment filters validate URL state and retain only matching rows", () =
   expect(commitmentSearch({})).toEqual({})
   expect(filterCommitment(rows, "now")).toEqual([{ commitment: "now" }])
 })
+
+
+test("No commitment includes unlabeled and explicitly uncommitted issues", () => {
+  const rows = [{ commitment: "" }, { commitment: null }, {}, { commitment: "none" }, { commitment: "now" }, { commitment: "conflict" }]
+  expect(filterCommitment(rows, "none")).toEqual(rows.slice(0, 4))
+})
