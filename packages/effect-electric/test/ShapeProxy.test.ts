@@ -151,6 +151,15 @@ const harness = (options: Partial<ShapeProxy.Options<HttpServerRequest.HttpServe
 const until = (assertion: () => void) => vi.waitFor(assertion, { timeout: 5_000, interval: 10 })
 
 describe("refusals: no Electric needed", () => {
+  test("catch-up records its phase separately from first and live without logging protocol values", async () => {
+    const h = harness()
+    const response = await h.request("?offset=42_0&handle=private-handle", { method: "POST" })
+    expect(response.status).toBe(405)
+    expect(h.line()?.annotations).toMatchObject({ phase: "catch-up", live: false, bytes: 0, outcome: "complete" })
+    expect(JSON.stringify(h.logs)).not.toContain("private-handle")
+    expect(JSON.stringify(h.logs)).not.toContain("42_0")
+  })
+
   test("another method is 405, and Electric is never called", async () => {
     const h = harness()
     const response = await h.request("?offset=-1", { method: "POST" })
@@ -160,7 +169,7 @@ describe("refusals: no Electric needed", () => {
     expect(h.line()).toMatchObject({
       message: ["electric.shape"],
       level: "Warn",
-      annotations: { status: 405, live: false, bytes: 0, outcome: "complete" }
+      annotations: { status: 405, live: false, phase: "first", bytes: 0, outcome: "complete" }
     })
     expect(h.line()?.annotations).not.toHaveProperty("subset")
   })
@@ -246,7 +255,7 @@ describe("faults: no Electric needed", () => {
     expect(response.status).toBe(502)
     expect(h.line()).toMatchObject({
       level: "Error",
-      annotations: { status: 502, live: true, bytes: 0, outcome: "complete" }
+      annotations: { status: 502, live: true, phase: "live", bytes: 0, outcome: "complete" }
     })
     expect(h.span().attributes.get("http.response.status_code")).toBe(502)
     expect(h.count(ShapeProxy.defaultMetric, { status: "502", live: "true" })).toBe(1)
@@ -274,6 +283,7 @@ describe("faults: no Electric needed", () => {
       correlationId: response.headers.get("x-request-id"),
       statusClass: "5xx",
       live: false,
+      phase: "first",
       durationMs: expect.any(Number),
       bytes: 0,
       outcome: "complete"
@@ -281,6 +291,7 @@ describe("faults: no Electric needed", () => {
     expect(Object.fromEntries(h.span().attributes)).toEqual({
       "http.response.status_code": 502,
       "electric.shape.live": false,
+      "electric.shape.phase": "first",
       route: "electric.shape",
       upstream: "electric",
       correlationId: response.headers.get("x-request-id")

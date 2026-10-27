@@ -210,3 +210,10 @@ The proxy generates `correlationId` from its server span id and returns it as `x
   primary key included. A column added to the table later stays on the server
   until you list it.
 - **Tested with `@electric-sql/client` 1.5.28 and Electric 1.8.1.**
+
+Each completion record includes `phase` (`first`, `catch-up`, or `live`),
+`bytes`, `durationMs`, and `outcome` (`complete`, `aborted`, or `failed`).
+The response's `x-request-id` matches `correlationId` in that record. Preserve
+it even when reading the response body fails; aggregate invocation success
+cannot prove that a particular response reached the client. No protocol values
+or row contents enter these records.

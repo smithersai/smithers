@@ -497,3 +497,15 @@ The site Worker matches the shared TanStack route declarations before returning 
 
 
 The documentation build omits the legacy `/bug/` noindex redirect from generated sitemap chunks; the app form remains its destination.
+
+
+### Correlating a truncated shape response
+
+Every shape response carries `x-request-id`, matching the proxy's `correlationId`.
+Its completion record includes the route, first/catch-up/live phase, status,
+bytes, duration and complete/aborted/failed outcome, without protocol values or
+row content. A probe must preserve that ID and the UTC start and failure times
+even if reading the body fails. Compare the failed read with its proxy record
+and the serving Workers' invocation outcomes and wall/CPU durations. Aggregate
+success counts alone cannot establish that a particular body reached a client;
+a later successful probe does not resolve an earlier truncation.

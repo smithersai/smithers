@@ -323,6 +323,7 @@ export const make = <R = never>(
   const record = (request: {
     readonly status: number
     readonly live: boolean
+    readonly phase: "first" | "catch-up" | "live"
     readonly startedAt: number
     readonly bytes: number
     readonly outcome: Outcome
@@ -330,7 +331,7 @@ export const make = <R = never>(
     readonly upstream: string
   }) =>
     Effect.gen(function*() {
-      const { status, live, bytes, outcome } = request
+      const { status, live, phase, bytes, outcome } = request
       const { correlationId, upstream } = request
       const statusClass = `${Math.floor(status / 100)}xx`
       yield* Metric.update(Metric.withAttributes(responses, { name, statusClass }), 1)
@@ -349,6 +350,7 @@ export const make = <R = never>(
           status,
           statusClass,
           live,
+          phase,
           durationMs,
           bytes,
           outcome
@@ -364,10 +366,12 @@ export const make = <R = never>(
     const startedAt = yield* Clock.currentTimeMillis
     const incoming = new URL(request.url, "http://localhost").searchParams
     const live = incoming.get("live") === "true"
+    const phase = live ? "live" : incoming.get("offset") === "-1" ? "first" : "catch-up"
     const answered = (status: number, upstream: string) =>
       Effect.annotateCurrentSpan({
         "http.response.status_code": status,
         "electric.shape.live": live,
+        "electric.shape.phase": phase,
         route: name,
         correlationId,
         upstream
@@ -375,7 +379,7 @@ export const make = <R = never>(
     const ended = (status: number, upstream: string, outcome: Outcome = "complete") =>
       Effect.andThen(
         answered(status, upstream),
-        record({ status, live, startedAt, bytes: 0, outcome, correlationId, upstream })
+        record({ status, live, phase, startedAt, bytes: 0, outcome, correlationId, upstream })
       )
 
     if (request.method !== "GET") {
@@ -453,6 +457,7 @@ export const make = <R = never>(
           correlationId,
           upstream: "electric",
           live,
+          phase,
           startedAt,
           bytes,
           outcome: Exit.isSuccess(exit) ? "complete" : Exit.hasInterrupts(exit) ? "aborted" : "failed"
