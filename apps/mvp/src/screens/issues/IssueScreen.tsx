@@ -89,7 +89,7 @@ export function IssueScreen() {
                   aria-keyshortcuts={MAKE_TODO_KEY}
                   onClick={() => void navigate({ href: todos.actions.fromIssue(owner, repo, number) })}
                 >
-                  {MAKE_TODO} <Kbd>{MAKE_TODO_KEY}</Kbd>
+                  {MAKE_TODO} <Kbd aria-hidden="true">{MAKE_TODO_KEY}</Kbd>
                 </Button>
               )
               : null}
