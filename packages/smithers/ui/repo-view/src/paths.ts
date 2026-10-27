@@ -103,7 +103,7 @@ export type LinkTarget = { readonly kind: "tree" | "blob"; readonly path: string
 
 const decode = (segment: string): string | undefined => {
   try {
-    return decodeURIComponent(segment);
+    return decodeURIComponent(segment.replace(/%(?![0-9a-f]{2})/gi, "%25"));
   } catch {
     return undefined;
   }
