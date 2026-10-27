@@ -190,8 +190,8 @@ describe("your conversations", () => {
     const phoneHost = nodeDevice({ agent: api })
     const phone = await openDevice(api, phoneHost, false)
     await laptop.branch.actions.open("octo", "hello", "feature/one")
-    laptop.commands.actions.type("/new topic-two")
-    laptop.commands.actions.submit("/new topic-two")
+    laptop.commands.actions.type("/new octo/hello topic-two")
+    laptop.commands.actions.submit("/new octo/hello topic-two")
     await until(() => expect(laptop.host.navigated).toEqual(["/octo/hello/tree/topic-two"]))
     // The route starts these queries only when Conversations mounts, after the writes.
     for (const device of [laptop, phone]) {
@@ -305,8 +305,8 @@ describe("a new conversation", () => {
     const api = await runtime.runPromise(Effect.service(TestChatApi))
     const laptop = await openDevice(api)
     laptop.commands.queries.menu.startSyncImmediate()
-    laptop.commands.actions.type("/new")
-    laptop.commands.actions.submit("/new")
+    laptop.commands.actions.type(`/new ${DEFAULT_REPOSITORY}`)
+    laptop.commands.actions.submit(`/new ${DEFAULT_REPOSITORY}`)
     await until(() =>
       expect(laptop.count(dispatches, { flow: "conversation/new", door: "slash", outcome: "failed" })).toBe(1)
     )
@@ -316,33 +316,32 @@ describe("a new conversation", () => {
       `/${DEFAULT_REPOSITORY}.git/info/refs?service=git-upload-pack`,
     ])
     // The composer and its menu agree, so the existing error is visible.
-    expect(laptop.commands.queries.menu.toArray[0]?.items.some(row => row.label === "/new")).toBe(true)
+    expect((await laptop.runtime.runPromise(Effect.service(ChatStore))).composer.tanstack.get(COMPOSER)?.draft).toBe(`/new ${DEFAULT_REPOSITORY}`)
   }, WITHIN)
 
   test("an unavailable engine reports the same existing error and restores /new", async () => {
     const api = await openApi()
     const laptop = await openDevice(api, nodeDevice({ engineWorker: failingWorker }))
     laptop.commands.queries.menu.startSyncImmediate()
-    laptop.commands.actions.type("/new")
-    laptop.commands.actions.submit("/new")
+    laptop.commands.actions.type(`/new ${DEFAULT_REPOSITORY}`)
+    laptop.commands.actions.submit(`/new ${DEFAULT_REPOSITORY}`)
     await until(() => expect(laptop.commands.queries.menu.toArray[0]?.refusal).toBe(ACTION_FAILED))
     expect(laptop.host.navigated).toEqual([])
   }, WITHIN)
 
-  test("a refused /new chosen from the slash menu restores the accepted command", async () => {
-    const runtime = openTestApp({ answers: false }, { forge: "code-storage" })
-    runtimes.push(runtime)
-    const api = await runtime.runPromise(Effect.service(TestChatApi))
+  test("choosing /new requests a repository without creating a branch", async () => {
+    const api = await openApi()
     const laptop = await openDevice(api)
     laptop.commands.queries.menu.startSyncImmediate()
     laptop.commands.actions.type("/")
     const index = laptop.commands.queries.menu.toArray[0]!.items.findIndex(row => row.label === "/new")
-    expect(index).toBeGreaterThanOrEqual(0)
     laptop.commands.actions.choose(index, "accept")
-    await until(() => expect(laptop.commands.queries.menu.toArray[0]?.refusal).toBe(ACTION_FAILED))
     const store = await laptop.runtime.runPromise(Effect.service(ChatStore))
-    expect(store.composer.tanstack.get(COMPOSER)?.draft.trim()).toBe("/new")
-    expect(laptop.commands.queries.menu.toArray[0]?.items).toEqual([])
+    expect(store.composer.tanstack.get(COMPOSER)?.draft).toBe("/new ")
+    laptop.commands.actions.submit("/new")
+    expect(laptop.commands.queries.menu.toArray[0]?.refusal).toBe("/new needs repo")
+    expect(laptop.host.navigated).toEqual([])
+    expect(api.branches.github.seen).toEqual([])
   }, WITHIN)
 
   test.each(["typing", "dismissal", "draft", "conversation"] as const)(
@@ -354,8 +353,8 @@ describe("a new conversation", () => {
       const store = await laptop.runtime.runPromise(Effect.service(ChatStore))
       const release = api.branches.github.hold()
       try {
-        laptop.commands.actions.type("/new taken")
-        laptop.commands.actions.submit("/new taken")
+        laptop.commands.actions.type(`/new ${DEFAULT_REPOSITORY} taken`)
+        laptop.commands.actions.submit(`/new ${DEFAULT_REPOSITORY} taken`)
         // The real branch request is still waiting for its forge.
         await until(() => expect(api.branches.github.seen.length).toBeGreaterThan(0))
         expect(laptop.commands.queries.menu.toArray[0]?.refusal).toBeNull()
@@ -382,20 +381,20 @@ describe("a new conversation", () => {
     WITHIN,
   )
 
-  test("/new makes a new branch of the repository the tab shows and opens it there; from home, the deployment's own", async () => {
+  test("/new makes a new branch of the explicitly named repository from a branch or home", async () => {
     const api = await openApi()
     const laptop = await openDevice(api)
     await laptop.branch.actions.open("octo", "hello", "feature/one")
 
-    laptop.commands.actions.type("/new topic-two")
-    laptop.commands.actions.submit("/new topic-two")
+    laptop.commands.actions.type("/new octo/hello topic-two")
+    laptop.commands.actions.submit("/new octo/hello topic-two")
     await until(() => expect(laptop.host.navigated).toEqual(["/octo/hello/tree/topic-two"]))
     await until(() => expect(laptop.list()).toContain("topic-two"))
 
     // From the home conversation, with no name: the deployment's own repository, a name drawn from the run.
     await laptop.branch.actions.leave()
-    laptop.commands.actions.type("/new")
-    laptop.commands.actions.submit("/new")
+    laptop.commands.actions.type(`/new ${DEFAULT_REPOSITORY}`)
+    laptop.commands.actions.submit(`/new ${DEFAULT_REPOSITORY}`)
     await until(() => expect(laptop.host.navigated).toHaveLength(2))
     expect(laptop.host.navigated[1]).toMatch(new RegExp(`^/${DEFAULT_REPOSITORY}/tree/${NEW_BRANCH_PREFIX}[0-9a-f]{6}$`))
     await until(() =>
@@ -412,8 +411,8 @@ describe("a new conversation", () => {
       .replace('Create.call({ ref })', 'Create.call({ ref: `team/${ref}` })'))
     const laptop = await openDevice(api)
     await laptop.branch.actions.open("octo", "hello", "feature/one")
-    laptop.commands.actions.type("/new selected")
-    laptop.commands.actions.submit("/new selected")
+    laptop.commands.actions.type("/new octo/hello selected")
+    laptop.commands.actions.submit("/new octo/hello selected")
     await until(() => expect(laptop.host.navigated).toEqual(["/octo/hello/tree/team/selected"]))
     await until(() => expect(laptop.list()).toContain("team/selected"))
     expect(api.branches.forge.created).toContainEqual({ repo: "github/octo/hello", from: "main", branch: "team/selected" })
@@ -437,8 +436,8 @@ describe("a new conversation", () => {
     }))
     const laptop = await openDevice(api)
     laptop.commands.queries.menu.startSyncImmediate()
-    laptop.commands.actions.type("/new")
-    laptop.commands.actions.submit("/new")
+    laptop.commands.actions.type(`/new ${DEFAULT_REPOSITORY}`)
+    laptop.commands.actions.submit(`/new ${DEFAULT_REPOSITORY}`)
     // A completed failure is a durable terminal result, with no retry pending.
     await until(() =>
       expect(laptop.count(dispatches, { flow: "conversation/new", door: "slash", outcome: "failed" })).toBe(1)
@@ -452,8 +451,8 @@ describe("a new conversation", () => {
     const api = await openApi()
     const laptop = await openDevice(api)
     laptop.commands.queries.menu.startSyncImmediate()
-    laptop.commands.actions.type("/new taken")
-    laptop.commands.actions.submit("/new taken")
+    laptop.commands.actions.type(`/new ${DEFAULT_REPOSITORY} taken`)
+    laptop.commands.actions.submit(`/new ${DEFAULT_REPOSITORY} taken`)
     // The step's refusal is final: one failed run, no retries for a day.
     await until(() =>
       expect(laptop.count(dispatches, { flow: "conversation/new", door: "slash", outcome: "failed" })).toBe(1)

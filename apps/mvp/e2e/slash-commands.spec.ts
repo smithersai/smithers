@@ -139,3 +139,20 @@ test("roles: a member-only command is offered to an Admin, never to a signed-out
   expect(page.context().pages().length).toBe(pages)
   await expect(page).toHaveURL(url)
 })
+
+
+test("new names a repository before acting", async ({ devices }) => {
+  const [a] = await devices.open("A")
+  await a.openComposer()
+  const before = a.page.url()
+  const creates: string[] = []
+  a.page.on("request", request => {
+    if (request.method() === "POST" && new URL(request.url()).pathname === "/api/branches") creates.push(request.url())
+  })
+  await a.composer.fill("/new")
+  await a.composer.press("Enter")
+  await expect(a.composerForm.getByText("/new needs repo", { exact: true })).toBeVisible()
+  await expect(a.composer).toHaveValue("/new")
+  expect(a.page.url()).toBe(before)
+  expect(creates).toEqual([])
+})

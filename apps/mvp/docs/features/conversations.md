@@ -39,12 +39,9 @@ Archive is personal: it changes your own list, on all your devices, and nobody e
 
 ## New
 
-`/new [branch]` in the composer starts a new conversation: by default, a Smithers-only branch at the default branch's head, opened in your tab. It lives in Code Storage's ephemeral namespace. GitHub writes require explicit publication or a [repository-selected creation flow](branch-creation.md) ([GH-11](../rulings.md#7-github), [0095](../decisions/0095-new-conversation-ephemeral-refs.md)). The agent can do the same (`conversation/new`), and so can the [New branch](branch-workspace.md#new-branch) button on a repository's home.
+`/new owner/repo [branch]` in the composer starts a new conversation: by default, a Smithers-only branch at the default branch's head, opened in your tab. It lives in Code Storage's ephemeral namespace. GitHub writes require explicit publication or a [repository-selected creation flow](branch-creation.md) ([GH-11](../rulings.md#7-github), [0095](../decisions/0095-new-conversation-ephemeral-refs.md)). The agent can do the same (`conversation/new`), and so can the [New branch](branch-workspace.md#new-branch) button on a repository's home.
 
-| Where you type it | The new branch's repository |
-|---|---|
-| a branch's page | that branch's repository |
-| `/app`, the home conversation | the deployment's own (`GITHUB_REPOSITORY`) |
+The repository is required in the slash command. `/new` alone stays in the composer with `/new needs repo`; it never uses a previously viewed repository or the deployment default. The agent flow retains its optional repository argument.
 
 - **Its name** is the one you type, or `conversation-` and six hex digits drawn from the run.
 - **Always fresh.** The step names its run's request (`request`, a version 5 UUID of the run). ChatApi answers a branch the app tracks only to the request that made it, so a step tried again gets its own branch, and any other name someone already has, tracked or not, is refused `exists`: `/new` never opens an existing conversation as a fresh one.

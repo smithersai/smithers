@@ -24,7 +24,7 @@ import { ArchiveNotTaken, ConversationsClient } from "./api"
 import { NEW_BRANCH_PREFIX } from "./contract"
 import { ArchiveRefused, ArchiveUnsent } from "./flows"
 import { archives, news } from "./metrics"
-import { pinBranch, pinRepository } from "./pin"
+import { pinBranch } from "./pin"
 import { failureOf, requestArchive, requestNew, stamp } from "./steps"
 
 const ID = "6a3c2d0e-8a8b-5c1f-9e0a-1d2b3c4d5e6f"
@@ -306,33 +306,6 @@ describe("an act's time", () => {
     const now = await Effect.runPromise(stamp({ repo: "octo/hello" }))
     expect(now).toEqual({ repo: "octo/hello", at: expect.any(Number) })
     expect(Math.abs(now.at - Date.now())).toBeLessThan(5_000)
-  })
-})
-
-describe("/new's repository", () => {
-  const pin = (payload: Record<string, unknown>, current?: { readonly owner: string; readonly repo: string }) =>
-    Effect.runPromise(
-      current === undefined
-        ? pinRepository(payload)
-        : Effect.gen(function* () {
-          const { current: row } = yield* BranchStore
-          yield* Effect.orDie(row.update("current", (draft) => void Object.assign(draft, current)))
-          return yield* pinRepository(payload)
-        }).pipe(
-          Effect.provide(BranchStore.layer),
-          // The branch store keeps a row on the device, in a store of this test's own.
-          Effect.provide(persistenceOn(join(tmpdir(), `pin-${crypto.randomUUID()}.sqlite`))),
-        ),
-    )
-
-  test("the branch the tab shows names it; home, or a payload naming one, keeps the payload", async () => {
-    expect(await pin({ branch: "x" }, { owner: "octo", repo: "hello" })).toEqual({ branch: "x", repo: "octo/hello" })
-    expect(await pin({ repo: "a/b" }, { owner: "octo", repo: "hello" })).toEqual({ repo: "a/b" })
-    // Home: the branch store's row names no branch.
-    expect(await pin({}, { owner: "", repo: "" })).toEqual({})
-    // No branch store at all, as in a frontend without the workspace.
-    expect(await pin({}, { owner: "", repo: "hello" })).toEqual({})
-    expect(await pin({})).toEqual({})
   })
 })
 

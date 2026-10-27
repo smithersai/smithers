@@ -1,5 +1,5 @@
 import { Effect, type ManagedRuntime, Metric } from "effect"
-import { slashSubmit } from "@smthrs/ui"
+import { slashMenu, slashSubmit } from "@smthrs/ui"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { dispatches } from "../../flows/dispatch"
 import { entryOf, names } from "../../flows/registry"
@@ -462,4 +462,13 @@ describe("submitting", () => {
     await ready(tab, { signedIn: true, role: "admin" })
     expect(tab.labels()).toEqual([...COMMANDS, ...PLUGIN_COMMANDS].map(({ name }) => `/${name}`))
   })
+})
+
+// Production bug bash: omitted context must never pick a repository silently.
+test("/new asks for its repository before dispatch and exposes it in the command", () => {
+  expect(slashSubmit("/new", COMMANDS)).toMatchObject({ kind: "missing", fields: ["repo"] })
+  expect(slashSubmit("/new roninjin10/smithers-github-tests topic", COMMANDS)).toMatchObject({
+    kind: "run", payload: { repo: "roninjin10/smithers-github-tests", branch: "topic" },
+  })
+  expect(slashMenu("/new", COMMANDS).items[0]?.runs).toBe(false)
 })

@@ -131,7 +131,7 @@ test.describe("a new conversation", () => {
     const branch = await step("Type /new in the composer", async () => {
       const composer = a.getByRole("textbox", { name: "Message Smithers" })
       if (!(await composer.isVisible())) await a.getByRole("button", { name: /Chat/ }).click()
-      await composer.fill("/new")
+      await composer.fill("/new roninjin10/smithers-github-tests")
       await composer.press("Enter")
       await expect(a).toHaveURL(new RegExp(`/tree/${NEW_BRANCH_PREFIX}[0-9a-f]{6}$`), { timeout: 120_000 })
       return new URL(a.url()).pathname.split("/").at(-1)!

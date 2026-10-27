@@ -76,7 +76,7 @@ export interface SlashDoor {
    * How its arguments read, as `@smthrs/ui`'s `FormHints`: `hidden` keeps an optional field a person never types out of
    * the command's arguments.
    */
-  readonly hints?: { readonly fields?: Readonly<Record<string, { readonly hidden?: boolean }>> }
+  readonly hints?: { readonly fields?: Readonly<Record<string, { readonly hidden?: boolean; readonly required?: boolean }>> }
   /**
    * The payload fields a line fills, in order, when not all of them: the rest keep their defaults. The last one takes
    * the rest of the line.
@@ -297,7 +297,7 @@ export const registry = {
   "conversation/new": {
     flow: ConversationNew,
     changes: "makes a new branch of the repository, with its conversation, and opens it in the person's tab",
-    slash: { command: "new", minimum: "member", fields: ["branch"], hints: { fields: { repo: { hidden: true } } } },
+    slash: { command: "new", minimum: "member", fields: ["repo", "branch"], hints: { fields: { repo: { required: true } } } },
   },
   "conversation/archive": { flow: ConversationArchive, changes: "archives one of the person's conversations, or brings it back" },
   "branch/share": {

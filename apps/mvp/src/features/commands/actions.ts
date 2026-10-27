@@ -6,7 +6,7 @@ import { ask, setDraft } from "../chat/actions"
 import type { DraftSelection } from "../chat/sharedPrompt"
 import { COMPOSER, PLACE } from "../chat/schema"
 import { ChatStore } from "../chat/store"
-import { pinBranch, pinRepository } from "../conversations/pin"
+import { pinBranch } from "../conversations/pin"
 import { ACTION_FAILED } from "../home/contract"
 import { pinConversation } from "../sandbox/actions"
 import { openWebPage, refusedPage } from "../web/actions"
@@ -106,12 +106,9 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>, draft
     if (command.flow === "app/web/open") yield* openWebPage(payload as never, "slash", scope)
     else {
       // A sandbox tool runs on the branch of the conversation this tab shows now (src/features/sandbox/actions.ts), and
-      // `/docs`, `/repo` and `/issues` show their views in that conversation. `/new` starts the conversation in the repository of the branch this
-      // tab shows (src/features/conversations); `/publish`, `/branch.update` and `/branch.resync` act on that branch.
+      // `/docs`, `/repo` and `/issues` show their views in that conversation. `/new` names its repository explicitly; `/publish`, `/branch.update` and `/branch.resync` act on that branch.
       const pinned = command.flow.startsWith("sandbox/") || PINNED_FLOWS.has(command.flow)
         ? yield* pinConversation(payload)
-        : command.flow === "conversation/new"
-        ? yield* pinRepository(payload)
         : command.flow === "branch/publish" || command.flow === "branch/update" || command.flow === "branch/resync"
         ? yield* pinBranch(payload)
         : payload
