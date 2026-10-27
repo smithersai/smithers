@@ -53,7 +53,7 @@ test(
     await expect(page.locator('[aria-label="Head commit"]')).toContainText(/\d[\d,]* Commits?/)
     await expect(page.getByRole("button", { name: "Code" })).toBeVisible()
     // Never the empty card it used to be.
-    await expect(page.getByText("Not cloned")).toHaveCount(0)
+    await expect(page.getByText("Clone to browse files")).toHaveCount(0)
   },
 )
 

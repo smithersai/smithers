@@ -5,12 +5,15 @@ import {
   blobRoute,
   cloneExecutionId,
   cloneUrl,
+  clipboardChannel,
   githubRawUrl,
+  formatBytes,
   rawRoute,
   refsRoute,
   isFilePath,
   isRepository,
   MAX_PATH_LENGTH,
+  NOT_CLONED,
   repoId,
   textOf,
   treeRoute,
@@ -85,4 +88,20 @@ describe("the clone's feed row and what GitHub says", () => {
     expect(aboutRoute("octo cat", "a/b")).toBe("/api/repos/octo%20cat/a%2Fb/about")
     expect(installUrl("smithers")).toBe("https://github.com/apps/smithers/installations/new")
   })
+})
+
+test("uncloned code explains what Clone unlocks", () => {
+  expect(NOT_CLONED).toBe("Clone to browse files")
+})
+
+test("clone sizes retain bytes below a kilobyte and stop at terabytes", () => {
+  expect(formatBytes(0)).toBe("0 B")
+  expect(formatBytes(512)).toBe("512 B")
+  expect(formatBytes(1024)).toBe("1.0 KB")
+  expect(formatBytes(1024 ** 5)).toBe("1024.0 TB")
+})
+
+test("copy requests stay on the requesting engine channel", () => {
+  expect(clipboardChannel("tab-a")).toBe("tab-a/clipboard")
+  expect(clipboardChannel("tab-b")).not.toBe(clipboardChannel("tab-a"))
 })

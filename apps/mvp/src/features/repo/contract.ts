@@ -237,7 +237,7 @@ export const SIGN_IN_TO_CLONE = "Sign in to clone"
 export const NOT_FOUND = "Not found"
 
 /** The Code view of a repository nobody cloned yet, or whose clone failed or was refused: Clone is in its header. */
-export const NOT_CLONED = "Not cloned"
+export const NOT_CLONED = "Clone to browse files"
 
 /** The Code view while the repository clones. */
 export const CLONING = "Cloning"

@@ -44,7 +44,7 @@ const expectWorkspace = (page: Page, branch: string) =>
     await expect(chrome.getByRole("list", { name: "People here" }).getByRole("button", { name: me().login })).toBeVisible({
       timeout: 30_000,
     })
-    await expect(page.locator(".repo-page").or(page.getByText("Not cloned", { exact: true }))).toBeVisible({ timeout: 30_000 })
+    await expect(page.locator(".repo-page").or(page.getByText("Clone to browse files", { exact: true }))).toBeVisible({ timeout: 30_000 })
     const view = (await page.locator(".branch-screen-view").boundingBox())!
     const conversation = (await conversationOf(page).boundingBox())!
     expect(conversation.x, "the conversation sits beside the view").toBeGreaterThanOrEqual(view.x + view.width)

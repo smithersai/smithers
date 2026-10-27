@@ -384,3 +384,5 @@ A confirmed missing repository offers neither Clone nor Sign in to clone, and hi
 About reads settle on their first refusal. A failed upstream read shows its reason and Try again, including on a private repository; a GitHub 404 says Repository not found. A 503 remains unavailable, never invented absence. This replaces the two-minute loading-only retry budget for About; file and tree reads retain their durable retry policy.
 
 A read beyond the supported file-path length is absent (404), while malformed traversal paths remain invalid (400). Breadcrumbs wrap within the header.
+
+Before a clone, Code's empty state says **Clone to browse files**. The root preview comes from the cached GitHub About answer (root entries and README only); nested reads use Code Storage. Browsing arbitrary GitHub paths must not spend an installation's quota for repositories without that installation.
