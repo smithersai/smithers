@@ -61,13 +61,8 @@ export function IssueScreen() {
       } />
     </main>
   )
-  if (item === undefined) {
-    return (
-      <main className="issues-screen">
-        <ItemConversation loading title="" number={number} state="open" body="" comments={[]} />
-      </main>
-    )
-  }
+  // Keep the route's frame while its detail arrives; no invented content or loading skeleton.
+  if (item === undefined) return <main className="issues-screen" />
   const shown = conversationProps(item, rows ?? [], { owner, name: repo })
   const made = todosByIssue(todosRepoId, todoRows, owner, repo).get(number)
   const make = mayMakeTodo(session !== undefined && mayChange(session, confirmed, answer), shown)

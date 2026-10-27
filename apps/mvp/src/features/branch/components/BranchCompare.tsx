@@ -1,4 +1,4 @@
-import { EmptyState, Skeleton } from "@smthrs/ui"
+import { EmptyState } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { ChangedFiles } from "../../pulls/components/ChangedFiles"
 import { CommitList } from "../../pulls/components/CommitList"
@@ -14,9 +14,9 @@ export function BranchCompare() {
   const { data: comparisons } = useLiveQuery(publishing.queries.comparisons)
   const view = compareOf(publication, comparisons)
   return (
-    <section className="branch-compare" aria-label={COMPARE} aria-busy={view.kind === "loading"}>
+    <section className="branch-compare" aria-label={COMPARE}>
       {view.kind === "loading"
-        ? <Skeleton className="branch-compare-loading" />
+        ? null
         : view.kind === "ready"
         ? (
           <>

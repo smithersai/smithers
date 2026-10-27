@@ -10,4 +10,3 @@
 
 /* Compare: the commits, then each file's diff. */
 .branch-compare { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
-.branch-compare-loading { min-height: 12rem; }

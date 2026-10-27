@@ -50,13 +50,8 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
       } />
     </main>
   )
-  if (pull === undefined) {
-    return (
-      <main className="pulls-screen">
-        <ItemConversation loading title="" number={number} state="open" body="" comments={[]} />
-      </main>
-    )
-  }
+  // Keep the route's frame while its detail arrives; no invented content or loading skeleton.
+  if (pull === undefined) return <main className="pulls-screen" />
   const summary = checksSummaryOf(checks ?? [])
   const tabs: ReadonlyArray<{ readonly tab: PullTab; readonly label: string }> = [
     { tab: "conversation", label: "Conversation" },

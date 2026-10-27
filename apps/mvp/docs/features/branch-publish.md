@@ -180,3 +180,5 @@ No record carries a title, a body, a path, a branch name or a login. The machine
 - The branches page.
 
 Publish and Update attempts log `branch.write.identity` and count `smithers_branch_write_identities` by `op` and `identity` (`person` or `app`), without login or token. The browser also logs `branch.write.identity` at credential resolution with `runId`, `parentRunId`, `flow`, credential kind and identity, so the continuation where authority changed is visible through the telemetry relay.
+
+Compare keeps its section frame while the comparison arrives, then fills in commits and files without a loading skeleton. The production `branch-publish.spec.ts` journey checks this throughout navigation.
