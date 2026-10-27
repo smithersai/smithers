@@ -21,6 +21,10 @@ Option names are the kebab-case form of their schema key, so `cacheDir` is
 
 ## Workspace options
 
+The `owners` command also accepts absolute paths inside the workspace and
+resolves them to workspace-relative paths. It rejects paths outside the
+workspace before resolving ownership.
+
 Every command takes these.
 
 | Option        | Alias | Type   | Default                | Meaning                                                         |

@@ -15,6 +15,32 @@ afterAll(async () => {
   await Promise.all(temporaryDirectories.map((directory) => Fs.rm(directory, { recursive: true, force: true })))
 })
 
+it("maps an absolute workspace path to its owners and rejects absolute paths outside the workspace", async () => {
+  const root = await fixture()
+  expect(await ownersJson(root, [NodePath.join(root, "lib/query.sql")])).toEqual(
+    await ownersJson(root, ["lib/query.sql"])
+  )
+  for (
+    const path of [NodePath.join(root, "..", "outside.sql"), `${root}-sibling/lib/query.sql`, "C:\\outside\\file.sql"]
+  ) {
+    const result = await serve(root, ["owners", path, "--format", "json"])
+    expect(result.exitCode).toBe(1)
+    expect(result.output).toContain("outside the workspace")
+  }
+})
+
+it("refuses empty and parent-relative owners paths through the command", async () => {
+  const root = await fixture()
+  for (const path of [".", "./", "lib/../query.sql", "../query.sql", root]) {
+    const result = await serve(root, ["owners", path, "--format", "json"])
+    expect(result.exitCode, path).toBe(1)
+    expect(JSON.parse(result.output)).toEqual({
+      code: "owners_failed",
+      message: `owners paths must be workspace-relative: ${JSON.stringify(path)}`
+    })
+  }
+})
+
 const workspaceModule = (teams: string) =>
   `import { Smithers as S } from "@smthrs/targets"
 const packageJson = S.file("//package.json")

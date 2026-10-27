@@ -31,6 +31,7 @@ import * as Input from "@smthrs/targets/Input"
 import type * as Owners from "@smthrs/targets/Owners"
 import * as Target from "@smthrs/targets/Target"
 import { minimatch } from "minimatch"
+import * as NodePath from "node:path"
 import * as Ansi from "./Ansi.ts"
 import { byCodeUnit } from "./internal/Text.ts"
 import * as Label from "./Label.ts"
@@ -95,13 +96,22 @@ export interface Resolution {
 
 const packageLabel = (packagePath: string): string => packagePath === "" ? "//" : `//${packagePath}`
 
-const normalizePath = (path: string): string => {
+const normalizePath = (path: string, root: string): string => {
   // Drop empty and `.` segments so every spelling of a path lands on the
   // package that owns it; a path that reached the wrong package would need
   // the wrong approvers.
-  const segments = path.replaceAll("\\", "/").split("/").filter((segment) => segment !== "" && segment !== ".")
-  if (segments.length === 0 || segments.includes("..")) {
-    throw new Error(`owners paths must be workspace-relative: ${JSON.stringify(path)}`)
+  const spelling = path.replaceAll("\\", "/")
+  const absolute = NodePath.isAbsolute(spelling)
+  const relative = absolute ? NodePath.relative(root, spelling).replaceAll("\\", "/") : spelling
+  const outside = (absolute && (relative === ".." || relative.startsWith("../") || NodePath.isAbsolute(relative))) ||
+    (NodePath.win32.isAbsolute(spelling) && !absolute)
+  const segments = relative.split("/").filter((segment) => segment !== "" && segment !== ".")
+  if (outside || segments.length === 0 || segments.includes("..")) {
+    throw new Error(
+      outside
+        ? `owners path is outside the workspace: ${JSON.stringify(path)}`
+        : `owners paths must be workspace-relative: ${JSON.stringify(path)}`
+    )
   }
   return segments.join("/")
 }
@@ -272,7 +282,7 @@ const claimants = (
 }
 
 /**
- * Resolves ownership for a set of workspace-relative paths.
+ * Resolves ownership for workspace-relative paths or absolute paths inside the workspace.
  *
  * @category resolution
  * @since 0.1.0
@@ -288,7 +298,7 @@ export const resolve = (index: PackageIndex, paths: ReadonlyArray<string>): Reso
   }
   const claims = claimants(index)
   const touched: Array<TouchedPath> = []
-  for (const raw of [...new Set(paths.map(normalizePath))].sort(byCodeUnit)) {
+  for (const raw of [...new Set(paths.map((path) => normalizePath(path, index.root)))].sort(byCodeUnit)) {
     const owning = packageOf(index, raw)
     const set = new OwnerSet()
     const packages = new Set<string>([packageLabel(owning)])
