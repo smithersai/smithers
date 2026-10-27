@@ -10,7 +10,7 @@ import * as RedactedLogger from "@smthrs/journal/RedactedLogger"
 import * as MigrateCommand from "@smthrs/migrate/flow/Command"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Layer, Logger } from "effect"
-import { Cli, z } from "incur"
+import { Cli, Mcp, z } from "incur"
 import { createRequire } from "node:module"
 import { homedir } from "node:os"
 import { dirname, resolve } from "node:path"
@@ -22,6 +22,7 @@ import { createEnvironmentCli } from "./cli/EnvironmentCommands.ts"
 import * as Generate from "./cli/Generate.ts"
 import { createGenerateCli, initialize } from "./cli/Generate.ts"
 import { appendHistoryCommands } from "./cli/HistoryCommands.ts"
+import * as McpStdio from "./cli/McpStdio.ts"
 import * as Presentation from "./cli/Presentation.ts"
 import { appendRunTiming } from "./cli/RunTimingCommand.ts"
 import { createStepCacheCli } from "./cli/StepCacheCommands.ts"
@@ -515,7 +516,7 @@ export const makeCli = (
   ])
 
   const invoke = cli.serve.bind(cli)
-  const serve: typeof cli.serve = (argv = [], serveOptions) => {
+  const serve: typeof cli.serve = async (argv = [], serveOptions) => {
     const parsed = Argv.parse(argv, cli)
     // Published commands keep explicit help even when omitted from install
     // discovery. Resolve against both existing trees; never expose them in
@@ -560,6 +561,49 @@ export const makeCli = (
         await RetiredSkills.register(homedir(), process.env.XDG_DATA_HOME || resolve(homedir(), ".local/share"))
       }
       return rootDiscovery && !explicitHiddenHelp ? helpDiscovery.serve(argv, options) : invoke(argv, options)
+    }
+    // Incur selects stdio before help/schema/manifests/version, but after
+    // update checks and a requested update (unless help suppresses it).
+    if (
+      parsed.mcp && !argv.includes("--incur-update-check") &&
+      (!argv.includes("--update") || argv.includes("--help") || argv.includes("-h"))
+    ) {
+      // Host services only: an abort closes the input, which ends the server
+      // cleanly, so the signal is not raced against it.
+      await Bridge.run(
+        Effect.gen(function*() {
+          const stdio = yield* McpStdio.Stdio
+          const input = McpStdio.input(stdio.output)
+          yield* Effect.promise(() =>
+            Mcp.serve("smthrs", packageVersion, discoveryTree, {
+              input,
+              output: stdio.output,
+              version: packageVersion,
+              middlewares: [(context, next) => Presentation.scope(context, config, next)]
+            })
+          )
+          const cleanup = () => {
+            stdio.input.unpipe(input)
+            stdio.input.off("error", onError)
+            config.signal?.removeEventListener("abort", cleanup)
+            input.destroy()
+          }
+          const onError = (cause: Error) => input.destroy(cause)
+          input.once("close", cleanup)
+          stdio.input.on("error", onError)
+          config.signal?.addEventListener("abort", cleanup, { once: true })
+          if (config.signal?.aborted) cleanup()
+          else stdio.input.pipe(input)
+        }).pipe(Effect.provideService(
+          McpStdio.Stdio,
+          config.mcpStdio ?? {
+            input: process.stdin,
+            output: process.stdout
+          }
+        )),
+        { effectContext: config.effectContext }
+      )
+      return
     }
     if (argv.some((word) => word === "--mcp" || word === "--http")) return dispatch(serveOptions)
     return Presentation.withErrorEnvelope(

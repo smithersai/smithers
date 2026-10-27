@@ -92,8 +92,13 @@ This is an approval boundary, not an operating-system sandbox. Do not grant
 arbitrary host shell, code execution, or database write access to an actor that
 must not bypass a human gate.
 
-A missing local host installation reports `host_not_installed` without a
-filesystem path.
+Malformed JSON on stdio receives JSON-RPC error `-32700` with a null request
+ID; the server continues accepting later requests. A missing local host
+installation reports `host_not_installed` without a filesystem path.
+
+Embedded `makeCli` hosts may supply `mcpStdio: { input, output }`; the CLI
+provides these streams as its Effect transport service. EOF, input failure and
+abort release the input pipe and listeners. The default uses process stdio.
 
 ## The other direction
 

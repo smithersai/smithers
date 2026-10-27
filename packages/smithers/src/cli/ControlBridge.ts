@@ -33,6 +33,7 @@ import * as Ui from "../Ui.ts"
 import * as Verb from "../Verb.ts"
 import { packageVersion } from "../Version.ts"
 import * as Argv from "./Argv.ts"
+import type * as McpStdio from "./McpStdio.ts"
 import { writeOperatorTokenFile } from "./OperatorTokenFile.ts"
 import * as Presentation from "./Presentation.ts"
 import * as RunProgress from "./RunProgress.ts"
@@ -64,6 +65,8 @@ export type ConnectionOptions = z.output<typeof connectionOptions>
 export interface Runtime extends RuntimeConfig {
   /** Services captured by an embedded Effect host, retained at each command boundary. */
   readonly effectContext?: Context.Context<never> | undefined
+  /** Host-owned MCP transport; the process standard streams when omitted. */
+  readonly mcpStdio?: McpStdio.Service | undefined
   /** Explicit judge for an embedded or offline CLI host; otherwise select the gateway. */
   readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
   /** Host-owned delegation for local commands and the served gateway, never a request argument. */
