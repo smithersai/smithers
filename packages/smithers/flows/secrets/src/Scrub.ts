@@ -87,6 +87,7 @@ export const forms = (value: string): ReadonlyArray<string> => {
 interface Pattern {
   readonly bytes: Uint8Array
   readonly replacement: Uint8Array
+  readonly tokens?: ReadonlyArray<ReadonlyArray<Uint8Array>>
 }
 
 const matchesAt = (input: Uint8Array, at: number, pattern: Uint8Array): boolean => {
@@ -94,6 +95,32 @@ const matchesAt = (input: Uint8Array, at: number, pattern: Uint8Array): boolean 
     if (input[at + index] !== pattern[index]) return false
   }
   return true
+}
+
+// Alternatives are per byte, rather than a Cartesian product of whole echoes.
+// Every token is nonempty and prefix-free, so matching needs no backtracking.
+const percentTokens = (value: string): ReadonlyArray<ReadonlyArray<Uint8Array>> =>
+  Array.from(utf8(value), (byte) => {
+    const hex = byte.toString(16).padStart(2, "0")
+    const escapes = [...new Set([hex.charAt(0), hex.charAt(0).toUpperCase()])].flatMap((first) =>
+      [...new Set([hex.charAt(1), hex.charAt(1).toUpperCase()])].map((last) => utf8(`%${first}${last}`))
+    )
+    if (byte === 32) escapes.push(utf8("+"))
+    if (/^[A-Za-z0-9!'()*~._-]$/.test(String.fromCharCode(byte))) escapes.push(Uint8Array.of(byte))
+    return escapes
+  })
+
+const matchedLength = (input: Uint8Array, at: number, pattern: Pattern): number => {
+  if (pattern.tokens === undefined) {
+    return pattern.bytes.length <= input.length - at && matchesAt(input, at, pattern.bytes) ? pattern.bytes.length : 0
+  }
+  let end = at
+  for (const token of pattern.tokens) {
+    const hit = token.find((bytes) => bytes.length <= input.length - end && matchesAt(input, end, bytes))
+    if (hit === undefined) return 0
+    end += hit.length
+  }
+  return end - at
 }
 
 /**
@@ -107,11 +134,18 @@ export const make = (targets: ReadonlyArray<Target>): Scrubber => {
   const patterns: Array<Pattern> = []
   for (const target of targets) {
     const replacement = utf8(target.replacement)
-    for (const form of forms(Redacted.value(target.value))) patterns.push({ bytes: utf8(form), replacement })
+    const value = Redacted.value(target.value)
+    for (const form of forms(value)) patterns.push({ bytes: utf8(form), replacement })
+    if (value.length > 0) {
+      const tokens = percentTokens(value)
+      patterns.push({ bytes: concat(tokens.map((token) => token[0]!)), tokens, replacement })
+    }
   }
   patterns.sort((left, right) => right.bytes.length - left.bytes.length)
   const longest = patterns[0]?.bytes.length ?? 0
-  const firsts = new Set(patterns.map((pattern) => pattern.bytes[0]))
+  const firsts = new Set(
+    patterns.flatMap((pattern) => pattern.tokens?.[0]!.map((bytes) => bytes[0]) ?? [pattern.bytes[0]])
+  )
 
   /**
    * Scrubs `input` up to where a form could still continue in the next chunk, or to its end when `final`, and
@@ -124,12 +158,18 @@ export const make = (targets: ReadonlyArray<Target>): Scrubber => {
     let at = 0
     while (at < limit) {
       if (firsts.has(input[at])) {
-        const hit = patterns.find((pattern) =>
-          pattern.bytes.length <= input.length - at && matchesAt(input, at, pattern.bytes)
-        )
-        if (hit !== undefined) {
-          parts.push(input.subarray(start, at), hit.replacement)
-          at += hit.bytes.length
+        let length = 0
+        let replacement: Uint8Array | undefined
+        for (const pattern of patterns) {
+          const matched = matchedLength(input, at, pattern)
+          if (matched > length) {
+            length = matched
+            replacement = pattern.replacement
+          }
+        }
+        if (replacement !== undefined) {
+          parts.push(input.subarray(start, at), replacement)
+          at += length
           start = at
           continue
         }
