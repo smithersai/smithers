@@ -62,8 +62,18 @@ const urlPattern = /https?:\/\/[^\s"'<>`]+/g;
 
 /** The web links in one line of terminal text, with the column each starts at. */
 export const linksIn = (line: string): Array<{ readonly start: number; readonly url: string }> =>
-  Array.from(line.matchAll(urlPattern), (match) => ({ start: match.index, url: match[0].replace(/[.,;:!?)\]}]+$/, "") }))
-    .filter(({ url }) => isWebUrl(url));
+  Array.from(line.matchAll(urlPattern), (match) => {
+    let url = match[0];
+    // Remove sentence punctuation and closing delimiters supplied by the surrounding text.
+    // A balanced delimiter belongs to the URL (for example Wikipedia article names).
+    while (/[.,;:!?)\]}]$/.test(url)) {
+      const closing = url.at(-1)!;
+      const opening = ({ ")": "(", "]": "[", "}": "{" } as Record<string, string>)[closing];
+      if (opening !== undefined && url.split(opening).length >= url.split(closing).length) break;
+      url = url.slice(0, -1);
+    }
+    return { start: match.index, url };
+  }).filter(({ url }) => isWebUrl(url));
 
 /** Whether a key event is one of the page's shortcuts: ⌘K or Ctrl+K, with or without Shift. */
 export const isPageKey = (event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey">): boolean =>

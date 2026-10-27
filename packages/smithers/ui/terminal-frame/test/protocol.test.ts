@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { decodeFrameMessage } from "../src/protocol";
+import { decodeFrameMessage, linksIn } from "../src/protocol";
 
 const message = (method: string, params: unknown) => ({ jsonrpc: "2.0", method, params });
 
@@ -35,5 +35,17 @@ test("limits each terminal dimension to the unsigned 16-bit protocol range", () 
     for (const rows of [1, 24, 65535]) {
       expect(decodeFrameMessage(message("terminal/resize", { cols, rows }))).toEqual({ method: "terminal/resize", cols, rows });
     }
+  }
+});
+
+test("links retain balanced URL parentheses and strip surrounding punctuation", () => {
+  for (const [text, url] of [
+    ["see https://en.wikipedia.org/wiki/Foo_(bar) now", "https://en.wikipedia.org/wiki/Foo_(bar)"],
+    ["(https://example.com/a)", "https://example.com/a"],
+    ["(https://example.com/a_(b)).", "https://example.com/a_(b)"],
+    ["https://example.com/a_(b_(c))!", "https://example.com/a_(b_(c))"],
+    ["https://example.com/a).", "https://example.com/a"],
+  ] as const) {
+    expect(linksIn(text)).toEqual([{ start: text.indexOf("https:"), url }]);
   }
 });
