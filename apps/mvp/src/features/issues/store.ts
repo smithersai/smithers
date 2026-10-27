@@ -1,3 +1,4 @@
+import { admissionReceipt } from "../../writeAdmission"
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
 import { Cache, Clock, Context, Effect, Exit, Layer, Option, Ref, Scope, Stream } from "effect"
@@ -478,14 +479,14 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
         queuedAt: yield* Clock.currentTimeMillis,
         v: 3,
       }
-      const recoveryKept = yield* Effect.result(keep(requested, row, "not_sent", null))
+      const recoveryKept = yield* Effect.result(admissionReceipt(keep(requested, row, "not_sent", null), write.id, write.op, "recovery"))
       if (recoveryKept._tag === "Failure") return { queued: false }
       // Following server receipts must not hold local admission behind a repository read or shape startup.
       yield* forRepo(row.repoId).pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }))
-      yield* chat.lead
+      yield* admissionReceipt(chat.lead, write.id, write.op, "leader")
       const admitted = yield* chat.outbox
         .transact(ISSUE_WRITE, { idempotencyKey: write.id, joinExisting: true }, Effect.asVoid(sending.insert(row)))
-        .pipe(Effect.flatMap((taken) => taken.admitted.pipe(Effect.catch((error) => Effect.andThen(Effect.ignore(taken.settled), Effect.fail(error))))), Effect.result)
+        .pipe(Effect.flatMap((taken) => admissionReceipt(taken.admitted, write.id, write.op, "storage").pipe(Effect.catch((error) => Effect.andThen(Effect.ignore(taken.settled), Effect.fail(error))))), Effect.result)
       // Remove only the pre-admission recovery receipt. A concurrent server refusal or accepted receipt wins.
       const recovery = yield* requested.get(write.id)
       if (admitted._tag === "Success" && Option.isSome(recovery) && recovery.value.status === "not_sent" && recovery.value.reason === null) {

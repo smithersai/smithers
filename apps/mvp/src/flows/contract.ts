@@ -39,6 +39,9 @@ export const doorChannel = (name: string): string => `${name}/door`
 export const FLOWS_TELEMETRY = {
   records: [
     "flow.dispatch",
+    "write.admission",
+    "write.identity",
+    "smithers_write_admission_stages",
     "smithers_flow_dispatches",
     // Whose data the device holds, checked before the engine starts (src/device/identity.ts).
     "auth.device_identity",
@@ -141,6 +144,10 @@ export const FLOWS_TELEMETRY = {
     "flow",
     "door",
     "executionId",
+    "commandId",
+    "atMs",
+    "stage",
+    "writeId",
     "outcome",
     "refusal",
     "durationMs",

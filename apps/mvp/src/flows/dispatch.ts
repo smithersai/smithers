@@ -1,3 +1,4 @@
+import { admissionReceipt } from "../writeAdmission"
 import type { Flow as FlowTypes } from "@smthrs/flow"
 import { FlowRuntime, Interpreter, RunMetrics } from "@smthrs/flow"
 import { BrowserEngine } from "@smthrs/platform-browser"
@@ -198,7 +199,8 @@ export const makeDispatch = <Entries extends Readonly<Record<string, Entry>>>(en
         const fields: Record<string, string | number> = { flow: name, door: options.door, executionId }
         const run = { executionId, payload }
         // The engine labels the run's usage metrics with the door and its actor kind, never who.
-        const started = engine.start(entry.flow, run).pipe(
+        const write = name.startsWith("issue/") || name.startsWith("todo/") || name.startsWith("triage/") || name === "run/steer"
+        const started = (write ? admissionReceipt(engine.start(entry.flow, run), executionId, name, "engine") : engine.start(entry.flow, run)).pipe(
           RunMetrics.withOrigin({ door: options.door, actor: actorOf(options.door) }),
           Effect.onExit(admit),
         )

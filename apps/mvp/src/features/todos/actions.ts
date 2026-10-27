@@ -1,3 +1,4 @@
+import { admissionReceipt, beginAdmission, executionOf, finishAdmission, forgetAdmission, forgetDraftAdmissions, identifyAdmission } from "../../writeAdmission"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Clock, Effect, Metric, Option } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
@@ -69,9 +70,8 @@ const setCommitting = (id: string, committing: boolean) =>
     })))
 
 /** Stable for an unchanged draft snapshot; its content never enters the flow's recorded identity. */
-const commitExecutionId = (draft: Draft) => Uuid.v5(OP_ID_NAMESPACE,
-  JSON.stringify([draft.id, draft.repo, draft.title.trim(), draft.prompt, draft.acceptance, draft.issue ?? null]),
-).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+const commitIdentity = (draft: Draft) => ({ namespace: OP_ID_NAMESPACE, value: JSON.stringify([draft.id, draft.repo, draft.title.trim(), draft.prompt, draft.acceptance, draft.issue ?? null]) })
+const commitExecutionId = (draft: Draft) => Uuid.v5(OP_ID_NAMESPACE, commitIdentity(draft).value).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
 
 /** Commit retains its draft until the device durably admits its snapshot. */
 export const commit = (id: string) =>
@@ -84,16 +84,22 @@ export const commit = (id: string) =>
     if (!isTitle(draft.title) || !isPrompt(draft.prompt)) return undefined
     const flows = yield* FlowDispatch
     yield* setCommitting(id, true)
-    const executionId = yield* commitExecutionId(draft)
-    const opId = yield* Uuid.v5(OP_ID_NAMESPACE, executionId).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
     const payload = { repo: draft.repo, title: draft.title.trim(), prompt: draft.prompt,
       ...(draft.acceptance.length === 0 ? {} : { acceptance: draft.acceptance }),
       ...(draft.issue === undefined ? {} : { issue: draft.issue }) }
+    // Input retention must precede any asynchronous progress/toast persistence as well as outbox admission.
+    const admission = yield* beginAdmission("todo/commit", payload, commitIdentity(draft), id)
+    if (Option.isNone(admission)) { yield* setCommitting(id, false); return undefined }
+    const executionId = yield* executionOf(admission.value)
+    const opId = yield* Uuid.v5(OP_ID_NAMESPACE, executionId).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+    yield* identifyAdmission(admission.value, executionId, opId)
     const { kept } = yield* store.queue({ ...payload, id: opId, op: "commit", number: 0, acceptance: draft.acceptance })
+    let cleaned = true
     if (kept) {
-      yield* store.drafts.delete(id).pipe(Effect.flatMap((removed) => removed.persisted), Effect.ignore)
+      cleaned = yield* admissionReceipt(store.drafts.delete(id).pipe(Effect.flatMap((removed) => removed.persisted)), admission.value.commandId, "todo/commit", "source").pipe(Effect.as(true), Effect.orElseSucceed(() => false))
       yield* flows.dispatch("todo/commit", payload, { door: "button", executionId }).pipe(Effect.ignore, Effect.forkIn(store.scope, { startImmediately: true }))
     }
+    yield* finishAdmission(admission.value, kept, cleaned)
     yield* setCommitting(id, false)
     const [owner, name] = draft.repo.split("/") as [string, string]
     return stackPath(owner, name)
@@ -110,7 +116,7 @@ const record = (action: "edit" | "discard" | "discard_draft", fields: Record<str
 export const discardDraft = (id: string) =>
   Effect.gen(function* () {
     const { drafts } = yield* TodosStore
-    if (Option.isNone(yield* drafts.get(id))) return
+    if (Option.isNone(yield* drafts.get(id)) || !(yield* forgetDraftAdmissions(id))) return
     yield* Effect.ignore(drafts.delete(id))
     yield* record("discard_draft", { draftId: id })
   })
@@ -136,11 +142,15 @@ const admitChange = (op: "drop" | "retry", owner: string, name: string, number: 
   Effect.gen(function* () {
     const store = yield* TodosStore
     const flows = yield* FlowDispatch
-    const executionId = crypto.randomUUID()
-    const id = yield* Uuid.v5(OP_ID_NAMESPACE, executionId).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
     const payload = { repo: `${owner}/${name}`, number }
+    const admission = yield* beginAdmission(op === "drop" ? "todo/drop" : "todo/Retry", payload)
+    if (Option.isNone(admission)) return
+    const executionId = yield* executionOf(admission.value)
+    const id = yield* Uuid.v5(OP_ID_NAMESPACE, executionId).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+    yield* identifyAdmission(admission.value, executionId, id)
     const row: QueuedOp = { ...payload, id, op, title: "", prompt: "", acceptance: [] }
     const { kept } = yield* store.queue(row)
+    yield* finishAdmission(admission.value, kept)
     if (kept) yield* flows.dispatch(op === "drop" ? "todo/drop" : "todo/Retry", payload, { door: "button", executionId }).pipe(
       Effect.ignore, Effect.forkIn(store.scope, { startImmediately: true }),
     )
@@ -158,6 +168,7 @@ const handle = (opId: string, action: "edit" | "discard") =>
     const found = yield* requested.get(opId)
     if (Option.isNone(found)) return undefined
     const change = found.value
+    if (!(yield* forgetAdmission(OP_ID_NAMESPACE, change.id))) return undefined
     if (action === "edit" && change.op === "commit") {
       yield* Effect.orDie(drafts.insert({
         id: crypto.randomUUID(),

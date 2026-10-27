@@ -1,3 +1,4 @@
+import { acknowledgeNavigation, admissionReceipt, beginAdmission, identifyAdmission, executionOf, finishAdmission, forgetAdmission, WriteIntents } from "../../writeAdmission"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { keep } from "./writes"
 import type { Commitment } from "./lifecycle"
@@ -40,12 +41,18 @@ export const retry = Effect.andThen(reconnectShapes, recordShapeRetry("issue"))
  * What the route calls on a navigation: shows `owner/name`'s issues, or, with `number`, that issue; and opens that
  * repository's issues, its own shapes (decision 0079 slice 1b), once.
  */
-export const open = (owner: string, name: string, number?: number) =>
+export const open = (owner: string, name: string, number?: number, writeId?: string | null) =>
   Effect.gen(function* () {
     const store = yield* IssuesStore
     const id = repoId(owner, name)
     yield* store.forRepo(id, number)
     yield* store.route(id, number)
+    const intents = yield* Effect.serviceOption(WriteIntents)
+    const resumed = Option.isSome(intents) ? intents.value.resumed.get(`${owner}/${name}`) : undefined
+    if (typeof writeId === "string" && Option.isSome(intents)) {
+      yield* acknowledgeNavigation(writeId)
+      intents.value.resumed.delete(`${owner}/${name}`)
+    }
     yield* store.view.update(VIEW, (row) => {
       row.owner = owner
       row.name = name
@@ -55,6 +62,7 @@ export const open = (owner: string, name: string, number?: number) =>
       row.submitting = false
       delete row.submissionKey
       delete row.createdWriteId
+      if (number === undefined && writeId === null && resumed !== undefined) row.createdWriteId = resumed
       delete row.submissionFailed
     })
   }).pipe(Effect.orDie)
@@ -100,16 +108,22 @@ const admitWrite = (write: Omit<QueuedWrite, "id" | "credential">, join: (execut
   Effect.gen(function* () {
     const store = yield* IssuesStore
     const { drafts, view } = store
-    const executionId = crypto.randomUUID()
+    const admission = yield* beginAdmission(write.op, write as unknown as Readonly<Record<string, unknown>>, undefined, key)
+    if (Option.isNone(admission)) {
+      yield* view.update(VIEW, value => { value.submissionFailed = true })
+      return false
+    }
+    const executionId = yield* executionOf(admission.value)
     yield* view.update(VIEW, (row) => {
       if (key !== undefined) { row.submitting = true; row.submissionKey = executionId }
       delete row.submissionFailed
     })
     const id = yield* Uuid.v5(WRITE_ID_NAMESPACE, executionId).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+    yield* identifyAdmission(admission.value, executionId, id)
     const row = { ...write, id, repoId: repoId(...write.repo.split("/") as [string, string]), queuedAt: yield* Clock.currentTimeMillis, v: 3 as const }
     // A recoverable receipt precedes every asynchronous admission. If this tab closes here, no old tab is needed
     // to recover the text, and Retry uses this same write identity.
-    const kept = yield* Effect.result(keep(store.requested, row, "not_sent", null))
+    const kept = yield* Effect.result(admissionReceipt(keep(store.requested, row, "not_sent", null), admission.value.commandId, write.op, "recovery"))
     const current = Option.getOrThrow(yield* view.get(VIEW))
     if (kept._tag === "Failure") {
       if (key === undefined || current.submissionKey === executionId) yield* view.update(VIEW, (value) => {
@@ -117,6 +131,7 @@ const admitWrite = (write: Omit<QueuedWrite, "id" | "credential">, join: (execut
         value.submissionFailed = true
       })
       if (write.op === "issue/comment") yield* Metric.update(Metric.withAttributes(submissionFailures, { reason: "storage" }), 1)
+      yield* finishAdmission(admission.value, false)
       yield* Metric.update(Metric.withAttributes(admissions, { outcome: "storage_failed" }), 1)
       yield* Effect.logWarning("issues.write.admission").pipe(Effect.annotateLogs({ feature: "issues", writeId: id, op: row.op, outcome: "storage_failed" }))
       return false
@@ -124,11 +139,13 @@ const admitWrite = (write: Omit<QueuedWrite, "id" | "credential">, join: (execut
     if (write.op === "issue/create" && current.submissionKey === executionId) yield* view.update(VIEW, (value) => { value.createdWriteId = id })
     const { queued } = yield* store.queue(row)
     const latest = Option.getOrThrow(yield* view.get(VIEW))
+    let cleaned = true
     if (latest.submissionKey === executionId) {
-      if (queued && key !== undefined) yield* drafts.delete(key).pipe(Effect.flatMap((removed) => removed.persisted), Effect.ignore)
+      if (queued && key !== undefined) cleaned = yield* admissionReceipt(drafts.delete(key).pipe(Effect.flatMap((removed) => removed.persisted)), admission.value.commandId, write.op, "source").pipe(Effect.as(true), Effect.orElseSucceed(() => false))
       if (!queued && write.op === "issue/comment") yield* view.update(VIEW, (value) => { value.submissionFailed = true })
       yield* setSubmitting(false)
     }
+    yield* finishAdmission(admission.value, queued, cleaned)
     yield* Metric.update(Metric.withAttributes(admissions, { outcome: queued ? "queued" : "not_admitted" }), 1)
     yield* Effect.logInfo("issues.write.admission").pipe(Effect.annotateLogs({
       feature: "issues", writeId: id, op: row.op, outcome: queued ? "queued" : "not_admitted",
@@ -211,6 +228,7 @@ const handle = (writeId: string, action: "edit" | "discard") =>
     const found = yield* requested.get(writeId)
     if (Option.isNone(found)) return undefined
     const write = found.value
+    if (!(yield* forgetAdmission(WRITE_ID_NAMESPACE, write.id))) return undefined
     const [owner, name] = write.repo.split("/") as [string, string]
     const created = write.op === "issue/create"
     if (action === "edit") {

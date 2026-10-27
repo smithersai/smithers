@@ -1,15 +1,25 @@
+import { admissionRecords } from "./admissionRecords"
 import { reloadAfter } from "../src/test/reloadTiming"
-import { expect, test } from "./devices"
+import { expect, test as base } from "./devices"
 import { requires, stackRepository } from "./target"
 
+const test = base.extend<{ records: (page: import("@playwright/test").Page) => Promise<void> }>({
+  records: async ({}, use, info) => {
+    const finish: Array<() => Promise<void>> = []
+    await use(async page => { finish.push(await admissionRecords(page, info)) })
+    for (const attach of finish) await attach()
+  },
+})
+
 for (const delay of [0, 100, 300] as const) {
-  test(`TODO commit and drop survive reload ${delay} ms after the press`, async ({ devices }) => {
+  test(`TODO commit and drop survive reload ${delay} ms after the press`, async ({ devices, records }) => {
     requires("writableStack", "member")
     test.setTimeout(180_000)
     const repo = stackRepository()
     const [person] = await devices.open("Maya")
     const page = person!.page
-    const title = `bugbash4-bb5-app-todo-${delay}-${devices.word}`
+    await records(page)
+    const title = `bugbash4-w14w-todo-${delay}-${devices.word}`
     await page.goto(`/${repo}/stack`)
     await page.getByRole("button", { name: "New TODO", exact: true }).click()
     const draft = page.getByRole("form", { name: "TODO draft" })

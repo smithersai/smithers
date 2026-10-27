@@ -1,3 +1,4 @@
+import { admissionReceipt } from "../../writeAdmission"
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Persistence } from "@smthrs/effect-tanstack-db"
 import { Cache, Clock, Context, Effect, Exit, Layer, Metric, Option, Scope, Stream } from "effect"
@@ -200,20 +201,21 @@ const make = Effect.fnUntraced(function* (config: TodosConfig) {
    */
   const queue = (op: QueuedOp) =>
     Effect.gen(function* () {
+      const flow = op.op === "retry" ? "todo/Retry" : `todo/${op.op}`
       const held = yield* requested.get(op.id)
       if (Option.isSome(yield* sending.get(op.id))) return { kept: yield* sendingAdmitted(chat.outbox, TODO_OP, op.id) }
       if (Option.isSome(held) && (held.value.status === "requested" || held.value.reason !== null)) return { kept: true }
       const [owner, name] = op.repo.split("/") as [string, string]
       const row: Sending = { ...op, repoId: repoId(owner, name), queuedAt: yield* Clock.currentTimeMillis, v: 2 }
-      const recovery = yield* Effect.result(keep(requested, row, "not_sent", null, null))
+      const recovery = yield* Effect.result(admissionReceipt(keep(requested, row, "not_sent", null, null), op.id, flow, "recovery"))
       if (recovery._tag === "Failure") {
         yield* recordAdmission(op, "storage_failed")
         return { kept: false }
       }
-      yield* chat.lead
+      yield* admissionReceipt(chat.lead, op.id, flow, "leader")
       const admitted = yield* chat.outbox
         .transact(TODO_OP, { idempotencyKey: op.id, joinExisting: true }, Effect.asVoid(sending.insert(row)))
-        .pipe(Effect.flatMap((taken) => taken.admitted.pipe(Effect.catch((error) => Effect.andThen(Effect.ignore(taken.settled), Effect.fail(error))))), Effect.result)
+        .pipe(Effect.flatMap((taken) => admissionReceipt(taken.admitted, op.id, flow, "storage").pipe(Effect.catch((error) => Effect.andThen(Effect.ignore(taken.settled), Effect.fail(error))))), Effect.result)
       const pending = yield* requested.get(op.id)
       if (admitted._tag === "Success" && Option.isSome(pending) && pending.value.status === "not_sent" && pending.value.reason === null) {
         const removed = yield* requested.delete(op.id).pipe(Effect.orDie)

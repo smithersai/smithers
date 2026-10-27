@@ -530,6 +530,11 @@ void Promise.all([wipe.open(), claimEditorTabId({
       setItem: (key, value) => sessionStorage.setItem(key, value),
       removeItem: (key) => sessionStorage.removeItem(key),
     }, `smithers-flow-pending:${editorTab.id}`, () => activation.state() === "retained" ? deviceOwner : undefined) } : {}),
+    ...(editorTab.persistent ? { writeSnapshot: PendingSnapshot.make({
+      getItem: (key) => sessionStorage.getItem(key),
+      setItem: (key, value) => sessionStorage.setItem(key, value),
+      removeItem: (key) => sessionStorage.removeItem(key),
+    }, `smithers-write-pending:${editorTab.id}`, () => activation.state() === "retained" ? deviceOwner : undefined) } : {}),
     editorTabPersistent: editorTab.persistent,
     ...(editorTab.reason === undefined ? {} : { editorTabRefusal: editorTab.reason }),
   }
@@ -537,6 +542,7 @@ void Promise.all([wipe.open(), claimEditorTabId({
   const leaving = (stop: () => Promise<void>) =>
     wipe.started(() => {
       tabHost.formSnapshot?.clear()
+      tabHost.writeSnapshot?.clear()
       root.unmount()
       return stop()
     })

@@ -68,7 +68,7 @@ export interface IssuesQueries {
 export interface IssuesActions {
   readonly setCommitment: (owner: string, name: string, number: number, commitment: import("./lifecycle").Commitment, previousWriteId?: string) => Promise<void>
   /** What an issue route calls on a navigation: resolves once the repository's issues are open. */
-  readonly open: (owner: string, name: string, number?: number) => Promise<void>
+  readonly open: (owner: string, name: string, number?: number, writeId?: string | null) => Promise<void>
   /** What an issue route calls on a link's hover or focus: starts the repository's issues' sync without showing a page. */
   readonly warm: (owner: string, name: string, number?: number) => Promise<void>
   /** Reconnect failed issue shapes now. */
@@ -125,7 +125,7 @@ export class Issues extends Context.Service<Issues, { readonly queries: IssuesQu
         },
         actions: {
           setCommitment: (owner, name, number, commitment, previousWriteId) => promise(setCommitment(owner, name, number, commitment, previousWriteId)),
-          open: (owner, name, number) => promise(open(owner, name, number)),
+          open: (owner, name, number, writeId) => promise(open(owner, name, number, writeId)),
           warm: (owner, name, number) => promise(warm(owner, name, number)),
           retry: () => run(retry),
           setNewTitle: (owner, name, title) => run(setNewTitle(owner, name, title)),

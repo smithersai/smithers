@@ -1,3 +1,5 @@
+import { WriteIntents } from "./writeAdmission"
+import { resumeAdmissions } from "./resumeAdmissions"
 import type { PendingSnapshot } from "@smthrs/platform-browser"
 import { telemetryExport } from "./telemetryExport"
 import { FlowRegistry } from "./flows/registry"
@@ -128,6 +130,7 @@ export const bootTime = Metric.histogram("smithers_web_boot_ms", {
  */
 export interface Host extends ChatHost {
   readonly formSnapshot?: PendingSnapshot.Service
+  readonly writeSnapshot?: PendingSnapshot.Service
 
   readonly persistence: Persistence.Options<BrowserWASQLiteDatabase>
   /** One tab's stable, locally claimed editor identity across reloads. */
@@ -392,7 +395,7 @@ export const appLayer = <S = never>(
         RemoteRunsClient.layer({ origin, within: REQUEST_WITHIN }),
       ),
     ),
-    Layer.provideMerge(Clipboard.layer(host.clipboard)),
+    Layer.provideMerge(Layer.merge(Clipboard.layer(host.clipboard), WriteIntents.layer(host.writeSnapshot, host.editorTabPersistent))),
     // The device store opens through the leading tab's engine worker; if this tab's worker fails, it opens in memory
     // at once instead of waiting for a leader that will never answer.
     // Every persisted collection must be one the device's registry declares, at its version (decision 0021). One tab
@@ -595,6 +598,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
     const personalModel = yield* PersonalModel
     const store = yield* ChatStore
     yield* bindSessionConnectivity(options.target)
+    yield* resumeAdmissions
     const timeline = options.timeline
     if (timeline !== undefined) markStage(timeline, "services")
     yield* Effect.sync(() =>

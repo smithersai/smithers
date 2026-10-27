@@ -483,8 +483,8 @@ const newIssueRoute = createRoute({
   component: NewIssueScreen,
   validateSearch: (search: Record<string, unknown>): { readonly write?: string } =>
     typeof search.write === "string" && /^[0-9a-f-]{36}$/i.test(search.write) ? { write: search.write } : {},
-  beforeLoad: ({ context, params, ...load }) =>
-    enterRepository(context, params, load, () => context.issues.actions.warm(params.owner, params.repo), () => context.issues.actions.open(params.owner, params.repo)),
+  beforeLoad: ({ context, params, search, ...load }) =>
+    enterRepository(context, params, load, () => context.issues.actions.warm(params.owner, params.repo), () => context.issues.actions.open(params.owner, params.repo, undefined, search.write ?? null)),
 })
 
 /** `/$owner/$repo/issues/$number`: one issue, and the TODOs made from it; any other `$number` matches no route. */

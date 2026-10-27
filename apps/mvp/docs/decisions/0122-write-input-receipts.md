@@ -1,0 +1,11 @@
+# 0122: A write press survives before durable admission
+
+Status: accepted implementation detail (2026-10-27). Extends [0002](0002-local-first.md); core transport infrastructure for the existing public flows, not a feature plugin.
+
+A button or slash command synchronously stages its exact validated payload and command identity with the catalog's `@smthrs/platform-browser` `PendingSnapshot`, before UUID hashing or asynchronous persistence. The host fences the receipt by the current device owner and clears it on sign-out. Multiple unfinished presses keep separate identities. This temporary input receipt bridges admission; it does not send, retry or schedule work.
+
+On opening the page, staged inputs enter their existing `@smthrs/effect-tanstack-db` outboxes once. Those libraries own durable storage, retry, resumption and idempotency. A receipt stays until admission and source cleanup succeed. Create additionally keeps an independent navigation acknowledgment until TanStack Router records the matching `?write=` identity; navigation alone cannot retire an unadmitted input. Recovery uses the exact original identity, waits for draft restoration and clears only its matching source draft, including the original conversation’s composer. Source cleanup failures retain their receipt. Edit and Discard use synchronous identity lookup and retire the matching input receipt before removing their visible recovery row; a running admission fences Discard.
+
+`write.admission` records command identity, flow, stage, outcome and elapsed time. `write.identity` correlates command, execution and write identities. Recovery persistence, leader acquisition, outbox storage and engine admission each record pending and terminal receipts. Metrics omit identities. Payloads, hash inputs, repository names and credentials never enter these records.
+
+Production reproduction on W14: immediate Create and TODO reloads reached hashing but no IndexedDB outbox transaction; their request identity was unavailable after reload. Prior unit tests awaited the action Promise before reloading, missing this interval. Regressions interrupt an unresolved device receipt and reload immediately after the actual browser press at 0, 100 and 300 ms.

@@ -1043,3 +1043,12 @@ Comment recovery-storage refusal counts `smithers_issue_submission_failures` as 
 Browser and engine OTLP exports apply `telemetryExport` before network transmission. HTTP paths use route templates; full URLs, exception text/stack and span status messages are withheld on the device. Persisted collection diagnostics use the collection kind, never repository-qualified storage IDs.
 
 TODO local admission logs `todos.write.admission` and counts `smithers_todo_write_admissions` by operation and outcome (`queued`, `not_admitted`, `storage_failed`), correlated by op id, without the title, prompt or repository name.
+
+### Write admission
+
+`write.admission` carries `commandId`, `flow`, `stage`, `outcome`, `atMs`, and `durationMs`.
+Stages cover input retention, restored input, device recovery persistence, outbox leadership,
+outbox storage and engine admission. A `pending` record without a terminal receipt identifies
+the interrupted boundary. `write.identity` links the input command to its execution and write
+ids. `smithers_write_admission_stages` counts by flow, stage and outcome, without ids.
+No record includes payloads, hash inputs, repository names or credentials.

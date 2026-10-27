@@ -1,3 +1,9 @@
+import { WriteIntents } from "../../writeAdmission"
+import { RunSteers } from "../runs/steers"
+import { SteerWrites } from "../runs/writes"
+import { TodosStore } from "../todos/store"
+import { PendingSnapshot } from "@smthrs/platform-browser"
+import { resumeAdmissions } from "../../resumeAdmissions"
 import { reloadAfter } from "../../test/reloadTiming"
 import { comment as commentAction, create as createAction, open as openAction, retryWrite, triage as triageAction } from "./actions"
 import { dispatches, FlowDispatch } from "../../flows/dispatch"
@@ -14,7 +20,7 @@ import { role as readRepositoryRole } from "../repo/actions"
 import { type ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection, Outbox, Persistence } from "@smthrs/effect-tanstack-db"
 import { GitHub } from "@smthrs/integrations"
-import { Context, Effect, Exit, Layer, type ManagedRuntime, Metric, Stream } from "effect"
+import { Context, Effect, Exit, Fiber, Layer, type ManagedRuntime, Metric, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
@@ -117,7 +123,7 @@ const faultyClient = () => {
   }
 }
 
-type App = ManagedRuntime.ManagedRuntime<FlowDispatch | Issues | IssuesStore | ChatStore | Chat | Commands | AuthStore | RepoStore | RepoClient, unknown>
+type App = ManagedRuntime.ManagedRuntime<WriteIntents | TodosStore | RunSteers | SteerWrites | FlowDispatch | Issues | IssuesStore | ChatStore | Chat | Commands | AuthStore | RepoStore | RepoClient, unknown>
 
 /** A tab on `runtime`, with the issues layer's queries started as React starts them, on read. */
 const tabOf = async (runtime: App) => {
@@ -146,7 +152,7 @@ const tabOf = async (runtime: App) => {
 /** The app on a fresh ChatApi as `actor` (Maya unless set), its device's engine leading. */
 const open = async (options: TabOptions = {}, actor: Actor | null = maya) => {
   const runtime: ManagedRuntime.ManagedRuntime<
-    FlowDispatch | Issues | IssuesStore | ChatStore | Chat | Commands | AuthStore | RepoStore | RepoClient | TestChatApi,
+    WriteIntents | TodosStore | RunSteers | SteerWrites | FlowDispatch | Issues | IssuesStore | ChatStore | Chat | Commands | AuthStore | RepoStore | RepoClient | TestChatApi,
     unknown
   > = openTestApp(options, { actor })
   runtimes.push(runtime)
@@ -1408,3 +1414,36 @@ for (const accepts of [true, false]) {
     expect(await server(opened.api).writes()).toEqual([])
   }, WITHIN)
 }
+
+
+test("a Comment press has a recoverable input before its admission Promise resolves", async () => {
+  const apiTab = await open({ answers: false })
+  const data = new Map<string, string>()
+  const snapshot = PendingSnapshot.make({ getItem: key => data.get(key) ?? null, setItem: (key, value) => { data.set(key, value) }, removeItem: key => { data.delete(key) } }, "pending")
+  const device = nodeDevice({ agent: apiTab.api })
+  const host = { ...device, writeSnapshot: snapshot }
+  const client = faultyClient()
+  client.state.down = true
+  const tab = await another(apiTab.api, { host, replace: client.layer })
+  await tab.actions.open(OWNER, NAME, 45)
+  tab.actions.setCommentDraft(OWNER, NAME, 45, "Immediate reload retains this press")
+  // Do not await the Promise: the old regression tested only after admission had completed.
+  const real = tab.store.requested
+  const faulty = { ...real, insert: (row: Parameters<typeof real.insert>[0]) => real.insert(row).pipe(Effect.map(write => ({ ...write, persisted: Effect.never }))) }
+  const fiber = tab.runtime.runFork(commentAction(OWNER, NAME, 45).pipe(Effect.provideService(IssuesStore, { ...tab.store, requested: faulty })))
+  await until(() => expect(snapshot.read()).toBeDefined())
+  const [intent] = snapshot.read()!.value as Array<{ commandId: string; payload: { body: string } }>
+  expect(intent!.payload.body).toBe("Immediate reload retains this press")
+  await Effect.runPromise(Fiber.interrupt(fiber))
+  await tab.runtime.dispose()
+  runtimes.splice(runtimes.indexOf(tab.runtime), 1)
+  const restored = await another(apiTab.api, { host, replace: client.layer })
+  await restored.runtime.runPromise(resumeAdmissions)
+  await restored.actions.open(OWNER, NAME, 45)
+  await until(() => expect(restored.comments()).toContainEqual(expect.objectContaining({ body: "Immediate reload retains this press", pending: "requested" })))
+  const writes = [...restored.store.sending.tanstack.toArray, ...restored.store.requested.tanstack.toArray]
+  expect(new Set(writes.map(row => row.id)).size).toBe(1)
+  client.state.down = false
+  await restored.runtime.runPromise(restored.chat.outbox.retryNow)
+  await until(async () => expect((await server(apiTab.api).writes()).filter(row => row.id === writes[0]!.id)).toHaveLength(1))
+}, WITHIN)

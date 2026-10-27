@@ -1,3 +1,5 @@
+import { PendingSnapshot } from "@smthrs/platform-browser"
+import { WriteIntents } from "../../writeAdmission"
 import { Effect, Option } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
 import { nodeDevice, openTab, openTestApp, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
@@ -25,7 +27,9 @@ const open = async (refusing = false, engine = false) => {
   const api = await app.runPromise(Effect.service(TestChatApi))
   const base = nodeDevice(engine ? { agent: api } : {})
   const down: { value: boolean; hold?: () => Promise<void> } = { value: refusing }
-  const host = { ...base, outbox: { ...base.outbox, online: { ...base.outbox.online, isOnline: () => engine }, storage: { ...base.outbox.storage,
+  const retained = new Map<string, string>()
+  const writeSnapshot = PendingSnapshot.make({ getItem: key => retained.get(key) ?? null, setItem: (key, value) => { retained.set(key, value) }, removeItem: key => { retained.delete(key) } }, "writes")
+  const host = { ...base, writeSnapshot, outbox: { ...base.outbox, online: { ...base.outbox.online, isOnline: () => engine }, storage: { ...base.outbox.storage,
     set: async (key: string, value: string) => { await down.hold?.(); if (down.value) throw new Error("quota"); return base.outbox.storage.set(key, value) },
   } } }
   const tab = openTab(api, { host, answers: !engine ? false : undefined })
@@ -99,6 +103,10 @@ test("a refused slash admission retains the command and retries its original rec
     await t.commands.actions.submit(text)
     const [held] = await t.tab.runPromise<ReadonlyArray<{ readonly id: string; readonly status: string }>, never>(store.requested.toArray)
     expect(held?.status).toBe("not_sent")
+    const intents = await t.tab.runPromise(Effect.service(WriteIntents))
+    const commandId = intents.pending()[0]!.commandId
+    await t.commands.actions.submit(text)
+    expect(intents.pending().map(row => row.commandId)).toEqual([commandId])
     t.down.value = false
     await t.commands.actions.submit(text)
     expect((await t.tab.runPromise<ReadonlyArray<{ readonly id: string }>, never>(store.sending.toArray)).map((row) => row.id)).toContain(held!.id)
@@ -158,3 +166,18 @@ for (const accepts of [true, false]) {
     expect(Option.getOrThrow(await t.tab.runPromise(store.composer.get(COMPOSER))).draft).toBe("Later draft")
   })
 }
+
+for (const [name, payload] of writes.filter(([flow]) => flow === "issue/comment" || flow === "todo/commit" || flow === "run/steer")) {
+  test(`exact recovery keeps distinct ${name} identities even when their payloads match`, async () => {
+    const t = await open(true)
+    const first = crypto.randomUUID()
+    const second = crypto.randomUUID()
+    expect(await t.tab.runPromise(admitCommand(name, payload, first, "exact"))).toEqual(Option.some("not_admitted"))
+    expect(await t.tab.runPromise(admitCommand(name, payload, second, "exact"))).toEqual(Option.some("not_admitted"))
+    const rows = name === "run/steer" ? (await t.tab.runPromise(Effect.service(SteerWrites))).sent
+      : name === "todo/commit" ? (await t.tab.runPromise(Effect.service(TodosStore))).requested
+      : (await t.tab.runPromise(Effect.service(IssuesStore))).requested
+    expect(new Set(rows.tanstack.toArray.map(row => row.id)).size).toBe(2)
+  })
+}
+

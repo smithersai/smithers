@@ -1,17 +1,27 @@
+import { admissionRecords } from "./admissionRecords"
 import { reloadAfter } from "../src/test/reloadTiming"
-import { expect, test } from "./devices"
+import { expect, test as base } from "./devices"
 import { faults } from "./faults"
 import { github, pollGitHub } from "./github"
 import { requires, scratchRepository } from "./target"
 
+const test = base.extend<{ records: (page: import("@playwright/test").Page) => Promise<void> }>({
+  records: async ({}, use, info) => {
+    const finish: Array<() => Promise<void>> = []
+    await use(async page => { finish.push(await admissionRecords(page, info)) })
+    for (const attach of finish) await attach()
+  },
+})
+
 for (const delay of [0, 100, 300] as const) {
-test(`Create survives reload ${delay} ms after the press`, async ({ devices }) => {
+test(`Create survives reload ${delay} ms after the press`, async ({ devices, records }) => {
   requires("githubScratch", "member")
   test.setTimeout(180_000)
   const repo = scratchRepository()
   const [person] = await devices.open("Maya")
   const page = person!.page
-  const title = `bugbash4-bb5-app-create-${delay}-${devices.word}`
+  await records(page)
+  const title = `bugbash4-w14w-create-${delay}-${devices.word}`
   await page.goto(`/${repo}/issues/new`)
   await page.getByLabel("Title", { exact: true }).fill(title)
   await page.getByLabel("Description", { exact: true }).fill("Durable admission across reload")
@@ -28,13 +38,14 @@ test(`Create survives reload ${delay} ms after the press`, async ({ devices }) =
 
 }
 
-test("an offline Create remains Requested through reload", async ({ devices }) => {
+test("an offline Create remains Requested through reload", async ({ devices, records }) => {
   requires("githubScratch", "member")
   const repo = scratchRepository()
   const [person] = await devices.open("Maya")
   const page = person!.page
+  await records(page)
   await page.goto(`/${repo}/issues/new`)
-  await page.getByLabel("Title", { exact: true }).fill(`bugbash4-bb5-app-offline-${devices.word}`)
+  await page.getByLabel("Title", { exact: true }).fill(`bugbash4-w14w-offline-${devices.word}`)
   await person!.offline()
   await page.getByRole("button", { name: "Create issue", exact: true }).click()
   await expect(page).toHaveURL(/\?write=/)
@@ -44,11 +55,12 @@ test("an offline Create remains Requested through reload", async ({ devices }) =
   await expect(page.getByText("Creating issue…", { exact: true })).toHaveCount(0)
 })
 
-test("a write URL unavailable on this device recovers to Issues", async ({ devices }) => {
+test("a write URL unavailable on this device recovers to Issues", async ({ devices, records }) => {
   requires("githubScratch", "member")
   const repo = scratchRepository()
   const [person] = await devices.open("Maya")
   const page = person!.page
+  await records(page)
   await page.goto(`/${repo}/issues/new?write=${crypto.randomUUID()}`)
   await expect(page.getByRole("heading", { name: "Request unavailable", exact: true })).toBeVisible({ timeout: 60_000 })
   await expect(page.getByText("Requested", { exact: true })).toHaveCount(0)
@@ -57,17 +69,18 @@ test("a write URL unavailable on this device recovers to Issues", async ({ devic
 })
 
 
-test("comment admission survives a refused engine join", async ({ devices }) => {
+test("comment admission survives a refused engine join", async ({ devices, records }) => {
   requires("faults", "syncedScratch", "member")
   const repo = scratchRepository()
   const [person] = await devices.openFaulty("Maya")
   const page = person!.page
+  await records(page)
   const issues = await github<Array<{ number: number; pull_request?: unknown }>>(page, `/repos/${repo}/issues?state=open&per_page=100`)
   const issue = issues.find((row) => row.pull_request === undefined)
   expect(issue).toBeDefined()
   await page.goto(`/${repo}/issues/${issue!.number}?faults`)
   await faults(page).engine.refuseStarts("issue/comment")
-  const comment = `bugbash4-bb5-app-comment-engine-${devices.word}`
+  const comment = `bugbash4-w14w-comment-engine-${devices.word}`
   await page.getByRole("textbox", { name: "Comment", exact: true }).fill(comment)
   await page.getByRole("button", { name: "Comment", exact: true }).click()
   await page.reload()
@@ -76,17 +89,18 @@ test("comment admission survives a refused engine join", async ({ devices }) => 
 })
 
 for (const delay of [0, 100, 300] as const) {
-  test(`comment survives reload ${delay} ms after pressing Comment`, async ({ devices }) => {
+  test(`comment survives reload ${delay} ms after pressing Comment`, async ({ devices, records }) => {
     requires("githubScratch", "member")
     test.setTimeout(180_000)
     const repo = scratchRepository()
     const [person] = await devices.open("Maya")
     const page = person!.page
+  await records(page)
     const issues = await github<Array<{ number: number; pull_request?: unknown }>>(page, `/repos/${repo}/issues?state=open&per_page=100`)
     const issue = issues.find((row) => row.pull_request === undefined)
     expect(issue).toBeDefined()
     await page.goto(`/${repo}/issues/${issue!.number}`)
-    const body = `bugbash4-bb5-app-comment-${delay}-${devices.word}`
+    const body = `bugbash4-w14w-comment-${delay}-${devices.word}`
     await page.getByRole("textbox", { name: "Comment", exact: true }).fill(body)
     await page.getByRole("button", { name: "Comment", exact: true }).click()
     await reloadAfter(delay, () => page.reload())
@@ -97,16 +111,17 @@ for (const delay of [0, 100, 300] as const) {
 }
 
 for (const delay of [0, 100, 300] as const) {
-  test(`a slash comment survives reload ${delay} ms after Enter`, async ({ devices }) => {
+  test(`a slash comment survives reload ${delay} ms after Enter`, async ({ devices, records }) => {
     requires("githubScratch", "member")
     test.setTimeout(180_000)
     const repo = scratchRepository()
     const [person] = await devices.open("Maya")
     const page = person!.page
+  await records(page)
     const issues = await github<Array<{ number: number; pull_request?: unknown }>>(page, `/repos/${repo}/issues?state=open&per_page=100`)
     const issue = issues.find((row) => row.pull_request === undefined)
     expect(issue).toBeDefined()
-    const body = `bugbash4-bb5-app-slash-comment-${delay}-${devices.word}`
+    const body = `bugbash4-w14w-slash-comment-${delay}-${devices.word}`
     await person!.openComposer()
     await person!.composer.fill(`/comment ${repo} ${issue!.number} ${body}`)
     await person!.composer.press("Enter")

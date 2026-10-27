@@ -1,3 +1,5 @@
+import { Uuid, WebCrypto } from "@smthrs/crypto"
+import { beginAdmission, executionOf, finishAdmission, identifyAdmission } from "../../writeAdmission"
 import { slashMenu, slashSubmit } from "@smthrs/ui"
 import { Effect, Metric, Option, Ref, Schema } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
@@ -19,8 +21,7 @@ import { COMMANDS, invalidArgument, missingArguments, unknownCommand } from "./c
 import { choices, submits } from "./metrics"
 import { MENU, type Menu } from "./schema"
 import { CommandsStore } from "./store"
-import { admitCommand, hasOutboxAdmission } from "./admission"
-import { Uuid, WebCrypto } from "@smthrs/crypto"
+import { admissionNamespace, admitCommand, hasOutboxAdmission } from "./admission"
 import { WRITE_ID_NAMESPACE } from "../issues/contract"
 
 // Composer actions await local write admission (docs/features/slash-commands.md). Typing
@@ -111,17 +112,26 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>, draft
       : payload
     const { scope, revision, requestNamespace } = yield* CommandsStore
     const before = yield* draftNow
-    const executionId = hasOutboxAdmission(command.flow)
-      ? yield* Uuid.v5(WRITE_ID_NAMESPACE, JSON.stringify([requestNamespace, yield* Ref.get(revision), conversation, command.flow, pinned])).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
-      : crypto.randomUUID()
-    const admission = yield* admitCommand(command.flow, { ...pinned, ...command.args }, executionId)
+    const input = { ...pinned, ...command.args }
+    const staged = hasOutboxAdmission(command.flow)
+      ? yield* beginAdmission(command.flow, input, { namespace: WRITE_ID_NAMESPACE, value: JSON.stringify([requestNamespace, yield* Ref.get(revision), conversation, command.flow, pinned]) }, undefined, { conversationId: conversation, text: draft })
+      : Option.none()
+    if (hasOutboxAdmission(command.flow) && Option.isNone(staged)) return yield* refuse("invalid", "Not sent", command)
+    const executionId = Option.isSome(staged) ? yield* executionOf(staged.value) : crypto.randomUUID()
+    if (Option.isSome(staged)) {
+      const writeId = yield* Uuid.v5(admissionNamespace(command.flow), executionId).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+      yield* identifyAdmission(staged.value, executionId, writeId)
+    }
+    const admission = yield* admitCommand(command.flow, input, executionId, Option.isSome(staged) ? "exact" : "content")
     if (Option.isSome(admission) && admission.value === "not_admitted") {
+      if (Option.isSome(staged)) yield* finishAdmission(staged.value, false)
       if ((yield* draftNow) === before && (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId === conversation) yield* refuse("invalid", "Not sent", command)
       return
     }
     // A new tab must open while this keypress still owns browser activation, before shared-text admission waits.
     if (command.flow === "app/web/open") yield* openWebPage(payload as never, "slash", scope, conversation)
     if ((yield* draftNow) === before && (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId === conversation) yield* type("")
+    if (Option.isSome(staged)) yield* finishAdmission(staged.value, Option.isSome(admission) && admission.value !== "not_admitted")
     // New typing, dismissal or another command advances the revision even when
     // its row is unchanged, so an older refusal cannot take over the composer.
     const cleared = yield* Ref.get(revision)
