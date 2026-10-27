@@ -2,9 +2,26 @@ import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
 /** Standard package targets plus package-owned documentation generation. */
 import { Smithers } from "@smthrs/targets"
 
-const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
+const { check, circular, docs: readmeDocs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
   cwd: "packages/smithers/flows/crypto"
+})
+
+/** The API's every-public-export promise includes wildcard root exports. */
+const docs = Smithers.DocsParity({
+  readme: Smithers.file("README.md"),
+  cwd: "packages/smithers/flows/crypto",
+  deps: [
+    readmeDocs,
+    Smithers.Shell.Test({
+      shell: "node --test packages/smithers/flows/crypto/scripts/reference-docs.test.mjs",
+      data: [
+        Smithers.file("scripts/reference-docs.test.mjs"),
+        Smithers.file("docs/api.md"),
+        Smithers.glob("src/*.{ts,vibe}")
+      ]
+    })
+  ]
 })
 
 /**
