@@ -124,3 +124,8 @@ img.hero-anim {
 	width: 100%;
 	margin: 0;
 }
+
+/* Pagefind already links the page title; its #_top sub-result repeats it. */
+#starlight__search .pagefind-ui__result-nested:has(a[href$="#_top"]) {
+  display: none;
+}
