@@ -3,7 +3,7 @@ import { Effect, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { expect, test } from "./devices"
 import { step } from "./fixtures"
-import { github, pollGitHub } from "./github"
+import { pollGitHub } from "./github"
 import { me, requires, scratchRepository } from "./target"
 
 // Publish, Update branch and Resync end to end (docs/features/branch-publish.md, rulings GH-6 and GH-11): the real app,
@@ -19,6 +19,16 @@ import { me, requires, scratchRepository } from "./target"
 
 /** A container's first start may take a while on a cold machine. */
 const MACHINE = 240_000
+
+/** The accepted request owns its id; CDP can discard a response body during navigation. */
+const acceptedWrite = (page: import("@playwright/test").Page, op: "branch/publish" | "branch/update") =>
+  page.waitForResponse((response) => response.request().method() === "POST" &&
+    response.url().endsWith("/writes") && response.request().postDataJSON()?.op === op).then((response) => {
+    expect([200, 202], `${op} is admitted`).toContain(response.status())
+    const writeId = response.request().postDataJSON().writeId as string
+    expect(writeId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+    return { writeId }
+  })
 
 /** The App installation's GitHub REST on the scratch repository, with the SDK's credential scrubbing. */
 const asApp = (repository: string) => {
@@ -60,10 +70,13 @@ test("publish: a Smithers-only branch reaches GitHub only through Publish, as a 
   test.setTimeout(15 * 60_000)
   const repo = scratchRepository()
   const app = asApp(repo)
+  // Verification already requires this installation for main and cleanup. Keep
+  // reads outside the browser too, rather than exhaust GitHub's anonymous quota.
+  const read = <A>(path: string) => app("GET", path) as Promise<A>
   const [maya] = await devices.open("Maya")
   const page = maya!.page
-  const facts = await github<{ default_branch: string }>(page, `/repos/${repo}`)
-  const file = `e2e/publish-${devices.word}.md`
+  const facts = await read<{ default_branch: string }>("")
+  const file = `e2e/bugbash4-w13f-publish-${devices.word}.md`
   let number: number | undefined
   let ref: string | undefined
   try {
@@ -73,7 +86,7 @@ test("publish: a Smithers-only branch reaches GitHub only through Publish, as a 
       await page.getByRole("button", { name: /^Chat\b/ }).click()
       const composer = page.getByRole("textbox", { name: "Message Smithers" })
       await expect(composer).toBeVisible()
-      await composer.fill(`/new ${repo}`)
+      await composer.fill(`/new ${repo} bugbash4-w13f-publish-${devices.word}`)
       await composer.press("Enter")
       // The page starts on the default branch's tree, which a plain `/tree/<name>` pattern already matches.
       await expect(page).toHaveURL(new RegExp(`/${repo}/tree/(?!${facts.default_branch}$)[^/]+$`), { timeout: 120_000 })
@@ -84,7 +97,7 @@ test("publish: a Smithers-only branch reaches GitHub only through Publish, as a 
     })
 
     await step("Nothing is on GitHub yet", async () => {
-      const branches = await github<Array<{ name: string }>>(page, `/repos/${repo}/branches?per_page=100`)
+      const branches = await read<Array<{ name: string }>>("/branches?per_page=100")
       expect(branches.map((each) => each.name).filter((name) => name.startsWith(branch))).toEqual([])
     })
 
@@ -102,8 +115,8 @@ test("publish: a Smithers-only branch reaches GitHub only through Publish, as a 
       await page.goto(`/${repo}/tree/${branch}`)
       const header = page.getByRole("navigation", { name: "Branch" })
       await header.getByRole("button", { name: "Publish", exact: true }).click()
-      await page.getByRole("textbox", { name: "Title" }).fill(`Branch publish e2e ${devices.word}`)
-      const admitted = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/writes") && response.request().postDataJSON()?.op === "branch/publish").then((response) => response.json() as Promise<{ readonly writeId: string }>)
+      await page.getByRole("textbox", { name: "Title" }).fill(`bugbash4-w13f-publish-${devices.word}`)
+      const admitted = acceptedWrite(page, "branch/publish")
       await page.getByRole("form", { name: "Publish" }).getByRole("button", { name: "Publish", exact: true }).click()
       const { writeId } = await admitted
       const subject = `write:${writeId}`
@@ -117,26 +130,26 @@ test("publish: a Smithers-only branch reaches GitHub only through Publish, as a 
 
     const pull = await step("GitHub has the pull request, opened by Maya, holding her file", async () => {
       const found = await pollGitHub(
-        () => github<{ user: { login: string }; head: { ref: string; sha: string }; base: { ref: string }; title: string }>(page, `/repos/${repo}/pulls/${number}`),
+        () => read<{ user: { login: string }; head: { ref: string; sha: string }; base: { ref: string }; title: string }>(`/pulls/${number}`),
         (value) => value.head.sha.length === 40,
       )
       expect(found.user.login.toLowerCase()).toBe(me().login.toLowerCase())
-      const commit = await github<{ author: { login: string } | null }>(page, `/repos/${repo}/commits/${found.head.sha}`)
+      const commit = await read<{ author: { login: string } | null }>(`/commits/${found.head.sha}`)
       expect(commit.author?.login.toLowerCase()).toBe(me().login.toLowerCase())
-      expect([found.base.ref, found.title]).toEqual([facts.default_branch, `Branch publish e2e ${devices.word}`])
+      expect([found.base.ref, found.title]).toEqual([facts.default_branch, `bugbash4-w13f-publish-${devices.word}`])
       expect(found.head.ref.startsWith(`${branch}-`)).toBe(true)
-      const files = await github<Array<{ filename: string }>>(page, `/repos/${repo}/pulls/${number}/files`)
+      const files = await read<Array<{ filename: string }>>(`/pulls/${number}/files`)
       expect(files.map((each) => each.filename)).toEqual([file])
       ref = found.head.ref
       return found
     })
 
-    const mains = `e2e/base-${devices.word}.md`
+    const mains = `e2e/bugbash4-w13f-base-${devices.word}.md`
     const moved = await step("Main moves on GitHub", () => pushToMain(app, facts.default_branch, mains, "moved\n"))
 
     await step("Maya presses Update branch, and the branch takes main in", async () => {
       const header = page.getByRole("navigation", { name: "Branch" })
-      const admitted = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/writes") && response.request().postDataJSON()?.op === "branch/update").then((response) => response.json() as Promise<{ readonly writeId: string }>)
+      const admitted = acceptedWrite(page, "branch/update")
       await header.getByRole("button", { name: "Update branch" }).click()
       const { writeId } = await admitted
       const notice = page.locator(`[data-subject="write:${writeId}"]`)
@@ -144,7 +157,7 @@ test("publish: a Smithers-only branch reaches GitHub only through Publish, as a 
       await expect(header).toContainText("Updated", { timeout: MACHINE })
       await expect(notice).toHaveAttribute("data-tone", "done")
       const compared = await pollGitHub(
-        () => github<{ behind_by: number; ahead_by: number }>(page, `/repos/${repo}/compare/${moved}...${pull.head.ref}`),
+        () => read<{ behind_by: number; ahead_by: number }>(`/compare/${moved}...${pull.head.ref}`),
         (value) => value.behind_by === 0,
       )
       expect(compared.ahead_by).toBeGreaterThan(0)
@@ -179,7 +192,7 @@ test("publish: a Smithers-only branch reaches GitHub only through Publish, as a 
       await header.getByRole("button", { name: "Publish", exact: true }).click()
       await page.getByRole("form", { name: "Publish" }).getByRole("button", { name: "Publish", exact: true }).click()
       const pushed = await pollGitHub(
-        () => github<{ content: string }>(page, `/repos/${repo}/contents/${mains}?ref=${encodeURIComponent(ref!)}`),
+        () => read<{ content: string }>(`/contents/${mains}?ref=${encodeURIComponent(ref!)}`),
         (value) => Buffer.from(value.content, "base64").toString("utf8").includes(`Edited after Update ${devices.word}`),
       )
       expect(Buffer.from(pushed.content, "base64").toString("utf8").trimEnd()).toBe(`moved\n\nEdited after Update ${devices.word}`)
@@ -189,7 +202,7 @@ test("publish: a Smithers-only branch reaches GitHub only through Publish, as a 
 
     await step("Compare lists the branch's commits and its file", async () => {
       await page.getByRole("navigation", { name: "Branch" }).getByRole("link", { name: "Compare" }).click()
-      await expect(page.getByRole("region", { name: "Compare" })).toContainText(`Branch publish e2e ${devices.word}`, { timeout: 60_000 })
+      await expect(page.getByRole("region", { name: "Compare" })).toContainText(`bugbash4-w13f-publish-${devices.word}`, { timeout: 60_000 })
       await expect(page.getByRole("region", { name: "Compare" })).toContainText(file)
     })
   } finally {

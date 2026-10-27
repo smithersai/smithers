@@ -1,9 +1,10 @@
 import { REPOSITORIES_SHAPE_ROUTE } from "../src/features/repo/contract"
 import { shapeRows } from "./shape"
 import { expect, test, visibleText } from "./fixtures"
-import { baseURL, requires, writeHeaders } from "./target"
+import { requires, writeHeaders } from "./target"
 import { repositoryAbout } from "./repository-prerequisites"
 import { expectConsoleError, expectServerError } from "./watch"
+import { showChat } from "./chat-composer"
 
 // Browsing a repository as Will reviewed it (docs/features/repo.md#the-page), against the real app, Worker, Postgres,
 // Electric, GitHub and Code Storage:
@@ -66,14 +67,12 @@ test(
 test(
   "the header's bell: its own slot after Clone, never over it, at 1280 px and on a phone",
   { annotation: { type: "summary", description: "The bell sits in the header's last slot and never covers Clone." } },
-  async ({ page, browser }) => {
+  async ({ page }) => {
     type Box = { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
     const apart = (one: Box | null, two: Box | null) =>
       one !== null && two !== null &&
       (one.x + one.width <= two.x || two.x + two.width <= one.x || one.y + one.height <= two.y || two.y + two.height <= one.y)
     const check = async (tab: import("@playwright/test").Page) => {
-      // octocat/linguist, which no test clones: its header offers Clone.
-      await tab.goto("/octocat/linguist")
       const header = tab.locator('header[aria-label="Repository"]')
       const clone = header.getByRole("button", { name: "Clone" })
       const bell = header.getByRole("button", { name: /^Notifications/ })
@@ -84,13 +83,15 @@ test(
       expect(apart(await clone.boundingBox(), await bell.boundingBox())).toBe(true)
       return { clone: await clone.boundingBox(), bell: await bell.boundingBox() }
     }
+    // octocat/linguist, which no test clones: its header offers Clone.
+    await page.goto("/octocat/linguist")
     const wide = await check(page)
     // At 1280 px it is the row's last slot, right of Clone.
     expect(wide.bell!.x).toBeGreaterThanOrEqual(wide.clone!.x + wide.clone!.width)
-    // A phone's width, in a window of its own that isn't recorded: the row wraps, and still nothing overlaps.
-    const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, ignoreHTTPSErrors: true })
-    await check(await phone.newPage())
-    await phone.close()
+    // The same signed-in, storage-capable device at a phone width. WebKit's
+    // newContext() is private browsing and cannot run this device's engine.
+    await page.setViewportSize({ width: 390, height: 844 })
+    await check(page)
   },
 )
 
@@ -131,8 +132,11 @@ test.describe("cloned repositories", () => {
         const row = (await shapeRows<CloneRow>(request, REPOSITORIES_SHAPE_ROUTE)).find(row => row.id === `github/${repository.toLowerCase()}`)
         return row === undefined ? undefined : { ...row, attempt: Number(row.attempt) }
       }
-      const before = await current()
-      expect(before).toMatchObject({ status: "failed", failure: "not_found" })
+      // Notifications and repositories are independent Electric shapes. The
+      // failed entry can arrive before this snapshot includes its repository.
+      let before: Awaited<ReturnType<typeof current>> = undefined
+      await expect.poll(async () => { before = await current(); return before }, { timeout: 30_000 })
+        .toMatchObject({ status: "failed", failure: "not_found" })
       await entry.getByRole("button", { name: "Retry" }).click()
       // The first failure's text can survive the click. Require the new attempt's actual terminal receipt.
       await expect.poll(current, { timeout: 120_000 }).toMatchObject({
@@ -181,12 +185,19 @@ test.describe("cloned repositories", () => {
   test(
     "HTML: Code, Preview and Split, the page live in a frame that can't reach the app or the network",
     { annotation: { type: "summary", description: "An HTML file shows live beside its source, sandboxed." } },
-    async ({ page }) => {
-      // These are the preview policy's intentional refusals, including our network probe below.
-      expectConsoleError(`Loading the stylesheet '${new URL(`${SPOON}/blob/main/styles.css`, baseURL).href}' violates the following Content Security Policy directive: "style-src 'unsafe-inline'"`)
-      expectConsoleError(`Loading the image '${new URL(`${SPOON}/blob/main/forkit.gif`, baseURL).href}' violates the following Content Security Policy directive: "img-src data: blob:"`)
-      expectConsoleError("Connecting to 'https://example.com/' violates the following Content Security Policy directive")
-      expectConsoleError("Fetch API cannot load https://example.com/. Refused to connect because it violates the document's Content Security Policy.")
+    async ({ page, browserName, baseURL }) => {
+      // Denying the real HTML's external resources is the named behavior.
+      const origin = new URL(baseURL!).origin
+      for (const [file, directive, resource] of [["styles.css", "style-src", "stylesheet"], ["forkit.gif", "img-src", "image"]] as const) {
+        const url = `${origin}${SPOON}/blob/main/${file}`
+        expectConsoleError(browserName === "webkit"
+          ? `Refused to load ${url} because it does not appear in the ${directive} directive of the Content Security Policy.`
+          : `Loading the ${resource} '${url}' violates the following Content Security Policy directive: "${directive}`)
+      }
+      expectConsoleError(browserName === "webkit"
+        ? "Refused to connect to https://example.com/ because it does not appear in the connect-src directive of the Content Security Policy."
+        : 'Connecting to \'https://example.com/\' violates the following Content Security Policy directive: "connect-src \'none\'".')
+      if (browserName === "chromium") expectConsoleError("Fetch API cannot load https://example.com/. Refused to connect because it violates the document's Content Security Policy.")
       await openSpoon(page)
       await page.goto(`${SPOON}/blob/main/index.html`)
       const file = page.locator('article[aria-label="index.html"]')

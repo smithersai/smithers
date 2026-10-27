@@ -12,8 +12,15 @@ test.describe("VibeLang on Smithers", () => {
   test(
     "visitor: VibeLang's landing page, its docs and its code, signed out",
     { annotation: { type: "summary", description: "Signed out, VibeLang opens on its landing page; Docs and Code are one tab away." } },
-    async ({ page }) => {
+    async ({ page, browserLog }) => {
       test.setTimeout(180_000)
+      page.context().on("response", async (response) => {
+        if (new URL(response.url()).pathname !== `/api/repos${REPO}/about`) return
+        const answer = await response.json().catch(() => undefined) as { home?: string | null } | undefined
+        let docs = false
+        try { docs = typeof JSON.parse(answer?.home ?? "null")?.docs === "string" } catch { /* Record an unreadable declaration without its contents. */ }
+        browserLog.push(`visitor.about ${JSON.stringify({ status: response.status(), home: typeof answer?.home === "string", docs })}`)
+      })
       await as(page, "visitor")
       await openHome(page, "everyone")
       await step("The landing page: VibeLang, install, an example, why", () => landing(page))
@@ -74,9 +81,10 @@ const cloned = (page: Page) =>
 /** The requests a signed-out page has no business making: tracking a branch, and asking for a run's credential. */
 const refusedRequests = (page: Page) => {
   const sent: Array<string> = []
+  const personal = /^\/api\/shapes\/(runs|flows|flow-drafts|notifications|my-conversations|github-writes|triage-settings|actions|personal-model|spend-alerts)(\/|$)/
   page.on("request", (request) => {
     const path = new URL(request.url()).pathname
-    if (request.method() === "POST" && (path === "/api/branches" || /^\/api\/runs\/[^/]+\/credential$/.test(path))) {
+    if (personal.test(path) || (request.method() === "POST" && (path === "/api/branches" || /^\/api\/runs\/[^/]+\/credential$/.test(path)))) {
       sent.push(path.replace(/\/runs\/[^/]+\//, "/runs/<id>/"))
     }
   })
