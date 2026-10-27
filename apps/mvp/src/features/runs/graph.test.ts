@@ -510,3 +510,10 @@ test("distinct skipped calls to the same ordinary action remain separate", () =>
   expect(shown.nodes.map((node) => node.state)).toEqual(["done", "skipped"])
   expect(shown.edges).toHaveLength(1)
 })
+
+test("CI command records follow the selected step and replay excludes future output", () => {
+  const output = value(JSON.stringify({ steps: [{ output: { stdout: "command output", stderr: "", truncated: false } }] }))
+  const data = page({ steps: [{ nodeId: "a", action: "ci/job/Step", kind: "ActionCall", status: "completed", scheduledAtMs: 1200, settledAtMs: 1300, seq: 3, output, attempts: [] }] })
+  expect(graphOf(data, null, 2000).steps[0]!.logs).toEqual([{ text: "command output", bytes: 14, clipped: false }])
+  expect(graphOf(data, 2, 2000).steps[0]!.logs).toEqual([])
+})

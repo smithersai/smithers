@@ -274,3 +274,7 @@ keeps the state recorded at the selected event, including work active then.
 While the first inspection is pending, a run without a cached header shows the
 shared skeleton in its content area.
 
+
+CI command records come from the command's sealed outcome, with stdout then
+stderr and the sandbox's truncation flag. They do not enter diagnostic telemetry.
+Previously discarded command output cannot be recovered for historical runs.

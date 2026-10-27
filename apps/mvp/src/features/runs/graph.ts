@@ -1,6 +1,7 @@
 import { Journal } from "@smthrs/flows"
 import { InspectionJournal, RunTrace } from "@smthrs/gateway"
 import type { GraphEdge, GraphNode, JsonValueData, StepRow } from "@smthrs/ui"
+import { outputLogs } from "./outputLogs"
 import { runPath, settled } from "./contract"
 import { journalOf, type PageStep } from "./page"
 import type { Inspection, RunPage } from "./schema"
@@ -125,6 +126,8 @@ export const graphOf = (page: RunPage, at: number | null, now: number, pathOf: (
     const logs = digests.flatMap((digest) =>
       logsByDispatch.get(dispatchId(ownerId, nodeFields.generation, digest)) ?? []
     )
+    // Command text belongs to the sealed result, never application telemetry.
+    if (native?.action === "ci/job/Step") logs.push(...outputLogs(at === null ? native.output : output))
     const state: StepRow["state"] = node.state === "done"
       ? "completed"
       : node.state === "current"

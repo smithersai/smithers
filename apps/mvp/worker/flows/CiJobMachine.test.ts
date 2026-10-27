@@ -23,6 +23,7 @@ interface Call {
  * `lost`, and fails `unavailable` times as a machine that couldn't start before it answers.
  */
 const machine = (options: {
+  readonly output?: { stdout: string; stderr: string; truncated: boolean }
   readonly head?: string
   readonly exits?: Readonly<Record<string, number>>
   readonly lost?: ReadonlyArray<string>
@@ -58,6 +59,7 @@ const machine = (options: {
           stdoutBytes: 0,
           stderrBytes: 0,
           truncated: false,
+          ...options.output,
         },
       })
     },
@@ -182,3 +184,18 @@ describe("ci/job on a job machine", { timeout: 60_000 }, () => {
     }))
   })
 })
+
+test("CI adapter retains bounded command output in the step result", async () => {
+  for (const output of [
+    { stdout: "v26\n", stderr: "", truncated: false },
+    { stdout: "", stderr: "warning\n", truncated: false },
+    { stdout: "", stderr: "", truncated: true },
+  ]) {
+    const box = machine({ output })
+    const ran = await runFlow(CiJob.CiJob, { target, job: job("output", "node") }, registration(box.layer))
+    expect(ran.exit).toEqual(Exit.succeed({ outcome: "passed", steps: [
+      { name: "checkout", outcome: "passed", exitCode: null },
+      { name: "step-0", outcome: "passed", exitCode: 0, output },
+    ] }))
+  }
+}, 60_000)

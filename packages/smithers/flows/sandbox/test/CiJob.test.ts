@@ -29,6 +29,7 @@ const machine = (
   options: {
     readonly exits?: Readonly<Record<string, number>>
     readonly timedOut?: ReadonlyArray<string>
+    readonly output?: { readonly stdout: string; readonly stderr: string; readonly truncated: boolean }
     readonly wrongCommit?: boolean
     readonly unavailable?: boolean
   } = {}
@@ -47,7 +48,11 @@ const machine = (
       run: (at, job, index, step) =>
         Effect.sync(() => {
           asked.runs.push(`${at.run}:${job}#${index}:${step.run}`)
-          return { exitCode: options.exits?.[step.run] ?? 0, timedOut: options.timedOut?.includes(step.run) === true }
+          return {
+            ...(options.output === undefined ? {} : { output: options.output }),
+            exitCode: options.exits?.[step.run] ?? 0,
+            timedOut: options.timedOut?.includes(step.run) === true
+          }
         }),
       release: (at, job) => Effect.sync(() => void asked.released.push(`${at.run}:${job}`))
     })
@@ -194,5 +199,52 @@ describe("ci/job", () => {
         `ci:delivery-1:node@${"a".repeat(40)}`
       ])
     }).pipe(Effect.provide(host(box.layer, Pipeline)))
+  })
+})
+
+it.effect("keeps command output in the sealed step result rather than diagnostic logs", () => {
+  const output = { stdout: "v26.0.0\n", stderr: "warning\n", truncated: true }
+  const box = machine({ output, exits: { node: 1 } })
+  return Effect.gen(function*() {
+    const result = yield* CiJob.CiJob.execute({ target, job: job("version", "node") }, { executionId: "job-output" })
+    expect(result.steps.at(-1)).toEqual({ name: "step-0", outcome: "failed", exitCode: 1, output })
+  }).pipe(Effect.provide(host(box.layer)))
+})
+
+it.effect("verbose commands cannot clip their own or later step records", () => {
+  const box = machine({
+    output: { stdout: "\u0000".repeat(64 * 1024), stderr: "é".repeat(64 * 1024), truncated: false }
+  })
+  const runs = Array.from({ length: 32 }, (_, i) => ({ name: `${i}`.padEnd(64, "a"), run: "verbose" }))
+  return Effect.gen(function*() {
+    const result = yield* CiJob.CiJob.execute({ target, job: { name: "verbose", steps: runs } }, {
+      executionId: "job-bounded-output"
+    })
+    expect(new TextEncoder().encode(JSON.stringify(result)).length).toBeLessThan(16 * 1024)
+    expect(result.steps.slice(0, -1).every((step) => step.output === undefined)).toBe(true)
+    const output = result.steps.at(-1)!.output!
+    expect(output.stdout.length).toBeGreaterThan(0)
+    expect(output.stderr.length).toBeGreaterThan(0)
+    expect(output.truncated).toBe(true)
+  }).pipe(Effect.provide(host(box.layer)))
+})
+
+it.effect("command output records mark truncation independently for each stream", () => {
+  return Effect.gen(function*() {
+    for (
+      const [index, output] of [
+        { stdout: "small", stderr: "small", truncated: false },
+        { stdout: "", stderr: "x".repeat(64 * 1024), truncated: false },
+        { stdout: "", stderr: "", truncated: false }
+      ].entries()
+    ) {
+      const box = machine({ output })
+      const result = yield* CiJob.CiJob.execute({ target, job: job("streams", "print") }, {
+        executionId: `job-streams-${index}`
+      })
+        .pipe(Effect.provide(host(box.layer)))
+      expect(result.steps.at(-1)!.output!.truncated).toBe(index === 1)
+      expect(result.steps.at(-1)!.output!.stdout).toBe(output.stdout)
+    }
   })
 })

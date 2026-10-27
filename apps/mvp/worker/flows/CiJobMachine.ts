@@ -94,7 +94,11 @@ export const layer = Layer.effect(
         }).pipe(
           Effect.map((ran) => {
             const result = ran.result as typeof SandboxTools.RunResult.Type
-            return { exitCode: result.exitCode, timedOut: result.timedOut }
+            return { exitCode: result.exitCode, timedOut: result.timedOut,
+              ...(result.stdout === "" && result.stderr === "" && !result.truncated ? {} : {
+                output: { stdout: result.stdout, stderr: result.stderr, truncated: result.truncated },
+              }),
+            }
           }),
           // A command the machine lost or refused isn't run again: it runs at most once per call.
           Effect.catch((error) =>

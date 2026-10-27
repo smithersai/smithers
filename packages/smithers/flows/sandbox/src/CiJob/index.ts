@@ -152,7 +152,8 @@ export type Target = typeof Target.Type
 export const StepResult = Schema.Struct({
   name: Schema.String,
   outcome: Outcome,
-  exitCode: Schema.NullOr(Schema.Int)
+  exitCode: Schema.NullOr(Schema.Int),
+  output: Schema.optionalKey(Schema.Struct({ stdout: Schema.String, stderr: Schema.String, truncated: Schema.Boolean }))
 })
 
 /**
@@ -218,7 +219,14 @@ export class Machine extends Context.Service<
       job: string,
       index: number,
       step: Step
-    ) => Effect.Effect<{ readonly exitCode: number; readonly timedOut: boolean }, MachineUnavailable>
+    ) => Effect.Effect<
+      {
+        readonly exitCode: number
+        readonly timedOut: boolean
+        readonly output?: { readonly stdout: string; readonly stderr: string; readonly truncated: boolean }
+      },
+      MachineUnavailable
+    >
     readonly release: (target: Target, job: string) => Effect.Effect<void>
   }
 >()("@smthrs/sandbox/CiJob/Machine") {}
@@ -333,6 +341,19 @@ export const CiJob = Flow.make("ci/job", {
   )
 })
 
+// Reserve room for all 32 outcome rows inside RunInspection's 16 KiB value.
+// Bound encoded JSON bytes, including escapes, instead of raw string length.
+const outputText = (text: string) => {
+  const bytes = (length: number) => new TextEncoder().encode(JSON.stringify(text.slice(0, length))).length
+  let low = 0, high = text.length
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2)
+    if (bytes(mid) <= 4096) low = mid
+    else high = mid - 1
+  }
+  return text.slice(0, low)
+}
+
 const machine = Effect.gen(function*() {
   return yield* Machine
 })
@@ -354,16 +375,37 @@ export const layer = Layer.mergeAll(
   ),
   RunStep.toLayer(({ index, job, sofar, target }) => {
     const step = job.steps[index]!
+    // Each action's own sealed outcome owns its output. Carry only outcome
+    // metadata forward so earlier verbose commands cannot clip later records.
+    const prior = sofar.steps.map(({ output: _, ...row }) => row)
     if (sofar.outcome !== "passed") {
       return Effect.succeed<Result>({
         outcome: sofar.outcome,
-        steps: [...sofar.steps, { name: step.name, outcome: "skipped", exitCode: null }]
+        steps: [...prior, { name: step.name, outcome: "skipped", exitCode: null }]
       })
     }
     return Effect.flatMap(machine, (m) => m.run(target, job.name, index, step)).pipe(
-      Effect.map(({ exitCode, timedOut }): Result => {
+      Effect.map(({ exitCode, timedOut, output }): Result => {
         const outcome = exitCode === 0 && !timedOut ? "passed" : "failed"
-        return { outcome, steps: [...sofar.steps, { name: step.name, outcome, exitCode: timedOut ? null : exitCode }] }
+        const stdout = output === undefined ? "" : outputText(output.stdout)
+        const stderr = output === undefined ? "" : outputText(output.stderr)
+        return {
+          outcome,
+          steps: [...prior, {
+            name: step.name,
+            outcome,
+            exitCode: timedOut ? null : exitCode,
+            ...(output === undefined
+              ? {}
+              : {
+                output: {
+                  stdout,
+                  stderr,
+                  truncated: output.truncated || stdout !== output.stdout || stderr !== output.stderr
+                }
+              })
+          }]
+        }
       })
     )
   }),
