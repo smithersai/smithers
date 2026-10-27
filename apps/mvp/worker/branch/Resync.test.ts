@@ -546,8 +546,10 @@ describe("branch/Resync and the resync after a Publish or an Update", { timeout:
     expect(await runtime.runPromise(Publish.steps(built).resync({ writeId }).pipe(Effect.provide(w.layer()))))
       .toEqual({ status: "done", prNumber: 1 })
 
-    // GitHub moves again on a file the working copy changes since.
-    write(w.workdir, { [GUIDE]: "one\ntwo mine\nthree\n" })
+    // GitHub moves again on a file the working copy changes since. The change is another size than the checkout's: a
+    // same-size rewrite within the second git checked the file out reads as clean to git's index (racy git), which
+    // made this test pass or fail by the clock.
+    write(w.workdir, { [GUIDE]: "one\ntwo is mine\nthree\n" })
     git(w.github, "checkout", "-q", REF)
     write(w.github, { [GUIDE]: "one\ntwo github\nthree\n" })
     git(w.github, "commit", "-q", "-am", "on github.com")
