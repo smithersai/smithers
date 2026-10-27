@@ -39,7 +39,7 @@ export function PullsScreen() {
   }
   return (
     <main className="pulls-screen" aria-label="Pull requests"><RepoHeader /><HomeTabs />
-      {page.unknown ? <p role="status" data-list-sync="">Syncing pull requests…</p> : null}
+      {(page.unknown || access?.installed !== true) ? <p role="status" data-list-sync="">Syncing pull requests…</p> : null}
       <div className="list-search-tools" role="search" aria-label="Search pulls">
         <Input aria-label="Search pulls" placeholder="Search pulls" value={search.q ?? ""}
           onChange={(event) => void navigate({ to: "/$owner/$repo/pulls", params: { owner, repo }, search: { ...search, q: event.currentTarget.value }, replace: true, resetScroll: false })} />
@@ -53,7 +53,7 @@ export function PullsScreen() {
         size="full"
         issues={page.pulls}
         loading={page.loading}
-        unknown={listPageOf(rows ?? [], { owner, name: repo }, synced, pullAccessOf(access, view), isReady).unknown}
+        unknown={listPageOf(rows ?? [], { owner, name: repo }, synced, pullAccessOf(access, view), isReady).unknown || access?.installed !== true}
         emptyTitle="No pull requests"
         href={(pull) => ("href" in pull ? (pull.href as string) : undefined)}
         onNavigate={(_, href) => void navigate({ href })}

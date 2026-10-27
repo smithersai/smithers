@@ -74,7 +74,7 @@ export function IssuesScreen() {
           </Button>
         ))}
       </nav>
-      {(list.unknown || !isReady) ? <p role="status" data-list-sync="">Syncing issues…</p> : null}
+      {(list.unknown || !isReady || access?.installed !== true) ? <p role="status" data-list-sync="">Syncing issues…</p> : null}
       <div className="list-search-tools" role="search" aria-label="Search issues">
         <Input aria-label="Search issues" placeholder="Search issues" value={search.q ?? ""}
           onChange={(event) => void navigate({ to: "/$owner/$repo/issues", params: { owner, repo }, search: { ...search, q: event.currentTarget.value }, replace: true, resetScroll: false })} />
@@ -92,7 +92,7 @@ export function IssuesScreen() {
           session !== undefined && mayChange(session, confirmed, answer),
           (number) => void navigate({ href: todos.actions.fromIssue(owner, repo, number) }),
         )}
-        unknown={list.unknown || !isReady}
+        unknown={list.unknown || !isReady || access?.installed !== true}
         href={(issue) => (issue.number === null ? undefined : issuePath(owner, repo, issue.number))}
         onNavigate={(_, href) => void navigate({ href })}
         actions={session !== undefined && mayWrite(session, confirmed, answer)
