@@ -16,7 +16,7 @@ import {
 import { LiveMarkdownEditor, RepoView, type RepoViewLocation } from "@smthrs/repo-view"
 import { Fragment, type ReactNode } from "react"
 import { useLiveQuery } from "@tanstack/react-db"
-import { useLocation, useNavigate } from "@tanstack/react-router"
+import { Link, useLocation, useNavigate } from "@tanstack/react-router"
 import {
   CLONING,
   cloneUrl,
@@ -73,11 +73,11 @@ function CommitRow({ commit, commits }: { readonly commit: Commit | undefined; r
 }
 
 /** Beside the picker: how many branches and tags there are, as GitHub's repository page says. */
-function RefCounts({ counts }: { readonly counts: Counts }) {
+function RefCounts({ counts, owner, name }: { readonly counts: Counts; readonly owner: string; readonly name: string }) {
   if (counts.branches === undefined && counts.tags === undefined) return null
   return (
     <span className="repo-counts">
-      {counts.branches === undefined ? null : <span>{countLabel(counts.branches, "Branch", "Branches")}</span>}
+      {counts.branches === undefined ? null : <Link to="/$owner/$repo/branches" params={{ owner, repo: name }}>{countLabel(counts.branches, "Branch", "Branches")}</Link>}
       {counts.tags === undefined ? null : <span>{countLabel(counts.tags, "Tag", "Tags")}</span>}
     </span>
   )
@@ -189,7 +189,7 @@ export function RepoPage({ editFiles = false, liveMarkdown }: {
         revision={
           <span className="repo-revision">
             <Badge variant="outline">{preview.defaultBranch}</Badge>
-            <RefCounts counts={countsOf(undefined, preview)} />
+            <RefCounts counts={countsOf(undefined, preview)} owner={view.owner} name={view.name} />
           </span>
         }
         actions={<CodeMenu owner={view.owner} name={view.name} onCopy={() => actions.copy("clone-url")} />}
@@ -261,7 +261,7 @@ export function RepoPage({ editFiles = false, liveMarkdown }: {
             href={at}
             onSelect={(ref) => actions.navigate(at(ref))}
           />
-          {root ? <RefCounts counts={counts} /> : null}
+          {root ? <RefCounts counts={counts} owner={view.owner} name={view.name} /> : null}
         </span>
       }
       actions={
