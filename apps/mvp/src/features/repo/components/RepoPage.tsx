@@ -16,7 +16,7 @@ import {
 import { LiveMarkdownEditor, RepoView, type RepoViewLocation } from "@smthrs/repo-view"
 import { Fragment, type ReactNode } from "react"
 import { useLiveQuery } from "@tanstack/react-db"
-import { useNavigate } from "@tanstack/react-router"
+import { useLocation, useNavigate } from "@tanstack/react-router"
 import {
   CLONING,
   cloneUrl,
@@ -31,7 +31,7 @@ import {
   RAW,
   TRY_AGAIN,
 } from "../contract"
-import { hrefFor, viewHrefFor } from "../paths"
+import { hrefFor, parseLineHash, viewHrefFor } from "../paths"
 import {
   aboutOf,
   atRoot,
@@ -128,6 +128,7 @@ export function RepoPage({ editFiles = false, liveMarkdown }: {
   const { data: aboutRow } = useLiveQuery(queries.about)
   const codeIntel = useCodeIntelRow()
   const navigate = useNavigate()
+  const anchor = parseLineHash(useLocation().hash)
   const page = pageOf(current)
   // The live query's first read, or a repository the device can't tell about yet: a skeleton in the files' place.
   if (current === undefined || page.kind === "loading") return <Skeleton className="repo-page-loading" />
@@ -229,8 +230,8 @@ export function RepoPage({ editFiles = false, liveMarkdown }: {
       location={{
         kind: view.kind,
         path: view.path,
-        line: view.line ?? undefined,
-        lineEnd: view.lineEnd ?? undefined,
+        line: anchor.line ?? view.line ?? undefined,
+        lineEnd: anchor.line === null ? view.lineEnd ?? undefined : anchor.lineEnd ?? undefined,
       }}
       file={view.kind === "blob" ? fileProps(file?.file) : undefined}
       readme={view.kind === "tree" && view.readmePath !== null

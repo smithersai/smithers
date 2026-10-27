@@ -372,3 +372,5 @@ A cached About rate limit records its quota (`refusal_via`). A curated public ho
 an anonymous or legacy rate-limit hold with one deployment-token read. The database claim clears the refusal atomically;
 concurrent visitors wait for that read. Authenticated holds and other refusals remain in force. `repo.about` records
 `refusalVia` and `retryAfterMs` when serving a held refusal, without credentials or provider response text.
+
+GitHub file fragments (`#L72`, `#L5-L12`) select and reveal their lines, including when only the fragment changes. Existing `?L=` links remain supported.

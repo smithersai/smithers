@@ -8,6 +8,7 @@ import {
   isMarkdownPath,
   lineSearch,
   parseLines,
+  parseLineHash,
   readmeOf,
   refsKey,
   resolveRef,
@@ -250,4 +251,13 @@ describe("Markdown edited in place", () => {
     expect(viewHrefFor(at, "feature", { kind: "blob", path: "src/app.ts", line: 3 }, false))
       .toBe("/octocat/Spoon-Knife/blob/feature/src/app.ts?L=3")
   })
+})
+
+ test("GitHub fragments select a line or range and reject unrelated anchors", () => {
+  expect(parseLineHash("L72")).toEqual({ line: 72, lineEnd: null })
+  expect(parseLineHash("#L5-L12")).toEqual({ line: 5, lineEnd: 12 })
+  expect(parseLineHash("L12-L5")).toEqual({ line: 12, lineEnd: null })
+  for (const hash of ["", "overview", "L0", "L1-12", "L1-L0", "L1000000000"]) {
+    expect(parseLineHash(hash)).toEqual({ line: null, lineEnd: null })
+  }
 })

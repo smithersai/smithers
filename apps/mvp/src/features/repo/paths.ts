@@ -84,6 +84,12 @@ export const parseLines = (value: unknown): { readonly line: number | null; read
   return end > line ? { line, lineEnd: end } : { line, lineEnd: null }
 }
 
+/** GitHub line fragments, including ranges; unrelated fragments select nothing. */
+export const parseLineHash = (hash: string): ReturnType<typeof parseLines> => {
+  const match = /^#?L([1-9]\d{0,8})(?:-L([1-9]\d{0,8}))?$/.exec(hash)
+  return match === null ? parseLines(undefined) : parseLines(`${match[1]}${match[2] === undefined ? "" : `-${match[2]}`}`)
+}
+
 /** A path as a URL writes it: each segment encoded, the slashes kept. */
 export const encodePath = (path: string): string => path.split("/").map(encodeURIComponent).join("/")
 
