@@ -26,10 +26,10 @@ run-kind targets; `flow start` starts durable flows.
 | `flow list/show/plan/start/execute` | Discover flows, compile plans, start flows, or execute approved payloads. |
 | `runs list/show/logs/output/cancel/cancel-all/resume/signal/steer` | Inspect and operate durable runs. |
 | `runs inspect/replay/fork/rewind` | Read frames, branch history, or restore an earlier frame. |
-| `approvals list/approve/deny` | List pending decisions and submit the exact approval payload or `@file`. |
+| `approvals list/approve/deny/grant` | Inspect pending decisions, answer them, or grant a build target's revision. |
 | `init [name]`, `generate flow/package/ci` | Initialize a workspace or scaffold a declared resource. |
 | `install`, `git-hooks [--write]` | Use the declared installation toolchain and Git hooks. |
-| `cache status/prune/clear`, `clean [patterns...]`, `gc` | Maintain action results, declared cleanup targets, or terminal run history. |
+| `cache status/prune/clear`, `cache steps`, `clean [patterns...]`, `gc` | Maintain target results, step results, declared cleanup targets, or terminal run history. |
 | `environment add/list/view/remove/exec/shell/forward` | Save an execution location and run commands there. |
 | `memory`, `credentials`, `triggers`, `integrations`, `eval` | Operate the persistent agent features described below. |
 | `open [dir]`, `.` | Open the checkout's `owner/repo` in the Smithers app (`smithers://open/<owner>/<repo>`), or print its smithers.sh page. |
@@ -40,7 +40,7 @@ run-kind targets; `flow start` starts durable flows.
 | `agent` | Configure an agent |
 | `agents` | The factory's agents |
 | `api` | Make raw API calls to the Smithers server |
-| `branch` | Add a scratch branch as a TODO; waits for the person's confirmation |
+| `branch show/add-to-stack/archive/fork/rebase` | Read, stack, archive, fork or rebase a scratch branch. |
 | `branches` | List branches with presence |
 | `cp` | Copy files or directories between the local machine and a workspace |
 | `debug` | Call the documented API |
@@ -61,7 +61,7 @@ run-kind targets; `flow start` starts durable flows.
 | `ssh` | Copy the SSH line for a branch |
 | `ssh-key` | Add an SSH key |
 | `stack` | Reorder an item |
-| `todo` | Change an unmerged TODO's prompt; waits for the person's confirmation |
+| `todo show/new/amend/answer/drop/from-issue/resume/retry/steer/stop` | Read, draft and operate TODOs. |
 | `wiki` | Open or create a page |
 | `workspace` | SSH into a workspace (creates one if none exists for the repo) |
 
@@ -83,6 +83,31 @@ integrations, evaluations, and local maintenance reject remote access.
 
 ## Backend commands
 
+### Branches and TODOs
+
+| Command | Purpose |
+| --- | --- |
+| `branch show <name>` | Open a branch's card. |
+| `branch add-to-stack --branch <branch>` | Propose adding a scratch branch as a TODO. |
+| `branch archive --branch <branch>` | Propose archiving a scratch branch. |
+| `branch fork --from <branch> [--name <name>]` | Fork a scratch branch. |
+| `branch rebase --branch <branch> [--onto_revision <revision>] [--conflict_change <change>]` | Request a rebase. |
+| `todo show <Tn>` | Open a TODO. |
+| `todo new [--text <prompt>] [--title <title>] [--before <Tn>]` | Propose a new TODO, appended unless `--before` places it. |
+| `todo amend <Tn> <text>` | Propose changing an unmerged TODO's prompt. |
+| `todo answer <Tn> <answer> [--wait <id>]` | Answer a question; name the wait when several are open. |
+| `todo drop <Tn>` | Propose abandoning an unmerged TODO. |
+| `todo from-issue <number>` | Draft from an issue for confirmation. |
+| `todo resume <Tn>` | Resume a paused TODO. |
+| `todo retry <Tn>` | Retry a failed TODO. |
+| `todo steer <Tn> <text>` | Send a correction. |
+| `todo stop <Tn>` | Pause a working TODO. |
+
+Proposals wait for the person's confirmation. Use `--help` or `--schema` for
+the complete payload options.
+
+### Sign-in
+
 Set `SMITHERS_API_ORIGIN` or run `smithers config set api_origin https://your-api-host`,
 then `smthrs login <install-origin>`. An external agent signs in with
 `smthrs login <install-origin> --agent claude-code` (or `--agent codex`).
@@ -99,6 +124,10 @@ for automation. `SMITHERS_TOKEN_FILE` reads a token from a fixed file path after
 `SMITHERS_TOKEN` and before saved credentials. Missing or invalid files refuse
 the command. A 401 clears only that file resolution; the next explicit command
 rereads it without replaying the failed request.
+
+`auth connections [--org <organization>]` lists connected subscriptions.
+`auth revoke <id>` revokes the named connection. These use the saved install
+login. Provider connection and native sign-in are described below.
 
 `smthrs todo from-issue <number>` reads the install issue and drafts with no
 tools, then waits for its person's private Confirm card. Only that person's
@@ -204,6 +233,27 @@ message and exit non-zero. Local `smthrs ls` reads apps from the checkout's
 The Go executable is removed. Its `status` is now `change status`, `run view` is
 `runs show --cloud`, other `run` operations are under `runs --cloud`, and
 `workflow run` is `flow start --cloud`. `workflow watch` is `runs watch --cloud`.
+
+## Build approvals and step results
+
+`approvals list --targets` lists build targets awaiting approval.
+`approvals grant <target> [--revision <revision>] [--input <name=value>...]`
+grants the target's revision. Without `--revision`, a local command computes
+the current revision with those inputs; a remote command resolves a pending
+revision. `--root` selects the local workspace; `--remote` selects a control
+plane. People grant approvals; agent credentials cannot authorize them.
+
+Step results use a separate cache from target results:
+
+| Command | Purpose |
+| --- | --- |
+| `cache steps ls` | List up to 100 recent heads in each local runtime database. |
+| `cache steps show <key>` | Read a result, metadata and recording run/event. |
+| `cache steps evict <key> --if-recorded-by <run>` | Remove a head only when its recording run matches. |
+| `cache steps sweep --older-than <duration>` | Remove old heads; durations are positive integers with `s`, `m`, `h`, `d` or `w`, such as `7d`. |
+
+All four accept `--root <workspace>`. Eviction and sweeping preserve the
+recorded replay ledger.
 
 ## Execution environments
 

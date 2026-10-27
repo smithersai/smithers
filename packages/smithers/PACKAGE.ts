@@ -101,7 +101,7 @@ const tuiSources = Smithers.Filegroup({
   srcs: [Smithers.glob("src/**/*.ts"), Smithers.glob("src/**/*.tsx")]
 })
 
-const { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({
+const { check, circular, docs: readmeDocs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({
   deps: [tuiSources],
   cwd: "packages/smithers",
   // On the Node 22 CI hosts this complete process-boundary suite took
@@ -118,6 +118,26 @@ const { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeSc
   tests: Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] }),
   // Runnable examples are linted and type-checked with the sources.
   sources: Smithers.glob("{src,examples}/**/*.ts")
+})
+
+/** Registered operator commands must remain in the package reference. */
+const docs = Smithers.DocsParity({
+  readme: Smithers.file("README.md"),
+  cwd: "packages/smithers",
+  deps: [
+    readmeDocs,
+    Smithers.Shell.Test({
+      shell: "node --test packages/smithers/scripts/reference-docs.test.mjs",
+      data: [
+        Smithers.file("scripts/reference-docs.test.mjs"),
+        Smithers.file("docs/reference/cli/README.md"),
+        Smithers.file("src/internal/backend/catalog.mvp.json"),
+        Smithers.file("src/internal/backend/Definitions.ts"),
+        Smithers.file("src/cli/ControlCommands.ts"),
+        Smithers.file("src/cli/StepCacheCommands.ts")
+      ]
+    })
+  ]
 })
 
 /**
