@@ -18,6 +18,7 @@ import { PullsScreen } from "../src/screens/pulls/PullsScreen"
 import { NewIssueScreen } from "../src/screens/issues/NewIssueScreen"
 import { StackScreen } from "../src/screens/stack/StackScreen"
 import { SecretsScreen } from "../src/screens/secrets/SecretsScreen"
+import { RepoSettingsScreen } from "../src/screens/repo-settings/RepoSettingsScreen"
 import { ActionsScreen } from "../src/screens/actions/ActionsScreen"
 import { Auth } from "../src/features/auth/auth"
 import { Repo } from "../src/features/repo/repo"
@@ -78,6 +79,7 @@ test("direct feature pages keep navigation, fence the deployment's own repositor
       ["issues/new", NewIssueScreen, "Open an issue on GitHub"],
       ["settings/secrets", SecretsScreen, "You can&#x27;t see this repository&#x27;s secrets."],
       ["actions", ActionsScreen, "Runs"],
+      ["settings", RepoSettingsScreen, "No settings available"],
       ["stack", StackScreen, "Members can make TODOs."],
     ] as const) {
       await services.issues.actions.open("smithersai", "vibelang")
@@ -92,12 +94,12 @@ test("direct feature pages keep navigation, fence the deployment's own repositor
       expect(router.state.matches.at(-1)).toMatchObject({ routeId: route.id, status: "success" })
       await vi.waitFor(() => {
       const html = renderRepositoryPages(router, services)
-      if (path !== "") {
+      if (path !== "" && path !== "settings") {
         expect(html).toContain('aria-label="Repository"')
         expect(html.match(/>Back to chat<\/a>/g)).toHaveLength(1)
+        expect(html).toContain("smithersai / vibelang")
+        expect(html).toContain('aria-label="Repository pages"')
       }
-      if (path !== "") expect(html).toContain("smithersai / vibelang")
-      if (path !== "") expect(html).toContain('aria-label="Repository pages"')
       expect(html).toContain(text)
       expect(html).not.toContain("Ask about this repository")
       expect(html).not.toContain('>Secrets</a>')

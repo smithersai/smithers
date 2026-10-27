@@ -113,3 +113,5 @@ Steps 1 to 3 belong in `alchemy.run.ts` beside the app's own domain ([infrastruc
 
 - **Serving a custom domain.** The site Worker doesn't yet map a request's `Host` to the repository's app; that and the Cloudflare setup above land with the smithers.sh cut-over.
 - **Live Cloudflare calls** have not run: they need the zone's token on the MacBook.
+
+A repository's Settings page says `No settings available` when the viewer cannot manage its domains.

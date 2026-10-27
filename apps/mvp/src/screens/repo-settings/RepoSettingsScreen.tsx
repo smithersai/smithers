@@ -1,4 +1,4 @@
-import { Breadcrumbs } from "@smthrs/ui"
+import { Breadcrumbs, EmptyState } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useNavigate, useParams } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
@@ -9,7 +9,7 @@ import { useRepoAnswer } from "../../features/repo/components/RepoContext"
 import "./repo-settings-screen.css"
 
 // /$owner/$repo/settings (decision 0039): the repository's settings. Its one section so far is its custom domains, for
-// a Maintainer or Admin; anyone else sees the page's header alone, and ChatApi gives them no rows either way.
+// a Maintainer or Admin; anyone else sees an empty state, and ChatApi gives them no rows either way.
 export function RepoSettingsScreen() {
   const { owner, repo } = useParams({ from: "/$owner/$repo/settings" })
   const { queries } = useAuth()
@@ -25,7 +25,7 @@ export function RepoSettingsScreen() {
         onNavigate={(item) => void navigate({ href: item.href! })}
       />
       <h1>{SETTINGS}</h1>
-      {maintainer ? <DomainSettings /> : null}
+      {maintainer ? <DomainSettings /> : <EmptyState title="No settings available" />}
     </main>
   )
 }
