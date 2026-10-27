@@ -56,6 +56,13 @@ const exhausted = (cron: Cron, search: string, cause: unknown): TriggerError =>
 const attempt = <A>(cron: Cron, search: string, find: () => A): Effect.Effect<A, TriggerError> =>
   Effect.try({ try: find, catch: (cause) => exhausted(cron, search, cause) })
 
+const invalidDate = (date: Date, path: string): TriggerError | undefined =>
+  Number.isFinite(date.getTime()) ? undefined : new TriggerError({
+    code: "invalid_options",
+    message: "search date must be finite",
+    path
+  })
+
 /**
  * The first occurrence strictly after `from`.
  *
@@ -63,7 +70,12 @@ const attempt = <A>(cron: Cron, search: string, find: () => A): Effect.Effect<A,
  * @since 0.1.0
  */
 export const next = (cron: Cron, from: Date): Effect.Effect<Date, TriggerError> =>
-  attempt(cron, "next", () => new Date(WallClock.next(WallClock.compile(cron.value), from.getTime())))
+  Effect.suspend(() => {
+    const error = invalidDate(from, "from")
+    return error === undefined
+      ? attempt(cron, "next", () => new Date(WallClock.next(WallClock.compile(cron.value), from.getTime())))
+      : Effect.fail(error)
+  })
 
 /**
  * Returns the latest occurrence at or before `at`.
@@ -72,11 +84,16 @@ export const next = (cron: Cron, from: Date): Effect.Effect<Date, TriggerError> 
  * @since 0.1.0
  */
 export const previousAtOrBefore = (cron: Cron, at: Date): Effect.Effect<Date, TriggerError> =>
-  attempt(
-    cron,
-    "previous",
-    () => new Date(WallClock.previousAtOrBefore(WallClock.compile(cron.value), at.getTime()))
-  )
+  Effect.suspend(() => {
+    const error = invalidDate(at, "at")
+    return error === undefined
+      ? attempt(
+        cron,
+        "previous",
+        () => new Date(WallClock.previousAtOrBefore(WallClock.compile(cron.value), at.getTime()))
+      )
+      : Effect.fail(error)
+  })
 
 /**
  * The greatest number of occurrences one search returns when its caller states

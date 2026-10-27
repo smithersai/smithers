@@ -198,7 +198,8 @@ the same search every tick performs.
 const next: (cron: Cron, from: Date) => Effect.Effect<Date, TriggerError>
 ```
 
-The first occurrence strictly after `from`.
+The first occurrence strictly after `from`. An invalid date fails with
+`invalid_options` and `path: "from"`.
 
 ### Cron.previousAtOrBefore
 
@@ -208,7 +209,8 @@ const previousAtOrBefore: (cron: Cron, at: Date) => Effect.Effect<Date, TriggerE
 
 The latest occurrence at or before `at`. When `at` itself matches, the answer is
 that instant with milliseconds zeroed, so an occurrence is the boundary rather
-than the sub-second offset the caller observed it at.
+than the sub-second offset the caller observed it at. An invalid date fails with
+`invalid_options` and `path: "at"`.
 
 ### Cron.occurrencesBetween
 
