@@ -37,6 +37,7 @@ import { TodosProvider } from "./features/todos/components/TodosContext"
 import { ViewsProvider } from "./features/views/components/ViewsContext"
 import { WebProvider } from "./features/web/components/WebContext"
 import { router } from "./router"
+import { navigateTo } from "./features/navigation/router"
 import { AppErrorBoundary } from "./screens/root/AppErrorBoundary"
 import { activationGate, type Adoption, boundFetch, outboxPrincipal, DeviceIdentityRefused, IDENTITY_MESSAGE, readReceipt, type Receipt, VISITOR } from "./device/identity"
 import { DEVICE_ADOPTED_EVENT, NO_DEVICE_DATA, type SessionState } from "./features/auth/contract"
@@ -334,7 +335,7 @@ const host: Omit<Host, "editorTabId" | "editorTabPersistent" | "editorTabRefusal
   // Copy permalink writes here; the browser refuses without the page's focus or permission.
   clipboard: (text) => navigator.clipboard.writeText(text),
   // Navigation answers only after the router completes.
-  navigate: (path) => router.navigate({ href: path }),
+  navigate: navigateTo(router, window.location.origin),
   reopenRoute: () => void router.invalidate(),
   pathname: () => router.state.location.pathname,
   // A bug report names the page before its form, carries the build and the window (docs/features/bugs.md).

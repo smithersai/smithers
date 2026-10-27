@@ -181,6 +181,16 @@ test("shortcut: accepts typing immediately without waiting for the composer", as
   await expect(a.composer).toHaveValue(text)
 })
 
+test("missing page: navigation stays in chat with a reason", async ({ devices }) => {
+  const [a] = await devices.open("A")
+  await a.openComposer()
+  await a.composer.fill("/navigate /nope-page")
+  await a.composer.press("Enter")
+  await expect(a.composerForm.getByText("Couldn’t open page")).toBeVisible({ timeout: 40_000 })
+  await expect(a.page).toHaveURL(/\/app$/)
+  await expect(a.composer).toHaveValue("/navigate /nope-page")
+})
+
 test("repository hints: first Enter shows the argument format", async ({ devices }) => {
   const [a] = await devices.open("A")
   await a.openComposer()

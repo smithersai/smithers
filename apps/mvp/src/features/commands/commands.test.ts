@@ -1,10 +1,12 @@
 import { Effect, type ManagedRuntime, Metric } from "effect"
 import { slashMenu, slashSubmit } from "@smthrs/ui"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { dispatches } from "../../flows/dispatch"
+import { DispatchFailed, FlowDispatch, dispatches } from "../../flows/dispatch"
+import { NavigationRefused } from "../navigation/flows"
+import { submit as submitCommand } from "./actions"
 import { entryOf, names } from "../../flows/registry"
 import type { Actor } from "../../../worker/Actor.ts"
-import { openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
+import { nodeDevice, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
 import { AuthStore, SESSION } from "../auth/store"
 import { Chat } from "../chat/chat"
 import { PLACE } from "../chat/schema"
@@ -13,6 +15,7 @@ import { ThemeStore } from "../theme/store"
 import { CANT_OPEN } from "../web/contract"
 import { Load } from "@smthrs/plugin"
 import { BUILTIN } from "../../plugins/builtin"
+import { Plugins } from "../../plugins/plugins"
 import { hostFacts } from "../../plugins/facts"
 import { type Command, COMMANDS, commandsFor, commandsOf, pluginCommands, rankOf, summary, type Viewer, viewerOf } from "./catalog"
 import { Commands } from "./commands"
@@ -42,7 +45,7 @@ const person = (role: Actor["role"]): Actor => ({ subject: { kind: "person", id:
  */
 const open = async (options: TabOptions = {}, actor: Actor | null = person("member")) => {
   const runtime: ManagedRuntime.ManagedRuntime<
-    Commands | Chat | ChatStore | CommandsStore | ThemeStore | AuthStore | TestChatApi,
+    Commands | Chat | ChatStore | CommandsStore | ThemeStore | AuthStore | TestChatApi | Plugins,
     unknown
   > = openTestApp(options, { actor })
   runtimes.push(runtime)
@@ -69,6 +72,7 @@ const open = async (options: TabOptions = {}, actor: Actor | null = person("memb
     ),
   )
   return {
+    runtime,
     actions,
     chat,
     /** The menu as the composer reads it, if it is the menu for the composer's draft. */
@@ -317,6 +321,37 @@ describe("submitting", () => {
     // Nothing went to the agent.
     expect(tab.shown()).toEqual([])
   }, 60_000)
+
+  test("navigation dispatch failures keep the command and a short reason", async () => {
+    const tab = await open()
+    await ready(tab)
+    for (const result of [
+      Effect.fail(new DispatchFailed({ flow: "app/navigate", reason: "unavailable" })),
+      Effect.succeed({ _tag: "Failed" as const, error: new NavigationRefused({ reason: "invalid" }) }),
+    ]) {
+      tab.actions.type("/navigate /nope-page")
+      tab.runtime.runSync(submitCommand("/navigate /nope-page").pipe(
+        Effect.provideService(FlowDispatch, FlowDispatch.of({ dispatch: () => result as never })),
+      ))
+      await until(() => expect(tab.menu()?.refusal).toBe("Couldn’t open page"))
+      expect(tab.draft()).toBe("/navigate /nope-page")
+    }
+  })
+
+  test("a navigation the router refuses stays in chat with a reason", async () => {
+    const server = openTestApp({ answers: false })
+    runtimes.push(server)
+    const api = await server.runPromise(Effect.service(TestChatApi))
+    const host = nodeDevice({ agent: api })
+    const tab = await open({ host: { ...host, navigate: () => { throw new Error("Page not found") } } })
+    await ready(tab)
+    tab.actions.type("/navigate /nope-page")
+    tab.actions.submit("/navigate /nope-page")
+    await until(() => expect(tab.menu()?.refusal).toBe("Couldn’t open page"), engineWithin)
+    expect(tab.draft()).toBe("/navigate /nope-page")
+    expect(host.navigated).toEqual([])
+    expect(tab.shown()).toEqual([])
+  }, engineWithin)
 
   test("/queue, a plugin's command, runs app/navigate with the payload its manifest fixes, door slash", async () => {
     const tab = await open({ answers: true })

@@ -115,11 +115,14 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>, draft
       const dispatch = flows.dispatch(command.flow, { ...pinned, ...command.args } as never, { door: "slash" })
       yield* Effect.gen(function* () {
         const result = yield* Effect.result(dispatch)
-        if (command.flow !== "conversation/new" || (result._tag === "Success" && result.success._tag === "Done")) return
+        const navigationFailed = command.flow === "app/navigate" &&
+          (result._tag === "Failure" || result.success._tag === "Failed" ||
+            !(result.success.value as { readonly moved: boolean }).moved)
+        if (!navigationFailed && (command.flow !== "conversation/new" || (result._tag === "Success" && result.success._tag === "Done"))) return
         if ((yield* Ref.get(revision)) !== cleared || (yield* draftNow) !== "" ||
           (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId !== conversation) return
         yield* type(draft)
-        yield* list(draft, ACTION_FAILED)
+        yield* list(draft, navigationFailed ? "Couldn’t open page" : ACTION_FAILED)
       }).pipe(Effect.forkIn(scope))
     }
     yield* Metric.update(Metric.withAttributes(submits, { outcome: "run", command: command.name }), 1)
