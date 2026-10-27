@@ -24,6 +24,13 @@ const nodes: GraphNode[] = [
   { id: "e", label: "A very long queued step name", state: "next" },
 ];
 const edges = [{ from: "a", to: "b", kind: "value" as const, label: "input" }, { from: "a", to: "c", kind: "failure" as const }, { from: "b", to: "d", kind: "continuation" as const }, { from: "d", to: "e" }];
+test("a cancelled step is Stopped in the graph and inspector, with a fixed duration", async () => {
+  await render(<FlowGraph nodes={[{ id: "stopped", label: "Await", state: "cancelled" }]} edges={[]} />);
+  expect(get('[data-node="stopped"]').getAttribute("aria-label")).toBe("Await, Stopped");
+  await render(<StepInspector step={{ id: "stopped", label: "Await", kind: "Step", state: "cancelled", startedAtMs: 1000, endedAtMs: 2000, depth: 0, attempts: 1, failedAttempts: 0 }} logs={[]} attempts={[]} input={null} output={null} wait={null} now={100000} />);
+  expect(container.textContent).toContain("Stopped");
+  expect(container.textContent).toContain("1.0 s");
+});
 test("layout preserves dependencies, branching, parent means and stable non-overlapping ranks", () => {
   const g = graphLayout(nodes, edges);
   expect(g.ranks).toEqual([["a"], ["b", "c"], ["d"], ["e"]]);

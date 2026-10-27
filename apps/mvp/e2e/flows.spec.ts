@@ -104,6 +104,8 @@ test("flows: draft a flow, save it, run it, watch its run page, then stop a run 
     stopped = (await runState(page).textContent())?.includes("Stopped") ?? false
   }
   expect(stopped, "a run stopped while it worked").toBe(true)
+  await expect(page.locator('[data-slot="flow-graph"] [data-state="current"]')).toHaveCount(0)
+  await expect(page.locator('[data-slot="run-waterfall"] [data-state="running"]')).toHaveCount(0)
 
   // Retry the stopped run: a new run of the same flow, whose page opens and follows it.
   await page.getByRole("button", { name: "Retry", exact: true }).click()

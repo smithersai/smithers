@@ -114,6 +114,7 @@ describe("the run vocabulary", () => {
     expect(RUN_WORD_TONES.Working).toBe("default");
     expect(Object.isFrozen(RUN_WORD_GLYPHS) && Object.isFrozen(RUN_WORD_TONES)).toBe(true);
     expect(Object.keys(STEP_GLYPHS)).toEqual(Object.keys(STEP_WORDS));
+    expect(attemptWords({ attempt: 2, state: "cancelled", startedAtMs: 1000, finishedAtMs: 2000, error: null })).toBe("2 ■");
   });
 
   test("durations: a clock for a run, milliseconds and seconds for a step", () => {

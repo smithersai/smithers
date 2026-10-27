@@ -1,7 +1,7 @@
 import { Journal } from "@smthrs/flows"
 import { InspectionJournal, RunTrace } from "@smthrs/gateway"
 import type { GraphEdge, GraphNode, JsonValueData, StepRow } from "@smthrs/ui"
-import { runPath } from "./contract"
+import { runPath, settled } from "./contract"
 import { journalOf, type PageStep } from "./page"
 import type { Inspection, RunPage } from "./schema"
 
@@ -224,6 +224,25 @@ export const graphOf = (page: RunPage, at: number | null, now: number, pathOf: (
     wait: { kind: wait.kind, sinceMs: Date.parse(wait.since), wakeAtMs: null },
     href: null
   }))
+  // A terminal inspection proves outstanding work stopped, even if cancellation did not settle each journal node.
+  // Replay remains the evidence at its cursor and must not inherit a later cancellation.
+  const stoppedAt = at === null && settled(inspection.run.status)
+    ? inspection.run.finishedAtMs ?? events.at(-1)?.emittedAtMs ?? inspection.run.createdAtMs
+    : null
+  for (const rows of [steps, cells, waits]) {
+    for (let index = 0; index < rows.length; index++) {
+      const step = rows[index]!
+      if (stoppedAt === null || (step.row.state !== "running" && step.row.state !== "waiting")) continue
+      rows[index] = {
+        ...step,
+        row: { ...step.row, state: "cancelled", endedAtMs: stoppedAt },
+        attempts: step.attempts.map((attempt) => attempt.finishedAtMs === null
+          ? { ...attempt, state: "cancelled", finishedAtMs: stoppedAt }
+          : attempt),
+        wait: null,
+      }
+    }
+  }
   const timeline = [...steps.filter((step) => step.attempts.length > 0), ...cells, ...waits]
   const segments = [
     ...steps.flatMap((step) =>
@@ -238,8 +257,11 @@ export const graphOf = (page: RunPage, at: number | null, now: number, pathOf: (
       stepId: wait.row.id,
       startedAtMs: wait.row.startedAtMs,
       endedAtMs: wait.row.endedAtMs,
-      state: "waiting"
+      state: wait.row.state === "cancelled" ? "cancelled" : "waiting"
     }))
   ]
-  return { nodes, edges, steps: [...steps, ...cells, ...waits], timeline, segments, events, time, trace }
+  const shownNodes = nodes.map((node) => stoppedAt !== null && (node.state === "current" || node.state === "waiting")
+    ? { ...node, state: "cancelled" as const }
+    : node)
+  return { nodes: shownNodes, edges, steps: [...steps, ...cells, ...waits], timeline, segments, events, time, trace }
 }

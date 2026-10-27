@@ -12,8 +12,8 @@ export type FlowGraphProps = Omit<ComponentProps<"div">, "onSelect" | "children"
   onSelect?: (id: string) => void;
   onInspect?: (id: string) => void;
 };
-const words = { next: "Queued", current: "Working", done: "Done", failed: "Failed", waiting: "Waiting" };
-const glyphs = { next: "○", current: "◌", done: "✓", failed: "✕", waiting: "◷" };
+const words = { next: "Queued", current: "Working", done: "Done", failed: "Failed", waiting: "Waiting", cancelled: "Stopped" };
+const glyphs = { next: "○", current: "◌", done: "✓", failed: "✕", waiting: "◷", cancelled: "■" };
 /** A read-only view of recorded graph data. All selection belongs to the host. */
 export function FlowGraph({ nodes, edges, selected = null, onSelect, onInspect, className, ...props }: FlowGraphProps) {
   useInjectUiCss();

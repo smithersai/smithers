@@ -58,6 +58,29 @@ const page = (changes: Partial<Inspection> = {}, more: typeof events = []): RunP
   hasMore: false
 })
 describe("read-only run graph", () => {
+  test("a stopped run closes active steps and timers without rewriting historical replay", () => {
+    const stopped = page({ run: { ...run, status: "cancelled", finishedAtMs: 1500 } })
+    const live = graphOf(stopped, null, 100_000)
+    expect(live.nodes.map((node) => node.state)).toEqual(["done", "cancelled"])
+    expect(live.steps[1]!.row).toMatchObject({ state: "cancelled", endedAtMs: 1500 })
+    expect(live.steps[1]!.attempts[0]).toMatchObject({ state: "cancelled", finishedAtMs: 1500 })
+    expect(live.segments.at(-1)).toMatchObject({ state: "cancelled", endedAtMs: 1500 })
+    expect(graphOf(stopped, 4, 100_000).steps[1]!.row).toMatchObject({ state: "running", endedAtMs: null })
+    const noFinish = page({ run: { ...run, status: "failed" } })
+    expect(graphOf(noFinish, null, 100_000).steps[1]!.row.endedAtMs).toBe(1400)
+    const empty = page({ run: { ...run, status: "cancelled" }, journal: { events: [], afterSeq: -1, nextSeq: -1, hasMore: false } })
+    expect(graphOf(empty, null, 100_000).steps).toEqual([])
+    const retried = page({ run: { ...run, status: "cancelled", finishedAtMs: 1500 }, steps: [{
+      nodeId: "b", action: "flow/run/prompt", kind: "FlowCall", status: "running", scheduledAtMs: 1400,
+      settledAtMs: null, seq: 4, output: null, attempts: [
+        { attempt: 1, state: "failed", startedAtMs: 1400, finishedAtMs: 1450, outcome: null, error: "unavailable" },
+        { attempt: 2, state: "running", startedAtMs: 1460, finishedAtMs: null, outcome: null, error: null },
+      ],
+    }] })
+    expect(graphOf(retried, null, 100_000).steps[1]!.attempts.map((a) => [a.state, a.finishedAtMs])).toEqual([
+      ["failed", 1450], ["cancelled", 1500],
+    ])
+  })
   test("a personal flow names its reference; invalid, clipped and non-personal inputs keep their tag", () => {
     expect(runTitle(run)).toBe("daily")
     for (const text of ["bad", "null", "[]", "{}", "{\"name\":5}", "{\"name\":\"\"}"]) {
@@ -244,6 +267,10 @@ test("recorded sleep segments retain historical waits after the current run has 
   const historical = graphOf(data, 5, 3000)
   expect(historical.timeline.at(-1)!.row).toMatchObject({ state: "waiting", endedAtMs: null })
   expect(graphOf(data, 4, 3000).timeline.some((step) => step.row.kind === "sleep")).toBe(false)
+  const stopped = graphOf(page({ run: { ...run, status: "cancelled", finishedAtMs: 1700 } }, [clock]), null, 100_000)
+  expect(stopped.timeline.at(-1)!.row).toMatchObject({ state: "cancelled", endedAtMs: 1700 })
+  expect(stopped.timeline.at(-1)!.wait).toBeNull()
+  expect(stopped.segments.at(-1)).toMatchObject({ state: "cancelled", endedAtMs: 1700 })
 })
 
 test("same-millisecond settlements never disclose an attempt before its journal event", () => {

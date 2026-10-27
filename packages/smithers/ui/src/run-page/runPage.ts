@@ -95,7 +95,7 @@ export const isSettled = (state: RunState): boolean =>
   state === "completed" || state === "failed" || state === "cancelled";
 
 /** A step's state as the run's journal records it. */
-export type StepState = "pending" | "running" | "completed" | "failed" | "waiting" | "skipped";
+export type StepState = "pending" | "running" | "completed" | "failed" | "waiting" | "skipped" | "cancelled";
 
 /** The glyph each step state shows. */
 export const STEP_GLYPHS: Readonly<Record<StepState, string>> = Object.freeze({
@@ -105,6 +105,7 @@ export const STEP_GLYPHS: Readonly<Record<StepState, string>> = Object.freeze({
   failed: "✕",
   waiting: "○",
   skipped: "–",
+  cancelled: "■",
 });
 
 /** The word each step state reads as, for screen readers and the detail pane. */
@@ -115,6 +116,7 @@ export const STEP_WORDS: Readonly<Record<StepState, string>> = Object.freeze({
   failed: "Failed",
   waiting: "Waiting",
   skipped: "Skipped",
+  cancelled: "Stopped",
 });
 
 /** A clock duration: `0:42`, `12:05`, `1:02:03`. Negative or unreadable time is `0:00`. */
@@ -227,6 +229,7 @@ export interface AttemptRow {
 export const attemptWords = (attempt: AttemptRow): string => {
   if (attempt.error !== null) return `${attempt.attempt} ✕ ${attempt.error}`;
   if (attempt.state === "failed") return `${attempt.attempt} ✕`;
+  if (attempt.state === "cancelled") return `${attempt.attempt} ■`;
   if (attempt.finishedAtMs === null) return `${attempt.attempt} ◌`;
   return `${attempt.attempt} ✓`;
 };

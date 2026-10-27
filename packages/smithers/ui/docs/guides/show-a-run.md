@@ -7,6 +7,9 @@ A run page shows what a flow did, step by step. The host reads the run from its
 engine, redacts every value and clips it, then hands these components plain
 data. They render values as text and keep no data of their own.
 
+Use `cancelled` for a stopped step or graph node. Supply the recorded end time
+for stopped steps and attempts so their durations remain fixed.
+
 ```tsx
 import { Button, RunHeader, RunJournal, RunWaterfall, SpanDetail, SpanTree, Tabs, TabsContent, TabsList, TabsTrigger } from "@smthrs/ui"
 
