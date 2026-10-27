@@ -45,7 +45,7 @@ export function directoryEntries(
 ): ReadonlyArray<DirectoryEntry> {
   const prefix = directory === "" ? "" : `${directory}/`;
   const entries = new Map<string, DirectoryEntry>();
-  for (const path of [...paths, ...folders.map((folder) => `${folder}/`)]) {
+  for (const path of [...paths, ...folders.filter((folder) => folder !== "").map((folder) => `${folder}/`)]) {
     if (!path.startsWith(prefix) || path.length === prefix.length) continue;
     const rest = path.slice(prefix.length);
     const slash = rest.indexOf("/");
