@@ -1,7 +1,8 @@
-import { Effect } from "effect"
+import { Effect, Option } from "effect"
 import { runners } from "../../boundary"
-import { closeComposer, toggleComposer } from "./actions"
-import type { ChatStore } from "./store"
+import { closeComposer, setDraft, toggleComposer } from "./actions"
+import { ChatStore } from "./store"
+import { COMPOSER } from "./schema"
 
 // ⌘K (Ctrl+K) toggles the composer and Esc hides it from anywhere on `target`, whatever has focus, as in the old app's
 // controlFocus.ts (removed 2026-10-21). The listeners are bound while the scope is open, and run
@@ -20,17 +21,34 @@ export const chatShortcuts = Effect.fnUntraced(function* (target: EventTarget) {
     event.preventDefault()
     run(toggleComposer("shortcut"))
   }
+  // A collection notification can paint after the shortcut returns. Keep keys
+  // arriving before the textarea claims focus in the same durable draft.
+  const onPendingInput = (event: Event) => {
+    const keyboard = event as Partial<KeyboardEvent>
+    const key = keyOf(event)
+    if (event.defaultPrevented || keyboard.metaKey || keyboard.ctrlKey || keyboard.altKey ||
+      keyboard.isComposing || typeof key !== "string" || (key.length !== 1 && key !== "Backspace")) return
+    run(Effect.gen(function* () {
+      const { composer } = yield* ChatStore
+      const current = Option.getOrThrow(yield* composer.get(COMPOSER))
+      if (!current.open || !current.focusRequested) return
+      event.preventDefault()
+      yield* setDraft(key === "Backspace" ? current.draft.slice(0, -1) : current.draft + key)
+    }))
+  }
   const onEscape = (event: Event) => {
     if (keyOf(event) === "Escape" && !event.defaultPrevented) run(closeComposer)
   }
   yield* Effect.acquireRelease(
     Effect.sync(() => {
       target.addEventListener("keydown", onToggle, true)
+      target.addEventListener("keydown", onPendingInput, true)
       target.addEventListener("keydown", onEscape)
     }),
     () =>
       Effect.sync(() => {
         target.removeEventListener("keydown", onToggle, { capture: true })
+        target.removeEventListener("keydown", onPendingInput, { capture: true })
         target.removeEventListener("keydown", onEscape)
       }),
   )

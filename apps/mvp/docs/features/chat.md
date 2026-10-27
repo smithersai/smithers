@@ -233,3 +233,5 @@ Both controls and the agent use the same model-invocable flows. “Pin that” w
 Agent calls first journal a timestamp from `/api/message-pin/stamp`, newer than the current personal pin even after a device's fast clock. Device intents retain their original timestamp through retries. A refused launch restores the synced pin and keeps Retry available; reloading resumes unfinished intents without silently retrying a final refusal.
 
 Queued and unsent questions pin immediately. The versioned intent keeps a local copy, including if its original is taken back or discarded, until Unpin. Retry preserves that copy and its expected answer id. A conflicting synced message with the same id cannot replace its text: the same durable flow waits for the matching question and answer before syncing the pin to other devices; a newer pin or unpin ends an obsolete wait. This also works for the first question, before any message has synced. No message text enters the flow payload or telemetry.
+
+The composer keeps keystrokes arriving immediately after its shortcut, before the input mounts.

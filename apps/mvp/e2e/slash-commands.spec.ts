@@ -170,3 +170,13 @@ test("short command descriptions and /new before /navigate", async ({ devices })
     expect(await option.innerText()).not.toMatch(/.{90}/)
   }
 })
+
+
+test("shortcut: accepts typing immediately without waiting for the composer", async ({ devices }) => {
+  const [a] = await devices.open("A")
+  await expect(a.chatButton).toBeVisible({ timeout: 30_000 })
+  await a.page.keyboard.press("Meta+k")
+  const text = "The first thirty six characters must survive immediate typing"
+  await a.page.keyboard.type(text)
+  await expect(a.composer).toHaveValue(text)
+})

@@ -1194,6 +1194,22 @@ describe("shortcuts", () => {
     expect(tab.count(Metric.withAttributes(composerOpens, { via: "shortcut" }))).toBe(2)
   })
 
+  test("typing immediately after the shortcut keeps every character before the input mounts", async () => {
+    const tab = await bound()
+    tab.press({ key: "k", metaKey: true })
+    for (const key of "First keystrokes survive") expect(tab.press({ key })).toBe(true)
+    expect(tab.composer()?.draft).toBe("First keystrokes survive")
+    expect(tab.press({ key: "Backspace" })).toBe(true)
+    expect(tab.composer()?.draft).toBe("First keystrokes surviv")
+    expect(tab.press({ key: "x", metaKey: true })).toBe(false)
+    // The input now owns normal typing and browser editing.
+    expect(tab.actions.takeComposerFocus()).toBe(true)
+    expect(tab.press({ key: "x" })).toBe(false)
+    expect(tab.composer()?.draft).toBe("First keystrokes surviv")
+    tab.actions.closeComposer()
+    expect(tab.press({ key: "x" })).toBe(false)
+  })
+
   test("Esc hides the composer and keeps the draft, without stopping the browser", async () => {
     const tab = await bound()
     tab.actions.openComposer("button")
