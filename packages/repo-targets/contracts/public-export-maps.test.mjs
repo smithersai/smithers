@@ -104,7 +104,7 @@ describe("explicit public entrypoints", () => {
   })
 
   it("preserves every reviewed runtime contract except the confirmed implementation paths", () => {
-    assert.equal(baseline.packages.length, 48)
+    assert.equal(baseline.packages.length, 47)
     assert.deepEqual(baseline.removed.map(({ name, subpath }) => `${name}${subpath.slice(1)}`), [
       "@smthrs/integrations/core/migrations/0001_integration_cursors",
       "@smthrs/integrations/github/Webhook",
@@ -170,6 +170,15 @@ describe("explicit public entrypoints", () => {
       retained += previous.subpaths.length - removed.length
     }
     assert.equal(retained, 729)
+  })
+
+  it("does not advertise the retired create-app package or its nonexistent source directory", () => {
+    assert.equal(existsSync(join(repoRoot, "packages/smithers/create-app/package.json")), false)
+    assert.equal(existsSync(join(repoRoot, "packages/smithers/create-app/src/index.ts")), false)
+    assert.equal(current.has("@smthrs/create-app"), false)
+    for (const entries of Object.values(baseline)) {
+      if (Array.isArray(entries)) assert.ok(entries.every((entry) => entry.name !== "@smthrs/create-app"))
+    }
   })
 
   it("retires CLI CodexAuth credentials while preserving the reviewed export history", () => {

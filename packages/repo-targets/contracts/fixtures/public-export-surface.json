@@ -923,28 +923,6 @@
       "reason": "Compact, safe copy for typed model and harness failures that the TUI renders on failure cards (26b84458c)."
     },
     {
-      "name": "@smthrs/create-app",
-      "subpath": "./worker",
-      "development": "./src/worker.ts",
-      "published": {
-        "types": "./dist/esm/worker.d.ts",
-        "import": "./dist/esm/worker.js",
-        "require": "./dist/cjs/worker.js"
-      },
-      "reason": "Turn host a scaffolded Worker serves POST /api/turn with; the default template imports it so a new app answers its first chat turn (b6875f96e)."
-    },
-    {
-      "name": "@smthrs/create-app",
-      "subpath": "./http",
-      "development": "./src/http.ts",
-      "published": {
-        "types": "./dist/esm/http.d.ts",
-        "import": "./dist/esm/http.js",
-        "require": "./dist/cjs/http.js"
-      },
-      "reason": "Bearer check and capped JSON body read that turnResponse requires; import-free so a template's Worker router guards its routes without loading the agent runtime (security fix: unauthenticated paid turns)."
-    },
-    {
       "name": "@smthrs/artifacts",
       "subpath": "./FileLease",
       "development": "./src/FileLease.ts",
@@ -2814,89 +2792,6 @@
       ]
     },
     {
-      "name": "@smthrs/create-app",
-      "directory": "packages/smithers/create-app",
-      "development": {
-        "./package.json": "./package.json",
-        ".": "./src/index.ts",
-        "./app": "./src/app.ts",
-        "./package": "./src/package.ts",
-        "./ui": "./src/ui.ts",
-        "./runtime": "./src/runtime.ts",
-        "./router": "./src/router.ts",
-        "./vite": "./src/vite.ts",
-        "./testing": {
-          "types": "./src/testing.ts",
-          "import": "./src/testing.ts"
-        },
-        "./*": "./src/*.ts",
-        "./internal/*": null,
-        "./*/index": null
-      },
-      "published": {
-        "./package.json": "./package.json",
-        ".": {
-          "types": "./dist/esm/index.d.ts",
-          "import": "./dist/esm/index.js",
-          "require": "./dist/cjs/index.js"
-        },
-        "./app": {
-          "types": "./dist/esm/app.d.ts",
-          "import": "./dist/esm/app.js",
-          "require": "./dist/cjs/app.js"
-        },
-        "./package": {
-          "types": "./dist/esm/package.d.ts",
-          "import": "./dist/esm/package.js",
-          "require": "./dist/cjs/package.js"
-        },
-        "./ui": {
-          "types": "./dist/esm/ui.d.ts",
-          "import": "./dist/esm/ui.js",
-          "require": "./dist/cjs/ui.js"
-        },
-        "./runtime": {
-          "types": "./dist/esm/runtime.d.ts",
-          "import": "./dist/esm/runtime.js",
-          "require": "./dist/cjs/runtime.js"
-        },
-        "./router": {
-          "types": "./dist/esm/router.d.ts",
-          "import": "./dist/esm/router.js",
-          "require": "./dist/cjs/router.js"
-        },
-        "./vite": {
-          "types": "./dist/esm/vite.d.ts",
-          "import": "./dist/esm/vite.js",
-          "require": "./dist/cjs/vite.js"
-        },
-        "./testing": {
-          "types": "./dist/esm/testing.d.ts",
-          "import": "./dist/esm/testing.js"
-        },
-        "./*": {
-          "types": "./dist/esm/*.d.ts",
-          "import": "./dist/esm/*.js",
-          "require": "./dist/cjs/*.js"
-        },
-        "./internal/*": null,
-        "./*/index": null
-      },
-      "subpaths": [
-        ".",
-        "./app",
-        "./index",
-        "./package",
-        "./package.json",
-        "./router",
-        "./routesBin",
-        "./runtime",
-        "./testing",
-        "./ui",
-        "./vite"
-      ]
-    },
-    {
       "name": "@smthrs/flows",
       "directory": "packages/smithers/flows",
       "development": {
@@ -4397,12 +4292,7 @@
       ]
     }
   ],
-  "retiredPackages": [
-    {
-      "name": "@smthrs/create-app",
-      "reason": "Application scaffolding is deferred from the MVP; reviewed historical exports remain recorded for restoration. #3386."
-    }
-  ],
+  "retiredPackages": [],
   "retiredAdditions": [
     {
       "name": "@smthrs/integrations",

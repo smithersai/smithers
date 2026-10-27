@@ -210,3 +210,5 @@ Run one project from `init` to a settled run in the [Quickstart](./quickstart.md
 ## Agent skill
 
 Run `smthrs skills add` to install or refresh the packaged Smithers authoring skill in detected agents. The skill comes from the installed CLI package, regardless of your current directory.
+Global sync also removes the old generated `smthrs-create-app` skill, including
+installs whose original sync metadata is missing. Custom skills are preserved.

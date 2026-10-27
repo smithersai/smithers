@@ -12,6 +12,7 @@ import type * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Layer, Logger } from "effect"
 import { Cli, z } from "incur"
 import { createRequire } from "node:module"
+import { homedir } from "node:os"
 import { dirname, resolve } from "node:path"
 import * as Agents from "./Agents.ts"
 import * as Argv from "./cli/Argv.ts"
@@ -41,6 +42,7 @@ import { createEvalCli } from "./evaluation/EvalCli.ts"
 import * as Init from "./Init.ts"
 import { catalogCommands } from "./internal/backend/Catalog.ts"
 import { retainInstallDiscovery } from "./internal/backend/InstallDiscovery.ts"
+import * as RetiredSkills from "./internal/RetiredSkills.ts"
 import * as NodeControl from "./NodeControl.ts"
 import { createCredentialsCli } from "./operator/Credentials.ts"
 import { createIntegrationsCli } from "./operator/Integrations.ts"
@@ -550,8 +552,15 @@ export const makeCli = (
         !argv.includes("--llms") && !argv.includes("--llms-full") && (argv.includes("--help") || argv.includes("-h"))
       ? humanDiscovery :
       discovery
-    const dispatch = (options: typeof serveOptions) =>
-      rootDiscovery && !explicitHiddenHelp ? helpDiscovery.serve(argv, options) : invoke(argv, options)
+    const dispatch = async (options: typeof serveOptions) => {
+      if (
+        parsed.rest[0] === "skills" && parsed.rest[1] === "add" &&
+        !argv.some((word) => ["--no-global", "--help", "-h", "--schema", "--llms", "--llms-full"].includes(word))
+      ) {
+        await RetiredSkills.register(homedir(), process.env.XDG_DATA_HOME || resolve(homedir(), ".local/share"))
+      }
+      return rootDiscovery && !explicitHiddenHelp ? helpDiscovery.serve(argv, options) : invoke(argv, options)
+    }
     if (argv.some((word) => word === "--mcp" || word === "--http")) return dispatch(serveOptions)
     return Presentation.withErrorEnvelope(
       serveOptions?.stdout ?? ((text) => process.stdout.write(text)),

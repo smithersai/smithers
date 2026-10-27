@@ -1,5 +1,14 @@
 import { spawnSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from "node:fs"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -16,14 +25,24 @@ it("skills add installs and refreshes the packaged authoring skill from an unrel
   const entry = new URL("../src/Cli.ts", import.meta.url).href
   const source = fileURLToPath(new URL("../skills/smithers/SKILL.md", import.meta.url))
   const installed = join(home, ".claude/skills/smithers/SKILL.md")
-  const install = () =>
+  // Older installs can outlive Incur's metadata. Sync must still retire the
+  // generated skill without requiring a person to edit agent directories.
+  const retired = join(home, ".agents/skills/smthrs-create-app")
+  mkdirSync(retired, { recursive: true })
+  writeFileSync(
+    join(retired, "SKILL.md"),
+    "---\nname: smthrs-create-app\nrequires_bin: smthrs\ncommand: smthrs create-app\n---\n# smthrs create-app\n"
+  )
+  mkdirSync(join(home, ".claude/skills"))
+  symlinkSync(retired, join(home, ".claude/skills/smthrs-create-app"), "dir")
+  const install = (args = ["skills", "add"]) =>
     spawnSync(process.execPath, [
       "--no-warnings",
       "--import",
       createRequire(import.meta.url).resolve("vibelang/register"),
       "--input-type=module",
       "--eval",
-      `import { makeCli } from ${JSON.stringify(entry)}; await makeCli().serve(["skills", "add"])`
+      `import { makeCli } from ${JSON.stringify(entry)}; await makeCli().serve(${JSON.stringify(args)})`
     ], {
       cwd,
       env: {
@@ -37,8 +56,12 @@ it("skills add installs and refreshes the packaged authoring skill from an unrel
       timeout: 60_000
     })
   try {
+    const help = install(["skills", "add", "--help"])
+    expect(help.status, help.stdout + help.stderr).toBe(0)
+    expect(existsSync(retired)).toBe(true)
     const first = install()
     expect(first.status, first.stdout + first.stderr).toBe(0)
+    expect(existsSync(retired)).toBe(false)
     expect(readFileSync(installed, "utf8")).toBe(readFileSync(source, "utf8"))
     for (const group of fixture.excluded) {
       expect(readFileSync(installed, "utf8")).not.toContain(`smthrs ${group}`)
