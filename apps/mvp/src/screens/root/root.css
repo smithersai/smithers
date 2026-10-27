@@ -10,3 +10,11 @@
 @media (max-width: 60rem) {
   .conversation-view-full-screen { display: inline-flex; align-items: center; min-height: 32px; }
 }
+
+/* Navigation shares the UI theme; document links keep their own presentation. */
+main > header > a,
+.branch-header-views > a,
+.terminal-panel-tabs > a {
+  color: var(--brand, #0f766e);
+  text-decoration: none;
+}

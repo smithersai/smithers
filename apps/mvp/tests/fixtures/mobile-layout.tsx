@@ -53,7 +53,7 @@ createRoot(document.getElementById("app")!).render(screen === null ? <>
   </main>
 </> : <>
   <SmithersUiStyles withTheme />
-  {screen === "branch" ? <main className="branch-screen" data-workspace="false">
+  {screen === "shell" ? <main className="app-shell"><header className="app-shell-header"><div className="app-shell-agent">Smithers</div><nav className="app-shell-nav" aria-label="Pages">{["Conversations", "Flows", "Runs", "Settings", "Queue", "Report a bug"].map(label => <a href="#" key={label}>{label}</a>)}</nav><NotificationBell unread={337} /><Button aria-label="Theme">Theme</Button><span aria-label="Account"><span>codeplanesmithers</span><Button>Sign out</Button></span></header><div className="app-shell-composer"><Button aria-keyshortcuts="Meta+K Control+K">Chat <kbd>⌘K</kbd></Button></div></main> : screen === "branch" ? <main className="branch-screen" data-workspace="false">
     <header className="repo-header"><h1>octocat / Spoon-Knife</h1><NotificationBell /></header>
     <div className="branch-screen-view"><LinkTabs className="home-tabs"><a href="#home">Home</a><a href="#code">Code</a></LinkTabs><div style={{ minHeight: "1200px" }}>Files</div></div>
   </main> : screen === "issues" ? <main className="issues-screen">

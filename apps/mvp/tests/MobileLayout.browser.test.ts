@@ -15,7 +15,7 @@ beforeAll(async () => {
     jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' },
   })
   const backCss = await readFile(new URL("../src/features/views/components/back-to-chat.css", import.meta.url), "utf8")
-  const css = backCss + (await Promise.all(["conversations/conversations-screen", "repo/repo-screen", "root/root", "branch/branch-screen", "issues/issues-screen", "pulls/pulls-screen", "stack/stack-screen"].map((name) =>
+  const css = backCss + (await Promise.all(["app/app-shell", "conversations/conversations-screen", "repo/repo-screen", "root/root", "branch/branch-screen", "issues/issues-screen", "pulls/pulls-screen", "stack/stack-screen"].map((name) =>
     readFile(new URL(`../src/screens/${name}.css`, import.meta.url), "utf8")))).join("\n")
   server = createServer((request, response) => {
     response.setHeader("Content-Type", request.url === "/fixture.js" ? "text/javascript" : "text/html")
@@ -178,3 +178,28 @@ for (const width of [390, 768, 1280]) {
     } finally { await page.close() }
   })
 }
+
+for (const width of [390, 768, 1280]) test(`${width}: navigation uses theme links and the phone header stays compact`, async () => {
+  const page = await browser.newPage({ viewport: { width, height: 844 } })
+  try {
+    await page.goto(`${origin}?screen=shell`)
+    await page.getByRole("navigation", { name: "Pages" }).waitFor()
+    const links = await page.locator(".app-shell-nav a").evaluateAll(elements => elements.map(element => {
+      const css = getComputedStyle(element)
+      return { color: css.color, decoration: css.textDecorationLine }
+    }))
+    expect(links.every(link => link.decoration === "none")).toBe(true)
+    expect(links.every(link => link.color === links[0]!.color)).toBe(true)
+    expect(links[0]!.color).not.toBe("rgb(0, 0, 238)")
+    if (width === 390) {
+      expect((await page.locator(".app-shell-header").boundingBox())!.height).toBeLessThanOrEqual(112)
+      await expect.poll(() => page.locator(".app-shell-composer kbd").isVisible()).toBe(false)
+      expect(await page.getByRole("button", { name: "Chat", exact: true }).isVisible()).toBe(true)
+    }
+    expect(await page.getByRole("button", { name: "Notifications: 337 unread", exact: true }).isVisible()).toBe(true)
+    const nav = page.locator(".app-shell-nav")
+    await nav.evaluate(element => { element.scrollLeft = element.scrollWidth })
+    expect(await page.getByRole("link", { name: "Report a bug", exact: true }).isVisible()).toBe(true)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+  } finally { await page.close() }
+})

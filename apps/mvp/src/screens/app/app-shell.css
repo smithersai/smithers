@@ -17,7 +17,7 @@
 .app-shell-composer > button { flex: none; }
 
 /* The header: the connection pill, the theme button and the account, at the end of the row. */
-.app-shell-header { display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; }
+.app-shell-header { min-width: 0; flex-wrap: wrap; display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; }
 .app-shell-header [aria-label="Account"] { display: flex; align-items: center; gap: 0.5rem; }
 
 /* The agent's pill, first in the header row; the rest stay at the end. */
@@ -28,11 +28,18 @@
 .app-shell-connection:empty { margin-inline-end: -0.5rem; }
 
 /* The pages the header links to: Flows and Runs. */
-.app-shell-nav { display: flex; align-items: center; gap: 0.75rem; }
+.app-shell-nav { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
+.app-shell-nav a { color: var(--brand, #0f766e); text-decoration: none; white-space: nowrap; }
 
 @media (max-width: 60rem) {
   .app-shell-header { flex-wrap: wrap; }
-  .app-shell-header [aria-label="Account"] { min-width: 0; flex-wrap: wrap; }
-  .app-shell-nav { flex-wrap: wrap; }
+  .app-shell-header [aria-label="Account"] { min-width: 0; }
+  .app-shell-header [aria-label="Account"] > span { max-width: 4rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .app-shell-nav { order: 1; flex: 0 0 100%; overflow-x: auto; flex-wrap: nowrap; }
+  .app-shell-nav > * { flex-shrink: 0; }
   .app-shell-nav > a { display: inline-flex; align-items: center; min-width: 32px; min-height: 32px; }
+}
+
+@media (max-width: 40rem) {
+  .app-shell-composer kbd, .sui-chat-composer kbd { display: none; }
 }

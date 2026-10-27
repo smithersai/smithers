@@ -1,4 +1,6 @@
 .back-to-chat {
+  color: var(--brand, #0f766e);
+  text-decoration: none;
   display: inline-flex;
   align-items: center;
   min-height: var(--ctl-h, 32px);
