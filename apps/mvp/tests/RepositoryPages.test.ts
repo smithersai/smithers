@@ -78,7 +78,7 @@ test("direct feature pages keep navigation, fence the deployment's own repositor
       ["pulls", PullsScreen, "Pull requests for this repository are on GitHub."],
       ["issues/new", NewIssueScreen, "Open an issue on GitHub"],
       ["settings/secrets", SecretsScreen, "You can&#x27;t see this repository&#x27;s secrets."],
-      ["actions", ActionsScreen, "Runs"],
+      ["runs", ActionsScreen, "Runs"],
       ["settings", RepoSettingsScreen, "No settings available"],
       ["stack", StackScreen, "Members can make TODOs."],
     ] as const) {
@@ -111,13 +111,13 @@ test("direct feature pages keep navigation, fence the deployment's own repositor
     await app.runPromise(auth.session.update("session", (row) => { row.status = "signed_out"; row.available = true }))
     {
       const root = createRootRoute()
-      const route = createRoute({ getParentRoute: () => root, path: "/$owner/$repo/actions", component: ActionsScreen })
-      const router = createRouter({ routeTree: root.addChildren([route]), history: createMemoryHistory({ initialEntries: ["/smithersai/vibelang/actions"] }) })
+      const route = createRoute({ getParentRoute: () => root, path: "/$owner/$repo/runs", component: ActionsScreen })
+      const router = createRouter({ routeTree: root.addChildren([route]), history: createMemoryHistory({ initialEntries: ["/smithersai/vibelang/runs"] }) })
       await router.load()
       await vi.waitFor(() => {
         const html = renderRepositoryPages(router, services)
         expect(html).toContain("Sign in with GitHub")
-        expect(html).toContain("return=%2Fsmithersai%2Fvibelang%2Factions")
+        expect(html).toContain("return=%2Fsmithersai%2Fvibelang%2Fruns")
         expect(html).not.toContain("No runs yet")
       })
     }

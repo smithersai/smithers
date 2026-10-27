@@ -49,7 +49,7 @@ export function RepoHeader({ backTarget }: { readonly backTarget?: Minimized } =
         <Link to="/$owner/$repo/pulls" params={{ owner: view.owner, repo: view.name }}>Pull requests</Link>
       </Button>
       <Button asChild variant="ghost">
-        <Link to="/$owner/$repo/actions" params={{ owner: view.owner, repo: view.name }}>Runs</Link>
+        <Link to="/$owner/$repo/runs" params={{ owner: view.owner, repo: view.name }}>Runs</Link>
       </Button>
       <Button asChild variant="ghost">
         <Link to="/$owner/$repo/stack" params={{ owner: view.owner, repo: view.name }}>{STACK}</Link>

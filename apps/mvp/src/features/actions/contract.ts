@@ -39,10 +39,10 @@ export const ACTIONS_LIMIT = 100
 /** How deep the route walks a run's parents to find the repository run that started it. */
 export const LINEAGE_DEPTH = 16
 
-/** `/$owner/$repo/actions`: the repository's runs. */
+/** `/$owner/$repo/runs`: the repository's runs. */
 export const actionsPath = (owner: string, name: string): string =>
-  `/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/actions`
+  `/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/runs`
 
 /** `/$owner/$repo/actions/runs/$runId`: one of its runs, read from Cloudflare. */
 export const actionRunPath = (owner: string, name: string, runId: string): string =>
-  `${actionsPath(owner, name)}/runs/${encodeURIComponent(runId)}`
+  `/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/actions/runs/${encodeURIComponent(runId)}`

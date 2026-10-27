@@ -9,7 +9,7 @@ import "../runs/runs-screen.css"
 
 // /$owner/$repo/actions: the repository's runs on Cloudflare (docs/features/actions.md).
 export function ActionsScreen() {
-  const { owner, repo } = useParams({ from: "/$owner/$repo/actions" })
+  const { owner, repo } = useParams({ from: "/$owner/$repo/runs" })
   const { data: session } = useLiveQuery(useAuth().queries.session)
   return (
     <main className="runs-screen" aria-label="Runs"><RepoHeader /><HomeTabs />

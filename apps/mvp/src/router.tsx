@@ -506,7 +506,7 @@ const issueRoute = createRoute({
 /** `/$owner/$repo/actions`: the repository's runs on Cloudflare (docs/features/actions.md); Electric keeps them. */
 const actionsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/$owner/$repo/actions",
+  path: "/$owner/$repo/runs",
   component: ActionsScreen,
   beforeLoad: ({ context, params, ...load }) => enterRepository(context, params, load, () => context.runs.actions.openRepoRuns(params.owner, params.repo), local),
 })
@@ -652,6 +652,23 @@ const secretsRoute = createRoute({
     ),
 })
 
+// Compatibility URLs use router redirects before opening a feature or starting its work.
+const settingsAliasRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings",
+  beforeLoad: () => { throw redirect({ to: "/app/settings", replace: true }) },
+})
+const secretsAliasRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/$owner/$repo/secrets",
+  beforeLoad: ({ params }) => { throw redirect({ to: "/$owner/$repo/settings/secrets", params, replace: true }) },
+})
+const actionsAliasRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/$owner/$repo/actions",
+  beforeLoad: ({ params }) => { throw redirect({ to: "/$owner/$repo/runs", params, replace: true }) },
+})
+
 export const router = createRouter({
   routeTree: rootRoute.addChildren([
     landingRoute,
@@ -667,6 +684,9 @@ export const router = createRouter({
     conversationsRoute,
     runRoute,
     settingsRoute,
+    settingsAliasRoute,
+    secretsAliasRoute,
+    actionsAliasRoute,
     pluginIndexRoute,
     pluginPathRoute,
     repoSettingsRoute,

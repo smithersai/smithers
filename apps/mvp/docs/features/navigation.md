@@ -40,3 +40,5 @@ click, or app/navigate ─────────▶ route beforeLoad ──▶
 | `e2e/navigate.spec.ts` | A hovered link's page opens with no pending frame and the previous page never blanks; the repository page a person navigates to is never blank and keeps its box as it fills |
 
 Unknown routes use the router's not-found component: the shared `@smthrs/ui` `NotFound` view, navigation, theme and account controls, and a Back to chat link. Route errors retain the same recovery shell and Retry. No raw error details are shown.
+
+Compatibility paths redirect with replacement: `/settings` to `/app/settings`, repository `/secrets` to `/settings/secrets`, and repository `/actions` to `/runs`. Runs is the canonical repository list; it shows Smithers flow runs.
