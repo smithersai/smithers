@@ -7,7 +7,7 @@ export type { Viewer } from "../auth/viewer"
 
 // The slash commands (docs/features/slash-commands.md): every registered flow with a slash door, in the registry's
 // order, and the ones a person may run. A command is its flow's own declaration seen from the composer: its row shows
-// the flow's description and its arguments are the flow's payload, so `/theme dark` runs the very `app/theme/set` the
+// short menu copy and its arguments are the flow's payload, so `/theme dark` runs the very `app/theme/set` the
 // theme button and the agent run. Roles only hint here (decision 0007 §3); a flow that writes shared state checks
 // again on the server.
 
@@ -26,7 +26,7 @@ export const summary = (description: string): string => {
 }
 
 /**
- * The commands of `registered`, registry entries by name, in its order. A flow with no description shows none. A slash
+ * The commands of `registered`, registry entries by name, in its order. A slash description overrides the flow's first sentence. A slash
  * door that names its `fields` takes those, in its order; the rest of the payload keeps its defaults.
  */
 export const commandsOf = (registered: ReadonlyArray<readonly [FlowName, Entry]>): ReadonlyArray<Command> =>
@@ -37,7 +37,7 @@ export const commandsOf = (registered: ReadonlyArray<readonly [FlowName, Entry]>
       name: slash.command,
       flow: name,
       minimum: slash.minimum,
-      description: summary(flow.description ?? ""),
+      description: slash.description ?? summary(flow.description ?? ""),
       fields: slash.fields === undefined
         ? fields
         : slash.fields.flatMap((field) => fields.filter((candidate) => candidate.name === field)),

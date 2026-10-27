@@ -116,7 +116,7 @@ const THEME: Command = {
   name: "theme",
   flow: "app/theme/set",
   minimum: "anyone",
-  description: "Set this device's theme to light or dark.",
+  description: "Light or dark theme",
   fields: [{
     name: "mode",
     label: "Mode",
@@ -134,7 +134,7 @@ describe("the catalog", () => {
     // A reference carries no description: its row has none.
     const { _tag, payloadSchema, successSchema, errorSchema } = entryOf("app/theme/set").flow
     const reference = { _tag, payloadSchema, successSchema, errorSchema }
-    expect(commandsOf([["app/theme/set", { ...entryOf("app/theme/set"), flow: reference }]])).toEqual([
+    expect(commandsOf([["app/theme/set", { ...entryOf("app/theme/set"), flow: reference, slash: { ...entryOf("app/theme/set").slash!, description: undefined } }]])).toEqual([
       { ...THEME, description: "" },
     ])
   })
@@ -223,7 +223,7 @@ describe("the menu", () => {
     expect(tab.menu()?.items[theme]).toEqual({
       id: "command:theme",
       label: "/theme",
-      detail: "Set this device's theme to light or dark.",
+      detail: "Light or dark theme",
       draft: "/theme ",
       runs: false,
     })
@@ -471,4 +471,10 @@ test("/new asks for its repository before dispatch and exposes it in the command
     kind: "run", payload: { repo: "roninjin10/smithers-github-tests", branch: "topic" },
   })
   expect(slashMenu("/new", COMMANDS).items[0]?.runs).toBe(false)
+})
+
+
+test("slash descriptions fit a menu row and /n offers /new first", () => {
+  for (const command of COMMANDS) expect(command.description.length).toBeLessThanOrEqual(40)
+  expect(slashMenu("/n", COMMANDS).items.slice(0, 2).map(item => item.label)).toEqual(["/new", "/navigate"])
 })

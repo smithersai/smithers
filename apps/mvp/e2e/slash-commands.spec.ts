@@ -30,7 +30,7 @@ test("complete and run: / lists the commands, typing filters, the keyboard compl
   const commands = page.getByRole("listbox", { name: COMMANDS })
   await expect(commands).toBeVisible()
   const theme = commands.getByRole("option", { name: /^\/theme/ })
-  await expect(theme).toContainText("Set this device's theme to light or dark.")
+  await expect(theme).toContainText("Light or dark theme")
   const first = commands.getByRole("option").first()
   await expect(first).toHaveAttribute("aria-selected", "true")
   await expect(a.composer).toHaveAttribute("aria-activedescendant", (await first.getAttribute("id"))!)
@@ -155,4 +155,18 @@ test("new names a repository before acting", async ({ devices }) => {
   await expect(a.composer).toHaveValue("/new")
   expect(a.page.url()).toBe(before)
   expect(creates).toEqual([])
+})
+
+
+test("short command descriptions and /new before /navigate", async ({ devices }) => {
+  const [a] = await devices.open("A")
+  await a.openComposer()
+  await a.composer.fill("/n")
+  const options = a.page.getByRole("listbox", { name: COMMANDS }).getByRole("option")
+  await expect(options.nth(0)).toContainText("/new")
+  await expect(options.nth(0)).toContainText("Start a conversation")
+  await expect(options.nth(1)).toContainText("/navigate")
+  for (const option of await options.all()) {
+    expect(await option.innerText()).not.toMatch(/.{90}/)
+  }
 })

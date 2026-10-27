@@ -67,14 +67,16 @@ export type Minimum = "anyone" | Role
 
 /**
  * A flow's slash command (docs/features/slash-commands.md): `/<command>` in the composer runs it, for a person who is at
- * least `minimum`. Its row shows the first sentence of the flow's description, and its arguments are the flow's payload.
+ * least `minimum`. Its row shows short menu copy, falling back to the flow's first sentence; its arguments are the flow's payload.
  */
 export interface SlashDoor {
   readonly command: string
+  /** Short menu copy; the flow retains its full instructions for the agent. */
+  readonly description?: string
   readonly minimum: Minimum
   /**
    * How its arguments read, as `@smthrs/ui`'s `FormHints`: `hidden` keeps an optional field a person never types out of
-   * the command's arguments.
+   * the command's arguments; `required` asks for otherwise optional context before acting.
    */
   readonly hints?: { readonly fields?: Readonly<Record<string, { readonly hidden?: boolean; readonly required?: boolean }>> }
   /**
@@ -131,8 +133,13 @@ export const registry = {
     acts: "flow",
     userOnlyReason: "A tab whose session check failed starts it; it asks that tab again and grants nothing.",
   },
-  "app/theme/set": { flow: SetTheme, changes: "sets this device's theme", slash: { command: "theme", minimum: "anyone" } },
-  "app/navigate": { flow: Navigate, changes: "moves the person's tab", slash: { command: "navigate", minimum: "anyone" } },
+  "app/theme/set": { flow: SetTheme, changes: "sets this device's theme", slash: { command: "theme", description: "Light or dark theme", minimum: "anyone" } },
+  "conversation/new": {
+    flow: ConversationNew,
+    changes: "makes a new branch of the repository, with its conversation, and opens it in the person's tab",
+    slash: { command: "new", description: "Start a conversation", minimum: "member", fields: ["repo", "branch"], hints: { fields: { repo: { required: true } } } },
+  },
+  "app/navigate": { flow: Navigate, changes: "moves the person's tab", slash: { command: "navigate", description: "Go to a page", minimum: "anyone" } },
   // File tabs (docs/features/files.md): the strip's clicks and keys dispatch these, and the agent calls them to show code.
   "file/open": { flow: OpenFile, changes: "opens a file as a tab in the person's tab" },
   "file/close": { flow: CloseFile, changes: "closes a file's tab in the person's tab" },
@@ -141,14 +148,14 @@ export const registry = {
   "app/web/open": {
     flow: OpenWebPage,
     changes: "adds a page to the chat",
-    slash: { command: "web", minimum: "member", hints: { fields: { conversationId: { hidden: true } } } },
+    slash: { command: "web", description: "Open a web page", minimum: "member", hints: { fields: { conversationId: { hidden: true } } } },
   },
   // A repository's docs (docs/features/docs.md): adding its pages writes the shared conversation, Member or above too.
   "app/docs/search": {
     flow: SearchDocs,
     changes: "adds docs pages to the chat",
     slash: {
-      command: "docs",
+      command: "docs", description: "Find documentation",
       minimum: "member",
       fields: ["repository", "query"],
       hints: { fields: { conversationId: { hidden: true }, pages: { hidden: true } } },
@@ -164,12 +171,12 @@ export const registry = {
   "ui/repo": {
     flow: ShowRepo,
     changes: "adds a repository's view to the chat",
-    slash: { command: "repo", minimum: "member", fields: ["repo"], hints: { fields: { conversationId: { hidden: true } } } },
+    slash: { command: "repo", description: "Open a repository", minimum: "member", fields: ["repo"], hints: { fields: { conversationId: { hidden: true } } } },
   },
   "ui/issues": {
     flow: ShowIssues,
     changes: "adds a repository's issues to the chat",
-    slash: { command: "issues", minimum: "member", fields: ["repo"], hints: { fields: { conversationId: { hidden: true } } } },
+    slash: { command: "issues", description: "Show issues", minimum: "member", fields: ["repo"], hints: { fields: { conversationId: { hidden: true } } } },
   },
   "chat/Answer": {
     flow: AnswerReference,
@@ -184,11 +191,11 @@ export const registry = {
   // copy its last answer; Edit on a question Smithers doesn't have yet and `/edit`, the person's only.
   "chat/pin": { flow: ChatPin, minimum: "guest", changes: "pins a message for the person across their devices" },
   "chat/unpin": { flow: ChatUnpin, minimum: "guest", changes: "unpins the person's message across their devices" },
-  "chat/copy": { flow: ChatCopy, changes: "writes the person's clipboard", slash: { command: "copy", minimum: "anyone", hints: { fields: { messageId: { hidden: true } } } } },
+  "chat/copy": { flow: ChatCopy, changes: "writes the person's clipboard", slash: { command: "copy", description: "Copy an answer", minimum: "anyone", hints: { fields: { messageId: { hidden: true } } } } },
   "chat/edit": {
     flow: ChatEdit,
     userOnlyReason: "Only the person changes what they asked; the agent never edits a question.",
-    slash: { command: "edit", minimum: "member", hints: { fields: { questionId: { hidden: true } } } },
+    slash: { command: "edit", description: "Edit an unsent message", minimum: "member", hints: { fields: { questionId: { hidden: true } } } },
   },
   "app/memory/remember": { flow: Remember, changes: "stores a fact for future conversations on this device" },
   "repo/tree": { flow: RepoTree },
@@ -202,7 +209,7 @@ export const registry = {
   "repo/clone": {
     flow: RepoCloneRequest,
     changes: "clones the repository, which spends the deployment's storage",
-    slash: { command: "clone", minimum: "member" },
+    slash: { command: "clone", description: "Clone a repository", minimum: "member" },
   },
   "repo/copy": { flow: RepoCopy, changes: "writes the person's clipboard" },
   // No slash command: a person's run would have nowhere to show its verdicts. A person asks Smithers instead.
@@ -222,7 +229,7 @@ export const registry = {
     flow: FlowNewReference,
     acts: "agent",
     changes: "drafts a flow for the person to review, which spends model calls",
-    slash: { command: "flow.new", minimum: "member" },
+    slash: { command: "flow.new", description: "Create a flow", minimum: "member" },
   },
   "flow/answer": { flow: FlowAnswerReference, userOnlyReason: "Only the person answers what the drafting agent asked." },
   // Saving and deleting your flow are yours to decide: the agent's call asks first (the agent evals saw it save a draft
@@ -239,7 +246,7 @@ export const registry = {
     flow: FlowRunReference,
     changes: "runs the person's flow, and whatever it does",
     // `/flow.run <name> <input>`: the revision a person never types; the latest runs.
-    slash: { command: "flow.run", minimum: "member", fields: ["name", "input"] },
+    slash: { command: "flow.run", description: "Run a flow", minimum: "member", fields: ["name", "input"] },
   },
   "flow/run/prompt": {
     flow: FlowPromptReference,
@@ -271,7 +278,7 @@ export const registry = {
   "branch/create": {
     flow: BranchCreate,
     changes: "makes a new branch of the repository and tracks it for the person",
-    slash: { command: "branch.new", minimum: "member", fields: ["repo", "branch"] },
+    slash: { command: "branch.new", description: "Create a branch", minimum: "member", fields: ["repo", "branch"] },
   },
   // Publish, Update branch and Resync (docs/features/branch-publish.md, rulings GH-6 and GH-11): GitHub hears of a
   // Smithers-only branch only through Publish, which the agent runs too once the person approves it; `/publish <title>`,
@@ -280,25 +287,20 @@ export const registry = {
     flow: BranchPublish,
     changes: "publishes the branch to GitHub as a commit and a pull request",
     confirm: "Publish this branch to GitHub as a pull request?",
-    slash: { command: "publish", minimum: "member", fields: ["title"], hints: { fields: { repo: { hidden: true }, branch: { hidden: true } } } },
+    slash: { command: "publish", description: "Publish this branch", minimum: "member", fields: ["title"], hints: { fields: { repo: { hidden: true }, branch: { hidden: true } } } },
   },
   "branch/update": {
     flow: BranchUpdate,
     changes: "brings the published branch up to date with its base on GitHub",
-    slash: { command: "branch.update", minimum: "member", fields: [], hints: { fields: { repo: { hidden: true }, branch: { hidden: true } } } },
+    slash: { command: "branch.update", description: "Update this branch", minimum: "member", fields: [], hints: { fields: { repo: { hidden: true }, branch: { hidden: true } } } },
   },
   "branch/resync": {
     flow: BranchResync,
     changes: "brings the published branch's working copy to its GitHub branch's head, keeping its own changes",
-    slash: { command: "branch.resync", minimum: "member", fields: [], hints: { fields: { repo: { hidden: true }, branch: { hidden: true } } } },
+    slash: { command: "branch.resync", description: "Resync this branch", minimum: "member", fields: [], hints: { fields: { repo: { hidden: true }, branch: { hidden: true } } } },
   },
   // Your conversations (docs/features/conversations.md): one per branch, so `/new` makes a branch and opens it; the
   // list's Archive and Restore change only the person's own list. The agent can do both.
-  "conversation/new": {
-    flow: ConversationNew,
-    changes: "makes a new branch of the repository, with its conversation, and opens it in the person's tab",
-    slash: { command: "new", minimum: "member", fields: ["repo", "branch"], hints: { fields: { repo: { required: true } } } },
-  },
   "conversation/archive": { flow: ConversationArchive, changes: "archives one of the person's conversations, or brings it back" },
   "branch/share": {
     flow: BranchShare,
@@ -310,41 +312,41 @@ export const registry = {
   },
   // Git writes (decision 0012 §3): opening an issue and commenting are Guest acts. `/issue owner/repo <title>` fills
   // the title with the rest of the line; the body is the form's.
-  "issue/create": { flow: IssueCreate, changes: "opens an issue on GitHub", slash: { command: "issue", minimum: "guest", fields: ["repo", "title"] } },
-  "issue/comment": { flow: IssueComment, changes: "comments on a GitHub issue", slash: { command: "comment", minimum: "guest" } },
+  "issue/create": { flow: IssueCreate, changes: "opens an issue on GitHub", slash: { command: "issue", description: "Open an issue", minimum: "guest", fields: ["repo", "title"] } },
+  "issue/comment": { flow: IssueComment, changes: "comments on a GitHub issue", slash: { command: "comment", description: "Comment on an issue", minimum: "guest" } },
   // Triage (decision 0012 §5 and decision 11): a person's acts only. Accept and Not accepted, and Run triage again, are
   // a Member's (`repo:triage`); Enable and Pause a Maintainer's (`repo:triage-flow`).
   "issue/triage": {
     flow: IssueTriage,
     userOnlyReason: "Overriding triage is a person's call; the agent never accepts or rejects an issue.",
     // `/triage owner/repo <n> accept|reject <reason>`: the reason, the last text field, takes the rest of the line.
-    slash: { command: "triage", minimum: "member" },
+    slash: { command: "triage", description: "Set issue triage", minimum: "member" },
   },
-  "issue/commitment": { flow: IssueCommitment, userOnlyReason: "A Maintainer sets the implementation commitment.", slash: { command: "issue.commitment", minimum: "maintainer" } },
+  "issue/commitment": { flow: IssueCommitment, userOnlyReason: "A Maintainer sets the implementation commitment.", slash: { command: "issue.commitment", description: "Set implementation commitment", minimum: "maintainer" } },
   "triage/run": {
     flow: TriageRunAgain,
     userOnlyReason: "Handing an issue back to the triage flow is a person's call, never the agent's.",
-    slash: { command: "triage.run", minimum: "member" },
+    slash: { command: "triage.run", description: "Run triage", minimum: "member" },
   },
   "triage/enable": {
     flow: TriageEnable,
     userOnlyReason: "A Maintainer turns the triage flow on under their own role; the agent never does.",
-    slash: { command: "triage.enable", minimum: "maintainer" },
+    slash: { command: "triage.enable", description: "Enable automatic triage", minimum: "maintainer" },
   },
   "triage/pause": {
     flow: TriagePause,
     userOnlyReason: "A Maintainer pauses the triage flow; the agent never does.",
-    slash: { command: "triage.pause", minimum: "maintainer" },
+    slash: { command: "triage.pause", description: "Pause automatic triage", minimum: "maintainer" },
   },
   // TODOs and the stack (decision 0016 §3): the agent drafts a TODO, privately, on the person's device; only the person
   // commits it and drops it. `/todo.new owner/repo <prompt>` drafts one; the prompt takes the rest of the line.
-  "todo/draft": { flow: TodoDraft, changes: "drafts a TODO for the person", slash: { command: "todo.new", minimum: "member", fields: ["repo", "prompt"] } },
+  "todo/draft": { flow: TodoDraft, changes: "drafts a TODO for the person", slash: { command: "todo.new", description: "Draft a TODO", minimum: "member", fields: ["repo", "prompt"] } },
   // Make TODO on an issue (docs/features/todos.md#from-an-issue): `/todo.issue owner/repo <n>` drafts a TODO linked to
   // issue n, its title and prompt the issue's; the agent may pass better ones.
   "todo/issue": {
     flow: TodoIssue,
     changes: "drafts a TODO from an issue for the person",
-    slash: { command: "todo.issue", minimum: "member", fields: ["repo", "issue"] },
+    slash: { command: "todo.issue", description: "Draft a TODO from an issue", minimum: "member", fields: ["repo", "issue"] },
   },
   "todo/inspect": { flow: TodoInspect },
   "todo/commit": {
@@ -355,7 +357,7 @@ export const registry = {
   "todo/drop": {
     flow: TodoDrop,
     userOnlyReason: "Dropping a TODO is a person's press; the agent never drops one.",
-    slash: { command: "todo.drop", minimum: "member" },
+    slash: { command: "todo.drop", description: "Drop a TODO", minimum: "member" },
   },
   // Notifications (decision 0009): a tab showing a conversation follows its branch and repository, and the agent can
   // too; Read, Dismiss and Hide are the person's acts on their own feed.
@@ -412,28 +414,28 @@ export const registry = {
   "sandbox/run": {
     flow: SandboxRun,
     changes: "runs a command on the branch's machine",
-    slash: { command: "run", minimum: "member", fields: ["command"], hints: { fields: { conversationId: { hidden: true } } } },
+    slash: { command: "run", description: "Run a command", minimum: "member", fields: ["command"], hints: { fields: { conversationId: { hidden: true } } } },
   },
   "sandbox/read": {
     flow: SandboxRead,
-    slash: { command: "read", minimum: "member", hints: { fields: { conversationId: { hidden: true } } } },
+    slash: { command: "read", description: "Read a file", minimum: "member", hints: { fields: { conversationId: { hidden: true } } } },
   },
   "sandbox/write": {
     flow: SandboxWrite,
     changes: "writes a file on the branch's machine",
-    slash: { command: "write", minimum: "member", fields: ["path", "content"], hints: { fields: { conversationId: { hidden: true } } } },
+    slash: { command: "write", description: "Write a file", minimum: "member", fields: ["path", "content"], hints: { fields: { conversationId: { hidden: true } } } },
   },
   "sandbox/list": {
     flow: SandboxList,
-    slash: { command: "ls", minimum: "member", hints: { fields: { conversationId: { hidden: true } } } },
+    slash: { command: "ls", description: "List files", minimum: "member", hints: { fields: { conversationId: { hidden: true } } } },
   },
   "sandbox/status": {
     flow: SandboxStatus,
-    slash: { command: "status", minimum: "member", hints: { fields: { conversationId: { hidden: true } } } },
+    slash: { command: "status", description: "Show changes", minimum: "member", hints: { fields: { conversationId: { hidden: true } } } },
   },
   "sandbox/diff": {
     flow: SandboxDiff,
-    slash: { command: "diff", minimum: "member", hints: { fields: { conversationId: { hidden: true }, paths: { hidden: true } } } },
+    slash: { command: "diff", description: "Show the diff", minimum: "member", hints: { fields: { conversationId: { hidden: true }, paths: { hidden: true } } } },
   },
 } as const satisfies Record<string, Entry>
 

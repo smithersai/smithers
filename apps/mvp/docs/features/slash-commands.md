@@ -106,3 +106,5 @@ Signed out, and for a Guest, the sign-in prompt or "Members can ask Smithers." s
 | `e2e/slash-commands.spec.ts` | in a real browser: `/` lists, typing filters, Tab and the arrows complete, Enter runs `/theme dark` and the page turns dark, a typed line runs, an unknown one stays; Escape closes the list then the composer; signed out, no list opens and a typed member-only command does nothing |
 
 GIFs: `pnpm e2e:gifs` writes `slash-commands-complete-and-run.gif`, `slash-commands-escape.gif` and `slash-commands-roles.gif`.
+
+Slash doors carry short `description` copy for the menu; the agent retains the flow's full instructions. `/new` precedes `/navigate` among prefix matches.
