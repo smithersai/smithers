@@ -183,7 +183,7 @@ const Hero = ({ block, onCopy }: { readonly block: BlockOf<"hero">; readonly onC
     {block.install === undefined ? null : (
       <div className="sui-rh-install">
         <span aria-hidden="true" className="sui-rh-install-prompt">$</span>
-        <code>{block.install}</code>
+        <code tabIndex={0}>{block.install}</code>
         <Copy text={block.install} label={`Copy ${block.install}`} onCopy={onCopy} />
       </div>
     )}

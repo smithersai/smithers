@@ -367,6 +367,7 @@ describe("RepositoryHome: hero", () => {
     ]);
     expect(actions.map((a) => a.classList.contains("sui-rh-action-primary"))).toEqual([true, false]);
     expect(drawn.querySelector(".sui-rh-install code")!.textContent).toBe("npm install effect");
+    expect(drawn.querySelector(".sui-rh-install code")!.getAttribute("tabindex")).toBe("0");
     expect(drawn.querySelector(".sui-rh-install-prompt")!.getAttribute("aria-hidden")).toBe("true");
   });
 

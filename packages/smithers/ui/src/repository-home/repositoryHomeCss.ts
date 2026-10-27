@@ -57,7 +57,7 @@ export const repositoryHomeCss = `
 .sui-rh-action-primary { background:${t.inverseBg}; color:${t.inverseText}; border-color:transparent; }
 .sui-rh-action-primary:hover { border-color:transparent; opacity:0.9; }
 .sui-rh-install { display:flex; align-items:center; gap:10px; width:100%; max-width:380px; min-height:44px; margin-top:16px; padding:6px 6px 6px 14px; border-radius:10px; border:1px solid ${t.borderStrong}; background:${t.card}; font:13px ${t.fontMono}; }
-.sui-rh-install code { flex:1; min-width:0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.sui-rh-install code { flex:1; min-width:0; white-space:pre; overflow-wrap:normal; overflow-x:auto; }
 .sui-rh-install-prompt { color:${t.textFaint}; user-select:none; }
 .sui-rh-copy { flex:none; min-height:${t.controlHeight}; padding:0 10px; border-radius:6px; border:0; background:${t.surface2}; color:${t.foreground}; font:650 12px ${t.fontSans}; cursor:pointer; }
 .sui-rh-copy:hover { background:${t.borderStrong}; }

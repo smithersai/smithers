@@ -88,7 +88,13 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
       await page.locator(".sui-rh-install").waitFor()
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width)
       const install = page.locator(".sui-rh-install code")
-      expect(await install.evaluate((element) => element.scrollWidth)).toBeLessThanOrEqual(await install.evaluate((element) => element.clientWidth))
+      expect(await install.evaluate(element => getComputedStyle(element).whiteSpace)).toBe("pre")
+      expect(await install.evaluate(element => getComputedStyle(element).overflowX)).toBe("auto")
+      if (viewport.width === 390) {
+        expect(await install.evaluate(element => element.scrollWidth)).toBeGreaterThan(await install.evaluate(element => element.clientWidth))
+        await install.evaluate(element => { element.scrollLeft = element.scrollWidth })
+        expect(await install.evaluate(element => element.scrollLeft)).toBeGreaterThan(0)
+      }
       const source = page.locator(".sui-rh-code-body")
       expect(await source.evaluate((element) => element.scrollWidth)).toBeGreaterThan(await source.evaluate((element) => element.clientWidth))
       await source.evaluate((element) => { element.scrollLeft = element.scrollWidth })
