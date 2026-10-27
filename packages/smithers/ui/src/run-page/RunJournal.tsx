@@ -9,6 +9,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { dateFromMs } from "../time/dateFromMs";
 import { offsetWords } from "./runPage";
 
+const eventWords: Readonly<Record<string, string>> = {
+  "flows.engine.run-decision": "Run updated",
+  "flows.engine.plan-recorded": "Steps planned",
+  "flows.engine.node-scheduled": "Step queued",
+  "flows.engine.node-settled": "Step finished",
+  "flows.engine.attempt-started": "Attempt started",
+  "flows.engine.attempt-finished": "Attempt finished",
+  "flows.time-travel.effect-boundary": "Step recorded",
+  "telemetry.log": "Log recorded",
+};
+
 /** One journal record: its sequence, type, when it was written, and its payload as text. */
 export interface JournalRow {
   readonly seq: number;
@@ -37,10 +48,10 @@ export function RunJournal({ events, originMs, hasMore = false, onMore, classNam
       <Table aria-label="Journal">
         <TableHeader>
           <TableRow>
-            <TableHead>Seq</TableHead>
-            <TableHead>Type</TableHead>
+            <TableHead>#</TableHead>
+            <TableHead>Event</TableHead>
             <TableHead>Time</TableHead>
-            <TableHead>Payload</TableHead>
+            <TableHead>Details</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -49,7 +60,7 @@ export function RunJournal({ events, originMs, hasMore = false, onMore, classNam
             return (
               <TableRow key={event.seq} data-seq={event.seq}>
                 <TableCell className="sui-run-journal-seq">{event.seq}</TableCell>
-                <TableCell className="sui-run-journal-type">{event.eventType}</TableCell>
+                <TableCell className="sui-run-journal-type"><details><summary>{eventWords[event.eventType] ?? "Activity"}</summary><code>{event.eventType}</code></details></TableCell>
                 <TableCell className="sui-run-journal-time">
                   <time {...(date === undefined ? {} : { dateTime: date.toISOString(), title: date.toLocaleString() })}>
                     {offsetWords(event.emittedAtMs, origin)}

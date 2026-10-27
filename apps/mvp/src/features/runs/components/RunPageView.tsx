@@ -109,7 +109,7 @@ function ReadRunPage({ page, view, actions }: { page: RunPage; view: RunView; ac
       <RunSteers page={page} view={view} steps={steps} />
       <div className="run-page-values">
         <JsonValue label="Input" value={run.input} />
-        {run.result === null ? null : <JsonValue label="Result" value={run.result} defaultOpen />}
+        {run.result === null ? null : <JsonValue label="Result" value={run.result} />}
       </div>
       <Tabs value={view.tab} onValueChange={(tab) => actions.showTab(tab as RunTab)}>
         <TabsList>

@@ -142,3 +142,8 @@ test("a skipped graph node uses the inspector's state word", async () => {
   await render(<FlowGraph nodes={[{ id: "unused", label: "Collect", state: "skipped" }]} edges={[]} />);
   expect(get('[data-node="unused"]').getAttribute("aria-label")).toBe("Collect, Skipped");
 });
+
+test("step result JSON stays behind its details control", async () => {
+  await render(<StepInspector step={step} input={null} output={value} logs={[]} attempts={[]} now={400} />);
+  expect(get('[data-slot="json-value"] details, details')?.hasAttribute("open")).toBe(false);
+});

@@ -568,3 +568,13 @@ test("the run page's sheet is part of smithersUiCss", () => {
   expect(smithersUiCss).toContain(".sui-span-tree-row[aria-selected='true']");
   expect(smithersUiCss).toContain(".sui-waterfall-bar[data-instant='true']");
 });
+
+test("journal uses product words and keeps engine identifiers inside details", async () => {
+  await render(<RunJournal events={[
+    { seq: 1, eventType: "flows.engine.run-decision", emittedAtMs: 1000, payload: { text: "{}", bytes: 2, clipped: false } },
+    { seq: 2, eventType: "future.engine-event", emittedAtMs: 1001, payload: { text: "{}", bytes: 2, clipped: false } },
+  ]} />);
+  const summaries = [...container!.querySelectorAll(".sui-run-journal-type summary")];
+  expect(summaries.map((node) => node.textContent)).toEqual(["Run updated", "Activity"]);
+  expect([...container!.querySelectorAll(".sui-run-journal-type details")].every((node) => !node.hasAttribute("open"))).toBe(true);
+});

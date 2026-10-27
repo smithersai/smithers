@@ -26,7 +26,7 @@ export function StepInspector({ step, input, output, logs, attempts, now, wait, 
     <div className="sui-step-inspector-time"><span>{step.kind}</span><span>{stepDuration(step.state === "pending" ? 0 : stepElapsed(step, now))}</span></div>
     <Tabs defaultValue="output">
       <TabsList><TabsTrigger value="output">Output</TabsTrigger><TabsTrigger value="input">Input</TabsTrigger><TabsTrigger value="logs" count={logs.length}>Logs</TabsTrigger><TabsTrigger value="attempts" count={attempts.length}>Attempts</TabsTrigger></TabsList>
-      <TabsContent value="output">{output === null ? null : <JsonValue label="Output" value={output} defaultOpen />}</TabsContent>
+      <TabsContent value="output">{output === null ? null : <JsonValue label="Output" value={output} />}</TabsContent>
       <TabsContent value="input">{input === null ? null : <JsonValue label="Input" value={input} defaultOpen />}</TabsContent>
       <TabsContent value="logs"><StepLogs lines={logs} now={now} /></TabsContent>
       <TabsContent value="attempts"><ol aria-label="Attempts">{attempts.map((a) => <li key={a.attempt}>{attemptWords(a)} · {stepDuration(Math.max(0, (a.finishedAtMs ?? now) - a.startedAtMs))}</li>)}</ol></TabsContent>
