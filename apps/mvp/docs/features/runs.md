@@ -264,6 +264,9 @@ visible snapshot, including a parent whose child has not arrived yet (decision
 The live graph inspector preserves complete journal results, including the verdict fields read by answer debug info. For completed steps with missing or clipped previews, it uses the engine inspection’s schema-redacted sealed outcome. Journal replay retains the bounded preview recorded at that position; later outcomes never enter an earlier replay.
 # Settled runs
 
+Repository run pages retain a link to their repository and name the recorded
+flow (`ci`, for example), rather than its internal `repo/Run` wrapper.
+
 A terminal run closes outstanding steps, attempts, cells and waits as Stopped at
 its recorded finish time. Completed steps retain their result. Journal replay
 keeps the state recorded at the selected event, including work active then.

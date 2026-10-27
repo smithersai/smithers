@@ -20,10 +20,11 @@ const asValue = (value: unknown): JsonValueData => {
   const text = typeof value === "string" ? value : JSON.stringify(value)
   return { text, bytes: new TextEncoder().encode(text).length, clipped: false }
 }
-/** Personal runs name the recorded flow reference, while engine tags remain unchanged. */
+/** Runs name their recorded flow reference, while engine tags remain unchanged. */
 export const runTitle = (run: Inspection["run"]): string => {
-  const name = record(parsed(run.input)).name
-  return run.flowName === "flow/run" && typeof name === "string" && name.length > 0 ? name : run.flowName
+  const input = record(parsed(run.input))
+  const name = run.flowName === "repo/Run" ? input.flow : input.name
+  return (run.flowName === "flow/run" || run.flowName === "repo/Run") && typeof name === "string" && name.length > 0 ? name : run.flowName
 }
 export const graphOf = (page: RunPage, at: number | null, now: number, pathOf: (runId: string) => string = runPath) => {
   const inspection = page.inspection as Inspection

@@ -13,7 +13,8 @@ export function ActionRunScreen() {
   const rendered = useCallback((node: HTMLElement | null) => { if (node !== null) actions.rendered(runId) }, [actions, runId])
   return (
     <main ref={rendered} className="runs-screen" aria-label="Run">
-      <header className="runs-screen-header">
+      <header className="runs-screen-header" aria-label="Repository">
+        <Link to="/$owner/$repo" params={{ owner, repo }}>{owner}/{repo}</Link>
         <Link to={actionsPath(owner, repo) as never}>Runs</Link>
       </header>
       <RunPageView />

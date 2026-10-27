@@ -88,6 +88,12 @@ describe("read-only run graph", () => {
     }
     expect(runTitle({ ...run, input: value("{\"name\":\"secret\"}", true) })).toBe("flow/run")
     expect(runTitle({ ...run, flowName: "example" })).toBe("example")
+    const repoRun = { ...run, flowName: "repo/Run" }
+    expect(runTitle({ ...repoRun, input: value('{"flow":"ci"}') })).toBe("ci")
+    for (const text of ["bad", "null", "{}", '{"flow":3}', '{"flow":""}']) {
+      expect(runTitle({ ...repoRun, input: value(text) })).toBe("repo/Run")
+    }
+    expect(runTitle({ ...repoRun, input: value('{"flow":"ci"}', true) })).toBe("repo/Run")
   })
   test("one journal position drives graph states, data, edges and time without future output", () => {
     const live = graphOf(page(), null, 2000)
