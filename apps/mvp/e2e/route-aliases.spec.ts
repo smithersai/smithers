@@ -17,3 +17,9 @@ test("repository casing follows GitHub", async ({ page }) => {
   await expect(page).toHaveURL(/\/smithersai\/smithers$/)
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("smithersai / smithers")
 })
+
+test("a tree URL naming a real file opens its blob", async ({ page }) => {
+  await page.goto("/smithersai/smithers/tree/main/README.md")
+  await expect(page).toHaveURL(/\/smithersai\/smithers\/blob\/main\/README.md$/)
+  await expect(page.getByText("Not found", { exact: true })).toHaveCount(0)
+})

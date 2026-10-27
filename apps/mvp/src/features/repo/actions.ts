@@ -717,3 +717,15 @@ export const refresh = (target: Target) => Effect.gen(function* () {
   if (view.refsKey !== null) yield* Effect.orDie(store.refs.delete(view.refsKey))
   yield* open(target, true)
 })
+
+/** A tree URL naming a known file redirects to the same location's blob URL. Unknown paths remain trees. */
+export const fileAtTree = (target: Target) => Effect.gen(function* () {
+  const id = repoId(target.owner, target.name)
+  const repository = yield* shown({ id, owner: target.owner, name: target.name })
+  if (Option.isNone(repository)) return false
+  const location = yield* locate(repository.value, target)
+  if (location._tag !== "Located" || location.path === "") return false
+  yield* ensureTree(repository.value, location.sha, false)
+  const tree = yield* until((yield* RepoStore).trees, treeKey(id, location.sha), loaded)
+  return tree.state === "ready" && tree.paths.includes(location.path)
+})

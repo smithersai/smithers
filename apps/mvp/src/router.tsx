@@ -129,7 +129,7 @@ const enter = async (load: Load, warm: () => unknown, open: () => unknown): Prom
  */
 const enterRepo = (
   context: RouterContext,
-  params: { readonly owner: string; readonly repo: string },
+  params: { readonly owner: string; readonly repo: string; readonly ref?: string; readonly _splat?: string },
   load: Load,
   warm: () => unknown,
   open: () => unknown,
@@ -137,7 +137,8 @@ const enterRepo = (
   enter(load, async () => {
     await warm()
     const canonical = await context.repo.actions.canonicalName(params.owner, params.repo)
-    const href = canonicalRepoHref(load.location, params, canonical)
+    const fileAtTree = load.location.pathname.split("/")[3] === "tree" && await context.repo.actions.fileAtTree(params)
+    const href = canonicalRepoHref(load.location, params, canonical, fileAtTree)
     if (href !== undefined) throw redirect({ href, replace: true })
   }, () => {
     context.repo.actions.role(params.owner, params.repo)

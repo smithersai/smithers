@@ -809,3 +809,17 @@ test("canonical naming comes from GitHub; an absent repository invents no spelli
   expect(await tab.repo.actions.canonicalName("octocat", "Spoon-Knife")).toBe("octocat/Spoon-Knife")
   expect(await tab.repo.actions.canonicalName("octocat", "Gone")).toBeUndefined()
 })
+
+
+test("tree URLs redirect only files present at the resolved revision", async () => {
+  const h = await repoHarness(server)
+  await h.seed("octocat", "Spoon-Knife", fixture())
+  const tab = await open(h)
+  const at = (ref: string, path: string) => tab.repo.actions.fileAtTree({ owner: "octocat", repo: "Spoon-Knife", ref, _splat: path })
+  expect(await at("main", "README.md")).toBe(true)
+  expect(await at("main", "docs")).toBe(false)
+  expect(await at("main", "gone.ts")).toBe(false)
+  expect(await at("main", "")).toBe(false)
+  expect(await at("gone", "README.md")).toBe(false)
+  expect(await tab.repo.actions.fileAtTree({ owner: "octocat", repo: "Gone", ref: "main", _splat: "README.md" })).toBe(false)
+})

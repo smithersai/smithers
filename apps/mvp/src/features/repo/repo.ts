@@ -1,7 +1,7 @@
 import { Context, Data, Effect, Layer, Option } from "effect"
 import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { aboutOf, clone, copy, navigate, open, rawHref, refresh, retryAbout, retryClone, role, warm } from "./actions"
+import { aboutOf, fileAtTree, clone, copy, navigate, open, rawHref, refresh, retryAbout, retryClone, role, warm } from "./actions"
 import type { RepoClient } from "./api"
 import type { CopyKind } from "./contract"
 import { type RouteParams, type Target, targetOf } from "./paths"
@@ -48,6 +48,7 @@ export interface RepoLookups {
 
 /** What a person does, as plain functions. Each returns at once, or with a promise of what the flow did. */
 export interface RepoActions {
+  readonly fileAtTree: (params: RouteParams) => Promise<boolean>
   /** GitHub's canonical owner/name after the public metadata read settles. */
   readonly canonicalName: (owner: string, name: string) => Promise<string | undefined>
 
@@ -116,6 +117,7 @@ export class Repo extends Context.Service<
           readme: (id, sha, dir) => now(device.readme(id, sha, dir)),
         },
         actions: {
+          fileAtTree: (params) => promise(fileAtTree(targetOf("tree", params, {}))),
           canonicalName: (owner, name) => promise(Effect.map(aboutOf(owner, name), (row) => row.about?.name)),
           clone: (owner, name) => run(clone(owner, name)),
           retryClone: (owner, name) => run(retryClone(owner, name)),

@@ -44,3 +44,5 @@ Unknown routes use the router's not-found component: the shared `@smthrs/ui` `No
 Compatibility paths redirect with replacement: `/settings` to `/app/settings`, repository `/secrets` to `/settings/secrets`, and repository `/actions` to `/runs`. Runs is the canonical repository list; it shows Smithers flow runs.
 
 Repository routes adopt the owner/name spelling GitHub returns, preserving the route suffix, search and fragment. A failed metadata lookup never invents a canonical name.
+
+A tree URL naming a file in the resolved revision redirects to its blob URL. Directories, unknown paths and missing revisions retain their own URLs and absence handling.
