@@ -129,6 +129,7 @@ export function IssueScreen() {
           }
           : undefined}
       />
+      {session?.status === "signed_out" ? <SignInButton /> : null}
     </main>
   )
 }

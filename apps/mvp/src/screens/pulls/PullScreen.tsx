@@ -85,7 +85,7 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
   const filesKey = `${pull.baseSha}...${pull.headSha}`
   const compared = (files ?? []).find((row) => row.id === filesKey)
   return (
-    <main className="pulls-screen" aria-label={`Pull request ${pull.number}`}>
+    <main className="pulls-screen" aria-label={`Pull request ${pull.number}`}><RepoHeader />
       {back}
       {tab === "conversation" ? null : <h1>{pull.title} <span>#{pull.number}</span></h1>}
       <LinkTabs aria-label="Pull request">
