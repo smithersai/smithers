@@ -278,3 +278,13 @@ shared skeleton in its content area.
 CI command records come from the command's sealed outcome, with stdout then
 stderr and the sandbox's truncation flag. They do not enter diagnostic telemetry.
 Previously discarded command output cannot be recovered for historical runs.
+
+Run inspection opens on the first failed step unless a person selected another.
+Failed attempt reasons stay visible above the inspector tabs. Graph and timeline
+share journal state words; CI's unused alternative cleanup branch is folded into
+the cleanup that ran. Ordinary repeated steps remain distinct.
+
+Results and engine event identifiers start collapsed. Personal Runs links remember
+their return list through repository job pages. Tables use readable system flow
+names, branch names without transport prefixes, and the shared duration formatter.
+Signed-out visitors read their device's history without requesting cloud history.

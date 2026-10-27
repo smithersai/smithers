@@ -2,12 +2,13 @@ import { dom } from "./fixtures/dom"
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, Outlet, RouterProvider } from "@tanstack/react-router"
 import { ShapeSource } from "@smthrs/effect-electric"
 import { Deferred, Effect, Layer } from "effect"
-import { act, createElement } from "react"
+import { act, createElement, Fragment } from "react"
 import { createRoot } from "react-dom/client"
 import { afterAll, expect, test, vi } from "vitest"
 import { ACTIONS_SHAPE_ROUTE } from "../src/features/actions/contract"
 import { REMOTE_RUN_SHAPE_ROUTE } from "../src/features/runs/contract"
 import { RemoteRunsClient } from "../src/features/runs/api"
+import { RepoRunsView } from "../src/features/runs/components/RepoRunsView"
 import { RunsProvider } from "../src/features/runs/components/RunsContext"
 import { Repo } from "../src/features/repo/repo"
 import { Runs } from "../src/features/runs/runs"
@@ -71,7 +72,7 @@ test.each([true, false])("a run shows its frame while inspection and sync are he
     const repo = await device.runPromise(Effect.service(Repo))
     const { router: appRouter } = await import("../src/router")
     const root = createRootRoute({ component: Outlet })
-    const route = createRoute({ getParentRoute: () => root, path: "/$owner/$repo/actions/runs/$runId", component: ActionRunScreen,
+    const route = createRoute({ getParentRoute: () => root, path: "/$owner/$repo/actions/runs/$runId", component: () => createElement(Fragment, null, createElement(ActionRunScreen), createElement(RepoRunsView, { owner: "octo", name: "hello" })),
       validateSearch: appRouter.routesById["/$owner/$repo/actions/runs/$runId"].options.validateSearch,
       beforeLoad: appRouter.routesById["/$owner/$repo/actions/runs/$runId"].options.beforeLoad,
     })
@@ -91,9 +92,12 @@ test.each([true, false])("a run shows its frame while inspection and sync are he
       expect([...container.querySelectorAll("a")].find((link) => link.textContent === "Runs")?.getAttribute("href"))
         .toBe(persisted ? "/app/runs" : "/octo/hello/actions")
       if (persisted) expect(container.querySelector("h1")?.textContent).toBe("ci")
-      else expect(container.querySelector('[aria-label="Loading run"]')).not.toBeNull()
+      else {
+        expect(container.querySelector('[aria-label="Loading run"]')).not.toBeNull()
+        expect(container.querySelector('[aria-label="Loading runs"]')).not.toBeNull()
+      }
       expect(container.querySelector('header[aria-label="Repository"] a[href="/octo/hello"]')?.textContent).toBe("octo/hello")
-      expect(container.querySelector('a[href="/octo/hello/actions"]')?.textContent).toBe("Runs")
+      expect(container.querySelector(`a[href="${persisted ? "/app/runs" : "/octo/hello/actions"}"]`)?.textContent).toBe("Runs")
       expect(router.state.status).toBe("idle")
     }, { timeout: 5_000, interval: 10 })
     expect(performance.now() - startedAt).toBeLessThan(5_000)
@@ -125,3 +129,28 @@ test.each([true, false])("a run shows its frame while inspection and sync are he
     await server.dispose()
   }
 }, 90_000)
+
+test("an empty repository's run list resolves from loading to No runs yet", async () => {
+  const server = openTestApp()
+  const api = await server.runPromise(Effect.service(TestChatApi))
+  const device = openTab(api)
+  const container = document.createElement("div")
+  document.body.append(container)
+  const view = createRoot(container)
+  try {
+    const runs = await device.runPromise(Effect.service(Runs))
+    const repo = await device.runPromise(Effect.service(Repo))
+    await repo.actions.role("octo", "hello")
+    await act(async () => view.render(createElement(RunsProvider, { value: runs }, createElement(RepoRunsView, { owner: "octo", name: "hello" }))))
+    await runs.actions.openRepoRuns("octo", "hello")
+    await vi.waitFor(async () => {
+      await act(async () => {})
+      expect(container.textContent).toContain("No runs yet")
+    }, { timeout: 30_000 })
+  } finally {
+    await act(async () => view.unmount())
+    container.remove()
+    await device.dispose()
+    await server.dispose()
+  }
+}, 60_000)
