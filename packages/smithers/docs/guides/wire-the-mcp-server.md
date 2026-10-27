@@ -25,7 +25,7 @@ server named `smithers` into the agent's own configuration:
 
 `smthrs mcp add` with no `--agent` wires every agent it knows. An unknown agent
 name is a usage error that lists the known ids. `smthrs mcp` on its own prints
-the group's help; `add` is its only subcommand.
+the group's help. `smthrs mcp doctor` validates server startup and tool listing.
 
 The entry records the current executable and entry path verbatim, not a package
 runner. An installed CLI therefore registers its own installed path, and a

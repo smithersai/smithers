@@ -35,6 +35,18 @@ describe("the unified MCP docs", () => {
     expect(reference).toContain("`flow_show`")
   })
 
+  it("documents doctor alongside the registration subcommand shown by help", async () => {
+    let help = ""
+    await makeCli().serve(["mcp", "--help"], {
+      stdout: (text) => {
+        help += text
+      }
+    })
+    expect(help).toContain("doctor")
+    expect(guide).toContain("smthrs mcp doctor")
+    expect(guide).not.toContain("only subcommand")
+  })
+
   it("says the approval-bearing verbs are absent, and they are", () => {
     const sentence = guide.replaceAll(/\s+/g, " ").match(/([^.]*) are absent from both discovery and dispatch/)?.[1]
     const absent = names(sentence ?? "")
