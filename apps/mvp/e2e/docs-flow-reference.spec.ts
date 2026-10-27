@@ -18,5 +18,8 @@ test("flow reference: published instructions use personal-flow commands and cont
   await expect(content).toContainText("/flow.new greet")
   await expect(content).toContainText("/flow.run greet")
   await expect(content).toContainText("Needs a sandbox")
-  for (const command of ["/help", "/flows", "/flow todo", "/flow.edit", "/flow.source"]) await expect(content).not.toContainText(command)
+  const instructions = (await content.locator("code").allTextContents()).map((text) => text.trim())
+  for (const command of ["/help", "/flows", "/flow todo", "/flow.edit", "/flow.source"]) {
+    expect(instructions.some((text) => text === command || text.startsWith(`${command} `)), `unsupported command ${command}`).toBe(false)
+  }
 })

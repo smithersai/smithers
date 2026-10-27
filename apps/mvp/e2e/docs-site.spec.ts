@@ -85,5 +85,5 @@ test("hosted docs use the product introduction without a global CLI release bann
   await expect(page.getByRole("main")).toContainText('already sets both seat and model to "openai:gpt-6-sol"')
   await page.goto("/docs/flows/")
   await expect(page.getByRole("main")).toContainText("System flows are protected actions")
-  await expect(page.getByRole("main")).toContainText("Learning proposals are suggested improvements")
+  await expect(page.getByRole("main")).toContainText("Code opens the saved source for direct editing.")
 })

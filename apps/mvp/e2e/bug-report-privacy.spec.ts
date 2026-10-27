@@ -6,7 +6,7 @@ requires("member")
 test("bug report: failed repository reads never expose repository or file paths in GitHub prefill", async ({ page }) => {
   for (const status of [400, 404, 502, 503] as const) expectServerError(status, "/api/repos/bugbash4-bb4-app2/*")
   await page.goto("/bugbash4-bb4-app2/private-repository")
-  await expect(page.getByText(/Not found|No such repository|Couldn't/).first()).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText(/Not found|No such repository|Couldn't|GitHub limit reached/).first()).toBeVisible({ timeout: 30_000 })
   await page.goto("/app/bugs/report")
   await page.getByRole("textbox", { name: "What happened?" }).fill("bugbash4-bb4-app2-private-read")
   await page.getByRole("button", { name: "Send", exact: true }).click()

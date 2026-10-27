@@ -148,3 +148,15 @@ img.hero-anim {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* A command heading can exceed a phone column before its anchor is laid out. */
+.sl-markdown-content .sl-heading-wrapper {
+  max-inline-size: 100%;
+  min-inline-size: 0;
+}
+.sl-markdown-content .sl-heading-wrapper > :is(h1, h2, h3, h4, h5, h6) {
+  display: inline-block;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}

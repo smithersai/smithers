@@ -103,9 +103,9 @@ test("publish: a Smithers-only branch reaches GitHub only through Publish, as a 
       const header = page.getByRole("navigation", { name: "Branch" })
       await header.getByRole("button", { name: "Publish", exact: true }).click()
       await page.getByRole("textbox", { name: "Title" }).fill(`Branch publish e2e ${devices.word}`)
-      const admitted = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/writes") && response.request().postDataJSON()?.op === "branch/publish")
+      const admitted = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/writes") && response.request().postDataJSON()?.op === "branch/publish").then((response) => response.json() as Promise<{ readonly writeId: string }>)
       await page.getByRole("form", { name: "Publish" }).getByRole("button", { name: "Publish", exact: true }).click()
-      const { writeId } = await (await admitted).json() as { readonly writeId: string }
+      const { writeId } = await admitted
       const subject = `write:${writeId}`
       const notice = page.locator(`[data-subject="${subject}"]`)
       await expect(notice).toHaveAttribute("data-tone", /waiting|working|done/)
@@ -136,9 +136,9 @@ test("publish: a Smithers-only branch reaches GitHub only through Publish, as a 
 
     await step("Maya presses Update branch, and the branch takes main in", async () => {
       const header = page.getByRole("navigation", { name: "Branch" })
-      const admitted = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/writes") && response.request().postDataJSON()?.op === "branch/update")
+      const admitted = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/writes") && response.request().postDataJSON()?.op === "branch/update").then((response) => response.json() as Promise<{ readonly writeId: string }>)
       await header.getByRole("button", { name: "Update branch" }).click()
-      const { writeId } = await (await admitted).json() as { readonly writeId: string }
+      const { writeId } = await admitted
       const notice = page.locator(`[data-subject="write:${writeId}"]`)
       await expect(notice).toHaveAttribute("data-tone", /waiting|working|done/)
       await expect(header).toContainText("Updated", { timeout: MACHINE })
