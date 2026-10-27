@@ -22,6 +22,7 @@ Every function that can refuse returns `Effect<A, PluginError>`, except
 
 ```ts
 import { Kernel, make } from "@smthrs/plugin"
+import * as Effect from "effect/Effect"
 
 const editor = make({
   name: "flows-plugin-editor",

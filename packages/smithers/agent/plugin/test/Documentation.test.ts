@@ -1,4 +1,5 @@
 import { Effect } from "effect"
+import { spawnSync } from "node:child_process"
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -38,6 +39,18 @@ const violations: Readonly<Record<string, () => Promise<{ readonly code: string 
 }
 
 describe("reference documentation matches admission", () => {
+  it("runs the standalone API example with only its declared imports", () => {
+    const block = /## Example\n\n```ts\n([\s\S]*?)```/.exec(read("docs/api.md"))![1]!
+    // Run the published code unchanged in a fresh module, without the test's
+    // own Effect binding or the suite's module cache.
+    const result = spawnSync(process.execPath, ["--input-type=module", "--eval", block], {
+      cwd: packageRoot,
+      encoding: "utf8"
+    })
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain("{ editor: { readOnly: false } }")
+  })
+
   it("attributes every published limit to the code the kernel actually reports", async () => {
     const table = /### Limits\n\n((?:\|.*\n)+)/.exec(read("docs/api.md"))
     expect(table, "docs/api.md must publish a limits table").not.toBeNull()
