@@ -43,9 +43,9 @@ export interface PageStep {
   readonly node?: { readonly runId: string; readonly nodeId: string }
 }
 
-/** The step a page shows the detail of: the selected one, else the latest. */
+/** The step a page shows the detail of: the selected one, else the first failure, live work, then the latest. */
 export const selectedStep = (steps: ReadonlyArray<PageStep>, selected: string | null): PageStep | undefined =>
-  steps.find((step) => step.row.id === selected) ?? steps.find((step) => step.row.state === "running" || step.row.state === "waiting") ?? [...steps].reverse().find((step) => step.row.state !== "pending") ?? steps[0]
+  steps.find((step) => step.row.id === selected) ?? steps.find((step) => step.row.state === "failed") ?? steps.find((step) => step.row.state === "running" || step.row.state === "waiting") ?? [...steps].reverse().find((step) => step.row.state !== "pending") ?? steps[0]
 
 /** The journal's rows: the first page and every page More read after it. */
 export const journalOf = (page: RunPage): ReadonlyArray<JournalRow> => {

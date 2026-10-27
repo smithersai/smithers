@@ -99,6 +99,10 @@ describe("selectedStep", () => {
     expect(selectedStep([steps[0]!, steps[2]!], null)?.row.id).toBe("a")
     expect(selectedStep([steps[2]!], null)?.row.id).toBe("c")
     expect(selectedStep([], null)).toBeUndefined()
+    const failed = [...steps, step("first-failure", "failed"), step("later-failure", "failed"), step("cleanup", "completed")]
+    expect(selectedStep(failed, null)?.row.id).toBe("first-failure")
+    expect(selectedStep(failed, "cleanup")?.row.id).toBe("cleanup")
+    expect(selectedStep(failed, "missing")?.row.id).toBe("first-failure")
   })
 })
 

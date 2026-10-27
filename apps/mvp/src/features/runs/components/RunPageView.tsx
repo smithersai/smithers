@@ -120,7 +120,7 @@ function ReadRunPage({ page, view, actions }: { page: RunPage; view: RunView; ac
         <TabsContent value="steps">
           <JournalScrubber events={graph.events} at={at} onChange={actions.scrub} />
           <div className="run-page-graph" data-inspector={view.inspectorOpen !== false}>
-            <FlowGraph nodes={graph.nodes} edges={graph.edges} selected={view.selected} onSelect={actions.select} onInspect={actions.inspectStep} />
+            <FlowGraph nodes={graph.nodes} edges={graph.edges} selected={shown?.row.id ?? null} onSelect={actions.select} onInspect={actions.inspectStep} />
             {shown === undefined || view.inspectorOpen === false ? null : (
               <StepInspector key={shown.row.id} step={shown.row} attempts={shown.attempts} input={shown.input} output={shown.output}
                 logs={shown.logs} wait={shown.wait} now={graph.time}
