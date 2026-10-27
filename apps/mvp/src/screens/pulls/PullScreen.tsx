@@ -38,11 +38,14 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
   const { data: access } = useLiveQuery(issues.queries.access)
   // A pull request is an issue row of kind `pull`: shown, loading until the first complete sync, or not there.
   const pageAccess = pullAccessOf(access, view)
+  const back = <Button asChild variant="ghost"><Link to="/$owner/$repo/pulls" params={{ owner, repo }}>Pull requests</Link></Button>
   const page = pageOf(pull, synced, pullReady && view?.installed === true, syncedReady, pageAccess)
-  if (page === "sign_in") return <main className="pulls-screen"><RepoHeader /><SignInButton /></main>
-  if (page === "missing") return <main className="pulls-screen"><RepoHeader /><EmptyState title={NOT_FOUND} /></main>
+  if (page === "sign_in") return <main className="pulls-screen"><RepoHeader />{back}<SignInButton /></main>
+  if (page === "missing") return <main className="pulls-screen"><RepoHeader />{back}<EmptyState title={NOT_FOUND} /></main>
+
   if (page === "unknown") return (
-    <main className="pulls-screen"><RepoHeader />
+    <main className="pulls-screen"><RepoHeader />{back}
+
       <EmptyState title="Pull request unavailable here" action={
         <>
           {pageAccess?.status === "unavailable" ? <Button variant="outline" onClick={actions.retry}>Try again</Button> : null}
@@ -52,7 +55,8 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
     </main>
   )
   // Keep the route frame while its detail arrives.
-  if (pull === undefined) return <main className="pulls-screen"><RepoHeader /></main>
+  if (pull === undefined) return <main className="pulls-screen"><RepoHeader />{back}</main>
+
   const summary = checksSummaryOf(checks ?? [])
   const tabs: ReadonlyArray<{ readonly tab: PullTab; readonly label: string }> = [
     { tab: "conversation", label: "Conversation" },
@@ -82,6 +86,8 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
   const compared = (files ?? []).find((row) => row.id === filesKey)
   return (
     <main className="pulls-screen" aria-label={`Pull request ${pull.number}`}>
+      {back}
+      {tab === "conversation" ? null : <h1>{pull.title} <span>#{pull.number}</span></h1>}
       <LinkTabs aria-label="Pull request">
         {tabs.map((entry) => (
           <Link

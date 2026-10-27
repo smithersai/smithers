@@ -1,7 +1,7 @@
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
 import { Button, EmptyState, ItemAsideSection, ItemConversation, Kbd, TriageControl } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import { useNavigate, useParams } from "@tanstack/react-router"
+import { Link, useNavigate, useParams } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
 import { SignInButton } from "../../features/auth/components/SignInButton"
 import { CommitmentControl } from "../../features/issues/components/CommitmentControl"
@@ -49,11 +49,14 @@ export function IssueScreen() {
   const todosRepoId = todosView?.repoId ?? ""
   const { data: todoRows } = useLiveQuery(todos.queries.stack(todosRepoId).todos)
   const navigate = useNavigate()
+  const back = <Button asChild variant="ghost"><Link to="/$owner/$repo/issues" params={{ owner, repo }}>Issues</Link></Button>
   const page = pageOf(item, synced, itemReady, syncedReady, access)
-  if (page === "sign_in") return <main className="issues-screen"><RepoHeader /><SignInButton /></main>
-  if (page === "missing") return <main className="issues-screen"><RepoHeader /><EmptyState title={NOT_FOUND} /></main>
+  if (page === "sign_in") return <main className="issues-screen"><RepoHeader />{back}<SignInButton /></main>
+  if (page === "missing") return <main className="issues-screen"><RepoHeader />{back}<EmptyState title={NOT_FOUND} /></main>
+
   if (page === "unknown") return (
-    <main className="issues-screen"><RepoHeader />
+    <main className="issues-screen"><RepoHeader />{back}
+
       <EmptyState title="Issue unavailable here" action={
         <>
           {access?.status === "unavailable" ? <Button variant="outline" onClick={actions.retry}>Try again</Button> : null}
@@ -63,7 +66,8 @@ export function IssueScreen() {
     </main>
   )
   // Keep the route frame while its detail arrives.
-  if (item === undefined) return <main className="issues-screen"><RepoHeader /></main>
+  if (item === undefined) return <main className="issues-screen"><RepoHeader />{back}</main>
+
   const shown = conversationProps(item, rows ?? [], { owner, name: repo })
   const made = todosByIssue(todosRepoId, todoRows, owner, repo).get(number)
   const make = mayMakeTodo(session !== undefined && mayChange(session, confirmed, answer), shown)
@@ -72,7 +76,8 @@ export function IssueScreen() {
     flowOn: triage !== undefined && !triage.paused,
   })
   return (
-    <main className="issues-screen"><RepoHeader />
+    <main className="issues-screen"><RepoHeader />{back}
+
       <ItemConversation
         {...shown}
         aside={made === undefined && !make ? undefined : (
