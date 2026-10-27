@@ -353,6 +353,9 @@ describe("the branch client", () => {
       status: 204, headers: { "x-branch-state": "forbidden" },
     }))).toEqual(new TrackRefused({ status: 403, code: "forbidden" }))
     expect(await client(async () => new Response(null, { status: 204 }))).toEqual(new TrackRefused({ status: 204 }))
+    expect(await client(async () => new Response(null, {
+      status: 204, headers: { "x-branch-state": "not_found" },
+    }))).toEqual(new TrackRefused({ status: 404, code: "not_found" }))
   })
 
   test("posts the branch; 200 or 201 with the branch is tracked, and anything else is a TrackRefused", async () => {

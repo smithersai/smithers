@@ -282,6 +282,17 @@ describe("POST /api/branches", () => {
     expect(h.github.seen).toEqual([])
   })
 
+  test("an absent branch is a normal optional browsing result, without recording a workspace", async () => {
+    const h = await open()
+    const body = { owner: "octocat", name: "Spoon-Knife", ref: "no-such-branch" }
+    const response = await h.fetch("/api/branches?optional=true", { method: "POST", body: JSON.stringify(body) })
+    expect(response.status).toBe(204)
+    expect(response.headers.get("x-branch-state")).toBe("not_found")
+    expect(h.only("branch.track").annotations).toMatchObject({ outcome: "not_found", status: 204 })
+    expect(await rows()).toEqual([])
+    expect((await track(h, body)).status).toBe(404)
+  })
+
   test("a reader browsing a branch gets an explicit unavailable workspace without a failed request", async () => {
     const h = await open({ actor: { ...member, role: "guest" } })
     const body = { owner: "octocat", name: "Spoon-Knife", ref: "feature" }
@@ -335,6 +346,7 @@ describe("POST /api/branches", () => {
       // GitHub not answering: 503, nothing recorded.
       const down = await open({ branchRoles: rolesThere("refused") })
       expect((await track(down, body)).status).toBe(503)
+      expect((await down.fetch("/api/branches?optional=true", { method: "POST", body: JSON.stringify(body) })).status).toBe(503)
       expect(await rows()).toEqual([])
       // The deployment's Guest, a Member there: tracks it, and owns it.
       const insider = await open({ actor: { ...member, role: "guest" }, branchRoles: rolesThere("member") })

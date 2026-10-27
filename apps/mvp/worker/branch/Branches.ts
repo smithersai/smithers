@@ -82,7 +82,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, app
     const fields: Fields = {}
     let browsing = false
     const answerRefusal = (status: number, code: string) => {
-      if (browsing && status === 403) {
+      if (browsing && (status === 403 || status === 404)) {
         fields.outcome = code
         return HttpServerResponse.empty({ status: 204, headers: { ...noStore, "x-branch-state": code } })
       }

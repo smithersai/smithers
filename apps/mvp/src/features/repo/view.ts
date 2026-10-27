@@ -11,6 +11,10 @@ import type { About, Ref, Repository } from "./schema"
 // What the view shows, from the rows the queries read (decision 0006 §2): pure functions, so a component only renders
 // their result and a TUI can show the same.
 
+/** A resolved repository whose refs do not contain the requested revision. */
+export const missingRefOf = (view: ViewRow): boolean =>
+  view.missing && view.ref !== null && view.refsKey !== null
+
 /** A missing file of a known revision has a path-specific way back to Code. */
 export const missingFileOf = (kind: "tree" | "blob", row: BlobRow | undefined): boolean =>
   kind === "blob" && row?.state === "failed" && row.message === NOT_FOUND

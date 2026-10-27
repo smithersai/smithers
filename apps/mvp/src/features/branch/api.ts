@@ -53,8 +53,9 @@ export class BranchClient extends Context.Service<
               HttpClientRequest.post(`${options.origin}${BRANCHES_ROUTE}${branch.create === true ? "" : "?optional=true"}`).pipe(HttpClientRequest.bodyJsonUnsafe(branch)),
             ).pipe(Effect.mapError(() => new TrackRefused({})))
             yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-            if (response.status === 204 && response.headers["x-branch-state"] === "forbidden") {
-              return yield* new TrackRefused({ status: 403, code: "forbidden" })
+            const state = response.headers["x-branch-state"]
+            if (response.status === 204 && (state === "forbidden" || state === "not_found")) {
+              return yield* new TrackRefused({ status: state === "forbidden" ? 403 : 404, code: state })
             }
             if (response.status !== 200 && response.status !== 201) {
               const body = decodeRefused(yield* Effect.orElseSucceed(response.text, () => ""))

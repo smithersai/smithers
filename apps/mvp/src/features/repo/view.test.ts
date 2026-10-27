@@ -13,6 +13,7 @@ import {
   headCommitOf,
   pageOf,
   missingFileOf,
+  missingRefOf,
   previewCommitOf,
   previewReadmeOf,
   previewTreeOf,
@@ -587,4 +588,12 @@ describe("what the page shows", () => {
   expect(missingFileOf("blob", undefined)).toBe(false)
   expect(missingFileOf("blob", { ...row, state: "loading" })).toBe(false)
   expect(missingFileOf("blob", { ...row, message: "Reading paused" })).toBe(false)
+})
+
+ test("a missing ref is distinct from an unresolved or missing repository", () => {
+  const missing = { ...emptyView, missing: true, ref: "no-such-branch", refsKey: "refs" }
+  expect(missingRefOf(missing)).toBe(true)
+  expect(missingRefOf({ ...missing, missing: false })).toBe(false)
+  expect(missingRefOf({ ...missing, ref: null })).toBe(false)
+  expect(missingRefOf({ ...missing, refsKey: null })).toBe(false)
 })
