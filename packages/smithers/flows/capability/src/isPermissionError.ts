@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 
-import { isRecord } from "@smthrs/canonical/Record"
+import { isRecord } from "@smthrs/canonical"
 import { Schema } from "effect"
 import { Action, EffectTier, maxResourceLength } from "./Capability.ts"
 import { GrantStoreError } from "./GrantStoreError.ts"

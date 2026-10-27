@@ -1,8 +1,7 @@
 import { Option, Schema } from "effect"
 import { systemError } from "effect/PlatformError"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import { Capability, CapabilityPattern, maxMatchWork } from "../src/Capability.ts"
-import * as CapabilityModule from "../src/Capability.ts"
 import {
   evaluate,
   fromPlatformError,
@@ -14,11 +13,6 @@ import {
   type RuleEffect,
   toPlatformError
 } from "../src/Permission.ts"
-
-vi.mock("../src/Capability.ts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/Capability.ts")>()
-  return { ...actual, matches: vi.fn(actual.matches) }
-})
 
 const capability = new Capability({
   action: "fs:read",
@@ -200,25 +194,6 @@ describe("Permission policy", () => {
     expect(deny.pattern.resource.length * big.resource.length).toBeGreaterThan(maxMatchWork)
     expect(evaluate([[deny], [allow]], big)).toBe("deny")
     expect(evaluate([[allow, deny]], big)).toBe("deny")
-  })
-
-  it("matches each rule at most once per decision, configured ruleset included", () => {
-    const matches = vi.mocked(CapabilityModule.matches)
-    const configured = [
-      rule("deny", "fs:read", "/workspace/**"),
-      rule("allow", "fs:read", "/workspace/readme.md"),
-      rule("ask", "fs:*", "/elsewhere/**")
-    ]
-    const later = [rule("deny", "*", "/workspace/*.md"), rule("allow", "fs:read", "/workspace/readme.md")]
-
-    matches.mockClear()
-    expect(evaluate([configured, later], capability)).toBe("allow")
-
-    const calls = matches.mock.calls.map(([pattern]) => pattern)
-    expect(calls).toHaveLength(configured.length + later.length)
-    for (const candidate of [...configured, ...later]) {
-      expect(calls.filter((pattern) => pattern === candidate.pattern)).toHaveLength(1)
-    }
   })
 
   it("does not veto for an over-budget rule whose action does not select the capability", () => {

@@ -4,8 +4,11 @@
  * @since 0.1.0
  */
 
-import { Capability, matches, withinMatchBudget } from "./Capability.ts"
+import { matches, withinMatchBudget } from "./Capability.ts"
+import type { Capability } from "./ExactCapability.ts"
 import { dotSegmentForms } from "./internal/hasDotSegment.ts"
+import { matchesAction } from "./internal/matchesAction.ts"
+import { matchesResource } from "./internal/matchesResource.ts"
 import type { Rule } from "./Rule.ts"
 import type { RuleEffect } from "./RuleEffect.ts"
 
@@ -48,12 +51,9 @@ export const evaluate = (
   }
   // matches requires every form, which is the narrow reading for an allow. A
   // deny or ask must take the wide reading, so it applies when any form does.
-  // The normal form is never longer than the checked text, so skipping the
-  // schema check here admits nothing the caller's capability did not.
-  const candidates = forms.map((resource) =>
-    resource === capability.resource ? capability : new Capability({ ...capability, resource }, { disableChecks: true })
-  )
-  const restricts = (rule: Rule): boolean => candidates.some((candidate) => matches(rule.pattern, candidate))
+  const restricts = (rule: Rule): boolean =>
+    matchesAction(rule.pattern.action, capability.action) &&
+    forms.some((resource) => matchesResource(rule.pattern.resource, resource))
   // One indexed pass: an undecidable rule anywhere vetoes, so returning on the
   // first one is equivalent to a separate budget preflight. Each rule is
   // matched once; index 0 additionally tracks the configured last-match.
