@@ -154,13 +154,13 @@ describe("surfaceOf", () => {
 
 describe("floatsBell", () => {
   test("a page floats the bell unless its header holds it: the home conversation's or the repository header; no route yet, none", () => {
-    for (const route of ["/", "/app/runs", "/app/flows", "/$owner/$repo/issues/$number", "/$owner/$repo/pull/$number", "/$owner/$repo/stack/$number"]) {
+    for (const route of ["/", "/app/runs", "/app/flows", "/$owner/$repo/stack/$number"]) {
       expect(floatsBell(route)).toBe(true)
     }
     for (const route of [
       "/app", "/$owner/$repo", "/$owner/$repo/tree/$ref/$", "/$owner/$repo/blob/$ref/$", "/$owner/$repo/raw/$ref/$", "/$owner/$repo/docs",
       "/$owner/$repo/docs/$", "/$owner/$repo/issues", "/$owner/$repo/issues/new", "/$owner/$repo/actions", "/$owner/$repo/pulls",
-      "/$owner/$repo/stack", "/$owner/$repo/settings/secrets",
+      "/$owner/$repo/stack", "/$owner/$repo/settings/secrets", "/$owner/$repo/issues/$number", "/$owner/$repo/pull/$number", "/$owner/$repo/pull/$number/$tab",
     ]) {
       expect(floatsBell(route)).toBe(false)
     }

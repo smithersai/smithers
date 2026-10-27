@@ -203,3 +203,16 @@ for (const width of [390, 768, 1280]) test(`${width}: navigation uses theme link
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
   } finally { await page.close() }
 })
+
+for (const width of [390, 1280]) test(`${width}: the repository bell stays beside its heading`, async () => {
+  const page = await browser.newPage({ viewport: { width, height: 844 } })
+  try {
+    await page.goto(`${origin}?screen=issues`)
+    const bell = page.getByRole("button", { name: "Notifications", exact: true })
+    await bell.waitFor()
+    const heading = (await page.locator(".repo-header-name").boundingBox())!
+    const box = (await bell.boundingBox())!
+    expect(box.y).toBeLessThan(heading.y + heading.height)
+    expect(box.x).toBeGreaterThanOrEqual(heading.x + heading.width)
+  } finally { await page.close() }
+})

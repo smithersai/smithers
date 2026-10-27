@@ -1,3 +1,4 @@
+import { RepoHeader } from "../../features/repo/components/RepoHeader"
 import { Badge, Button, EmptyState, ItemConversation, LinkTabs, RunList } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link, useParams } from "@tanstack/react-router"
@@ -38,10 +39,10 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
   // A pull request is an issue row of kind `pull`: shown, loading until the first complete sync, or not there.
   const pageAccess = pullAccessOf(access, view)
   const page = pageOf(pull, synced, pullReady && view?.installed === true, syncedReady, pageAccess)
-  if (page === "sign_in") return <main className="pulls-screen"><SignInButton /></main>
-  if (page === "missing") return <main className="pulls-screen"><EmptyState title={NOT_FOUND} /></main>
+  if (page === "sign_in") return <main className="pulls-screen"><RepoHeader /><SignInButton /></main>
+  if (page === "missing") return <main className="pulls-screen"><RepoHeader /><EmptyState title={NOT_FOUND} /></main>
   if (page === "unknown") return (
-    <main className="pulls-screen">
+    <main className="pulls-screen"><RepoHeader />
       <EmptyState title="Pull request unavailable here" action={
         <>
           {pageAccess?.status === "unavailable" ? <Button variant="outline" onClick={actions.retry}>Try again</Button> : null}
@@ -50,8 +51,8 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
       } />
     </main>
   )
-  // Keep the route's frame while its detail arrives; no invented content or loading skeleton.
-  if (pull === undefined) return <main className="pulls-screen" />
+  // Keep the route frame while its detail arrives.
+  if (pull === undefined) return <main className="pulls-screen"><RepoHeader /></main>
   const summary = checksSummaryOf(checks ?? [])
   const tabs: ReadonlyArray<{ readonly tab: PullTab; readonly label: string }> = [
     { tab: "conversation", label: "Conversation" },

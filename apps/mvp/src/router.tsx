@@ -464,7 +464,7 @@ const issueRoute = createRoute({
     stringify: (params) => ({ ...params, number: String(params.number) }),
   },
   beforeLoad: ({ context, params, ...load }) =>
-    enterRepo(
+    enterRepository(
       context,
       params,
       load,
@@ -524,7 +524,7 @@ const pullRoute = createRoute({
   component: () => <PullScreen tab="conversation" />,
   params: pullParams,
   beforeLoad: ({ context, params, ...load }) =>
-    enterRepo(context, params, load, () => context.pulls.actions.warm(params.owner, params.repo), () => context.pulls.actions.open(params.owner, params.repo, params.number)),
+    enterRepository(context, params, load, () => context.pulls.actions.warm(params.owner, params.repo), () => context.pulls.actions.open(params.owner, params.repo, params.number)),
 })
 
 /** `/$owner/$repo/pull/$number/$tab`: its commits, its checks (the Smithers runs on its head), or its files. */
@@ -549,7 +549,7 @@ const pullTabRoute = createRoute({
     }),
   },
   beforeLoad: ({ context, params, ...load }) =>
-    enterRepo(
+    enterRepository(
       context,
       params,
       load,
