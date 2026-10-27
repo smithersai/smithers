@@ -41,6 +41,7 @@ export function RepoHeader({ backTarget }: { readonly backTarget?: Minimized } =
       <h1 className="repo-header-name">
         <Link to="/$owner/$repo" params={{ owner: view.owner, repo: view.name }}>{view.owner} / {view.name}</Link>
       </h1>
+      {header.kind === "missing" || header.kind === "unavailable" ? null : <>
       <Button asChild variant="ghost">
         <Link to="/$owner/$repo/issues" params={{ owner: view.owner, repo: view.name }}>{ISSUES}</Link>
       </Button>
@@ -54,6 +55,7 @@ export function RepoHeader({ backTarget }: { readonly backTarget?: Minimized } =
         <Link to="/$owner/$repo/stack" params={{ owner: view.owner, repo: view.name }}>{STACK}</Link>
       </Button>
       <SecretsLink owner={view.owner} repo={view.name} />
+      </>}
       {(header.kind === "clone" || header.kind === "sign_in") && header.status !== undefined
         ? <span role="status">{header.status}</span>
         : null}

@@ -139,21 +139,19 @@ describe("codeEmptyOf", () => {
 })
 
 describe("headerOf", () => {
-  test("About missing says Not found before cloning, even before the repositories shape answers", () => {
+  test("About missing offers no clone or sign-in action, even before the repositories shape answers", () => {
     const about: AboutRow = { key: "github/o/n", state: "missing", about: null, message: "Not found" }
     for (const answered of [false, true]) {
-      for (const signedIn of [true, null]) {
-        expect(headerOf(undefined, undefined, signedIn, answered, about)).toEqual({ kind: "clone", status: "Not found" })
+      for (const signedIn of [true, false, null]) {
+        expect(headerOf(undefined, undefined, signedIn, answered, about)).toEqual({ kind: "missing" })
+        expect(codeEmptyOf(headerOf(undefined, undefined, signedIn, answered, about))).toBe("Not found")
       }
-      expect(headerOf(undefined, undefined, false, answered, about)).toEqual({
-        kind: "sign_in", text: SIGN_IN_TO_CLONE, status: "Not found",
-      })
     }
     expect(headerOf(repository(), undefined, true, true, about)).toEqual({ kind: "ready" })
     expect(headerOf(repository({ status: "cloning" }), undefined, true, true, about)).toEqual({ kind: "cloning" })
     expect(headerOf(undefined, clone("requesting"), true, true, about)).toEqual({ kind: "cloning" })
     expect(headerOf(undefined, clone("failed"), true, true, about)).toEqual({ kind: "refused", text: FAILURE_COPY.unavailable })
-    for (const state of ["loading", "ready", "failed"] as const) {
+    for (const state of ["loading", "ready"] as const) {
       expect(headerOf(undefined, undefined, true, true, { ...about, state })).toEqual({ kind: "clone" })
       expect(headerOf(undefined, undefined, true, false, { ...about, state })).toEqual({ kind: "unknown" })
     }
@@ -345,6 +343,10 @@ const aboutRow = (state: AboutRow["state"], value: About | null = null): AboutRo
 describe("the first visit: what GitHub says, before and after a clone", () => {
   test("a failed public root read needs an honest error instead of a clone claim", () => {
     expect(aboutFailed(aboutRow("failed"), { kind: "clone" }, true)).toBe(true)
+    const unavailable = headerOf(undefined, undefined, false, true, aboutRow("failed"))
+    expect(unavailable).toEqual({ kind: "unavailable" })
+    expect(aboutFailed(aboutRow("failed"), unavailable, true)).toBe(true)
+    expect(codeEmptyOf(unavailable)).toBe(COULDNT_LOAD)
     expect(aboutFailed(aboutRow("loading"), { kind: "clone" }, true)).toBe(false)
     expect(aboutFailed(aboutRow("ready", about()), { kind: "clone" }, true)).toBe(false)
     expect(aboutFailed(aboutRow("failed"), { kind: "ready" }, true)).toBe(false)

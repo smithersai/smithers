@@ -21,7 +21,7 @@ export const missingFileOf = (kind: "tree" | "blob", row: BlobRow | undefined): 
 
 /** A public root whose About retries ended must show the refusal, not an absent clone. */
 export const aboutFailed = (row: AboutRow | undefined, header: Header, root: boolean): boolean =>
-  (header.kind === "clone" || header.kind === "sign_in") && root && row?.state === "failed"
+  (header.kind === "clone" || header.kind === "sign_in" || header.kind === "unavailable") && root && row?.state === "failed"
 
 /** A file list as `RepoView` takes it. */
 export type TreeProps =
@@ -104,7 +104,7 @@ export const fileProps = (row: BlobRow | undefined): FileProps => {
  * - `ready`: nothing.
  */
 export type Header =
-  | { readonly kind: "unknown" | "cloning" | "ready" }
+  | { readonly kind: "unknown" | "cloning" | "ready" | "missing" | "unavailable" }
   | { readonly kind: "clone"; readonly status?: string }
   | { readonly kind: "sign_in"; readonly text: string; readonly status?: string }
   | { readonly kind: "refused"; readonly text: string }
@@ -133,7 +133,7 @@ export const capacityText = (repository: Repository): string => {
  * (`null` when sign-in hasn't said). This tab's request wins until Electric delivers what it did. A repository the
  * device doesn't have is `unknown`, offering nothing, until the repositories' shape has `answered` once: until then
  * the device can't tell a repository nobody cloned from one whose row is still on its way. About's missing result
- * immediately adds Not found to the available Clone or sign-in action when no repository row or clone request exists.
+ * removes clone and repository navigation actions when no repository row or clone request exists.
  */
 export const headerOf = (
   repository: Repository | undefined,
@@ -155,10 +155,9 @@ export const headerOf = (
     }
   }
   if (repository === undefined && about?.state === "missing") {
-    return signedIn === false
-      ? { kind: "sign_in", text: SIGN_IN_TO_CLONE, status: NOT_FOUND }
-      : { kind: "clone", status: NOT_FOUND }
+    return { kind: "missing" }
   }
+  if (repository === undefined && about?.state === "failed") return { kind: "unavailable" }
   if (repository === undefined && !answered) return { kind: "unknown" }
   if (repository === undefined) return signedIn === false ? { kind: "sign_in", text: SIGN_IN_TO_CLONE } : { kind: "clone" }
   switch (repository.status) {
@@ -179,7 +178,7 @@ export const headerOf = (
  * Nothing while the device can't tell yet (`unknown`) or once it is `ready`.
  */
 export const codeEmptyOf = (header: Header): string | undefined =>
-  header.kind === "unknown" || header.kind === "ready" ? undefined : header.kind === "cloning" ? CLONING : NOT_CLONED
+  header.kind === "unknown" || header.kind === "ready" ? undefined : header.kind === "cloning" ? CLONING : header.kind === "missing" ? NOT_FOUND : header.kind === "unavailable" ? COULDNT_LOAD : NOT_CLONED
 
 /** The head commit's row: its message's first line, its author, its short SHA and when it was made. */
 export interface Commit {

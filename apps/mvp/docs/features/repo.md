@@ -378,3 +378,5 @@ GitHub file fragments (`#L72`, `#L5-L12`) select and reveal their lines, includi
 A missing file names its revision and links back to Code. Browser file reads use `?optional=true`: a confirmed absent path at a readable commit is `204`, so a normal missing-file page produces no browser error. Missing repositories and unreadable commits retain their error status.
 
 An optional preview that exceeds the display limit answers `200` with `x-file-state: too_large` and its size metadata. The client retains the Too large to show state and GitHub Raw link. Direct blob and raw reads retain `413`.
+
+A confirmed missing repository offers neither Clone nor Sign in to clone, and hides repository feature links. An About 404 is the authoritative absence receipt, not a transport failure to disguise; 503 remains a retryable failure and offers no clone or repository feature links until metadata recovers. The header preserves existing cloned repositories when a separate About read is missing.
