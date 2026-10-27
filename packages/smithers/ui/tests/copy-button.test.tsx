@@ -33,6 +33,26 @@ const click = () => act(async () => void button().dispatchEvent(new MouseEvent("
 const settle = (ms = 0) => act(async () => void (await new Promise((resolve) => setTimeout(resolve, ms))));
 
 describe("CopyButton", () => {
+  test("an earlier copied-label timer cannot unlock a pending copy", async () => {
+    let calls = 0;
+    let release = () => {};
+    await render(<CopyButton copiedDurationMs={40} onCopy={() => {
+      calls++;
+      if (calls > 1) return new Promise<void>((resolve) => { release = resolve; });
+    }}>Copy</CopyButton>);
+    await click();
+    expect(button().textContent).toBe("Copied");
+    await click();
+    await settle(80);
+    expect(button().getAttribute("data-copying")).toBe("true");
+    await click();
+    expect(calls).toBe(2);
+    await act(async () => release());
+    expect(button().textContent).toBe("Copied");
+    await settle(80);
+    expect(button().textContent).toBe("Copy");
+  });
+
   test("says Copied once the host copied, then its label again", async () => {
     let copies = 0;
     await render(

@@ -42,6 +42,7 @@ export function CopyButton({
   }, []);
   const copy = async () => {
     if (state === "copying") return;
+    clearTimeout(timer.current);
     setState("copying");
     let next: "copied" | "failed" = "copied";
     try {
