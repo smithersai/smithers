@@ -1,3 +1,4 @@
+/** @jsxImportSource react */
 import { useLayoutEffect, useRef } from "react"
 
 // Runs after the router commits the new screen. Search/filter changes keep focus
