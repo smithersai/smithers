@@ -1,3 +1,4 @@
+import { itemShape } from "./ItemShape.ts"
 import * as MirrorRefresh from "../MirrorRefresh.ts"
 import { COMMITMENTS } from "../../src/features/issues/lifecycle.ts"
 import { digestSync } from "@smthrs/crypto"
@@ -822,7 +823,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
     })
 
     /** A repository shape, served only to whom `readRefusal` lets read it; the refusal is counted under its table. */
-    const readable = (table: string, columns: ReadonlyArray<string>, where = "repo_id = $1", target = repository) =>
+    const readable = (table: string, columns: ReadonlyArray<string>, where = "repo_id = $1", target = repository, params: Readonly<Record<string, string>> = { "1": target.id }) =>
       Effect.gen(function* () {
         const refused = yield* readRefusal(target)
         if (Option.isSome(refused)) {
@@ -833,7 +834,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           yield* Effect.logWarning(`github.shape.${table}`).pipe(Effect.annotateLogs({ status: refused.value.status }))
           return refused.value
         }
-        return yield* shape(table, columns, where, { "1": target.id })
+        return yield* shape(table, columns, where, params)
       })
 
     /**
@@ -879,7 +880,9 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             return refuse(404, "app_not_installed")
           }
         }
-        const read = readable(repositoryShape.table, repositoryShape.columns, repositoryShape.where, target.success)
+        const selected = itemShape(path, repositoryShape.where, target.success.id, new URL(request.url, "http://localhost").searchParams.get("number"))
+        if (selected === undefined) return refuse(400, "invalid")
+        const read = readable(repositoryShape.table, repositoryShape.columns, selected.where, target.success, selected.params)
         if (path === ITEMS_SHAPE_ROUTE || path === ITEM_SUMMARIES_SHAPE_ROUTE) {
           // Admission runs beside the shape read inside this request, bounded at `RECONCILE_START_TIMEOUT`.
           // Reconcile's work stays on the durable engine; no admission outlives the request (decision 0104).

@@ -322,3 +322,7 @@ Cold issue and pull request lists say “Syncing issues…” or “Syncing pull
 
 
 Agent attribution names the requester only when their stored GitHub login exists. Without one, new text is attributed to “Smithers”; it never fabricates an `@unknown` mention. Historical issue bodies remain GitHub's text, including the old scratch issue #16.
+
+Detail routes use item-scoped Electric shapes: `items?repo=owner/name&number=N` and `comments?repo=owner/name&number=N`. The server validates N and binds it into an additional number/item-id predicate after repository authorization. Separate persisted collection identities retain each item's cursor; moving between issues cannot reuse another item's handle. Lists share summaries, sync and triage metadata. Explicit repository-wide readers retain their existing full-body demand.
+
+The October 26 production probe measured boot render at 2.82 s, first issue content at 7.37 s, and initial detail transfer of 8.24 MB of bodies plus 19.46 MB of comments. The scoped-shape regression verifies that a detail downloads only its own body and comments. Post-deployment timings remain a lander check; this change makes no measured speedup claim before deployment.

@@ -25,8 +25,8 @@ import { IssuesStore } from "./store"
  * What an issue route calls on a link's hover or focus (the router's intent preload): starts `owner/name`'s issues'
  * sync without showing a page, so the page the click opens has its rows.
  */
-export const warm = (owner: string, name: string) =>
-  Effect.flatMap(IssuesStore, (store) => Effect.asVoid(store.forRepo(repoId(owner, name))))
+export const warm = (owner: string, name: string, number?: number) =>
+  Effect.flatMap(IssuesStore, (store) => Effect.asVoid(store.forRepo(repoId(owner, name), number)))
 
 /** Reconnects this tab's issue shapes after one stopped or failed; the SDK owns retries and resumption. */
 export const reconnectShapes = Effect.flatMap(IssuesStore, (store) =>
@@ -43,8 +43,8 @@ export const open = (owner: string, name: string, number?: number) =>
   Effect.gen(function* () {
     const store = yield* IssuesStore
     const id = repoId(owner, name)
-    yield* store.forRepo(id)
-    yield* store.route(id)
+    yield* store.forRepo(id, number)
+    yield* store.route(id, number)
     yield* store.view.update(VIEW, (row) => {
       row.owner = owner
       row.name = name

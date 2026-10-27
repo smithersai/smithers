@@ -73,9 +73,9 @@ export class PullsStore extends Context.Service<
     readonly view: Collection.Collection<PullsView, string>
     readonly fileList: Query<typeof filesQuery>
     readonly viewState: Query<typeof viewQuery>
-    readonly forRepo: (id: string) => Effect.Effect<RepoPulls>
+    readonly forRepo: (id: string, number?: number) => Effect.Effect<RepoPulls>
     readonly routed: () => RepoPulls
-    readonly route: (id: string) => Effect.Effect<void>
+    readonly route: (id: string, number?: number) => Effect.Effect<void>
     readonly empty: RepoPulls
     readonly scope: Scope.Scope
   }
@@ -269,16 +269,36 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
     timeToLive: (exit) => Exit.isFailure(exit) ? 0 : Infinity,
   })
 
+  const itemOpening = yield* Cache.makeWith((key: string) => Effect.gen(function* () {
+    const split = key.lastIndexOf("#")
+    const id = key.slice(0, split)
+    const number = Number(key.slice(split + 1))
+    const repo = yield* Cache.get(opening, id)
+    const item = yield* issues.forRepo(id, number)
+    return {
+      ...repo,
+      pull: yield* pullQuery(view, item.details, repo.pulls),
+      comments: yield* commentsQuery(view, item.items, item.comments),
+    }
+  }).pipe(Scope.provide(scope), Effect.orDie), {
+    capacity: Number.MAX_SAFE_INTEGER,
+    timeToLive: (exit) => Exit.isFailure(exit) ? 0 : Infinity,
+  })
+  const forRepo = (id: string, number?: number) => number === undefined
+    ? Cache.get(opening, id) : Cache.get(itemOpening, `${id}#${number}`)
+  let routedRepo = empty
+
   return PullsStore.of({
     files,
     view,
     fileList: yield* filesQuery(files),
     viewState: yield* viewQuery(view, issues.writes),
-    forRepo: (id) => Cache.get(opening, id),
-    routed: () => repositories.get(routedId) ?? empty,
-    route: (id) =>
+    forRepo,
+    routed: () => routedRepo,
+    route: (id, number) =>
       Effect.gen(function* () {
         routedId = id
+        routedRepo = yield* forRepo(id, number)
         // What this repository's shape last said, shown at once: a page opened again needs no new answer.
         const known = yield* (yield* Cache.get(opening, id)).status
         yield* Effect.ignore(view.update(VIEW, (row) => {

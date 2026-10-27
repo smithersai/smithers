@@ -65,9 +65,7 @@ export function IssueScreen() {
       } />
     </main>
   )
-  // Keep the route frame while its detail arrives.
-  if (item === undefined) return <main className="issues-screen"><RepoHeader />{back}</main>
-
+  if (item === undefined) return <main className="issues-screen"><RepoHeader />{back}<p role="status">Syncing issue…</p></main>
   const shown = conversationProps(item, rows ?? [], { owner, name: repo })
   const made = todosByIssue(todosRepoId, todoRows, owner, repo).get(number)
   const make = mayMakeTodo(session !== undefined && mayChange(session, confirmed, answer), shown)

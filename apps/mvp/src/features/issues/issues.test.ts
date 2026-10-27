@@ -600,11 +600,14 @@ describe("a link's warm", () => {
       ))
       const store = Context.get(built, IssuesStore)
       faulty.failNext()
-      expect(Exit.isFailure(yield* Effect.exit(store.forRepo(REPO_ID)))).toBe(true)
+      expect(Exit.isFailure(yield* Effect.exit(store.forRepo(REPO_ID, 1)))).toBe(true)
       expect(store.opened(REPO_ID)).toBeUndefined()
       const reopened = yield* store.forRepo(REPO_ID)
       expect(store.opened(REPO_ID)).toBe(reopened)
       expect(yield* store.forRepo(REPO_ID)).toBe(reopened)
+      const detail = yield* store.forRepo(REPO_ID, 1)
+      expect(yield* store.forRepo(REPO_ID, 1)).toBe(detail)
+      expect(detail).not.toBe(reopened)
     })))
   }, WITHIN)
 })
@@ -1098,4 +1101,23 @@ test("a failed body shape cannot mark the healthy list unavailable after navigat
   await tab.actions.open(OWNER, NAME)
   await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "allowed", installed: true }))
   expect(tab.issues.queries.list.toArray).toContainEqual(expect.objectContaining({ number: 45 }))
+}, WITHIN)
+
+test("a detail sync contains only the selected issue and comments, with independent cached cursors", async () => {
+  const tab = await open()
+  await server(tab.api).seed(1, "First")
+  await server(tab.api).seed(2, "Second")
+  await Effect.runPromise(tab.api.github.run(Effect.all([
+    Store.upsertComment(REPO_ID, 1, comment(101, "First comment"), Date.now()),
+    Store.upsertComment(REPO_ID, 2, comment(102, "Second comment"), Date.now()),
+  ])))
+  for (const number of [1, 2, 1]) {
+    await tab.actions.open(OWNER, NAME, number)
+    await until(() => expect(tab.issues.queries.item.toArray[0]?.number).toBe(number))
+    await until(() => expect(tab.comments().map((row) => row.body)).toEqual([number === 1 ? "First comment" : "Second comment"]))
+    expect((await tab.runtime.runPromise(tab.store.routed().details.toArray)).map((row) => row.number)).toEqual([number])
+    expect((await tab.runtime.runPromise(tab.store.routed().comments.toArray)).map((row) => row.itemId)).toEqual([itemId(REPO_ID, number)])
+  }
+  await tab.actions.open(OWNER, NAME)
+  await until(() => expect(tab.list().issues).toHaveLength(2))
 }, WITHIN)

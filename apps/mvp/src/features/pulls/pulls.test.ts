@@ -614,10 +614,13 @@ test("a repository whose pull requests failed to open opens again once persisten
     ))
     const store = Context.get(built, PullsStore)
     faulty.failNext()
-    expect(Exit.isFailure(yield* Effect.exit(store.forRepo(REPO_ID)))).toBe(true)
+    expect(Exit.isFailure(yield* Effect.exit(store.forRepo(REPO_ID, 1)))).toBe(true)
     // The failure isn't kept: the next open opens, once.
     const reopened = yield* store.forRepo(REPO_ID)
     expect(yield* store.forRepo(REPO_ID)).toBe(reopened)
+      const detail = yield* store.forRepo(REPO_ID, 1)
+      expect(yield* store.forRepo(REPO_ID, 1)).toBe(detail)
+      expect(detail).not.toBe(reopened)
   })))
 }, WITHIN)
 

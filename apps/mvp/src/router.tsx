@@ -484,7 +484,7 @@ const issueRoute = createRoute({
       context,
       params,
       load,
-      () => Promise.all([context.issues.actions.warm(params.owner, params.repo), context.todos.actions.warm(params.owner, params.repo)]),
+      () => Promise.all([context.issues.actions.warm(params.owner, params.repo, params.number), context.todos.actions.warm(params.owner, params.repo)]),
       () =>
         Promise.all([
           context.issues.actions.open(params.owner, params.repo, params.number),
@@ -540,7 +540,7 @@ const pullRoute = createRoute({
   component: () => <PullScreen tab="conversation" />,
   params: pullParams,
   beforeLoad: ({ context, params, ...load }) =>
-    enterRepository(context, params, load, () => context.pulls.actions.warm(params.owner, params.repo), () => context.pulls.actions.open(params.owner, params.repo, params.number)),
+    enterRepository(context, params, load, () => context.pulls.actions.warm(params.owner, params.repo, params.number), () => context.pulls.actions.open(params.owner, params.repo, params.number)),
 })
 
 /** `/$owner/$repo/pull/$number/$tab`: its commits, its checks (the Smithers runs on its head), or its files. */
@@ -569,7 +569,7 @@ const pullTabRoute = createRoute({
       context,
       params,
       load,
-      () => context.pulls.actions.warm(params.owner, params.repo),
+      () => context.pulls.actions.warm(params.owner, params.repo, params.number),
       () => context.pulls.actions.open(params.owner, params.repo, params.number, params.tab),
     ),
 })

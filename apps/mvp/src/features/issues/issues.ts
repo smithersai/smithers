@@ -67,7 +67,7 @@ export interface IssuesActions {
   /** What an issue route calls on a navigation: resolves once the repository's issues are open. */
   readonly open: (owner: string, name: string, number?: number) => Promise<void>
   /** What an issue route calls on a link's hover or focus: starts the repository's issues' sync without showing a page. */
-  readonly warm: (owner: string, name: string) => Promise<void>
+  readonly warm: (owner: string, name: string, number?: number) => Promise<void>
   /** Reconnect failed issue shapes now. */
   readonly retry: () => void
   readonly setNewTitle: (owner: string, name: string, title: string) => void
@@ -120,7 +120,7 @@ export class Issues extends Context.Service<Issues, { readonly queries: IssuesQu
         actions: {
           setCommitment: (owner, name, number, commitment, previousWriteId) => run(setCommitment(owner, name, number, commitment, previousWriteId)),
           open: (owner, name, number) => promise(open(owner, name, number)),
-          warm: (owner, name) => promise(warm(owner, name)),
+          warm: (owner, name, number) => promise(warm(owner, name, number)),
           retry: () => run(retry),
           setNewTitle: (owner, name, title) => run(setNewTitle(owner, name, title)),
           setNewBody: (owner, name, body) => run(setNewBody(owner, name, body)),

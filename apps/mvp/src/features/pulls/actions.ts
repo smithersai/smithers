@@ -21,8 +21,8 @@ export const mergePresses = Metric.counter("smithers_web_pull_merges", {
 })
 
 /** What a pull request route calls on a link's hover or focus: starts `owner/name`'s sync without showing a page. */
-export const warm = (owner: string, name: string) =>
-  Effect.flatMap(PullsStore, (store) => Effect.asVoid(store.forRepo(repoId(owner, name))))
+export const warm = (owner: string, name: string, number?: number) =>
+  Effect.flatMap(PullsStore, (store) => Effect.asVoid(store.forRepo(repoId(owner, name), number)))
 
 /** A person's Try again on an unavailable pull; both its own and the repository's issue shapes may need reconnecting. */
 export const retry = Effect.gen(function* () {
@@ -38,7 +38,7 @@ export const retry = Effect.gen(function* () {
 export const open = (owner: string, name: string, number?: number, tab: PullTab = "conversation") =>
   Effect.gen(function* () {
     const store = yield* PullsStore
-    yield* store.forRepo(repoId(owner, name))
+    yield* store.forRepo(repoId(owner, name), number)
     yield* store.view.update(VIEW, (row) => {
       const same = row.number === (number ?? null) && row.owner === owner && row.name === name
       row.owner = owner
@@ -54,7 +54,7 @@ export const open = (owner: string, name: string, number?: number, tab: PullTab 
     })
     // Sync status is shared with issues and must follow this route's repository too.
     yield* openIssues(owner, name, number)
-    yield* store.route(repoId(owner, name))
+    yield* store.route(repoId(owner, name), number)
     // The Files tab reads its comparison once the device has the pull request's base and head.
     if (number !== undefined && tab === "files") {
       yield* store.routed().pull.rows.pipe(

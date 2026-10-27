@@ -54,9 +54,7 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
       } />
     </main>
   )
-  // Keep the route frame while its detail arrives.
-  if (pull === undefined) return <main className="pulls-screen"><RepoHeader />{back}</main>
-
+  if (pull === undefined) return <main className="pulls-screen"><RepoHeader />{back}<p role="status">Syncing pull request…</p></main>
   const summary = checksSummaryOf(checks ?? [])
   const tabs: ReadonlyArray<{ readonly tab: PullTab; readonly label: string }> = [
     { tab: "conversation", label: "Conversation" },

@@ -31,7 +31,7 @@ export interface PullsActions {
   /** What a pull request route calls on a navigation: resolves once the repository's pull requests are open. */
   readonly open: (owner: string, name: string, number?: number, tab?: PullTab) => Promise<void>
   /** On a link's hover or focus: starts the repository's pull requests' sync without showing a page. */
-  readonly warm: (owner: string, name: string) => Promise<void>
+  readonly warm: (owner: string, name: string, number?: number) => Promise<void>
   readonly retry: () => void
   readonly loadFiles: (owner: string, name: string, base: string, head: string) => void
   /** Merge, bound to the head and base the page shows: whether it was sent. */
@@ -60,7 +60,7 @@ export class Pulls extends Context.Service<Pulls, { readonly queries: PullsQueri
         },
         actions: {
           open: (owner, name, number, tab) => promise(open(owner, name, number, tab)),
-          warm: (owner, name) => promise(warm(owner, name)),
+          warm: (owner, name, number) => promise(warm(owner, name, number)),
           retry: () => run(retry),
           loadFiles: (owner, name, base, head) => run(loadFiles(owner, name, base, head)),
           merge: (headSha, baseSha, number) => run(merge(headSha, baseSha, number)),

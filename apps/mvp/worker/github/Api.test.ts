@@ -4,7 +4,7 @@
 // intercepts a request.
 import { BranchRoles } from "../branch/Access.ts"
 import { ConfigProvider, Duration, Effect, Layer, Option, Redacted } from "effect"
-import { FetchHttpClient, HttpEffect } from "effect/http"
+import { FetchHttpClient, HttpEffect, HttpServerRequest } from "effect/http"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { beforeAll, beforeEach, describe, expect, test } from "vitest"
@@ -684,6 +684,20 @@ describe("the shapes", () => {
     expect(Object.keys(listedComments[0]!)).not.toContain("fetched_at")
   })
 
+  test("number scopes detail bodies and comments without widening repository access", async () => {
+    await seed()
+    const h = await githubHarness(runtime)
+    for (const route of [ITEMS_SHAPE_ROUTE, COMMENTS_SHAPE_ROUTE]) {
+      const present = await h.fetch(`${route}?offset=-1&number=1`)
+      expect(present.status).toBe(200)
+      expect(values(await present.json())).toHaveLength(1)
+      const absent = await h.fetch(`${route}?offset=-1&number=2`)
+      expect(absent.status).toBe(200)
+      expect(values(await absent.json())).toEqual([])
+      expect((await h.fetch(`${route}?offset=-1&number=0`)).status).toBe(400)
+    }
+  })
+
   test("a read of stale issues starts github/Reconcile once per 5 minutes; fresh ones start nothing", async () => {
     const h = await githubHarness(runtime)
     // The read answers once the start is admitted: it is recorded before the response, with no waiting after it.
@@ -1059,6 +1073,7 @@ test.each([undefined, "metadata-fixture-token"])("default metadata transport che
         const response = yield* Effect.promise(() => handler(new Request(`http://app.test${COMMENTS_SHAPE_ROUTE}?offset=-1`)))
         expect(response.status).toBe(401)
         expect(yield* Effect.promise(() => response.json())).toEqual({ code: "authentication" })
+        expect(yield* routes.mayRead(REPOSITORY).pipe(Effect.provide(Actor.signedOut), Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("http://app.test/"))))).toBe(false)
       }
     })).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config)))
     expect(seen).toEqual([token === undefined ? undefined : `Bearer ${token}`])
