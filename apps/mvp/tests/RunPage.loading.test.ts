@@ -23,7 +23,7 @@ afterAll(() => dom.happyDOM.close())
 
 // Real repository list and run, Postgres, Electric, collections, React and the production route's beforeLoad.
 // Faulty inspection and shape services independently hold their real answers until explicitly released.
-test("a reloaded run shows its frame and persisted header within five seconds while inspection and sync are held, then fills live", async () => {
+test.each([true, false])("a run shows its frame while inspection and sync are held, then fills live (persisted header: %s)", async (persisted) => {
   const server = openTestApp()
   const api = await server.runPromise(Effect.service(TestChatApi))
   const pending = Effect.runSync(Deferred.make<void>())
@@ -60,8 +60,10 @@ test("a reloaded run shows its frame and persisted header within five seconds wh
     // Seed through the same repository authority read as the production route.
     await (await seed.runPromise(Effect.service(Repo))).actions.role("octo", "hello")
     seedRuns.queries.repoRuns.startSyncImmediate()
-    await seedRuns.actions.openRepoRuns("octo", "hello")
-    await vi.waitFor(() => expect(host.stored("repo-runs:octo/hello")).toBe(1), { timeout: 30_000 })
+    if (persisted) {
+      await seedRuns.actions.openRepoRuns("octo", "hello")
+      await vi.waitFor(() => expect(host.stored("repo-runs:octo/hello")).toBe(1), { timeout: 30_000 })
+    }
     await seed.dispose()
     // This fresh tab opens the deep link directly; it never visits the repository list.
     const runs = await device.runPromise(Effect.service(Runs))
@@ -85,7 +87,8 @@ test("a reloaded run shows its frame and persisted header within five seconds wh
       expect(Effect.runSync(Deferred.isDone(shapeRequested))).toBe(true)
       expect(loaded).toBe(true)
       expect(container.querySelector('main[aria-label="Run"]')).not.toBeNull()
-      expect(container.querySelector("h1")?.textContent).toBe("ci")
+      if (persisted) expect(container.querySelector("h1")?.textContent).toBe("ci")
+      else expect(container.querySelector('[aria-label="Loading run"]')).not.toBeNull()
       expect(container.querySelector('a')?.textContent).toBe("Runs")
       expect(router.state.status).toBe("idle")
     }, { timeout: 5_000, interval: 10 })

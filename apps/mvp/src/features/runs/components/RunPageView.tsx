@@ -10,6 +10,7 @@ import {
   JournalScrubber,
   journalPosition,
   StepInspector,
+  Skeleton,
   Tabs,
   TabsContent,
   TabsList,
@@ -35,11 +36,11 @@ export function RunPageView() {
   const { queries, actions } = useRuns()
   const { data } = useLiveQuery(queries.page)
   const { data: repoRuns } = useLiveQuery(queries.repoRuns)
-  if (data === undefined) return null
+  if (data === undefined) return <Skeleton aria-label="Loading run" className="run-page-loading" />
   const { view, page } = data
   if (page.state === "loading") {
     const known = repoRuns.find((run) => run.execution === page.id)
-    return known === undefined ? null : <RunHeader title={known.flow} state={repoRunStateOf(known.status)}
+    return known === undefined ? <Skeleton aria-label="Loading run" className="run-page-loading" /> : <RunHeader title={known.flow} state={repoRunStateOf(known.status)}
       startedAtMs={Date.parse(known.createdAt)} finishedAtMs={known.status === "running" ? null : Date.parse(known.updatedAt)}
       now={view.now ?? Date.now()} host={hostOf(page.id, true)} />
   }

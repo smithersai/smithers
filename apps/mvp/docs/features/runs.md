@@ -262,3 +262,12 @@ visible snapshot, including a parent whose child has not arrived yet (decision
 [0097](../decisions/0097-run-page-progressive-inspection.md)).
 
 The live graph inspector preserves complete journal results, including the verdict fields read by answer debug info. For completed steps with missing or clipped previews, it uses the engine inspection’s schema-redacted sealed outcome. Journal replay retains the bounded preview recorded at that position; later outcomes never enter an earlier replay.
+# Settled runs
+
+A terminal run closes outstanding steps, attempts, cells and waits as Stopped at
+its recorded finish time. Completed steps retain their result. Journal replay
+keeps the state recorded at the selected event, including work active then.
+
+While the first inspection is pending, a run without a cached header shows the
+shared skeleton in its content area.
+
