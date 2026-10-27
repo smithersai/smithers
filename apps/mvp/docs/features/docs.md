@@ -109,3 +109,5 @@ The feature is self-contained, as a first-party plugin will be once the plugin h
 The docs e2e oracle (`e2e/live-docs.ts`) reads vibelang.sh’s live index and selected Markdown independently of ChatApi. Titles, paths, search words and expected body come from that source; a failed source read fails the test rather than choosing a different page. Production’s reported Retrying read failure was not reproducible on 2026-10-25: the listed URL and ChatApi both returned its Markdown.
 
 The VibeLang sidebar includes Effect reference pages because VibeLang publishes them in its docs index. The app keeps that index's pages and sections; it does not curate a second sidebar. The hosted Smithers docs search suppresses Pagefind's repeated `#_top` title sub-result while keeping section matches.
+
+An unavailable page keeps the docs index visible and says “Page unavailable · choose from the list”. The reader can open a listed page without leaving the repository.
