@@ -1,6 +1,10 @@
 import { createMemoryHistory, createRootRoute, createRoute, createRouter } from "@tanstack/react-router"
-import { expect, test } from "vitest"
+import { afterAll, expect, test } from "vitest"
+import { dom } from "../../../tests/fixtures/dom"
 import { navigateTo } from "./router"
+
+Object.assign(globalThis, { self: dom, scrollTo: dom.scrollTo.bind(dom) })
+afterAll(() => dom.happyDOM.close())
 
 test("navigation refuses unknown paths without leaving the current page", async () => {
   const root = createRootRoute()

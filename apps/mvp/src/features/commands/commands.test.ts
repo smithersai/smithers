@@ -352,6 +352,49 @@ describe("submitting", () => {
     }
   })
 
+  test("late refusals preserve new typing and the newly opened conversation", async () => {
+    const tab = await open()
+    await ready(tab)
+    for (const changed of ["menu", "draft", "conversation"] as const) {
+      tab.actions.type("/navigate /nope-page")
+      const gate = Promise.withResolvers<void>()
+      const finished = Promise.withResolvers<void>()
+      tab.runtime.runSync(submitCommand("/navigate /nope-page").pipe(
+        Effect.provideService(FlowDispatch, FlowDispatch.of({ dispatch: () => Effect.gen(function* () {
+          yield* Effect.promise(() => gate.promise)
+          return { _tag: "Done", value: { moved: false } }
+        }).pipe(Effect.ensuring(Effect.sync(() => finished.resolve()))) as never })),
+      ))
+      if (changed === "menu") tab.actions.type("new typing")
+      if (changed === "draft") tab.chat.actions.setDraft("edited draft")
+      if (changed === "conversation") await tab.showConversation(crypto.randomUUID())
+      gate.resolve()
+      await finished.promise
+      await tab.runtime.runPromise(Effect.yieldNow)
+      expect(tab.draft()).toBe(changed === "menu" ? "new typing" : changed === "draft" ? "edited draft" : "")
+      expect(tab.menu()?.refusal ?? null).toBeNull()
+    }
+  })
+
+  test("new conversation dispatch outcomes restore only refused commands", async () => {
+    const tab = await open()
+    await ready(tab)
+    for (const [index, result] of [
+      Effect.fail(new DispatchFailed({ flow: "conversation/new", reason: "unavailable" })),
+      Effect.succeed({ _tag: "Failed" }),
+      Effect.succeed({ _tag: "Done", value: {} }),
+    ].entries()) {
+      const draft = "/new roninjin10/smithers-github-tests bugbash3-bb2-chat-refused"
+      tab.actions.type(draft)
+      tab.runtime.runSync(submitCommand(draft).pipe(
+        Effect.provideService(FlowDispatch, FlowDispatch.of({ dispatch: () => result as never })),
+      ))
+      await tab.runtime.runPromise(Effect.yieldNow)
+      expect(tab.draft()).toBe(index === 2 ? "" : draft)
+      if (tab.draft() !== "") expect(tab.menu()?.refusal).toBe("Couldn't make a branch")
+    }
+  })
+
   test("a navigation the router refuses stays in chat with a reason", async () => {
     const server = openTestApp({ answers: false })
     runtimes.push(server)
