@@ -15,6 +15,7 @@ import {
   REMOVING,
   SAVING,
   TIER_LABEL,
+  TIER_PURPOSE,
   tierKeyLabel,
   UNKNOWN,
   YOUR_MODEL,
@@ -362,6 +363,7 @@ describe("the words", () => {
       ["Implement", "Implement key"],
       ["Hard", "Hard key"],
     ])
+    expect(MODEL_TIERS.map((tier) => TIER_PURPOSE[tier])).toEqual(["Chat", "Coding", "Plans and reviews"])
     expect(keyPlaceholder("x7Qz")).toBe("····x7Qz")
   })
 

@@ -30,6 +30,13 @@ export const TIER_LABEL: Record<ModelTier, string> = {
   hard: "Hard",
 }
 
+/** The work each model tier answers. */
+export const TIER_PURPOSE: Record<ModelTier, string> = {
+  fast: "Chat",
+  implement: "Coding",
+  hard: "Plans and reviews",
+}
+
 /** A tier's key select, as a screen reader names it. */
 export const tierKeyLabel = (tier: ModelTier): string => `${TIER_LABEL[tier]} key`
 

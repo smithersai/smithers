@@ -152,7 +152,7 @@ the provider's host. Nothing saved is `404 none`; a Guest or someone with no rol
 
 `/app/settings`, the header's Settings link, shows **Your model** to a signed-in Member or above: a group per protocol,
 "OpenAI-compatible" and "Anthropic-compatible", each with Base URL and Key (a password field; once saved, its
-placeholder is the key's last four characters, and left empty it keeps the saved key); then Fast, Implement and Hard,
+placeholder is the key's last four characters, and left empty it keeps the saved key); then Fast (Chat), Implement (Coding) and Hard (Plans and reviews),
 each a model id and the key it runs on ("Fast key"). A tier's model field shows the saved model it names, or as its
 placeholder the model it resolves to (a preset or a fallback). Save sends every group whose Base URL is filled, so
 clearing a Base URL removes that key, and every tier whose model is filled. Remove and Test show once a key is saved. Someone signed in who may no longer save one, such as a person who lost their role, sees
