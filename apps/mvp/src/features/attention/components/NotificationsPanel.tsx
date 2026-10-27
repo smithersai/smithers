@@ -68,8 +68,10 @@ function Notification({ entry, surface, expanded, detail, answerRequest }: {
       unread={entry.unread}
       expanded={expanded}
       onExpandedChange={() => actions.expand(entry.id)}
-      onActivate={() => actions.open(entry.id, surface)}
-      onOpen={() => actions.open(entry.id, surface)}
+      {...(entry.kind === "clone" && entry.state === "failed" ? {} : {
+        onActivate: () => actions.open(entry.id, surface),
+        onOpen: () => actions.open(entry.id, surface),
+      })}
       {...(entry.action === "answer" ? { onAnswer: () => actions.answer(entry.id, "panel") } : {})}
       onRead={() => actions.read(entry.id)}
       hideLabel={entry.settled ? "Dismiss" : "Hide"}

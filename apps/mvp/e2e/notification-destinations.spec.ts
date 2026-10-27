@@ -14,3 +14,16 @@ test("commit notification opens its recorded revision", async ({ devices }) => {
   await entry.locator('[data-slot="notification-row"]').click()
   await expect(tab.page).toHaveURL(new RegExp(`/tree/${sha}[0-9a-f]*/*$`))
 })
+
+test("failed clone stays at its reason and Retry", async ({ devices }) => {
+  const [tab] = await devices.open("Reader")
+  await tab.page.goto(`/${syncedRepository()}`)
+  await tab.page.getByRole("button", { name: /^Notifications/ }).click()
+  const entry = tab.page.locator('[data-entry^="clone:"][data-tone="failed"]').first()
+  await expect(entry).toBeVisible({ timeout: 30_000 })
+  const before = tab.page.url()
+  await entry.locator('[data-slot="notification-row"]').click()
+  await expect(entry.getByRole("button", { name: "Retry", exact: true })).toBeVisible()
+  await expect(entry.getByRole("button", { name: "Open", exact: true })).toHaveCount(0)
+  await expect(tab.page).toHaveURL(before)
+})

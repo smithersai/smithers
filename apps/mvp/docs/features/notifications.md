@@ -178,3 +178,5 @@ Opening a waiting run from a toast navigates to its conversation with the answer
 An empty panel, including a visitor's, says `No notifications`. Empty spend-alert content does not suppress this state.
 
 Commit entries open the tree at their recorded revision, including entries synced before this change; later pushes cannot change that destination.
+
+Failed clones keep their reason and Retry in the panel, without an Open link to a repository that could not be imported. Notification rows open their subject directly; Details and E expand other entries.

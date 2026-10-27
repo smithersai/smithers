@@ -507,9 +507,10 @@ describe("a clone in the feed", { timeout: ENGINE_WITHIN }, () => {
       expect(ann.count(Metric.withAttributes(dispatches, { flow: "repo/clone", door: "button", outcome: "failed" }))).toBe(1)
     )
     expect(ann.count(Metric.withAttributes(panelActs, { act: "retry", outcome: "started" }))).toBe(1)
-    // Open goes to the repository.
+    // A failed clone has no repository to open: keep its reason and Retry reachable.
     ann.attention.actions.open(subject, "conversation")
-    expect(ann.host.navigated).toEqual(["/acme/widgets"])
+    expect(ann.host.navigated).toEqual([])
+    await until(() => expect(ann.attention.queries.panel.toArray[0]).toMatchObject({ open: true, expanded: subject, focus: subject }))
   })
 
   test("a Hide the engine can't take shows the toast again, and Hide again sends it again", async () => {

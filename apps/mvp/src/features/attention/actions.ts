@@ -169,6 +169,10 @@ export const open = (subject: string, _surface: Surface) =>
   Effect.gen(function* () {
     const entry = yield* record(subject, "read")
     if (Option.isNone(entry)) return
+    if (entry.value.kind === "clone" && entry.value.state === "failed") {
+      yield* setPanel({ open: true, expanded: subject, focus: subject, answer: 0 })
+      return
+    }
     const { action, runId, href } = entry.value
     if ((yield* panelNow).open) yield* closePanel
     // Its run is the answer it asks about: the question's card takes focus where it shows.
