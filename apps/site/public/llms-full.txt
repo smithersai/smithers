@@ -18519,7 +18519,8 @@ Resolves the longest routable prefix of an argv. Lookup tokens are normalized
 to Unicode NFC before comparison, so a decomposed spelling selects the same
 route as a composed one; unconsumed argument text stays exactly as the caller
 supplied it. A request above `maximumResolutionTokens` fails with
-`resource_limit`. When no prefix matches, the effect fails with
+`resource_limit`. NUL or unpaired UTF-16 surrogates fail with `parse_failed`
+and the offending argument path. When no prefix matches, the effect fails with
 `unknown_command`.
 
 ### `CommandTree.resolveExact`
@@ -35876,6 +35877,7 @@ Every function that can refuse returns `Effect<A, PluginError>`, except
 
 ```ts
 import { Kernel, make } from "@smthrs/plugin"
+import * as Effect from "effect/Effect"
 
 const editor = make({
   name: "flows-plugin-editor",
@@ -45232,7 +45234,8 @@ the same search every tick performs.
 const next: (cron: Cron, from: Date) => Effect.Effect<Date, TriggerError>
 ```
 
-The first occurrence strictly after `from`.
+The first occurrence strictly after `from`. An invalid date fails with
+`invalid_options` and `path: "from"`.
 
 ### Cron.previousAtOrBefore
 
@@ -45242,7 +45245,8 @@ const previousAtOrBefore: (cron: Cron, at: Date) => Effect.Effect<Date, TriggerE
 
 The latest occurrence at or before `at`. When `at` itself matches, the answer is
 that instant with milliseconds zeroed, so an occurrence is the boundary rather
-than the sub-second offset the caller observed it at.
+than the sub-second offset the caller observed it at. An invalid date fails with
+`invalid_options` and `path: "at"`.
 
 ### Cron.occurrencesBetween
 
@@ -45256,7 +45260,9 @@ const occurrencesBetween: (
 ```
 
 The occurrences in `(from, to]`, in order. `from` is exclusive and `to` is
-inclusive.
+inclusive. Invalid endpoints fail with `invalid_options` and `path: "from"`
+or `path: "to"`, including when the limit is zero. The `from` endpoint is
+validated first.
 
 A stated `limit` caps the result silently and must be a non-negative safe
 integer; anything else fails with `invalid_options` and `path: "limit"`, and 0

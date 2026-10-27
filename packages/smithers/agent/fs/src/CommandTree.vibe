@@ -179,7 +179,17 @@ function resolutionTokens(input: ReadonlyArray<string>): Effect<ReadonlyArray<st
     maxLength: CommandLine.maximumTokenLength,
     allowEmpty: true
   })
-  if (!captured.ok) throw resourceLimit("CommandTree.resolve", "The command arguments exceed their resource bounds")
+  if (!captured.ok) {
+    if (captured.kind === "invalid_text") {
+      throw new FsError({
+        code: "parse_failed",
+        method: "CommandTree.resolve",
+        description: "The command arguments must be well-formed text without NUL",
+        path: captured.path
+      })
+    }
+    throw resourceLimit("CommandTree.resolve", "The command arguments exceed their resource bounds")
+  }
   return captured.value
 }
 

@@ -44,6 +44,7 @@ export interface AdmissionFailure {
   readonly ok: false
   readonly path: string
   readonly complaint: string
+  readonly kind?: "invalid_text"
 }
 
 /**
@@ -175,10 +176,17 @@ export const stringArray = (
       const value = descriptor !== undefined && "value" in descriptor ? descriptor.value : undefined
       if (
         descriptor === undefined || !descriptor.enumerable || typeof value !== "string" ||
-        (options.allowEmpty !== true && value.length === 0) || value.length > options.maxLength ||
-        !isWellFormedText(value) || value.includes("\0")
+        (options.allowEmpty !== true && value.length === 0) || value.length > options.maxLength
       ) {
         return { ok: false, path: `$[${index}]`, complaint: "must be bounded, well-formed text" }
+      }
+      if (!isWellFormedText(value) || value.includes("\0")) {
+        return {
+          ok: false,
+          path: `$[${index}]`,
+          complaint: "must be well-formed text without NUL",
+          kind: "invalid_text"
+        }
       }
       output.push(value)
     }

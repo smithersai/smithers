@@ -155,7 +155,12 @@ export function parseFlags(input: ReadonlyArray<string>): Effect<ParsedFlags, Fs
     maxLength: maximumTokenLength,
     allowEmpty: true
   })
-  if (!captured.ok) throw resourceLimit("The command arguments exceed their resource bounds")
+  if (!captured.ok) {
+    if (captured.kind === "invalid_text") {
+      throw parseError("The command arguments must be well-formed text without NUL", captured.path)
+    }
+    throw resourceLimit("The command arguments exceed their resource bounds")
+  }
 
   const args: Array<string> = []
   const options: Record<string, unknown> = Object.create(null) as Record<string, unknown>

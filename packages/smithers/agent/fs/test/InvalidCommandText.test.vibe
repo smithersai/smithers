@@ -1,0 +1,20 @@
+import { describe, expect, it } from "@effect/vitest"
+import { Command } from "../src/index.ts"
+import * as CommandTree from "../src/CommandTree.vibe"
+import * as CommandLine from "../src/internal/CommandLine.vibe"
+import { failureOf } from "./helpers.vibe"
+
+describe("malformed command text", () => {
+  it.effect("refuses NUL and unpaired surrogates as parse errors") {
+    const surface = Command.make([])
+    expect(failureOf(surface.parse("plain\0x"))).toMatchObject({
+      code: "parse_failed", method: "CommandTree.resolve", path: "$[0]"
+    })
+    for (const text of ["plain\0x", "plain\ud800", "plain\udc00"]) {
+      expect(failureOf(CommandTree.resolve(CommandTree.make([]), [text]))).toMatchObject({
+        code: "parse_failed", method: "CommandTree.resolve"
+      })
+      expect(failureOf(CommandLine.parseFlags([text]))).toMatchObject({ code: "parse_failed" })
+    }
+  }
+})

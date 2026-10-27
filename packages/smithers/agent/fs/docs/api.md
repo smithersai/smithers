@@ -167,7 +167,8 @@ Resolves the longest routable prefix of an argv. Lookup tokens are normalized
 to Unicode NFC before comparison, so a decomposed spelling selects the same
 route as a composed one; unconsumed argument text stays exactly as the caller
 supplied it. A request above `maximumResolutionTokens` fails with
-`resource_limit`. When no prefix matches, the effect fails with
+`resource_limit`. NUL or unpaired UTF-16 surrogates fail with `parse_failed`
+and the offending argument path. When no prefix matches, the effect fails with
 `unknown_command`.
 
 ### `CommandTree.resolveExact`
