@@ -10,9 +10,9 @@
   gap: 1rem;
 }
 
-.app-shell-conversation { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.app-shell-conversation { order: 1; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
-.app-shell-composer { display: flex; justify-content: center; }
+.app-shell-composer { order: 2; display: flex; justify-content: center; }
 .app-shell-composer > * { flex: 1; }
 .app-shell-composer > button { flex: none; }
 

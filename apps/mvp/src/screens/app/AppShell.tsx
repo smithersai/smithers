@@ -42,14 +42,14 @@ export function AppShell() {
       {/* The toasts, under the header and its pill: the open composer docks over the column's foot, so a toast there
           would hide behind it (decision 0015). */}
       <Toasts />
-      <section className="app-shell-conversation" aria-label="Conversation">
-        <Conversation />
-      </section>
       <div className="app-shell-composer">
         <ComposerGate>
           <Composer />
         </ComposerGate>
       </div>
+      <section className="app-shell-conversation" aria-label="Conversation">
+        <Conversation />
+      </section>
     </main>
   )
 }
