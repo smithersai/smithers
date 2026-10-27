@@ -96,7 +96,10 @@ export const commit = (id: string) =>
     const { kept } = yield* store.queue({ ...payload, id: opId, op: "commit", number: 0, acceptance: draft.acceptance })
     let cleaned = true
     if (kept) {
-      cleaned = yield* admissionReceipt(store.drafts.delete(id).pipe(Effect.flatMap((removed) => removed.persisted)), admission.value.commandId, "todo/commit", "source").pipe(Effect.as(true), Effect.orElseSucceed(() => false))
+      const source = yield* store.drafts.get(id)
+      if (Option.isSome(source) && commitIdentity(source.value).value === commitIdentity(draft).value) {
+        cleaned = yield* admissionReceipt(store.drafts.delete(id).pipe(Effect.flatMap((removed) => removed.persisted)), admission.value.commandId, "todo/commit", "source").pipe(Effect.as(true), Effect.orElseSucceed(() => false))
+      }
       yield* flows.dispatch("todo/commit", payload, { door: "button", executionId }).pipe(Effect.ignore, Effect.forkIn(store.scope, { startImmediately: true }))
     }
     yield* finishAdmission(admission.value, kept, cleaned)

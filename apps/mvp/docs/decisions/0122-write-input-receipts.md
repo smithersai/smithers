@@ -2,7 +2,7 @@
 
 Status: accepted implementation detail (2026-10-27). Extends [0002](0002-local-first.md); core transport infrastructure for the existing public flows, not a feature plugin.
 
-A button or slash command synchronously stages its exact validated payload and command identity with the catalog's `@smthrs/platform-browser` `PendingSnapshot`, before UUID hashing or asynchronous persistence. The host fences the receipt by the current device owner and clears it on sign-out. Multiple unfinished presses keep separate identities. This temporary input receipt bridges admission; it does not send, retry or schedule work.
+A button or slash command synchronously stages its exact validated payload and command identity with the catalog's `@smthrs/platform-browser` `PendingSnapshot`, before UUID hashing or asynchronous persistence. The host fences the receipt by the current device owner and clears it on sign-out. Independent unfinished presses keep separate identities; pressing the same unchanged source again joins its retained identity. This temporary input receipt bridges admission; it does not send, retry or schedule work.
 
 On opening the page, staged inputs enter their existing `@smthrs/effect-tanstack-db` outboxes once. Those libraries own durable storage, retry, resumption and idempotency. A receipt stays until admission and source cleanup succeed. Create additionally keeps an independent navigation acknowledgment until TanStack Router records the matching `?write=` identity; navigation alone cannot retire an unadmitted input. Recovery uses the exact original identity, waits for draft restoration and clears only its matching source draft, including the original conversation’s composer. Source cleanup failures retain their receipt. Edit and Discard use synchronous identity lookup and retire the matching input receipt before removing their visible recovery row; a running admission fences Discard.
 
@@ -13,3 +13,5 @@ Production reproduction on W14: immediate Create and TODO reloads reached hashin
 ## Recovery receipt precedence
 
 Reload can restore a pre-admission `not_sent` row alongside the same write's durable outbox row: admission reached IndexedDB before removal of its earlier SQLite receipt persisted. The outbox receipt wins over that unrefused local row. An actual server refusal or failed server write still wins. The same rule applies to issues, comments, triage and TODOs; Retry appears only when there is no outgoing receipt or the write was genuinely refused.
+
+A live admission receipt, like startup replay, clears only its exact submitted source snapshot. Typing into that draft while admission waits creates a newer source that the older receipt cannot delete. Faulted real queue services exercise this ordering for Create, Comment and TODO Commit.

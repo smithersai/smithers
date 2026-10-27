@@ -3,7 +3,7 @@ import { ChatStore } from "./features/chat/store"
 import { COMPOSER, HOME_DRAFT, PLACE } from "./features/chat/schema"
 import { PendingSnapshot } from "@smthrs/platform-browser"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
-import { Effect, Fiber, Option } from "effect"
+import { Deferred, Effect, Fiber, Option } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
 import { nodeDevice, openTab, openTestApp, TEST_REPOSITORY, TestChatApi } from "./test/chatApi"
 import { Issues } from "./features/issues/issues"
@@ -159,3 +159,31 @@ test("Discard draft cancels its retained commit after refusal and fences a runni
   await tab.app.runPromise(resumeAdmissions)
   expect(tab.todos.sending.tanstack.toArray).toEqual([])
 })
+
+for (const source of ["comment", "issue", "todo"] as const) {
+  test(`an admission receipt cannot delete newer typing in its ${source} source draft`, async () => {
+    const tab = await opening()
+    const { comment, create } = await import("./features/issues/actions")
+    const { commit } = await import("./features/todos/actions")
+    const key = source === "comment" ? commentDraftKey(repoId, 45) : source === "issue" ? newDraftKey(repoId) : crypto.randomUUID()
+    const gate = await Effect.runPromise(Deferred.make<void>())
+    let queued = false
+    if (source === "todo") {
+      await tab.app.runPromise(tab.todos.drafts.insert({ id: key, repo: TEST_REPOSITORY, repoId, title: "Earlier", prompt: "Earlier prompt", acceptance: [], answerId: null, createdAt: 1 }))
+    } else {
+      await tab.issues.actions.open(owner, name, source === "comment" ? 45 : undefined)
+      await tab.app.runPromise(tab.store.drafts.insert({ id: key, title: "Earlier", body: "Earlier body" }))
+    }
+    const effect = source === "todo"
+      ? commit(key).pipe(Effect.provideService(TodosStore, { ...tab.todos, queue: row => tab.todos.queue(row).pipe(Effect.tap(() => { queued = true; return Deferred.await(gate) })) }), Effect.asVoid)
+      : (source === "comment" ? comment(owner, name, 45) : create(owner, name)).pipe(Effect.provideService(IssuesStore, { ...tab.store, queue: row => tab.store.queue(row).pipe(Effect.tap(() => { queued = true; return Deferred.await(gate) })) }), Effect.asVoid)
+    const fiber = tab.app.runFork(effect)
+    await until(() => expect(queued).toBe(true))
+    if (source === "todo") await tab.app.runPromise(tab.todos.drafts.update(key, draft => { draft.prompt = "Newer typing" }))
+    else await tab.app.runPromise(tab.store.drafts.update(key, draft => { draft.body = "Newer typing" }))
+    await Effect.runPromise(Deferred.succeed(gate, undefined))
+    await Effect.runPromise(Fiber.join(fiber))
+    const held = source === "todo" ? tab.todos.drafts.tanstack.get(key)?.prompt : tab.store.drafts.tanstack.get(key)?.body
+    expect(held).toBe("Newer typing")
+  })
+}

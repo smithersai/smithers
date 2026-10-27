@@ -141,7 +141,13 @@ const admitWrite = (write: Omit<QueuedWrite, "id" | "credential">, join: (execut
     const latest = Option.getOrThrow(yield* view.get(VIEW))
     let cleaned = true
     if (latest.submissionKey === executionId) {
-      if (queued && key !== undefined) cleaned = yield* admissionReceipt(drafts.delete(key).pipe(Effect.flatMap((removed) => removed.persisted)), admission.value.commandId, write.op, "source").pipe(Effect.as(true), Effect.orElseSucceed(() => false))
+      if (queued && key !== undefined) {
+        const source = yield* drafts.get(key)
+        if (Option.isSome(source) && source.value.body === (write.body ?? "") &&
+          (write.op !== "issue/create" || source.value.title.trim() === write.title)) {
+          cleaned = yield* admissionReceipt(drafts.delete(key).pipe(Effect.flatMap((removed) => removed.persisted)), admission.value.commandId, write.op, "source").pipe(Effect.as(true), Effect.orElseSucceed(() => false))
+        }
+      }
       if (!queued && write.op === "issue/comment") yield* view.update(VIEW, (value) => { value.submissionFailed = true })
       yield* setSubmitting(false)
     }
