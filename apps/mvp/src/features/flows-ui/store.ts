@@ -1,3 +1,4 @@
+import type { PendingSnapshot } from "@smthrs/platform-browser"
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Persistence, Query } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
@@ -7,6 +8,7 @@ import { signedInShapeSource } from "../auth/source"
 import { AuthStore } from "../auth/store"
 import { FLOW_DRAFTS_SHAPE_ROUTE, FLOWS_SHAPE_ROUTE } from "./contract"
 import * as Following from "./following"
+import { restoreEditorCollection } from "./editorStorage"
 import { roundExecutionId, type RunStatus } from "./round"
 import { AnswerRow, Code, CODE, Draft, FlowRow, Form, FORM } from "./schema"
 export { AnswerRow, Code, CODE, Form, FORM } from "./schema"
@@ -19,6 +21,8 @@ export { AnswerRow, Code, CODE, Form, FORM } from "./schema"
 
 /** Where the shapes sync from: ChatApi's origin, the site's own. */
 export interface FlowsUiConfig {
+  readonly formSnapshot?: PendingSnapshot.Service
+
   readonly origin: string
   /** Stable for one browser tab across reloads; different tabs never share unfinished editors. */
   readonly editorTabId: string
@@ -41,7 +45,7 @@ export const EDITOR_RESTORE_WITHIN = Duration.seconds(5)
  * nothing.
  */
 export const EDITOR = "editor"
-export const EditorState = Schema.Literals(["restoring", "available", "unavailable"])
+export const EditorState = Schema.Literals(["restoring", "available", "session", "unavailable"])
 export type EditorState = typeof EditorState.Type
 export const Editor = Schema.Struct({ id: Schema.Literal(EDITOR), state: EditorState })
 export type Editor = typeof Editor.Type
@@ -119,6 +123,7 @@ export class FlowsUiStore extends Context.Service<
     readonly flows: ElectricCollection.ElectricCollection<FlowRow>
     readonly drafts: ElectricCollection.ElectricCollection<Draft>
     readonly editorTabId: string
+    readonly formSnapshot?: PendingSnapshot.Service
     readonly formId: string
     readonly codeId: string
     /** Distinguishes successive openings, including A → B → A in one tab. */
@@ -163,11 +168,13 @@ export class FlowsUiStore extends Context.Service<
       FlowsUiStore,
       Effect.gen(function* () {
         const engine = yield* BrowserEngine.BrowserEngine
-        const storageAvailable = Option.isSome((yield* Persistence.Persistence).persistence)
+        const persistence = yield* Persistence.Persistence
+        const storageAvailable = Option.isSome(persistence.persistence)
+        const editorPersistence = config.editorTabPersistent ? persistence : { ...persistence, persistence: Option.none() }
         if (!storageAvailable) yield* Effect.logWarning("flows.editor.storage").pipe(
           Effect.annotateLogs({ collection: "device", outcome: "unavailable" }),
         )
-        // A tab whose id can't survive reload refuses edits: logged once, with why when the host could say.
+        // An unretained tab uses session-only editors; record why without user content.
         if (!config.editorTabPersistent) yield* Effect.logWarning("flows.editor.storage").pipe(
           Effect.annotateLogs({
             feature: "flows",
@@ -212,13 +219,13 @@ export class FlowsUiStore extends Context.Service<
           schema: Form,
           getKey: (row) => row.id,
           schemaVersion: 1,
-        })
+        }).pipe(Effect.provideService(Persistence.Persistence, editorPersistence))
         const answers = yield* Collection.persisted<AnswerRow, string>({
           id: "flow-answers",
           schema: AnswerRow,
           getKey: answerKey,
           schemaVersion: 1,
-        })
+        }).pipe(Effect.provideService(Persistence.Persistence, editorPersistence))
         const codeSeed = (): Code => ({
           id: codeId, name: "", state: "loading", revision: 0, source: "", text: "", busy: false, refusal: null,
         })
@@ -227,45 +234,48 @@ export class FlowsUiStore extends Context.Service<
           schema: Code,
           getKey: (row) => row.id,
           schemaVersion: 1,
-        })
+        }).pipe(Effect.provideService(Persistence.Persistence, editorPersistence))
         // The editors' rows restore in the background, each with its own deadline, so the app renders without waiting
         // for them; the editors write only once all three are back.
-        const usable = config.editorTabPersistent && storageAvailable
+        const retained = config.editorTabPersistent && storageAvailable
         const editor = yield* Collection.local<Editor, string>({
           id: "flow-editor",
           schema: Editor,
           getKey: (row) => row.id,
-          initialData: [{ id: EDITOR, state: usable ? "restoring" : "unavailable" }],
+          initialData: [{ id: EDITOR, state: "restoring" }],
         })
         const verdict = yield* Deferred.make<boolean>()
         const restore = Effect.gen(function* () {
           const [formReady, answersReady, codeReady] = yield* Effect.all([
-            Effect.result(Effect.gen(function* () {
+            restoreEditorCollection("flow-form", Effect.gen(function* () {
               yield* form.restored
+              const staged = config.formSnapshot?.read()
+              const recovered = staged === undefined ? Option.none() : Schema.decodeUnknownOption(Form)(staged.value)
+              if (Option.isSome(recovered) && recovered.value.id === formId) {
+                const existing = yield* form.get(formId)
+                yield* Effect.flatMap(Option.isNone(existing)
+                  ? form.insert(recovered.value)
+                  : form.update(formId, (row) => void Object.assign(row, recovered.value)), (write) => write.persisted)
+                config.formSnapshot!.acknowledge(staged!.token)
+              }
               if (Option.isNone(yield* form.get(formId))) {
                 yield* Effect.flatMap(form.insert(formSeed()), (write) => write.persisted)
               }
-            }).pipe(Effect.timeout(EDITOR_RESTORE_WITHIN))),
-            Effect.result(answers.restored.pipe(Effect.timeout(EDITOR_RESTORE_WITHIN))),
-            Effect.result(Effect.gen(function* () {
+            }), EDITOR_RESTORE_WITHIN),
+            restoreEditorCollection("flow-answers", answers.restored, EDITOR_RESTORE_WITHIN),
+            restoreEditorCollection("flow-code", Effect.gen(function* () {
               yield* code.restored
               if (Option.isNone(yield* code.get(codeId))) {
                 yield* Effect.flatMap(code.insert(codeSeed()), (write) => write.persisted)
               }
-            }).pipe(Effect.timeout(EDITOR_RESTORE_WITHIN))),
+            }), EDITOR_RESTORE_WITHIN),
           ] as const, { concurrency: 3 })
-          for (const [collection, ready] of [["flow-form", formReady], ["flow-answers", answersReady], ["flow-code", codeReady]] as const) {
-            if (ready._tag === "Failure") {
-              yield* Effect.logWarning("flows.editor.storage").pipe(Effect.annotateLogs({ collection, outcome: "failed" }))
-            }
-          }
           const available = formReady._tag === "Success" && answersReady._tag === "Success" && codeReady._tag === "Success"
           // A local collection refuses only a row its own schema rejects, which a state never is.
-          yield* Effect.orDie(editor.update(EDITOR, (row) => void (row.state = available ? "available" : "unavailable")))
+          yield* Effect.orDie(editor.update(EDITOR, (row) => void (row.state = available ? (retained ? "available" : "session") : "unavailable")))
           yield* Deferred.succeed(verdict, available)
         })
-        if (usable) yield* Effect.forkScoped(restore)
-        else yield* Deferred.succeed(verdict, false)
+        yield* Effect.forkScoped(restore)
         const shown = yield* Collection.local<Shown, string>({
           id: "flow-shown",
           schema: Shown,
@@ -338,6 +348,7 @@ export class FlowsUiStore extends Context.Service<
           codeEpoch: { current: 0 },
           editor,
           editorReady: Deferred.await(verdict),
+          ...(config.formSnapshot === undefined ? {} : { formSnapshot: config.formSnapshot }),
           form,
           answers,
           shown,

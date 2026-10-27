@@ -61,6 +61,11 @@ export const faults = (page: Page) => {
       },
     },
     engine: {
+      /** The named flow cannot be admitted by this tab's engine; every other flow uses the real service. */
+      refuseStarts: async (flow: string) => {
+        await built()
+        await page.evaluate((flow) => (window as unknown as OnWindow).faults.engine.refuseStarts(flow), flow)
+      },
       /** Every run this tab starts waits until released, as when its engine worker is still loading. */
       holdStarts: async () => {
         await built()

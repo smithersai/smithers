@@ -347,7 +347,7 @@ export const tabsCss = `
   .sui-file-tab > button { width:32px; height:${t.controlHeight}; }
 }
 .sui-tabs-content { min-width:0; }
-.sui-tabs-content:focus-visible { outline:none; }
+.sui-tabs-content:focus-visible { outline:none; box-shadow:0 0 0 3px ${t.ring}; border-radius:${t.radiusControl}; }
 `;
 
 /* -------------------------------------------------------------------------- */

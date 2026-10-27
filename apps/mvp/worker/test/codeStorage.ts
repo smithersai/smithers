@@ -3,7 +3,7 @@
 // the scripted GitHub holds; GitHub answers HEAD and size from the same table. A test arms a one-shot fault on either
 // through `fail`; the live tests (worker/RepoClone.live.test.ts) use the real ones.
 import { CodeStorage, GitRemote } from "@smthrs/effect-code-storage"
-import { Effect, Redacted } from "effect"
+import { Effect, Redacted, Stream } from "effect"
 import type { Sized } from "../RepoUpstream.ts"
 import { RepoUpstream, UpstreamUnavailable } from "../RepoUpstream.ts"
 
@@ -110,6 +110,8 @@ export const scripted = (options: { readonly syncPolls?: number; readonly pageSi
     new CodeStorage.CodeStorageError({ operation, code, status, ...extra })
 
   const client: CodeStorage.Client = {
+    streamFile: (repo, options) => Effect.map(client.readFile(repo, { ...options, maxBytes: Number.MAX_SAFE_INTEGER }),
+      (file) => ({ stream: Stream.make(file.bytes), blobSha: file.blobSha })),
     // The mirror's git remote, with a credential that names the repository; nothing is sent.
     gitRemote: (repo) =>
       Effect.sync(() => {

@@ -1,4 +1,4 @@
-import { ConfigProvider, Effect, Exit, Fiber, Layer, Option, Redacted } from "effect"
+import { ConfigProvider, Effect, Exit, Fiber, Layer, Option, Redacted, Stream } from "effect"
 import { beforeAll, describe, expect, test } from "vitest"
 import { CodeStorage } from "../src/index.ts"
 import {
@@ -186,6 +186,31 @@ describe("listFiles", () => {
 })
 
 describe("readFile", () => {
+  test("streamFile retains original bytes, scopes the read token and classifies a broken stream", async () => {
+    const h = harness()
+    await h.run((client) => client.createRepo({ name: "r" }))
+    h.repos.get("r")!.files["large.bin"] = new Uint8Array(600 * 1024).fill(97)
+    const file = await h.run((client) =>
+      client.streamFile("r", { path: "large.bin", ref: "main", namespace: "ephemeral" })
+    )
+    expect(h.count(CodeStorage.bytesRead, { operation: "readFile" })).toBe(0)
+    expect(h.seen.at(-1)!.url.searchParams.get("ephemeral")).toBe("true")
+    const chunks = await Effect.runPromise(Stream.runCollect(file.stream))
+    expect(Array.from(chunks).reduce((sum, chunk) => sum + chunk.length, 0)).toBe(600 * 1024)
+    expect(file.blobSha).toMatch(/^[0-9a-f]{40}$/)
+    await h.run((client) => client.streamFile("r", { path: "large.bin" }))
+    await h.run((client) => client.streamFile("r", { path: "large.bin", namespace: "default" }))
+    h.faults.push(new Response(brokenBody("bytes")))
+    const broken = await h.run((client) => client.streamFile("r", { path: "large.bin" }))
+    expect(await Effect.runPromise(Effect.flip(Stream.runDrain(broken.stream)))).toMatchObject({
+      code: "transport",
+      status: 200
+    })
+    h.faults.push(new Response(longBody(100 * 1024 * 1024, 1024)))
+    const cancellable = await h.run((client) => client.streamFile("r", { path: "large.bin" }))
+    const first = await Effect.runPromise(Stream.runCollect(Stream.take(cancellable.stream, 1)))
+    expect(Array.from(first).map((chunk) => chunk.length)).toEqual([1024])
+  })
   const seeded = async (files: Record<string, Uint8Array>) => {
     const h = harness()
     await h.run((client) => client.createRepo({ name: "r" }))
@@ -341,9 +366,10 @@ describe("createBranch", () => {
     expect(moved).toEqual({ branch: "try-1", sha: newer })
     expect(h.seen.at(-1)!.body).toEqual({ base_ref: newer, target_branch: "try-1", force: true })
     // Moving it to where it is changes nothing and answers the same.
-    expect(await h.run((client) => client.createBranch("acme/r", { branch: "try-1", from: newer, force: true }))).toEqual(
-      moved
-    )
+    expect(await h.run((client) => client.createBranch("acme/r", { branch: "try-1", from: newer, force: true })))
+      .toEqual(
+        moved
+      )
     // Back, which no fast-forward allows.
     await h.run((client) => client.createBranch("acme/r", { branch: "try-1", from: older, force: true }))
     expect(h.repos.get("acme/r")!.branches.find((branch) => branch.name === "try-1")!.head_sha).toBe(older)

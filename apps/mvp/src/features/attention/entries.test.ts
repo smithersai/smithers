@@ -336,3 +336,14 @@ describe("a bug report", () => {
   }
   expect(one(notice({ kind: "main", href: "/acme/widgets", ref: null })).href).toBe("/acme/widgets")
 })
+
+test("a write launch occupies the shared stack; only its server receipt enters the notification list", () => {
+  const launch = notice({ subject: "write:a", kind: "write", state: "waiting", mine: true, quiet: true, title: "Publish", ref: "launch", href: "/octo/hello/tree/feature" })
+  expect(one(launch)).toMatchObject({ word: null, detail: "Publish", state: "waiting", local: true, stack: true, stackHere: true, listed: false })
+  const admitted = one({ ...launch, state: "working", quiet: false, ref: null })!
+  expect(admitted).toMatchObject({ word: null, detail: "Publish", state: "working", stack: true, listed: true })
+  expect(admitted.local).toBeUndefined()
+  const done = one({ ...launch, state: "done", quiet: false, ref: null }, T0 + 5_000)!
+  expect(done).toMatchObject({ state: "done", stack: false, listed: true })
+})
+

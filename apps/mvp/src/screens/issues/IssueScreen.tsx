@@ -128,6 +128,7 @@ export function IssueScreen() {
           }
           : undefined}
       />
+      {view?.submissionFailed === true ? <p role="alert">Not sent</p> : null}
       {session?.status === "signed_out" ? <SignInButton /> : null}
     </main>
   )

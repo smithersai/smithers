@@ -1,0 +1,619 @@
+[
+  {
+    "name": "change list",
+    "description": "List changes",
+    "schema": {
+      "args": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "options": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "default": 10,
+            "type": "number",
+            "description": "Number of changes to show"
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository (OWNER/REPO)"
+          },
+          "verbose": {
+            "default": false,
+            "description": "Show redacted diagnostic details",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "limit",
+          "verbose"
+        ],
+        "additionalProperties": false
+      },
+      "globals": {
+        "type": "object",
+        "properties": {
+          "audience": {
+            "default": "auto",
+            "description": "Presentation audience; auto detects agent harnesses, CI, and terminals",
+            "type": "string",
+            "enum": [
+              "auto",
+              "human",
+              "agent"
+            ]
+          },
+          "silent": {
+            "default": false,
+            "description": "Suppress progress; retain the result and actionable failures",
+            "type": "boolean"
+          },
+          "ui": {
+            "default": "auto",
+            "description": "Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, --silent, pipe and dumb-terminal policies take precedence",
+            "type": "string",
+            "enum": [
+              "auto",
+              "tty",
+              "stream",
+              "plain"
+            ]
+          }
+        },
+        "required": [
+          "audience",
+          "silent",
+          "ui"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "name": "change status",
+    "description": "Show working copy status",
+    "schema": {
+      "args": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "options": {
+        "type": "object",
+        "properties": {
+          "verbose": {
+            "default": false,
+            "description": "Show redacted diagnostic details",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "verbose"
+        ],
+        "additionalProperties": false
+      },
+      "globals": {
+        "type": "object",
+        "properties": {
+          "audience": {
+            "default": "auto",
+            "description": "Presentation audience; auto detects agent harnesses, CI, and terminals",
+            "type": "string",
+            "enum": [
+              "auto",
+              "human",
+              "agent"
+            ]
+          },
+          "silent": {
+            "default": false,
+            "description": "Suppress progress; retain the result and actionable failures",
+            "type": "boolean"
+          },
+          "ui": {
+            "default": "auto",
+            "description": "Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, --silent, pipe and dumb-terminal policies take precedence",
+            "type": "string",
+            "enum": [
+              "auto",
+              "tty",
+              "stream",
+              "plain"
+            ]
+          }
+        },
+        "required": [
+          "audience",
+          "silent",
+          "ui"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "name": "change files",
+    "description": "List files in a change",
+    "schema": {
+      "args": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Change ID"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "options": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Repository (OWNER/REPO)"
+          },
+          "verbose": {
+            "default": false,
+            "description": "Show redacted diagnostic details",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "verbose"
+        ],
+        "additionalProperties": false
+      },
+      "globals": {
+        "type": "object",
+        "properties": {
+          "audience": {
+            "default": "auto",
+            "description": "Presentation audience; auto detects agent harnesses, CI, and terminals",
+            "type": "string",
+            "enum": [
+              "auto",
+              "human",
+              "agent"
+            ]
+          },
+          "silent": {
+            "default": false,
+            "description": "Suppress progress; retain the result and actionable failures",
+            "type": "boolean"
+          },
+          "ui": {
+            "default": "auto",
+            "description": "Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, --silent, pipe and dumb-terminal policies take precedence",
+            "type": "string",
+            "enum": [
+              "auto",
+              "tty",
+              "stream",
+              "plain"
+            ]
+          }
+        },
+        "required": [
+          "audience",
+          "silent",
+          "ui"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "name": "change show",
+    "description": "Show a specific change",
+    "schema": {
+      "args": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Change ID"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "options": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Repository (OWNER/REPO)"
+          },
+          "verbose": {
+            "default": false,
+            "description": "Show redacted diagnostic details",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "verbose"
+        ],
+        "additionalProperties": false
+      },
+      "globals": {
+        "type": "object",
+        "properties": {
+          "audience": {
+            "default": "auto",
+            "description": "Presentation audience; auto detects agent harnesses, CI, and terminals",
+            "type": "string",
+            "enum": [
+              "auto",
+              "human",
+              "agent"
+            ]
+          },
+          "silent": {
+            "default": false,
+            "description": "Suppress progress; retain the result and actionable failures",
+            "type": "boolean"
+          },
+          "ui": {
+            "default": "auto",
+            "description": "Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, --silent, pipe and dumb-terminal policies take precedence",
+            "type": "string",
+            "enum": [
+              "auto",
+              "tty",
+              "stream",
+              "plain"
+            ]
+          }
+        },
+        "required": [
+          "audience",
+          "silent",
+          "ui"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "name": "change conflicts",
+    "description": "List conflicts in a change",
+    "schema": {
+      "args": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Change ID"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "options": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Repository (OWNER/REPO)"
+          },
+          "verbose": {
+            "default": false,
+            "description": "Show redacted diagnostic details",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "verbose"
+        ],
+        "additionalProperties": false
+      },
+      "globals": {
+        "type": "object",
+        "properties": {
+          "audience": {
+            "default": "auto",
+            "description": "Presentation audience; auto detects agent harnesses, CI, and terminals",
+            "type": "string",
+            "enum": [
+              "auto",
+              "human",
+              "agent"
+            ]
+          },
+          "silent": {
+            "default": false,
+            "description": "Suppress progress; retain the result and actionable failures",
+            "type": "boolean"
+          },
+          "ui": {
+            "default": "auto",
+            "description": "Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, --silent, pipe and dumb-terminal policies take precedence",
+            "type": "string",
+            "enum": [
+              "auto",
+              "tty",
+              "stream",
+              "plain"
+            ]
+          }
+        },
+        "required": [
+          "audience",
+          "silent",
+          "ui"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "name": "generate package",
+    "description": "Run the workspace's declared package scaffold with its configured defaults",
+    "schema": {
+      "args": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "options": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "default": "<cwd>",
+            "type": "string"
+          },
+          "target": {
+            "description": "Declared generator label; required when more than one matches",
+            "type": "string"
+          },
+          "plan": {
+            "default": false,
+            "description": "Show the generator plan without writing files",
+            "type": "boolean"
+          },
+          "verbose": {
+            "default": false,
+            "description": "Show redacted diagnostic details",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "workspace",
+          "plan",
+          "verbose"
+        ],
+        "additionalProperties": false
+      },
+      "globals": {
+        "type": "object",
+        "properties": {
+          "audience": {
+            "default": "auto",
+            "description": "Presentation audience; auto detects agent harnesses, CI, and terminals",
+            "type": "string",
+            "enum": [
+              "auto",
+              "human",
+              "agent"
+            ]
+          },
+          "silent": {
+            "default": false,
+            "description": "Suppress progress; retain the result and actionable failures",
+            "type": "boolean"
+          },
+          "ui": {
+            "default": "auto",
+            "description": "Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, --silent, pipe and dumb-terminal policies take precedence",
+            "type": "string",
+            "enum": [
+              "auto",
+              "tty",
+              "stream",
+              "plain"
+            ]
+          }
+        },
+        "required": [
+          "audience",
+          "silent",
+          "ui"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "name": "generate ci",
+    "description": "Generate CI files using the workspace's declared GitHub workflow target",
+    "schema": {
+      "options": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "default": "<cwd>",
+            "type": "string"
+          },
+          "target": {
+            "description": "Declared generator label; required when more than one matches",
+            "type": "string"
+          },
+          "plan": {
+            "default": false,
+            "description": "Show the generator plan without writing files",
+            "type": "boolean"
+          },
+          "verbose": {
+            "default": false,
+            "description": "Show redacted diagnostic details",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "workspace",
+          "plan",
+          "verbose"
+        ],
+        "additionalProperties": false
+      },
+      "globals": {
+        "type": "object",
+        "properties": {
+          "audience": {
+            "default": "auto",
+            "description": "Presentation audience; auto detects agent harnesses, CI, and terminals",
+            "type": "string",
+            "enum": [
+              "auto",
+              "human",
+              "agent"
+            ]
+          },
+          "silent": {
+            "default": false,
+            "description": "Suppress progress; retain the result and actionable failures",
+            "type": "boolean"
+          },
+          "ui": {
+            "default": "auto",
+            "description": "Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, --silent, pipe and dumb-terminal policies take precedence",
+            "type": "string",
+            "enum": [
+              "auto",
+              "tty",
+              "stream",
+              "plain"
+            ]
+          }
+        },
+        "required": [
+          "audience",
+          "silent",
+          "ui"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "name": "tui",
+    "description": "Open the terminal coding agent",
+    "schema": {
+      "args": {
+        "type": "object",
+        "properties": {
+          "directory": {
+            "description": "Working directory; defaults to cwd",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "options": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "description": "Chat seat as provider:model",
+            "type": "string"
+          },
+          "continue": {
+            "default": false,
+            "description": "Continue the latest session in the directory",
+            "type": "boolean"
+          },
+          "resume": {
+            "default": false,
+            "description": "Pick a session to continue",
+            "type": "boolean"
+          },
+          "print": {
+            "description": "Answer one prompt, print it, and exit",
+            "type": "string"
+          },
+          "approve": {
+            "description": "Consequential calls: all, ask, or deny",
+            "type": "string",
+            "enum": [
+              "all",
+              "ask",
+              "deny"
+            ]
+          },
+          "budgetTokens": {
+            "description": "Override the token ceiling per turn and worker",
+            "type": "string"
+          },
+          "environment": {
+            "description": "Run the TUI app in a saved execution environment",
+            "type": "string"
+          },
+          "verbose": {
+            "default": false,
+            "description": "Show redacted diagnostic details",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "continue",
+          "resume",
+          "verbose"
+        ],
+        "additionalProperties": false
+      },
+      "globals": {
+        "type": "object",
+        "properties": {
+          "audience": {
+            "default": "auto",
+            "description": "Presentation audience; auto detects agent harnesses, CI, and terminals",
+            "type": "string",
+            "enum": [
+              "auto",
+              "human",
+              "agent"
+            ]
+          },
+          "silent": {
+            "default": false,
+            "description": "Suppress progress; retain the result and actionable failures",
+            "type": "boolean"
+          },
+          "ui": {
+            "default": "auto",
+            "description": "Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, --silent, pipe and dumb-terminal policies take precedence",
+            "type": "string",
+            "enum": [
+              "auto",
+              "tty",
+              "stream",
+              "plain"
+            ]
+          }
+        },
+        "required": [
+          "audience",
+          "silent",
+          "ui"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+]

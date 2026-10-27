@@ -12,6 +12,7 @@ import {
   mergeBoxOf,
   mergeNoticeOf,
   pullAccessOf,
+  pullPageOf,
   type MergeView,
   type Pull,
   runStateOf,
@@ -125,6 +126,14 @@ describe("the list page", () => {
 })
 
 describe("merge", () => {
+  test("an installed projection cannot certify PR absence; only that PR's receipt can", () => {
+    const access = { status: "allowed", installed: true }
+    expect(pullPageOf(undefined, false, true, true, access)).toBe("unknown")
+    expect(pullPageOf(undefined, true, true, true, access)).toBe("missing")
+    expect(pullPageOf({ number: 3723 }, true, true, true, access)).toBe("shown")
+    expect(pullPageOf(undefined, true, false, true, access)).toBe("loading")
+    expect(pullPageOf(undefined, false, true, true, { status: "sign_in" })).toBe("sign_in")
+  })
   test("a Maintainer or an Admin of the repository sees Merge on an open pull request whose head the device has", () => {
     expect(mayMerge(signedIn, maintainer, pull())).toBe(true)
     expect(mayMerge(signedIn, { role: "admin", own: true }, pull())).toBe(true)

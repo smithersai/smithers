@@ -2,22 +2,30 @@
 // file's schema of the compose Postgres and Electric (`pnpm db:up`), with remote flows recorded or run on the Node host
 // against the scripted GitHub (worker/github/test/harness.ts): the merge write, which only a Maintainer's own press
 // admits, the pull request webhooks, the compare route, and the shapes.
-import { Effect } from "effect"
+import { Effect, Option, Redacted } from "effect"
+import { Collection } from "@smthrs/effect-tanstack-db"
+import { ShapeSource } from "@smthrs/effect-electric"
 import { HttpClient } from "effect/http"
 import { beforeAll, beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { ACTIONS_SHAPE_ROUTE } from "../../src/features/actions/contract.ts"
-import { applyExecutionId, GITHUB_WEBHOOK_ROUTE, writesRoute } from "../../src/features/issues/contract.ts"
+import { applyExecutionId, GITHUB_WEBHOOK_ROUTE, itemId, writesRoute } from "../../src/features/issues/contract.ts"
 import {
   CHECKS_SHAPE_ROUTE,
   compareRoute,
   mergeExecutionId,
   PULL_COMMITS_SHAPE_ROUTE,
   PULLS_SHAPE_ROUTE,
+  PULL_RECEIPT_HEADER,
   REVIEWS_SHAPE_ROUTE,
 } from "../../src/features/pulls/contract.ts"
 import * as Actor from "../Actor.ts"
 import * as RepoRuns from "../RepoRuns.ts"
+import * as Database from "../../db/Database.ts"
+import { FlowStarter, StartUnavailable } from "../Flows.ts"
+import * as PullRefresh from "./PullRefresh.ts"
+import { refreshingSource } from "../../src/features/pulls/refresh.ts"
+import { PullsView, VIEW } from "../../src/features/pulls/schema.ts"
 import { testFile } from "../test/harness.ts"
 import { handles } from "./Api.ts"
 import * as Compare from "./Compare.ts"
@@ -377,6 +385,84 @@ describe("the repository's runs", () => {
 })
 
 describe("the pull request shapes", () => {
+  test("the browser's real shape adapter applies only its PR's fresh absence receipt", async () => {
+    const h = await githubHarness(runtime)
+    await sql(runtime, `INSERT INTO github_projection_fences(item_id, gone_at) VALUES ('${itemId(REPOSITORY.id, 42)}', now())`)
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const view = yield* Collection.local({ id: "pull-refresh-test", schema: PullsView, getKey: (row) => row.id,
+        initialData: [{ id: VIEW, owner: "acme", name: "widgets", repoId: REPOSITORY.id, number: 42, tab: "conversation" as const,
+          merging: false, mergeWriteId: null, mergeRefused: null, installed: true, pullStatus: "allowed" as const }],
+      })
+      const source: ShapeSource.Source = { request: (url, init) => Effect.tryPromise({
+        try: () => h.fetch(url, init), catch: () => new ShapeSource.RequestFailed({}),
+      }) }
+      const reader = refreshingSource(source, view, REPOSITORY.id)
+      yield* reader.request(`http://app.test${REVIEWS_SHAPE_ROUTE}?offset=-1`, {})
+      expect(Option.getOrThrow(yield* view.get(VIEW)).pullAbsent).toBe(true)
+      yield* view.update(VIEW, (row) => { row.number = null })
+      const noSubject = yield* reader.request(`http://app.test${REVIEWS_SHAPE_ROUTE}?offset=-1`, {})
+      expect(noSubject.headers.has(PULL_RECEIPT_HEADER)).toBe(false)
+      yield* view.update(VIEW, (row) => { row.repoId = "another"; row.number = 42 })
+      expect((yield* reader.request(`http://app.test${REVIEWS_SHAPE_ROUTE}?offset=-1`, {})).headers.has(PULL_RECEIPT_HEADER)).toBe(false)
+    })))
+  })
+
+  test.each(["failed", "stalled"] as const)("a %s durable admission never turns projection absence into deletion", async (failure) => {
+    const h = await githubHarness(runtime, { starter: FlowStarter.of({ start: () => failure === "failed"
+      ? Effect.fail(new StartUnavailable({ errorCode: "unreachable" })) : Effect.never }) })
+    const response = await h.fetch(`${REVIEWS_SHAPE_ROUTE}?offset=-1&refresh=42`)
+    expect(response.status).toBe(200)
+    expect(JSON.parse(response.headers.get(PULL_RECEIPT_HEADER)!)).toMatchObject({ missing: false })
+    expect(h.count(PullRefresh.refreshes, { outcome: failure === "failed" ? "not_started" : "timed_out" })).toBe(1)
+  })
+
+  test("no configured App starts nothing; an unavailable receipt cannot prove deletion", async () => {
+    const h = await githubHarness(runtime, { app: null })
+    expect((await h.fetch(`${REVIEWS_SHAPE_ROUTE}?offset=-1&refresh=42`)).status).toBe(200)
+    expect(h.starts).toEqual([])
+    const unavailable = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
+    const reader = await Effect.runPromise(PullRefresh.make(unavailable, false, "1 second"))
+    expect(JSON.parse(await Effect.runPromise(reader.receipt(REPOSITORY, 42)))).toMatchObject({ number: 42, missing: false })
+  })
+  test("a detail read recovers an existing PR missing from a completed projection, including its metadata", async () => {
+    const h = await githubHarness(runtime, { run: true })
+    h.github.refs.set("feature", h.github.refs.get("main")!)
+    const pull = h.github.openPull("feature", "Recover the PR")
+    const path = `${PULL_COMMITS_SHAPE_ROUTE}?offset=-1&refresh=${pull.number}`
+    const response = await h.fetch(path)
+    expect(response.status).toBe(200)
+    expect(JSON.parse(response.headers.get(PULL_RECEIPT_HEADER)!)).toMatchObject({ number: pull.number, missing: false })
+    expect(h.starts.map((start) => start.flow)).toEqual(["github/Apply"])
+    await h.settled()
+    expect(await sql(runtime, `SELECT title FROM items WHERE number = ${pull.number}`)).toEqual([{ title: "Recover the PR" }])
+    expect(await sql(runtime, `SELECT head_ref AS "head" FROM pulls WHERE number = ${pull.number}`)).toEqual([{ head: "feature" }])
+    await h.fetch(path)
+    expect(h.starts).toHaveLength(1)
+  })
+
+  test("only the selected item's authoritative absence is reported, and shape refusals never launch recovery", async () => {
+    const h = await githubHarness(runtime)
+    await sql(runtime, `INSERT INTO github_projection_fences(item_id, gone_at) VALUES ('${itemId(REPOSITORY.id, 42)}', now())`)
+    // The existing per-item fence is keyed by the same canonical item id as the projection.
+    const path = `${REVIEWS_SHAPE_ROUTE}?offset=-1&refresh=42`
+    const response = await h.fetch(path)
+    expect(response.status).toBe(200)
+    expect(JSON.parse(response.headers.get(PULL_RECEIPT_HEADER)!)).toMatchObject({ number: 42, missing: true })
+    expect(h.starts).toHaveLength(1)
+    for (const number of ["0", "-1", "1.2", "9007199254740992", "no"]) {
+      expect((await h.fetch(`${REVIEWS_SHAPE_ROUTE}?offset=-1&refresh=${number}`)).status).toBe(400)
+    }
+    const visitor = await githubHarness(runtime, { actor: null })
+    expect((await visitor.fetch(path)).status).toBe(401)
+    expect(visitor.starts).toEqual([])
+    await sql(runtime, `INSERT INTO items(id,repo_id,number,kind,github_id,title,body,state,created_at,updated_at,source_updated_at,fetched_at)
+      VALUES ('${itemId(REPOSITORY.id, 42)}','${REPOSITORY.id}',42,'pull',42,'Restored','','open',now(),now(),now(),now()+interval '1 second')`)
+    const restored = await h.fetch(path)
+    expect(JSON.parse(restored.headers.get(PULL_RECEIPT_HEADER)!)).toMatchObject({ missing: false })
+    expect(h.count(PullRefresh.receipts, { outcome: "missing" })).toBe(1)
+    expect(h.count(PullRefresh.receipts, { outcome: "unproven" })).toBe(1)
+    expect(h.line("pull.refresh.receipt").map((line) => line.annotations.missing)).toEqual([true, false])
+  })
   test.each([PULLS_SHAPE_ROUTE, PULL_COMMITS_SHAPE_ROUTE, REVIEWS_SHAPE_ROUTE, CHECKS_SHAPE_ROUTE, ACTIONS_SHAPE_ROUTE])(
     "%s serves a person with a role, and refuses one signed out",
     async (route) => {

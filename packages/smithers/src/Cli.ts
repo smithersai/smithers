@@ -290,7 +290,7 @@ export const makeCli = (
         resume: z.boolean().default(false).describe("Pick a session to continue"),
         print: z.string().optional().describe("Answer one prompt, print it, and exit"),
         approve: z.enum(["all", "ask", "deny"]).optional().describe("Consequential calls: all, ask, or deny"),
-        budgetTokens: z.string().optional().describe("Token ceiling per turn and worker; unbounded by default"),
+        budgetTokens: z.string().optional().describe("Override the token ceiling per turn and worker"),
         environment: z.string().optional().describe("Run the TUI app in a saved execution environment")
       }),
       alias: { model: "m", continue: "c", resume: "r", print: "p" },

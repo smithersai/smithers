@@ -76,7 +76,17 @@ describe("an ended span", () => {
       .toEqual({ at: "2026-10-25T20:00:00.000Z", kind: "http", name: "POST /api/bugs", code: "503", traceId: TRACE })
     expect(fromSpan(span({ "url.path": "/api/runs", "http.response.status_code": 401 }))).toMatchObject({ name: "GET /api/runs" })
     expect(fromSpan(span({ "url.path": `/api/${"x".repeat(300)}`, "http.response.status_code": 500 }))!.name)
-      .toHaveLength("GET ".length + 160)
+      .toBe("GET /api/:id")
+  })
+
+  test("private repositories, file paths and queries never enter HTTP records", () => {
+    const record = fromSpan(span({
+      "http.request.method": "GET",
+      "url.path": "/api/repos/private-owner/payroll-private/contents/config/keys.env?token=private-query",
+      "http.response.status_code": 500,
+    }))!
+    expect(record.name).toBe("GET /api/repos/:owner/:repo/:id/:id/:id")
+    expect(JSON.stringify(record)).not.toMatch(/private|keys\.env/)
   })
 
   test("one with no answer is network; one answered under 400, another kind or path is none", () => {

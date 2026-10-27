@@ -1,8 +1,10 @@
 # CLI reference
 
-> Every smthrs command with its usage, arguments, options and defaults, generated from the CLI's own help.
+> Install discovery and additional local commands, with usage, arguments, options and defaults from the CLI's own help.
 
-Every command in `smthrs` 1.0.0-rc.16, as its `--help` describes it.
+Install discovery for `smthrs` 1.0.0-rc.16, plus additional local commands, as their `--help` describes them.
+
+Other callable library commands stay outside install discovery. Use their explicit `--help`; see the [library command reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/reference/cli/README.md) and [CLI API](/docs/reference/api/cli/).
 
 ```bash
 npm install -g smthrs@next
@@ -13,7 +15,6 @@ npm install -g smthrs@next
 | Command | Description |
 | --- | --- |
 | [`agent`](#agent) | Configure an agent |
-| [`agents`](#agents) | The factory's agents |
 | [`api`](#api) | Make raw API calls to the Smithers server |
 | [`branch`](#branch) | Branches and machines |
 | [`branches`](#branches) | List branches with presence |
@@ -46,6 +47,7 @@ npm install -g smthrs@next
 | [`todo`](#todo) | Answer the install's TODOs |
 | [`wiki`](#wiki) | Read and edit wiki pages |
 | [`workspace`](#workspace) | Create, open and run commands in workspaces |
+| [`tui`](#tui) | Open the terminal coding agent |
 
 ## Global options
 
@@ -55,7 +57,7 @@ Every command takes these options.
 | --- | --- | --- | --- | --- |
 | `--audience` | one of `auto`, `human`, `agent` | `auto` | no | Presentation audience; auto detects agent harnesses, CI, and terminals |
 | `--silent` | boolean | `false` | no | Suppress progress; retain the result and actionable failures |
-| `--ui` | one of `auto`, `tty`, `stream`, `plain` | `auto` | no | Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, --silent, pipe and dumb-terminal policies take precedence |
+| `--ui` | one of `auto`, `tty`, `stream`, `plain` | `auto` | no | Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, `--silent`, pipe and dumb-terminal policies take precedence |
 
 `smthrs --help` also lists these built-in options.
 
@@ -102,18 +104,6 @@ smthrs agent edit <name> [options]
 | --- | --- | --- | --- | --- |
 | `--request` | string, min length 1 |  | yes |  |
 | `--diff` | string |  | no |  |
-| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
-
-## `agents`
-
-The factory's agents
-
-```text
-smthrs agents [options]
-```
-
-| Option | Type | Default | Required | Description |
-| --- | --- | --- | --- | --- |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 
 ## `api`
@@ -257,6 +247,83 @@ smthrs change diff [id] [options]
 | `--repo`, `-R` | string |  | no | Repository (OWNER/REPO) |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 
+### `change list`
+
+List changes
+
+```text
+smthrs change list [options]
+```
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--limit` | number | `10` | no | Number of changes to show |
+| `--repo`, `-R` | string |  | no | Repository (OWNER/REPO) |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
+### `change status`
+
+Show working copy status
+
+```text
+smthrs change status [options]
+```
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
+### `change files`
+
+List files in a change
+
+```text
+smthrs change files <id> [options]
+```
+
+| Argument | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `id` | string |  | yes | Change ID |
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--repo`, `-R` | string |  | no | Repository (OWNER/REPO) |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
+### `change show`
+
+Show a specific change
+
+```text
+smthrs change show <id> [options]
+```
+
+| Argument | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `id` | string |  | yes | Change ID |
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--repo`, `-R` | string |  | no | Repository (OWNER/REPO) |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
+### `change conflicts`
+
+List conflicts in a change
+
+```text
+smthrs change conflicts <id> [options]
+```
+
+| Argument | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `id` | string |  | yes | Change ID |
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--repo`, `-R` | string |  | no | Repository (OWNER/REPO) |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
 ## `cp`
 
 Copy files or directories between the local machine and a workspace
@@ -323,7 +390,7 @@ smthrs exec [id] [options]
 | --- | --- | --- | --- | --- |
 | `--command` | string |  | yes | Remote command to run (multi-line allowed; runs under bash) |
 | `--cwd` | string |  | no | Working directory (default: workspace root) |
-| `--detach` | boolean | `false` | no | Return the receipt at once; the command keeps running (reattach with --exec-id) |
+| `--detach` | boolean | `false` | no | Return the receipt at once; the command keeps running (reattach with `--exec-id`) |
 | `--env` | array of string | `[]` | no | KEY=VALUE exported to the command (repeatable) |
 | `--exec-id` | string |  | no | Durable command ID; reuse with the same command to reattach after a disconnect |
 | `--repo`, `-R` | string |  | no | Repository (OWNER/REPO) |
@@ -554,6 +621,40 @@ smthrs generate flow <name> [options]
 | `--root` | string |  | no | Project directory |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 
+### `generate package`
+
+Run the workspace's declared package scaffold with its configured defaults
+
+```text
+smthrs generate package <name> [options]
+```
+
+| Argument | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `name` | string, min length 1 |  | yes |  |
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--workspace` | string | `<cwd>` | no |  |
+| `--target` | string |  | no | Declared generator label; required when more than one matches |
+| `--plan` | boolean | `false` | no | Show the generator plan without writing files |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
+### `generate ci`
+
+Generate CI files using the workspace's declared GitHub workflow target
+
+```text
+smthrs generate ci [options]
+```
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--workspace` | string | `<cwd>` | no |  |
+| `--target` | string |  | no | Declared generator label; required when more than one matches |
+| `--plan` | boolean | `false` | no | Show the generator plan without writing files |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
 ## `github`
 
 Show sync status and retry
@@ -736,7 +837,7 @@ smthrs login [origin] [options]
 | Option | Type | Default | Required | Description |
 | --- | --- | --- | --- | --- |
 | `--admin` | boolean | `false` | no | Request an expiring administrator token with browser consent |
-| `--host` | string |  | no | Hostname or API URL (alias for --hostname) |
+| `--host` | string |  | no | Hostname or API URL (alias for `--hostname`) |
 | `--hostname` | string |  | no | Hostname or API URL to authenticate with |
 | `--observe` | boolean | `false` | no | Sign in as an administrator and open Observe already authenticated |
 | `--agent` | string, pattern `^[a-z0-9-]{1,32}$` |  | no | External agent name |
@@ -1302,3 +1403,154 @@ smthrs workspace ssh [id] [options]
 | --- | --- | --- | --- | --- |
 | `--repo`, `-R` | string |  | no | Repository (OWNER/REPO) |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
+## `tui`
+
+Open the terminal coding agent
+
+```text
+smthrs tui [directory] [options]
+```
+
+| Argument | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `directory` | string |  | no | Working directory; defaults to cwd |
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--model`, `-m` | string |  | no | Chat seat as provider:model |
+| `--continue`, `-c` | boolean | `false` | no | Continue the latest session in the directory |
+| `--resume`, `-r` | boolean | `false` | no | Pick a session to continue |
+| `--print`, `-p` | string |  | no | Answer one prompt, print it, and exit |
+| `--approve` | one of `all`, `ask`, `deny` |  | no | Consequential calls: all, ask, or deny |
+| `--budget-tokens` | string |  | no | Override the token ceiling per turn and worker |
+| `--environment` | string |  | no | Run the TUI app in a saved execution environment |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
+### Token budgets
+
+`smthrs tui [directory]` opens the terminal coding agent. `--model provider:model` selects the chat model; `--continue` continues the latest session, `--resume` picks one, and `--print <prompt>` answers once and exits. `--environment <name>` runs the TUI in a saved execution environment.
+
+| Setting | Default | Scope |
+| --- | --- | --- |
+| `--budget-tokens <n>` or `SMITHERS_TUI_BUDGET_TOKENS` | `200000000` | Each chat turn and worker |
+| `SMITHERS_TUI_BUDGET_DAILY_TOKENS` | `2000000000` | All runs per UTC day on the execution machine |
+
+The per-run flag wins over its environment variable. Values are positive whole numbers; `0` or `none` disables a cap. A hit stops new model calls and shows the reached cap. These are runaway-loop tripwires, not a billing limit. The outer `smthrs tui` command has no daily-budget flag; set the daily environment variable.
+
+## `completions`
+
+```text
+smthrs completions — Generate shell completion script
+
+Usage: smthrs completions <bash|fish|nushell|zsh>
+
+Arguments:
+  shell  Shell to generate completions for
+
+Setup:
+  bash     eval "$(smthrs completions bash)"  # add to ~/.bashrc
+  fish     smthrs completions fish | source   # add to ~/.config/fish/config.fish
+  nushell  see `smthrs completions nushell`   # add to config.nu
+  zsh      eval "$(smthrs completions zsh)"   # add to ~/.zshrc
+```
+
+## `mcp`
+
+```text
+smthrs mcp — Register as MCP server
+
+Usage: smthrs mcp <command>
+
+Commands:
+  add     Register as MCP server
+  doctor  Validate MCP server startup and tool listing
+
+Global Options:
+  --filter-output <keys>              Filter output by key paths (e.g. foo,bar.baz,a[0,3])
+  --format <toon|json|yaml|md|jsonl>  Output format
+  --full-output                       Show full output envelope
+  --help                              Show help
+  --llms, --llms-full                 Print LLM-readable manifest
+  --schema                            Show JSON Schema for command
+  --token-count                       Print token count of output (instead of output)
+  --token-limit <n>                   Limit output to n tokens
+  --token-offset <n>                  Skip first n tokens of output
+```
+
+```text
+smthrs mcp add — Register with Claude Code or Codex; omit --agent to configure both
+
+Usage: smthrs mcp add [options]
+
+Options:
+  --root <string>        Project directory; defaults to the nearest Smithers project
+  --remote <string>      Remote control plane URL; defaults to SMITHERS_REMOTE
+  --mcp-config <string>  Path to the configured MCP servers
+  --quiet                Suppress progress messages
+  --agent <string>
+  --verbose              Show redacted diagnostic details
+
+Custom Global Options:
+  --audience <auto|human|agent>   (default: auto)
+  --silent
+  --ui <auto|tty|stream|plain>    (default: auto)
+
+Global Options:
+  --filter-output <keys>              Filter output by key paths (e.g. foo,bar.baz,a[0,3])
+  --format <toon|json|yaml|md|jsonl>  Output format
+  --full-output                       Show full output envelope
+  --help                              Show help
+  --llms, --llms-full                 Print LLM-readable manifest
+  --schema                            Show JSON Schema for command
+  --token-count                       Print token count of output (instead of output)
+  --token-limit <n>                   Limit output to n tokens
+  --token-offset <n>                  Skip first n tokens of output
+```
+
+```text
+smthrs mcp doctor — Validate MCP server startup and tool listing
+
+Usage: smthrs mcp doctor
+```
+
+## `skills`
+
+```text
+smthrs skills — Sync skill files to agents
+
+Usage: smthrs skills <command>
+Aliases: skill
+
+Commands:
+  add   Sync skill files to agents
+  list  List skills
+
+Global Options:
+  --filter-output <keys>              Filter output by key paths (e.g. foo,bar.baz,a[0,3])
+  --format <toon|json|yaml|md|jsonl>  Output format
+  --full-output                       Show full output envelope
+  --help                              Show help
+  --llms, --llms-full                 Print LLM-readable manifest
+  --schema                            Show JSON Schema for command
+  --token-count                       Print token count of output (instead of output)
+  --token-limit <n>                   Limit output to n tokens
+  --token-offset <n>                  Skip first n tokens of output
+```
+
+```text
+smthrs skills add — Sync skill files to agents
+
+Usage: smthrs skills add [options]
+
+Options:
+  --depth <number>  Grouping depth for skill files (default: 1)
+  --no-global       Install to project instead of globally
+```
+
+```text
+smthrs skills list — List skills
+
+Usage: smthrs skills list
+Aliases: ls
+```

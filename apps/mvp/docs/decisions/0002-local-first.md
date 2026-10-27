@@ -261,3 +261,7 @@ The real-SQLite regressions live in `src/features/files/persistence.test.ts` and
 ## Sources
 
 [1] https://github.com/TanStack/db/blob/main/docs/guides/sqlite-persistence.md, and the browser package README at 0.2.36 · [2] https://github.com/TanStack/db/blob/main/docs/guides/offline-transactions.md, and `OfflineExecutor.ts`, `coordination/WebLocksLeader.ts`, `retry/RetryPolicy.ts` and `executor/TransactionExecutor.ts` in the 1.1.3 tarball · [3] https://github.com/TanStack/db/blob/main/docs/guides/mutations.md · [4] https://electric.ax/docs/guides/writes · [5] https://electric.ax/docs/guides/shapes · [6] https://electric.ax/blog/2026/01/12/durable-sessions-for-collaborative-ai · [7] https://electric.ax/blog/2026/03/26/stream-db · [8] https://github.com/electric-sql/electric/tree/main/packages/y-electric (README at 0.1.54) · [9] https://doc.replicache.dev/concepts/how-it-works · [HOST-PLAN] the lead's durable-answering plan, 2026-10-19.
+
+## Issue-create admission correction (2026-10-27)
+
+The button records a recoverable receipt containing the write identity and payload before asking the device outbox to admit it. Create returns after local admission, with network delivery independent of the initiating tab and its engine startup. The public flow joins the admitted write under the same derived id. A reload during admission retains Not sent and Retry; a retry keeps that id. This uses the existing outbox and device collections, without an application retry loop.

@@ -66,7 +66,7 @@ runnable composition.
 | Exit | Meaning                                                                                                                        |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------ |
 | 0    | Every planned unit finished.                                                                                                   |
-| 1    | A unit failed verification and was restored from its checkpoint.                                                               |
+| 1    | A unit failed and was restored from its checkpoint.                                                                            |
 | 3    | Parked. The project is intact and the operator has a decision to make: 0.x run state, or a construct with no safe translation. |
 
 ## MigrateError
@@ -954,6 +954,9 @@ component is `jsx`, and the agent decides what it becomes.
 one checkpoint, one agent frame, and one verification, which is what makes a
 failure recoverable: the tool restores the unit's checkpoint, marks it failed,
 and carries on.
+
+Agent failures include the credential or seat refusal in the summary. Repair
+round counts record attempted repairs; an initial agent refusal records zero.
 
 The order is fixed:
 

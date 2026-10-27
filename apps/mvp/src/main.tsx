@@ -1,4 +1,5 @@
 import { applyDocumentLocale } from "./documentLocale"
+import { PendingSnapshot } from "@smthrs/platform-browser"
 import { hostRecords, thrownName } from "./hostRecords"
 import { watchInstalls, watchUpdates } from "./pwa"
 import { SmithersUiStyles } from "@smthrs/ui"
@@ -524,12 +525,18 @@ void Promise.all([wipe.open(), claimEditorTabId({
   const tabHost: Host = {
     ...host,
     editorTabId: editorTab.id,
+    ...(editorTab.persistent ? { formSnapshot: PendingSnapshot.make({
+      getItem: (key) => sessionStorage.getItem(key),
+      setItem: (key, value) => sessionStorage.setItem(key, value),
+      removeItem: (key) => sessionStorage.removeItem(key),
+    }, `smithers-flow-pending:${editorTab.id}`, () => activation.state() === "retained" ? deviceOwner : undefined) } : {}),
     editorTabPersistent: editorTab.persistent,
     ...(editorTab.reason === undefined ? {} : { editorTabRefusal: editorTab.reason }),
   }
   const opened = { ...page, host: wiped ? tabHost : unwiped(tabHost) }
   const leaving = (stop: () => Promise<void>) =>
     wipe.started(() => {
+      tabHost.formSnapshot?.clear()
       root.unmount()
       return stop()
     })

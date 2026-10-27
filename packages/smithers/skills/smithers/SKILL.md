@@ -173,7 +173,6 @@ Tools manage their own login in the selected home; profiles describe locations.
 
 - `smthrs agent` — run. Configure an agent
 - `smthrs agent edit` — confirm; waits for the person's confirmation. Propose an instruction change
-- `smthrs agents` — run. The factory's agents
 - `smthrs branch show` — run. Open a branch's card
 - `smthrs branch add-to-stack` — confirm; waits for the person's confirmation. Add a scratch branch as a TODO
 - `smthrs branch archive` — confirm; waits for the person's confirmation. Archive a scratch branch

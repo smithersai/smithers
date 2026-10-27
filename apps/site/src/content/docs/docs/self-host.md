@@ -170,7 +170,7 @@ Two running installs would both act on the same repository. Keep backup director
 
 ## API and flows
 
-The [HTTP API reference](https://smithers.sh/docs/reference/http-api/) documents the API used by the app and CLI. See [Flows reference](/docs/flows/#change-a-flow) to customize how TODOs run.
+The [HTTP API reference](https://smithers.sh/docs/reference/http-api/) documents the API used by the app and CLI. The [Flows reference](/docs/flows/) covers personal flows in the hosted app.
 
 ## Open the wiki in Obsidian
 

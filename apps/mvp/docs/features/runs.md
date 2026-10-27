@@ -1,5 +1,10 @@
 # Runs
 
+A failed dependency can settle a graph node without dispatching its action. Such
+actions show Skipped, with no invented attempt or failed duration in the timeline.
+Their original dependency failure remains in the journal. Legacy records without
+dispatch evidence retain their recorded state; replay uses only evidence at its cursor.
+
 Every flow this device runs is a run of its durable engine. `/app/runs` lists them beside the runs on Cloudflare this person may read, like GitHub Actions lists a repository's runs (ruling FLOW-13): what started each, its branch, who started it, how long it took and how it ended, and each opens in place to its jobs and steps with their logs ([the list](#the-list)). A run's page shows what it did: its steps with each one's input and output, its timeline and its journal, with Stop, Retry and Resume. A TODO's run on Cloudflare has the same page, live ([a run on Cloudflare](#a-run-on-cloudflare)). Decision: [0014](../decisions/0014-flows-authoring-debugging-and-home-view.md) §3, §5 and §6.
 
 ## Where a run is read

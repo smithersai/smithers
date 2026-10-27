@@ -277,7 +277,7 @@ describe("Docker push executor unit boundary", () => {
       ReadonlyArray<ReadonlyArray<string>>
     ]
   > = [
-    ["a missing archive", "missing", {}, ["one"], "ENOENT", []],
+    ["a missing archive", "missing", {}, ["one"], "dependency //:image did not succeed", []],
     [
       "a multi-platform archive",
       { platforms: ["linux/amd64", "linux/arm64"] },
@@ -306,6 +306,10 @@ describe("Docker push executor unit boundary", () => {
       const summary = await PackageExec.execute(host.planned, { ...host.options, log: () => {} })
       expect(summary.ok).toBe(false)
       expect(pushResult(summary)?.error).toContain(message)
+      if (archive === "missing") {
+        expect(summary.results.find((result) => result.label === "//:image")?.error)
+          .toBe("//:image did not produce declared outputs: docker-image")
+      }
       expect(await host.observed()).toEqual(pushes)
     })
   }

@@ -75,31 +75,6 @@
       }
     },
     {
-      "name": "agents",
-      "description": "The factory's agents",
-      "schema": {
-        "args": {
-          "type": "object",
-          "properties": {},
-          "additionalProperties": false
-        },
-        "options": {
-          "type": "object",
-          "properties": {
-            "verbose": {
-              "default": false,
-              "description": "Show redacted diagnostic details",
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "verbose"
-          ],
-          "additionalProperties": false
-        }
-      }
-    },
-    {
       "name": "api",
       "description": "Make raw API calls to the Smithers server",
       "schema": {

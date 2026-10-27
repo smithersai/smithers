@@ -323,7 +323,16 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           fields.repoId = repoId(target.owner, target.name)
           if (target.kind !== "refs") fields.sha = target.sha
           if (Option.isNone(reads)) return refuse(503, "not_configured")
-          const answered = target.kind === "refs"
+          const attachment = target.kind === "raw" && new URL(request.url, "http://localhost").searchParams.get("download") === "1"
+          const answered = attachment
+            ? reads.value.download(target.owner, target.name, target.sha, target.file).pipe(
+              Effect.map((file) => HttpServerResponse.stream(file.stream, {
+                headers: { ...rawHeaders, "cache-control": "private, no-store",
+                  "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(target.file.split("/").at(-1)!)}` },
+                contentType: "application/octet-stream",
+              })),
+            )
+            : target.kind === "refs"
             ? Effect.gen(function* () {
               const names = yield* Effect.gen(function* () {
                 const actor = yield* (yield* Sessions).resolve

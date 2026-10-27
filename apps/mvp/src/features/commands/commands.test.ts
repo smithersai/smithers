@@ -422,6 +422,17 @@ describe("submitting", () => {
     expect(tab.shown()).toEqual([])
   }, 60_000)
 
+  test.each(["/issue nonrepo title", "/clone nope", "/new invalid", "/comment invalid 1 words"])(
+    "%s retains its malformed repository with a visible refusal", async (line) => {
+      const tab = await open()
+      tab.actions.type(line)
+      tab.actions.submit(line)
+      expect(tab.draft()).toBe(line)
+      expect(tab.menu()?.refusal).toContain("owner/name")
+      expect(tab.count(Metric.withAttributes(submits, { outcome: "run", command: line.split(" ")[0]!.slice(1) }))).toBe(0)
+    }, engineWithin,
+  )
+
   test("/web keeps a refused URL in the composer without dispatching", async () => {
     const tab = await open()
     tab.actions.type("/web javascript:alert(1)")

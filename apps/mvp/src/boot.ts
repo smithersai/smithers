@@ -1,3 +1,4 @@
+import type { PendingSnapshot } from "@smthrs/platform-browser"
 import { FlowRegistry } from "./flows/registry"
 import { FetchFailures, LogFailures, Otlp } from "@smthrs/observability"
 import { Persistence } from "@smthrs/effect-tanstack-db"
@@ -125,6 +126,8 @@ export const bootTime = Metric.histogram("smithers_web_boot_ms", {
  * theme paints, the clipboard, and this tab's engine worker. main.tsx gives the browser's; a test gives Node's.
  */
 export interface Host extends ChatHost {
+  readonly formSnapshot?: PendingSnapshot.Service
+
   readonly persistence: Persistence.Options<BrowserWASQLiteDatabase>
   /** One tab's stable, locally claimed editor identity across reloads. */
   readonly editorTabId: string
@@ -295,6 +298,7 @@ export const appLayer = <S = never>(
     Layer.merge(Runs.layer.pipe(Layer.provide(RunsStore.layer({ origin }))), FlowsUi.layer.pipe(Layer.provide(FlowsUiStore.layer({
       origin,
       editorTabId: host.editorTabId,
+      ...(host.formSnapshot === undefined ? {} : { formSnapshot: host.formSnapshot }),
       editorTabPersistent: host.editorTabPersistent,
       ...(host.editorTabRefusal === undefined ? {} : { editorTabRefusal: host.editorTabRefusal }),
       ...(chat.confirmWithin === undefined ? {} : { confirmWithin: chat.confirmWithin }),

@@ -153,7 +153,9 @@ export const run = (prepare: Prepare, context: Context.Context<FlowRuntime.FlowR
     const runtime = Context.get(context, FlowRuntime.FlowRuntime)
     const { flow } = declare(prepare)
     yield* runtime.execute(flow, {
-      executionId: `device/prepare/${prepare.epoch}`,
+      // Version 2 repairs workers whose split module graph mixed Schema sentinels.
+      // The failed v1 receipt remains readable; idempotent migrations run once under the corrected host.
+      executionId: `device/prepare/v2/${prepare.epoch}`,
       payload: { epoch: prepare.epoch }
     }) as Effect.Effect<unknown, unknown>
     return "prepared" as const

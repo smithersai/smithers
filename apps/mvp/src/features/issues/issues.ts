@@ -11,6 +11,7 @@ import {
   open,
   pauseTriage,
   retry,
+  retryWrite,
   warm,
   runTriageAgain,
   setCommentDraft,
@@ -75,7 +76,8 @@ export interface IssuesActions {
   readonly setNewBody: (owner: string, name: string, body: string) => void
   readonly setCommentDraft: (owner: string, name: string, number: number, body: string) => void
   /** Create issue: whether it ran. */
-  readonly create: (owner: string, name: string) => boolean
+  readonly create: (owner: string, name: string) => Promise<boolean>
+  readonly retryWrite: (writeId: string) => Promise<void>
   /** Comment: whether it ran. */
   readonly comment: (owner: string, name: string, number: number) => boolean
   /** Discard on a write that wasn't sent. */
@@ -127,7 +129,8 @@ export class Issues extends Context.Service<Issues, { readonly queries: IssuesQu
           setNewTitle: (owner, name, title) => run(setNewTitle(owner, name, title)),
           setNewBody: (owner, name, body) => run(setNewBody(owner, name, body)),
           setCommentDraft: (owner, name, number, body) => run(setCommentDraft(owner, name, number, body)),
-          create: (owner, name) => run(create(owner, name)),
+          create: (owner, name) => promise(create(owner, name)),
+          retryWrite: (writeId) => promise(retryWrite(writeId)),
           comment: (owner, name, number) => run(comment(owner, name, number)),
           discard: (writeId) => run(discard(writeId)),
           edit: (writeId) => run(edit(writeId)),

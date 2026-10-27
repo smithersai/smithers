@@ -34,12 +34,16 @@ describe("browser bundle", () => {
    * splits at `import()`, what the tab loads eagerly is the entry chunk and
    * every chunk it imports statically.
    */
-  it("loads no engine and no SQLite from the root: both arrive only through lazy imports", async () => {
+  it("a tab importing BrowserEngine and SharedSqlite carries no engine or SQLite", async () => {
     const result = await build({
       bundle: true,
       splitting: true,
       metafile: true,
-      entryPoints: { tab: fileURLToPath(new URL("../src/index.ts", import.meta.url)) },
+      stdin: {
+        contents: `export { BrowserEngine, SharedSqlite } from "./index.ts"`,
+        resolveDir: fileURLToPath(new URL("../src", import.meta.url)),
+        sourcefile: "tab.ts"
+      },
       external: ["effect", "effect/*"],
       format: "esm",
       logLevel: "silent",
@@ -61,8 +65,8 @@ describe("browser bundle", () => {
     const engine =
       /(?:^|\/)(?:engine-store|run-store|journal|database)\/src\/|flows\/src\/Runtime|wa-sqlite|internal\/(?:Engine|Leader|SqlConnection)\.ts$/
     expect(loaded.filter((input) => engine.test(input))).toEqual([])
-    // The engine is there, behind the lazy imports.
-    expect(lazy.some((input) => input.endsWith("internal/Engine.ts"))).toBe(true)
+    // Worker composition is not part of a tab importing the client services.
+    expect(lazy.some((input) => input.endsWith("internal/Engine.ts"))).toBe(false)
     // The package never imports the build itself: the worker hands it over.
     expect(lazy.filter((input) => /wa-sqlite\/dist\//.test(input))).toEqual([])
   })

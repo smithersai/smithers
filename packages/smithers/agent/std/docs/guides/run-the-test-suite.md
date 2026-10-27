@@ -114,16 +114,24 @@ with `baseline: false`.
 base commit, in a scratch checkout, and differences the two failure sets:
 
 ```ts
-const result = TestRun.run({
-  selection: ["tests/test_admin.py"],
-  against: "base"
-})
+import { TestRun } from "@smthrs/std"
+import { Effect } from "effect"
 
-result.introduced // failing here and not on the base tree: yours
-result.preexisting // failing on both: not yours, and not worth investigating
-result.fixed // failing on the base tree and passing here
-result.base // the base run's own outcome, plus its ref and commit
+const attribution = Effect.gen(function*() {
+  const result = yield* TestRun.run({
+    selection: ["tests/test_admin.py"],
+    against: "base"
+  })
+
+  result.introduced // failing here and not on the base tree: yours
+  result.preexisting // failing on both: not yours, and not worth investigating
+  result.fixed // failing on the base tree and passing here
+  result.base // the base run's own outcome, plus its ref and commit
+})
 ```
+
+Provide the host’s `TestRunner`, evaluator, and child-process services at the
+caller boundary before running `attribution`.
 
 That is the whole of attribution, in one call. Without it, the same question
 costs a revert of the very work it was meant to prove.

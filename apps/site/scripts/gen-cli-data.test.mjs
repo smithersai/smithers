@@ -1,9 +1,10 @@
 /** Check public page selection while preserving the complete CLI data contract. */
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import test from "node:test"
 
 const retired = ["admin", "artifact", "cache", "egress", "label", "notification", "org", "stack", "triggers", "tui", "variable", "webhook"]
@@ -17,39 +18,20 @@ function fixture(t) {
     writeFileSync(join(root, path), contents)
   }
   write("package.json", '{"type":"module"}')
-  write("packages/smithers/package.json", JSON.stringify({ version: "1.2.3", dependencies: { effect: "4.0.0" }, engines: { node: ">=26.4.0" } }))
-  write("packages/smithers/build/build-cli/src/effect-resolution.js", "export const installEffectResolution = () => {}\n")
-  // The generator consumes manifest/help data, not CLI execution. A controlled
-  // data source covers selection boundaries without starting the CLI services.
-  const commands = [{ name: "flows" }, { name: "flow show" }, { name: "api" }, { name: "host status" }]
-  write("packages/smithers/src/Cli.ts", `
-const manifest = ${JSON.stringify({ commands })}
-export const makeCli = () => ({
-  async serve(args, io) {
-    io.stdout(args.includes("--llms-full") ? JSON.stringify(manifest) :
-      "smthrs " + args.filter(arg => arg !== "--help").join(" ") + " — Canonical help.\\nUsage: smthrs\\n")
-    io.exit(0)
-  }
-})
-`)
-  write("packages/smithers/src/internal/backend/Catalog.ts", `export const catalogCommands = [
-    {name: "debug-api", cli: null, actors: ["person"], visibility: "advanced", agent: "never"},
-    {name: "admin.health", cli: ["admin", "health"], actors: ["person"], visibility: "hidden", agent: "never"}
-  ]`)
-  write("packages/smithers/src/Unsupported.ts", 'export const removedVerbs = []; export const removedFlags = []; export const migrationUrl = "https://smithers.sh/migration/1.0"\n')
+  // Exercise the real CLI and declaration loader, while keeping all generated
+  // output in this test's temporary directory. No command service is replaced.
+  symlinkSync(fileURLToPath(new URL("../../../packages", import.meta.url)), join(root, "packages"), "dir")
   write("apps/site/src/data/migration-paths.json", '{"paths":{"flows":"Use a flow."},"flagGroups":{}}')
   write("apps/site/src/data/help/stale.txt", "Retired help capture.\n")
   write("apps/site/src/content/docs/docs/reference/cli/index.mdx", "---\ntitle: CLI\ndescription: Reference\n---\n\n| Command | Purpose |\n| --- | --- |\n| old | old |\n\nRetained index prose.\n")
   write("apps/site/src/content/docs/docs/reference/cli/manual.mdx", "Hand-written command reference.\n")
   for (const name of retired) write(`apps/site/src/content/docs/docs/reference/cli/${name}.mdx`, `---\n${owner}\n---\nOld generated page.\n`)
-  write("packages/smithers/docs/migration.md", '---\ntitle: "Upgrade"\ndescription: "Guide."\n---\n\n## Run data\n\n<!-- generated:removed-commands -->\n')
   const script = "apps/site/scripts/gen-cli-data.mjs"
   mkdirSync(dirname(join(root, script)), { recursive: true })
   cpSync(new URL("./gen-cli-data.mjs", import.meta.url), join(root, script))
   cpSync(new URL("./migration-guide.mjs", import.meta.url), join(root, "apps/site/scripts/migration-guide.mjs"))
   return {
     root,
-    commands,
     read: (path) => readFileSync(join(root, path), "utf8"),
     run: (...args) => spawnSync(process.execPath, [join(root, script), ...args], { encoding: "utf8" })
   }
@@ -60,19 +42,25 @@ test("CLI generation retains complete source facts and retires every public comm
   const result = run()
   assert.equal(result.status, 0, result.stdout + result.stderr)
   const { commands } = JSON.parse(read("apps/site/src/data/cli-commands.json"))
-  assert.ok(commands.some(command => command.name === "flows"))
-  for (const name of ["flows", "flow", "api", "host"]) {
-    assert.match(read(`apps/site/src/data/help/${name}.txt`), /Canonical help/)
+  assert.ok(commands.some(command => command.name === "flow run"))
+  for (const name of ["flow", "api"]) {
+    assert.match(read(`apps/site/src/data/help/${name}.txt`), new RegExp(`^smthrs ${name} — `))
   }
-  // B.6 explicitly cuts these from docs; hidden person-only rows do not revive them.
+  // Retired per-command pages stay removed. TUI now has a reference supplement
+  // without widening the install discovery manifest.
   for (const name of [...retired, "index", "manual"]) {
-    assert.equal(existsSync(join(root, `apps/site/src/data/help/${name}.txt`)), false)
+    assert.equal(existsSync(join(root, `apps/site/src/data/help/${name}.txt`)), name === "tui" || commands.some(command => command.name.split(" ")[0] === name))
     assert.equal(existsSync(join(root, `apps/site/src/content/docs/docs/reference/cli/${name}.mdx`)), false)
   }
   assert.equal(existsSync(join(root, "apps/site/src/content/docs/docs/reference/cli/index.mdx")), false)
   assert.equal(existsSync(join(root, "apps/site/src/data/help/stale.txt")), false)
-  assert.equal(existsSync(join(root, "apps/site/src/data/help/debug/api.txt")), false)
+  assert.match(read("apps/site/src/data/help/debug/api.txt"), /^smthrs debug api — /)
   assert.equal(commands.some(command => command.name === "debug api"), false)
+  assert.equal(commands.some(command => command.name === "tui"), false)
+  const reference = JSON.parse(read("apps/site/src/data/cli-reference-extra.json"))
+  for (const name of ["change list", "change status", "change files", "change show", "change conflicts", "generate package", "generate ci", "tui"]) {
+    assert.ok(reference.some(command => command.name === name), name)
+  }
   // The guide every 1.0 package links is written from the CLI package's doc.
   const guide = read("apps/site/src/pages/migration/1.0.md")
   assert.match(guide, /^---\n# GENERATED by apps\/site\/scripts\/gen-cli-data\.mjs\. Edit packages\/smithers\/docs\/migration\.md\./)

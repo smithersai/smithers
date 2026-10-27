@@ -897,7 +897,7 @@
         "J11"
       ],
       "group": "Advanced",
-      "visibility": "advanced",
+      "visibility": "hidden",
       "actors": [
         "person",
         "app_agent",

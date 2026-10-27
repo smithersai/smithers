@@ -1,6 +1,10 @@
 import type { RepoAnswer } from "../auth/viewer"
 import { NOT_SENT_COPY, type NotSentReason } from "../issues/contract"
-import { refusedOf } from "../issues/view"
+import { pageOf, refusedOf } from "../issues/view"
+
+/** A repository-wide walk cannot certify one pull request's absence. Only its own GitHub receipt can. */
+export const pullPageOf = (item: unknown, absent: boolean, itemReady: boolean, syncedReady: boolean, access?: Parameters<typeof pageOf>[4]) =>
+  pageOf(item, absent ? {} : undefined, itemReady, syncedReady, access)
 import {
   CHECK_STATUS_WORDS,
   deployWarningOf,

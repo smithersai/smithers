@@ -114,6 +114,7 @@ export const feedOf = (
     entries.push({
       id: notice.subject,
       kind: notice.kind,
+      ...(notice.kind === "write" && notice.ref === "launch" ? { local: true } : {}),
       state: notice.state,
       mine: notice.mine,
       runId: notice.runId,

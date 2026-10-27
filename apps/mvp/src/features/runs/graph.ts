@@ -128,7 +128,10 @@ export const graphOf = (page: RunPage, at: number | null, now: number, pathOf: (
     )
     // Command text belongs to the sealed result, never application telemetry.
     if (native?.action === "ci/job/Step") logs.push(...outputLogs(at === null ? native.output : output))
-    const state: StepRow["state"] = node.state === "done"
+    // An explicit empty dispatch list proves dependency resolution failed before the action ran.
+    // The journal retains that failure; the action gets no invented attempt or failed duration.
+    const undispatched = node.state === "failed" && Array.isArray(nodePayload.stepKeyDigests) && digests.length === 0
+    const state: StepRow["state"] = undispatched ? "skipped" : node.state === "done"
       ? "completed"
       : node.state === "current"
       ? "running"
@@ -155,7 +158,7 @@ export const graphOf = (page: RunPage, at: number | null, now: number, pathOf: (
         finishedAtMs: span.endedAt ?? null,
         error: span.status === "failed" ? "failed" : null
       }))
-    const attempts = recordedAttempts !== undefined && recordedAttempts.length > 0
+    const attempts = undispatched ? [] : recordedAttempts !== undefined && recordedAttempts.length > 0
       ? recordedAttempts
       : calls.map((call) => ({
         attempt: call.k,

@@ -7,6 +7,7 @@ import type {
   RepositoryHomeRuns,
 } from "@smthrs/ui"
 import { Home } from "@smthrs/views"
+import { OFFLINE } from "../chat/contract"
 import { COMMANDS } from "../commands/catalog"
 import type { FlowRow } from "../flows-ui/schema"
 import { issuePath, issuesPath } from "../issues/contract"
@@ -64,7 +65,7 @@ const viewsOf = (sections: ReadonlyArray<Home.Section>, own: Home.Audience): Rea
  * or the repository's own home is read from what GitHub says, and else the tree. Until ChatApi says who the person is, they see only everyone's sections, or a contributor's on a
  * home open to anyone. A person who switched to a lower view they may see sees its sections instead (SCOPE-14).
  */
-export const homePageOf = (current: CurrentRow, home: HomeRow | undefined, curated: CuratedRow | undefined): HomePage => {
+export const homePageOf = (current: CurrentRow, home: HomeRow | undefined, curated: CuratedRow | undefined, offline = false): HomePage => {
   if (current.repoId === null) return { kind: "tree", notice: null }
   const audience = current.audience ?? "everyone"
   const docs = current.docs ?? current.curatedDocs
@@ -96,7 +97,7 @@ export const homePageOf = (current: CurrentRow, home: HomeRow | undefined, curat
     const sections = home.state === "declared" ? shownTo(home.sections, widened) : []
     if (sections.length > 0) return page("declared", home.sections, current.defaultBranch, widened)
     if (home.state === "invalid") return { kind: "tree", notice: HOME_INVALID }
-    if (home.state === "unreadable") return { kind: "tree", notice: HOME_UNREADABLE }
+    if (home.state === "unreadable") return { kind: "tree", notice: offline ? OFFLINE : HOME_UNREADABLE }
   }
   if (curated?.state === "declared" && curated.defaultBranch !== null) {
     if (shownTo(curated.sections, audience).length > 0) return page("curated", curated.sections, curated.defaultBranch)

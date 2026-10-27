@@ -327,6 +327,10 @@ export const NOT_FOUND = "Not found"
 /** What the issues feature records (docs/observability.md), by name, and the attributes they carry: never text. */
 export const ISSUES_TELEMETRY = {
   records: [
+    "issues.write.admission",
+    "issues.submission.not_sent",
+    "smithers_issue_write_admissions",
+    "smithers_issue_submission_failures",
     "issues.write.queue",
     "issues.write.send",
     "issues.pending",
@@ -342,7 +346,7 @@ export const ISSUES_TELEMETRY = {
     "execute_tool issue/create",
     "execute_tool issue/comment",
   ],
-  fields: ["op", "door", "outcome", "status", "writeId", "durationMs", "reason", "action", "phase", "item", "errorCode"],
+  fields: ["op", "door", "outcome", "status", "writeId", "durationMs", "reason", "action", "phase", "item", "errorCode", "executionId"],
 } as const
 
 // Triage (decision 0012 §5, docs/features/issues.md#triage): two GitHub labels carry an issue's triage state, which is

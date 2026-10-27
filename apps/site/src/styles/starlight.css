@@ -129,3 +129,22 @@ img.hero-anim {
 #starlight__search .pagefind-ui__result-nested:has(a[href$="#_top"]) {
   display: none;
 }
+
+/* Local background covers hide each scroll shadow when that edge is reached. */
+.sl-markdown-content table {
+  background:
+    linear-gradient(to right, var(--sl-color-bg) 30%, transparent) left center / 2rem 100% no-repeat local,
+    linear-gradient(to left, var(--sl-color-bg) 30%, transparent) right center / 2rem 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, var(--sl-color-gray-3), transparent) left center / 0.75rem 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, var(--sl-color-gray-3), transparent) right center / 0.75rem 100% no-repeat scroll;
+  scrollbar-color: var(--sl-color-gray-3) var(--sl-color-bg);
+}
+
+/* Short tokens move intact; long values wrap inside the available column. */
+.sl-markdown-content :not(pre) > code {
+  display: inline-block;
+  max-inline-size: 100%;
+  vertical-align: bottom;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

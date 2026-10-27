@@ -3,7 +3,7 @@ import { RepoHeader } from "../../features/repo/components/RepoHeader"
 import { HomeTabs } from "../../features/home/components/HomeTabs"
 import { Button, EmptyState } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import { Navigate, useNavigate, useParams, useSearch } from "@tanstack/react-router"
+import { Link, Navigate, useNavigate, useParams, useSearch } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
 import { SignInButton } from "../../features/auth/components/SignInButton"
 import { useIssues } from "../../features/issues/components/IssuesContext"
@@ -28,11 +28,14 @@ export function NewIssueScreen() {
   const answer = useRepoAnswer(owner, repo)
   const navigate = useNavigate()
   const search = useSearch({ from: "/$owner/$repo/issues/new" })
-  const { data: writes } = useLiveQuery(queries.writes)
-  const { data: rows } = useLiveQuery(queries.list)
+  const { data: writes, isReady: writesReady } = useLiveQuery(queries.writes)
+  const { data: rows, isReady: rowsReady } = useLiveQuery(queries.list)
   const writeId = search.write ?? view?.createdWriteId
   const created = writes?.find((write) => write.id === writeId && write.repoId === `github/${owner}/${repo}` && write.op === "issue/create")
-  const notSent = rows?.some((row) => row.id === writeId && row.pending === "not_sent") === true || created?.status === "failed" || created?.status === "refused"
+  const unknown = created === undefined && rows?.some((row) => row.id === writeId) !== true
+  const restored = writesReady && rowsReady
+  const retryable = rows?.some((row) => row.id === writeId && row.pending === "not_sent" && row.reason === "") === true
+  const notSent = view?.submitting !== true && (rows?.some((row) => row.id === writeId && row.pending === "not_sent") === true || created?.status === "failed" || created?.status === "refused")
   // Where this deployment doesn't sync the repository's issues, it can't show a new one arriving: GitHub opens it.
   if (!syncsHere(access, unsynced)) {
     const list = githubList(owner, repo, "issues")
@@ -43,12 +46,14 @@ export function NewIssueScreen() {
   if (created?.status === "done" && created.itemNumber !== null) return <Navigate to={issuePath(owner, repo, created.itemNumber)} replace />
   if (writeId !== undefined) return (
     <main className="issues-screen" aria-label="New issue"><RepoHeader /><HomeTabs />
-      {session.status === "signed_out" ? <SignInButton /> : notSent
-        ? <EmptyState title="Not sent" action={<Button onClick={() => {
+      {session.status === "signed_out" ? <SignInButton /> : unknown && restored
+        ? <EmptyState title="Request unavailable" action={<Button asChild><Link to="/$owner/$repo/issues" params={{ owner, repo }}>Issues</Link></Button>} />
+        : notSent
+        ? <EmptyState title="Not sent" action={<>{retryable ? <Button onClick={() => void actions.retryWrite(writeId)}>Retry</Button> : null}<Button onClick={() => {
           const href = actions.edit(writeId)
           if (href !== undefined) void navigate({ href })
-        }}>Edit</Button>} />
-        : <p role="status">Creating issue…</p>}
+        }}>Edit</Button></>} />
+        : <p role="status">{unknown ? "Syncing issue…" : "Requested"}</p>}
     </main>
   )
   const draft = draftOf(view)
@@ -59,11 +64,11 @@ export function NewIssueScreen() {
           <NewIssueForm
             title={draft.title}
             body={draft.body}
-            error={draft.error}
+            error={draft.error ?? (view?.submissionFailed === true ? "Not sent" : undefined)}
             disabled={view?.submitting === true}
             onTitle={(title) => actions.setNewTitle(owner, repo, title)}
             onBody={(body) => actions.setNewBody(owner, repo, body)}
-            onSubmit={() => { actions.create(owner, repo) }}
+            onSubmit={() => { void actions.create(owner, repo) }}
           />
         )
         : session.status === "signed_in" ? <EmptyState title="You can’t open issues in this repository." /> : <SignInButton />}

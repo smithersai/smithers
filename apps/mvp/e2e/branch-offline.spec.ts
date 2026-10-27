@@ -19,7 +19,7 @@ const branch = () => {
 
 test("branch offline: a branch's page opened offline shows at once, and opens its workspace in place when the network returns", {
   annotation: { type: "summary", description: "Offline, a branch's page shows at once and stays; back online, however long after, its workspace opens with no reload." },
-}, async ({ devices }) => {
+}, async ({ devices, browserName }) => {
   test.setTimeout(180_000)
   const { path, name } = branch()
   const [tab] = await devices.open("Laptop")
@@ -32,8 +32,8 @@ test("branch offline: a branch's page opened offline shows at once, and opens it
     await page.goto(path)
     // Chromium starts a new page's navigator.onLine as true despite the context's emulation: correct it, as a browser
     // offline reports.
-    const network = await tab.device.context.newCDPSession(page)
-    await network.send("Network.overrideNetworkState", { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
+    const network = browserName === "chromium" ? await tab.device.context.newCDPSession(page) : undefined
+    await network?.send("Network.overrideNetworkState", { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
     // Well within the 30 s `branch/track` would spend trying a ChatApi it can't reach.
     await expect(page.getByRole("navigation", { name: "Branch" })).toContainText(name, { timeout: 10_000 })
     await expect(tab.conversation).toHaveCount(0)
@@ -53,7 +53,7 @@ test("branch offline: a branch's page opened offline shows at once, and opens it
   })
   await step("Back online, the branch's workspace opens in place", async () => {
     await tab.device.online()
-    await network.send("Network.overrideNetworkState", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
+    await network?.send("Network.overrideNetworkState", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
     await expect(page.getByRole("navigation", { name: "Branch" })).toContainText(/Owner|Can edit|Can view/, { timeout: 30_000 })
     await expect(tab.conversation).toBeVisible()
     expect(await page.evaluate(() => (window as { e2eSamePage?: boolean }).e2eSamePage), "the page never reloaded").toBe(true)

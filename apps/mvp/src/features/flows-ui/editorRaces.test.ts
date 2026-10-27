@@ -5,7 +5,7 @@ import { afterEach, expect, test, vi } from "vitest"
 import { DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { nodeDevice, openTab, openTestApp, TestChatApi } from "../../test/chatApi"
 import { RunsNavigation } from "../runs/actions"
-import { deleteDraft, editCode, openCode, openDraft, save, saveCode } from "./actions"
+import { answer, deleteDraft, editCode, openCode, openDraft, openNew, save, saveCode, startDraft } from "./actions"
 import { FlowsUiStore, SHOWN } from "./store"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
@@ -171,4 +171,50 @@ test("a late draft save and a refused deletion leave the next draft's refusal al
   expect(await t.runtime.runPromise(t.store.shown.get(SHOWN))).toMatchObject({
     value: { draftId: nextId, refusal: null, busy: false },
   })
+})
+
+test("a refused form write keeps its pending snapshot for reload", async () => {
+  const t = await open()
+  const { PendingSnapshot } = await import("@smthrs/platform-browser")
+  const { FlowsUi } = await import("./flowsUi")
+  const { awaitEditorWrites } = await import("./editorWrites")
+  const values = new Map<string, string>()
+  const snapshot = PendingSnapshot.make({
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => void values.set(key, value),
+    removeItem: (key) => void values.delete(key),
+  }, "pending")
+  const faulty = { ...t.store, formSnapshot: snapshot, form: {
+    ...t.store.form,
+    update: () => Effect.die(new Error("device write refused")),
+  } }
+  const ui = ManagedRuntime.make(FlowsUi.layer.pipe(
+    Layer.provide(Layer.succeed(FlowsUiStore, faulty)),
+    Layer.provide(Layer.succeedContext(await t.runtime.context())),
+    Layer.provide(Layer.succeed(RunsNavigation, { navigate: t.host.navigate })),
+  ))
+  runtimes.push(ui)
+  const flows = await ui.runPromise(Effect.service(FlowsUi))
+  flows.queries.form.startSyncImmediate()
+  await vi.waitFor(() => expect(flows.queries.form.toArray).toHaveLength(1))
+  flows.actions.setRequest("Unacknowledged input")
+  await awaitEditorWrites()
+  await vi.waitFor(() => expect(snapshot.read()?.value).toMatchObject({ request: "Unacknowledged input" }))
+})
+
+test("failed collection restoration refuses editor actions without changing retained input or dispatching", async () => {
+  const t = await open()
+  await t.runtime.runPromise(Effect.gen(function* () {
+    yield* t.store.form.update(t.store.formId, row => Object.assign(row, { name: "kept", request: "Keep my request", seeded: false }))
+    yield* t.store.code.update(t.store.codeId, row => Object.assign(row, { name: "kept", state: "read", text: "edited", source: "source" }))
+  }))
+  const beforeForm = structuredClone(t.store.form.tanstack.toArray)
+  const beforeCode = structuredClone(t.store.code.tanstack.toArray)
+  const refused = { ...t.store, editorReady: Effect.succeed(false) }
+  const dispatch = { ...t.dispatch, dispatch: () => Effect.die("a refused editor must not dispatch") } as FlowDispatch["Service"]
+  for (const action of [openNew("other"), startDraft, answer, openCode("other"), saveCode()]) {
+    await t.run(action, refused, dispatch)
+  }
+  expect(t.store.form.tanstack.toArray).toEqual(beforeForm)
+  expect(t.store.code.tanstack.toArray).toEqual(beforeCode)
 })

@@ -1204,6 +1204,12 @@ export const wrap = (
  * the path was never mounted, and dash spells that "Directory nonexistent".
  */
 const denialPatterns: ReadonlyArray<{ readonly pattern: RegExp; readonly write: boolean }> = [
+  {
+    pattern:
+      /(?:^|\n)(?:mkdir|touch): ['"]?([^'":\n]+?)['"]?: (?:Operation not permitted|Permission denied|Read-only file system)/g,
+    write: true
+  },
+
   { pattern: /\b(?:EACCES|EPERM|ENOENT)\b[^'"\n]*['"]([^'"\n]+)['"]/g, write: false },
   { pattern: /\bEROFS\b[^'"\n]*['"]([^'"\n]+)['"]/g, write: true },
   {

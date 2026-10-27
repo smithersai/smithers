@@ -49,6 +49,7 @@ export interface Report {
  */
 export type Sending =
   | { readonly status: "idle" }
+  | { readonly status: "invalid"; readonly what: string; readonly code: "empty" | "too_large" }
   | { readonly status: "sending"; readonly id: string; readonly what: string }
   | { readonly status: "sent"; readonly report: Report }
   | { readonly status: "failed"; readonly id: string; readonly what: string; readonly code: string }
@@ -137,7 +138,11 @@ export const tab = Effect.gen(function* () {
 
   const send = (text: string) => {
     const what = whatOf(text)
-    if (what === undefined || sending.status === "sending") return
+    if (sending.status === "sending") return
+    if (what === undefined) {
+      set({ status: "invalid", what: text, code: text.trim() === "" ? "empty" : "too_large" })
+      return
+    }
     const id = idFor(sending, what, () => crypto.randomUUID())
     set({ status: "sending", id, what })
     const failed = (code: string) => Effect.sync(() => set({ status: "failed", id, what, code }))

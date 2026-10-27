@@ -166,6 +166,7 @@ export const DOCS_PAGES: ReadonlyMap<string, ReadonlyMap<string, string>> = new 
     ["/reference/cli/", "https://github.com/smithersai/smithers/tree/main/packages/smithers/docs/reference/cli"],
     ["/reference/cli/host/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/reference/cli/host.md"],
     ["/reference/cli/seats/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/reference/cli/seats.md"],
+    ["/reference/cli/tui/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/reference/cli/tui.md"],
     ["/troubleshooting/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/troubleshooting.md"],
   ])],
   ["control", new Map([

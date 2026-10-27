@@ -13,8 +13,19 @@ describe("errorName", () => {
     expect(errorName(undefined)).toBe("undefined")
   })
 
+  test("names serialized errors only by a short identifier", () => {
+    expect(errorName({ name: "@smthrs/platform-browser/PrepareFailed", message: "private text" })).toBe(
+      "@smthrs/platform-browser/PrepareFailed"
+    )
+    for (const name of ["", "private text", 12, undefined]) expect(errorName({ name })).toBe("object")
+    expect(errorName({})).toBe("object")
+    expect(errorName(null)).toBe("object")
+  })
+
   test("names a wrapper it is told to unwrap by what it wraps, however deep", () => {
-    expect(errorName(new Wrapper({ cause: new Wrapper({ cause: new RangeError("x") }) }), ["Wrapper"])).toBe("RangeError")
+    expect(errorName(new Wrapper({ cause: new Wrapper({ cause: new RangeError("x") }) }), ["Wrapper"])).toBe(
+      "RangeError"
+    )
     expect(errorName(new Wrapper({ cause: new RangeError("x") }))).toBe("Wrapper")
   })
 })

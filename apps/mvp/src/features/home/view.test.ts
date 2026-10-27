@@ -70,6 +70,13 @@ describe("homePageOf: the repository's own home", () => {
     })
   })
 
+  test("an offline unreadable home says Offline; reconnect restores its actual state", () => {
+    const unreadable = row({ state: "unreadable", sections: [] })
+    expect(homePageOf(ready, unreadable, undefined, true)).toEqual({ kind: "tree", notice: "Offline" })
+    expect(homePageOf(ready, unreadable, undefined, false)).toEqual({ kind: "tree", notice: HOME_UNREADABLE })
+    expect(homePageOf(ready, row({}), undefined, true)).toMatchObject({ kind: "home", sections: [everyone] })
+  })
+
   test("only the sections the person may see, by the audience ChatApi said; everyone's until it says", () => {
     const home = row({ sections: [maintainers, members, everyone] })
     const shown = (audience: Home.Audience | null) => {

@@ -23,6 +23,7 @@ export interface Switches {
   }
   readonly questions: { readonly failNext: (fault: QuestionFault) => void; readonly asked: () => ReadonlyArray<Question> }
   readonly engine: {
+    readonly refuseStarts: (flow: string) => void
     readonly holdStarts: () => void
     readonly releaseStarts: () => void
     readonly refuseResults: (flow: string, code: Interpreter.InterpreterError["code"]) => void
@@ -79,6 +80,7 @@ export const startWithFaults = async (page: AppOptions & BootOptions, search: st
       asked: () => runtime.runSync(questions.asked),
     },
     engine: {
+      refuseStarts: (flow) => runtime.runSync(engine.refuseStarts(flow)),
       holdStarts: () => runtime.runSync(engine.holdStarts),
       releaseStarts: () => runtime.runSync(engine.releaseStarts),
       refuseResults: (flow, code) => runtime.runSync(engine.refuseResults(flow, code)),

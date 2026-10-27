@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -18,6 +19,8 @@ it("skills add installs and refreshes the packaged authoring skill from an unrel
   const install = () =>
     spawnSync(process.execPath, [
       "--no-warnings",
+      "--import",
+      createRequire(import.meta.url).resolve("vibelang/register"),
       "--input-type=module",
       "--eval",
       `import { makeCli } from ${JSON.stringify(entry)}; await makeCli().serve(["skills", "add"])`

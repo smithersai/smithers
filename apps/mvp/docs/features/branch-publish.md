@@ -182,3 +182,5 @@ No record carries a title, a body, a path, a branch name or a login. The machine
 Publish and Update attempts log `branch.write.identity` and count `smithers_branch_write_identities` by `op` and `identity` (`person` or `app`), without login or token. The browser also logs `branch.write.identity` at credential resolution with `runId`, `parentRunId`, `flow`, credential kind and identity, so the continuation where authority changed is visible through the telemetry relay.
 
 Compare keeps its section frame while the comparison arrives, then fills in commits and files without a loading skeleton. The production `branch-publish.spec.ts` journey checks this throughout navigation.
+
+Publish and Update branch use the shared toast stack. A launch is Requested until the server admits its write; admission keeps the toast working until the actual write settles, including after navigation or reload. The notification links back to the branch's durable publication result. Failed admission shows a failed toast and keeps the existing retry control. The launch has no notification acknowledgment controls until its server receipt exists.

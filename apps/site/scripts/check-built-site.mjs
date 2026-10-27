@@ -227,9 +227,9 @@ export function checkBuiltSite(root, requiredReferences = []) {
       if (!rule.destination.includes("#")) destination.hash = url.hash
       url = destination
     }
-    // The app serves this route on the same origin; it is not a docs asset. The
-    // regression test pins it to the app's BUG_FORM_PATH and rejects unknown paths.
-    if (url.pathname === "/app/bugs/report" && !url.hash) return
+    // These exact app-owned routes share the origin and are not docs assets.
+    // Regression tests pin them to app declarations and reject unknown paths.
+    if (["/app/bugs/report", "/app/flows", "/app/settings"].includes(url.pathname) && !url.hash) return
     let target = join(root, decodeURIComponent(url.pathname))
     if (existsSync(target) && statSync(target).isDirectory()) target = join(target, "index.html")
     if (!existsSync(target)) failures.add(`${source}: missing ${reference} (resolved to ${url.pathname})`)

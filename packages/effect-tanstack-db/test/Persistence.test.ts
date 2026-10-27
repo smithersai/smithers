@@ -1,5 +1,6 @@
 import { createBrowserWASQLitePersistence } from "@tanstack/browser-db-sqlite-persistence"
 import { Effect, Exit, Layer, Metric, Option, Schedule, Scope } from "effect"
+import { ConnectionError, SqlError } from "effect/sql/SqlError"
 import { describe, expect, test } from "vitest"
 import { Collection, Persistence } from "../src/index.ts"
 import { databaseFile, id, Note, note, persistenceOn, sqlite, withLogs } from "./fixtures.ts"
@@ -239,6 +240,31 @@ describe("without a database", () => {
       })
     )
     expect(JSON.stringify(logs)).not.toContain("no OPFS")
+  })
+
+  test("a refused SQL connection records its reason and cause name without SQL or content", async () => {
+    const unavailable = Persistence.layer({
+      open: () =>
+        Promise.reject(
+          new SqlError({
+            reason: new ConnectionError({
+              cause: { name: "@smthrs/platform-browser/PrepareFailed", message: "private connection details" },
+              message: "private SQL text",
+              operation: "connect"
+            })
+          })
+        ),
+      make: () => {
+        throw new Error("never built")
+      }
+    })
+    const { result, logs } = await withLogs(Effect.service(Persistence.Persistence).pipe(Effect.provide(unavailable)))
+    expect(result.persistence).toEqual(Option.none())
+    expect(logs).toContainEqual(expect.objectContaining({
+      message: ["persistence unavailable"],
+      annotations: { error: "SqlError", reason: "ConnectionError", errorCode: "@smthrs/platform-browser/PrepareFailed" }
+    }))
+    expect(JSON.stringify(logs)).not.toContain("private")
   })
 
   test("memory keeps every persisted collection in memory", async () => {

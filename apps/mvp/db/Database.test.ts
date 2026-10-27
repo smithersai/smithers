@@ -1571,3 +1571,18 @@ describe("0070_about_refusal_quota", () => {
     expect(await on(through("0070"))).toEqual([])
   }))
 })
+
+describe("0071_branch_write_notices", () => {
+  test("preserves older notifications and admits working and terminal branch write receipts", () => emptySchema(async (url) => {
+    const database = Database.layer(Effect.succeed(Redacted.make(url)))
+    const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+    await on(through("0070"))
+    await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`INSERT INTO notifications (recipient, subject, kind, state, href) VALUES ('person', 'main', 'main', 'update', '/app')`))
+    expect((await on(through("0071"))).map(([id, name]) => `${id}_${name}`)).toEqual(["71_branch_write_notices"])
+    for (const state of ["working", "done", "failed"]) await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO notifications (recipient, subject, kind, state, href) VALUES ('person', ${`write:${state}`}, 'write', ${state}, '/octo/hello/tree/feature')`))
+    expect((await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`SELECT subject FROM notifications ORDER BY subject`))).map((row) => row.subject)).toEqual(["main", "write:done", "write:failed", "write:working"])
+    expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`INSERT INTO notifications (recipient, subject, kind, state, href) VALUES ('person', 'invalid', 'write', 'update', '/app')`).pipe(Effect.as("taken"), Effect.orElseSucceed(() => "refused")))).toBe("refused")
+    expect(await on(through("0071"))).toEqual([])
+  }))
+})

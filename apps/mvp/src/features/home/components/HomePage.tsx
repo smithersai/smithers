@@ -1,3 +1,5 @@
+import { ConnectionPill } from "../../chat/components/ConnectionPill"
+import { OFFLINE } from "../../chat/contract"
 import { ownRepository } from "../../auth/viewer"
 import { useRepoAnswer } from "../../repo/components/RepoContext"
 import { mayAsk } from "../../auth/contract"
@@ -22,11 +24,16 @@ import { useHome } from "./HomeContext"
 // the rows this device synced. A person who may see more than one view switches between their own and the lower ones
 // (SCOPE-14); a view above theirs never shows.
 export function HomePage({ tree }: { readonly tree: ReactNode }) {
+  return <><div role="status" aria-label="Connection" aria-live="polite"><ConnectionPill /></div><HomeContent tree={tree} /></>
+}
+
+function HomeContent({ tree }: { readonly tree: ReactNode }) {
   const { queries, actions } = useHome()
   const auth = useAuth()
   const flows = useFlowsUi()
   const chat = useChat()
   const navigate = useNavigate()
+  const { data: connection } = useLiveQuery(chat.queries.connection)
   const { data } = useLiveQuery(queries.home)
   const { data: files } = useLiveQuery(queries.files)
   // The issues `open` opened for an `issues` block: a new collection once they open, which the hook follows.
@@ -43,12 +50,12 @@ export function HomePage({ tree }: { readonly tree: ReactNode }) {
   // The live query's first read: the same skeleton as a home still being read, so the body is never blank.
   if (data === undefined) return <Skeleton className="repo-page-loading" />
   const { current } = data
-  const page = homePageOf(current, data.home, data.curated)
+  const page = homePageOf(current, data.home, data.curated, connection?.status === "offline")
   if (page.kind === "loading") return <Skeleton className="repo-page-loading" />
   if (page.kind === "tree") {
     return (
       <>
-        {page.notice === null ? null : <p className="home-notice" role="status">{page.notice}</p>}
+        {page.notice === null || page.notice === OFFLINE ? null : <p className="home-notice" role="status">{page.notice}</p>}
         {tree}
       </>
     )

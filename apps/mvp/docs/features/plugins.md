@@ -106,3 +106,5 @@ The second plugin (`plugins/bugs/`, [bugs.md](bugs.md)): `/bug` and the header's
 - `src/plugins/*.test.ts`: the app's manifests load with no refusal; the trust boundaries above against the real registry; `PluginHost` scoping and its refusals; the strip and the keymap over a real device (`src/test/chatApi.ts`).
 - `plugins/queue/src/tab.test.ts`: the queue over real waits, answered through the strip, on a real device.
 - `e2e/queue.spec.ts`: the agent asks three times; `g q`; `2`, `j`, a note and `a`, `1`; every asking run goes on. With a GIF.
+
+Full-size plugin headers show the host connection pill, including Offline, queued writes and Retry, so cached queue contents remain qualified.

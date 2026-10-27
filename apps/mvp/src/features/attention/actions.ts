@@ -56,7 +56,7 @@ const record = (subject: string, act: Inbox.Act) =>
   Effect.gen(function* () {
     const { entries, pending } = yield* AttentionStore
     const entry = yield* entries.get(subject)
-    if (Option.isNone(entry)) return entry
+    if (Option.isNone(entry) || entry.value.local === true) return entry
     const { version } = entry.value
     const id = `${subject}:${act}`
     const held = yield* pending.get(id)

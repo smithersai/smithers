@@ -348,3 +348,29 @@ workspace reads, so an unresolved read does not hold later requests. Interrupted
 workspace and library loads discard their incomplete cache additions; a later
 request reloads their imports and can finish project-wide references. Malformed
 percent encoding in a file URI makes `pathOf` return `undefined`.
+
+The worker composition imports its engine and leader statically. A bundled lazy
+chunk that imports the worker entry back can evaluate that entry twice in WebKit,
+creating two incompatible Effect Schema missing-value sentinels. Keep the worker
+in one static module graph; the SQLite build remains lazy. Tree shaking removes
+the unused worker composition from a tab importing BrowserEngine or SharedSqlite.
+
+At an input boundary, `PendingSnapshot.make(storage, key)` can stage a pending
+value synchronously in tab-scoped session storage. Restore with the consumer's
+schema and acknowledge only after its durable write receipt. Acknowledging an
+older token never removes a newer value. Clear snapshots when their owner signs
+out; storage refusal returns no snapshot without failing the input handler.
+
+For private input, pass an owner callback as make's third argument. Unverified
+owners cannot stage or restore a snapshot; a changed owner cannot restore the
+previous owner's input. The owner is part of the receipt, so an old receipt
+cannot clear another owner's newer value.
+
+A worker reopening offline must not fetch its own SQLite modules from the
+network. Bundle the SQLite API, VFS and factory into the worker entry. Load the
+immutable WASM URL with `BrowserCache.readAsset(url)` provided by
+`BrowserCache.layerAssets()`: it reads the origin's existing PWA precache before
+native fetch. WebKit worker fetch can bypass the document's service worker even
+when its shell and WASM are cached. A cache refusal falls through to the network;
+network, HTTP and body failures are typed without URLs or content. Reads log,
+trace and count their source and outcome, including cancellation.

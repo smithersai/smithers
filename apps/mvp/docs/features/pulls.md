@@ -1,5 +1,18 @@
 # Pull requests
 
+A detail shape admits a bounded, deduplicated `github/Apply` refresh for its PR.
+That existing durable flow reads GitHub's issue, PR metadata, commits and reviews.
+A repository-wide sync receipt does not prove that an unprojected PR is absent.
+Not found requires a per-PR GitHub absence fence; otherwise an absent projection
+remains unavailable here, with the existing GitHub link. Refused readers never
+start a refresh. Late receipts for a different route or an older read are ignored.
+
+Detail reads trace `pull.refresh.start` and `pull.refresh.receipt`; admissions
+count `smithers_pull_refresh_starts` by started, timed_out and not_started.
+Receipts count `smithers_pull_absence_receipts` by missing or unproven and record
+the selected PR, repository and absence result on their span and log.
+Records contain identifiers and error codes, never PR content or credentials.
+
 GitHub is the truth for pull requests, as for issues ([issues](issues.md)): Postgres holds a projection that only the server's GitHub flows write, and Electric syncs it to every device. A person merges, never the agent; a pull request's checks are Smithers runs on its head, never GitHub check runs (decision [0012](../decisions/0012-git-end-to-end.md) decisions 6 and 12), each reported on the head as the write-only commit status `smithers/<name>` (ruling GH-10). The `todo` run opens pull requests ([TODOs](todos.md#the-run)), and so does a person's Publish of a branch ([branch publish](branch-publish.md)).
 
 ```

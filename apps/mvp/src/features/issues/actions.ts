@@ -1,5 +1,7 @@
+import { Uuid, WebCrypto } from "@smthrs/crypto"
+import { keep } from "./writes"
 import type { Commitment } from "./lifecycle"
-import { Effect, Metric, Option } from "effect"
+import { Clock, Effect, Metric, Option } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { repoId } from "../repo/contract"
 import {
@@ -9,9 +11,10 @@ import {
   MAX_TITLE_LENGTH,
   newDraftKey,
   newIssuePath,
+  WRITE_ID_NAMESPACE,
   type TriageDecision,
 } from "./contract"
-import { pendingActions } from "./metrics"
+import { admissions, pendingActions, submissionFailures } from "./metrics"
 import { recordShapeRetry } from "./shapeSync"
 import { type Draft, VIEW } from "./schema"
 import { IssuesStore } from "./store"
@@ -54,6 +57,7 @@ export const open = (owner: string, name: string, number?: number) =>
       row.submitting = false
       delete row.submissionKey
       delete row.createdWriteId
+      delete row.submissionFailed
     })
   }).pipe(Effect.orDie)
 
@@ -94,17 +98,22 @@ const setSubmitting = (submitting: boolean) =>
  * Runs `dispatch` in the store's scope while the view says it is submitting; once the flow answers, the draft `key`
  * goes. A flow that failed, or didn't run, keeps it: the dispatch has logged and counted why.
  */
-const submit = <A extends { readonly _tag: string }>(key: string, dispatch: Effect.Effect<A, unknown, FlowDispatch>, onDone?: (answer: A) => Effect.Effect<void>) =>
+const submit = <A extends { readonly _tag: string }>(key: string, dispatch: (executionId: string) => Effect.Effect<A, unknown, FlowDispatch>) =>
   Effect.gen(function* () {
     const store = yield* IssuesStore
     const submissionKey = crypto.randomUUID()
-    yield* store.view.update(VIEW, (row) => { row.submitting = true; row.submissionKey = submissionKey })
+    yield* store.view.update(VIEW, (row) => { row.submitting = true; row.submissionKey = submissionKey; delete row.submissionFailed })
     const done = Effect.gen(function* () {
-      const answered = yield* Effect.result(dispatch)
+      const answered = yield* Effect.result(dispatch(submissionKey))
       const current = Option.getOrThrow(yield* store.view.get(VIEW))
       if (current.submissionKey !== submissionKey) return
       if (answered._tag === "Success" && answered.success._tag === "Done") yield* Effect.ignore(store.drafts.delete(key))
-      if (answered._tag === "Success" && onDone !== undefined) yield* onDone(answered.success)
+      else {
+        yield* store.view.update(VIEW, (row) => { row.submissionFailed = true })
+        const reason = answered._tag === "Failure" ? "dispatch" : "flow"
+        yield* Metric.update(Metric.withAttributes(submissionFailures, { reason }), 1)
+        yield* Effect.logWarning("issues.submission.not_sent").pipe(Effect.annotateLogs({ feature: "issues", op: "issue/comment", executionId: submissionKey, reason }))
+      }
       yield* setSubmitting(false)
     })
     yield* Effect.forkIn(done, store.scope, { startImmediately: true })
@@ -119,15 +128,53 @@ const submitting = Effect.flatMap(IssuesStore, ({ view }) => Effect.map(view.get
  */
 export const create = (owner: string, name: string) =>
   Effect.gen(function* () {
-    const { drafts, view } = yield* IssuesStore
+    const store = yield* IssuesStore
+    const { drafts, view } = store
     const key = newDraftKey(repoId(owner, name))
     const issue = newIssueOf(Option.getOrUndefined(yield* drafts.get(key)))
     if (issue === undefined || (yield* submitting)) return false
     const flows = yield* FlowDispatch
-    yield* submit(key, flows.dispatch("issue/create", { repo: `${owner}/${name}`, ...issue }, { door: "button" }), (answer) =>
-      answer._tag === "Done" ? Effect.orDie(view.update(VIEW, (row) => { row.createdWriteId = answer.value.writeId })) : Effect.void)
+    const executionId = crypto.randomUUID()
+    yield* view.update(VIEW, (row) => { row.submitting = true; row.submissionKey = executionId; delete row.submissionFailed })
+    const id = yield* Uuid.v5(WRITE_ID_NAMESPACE, executionId).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+    const row = { id, repo: `${owner}/${name}`, repoId: repoId(owner, name), op: "issue/create" as const,
+      ...issue, number: 0, queuedAt: yield* Clock.currentTimeMillis, v: 3 as const }
+    // A recoverable receipt precedes every asynchronous admission. If this tab closes here, no old tab is needed
+    // to recover the text, and Retry uses this same write identity.
+    const kept = yield* Effect.result(keep(store.requested, row, "not_sent", null))
+    const current = Option.getOrThrow(yield* view.get(VIEW))
+    if (kept._tag === "Failure") {
+      if (current.submissionKey === executionId) yield* view.update(VIEW, (value) => { value.submitting = false; value.submissionFailed = true })
+      yield* Metric.update(Metric.withAttributes(admissions, { outcome: "storage_failed" }), 1)
+      yield* Effect.logWarning("issues.write.admission").pipe(Effect.annotateLogs({ feature: "issues", writeId: id, op: row.op, outcome: "storage_failed" }))
+      return false
+    }
+    if (current.submissionKey === executionId) yield* view.update(VIEW, (value) => { value.createdWriteId = id })
+    const { queued } = yield* store.queue(row)
+    const latest = Option.getOrThrow(yield* view.get(VIEW))
+    if (latest.submissionKey === executionId) {
+      if (queued) yield* Effect.ignore(drafts.delete(key))
+      yield* setSubmitting(false)
+    }
+    yield* Metric.update(Metric.withAttributes(admissions, { outcome: queued ? "queued" : "not_admitted" }), 1)
+    yield* Effect.logInfo("issues.write.admission").pipe(Effect.annotateLogs({
+      feature: "issues", writeId: id, op: row.op, outcome: queued ? "queued" : "not_admitted",
+    }))
+    // The durable outbox already owns delivery. The public flow joins the same write, so engine startup and the
+    // asking tab's lifetime cannot hold admission hostage or create a second issue.
+    if (queued) yield* flows.dispatch("issue/create", { repo: row.repo, ...issue }, { door: "button", executionId }).pipe(
+      Effect.ignore, Effect.forkIn(store.scope, { startImmediately: true }),
+    )
     return true
   })
+
+/** Retry a locally retained admission under its original id; the server and outbox deduplicate it. */
+export const retryWrite = (writeId: string) => Effect.gen(function* () {
+  const store = yield* IssuesStore
+  const held = yield* store.requested.get(writeId)
+  if (Option.isNone(held) || held.value.status !== "not_sent" || held.value.reason !== null) return
+  yield* store.queue(held.value)
+})
 
 /** Comment on issue `number` of `owner/name`: `issue/comment` with its draft. Answers whether it ran. */
 export const comment = (owner: string, name: string, number: number) =>
@@ -137,7 +184,7 @@ export const comment = (owner: string, name: string, number: number) =>
     const body = commentBodyOf(Option.getOrUndefined(yield* drafts.get(key)))
     if (body === undefined || (yield* submitting)) return false
     const flows = yield* FlowDispatch
-    yield* submit(key, flows.dispatch("issue/comment", { repo: `${owner}/${name}`, number, body }, { door: "button" }))
+    yield* submit(key, (executionId) => flows.dispatch("issue/comment", { repo: `${owner}/${name}`, number, body }, { door: "button", executionId }))
     return true
   })
 

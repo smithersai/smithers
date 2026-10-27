@@ -232,3 +232,105 @@ describe("ToastStack with more entries", () => {
     expect(container!.innerHTML).toBe("");
   });
 });
+
+test("a launch toast without a Hide action advertises only available controls", async () => {
+  let opened = 0;
+  await render(<Toast tone="waiting" word="Publish" onOpen={() => opened++} />);
+  expect($$("button")).toHaveLength(1);
+  expect($("button")!.getAttribute("aria-keyshortcuts")).not.toContain("H");
+  const event = new KeyboardEvent("keydown", { key: "h", bubbles: true, cancelable: true });
+  await act(async () => $("button")!.dispatchEvent(event));
+  expect(event.defaultPrevented).toBe(false);
+  expect(opened).toBe(0);
+  await click($("button"));
+  expect(opened).toBe(1);
+});
+
+test("toast shortcuts invoke available actions and leave absent or blocked actions alone", async () => {
+  const calls: string[] = [];
+  const press = async (key: string, target = $("[data-slot=toast]")!) => {
+    const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+    await act(async () => target.dispatchEvent(event));
+    return event.defaultPrevented;
+  };
+  await render(<Toast tone="working" onOpen={() => calls.push("open")} onExpand={() => calls.push("expand")} onAnswer={() => calls.push("answer")} onRead={() => calls.push("read")} onHide={() => calls.push("hide")} action={{ label: "Answer", onAction: () => calls.push("answer") }} />);
+  for (const key of ["o", "e", "a", "h", "r"]) expect(await press(key)).toBe(true);
+  expect(await press("x")).toBe(false);
+  expect(calls).toEqual(["open", "expand", "answer", "hide", "read"]);
+  await render(<Toast tone="working" onHide={noop} onKeyDown={(event) => event.preventDefault()} />);
+  expect(await press("h")).toBe(true);
+  await render(<Toast tone="working" word={<input aria-label="Draft" />} onHide={() => calls.push("hidden while typing")} />);
+  expect(await press("h", $("input")!)).toBe(false);
+  expect(calls).toHaveLength(5);
+  await render(<Toast tone="working" onHide={noop} />);
+  for (const key of ["o", "e", "a", "r"]) expect(await press(key)).toBe(false);
+});
+
+test("the toast stack keeps keyboard focus through navigation, overflow and an unavailable destination", async () => {
+  const press = async (key: string, target: EventTarget = document, altKey = false) => {
+    const event = new KeyboardEvent("keydown", { key, code: key.length === 1 ? `Key${key.toUpperCase()}` : key, altKey, bubbles: true, cancelable: true });
+    await act(async () => target.dispatchEvent(event));
+    return event.defaultPrevented;
+  };
+  const before = document.createElement("button");
+  document.body.append(before);
+  before.focus();
+  let more = 0;
+  const items = [
+    <Toast key="open" tone="working" onOpen={noop} onHide={noop} />,
+    <Toast key="action" tone="working" action={{ label: "Answer", onAction: noop }} onHide={noop} />,
+    <Toast key="hide" tone="working" onHide={noop} />,
+  ];
+  try {
+    await render(<ToastStack>{items}</ToastStack>);
+    expect(await press("t", document, true)).toBe(true);
+    const first = $("[data-toast-focus]")!;
+    expect(document.activeElement).toBe(first);
+    expect(await press("t", first, true)).toBe(true);
+    expect(await press("ArrowDown", first)).toBe(true);
+    expect(document.activeElement).toBe($$("[data-toast-focus]")[1]);
+    expect(await press("End", document.activeElement!)).toBe(true);
+    expect(document.activeElement).toBe($$("[data-toast-focus]")[2]);
+    expect(await press("Home", document.activeElement!)).toBe(true);
+    expect(document.activeElement).toBe(first);
+    expect(await press("x", first)).toBe(false);
+    expect(await press("Escape", first)).toBe(true);
+    expect(document.activeElement).toBe(before);
+    first.focus();
+    expect(await press("Escape", first)).toBe(true);
+    expect(document.activeElement).not.toBe(first);
+    before.focus();
+    await press("t", document, true);
+    before.remove();
+    await press("Escape", first);
+    expect(document.activeElement).not.toBe(first);
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("tabindex", "0");
+    document.body.append(svg);
+    try {
+      svg.focus();
+      expect(document.activeElement).toBe(svg);
+      expect(await press("t", document, true)).toBe(true);
+      expect(document.activeElement).toBe(first);
+      await press("Escape", first);
+      expect(document.activeElement).not.toBe(first);
+    } finally { svg.remove(); }
+    await render(<ToastStack max={1} moreCount={2} onMore={() => more++}>{items}</ToastStack>);
+    await click(byText("+4"));
+    expect(more).toBe(1);
+    expect($$("[data-slot=toast]")).toHaveLength(1);
+    await render(<ToastStack onKeyDown={(event) => event.preventDefault()}>{items}</ToastStack>);
+    const kept = $("[data-toast-focus]")!;
+    kept.focus();
+    expect(await press("ArrowDown", kept)).toBe(true);
+    expect(document.activeElement).toBe(kept);
+    await render(<ToastStack><Toast tone="working" word={<input aria-label="Draft" />} onHide={noop} /></ToastStack>);
+    $("input")!.focus();
+    expect(await press("ArrowDown", $("input")!)).toBe(false);
+    expect(document.activeElement).toBe($("input"));
+    await render(<ToastStack more={<span>History</span>} />);
+    expect(await press("t", document, true)).toBe(false);
+    await render(<ToastStack />);
+    expect(await press("t", document, true)).toBe(false);
+  } finally { before.remove(); }
+});

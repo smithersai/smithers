@@ -229,3 +229,5 @@ export const writeRefusalWords = (code: string): string =>
 export const NO_SUCH_FLOW = "No such flow"
 export const COULDNT_READ_FLOW = "Couldn't read this flow"
 export const DEVICE_STORAGE_UNAVAILABLE = "Device storage unavailable"
+
+export const SESSION_STORAGE = "Not kept on this device"

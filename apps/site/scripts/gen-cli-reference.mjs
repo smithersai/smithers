@@ -3,8 +3,9 @@
  * Markdown copy at /docs/reference/cli.md from what gen-cli-data.mjs captures
  * from the checked-out CLI: the command manifest (src/data/cli-commands.json,
  * `smthrs --llms-full --format json`) and each command's `--help`
- * (src/data/help/). Nothing on the page is typed by hand: descriptions, usage
- * lines, types and defaults are the CLI's own. Option spellings and aliases
+ * (src/data/help/). Command descriptions, usage lines, types and option
+ * defaults are the CLI's own; TUI budget guidance comes from its colocated
+ * docs. Option spellings and aliases
  * come from the help; types, defaults and descriptions come from the schema.
  * A command, argument or option that one source has and the other lacks, or a
  * schema keyword this script cannot render, throws instead of being skipped.
@@ -34,7 +35,7 @@ export const PAGE = "apps/site/src/content/docs/docs/reference/cli.md"
 export const COPY = "apps/site/public/docs/reference/cli.md"
 
 const TITLE = "CLI reference"
-const DESCRIPTION = "Every smthrs command with its usage, arguments, options and defaults, generated from the CLI's own help."
+const DESCRIPTION = "Install discovery and additional local commands, with usage, arguments, options and defaults from the CLI's own help."
 const INSTALL = "npm install -g smthrs@next"
 const COLUMNS = ["Type", "Default", "Required", "Description"]
 
@@ -74,6 +75,7 @@ export function prose(text) {
     .replace(/[\\`*[\]<]/g, "\\$&")
     .replace(/(?<![\p{L}\p{N}])_|_(?![\p{L}\p{N}])/gu, "\\_")
     .replace(/&(?=#?[A-Za-z0-9]+;)/g, "&amp;")
+    .replace(/(?<![\w\\])--[a-z][a-z0-9-]*/gi, code)
 }
 
 /** A paragraph that cannot open a heading, quote or list. */
@@ -201,7 +203,7 @@ const anchor = (name) => name.replaceAll(" ", "-")
  * `help(path)` returns the capture for a command path ("" is `smthrs` itself)
  * or undefined.
  */
-export function renderBody({ manifest, help }) {
+export function renderBody({ manifest, help, additional = [], notes = {}, integrations = [] }) {
   if (!Array.isArray(manifest.commands) || manifest.commands.length === 0) throw new Error("cli-commands.json lists no commands")
   const capture = (path) => {
     const text = help(path)
@@ -213,9 +215,10 @@ export function renderBody({ manifest, help }) {
   if (top.version === undefined) throw new Error("help for smthrs: the first line names no version")
   const globals = top.sections.get("Custom Global Options") ?? []
 
-  const leaves = new Map(manifest.commands.map((command) => [command.name, command]))
+  const commands = [...new Map([...manifest.commands, ...additional].map(command => [command.name, command])).values()]
+  const leaves = new Map(commands.map((command) => [command.name, command]))
   const groups = new Map()
-  for (const command of manifest.commands) {
+  for (const command of commands) {
     const [group] = command.name.split(" ")
     if (!groups.has(group)) groups.set(group, [])
     if (command.name !== group) groups.get(group).push(command.name)
@@ -246,12 +249,14 @@ export function renderBody({ manifest, help }) {
     } else if (text.sections.has("Arguments") || text.sections.has("Options")) {
       throw new Error(`${where}: the help lists arguments or options, but the manifest has no such command`)
     }
+    if (notes[path] !== undefined) parts.push(notes[path].trim())
     return parts.join("\n\n")
   }
 
   const builtIn = helpOptions(top.sections.get("Global Options") ?? [], "smthrs --help")
   return [
-    `Every command in ${code("smthrs")} ${top.version}, as its ${code("--help")} describes it.`,
+    `Install discovery for ${code("smthrs")} ${top.version}, plus additional local commands, as their ${code("--help")} describes them.`,
+    "Other callable library commands stay outside install discovery. Use their explicit `--help`; see the [library command reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/reference/cli/README.md) and [CLI API](/docs/reference/api/cli/).",
     "```bash\n" + INSTALL + "\n```",
     "## Commands",
     table(["Command", "Description"], [...groups.keys()].map((group) => [`[${code(group)}](#${anchor(group)})`, prose(capture(group).description)])),
@@ -261,7 +266,11 @@ export function renderBody({ manifest, help }) {
     `${code("smthrs --help")} also lists these built-in options.`,
     table(["Option", "Value", "Description"], [...builtIn.values()].map(({ names, value, description }) =>
       [names.map(code).join(", "), value === undefined ? "" : code(value), prose(description)])),
-    ...[...groups].map(([group, subcommands]) => [section(2, group), ...subcommands.map((path) => section(3, path))].join("\n\n"))
+    ...[...groups].map(([group, subcommands]) => [section(2, group), ...subcommands.map((path) => section(3, path))].join("\n\n")),
+    ...integrations.map(({ name, captures }) => {
+      claim(name)
+      return [`## ${code(name)}`, ...captures.map(text => "```text\n" + text.trim() + "\n```")].join("\n\n")
+    })
   ].join("\n\n") + "\n"
 }
 
@@ -287,36 +296,55 @@ export const sitePage = (body) => [
 export const markdownCopy = (body) => `# ${TITLE}\n\n> ${DESCRIPTION}\n\n${body}`
 
 /** Both files, by repository path, rendered from the committed captures. */
-export function projection() {
-  const data = join(site, "src/data")
+export function projection(directory = root) {
+  const data = join(directory, "apps/site/src/data")
   const manifest = JSON.parse(readFileSync(join(data, "cli-commands.json"), "utf8"))
   const help = (path) => {
     const tokens = path === "" ? ["smthrs"] : path.split(" ")
     const file = join(data, "help", ...tokens.slice(0, -1), `${tokens.at(-1)}.txt`)
     return existsSync(file) ? readFileSync(file, "utf8") : undefined
   }
-  const body = renderBody({ manifest, help })
+  const extra = join(data, "cli-reference-extra.json")
+  const additional = existsSync(extra) ? JSON.parse(readFileSync(extra, "utf8")) : []
+  const notes = additional.some(command => command.name === "tui")
+    ? { tui: readFileSync(join(directory, "packages/smithers/docs/reference/cli/tui.md"), "utf8") } : {}
+  const integrations = [
+    ["completions"], ["mcp", "mcp add", "mcp doctor"], ["skills", "skills add", "skills list"]
+  ].filter(paths => help(paths[0]) !== undefined).map(paths => ({
+    name: paths[0],
+    captures: paths.map(path => {
+      const text = help(path)
+      if (text === undefined) throw new Error(`no integration help capture for smthrs ${path}`)
+      return text
+    })
+  }))
+  const body = renderBody({ manifest, help, additional, notes, integrations })
   return new Map([[PAGE, sitePage(body)], [COPY, markdownCopy(body)]])
 }
 
-// Run as a script, not imported. realpath: a module URL names the resolved file.
-if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const check = process.argv.includes("--check")
-  let drift = 0
-  for (const [path, content] of projection()) {
-    const target = join(root, path)
-    const current = existsSync(target) ? readFileSync(target, "utf8") : undefined
-    if (current === content) continue
-    drift++
-    if (check) console.error(`cli reference drift: ${path} ${current === undefined ? "is missing" : "differs"}`)
-    else {
-      mkdirSync(dirname(target), { recursive: true })
-      writeFileSync(target, content)
-      console.log(`wrote ${path}`)
+/** Execute the generator against a concrete output projection and directory. */
+export function main(argv = process.argv, { directory = root, files } = {}) {
+  // realpath: a module URL names the resolved file.
+  if (argv[1] && realpathSync(argv[1]) === fileURLToPath(import.meta.url)) {
+    const check = argv.includes("--check")
+    let drift = 0
+    for (const [path, content] of files ?? projection(directory)) {
+      const target = join(directory, path)
+      const current = existsSync(target) ? readFileSync(target, "utf8") : undefined
+      if (current === content) continue
+      drift++
+      if (check) console.error(`cli reference drift: ${path} ${current === undefined ? "is missing" : "differs"}`)
+      else {
+        mkdirSync(dirname(target), { recursive: true })
+        writeFileSync(target, content)
+        console.log(`wrote ${path}`)
+      }
     }
+    if (check && drift > 0) {
+      console.error(`cli reference: ${drift} file(s) out of date; run node ${script}`)
+      process.exitCode = 1
+    } else if (drift === 0) console.log(`cli reference: up to date`)
   }
-  if (check && drift > 0) {
-    console.error(`cli reference: ${drift} file(s) out of date; run node ${script}`)
-    process.exitCode = 1
-  } else if (drift === 0) console.log(`cli reference: up to date`)
 }
+
+main()

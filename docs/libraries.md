@@ -381,3 +381,14 @@ The old app (`apps/app`), its edge Worker (`apps/server`), the Go backend
 (`packages/backend`, `apps/backend`), its model-host bundle (`apps/model-host`)
 and its microVM daemon (`packages/smithers-machined`) were removed on
 2026-10-21; read them with `jj file show -r 78407fce59dd <path>`.
+
+`@smthrs/platform-browser` also provides `PendingSnapshot.make(storage, key)` for
+synchronous input-boundary staging in tab-scoped session storage until an
+asynchronous device write is acknowledged. Consumers validate recovered values
+with their own schema and clear them on sign-out. It is a pending-write receipt,
+not another durable store.
+
+For immutable worker binary assets already pre-cached by the PWA, use
+`BrowserCache.readAsset(url)` with `BrowserCache.layerAssets()`. It consults the
+origin's Cache Storage directly before native fetch, whose WebKit worker path
+can bypass the document's service worker.

@@ -80,6 +80,13 @@ export class FlowsUi extends Context.Service<
       const editor = (effect: Effect.Effect<void, never, Services>): Promise<void> => {
         return promise(effect)
       }
+      const changeForm = (fields: Parameters<typeof setForm>[0]) => {
+        const current = store.formRow.tanstack.toArray[0]
+        const token = current === undefined ? undefined : store.formSnapshot?.stage({ ...current, ...fields })
+        void editor(setForm(fields)).then(() => {
+          if (token !== undefined) store.formSnapshot!.acknowledge(token)
+        }, () => undefined)
+      }
       return FlowsUi.of({
         queries: {
           flows: store.flowList.tanstack,
@@ -95,8 +102,8 @@ export class FlowsUi extends Context.Service<
           openNew: (name) => editor(openNew(name)),
           openDraft: (draftId) => promise(openDraft(draftId)),
           openCode: (name) => editor(openCode(name)),
-          setName: (name) => void editor(setForm({ name, seeded: false })),
-          setRequest: (request) => void editor(setForm({ request })),
+          setName: (name) => changeForm({ name, seeded: false }),
+          setRequest: (request) => changeForm({ request }),
           startDraft: () => void editor(startDraft),
           setAnswer: (draftId, questionId, value) => void editor(setAnswer(draftId, questionId, value)),
           answer: () => void editor(answer),

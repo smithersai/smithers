@@ -29,7 +29,8 @@
  * @since 1.0.0
  */
 
-import type { AccessHandlePoolVFS } from "#access-handle-pool-vfs"
+import { AccessHandlePoolVFS } from "#access-handle-pool-vfs"
+import { Factory as sqliteFactory } from "@journeyapps/wa-sqlite"
 import * as Context from "effect/Context"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
@@ -108,13 +109,31 @@ export interface Build {
 }
 
 /**
+ * A SQLite build whose binary is read by the surrounding Effect scope. This
+ * preserves cancellation and injected cache services without an app-level runner.
+ * @category models
+ * @since 1.0.0
+ */
+export interface EffectBuild {
+  readonly module: Build["module"]
+  readonly wasm: Effect.Effect<BufferSource, unknown>
+}
+
+/**
+ * A Promise-backed or Effect-backed SQLite build.
+ * @category models
+ * @since 1.0.0
+ */
+export type Source = Build | EffectBuild
+
+/**
  * The build and the OPFS directory {@link layerSqlite} opens.
  *
  * @category models
  * @since 1.0.0
  */
 export interface SqliteOptions {
-  readonly build: Build
+  readonly build: Source
   /**
    * The OPFS directory the pool keeps every database file in, such as
    * `"smithers/app"`. The VFS is registered under the same name.
@@ -207,19 +226,27 @@ const openPool = (directory: string, module: unknown, Vfs: Pool) =>
     (vfs) => Effect.promise(() => vfs.close())
   ).pipe(Effect.retry({ schedule: heldSchedule, while: isHeldElsewhere }))
 
-/** Imports wa-sqlite's API, the pool VFS and the build, and instantiates the build. */
-const load = async (build: Build) => {
-  const [api, pool, glue, wasm] = await Promise.all([
-    import("@journeyapps/wa-sqlite"),
-    import("#access-handle-pool-vfs"),
-    build.module(),
-    build.wasm()
-  ])
-  // Bytes that are not WebAssembly never reach emscripten, whose abort
-  // would leave an unhandled rejection behind the one this reports.
-  if (!WebAssembly.validate(wasm)) throw new WebAssembly.CompileError("the bytes are not a WebAssembly module")
-  return { Factory: api.Factory, Vfs: pool.AccessHandlePoolVFS, module: await glue.default({ wasmBinary: wasm }) }
-}
+/** Instantiates the bundled SQLite API and VFS over the build's scoped binary. */
+const load = (build: Source) =>
+  Effect.gen(function*() {
+    const source = build.wasm
+    const binary = Effect.isEffect(source)
+      ? source
+      : Effect.tryPromise({ try: () => source(), catch: (error) => error })
+    const [glue, wasm] = yield* Effect.all([
+      Effect.tryPromise({ try: () => build.module(), catch: (error) => error }),
+      binary
+    ], { concurrency: "unbounded" })
+    // Invalid bytes never reach emscripten, whose abort would leave an unhandled rejection.
+    yield* Effect.try({
+      try: () => {
+        if (!WebAssembly.validate(wasm)) throw new WebAssembly.CompileError("the bytes are not a WebAssembly module")
+      },
+      catch: (error) => error
+    })
+    const module = yield* Effect.tryPromise({ try: () => glue.default({ wasmBinary: wasm }), catch: (error) => error })
+    return { Factory: sqliteFactory, Vfs: AccessHandlePoolVFS, module }
+  })
 
 /**
  * Loads the build and opens the OPFS pool `directory`, holding its access
@@ -232,10 +259,9 @@ export const layerSqlite = (options: SqliteOptions): Layer.Layer<Sqlite, SqlErro
   Layer.effect(
     Sqlite,
     Effect.gen(function*() {
-      const { Factory, module, Vfs } = yield* Effect.tryPromise({
-        try: () => load(options.build),
-        catch: (cause) => Statements.failed(cause, "Failed to load wa-sqlite", "connect")
-      })
+      const { Factory, module, Vfs } = yield* load(options.build).pipe(
+        Effect.mapError((cause) => Statements.failed(cause, "Failed to load wa-sqlite", "connect"))
+      )
       const sqlite3 = Factory(module)
       const vfs = yield* openPool(options.directory, module, Vfs)
       sqlite3.vfs_register(vfs as unknown as SQLiteVFS, false)

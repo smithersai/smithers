@@ -30,10 +30,11 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
+import { SqlError } from "effect/sql/SqlError"
 import * as Elections from "./internal/elections.ts"
+import { errorName } from "./internal/errorName.ts"
 import type { Registry } from "./Migrations.ts"
 import type { Lock } from "./Outbox.ts"
-import { errorName } from "./internal/errorName.ts"
 
 /**
  * The database could not be opened: no OPFS, no Web Worker, storage refused,
@@ -237,7 +238,15 @@ export const layer = <D extends Database>(options: Options<D>): Layer.Layer<Pers
             Effect.all([
               Metric.update(unavailable, 1),
               Effect.logWarning("persistence unavailable").pipe(
-                Effect.annotateLogs({ error: errorName(error, ["PersistenceUnavailable", "UnknownError"]) })
+                Effect.annotateLogs({
+                  error: errorName(error, ["PersistenceUnavailable", "UnknownError"]),
+                  ...(error.cause instanceof SqlError ?
+                    {
+                      reason: error.cause.reason._tag,
+                      errorCode: errorName(error.cause.reason.cause, [])
+                    } :
+                    {})
+                })
               )
             ])
           )

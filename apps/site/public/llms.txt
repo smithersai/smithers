@@ -13,6 +13,7 @@
 
 - [Welcome to Smithers](https://smithers.sh/docs/index.md): What Smithers is, and the two ways to use it.
 - [Quickstart](https://smithers.sh/docs/quickstart.md): Open a repository on smithers.sh, read its files and issues, and sign in with GitHub.
+- [Settings](https://smithers.sh/docs/settings.md): Choose your models, alert destinations and sandbox limits.
 
 ## On your own Mac
 
@@ -21,7 +22,12 @@
 
 ## Flows
 
-- [Flows reference](https://smithers.sh/docs/flows.md): Find, customize and run the factory's flows.
+- [Flows reference](https://smithers.sh/docs/flows.md): Create, edit and run your own flows.
+- [Chat commands](https://smithers.sh/docs/commands.md): Slash commands, arguments and minimum roles.
+
+## Operators
+
+- [Operator configuration](https://smithers.sh/docs/operator.md): Generic model and sandbox limits for a Cloudflare deployment.
 
 ## Reference
 
@@ -79,7 +85,7 @@
 - [@smthrs/time-travel](https://smithers.sh/docs/reference/api/time-travel/): Durable replay, fork, and rewind primitives for flows
 - [@smthrs/triggers](https://smithers.sh/docs/reference/api/triggers/): Durable cron triggers and channel contracts for flows
 - [@smthrs/views](https://smithers.sh/docs/reference/api/views/): Generated views as safe arbitrary output: check a model-written TSX module, render it to HTML in a QuickJS presentation realm, and frame it behind a pinned CSP and a validated MessageChannel bridge
-- [CLI reference](https://smithers.sh/docs/reference/cli.md): Every smthrs command with its usage, arguments, options and defaults, generated from the CLI's own help.
+- [CLI reference](https://smithers.sh/docs/reference/cli.md): Install discovery and additional local commands, with usage, arguments, options and defaults from the CLI's own help.
 - [HTTP and RPC endpoints](https://smithers.sh/docs/reference/http-api/): The routes smthrs serve mounts, their protocols, their authentication rules, and the RPC groups each one serves.
 
 ## Package documentation

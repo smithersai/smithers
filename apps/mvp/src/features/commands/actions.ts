@@ -1,5 +1,5 @@
 import { slashMenu, slashSubmit } from "@smthrs/ui"
-import { Effect, Metric, Option, Ref } from "effect"
+import { Effect, Metric, Option, Ref, Schema } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { AuthStore, SESSION } from "../auth/store"
 import { ask, setDraft } from "../chat/actions"
@@ -9,6 +9,7 @@ import { COMPOSER, PLACE } from "../chat/schema"
 import { ChatStore } from "../chat/store"
 import { pinBranch } from "../conversations/pin"
 import { ACTION_FAILED } from "../home/contract"
+import { RepoName } from "../repo/flows"
 import { pinConversation } from "../sandbox/actions"
 import { openWebPage, refusedPage } from "../web/actions"
 import { CANT_OPEN } from "../web/contract"
@@ -95,6 +96,9 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>, draft
       const refused = yield* refusedPage(payload as never, "slash")
       if (Option.isSome(refused)) return yield* refuse("invalid", CANT_OPEN[refused.value], command)
     }
+    if (payload.repo !== undefined && !Schema.is(RepoName)(payload.repo)) {
+      return yield* refuse("invalid", `/${command.name} needs owner/name`, command)
+    }
     const { place } = yield* ChatStore
     const conversation = (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId
     yield* type("")
@@ -119,7 +123,7 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>, draft
         const navigationFailed = command.flow === "app/navigate" &&
           (result._tag === "Failure" || result.success._tag === "Failed" ||
             !(result.success.value as { readonly moved: boolean }).moved)
-        if (!navigationFailed && (command.flow !== "conversation/new" || (result._tag === "Success" && result.success._tag === "Done"))) return
+        if (!navigationFailed && result._tag === "Success" && result.success._tag === "Done") return
         if ((yield* Ref.get(revision)) !== cleared || (yield* draftNow) !== "" ||
           (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId !== conversation) return
         yield* type(draft)

@@ -5,7 +5,7 @@ import * as Conversations from "./branch/Conversations.ts"
 // Clones run on the Node host in this process (worker/test/repos.ts). Unhappy paths arm a fault on the scripted
 // provider, or give RepoApi a faulty service; nothing intercepts a request.
 import { Action } from "@smthrs/flow"
-import { Cause, Effect, Exit, Layer, Redacted } from "effect"
+import { Cause, Effect, Exit, Layer, Redacted, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { RepoClient } from "../src/features/repo/api.ts"
 import { SqlClient } from "effect/sql"
@@ -470,6 +470,12 @@ describe("reads", () => {
     expect(preview.headers.get("x-file-state")).toBe("too_large")
     expect((await h.fetch(`${rawRoute("octocat", "Spoon-Knife", headSha, "big.txt")}?optional=true`)).status).toBe(413)
     expect(await preview.json()).toEqual({ code: "too_large", size: 600 * 1024 })
+    const download = await h.fetch(`${rawRoute("octocat", "Spoon-Knife", headSha, "big.txt")}?download=1`)
+    expect(download.status).toBe(200)
+    expect(download.headers.get("content-disposition")).toBe("attachment; filename*=UTF-8''big.txt")
+    expect((await download.arrayBuffer()).byteLength).toBe(600 * 1024)
+    // A download must not populate the preview cache with uncapped bytes.
+    expect((await h.fetch(rawRoute("octocat", "Spoon-Knife", headSha, "big.txt"))).status).toBe(413)
     const browserRead = await Effect.runPromise(Effect.flatMap(RepoClient, (client) => Effect.result(client.blob("octocat", "Spoon-Knife", headSha, "big.txt"))).pipe(
       Effect.provide(RepoClient.layer({ origin: h.origin, within: "2 seconds" }).pipe(
         Layer.provide(FetchHttpClient.layer),
@@ -706,6 +712,27 @@ describe("branches and tags", () => {
 })
 
 describe("raw", () => {
+  test("download faults remain typed, and interrupted byte streams close their meter", async () => {
+    const h = await repoHarness(runtime)
+    const { headSha } = await h.seed("octocat", "Spoon-Knife")
+    const path = `${rawRoute("octocat", "Spoon-Knife", headSha, "big.txt")}?download=1`
+    const failed = await repoHarness(runtime, { scripted: h.scripted, codeStorage: {
+      ...h.scripted.client,
+      streamFile: () => Effect.succeed({ blobSha: undefined, stream: Stream.fail(h.scripted.error("readFile", "internal_error", 500)) }),
+    } })
+    const response = await failed.fetch(path)
+    expect(response.status).toBe(200)
+    await expect(response.arrayBuffer()).rejects.toBeDefined()
+    expect(failed.line("repo.download.closed").at(-1)!.annotations).toMatchObject({ bytes: 0 })
+    const missing = await repoHarness(runtime, { scripted: h.scripted, codeStorage: {
+      ...h.scripted.client,
+      streamFile: () => Effect.fail(h.scripted.error("readFile", "not_found", 404)),
+      listCommits: () => Effect.fail(h.scripted.error("listCommits", "internal_error", 500)),
+    } })
+    expect((await missing.fetch(path)).status).toBe(503)
+    h.scripted.fail("listBranches", h.scripted.error("listBranches", "ref_not_found", 404))
+    expect((await h.fetch(refsRoute("octocat", "Spoon-Knife"))).status).toBe(404)
+  })
   test("a text file as plain UTF-8, a binary as bytes, never sniffed or run; cached forever like the file", async () => {
     const h = await repoHarness(runtime)
     const { headSha } = await h.seed("octocat", "Spoon-Knife", fixture({

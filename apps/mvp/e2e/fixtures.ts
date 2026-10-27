@@ -1,3 +1,4 @@
+import { persistent } from "./persistent"
 import { type APIRequestContext, test as base, expect, type Locator, type Page, type TestInfo } from "@playwright/test"
 import { readdir, writeFile } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
@@ -278,6 +279,22 @@ export const redactedRequests = [
 
 export const test = base.extend<{ browserLog: Array<string>; spendGuard: void; problems: Watched }, { redactedRequests: void }>({
   redactedRequests: [...redactedRequests],
+  context: async ({ context, playwright, browserName, contextOptions, baseURL, colorScheme, ignoreHTTPSErrors, viewport }, use, testInfo) => {
+    if (browserName !== "webkit") return use(context)
+    const device = await persistent(playwright.webkit, {
+      ...contextOptions, baseURL, colorScheme, ignoreHTTPSErrors, viewport,
+      recordVideo: { dir: testInfo.outputPath("videos"), size: viewport ?? { width: 1280, height: 800 } },
+    })
+    try {
+      await device.context.addCookies((await context.storageState()).cookies)
+      await use(device.context)
+    } finally {
+      const videos = device.context.pages().filter((page) => page.url() !== "about:blank").map((page) => page.video())
+      const saved = videos.map((video, index) => video?.saveAs(testInfo.outputPath(index === 0 ? "video.webm" : `video-${index}.webm`)))
+      await device.close()
+      await Promise.all(saved)
+    }
+  },
   // Every context the test opens, watched for server, console and page errors (e2e/watch.ts).
   problems: [...problems],
   // A deployment run stops asking once its answers spent the run's token budget (e2e/spend.ts).

@@ -76,7 +76,11 @@ export const fileLinksOf = (
   if (view.sha === null || file === undefined || file.state === "loading" || file.state === "failed") {
     return { copyContents: false }
   }
-  if (file.state === "too-large") return { raw: githubRawUrl(view.owner, view.name, view.sha, view.path), copyContents: false }
+  if (file.state === "too-large") return {
+    raw: githubRawUrl(view.owner, view.name, view.sha, view.path),
+    download: { href: `${rawRoute(view.owner, view.name, view.sha, view.path)}?download=1`, name: view.path.split("/").at(-1)! },
+    copyContents: false,
+  }
   const raw = rawRoute(view.owner, view.name, view.sha, view.path)
   return { raw, download: { href: raw, name: view.path.split("/").at(-1)! }, copyContents: file.state === "text" }
 }

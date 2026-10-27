@@ -162,3 +162,32 @@ test("direct feature pages keep navigation, fence the deployment's own repositor
 
   } finally { await Effect.runPromise(Scope.close(scope, Exit.void)); await app.dispose() }
 }, 90_000)
+
+test.each(["queued", "missing"])("a %s Create URL has honest progress and recovery", async (state) => {
+  const app = openTestApp({ sessionLifecycle: false })
+  try {
+    const services = await app.runPromise(Effect.all({
+      flows: FlowsUi, auth: Auth, repo: Repo, home: Home, issues: Issues, todos: Todos,
+      pulls: Pulls, runs: Runs, secrets: Secrets, attention: Attention, chat: Chat, spend: Spend, views: Views,
+    }))
+    const store = await app.runPromise(Effect.service(IssuesStore))
+    const auth = await app.runPromise(Effect.service(AuthStore))
+    await services.issues.actions.open("octo", "hello")
+    await app.runPromise(auth.session.update("session", (row) => { row.status = "signed_in"; row.login = "member"; row.role = "member" }))
+    const write = crypto.randomUUID()
+    if (state === "queued") await app.runPromise(store.requested.insert({ id: write, repo: "octo/hello", repoId: "github/octo/hello", op: "issue/create", title: "Queued", body: "Offline request", number: 0, queuedAt: Date.now(), status: "requested", reason: null }))
+    for (const queries of [services.repo.queries, services.home.queries, services.issues.queries, services.auth.queries, services.chat.queries, services.attention.queries]) {
+      for (const query of Object.values(queries)) if (typeof query === "object" && query !== null && "startSyncImmediate" in query && typeof query.startSyncImmediate === "function") query.startSyncImmediate()
+    }
+    const root = createRootRoute()
+    const route = createRoute({ getParentRoute: () => root, path: "/$owner/$repo/issues/new", component: NewIssueScreen, validateSearch: (search) => ({ write: String(search.write) }) })
+    const router = createRouter({ routeTree: root.addChildren([route]), history: createMemoryHistory({ initialEntries: [`/octo/hello/issues/new?write=${write}`] }) })
+    await router.load()
+    await vi.waitFor(() => {
+      const html = renderRepositoryPages(router, services)
+      expect(html).toContain(state === "queued" ? 'role="status">Requested' : "Request unavailable")
+      if (state === "missing") expect(html).toContain('href="/octo/hello/issues"')
+      expect(html).not.toContain("Creating issue")
+    }, { timeout: 30_000 })
+  } finally { await app.dispose() }
+}, 90_000)

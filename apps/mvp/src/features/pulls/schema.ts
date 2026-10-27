@@ -135,6 +135,9 @@ export const PullsView = Schema.Struct({
   mergeRefused: Schema.NullOr(Schema.String),
   /** True after the first complete pull shape is installed, not just its first 2xx. */
   installed: Schema.Boolean,
+  /** Transient, per-route GitHub absence evidence, never inferred from an empty projection. */
+  pullAbsent: Schema.optionalKey(Schema.Boolean),
+  pullCheckedAt: Schema.optionalKey(Schema.Number),
   /** The pull shape's current access or failure, separate from the shared issue shape. */
   pullStatus: Schema.Literals(["unknown", "allowed", "unavailable", "sign_in", "forbidden", "elsewhere"]),
 })

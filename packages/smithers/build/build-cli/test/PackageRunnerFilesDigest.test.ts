@@ -312,7 +312,7 @@ describe("PackageRunner Files.digest", () => {
     expect(result.results.find((row) => row.label === "//:producer")).toMatchObject({
       label: "//:producer",
       status: "failed",
-      error: "declared output file was not created: missing.txt"
+      error: "//:producer did not produce declared outputs: missing.txt"
     })
     expect(result.results.find((row) => row.label === "//:check"))
       .toMatchObject({ label: "//:check", status: "skipped", error: "dependency //:producer did not succeed" })

@@ -694,13 +694,22 @@ export const finalize = (report: MigrationReport, options: FinalizeOptions = {})
   for (const entry of unresolved) {
     followUps.push({
       severity: "should",
-      text: `${entry.construct} at ${entry.file}:${entry.line}: ${entry.suggestion}`,
+      text: `${entry.construct} at ${entry.file}:${entry.line}: ${entry.reason}. ${entry.suggestion}`,
       unit: entry.unit
     })
   }
   for (const unit of report.units) {
     if (unit.status === "failed") {
-      followUps.push({ severity: "must", text: `unit ${unit.id} failed verification and was restored`, unit: unit.id })
+      const stage = unit.unresolved.some((entry) => entry.construct === "the migration agent")
+        ? " in the migration agent"
+        : unit.verification === undefined
+        ? ""
+        : " verification"
+      followUps.push({
+        severity: "must",
+        text: `unit ${unit.id} failed${stage} and was restored`,
+        unit: unit.id
+      })
     }
     if (unit.status === "blocked") {
       followUps.push({ severity: "must", text: `unit ${unit.id} is blocked and was not attempted`, unit: unit.id })

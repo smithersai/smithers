@@ -185,6 +185,7 @@ const cliData = Smithers.Generate({
   changes: [
     "src/data/versions.json",
     "src/data/cli-commands.json",
+    "src/data/cli-reference-extra.json",
     "src/data/removed-commands.json",
     "src/data/help/**",
     "src/pages/migration/1.0.md"
@@ -194,22 +195,50 @@ const cliData = Smithers.Generate({
 
 /**
  * The CLI reference at /docs/reference/cli/ and its Markdown copy, rendered
- * from the command manifest and help captures `cliData` writes. Nothing on the
- * page is typed by hand, and a help capture that disagrees with the manifest
+ * from the command manifest and help captures `cliData` writes, with TUI
+ * guidance from the CLI package. A help capture that disagrees with the manifest
  * fails the generator rather than publishing.
  */
+const cliReferenceInputs = [
+  Smithers.file("src/data/cli-commands.json"),
+  Smithers.file("src/data/cli-reference-extra.json"),
+  Smithers.file("//packages/smithers/docs/reference/cli/tui.md"),
+  Smithers.glob("src/data/help/**/*.txt")
+]
+
 const cliReference = Smithers.Generate({
   summary:
     "Render the CLI reference page and its Markdown copy from the captured command manifest and help; check drift under lint.",
   script: Smithers.file("scripts/gen-cli-reference.mjs"),
-  data: [Smithers.file("src/data/cli-commands.json"), Smithers.glob("src/data/help/**/*.txt")],
+  data: cliReferenceInputs,
   changes: ["src/content/docs/docs/reference/cli.md", "public/docs/reference/cli.md"]
 })
 
 /** The CLI reference generator: fixture help and manifest in, Markdown sections out, plus write, check and drift. */
 const cliReferenceTest = Smithers.Shell.Test({
   shell: "node --test apps/site/scripts/gen-cli-reference.test.mjs",
-  data: [Smithers.file("scripts/gen-cli-reference.mjs"), Smithers.file("scripts/gen-cli-reference.test.mjs")]
+  data: [Smithers.file("scripts/gen-cli-reference.mjs"), Smithers.file("scripts/gen-cli-reference.test.mjs"), ...cliReferenceInputs]
+})
+
+/** Real docs projections and installed npm consumer regressions. */
+const docsRegressionTest = Smithers.Shell.Test({
+  shell: "node --test apps/site/scripts/regressions/*.test.mjs",
+  data: [
+    Smithers.glob("scripts/regressions/*.test.mjs"),
+    Smithers.file("scripts/gen-cli-reference.mjs"),
+    Smithers.file("scripts/sync-app-docs.mjs"),
+    Smithers.file("scripts/docs-text.mjs"),
+    Smithers.file("src/data/cli-commands.json"),
+    Smithers.file("src/data/cli-reference-extra.json"),
+    Smithers.glob("src/data/help/**/*.txt"),
+    Smithers.glob("docs/app/**/*.md"),
+    Smithers.file("docs/app/toc.ts"),
+    Smithers.file("src/styles/starlight.css"),
+    Smithers.file("//packages/smithers/flows/docs/quickstart.md"),
+    Smithers.file("//packages/smithers/docs/reference/cli/tui.md"),
+    Smithers.file("//apps/mvp/src/flows/registry.ts"),
+    Smithers.file("//apps/mvp/src/screens/settings/SettingsScreen.tsx")
+  ]
 })
 
 // --- API reference pages ---------------------------------------------------
@@ -325,10 +354,13 @@ const docsTextTest = Smithers.Shell.Test({
     Smithers.file("//packages/smithers/flows/flow/src/DurableClock.ts"),
     Smithers.file("scripts/check-built-site.mjs"),
     Smithers.file("scripts/built-site.test.mjs"),
+    Smithers.file("//apps/mvp/src/router.tsx"),
+    Smithers.file("//apps/mvp/src/features/bugs/contract.ts"),
     Smithers.file("public/robots.txt"),
     Smithers.file("scripts/gen-cli-data.mjs"),
     Smithers.file("scripts/gen-cli-data.test.mjs"),
-    Smithers.file("//packages/smithers/src/Cli.ts")
+    cliPackage.docsSources,
+    Smithers.file("//packages/smithers/build/build-cli/src/effect-resolution.js")
   ]
 })
 
@@ -719,6 +751,7 @@ export const Package = Smithers.Package({
     cliData,
     cliReference,
     cliReferenceTest,
+    docsRegressionTest,
     apiDocs,
     docsLint,
     docsTextTest,

@@ -10,10 +10,11 @@
  *   and runs the tabs' statements on the shared database.
  * - {@link run} is the worker entry: {@link serve} over {@link layerHost}.
  *
- * This module loads the engine itself only when one of these runs: each
- * imports the engine's modules lazily. A tab that imports the package's root
- * for `BrowserEngine` or `SharedSqlite` loads none of them, and an app's
- * production build of its tab bundle carries no engine and no wasm.
+ * The worker composition uses static imports. A split worker entry that its
+ * lazy engine chunk imports back can evaluate twice in WebKit, giving Effect
+ * Schema two distinct private missing-value sentinels. Keeping the composition
+ * in one module graph preserves schema identity. Unused worker exports are
+ * tree-shaken from a tab bundle; the SQLite build is still loaded lazily.
  *
  * @since 1.0.0
  */
@@ -27,8 +28,8 @@ import * as Schema from "effect/Schema"
 import type { SqlClient } from "effect/sql/SqlClient"
 import * as BrowserScheduler from "./BrowserScheduler.ts"
 import type * as BrowserSqlite from "./BrowserSqlite.ts"
-import type * as Engine from "./internal/Engine.ts"
-import type * as Leader from "./internal/Leader.ts"
+import * as Engine from "./internal/Engine.ts"
+import * as Leader from "./internal/Leader.ts"
 import * as Metrics from "./internal/Metrics.ts"
 import type * as PrepareModule from "./internal/Prepare.ts"
 import * as Protocol from "./internal/Protocol.ts"
@@ -36,8 +37,8 @@ import type * as SharedSqlite from "./SharedSqlite.ts"
 import * as TabChannel from "./TabChannel.ts"
 import * as WebLock from "./WebLock.ts"
 
-/** The engine's composition, imported when a worker first builds an engine. */
-const engine = Effect.promise(() => import("./internal/Engine.ts"))
+/** The worker and its engine share one module graph and one Effect instance. */
+const engine = Effect.succeed(Engine)
 
 /**
  * What names one engine.
@@ -73,7 +74,7 @@ export interface HostOptions extends Options {
    * The synchronous wa-sqlite build, as lazy imports: loaded only once this
    * worker leads. See `BrowserSqlite.Build`.
    */
-  readonly sqlite: BrowserSqlite.Build
+  readonly sqlite: BrowserSqlite.Source
   /**
    * What the leader runs on the app's shared database before it answers any
    * tab's statement: see {@link Prepare}.
@@ -200,8 +201,7 @@ export type ServeOptions = Leader.Options
 export const serve = <E, R>(
   options: ServeOptions,
   engine: Layer.Layer<Services, E, R>
-): Effect.Effect<never, E, R | WebLock.WebLock | TabChannel.TabChannel> =>
-  Effect.flatMap(Effect.promise(() => import("./internal/Leader.ts")), (leader) => leader.serve(options, engine))
+): Effect.Effect<never, E, R | WebLock.WebLock | TabChannel.TabChannel> => Leader.serve(options, engine)
 
 /**
  * Times a worker became leader.

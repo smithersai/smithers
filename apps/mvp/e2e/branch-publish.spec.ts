@@ -103,9 +103,15 @@ test("publish: a Smithers-only branch reaches GitHub only through Publish, as a 
       const header = page.getByRole("navigation", { name: "Branch" })
       await header.getByRole("button", { name: "Publish", exact: true }).click()
       await page.getByRole("textbox", { name: "Title" }).fill(`Branch publish e2e ${devices.word}`)
+      const admitted = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/writes") && response.request().postDataJSON()?.op === "branch/publish")
       await page.getByRole("form", { name: "Publish" }).getByRole("button", { name: "Publish", exact: true }).click()
+      const { writeId } = await (await admitted).json() as { readonly writeId: string }
+      const subject = `write:${writeId}`
+      const notice = page.locator(`[data-subject="${subject}"]`)
+      await expect(notice).toHaveAttribute("data-tone", /waiting|working|done/)
       const link = header.getByRole("link", { name: /^#\d+$/ })
       await expect(link).toBeVisible({ timeout: MACHINE })
+      await expect(page.locator(`[data-subject="${subject}"]`)).toHaveAttribute("data-tone", "done")
       return Number((await link.textContent())!.slice(1))
     })
 
@@ -130,8 +136,13 @@ test("publish: a Smithers-only branch reaches GitHub only through Publish, as a 
 
     await step("Maya presses Update branch, and the branch takes main in", async () => {
       const header = page.getByRole("navigation", { name: "Branch" })
+      const admitted = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/writes") && response.request().postDataJSON()?.op === "branch/update")
       await header.getByRole("button", { name: "Update branch" }).click()
+      const { writeId } = await (await admitted).json() as { readonly writeId: string }
+      const notice = page.locator(`[data-subject="write:${writeId}"]`)
+      await expect(notice).toHaveAttribute("data-tone", /waiting|working|done/)
       await expect(header).toContainText("Updated", { timeout: MACHINE })
+      await expect(notice).toHaveAttribute("data-tone", "done")
       const compared = await pollGitHub(
         () => github<{ behind_by: number; ahead_by: number }>(page, `/repos/${repo}/compare/${moved}...${pull.head.ref}`),
         (value) => value.behind_by === 0,

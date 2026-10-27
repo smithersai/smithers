@@ -58,6 +58,33 @@ const page = (changes: Partial<Inspection> = {}, more: typeof events = []): RunP
   hasMore: false
 })
 describe("read-only run graph", () => {
+  test("a failed dependency never becomes an executed action or a zero-duration failed attempt", () => {
+    const terminal = (seq: number, nodeId: string, digests?: string[]) => event(seq, "flows.engine.node-settled", {
+      nodeId, outcome: "failed", attempts: 1,
+      ...(digests === undefined ? {} : { stepKeyDigests: digests }),
+      result: { preview: '{"code":"quota_exceeded"}', bytes: 25, truncated: false },
+    })
+    const history = [
+      events[0]!, events[1]!, terminal(3, "a", ["a".repeat(64)]), events[3]!, terminal(5, "b", []),
+    ]
+    const data = page({ run: { ...run, status: "failed", finishedAtMs: 1500 }, journal: {
+      events: history, hasMore: false, nextSeq: 5, afterSeq: -1,
+    } })
+    for (const cursor of [null, 5]) {
+      const shown = graphOf(data, cursor, 2000)
+      expect(shown.steps.map((step) => step.row.state)).toEqual(["failed", "skipped"])
+      expect(shown.nodes.map((node) => node.state)).toEqual(["failed", "skipped"])
+      expect(shown.steps[1]!.attempts).toEqual([])
+      expect(shown.steps[1]!.row).toMatchObject({ attempts: 0, failedAttempts: 0 })
+      expect(shown.timeline.map((step) => step.row.label)).toEqual(["daily/load"])
+      expect(shown.events.at(-1)!.payload.text).toContain("quota_exceeded")
+    }
+    // At the earlier cursor the dependency resolution has not failed yet.
+    expect(graphOf(data, 4, 2000).steps[1]!.row.state).toBe("running")
+    // Old journals without dispatch evidence keep their recorded failure, rather than guessing they did not run.
+    const legacy = page({}, [terminal(5, "b")])
+    expect(graphOf(legacy, null, 2000).steps[1]!.row.state).toBe("failed")
+  })
   test("a stopped run closes active steps and timers without rewriting historical replay", () => {
     const stopped = page({ run: { ...run, status: "cancelled", finishedAtMs: 1500 } })
     const live = graphOf(stopped, null, 100_000)

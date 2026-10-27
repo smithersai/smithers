@@ -32,6 +32,11 @@ function stripVarFallbacks(css: string): string {
 }
 
 describe("css contract", () => {
+  test("keyboard focus on a tab panel remains visible", () => {
+    const rule = smithersUiCss.match(/\.sui-tabs-content:focus-visible\s*\{([^}]+)\}/)![1]!;
+    expect(rule).toContain("box-shadow:0 0 0 3px");
+    expect(rule).toContain(tokens.ring);
+  });
   test("fields keep one shrinkable column and hide Radix serialization selects", () => {
     expect(smithersUiCss).toContain(".sui-field { min-width:0; display:grid; grid-template-columns:minmax(0, 1fr); gap:6px; }");
     expect(smithersUiCss).toContain('.sui-field select[aria-hidden="true"] { display:none; }');

@@ -98,13 +98,13 @@ const host = S.Host({ bins: ["git", "jj", "docker", "cargo", "go", "bash"] })
 const hostGit = S.Host.bin("git")
 const hostDocker = S.Host.bin("docker")
 
-// Workspace flags become references such as flags.production
+// Workspace flags become references on S.Flags, such as S.Flags.production
 const flags = S.Flags({
   production: "--production",
   verbose: "--verbose",
   updateSnapshots: "--update"
 })
-const productionFlag = flags.production
+const productionFlag = S.Flags.production
 
 // Mise and programs managed by Mise
 const mise = S.Mise({ config: S.file("//.mise.toml") })
@@ -153,7 +153,7 @@ const agents = S.Agents({
   codex: S.Agent.Codex({ model: "gpt-6-luna" }),
   reviewers: S.Agent.Pool(["claude", "codex"])
 })
-const reviewer = agents.reviewers
+const reviewer = S.Agents.reviewers
 
 // Teams and ownership policy
 const teams = S.Teams({

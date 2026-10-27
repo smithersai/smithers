@@ -16,7 +16,7 @@
  *   `code` and HTTP status, never its free-text `detail`.
  *   {@link isTransient} says which are worth retrying; retrying is the
  *   caller's choice, for example a durable flow's `RetryPolicy`.
- * - Every body it reads is bounded.
+ * - Buffered body reads are bounded; original-file streams consume chunks on demand.
  * - Each call is one span, `CodeStorage.<operation>`, and one count on
  *   `code_storage_requests` by `operation` and `outcome`. Every body byte it
  *   receives counts on `code_storage_bytes_read` by `operation`: Code Storage
@@ -478,6 +478,11 @@ export interface Client {
   readonly pullUpstream: (repo: string) => Effect.Effect<void, CodeStorageError>
   readonly listFiles: (repo: string, options?: ListFilesOptions) => Effect.Effect<FilesPage, CodeStorageError>
   readonly readFile: (repo: string, options: ReadFileOptions) => Effect.Effect<FileContents, CodeStorageError>
+  /** Stream original bytes without buffering a preview. The consumer owns cancellation and its byte budget. */
+  readonly streamFile: (repo: string, options: Omit<ReadFileOptions, "maxBytes">) => Effect.Effect<{
+    readonly stream: Stream.Stream<Uint8Array, CodeStorageError>
+    readonly blobSha: string | undefined
+  }, CodeStorageError>
   readonly listCommits: (repo: string, options?: ListCommitsOptions) => Effect.Effect<CommitsPage, CodeStorageError>
   readonly listBranches: (repo: string, options?: ListBranchesOptions) => Effect.Effect<BranchesPage, CodeStorageError>
   readonly listTags: (repo: string, options?: ListRefsOptions) => Effect.Effect<TagsPage, CodeStorageError>
@@ -913,6 +918,31 @@ const make = (credentials: Credentials): Effect.Effect<Client, CodeStorageError,
               return yield* new CodeStorageError({ operation: "readFile", code: "too_large", status: response.status })
             }
             return { bytes, blobSha: response.headers["x-blob-sha"] }
+          })
+        ),
+
+      streamFile: (repo, options) =>
+        observe(
+          "readFile",
+          repo,
+          Effect.gen(function*() {
+            const request = HttpClientRequest.get(url(repo, "/file")).pipe(HttpClientRequest.setUrlParams(params({
+              path: options.path,
+              ref: options.ref,
+              ephemeral: options.namespace === undefined ? undefined : options.namespace === "ephemeral"
+            })))
+            const response = yield* send("readFile", repo, ["git:read"], request)
+            return {
+              blobSha: response.headers["x-blob-sha"],
+              stream: response.stream.pipe(
+                Stream.tap((chunk) =>
+                  Metric.update(Metric.withAttributes(bytesRead, { operation: "readFile" }), chunk.length)
+                ),
+                Stream.mapError(() =>
+                  new CodeStorageError({ operation: "readFile", code: "transport", status: response.status })
+                )
+              )
+            }
           })
         ),
 

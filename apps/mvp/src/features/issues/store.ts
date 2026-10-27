@@ -177,6 +177,8 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     getKey: (row) => row.id,
     schemaVersion: 1,
   })
+  // A direct write URL distinguishes missing recovery data only after local receipts have restored.
+  yield* Effect.ignore(requested.restored)
   const view = yield* Collection.local<IssueView, string>({
     id: "issue-view",
     schema: IssueView,
@@ -461,7 +463,8 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
   const queue = (write: QueuedWrite) =>
     Effect.gen(function* () {
       yield* forRepo(repoIdOf(write.repo))
-      if (Option.isSome(yield* sending.get(write.id)) || Option.isSome(yield* requested.get(write.id))) {
+      const held = yield* requested.get(write.id)
+      if (Option.isSome(yield* sending.get(write.id)) || (Option.isSome(held) && (held.value.status === "requested" || held.value.reason !== null))) {
         return { queued: true }
       }
       yield* chat.lead
@@ -473,7 +476,13 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
       }
       const admitted = yield* chat.outbox
         .transact(ISSUE_WRITE, { idempotencyKey: write.id }, Effect.asVoid(sending.insert(row)))
-        .pipe(Effect.flatMap((taken) => taken.admitted), Effect.result)
+        .pipe(Effect.flatMap((taken) => taken.admitted.pipe(Effect.onError(() => Effect.ignore(taken.settled)))), Effect.result)
+      // Remove only the pre-admission recovery receipt. A concurrent server refusal or accepted receipt wins.
+      const recovery = yield* requested.get(write.id)
+      if (admitted._tag === "Success" && Option.isSome(recovery) && recovery.value.status === "not_sent" && recovery.value.reason === null) {
+        const removed = yield* requested.delete(write.id).pipe(Effect.orDie)
+        yield* Effect.ignore(removed.persisted)
+      }
       return { queued: admitted._tag === "Success" }
     })
 

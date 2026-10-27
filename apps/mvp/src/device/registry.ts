@@ -187,7 +187,7 @@ const synced = [
   Migrations.synced({ id: "flow-drafts", version: 1, schema: FlowDraft }),
   // Version 2: the kind `spend`, a sandbox spend alert in an Admin's bell (docs/features/sandbox-budgets.md); version 3:
   // the kind `bug`, a bug report in an Admin's bell (docs/features/bugs.md).
-  Migrations.synced({ id: "notifications", version: 3, schema: Notice }),
+  Migrations.synced({ id: "notifications", version: 4, schema: Notice }),
   Migrations.synced({ id: "my-conversations", version: 1, schema: Mine }),
   Migrations.synced({ id: "spend-alerts", version: 1, schema: SpendAlert }),
   Migrations.synced({ id: "alert-channels", version: 1, schema: AlertChannel }),

@@ -3,8 +3,7 @@ smthrs@1.0.0-rc.16 — Build workspace targets and operate durable agent flows
 Usage: smthrs <command>
 
 Commands:
-  agent      Ask the Smithers helper and hold remote conversations
-  agents     The factory's agents
+  agent      Configure an agent
   api        Make raw API calls to the Smithers server
   branch     Branches and machines
   branches   List branches with presence

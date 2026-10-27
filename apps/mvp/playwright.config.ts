@@ -42,6 +42,7 @@ const deployment = (): PlaywrightTestConfig => {
       // GitHub's pages stay out of every artifact: the setup records neither video nor trace.
       { name: "deployment-auth", testMatch: /deployment\/[^/]+\.setup\.ts$/, use: { video: "off", trace: "off" } },
       // No traces: a trace holds the requests' cookies, the session among them. Videos, screenshots and logs remain.
+      { name: "webkit", dependencies: ["deployment-auth"], use: { browserName: "webkit", storageState: sessionFiles(baseURL).session, trace: "off" } },
       { name: "deployment", dependencies: ["deployment-auth"], use: { storageState: sessionFiles(baseURL).session, trace: "off" } },
     ],
   }
@@ -78,6 +79,7 @@ export default defineConfig({
       projects: [
         // The dev server's sandbox limits for its one person (e2e/local/sandbox-limits.setup.ts).
         { name: "local-setup", testMatch: /local\/[^/]+\.setup\.ts$/, use: { video: "off", trace: "off" } },
+        { name: "webkit", dependencies: ["local-setup"], use: { browserName: "webkit" }, workers: 1 },
         { name: "local", dependencies: ["local-setup"], testIgnore: TAKES_TURNS },
         // Locally every spec asks in one shared conversation, which answers one question at a time (worker/Answers.ts):
         // specs whose scripted agent waits for its answer, or for its person, take turns instead of timing out behind

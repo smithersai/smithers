@@ -1,3 +1,4 @@
+import { routeTemplate } from "../apiRoutes"
 import { Context, Effect, Exit, Layer, Logger, Tracer } from "effect"
 
 // What went wrong in this tab lately (docs/features/bugs.md#what-a-report-carries), from the tab's own observability:
@@ -77,6 +78,12 @@ export interface EndedSpan {
 /** The longest request path a record keeps. */
 const MAX_PATH = 160
 
+/** An HTTP record's content-free name, including raw records retained by older app builds. */
+export const httpErrorName = (name: string): string => {
+  const match = /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|HTTP) (\/api\/[^?#\s]*)/.exec(name)
+  return match === null ? "HTTP /api/:id" : `${match[1]} ${routeTemplate(match[2]!).slice(0, MAX_PATH)}`
+}
+
 /**
  * The record of an HTTP client span to `/api/` that failed: its method and path (never its query), coded by its status
  * of 400 or more, or `network` when no response came. Nothing for any other span.
@@ -91,7 +98,7 @@ export const fromSpan = (span: EndedSpan): ErrorRecord | undefined => {
   return {
     at: span.date.toISOString(),
     kind: "http",
-    name: `${typeof method === "string" ? method : span.name} ${path.slice(0, MAX_PATH)}`,
+    name: httpErrorName(`${typeof method === "string" ? method : span.name} ${path}`),
     code: typeof status === "number" ? String(status) : "network",
     traceId: traceOf(span.traceId),
   }

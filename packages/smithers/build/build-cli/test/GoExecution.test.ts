@@ -331,6 +331,7 @@ func TestExternalImport(t *testing.T) { if externalhelper.Want < 1 || helper.Wan
 
   it("removes a partial module archive when tar fails", async () => {
     const root = await fixture()
+    await write(root, ".gomodcache/fixture-module", "cached module\n")
     await write(root, "PACKAGE.ts", packageWithoutSandbox(await Fs.readFile(NodePath.join(root, "PACKAGE.ts"), "utf8")))
     const tar = await writeExecutable(
       NodePath.join(root, "fake-tar"),
@@ -353,6 +354,7 @@ func TestExternalImport(t *testing.T) { if externalhelper.Want < 1 || helper.Wan
 
   it("removes a module archive when capturing its blob fails", async () => {
     const root = await fixture()
+    await write(root, ".gomodcache/fixture-module", "cached module\n")
     await write(root, "PACKAGE.ts", packageWithoutSandbox(await Fs.readFile(NodePath.join(root, "PACKAGE.ts"), "utf8")))
     const captureFile = PackageTree.captureFile
     let capturedArchive = false

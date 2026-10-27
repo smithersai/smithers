@@ -47,6 +47,8 @@ export const open = (owner: string, name: string, number?: number, tab: PullTab 
       row.number = number ?? null
       row.tab = tab
       if (!same) {
+        row.pullAbsent = false
+        row.pullCheckedAt = 0
         row.merging = false
         row.mergeWriteId = null
         row.mergeRefused = null

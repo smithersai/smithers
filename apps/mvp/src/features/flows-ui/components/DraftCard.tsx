@@ -1,6 +1,6 @@
 import { FlowDraftView } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import { DEVICE_STORAGE_UNAVAILABLE, draftFailureWords, MINE, SAVE_REFUSALS } from "../contract"
+import { DEVICE_STORAGE_UNAVAILABLE, SESSION_STORAGE, draftFailureWords, MINE, SAVE_REFUSALS } from "../contract"
 import { shownRound } from "../round"
 import { useFlowsUi } from "./FlowsUiContext"
 
@@ -21,7 +21,7 @@ export function DraftCard() {
   const round = shownRound(draft, run)
   const saveable = round.status === "ready" && draft.checks.length > 0 && draft.checks.every((check) => check.ok)
   return (
-    <>
+    <div data-draft={editor?.state === "session" && (unsent?.length ?? 0) > 0 ? "unsaved" : undefined}>
       <FlowDraftView
         where={MINE}
         name={draft.name ?? ""}
@@ -33,13 +33,14 @@ export function DraftCard() {
         files={draft.files}
         checks={draft.checks}
         failure={round.failure === null ? null : draftFailureWords(round.failure)}
-        {...(editor?.state === "available" ? { onAnswerChange: (id: string, value: string) => actions.setAnswer(draft.id, id, value), onAnswer: actions.answer } : {})}
+        {...((editor?.state === "available" || editor?.state === "session") ? { onAnswerChange: (id: string, value: string) => actions.setAnswer(draft.id, id, value), onAnswer: actions.answer } : {})}
         {...(round.retry ? { onRetry: actions.draftAgain } : {})}
         {...(draft.status === "saved" ? {} : { onSave: actions.save, saveDisabled: !saveable || shown.busy })}
         {...(draft.status === "saved" || draft.status === "proposed" ? {} : { onDelete: () => actions.deleteDraft(draft.id) })}
       />
+      {editor?.state === "session" ? <p role="status">{SESSION_STORAGE}</p> : null}
       {editor?.state === "unavailable" ? <p role="alert">{DEVICE_STORAGE_UNAVAILABLE}</p> : null}
       {shown.refusal === null ? null : <p role="alert">{SAVE_REFUSALS[shown.refusal] ?? shown.refusal}</p>}
-    </>
+    </div>
   )
 }

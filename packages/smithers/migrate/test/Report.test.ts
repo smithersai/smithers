@@ -132,7 +132,7 @@ describe("Report.finalize", () => {
       }))
 
       expect(failed.exitCode).toBe(1)
-      expect(failed.followUps.some((entry) => entry.text.includes("failed verification"))).toBe(true)
+      expect(failed.followUps.some((entry) => entry.text.includes("failed and was restored"))).toBe(true)
     }))
 
   it.effect("rolls every unit's unresolved and unsupported entries up", () =>

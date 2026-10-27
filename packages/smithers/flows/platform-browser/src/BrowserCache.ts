@@ -28,7 +28,13 @@
  */
 
 import { ImmutableCache } from "@smthrs/artifacts"
-import type * as Layer from "effect/Layer"
+import * as Cause from "effect/Cause"
+import * as Context from "effect/Context"
+import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
+import * as Layer from "effect/Layer"
+import * as Metric from "effect/Metric"
+import * as Schema from "effect/Schema"
 
 /**
  * The slice of `CacheStorage` the layer uses.
@@ -82,3 +88,114 @@ export const layer = (
       return storage?.open(options.name ?? defaultName)
     }
   })
+
+/**
+ * A binary response from Cache Storage or the network.
+ * @category models
+ * @since 1.0.0
+ */
+export type AssetResponse = Pick<Response, "ok" | "status" | "arrayBuffer">
+
+/**
+ * The worker's asset sources. Faults are supplied as Effects, without replacing globals.
+ * @category services
+ * @since 1.0.0
+ */
+export class AssetSource extends Context.Service<AssetSource, {
+  readonly match: (url: string) => Effect.Effect<AssetResponse | undefined, unknown>
+  readonly fetch: (url: string) => Effect.Effect<AssetResponse, unknown>
+}>()("@smthrs/platform-browser/BrowserCache/AssetSource") {}
+
+/**
+ * The asset could not be read; no URL or response content enters the error.
+ * @category errors
+ * @since 1.0.0
+ */
+export class AssetUnavailable
+  extends Schema.TaggedError<AssetUnavailable>()("@smthrs/platform-browser/AssetUnavailable", {
+    phase: Schema.Literals(["network", "http", "body"]),
+    code: Schema.String
+  })
+{}
+
+const assetCode = (error: unknown): string => error instanceof Error ? error.name : "unknown"
+
+/**
+ * Binary asset reads, by source and outcome, never by URL.
+ * @category metrics
+ * @since 1.0.0
+ */
+export const assetReads = Metric.counter("browser_cached_asset_reads", {
+  description: "Worker binary assets read, by source and outcome",
+  incremental: true
+})
+
+/**
+ * The native worker's Cache Storage and fetch. Lookup spans every named cache,
+ * including the PWA's precache. WebKit worker fetch does not inherit that cache.
+ * @category layers
+ * @since 1.0.0
+ */
+export const layerAssets = (options: {
+  readonly caches?: Pick<globalThis.CacheStorage, "match">
+  readonly fetch?: typeof globalThis.fetch
+} = {}): Layer.Layer<AssetSource> =>
+  Layer.succeed(AssetSource, {
+    match: (url) =>
+      Effect.tryPromise({
+        try: async () => (options.caches ?? globalThis.caches)?.match(url),
+        catch: (error) => error
+      }),
+    fetch: (url) =>
+      Effect.tryPromise({
+        try: (signal) => (options.fetch ?? globalThis.fetch)(url, { signal }),
+        catch: (error) => error
+      })
+  })
+
+/**
+ * Reads an immutable, versioned binary asset before asking the network. Dedicated workers
+ * can therefore reopen SQLite offline even when native fetch bypasses the PWA.
+ * Cache lookup refusal falls through to the real network; a failed read is typed.
+ * @category reading
+ * @since 1.0.0
+ */
+export const readAsset = (url: string): Effect.Effect<ArrayBuffer, AssetUnavailable, AssetSource> =>
+  Effect.gen(function*() {
+    const io = yield* AssetSource
+    const cached = yield* Effect.result(io.match(url))
+    if (cached._tag === "Failure") {
+      yield* Effect.logWarning("browser.cache.asset.lookup").pipe(
+        Effect.annotateLogs({ outcome: "unavailable", errorCode: assetCode(cached.failure) })
+      )
+    }
+    const hit = cached._tag === "Success" && cached.success?.ok === true ? cached.success : undefined
+    const source = hit === undefined ? "network" : "cache"
+    const response = hit === undefined
+      ? io.fetch(url).pipe(
+        Effect.mapError((error) => new AssetUnavailable({ phase: "network", code: assetCode(error) }))
+      )
+      : Effect.succeed(hit)
+    return yield* response.pipe(
+      Effect.flatMap((response) =>
+        response.ok
+          ? Effect.tryPromise({
+            try: () => response.arrayBuffer(),
+            catch: (error) => new AssetUnavailable({ phase: "body", code: assetCode(error) })
+          })
+          : Effect.fail(new AssetUnavailable({ phase: "http", code: `HTTP_${response.status}` }))
+      ),
+      Effect.onExit((exit) => {
+        const outcome = exit._tag === "Success" ? "loaded" : Exit.hasInterrupts(exit) ? "cancelled" : "failed"
+        const error = exit._tag === "Failure" ? Cause.squash(exit.cause) : undefined
+        const failure = error instanceof AssetUnavailable ? { phase: error.phase, errorCode: error.code } : {}
+        return Metric.update(Metric.withAttributes(assetReads, { source, outcome }), 1).pipe(
+          Effect.andThen(
+            (outcome === "failed" ? Effect.logWarning : Effect.logInfo)("browser.cache.asset").pipe(
+              Effect.annotateLogs({ source, outcome, ...failure })
+            )
+          )
+        )
+      })
+    )
+  }).pipe(Effect.withSpan("browser.cache.asset"))

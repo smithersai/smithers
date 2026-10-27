@@ -128,3 +128,6 @@ export * as TerminalSocket from "./TerminalSocket.ts"
  * @since 1.0.0
  */
 export * as WebLock from "./WebLock.ts"
+
+/** @since 1.0.0 */
+export * as PendingSnapshot from "./PendingSnapshot.ts"

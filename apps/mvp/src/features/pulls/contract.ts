@@ -7,6 +7,8 @@ import { REPOS_ROUTE } from "../repo/contract"
 
 /** Electric shape proxies: one repository's rows, `GET ...?repo=<owner>/<name>` or the synced repository's. */
 export const PULLS_SHAPE_ROUTE = "/api/shapes/pulls"
+/** A per-PR GitHub absence receipt carried by its detail shapes. */
+export const PULL_RECEIPT_HEADER = "x-smithers-pull-state"
 export const PULL_COMMITS_SHAPE_ROUTE = "/api/shapes/pull-commits"
 export const REVIEWS_SHAPE_ROUTE = "/api/shapes/reviews"
 /** The repository's runs on a commit: every pull request's Checks read it, filtered to the head SHA. */

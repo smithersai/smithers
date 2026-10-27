@@ -177,10 +177,6 @@
       "agent": "run"
     },
     {
-      "path": "agents",
-      "agent": "run"
-    },
-    {
       "path": "agent",
       "agent": "run"
     },
@@ -233,13 +229,6 @@
       ],
       "method": "GET",
       "path": "/api/agents/coding"
-    },
-    {
-      "argv": [
-        "agents"
-      ],
-      "method": "GET",
-      "path": "/api/agents"
     },
     {
       "argv": [

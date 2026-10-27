@@ -69,6 +69,7 @@ import timelineSummaries from "./migrations/0066_timeline_summaries.ts"
 import bugReportErrors from "./migrations/0067_bug_report_errors.ts"
 import branchPublish from "./migrations/0068_branch_publish.ts"
 import branchResync from "./migrations/0069_branch_resync.ts"
+import branchWriteNotices from "./migrations/0071_branch_write_notices.ts"
 import aboutRefusalQuota from "./migrations/0070_about_refusal_quota.ts"
 
 /** The compose Postgres (`docker-compose.yml`): what `DATABASE_URL` defaults to, and the only one tests use. */
@@ -177,6 +178,7 @@ export const migrations = {
   "0068_branch_publish": branchPublish,
   "0069_branch_resync": branchResync,
   "0070_about_refusal_quota": aboutRefusalQuota,
+  "0071_branch_write_notices": branchWriteNotices,
 }
 
 /** Applies every migration in `db/migrations` that hasn't run, in order; returns the ones it applied. */

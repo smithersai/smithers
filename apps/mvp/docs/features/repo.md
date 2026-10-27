@@ -1,5 +1,10 @@
 # Repositories: clone and view
 
+An oversized file retains Download. Its same-origin raw URL with `download=1`
+streams the original bytes as an attachment with the original filename, using
+the same read budget without buffering or caching the download. The preview size limit stays on
+preview and ordinary Raw requests; the oversized Raw link still opens GitHub.
+
 A signed-in Member or above clones a public GitHub repository into Code Storage, and anyone browses a cloned one: its file tree, a directory with its README, and a file as highlighted code or rendered Markdown, at any branch, tag or commit. A file opens raw or downloads; Copy puts a permalink, a path, a file's text or the clone URL on the clipboard. The URLs are GitHub's: swapping `github.com` for the app's domain opens the same thing, raw files included. Every action is a registered flow that a person and the agent run alike: `repo/clone`, `repo/copy`, `repo/refs`, `repo/tree`, `repo/read`, and `app/navigate` to open a location. The first visit uses the page as GitHub's repository page does, before anyone clones: the top folder, the README, and the about panel from GitHub ([About](#about)). A clone reports its stages in the person's feed ([the clone in the feed](#the-clone-in-the-feed)), and a copy without the Smithers app is reclaimable ([reclaiming](#reclaiming)). Decision: [0006](../decisions/0006-repo-clone-and-view.md).
 
 ## How it works

@@ -223,6 +223,15 @@ describe("Open on GitHub", () => {
     expect(url.searchParams.get("body")).not.toContain("/octocat/private-thing")
   })
 
+  test("legacy raw HTTP errors are redacted before the public GitHub prefill", () => {
+    const url = new URL(issueUrl({ ...report, repo: null, route: "/app", errors: [
+      { ...report.errors[0]!, kind: "http", name: "GET /api/repos/private-owner/payroll-private/contents/config/keys.env?token=private-query" },
+      { ...report.errors[0]!, kind: "http", name: "private malformed HTTP error" },
+    ] }))
+    expect(url.searchParams.get("body")).toContain("GET /api/repos/:owner/:repo/:id/:id/:id")
+    expect(url.searchParams.get("body")).not.toMatch(/private|keys\.env/)
+  })
+
   test("smithersai/smithers when the page showed no repository; long words cut; no empty lines for ids", () => {
     const url = new URL(issueUrl({ ...report, repo: null, route: null, what: "w".repeat(3_000), traces: [], failures: [], errors: [] }))
     expect(url.pathname).toBe("/smithersai/smithers/issues/new")

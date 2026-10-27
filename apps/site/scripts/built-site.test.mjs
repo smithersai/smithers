@@ -275,3 +275,16 @@ test("the bug door can link to the app-owned report route, but unknown app paths
   assert.equal(checkBuiltSite(root, ["/app/bugs/missing"]).failures.length, 1)
   assert.equal(checkBuiltSite(root, ["/app/bugs/report#missing"]).failures.length, 1)
 })
+
+test("personal-flow and settings guides can link to declared app routes without allowing unknown routes", (t) => {
+  const root = fixture(t, {
+    "docs/guide/index.html": '<a href="https://smithers.sh/app/flows">Flows</a><a href="https://smithers.sh/app/settings">Settings</a>'
+  })
+  const router = readFileSync(new URL("../../mvp/src/router.tsx", import.meta.url), "utf8")
+  for (const path of ["/app/flows", "/app/settings"]) {
+    assert.ok(router.includes(`path: "${path}"`), path)
+    assert.equal(checkBuiltSite(root, [`${path}#missing`]).failures.length, 1)
+    assert.equal(checkBuiltSite(root, [`${path}/missing`]).failures.length, 1)
+  }
+  assert.deepEqual(checkBuiltSite(root).failures, [])
+})

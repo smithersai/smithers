@@ -84,6 +84,9 @@ Explicit selection overrides detection, and MCP always remains machine-clean.
 This policy affects rendering only, not approvals or permissions. See
 [human and agent output](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/reference/cli/README.md#human-and-agent-output).
 
+The root entry point intentionally omits the retired `CodexAuth` namespace and
+its disabled subpath.
+
 ## Command
 
 The retained Effect CLI compatibility tree, used by hidden flat aliases.
@@ -92,8 +95,6 @@ New hosts should use `Cli.makeCli` for the unified public surface.
 | Export           | Signature                                                                                 | Meaning                                                                                                                                                                       |
 | ---------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cli`            | `Command`                                                                                 | The root command: every shipped verb with a handler, every removed verb and flag as a hidden refusal.                                                                         |
-| `migrationCli`   | `Command`                                                                                 | Local migration inspection tree, composed without opening execution databases.                                                                                                |
-| `doctorCli`      | `Command`                                                                                 | Local diagnostics tree using the discovery snapshot without opening execution databases.                                                                                      |
 | `signalKey`      | `(runId: string, payload: SignalPayload) => string`                                       | The idempotency key of one signal delivery: `cli:signal:<run-id>:<digest>`. The payload digest is part of the key because two different signals to one run are two mutations. |
 | `latestSequence` | `<E, R>(events: Stream<{ sequence: number }, E, R>) => Effect<number \| undefined, E, R>` | The greatest sequence in a stream, folded without retaining history. Stream failures are preserved, so a caller never substitutes a weaker cursor after a failed read.        |
 
@@ -335,7 +336,6 @@ The `flow start -d` launch.
 | `defaultTimeoutMs`                | `30_000`                                     | How long the parent waits for the admission line.                                                                                |
 | `defaultTerminationGraceMs`       | `2_000`                                      | How long a terminated child gets before it is killed.                                                                            |
 | `admissionLine`                   | `(nonce, runId) => string`                   | The line the child writes once the run row is durable.                                                                           |
-| `admittedRunId`                   | `(tail, nonce) => string \| undefined`       | Accepts only IDs matching `[A-Za-z0-9][A-Za-z0-9._-]{0,127}` from this nonce's admission line. An unsafe ID returns `undefined`. |
 | `logTail`                         | `(file, maxBytes?) => string`                | The end of a log file.                                                                                                           |
 | `terminate`                       | `(...) => Promise<...>`                      | Ends a child that never reached admission.                                                                                       |
 | `Launched`, `Rejected`, `Options` | interfaces                                   | The two outcomes of a launch, and its inputs.                                                                                    |

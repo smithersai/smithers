@@ -56,6 +56,7 @@ pass only the origin: the constructor appends `/v1/responses` itself, so
 const route = Result.getOrThrow(
   Route.openaiResponsesCompatible({
     id: "openrouter",
+    providerName: "openrouter",
     baseUrl: "https://openrouter.ai/api",
     apiKey: Redacted.make(process.env["OPENROUTER_API_KEY"] ?? "")
   })
@@ -70,6 +71,7 @@ mounts the endpoint elsewhere:
 const ollama = Result.getOrThrow(
   Route.openaiChatCompatible({
     id: "ollama",
+    providerName: "ollama",
     baseUrl: "http://localhost:11434",
     apiKey: Redacted.make("ollama")
   })
@@ -78,6 +80,7 @@ const ollama = Result.getOrThrow(
 const gemini = Result.getOrThrow(
   Route.openaiChatCompatible({
     id: "gemini",
+    providerName: "gemini",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
     path: "/chat/completions",
     apiKey: Redacted.make(process.env["GEMINI_API_KEY"] ?? "")
@@ -99,6 +102,7 @@ The Cerebras example uses the origin as `baseUrl` with the default
 const route = Result.getOrThrow(
   Route.openaiChatCompatible({
     id: "cerebras",
+    providerName: "cerebras",
     baseUrl: "https://api.cerebras.ai",
     apiKey: Redacted.make(process.env["CEREBRAS_API_KEY"] ?? ""),
     structuredOutput: {
@@ -149,6 +153,7 @@ const route = Result.gen(function*() {
   const endpoint = yield* Endpoint.make({ url: "https://provider.example", path: "/v1/generate" })
   return Route.make({
     id: "my-provider",
+    providerName: "my-provider",
     protocol: myProtocol,
     endpoint,
     auth: Auth.bearer(Redacted.make(process.env["MY_PROVIDER_API_KEY"] ?? "")),

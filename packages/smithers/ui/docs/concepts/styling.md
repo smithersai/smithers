@@ -156,3 +156,5 @@ also runs during server rendering.
   task-shaped version of this page.
 - [`@smthrs/ui-styleguide`](https://github.com/smithersai/smithers/tree/main/packages/smithers/ui/ui-styleguide): the package that owns the theme
   token block and the palettes.
+
+Keyboard focus on a tab panel uses the shared ring and control-radius tokens, including panels on a run page.

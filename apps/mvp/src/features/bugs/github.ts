@@ -1,9 +1,10 @@
+import { httpErrorName } from "../../flows/errors"
 import { DEFAULT_ISSUE_REPOSITORY } from "./contract"
 import type { ReportRequest } from "./schema"
 
 // "Open on GitHub" (docs/features/bugs.md#open-on-github): GitHub's own new-issue form, prefilled with the
-// report, on the repository the page showed, else smithersai/smithers. It only opens the form: nothing reaches GitHub
-// until the person submits it there, under their own account (rulings GH-2, GH-11). A public issue never carries the
+// report, on the repository the page showed, else smithersai/smithers. Opening the form transmits its prefill in the URL
+// query; creating the issue requires submitting there under the person’s own account (rulings GH-2, GH-11). A public issue never carries the
 // page's path, which can name a private repository: only what kind of page it was.
 
 /** What kind of page `route` is, without its repository or any id: `repository`, `file`, `issues`, `app`, … */
@@ -44,7 +45,10 @@ export const issueUrl = (report: ReportRequest): string => {
       : [`Failures: ${report.failures.slice(0, 5).map(({ flow, code }) => `${flow} ${code}`).join(", ")}`]),
     ...(report.errors.length === 0
       ? []
-      : [`Errors: ${report.errors.slice(0, 5).map(({ name, code }) => (code === null ? name : `${name} ${code}`)).join(", ")}`]),
+      : [`Errors: ${report.errors.slice(0, 5).map(({ kind, name, code }) => {
+        const safe = kind === "http" ? httpErrorName(name) : name
+        return code === null ? safe : `${safe} ${code}`
+      }).join(", ")}`]),
     `Browser: ${report.browser}`,
     `Window: ${report.viewport}`,
   ].join("\n")

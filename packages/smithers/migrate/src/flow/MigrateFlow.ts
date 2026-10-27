@@ -1374,7 +1374,8 @@ export const unit = Flow.make(unitTag, {
         // stopped: the checkpoint is restored, the report says why, and the
         // next unit runs.
         const settleUnrun = (
-          failure: Planned.Planned<string>
+          failure: Planned.Planned<string>,
+          attemptedRepairs: number
         ): Node.Node<UnitOutcome, MigrateError, UnitRequires> =>
           finishAction.call({
             options,
@@ -1384,57 +1385,57 @@ export const unit = Flow.make(unitTag, {
             result: null,
             verification: null,
             failure,
-            repairRounds: rounds
+            repairRounds: attemptedRepairs
           })
 
         const round = (
           attempt: number,
           rewrite: Node.Node<Transform.UnitResult, MigrateError | AgentAction.AgentFailure, UnitRequires>
         ): Node.Node<UnitOutcome, MigrateError | AgentAction.AgentFailure, UnitRequires> =>
-          Node.bindPlanned(rewrite, (result) =>
-            Node.branch(
-              Verify.action.call({
-                root: options.root,
-                commands: outline.commands,
-                changedFiles: result.changedFiles,
-                expectFlows: outline.expectFlows
-              }),
-              {
-                if: (verification) => Verify.verdict(verification) === "pass",
-                then: (verification) => settleWith(result, verification, attempt),
-                else: (verification) =>
-                  attempt >= rounds
-                    ? settleWith(result, verification, attempt)
-                    : Node.bindPlanned(
-                      // A repair round is shown the sources as they are now,
-                      // not as the unit found them: the previous round edited
-                      // them, and a prompt that hid that would ask for the
-                      // same rewrite again. `current` is what says so; without
-                      // it the capture answers from the checkpoint's copy, and
-                      // the payload would be the round-0 payload byte for byte.
-                      Transform.captureAction.call({ outline, checkpoint, current: true }),
-                      (brief) =>
-                        round(
-                          attempt + 1,
-                          Repair.action.call({
-                            unit: brief,
-                            round: attempt + 1,
-                            failures: verification
-                          })
-                        )
-                    )
-              }
-            ))
+          Node.catch(
+            Node.bindPlanned(rewrite, (result) =>
+              Node.branch(
+                Verify.action.call({
+                  root: options.root,
+                  commands: outline.commands,
+                  changedFiles: result.changedFiles,
+                  expectFlows: outline.expectFlows
+                }),
+                {
+                  if: (verification) => Verify.verdict(verification) === "pass",
+                  then: (verification) => settleWith(result, verification, attempt),
+                  else: (verification) =>
+                    attempt >= rounds
+                      ? settleWith(result, verification, attempt)
+                      : Node.bindPlanned(
+                        // A repair round is shown the sources as they are now,
+                        // not as the unit found them: the previous round edited
+                        // them, and a prompt that hid that would ask for the
+                        // same rewrite again. `current` is what says so; without
+                        // it the capture answers from the checkpoint's copy, and
+                        // the payload would be the round-0 payload byte for byte.
+                        Transform.captureAction.call({ outline, checkpoint, current: true }),
+                        (brief) =>
+                          round(
+                            attempt + 1,
+                            Repair.action.call({
+                              unit: brief,
+                              round: attempt + 1,
+                              failures: verification
+                            })
+                          )
+                      )
+                }
+              )),
+            {
+              error: AgentAction.AgentFailure,
+              onFailure: (failure) => settleUnrun(failure.message, attempt)
+            }
+          )
 
-        const settled = Node.catch(
-          Node.bindPlanned(
-            Transform.captureAction.call({ outline, checkpoint }),
-            (brief) => round(0, Transform.action.call({ unit: brief }))
-          ),
-          {
-            error: AgentAction.AgentFailure,
-            onFailure: (failure) => settleUnrun(failure.message)
-          }
+        const settled = Node.bindPlanned(
+          Transform.captureAction.call({ outline, checkpoint }),
+          (brief) => round(0, Transform.action.call({ unit: brief }))
         )
         // A schema-filtered catch conservatively retains its input errors:
         // refinements can reject values without narrowing their TypeScript type.

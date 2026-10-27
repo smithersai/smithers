@@ -39,12 +39,13 @@ type Success<F extends (...args: never) => unknown> = Effect.Success<ReturnType<
 
 /** Whether an entry reads differently from what the tab holds. */
 const changed = (old: Entry, next: Entry) =>
-  (Object.keys(next) as ReadonlyArray<keyof Entry>).some((field) => old[field] !== next[field])
+  old.local !== next.local || (Object.keys(next) as ReadonlyArray<keyof Entry>).some((field) => old[field] !== next[field])
 
 export class AttentionStore extends Context.Service<
   AttentionStore,
   {
     readonly notices: ElectricCollection.ElectricCollection<Notice>
+    readonly launches: Collection.Collection<Notice, string>
     readonly pending: Collection.Collection<Pending, string>
     readonly entries: Collection.Collection<Entry, string>
     readonly stack: Success<typeof stackQuery>
@@ -80,8 +81,8 @@ export class AttentionStore extends Context.Service<
           schema: Notice,
           getKey: (row) => row.subject,
           syncMode: "eager",
-          // Version 2: the kind `spend`; version 3: the kind `bug` (src/device/registry.ts).
-          persist: { schemaVersion: 3 },
+          // Version 4 adds durable branch write notices; the device retains prior notification versions.
+          persist: { schemaVersion: 4 },
           shape: {
             url: `${config.origin}${NOTIFICATIONS_SHAPE_ROUTE}`,
             columnMapper: ElectricCollection.snakeCamelMapper(),
@@ -98,6 +99,7 @@ export class AttentionStore extends Context.Service<
           schema: Entry,
           getKey: (row) => row.id,
         })
+        const launches = yield* Collection.local<Notice, string>({ id: "attention-launches", schema: Notice, getKey: (row) => row.subject })
         const panel = yield* Collection.local<Panel, string>({
           id: "attention-panel",
           schema: Panel,
@@ -116,7 +118,11 @@ export class AttentionStore extends Context.Service<
         const recorded = new Set<string>()
         const work = Effect.gen(function* () {
           const now = yield* Clock.currentTimeMillis
-          const rows = yield* notices.toArray
+          const synced = yield* notices.toArray
+          const known = new Set(synced.map((row) => row.subject))
+          const optimistic = yield* launches.toArray
+          for (const row of optimistic) if (known.has(row.subject)) yield* launches.delete(row.subject)
+          const rows = [...synced, ...optimistic.filter((row) => !known.has(row.subject))]
           const acts = yield* pending.toArray
           // Chat's place always holds its one row.
           const where = (yield* place.toArray)[0]!
@@ -129,7 +135,7 @@ export class AttentionStore extends Context.Service<
             const old = before.get(entry.id)
             if (old === undefined) yield* entries.insert(entry)
             else if (changed(old, entry)) {
-              yield* entries.update(entry.id, (draft) => void Object.assign(draft, entry))
+              yield* entries.update(entry.id, (draft) => { if (entry.local === undefined) delete draft.local; Object.assign(draft, entry) })
             }
             // Each toast that came to show, once per version: a log line and a count, never its words.
             const key = `${entry.id}:${entry.version}`
@@ -160,6 +166,7 @@ export class AttentionStore extends Context.Service<
         yield* Stream.mergeAll(
           [
             Stream.map(notices.changes({ initial: true }), () => undefined),
+            Stream.map(launches.changes({ initial: true }), () => undefined),
             Stream.map(pending.changes({ initial: true }), () => undefined),
             Stream.map(place.changes({ initial: true }), () => undefined),
             Stream.fromQueue(ticks),
@@ -263,6 +270,7 @@ export class AttentionStore extends Context.Service<
 
         return AttentionStore.of({
           notices,
+          launches,
           pending,
           entries,
           stack: yield* stackQuery(entries, "stack"),

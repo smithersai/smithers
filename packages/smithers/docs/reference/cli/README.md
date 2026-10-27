@@ -27,7 +27,7 @@ run-kind targets; `flow start` starts durable flows.
 | `runs list/show/logs/output/cancel/cancel-all/resume/signal/steer` | Inspect and operate durable runs. |
 | `runs inspect/replay/fork/rewind` | Read frames, branch history, or restore an earlier frame. |
 | `approvals list/approve/deny` | List pending decisions and submit the exact approval payload or `@file`. |
-| `init [name]`, `generate app/flow/package/ci` | Initialize a workspace or scaffold a declared resource. |
+| `init [name]`, `generate flow/package/ci` | Initialize a workspace or scaffold a declared resource. |
 | `install`, `git-hooks [--write]` | Use the declared installation toolchain and Git hooks. |
 | `cache status/prune/clear`, `clean [patterns...]`, `gc` | Maintain action results, declared cleanup targets, or terminal run history. |
 | `environment add/list/view/remove/exec/shell/forward` | Save an execution location and run commands there. |

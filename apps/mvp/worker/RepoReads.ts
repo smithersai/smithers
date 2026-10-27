@@ -1,6 +1,6 @@
 import { ImmutableCache } from "@smthrs/artifacts"
 import { CodeStorage } from "@smthrs/effect-code-storage"
-import { Cause, Config, Data, Effect, Layer, Metric, Option, Schema } from "effect"
+import { Cause, Config, Data, Effect, Layer, Metric, Option, Ref, Schema, Stream } from "effect"
 import type { SqlClient } from "effect/sql"
 import { MAX_BLOB_BYTES, REFS_PAGE_SIZE, repoId, textOf, TREE_PAGE_SIZE } from "../src/features/repo/contract.ts"
 import {
@@ -258,7 +258,28 @@ export const make = <E, R>(services: Services<E, R>) => {
     })
   }
 
-  return { tree, files, blob, refs }
+  // Downloads stream original bytes, without buffering them or contaminating the preview cache.
+  const download = (owner: string, name: string, sha: string, path: string) => Effect.gen(function* () {
+    const id = repoId(owner, name)
+    yield* admitRead
+    const file = yield* codeStorage.streamFile(id, { path, ref: sha }).pipe(
+      Effect.catch((error) => classifyMissing(id, sha, error)),
+    )
+    const context = yield* Effect.context<R>()
+    const received = yield* Ref.make(0)
+    return { ...file, stream: file.stream.pipe(
+      Stream.mapError(refusedBy),
+      Stream.tap((chunk) => Ref.update(received, (bytes) => bytes + chunk.length)),
+      Stream.ensuring(Effect.gen(function* () {
+        const bytes = yield* Ref.get(received)
+        yield* meter(bytes)
+        yield* Metric.update(RepoMetrics.readBytes, bytes)
+        yield* Effect.logInfo("repo.download.closed").pipe(Effect.annotateLogs({ repoId: id, bytes }))
+      })),
+      Stream.provideContext(context),
+    ) }
+  })
+  return { tree, files, blob, refs, download }
 }
 
 /** A read's refusal as the flows declare it. */

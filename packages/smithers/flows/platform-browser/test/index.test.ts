@@ -33,6 +33,7 @@ describe("@smthrs/platform-browser barrel", () => {
         "BrowserScheduler",
         "BrowserServices",
         "BrowserSqlite",
+        "PendingSnapshot",
         "SharedSqlite",
         "StoragePersistence",
         "TabChannel",

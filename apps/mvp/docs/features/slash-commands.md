@@ -110,3 +110,6 @@ GIFs: `pnpm e2e:gifs` writes `slash-commands-complete-and-run.gif`, `slash-comma
 Slash doors carry short `description` copy for the menu; the agent retains the flow's full instructions. `/new` precedes `/navigate` among prefix matches.
 
 Enter on an exact `/repo`, `/issues` or `/docs` command shows its argument format on the first press. Navigation checks the router before moving; a failed navigation keeps the command in chat with a short reason.
+
+
+Malformed repository arguments stay in the composer with `needs owner/name`; rejected dispatches also restore their line unless newer typing, dismissal or navigation superseded it.

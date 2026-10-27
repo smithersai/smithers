@@ -570,6 +570,27 @@ export const executeEffect = (
             yield* joined(() => Fs.mkdir(NodePath.dirname(destination), { recursive: true }))
             yield* joined(() => Fs.writeFile(destination, exit.value.stdout, "utf8"))
           }
+          const missing: Array<string> = []
+          for (const path of override === undefined ? [...node.outDirs, ...node.outFiles] : []) {
+            const absolute = NodePath.join(workspaceRoot, ...path.split("/"))
+            const stat = yield* joined(() =>
+              Fs.stat(absolute).catch((cause: NodeJS.ErrnoException) => {
+                if (cause.code === "ENOENT" || cause.code === "ENOTDIR") return undefined
+                throw cause
+              })
+            )
+            // Confinement prepares exact directory mounts. Without an explicit
+            // empty-output declaration, an empty mount is not a produced output.
+            if (
+              stat === undefined ||
+              (node.outDirs.includes(path) &&
+                (!stat.isDirectory() || (yield* joined(() => Fs.readdir(absolute))).length === 0)) ||
+              (node.outFiles.includes(path) && !stat.isFile())
+            ) missing.push(path)
+          }
+          if (missing.length > 0) {
+            return { ok: false, error: `${node.label} did not produce declared outputs: ${missing.join(", ")}` }
+          }
           return { ok: true, result: exit.value }
         }
         // Exec.run fails only with ExecError; render whatever the cause carries.
@@ -729,6 +750,7 @@ export const executeEffect = (
       Effect.gen(function*() {
         const decoded = decodeBuildOutput(output)
         if (decoded === undefined || !manifestsBindToDeclared(decoded, node.outDirs, node.outFiles)) return false
+        if (decoded.manifests.some((manifest) => manifest.entries.length === 0)) return false
         return yield* restoreManifests(node, decoded)
       })
 

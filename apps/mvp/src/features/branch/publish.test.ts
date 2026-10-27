@@ -17,6 +17,9 @@ import { shaOf } from "../../../worker/test/branch.ts"
 import { EngineFaults } from "../../test/faults"
 import { CHATAPI_ORIGIN, member, openFaultyApp, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
 import { MAX_BODY_LENGTH, MAX_TITLE_LENGTH } from "../issues/contract"
+import { AttentionStore } from "../attention/store"
+import { fold as foldWriteNotice } from "../../../worker/github/WriteFeed.ts"
+import { Attention } from "../attention/attention"
 import { PresenceStore } from "../presence/store"
 import { PullsClient, PullsRequestFailed } from "../pulls/api"
 import { repoId } from "../repo/contract"
@@ -73,7 +76,7 @@ const reads = (shown: PublishBar): ReadonlyArray<string> => [
   ...(shown.compare ? ["Compare"] : []),
 ]
 
-type Runtime = ManagedRuntime.ManagedRuntime<Branch | TestChatApi | Terminal | PresenceStore, unknown>
+type Runtime = ManagedRuntime.ManagedRuntime<AttentionStore | Attention | Branch | TestChatApi | Terminal | PresenceStore, unknown>
 
 /** Maya's device on `runtime`: `octo/hello` has `main` and `feature/one`; the page's queries started as React does. */
 const device = async (runtime: Runtime) => {
@@ -84,6 +87,9 @@ const device = async (runtime: Runtime) => {
     branches: { main: shaOf("main"), "feature/one": shaOf("feature/one") },
   })
   const branch = await runtime.runPromise(Effect.service(Branch))
+  const attention = await runtime.runPromise(Effect.service(Attention))
+  attention.queries.stack.startSyncImmediate()
+  attention.queries.feed.startSyncImmediate()
   const { publishing } = branch
   for (const query of [branch.queries.current, ...Object.values(publishing.queries)]) query.startSyncImmediate()
   const sql = <A>(effect: Effect.Effect<A, unknown, SqlClient.SqlClient>) => runtime.runPromise(api.github.run(effect))
@@ -92,6 +98,8 @@ const device = async (runtime: Runtime) => {
   return {
     runtime,
     api,
+    attention,
+    notices: () => attention.queries.stack.toArray,
     branch,
     actions: publishing.actions,
     publication,
@@ -200,6 +208,8 @@ describe("Publish", () => {
     expect(tab.api.github.starts.map((start) => start.executionId)).toContain(publishExecutionId(writeId))
     await until(() => expect(tab.writes()).toEqual([expect.objectContaining({ id: writeId, op: "branch/publish", status: "pending" })]))
     expect(reads(tab.bar())).toEqual(["Publishing…", "[Publish]"])
+    await until(() => expect(tab.notices()).toContainEqual(expect.objectContaining({ id: `write:${writeId}`, state: "working", detail: "Publish", local: undefined })), 5_000)
+    expect(await tab.sql(foldWriteNotice(writeId))).toBe(0)
 
     // A second press while hers is on its way: ChatApi refuses it, and the page still says where hers is.
     expect(await tab.actions.publish("Again", "")).toBe(true)
@@ -213,6 +223,7 @@ describe("Publish", () => {
     await tab.published(branchId, writeId, base, head)
     await until(() => expect(reads(tab.bar())).toEqual(["#7", "Publish", "Update branch", "Compare"]))
     expect(tab.publication()).toMatchObject({ branchId, baseSha: base, headSha: head, prNumber: 7, updateState: null })
+    await until(() => expect(tab.attention.queries.feed.toArray).toContainEqual(expect.objectContaining({ id: `write:${writeId}`, state: "done", href: "/octo/hello/tree/feature/one" })))
 
     // Publish again pushes new changes as one commit: its form asks only for the title, the pull request's once known.
     await tab.actions.openForm()
@@ -245,6 +256,7 @@ describe("Publish", () => {
     expect(await tab.recorded(first)).toMatchObject({ op: "branch/update", status: "pending", payload: expect.objectContaining({ branchId }) })
     expect(tab.api.github.starts.map((start) => start.executionId)).toContain(updateExecutionId(first))
     await until(() => expect(reads(tab.bar())).toEqual(["#7", "Publish", "Updating…", "[Update branch]", "Compare"]))
+    await until(() => expect(tab.notices()).toContainEqual(expect.objectContaining({ id: `write:${first}`, state: "working", detail: "Update branch" })))
     await tab.updated(branchId, first, "up_to_date")
     await until(() => expect(reads(tab.bar())).toEqual(["#7", "Publish", "Up to date", "Update branch", "Compare"]))
 
@@ -256,6 +268,7 @@ describe("Publish", () => {
     // The write's refusal and the publication's state commit together, but sync on their own shapes.
     await until(() => expect(tab.publication()).toMatchObject({ updateState: "conflict" }))
     expect(tab.count(updates, "sent")).toBe(2)
+    await until(() => expect(tab.attention.queries.feed.toArray).toContainEqual(expect.objectContaining({ id: `write:${second}`, state: "failed", detail: "Update branch" })))
   }, WITHIN)
 
   test("Resync: Behind once published, Resyncing… while its write is on its way, a conflict's files, then nothing", async () => {
@@ -341,9 +354,15 @@ describe("Publish", () => {
     await until(() => expect(tab.press()).toMatchObject({ publishing: true }))
     expect(reads(tab.bar())).toEqual(["Publishing…", "[Publish]"])
     expect(await tab.actions.publish("Again", "")).toBe(false)
+    await until(() => expect(tab.notices()).toContainEqual(expect.objectContaining({ state: "waiting", detail: "Publish", local: true })))
+    const launch = tab.notices().find((entry) => entry.local === true)!
+    tab.attention.actions.open(launch.id, "page")
+    const notices = await runtime.runPromise(Effect.service(AttentionStore))
+    expect(notices.pending.tanstack.size).toBe(0)
     const updating = tab.actions.update()
     await until(() => expect(tab.press()).toMatchObject({ updating: true }))
     expect(await tab.actions.update()).toBe(false)
+    await until(() => expect(tab.notices()).toContainEqual(expect.objectContaining({ state: "waiting", detail: "Update branch" })))
     const resyncing = tab.actions.resync()
     await until(() => expect(tab.press()).toMatchObject({ resyncing: true }))
     expect(await tab.actions.resync()).toBe(false)
@@ -363,6 +382,7 @@ describe("Publish", () => {
     expect(await tab.actions.update()).toBe(true)
     expect(tab.press()).toMatchObject({ updateRefused: "unavailable", updateWriteId: null })
     expect([tab.count(publishes, "unavailable"), tab.count(updates, "unavailable")]).toEqual([1, 1])
+    await until(() => expect(tab.notices().filter((entry) => entry.state === "failed").map((entry) => entry.detail)).toEqual(expect.arrayContaining(["Publish", "Update branch"])))
   }, WITHIN)
 })
 

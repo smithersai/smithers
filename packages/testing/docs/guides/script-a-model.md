@@ -86,7 +86,7 @@ tag in that prompt. Build the tag with `BuiltinScript.tag`:
 import { BuiltinScript } from "@smthrs/testing"
 
 const prompt = `${BuiltinScript.tag({ ask: true, file: "notes/t2.md", hold: "t2" })} Add a greeting`
-// "[ASK] [FILE notes/t2.md] [HOLD t2] Add a greeting"
+// "[ASK] [HOLD t2] [FILE notes/t2.md] Add a greeting"
 ```
 
 | Directive           | Tag                  | The scripted run                                                                            |
@@ -94,6 +94,7 @@ const prompt = `${BuiltinScript.tag({ ask: true, file: "notes/t2.md", hold: "t2"
 | `ask: true`         | `[ASK]`              | The request review asks `QUESTION`, so the TODO needs you; the edit writes the answer.      |
 | `fail: true`        | `[FAIL]`             | The edit empties `JOURNEY.md`, so a check that reads it fails, until `fixed`.               |
 | `failOnce: true`    | `[FAILONCE]`         | The first edit leaves `JOURNEY.md` blank; the repair restores it and the retry passes.      |
+| `restore: true`     | `[RESTORE]`          | The edit appends the greeting to `JOURNEY.md`, including when `file` names another file.    |
 | `fixed: true`       | `[FIXED]`            | Ends `fail` and `failOnce`, from a steer, an answer or retry feedback.                      |
 | `hold: "k"`         | `[HOLD k]`           | The edit turn waits until `POST /__testing/release/k`.                                      |
 | `file: "p"`         | `[FILE p]`           | The edit appends to `p` instead of `JOURNEY.md`.                                            |

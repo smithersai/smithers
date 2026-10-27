@@ -34,6 +34,17 @@ describe("the form", () => {
     expect(whatOf("x".repeat(MAX_WHAT + 1))).toBeUndefined()
   })
 
+  test("blank reports show a refusal and keep the words without dispatching", async () => {
+    const sent: unknown[] = []
+    await withTab(hostWith([], [], sent), (built) => Effect.sync(() => {
+      built.actions.send("   \n ")
+      expect(built.queries.sending.current()).toEqual({ status: "invalid", what: "   \n ", code: "empty" })
+      built.actions.send("x".repeat(MAX_WHAT + 1))
+      expect(built.queries.sending.current()).toMatchObject({ status: "invalid", code: "too_large" })
+      expect(sent).toEqual([])
+    }))
+  })
+
   test("a Send is Sent only once its report comes back; nothing else changes", () => {
     const sending: Sending = { status: "sending", id: "b", what: "x" }
     expect(settle(sending, [report("a")])).toBe(sending)
@@ -152,6 +163,8 @@ describe("a report that isn't sent", () => {
       Effect.gen(function* () {
         built.actions.send("words")
         yield* pause
+        host.arrive(report("another-report"))
+        expect(built.queries.sending.current()).toMatchObject({ status: "sending" })
         host.arrive(report(sent[0]!.id))
         return built.queries.sending.current()
       }))

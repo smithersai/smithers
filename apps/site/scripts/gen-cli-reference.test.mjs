@@ -7,7 +7,8 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import test from "node:test"
-import { COPY, MARKER, PAGE, prose, renderBody, typeOf } from "./gen-cli-reference.mjs"
+import { fileURLToPath } from "node:url"
+import { COPY, MARKER, PAGE, main, parseHelp, projection, prose, renderBody, typeOf } from "./gen-cli-reference.mjs"
 
 const globalsHelp = [
   "Custom Global Options:",
@@ -68,7 +69,7 @@ function fixture() {
 
 test("one section per command: usage from the help, tables from the schema, globals once at the top", () => {
   const body = renderBody(fixture())
-  assert.ok(body.startsWith("Every command in `smthrs` 1.2.3, as its `--help` describes it.\n\n```bash\nnpm install -g smthrs@next\n```\n\n## Commands\n"))
+  assert.ok(body.startsWith("Install discovery for `smthrs` 1.2.3, plus additional local commands, as their `--help` describes them."))
   assert.ok(body.includes([
     "| Command | Description |",
     "| --- | --- |",
@@ -169,10 +170,10 @@ test("the script writes the page and its copy, then --check names drift without 
   assert.equal(written.status, 0, written.stderr)
   const sitePage = read(PAGE)
   assert.ok(sitePage.startsWith(`---\n${MARKER}\neditUrl: https://github.com/smithersai/smithers/edit/main/apps/site/scripts/gen-cli-reference.mjs\ntitle: "CLI reference"\ndescription: "`))
-  assert.match(sitePage, /^ {6}type: text\/markdown\n {6}href: \/docs\/reference\/cli\.md\n---\n\nEvery command in `smthrs` 1\.2\.3/m)
+  assert.match(sitePage, /^ {6}type: text\/markdown\n {6}href: \/docs\/reference\/cli\.md\n---\n\nInstall discovery for `smthrs` 1\.2\.3/m)
   assert.doesNotMatch(sitePage.split("\n---\n")[1], /^# /m, "the frontmatter title owns the page heading")
   const copy = read(COPY)
-  assert.ok(copy.startsWith("# CLI reference\n\n> Every smthrs command"))
+  assert.ok(copy.startsWith("# CLI reference\n\n> Install discovery and additional local commands"))
   assert.equal(copy.split("\n\n").slice(2).join("\n\n"), sitePage.split("\n---\n\n")[1], "the copy carries the page's body")
   assert.equal(run("--check").status, 0)
 
@@ -186,4 +187,120 @@ test("the script writes the page and its copy, then --check names drift without 
   assert.match(run("--check").stderr, /public\/docs\/reference\/cli\.md is missing/)
   assert.equal(run().status, 0)
   assert.equal(run("--check").status, 0)
+  put("apps/site/src/data/help/mcp.txt", "smthrs mcp — Integrations\n\nUsage: smthrs mcp <command>\n")
+  const incomplete = run()
+  assert.equal(incomplete.status, 1)
+  assert.match(incomplete.stderr, /no integration help capture for smthrs mcp add/)
+})
+
+test("reference supplements retain invocation schemas, notes and literal integration help", () => {
+  const f = fixture()
+  const extra = { name: "host status", description: "Read the host", schema: { args: { type: "object", properties: {} }, options: { type: "object", properties: {} } } }
+  f.map.set(extra.name, page("smthrs host status — Read the host", "smthrs host status"))
+  const body = renderBody({ ...f, additional: [extra], notes: { "host status": "### Details\n\nRead-only host status." }, integrations: [{ name: "completions", captures: ["smthrs completions — Generate a script\n\nUsage: smthrs completions <shell>\n\n  --help\n"] }] })
+  assert.match(body, /### `host status`\n\nRead the host/)
+  assert.match(body, /### Details\n\nRead-only host status/)
+  assert.match(body, /## `completions`\n\n```text\nsmthrs completions/)
+  assert.match(body, /  --help\n```/)
+  assert.throws(() => renderBody({ ...f, integrations: [{ name: "host", captures: [] }] }), /two headings share the anchor/)
+})
+
+test("help and schema failures identify the command instead of emitting partial documentation", () => {
+  assert.throws(() => renderBody({ manifest: { commands: [] }, help: () => undefined }), /lists no commands/)
+  assert.throws(() => parseHelp("bad header", "smthrs"), /first line/)
+  assert.throws(() => parseHelp("smthrs — Purpose\n", "smthrs"), /no usage line/)
+  assert.throws(() => parseHelp("smthrs — Purpose\nUsage: one\nUsage: two", "smthrs"), /more than one usage/)
+  assert.throws(() => parseHelp("smthrs — Purpose\nUsage: one\nUnexpected", "smthrs"), /unexpected line/)
+  assert.equal(parseHelp("smthrs — Purpose\r\nUsage: one\r\n", "smthrs").usage, "one")
+  const f = fixture()
+  f.map.set("host backup", f.map.get("host backup").replace("  --verbose  Show redacted diagnostic details", "  !!! bad option"))
+  assert.throws(() => renderBody(f), /option line.*does not parse/)
+  const args = fixture()
+  args.map.set("stack move", args.map.get("stack move").replace("  n\n", "  ??? bad argument\n"))
+  assert.throws(() => renderBody(args), /argument line.*does not parse|help lists arguments/)
+  const group = fixture()
+  group.map.set("host", page("smthrs host — Operate the host", "smthrs host", ["Options:", "  --unexpected"]))
+  assert.throws(() => renderBody(group), /help lists arguments or options, but the manifest has no such command/)
+})
+
+test("constraint rendering covers bounds, empty unions and code punctuation", () => {
+  assert.equal(typeOf({ type: "null" }, "field"), "null")
+  assert.equal(typeOf({ anyOf: [{ type: "null" }] }, "field"), "null")
+  assert.equal(typeOf({ type: "array" }, "field"), "array of any")
+  assert.equal(typeOf({ type: "string", maxLength: 9 }, "field"), "string, max length 9")
+  assert.equal(typeOf({ type: "number", maximum: 7, exclusiveMaximum: 8 }, "field"), "number, maximum 7, less than 8")
+  assert.equal(typeOf({ type: "array", maxItems: 3 }, "field"), "array of any, max items 3")
+  assert.equal(typeOf({ enum: ["a`b"] }, "field"), "one of `` a`b ``")
+})
+
+test("entrypoint writes real files, checks drift without writing, and repairs missing outputs", (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "reference-writer-"))
+  t.after(() => rmSync(directory, { recursive: true, force: true }))
+  const script = fileURLToPath(new URL("./gen-cli-reference.mjs", import.meta.url))
+  const files = new Map([["docs/reference.md", "Canonical reference\n"], ["copy.md", "Canonical copy\n"]])
+  const output = join(directory, "docs/reference.md")
+  const previous = process.exitCode
+  try {
+    main([])
+    main([process.execPath, script], { directory, files })
+    assert.equal(readFileSync(output, "utf8"), "Canonical reference\n")
+    main([process.execPath, script, "--check"], { directory, files })
+    writeFileSync(output, "drifted\n")
+    rmSync(join(directory, "copy.md"))
+    main([process.execPath, script, "--check"], { directory, files })
+    assert.equal(process.exitCode, 1)
+    assert.equal(readFileSync(output, "utf8"), "drifted\n")
+    process.exitCode = previous
+    main([process.execPath, script], { directory, files })
+    main([process.execPath, script, "--check"])
+    assert.equal(process.exitCode, previous)
+  } finally {
+    process.exitCode = previous
+  }
+})
+
+test("a real capture directory can predate supplements; incomplete integration captures fail closed", (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "reference-captures-"))
+  t.after(() => rmSync(directory, { recursive: true, force: true }))
+  const put = (path, text) => {
+    const target = join(directory, "apps/site/src/data", path)
+    mkdirSync(dirname(target), { recursive: true })
+    writeFileSync(target, text)
+  }
+  const f = fixture()
+  put("cli-commands.json", JSON.stringify(f.manifest))
+  for (const [path, text] of f.map) {
+    const tokens = path === "" ? ["smthrs"] : path.split(" ")
+    put(join("help", ...tokens.slice(0, -1), `${tokens.at(-1)}.txt`), text)
+  }
+  assert.match(projection(directory).get(PAGE), /### `stack move`/)
+  put("cli-reference-extra.json", "[]")
+  put("help/mcp.txt", "smthrs mcp — Register as MCP server\n\nUsage: smthrs mcp <command>\n")
+  assert.throws(() => projection(directory), /no integration help capture for smthrs mcp add/)
+  put("help/mcp/add.txt", "smthrs mcp add — Register a server\n\nUsage: smthrs mcp add\n")
+  put("help/mcp/doctor.txt", "smthrs mcp doctor — Validate a server\n\nUsage: smthrs mcp doctor\n")
+  assert.match(projection(directory).get(PAGE), /## `mcp`/)
+  main([process.execPath, fileURLToPath(new URL("./gen-cli-reference.mjs", import.meta.url))], { directory })
+  assert.match(readFileSync(join(directory, PAGE), "utf8"), /### `stack move`/)
+})
+
+test("commands without custom globals and explicit empty defaults retain their meaning", () => {
+  const manifest = { commands: [{ name: "plain", description: "Pure command" }] }
+  const captures = new Map([
+    ["", "smthrs@1.2.3 — Root\n\nUsage: smthrs <command>\n"],
+    ["plain", "smthrs plain — Pure command\n\nUsage: smthrs plain\n"]
+  ])
+  assert.match(renderBody({ manifest, help: path => captures.get(path) }), /## `plain`/)
+  assert.throws(() => renderBody({ manifest: { commands: null }, help: () => undefined }), /lists no commands/)
+  assert.throws(() => parseHelp("smthrs — Purpose\nUsage: one\n  orphan", "smthrs"), /unexpected line/)
+  const f = fixture()
+  f.manifest.commands[2].schema.options.properties.user.default = ""
+  f.map.set("stack move", f.map.get("stack move").replace("default: developer", 'default: ""'))
+  assert.ok(renderBody(f).includes('| `--user`, `-u` | string | `""` | no'))
+})
+
+test("a group cannot publish arguments without an invocation schema", () => {
+  const f = fixture()
+  f.map.set("host", page("smthrs host — Operate the host", "smthrs host <name>", ["Arguments:", "  name"]))
+  assert.throws(() => renderBody(f), /help lists arguments or options, but the manifest has no such command/)
 })

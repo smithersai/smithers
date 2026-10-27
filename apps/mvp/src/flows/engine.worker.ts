@@ -1,10 +1,11 @@
 // First: the worker's first session read starts before the rest of its bundle evaluates
 // (src/flows/sessionStart.worker.ts).
 import { started as sessionStarted } from "./sessionStart.worker"
+import SqliteFactory from "@journeyapps/wa-sqlite/dist/wa-sqlite.mjs"
 import wasmUrl from "@journeyapps/wa-sqlite/dist/wa-sqlite.wasm?url"
 import { Migrations } from "@smthrs/effect-tanstack-db"
 import type { Model } from "@smthrs/model"
-import { BrowserRuntime, type SharedSqlite } from "@smthrs/platform-browser"
+import { BrowserCache, BrowserRuntime, type SharedSqlite } from "@smthrs/platform-browser"
 import { Effect, Layer, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { answer, authorizeDevice, boundFetch, IDENTITY_MESSAGE, type Receipt, sessionNow, VISITOR } from "../device/identity"
@@ -86,8 +87,8 @@ const run = (model?: Model.Model, summaryModel?: Model.Model, rendererModel?: Mo
     name: ENGINE_NAME,
     // The SQLite build loads only once this worker leads, and only in this worker's bundle.
     sqlite: {
-      module: () => import("@journeyapps/wa-sqlite/dist/wa-sqlite.mjs"),
-      wasm: () => fetch(wasmUrl).then((response) => response.arrayBuffer()),
+      module: async () => ({ default: SqliteFactory }),
+      wasm: BrowserCache.readAsset(wasmUrl).pipe(Effect.provide(BrowserCache.layerAssets())),
     },
     flows: clientFlows,
     // Before it serves the device store to any tab, the leader brings it to this build's versions, once per epoch, as

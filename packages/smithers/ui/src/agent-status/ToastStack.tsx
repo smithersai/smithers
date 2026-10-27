@@ -147,7 +147,7 @@ export type ToastProps = Omit<ComponentProps<"div">, "children" | "title"> & {
   /** Its one action. */
   action?: { readonly label: string; readonly onAction: () => void } | undefined;
   /** Hide: the toast goes, and what it is about stays where it lives. H. */
-  onHide: () => void;
+  onHide?: () => void;
   /** The × button's accessible name. Default `Hide`. */
   hideLabel?: string;
   /** Not yet read: a dot before the glyph, and `Unread` for screen readers. */
@@ -166,7 +166,7 @@ export type ToastProps = Omit<ComponentProps<"div">, "children" | "title"> & {
 
 /**
  * One toast: the state's glyph and word, a detail on one line, at most one
- * action, and Hide. Tone follows the state: gold for needs you, ember for
+ * action, and optional Hide. Tone follows the state: gold for needs you, ember for
  * failed, brand for working, muted for an update. With `onOpen` its words are
  * a button that opens what it is about. A focused toast takes `NOTICE_KEYS`:
  * O opens, E expands, A answers, H hides and R marks it read.
@@ -212,7 +212,7 @@ export function Toast({
     onOpen === undefined ? null : NOTICE_KEYS.open,
     onExpand === undefined ? null : NOTICE_KEYS.expand,
     onAnswer === undefined ? null : NOTICE_KEYS.answer,
-    NOTICE_KEYS.hide,
+    onHide === undefined ? null : NOTICE_KEYS.hide,
     onRead === undefined ? null : NOTICE_KEYS.read,
   ].filter((key) => key !== null).join(" ");
   const face = (
@@ -264,7 +264,7 @@ export function Toast({
           {action.label}
         </Button>
       )}
-      <Button
+      {onHide === undefined ? null : <Button
         variant="ghost"
         size="icon"
         className="sui-toast-hide"
@@ -274,7 +274,7 @@ export function Toast({
         onClick={onHide}
       >
         ×
-      </Button>
+      </Button>}
     </div>
   );
 }

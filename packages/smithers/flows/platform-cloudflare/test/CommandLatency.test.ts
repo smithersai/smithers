@@ -227,7 +227,9 @@ describe.runIf(Postgres.direct.available && process.env.COMMAND_LATENCY_BENCH !=
     it.live(
       "run, a command that outlives its drive's budget",
       () =>
-        Effect.asVoid(measure({ warm: 20, exitAfterMs: 30_000, rttMs: benchRttMs, call: "run", driveBudgetMs: 10_000 })),
+        Effect.asVoid(
+          measure({ warm: 20, exitAfterMs: 30_000, rttMs: benchRttMs, call: "run", driveBudgetMs: 10_000 })
+        ),
       { timeout: 600_000 }
     )
   }

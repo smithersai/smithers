@@ -19,6 +19,7 @@ import {
 } from "./queries"
 import { CheckRow, commitKey, FilesRow, PullCommitRow, PullRow, PullsView, ReviewRow, VIEW } from "./schema"
 import { observePullShape } from "./shapeSync"
+import { refreshingSource } from "./refresh"
 
 // Pull requests on this tab (decision 0012 §6, docs/features/pulls.md#the-browser): each repository's pull requests,
 // their commits, reviews and checks in Postgres, synced by Electric per repository (`?repo=`, decision 0079 slice 1b)
@@ -180,7 +181,7 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
       // A pull request's commits, reviews and checks open only while the route shows one (decision 0112): the
       // repository's pages and its list of pull requests never ask for them.
       const detail = ShapeSource.gated(
-        source,
+        refreshingSource(source, view, id),
         Stream.zipLatestWith(authority, detailShown(view), (status, shown) => status === "allowed" && shown),
       )
       const pulls = yield* ElectricCollection.make<PullRow>({

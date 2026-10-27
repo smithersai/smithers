@@ -7,6 +7,9 @@
       },
       {
         "slug": "docs/quickstart"
+      },
+      {
+        "slug": "docs/settings"
       }
     ]
   },
@@ -29,6 +32,17 @@
     "items": [
       {
         "slug": "docs/flows"
+      },
+      {
+        "slug": "docs/commands"
+      }
+    ]
+  },
+  {
+    "label": "Operators",
+    "items": [
+      {
+        "slug": "docs/operator"
       }
     ]
   },

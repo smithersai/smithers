@@ -78,13 +78,18 @@ packages are namespaces:
 import { Action, Engine, Flow, Interpreter, Journal, Kernel } from "@smthrs/flows"
 ```
 
-The runtime core, `Runtime`, consumes injected services. The native
-compositions are in the platform packages, imported from their roots:
+The runtime core, `Runtime`, consumes injected services. In the published
+`1.0.0-rc.16`, import the Node runtime and sandbox composition from
+these subpaths:
 
 ```ts
-import { BunRuntime } from "@smthrs/platform-bun"
-import { NodeRuntime, SandboxedFlow } from "@smthrs/platform-node"
+import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import * as SandboxedFlow from "@smthrs/flows/SandboxedFlow"
 ```
+
+The source checkout relocates these namespaces to `@smthrs/platform-node`
+and the Bun runtime to `@smthrs/platform-bun`. Those root runtime exports are
+not part of the published rc.16 packages.
 
 Two subpath forms are blocked in the export map and are not public:
 `@smthrs/flows/internal/*` and `@smthrs/flows/*/index`.
@@ -99,13 +104,13 @@ own package:
 
 | Runtime           | Runtime export                         | Platform package                                                    |
 | ----------------- | -------------------------------------- | ------------------------------------------------------------------- |
-| Node.js           | `NodeRuntime`                          | [`@smthrs/platform-node`](../platform-node/docs/api.md)             |
+| Node.js           | `NodeRuntime`                          | `@smthrs/flows/NodeRuntime` (rc.16)                                 |
 | Bun               | `BunRuntime`                           | [`@smthrs/platform-bun`](../platform-bun/docs/api.md)               |
 | Browser tab       | `BrowserRuntime`, `BrowserEngine`      | [`@smthrs/platform-browser`](../platform-browser/docs/api.md)       |
 | Cloudflare Worker | `CloudflareRuntime`, `ExecutionObject` | [`@smthrs/platform-cloudflare`](../platform-cloudflare/docs/api.md) |
 
 `@smthrs/platform-node` supplies the Node host, containment, process reaping,
-the liveness probe, and `NodeRuntime`. It carries its own copy of
+and the liveness probe. In rc.16, `NodeRuntime` is in the flows subpath above. It carries its own copy of
 `@effect/platform-node` and installs the SQLite driver `@effect/sql-sqlite-node`,
 so a Node program adds no `@effect/*` package of its own. The
 [Bun](#bun-durable-execution) section has the Bun line.
@@ -151,7 +156,7 @@ npm install @effect/sql-pg
 ```
 
 Then set `SMITHERS_POSTGRES_URL` to a `postgres://` connection string, or pass
-one as the `filename` of `NodeRuntime.layerHost` from `@smthrs/platform-node`. `SMITHERS_BACKEND=sqlite`
+one as the `filename` of `NodeRuntime.layerHost` from `@smthrs/flows/NodeRuntime` in rc.16. `SMITHERS_BACKEND=sqlite`
 keeps a filename on SQLite even when `SMITHERS_POSTGRES_URL` is set.
 [SQLite and PostgreSQL](../database/docs/concepts/sqlite-only.md) covers the
 schema each store gets and the role permissions the adapter needs.

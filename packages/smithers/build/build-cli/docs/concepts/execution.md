@@ -327,3 +327,19 @@ query, and fragment before it appears anywhere; the full value stays in the
 failure's cause. An agent prompt's data files are read through a descriptor
 proven to resolve inside the workspace, so an in-workspace symlink cannot pull
 a host file into a model prompt.
+
+## Declared outputs must be produced
+
+A zero exit code succeeds only when every declared output exists with its
+declared kind. Failure names the target and every missing output path, before
+publishing a successful cache entry.
+
+Sandbox setup may prepare exact writable output directories. An empty prepared
+directory does not prove that the tool produced an output. The current
+declaration API has no explicit empty-directory output form, so empty output
+directories fail too. A zero-byte output file is valid. Previous cached empty
+directory manifests are misses.
+
+This is the build-4 decision: validate products, without syscall provenance or
+wider sandbox grants. Targets must write a file into each declared output
+directory, or declare the files they actually produce.

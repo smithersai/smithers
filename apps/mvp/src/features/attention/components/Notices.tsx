@@ -39,14 +39,13 @@ function Notice({ entry, surface }: { readonly entry: Entry; readonly surface: S
       {...(entry.detail === null ? {} : { detail: entry.detail })}
       unread={entry.unread}
       onOpen={() => actions.open(entry.id, surface)}
-      onExpand={() => actions.openPanel("toast", entry.id)}
-      onRead={() => actions.read(entry.id)}
+      {...(entry.local === true ? {} : { onExpand: () => actions.openPanel("toast", entry.id), onRead: () => actions.read(entry.id) })}
       {...(answers
         ? { action: { label: "Answer", onAction: () => actions.open(entry.id, surface) }, onAnswer: () => actions.answer(entry.id, surface) }
         : retries
         ? { action: { label: TRY_AGAIN, onAction: () => actions.retry(entry.id) } }
         : {})}
-      onHide={() => actions.hide(entry.id)}
+      {...(entry.local === true ? {} : { onHide: () => actions.hide(entry.id) })}
       data-subject={entry.id}
       {...(entry.runId === null ? {} : { "data-run": entry.runId })}
     />

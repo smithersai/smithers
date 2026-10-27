@@ -5,12 +5,12 @@ import { Link, useParams } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
 import { SignInButton } from "../../features/auth/components/SignInButton"
 import { useIssues } from "../../features/issues/components/IssuesContext"
-import { pageOf } from "../../features/issues/view"
+import { NOT_FOUND } from "../../features/issues/contract"
 import { usePulls } from "../../features/pulls/components/PullsContext"
 import { githubPullUrl, type PullTab, pullTabPath } from "../../features/pulls/contract"
 import { ChangedFiles } from "../../features/pulls/components/ChangedFiles"
 import { CommitList } from "../../features/pulls/components/CommitList"
-import { checkRows, checksSummaryOf, conversationProps, mergeBoxOf, pullAccessOf } from "../../features/pulls/view"
+import { checkRows, checksSummaryOf, conversationProps, mergeBoxOf, pullAccessOf, pullPageOf } from "../../features/pulls/view"
 import "./pulls-screen.css"
 import { useRepoAnswer } from "../../features/repo/components/RepoContext"
 
@@ -33,12 +33,12 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
   const { data: session } = useLiveQuery(auth.queries.session)
   const answer = useRepoAnswer(owner, repo)
   const issues = useIssues()
-  const { data: synced, isReady: syncedReady } = useLiveQuery(issues.queries.synced)
+  const { isReady: syncedReady } = useLiveQuery(issues.queries.synced)
   const { data: access } = useLiveQuery(issues.queries.access)
-  // A pull request is an issue row of kind `pull`: shown, loading until the first complete sync, or not there.
+  // A repository walk cannot prove a PR is absent; detail shapes carry its own GitHub absence receipt.
   const pageAccess = pullAccessOf(access, view)
   const back = <Button asChild variant="ghost"><Link to="/$owner/$repo/pulls" params={{ owner, repo }}>Pull requests</Link></Button>
-  const page = pageOf(pull, synced, pullReady && view?.installed === true, syncedReady, pageAccess)
+  const page = pullPageOf(pull, view?.pullAbsent === true, pullReady && view?.installed === true, syncedReady, pageAccess)
   if (page === "sign_in") return <main className="pulls-screen"><RepoHeader />{back}<SignInButton /></main>
   if (page === "missing") return <main className="pulls-screen"><RepoHeader /><NotFound title="Pull request not found" back={back} /></main>
 

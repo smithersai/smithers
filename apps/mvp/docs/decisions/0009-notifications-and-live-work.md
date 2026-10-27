@@ -277,3 +277,7 @@ A persisted clone request owns a feed entry before its remote execution starts. 
 Uses the library catalog's `@smthrs/flow` durable launch and `@smthrs/notifications` feed entries; no new scheduler or retry loop.
 
 The clone-feed e2e must wait for the retry's own terminal repository row, identified by its incremented attempt. Seeing the repository name again is only an acknowledgment and can still be the first failure's text. Ending the browser context then can strand a persisted request before its browser flow launches the remote execution. Tests must leave every clone they request settled.
+
+## Branch write receipts (2026-10-27)
+
+Publish and Update branch raise `write:<write id>` notices to their actor in the write's admission and settlement transactions. These notices use kind `write`, link to the branch, and carry only the operation name. The browser's immediate, quiet launch toast shares that identity and yields to the synced receipt. Only the receipt offers notification acknowledgment controls; a local launch Open never acknowledges a nonexistent server notice. An admitted write stays working until its actual terminal receipt. Migration 0071 expands the notification kind and state constraints; the device notification schema becomes version 4.

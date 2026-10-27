@@ -1345,6 +1345,14 @@ describe("wrap and environment", () => {
 })
 
 describe("diagnose", () => {
+  it.each(["mkdir: notes: Operation not permitted", "touch: notes: Permission denied"])(
+    "classifies write-tool denials: %s",
+    (message) => {
+      expect(ProcessSandbox.diagnose(planned(linux), message))
+        .toContain("sandbox: pkg/notes is outside the declared write set")
+    }
+  )
+
   it("names the workspace paths a tool was denied and which side of the boundary they fell on", () => {
     const plan = planned(linux)
     const text = [
@@ -2019,4 +2027,59 @@ describe("strict native seatbelt policy", () => {
     expect(profile).not.toContain("(allow job-creation")
     expect(profile).not.toContain("(allow appleevent-send")
   })
+})
+
+describe("portable sandbox refusal contracts", () => {
+  it("refuses Docker loopback networking before granting a wider network", () => {
+    expect(ProcessSandbox.select({
+      network: "loopback",
+      mechanism: { _tag: "docker", image: "fixture" }
+    }, windows)).toMatchObject({ _tag: "@smthrs/platform-node/SandboxUnenforceable", missing: "network: true" })
+  })
+
+  it("refuses a file declared as a writable directory instead of granting its parent", () => {
+    const result = ProcessSandbox.plan(
+      { network: "none", reads: [], writes: ["src/a.ts"] },
+      { workspaceRoot: root, cwd: root, tmp: `${root}/.tmp` },
+      linux
+    )
+    expect(result).toMatchObject({ _tag: "@smthrs/platform-node/SandboxUnenforceable", missing: "directory write" })
+  })
+
+  it("refuses an absent read-only subtree inside a writable bubblewrap mount", () => {
+    const result = planned(linux, { writes: ["dist"], writeFiles: [], readOnly: ["dist/private"] })
+    expect(() => ProcessSandbox.bubblewrap(result, ["true"], linux))
+      .toThrow(/a missing readOnly path cannot be sealed/)
+  })
+
+  it("renders explicit read denials under seatbelt grants", () => {
+    const result = { ...planned(darwin), readDenies: [`${root}/private`] }
+    expect(ProcessSandbox.seatbelt(result, darwin))
+      .toContain("(deny file-read* (subpath \"/work/ws/private\"))")
+  })
+
+  it("rechecks loopback-only networking when rendering an existing Docker plan", () => {
+    const result = {
+      ...planned(windows, { mechanism: { _tag: "docker", image: "fixture" } }),
+      network: "loopback" as const
+    }
+    expect(() => ProcessSandbox.docker(result, ["true"], {}, windows, "fixture"))
+      .toThrow(/docker cannot render loopback-only networking/)
+  })
+})
+
+it("resolves declared reads through the native filesystem when no realpath adapter is supplied", () => {
+  const { base, workspaceRoot, facts } = writeFixture()
+  try {
+    const input = NodePath.join(workspaceRoot, "input.txt")
+    NodeFs.writeFileSync(input, "input")
+    const result = ProcessSandbox.plan(
+      { network: "none", reads: ["input.txt"], writes: [] },
+      { workspaceRoot, cwd: workspaceRoot, tmp: NodePath.join(workspaceRoot, ".tmp") },
+      { ...facts, realpath: undefined }
+    )
+    expect(result).toMatchObject({ reads: [input], externalReads: [] })
+  } finally {
+    NodeFs.rmSync(base, { recursive: true, force: true })
+  }
 })

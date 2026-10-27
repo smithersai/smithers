@@ -123,7 +123,10 @@ outputs.set(join(dataDir, "cli-commands.json"), JSON.stringify(manifest, null, 2
 outputs.set(join(dataDir, "removed-commands.json"), JSON.stringify(removed, null, 2) + "\n")
 outputs.set(join(site, guidePage), renderMigrationPage(readFileSync(join(root, guideSource), "utf8"), removed))
 outputs.set(join(helpDir, "smthrs.txt"), topHelp)
+// Reference supplements do not widen install discovery, skills or MCP.
+const referenceCommands = ["change list", "change status", "change files", "change show", "change conflicts", "generate package", "generate ci", "tui"]
 const commandPaths = new Set([
+  ...referenceCommands,
   "completions", "mcp", "mcp add", "mcp doctor", "skills", "skills add", "skills list"
 ])
 // B.6 plus Appendix A person-facing commands; manifest stays agent-filtered.
@@ -139,6 +142,18 @@ for (const command of [...commandPaths].sort()) {
   const tokens = command.split(" ")
   outputs.set(join(helpDir, ...tokens.slice(0, -1), `${tokens.at(-1)}.txt`), await help(tokens))
 }
+
+const reference = []
+for (const name of referenceCommands) {
+  const tokens = name.split(" ")
+  const text = outputs.get(join(helpDir, ...tokens.slice(0, -1), `${tokens.at(-1)}.txt`))
+  reference.push({
+    name,
+    description: text.split("\n")[0].split(" — ").slice(1).join(" — "),
+    schema: JSON.parse(await capture([...tokens, "--schema", "--format", "json"]))
+  })
+}
+outputs.set(join(dataDir, "cli-reference-extra.json"), JSON.stringify(reference, null, 2) + "\n")
 
 // M-35: retain source CLI schemas and help; remove the retired per-command pages.
 const helpFiles = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>

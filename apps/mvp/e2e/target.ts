@@ -112,6 +112,7 @@ export type Run = {
   readonly target: Target
   /** Whether the app under test is `alchemy dev` on this machine, a dev build, even when it signs in through GitHub. */
   readonly devBuild?: boolean
+  readonly browserName?: () => string
   readonly role: () => Role | null
   readonly env: Readonly<Record<string, string | undefined>>
   /** Whether a deployment run has its own conversation to ask in (read only when a need asks). */
@@ -160,6 +161,18 @@ const scratchSet = (run: Run) =>
   run.target === "deployment" && /^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_ISSUES_REPOSITORY ?? "") && !/^smithersai\//i.test(run.env.E2E_ISSUES_REPOSITORY!)
 
 const needs = {
+  chromium: {
+    met: (run) => run.browserName?.() === "chromium",
+    reason: "it uses Chromium's native minimum-font launch setting, which other browser engines do not implement",
+  },
+  duplicateDrafts: {
+    met: (run) => set(run, "E2E_DUPLICATE_DRAFT_NAME"),
+    reason: "it needs E2E_DUPLICATE_DRAFT_NAME naming the two existing personal drafts with the same name",
+  },
+  inspectRun: {
+    met: (run) => set(run, "E2E_INSPECT_RUN"),
+    reason: "it needs E2E_INSPECT_RUN naming an existing readable run whose Steps panel can receive focus",
+  },
   faults: devBuildOnly("the app's faulty services (`/app?faults`, e2e/faults.ts) are in dev builds only"),
   scriptedAgent: devBuildOnly("the scripted model (`/app?agent=<script>`) is in dev builds only"),
   devPeople: {
@@ -371,6 +384,7 @@ export const ownPlace = (): Place | undefined => (target === "local" ? undefined
 const thisRun: Run = {
   target,
   devBuild: onThisMachine(baseURL),
+  browserName: () => base.info().project.use.browserName ?? "chromium",
   role: () => me().role,
   env: process.env,
   ownConversation: () => ownPlace() !== undefined,
@@ -400,7 +414,7 @@ export const requires = (...names: ReadonlyArray<NeedName>) => {
     } else {
       // A modifier's condition may be read once per worker, so a hook records the need for each test of the scope.
       base.beforeEach(() => record(name))
-      base.skip(() => !meets(name), describeNeed(name))
+      base.skip(({ browserName }) => !meets(name, { ...thisRun, browserName: () => browserName }), describeNeed(name))
     }
   }
 }

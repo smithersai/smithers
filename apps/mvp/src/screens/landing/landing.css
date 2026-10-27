@@ -10,7 +10,7 @@
   text-align: center;
 }
 
-.landing-title { margin: 0 0 1.6rem; }
+.landing-title { margin: 0 0 1.6rem; min-width:0; max-width:100%; }
 
 .landing-tagline {
   max-width: 52rem;

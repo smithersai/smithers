@@ -8,6 +8,9 @@ has to agree on what it means. This package owns that agreement: one table maps
 a status spelling to a tone, one function humanizes it into a label, and the
 components read both.
 
+`FlowGraph` accepts `skipped` for an action with evidence that it never dispatched.
+It renders Skipped, separately from Queued, Failed and Stopped.
+
 Reach for these helpers rather than writing a `switch` in each surface. A
 hand-written mapping drifts, and two panels on the same page end up disagreeing
 about what `succeeded-with-failures` looks like.

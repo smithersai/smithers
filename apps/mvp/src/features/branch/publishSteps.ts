@@ -6,6 +6,7 @@ import { HttpClient } from "effect/http"
 import { parts } from "../repo/flows"
 import { BranchClient, type BranchWrite, BranchWrites, type TrackRefused } from "./api"
 import { CONVERSATION_NAMESPACE } from "./contract"
+import { operationWriteId } from "./writeIdentity"
 import { OPERATION_ACTIONS } from "./creation"
 import { selection } from "./creationSteps"
 import { BranchTrackRefused, BranchTrackUnavailable } from "./flows"
@@ -145,7 +146,7 @@ const operate = (
 ) =>
   Effect.gen(function* () {
     const { executionId } = yield* FlowRuntime.FlowInstance
-    const writeId = yield* Uuid.v5(CONVERSATION_NAMESPACE, `${operation}:${executionId}`).pipe(Effect.orDie)
+    const writeId = yield* operationWriteId(operation, executionId)
     const tracked = yield* requestTrack({ repo: request.repo, branch: request.branch })
     const [owner, name] = parts(request.repo)
     return yield* run({

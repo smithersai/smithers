@@ -24,7 +24,7 @@ export function Report({ tab }: { readonly tab: BugsTab }) {
           after another starts the field again with its own words. */}
       <Textarea
         key={state.status === "sent" ? state.report.id : "draft"}
-        defaultValue={state.status === "sending" || state.status === "failed" ? state.what : ""}
+        defaultValue={state.status === "sending" || state.status === "failed" || state.status === "invalid" ? state.what : ""}
         name="what"
         aria-label="What happened?"
         placeholder="What happened?"
@@ -37,6 +37,7 @@ export function Report({ tab }: { readonly tab: BugsTab }) {
         <Button type="submit" disabled={state.status === "sending"}>{state.status === "failed" ? "Retry" : "Send"}</Button>
         <p className="bugs-form-status" role="status" aria-live="polite">
           {state.status === "sending" ? "Sending" : null}
+          {state.status === "invalid" ? (state.code === "empty" ? "Write what happened" : "Report too long") : null}
           {state.status === "failed" ? `Not sent · ${reasonOf(state.code)}` : null}
           {state.status === "sent"
             ? (

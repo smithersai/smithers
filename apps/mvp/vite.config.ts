@@ -10,7 +10,7 @@ import { commandMaxSeconds } from "./src/features/sandbox/config.ts"
 import { DOCS_SITE, FRAME_POLICY, PAGE_HEADERS, shellCaches } from "./src/pwa.ts"
 
 // The app's shell, for the service worker to precache: everything a reload needs before it reaches the network.
-const SHELL = ["**/*.{js,css,html,woff2,svg,png}"]
+const SHELL = ["**/*.{js,css,html,woff2,svg,png,wasm}"]
 
 // Never the service worker's: ChatApi, the Electric shape proxy, the telemetry relay and the model endpoint.
 const API = /^\/api\//

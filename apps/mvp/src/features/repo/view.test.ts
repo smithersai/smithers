@@ -299,6 +299,7 @@ describe("fileLinksOf", () => {
   test("a file over the limit opens GitHub's raw bytes; one not loaded yet, failed, or at no commit has nothing", () => {
     expect(fileLinksOf(view, blob({ state: "too-large", contents: null, size: 600_000 }))).toEqual({
       raw: `https://github.com/octocat/Spoon-Knife/raw/${SHA}/docs/a%20b.md`,
+      download: { href: `/api/repos/octocat/Spoon-Knife/raw/${SHA}/docs/a%20b.md?download=1`, name: "a b.md" },
       copyContents: false,
     })
     for (const file of [undefined, blob({ state: "loading" }), blob({ state: "failed", message: "Not found" })]) {

@@ -1,9 +1,12 @@
-smthrs agents — The factory's agents
+smthrs generate ci — Generate CI files using the workspace's declared GitHub workflow target
 
-Usage: smthrs agents [options]
+Usage: smthrs generate ci [options]
 
 Options:
-  --verbose  Show redacted diagnostic details
+  --workspace <string>   (default: <cwd>)
+  --target <string>     Declared generator label; required when more than one matches
+  --plan                Show the generator plan without writing files
+  --verbose             Show redacted diagnostic details
 
 Custom Global Options:
   --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)

@@ -277,6 +277,41 @@ You opened a repository on smithers.sh, read a file, listed its issues, and star
 
 ---
 
+# Settings
+https://smithers.sh/docs/settings/
+
+Open [Settings](https://smithers.sh/app/settings). Your model is personal; deployment controls appear for an Admin.
+
+## Your model
+
+Members and above can save their own model keys. Under **Your model**, enter the provider's **Base URL** and **Key** for an OpenAI-compatible or Anthropic-compatible API.
+
+Choose the model and key for each tier:
+
+| Tier | Used for |
+| --- | --- |
+| Fast | Chat, generated views, judgments and summaries |
+| Implement | Coding |
+| Hard | Plans and reviews |
+
+Choose **Save**, then **Test** to check the saved configuration. Keys are never displayed. An empty Key keeps the saved key at that Base URL; clearing the Base URL removes it. **Remove** deletes your saved configuration.
+
+Calls use your configured models and your provider's billing, outside the deployment's daily model budget. A rejected key or exhausted provider quota appears as a failure; Smithers does not silently switch to the deployment's model.
+
+## Spend alerts
+
+An Admin can set **Email** recipients and a **Telegram chat** under **Spend alerts**. Save each channel separately; an empty field turns that channel off. Delivery receipts show **Sent**, **Retrying** or **Refused** with the reason. Model spend appears in Admin notifications.
+
+## Sandboxes
+
+An Admin sets **Awake**, **Awake per person** and **Monthly alert ($)** under **Sandboxes**, then chooses **Save**.
+
+Defaults are 20 awake across the deployment, 2 per person and a $100 monthly alert. A sandbox that would exceed an awake limit waits for capacity. Setting the monthly alert to $0 turns that alert off; it does not cap spending. **Saving** or **Not saved** means the update has not landed.
+
+Operators can also configure [deployment limits](https://smithers.sh/docs/operator/).
+
+---
+
 # Run agents on your Mac
 https://smithers.sh/docs/local-quickstart/
 
@@ -552,7 +587,7 @@ Two running installs would both act on the same repository. Keep backup director
 
 ## API and flows
 
-The [HTTP API reference](https://smithers.sh/docs/reference/http-api/) documents the API used by the app and CLI. See [Flows reference](https://smithers.sh/docs/flows/#change-a-flow) to customize how TODOs run.
+The [HTTP API reference](https://smithers.sh/docs/reference/http-api/) documents the API used by the app and CLI. The [Flows reference](https://smithers.sh/docs/flows/) covers personal flows in the hosted app.
 
 ## Open the wiki in Obsidian
 
@@ -563,63 +598,136 @@ In Settings, set **Obsidian folder** to an existing folder on the install's Mac,
 # Flows reference
 https://smithers.sh/docs/flows/
 
-Every action in Smithers is a flow: a typed, durable program that a button, a slash command and an agent all run the same way. This page shows how to find a flow, change one and write your own.
+Open [Flows](https://smithers.sh/app/flows) to see your saved flows and drafts. Members and above can create and run personal flows.
 
-## Find a command
+## Create a flow
 
-Type `/` in Chat to see commands and groups. Type more letters to filter them. `/help` opens the Commands card. `/flows` lists repository flows; `/flow todo` opens the TODO flow's steps and versions.
+Choose **New flow**, enter a name and what it should do, then submit. In Chat, `/flow.new greet Return a greeting` starts the same draft. Type `/` to find commands; see the [command reference](https://smithers.sh/docs/commands/).
 
-A button, slash command and agent action run the same typed flow. A flow called without required inputs opens a form for the missing fields.
+The draft shows its questions, code and checks. Answer any questions. **Save** becomes available when the draft is ready and its checks pass. A failed draft shows why and offers **Draft again**.
 
-## Change a flow
+## Edit and inspect
 
-The overridable flows are `todo`, `learning`, `review` and repository flows. Built-in defaults need no repository commit. System flows are protected actions: stack operations, merge, members, settings, secrets, setup and sync. They cannot be overridden.
+On Flows, **Edit** starts a draft from the saved flow's latest source. Describe the change, review the resulting code and checks, then choose **Save**.
 
-In Chat, type `/flow.edit todo` followed by a requested change to the TODO flow, or ask the app agent to propose it. The change becomes an ordinary TODO. Review its evidence and merge it as you would any other change.
+**Code** opens the saved source for direct editing. Saving creates another revision. **Delete** removes a saved flow or an unfinished draft.
 
-A file flow lives at `.smithers/flows/<name>/flow.ts`. Its default export uses the path's name as the first argument to `Flow.make` from `@smthrs/flow`:
+## Run a flow
 
-```ts
-import { Flow } from "@smthrs/flow"
-import { Node } from "@smthrs/plan"
-import { Schema } from "effect"
+Choose **Run**, or type `/flow.run greet` in Chat. An optional input follows the name: `/flow.run greet Hello`.
 
-export default Flow.make("greet", {
-  description: "Return a greeting",
-  capabilities: [],
-  effects: [],
-  payload: Schema.Struct({ name: Schema.String }),
-  success: Schema.String,
-  body: Node.capture({}, ({ name }) => Node.succeed(`Hello, ${name}`))
-})
-```
+A run uses the saved revision selected when it starts. Later edits do not change that run. Its run page shows progress, results or a failure reason.
 
-Use `/flow.source todo` to open the source through its proposed TODO. The name, input, success and body belong to one flow declaration.
+Personal code runs in the browser's isolated realm. A flow that needs a machine says **Needs a sandbox** and cannot run yet.
 
-## Versions and pinning
+## SDK file flows
 
-| Version | Meaning |
-| --- | --- |
-| Proposed | An open TODO changes the flow. |
-| Merged · syncing | The change is on `main`; the install is loading and checking it. |
-| Active | The newest successfully loaded version. New attempts use it. |
-| Merged · not active | Loading failed. Read the error and propose a fix; the previous Active version stays in use. |
+System flows are protected actions; personal revisions do not replace them.
 
-An attempt pins the flow's source commit and digest when it enters Starting. The digest includes imported repository modules and the lockfile. Edits on its branch do not change the running version. Retry and Resume keep that pin. Retry with the current flow starts a new attempt using Active and retains the TODO's earlier evidence.
+The CLI and SDK also load file flows from `.smithers/flows/<name>/flow.ts`. See the [flow API](/docs/reference/api/flow/) and [CLI reference](/docs/reference/cli/). The app's Flows page manages personal flows; repository file-flow overrides and activation controls are not available there.
 
-## Configuration
+---
 
-The install stores detected check commands, default wiki pages and model settings. Default flows work without `.smithers/` files. Repository configuration in `.smithers/*` on active `main` overrides install values field by field. Merge configuration changes before starting work that should use them.
+# Chat commands
+https://smithers.sh/docs/commands/
 
-## Learning proposals
+In Chat, type `/` to list commands available to you. Type to filter; Tab completes a row; Enter runs a complete command. Missing arguments stay in the composer. The last text argument takes the rest of the line. Brackets below mean optional arguments.
 
-Learning proposals are suggested improvements based on evidence from prior TODOs, offered after a merge. Turn the proposal into a TODO, review and merge it. It applies after the new version becomes Active; learning cannot change the running factory directly.
+The composer is available to Members and above. Minimum roles below describe each command's permission; they do not give Guests a composer. Commands operate in the current conversation unless they ask for a repository.
 
-## Run on a scratch branch
+## Commands
 
-On a scratch branch, open the Flow card and choose **Plan** to inspect its working-copy version without running steps, or **Run** with a test input. The run is labeled draft version. It is separate from a TODO attempt. A draft run of `todo` stops before proposing onto the stack and writes nothing to GitHub.
+`repo` means `owner/name`; issue and TODO numbers are positive integers.
 
-See [Self-host Smithers](https://smithers.sh/docs/self-host/#first-todo-to-merged) for your first change.
+| Command | Arguments | Minimum role | Action |
+| --- | --- | --- | --- |
+| `/theme` | `light` or `dark` | Anyone | Set this device's theme. |
+| `/navigate` | app path | Anyone | Open a page in this tab. |
+| `/copy` | none | Anyone | Copy the latest finished answer. |
+| `/new` | `repo [branch]` | Member | Start a conversation. |
+| `/web` | `url [embed\|tab]` | Member | Open a web page. |
+| `/docs` | `repo query` | Member | Find repository documentation. |
+| `/repo` | `repo` | Member | Open the repository view. |
+| `/issues` | `repo` | Member | Show the repository's issues. |
+| `/edit` | none | Member | Return the latest unsent question to the composer. |
+| `/clone` | `repo` | Member | Clone a repository. |
+| `/flow.new` | `name request` | Member | Draft or edit a personal flow. |
+| `/flow.run` | `name [input]` | Member | Run the latest saved revision. |
+| `/branch.new` | `repo branch` | Member | Create and track a branch. |
+| `/publish` | `title` | Member | Publish this branch's changes as a pull request. |
+| `/branch.update` | none | Member | Update the current branch. |
+| `/branch.resync` | none | Member | Resync the current branch. |
+| `/issue` | `repo title` | Guest | Open an issue. |
+| `/comment` | `repo number comment` | Guest | Comment on an issue. |
+| `/triage` | `repo number accept\|reject [reason]` | Member | Set triage and pin the decision. |
+| `/issue.commitment` | `repo number now\|next\|later\|none` | Maintainer | Set implementation commitment. |
+| `/triage.run` | `repo number` | Member | Unpin and run automatic triage again. |
+| `/triage.enable` | `repo [dailyTokens]` | Maintainer | Enable automatic triage. |
+| `/triage.pause` | `repo` | Maintainer | Pause automatic triage. |
+| `/todo.new` | `repo prompt` | Member | Draft a private TODO. |
+| `/todo.issue` | `repo issue` | Member | Draft a TODO from an issue. |
+| `/todo.drop` | `repo number` | Member | Request dropping a committed TODO. |
+| `/run` | shell command | Member | Run on the current branch's sandbox. |
+| `/read` | file path | Member | Read a sandbox file. |
+| `/write` | `path content` | Member | Replace a sandbox file. |
+| `/ls` | `[path]` | Member | List sandbox files. |
+| `/status` | none | Member | Show sandbox changes. |
+| `/diff` | `[paths]` | Member | Show the sandbox diff. |
+
+## Plugin commands
+
+Enabled plugins can contribute commands. The shipped queue and bug plugins add:
+
+| Command | Arguments | Minimum role | Action |
+| --- | --- | --- | --- |
+| `/queue` | none | Member | Open the decision queue. |
+| `/bug` | none | Guest | Open the bug report form. |
+| `/bugs` | none | Guest | Open the bug inbox. |
+
+Shared writes are checked again by the server. Requested work continues in the background; follow its toast and run for completion or failure.
+
+---
+
+# Operator configuration
+https://smithers.sh/docs/operator/
+
+These settings apply to the hosted Workers stack deployed with Alchemy. Supply them through the deployment's Effect configuration and layers. Changes read at startup require a redeploy; [Settings](https://smithers.sh/docs/settings/) exposes the controls an Admin can change live. The planned Mac self-host setup is separate.
+
+## Model limits
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `MODEL_DAILY_TOKEN_BUDGET` | `1000000` | Deployment input and output tokens per UTC day; positive integer. Personal keys have their own provider billing. |
+| `MODEL_MAX_OUTPUT_TOKENS` | `8000` | Most output tokens one call may request; positive integer. |
+| `MODEL_MAX_MESSAGES` | `200` | Most messages per call; positive integer. |
+| `MODEL_MAX_REQUEST_BYTES` | `196608` | Largest request body; positive integer. |
+| `HOSTED_MODEL_ENABLED` | `false` (`true` in Alchemy dev) | Fallback while no Admin has set hosted inference. An Admin's saved choice wins. |
+| `MODEL_SPEND_ALERTS` | `true` (`false` in Alchemy dev) | Notify Admins of deployment model spend. |
+| `MODEL_SPEND_ALERT_WINDOW` | `15 minutes` | Minimum window between spend alerts; at least one second. |
+| `MODEL_RESERVATION_EXPIRY` | `1 hour` | How long an unfinished model reservation lasts. |
+| `MODEL_ROLE_TIERS` | Built-in role map | JSON object mapping roles to tier and optional reasoning settings. |
+| `TIER_MODELS` | Unset | JSON object of `fast`, `implement` and `hard` model records. |
+| `SUMMARY_MODEL` | Unset | JSON model record for the summary role when no Admin set one. |
+| `ANSWER_TURN_LIVE_SECONDS` | `30` | Liveness bound for the agent role's current answer. |
+
+Provider credentials are server-held secrets referenced by name. Do not put their values in documentation, client configuration or logs. Personal keys are saved in Settings.
+
+## Sandbox limits
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `SANDBOX_COMMAND_MAX_SECONDS` | `3600` | Command time limit, 60 to 3600 whole seconds. Read by the Worker and browser build. |
+| `SANDBOX_COMMAND_STEP_WAIT_SECONDS` | `3600` | How long a remote step waits before handing off its command job, 0 to 3600 whole seconds; 0 hands off immediately. |
+| `SANDBOX_IDLE_SECONDS` | `900` | Idle time before a branch machine sleeps. Read by the remote flow host. |
+| `SANDBOX_INSTANCE` | `standard-1` | Container type: `lite`, `basic`, or `standard-1` through `standard-4`. |
+| `SANDBOX_START_TIMEOUT_SECONDS` | `150` | Maximum container start time before a failed wake. |
+| `SANDBOX_SECRETS` | `false` | Route additional outbound requests through secrets egress. Enable only after validating the deployment's egress setup. |
+
+Awake capacity, capacity per person and the monthly spend alert are stored settings under **Settings → Sandboxes**, separate from these startup settings.
+
+## Bindings
+
+`ELECTRIC_GATEWAY` is an Alchemy Worker service binding, not a URL environment variable. Database, storage and sandbox services are injected by the deployment's layers. Configure these resources in the infrastructure declaration; do not substitute credentials or deployment-specific hostnames into the public source.
 
 ---
 
@@ -3272,13 +3380,13 @@ const host = S.Host({ bins: ["git", "jj", "docker", "cargo", "go", "bash"] })
 const hostGit = S.Host.bin("git")
 const hostDocker = S.Host.bin("docker")
 
-// Workspace flags become references such as flags.production
+// Workspace flags become references on S.Flags, such as S.Flags.production
 const flags = S.Flags({
   production: "--production",
   verbose: "--verbose",
   updateSnapshots: "--update"
 })
-const productionFlag = flags.production
+const productionFlag = S.Flags.production
 
 // Mise and programs managed by Mise
 const mise = S.Mise({ config: S.file("//.mise.toml") })
@@ -3327,7 +3435,7 @@ const agents = S.Agents({
   codex: S.Agent.Codex({ model: "gpt-6-luna" }),
   reviewers: S.Agent.Pool(["claude", "codex"])
 })
-const reviewer = agents.reviewers
+const reviewer = S.Agents.reviewers
 
 // Teams and ownership policy
 const teams = S.Teams({
@@ -12025,6 +12133,9 @@ Explicit selection overrides detection, and MCP always remains machine-clean.
 This policy affects rendering only, not approvals or permissions. See
 [human and agent output](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/reference/cli/README.md#human-and-agent-output).
 
+The root entry point intentionally omits the retired `CodexAuth` namespace and
+its disabled subpath.
+
 ## Command
 
 The retained Effect CLI compatibility tree, used by hidden flat aliases.
@@ -12033,8 +12144,6 @@ New hosts should use `Cli.makeCli` for the unified public surface.
 | Export           | Signature                                                                                 | Meaning                                                                                                                                                                       |
 | ---------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cli`            | `Command`                                                                                 | The root command: every shipped verb with a handler, every removed verb and flag as a hidden refusal.                                                                         |
-| `migrationCli`   | `Command`                                                                                 | Local migration inspection tree, composed without opening execution databases.                                                                                                |
-| `doctorCli`      | `Command`                                                                                 | Local diagnostics tree using the discovery snapshot without opening execution databases.                                                                                      |
 | `signalKey`      | `(runId: string, payload: SignalPayload) => string`                                       | The idempotency key of one signal delivery: `cli:signal:<run-id>:<digest>`. The payload digest is part of the key because two different signals to one run are two mutations. |
 | `latestSequence` | `<E, R>(events: Stream<{ sequence: number }, E, R>) => Effect<number \| undefined, E, R>` | The greatest sequence in a stream, folded without retaining history. Stream failures are preserved, so a caller never substitutes a weaker cursor after a failed read.        |
 
@@ -12276,7 +12385,6 @@ The `flow start -d` launch.
 | `defaultTimeoutMs`                | `30_000`                                     | How long the parent waits for the admission line.                                                                                |
 | `defaultTerminationGraceMs`       | `2_000`                                      | How long a terminated child gets before it is killed.                                                                            |
 | `admissionLine`                   | `(nonce, runId) => string`                   | The line the child writes once the run row is durable.                                                                           |
-| `admittedRunId`                   | `(tail, nonce) => string \| undefined`       | Accepts only IDs matching `[A-Za-z0-9][A-Za-z0-9._-]{0,127}` from this nonce's admission line. An unsafe ID returns `undefined`. |
 | `logTail`                         | `(file, maxBytes?) => string`                | The end of a log file.                                                                                                           |
 | `terminate`                       | `(...) => Promise<...>`                      | Ends a child that never reached admission.                                                                                       |
 | `Launched`, `Rejected`, `Options` | interfaces                                   | The two outcomes of a launch, and its inputs.                                                                                    |
@@ -26561,7 +26669,7 @@ runnable composition.
 | Exit | Meaning                                                                                                                        |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------ |
 | 0    | Every planned unit finished.                                                                                                   |
-| 1    | A unit failed verification and was restored from its checkpoint.                                                               |
+| 1    | A unit failed and was restored from its checkpoint.                                                                            |
 | 3    | Parked. The project is intact and the operator has a decision to make: 0.x run state, or a construct with no safe translation. |
 
 ## MigrateError
@@ -27449,6 +27557,9 @@ component is `jsx`, and the agent decides what it becomes.
 one checkpoint, one agent frame, and one verification, which is what makes a
 failure recoverable: the tool restores the unit's checkpoint, marks it failed,
 and carries on.
+
+Agent failures include the credential or seat refusal in the summary. Repair
+round counts record attempted repairs; an initial agent refusal records zero.
 
 The order is fixed:
 
@@ -35726,6 +35837,8 @@ model host passes as `HostModel`'s `fetch` option. The `@smthrs/model-host` pack
 pool of its own, in the caller's scope, that follows the environment's proxy
 variables as `dispatcher` does and speaks HTTP/1.1 only. `connect` carries TLS
 options such as a private provider's `ca`.
+
+`@smthrs/model-host` is workspace-private; this composition example applies to source checkouts.
 
 ```ts
 import { HostModel } from "@smthrs/model-host"
@@ -46641,7 +46754,9 @@ shown in its place. See [Check a web page before framing it](https://github.com/
 # CLI reference
 https://smithers.sh/docs/reference/cli/
 
-Every command in `smthrs` 1.0.0-rc.16, as its `--help` describes it.
+Install discovery for `smthrs` 1.0.0-rc.16, plus additional local commands, as their `--help` describes them.
+
+Other callable library commands stay outside install discovery. Use their explicit `--help`; see the [library command reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/reference/cli/README.md) and [CLI API](/docs/reference/api/cli/).
 
 ```bash
 npm install -g smthrs@next
@@ -46652,7 +46767,6 @@ npm install -g smthrs@next
 | Command | Description |
 | --- | --- |
 | [`agent`](#agent) | Configure an agent |
-| [`agents`](#agents) | The factory's agents |
 | [`api`](#api) | Make raw API calls to the Smithers server |
 | [`branch`](#branch) | Branches and machines |
 | [`branches`](#branches) | List branches with presence |
@@ -46685,6 +46799,7 @@ npm install -g smthrs@next
 | [`todo`](#todo) | Answer the install's TODOs |
 | [`wiki`](#wiki) | Read and edit wiki pages |
 | [`workspace`](#workspace) | Create, open and run commands in workspaces |
+| [`tui`](#tui) | Open the terminal coding agent |
 
 ## Global options
 
@@ -46694,7 +46809,7 @@ Every command takes these options.
 | --- | --- | --- | --- | --- |
 | `--audience` | one of `auto`, `human`, `agent` | `auto` | no | Presentation audience; auto detects agent harnesses, CI, and terminals |
 | `--silent` | boolean | `false` | no | Suppress progress; retain the result and actionable failures |
-| `--ui` | one of `auto`, `tty`, `stream`, `plain` | `auto` | no | Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, --silent, pipe and dumb-terminal policies take precedence |
+| `--ui` | one of `auto`, `tty`, `stream`, `plain` | `auto` | no | Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, `--silent`, pipe and dumb-terminal policies take precedence |
 
 `smthrs --help` also lists these built-in options.
 
@@ -46741,18 +46856,6 @@ smthrs agent edit <name> [options]
 | --- | --- | --- | --- | --- |
 | `--request` | string, min length 1 |  | yes |  |
 | `--diff` | string |  | no |  |
-| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
-
-## `agents`
-
-The factory's agents
-
-```text
-smthrs agents [options]
-```
-
-| Option | Type | Default | Required | Description |
-| --- | --- | --- | --- | --- |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 
 ## `api`
@@ -46896,6 +46999,83 @@ smthrs change diff [id] [options]
 | `--repo`, `-R` | string |  | no | Repository (OWNER/REPO) |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 
+### `change list`
+
+List changes
+
+```text
+smthrs change list [options]
+```
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--limit` | number | `10` | no | Number of changes to show |
+| `--repo`, `-R` | string |  | no | Repository (OWNER/REPO) |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
+### `change status`
+
+Show working copy status
+
+```text
+smthrs change status [options]
+```
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
+### `change files`
+
+List files in a change
+
+```text
+smthrs change files <id> [options]
+```
+
+| Argument | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `id` | string |  | yes | Change ID |
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--repo`, `-R` | string |  | no | Repository (OWNER/REPO) |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
+### `change show`
+
+Show a specific change
+
+```text
+smthrs change show <id> [options]
+```
+
+| Argument | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `id` | string |  | yes | Change ID |
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--repo`, `-R` | string |  | no | Repository (OWNER/REPO) |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
+### `change conflicts`
+
+List conflicts in a change
+
+```text
+smthrs change conflicts <id> [options]
+```
+
+| Argument | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `id` | string |  | yes | Change ID |
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--repo`, `-R` | string |  | no | Repository (OWNER/REPO) |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
 ## `cp`
 
 Copy files or directories between the local machine and a workspace
@@ -46962,7 +47142,7 @@ smthrs exec [id] [options]
 | --- | --- | --- | --- | --- |
 | `--command` | string |  | yes | Remote command to run (multi-line allowed; runs under bash) |
 | `--cwd` | string |  | no | Working directory (default: workspace root) |
-| `--detach` | boolean | `false` | no | Return the receipt at once; the command keeps running (reattach with --exec-id) |
+| `--detach` | boolean | `false` | no | Return the receipt at once; the command keeps running (reattach with `--exec-id`) |
 | `--env` | array of string | `[]` | no | KEY=VALUE exported to the command (repeatable) |
 | `--exec-id` | string |  | no | Durable command ID; reuse with the same command to reattach after a disconnect |
 | `--repo`, `-R` | string |  | no | Repository (OWNER/REPO) |
@@ -47193,6 +47373,40 @@ smthrs generate flow <name> [options]
 | `--root` | string |  | no | Project directory |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 
+### `generate package`
+
+Run the workspace's declared package scaffold with its configured defaults
+
+```text
+smthrs generate package <name> [options]
+```
+
+| Argument | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `name` | string, min length 1 |  | yes |  |
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--workspace` | string | `<cwd>` | no |  |
+| `--target` | string |  | no | Declared generator label; required when more than one matches |
+| `--plan` | boolean | `false` | no | Show the generator plan without writing files |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
+### `generate ci`
+
+Generate CI files using the workspace's declared GitHub workflow target
+
+```text
+smthrs generate ci [options]
+```
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--workspace` | string | `<cwd>` | no |  |
+| `--target` | string |  | no | Declared generator label; required when more than one matches |
+| `--plan` | boolean | `false` | no | Show the generator plan without writing files |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
 ## `github`
 
 Show sync status and retry
@@ -47375,7 +47589,7 @@ smthrs login [origin] [options]
 | Option | Type | Default | Required | Description |
 | --- | --- | --- | --- | --- |
 | `--admin` | boolean | `false` | no | Request an expiring administrator token with browser consent |
-| `--host` | string |  | no | Hostname or API URL (alias for --hostname) |
+| `--host` | string |  | no | Hostname or API URL (alias for `--hostname`) |
 | `--hostname` | string |  | no | Hostname or API URL to authenticate with |
 | `--observe` | boolean | `false` | no | Sign in as an administrator and open Observe already authenticated |
 | `--agent` | string, pattern `^[a-z0-9-]{1,32}$` |  | no | External agent name |
@@ -47941,6 +48155,157 @@ smthrs workspace ssh [id] [options]
 | --- | --- | --- | --- | --- |
 | `--repo`, `-R` | string |  | no | Repository (OWNER/REPO) |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
+## `tui`
+
+Open the terminal coding agent
+
+```text
+smthrs tui [directory] [options]
+```
+
+| Argument | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `directory` | string |  | no | Working directory; defaults to cwd |
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--model`, `-m` | string |  | no | Chat seat as provider:model |
+| `--continue`, `-c` | boolean | `false` | no | Continue the latest session in the directory |
+| `--resume`, `-r` | boolean | `false` | no | Pick a session to continue |
+| `--print`, `-p` | string |  | no | Answer one prompt, print it, and exit |
+| `--approve` | one of `all`, `ask`, `deny` |  | no | Consequential calls: all, ask, or deny |
+| `--budget-tokens` | string |  | no | Override the token ceiling per turn and worker |
+| `--environment` | string |  | no | Run the TUI app in a saved execution environment |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
+### Token budgets
+
+`smthrs tui [directory]` opens the terminal coding agent. `--model provider:model` selects the chat model; `--continue` continues the latest session, `--resume` picks one, and `--print <prompt>` answers once and exits. `--environment <name>` runs the TUI in a saved execution environment.
+
+| Setting | Default | Scope |
+| --- | --- | --- |
+| `--budget-tokens <n>` or `SMITHERS_TUI_BUDGET_TOKENS` | `200000000` | Each chat turn and worker |
+| `SMITHERS_TUI_BUDGET_DAILY_TOKENS` | `2000000000` | All runs per UTC day on the execution machine |
+
+The per-run flag wins over its environment variable. Values are positive whole numbers; `0` or `none` disables a cap. A hit stops new model calls and shows the reached cap. These are runaway-loop tripwires, not a billing limit. The outer `smthrs tui` command has no daily-budget flag; set the daily environment variable.
+
+## `completions`
+
+```text
+smthrs completions — Generate shell completion script
+
+Usage: smthrs completions <bash|fish|nushell|zsh>
+
+Arguments:
+  shell  Shell to generate completions for
+
+Setup:
+  bash     eval "$(smthrs completions bash)"  # add to ~/.bashrc
+  fish     smthrs completions fish | source   # add to ~/.config/fish/config.fish
+  nushell  see `smthrs completions nushell`   # add to config.nu
+  zsh      eval "$(smthrs completions zsh)"   # add to ~/.zshrc
+```
+
+## `mcp`
+
+```text
+smthrs mcp — Register as MCP server
+
+Usage: smthrs mcp <command>
+
+Commands:
+  add     Register as MCP server
+  doctor  Validate MCP server startup and tool listing
+
+Global Options:
+  --filter-output <keys>              Filter output by key paths (e.g. foo,bar.baz,a[0,3])
+  --format <toon|json|yaml|md|jsonl>  Output format
+  --full-output                       Show full output envelope
+  --help                              Show help
+  --llms, --llms-full                 Print LLM-readable manifest
+  --schema                            Show JSON Schema for command
+  --token-count                       Print token count of output (instead of output)
+  --token-limit <n>                   Limit output to n tokens
+  --token-offset <n>                  Skip first n tokens of output
+```
+
+```text
+smthrs mcp add — Register with Claude Code or Codex; omit --agent to configure both
+
+Usage: smthrs mcp add [options]
+
+Options:
+  --root <string>        Project directory; defaults to the nearest Smithers project
+  --remote <string>      Remote control plane URL; defaults to SMITHERS_REMOTE
+  --mcp-config <string>  Path to the configured MCP servers
+  --quiet                Suppress progress messages
+  --agent <string>
+  --verbose              Show redacted diagnostic details
+
+Custom Global Options:
+  --audience <auto|human|agent>   (default: auto)
+  --silent
+  --ui <auto|tty|stream|plain>    (default: auto)
+
+Global Options:
+  --filter-output <keys>              Filter output by key paths (e.g. foo,bar.baz,a[0,3])
+  --format <toon|json|yaml|md|jsonl>  Output format
+  --full-output                       Show full output envelope
+  --help                              Show help
+  --llms, --llms-full                 Print LLM-readable manifest
+  --schema                            Show JSON Schema for command
+  --token-count                       Print token count of output (instead of output)
+  --token-limit <n>                   Limit output to n tokens
+  --token-offset <n>                  Skip first n tokens of output
+```
+
+```text
+smthrs mcp doctor — Validate MCP server startup and tool listing
+
+Usage: smthrs mcp doctor
+```
+
+## `skills`
+
+```text
+smthrs skills — Sync skill files to agents
+
+Usage: smthrs skills <command>
+Aliases: skill
+
+Commands:
+  add   Sync skill files to agents
+  list  List skills
+
+Global Options:
+  --filter-output <keys>              Filter output by key paths (e.g. foo,bar.baz,a[0,3])
+  --format <toon|json|yaml|md|jsonl>  Output format
+  --full-output                       Show full output envelope
+  --help                              Show help
+  --llms, --llms-full                 Print LLM-readable manifest
+  --schema                            Show JSON Schema for command
+  --token-count                       Print token count of output (instead of output)
+  --token-limit <n>                   Limit output to n tokens
+  --token-offset <n>                  Skip first n tokens of output
+```
+
+```text
+smthrs skills add — Sync skill files to agents
+
+Usage: smthrs skills add [options]
+
+Options:
+  --depth <number>  Grouping depth for skill files (default: 1)
+  --no-global       Install to project instead of globally
+```
+
+```text
+smthrs skills list — List skills
+
+Usage: smthrs skills list
+Aliases: ls
+```
 
 ---
 

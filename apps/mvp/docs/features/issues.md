@@ -327,10 +327,19 @@ Detail routes use item-scoped Electric shapes: `items?repo=owner/name&number=N` 
 
 The October 26 production probe measured boot render at 2.82 s, first issue content at 7.37 s, and initial detail transfer of 8.24 MB of bodies plus 19.46 MB of comments. The scoped-shape regression verifies that a detail downloads only its own body and comments. Post-deployment timings remain a lander check; this change makes no measured speedup claim before deployment.
 
-Create issue stays with its request instead of returning to the list. Once the durable flow supplies a write ID, the new-issue URL keeps it as `?write=`. The signed-in person's synced write receipt supplies the new issue number; only `done` navigates to that issue. Reload resumes from that URL. A failed write says Not sent and offers Edit. Leaving before admission prevents the old receipt from changing a later page or clearing its draft. `issue-create-navigation.spec.ts` writes only to the configured scratch repository and reloads before checking the issue page.
 
 Missing item details use the shared not-found view, naming Issue or Pull request and linking to its list. A repository this deployment does not sync settles as unavailable here with the GitHub source link; it never waits for a sync that cannot arrive or claims absence without a source receipt.
 
 The No commitment list includes issues with no commitment label as well as the explicit `smithers:commit-none` label. Setting a commitment still requires acceptance and a Maintainer; empty Now, Next and Later lists do not imply triage acceptance.
 
 Issue and pull request lists search synced titles and numbers locally with `?q=`. `?sort=newest|oldest|updated` orders by creation or update date and displays that same date; Recently updated is the default. Pending issue writes stay first. Search, sort and commitment filters can be combined and shared by URL.
+Create issue stays with its request instead of returning to the list. Once the device stores the recoverable write receipt, the new-issue URL keeps it as `?write=`. The signed-in person's synced write receipt supplies the new issue number; only `done` navigates to that issue. Reload resumes from that URL. A failed write says Not sent and offers Edit. Leaving before admission prevents the old receipt from changing a later page or clearing its draft. `issue-create-navigation.spec.ts` writes only to the configured scratch repository and reloads before checking the issue page.
+
+Create first stores the write's identity and text as a recoverable device receipt, then awaits the durable outbox's admission before its action returns. Network delivery remains in the background. Reloading during admission retains **Not sent** with **Retry** under the same write id, or the admitted **Requested** write. The public `issue/create` flow joins that identity after admission; an old asking tab is not needed for delivery. A device-store failure retains the draft with **Not sent**.
+
+A known pending issue write says **Requested**, including while offline. A pending server receipt does not establish that GitHub has started creating the issue.
+
+After device restoration and the relevant queries are ready, a write URL without a matching receipt says **Request unavailable** and links to **Issues**. Absence on this device does not claim that a write submitted elsewhere failed.
+
+A Comment whose flow or engine cannot admit it retains the draft and shows **Not sent**. The existing Comment button retries; a fresh attempt clears the old failure only while that attempt runs. Navigating away prevents an old attempt from changing the later page.
+

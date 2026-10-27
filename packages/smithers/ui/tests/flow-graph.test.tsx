@@ -24,6 +24,11 @@ const nodes: GraphNode[] = [
   { id: "e", label: "A very long queued step name", state: "next" },
 ];
 const edges = [{ from: "a", to: "b", kind: "value" as const, label: "input" }, { from: "a", to: "c", kind: "failure" as const }, { from: "b", to: "d", kind: "continuation" as const }, { from: "d", to: "e" }];
+test("an undispatched dependent is Skipped in the graph", async () => {
+  await render(<FlowGraph nodes={[{ id: "publish", label: "Publish", state: "skipped" }]} edges={[]} />);
+  expect(get('[data-node="publish"]').getAttribute("aria-label")).toBe("Publish, Skipped");
+  expect(container.textContent).not.toContain("Failed");
+});
 test("a cancelled step is Stopped in the graph and inspector, with a fixed duration", async () => {
   await render(<FlowGraph nodes={[{ id: "stopped", label: "Await", state: "cancelled" }]} edges={[]} />);
   expect(get('[data-node="stopped"]').getAttribute("aria-label")).toBe("Await, Stopped");

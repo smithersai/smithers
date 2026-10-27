@@ -1,3 +1,6 @@
+import { WebCrypto } from "@smthrs/crypto"
+import { failWriteNotice, requestWriteNotice } from "../attention/writeNotices"
+import { operationWriteId } from "./writeIdentity"
 import { Effect, FiberHandle, Metric, Option, type Result, Stream } from "effect"
 import { type DispatchFailed, type Dispatched, FlowDispatch } from "../../flows/dispatch"
 import { MAX_BODY_LENGTH, MAX_TITLE_LENGTH } from "../issues/contract"
@@ -187,14 +190,18 @@ export const publish = (title: string, body: string) =>
     if (trimmed.length === 0 || trimmed.length > MAX_TITLE_LENGTH || body.length > MAX_BODY_LENGTH) return false
     if ((yield* pressOf(branchId))?.publishing === true) return false
     yield* setPress(branchId, { form: false, publishing: true, publishWriteId: null, publishRefused: null })
+    const executionId = crypto.randomUUID()
+    const expectedWriteId = yield* operationWriteId("publish", executionId).pipe(Effect.provide(WebCrypto.layer))
+    yield* requestWriteNotice({ writeId: expectedWriteId, repoId: `github/${owner}/${repo}`, branch: name, operation: "publish" })
     const dispatched = yield* Effect.result(
       (yield* FlowDispatch).dispatch(
         "branch/publish",
         { repo: `${owner}/${repo}`, branch: name, title: trimmed, body },
-        { door: "button" },
+        { door: "button", executionId },
       ),
     )
     const { writeId, refused } = settled(dispatched)
+    if (refused !== null) yield* failWriteNotice(expectedWriteId)
     yield* setPress(branchId, { publishing: false, publishWriteId: writeId, publishRefused: refused })
     yield* record(publishes, "branch.publish.press", refused ?? "sent")
     return true
@@ -210,10 +217,14 @@ export const update = Effect.gen(function* () {
   const { branchId, owner, repo, name } = branch.value
   if ((yield* pressOf(branchId))?.updating === true) return false
   yield* setPress(branchId, { updating: true, updateWriteId: null, updateRefused: null })
+  const executionId = crypto.randomUUID()
+  const expectedWriteId = yield* operationWriteId("update", executionId).pipe(Effect.provide(WebCrypto.layer))
+  yield* requestWriteNotice({ writeId: expectedWriteId, repoId: `github/${owner}/${repo}`, branch: name, operation: "update" })
   const dispatched = yield* Effect.result(
-    (yield* FlowDispatch).dispatch("branch/update", { repo: `${owner}/${repo}`, branch: name }, { door: "button" }),
+    (yield* FlowDispatch).dispatch("branch/update", { repo: `${owner}/${repo}`, branch: name }, { door: "button", executionId }),
   )
   const { writeId, refused } = settled(dispatched)
+  if (refused !== null) yield* failWriteNotice(expectedWriteId)
   yield* setPress(branchId, { updating: false, updateWriteId: writeId, updateRefused: refused })
   yield* record(updates, "branch.update.press", refused ?? "sent")
   return true

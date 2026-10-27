@@ -340,3 +340,39 @@ The theme's transient `theme-display` collection publishes system color-scheme c
 
 The personal flows page offers GitHub sign-in to visitors and New flow to signed-in people.
 
+## Editor storage admission
+
+Persistence permission protects against eviction; denied persistence alone never
+refuses editing. Restore receipts record each collection's success, failure or
+timeout without its contents. A successful device open and restore keep edits
+across reloads; when the database cannot open, editing continues for the session.
+
+## Session editing and reload receipts
+
+When device storage cannot open, the editor uses the existing memory collections
+and says **Not kept on this device** ([decision 0120](../decisions/0120-session-flow-editors.md)).
+Restoration failures on an opened database still refuse edits and preserve its
+rows. Session editing does not promise an available durable engine.
+
+The new-flow form synchronously stages its latest input through the browser SDK's
+`PendingSnapshot` until SQLite acknowledges it. A reload restores that snapshot
+only for the same tab after schema validation. An older receipt never clears a
+newer edit; sign-out clears the snapshot. This closes the immediate Chromium
+reload window without adding a second collection or background writer.
+
+The worker's engine composition uses static imports: WebKit otherwise evaluates
+a split worker entry again through its engine chunk, splitting Effect Schema's
+private sentinel identities. The SDK fix applies to every device collection and
+durable flow, not only the editor.
+
+Offline reopening also reads the engine's pre-cached WASM directly through
+`BrowserCache.readAsset` and `BrowserSqlite.EffectBuild`. SQLite's JavaScript and
+factory stay in the worker bundle; worker fetch need not inherit the document's
+service-worker interception.
+
+The shell precache includes WASM. `e2e/flow-editor-storage.spec.ts` checks that
+SQLite's valid binary is cached before offline reopening; the SDK's real-browser
+asset test reads it through a dedicated worker with transport disabled.
+
+
+Repeated draft names show their request in the list and Delete name; repeated requests add a stable ordinal ordered by creation time and id.

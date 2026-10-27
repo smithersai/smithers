@@ -84,7 +84,7 @@ export const groups: Record<string, string> = {
   "admin user": "Create, suspend, export and erase users",
   "admin users": "Mark users as synthetic",
   "admin workspaces": "List, stop and suspend workspaces",
-  "agent": "Ask the Smithers helper and hold remote conversations",
+  "agent": catalogCommands.find((row) => row.name === "agent")!.summary,
   "agent session": "Manage remote conversations",
   "artifact": "List and download files a run produced",
   "auth": "Log in, log out and connect subscriptions",

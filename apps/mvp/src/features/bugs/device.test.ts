@@ -81,9 +81,10 @@ describe("a bug report on a real device", { timeout: 120_000 }, () => {
     await until(() => expect(member.device.navigated).toContain("/app/bugs/report"))
     pages.show("/app/bugs/report")
 
-    // Only spaces send nothing.
+    // Only spaces send nothing and stay available with a visible validation reason.
     member.tab.actions.send("   ")
-    expect(member.sending()).toEqual({ status: "idle" })
+    expect(member.sending()).toEqual({ status: "invalid", what: "   ", code: "empty" })
+    expect(api.bugs.starts).toEqual([])
 
     // A report refused for good is Not sent, says why and keeps its words; it never stays Sending, and nothing is filed.
     // A NUL is refused wherever it lands: this Node device's engine journals into Postgres, which can't hold one, so

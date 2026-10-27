@@ -91,9 +91,23 @@ describe("BrowserSqlite over OPFS", () => {
   })
   afterEach(() => remove())
 
-  const sqlite = (build: BrowserSqlite.Build = MemorySqlite.build) =>
+  const sqlite = (build: BrowserSqlite.Source = MemorySqlite.build) =>
     BrowserSqlite.layerSqlite({ build, directory: "smithers/test" })
   const database = (filename = "engine.db") => BrowserSqlite.layer({ filename }).pipe(Layer.provide(sqlite()))
+
+  it.effect("loads an Effect-owned binary and keeps its refusal typed", () =>
+    Effect.gen(function*() {
+      const layer = BrowserSqlite.layer({ filename: "effect.db" }).pipe(Layer.provide(sqlite({
+        module: MemorySqlite.build.module,
+        wasm: Effect.promise(MemorySqlite.build.wasm)
+      })))
+      const rows = yield* Effect.flatMap(sql, (client) => client`SELECT 7 AS value`).pipe(Effect.provide(layer))
+      expect(rows).toEqual([{ value: 7 }])
+      const refused = yield* Layer.build(
+        sqlite({ module: MemorySqlite.build.module, wasm: Effect.fail(new Error("binary refused")) })
+      ).pipe(Effect.scoped, Effect.flip)
+      expect(refused.message).toContain("Failed to load wa-sqlite")
+    }))
 
   it.effect("keeps what it wrote after the database is closed and opened again", () =>
     Effect.gen(function*() {
@@ -119,7 +133,10 @@ describe("BrowserSqlite over OPFS", () => {
       // The worker's pool and a connection it never closes: a power loss takes the process and every unsynced write.
       const worker = yield* Scope.make()
       const pool = yield* Layer.buildWithScope(sqlite(), worker)
-      const opened = yield* BrowserSqlite.open("engine.db").pipe(Effect.provideContext(pool), Scope.provide(yield* Scope.make()))
+      const opened = yield* BrowserSqlite.open("engine.db").pipe(
+        Effect.provideContext(pool),
+        Scope.provide(yield* Scope.make())
+      )
       const exec = (statements: string) => Effect.promise(() => opened.sqlite3.exec(opened.db, statements))
       yield* exec("CREATE TABLE t (id INTEGER PRIMARY KEY); INSERT INTO t (id) VALUES (7)")
       // A commit that skips the sync shows the power loss takes what wasn't synced.
@@ -273,6 +290,15 @@ describe("BrowserSqlite over OPFS", () => {
       )
         .pipe(Effect.scoped, Effect.flip)
       expect(noBytes.message).toContain("Failed to load wa-sqlite")
+      const noFactory = yield* Layer.build(sqlite({
+        module: async () => ({
+          default: async () => {
+            throw new TypeError("instantiate refused")
+          }
+        }),
+        wasm: Effect.promise(MemorySqlite.build.wasm)
+      })).pipe(Effect.scoped, Effect.flip)
+      expect(noFactory.message).toContain("Failed to load wa-sqlite")
     }))
 
   it.effect("fails a database name the pool cannot hold", () =>

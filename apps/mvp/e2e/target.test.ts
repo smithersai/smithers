@@ -90,6 +90,16 @@ describe("the target", () => {
 })
 
 describe("needs", () => {
+  it("declares browser-specific and existing-data prerequisites", () => {
+    expect(NEEDS.chromium.met(local)).toBe(false)
+    for (const name of ["chromium", "webkit", "firefox"]) {
+      expect(NEEDS.chromium.met({ ...local, browserName: () => name })).toBe(name === "chromium")
+    }
+    expect(NEEDS.duplicateDrafts.met(local)).toBe(false)
+    expect(NEEDS.inspectRun.met(local)).toBe(false)
+    expect(NEEDS.duplicateDrafts.met({ ...local, env: { E2E_DUPLICATE_DRAFT_NAME: "existing duplicates" } })).toBe(true)
+    expect(NEEDS.inspectRun.met({ ...local, env: { E2E_INSPECT_RUN: "existing-run" } })).toBe(true)
+  })
   it("quota-refusal needs an explicitly refusing provider", () => {
     expect(NEEDS.modelQuotaRefusal.met(local)).toBe(false)
     expect(NEEDS.modelQuotaRefusal.met({ ...local, env: { E2E_MODEL_QUOTA_REFUSED: "1" } })).toBe(true)
@@ -124,6 +134,9 @@ describe("needs", () => {
   it("are all met locally, where local development's Admin is signed in, but GitHub sign-in", () => {
     const unmet = (Object.keys(NEEDS) as Array<NeedName>).filter((name) => !NEEDS[name].met(local))
     expect(unmet).toEqual([
+      "chromium",
+      "duplicateDrafts",
+      "inspectRun",
       "outsideRoles",
       "sandboxSecrets",
       "webhookSecret",

@@ -1,5 +1,6 @@
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link, useParams } from "@tanstack/react-router"
+import { ConnectionPill } from "../../features/chat/components/ConnectionPill"
 import { useAuth } from "../../features/auth/components/AuthContext"
 import { viewerOf } from "../../features/commands/catalog"
 import { ActionStrip } from "../../plugins/components/ActionStrip"
@@ -24,6 +25,7 @@ export function PluginScreen() {
       <header className="plugin-screen-header">
         <Link to="/app">Back to chat</Link>
         <h1>{view.title}</h1>
+        <div role="status" aria-label="Connection" aria-live="polite"><ConnectionPill /></div>
       </header>
       {allowed && view.render.kind === "component"
         ? (

@@ -33,7 +33,7 @@ export type NoticeState = typeof NoticeState.Type
  * Admin (the month's sandbox spend reached their alert; docs/features/sandbox-budgets.md), or a bug report to an Admin
  * (docs/features/bugs.md).
  */
-export const NoticeKind = Schema.Literals(["run", "clone", "main", "release", "spend", "bug"])
+export const NoticeKind = Schema.Literals(["run", "clone", "main", "release", "spend", "bug", "write"])
 export type NoticeKind = typeof NoticeKind.Type
 
 /**
@@ -96,6 +96,7 @@ export type EntryAction = typeof EntryAction.Type
 export const Entry = Schema.Struct({
   id: Schema.String,
   kind: NoticeKind,
+  local: Schema.optional(Schema.Boolean),
   state: NoticeState,
   mine: Schema.Boolean,
   runId: Schema.NullOr(Schema.String),

@@ -1,6 +1,7 @@
+import { persistent } from "./persistent"
 import { answerTo, questionIn } from "./messages"
 import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA } from "../src/features/auth/contract"
-import { test as base, type APIRequestContext, type Browser, type BrowserContext, type Locator, type Page, type TestInfo } from "@playwright/test"
+import { test as base, type APIRequestContext, type BrowserContext, type BrowserContextOptions, type Locator, type Page, type TestInfo } from "@playwright/test"
 import { writeFile } from "node:fs/promises"
 import { DEV_URL } from "../dev/https"
 import { recordConsole } from "./console"
@@ -449,7 +450,7 @@ class Devices {
 
 
   constructor(
-    private readonly browser: Browser,
+    private readonly openContext: (options: BrowserContextOptions) => Promise<BrowserContext>,
     private readonly testInfo: TestInfo,
     // Every device's context, watched for server, console and page errors (e2e/watch.ts).
     private readonly problems: Watched,
@@ -503,7 +504,7 @@ class Devices {
   ) {
     return Promise.all(
       names.map(async (name) => {
-        const context = await this.browser.newContext({
+        const context = await this.openContext({
           viewport: this.viewport,
           extraHTTPHeaders: this.extraHTTPHeaders,
           // The test's mode, from the first frame (e2e/fixtures.ts `themeOf`).
@@ -598,11 +599,11 @@ class Devices {
         .post(`/api/answers/${answerId}`, { data: { status: "failed", failure: "unfinished" }, headers: settle })
         .catch(() => undefined)
     )))
+    // A persistent WebKit context closes its browser connection too. Request
+    // the video paths while the connection is live, then wait for close to finish them.
+    const recordings = tabs.map((tab) => ({ name: tab.name, video: tab.page.video()?.path(), openedAt: tab.openedAt }))
     await Promise.all(this.all.map((device) => device.context.close().catch(() => undefined)))
-    // What e2e/gifs.mjs needs to lay the videos side by side, each starting when its tab opened.
-    const videos = await Promise.all(
-      tabs.map(async (tab) => ({ name: tab.name, video: await tab.page.video()?.path(), openedAt: tab.openedAt })),
-    )
+    const videos = await Promise.all(recordings.map(async (recording) => ({ ...recording, video: await recording.video })))
     await writeManifest(this.testInfo, "devices.json", this.startedAt, videos, { word: this.word })
   }
 }
@@ -614,9 +615,18 @@ export const test = base.extend<{ devices: Devices; spendGuard: void; problems: 
   problems: [...problems],
   // A deployment run stops asking once its answers spent the run's token budget (e2e/spend.ts).
   spendGuard: [async ({ playwright }, use) => use(await guardSpend(() => playwright.request.newContext())), { auto: true }],
-  devices: async ({ browser, problems }, use, testInfo) => {
-    const devices = new Devices(browser, testInfo, problems)
-    await use(devices)
-    await devices.teardown()
+  devices: async ({ browser, browserName, playwright, problems }, use, testInfo) => {
+    const profiles: Array<Awaited<ReturnType<typeof persistent>>> = []
+    const openContext = async (options: BrowserContextOptions) => {
+      if (browserName !== "webkit") return browser.newContext(options)
+      const profile = await persistent(playwright.webkit, options)
+      profiles.push(profile)
+      return profile.context
+    }
+    const devices = new Devices(openContext, testInfo, problems)
+    try { await use(devices) } finally {
+      await devices.teardown()
+      await Promise.all(profiles.map((profile) => profile.close()))
+    }
   },
 })

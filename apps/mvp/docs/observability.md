@@ -78,7 +78,7 @@ Logs:
 | `page reloaded` | a page restored from the back/forward cache, just before it reloads | Info | none. It reaches the relay only if an export runs before the page unloads; the console always keeps it |
 | `collection cleanup failed` | a collection's cleanup rejected as its scope closed (`@smthrs/effect-tanstack-db`) | Warn | `collection` (its id), `error` (the error's name, never its message) |
 | `persistence unavailable` | the device store's database couldn't open, so rows stay in memory (`@smthrs/effect-tanstack-db`) | Warn | `error` (the name or tag of what `open` rejected with) |
-| `flows.editor.storage` | a flow editor's SQLite service could not open or its collection could not restore; editors refuse writes and keep retained rows for recovery | Warn | `collection` (`device`, `flow-form`, `flow-answers`, `flow-code`), `outcome` (`unavailable`, `failed`) |
+| `flows.editor.storage` | editor storage admission and per-collection restore receipts; retained rows remain untouched on failure | Info / Warn | `collection` (`device`, `flow-form`, `flow-answers`, `flow-code`), `outcome` (`unavailable`, `restored`, `failed`), sanitized `errorCode` (`TimeoutError` for the five-second deadline) |
 | `persisted write failed` | the device couldn't store a write to a persisted collection, such as an unsent question, so it rolled back; TanStack DB fails one whose coordinator tab closed mid-write (`IndeterminateCommitError`) (`@smthrs/effect-tanstack-db`) | Warn | `collection` (its id), `operation` (`insert`, `update`, `delete`), `error` (the error's name, never its message) |
 | `persisted sync role` | this tab's source for a synced collection took a role: `writer`, the one tab of the device that stores what the shape syncs (it holds the collection's lock, `persisted-sync:<id>`), or `watcher`, a tab whose rows come from the device store while its shape only tells it how the network is (`@smthrs/effect-tanstack-db`, decision 0002 §1). A collection's first role at boot is Debug and stays in the tab (`persisted sync roles` sums them); a change of role, such as a watcher taking the lock when the writing tab closes, and the first role of a collection made after boot, are Info | Info; Debug for a first role at boot | `collection` (its id), `role` |
 | `persisted sync roles` | once per tab, when the boot has built the device store's synced collections and each has taken its first role (`@smthrs/effect-tanstack-db` `Persistence.reportRoles`) | Info | `writers`, `watchers` (how many first took each role) |
@@ -1030,3 +1030,10 @@ or emit a successful-start record. No URL, shape, environment or secret is inclu
 `infra/ElectricAwake.test.ts` verifies success and injected failure, the exact field set and counter delta.
 The provider's `started_at` is authoritative for the [deployment isolation gate](infrastructure.md#electric-deployment-isolation),
 which compares placement receipts separately from these start-call records.
+
+Issue Create admission records `issues.write.admission` and `smithers_issue_write_admissions` by `queued`, `not_admitted`, or `storage_failed`, with the write id and operation only. A durable local recovery receipt precedes admission; neither title nor body enters these records.
+
+Failed comment admission records `issues.submission.not_sent` and `smithers_issue_submission_failures`, correlated by submission id and classified as `dispatch` or `flow`, without comment text.
+
+`github.write.notice` traces and logs admission and settlement of Publish and Update branch by write id, operation and state. The same database transaction folds the shared notification and counts `smithers_notifications_routed` with `kind=write`; replays neither raise a new version nor count an unchanged state. Client launch toasts use the shared `smithers_notifications_shown` lifecycle, without titles or descriptions from the publication.
+

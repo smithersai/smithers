@@ -176,6 +176,7 @@ export const IssueView = Schema.Struct({
   draftKey: Schema.String,
   submitting: Schema.Boolean,
   submissionKey: Schema.optional(Schema.String),
+  submissionFailed: Schema.optional(Schema.Boolean),
   createdWriteId: Schema.optional(Schema.String),
 })
 export type IssueView = typeof IssueView.Type

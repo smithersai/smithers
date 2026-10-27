@@ -14,6 +14,7 @@ import {
   NO_FLOWS,
   RUN,
 } from "../contract"
+import { draftLabel } from "../draftLabels"
 import { useFlowsUi } from "./FlowsUiContext"
 
 // Your own flows (decision 0014 §5, `/app/flows`): each one's name and description with Run, Edit, Code and Delete,
@@ -72,12 +73,12 @@ export function FlowsPage() {
             {drafts.map((draft) => (
               <TableRow key={draft.id}>
                 <TableCell>
-                  <Link to={draftPath(draft.id) as never}>{draft.name ?? draft.request}</Link>
+                  <Link to={draftPath(draft.id) as never}>{draftLabel(draft, drafts)}</Link>
                 </TableCell>
                 <TableCell>{draftStatusLine(draft.status, draft.round)}</TableCell>
                 <TableCell>
                   <Button
-                    aria-label={`${DELETE} draft ${draft.name ?? draft.request}`}
+                    aria-label={`${DELETE} draft ${draftLabel(draft, drafts)}`}
                     variant="ghost"
                     onClick={() => actions.deleteDraft(draft.id)}
                   >

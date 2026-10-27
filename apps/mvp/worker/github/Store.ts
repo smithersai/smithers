@@ -1,3 +1,4 @@
+import { fold as foldWriteNotice } from "./WriteFeed.ts"
 import { COMMITMENTS, commitmentOf } from "../../src/features/issues/lifecycle.ts"
 import { GitHub } from "@smthrs/integrations"
 import { Effect, Option, Schema } from "effect"
@@ -278,7 +279,10 @@ export const insertWrite = <E = never, R = never>(write: {
     )
     return yield* sql.withTransaction(Effect.gen(function* () {
       const found = yield* existing
-      if (found !== undefined) return found
+      if (found !== undefined) {
+        if (found.kind === "existing") yield* foldWriteNotice(write.id)
+        return found
+      }
       if (!(yield* holds)) return { kind: "stale" } satisfies Inserted
       const [inserted] = yield* sql<{ readonly txid: string }>`
         INSERT INTO github_writes (id, repo_id, actor_id, session_id, via, op, payload, payload_hash, branch_id)
@@ -286,7 +290,10 @@ export const insertWrite = <E = never, R = never>(write: {
           ${write.payload.op}, ${JSON.stringify(write.payload)}::jsonb, ${write.payloadHash}, ${branchOf(write.payload)}::uuid)
         ON CONFLICT (id) DO NOTHING
         RETURNING pg_current_xact_id()::xid::text AS txid`
-      if (inserted !== undefined) return { kind: "inserted", txid: Number(inserted.txid) } satisfies Inserted
+      if (inserted !== undefined) {
+        yield* foldWriteNotice(write.id)
+        return { kind: "inserted", txid: Number(inserted.txid) } satisfies Inserted
+      }
       return (yield* existing)!
     }))
   })
@@ -382,6 +389,7 @@ export const settleWrite = <E = never, R = never>(id: string, settlement: Settle
           WHERE id = ${id}::uuid AND status = 'pending' RETURNING id`
       const settled = rows.length > 0
       yield* settled && settlement.status === "done" ? project : Effect.void
+      if (settled) yield* foldWriteNotice(id)
       return settled
     }))
   })

@@ -10,6 +10,7 @@ import type { SqlClient } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import {
   applyExecutionId,
+  issueNumberOf,
   COMMENT_COLUMNS,
   COMMENTS_SHAPE_ROUTE,
   COMMENTS_TABLE,
@@ -58,6 +59,7 @@ import {
   PULL_COMMITS_SHAPE_ROUTE,
   PULL_COMMITS_TABLE,
   PULLS_SHAPE_ROUTE,
+  PULL_RECEIPT_HEADER,
   PULLS_TABLE,
   REVIEW_COLUMNS,
   REVIEWS_SHAPE_ROUTE,
@@ -88,6 +90,7 @@ import { apiUrl, type GitHubApp, type Repository, repositoryOf } from "./Config.
 import { Merge } from "./Merge.ts"
 import * as Metrics from "./Metrics.ts"
 import { Reconcile } from "./Reconcile.ts"
+import * as PullRefresh from "./PullRefresh.ts"
 import * as ReadToken from "./ReadToken.ts"
 import * as Visibility from "./Visibility.ts"
 import * as RepoRoles from "./RepoRoles.ts"
@@ -718,6 +721,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
     // The last admitted bucket per repository: completed values only. Each request that finds a bucket behind
     // starts it itself, without sharing pending work (decision 0104).
     const admitted = yield* Ref.make<ReadonlyMap<string, number>>(new Map())
+    const refreshPull = yield* PullRefresh.make(database, Option.isSome(options.app), RECONCILE_START_TIMEOUT)
 
     /**
      * Starts `github/Reconcile` when `target`'s issues are older than `SYNC_STALE_MS`, one execution per repository and
@@ -883,6 +887,16 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         const selected = itemShape(path, repositoryShape.where, target.success.id, new URL(request.url, "http://localhost").searchParams.get("number"))
         if (selected === undefined) return refuse(400, "invalid")
         const read = readable(repositoryShape.table, repositoryShape.columns, selected.where, target.success, selected.params)
+        const refresh = new URL(request.url, "http://localhost").searchParams.get("refresh")
+        if (refresh !== null && (path === PULL_COMMITS_SHAPE_ROUTE || path === REVIEWS_SHAPE_ROUTE || path === CHECKS_SHAPE_ROUTE)) {
+          const number = issueNumberOf(refresh)
+          if (number === undefined) return refuse(400, "invalid")
+          const refusal = yield* readRefusal(target.success)
+          if (Option.isSome(refusal)) return refusal.value
+          const [, response] = yield* Effect.all([refreshPull.start(target.success, number), read], { concurrency: 2 })
+          const receipt = yield* refreshPull.receipt(target.success, number)
+          return HttpServerResponse.setHeader(response, PULL_RECEIPT_HEADER, receipt)
+        }
         if (path === ITEMS_SHAPE_ROUTE || path === ITEM_SUMMARIES_SHAPE_ROUTE) {
           // Admission runs beside the shape read inside this request, bounded at `RECONCILE_START_TIMEOUT`.
           // Reconcile's work stays on the durable engine; no admission outlives the request (decision 0104).

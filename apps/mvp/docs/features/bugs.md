@@ -17,7 +17,7 @@ All of them are the first-party plugin `plugins/bugs/` on the public plugin inte
 
 ## The form
 
-One field, **What happened?**, and **Send**. Send runs the form's `send` event, which the manifest binds to `app/bug/report`. The form says **Sending** until the report's row comes back from Postgres through sync, then **Sent** and **Open on GitHub**, and the field starts empty. A report filed offline is sent when the device is back, for an hour.
+One field, **What happened?**, and **Send**. A whitespace-only report stays in the field with **Write what happened** and sends nothing. Send runs the form's `send` event, which the manifest binds to `app/bug/report`. The form says **Sending** until the report's row comes back from Postgres through sync, then **Sent** and **Open on GitHub**, and the field starts empty. A report filed offline is sent when the device is back, for an hour.
 
 A report that isn't sent never stays **Sending**. The form hears how the run ended (`PluginHost.dispatch`'s `settled`, [plugins](plugins.md#the-host-contract)) and says **Not sent** with the reason: `signed out` (401), `not allowed`, `not accepted` (ChatApi refused the report, or the host refused the press), `too long`, `couldn't reach Smithers` (an hour offline), else the failure's code. The words stay in the field and the button says **Retry**: the same words file the same report again under its id, so a retry never makes a second copy; changed words are a new report.
 
@@ -93,7 +93,7 @@ It reads reports and nothing else. Unset, that door is off.
 
 ## Open on GitHub
 
-GitHub's own new-issue form, prefilled: the title is the first line of the words, the body the words, the report's id, the kind of page (`issues`, `file`, `app/runs`, never its path, which can name a private repository), the build, the first trace ids and failures, the browser and window. It opens on the repository the page showed, else `smithersai/smithers`. Nothing reaches GitHub until the person submits GitHub's form under their own account (rulings GH-2, GH-11).
+GitHub's own new-issue form, prefilled: the title is the first line of the words, the body the words, the report's id, the kind of page (`issues`, `file`, `app/runs`, never its path, which can name a private repository), the build, the first trace ids and failures, the browser and window. It opens on the repository the page showed, else `smithersai/smithers`. Opening the link sends the prefilled content to GitHub in the URL query. Creating an issue requires submitting GitHub's form under the person's own account (rulings GH-2, GH-11).
 
 ## Postgres
 
@@ -138,3 +138,5 @@ ChatApi: `bug.request` and `smithers_bug_requests` (op, outcome, status), `bug.s
 - **The screenshot.** The form has no "include a screenshot" toggle yet: capturing only the page's own render needs a DOM-to-image library behind an Effect wrapper in `@smthrs/platform-browser`.
 
 Repository home links to `/bug` open `/app/bugs/report`, both on a direct visit through the docs site and through the app's router. They never prepare a GitHub issue. The report's build must match `/version.json`.
+
+HTTP error records keep route templates, never repository or file names. GitHub prefill also templates HTTP names from reports filed by older builds. `bug-report-privacy.spec.ts` checks a failed repository read through the report form.

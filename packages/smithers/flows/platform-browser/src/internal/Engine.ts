@@ -47,7 +47,7 @@ export interface Options {
  * @since 1.0.0
  */
 export interface HostOptions extends Options {
-  readonly sqlite: BrowserSqlite.Build
+  readonly sqlite: BrowserSqlite.Source
   /** What the leader runs on the app's database before serving it; its flow is registered here. */
   readonly prepare?: Prepare.Prepare | undefined
   /** Checked on every activation, before the engine exists; see `BrowserRuntime.HostOptions.authorize`. */
