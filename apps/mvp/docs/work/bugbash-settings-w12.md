@@ -13,7 +13,7 @@ Production probes reproduced the saved-model Test behavior with malformed and em
 unexplained tiers, mismatched columns, and the Member Secrets empty state. No forbidden save or destructive action
 was used. `/settings` is not a bug: the documented personal settings route is `/app/settings`; no alias is specified.
 
-Decision 0118 preserves the saved-model test contract and keeps draft keys outside durable flows. Library catalog entries:
+Decision 0119 preserves the saved-model test contract and keeps draft keys outside durable flows. Library catalog entries:
 `@smthrs/flow` for durable execution and `@smthrs/ui` for controls and EmptyState. Credential fields are named by protocol,
 because a protocol owns its key while multiple model tiers may share it. Tier purposes read Chat, Code, Plans & reviews.
 

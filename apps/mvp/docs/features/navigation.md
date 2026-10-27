@@ -56,3 +56,5 @@ covers the keyboard through the real router.
 
 The first Tab exposes **Skip to content**, targeting the current main region.
 `e2e/accessibility-skip.spec.ts` exercises the link by keyboard.
+
+Repository alias checks share the route warmup budget. Unavailable metadata or file lists leave the URL unchanged and let cached or offline branch navigation open; a later read can verify the redirect. Branch-root URLs need no file lookup.

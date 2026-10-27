@@ -1459,7 +1459,7 @@
         "RuleEffect.d.ts": "760a289320afcae544c01c8089f274532b987a11ae8f85b7d545112bb2b6d675",
         "TierOptions.d.ts": "429ff654a564384c00e757a0a626bbd4121b66f9ed8bf674ba7a9b20ce34d521",
         "decodePermissionError.d.ts": "9497f732734b08fad86733cebaa7236842dbebc573c3bc9778fc9596c8d70460",
-        "evaluate.d.ts": "2c56ba451f75f9da74ecd7bd8d108e886a8833b7ee330997a6849d949768e7d0",
+        "evaluate.d.ts": "95364878681ca7434ba80a82c42dc0d6422730dbe588bd60e4469efc7f8bc040",
         "format.d.ts": "85c406a0441e7fdf874222645d1ebbd0107ef2112e842b79e3b20f9b1ba9d1dd",
         "formatError.d.ts": "b45283955ac165b40d4fcba7e28e3fe6b1c7c7d28743be5c7a61207deb848762",
         "fromPlatformError.d.ts": "a4156f781dccca91e16f47c6298cb10b390eb48069b8ab5df92e80b7f32d1d6d",
@@ -1473,6 +1473,7 @@
         "internal/isPatternAction.d.ts": "9da5123f78231f99b7221ddb1ce48a25be6f27ab02ca7ce73c7e750d23b5a2f3",
         "internal/isPlainObject.d.ts": "6f5ae3770e3823e5dccdc57b3294eeaeebe4cb5fe9be67bddd437a27e9574bbc",
         "internal/matchesAction.d.ts": "4b1798eee31fedcbcb98254d052bf9e69cd0af59925877653abdc50509651717",
+        "internal/matchesResource.d.ts": "00b67e7fe7b4acaf02e6b8a3b08ed881160fa691ab511d93b776f8d39405742b",
         "internal/metacharacters.d.ts": "e40effd04af25570a45a5df16b9d118e902c0cb5de894c42abf1e7cae0b52f4c",
         "internal/permissionMetaSnapshot.d.ts": "8b96779b62a82a48b263709ab66561ee8419b41e43b6a719f5a36888b2971381",
         "isLiteralResource.d.ts": "719e227b400138955c30323b92bc4014ec13b4b37ab433ec9d2b46fa1c8bf0af",
@@ -2834,7 +2835,7 @@
         "migrations/0005_signal_principals.d.ts": "c080a26ac8caa5d8914166e1f872d4e55727236d2bff9e97243460758a07227a",
         "migrations/0006_run_principals.d.ts": "003da5e520ed49da082d64436cbeda39690b39172bda89c0cab4ba1bacaf63a2",
         "migrations/0007_resume_consent.d.ts": "78e59e84b9e248879c20e89643baf9515a1185c67fabeb3c276c15e81898e254",
-        "migrations/0008_signal_rejection.d.ts": "24090e2d73faa0b3312c2060aa713ab4b80b1dc70fee0a2a01b662f9a356a9d3",
+        "migrations/0008_signal_rejection.d.ts": "3aa3391dc322441e88351cb995698866742b0f2f3ff687cd6d8f94f12a0dfd4a",
         "test/TestControl.d.ts": "49932c6c15c4d245ca77f153b21adf59c48a620b2c51ae14bdc9ccbe0d27b6bc"
       }
     },
@@ -7463,6 +7464,7 @@
         "OtlpRelay.d.ts": "bff3adce4ad443307e103c12b87c09bff17bb75eeabdb82bf0603b7df47348bb",
         "Resource.d.ts": "0aac1e7a9bfb28b241b0030c51be8c9b5ab70c8a3851d3b70334960ba7453ae8",
         "index.d.ts": "f9c6034537e455331e92423565f419442182a8505c54d4c7669d4feac7333e90",
+        "internal/exportRedaction.d.ts": "2e7b55cf1ff5796a467dc88d7222fc61e0ee3179ba9181d4a49c1309fa9db5e7",
         "internal/schemaIssuePath.d.ts": "d1121b36495f65d0503eceb0170cee739e9ebdfdab2f0aed169c7f0083f21f4d",
         "internal/split.d.ts": "e2271f312cd9f0299611ce2bda52933bb84965b2e9587f0d37df4f582e32bb54"
       }
@@ -9362,7 +9364,7 @@
         "AwsSandbox/Sdk.d.ts": "1102de965333f870451757daafbbf6e7a1a66b5549983bcf7b5c125662623174",
         "AwsSandbox/index.d.ts": "af21c1a9a6709988c915dbc49706cbfd5b2b656bba589e12cb517fc012860c8f",
         "AwsSandbox/make.d.ts": "eed68fa32de3c95d56ac0d8a3b27cd6506beefa4e3a7f3cb58d70e726b7dacf1",
-        "CiJob/index.d.ts": "b277532ceba6171fa9a5aba8a02d4a41a5f10cb095ee3847074335ad8243adb9",
+        "CiJob/index.d.ts": "1b486802870150a1625dc75330ee5e6f48836fe2b692f72d0247e9a76f79ce9d",
         "CloudflareSandbox/Sdk.d.ts": "d6a4eec7e55b8d680d9c6dd5042ada6449f78dd8088312d448264c7f4c070a23",
         "CloudflareSandbox/index.d.ts": "d11742a7327592870cb0d1e912ad1d5d3ed400b8ca59e6dfc693a60cbc204485",
         "CloudflareSandbox/make.d.ts": "152130d979685b2c7312f03f1f1fb849c7a773c27b8f5157c3a7ad04f87136f7",

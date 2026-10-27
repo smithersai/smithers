@@ -720,6 +720,7 @@ export const refresh = (target: Target) => Effect.gen(function* () {
 
 /** A tree URL naming a known file redirects to the same location's blob URL. Unknown paths remain trees. */
 export const fileAtTree = (target: Target) => Effect.gen(function* () {
+  if (target.path === "") return false
   const id = repoId(target.owner, target.name)
   const repository = yield* shown({ id, owner: target.owner, name: target.name })
   if (Option.isNone(repository)) return false

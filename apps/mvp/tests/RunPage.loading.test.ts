@@ -90,14 +90,14 @@ test.each([true, false])("a run shows its frame while inspection and sync are he
       expect(loaded).toBe(true)
       expect(container.querySelector('main[aria-label="Run"]')).not.toBeNull()
       expect([...container.querySelectorAll("a")].find((link) => link.textContent === "Runs")?.getAttribute("href"))
-        .toBe(persisted ? "/app/runs" : "/octo/hello/actions")
-      if (persisted) expect(container.querySelector("h1")?.textContent).toBe("ci")
+        .toBe(persisted ? "/app/runs" : "/octo/hello/runs")
+      if (persisted) expect(container.querySelector("h1")?.textContent).toBe("CI")
       else {
         expect(container.querySelector('[aria-label="Loading run"]')).not.toBeNull()
         expect(container.querySelector('[aria-label="Loading runs"]')).not.toBeNull()
       }
       expect(container.querySelector('header[aria-label="Repository"] a[href="/octo/hello"]')?.textContent).toBe("octo/hello")
-      expect(container.querySelector(`a[href="${persisted ? "/app/runs" : "/octo/hello/actions"}"]`)?.textContent).toBe("Runs")
+      expect(container.querySelector(`a[href="${persisted ? "/app/runs" : "/octo/hello/runs"}"]`)?.textContent).toBe("Runs")
       expect(router.state.status).toBe("idle")
     }, { timeout: 5_000, interval: 10 })
     expect(performance.now() - startedAt).toBeLessThan(5_000)

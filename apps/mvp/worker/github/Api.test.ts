@@ -677,7 +677,7 @@ describe("the shapes", () => {
     const summaries = values(summary.rows)
     expect(summaries).toEqual([expect.objectContaining({ id: item!.id, title: "One" })])
     expect(Object.keys(summaries[0]!)).not.toContain("body")
-    const { body: _body, github_id: _githubId, state_reason: _stateReason, created_at: _createdAt, closed_at: _closedAt, triage_pinned: _triagePinned, ...facts } = item!
+    const { body: _body, github_id: _githubId, state_reason: _stateReason, closed_at: _closedAt, triage_pinned: _triagePinned, ...facts } = item!
     expect(summaries).toEqual([facts])
     const listedComments = values((await shape(h, COMMENTS_SHAPE_ROUTE)).rows)
     expect(listedComments).toEqual([expect.objectContaining({ id: `${REPOSITORY.id}/comment/5`, body: "Hi" })])

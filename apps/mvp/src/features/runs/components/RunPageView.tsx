@@ -27,6 +27,7 @@ import type { Inspection, RunTab, RunPage, RunView } from "../schema"
 import { actionRunPath } from "../../actions/contract"
 import { useRuns } from "./RunsContext"
 import { RunSteers } from "./RunSteers"
+import { flowWords } from "../words"
 
 // One run's page (decision 0014 §5): its header with Stop, Retry and Resume, then its steps with each one's input and
 // output, its timeline and its journal. Every value is text the engine redacted and cut to 16 KiB before it left the
@@ -40,7 +41,7 @@ export function RunPageView({ fromRuns = false }: { readonly fromRuns?: boolean 
   const { view, page } = data
   if (page.state === "loading") {
     const known = repoRuns.find((run) => run.execution === page.id)
-    return known === undefined ? <Skeleton aria-label="Loading run" className="run-page-loading" /> : <RunHeader title={known.flow} state={repoRunStateOf(known.status)}
+    return known === undefined ? <Skeleton aria-label="Loading run" className="run-page-loading" /> : <RunHeader title={flowWords(known.flow)} state={repoRunStateOf(known.status)}
       startedAtMs={Date.parse(known.createdAt)} finishedAtMs={known.status === "running" ? null : Date.parse(known.updatedAt)}
       now={view.now ?? Date.now()} />
   }

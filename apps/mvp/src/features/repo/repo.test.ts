@@ -1,6 +1,6 @@
 import { Action } from "@smthrs/flow"
 import { TabChannel } from "@smthrs/platform-browser"
-import { Cause, Effect, Exit, Layer, Schedule } from "effect"
+import { Cause, Deferred, Effect, Exit, Layer, Schedule } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { fixture, shaOf } from "../../../worker/test/codeStorage"
@@ -813,13 +813,40 @@ test("canonical naming comes from GitHub; an absent repository invents no spelli
 
 test("tree URLs redirect only files present at the resolved revision", async () => {
   const h = await repoHarness(server)
-  await h.seed("octocat", "Spoon-Knife", fixture())
+  await h.seed("octocat", "Spoon-Knife", branched())
   const tab = await open(h)
   const at = (ref: string, path: string) => tab.repo.actions.fileAtTree({ owner: "octocat", repo: "Spoon-Knife", ref, _splat: path })
   expect(await at("main", "README.md")).toBe(true)
   expect(await at("main", "docs")).toBe(false)
   expect(await at("main", "gone.ts")).toBe(false)
   expect(await at("main", "")).toBe(false)
+  expect(await at("feature", "x")).toBe(false)
   expect(await at("gone", "README.md")).toBe(false)
   expect(await tab.repo.actions.fileAtTree({ owner: "octocat", repo: "Gone", ref: "main", _splat: "README.md" })).toBe(false)
+})
+
+
+test("a held tree read cannot block route alias checks and its late answer remains usable", async () => {
+  const h = await repoHarness(server)
+  await h.seed("octocat", "Spoon-Knife", fixture())
+  const existing = await open(h)
+  const client = await existing.runtime.runPromise(Effect.service(RepoClient))
+  const held = Effect.runSync(Deferred.make<void>())
+  const requested = Effect.runSync(Deferred.make<void>())
+  const tab = await openTab({ origin: h.origin, fetch: h.fetch, client: Layer.succeed(RepoClient, { ...client,
+    tree: (...args) => Effect.gen(function* () {
+      yield* Deferred.succeed(requested, undefined)
+      yield* Deferred.await(held)
+      return yield* client.tree(...args)
+    }),
+  }) })
+  tabs.push(tab)
+  const params = { owner: "octocat", repo: "Spoon-Knife", ref: "main", _splat: "README.md" }
+  try {
+    expect(await tab.repo.actions.fileAtTree(params)).toBe(false)
+    expect(Effect.runSync(Deferred.isDone(requested))).toBe(true)
+  } finally {
+    await Effect.runPromise(Deferred.succeed(held, undefined))
+  }
+  await waitFor(async () => expect(await tab.repo.actions.fileAtTree(params)).toBe(true))
 })

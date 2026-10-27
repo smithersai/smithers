@@ -439,6 +439,7 @@ test("start is the boundary: it builds the one runtime, renders the chat layer o
     "keydown",
     "keydown",
     "keydown",
+    "keydown",
     "offline",
     "online",
     "online",

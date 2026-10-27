@@ -23,8 +23,8 @@ export function BranchPendingScreen() {
         </div>
       </header>
       <div className="branch-screen-view">
+        <BranchHeader access={undefined} pending />
         <OfflineFallback>
-          <BranchHeader access={undefined} pending />
           <Button asChild variant="ghost"><Link to="/app">Back to chat</Link></Button>
         </OfflineFallback>
       </div>

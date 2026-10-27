@@ -686,6 +686,7 @@ export const DOCS_PAGES: ReadonlyMap<string, ReadonlyMap<string, string>> = new 
     ["/run-store/troubleshooting/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/docs/troubleshooting.md"],
     ["/runtime-construction/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/runtime-construction.md"],
     ["/sandbox/", "https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/docs"],
+    ["/sandbox/ci/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sandbox/docs/ci.md"],
     ["/sandbox/concepts/isolation/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sandbox/docs/concepts/isolation.md"],
     ["/sandbox/concepts/remote-commands/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sandbox/docs/concepts/remote-commands.md"],
     ["/sandbox/concepts/seams/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sandbox/docs/concepts/seams.md"],
@@ -1119,6 +1120,7 @@ export const DOCS_PAGES: ReadonlyMap<string, ReadonlyMap<string, string>> = new 
   ])],
   ["sandbox", new Map([
     ["/", "https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/docs"],
+    ["/ci/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sandbox/docs/ci.md"],
     ["/concepts/isolation/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sandbox/docs/concepts/isolation.md"],
     ["/concepts/remote-commands/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sandbox/docs/concepts/remote-commands.md"],
     ["/concepts/seams/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sandbox/docs/concepts/seams.md"],

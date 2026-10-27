@@ -13104,7 +13104,7 @@ The schema-backed RPC projection of the service.
 | `layerAuth`           | layer     | `(authenticator: Authenticator) => Layer<ControlAuth>`                                                                                                            |
 | `layerBearerAuth`     | layer     | `(options: BearerAuthOptions) => Layer<ControlAuth>`                                                                                                              |
 | `layerNoopAuth`       | layer     | `(principal?: Principal) => Layer<ControlAuth>`. Authenticates nothing.                                                                                           |
-| `ControlDefect`       | schema    | The defect schema of every procedure. Encodes any non-string defect as `{ name: "Error", message: defectMessage }`; decodes like `Schema.Defect()`.               |
+| `ControlDefect`       | schema    | The defect schema of every procedure. Encodes every defect as `{ name: "Error", message: defectMessage }`; decodes like `Schema.Defect()`.                        |
 | `defectMessage`       | constant  | `"Something went wrong on our side. Not your fault."`                                                                                                             |
 
 `List` and `Watch` declare the whole `ControlError` union rather than restating
@@ -13113,9 +13113,9 @@ its members.
 A handler defect, an untyped failure no procedure declares, reaches a client as
 a `Die` whose defect is `{ "name": "Error", "message": "Something went wrong on
 our side. Not your fault." }`. Its raw message and stack never cross the wire;
-the server records only a content-free diagnostic through `ControlServer.logDefect`. A string defect passes
-unchanged, so a payload that fails to decode still answers with the request
-decoder's own sentence. The encoded shape is the one `Schema.Defect()` decodes,
+the server records only a content-free diagnostic through `ControlServer.logDefect`.
+This applies to every defect, including string defects and request-decoding failures.
+The encoded shape is the one `Schema.Defect()` decodes,
 so older clients and servers read each other's defects.
 
 ## ScopedToken

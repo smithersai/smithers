@@ -117,8 +117,12 @@ export class Repo extends Context.Service<
           readme: (id, sha, dir) => now(device.readme(id, sha, dir)),
         },
         actions: {
-          fileAtTree: (params) => promise(fileAtTree(targetOf("tree", params, {}))),
-          canonicalName: (owner, name) => promise(Effect.map(aboutOf(owner, name), (row) => row.about?.name)),
+          fileAtTree: (params) => promise(fileAtTree(targetOf("tree", params, {})).pipe(
+            Effect.timeoutOption(store.pageWait), Effect.map(Option.getOrElse(() => false)),
+          )),
+          canonicalName: (owner, name) => promise(aboutOf(owner, name).pipe(
+            Effect.timeoutOption(store.pageWait), Effect.map((row) => Option.isSome(row) ? row.value.about?.name : undefined),
+          )),
           clone: (owner, name) => run(clone(owner, name)),
           retryClone: (owner, name) => run(retryClone(owner, name)),
           retryAbout: (owner, name) => run(retryAbout(owner, name)),
