@@ -127,7 +127,9 @@ export const feedOf = (
         : notice.kind === "clone" && notice.mine && notice.state === "failed"
         ? "retry"
         : "open",
-      href: notice.href,
+      href: notice.kind === "main" && notice.ref !== null
+        ? `${notice.href.split("/tree/")[0]}/tree/${encodeURIComponent(notice.ref)}`
+        : notice.href,
       version: notice.version,
       unread: listed && Inbox.isUnread(notice),
       settled: settled || notice.state === "failed",

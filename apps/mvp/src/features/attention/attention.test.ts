@@ -467,9 +467,9 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
     await until(() => expect(tablet.entry(`run:${orphan}`)).toMatchObject({ conversationId: null }))
     tablet.attention.actions.expand(`run:${orphan}`)
     await until(() => expect(tablet.detail()).toMatchObject({ id: `run:${orphan}`, steps: [], note: null }))
-    // Open on main goes to the repository, with no answer to scroll to.
+    // Open on main goes to its recorded commit, with no answer to scroll to.
     tablet.attention.actions.open("main:github/acme/widgets", "page")
-    expect(tablet.host.navigated).toEqual(["/acme/widgets"])
+    expect(tablet.host.navigated).toEqual([`/acme/widgets/tree/${"a".repeat(40)}`])
   })
 })
 

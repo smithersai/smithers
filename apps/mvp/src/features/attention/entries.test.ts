@@ -328,3 +328,11 @@ describe("a bug report", () => {
     })
   })
 })
+
+ test("commit notifications open the recorded commit, including previously synced home links", () => {
+  for (const href of ["/acme/widgets", "/acme/widgets/tree/abc123"]) {
+    expect(one(notice({ kind: "main", state: "update", runId: null, href, ref: "abc123" })).href)
+      .toBe("/acme/widgets/tree/abc123")
+  }
+  expect(one(notice({ kind: "main", href: "/acme/widgets", ref: null })).href).toBe("/acme/widgets")
+})

@@ -176,3 +176,5 @@ A terminal answer settles its existing live notification even if its run-index r
 Opening a waiting run from a toast navigates to its conversation with the answer anchor, then focuses the question. Opening a question already in the conversation keeps focus there.
 
 An empty panel, including a visitor's, says `No notifications`. Empty spend-alert content does not suppress this state.
+
+Commit entries open the tree at their recorded revision, including entries synced before this change; later pushes cannot change that destination.
