@@ -59,7 +59,9 @@ export class CodeIntel extends Context.Service<
       yield* Stream.zipLatest(repo.treeState.rows, repo.viewState.rows).pipe(
         Stream.map(([trees, views]) => targetOf(trees[0], views[0]?.repository?.defaultBranch ?? null)),
         Stream.changesWith((left, right) =>
-          left?.owner === right?.owner && left?.name === right?.name && left?.sha === right?.sha && left?.path === right?.path && left?.revision === right?.revision && left?.defaultBranch === right?.defaultBranch
+          // Late repository metadata doesn't change this file or its definition URLs
+          // (blob links always carry their revision). Reloading would erase an active lookup.
+          left?.owner === right?.owner && left?.name === right?.name && left?.sha === right?.sha && left?.path === right?.path && left?.revision === right?.revision
         ),
         Stream.runForEach(follow),
         Effect.forkIn(store.scope),

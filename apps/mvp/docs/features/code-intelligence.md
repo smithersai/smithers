@@ -1,5 +1,9 @@
 # Code intelligence
 
+Repository metadata arriving after a file opens keeps its active cursor and
+Symbols lookup. Only changing the repository, commit, path or revision opens
+the file again; a late default-branch field does not.
+
 A TypeScript or JavaScript file in the repository view has a language server, as GitHub's code view and github.dev do: a hover card with the symbol's signature and documentation, go to definition in the same file or another, every reference in the Symbols pane, the file's outline, and its problems in the gutter. Everything works from the keyboard. TypeScript's language service runs in a worker in the tab, over the files of the commit the view shows, so it needs no machine, costs nothing per reader and keeps working offline for files the browser has cached. Design: [design/code-intelligence/DESIGN.md](../design/code-intelligence/DESIGN.md), with its [mock](../design/code-intelligence/mock.html).
 
 ## How it works

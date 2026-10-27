@@ -5,7 +5,7 @@
 // are also driven over an injected `fetch` for the answers ChatApi's route never gives a valid request: a body cut
 // short, a stalled answer, 400 and 413 (test.faults-by-injection).
 import { Uuid, WebCrypto } from "@smthrs/crypto"
-import { Deferred, Effect, FiberHandle, Layer, Logger, Metric, Ref } from "effect"
+import { Deferred, Effect, Fiber, FiberHandle, Layer, Logger, Metric, Ref } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
@@ -21,6 +21,9 @@ import {
   TestChatApi,
 } from "../../test/chatApi"
 import { Auth } from "../auth/auth"
+import { AuthClient } from "../auth/api"
+import { load as loadSession } from "../auth/actions"
+import { open as openBranch } from "./actions"
 import { retry, wentOffline } from "../chat/actions"
 import { Chat } from "../chat/chat"
 import { BranchClient, TrackRefused } from "./api"
@@ -244,6 +247,47 @@ describe("opening a branch", () => {
         Metric.value(Metric.withAttributes(dispatches, { flow: "branch/track", door: "view", outcome })),
       ).count).toBe(0)
     }
+    expect(await tab.rows()).toEqual([])
+  }, WITHIN)
+
+  test("a visitor opening a file before the first session answer never tracks its branch", async () => {
+    const tab = await open({ sessionLifecycle: false }, { actor: null })
+    const client = await tab.runtime.runPromise(Effect.service(AuthClient))
+    const release = Deferred.makeUnsafe<void>()
+    // Delay only the session service; releasing it reads the real signed-out ChatApi.
+    const loading = tab.runtime.runPromise(loadSession.pipe(Effect.provideService(AuthClient, {
+      ...client, session: Deferred.await(release).pipe(Effect.andThen(client.session)),
+    })))
+    const opening = tab.runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+      const fiber = yield* Effect.forkScoped(openBranch("octo", "hello", "feature/one"), { startImmediately: true })
+      expect(tab.current()).toMatchObject({ status: "tracking" })
+      expect(tab.api.branches.github.seen).toEqual([])
+      yield* Deferred.succeed(release, undefined)
+      return yield* Fiber.join(fiber)
+    })))
+    expect(await opening).toBeUndefined()
+    expect(await loading).toBe("signed_out")
+    expect(tab.current()).toMatchObject({ status: "sign_in" })
+    for (const outcome of ["done", "failed", "error"]) {
+      expect(tab.runtime.runSync(Metric.value(Metric.withAttributes(dispatches,
+        { flow: "branch/track", door: "view", outcome }))).count).toBe(0)
+    }
+  }, WITHIN)
+
+  test("a server refusal of a stale session clears its cached conversation and shows sign in", async () => {
+    const tab = await open({ sessionLifecycle: false }, { actor: null })
+    const real = await tab.runtime.runPromise(Effect.service(AuthClient))
+    // An injected stale session confirmation; the branch flow still reaches
+    // the real signed-out ChatApi and receives its real 401.
+    await tab.runtime.runPromise(loadSession.pipe(Effect.provideService(AuthClient, {
+      ...real, session: Effect.succeed({ signedIn: true, login: "expired", role: "member" } as const),
+    })))
+    await tab.runtime.runPromise(tab.cache.restored)
+    await tab.runtime.runPromise(tab.cache.insert({ id: "octo/hello/feature/one", conversationId: "old-conversation" }))
+    expect(await tab.actions.open("octo", "hello", "feature/one")).toBeUndefined()
+    expect(tab.current()).toMatchObject({ status: "sign_in", branchId: null, conversationId: null })
+    expect(tab.cache.tanstack.has("octo/hello/feature/one")).toBe(false)
+    expect(tab.opened("sign_in")).toBe(1)
     expect(await tab.rows()).toEqual([])
   }, WITHIN)
 

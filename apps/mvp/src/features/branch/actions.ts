@@ -11,6 +11,7 @@ import { opens, reopens } from "./metrics"
 import { CURRENT, type Current } from "./schema"
 import { BranchRoute, BranchStore } from "./store"
 import { writes } from "./view"
+import { identityReady } from "./identity"
 
 // What opening a branch's page does (docs/features/branch-workspace.md#the-page): it runs `branch/track` and, once it
 // answers, shows the branch's conversation in this tab (decision 0013 §1), so the composer asks there, in the branch's
@@ -106,10 +107,15 @@ export const open = (owner: string, repo: string, ref: string, signal?: AbortSig
         yield* Metric.update(Metric.withAttributes(opens, { outcome: status }), 1)
         return undefined
       })
-    // Nobody signed in may watch a branch, and ChatApi would answer 401: the page says sign in without asking.
-    if (yield* signedOut) return yield* refused("sign_in")
     yield* setCurrent({ owner, repo, name: ref, status: "tracking", ...empty })
     yield* Effect.logInfo("branch.open").pipe(Effect.annotateLogs({ outcome: "tracking" }))
+    // A file's loader can start before sign-in's first answer. Keep the route
+    // usable offline, but never interpret loading as permission to track.
+    yield* Effect.raceFirst(identityReady, signal === undefined
+      ? connectionIs("offline")
+      : Effect.raceFirst(connectionIs("offline"), whenAborted(signal)))
+    yield* stillCurrent
+    if (yield* signedOut) return yield* refused("sign_in")
     // The run goes on in the tab's scope whether or not this page still waits: offline, it spends its retries as any
     // run does, and settles.
     const tracking = yield* Effect.forkIn(
