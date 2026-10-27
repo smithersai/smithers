@@ -75,3 +75,15 @@ test("docs quickstart follows the current visitor home and repository navigation
   await tabs.getByRole("link", { name: "Code", exact: true }).click()
   await expect(page).toHaveURL(/\/tree\/main$/)
 })
+
+test("hosted docs use the product introduction without a global CLI release banner", async ({ page }) => {
+  requires("docsSite")
+  await page.goto("/docs/")
+  await expect(page.getByRole("main")).toContainText("Automate maintaining your codebase")
+  await expect(page.getByRole("main")).not.toContainText("Smithers 1.0 release candidate")
+  await page.goto("/docs/local-quickstart/")
+  await expect(page.getByRole("main")).toContainText('already sets both seat and model to "openai:gpt-6-sol"')
+  await page.goto("/docs/flows/")
+  await expect(page.getByRole("main")).toContainText("System flows are protected actions")
+  await expect(page.getByRole("main")).toContainText("Learning proposals are suggested improvements")
+})

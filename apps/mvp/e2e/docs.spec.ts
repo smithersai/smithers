@@ -4,6 +4,7 @@ import { expect, test } from "./devices"
 import { step } from "./fixtures"
 import { liveDocs, renderedDocs } from "./live-docs"
 import { baseURL, requires, target } from "./target"
+import { expectServerError } from "./watch"
 
 // A repository's docs (ruling AGENT-6, docs/features/docs.md) against the real app, ChatApi, Postgres and Electric, and
 // the real outside world: GitHub says what `smithersai/vibelang`'s own home names (`"docs":
@@ -122,4 +123,11 @@ test.describe("smithersai/vibelang's docs", () => {
       })
     },
   )
+})
+
+test("a missing documentation page points to the available index", async ({ page }) => {
+  expectServerError(404, "/api/repos/smithersai/vibelang/docs/page")
+  await page.goto("/smithersai/vibelang/docs/bugbash3-bb2-docs-missing")
+  await expect(page.getByRole("region", { name: "Docs", exact: true })).toContainText("Page unavailable · choose from the list")
+  await expect(page.getByRole("searchbox", { name: "Search docs" })).toBeVisible()
 })

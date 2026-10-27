@@ -98,7 +98,7 @@ test("commitment: accepted for discussion gets a Maintainer timeline visible on 
     await expect(page.getByRole("group", { name: "Commitment", exact: true })).toHaveAttribute("data-commitment", "none", { timeout: 60_000 })
     await page.goto(`/${repo}/issues?commitment=none`)
     await expect(page.getByRole("link", { name: title, exact: true })).toBeVisible({ timeout: 60_000 })
-    await page.getByRole("navigation", { name: "Commitment", exact: true }).getByRole("link", { name: "Now", exact: true }).click()
+    await page.getByRole("navigation", { name: "Schedule", exact: true }).getByRole("link", { name: "Now", exact: true }).click()
     await expect(page.getByRole("link", { name: title, exact: true })).toHaveCount(0)
   })
 })

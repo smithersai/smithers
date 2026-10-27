@@ -1,7 +1,7 @@
 /*
  * Smithers branding for the Starlight documentation at /docs.
  *
- * The palette is `night-owl`, the product UI's default, mapped onto
+ * The palette is `paper`, the product UI's default, mapped onto
  * Starlight's own variables. Starlight carries its dark values on bare `:root` and its light
  * values on `:root[data-theme='light']`, so this file follows that shape: the
  * dark block is the base and the light block overrides it.
@@ -18,59 +18,59 @@
 	--sl-font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 	--sl-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-	/* night-owl · dark */
-	--sl-color-white: #ffffff;
-	--sl-color-gray-1: #e8eef7;
-	--sl-color-gray-2: #d6deeb; /* --text */
-	--sl-color-gray-3: #8badc1; /* --text-muted */
-	--sl-color-gray-4: #5f7f97;
-	--sl-color-gray-5: #1d3b53; /* --surface-2 */
-	--sl-color-gray-6: #0b253a; /* --surface */
-	--sl-color-gray-7: #06182a;
-	--sl-color-black: #011627; /* --bg */
+	/* paper · dark */
+	--sl-color-white: #fffefa;
+	--sl-color-gray-1: #ece7db;
+	--sl-color-gray-2: #ece7db; /* --text */
+	--sl-color-gray-3: #a8a193; /* --text-muted */
+	--sl-color-gray-4: #969083;
+	--sl-color-gray-5: #293532; /* --surface-2 */
+	--sl-color-gray-6: #131b1a; /* --surface */
+	--sl-color-gray-7: #101917;
+	--sl-color-black: #0d1514; /* --bg */
 
 	--sl-color-accent-low: #183e37;
-	--sl-color-accent: #9bd5c6; /* --brand */
-	--sl-color-accent-high: #cce9e1;
+	--sl-color-accent: #45c4b2; /* --brand */
+	--sl-color-accent-high: #ece7db;
 
 	--sl-color-bg-nav: var(--sl-color-gray-6);
 	--sl-color-bg-sidebar: var(--sl-color-gray-6);
-	--sl-color-bg-inline-code: rgb(214 222 235 / 8%); /* --inline-code-bg */
+	--sl-color-bg-inline-code: rgb(236 231 219 / 8%); /* --inline-code-bg */
 
 	/* The aside hues, taken from the palette's semantic colors. */
-	--sl-color-green: #addb67; /* --success */
-	--sl-color-orange: #ecc48d; /* --warning */
-	--sl-color-red: #ef5350; /* --danger */
-	--sl-color-blue: #82aaff; /* --info */
-	--sl-color-purple: #9bd5c6; /* --brand */
+	--sl-color-green: #7fbfb3; /* --success */
+	--sl-color-orange: #f0c169; /* --warning */
+	--sl-color-red: #d97757; /* --danger */
+	--sl-color-blue: #82a8b8; /* --info */
+	--sl-color-purple: #45c4b2; /* --brand */
 }
 
 :root[data-theme="light"],
 [data-theme="light"] ::backdrop {
-	/* night-owl · light */
-	--sl-color-white: #211f30;
-	--sl-color-gray-1: #302e43;
-	--sl-color-gray-2: #403f53; /* --text */
-	--sl-color-gray-3: #5c5b71; /* --text-muted */
-	--sl-color-gray-4: #6f6e85; /* --text-faint */
-	--sl-color-gray-5: #cfcfd6;
-	--sl-color-gray-6: #f0f0f0; /* --surface-2 */
-	--sl-color-gray-7: #f7f7f9;
-	--sl-color-black: #fbfbfb; /* --bg */
+	/* paper · light */
+	--sl-color-white: #211d18;
+	--sl-color-gray-1: #211d18;
+	--sl-color-gray-2: #211d18; /* --text */
+	--sl-color-gray-3: #665f54; /* --text-muted */
+	--sl-color-gray-4: #6c655a; /* --text-faint */
+	--sl-color-gray-5: #e4ddcf;
+	--sl-color-gray-6: #efeae0; /* --surface-2 */
+	--sl-color-gray-7: #fffefa;
+	--sl-color-black: #f7f4ee; /* --bg */
 
 	--sl-color-accent-low: #e2efea;
-	--sl-color-accent: #3a756b; /* --brand */
-	--sl-color-accent-high: #275249;
+	--sl-color-accent: #0f766e; /* --brand */
+	--sl-color-accent-high: #0b5b57;
 
 	--sl-color-bg-nav: var(--sl-color-gray-7);
 	--sl-color-bg-sidebar: var(--sl-color-bg);
-	--sl-color-bg-inline-code: rgb(64 63 83 / 6%); /* --inline-code-bg */
+	--sl-color-bg-inline-code: rgb(33 29 24 / 6%); /* --inline-code-bg */
 
-	--sl-color-green: #207770; /* --success */
-	--sl-color-orange: #826601; /* --warning */
-	--sl-color-red: #ba3f3b; /* --danger */
-	--sl-color-blue: #4876d6; /* --info */
-	--sl-color-purple: #3a756b; /* --brand */
+	--sl-color-green: #0b5b57; /* --success */
+	--sl-color-orange: #8c5a08; /* --warning */
+	--sl-color-red: #a4442a; /* --danger */
+	--sl-color-blue: #3c6879; /* --info */
+	--sl-color-purple: #0f766e; /* --brand */
 }
 
 /* The site title reads as a wordmark rather than as body copy. */
