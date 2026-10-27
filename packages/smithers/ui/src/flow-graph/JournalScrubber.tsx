@@ -26,7 +26,7 @@ export function JournalScrubber({ events, at, onChange, className, ...props }: J
         onInput={(event) => onChange(events[Number(event.currentTarget.value) - 1]?.seq ?? (events[0] === undefined ? 0 : events[0].seq - 1))} />
     </div>
     <Button variant="ghost" size="sm" aria-label="Next event" disabled={events.length === 0} onClick={() => onChange(journalPosition(events, at, 1))}>]</Button>
-    <output aria-live="polite">{at === null ? "Live" : `#${at}`}</output>
+    <output aria-live="polite">{at === null ? "" : `#${at}`}</output>
     <Button variant={at === null ? "secondary" : "ghost"} size="sm" onClick={() => onChange(null)} aria-pressed={at === null}>Live</Button>
   </div>;
 }

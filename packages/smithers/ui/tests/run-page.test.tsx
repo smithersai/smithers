@@ -226,7 +226,7 @@ describe("RunStatusPill and RunHeader", () => {
     expect($("h1")!.textContent).toBe("release-notes");
     expect($("[role='status']")!.textContent).toBe("✓Done");
     expect($("[role='status']")!.getAttribute("aria-live")).toBe("polite");
-    expect($("[aria-label='Elapsed']")!.textContent).toBe("0:42");
+    expect($("[aria-label='Elapsed']")!.textContent).toBe("42 s");
     expect($(".sui-run-header-host")!.textContent).toBe("This device");
     expect($(".sui-run-header-actions button")!.textContent).toBe("Retry");
   });
@@ -261,10 +261,10 @@ describe("RunList", () => {
     expect(rows[0]!.querySelector("a")!.textContent).toBe("release-notes");
     expect(rows[0]!.textContent).toContain("Done");
     expect(rows[0]!.textContent).toContain("1m ago");
-    expect(rows[0]!.textContent).toContain("0:42");
+    expect(rows[0]!.textContent).toContain("42 s");
     expect(rows[1]!.textContent).toContain("Stopping");
     expect(rows[1]!.textContent).toContain("10s ago");
-    expect(rows[1]!.textContent).toContain("0:10");
+    expect(rows[1]!.textContent).toContain("10 s");
     expect($("table")!.getAttribute("aria-label")).toBe("Runs");
   });
 
@@ -307,7 +307,7 @@ describe("RunList like a CI system's runs", () => {
   test("trigger, branch and actor columns show once any row has them, with none as a dash", async () => {
     await render(<RunList runs={runs} now={60_000} />);
     expect($$("thead th").map((head) => head.textContent)).toEqual(
-      ["Details", "Flow", "Status", "Trigger", "Branch", "Actor", "Started", "Duration"],
+      ["Details", "Flow", "Status", "Trigger", "Branch", "Started by", "Started", "Duration"],
     );
     const [cloud, device] = $$("tbody tr[data-run]");
     expect(cloud!.querySelector("[data-slot='run-trigger']")!.textContent).toBe("commit");
@@ -539,7 +539,7 @@ describe("RunJournal", () => {
     await render(<RunJournal events={events} />);
     const rows = $$("tbody tr");
     expect(rows.map((row) => row.dataset.seq)).toEqual(["0", "1"]);
-    expect(rows[1]!.querySelector(".sui-run-journal-type")!.textContent).toBe("flows.engine.node-scheduled");
+    expect(rows[1]!.querySelector(".sui-run-journal-type summary")!.textContent).toBe("Step queued");
     expect(rows[1]!.querySelector("time")!.textContent).toBe("+1.2 s");
     expect(rows[1]!.querySelector("time")!.getAttribute("datetime")).toBe(new Date(2_234).toISOString());
     expect((rows[0]!.querySelector("details") as HTMLDetailsElement).open).toBe(false);
@@ -583,4 +583,10 @@ test("run table duration preserves short runs and names the person column", asyn
   await render(<RunList runs={[{ id: "r", flow: "CI", state: "completed", href: "/run/r", startedAtMs: 1000, finishedAtMs: 2500, actor: "you" }]} now={3000} />);
   expect(container!.textContent).toContain("1.5 s");
   expect(container!.textContent).toContain("Started by");
+});
+
+test("run header omits placement when the host supplies none", async () => {
+  await render(<RunHeader title="CI" state="completed" startedAtMs={1000} finishedAtMs={2500} now={3000} />);
+  expect(container!.querySelector(".sui-run-header-host")).toBeNull();
+  expect(container!.textContent).toContain("1.5 s");
 });

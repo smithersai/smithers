@@ -19,7 +19,7 @@ import {
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link } from "@tanstack/react-router"
 import { ANSWER, OPEN, REFUSAL_WORDS, RESUME, RETRY, RETRY_FROM, RETRY_LATEST, STOP } from "../contract"
-import { actsOf, hostOf, journalOf, missingOf, repoRunStateOf, retriesFrom, selectedStep } from "../page"
+import { actsOf, journalOf, missingOf, repoRunStateOf, retriesFrom, selectedStep } from "../page"
 import { headerStatusOf } from "../todoRun"
 import { graphOf, runTitle } from "../graph"
 import type { RunsActions } from "../runs"
@@ -42,7 +42,7 @@ export function RunPageView() {
     const known = repoRuns.find((run) => run.execution === page.id)
     return known === undefined ? <Skeleton aria-label="Loading run" className="run-page-loading" /> : <RunHeader title={known.flow} state={repoRunStateOf(known.status)}
       startedAtMs={Date.parse(known.createdAt)} finishedAtMs={known.status === "running" ? null : Date.parse(known.updatedAt)}
-      now={view.now ?? Date.now()} host={hostOf(page.id, true)} />
+      now={view.now ?? Date.now()} />
   }
   if (page.state !== "read") return <EmptyState title={missingOf(page, view.repo != null)} />
   return <ReadRunPage page={page} view={view} actions={actions} />
@@ -90,7 +90,6 @@ function ReadRunPage({ page, view, actions }: { page: RunPage; view: RunView; ac
         startedAtMs={run.startedAtMs ?? run.createdAtMs}
         finishedAtMs={run.finishedAtMs}
         now={now}
-        host={hostOf(run.runId, repo !== null)}
         actions={
           <>
             {acts.stop ? <Button variant="outline" disabled={busy} onClick={actions.stop}>{STOP}</Button> : null}

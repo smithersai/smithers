@@ -97,7 +97,7 @@ test("scrubber walks sparse sequences, step boundaries and live without mutating
   expect(journalPosition(ticks, 1, 1, true)).toBe(3);
   const positions: (number | null)[] = [];
   await render(<JournalScrubber events={ticks} at={null} onChange={(at) => positions.push(at)} />);
-  expect(get("output").textContent).toBe("Live");
+  expect(get("output").textContent).toBe("");
   await click('[aria-label="Previous event"]'); await click('[aria-label="Next event"]');
   await act(() => all("button").find((b) => b.textContent === "Live")!.click());
   expect(positions).toEqual([3, 7, null]);
@@ -146,4 +146,11 @@ test("a skipped graph node uses the inspector's state word", async () => {
 test("step result JSON stays behind its details control", async () => {
   await render(<StepInspector step={step} input={null} output={value} logs={[]} attempts={[]} now={400} />);
   expect(get('[data-slot="json-value"] details, details')?.hasAttribute("open")).toBe(false);
+});
+
+test("inspector labels its duration and scrubber says Live once", async () => {
+  await render(<StepInspector step={step} input={null} output={null} logs={[]} attempts={[]} now={400} />);
+  expect(get(".sui-step-inspector-time").textContent).toBe("Elapsed200 ms");
+  await render(<JournalScrubber events={[]} at={null} onChange={() => {}} />);
+  expect(container.textContent).toBe("[]Live");
 });

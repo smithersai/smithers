@@ -2,7 +2,7 @@
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
-import { clockDuration, type RunState, type RunWord } from "./runPage";
+import { stepDuration, type RunState, type RunWord } from "./runPage";
 import { RunStatusPill } from "./RunStatusPill";
 
 export type RunHeaderProps = Omit<ComponentProps<"header">, "children" | "title"> & {
@@ -16,7 +16,7 @@ export type RunHeaderProps = Omit<ComponentProps<"header">, "children" | "title"
   finishedAtMs: number | null;
   now: number;
   /** Where the run runs, such as `This device`. */
-  host: string;
+  host?: string;
   /** The run's acts: Stop, Retry, Resume. */
   actions?: ReactNode;
   /** The title's heading level. Default `h1`. */
@@ -53,9 +53,9 @@ export function RunHeader({
           <RunStatusPill state={state} cancelRequested={cancelRequested} {...(word === undefined ? {} : { word })} />
         </span>
         <span className="sui-run-header-elapsed" aria-label="Elapsed">
-          {clockDuration(elapsed)}
+          {stepDuration(elapsed)}
         </span>
-        <span className="sui-run-header-host">{host}</span>
+        {host === undefined ? null : <span className="sui-run-header-host">{host}</span>}
       </div>
       {actions === undefined || actions === null ? null : <div className="sui-run-header-actions">{actions}</div>}
     </header>
