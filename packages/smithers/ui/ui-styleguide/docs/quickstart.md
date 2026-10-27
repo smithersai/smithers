@@ -16,3 +16,12 @@ For a flow UI use `workflowUiStyles`; for shared React widgets use `SmithersUiSt
 
 [Embed a stylesheet](./guides/embed-a-stylesheet.md) explains composition.
 [API](./api.md) documents every runtime export and type.
+
+To request the registered palette explicitly:
+
+```ts
+import { themeCss } from "@smthrs/ui-styleguide"
+const css = themeCss({ palettes: ["paper"] })
+```
+
+The registry contains Paper in light and dark variants. Unknown palette keys throw.

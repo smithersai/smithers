@@ -97,3 +97,12 @@ describe("docs/api.md", () => {
     for (const page of ["docs/api.md", "docs/theming.md"]) expect(readme).toContain(page);
   });
 });
+
+test("README palette examples name registered palettes", () => {
+  const examples = [...read("README.md").matchAll(/themeCss\(\{ palettes: (\[[^\]]+\])/g)];
+  expect(examples.length).toBeGreaterThan(0);
+  for (const example of examples) {
+    const palettes = JSON.parse(example[1]!) as string[];
+    expect(barrel.themeCss({ palettes })).toContain("--");
+  }
+});

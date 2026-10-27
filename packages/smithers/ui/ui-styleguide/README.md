@@ -4,7 +4,7 @@
 
 Shared CSS tokens and layout primitives for Smithers browser UIs.
 
-Eight color palettes, each with a light and a dark variant, emitted as CSS
+Paper in light and dark variants, emitted as CSS
 custom properties plus the base element and component rules that consume them.
 `@smthrs/ui` builds its shadcn-anatomy components on these tokens;
 `.smithers/flows/review` embeds the sheets directly.
@@ -19,7 +19,7 @@ import { standaloneThemeCss, themeCss, themeRegistry, workflowUiStyles } from "@
 document.head.append(Object.assign(document.createElement("style"), { textContent: workflowUiStyles }));
 
 // Or just the tokens, for one pinned palette.
-const css = themeCss({ palettes: ["one"] });
+const css = themeCss({ palettes: ["paper"] });
 ```
 
 ## Documentation
