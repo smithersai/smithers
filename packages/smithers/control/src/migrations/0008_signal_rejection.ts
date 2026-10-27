@@ -1,4 +1,9 @@
-/** Persist the outcome of a rejected signal. @since 1.0.0 */
+/**
+ * Persist the outcome of a rejected signal.
+ *
+ * @since 1.0.0
+ */
+
 import * as Dialect from "@smthrs/database/Dialect"
 import * as Effect from "effect/Effect"
 import * as SqlClient from "effect/sql/SqlClient"
