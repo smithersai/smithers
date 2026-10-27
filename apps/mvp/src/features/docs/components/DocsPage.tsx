@@ -45,7 +45,7 @@ export function DocsPage() {
         ) : (
           page.list.groups.map((group) => (
             <section key={group.section ?? ""} className="docs-page-section">
-              {group.section === null ? null : <h2>{group.section}</h2>}
+              {group.section === null ? null : <p className="docs-page-section-title">{group.section}</p>}
               <ul className="docs-page-links">{group.pages.map(link)}</ul>
             </section>
           ))
