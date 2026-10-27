@@ -131,3 +131,9 @@ test("waterfall accepts attempt segments, waits, children and replay cursor with
   await render(<RunWaterfall steps={[step]} now={400} />);
   expect(all(".sui-waterfall-segment")).toHaveLength(0);
 });
+
+ test("failed inspection exposes its recorded reason before changing tabs", async () => {
+  await render(<StepInspector step={{ ...step, state: "failed" }} input={null} output={null} logs={[]} attempts={[{ attempt: 1, state: "failed", error: "Provider unavailable", startedAtMs: 100, finishedAtMs: 200 }]} now={400} />);
+  expect(get('[data-slot="span-detail"]').textContent).toContain("Provider unavailable");
+  expect(get('[role="tabpanel"][data-state="active"]').getAttribute("data-state")).toBe("active");
+});

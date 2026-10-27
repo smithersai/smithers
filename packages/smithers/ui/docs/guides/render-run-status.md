@@ -147,3 +147,5 @@ import { isTerminalRunStatus, statusClass } from "@smthrs/ui/status"
 
 - [Theme tokens](../concepts/theming.md): what the tone colors resolve to.
 - [API reference](../api.md): the full export list.
+
+A failed `StepInspector` shows its recorded attempt reasons above the tabs.

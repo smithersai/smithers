@@ -22,7 +22,7 @@ export type StepInspectorProps = Omit<ComponentProps<"section">, "children"> & {
 export function StepInspector({ step, input, output, logs, attempts, now, wait, actions, className, ...props }: StepInspectorProps) {
   useInjectUiCss();
   return <section tabIndex={-1} aria-label={`Inspect ${step.label}`} data-slot="step-inspector" className={cn("sui-step-inspector", className)} {...props}>
-    <SpanDetail label={step.label} state={step.state} input={null} output={null} attempts={[]} now={now} wait={wait} actions={actions} />
+    <SpanDetail label={step.label} state={step.state} input={null} output={null} attempts={step.state === "failed" ? attempts : []} now={now} wait={wait} actions={actions} />
     <div className="sui-step-inspector-time"><span>{step.kind}</span><span>{stepDuration(step.state === "pending" ? 0 : stepElapsed(step, now))}</span></div>
     <Tabs defaultValue="output">
       <TabsList><TabsTrigger value="output">Output</TabsTrigger><TabsTrigger value="input">Input</TabsTrigger><TabsTrigger value="logs" count={logs.length}>Logs</TabsTrigger><TabsTrigger value="attempts" count={attempts.length}>Attempts</TabsTrigger></TabsList>
