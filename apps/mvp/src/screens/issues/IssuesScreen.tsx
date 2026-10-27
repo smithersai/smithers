@@ -32,7 +32,7 @@ export function IssuesScreen() {
   const { owner, repo } = useParams({ from: "/$owner/$repo/issues" })
   const { queries, actions } = useIssues()
   const auth = useAuth()
-  const { data: rows } = useLiveQuery(queries.list)
+  const { data: rows, isReady } = useLiveQuery(queries.list)
   const { data: synced } = useLiveQuery(queries.synced)
   const { data: access } = useLiveQuery(queries.access)
   const { data: unsynced } = useLiveQuery(queries.unsynced)
@@ -47,7 +47,8 @@ export function IssuesScreen() {
   const { data: todoRows } = useLiveQuery(todos.queries.stack(todosRepoId).todos)
   const navigate = useNavigate()
   const search = useSearch({ from: "/$owner/$repo/issues" })
-  const list = listProps(filterCommitment(rows ?? [], search.commitment), synced, access, triage !== undefined && !triage.paused)
+  const list = listProps(rows ?? [], synced, access, triage !== undefined && !triage.paused)
+  const visible = listProps(filterCommitment(rows ?? [], search.commitment), synced, access, triage !== undefined && !triage.paused).issues
   const triageSwitch = triageSwitchOf(triage, triagePending ?? [])
   // The full-screen size of the repository's issues view in the chat (ruling FE-9): Back to chat minimizes it.
   const header = <RepoHeader backTarget={{ template: "issues", props: { repo: `${owner}/${repo}` } }} />
@@ -72,17 +73,17 @@ export function IssuesScreen() {
           </Button>
         ))}
       </nav>
-      {list.unknown ? <p role="status" data-list-sync="">Syncing issues…</p> : null}
+      {(list.unknown || !isReady) ? <p role="status" data-list-sync="">Syncing issues…</p> : null}
       <IssuesView
         repo={`${owner}/${repo}`}
         size="full"
         issues={withTodos(
-          list.issues,
+          visible,
           todosByIssue(todosRepoId, todoRows, owner, repo),
           session !== undefined && mayChange(session, confirmed, answer),
           (number) => void navigate({ href: todos.actions.fromIssue(owner, repo, number) }),
         )}
-        unknown={list.unknown}
+        unknown={list.unknown || !isReady}
         href={(issue) => (issue.number === null ? undefined : issuePath(owner, repo, issue.number))}
         onNavigate={(_, href) => void navigate({ href })}
         actions={session !== undefined && mayWrite(session, confirmed, answer)
