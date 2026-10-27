@@ -75,6 +75,8 @@ What isn't covered yet:
 - **The answer box** (`NeedsYouCard`, in the conversation and in the notifications panel) does the same for the person's devices.
 - **A file.** In a branch's Code view, someone who may edit opens a file in the live editor (`?edit=<path>`): `@smthrs/repo-view`'s `CodeEditor` (CodeMirror) with everyone's carets, or `LiveMarkdownEditor` for Markdown. A Markdown file's own page (`/blob/<branch>/<path>`) is that same text in place, a WYSIWYG document with Save in the file's toolbar, for someone who may write the branch; anyone else reads it ([repositories](repo.md#the-browser)). `Save` writes it to the working copy: it reads `Saving…` while it runs, `Saved` on every editor's screen once written, and `Retry save` after a failure. Presence says where each person is (`edit`), and following them opens the same file.
 
+Markdown editing uses document paragraphs: End moves to the end of the last paragraph; Enter starts a new paragraph. A trailing newline in Markdown source does not create an empty paragraph. The publish journey verifies both paragraphs reach GitHub after Update branch and Publish (`e2e/branch-publish.spec.ts`).
+
 ## Observability
 
 Content-free: ids, sizes, scopes' kinds, statuses and outcomes; never a text, an update, a path or a cursor.

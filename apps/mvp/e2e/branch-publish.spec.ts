@@ -152,7 +152,10 @@ test("publish: a Smithers-only branch reaches GitHub only through Publish, as a 
       const editor = region.getByRole("textbox", { name: mains })
       await expect(editor).toContainText("moved", { timeout: MACHINE })
       await editor.click()
+      // Markdown renders the final source newline as a paragraph boundary, not an empty line.
+      // End stays in that paragraph; Enter starts the paragraph Maya wants to add.
       await page.keyboard.press("ControlOrMeta+End")
+      await page.keyboard.press("Enter")
       await page.keyboard.type(`Edited after Update ${devices.word}`)
       await region.getByRole("button", { name: "Save", exact: true }).click()
       await expect(region.getByRole("button", { name: "Saved", exact: true })).toBeVisible({ timeout: MACHINE })
@@ -168,7 +171,7 @@ test("publish: a Smithers-only branch reaches GitHub only through Publish, as a 
         () => github<{ content: string }>(page, `/repos/${repo}/contents/${mains}?ref=${encodeURIComponent(ref!)}`),
         (value) => Buffer.from(value.content, "base64").toString("utf8").includes(`Edited after Update ${devices.word}`),
       )
-      expect(Buffer.from(pushed.content, "base64").toString("utf8")).toMatch(new RegExp(`^moved\\n.*Edited after Update ${devices.word}`, "s"))
+      expect(Buffer.from(pushed.content, "base64").toString("utf8").trimEnd()).toBe(`moved\n\nEdited after Update ${devices.word}`)
       await expect(header).not.toContainText("Conflict")
       await expect(header).not.toContainText("Couldn't publish")
     })
