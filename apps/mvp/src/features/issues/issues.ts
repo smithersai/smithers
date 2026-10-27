@@ -33,6 +33,7 @@ type Store = IssuesStore["Service"]
 export interface IssuesQueries {
   /** What the route shows, with its draft and whether a press is on its way. */
   readonly view: Store["viewState"]["tanstack"]
+  readonly writes: Store["writeRows"]["tanstack"]
   /** The repository's issues, this device's own new ones first. */
   readonly list: RepoIssues["list"]["tanstack"]
   /** The routed issue, once the device has it. */
@@ -103,6 +104,7 @@ export class Issues extends Context.Service<Issues, { readonly queries: IssuesQu
         // The routed repository's, read when the page renders.
         queries: {
           view: store.viewState.tanstack,
+          writes: store.writeRows.tanstack,
           get list() { return store.routed().list.tanstack },
           get item() { return store.routed().item.tanstack },
           get conversation() { return store.routed().conversation.tanstack },

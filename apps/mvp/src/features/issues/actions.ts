@@ -52,6 +52,8 @@ export const open = (owner: string, name: string, number?: number) =>
       row.number = number ?? null
       row.draftKey = number === undefined ? newDraftKey(id) : commentDraftKey(id, number)
       row.submitting = false
+      delete row.submissionKey
+      delete row.createdWriteId
     })
   }).pipe(Effect.orDie)
 
@@ -92,13 +94,17 @@ const setSubmitting = (submitting: boolean) =>
  * Runs `dispatch` in the store's scope while the view says it is submitting; once the flow answers, the draft `key`
  * goes. A flow that failed, or didn't run, keeps it: the dispatch has logged and counted why.
  */
-const submit = (key: string, dispatch: Effect.Effect<{ readonly _tag: string }, unknown, FlowDispatch>) =>
+const submit = <A extends { readonly _tag: string }>(key: string, dispatch: Effect.Effect<A, unknown, FlowDispatch>, onDone?: (answer: A) => Effect.Effect<void>) =>
   Effect.gen(function* () {
     const store = yield* IssuesStore
-    yield* setSubmitting(true)
+    const submissionKey = crypto.randomUUID()
+    yield* store.view.update(VIEW, (row) => { row.submitting = true; row.submissionKey = submissionKey })
     const done = Effect.gen(function* () {
       const answered = yield* Effect.result(dispatch)
+      const current = Option.getOrThrow(yield* store.view.get(VIEW))
+      if (current.submissionKey !== submissionKey) return
       if (answered._tag === "Success" && answered.success._tag === "Done") yield* Effect.ignore(store.drafts.delete(key))
+      if (answered._tag === "Success" && onDone !== undefined) yield* onDone(answered.success)
       yield* setSubmitting(false)
     })
     yield* Effect.forkIn(done, store.scope, { startImmediately: true })
@@ -113,12 +119,13 @@ const submitting = Effect.flatMap(IssuesStore, ({ view }) => Effect.map(view.get
  */
 export const create = (owner: string, name: string) =>
   Effect.gen(function* () {
-    const { drafts } = yield* IssuesStore
+    const { drafts, view } = yield* IssuesStore
     const key = newDraftKey(repoId(owner, name))
     const issue = newIssueOf(Option.getOrUndefined(yield* drafts.get(key)))
     if (issue === undefined || (yield* submitting)) return false
     const flows = yield* FlowDispatch
-    yield* submit(key, flows.dispatch("issue/create", { repo: `${owner}/${name}`, ...issue }, { door: "button" }))
+    yield* submit(key, flows.dispatch("issue/create", { repo: `${owner}/${name}`, ...issue }, { door: "button" }), (answer) =>
+      answer._tag === "Done" ? Effect.orDie(view.update(VIEW, (row) => { row.createdWriteId = answer.value.writeId })) : Effect.void)
     return true
   })
 

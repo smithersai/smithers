@@ -1,3 +1,4 @@
+import { dispatches } from "../../flows/dispatch"
 import { RepoStore } from "../repo/store"
 import { RepoClient } from "../repo/api"
 import { role as readRepositoryRole } from "../repo/actions"
@@ -304,6 +305,7 @@ describe("a new issue", () => {
     expect(tab.list().issues).toEqual([{ id: writeId, number: null, title: "Fix the crash", state: "open", pending: "requested" }])
     // The step queued it: the draft goes and the form can press again.
     await until(() => expect(tab.view()).toMatchObject({ title: undefined, body: undefined, submitting: false }))
+    expect(tab.view()?.createdWriteId).toBe(writeId)
     // The outbox sent it: ChatApi took it as Maya's own, and started its write; the device keeps it Requested.
     await until(async () =>
       expect(await server(tab.api).write(writeId)).toMatchObject({
@@ -431,7 +433,7 @@ describe("loading", () => {
     const faults = await runtime.runPromise(Effect.service(ShapeSource.Faults))
     await runtime.runPromise(faults.refuse(503))
     // Wake the in-flight live poll; the next request receives the injected failure.
-    await server(api).seed(32, "Wake poll")
+    await server(api).seed(31, "Cached issue updated")
     await runtime.runPromise(tab.store.routed().reconnect)
     await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "unavailable", installed: true }), 15_000)
     expect(currentPage()).toBe("shown")
@@ -1120,4 +1122,16 @@ test("a detail sync contains only the selected issue and comments, with independ
   }
   await tab.actions.open(OWNER, NAME)
   await until(() => expect(tab.list().issues).toHaveLength(2))
+}, WITHIN)
+
+test("an issue creation receipt cannot redirect a later visit", async () => {
+  const tab = await open()
+  await tab.actions.open(OWNER, NAME)
+  tab.actions.setNewTitle(OWNER, NAME, "Queued before leaving")
+  expect(tab.actions.create(OWNER, NAME)).toBe(true)
+  await tab.actions.open(OWNER, NAME, 99)
+  await pendingIssue(tab)
+  await until(() => expect(tab.count(dispatches, { flow: "issue/create", door: "button", outcome: "done" })).toBe(1))
+  expect(tab.store.drafts.tanstack.get(newDraftKey(REPO_ID))?.title).toBe("Queued before leaving")
+  expect(tab.view()).toMatchObject({ number: 99, submitting: false, createdWriteId: undefined })
 }, WITHIN)

@@ -120,6 +120,7 @@ export class IssuesStore extends Context.Service<
   IssuesStore,
   {
     readonly writes: ElectricCollection.ElectricCollection<WriteRow>
+    readonly writeRows: LiveRows<WriteRow>
     readonly sending: Collection.Collection<Sending, string>
     readonly requested: Collection.Collection<Requested, string>
     readonly drafts: Collection.Collection<Draft, string>
@@ -477,6 +478,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
 
   return IssuesStore.of({
     writes,
+    writeRows: yield* rowsQuery(writes),
     sending,
     requested,
     drafts,

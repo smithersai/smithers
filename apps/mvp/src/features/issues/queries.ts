@@ -305,6 +305,7 @@ export const viewQuery = (view: View, drafts: Local<Draft>) =>
         name: view.name,
         number: view.number,
         submitting: view.submitting,
+        createdWriteId: view.createdWriteId,
         title: draft?.title,
         body: draft?.body,
       }))

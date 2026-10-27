@@ -463,6 +463,8 @@ const newIssueRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/$owner/$repo/issues/new",
   component: NewIssueScreen,
+  validateSearch: (search: Record<string, unknown>): { readonly write?: string } =>
+    typeof search.write === "string" && /^[0-9a-f-]{36}$/i.test(search.write) ? { write: search.write } : {},
   beforeLoad: ({ context, params, ...load }) =>
     enterRepository(context, params, load, () => context.issues.actions.warm(params.owner, params.repo), () => context.issues.actions.open(params.owner, params.repo)),
 })
