@@ -15,6 +15,7 @@ import "./app-shell.css"
 export function AppShell() {
   return (
     <main className="app-shell" aria-label="App">
+      <h1 className="app-shell-title">Chat</h1>
       <header className="app-shell-header">
         {/* What the agent is doing, and whether it needs you (decision 0015): its own live region, first in the row. */}
         <div className="app-shell-agent" role="status" aria-label="Smithers" aria-live="polite">
