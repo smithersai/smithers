@@ -213,7 +213,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       const row = yield* target(answerId, liveSeconds)
       if (row === undefined) return refusal(404, "not_found")
       if (row.askedBy !== actorId) return notAsker(fields)
-      if (row.status !== "streaming") return refusal(409, "settled")
+      if (row.status !== "streaming") {
+        fields.renewed = false
+        return HttpServerResponse.empty({ status: 204 })
+      }
       fields.renewed = yield* touch(answerId, liveSeconds)
       return ok({})
     })

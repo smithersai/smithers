@@ -22,6 +22,13 @@ test("model quota: a refusal ends Working promptly with a reason and Retry", {
     await expect(answer.getByRole("button", { name: "Retry", exact: true })).toBeVisible()
     await expect(answer.locator('[data-slot="message-response"]')).toHaveAttribute("data-streaming", "false")
   })
+  await test.step("A late heartbeat leaves the finished answer alone", async () => {
+    const answerId = await a.answerTo(question).getAttribute("data-id")
+    expect(answerId).toBeTruthy()
+    const status = await a.page.evaluate(async id => (await fetch(`/api/answers/${id}`, { method: "PATCH" })).status, answerId)
+    expect(status).toBe(204)
+    await expect(a.answerTo(question).locator(".sui-chat-bubble")).toHaveText(MODEL_QUOTA_SPENT)
+  })
   await test.step("Retry: another refused answer also ends promptly", async () => {
     await a.answerTo(question).getByRole("button", { name: "Retry", exact: true }).click()
     await expect(a.question(question)).toHaveCount(2, { timeout: 15_000 })

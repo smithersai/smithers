@@ -77,6 +77,8 @@ export class AnswerApi extends Context.Service<
             })),
           heartbeat: (answerId) => exchange("heartbeat", Effect.gen(function* () {
             const response = yield* send(HttpClientRequest.patch(url(answerId)))
+            // A confirmed late pulse needs no lease: settlement is normal, not an HTTP failure.
+            if (response.status === 204) return yield* new AnswerSettled()
             if (response.status !== 200) return yield* refused(response).pipe(
               Effect.catchTag("@smthrs/mvp/agent/NotYourTurn", () => new AnswersUnavailable({ status: 409 })),
             )

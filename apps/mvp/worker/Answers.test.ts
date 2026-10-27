@@ -128,7 +128,20 @@ describe("GET /api/answers/<id>: the turn", () => {
     expect(await row(runtime, orphan)).toMatchObject({ status: "failed", failure: "abandoned", text: "" })
     expect(await row(runtime, quietJustUnder)).toMatchObject({ status: "failed", failure: "abandoned", text: "" })
     expect((await write(h, orphan, { status: "done", text: "Late" })).status).toBe(409)
-    expect((await h.fetch(`/api/answers/${orphan}`, { method: "PATCH" })).status).toBe(409)
+    expect((await h.fetch(`/api/answers/${orphan}`, { method: "PATCH" })).status).toBe(204)
+  })
+
+  test.each(["done", "failed"] as const)("a heartbeat after %s completes without a transport error or renewed lease", async (status) => {
+    const h = await open()
+    const id = await ask(h, "A quick answer")
+    await write(h, id, status === "done" ? { status, text: "Hello" } : { status, failure: "model_error" })
+    const before = await writtenAt(id)
+    const heartbeat = await h.fetch(`/api/answers/${id}`, { method: "PATCH" })
+    expect(heartbeat.status).toBe(204)
+    expect(await heartbeat.text()).toBe("")
+    expect(await writtenAt(id)).toBe(before)
+    expect(await answerRow(runtime, id)).toMatchObject({ status })
+    expect(h.only("chat.answer.heartbeat").annotations).toMatchObject({ status: 204, renewed: false })
   })
 
   test("confirmed host heartbeats keep a silent answer ahead of later turns without exposing text", async () => {

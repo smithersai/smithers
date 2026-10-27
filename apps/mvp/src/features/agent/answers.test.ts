@@ -101,6 +101,8 @@ test("heartbeat renews with PATCH and respects terminal/server failures", async 
   }, (api) => api.heartbeat("a"))
   expect(exit).toEqual(Exit.void)
   expect(seen).toEqual(["PATCH "])
+  expect(failure(await over(() => Promise.resolve(new Response(null, { status: 204 })), (api) => api.heartbeat("a"))))
+    .toEqual(new AnswerSettled())
   expect(failure(await over(answering(409, '{"code":"settled"}'), (api) => api.heartbeat("a"))))
     .toEqual(new AnswerSettled())
   expect(failure(await over(answering(503, '{}'), (api) => api.heartbeat("a"))))
