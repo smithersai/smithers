@@ -1,4 +1,6 @@
 import { expect, test } from "vitest"
+import { formatRelativeTime } from "@smthrs/ui"
+import { postgresTime } from "../chat/view"
 import { railEntries } from "./view"
 import { revisionOf } from "./identity"
 
@@ -21,8 +23,8 @@ test("only chat entries join the rail; recorded states and content identities co
 })
 
 test("timeline carries recorded evidence without inventing missing usage", () => {
-  const message = { id: "evidence", role: "assistant", text: "Done", status: "done", createdAt: "2026-10-20 19:58", inputTokens: 200, outputTokens: 40 }
-  expect(railEntries([message], [])[0]).toMatchObject({ actor: "Smithers", time: message.createdAt, tokens: 240 })
+  const message = { id: "evidence", role: "assistant", text: "Done", status: "done", createdAt: "2026-10-20 19:58:00.123456+00", inputTokens: 200, outputTokens: 40 }
+  expect(railEntries([message], [])[0]).toMatchObject({ actor: "Smithers", time: formatRelativeTime(postgresTime(message.createdAt)!), tokens: 240 })
   expect(railEntries([{ ...message, inputTokens: null }], [])[0]?.tokens).toBeUndefined()
   expect(railEntries([{ ...message, inputTokens: 0, outputTokens: 0 }], [])[0]?.tokens).toBeUndefined()
 })
@@ -139,4 +141,14 @@ test("an untitled draft remains identifiable and an active TODO names its step",
     .toBe("draft-7 · draft")
   const todo = { id: "t", title: "  ", number: 7, state: "working", prNumber: null, step: "implement", failure: null, updatedAt: "now" }
   expect(railEntries([], [], [], [todo])[0]).toMatchObject({ state: "working", label: "T7 · T7 · implement" })
+})
+
+ test("timeline times are readable and invalid timestamps are omitted", () => {
+  const createdAt = "2026-10-27 04:35:59.478813+00"
+  const time = formatRelativeTime(Date.parse("2026-10-27T04:35:59.478Z"))
+  const message = { id: "a", role: "assistant", text: "", status: "done", createdAt }
+  expect(railEntries([message], [{ id: "a", state: "done", flow: "chat/Answer" }]).map(entry => entry.time)).toEqual([time, time])
+  expect(railEntries([{ ...message, createdAt: "invalid" }], [])[0]?.time).toBeUndefined()
+  const todo = { id: "t", title: "Ship", number: 1, state: "done", prNumber: null, step: null, failure: null, updatedAt: createdAt }
+  expect(railEntries([], [], [], [todo])[0]?.time).toBe(time)
 })

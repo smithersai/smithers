@@ -1,4 +1,5 @@
-import type { ChatTimelineEntry } from "@smthrs/ui"
+import { formatRelativeTime, type ChatTimelineEntry } from "@smthrs/ui"
+import { postgresTime } from "../chat/view"
 import { isGenericSummary, revisionOf, safeTimelineText } from "./identity"
 
 export interface RailMessage {
@@ -42,6 +43,11 @@ const fallback = (message: RailMessage, messages: readonly RailMessage[], state:
   return outcome ? `${subject} · ${outcome}` : subject
 }
 
+const displayTime = (value: string | undefined): string | undefined => {
+  const ms = postgresTime(value ?? "")
+  return ms === undefined ? undefined : formatRelativeTime(ms)
+}
+
 export const railEntries = (
   messages: readonly RailMessage[], statuses: readonly RailStatus[],
   drafts: readonly RailDraft[] = [], todos: readonly RailTodo[] = [],
@@ -56,7 +62,7 @@ export const railEntries = (
     const entries: ChatTimelineEntry[] = [{
       id: message.status === "unsent" ? `unsent:${message.id}` : message.id,
       actor: message.role === "user" ? "Person" : "Smithers",
-      time: message.createdAt || undefined,
+      time: displayTime(message.createdAt),
       tokens: message.inputTokens != null && message.outputTokens != null && message.inputTokens + message.outputTokens > 0
         ? message.inputTokens + message.outputTokens : undefined,
       kind: message.role === "user" ? "ask" : "answer", state,
@@ -64,7 +70,7 @@ export const railEntries = (
       label: fallback(message, messages, state),
     }]
     if (message.role === "assistant" && status?.flow) entries.push({
-      id: `run:${message.id}`, kind: "flow", state, actor: "Smithers", time: message.createdAt || undefined,
+      id: `run:${message.id}`, kind: "flow", state, actor: "Smithers", time: displayTime(message.createdAt),
       label: `${safeTimelineText(status.flow)} · ${{ done: "completed", working: "running", waiting: "needs you", queued: "queued", failed: "failed" }[state]}`,
     })
     for (const draft of drafts.filter(draft => draft.answerId === message.id).sort((a, b) => a.createdAt - b.createdAt)) entries.push({
@@ -74,7 +80,7 @@ export const railEntries = (
     return entries
   }),
   ...todos.map((todo): ChatTimelineEntry => ({
-    id: `todo:${todo.id}`, kind: "tool", actor: "Smithers", time: todo.updatedAt,
+    id: `todo:${todo.id}`, kind: "tool", actor: "Smithers", time: displayTime(todo.updatedAt),
     state: todo.state === "failed" ? "failed" : todo.state === "working" ? "working" : todo.state === "queued" ? "queued" : todo.state === "in_review" ? "waiting" : "done",
     label: [subjectOf(todo.title) || `T${todo.number}`, todo.prNumber === null ? `T${todo.number}` : `PR #${todo.prNumber}`,
       (todo.state === "failed" ? todo.failure ? `${todo.failure} failed` : "failed" : todo.state === "working" ? todo.step || "working" : todo.state).replaceAll("_", " "),

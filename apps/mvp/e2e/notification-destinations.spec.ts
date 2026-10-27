@@ -27,3 +27,13 @@ test("failed clone stays at its reason and Retry", async ({ devices }) => {
   await expect(entry.getByRole("button", { name: "Open", exact: true })).toHaveCount(0)
   await expect(tab.page).toHaveURL(before)
 })
+
+test("timeline previews use readable times", async ({ devices }) => {
+  const [tab] = await devices.open("Reader")
+  await tab.page.goto("/app")
+  const timeline = tab.page.getByRole("navigation", { name: "Conversation timeline" })
+  await timeline.getByRole("button").first().hover()
+  const preview = tab.page.getByRole("tooltip").first()
+  await expect(preview).toBeVisible()
+  await expect(preview).not.toContainText(/\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d+\+00/)
+})
