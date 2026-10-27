@@ -5,7 +5,7 @@ import { describe, expect, test } from "vitest"
 import { branchPath, newBranchName, NEW_BRANCH_PREFIX } from "./contract"
 import { archivedOf, landed, listOf } from "./list"
 import type { Mine, Search } from "./schema"
-import { paramsOf } from "./view"
+import { emptyTitle, paramsOf } from "./view"
 
 const row = (conversationId: string, fields: Partial<Mine> = {}): Mine => ({
   conversationId,
@@ -104,3 +104,12 @@ describe("where a row and a new conversation go", () => {
     expect(newBranchName("")).toBe(`${NEW_BRANCH_PREFIX}000000`)
   })
 })
+
+
+test("empty searches say No matches in either list", () => {
+  expect(emptyTitle("missing", false)).toBe("No matches")
+  expect(emptyTitle("missing", true)).toBe("No matches")
+  expect(emptyTitle(" ", false)).toBe("No conversations")
+  expect(emptyTitle("", true)).toBe("No archived conversations")
+})
+

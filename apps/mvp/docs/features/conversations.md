@@ -129,3 +129,5 @@ The names are a snapshot for the list and its search, refreshed whenever you ope
 
 Conversation rows wrap branch and repository names so both remain readable beside
 Archive on a narrow screen.
+
+A filtered list with no results says “No matches.”

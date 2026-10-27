@@ -63,6 +63,9 @@ test("history: the branches you open are your conversations, on every device, se
   await search(b, "spoon title")
   await expect(rowOf(b, "change-the-title")).toBeVisible()
   await expect(rowOf(b, "test-branch")).toHaveCount(0)
+  await search(b, "no-matching-conversation-bb2")
+  await expect(b.getByText("No matches", { exact: true })).toBeVisible()
+  await expect(b.getByText("No conversations", { exact: true })).toHaveCount(0)
   await search(b, "")
   await expect(rowOf(b, "test-branch")).toBeVisible()
 

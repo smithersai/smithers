@@ -49,6 +49,14 @@ test("Conversations renders tracked and Smithers-only branches and archives thro
       await act(async () => {})
       expect([...list()!.querySelectorAll("li > a")].map(link => link.textContent)).toEqual(["topic-two octo/hello", "feature/one octo/hello"])
     }, { timeout: 40_000 })
+    await act(async () => { await branch.conversations.actions.search("missing-bb2") })
+    await vi.waitFor(async () => {
+      await act(async () => {})
+      expect(container.textContent).toContain("No matches")
+      expect(container.textContent).not.toContain("No conversations")
+    })
+    await act(async () => { await branch.conversations.actions.search("") })
+    await vi.waitFor(async () => { await act(async () => {}); expect(list()).not.toBeNull() })
     expect([...list()!.querySelectorAll("a")].map(link => link.getAttribute("href"))).toEqual(["/octo/hello/tree/topic-two", "/octo/hello/tree/feature/one"])
     await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Archive topic-two"]')!.click() })
     await vi.waitFor(async () => {
