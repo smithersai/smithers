@@ -106,6 +106,7 @@ export const parseTodoArgs = (field?: "text" | "answer", target = true) => (args
   }
   if (!target) return { payload: line ? { text: line } : {} }
   const match = /^(?:T)?([1-9]\d*)(?:\s+([\s\S]*))?$/.exec(line)
+  if (match && !Number.isSafeInteger(Number(match[1]))) return { error: "Invalid TODO input" }
   return { payload: match ? { n: Number(match[1]), ...(field && match[2] ? { [field]: match[2] } : {}) } : {} }
 }
 

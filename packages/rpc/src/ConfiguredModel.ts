@@ -1351,7 +1351,15 @@ export type ModelTestRequest = z.infer<typeof ModelTestRequestSchema>
  * @since 1.0.0
  * @category constants
  */
-export const MODEL_INVALID_FIELDS = ["model", "protocol", "baseUrl", "path", "modelId", "credential", "extraBody"] as const
+export const MODEL_INVALID_FIELDS = [
+  "model",
+  "protocol",
+  "baseUrl",
+  "path",
+  "modelId",
+  "credential",
+  "extraBody"
+] as const
 /**
  * A record field an `invalid` failure names.
  *
