@@ -37,6 +37,7 @@ export function PullsScreen() {
   }
   return (
     <main className="pulls-screen" aria-label="Pull requests"><RepoHeader /><HomeTabs />
+      {page.unknown ? <p role="status" data-list-sync="">Syncing pull requests…</p> : null}
       <IssuesView
         repo={`${owner}/${repo}`}
         size="full"

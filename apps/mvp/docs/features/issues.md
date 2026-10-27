@@ -318,3 +318,5 @@ Issue and pull-request details keep the route frame while their deferred body ar
 
 A signed-out reader of a public issue can sign in from the conversation; sign-in returns to the same issue. `issue-visitor.spec.ts` verifies that path without signing in or posting.
 
+Cold issue and pull request lists say “Syncing issues…” or “Syncing pull requests…” while counts are unknown. Cached rows remain visible; no spinner or false empty count appears. `issue-list-feedback.spec.ts` observes every painted frame until content arrives.
+

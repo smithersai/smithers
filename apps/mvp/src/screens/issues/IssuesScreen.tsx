@@ -72,6 +72,7 @@ export function IssuesScreen() {
           </Button>
         ))}
       </nav>
+      {list.unknown ? <p role="status" data-list-sync="">Syncing issues…</p> : null}
       <IssuesView
         repo={`${owner}/${repo}`}
         size="full"
