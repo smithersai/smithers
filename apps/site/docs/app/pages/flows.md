@@ -13,9 +13,9 @@ A button, slash command and agent action run the same typed flow. A flow called 
 
 ## Change a flow
 
-The overridable flows are `todo`, `learning`, `review` and repository flows. Built-in defaults need no repository commit. System flows, including stack operations, merge, members, settings, secrets, setup and sync, cannot be overridden.
+The overridable flows are `todo`, `learning`, `review` and repository flows. Built-in defaults need no repository commit. System flows are protected actions: stack operations, merge, members, settings, secrets, setup and sync. They cannot be overridden.
 
-Use `/flow.edit todo` with your requested change, or ask the app agent to propose it. The change becomes an ordinary TODO. Review its evidence and merge it as you would any other change.
+In Chat, type `/flow.edit todo` followed by a requested change to the TODO flow, or ask the app agent to propose it. The change becomes an ordinary TODO. Review its evidence and merge it as you would any other change.
 
 A file flow lives at `.smithers/flows/<name>/flow.ts`. Its default export uses the path's name as the first argument to `Flow.make` from `@smthrs/flow`:
 
@@ -53,7 +53,7 @@ The install stores detected check commands, default wiki pages and model setting
 
 ## Learning proposals
 
-After a merge, learning can propose an improvement with evidence from prior TODOs. Turn the proposal into a TODO, review and merge it. It applies after the new version becomes Active; learning cannot change the running factory directly.
+Learning proposals are suggested improvements based on evidence from prior TODOs, offered after a merge. Turn the proposal into a TODO, review and merge it. It applies after the new version becomes Active; learning cannot change the running factory directly.
 
 ## Run on a scratch branch
 
