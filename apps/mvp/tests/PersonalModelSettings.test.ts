@@ -272,3 +272,11 @@ test("each tier names its purpose beside its model and describes the input", asy
     expect(description?.textContent).toBe(purpose)
   }
 })
+
+ test("protocol fields have distinct names outside their fieldsets", async () => {
+  const tab = await section([])
+  for (const [protocol, label] of [["openai-chat", "OpenAI-compatible"], ["anthropic-messages", "Anthropic-compatible"]]) {
+    expect(tab.input(`personal-model-${protocol}-base-url`).getAttribute("aria-label")).toBe(`${label} Base URL`)
+    expect(tab.input(`personal-model-${protocol}-key`).getAttribute("aria-label")).toBe(`${label} Key`)
+  }
+})
