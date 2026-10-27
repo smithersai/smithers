@@ -1,3 +1,4 @@
+import { RecoveryShell } from "./RecoveryShell"
 import { Button, EmptyState } from "@smthrs/ui"
 import { type ErrorComponentProps, useRouter } from "@tanstack/react-router"
 
@@ -6,7 +7,7 @@ import { type ErrorComponentProps, useRouter } from "@tanstack/react-router"
 export function RouteError({ reset }: ErrorComponentProps) {
   const router = useRouter()
   return (
-    <main>
+    <RecoveryShell>
       <EmptyState
         title="Couldn't show this page"
         action={<Button onClick={() => {
@@ -14,6 +15,6 @@ export function RouteError({ reset }: ErrorComponentProps) {
           void router.invalidate()
         }}>Retry</Button>}
       />
-    </main>
+    </RecoveryShell>
   )
 }

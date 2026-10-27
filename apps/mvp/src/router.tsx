@@ -41,6 +41,7 @@ import { RepoHomeScreen } from "./screens/repo/RepoHomeScreen"
 import { BranchesScreen } from "./screens/repo/BranchesScreen"
 import { RepoScreen } from "./screens/repo/RepoScreen"
 import { Root } from "./screens/root/Root"
+import { RouteNotFound } from "./screens/root/RouteNotFound"
 import { RouteError } from "./screens/root/RouteError"
 import { RunScreen } from "./screens/runs/RunScreen"
 import { ConversationsScreen } from "./screens/conversations/ConversationsScreen"
@@ -156,7 +157,7 @@ const enterRepository = (
 /** A page whose data is on the device already: nothing to warm. */
 const local = () => undefined
 
-const rootRoute = createRootRouteWithContext<RouterContext>()({ component: Root })
+const rootRoute = createRootRouteWithContext<RouterContext>()({ component: Root, notFoundComponent: RouteNotFound })
 
 const landingRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: Landing })
 

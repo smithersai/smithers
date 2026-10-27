@@ -127,3 +127,5 @@ and Paper light/dark, rather than restating them.
   [troubleshooting](./troubleshooting.md).
 
 Field uses one shrinkable column; Radix Select’s hidden serialization control does not participate in its visible layout.
+
+`NotFound` displays an absent route or resource with a return link: `<NotFound back={<a href="/app">Back to chat</a>} />`. Set `title` for a known resource, such as `Issue not found`.

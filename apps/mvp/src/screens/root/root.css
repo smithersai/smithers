@@ -18,3 +18,7 @@ main > header > a,
   color: var(--brand, #0f766e);
   text-decoration: none;
 }
+
+.recovery-shell { min-height:100dvh; color:var(--foreground); background:var(--background); }
+.recovery-shell-header { display:flex; align-items:center; flex-wrap:wrap; gap:1rem; padding:1rem 4rem 1rem 1rem; border-bottom:1px solid var(--border); }
+.recovery-shell-header nav { display:flex; flex-wrap:wrap; gap:1rem; margin-right:auto; }
