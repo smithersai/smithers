@@ -110,6 +110,28 @@ const percentTokens = (value: string): ReadonlyArray<ReadonlyArray<Uint8Array>> 
     return escapes
   })
 
+const hexCases = (hex: string): ReadonlyArray<string> => {
+  let variants = [""]
+  for (const digit of hex) {
+    variants = variants.flatMap((prefix) => [...new Set([digit, digit.toUpperCase()])].map((next) => prefix + next))
+  }
+  return variants
+}
+
+// JSON permits a Unicode escape for every UTF-16 unit, including ASCII.
+// Astral literals and escaped surrogate pairs are alternatives of one token.
+const jsonTokens = (value: string): ReadonlyArray<ReadonlyArray<Uint8Array>> =>
+  Array.from(value, (point) => {
+    let escaped = [""]
+    for (const unit of point.split("")) {
+      const variants = hexCases(unit.charCodeAt(0).toString(16).padStart(4, "0"))
+      escaped = escaped.flatMap((prefix) => variants.map((hex) => `${prefix}\\u${hex}`))
+    }
+    const alternatives = new Set([JSON.stringify(point).slice(1, -1), ...escaped])
+    if (point === "/") alternatives.add("\\/")
+    return [...alternatives].map(utf8)
+  })
+
 const matchedLength = (input: Uint8Array, at: number, pattern: Pattern): number => {
   if (pattern.tokens === undefined) {
     return pattern.bytes.length <= input.length - at && matchesAt(input, at, pattern.bytes) ? pattern.bytes.length : 0
@@ -137,8 +159,12 @@ export const make = (targets: ReadonlyArray<Target>): Scrubber => {
     const value = Redacted.value(target.value)
     for (const form of forms(value)) patterns.push({ bytes: utf8(form), replacement })
     if (value.length > 0) {
-      const tokens = percentTokens(value)
-      patterns.push({ bytes: concat(tokens.map((token) => token[0]!)), tokens, replacement })
+      for (const tokens of [percentTokens(value), jsonTokens(value)]) {
+        const longestTokens = tokens.map((token) =>
+          token.reduce((longest, next) => next.length > longest.length ? next : longest)
+        )
+        patterns.push({ bytes: concat(longestTokens), tokens, replacement })
+      }
     }
   }
   patterns.sort((left, right) => right.bytes.length - left.bytes.length)
