@@ -58,7 +58,7 @@ test("Conversations renders tracked and Smithers-only branches and archives thro
     await act(async () => { await branch.conversations.actions.search("") })
     await vi.waitFor(async () => { await act(async () => {}); expect(list()).not.toBeNull() })
     expect([...list()!.querySelectorAll("a")].map(link => link.getAttribute("href"))).toEqual(["/octo/hello/tree/topic-two", "/octo/hello/tree/feature/one"])
-    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Archive topic-two"]')!.click() })
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Archive topic-two · octo/hello"]')!.click() })
     await vi.waitFor(async () => {
       await act(async () => {})
       expect([...list()!.querySelectorAll("li > a")].map(link => link.textContent)).toEqual(["feature/one octo/hello"])
@@ -66,7 +66,7 @@ test("Conversations renders tracked and Smithers-only branches and archives thro
     await act(async () => { await branch.conversations.actions.showArchived(true) })
     await vi.waitFor(async () => {
       await act(async () => {})
-      expect(container.querySelector('button[aria-label="Restore topic-two"]')).not.toBeNull()
+      expect(container.querySelector('button[aria-label="Restore topic-two · octo/hello"]')).not.toBeNull()
     }, { timeout: 40_000 })
   } finally {
     await act(async () => view.unmount())

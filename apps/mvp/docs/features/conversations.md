@@ -130,4 +130,4 @@ The names are a snapshot for the list and its search, refreshed whenever you ope
 Conversation rows wrap branch and repository names so both remain readable beside
 Archive on a narrow screen.
 
-A filtered list with no results says “No matches.”
+A filtered list with no results says “No matches.” Archive and Restore controls include the repository in their accessible names, distinguishing branches named alike.

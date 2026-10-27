@@ -90,7 +90,7 @@ test("archive: Archive hides a conversation on all your devices; opening its bra
   await expect(rowOf(b, "test-branch")).toBeVisible({ timeout: 30_000 })
 
   await step("Archive it on the laptop", async () => {
-    await rowOf(a, "test-branch").getByRole("button", { name: "Archive test-branch" }).click()
+    await rowOf(a, "test-branch").getByRole("button", { name: "Archive test-branch · octocat/Spoon-Knife", exact: true }).click()
     await expect(rowOf(a, "test-branch")).toHaveCount(0)
   })
   await step("It leaves the phone's list too", () => expect(rowOf(b, "test-branch")).toHaveCount(0, { timeout: 30_000 }))
@@ -102,7 +102,7 @@ test("archive: Archive hides a conversation on all your devices; opening its bra
 
   await openList(b, "Archived")
   await expect(rowOf(b, "test-branch")).toBeVisible({ timeout: 30_000 })
-  await expect(rowOf(b, "test-branch").getByRole("button", { name: "Restore test-branch" })).toBeVisible()
+  await expect(rowOf(b, "test-branch").getByRole("button", { name: "Restore test-branch · octocat/Spoon-Knife", exact: true })).toBeVisible()
 
   await step("Opening the branch on the phone brings it back", async () => {
     await rowOf(b, "test-branch").getByRole("link").click()
@@ -111,9 +111,9 @@ test("archive: Archive hides a conversation on all your devices; opening its bra
   await step("The laptop lists it again", () => expect(rowOf(a, "test-branch")).toBeVisible({ timeout: 30_000 }))
 
   await step("Archive, then Restore from the archived list", async () => {
-    await rowOf(a, "test-branch").getByRole("button", { name: "Archive test-branch" }).click()
+    await rowOf(a, "test-branch").getByRole("button", { name: "Archive test-branch · octocat/Spoon-Knife", exact: true }).click()
     await openList(a, "Archived")
-    await rowOf(a, "test-branch").getByRole("button", { name: "Restore test-branch" }).click()
+    await rowOf(a, "test-branch").getByRole("button", { name: "Restore test-branch · octocat/Spoon-Knife", exact: true }).click()
     await expect(rowOf(a, "test-branch")).toHaveCount(0)
     await openList(a)
     await expect(rowOf(a, "test-branch")).toBeVisible()

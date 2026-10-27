@@ -2,7 +2,7 @@ import { Button, EmptyState, Input, SegmentedControl } from "@smthrs/ui"
 import { Link } from "@tanstack/react-router"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useBranch } from "../../branch/components/BranchContext"
-import { emptyTitle, paramsOf } from "../view"
+import { archiveLabel, emptyTitle, paramsOf } from "../view"
 
 // Your conversations (docs/features/conversations.md#the-list): one per branch you opened, the latest first, searched
 // by repository and branch, with the archived ones one switch away. A row opens its branch, which brings an archived
@@ -41,7 +41,7 @@ export function ConversationList() {
                 </Link>
                 <Button
                   variant="ghost"
-                  aria-label={`${archived ? "Restore" : "Archive"} ${row.branch}`}
+                  aria-label={archiveLabel(row, archived)}
                   onClick={() => void conversations.actions.archive(row.conversationId, !archived)}
                 >
                   {archived ? "Restore" : "Archive"}

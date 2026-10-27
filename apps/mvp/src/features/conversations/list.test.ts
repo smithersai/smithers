@@ -5,7 +5,7 @@ import { describe, expect, test } from "vitest"
 import { branchPath, newBranchName, NEW_BRANCH_PREFIX } from "./contract"
 import { archivedOf, landed, listOf } from "./list"
 import type { Mine, Search } from "./schema"
-import { emptyTitle, paramsOf } from "./view"
+import { archiveLabel, emptyTitle, paramsOf } from "./view"
 
 const row = (conversationId: string, fields: Partial<Mine> = {}): Mine => ({
   conversationId,
@@ -113,3 +113,10 @@ test("empty searches say No matches in either list", () => {
   expect(emptyTitle("", true)).toBe("No archived conversations")
 })
 
+test("archive controls distinguish the same branch in different repositories", () => {
+  const first = { branch: "main", repo: "octo/one" }
+  const second = { branch: "main", repo: "octo/two" }
+  expect(archiveLabel(first, false)).toBe("Archive main · octo/one")
+  expect(archiveLabel(second, false)).toBe("Archive main · octo/two")
+  expect(archiveLabel(first, true)).toBe("Restore main · octo/one")
+})

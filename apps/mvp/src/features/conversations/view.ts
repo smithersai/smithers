@@ -13,3 +13,6 @@ export const paramsOf = (row: Listed) => {
 export const emptyTitle = (text: string, archived: boolean): string =>
   text.trim() !== "" ? "No matches" : archived ? "No archived conversations" : "No conversations"
 
+/** Branch names repeat across repositories, including for assistive technology. */
+export const archiveLabel = (row: Pick<Listed, "branch" | "repo">, archived: boolean): string =>
+  `${archived ? "Restore" : "Archive"} ${row.branch} · ${row.repo}`
