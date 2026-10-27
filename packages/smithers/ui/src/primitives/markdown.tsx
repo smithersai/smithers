@@ -452,6 +452,22 @@ type BlockSpan = { readonly kind: BlockKind; readonly lines: ReadonlyArray<strin
  * The final span may still grow while content streams; every earlier span is
  * stable, which is what makes it safe to cache.
  */
+const continuesList = (lines: ReadonlyArray<string>, index: number) => {
+  const line = lines[index]!;
+  return line.trim() !== "" && !isBullet(line) && !isOrdered(line) && !isFence(line) &&
+    !isHeading(line) && !isImageLine(line) && !interruptsParagraph(line) && tableAt(lines, index) === undefined;
+};
+
+/** Fold continuation lines into the item they belong to, before rendering its inline content. */
+const listItems = (lines: ReadonlyArray<string>, marker: RegExp): string[] => {
+  const items: string[] = [];
+  for (const line of lines) {
+    if (marker.test(line)) items.push(line.replace(marker, ""));
+    else items[items.length - 1] += " " + line.trim();
+  }
+  return items;
+};
+
 function scanBlocks(content: string, variant: MarkdownVariant = "chat"): BlockSpan[] {
   const lines = (variant === "document" ? markdownDocumentBody(content) : content).split("\n");
   const spans: BlockSpan[] = [];
@@ -515,10 +531,10 @@ function scanBlocks(content: string, variant: MarkdownVariant = "chat"): BlockSp
       i += 1;
     } else if (isBullet(lines[i]!)) {
       kind = "bullet";
-      while (i < lines.length && isBullet(lines[i]!)) i += 1;
+      while (i < lines.length && (isBullet(lines[i]!) || document && continuesList(lines, i))) i += 1;
     } else if (isOrdered(lines[i]!)) {
       kind = "ordered";
-      while (i < lines.length && isOrdered(lines[i]!)) i += 1;
+      while (i < lines.length && (isOrdered(lines[i]!) || document && continuesList(lines, i))) i += 1;
     } else {
       kind = "paragraph";
       while (
@@ -682,8 +698,8 @@ function renderSpan(
     case "bullet":
       return (
         <ul className="sui-md-list" key={key}>
-          {lines.map((line, item) => (
-            <li key={item}>{inline(line.replace(/^\s*[-*]\s+/, ""), `ul${key}.${item}`)}</li>
+          {listItems(lines, /^\s*[-*]\s+/).map((line, item) => (
+            <li key={item}>{inline(line, `ul${key}.${item}`)}</li>
           ))}
         </ul>
       );
@@ -691,8 +707,8 @@ function renderSpan(
     case "ordered":
       return (
         <ol className="sui-md-list" key={key}>
-          {lines.map((line, item) => (
-            <li key={item}>{inline(line.replace(/^\s*\d+\.\s+/, ""), `ol${key}.${item}`)}</li>
+          {listItems(lines, /^\s*\d+\.\s+/).map((line, item) => (
+            <li key={item}>{inline(line, `ol${key}.${item}`)}</li>
           ))}
         </ol>
       );
