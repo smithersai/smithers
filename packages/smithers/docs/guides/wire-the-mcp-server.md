@@ -92,6 +92,9 @@ This is an approval boundary, not an operating-system sandbox. Do not grant
 arbitrary host shell, code execution, or database write access to an actor that
 must not bypass a human gate.
 
+A missing local host installation reports `host_not_installed` without a
+filesystem path.
+
 ## The other direction
 
 `--mcp-config <path>` is not this feature. It names a JSON array of MCP servers

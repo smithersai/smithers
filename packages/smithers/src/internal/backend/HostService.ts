@@ -444,6 +444,9 @@ export const stop = async (system: Launchd): Promise<{ state: "stopped" }> =>
  */
 export const installedBundle = (system: Launchd): string => {
   const file = plistFile(system)
+  if (!existsSync(file) && !existsSync(`${file}.stopped`)) {
+    throw new Refused({ fault: "dependency", code: "host_not_installed", message: "Host is not installed" })
+  }
   const text = readFileSync(existsSync(file) ? file : `${file}.stopped`, "utf8")
   const executable = text.match(/<key>ProgramArguments<\/key>\s*<array>\s*<string>([^<]+)<\/string>/)?.[1]
   if (!executable) {
