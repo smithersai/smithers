@@ -124,6 +124,51 @@ describe("starting sign-in", () => {
     expect((await h.signInAs("/app?sign_in=failed&tab=1")).response.headers.get("location")).toBe("/app?tab=1")
   })
 
+  test("normalization cannot create an authority in a stored or local return path", async () => {
+    const h = await signInHarness(runtime)
+    const dev = await signInHarness(runtime, { config: {}, fallback: { actor: localDeveloper, login: "local-developer" } })
+    for (const target of [
+      "/.//evil.test", "/a/..//evil.test", "/%2e//evil.test", "/a/%2E%2e//evil.test",
+      "/.%2e//evil.test", "/.\\/evil.test", "/a\\..\\/evil.test", "/.\t//evil.test",
+      "/a/..\t//evil.test", "/\t/evil.test/app", "/\\evil.test", "//evil.test",
+      "/.//first.test/.//second.test", "//[", "/\\[",
+    ]) {
+      await h.start(target)
+      const [attempt] = await query((sql) => sql<{ readonly returnTo: string }>`SELECT return_to AS "returnTo" FROM sign_in_attempts`)
+      expect(attempt!.returnTo, target).toBe("/")
+      await query((sql) => sql`DELETE FROM sign_in_attempts`)
+      const response = await dev.fetch(`/api/auth/sign-in?return=${encodeURIComponent(target)}`)
+      expect(response.status).toBe(303)
+      expect(response.headers.get("location"), target).toBe("/")
+      expect(new URL(response.headers.get("location")!, "http://smithers.test").origin).toBe("http://smithers.test")
+    }
+  })
+
+  test("encoded separators remain path data and safe normalized paths keep their query and fragment", async () => {
+    const dev = await signInHarness(runtime, { config: {}, fallback: { actor: localDeveloper, login: "local-developer" } })
+    for (const [target, expected] of [
+      ["/%2f%2fevil.test", "/%2f%2fevil.test"], ["/%5c%5cevil.test", "/%5c%5cevil.test"],
+      ["/.%2f/evil.test", "/.%2f/evil.test"], ["/%2e%2f/evil.test", "/%2e%2f/evil.test"],
+      ["/%2e%5c/evil.test", "/%2e%5c/evil.test"], ["/app/%2F%5C?tab=1#end", "/app/%2F%5C?tab=1#end"],
+      ["/a/../app?tab=1&sign_in=failed#end", "/app?tab=1#end"], ["/ap\tp?tab=1#end", "/app?tab=1#end"],
+      ["/app\\settings?tab=1#end", "/app/settings?tab=1#end"],
+    ]) {
+      const response = await dev.fetch(`/api/auth/sign-in?return=${encodeURIComponent(target!)}`)
+      expect(response.status).toBe(303)
+      expect(response.headers.get("location"), target).toBe(expected)
+      expect(new URL(response.headers.get("location")!, "http://smithers.test").origin).toBe("http://smithers.test")
+    }
+  })
+
+  test("query decoding happens before normalized return-path validation", async () => {
+    const dev = await signInHarness(runtime, { config: {}, fallback: { actor: localDeveloper, login: "local-developer" } })
+    for (const encoded of ["%2f.%2f%2fevil.test", "%2fa%2f%2e%2e%2f%2fevil.test", "%2f.%5c%2fevil.test", "%2f.%09%2f%2fevil.test"]) {
+      const response = await dev.fetch(`/api/auth/sign-in?return=${encoded}`)
+      expect(response.status).toBe(303)
+      expect(response.headers.get("location"), encoded).toBe("/")
+    }
+  })
+
   test("a database that fails as sign-in starts answers 503, logged by code", async () => {
     const h = await signInHarness(runtime, { database: unreachable })
     const response = await h.fetch("/api/auth/sign-in?return=/app")
@@ -146,6 +191,23 @@ describe("starting sign-in", () => {
 })
 
 describe("the callback", () => {
+  test.each([false, true])("revalidates an older attempt's return path before redirecting (denied=%s)", async (denied) => {
+    const h = await signInHarness(runtime)
+    for (const target of ["//first.test//second.test", "//evil.test/app", "/.//evil.test", "/a/%2e%2e//evil.test"]) {
+      const started = await h.start("/app")
+      const { code, state } = h.github.approve(started.location)
+      // A real persisted attempt created by the previous deployment, before its callback returns.
+      await query((sql) => sql`UPDATE sign_in_attempts SET return_to = ${target} WHERE state_digest = ${SessionKeys.digest(state)}`)
+      const response = await h.callback(
+        denied ? { state, error: "access_denied" } : { code, state },
+        { smithers_sign_in: started.cookies["smithers_sign_in"]!.value },
+      )
+      expect(response.status).toBe(303)
+      expect(response.headers.get("location"), target).toBe(denied ? "/?sign_in=failed" : "/")
+      expect(new URL(response.headers.get("location")!, "http://smithers.test").origin).toBe("http://smithers.test")
+    }
+  })
+
   test("signs the browser in: a person keyed by GitHub id, a session behind an HttpOnly cookie", async () => {
     const h = await signInHarness(runtime)
     const { response, cookies } = await h.signInAs("/app")

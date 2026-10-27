@@ -160,12 +160,13 @@ const returnPath = (value: string | null, origin: string) => {
   if (value === null || !value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) return "/"
   const url = new URL(value, origin)
   url.searchParams.delete(SIGN_IN_FAILED_PARAM)
-  return url.origin === origin ? `${url.pathname}${url.search}${url.hash}` : "/"
+  // Dot segments and backslashes can turn a same-origin URL's pathname into a new authority when sent as Location.
+  return url.origin === origin && !/^\/[/\\]/.test(url.pathname) ? `${url.pathname}${url.search}${url.hash}` : "/"
 }
 
 /** `path` with `?sign_in=failed`, for the browser to show that sign-in failed. */
 const failedPath = (path: string, origin: string) => {
-  const url = new URL(path, origin)
+  const url = new URL(returnPath(path, origin), origin)
   url.searchParams.set(SIGN_IN_FAILED_PARAM, "failed")
   return `${url.pathname}${url.search}${url.hash}`
 }
@@ -428,7 +429,7 @@ export const make = <E, R>(
       if (outcome._tag === "Success") {
         const { personId, role, returnTo, cookie, maxAgeSeconds } = outcome.success
         yield* record("callback", { outcome: "signed_in", personId, role: role ?? "none", durationMs })
-        return HttpServerResponse.redirect(returnTo, { status: 303, headers: noStore }).pipe(
+        return HttpServerResponse.redirect(returnPath(returnTo, origin), { status: 303, headers: noStore }).pipe(
           HttpServerResponse.setCookieUnsafe(
             names.session,
             cookie,

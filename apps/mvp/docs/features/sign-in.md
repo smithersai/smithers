@@ -41,7 +41,7 @@ POST /api/auth/sign-out ──▶ FlowStarter.start(auth/RevokeGitHubToken { ses
 | `POST /api/auth/sign-out` | `204`, `auth/RevokeGitHubToken` started, the session ended and the cookie expired; `403` when the request doesn't say it came from this site (`Origin`, or `Sec-Fetch-Site: same-origin`); `503` when Postgres fails or the flow's start isn't recorded, with the session and cookie as they were. Under `alchemy dev` without the App: `204` with the dev signed-out cookie |
 | `GET /api/auth/session` | `200 { signedIn: false, available }` or `{ signedIn: true, personId, login, role }`, `personId` the person's stable id ([the device's owner](#the-devices-owner)); `503` when Postgres fails. `available` is true where the GitHub App is configured, and under `alchemy dev` |
 
-The return path is a path on this site; anything else, including `//host` and `/\host`, returns to `/`. `?sign_in=failed` is dropped from it, so trying again doesn't come back saying it failed. Every answer is `Cache-Control: no-store`.
+The return path is a path on this site; anything else, including `//host` and `/\host`, returns to `/`. Validation checks the origin and the normalized pathname: `/.//host`, `/a/..//host` and encoded dot-segment equivalents also return to `/`. Encoded slashes and backslashes remain path data, without a second decoding. Both callback outcomes revalidate stored paths, including attempts started before an update. `?sign_in=failed` is dropped from it, so trying again doesn't come back saying it failed. Every answer is `Cache-Control: no-store`.
 
 ## Sessions and cookies
 
