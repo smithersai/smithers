@@ -10,6 +10,7 @@ import { SETTINGS } from "../../domains/copy"
 import { ISSUES } from "../../issues/contract"
 import { SecretsLink } from "../../secrets/components/SecretsLink"
 import { STACK } from "../../todos/contract"
+import type { Minimized } from "../../views/minimize"
 import { BackToChat } from "../../views/components/BackToChat"
 import { CLONE, TRY_AGAIN } from "../contract"
 import { minimizedOf } from "../embedView"
@@ -23,7 +24,7 @@ import { useRepo, useRepoAnswer } from "./RepoContext"
 // clones (the files' place says Cloning, RepoPage); the sign-in link in Clone's place for a signed-out person; or why a
 // clone failed or was refused, with Try again. The person's bell is its last slot, so it never sits on
 // an action: the screens that render this header don't float it (attention/contract.ts `BELL_ROUTES`).
-export function RepoHeader() {
+export function RepoHeader({ backTarget }: { readonly backTarget?: Minimized } = {}) {
   const { queries, actions } = useRepo()
   const { data } = useLiveQuery(queries.view)
   const auth = useAuth()
@@ -36,7 +37,7 @@ export function RepoHeader() {
   const defaultBranch = repository?.defaultBranch ?? aboutOf(about)?.defaultBranch ?? null
   return (
     <header className="repo-header" aria-label="Repository">
-      <BackToChat target={{ template: "repo", props: minimizedOf(view, defaultBranch) }} />
+      <BackToChat target={backTarget ?? { template: "repo", props: minimizedOf(view, defaultBranch) }} />
       <h1 className="repo-header-name">
         <Link to="/$owner/$repo" params={{ owner: view.owner, repo: view.name }}>{view.owner} / {view.name}</Link>
       </h1>

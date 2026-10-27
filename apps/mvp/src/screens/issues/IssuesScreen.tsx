@@ -21,7 +21,6 @@ import {
 } from "../../features/issues/contract"
 import { COMMITMENTS, COMMITMENT_COPY, filterCommitment } from "../../features/issues/lifecycle"
 import { listProps, mayManageTriageOnList, mayWrite, syncsHere, triageSwitchOf } from "../../features/issues/view"
-import { BackToChat } from "../../features/views/components/BackToChat"
 import "./issues-screen.css"
 import { useRepoAnswer } from "../../features/repo/components/RepoContext"
 
@@ -51,19 +50,19 @@ export function IssuesScreen() {
   const list = listProps(filterCommitment(rows ?? [], search.commitment), synced, access, triage !== undefined && !triage.paused)
   const triageSwitch = triageSwitchOf(triage, triagePending ?? [])
   // The full-screen size of the repository's issues view in the chat (ruling FE-9): Back to chat minimizes it.
-  const back = <BackToChat target={{ template: "issues", props: { repo: `${owner}/${repo}` } }} />
+  const header = <RepoHeader backTarget={{ template: "issues", props: { repo: `${owner}/${repo}` } }} />
   // Where this deployment doesn't sync the repository's issues, GitHub lists them (decision 0079 slice 1b).
   if (!syncsHere(access, unsynced)) {
     const list = githubList(owner, repo, "issues")
-    return <main className="issues-screen" aria-label="Issues">{back}<RepoHeader /><HomeTabs /><p><a href={list.href}>{list.text}</a></p></main>
+    return <main className="issues-screen" aria-label="Issues">{header}<HomeTabs /><p><a href={list.href}>{list.text}</a></p></main>
   }
   // A repository whose issues this person may not read: sign in, or nothing to show.
-  if (list.refused === "sign_in") return <main className="issues-screen" aria-label="Issues">{back}<RepoHeader /><HomeTabs /><SignInButton /></main>
+  if (list.refused === "sign_in") return <main className="issues-screen" aria-label="Issues">{header}<HomeTabs /><SignInButton /></main>
   if (list.refused === "forbidden") {
-    return <main className="issues-screen" aria-label="Issues">{back}<RepoHeader /><HomeTabs /><EmptyState title={NOT_FOUND} /></main>
+    return <main className="issues-screen" aria-label="Issues">{header}<HomeTabs /><EmptyState title={NOT_FOUND} /></main>
   }
   return (
-    <main className="issues-screen" aria-label="Issues">{back}<RepoHeader /><HomeTabs />
+    <main className="issues-screen" aria-label="Issues">{header}<HomeTabs />
       <nav aria-label="Commitment">
         {[undefined, ...COMMITMENTS].map((commitment) => (
           <Button key={commitment ?? "all"} variant={search.commitment === commitment ? "secondary" : "ghost"} size="sm" asChild>

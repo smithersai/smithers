@@ -92,7 +92,10 @@ test("direct feature pages keep navigation, fence the deployment's own repositor
       expect(router.state.matches.at(-1)).toMatchObject({ routeId: route.id, status: "success" })
       await vi.waitFor(() => {
       const html = renderRepositoryPages(router, services)
-      if (path !== "") expect(html).toContain('aria-label="Repository"')
+      if (path !== "") {
+        expect(html).toContain('aria-label="Repository"')
+        expect(html.match(/>Back to chat<\/a>/g)).toHaveLength(1)
+      }
       if (path !== "") expect(html).toContain("smithersai / vibelang")
       if (path !== "") expect(html).toContain('aria-label="Repository pages"')
       expect(html).toContain(text)

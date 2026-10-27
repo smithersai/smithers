@@ -19,5 +19,3 @@
   .issues-screen > p > a { display: inline-flex; align-items: center; min-height: 32px; }
 }
 
-/* Back to chat, which minimizes the page into the chat (ruling FE-9), at the page's top left. */
-.issues-screen > .back-to-chat { align-self: flex-start; }
