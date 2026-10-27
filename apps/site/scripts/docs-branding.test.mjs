@@ -14,3 +14,8 @@ test("docs backgrounds and text match the current product palette in both themes
     assert.ok(css.includes(color), `docs must use ${color}`)
   }
 })
+
+test("Node provider example labels its private model host before importing it", () => {
+  const docs = readFileSync(new URL("../../../packages/smithers/flows/platform-node/docs/api.md", import.meta.url), "utf8")
+  assert.match(docs, /`@smthrs\/model-host` package is workspace-private/)
+})

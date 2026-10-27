@@ -35721,7 +35721,7 @@ client without this layer gets that refusal, which the web tools report as
 ## A model provider's fetch
 
 `EgressHttpClient.providerFetch(environment, { connect? })` is the `fetch` a Node
-model host passes as `HostModel`'s `fetch` option. It is Undici's `fetch` over a
+model host passes as `HostModel`'s `fetch` option. The `@smthrs/model-host` package is workspace-private. It is Undici's `fetch` over a
 pool of its own, in the caller's scope, that follows the environment's proxy
 variables as `dispatcher` does and speaks HTTP/1.1 only. `connect` carries TLS
 options such as a private provider's `ca`.
