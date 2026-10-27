@@ -211,3 +211,15 @@ test("repository hints: first Enter shows the argument format", async ({ devices
     await expect(a.composer).toHaveValue(command)
   }
 })
+
+test.fixme("missing repository: issues refuses without storing a card", async ({ devices }) => {
+  // Deferred: template admission currently persists the view before repository access resolves.
+  const [a] = await devices.open("A")
+  await a.openComposer()
+  const cards = a.page.locator('[data-template="issues"]')
+  const before = await cards.count()
+  await a.composer.fill("/issues bugbash3-bb2-chat-absent/repository")
+  await a.composer.press("Enter")
+  await expect(a.composerForm.getByText("Repository unavailable", { exact: true })).toBeVisible()
+  await expect(cards).toHaveCount(before)
+})
