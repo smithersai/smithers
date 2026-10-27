@@ -1,3 +1,5 @@
+import { markdownLinkNames } from "./markdownLinkNames";
+
 /** Read-only HTML policy. Parse into an inert template, then construct only allowlisted nodes. */
 const allowed = new Set("a abbr b blockquote br code dd del details div dl dt em h1 h2 h3 h4 h5 h6 hr i img kbd li ol p pre s samp small span strong sub summary sup table tbody td th thead tr ul".split(" "));
 const discard = new Set("script style iframe object embed template svg math form input button link meta base".split(" "));
@@ -39,6 +41,7 @@ export function markdownHtml(source: string): HTMLElement {
     parent.appendChild(target);
   };
   for (const child of template.content.childNodes) append(result, child);
+  markdownLinkNames(result);
   return result;
 }
 

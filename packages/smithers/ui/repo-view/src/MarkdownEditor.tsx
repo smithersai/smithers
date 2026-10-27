@@ -10,6 +10,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { markdownLinkNames } from "./markdownLinkNames";
 import { markdownAlerts } from "./markdownAlerts";
 import { markdownCode } from "./markdownCode";
 import { markdownDocumentBody } from "@smthrs/ui";
@@ -589,6 +590,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         }
         readyRef.current = true;
         const labelContent = () => {
+          markdownLinkNames(host);
           for (const content of host.querySelectorAll<HTMLElement>('.ProseMirror,[role="textbox"]')) {
             const label = content.classList.contains("ProseMirror") ? ariaLabel : "Code";
             if (label && content.getAttribute("aria-label") !== label) content.setAttribute("aria-label", label);

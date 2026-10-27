@@ -51,3 +51,13 @@ test("repository README draws GitHub warning alerts", async ({ page }) => {
   await expect(preview.locator('.sui-markdown-alert-title[data-kind="warning"]')).toHaveText("Warning", { timeout: 30_000 })
   await expect(preview).not.toContainText("[!WARNING]")
 })
+
+test("README badge links have accessible names", async ({ page }) => {
+  requires("codeStorage")
+  await page.goto("/smithersai/vibelang/blob/main/README.md")
+  const preview = page.locator(".sui-markdown-editor[data-readonly]")
+  const npm = preview.locator('a[href="https://www.npmjs.com/package/vibelang"]')
+  await expect(npm).toBeVisible({ timeout: 30_000 })
+  await expect(npm).toHaveAccessibleName(/\S/)
+  await expect(preview.locator('a[href="#license"]')).toHaveAccessibleName(/\S/)
+})
