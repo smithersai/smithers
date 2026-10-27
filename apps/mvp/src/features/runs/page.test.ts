@@ -294,10 +294,10 @@ describe("the list", () => {
     // A run the engine hasn't begun counts from when it was recorded.
     expect(rows.find((run) => run.id === "spend-1")).toMatchObject({ state: "pending", startedAtMs: 2 })
     expect(rows.map((run) => [run.id, run.trigger, run.branch, run.actor, run.where, run.href])).toEqual([
-      ["todo:a", "commit", "todo/fix", "maya", "Cloud", "/app/runs/todo%3Aa"],
+      ["todo:a", "commit", "todo/fix", "maya", undefined, "/app/runs/todo%3Aa"],
       ["answer", "composer", null, "agent", undefined, "/app/runs/answer"],
-      ["ci:1", "pull request", "main", "github", "Cloud", "/octo/hello/actions/runs/ci%3A1"],
-      ["spend-1", "system", null, null, "Cloud", "/app/runs/spend-1"],
+      ["ci:1", "pull request", "main", "github", undefined, "/octo/hello/actions/runs/ci%3A1"],
+      ["spend-1", "system", null, null, undefined, "/app/runs/spend-1"],
       ["theme", "button", null, "you", undefined, "/app/runs/theme"],
       ["old", undefined, null, undefined, undefined, "/app/runs/old"],
     ])
@@ -369,4 +369,11 @@ test("failed system TODO runs have Retry while remote running TODOs do not", () 
   expect(actsOf(inspection, 0).retry).toBe(false)
   expect(actsOf({ ...inspection, run: { ...inspection.run, status: "completed", result: value(JSON.stringify({ state: "failed" })) } }, 0).retry).toBe(true)
   expect(actsOf({ ...inspection, run: { ...inspection.run, status: "completed", result: value(JSON.stringify({ state: "merged" })) } }, 0).retry).toBe(false)
+})
+
+test("cloud and repository rows strip transport prefixes from branch names", () => {
+  const cloud: CloudRun = { runId: "ci:prefix", flow: "ci", kind: "repo", status: "completed", cancelRequested: false,
+    createdAtMs: 1, startedAtMs: 1, finishedAtMs: 2, trigger: "push", branch: "refs/heads/feature/a", actor: "you", repo: "octo/hello" }
+  expect(listRows([], [cloud])[0]!.branch).toBe("feature/a")
+  expect(listRows([], [cloud])[0]!.where).toBeUndefined()
 })

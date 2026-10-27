@@ -1,5 +1,6 @@
 import { EmptyState, RunList } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
+import { flowWords } from "../words"
 import { NO_RUNS } from "../contract"
 import { listLoaded, listRows } from "../page"
 import { RunDetailsView } from "./RunDetailsView"
@@ -14,12 +15,12 @@ export function RunListView({ flow, open }: { readonly flow?: string | undefined
   const { data: runs } = useLiveQuery(queries.runs)
   const { data: cloud } = useLiveQuery(queries.cloudRuns)
   const { data: view } = useLiveQuery(queries.view)
-  const rows = listRows(runs ?? [], cloud ?? [], { ...(flow === undefined ? {} : { flow }), ...(open === undefined ? {} : { open }) })
+  const rows = listRows(runs, cloud, { ...(flow === undefined ? {} : { flow }), ...(open === undefined ? {} : { open }) })
   // Until this device's list and the runs on Cloudflare have answered, none says nothing.
   if (rows.length === 0 && !listLoaded(view)) return null
   return (
     <RunList
-      runs={rows}
+      runs={rows.map((row) => ({ ...row, flow: flowWords(row.flow) }))}
       now={Date.now()}
       renderLink={routerLink}
       renderDetails={() => <RunDetailsView />}

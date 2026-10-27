@@ -578,3 +578,9 @@ test("journal uses product words and keeps engine identifiers inside details", a
   expect(summaries.map((node) => node.textContent)).toEqual(["Run updated", "Activity"]);
   expect([...container!.querySelectorAll(".sui-run-journal-type details")].every((node) => !node.hasAttribute("open"))).toBe(true);
 });
+
+test("run table duration preserves short runs and names the person column", async () => {
+  await render(<RunList runs={[{ id: "r", flow: "CI", state: "completed", href: "/run/r", startedAtMs: 1000, finishedAtMs: 2500, actor: "you" }]} now={3000} />);
+  expect(container!.textContent).toContain("1.5 s");
+  expect(container!.textContent).toContain("Started by");
+});

@@ -145,9 +145,9 @@ describe("a TODO's run on Cloudflare", () => {
     await until(() => expect((opened()?.inspection as Inspection | undefined)?.run.status).toBe("completed"))
     const { jobs } = detailsOf(opened()!, Date.now())
     expect(jobs[0]!.steps.filter((step) => step.label.endsWith("probe/Mark")).map((step) => step.state)).toEqual(["completed", "completed"])
-    // Its row on the list says where it ran and opens its page.
+    // Its row opens its page without a redundant placement label.
     expect(listRows([], t.runs.queries.cloudRuns.toArray as ReadonlyArray<CloudRun>, { open: runId })[0]).toMatchObject({
-      id: runId, where: "Cloud", expanded: true, href: `/app/runs/${encodeURIComponent(runId)}`,
+      id: runId, expanded: true, href: `/app/runs/${encodeURIComponent(runId)}`,
     })
   }, 120_000)
 

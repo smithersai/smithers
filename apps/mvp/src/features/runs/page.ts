@@ -17,6 +17,7 @@ import {
   type SteerRefusal,
   THIS_DEVICE,
 } from "./contract"
+import { branchWords } from "./words"
 import { retryable } from "./retry"
 import { failedTodoRun, hasDomainOutcome, todoRetryPayload } from "./todoRun"
 import { ACTIONS_LIMIT, actionRunPath } from "../actions/contract"
@@ -232,9 +233,8 @@ export const listRows = (
       finishedAtMs: run.finishedAtMs,
       href: cloudHref(run),
       trigger: cloudTrigger(run.trigger),
-      branch: run.branch,
+      branch: run.branch === null ? null : branchWords(run.branch),
       actor: run.actor,
-      where: CLOUD,
     } satisfies UiRunRow,
   }))
   const flow = view.flow
@@ -414,7 +414,7 @@ export const repoRunRows = (rows: ReadonlyArray<RepoRunRow>, owner: string, name
       const state = repoRunStateOf(row.status)
       return {
         id: row.id,
-        flow: `${row.flow} · ${row.ref}`,
+        flow: `${row.flow} · ${branchWords(row.ref)}`,
         state,
         startedAtMs,
         finishedAtMs: state === "running" ? null : Date.parse(isoOf(row.updatedAt)),

@@ -1,6 +1,7 @@
 import { stepDuration, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { cloudRowOf, listHref } from "../page"
+import { flowWords } from "../words"
 import { flowSummary } from "../summary"
 import { useRuns } from "./RunsContext"
 import { routerLink } from "./routerLink"
@@ -11,7 +12,7 @@ export function FlowSummaryView({ flow }: { readonly flow?: string | undefined }
   const { queries } = useRuns()
   const { data: runs } = useLiveQuery(queries.runs)
   const { data: cloud } = useLiveQuery(queries.cloudRuns)
-  const rows = flowSummary([...(runs ?? []), ...(cloud ?? []).map(cloudRowOf)])
+  const rows = flowSummary([...runs, ...cloud.map(cloudRowOf)])
   if (rows.length === 0) return null
   return (
     <Table aria-label="Flows">
@@ -19,8 +20,8 @@ export function FlowSummaryView({ flow }: { readonly flow?: string | undefined }
         <TableRow>
           <TableHead>Flow</TableHead>
           <TableHead>Runs</TableHead>
-          <TableHead>Success</TableHead>
-          <TableHead>p95</TableHead>
+          <TableHead>Passed</TableHead>
+          <TableHead>95% under</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -31,7 +32,7 @@ export function FlowSummaryView({ flow }: { readonly flow?: string | undefined }
         )}
         {rows.map((row) => (
           <TableRow key={row.flow} aria-current={row.flow === flow ? "true" : undefined}>
-            <TableCell>{routerLink(listHref({ flow: row.flow }), row.flow)}</TableCell>
+            <TableCell>{routerLink(listHref({ flow: row.flow }), flowWords(row.flow))}</TableCell>
             <TableCell>{row.runs}</TableCell>
             <TableCell>{row.successRate === null ? "–" : `${Math.round(row.successRate * 100)}%`}</TableCell>
             <TableCell>{row.p95Ms === null ? "–" : stepDuration(row.p95Ms)}</TableCell>

@@ -7,7 +7,7 @@ import { safeHref } from "../internal/safeHref";
 import { useInjectUiCss } from "../styles";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../table";
 import { formatRelativeTime } from "../time/formatRelativeTime";
-import { clockDuration, type RunState } from "./runPage";
+import { stepDuration, type RunState } from "./runPage";
 import { RunStatusPill } from "./RunStatusPill";
 
 /** One run in a list. */
@@ -86,7 +86,7 @@ export function RunList({ runs, now, renderLink, empty, renderDetails, className
             <TableHead>Status</TableHead>
             {shows.trigger ? <TableHead>Trigger</TableHead> : null}
             {shows.branch ? <TableHead>Branch</TableHead> : null}
-            {shows.actor ? <TableHead>Actor</TableHead> : null}
+            {shows.actor ? <TableHead>Started by</TableHead> : null}
             <TableHead>Started</TableHead>
             <TableHead>Duration</TableHead>
           </TableRow>
@@ -123,7 +123,7 @@ export function RunList({ runs, now, renderLink, empty, renderDetails, className
                 {shows.branch ? <TableCell className="sui-run-list-meta sui-run-list-branch" data-slot="run-branch">{run.branch ?? NONE}</TableCell> : null}
                 {shows.actor ? <TableCell className="sui-run-list-meta" data-slot="run-actor">{run.actor ?? NONE}</TableCell> : null}
                 <TableCell className="sui-run-list-time">{formatRelativeTime(run.startedAtMs, now)}</TableCell>
-                <TableCell className="sui-run-list-time">{clockDuration((run.finishedAtMs ?? now) - run.startedAtMs)}</TableCell>
+                <TableCell className="sui-run-list-time">{stepDuration((run.finishedAtMs ?? now) - run.startedAtMs)}</TableCell>
               </TableRow>
               {run.expanded === true && renderDetails !== undefined ? (
                 <TableRow data-run-details={run.id} className="sui-run-list-details">
