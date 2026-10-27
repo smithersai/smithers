@@ -18,3 +18,10 @@ for (const commitment of ["now", "next", "later"]) {
     await expect(page.locator('[data-list-sync]')).toHaveCount(0)
   })
 }
+
+test("an empty filter settles after the device applies its rows", async ({ page }) => {
+  requires("githubApp")
+  await page.goto("/smithersai/smithers/issues?commitment=next")
+  await expect(page.getByText("No issues", { exact: true }).or(page.locator('[data-slot="issues-row"]').first())).toBeVisible({ timeout: 60_000 })
+  await expect(page.locator('[data-list-sync]')).toHaveCount(0)
+})

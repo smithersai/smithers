@@ -395,3 +395,9 @@ test("unavailable item transport settles or retains only a completely installed 
     expect(pageOf(undefined, { syncedAt: "x" }, true, true, access)).toBe(installed === true ? "missing" : "unknown")
   }
 })
+
+
+test("an applied empty summary is known even without a server sync marker", () => {
+  expect(listProps([], undefined, { status: "allowed", installed: false }).unknown).toBe(true)
+  expect(listProps([], undefined, { status: "allowed", installed: true }).unknown).toBe(false)
+})

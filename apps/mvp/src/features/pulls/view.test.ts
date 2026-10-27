@@ -287,3 +287,11 @@ describe("checks and files", () => {
     ])
   })
 })
+
+
+test("an applied empty pull list is known without a repository sync marker", () => {
+  const repo = { owner: "octo", name: "hello" }
+  expect(listPageOf([], repo, undefined, { status: "allowed", installed: true }, true).unknown).toBe(false)
+  expect(listPageOf([], repo, undefined, { status: "allowed", installed: true }, false).unknown).toBe(true)
+  expect(listPageOf([], repo, undefined, { status: "allowed", installed: false }, true).unknown).toBe(true)
+})

@@ -111,12 +111,12 @@ export const syncsHere = (access: { readonly status: string } | undefined, unsyn
 export const listProps = (
   rows: ReadonlyArray<ListRow>,
   synced: unknown,
-  access?: { readonly status: string },
+  access?: { readonly status: string; readonly installed?: boolean },
   triageOn = false,
 ) => ({
   refused: refusedOf(access),
   issues: rows.map((row) => issueOf(row, triageOn)),
-  unknown: refusedOf(access) === undefined && synced === undefined && rows.every((row) => row.local === 1),
+  unknown: refusedOf(access) === undefined && synced === undefined && access?.installed !== true && rows.every((row) => row.local === 1),
   notSent: rows
     .filter((row) => row.pending === "not_sent")
     .map((row): NotSent => ({ id: row.id, title: row.title, reason: reasonText(row.reason) })),

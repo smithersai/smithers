@@ -77,7 +77,7 @@ export const listPageOf = (
   rows: ReadonlyArray<ListRow>,
   repository: { readonly owner: string; readonly name: string },
   synced: unknown,
-  access: { readonly status: string } | undefined,
+  access: { readonly status: string; readonly installed?: boolean } | undefined,
   ready = true,
 ) => {
   const refused = refusedOf(access)
@@ -85,7 +85,7 @@ export const listPageOf = (
     refused,
     pulls: refused === undefined ? listProps(rows, repository.owner, repository.name) : [],
     loading: false,
-    unknown: refused === undefined && (synced === undefined || !ready) && rows.length === 0,
+    unknown: refused === undefined && ((synced === undefined && access?.installed !== true) || !ready) && rows.length === 0,
   }
 }
 
