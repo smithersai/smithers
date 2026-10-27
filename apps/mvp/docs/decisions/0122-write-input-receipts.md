@@ -9,3 +9,7 @@ On opening the page, staged inputs enter their existing `@smthrs/effect-tanstack
 `write.admission` records command identity, flow, stage, outcome and elapsed time. `write.identity` correlates command, execution and write identities. Recovery persistence, leader acquisition, outbox storage and engine admission each record pending and terminal receipts. Metrics omit identities. Payloads, hash inputs, repository names and credentials never enter these records.
 
 Production reproduction on W14: immediate Create and TODO reloads reached hashing but no IndexedDB outbox transaction; their request identity was unavailable after reload. Prior unit tests awaited the action Promise before reloading, missing this interval. Regressions interrupt an unresolved device receipt and reload immediately after the actual browser press at 0, 100 and 300 ms.
+
+## Recovery receipt precedence
+
+Reload can restore a pre-admission `not_sent` row alongside the same write's durable outbox row: admission reached IndexedDB before removal of its earlier SQLite receipt persisted. The outbox receipt wins over that unrefused local row. An actual server refusal or failed server write still wins. The same rule applies to issues, comments, triage and TODOs; Retry appears only when there is no outgoing receipt or the write was genuinely refused.

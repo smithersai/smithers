@@ -36,9 +36,9 @@ export const rowsQuery = <A extends object>(rows: Synced<A>) => LiveQuery.make((
 export type LiveRows<A extends object> = Effect.Success<ReturnType<typeof rowsQuery<A>>>
 
 /** A requested write's state: Not sent when the route refused it, or the server's write settled refused or failed. */
-const pendingOf = (mine: { readonly status: unknown }, write: { readonly status: unknown } | undefined) =>
+const pendingOf = (mine: { readonly status: unknown }, write: { readonly status: unknown } | undefined, localRefusal: ReturnType<typeof Query.or>) =>
   Query.caseWhen(
-    Query.or(Query.eq(mine.status, "not_sent"), Query.eq(write?.status, "refused"), Query.eq(write?.status, "failed")),
+    Query.or(Query.and(Query.eq(mine.status, "not_sent"), localRefusal), Query.eq(write?.status, "refused"), Query.eq(write?.status, "failed")),
     "not_sent",
     "requested",
   )
@@ -108,8 +108,9 @@ export const listQuery = (
           .innerJoin({ mine: requested.tanstack }, ({ routed, mine }) => Query.eq(routed.repoId, mine.repoId))
           .leftJoin({ opened: items.tanstack }, ({ mine, opened }) => Query.eq(mine.id, opened.writeId))
           .leftJoin({ write: writes.tanstack }, ({ mine, write }) => Query.eq(mine.id, write.id))
+          .leftJoin({ admitted: sending.tanstack }, ({ mine, admitted }) => Query.eq(mine.id, admitted.id))
           .where(({ mine, opened }) => Query.and(Query.eq(mine.op, "issue/create"), Query.isUndefined(opened?.id)))
-          .select(({ mine, write }) => ({
+          .select(({ mine, write, admitted }) => ({
             id: mine.id,
             number: 0,
             title: mine.title,
@@ -120,7 +121,7 @@ export const listQuery = (
             updatedAt: "",
             triage: "",
             commitment: "",
-            pending: pendingOf(mine, write),
+            pending: pendingOf(mine, write, Query.or(Query.isUndefined(admitted?.id), Query.not(Query.isNull(mine.reason)))),
             reason: Query.coalesce(mine.reason, write?.failure, ""),
             local: 1,
             at: mine.queuedAt,
@@ -249,6 +250,7 @@ export const conversationQuery = (
           .innerJoin({ mine: requested.tanstack }, ({ routed, mine }) => Query.eq(routed.repoId, mine.repoId))
           .leftJoin({ posted: comments.tanstack }, ({ mine, posted }) => Query.eq(mine.id, posted.writeId))
           .leftJoin({ write: writes.tanstack }, ({ mine, write }) => Query.eq(mine.id, write.id))
+          .leftJoin({ admitted: sending.tanstack }, ({ mine, admitted }) => Query.eq(mine.id, admitted.id))
           .where(({ routed, mine, posted }) =>
             Query.and(
               Query.eq(mine.op, "issue/comment"),
@@ -256,12 +258,12 @@ export const conversationQuery = (
               Query.isUndefined(posted?.id),
             )
           )
-          .select(({ mine, write }) => ({
+          .select(({ mine, write, admitted }) => ({
             id: mine.id,
             author: "",
             createdAt: "",
             body: mine.body,
-            pending: pendingOf(mine, write),
+            pending: pendingOf(mine, write, Query.or(Query.isUndefined(admitted?.id), Query.not(Query.isNull(mine.reason)))),
             reason: Query.coalesce(mine.reason, write?.failure, ""),
             local: 1,
             at: mine.queuedAt,
@@ -407,12 +409,13 @@ export const triagePendingQuery = (
           .from({ routed: view.tanstack })
           .innerJoin({ mine: requested.tanstack }, ({ routed, mine }) => Query.eq(routed.repoId, mine.repoId))
           .leftJoin({ write: writes.tanstack }, ({ mine, write }) => Query.eq(mine.id, write.id))
+          .leftJoin({ admitted: sending.tanstack }, ({ mine, admitted }) => Query.eq(mine.id, admitted.id))
           .where(({ mine }) => isTriage(mine))
-          .select(({ mine, write }) => ({
+          .select(({ mine, write, admitted }) => ({
             id: mine.id,
             op: mine.op,
             number: mine.number,
-            pending: pendingOf(mine, write),
+            pending: pendingOf(mine, write, Query.or(Query.isUndefined(admitted?.id), Query.not(Query.isNull(mine.reason)))),
             at: mine.queuedAt,
           })),
         q

@@ -644,3 +644,16 @@ test("retry requests show Retry and leave the optimistic list only after the rou
   expect(deliveredOf(REPO, [], [row])).toEqual([])
   expect(deliveredOf(REPO, [], [{ ...row, status: "requested", reason: null }])).toEqual(["retry"])
 })
+
+test.each(["commit", "drop"] as const)("a restored %s outbox receipt overrides a stale admission row without hiding a real refusal", op => {
+  const outgoing = sending({ id: "same", op, title: "Pending", number: op === "drop" ? 1 : 0 })
+  const stale = requested({ ...outgoing, status: "not_sent", reason: null })
+  const todos = op === "drop" ? [todo({ id: "todo", number: 1 })] : []
+  expect(stackRows(REPO, todos, [outgoing], [stale])[0]!.pending).toBe("requested")
+  expect(notSentRows(REPO, [stale], [outgoing])).toEqual([])
+  expect(stackRows(REPO, todos, [], [stale])[0]!.pending).toBe("not_sent")
+  expect(notSentRows(REPO, [stale], [])).toHaveLength(1)
+  const refusal = { ...stale, reason: "forbidden" as const }
+  expect(stackRows(REPO, todos, [outgoing], [refusal])[0]!.pending).toBe("not_sent")
+  expect(notSentRows(REPO, [refusal], [outgoing])).toHaveLength(1)
+})

@@ -346,3 +346,7 @@ Comments resolve after local admission; the durable outbox delivers even when th
 Visitor issue counts use the public summary query, which never waits on signed-in write history. Counts remain unknown until the summary snapshot is applied and that query is ready.
 
 Failed authority reads persist their content-free refusal; the list shows the GitHub limit or unavailability and offers retry and the source link. An incomplete snapshot says “Issues not synced”.
+
+A reload can restore both the pre-admission recovery row and its admitted outbox row.
+The outbox receipt keeps that write Requested; a real server refusal or failure still
+shows Not sent. See [write input receipts](../decisions/0122-write-input-receipts.md).

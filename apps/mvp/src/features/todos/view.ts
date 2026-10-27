@@ -42,12 +42,15 @@ export interface StackRow {
 /** A change this device holds: in the outbox (`sending`), or taken or refused (`requested`). */
 type Mine = Pick<Sending, "id" | "repoId" | "op" | "title" | "number" | "queuedAt"> & {
   readonly status?: Requested["status"]
+  readonly reason?: Requested["reason"]
 }
 
 /** This device's changes to repository `repoId`: the outbox's first, each op id once. */
 const mineOf = (repoId: string, sending: ReadonlyArray<Mine>, requested: ReadonlyArray<Mine>): ReadonlyArray<Mine> => {
-  const kept = new Set(requested.map((row) => row.id))
-  return [...sending.filter((row) => !kept.has(row.id)), ...requested].filter((row) => row.repoId === repoId)
+  const outgoing = new Set(sending.map(row => row.id))
+  const authoritative = requested.filter(row => row.status !== "not_sent" || row.reason !== null || !outgoing.has(row.id))
+  const kept = new Set(authoritative.map((row) => row.id))
+  return [...sending.filter((row) => !kept.has(row.id)), ...authoritative].filter((row) => row.repoId === repoId)
 }
 
 const pendingOf = (row: Mine): "requested" | "not_sent" => (row.status === "not_sent" ? "not_sent" : "requested")
@@ -95,9 +98,9 @@ export interface NotSentRow {
 }
 
 /** This device's changes to repository `repoId` the route refused, in the order made. */
-export const notSentRows = (repoId: string, requested: ReadonlyArray<Requested>): ReadonlyArray<NotSentRow> =>
+export const notSentRows = (repoId: string, requested: ReadonlyArray<Requested>, sending: ReadonlyArray<Sending> = []): ReadonlyArray<NotSentRow> =>
   requested
-    .filter((row) => row.repoId === repoId && row.status === "not_sent")
+    .filter((row) => row.repoId === repoId && row.status === "not_sent" && (row.reason !== null || !sending.some(out => out.id === row.id)))
     .sort((a, b) => a.queuedAt - b.queuedAt)
     .map((row) => ({
       id: row.id,

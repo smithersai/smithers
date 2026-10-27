@@ -60,7 +60,7 @@ export function StackScreen() {
   }
   const rows = stackRows(repoId, todos, sending, requested)
   const may = status === "allowed" && session !== undefined && mayChange(session, confirmed, answer)
-  const notSent = notSentRows(repoId, requested)
+  const notSent = notSentRows(repoId, requested, sending)
   return (
     <main className="stack-screen" aria-label="Stack"><RepoHeader /><HomeTabs />
       <Breadcrumbs
