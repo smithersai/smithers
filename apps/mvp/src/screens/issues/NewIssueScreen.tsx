@@ -1,7 +1,7 @@
 import { githubList } from "../../features/repo/scope"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
 import { HomeTabs } from "../../features/home/components/HomeTabs"
-import { Button, EmptyState, IssueForm } from "@smthrs/ui"
+import { Button, EmptyState } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Navigate, useNavigate, useParams, useSearch } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
@@ -9,6 +9,7 @@ import { SignInButton } from "../../features/auth/components/SignInButton"
 import { useIssues } from "../../features/issues/components/IssuesContext"
 import { issuePath } from "../../features/issues/contract"
 import { draftOf, mayWrite, syncsHere } from "../../features/issues/view"
+import { NewIssueForm } from "../../features/issues/components/NewIssueForm"
 import "./issues-screen.css"
 import { useRepoAnswer } from "../../features/repo/components/RepoContext"
 
@@ -55,7 +56,7 @@ export function NewIssueScreen() {
     <main className="issues-screen" aria-label="New issue"><RepoHeader /><HomeTabs />
       {mayWrite(session, confirmed, answer)
         ? (
-          <IssueForm
+          <NewIssueForm
             title={draft.title}
             body={draft.body}
             error={draft.error}

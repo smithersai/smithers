@@ -28,6 +28,12 @@ test("page changes focus the new heading or main; initial load and filters prese
     expect(document.activeElement).toBe(button)
     await render("/third", false)
     expect(document.activeElement).toBe(host.querySelector("main"))
+    await act(async () => {
+      root.render(createElement("main", null, createElement("h1", null, "New issue"),
+        createElement("form", { "data-page-focus": "" }, createElement("input")),
+        createElement(PageFocus, { pathname: "/new" })))
+    })
+    expect(document.activeElement).toBe(host.querySelector("input"))
     await render("/empty", false, false)
     expect(document.activeElement).toBe(document.body)
   } finally {

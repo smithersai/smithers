@@ -11,7 +11,7 @@ export function PageFocus({ pathname }: { readonly pathname: string }) {
       main.tabIndex = -1
       if (previous.current !== pathname) {
         const heading = main.querySelector<HTMLElement>("h1")
-        const target = heading ?? main
+        const target = main.querySelector<HTMLElement>("[data-page-focus] input") ?? heading ?? main
         target.tabIndex = -1
         target.focus({ preventScroll: true })
       }
