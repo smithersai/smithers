@@ -121,43 +121,46 @@ export const occurrencesBetween = (
   from: Date,
   to: Date,
   limit?: number | undefined
-): Effect.Effect<ReadonlyArray<Date>, TriggerError> => {
-  if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 0)) {
-    return Effect.fail(
-      new TriggerError({
-        code: "invalid_options",
-        message: `occurrence limit must be a non-negative safe integer, received ${limit}`,
-        path: "limit"
-      })
-    )
-  }
-  const searchLimit = limit ?? maxOccurrences + 1
-  if (searchLimit === 0) return Effect.succeed([])
-  const search = attempt(cron, "interval", () => {
-    const wall = WallClock.compile(cron.value)
-    const occurrences: Array<Date> = []
-    let cursor = from.getTime()
-    while (occurrences.length < searchLimit) {
-      cursor = WallClock.next(wall, cursor)
-      if (cursor > to.getTime()) break
-      occurrences.push(new Date(cursor))
+): Effect.Effect<ReadonlyArray<Date>, TriggerError> =>
+  Effect.suspend(() => {
+    const dateError = invalidDate(from, "from") ?? invalidDate(to, "to")
+    if (dateError !== undefined) return Effect.fail(dateError)
+    if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 0)) {
+      return Effect.fail(
+        new TriggerError({
+          code: "invalid_options",
+          message: `occurrence limit must be a non-negative safe integer, received ${limit}`,
+          path: "limit"
+        })
+      )
     }
-    return occurrences
-  })
-  if (limit !== undefined) return search
-  return search.pipe(
-    Effect.flatMap((occurrences) =>
-      occurrences.length > maxOccurrences
-        ? Effect.fail(
-          new TriggerError({
-            code: "catch_up_bound_exceeded",
-            message: `interval contains more than ${maxOccurrences} occurrences; maxOccurrences is ${maxOccurrences}`
-          })
-        )
-        : Effect.succeed(occurrences)
+    const searchLimit = limit ?? maxOccurrences + 1
+    if (searchLimit === 0) return Effect.succeed([])
+    const search = attempt(cron, "interval", () => {
+      const wall = WallClock.compile(cron.value)
+      const occurrences: Array<Date> = []
+      let cursor = from.getTime()
+      while (occurrences.length < searchLimit) {
+        cursor = WallClock.next(wall, cursor)
+        if (cursor > to.getTime()) break
+        occurrences.push(new Date(cursor))
+      }
+      return occurrences
+    })
+    if (limit !== undefined) return search
+    return search.pipe(
+      Effect.flatMap((occurrences) =>
+        occurrences.length > maxOccurrences
+          ? Effect.fail(
+            new TriggerError({
+              code: "catch_up_bound_exceeded",
+              message: `interval contains more than ${maxOccurrences} occurrences; maxOccurrences is ${maxOccurrences}`
+            })
+          )
+          : Effect.succeed(occurrences)
+      )
     )
-  )
-}
+  })
 
 /**
  * Parses a cron expression in an optional timezone, reporting a malformed one

@@ -224,7 +224,9 @@ const occurrencesBetween: (
 ```
 
 The occurrences in `(from, to]`, in order. `from` is exclusive and `to` is
-inclusive.
+inclusive. Invalid endpoints fail with `invalid_options` and `path: "from"`
+or `path: "to"`, including when the limit is zero. The `from` endpoint is
+validated first.
 
 A stated `limit` caps the result silently and must be a non-negative safe
 integer; anything else fails with `invalid_options` and `path: "limit"`, and 0
