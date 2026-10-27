@@ -441,6 +441,7 @@ describe("MemoryStore", () => {
       ["listThreads", noop.listThreads()],
       ["deleteThread", noop.deleteThread({ threadId: "t" })],
       ["appendMessage", noop.appendMessage({ threadId: "t", id: "m", role: "user", text: "x", at: 0 })],
+      ["appendMessageOnce", noop.appendMessageOnce({ threadId: "t", id: "m", role: "user", text: "x" })],
       ["listMessages", noop.listMessages({ threadId: "t" })],
       ["countMessages", noop.countMessages({ threadId: "t" })],
       ["messageStats", noop.messageStats({ threadId: "t" })],

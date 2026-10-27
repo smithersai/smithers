@@ -313,15 +313,13 @@ export const createMemoryCli = () => {
             context.options,
             Effect.gen(function*() {
               const store = yield* MemoryStore.MemoryStore
-              const message = {
+              return yield* store.appendMessageOnce({
                 threadId: context.args.thread,
                 text: context.args.text,
                 role: context.options.role,
                 id: context.options.messageId ?? randomUUID(),
-                at: context.options.at ?? Date.now()
-              }
-              yield* store.appendMessage(message)
-              return message
+                at: context.options.at
+              })
             })
           ))
     })

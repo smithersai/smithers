@@ -26609,68 +26609,70 @@ The `mode`, `onConflict`, and `tier` values in the two effect declarations below
 
 Model types, all plain interfaces unless noted:
 
-| Export                 | Shape                                                                                                                                 |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `Provenance`           | `{ runId?, nodeId?, iteration? }`: explicit run coordinates attached to a write.                                                      |
-| `Fact`                 | `{ namespace, key, value, tags?, ttlMs?, provenance, createdAtMs, updatedAtMs }`.                                                     |
-| `PutFactInput`         | `{ namespace, key, value, tags?, ttlMs?, provenance }`; `value` is stored through a `JSON.stringify` round trip.                      |
-| `GetFactInput`         | `{ namespace, key }`.                                                                                                                 |
-| `ListFactsInput`       | `{ namespace, prefix?, limit? }`.                                                                                                     |
-| `Thread`               | `{ id, namespace, title?, metadata?, createdAtMs, updatedAtMs }`.                                                                     |
-| `CreateThreadInput`    | `{ id?, namespace, title?, metadata? }`.                                                                                              |
-| `ListThreadsInput`     | `{ namespace? }`.                                                                                                                     |
-| `GetThreadInput`       | `{ threadId }`.                                                                                                                       |
-| `DeleteThreadInput`    | `{ threadId }`.                                                                                                                       |
-| `Message`              | `{ threadId, id, role, text, at }`.                                                                                                   |
-| `AppendMessageInput`   | `Message`: an idempotent append, with the id unique within its thread.                                                                |
-| `ListMessagesInput`    | `{ threadId, limit?, cursor? }`.                                                                                                      |
-| `MessageCursor`        | `{ at, id }`: a stable exclusive cursor for ordered pagination.                                                                       |
-| `MessageStats`         | `{ messages, codePoints, bytes }`: one thread's size bounds; its JavaScript string length lies between `codePoints` and `bytes`.      |
-| `GetNoteInput`         | `{ id }`.                                                                                                                             |
-| `NoteStatus`           | schema and type: `"pending"`, `"accepted"`, `"rejected"`; the only mutable state on an append-only note.                              |
-| `Note`                 | `{ namespace, id, text, tags, provenance, status, createdAtMs }`.                                                                     |
-| `PutNoteInput`         | `{ namespace, id, text, tags, provenance, status?, supersedes? }`; `supersedes` persists in the same write transaction.               |
-| `SetNoteStatusInput`   | `{ id, status }`.                                                                                                                     |
-| `SupersedeInput`       | `{ supersederId, targetId }`.                                                                                                         |
-| `NamespaceInput`       | `Namespace \| string`: a structured namespace or a bank name; explicit prefixes keep their lifetime, unprefixed banks are flow-local. |
-| `StatusFilter`         | `NoteStatus \| "any" \| ReadonlyArray<NoteStatus>`.                                                                                   |
-| `ListNotesInput`       | `{ namespace, prefix?, limit?, tagGroups?, status?, includeSuperseded? }`.                                                            |
-| `SearchRow`            | `{ id, kind: "fact" \| "note", bank, namespace, key, text, tags, updatedAtMs, status? }`: the normalized row recall bindings consume. |
-| `SearchRowsInput`      | `ListNotesInput` with a `limit` that counts merged fact and note rows passing every filter.                                           |
-| `EnableFtsInput`       | `Namespace.Kind`.                                                                                                                     |
-| `SearchFtsInput`       | `SearchRowsInput` plus `query`.                                                                                                       |
-| `FtsRow`               | `SearchRow` plus `rank` (raw SQLite BM25) and `score`.                                                                                |
-| `CompactMessagesInput` | `{ threadId, summary: Message, sourceMessages: ReadonlyArray<Message> }`.                                                             |
+| Export                   | Shape                                                                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `Provenance`             | `{ runId?, nodeId?, iteration? }`: explicit run coordinates attached to a write.                                                      |
+| `Fact`                   | `{ namespace, key, value, tags?, ttlMs?, provenance, createdAtMs, updatedAtMs }`.                                                     |
+| `PutFactInput`           | `{ namespace, key, value, tags?, ttlMs?, provenance }`; `value` is stored through a `JSON.stringify` round trip.                      |
+| `GetFactInput`           | `{ namespace, key }`.                                                                                                                 |
+| `ListFactsInput`         | `{ namespace, prefix?, limit? }`.                                                                                                     |
+| `Thread`                 | `{ id, namespace, title?, metadata?, createdAtMs, updatedAtMs }`.                                                                     |
+| `CreateThreadInput`      | `{ id?, namespace, title?, metadata? }`.                                                                                              |
+| `ListThreadsInput`       | `{ namespace? }`.                                                                                                                     |
+| `GetThreadInput`         | `{ threadId }`.                                                                                                                       |
+| `DeleteThreadInput`      | `{ threadId }`.                                                                                                                       |
+| `Message`                | `{ threadId, id, role, text, at }`.                                                                                                   |
+| `AppendMessageInput`     | `Message`: an idempotent append, with the id unique within its thread.                                                                |
+| `AppendMessageOnceInput` | `Message` with optional `at` in Unix epoch milliseconds; a first write chooses the timestamp atomically.                              |
+| `ListMessagesInput`      | `{ threadId, limit?, cursor? }`.                                                                                                      |
+| `MessageCursor`          | `{ at, id }`: a stable exclusive cursor for ordered pagination.                                                                       |
+| `MessageStats`           | `{ messages, codePoints, bytes }`: one thread's size bounds; its JavaScript string length lies between `codePoints` and `bytes`.      |
+| `GetNoteInput`           | `{ id }`.                                                                                                                             |
+| `NoteStatus`             | schema and type: `"pending"`, `"accepted"`, `"rejected"`; the only mutable state on an append-only note.                              |
+| `Note`                   | `{ namespace, id, text, tags, provenance, status, createdAtMs }`.                                                                     |
+| `PutNoteInput`           | `{ namespace, id, text, tags, provenance, status?, supersedes? }`; `supersedes` persists in the same write transaction.               |
+| `SetNoteStatusInput`     | `{ id, status }`.                                                                                                                     |
+| `SupersedeInput`         | `{ supersederId, targetId }`.                                                                                                         |
+| `NamespaceInput`         | `Namespace \| string`: a structured namespace or a bank name; explicit prefixes keep their lifetime, unprefixed banks are flow-local. |
+| `StatusFilter`           | `NoteStatus \| "any" \| ReadonlyArray<NoteStatus>`.                                                                                   |
+| `ListNotesInput`         | `{ namespace, prefix?, limit?, tagGroups?, status?, includeSuperseded? }`.                                                            |
+| `SearchRow`              | `{ id, kind: "fact" \| "note", bank, namespace, key, text, tags, updatedAtMs, status? }`: the normalized row recall bindings consume. |
+| `SearchRowsInput`        | `ListNotesInput` with a `limit` that counts merged fact and note rows passing every filter.                                           |
+| `EnableFtsInput`         | `Namespace.Kind`.                                                                                                                     |
+| `SearchFtsInput`         | `SearchRowsInput` plus `query`.                                                                                                       |
+| `FtsRow`                 | `SearchRow` plus `rank` (raw SQLite BM25) and `score`.                                                                                |
+| `CompactMessagesInput`   | `{ threadId, summary: Message, sourceMessages: ReadonlyArray<Message> }`.                                                             |
 
 The service tag is `MemoryStore`, `Context.Service` tag `flows/memory/MemoryStore`. Every operation fails only with `MemoryError`:
 
-| Operation            | Signature                                         | Behavior                                                                                                                                                |
-| -------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `putFact`            | `(PutFactInput) => Effect<void>`                  | Last-write-wins upsert. Each update restarts the TTL clock and refreshes the FTS projection.                                                            |
-| `getFact`            | `(GetFactInput) => Effect<Fact \| undefined>`     | Answers the current fact, or `undefined` when it is missing or expired.                                                                                 |
-| `deleteFact`         | `(GetFactInput) => Effect<boolean>`               | Deletes the fact with its FTS and vector rows; answers whether a row existed.                                                                           |
-| `listFacts`          | `(ListFactsInput) => Effect<Fact[]>`              | Ordered by key, excluding expired facts; optional key `prefix` and `limit`.                                                                             |
-| `listAllFacts`       | `Effect<Fact[]>`                                  | Every unexpired fact, ordered by namespace and key.                                                                                                     |
-| `createThread`       | `(CreateThreadInput) => Effect<Thread>`           | Generates an id when omitted. Idempotent on identical creation data; a conflict fails `idempotency_conflict`.                                           |
-| `getThread`          | `(GetThreadInput) => Effect<Thread \| undefined>` | Exact read by id.                                                                                                                                       |
-| `listThreads`        | `(ListThreadsInput?) => Effect<Thread[]>`         | All threads, or one namespace's, ordered by creation.                                                                                                   |
-| `deleteThread`       | `(DeleteThreadInput) => Effect<boolean>`          | Deletes the thread and all its messages.                                                                                                                |
-| `appendMessage`      | `(AppendMessageInput) => Effect<void>`            | Creates a missing thread in the `global` namespace under the id `history`. An identical retry is a no-op; a differing one fails `idempotency_conflict`. |
-| `listMessages`       | `(ListMessagesInput) => Effect<Message[]>`        | Ordered by `(at, id)`; paginate with the exclusive `cursor`.                                                                                            |
-| `countMessages`      | `(ListMessagesInput) => Effect<number>`           | Counts one thread's messages.                                                                                                                           |
-| `messageStats`       | `({ threadId }) => Effect<MessageStats>`          | One SQL aggregate: message count, summed code points, and summed stored bytes, without reading message bodies.                                          |
-| `putNote`            | `(PutNoteInput) => Effect<Note>`                  | Append-only insert; `status` defaults to `accepted`. An identical re-put is a no-op; a differing one fails `supersede_conflict`.                        |
-| `getNote`            | `(GetNoteInput) => Effect<Note \| undefined>`     | Exact read by globally unique id.                                                                                                                       |
-| `setNoteStatus`      | `(SetNoteStatusInput) => Effect<void>`            | The status gate. An unknown id fails `not_found`.                                                                                                       |
-| `supersede`          | `(SupersedeInput) => Effect<void>`                | Adds a supersession edge. Both notes must exist and share a namespace; violations fail `supersede_conflict`.                                            |
-| `listNotes`          | `(ListNotesInput) => Effect<Note[]>`              | Authoritative note read; `status` defaults to `accepted`, superseded notes hide unless `includeSuperseded`.                                             |
-| `enableFts`          | `(kind: EnableFtsInput) => Effect<void>`          | Lazily enables FTS5 for one namespace kind and backfills it once; a kind that is already enabled is left as is, so calling it on every boot is cheap.   |
-| `searchFts`          | `(SearchFtsInput) => Effect<FtsRow[]>`            | Direct FTS5 recall, `limit` defaulting to 20. A disabled kind fails `fts_not_enabled`.                                                                  |
-| `searchRows`         | `(SearchRowsInput) => Effect<SearchRow[]>`        | Merged newest-first facts and notes for recall bindings; a bounded read never under-fills.                                                              |
-| `deleteExpiredFacts` | `Effect<number>`                                  | Deletes expired facts with their projections, in bounded chunks.                                                                                        |
-| `listThreadIds`      | `Effect<string[]>`                                | Every thread id, ordered by creation.                                                                                                                   |
-| `deleteMessages`     | `({ threadId, ids }) => Effect<number>`           | Deletes the named messages, in bounded chunks.                                                                                                          |
-| `compactMessages`    | `(CompactMessagesInput) => Effect<number>`        | Inserts the summary and deletes the sources in one durable write. A summary id that already exists fails `idempotency_conflict`.                        |
+| Operation            | Signature                                         | Behavior                                                                                                                                                         |
+| -------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `putFact`            | `(PutFactInput) => Effect<void>`                  | Last-write-wins upsert. Each update restarts the TTL clock and refreshes the FTS projection.                                                                     |
+| `getFact`            | `(GetFactInput) => Effect<Fact \| undefined>`     | Answers the current fact, or `undefined` when it is missing or expired.                                                                                          |
+| `deleteFact`         | `(GetFactInput) => Effect<boolean>`               | Deletes the fact with its FTS and vector rows; answers whether a row existed.                                                                                    |
+| `listFacts`          | `(ListFactsInput) => Effect<Fact[]>`              | Ordered by key, excluding expired facts; optional key `prefix` and `limit`.                                                                                      |
+| `listAllFacts`       | `Effect<Fact[]>`                                  | Every unexpired fact, ordered by namespace and key.                                                                                                              |
+| `createThread`       | `(CreateThreadInput) => Effect<Thread>`           | Generates an id when omitted. Idempotent on identical creation data; a conflict fails `idempotency_conflict`.                                                    |
+| `getThread`          | `(GetThreadInput) => Effect<Thread \| undefined>` | Exact read by id.                                                                                                                                                |
+| `listThreads`        | `(ListThreadsInput?) => Effect<Thread[]>`         | All threads, or one namespace's, ordered by creation.                                                                                                            |
+| `deleteThread`       | `(DeleteThreadInput) => Effect<boolean>`          | Deletes the thread and all its messages.                                                                                                                         |
+| `appendMessage`      | `(AppendMessageInput) => Effect<void>`            | Creates a missing thread in the `global` namespace under the id `history`. An identical retry is a no-op; a differing one fails `idempotency_conflict`.          |
+| `appendMessageOnce`  | `(AppendMessageOnceInput) => Effect<Message>`     | Returns the stored message. Omitted timestamps reuse the first insertion's time, including overlapping retries; explicit timestamp, role or text conflicts fail. |
+| `listMessages`       | `(ListMessagesInput) => Effect<Message[]>`        | Ordered by `(at, id)`; paginate with the exclusive `cursor`.                                                                                                     |
+| `countMessages`      | `(ListMessagesInput) => Effect<number>`           | Counts one thread's messages.                                                                                                                                    |
+| `messageStats`       | `({ threadId }) => Effect<MessageStats>`          | One SQL aggregate: message count, summed code points, and summed stored bytes, without reading message bodies.                                                   |
+| `putNote`            | `(PutNoteInput) => Effect<Note>`                  | Append-only insert; `status` defaults to `accepted`. An identical re-put is a no-op; a differing one fails `supersede_conflict`.                                 |
+| `getNote`            | `(GetNoteInput) => Effect<Note \| undefined>`     | Exact read by globally unique id.                                                                                                                                |
+| `setNoteStatus`      | `(SetNoteStatusInput) => Effect<void>`            | The status gate. An unknown id fails `not_found`.                                                                                                                |
+| `supersede`          | `(SupersedeInput) => Effect<void>`                | Adds a supersession edge. Both notes must exist and share a namespace; violations fail `supersede_conflict`.                                                     |
+| `listNotes`          | `(ListNotesInput) => Effect<Note[]>`              | Authoritative note read; `status` defaults to `accepted`, superseded notes hide unless `includeSuperseded`.                                                      |
+| `enableFts`          | `(kind: EnableFtsInput) => Effect<void>`          | Lazily enables FTS5 for one namespace kind and backfills it once; a kind that is already enabled is left as is, so calling it on every boot is cheap.            |
+| `searchFts`          | `(SearchFtsInput) => Effect<FtsRow[]>`            | Direct FTS5 recall, `limit` defaulting to 20. A disabled kind fails `fts_not_enabled`.                                                                           |
+| `searchRows`         | `(SearchRowsInput) => Effect<SearchRow[]>`        | Merged newest-first facts and notes for recall bindings; a bounded read never under-fills.                                                                       |
+| `deleteExpiredFacts` | `Effect<number>`                                  | Deletes expired facts with their projections, in bounded chunks.                                                                                                 |
+| `listThreadIds`      | `Effect<string[]>`                                | Every thread id, ordered by creation.                                                                                                                            |
+| `deleteMessages`     | `({ threadId, ids }) => Effect<number>`           | Deletes the named messages, in bounded chunks.                                                                                                                   |
+| `compactMessages`    | `(CompactMessagesInput) => Effect<number>`        | Inserts the summary and deletes the sources in one durable write. A summary id that already exists fails `idempotency_conflict`.                                 |
 
 `compactMessages` captures the full `sourceMessages` rows and verifies them inside the write transaction before inserting or deleting. Missing or changed sources fail with `compaction_conflict`. An existing summary id fails with `idempotency_conflict`, including identical retries.
 

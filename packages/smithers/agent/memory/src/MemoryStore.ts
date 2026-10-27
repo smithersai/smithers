@@ -184,6 +184,12 @@ export interface Message {
  */
 export type AppendMessageInput = Message
 
+/** An append whose timestamp defaults atomically to the first stored write.
+ * @category models
+ * @since 1.0.0
+ */
+export type AppendMessageOnceInput = Omit<Message, "at"> & { readonly at?: number | undefined }
+
 /**
  * Input for an ordered thread read.
  *
@@ -444,6 +450,7 @@ export interface Service {
   readonly listThreads: (input?: ListThreadsInput | undefined) => Effect.Effect<ReadonlyArray<Thread>, MemoryError>
   readonly deleteThread: (input: DeleteThreadInput) => Effect.Effect<boolean, MemoryError>
   readonly appendMessage: (input: AppendMessageInput) => Effect.Effect<void, MemoryError>
+  readonly appendMessageOnce: (input: AppendMessageOnceInput) => Effect.Effect<Message, MemoryError>
   readonly listMessages: (input: ListMessagesInput) => Effect.Effect<ReadonlyArray<Message>, MemoryError>
   readonly countMessages: (input: ListMessagesInput) => Effect.Effect<number, MemoryError>
   readonly messageStats: (input: { readonly threadId: string }) => Effect.Effect<MessageStats, MemoryError>
@@ -514,6 +521,7 @@ export const makeNoop = (overrides: Partial<Service> = {}): Service => {
     listThreads: () => unavailable("listThreads"),
     deleteThread: () => unavailable("deleteThread"),
     appendMessage: () => unavailable("appendMessage"),
+    appendMessageOnce: () => unavailable("appendMessageOnce"),
     listMessages: () => unavailable("listMessages"),
     countMessages: () => unavailable("countMessages"),
     messageStats: () => unavailable("messageStats"),

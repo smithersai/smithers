@@ -45,6 +45,7 @@ export const make = (database: DatabaseService, crypto: Crypto.Crypto): Pick<
   | "listThreads"
   | "deleteThread"
   | "appendMessage"
+  | "appendMessageOnce"
   | "listMessages"
   | "countMessages"
   | "messageStats"
@@ -145,27 +146,28 @@ export const make = (database: DatabaseService, crypto: Crypto.Crypto): Pick<
       ).pipe(Effect.mapError(storeError("could not delete memory thread")))
     })
 
-  const appendMessage: Service["appendMessage"] = (input) =>
+  const appendMessageOnce: Service["appendMessageOnce"] = (input) =>
     Effect.gen(function*() {
       yield* validateNonEmpty(input.threadId, "threadId", ["threadId"])
       yield* validateNonEmpty(input.id, "message id", ["id"])
       yield* validateNonEmpty(input.role, "message role", ["role"])
-      yield* validateTime(input.at, "message at", ["at"])
-      yield* database.write(
+      if (input.at !== undefined) yield* validateTime(input.at, "message at", ["at"])
+      return yield* database.write(
         Effect.gen(function*() {
+          const at = input.at ?? (yield* Clock.currentTimeMillis)
           yield* sql`INSERT INTO memory_threads (
             thread_id, namespace_kind, namespace_id, created_at_ms, updated_at_ms
           )
-            VALUES (${input.threadId}, 'global', 'history', ${input.at}, ${input.at})
+            VALUES (${input.threadId}, 'global', 'history', ${at}, ${at})
             ON CONFLICT (thread_id) DO NOTHING`
           const inserted = yield* sql`INSERT INTO memory_messages (id, thread_id, role, text, at_ms)
-            VALUES (${input.id}, ${input.threadId}, ${input.role}, ${input.text}, ${input.at})
+            VALUES (${input.id}, ${input.threadId}, ${input.role}, ${input.text}, ${at})
             ON CONFLICT (thread_id, id) DO NOTHING`.raw
           if (changed(inserted) > 0) {
             yield* sql`UPDATE memory_threads
-              SET updated_at_ms = ${Dialect.greatest(sql)}(updated_at_ms, ${input.at})
+              SET updated_at_ms = ${Dialect.greatest(sql)}(updated_at_ms, ${at})
               WHERE thread_id = ${input.threadId}`
-            return
+            return { threadId: input.threadId, id: input.id, role: input.role, text: input.text, at }
           }
           const existing = yield* sql<MessageRow>`SELECT ${messageColumns}
             FROM memory_messages
@@ -179,7 +181,7 @@ export const make = (database: DatabaseService, crypto: Crypto.Crypto): Pick<
             ? "role"
             : message.text !== input.text
             ? "text"
-            : Number(message.at_ms) !== input.at
+            : input.at !== undefined && Number(message.at_ms) !== input.at
             ? "at"
             : undefined
           if (conflict !== undefined) {
@@ -192,9 +194,20 @@ export const make = (database: DatabaseService, crypto: Crypto.Crypto): Pick<
               )
             )
           }
+          return {
+            threadId: message.thread_id,
+            id: message.id,
+            role: message.role,
+            text: message.text,
+            at: Number(message.at_ms)
+          }
         })
       ).pipe(Effect.mapError(storeError("could not append memory message")))
     })
+
+  // Keep the explicit-timestamp API and its strict validation unchanged.
+  const appendMessage: Service["appendMessage"] = (input) =>
+    validateTime(input.at, "message at", ["at"]).pipe(Effect.andThen(appendMessageOnce(input)), Effect.asVoid)
 
   const listMessages: Service["listMessages"] = (input) =>
     Effect.gen(function*() {
@@ -230,7 +243,8 @@ export const make = (database: DatabaseService, crypto: Crypto.Crypto): Pick<
       const rows = yield* sql<{ readonly count: number }>`
         SELECT count(*) AS count FROM memory_messages WHERE thread_id = ${input.threadId}
       `.pipe(Effect.mapError(storeError("could not count memory messages")))
-      return Number(rows[0]?.count ?? 0)
+      // An aggregate without GROUP BY always returns exactly one row.
+      return Number(rows[0]!.count)
     })
 
   const messageStats: Service["messageStats"] = (input) =>
@@ -244,11 +258,9 @@ export const make = (database: DatabaseService, crypto: Crypto.Crypto): Pick<
       }), 0) AS bytes
         FROM memory_messages WHERE thread_id = ${input.threadId}
       `.pipe(Effect.mapError(storeError("could not measure memory messages")))
-      return {
-        messages: Number(rows[0]?.count ?? 0),
-        codePoints: Number(rows[0]?.code_points ?? 0),
-        bytes: Number(rows[0]?.bytes ?? 0)
-      }
+      // An aggregate without GROUP BY always returns exactly one row; COALESCE fills empty sums.
+      const row = rows[0]!
+      return { messages: Number(row.count), codePoints: Number(row.code_points), bytes: Number(row.bytes) }
     })
 
   const deleteMessageRows = (threadId: string, ids: ReadonlyArray<string>) =>
@@ -364,6 +376,7 @@ export const make = (database: DatabaseService, crypto: Crypto.Crypto): Pick<
     listThreads,
     deleteThread,
     appendMessage,
+    appendMessageOnce,
     listMessages,
     countMessages,
     messageStats,

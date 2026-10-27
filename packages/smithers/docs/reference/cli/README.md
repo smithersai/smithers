@@ -336,6 +336,10 @@ namespaces. Semantic recall remains a library binding that needs a configured
 embedding provider. `compact` takes an explicit `--summary`, `--before`
 timestamp, and retained-message count (`--keep`); `--dry-run` previews it.
 
+`memory messages add --message-id <id>` is idempotent for the same thread,
+role and text. When `--at` is omitted, a retry keeps the saved timestamp;
+an explicitly different `--at` is a conflict.
+
 Credential encryption requires `SMITHERS_CREDENTIAL_KEY`, a base64-encoded
 32-byte host key. Keep that key outside the database. Integrations read
 `.smithers/integrations.json` (version 1 with an `integrations` array), or

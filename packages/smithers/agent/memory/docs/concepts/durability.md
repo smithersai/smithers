@@ -47,6 +47,12 @@ A thread is an ordered history of messages, each with a caller-chosen id, a role
 
 A message id is unique within its thread, not globally. Appending the same id with the same role, text, and timestamp is a no-op, which is what makes a retried append safe. Appending the same id with any difference fails with `idempotency_conflict` and a path to the first field that differs. `appendMessage` creates a missing thread for you, in the `global` namespace under the id `history`; call `createThread` first when the thread belongs somewhere else. Creating a thread is itself idempotent on identical creation data.
 
+`appendMessageOnce` accepts the same identity, role and text with an optional
+timestamp and returns the stored message. The first insertion chooses the
+timestamp inside the write transaction. Later and overlapping retries that
+omit it reuse that value. Explicitly conflicting timestamps, roles or text
+still fail; `appendMessage` retains its required-timestamp contract.
+
 ## What durability does not mean
 
 The store is the authority; recall is advisory. Recall bindings read the store and rank what they find, and the opening snapshot `Source` builds is a frozen copy meant for prompt stability, not a second source of truth. [How recall works](./recall.md) covers that side. For the limits every read enforces, see the [API reference](../api.md).
