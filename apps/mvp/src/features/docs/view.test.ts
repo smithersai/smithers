@@ -84,7 +84,7 @@ describe("the Docs tab's routes", () => {
   })
 })
 
- test("a refused page offers the index as recovery", () => {
+test("a refused page offers the index as recovery", () => {
   expect(PAGE_UNREADABLE).toBe("Page unavailable · choose from the list")
   expect(docsPageOf({
     current: { ...current, path: "/absent", pageKey: "acme/widgets:/absent" },
