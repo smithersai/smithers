@@ -17,3 +17,6 @@ test("issue scheduling filters use product words with a visible group label", ()
   const copy = source("src/features/issues/lifecycle.ts")
   assert.match(copy, /none: "Unscheduled"/)
 })
+test("an unreadable docs page points back to the available pages", () => {
+  assert.match(source("src/features/docs/contract.ts"), /PAGE_UNREADABLE = "Page unavailable · choose from the list"/)
+})

@@ -65,7 +65,7 @@ export const DOCS_REGION = "Docs"
 export const NO_MATCHES = "No matches"
 export const NO_DOCS = "No docs"
 export const DOCS_UNREADABLE = "Couldn't read docs"
-export const PAGE_UNREADABLE = "Couldn't read this page"
+export const PAGE_UNREADABLE = "Page unavailable · choose from the list"
 
 /** `/$owner/$repo/docs`, or one page of it: `/$owner/$repo/docs/<path without its leading slash>`. */
 export const docsHref = (owner: string, name: string, path?: string): string =>

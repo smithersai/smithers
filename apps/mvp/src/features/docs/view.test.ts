@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { docsHref, DOCS_UNREADABLE, NO_DOCS, pathOfSplat } from "./contract"
+import { docsHref, DOCS_UNREADABLE, NO_DOCS, PAGE_UNREADABLE, pathOfSplat } from "./contract"
 import { emptyCurrent, type IndexRow } from "./rows"
 import { docsPageOf, groupsOf, inAppHref } from "./view"
 
@@ -82,4 +82,13 @@ describe("the Docs tab's routes", () => {
     expect(docsHref("smithersai", "vibelang")).toBe("/smithersai/vibelang/docs")
     expect(docsHref("smithersai", "vibelang", pathOfSplat("guide/x.md"))).toBe("/smithersai/vibelang/docs/guide/x.md")
   })
+})
+
+ test("a refused page offers the index as recovery", () => {
+  expect(PAGE_UNREADABLE).toBe("Page unavailable · choose from the list")
+  expect(docsPageOf({
+    current: { ...current, path: "/absent", pageKey: "acme/widgets:/absent" },
+    index: ready,
+    page: { key: "acme/widgets:/absent", state: "refused", title: "", url: "", text: "", code: "not_found" },
+  })).toMatchObject({ page: { kind: "refused", notice: PAGE_UNREADABLE }, list: { kind: "index" } })
 })
