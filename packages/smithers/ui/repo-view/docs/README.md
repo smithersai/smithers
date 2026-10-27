@@ -49,3 +49,8 @@ controls have at least 32px tap targets.
 - [Use the repository views](./guides/use-the-repository-views.md)
 - [API reference](./api.md)
 - [Failure codes](./reference/contracts.md)
+
+Read-only Markdown preserves GitHub-style HTML paragraphs, emphasis, centered
+preformatted logos, and safe links and images. Comments, executable elements,
+styles, event attributes, and unsafe URL schemes are removed before nodes enter
+the document. Editable Markdown retains its source.

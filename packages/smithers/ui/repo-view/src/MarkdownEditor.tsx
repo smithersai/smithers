@@ -10,6 +10,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { markdownHtml, joinMarkdownHtml } from "./markdownHtml";
 import { crepeThemeCss } from "./crepeTheme.generated";
 
 /**
@@ -317,7 +318,7 @@ const renderedHeadingFor = (host: HTMLElement, markdown: string, line: number): 
 
 /** Load the rich editor and its transaction adapter only when needed. */
 const loadMilkdown = async (): Promise<MarkdownEditorModule> => {
-  const [{ Crepe }, { $prose }, { serializerCtx }, { Plugin }, { replaceMarkdown }, { htmlSchema }] = await Promise.all([
+  const [{ Crepe }, { $prose }, { serializerCtx, remarkPluginsCtx }, { Plugin }, { replaceMarkdown }, { htmlSchema }] = await Promise.all([
     import("@milkdown/crepe"),
     import("@milkdown/kit/utils"),
     import("@milkdown/kit/core"),
@@ -333,10 +334,10 @@ const loadMilkdown = async (): Promise<MarkdownEditorModule> => {
         // stay commonmark inline nodes, which keep their alt text and title.
         super({ ...options, features: { [Crepe.Feature.ImageBlock]: false } });
         if (readOnly) this.editor.config(ctx => {
+          ctx.update(remarkPluginsCtx, plugins => [...plugins, { plugin: () => tree => { joinMarkdownHtml(tree); }, options: {} }]);
           ctx.update(htmlSchema.key, previous => context => {
             const schema = previous(context);
-            return { ...schema, parseMarkdown: { ...schema.parseMarkdown,
-              runner: (state, node) => { state.addText(String(node.value ?? "")); } } };
+            return { ...schema, toDOM: node => markdownHtml(String(node.attrs.value)) };
           });
         });
       }

@@ -20,7 +20,7 @@ afterEach(async () => {
   document.querySelectorAll(`style[${MARKDOWN_EDITOR_STYLE_ATTR}]`).forEach((element) => element.remove());
 });
 
-test("a read-only document shows inline and block HTML as text", async () => {
+test("a read-only document renders sanitized inline and block HTML", async () => {
   container = document.createElement("div");
   document.body.appendChild(container);
   const created = createRoot(container);
@@ -36,8 +36,8 @@ test("a read-only document shows inline and block HTML as text", async () => {
     });
   }
   expect(content.getAttribute("aria-readonly")).toBe("true");
-  expect(content.querySelector("b")).toBeNull();
+  expect(content.querySelector("b")?.textContent).toBe("bold");
   expect(content.querySelector("[onclick]")).toBeNull();
-  expect(content.textContent).toContain("<b>");
-  expect(content.textContent).toContain('<div onclick="alert(1)">block</div>');
+  expect(content.textContent).not.toContain("<b>");
+  expect(content.querySelector(".sui-markdown-html div")?.textContent).toBe("block");
 });
