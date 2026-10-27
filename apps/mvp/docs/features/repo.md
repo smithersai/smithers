@@ -382,3 +382,5 @@ An optional preview that exceeds the display limit answers `200` with `x-file-st
 A confirmed missing repository offers neither Clone nor Sign in to clone, and hides repository feature links. An About 404 is the authoritative absence receipt, not a transport failure to disguise; 503 remains a retryable failure and offers no clone or repository feature links until metadata recovers. The header preserves existing cloned repositories when a separate About read is missing.
 
 About reads settle on their first refusal. A failed upstream read shows its reason and Try again, including on a private repository; a GitHub 404 says Repository not found. A 503 remains unavailable, never invented absence. This replaces the two-minute loading-only retry budget for About; file and tree reads retain their durable retry policy.
+
+A read beyond the supported file-path length is absent (404), while malformed traversal paths remain invalid (400). Breadcrumbs wrap within the header.

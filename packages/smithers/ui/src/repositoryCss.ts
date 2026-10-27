@@ -12,9 +12,9 @@ const focusRing = `outline:none; border-color:${t.ringBorder}; box-shadow:0 0 0 
 const interaction = "transition:background-color .12s ease, border-color .12s ease, color .12s ease;";
 
 export const breadcrumbsCss = `
-.sui-breadcrumbs { min-width:0; font-size:13px; }
+.sui-breadcrumbs { min-width:0; max-width:100%; font-size:13px; }
 .sui-breadcrumbs-list { display:flex; flex-wrap:wrap; align-items:center; gap:4px; margin:0; padding:0; list-style:none; }
-.sui-breadcrumbs-item { display:inline-flex; align-items:center; gap:4px; min-width:0; }
+.sui-breadcrumbs-item { max-width:100%; display:inline-flex; align-items:center; gap:4px; min-width:0; }
 .sui-breadcrumbs-separator { color:${t.mutedForeground}; }
 .sui-breadcrumbs-link { color:${t.primary}; text-decoration:none; border-radius:${t.radiusControl}; overflow-wrap:anywhere; }
 .sui-breadcrumbs-link:hover { text-decoration:underline; }

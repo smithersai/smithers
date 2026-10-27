@@ -13,6 +13,7 @@ import {
   isFilePath,
   isRepository,
   MAX_REQUEST_BYTES,
+  MAX_PATH_LENGTH,
   MAX_BLOB_BYTES,
   type Refusal,
   repoId,
@@ -317,6 +318,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           }
           if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
           if (target.kind !== "refs" && !SHA_PATTERN.test(target.sha)) return refuse(400, "invalid")
+          if ((target.kind === "blob" || target.kind === "raw") && target.file.length > MAX_PATH_LENGTH) return refuse(404, "not_found")
           if ((target.kind === "blob" || target.kind === "raw") && !isFilePath(target.file)) return refuse(400, "invalid")
           fields.repoId = repoId(target.owner, target.name)
           if (target.kind !== "refs") fields.sha = target.sha

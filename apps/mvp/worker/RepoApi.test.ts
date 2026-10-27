@@ -523,6 +523,9 @@ describe("reads", () => {
     expect((await h.fetch(`/api/repos/octocat/x/blob/${sha}/a%2F..%2Fb`)).status).toBe(400)
     expect((await h.fetch(`/api/repos/octocat/x/blob/${sha}/${"a/".repeat(70)}b`)).status).toBe(400)
     expect((await h.fetch(`/api/repos/octocat/x/blob/${sha}`)).status).toBe(400)
+    for (const kind of ["blob", "raw"]) {
+      expect((await h.fetch(`/api/repos/octocat/x/${kind}/${sha}/${"a".repeat(2500)}`)).status).toBe(404)
+    }
     expect((await h.fetch(treeRoute("app", "x", sha))).status).toBe(404)
     expect((await h.fetch(`/api/repos/octocat/x/tree/${sha}/extra`)).status).toBe(404)
     expect((await h.fetch(`/api/repos/octocat/x/commits/${sha}`)).status).toBe(404)
