@@ -1,7 +1,9 @@
-import { type Browser, type BrowserContext, expect, test as base, type Page, type TestInfo } from "@playwright/test"
+import { type Browser, type BrowserContext, expect, test as base, type Page, type Request, type TestInfo } from "@playwright/test"
 import { appendFile } from "node:fs/promises"
+import { createHash } from "node:crypto"
 import { recordConsole } from "./console"
-import { consoleErrorAnnotation, environmentAnnotations, Problems, serverErrorAnnotation, type Status, UNDECLARED } from "./problems"
+import { accessControlURL, DocumentRequests } from "./cancellations"
+import { consoleErrorAnnotation, environmentAnnotations, pathOf, Problems, serverErrorAnnotation, type Observation, type Status, UNDECLARED } from "./problems"
 import { baseURL, DOT_ENV, dotEnvSets, meets, onThisMachine, target } from "./target"
 
 // Every browser context a test opens is watched from its first request (docs/infrastructure.md#server-and-console-errors):
@@ -13,6 +15,33 @@ import { baseURL, DOT_ENV, dotEnvSets, meets, onThisMachine, target } from "./ta
 export class Watched extends Problems {
   private readonly contexts = new WeakSet<BrowserContext>()
   private readonly pages = new WeakSet<Page>()
+  private readonly cancellationRecords: string[] = []
+  private readonly nativeCandidates: Array<{ observation: Observation; classify: (() => boolean) | undefined; receipt: string }> = []
+  private readonly documents = new WeakMap<Page, DocumentRequests>()
+  private readonly requestIds = new WeakMap<Request, number>()
+  private requestSequence = 0
+
+  private document(page: Page): DocumentRequests {
+    let history = this.documents.get(page)
+    if (history === undefined) {
+      history = new DocumentRequests()
+      this.documents.set(page, history)
+    }
+    return history
+  }
+
+  private trace(request: Request) {
+    try {
+      const frame = request.frame()
+      const page = frame.page()
+      let id = this.requestIds.get(request)
+      if (id === undefined) this.requestIds.set(request, id = ++this.requestSequence)
+      return { frame, page, id, history: this.document(page) }
+    } catch {
+      // Worker-owned requests may have no page. They never establish a page's cancellation witness.
+      return undefined
+    }
+  }
 
   /** Watches `context` and its pages from now on; watching one twice changes nothing. */
   watch(context: BrowserContext): void {
@@ -20,17 +49,76 @@ export class Watched extends Problems {
     this.contexts.add(context)
     context.on("page", (page) => this.watchPage(page))
     for (const page of context.pages()) this.watchPage(page)
-    context.on("response", (response) =>
-      this.note({ kind: "response", method: response.request().method(), url: response.url(), status: response.status() }))
-    context.on("requestfailed", (request) =>
-      this.note({ kind: "failed", method: request.method(), url: request.url(), error: request.failure()?.errorText ?? "" }))
+    context.on("request", request => {
+      const trace = this.trace(request)
+      if (request.isNavigationRequest()) this.cancellationRecords.push(`navigation start ${new Date().toISOString()} ${pathOf(request.url())} tracked=${trace !== undefined}`)
+      if (trace === undefined) return
+      if (request.isNavigationRequest() && trace.frame === trace.page.mainFrame()) {
+        const from = request.redirectedFrom()
+        trace.history.navigate(trace.id, Date.now(), from === null ? undefined : this.requestIds.get(from))
+      }
+      const url = new URL(request.url())
+      if (url.origin === this.origin && !request.isNavigationRequest()) trace.history.start(trace.id, request.url(), Date.now())
+    })
+    context.on("response", response => {
+      this.note({ kind: "response", method: response.request().method(), url: response.url(), status: response.status() })
+      const trace = this.trace(response.request())
+      trace?.history.response(trace.id, response.status())
+    })
+    context.on("requestfinished", request => {
+      const trace = this.trace(request)
+      trace?.history.finish(trace.id)
+    })
+    context.on("requestfailed", (request) => {
+      const error = request.failure()?.errorText ?? ""
+      this.note({ kind: "failed", method: request.method(), url: request.url(), error })
+      const trace = this.trace(request)
+      trace?.history.fail(trace.id, error, Date.now())
+      if (trace !== undefined && request.isNavigationRequest() && trace.frame === trace.page.mainFrame()) trace.history.abort(trace.id, Date.now())
+      if (new URL(request.url()).origin === this.origin) this.cancellationRecords.push(
+        `requestfailed ${new Date().toISOString()} ${pathOf(request.url())} key=${createHash("sha256").update(request.url()).digest("hex").slice(0, 16)} ${error}`,
+      )
+    })
   }
 
   private watchPage(page: Page) {
     if (this.pages.has(page)) return
     this.pages.add(page)
+    const history = this.document(page)
+    page.on("framenavigated", frame => {
+      if (frame === page.mainFrame()) {
+        this.cancellationRecords.push(`navigation commit ${new Date().toISOString()} ${pathOf(frame.url())}`)
+        const revision = history.documentEvent(Date.now())
+        void frame.evaluate(() => {
+          const document = window as Window & { __smithersE2EDocument?: string }
+          return document.__smithersE2EDocument ??= crypto.randomUUID()
+        }).then(identity => history.observeDocument(revision, identity), () => {
+          // A disappearing context leaves identity unknown; it cannot establish cancellation evidence.
+          this.cancellationRecords.push(`document identity unavailable ${new Date().toISOString()}`)
+        })
+      }
+    })
     // Its console's errors and its uncaught errors, without a log: the test's own log records the lines it keeps.
-    recordConsole(page, undefined, undefined, this)
+    recordConsole(page, undefined, undefined, { note: (observation) => {
+      if (observation.kind === "page" && observation.name === `Fetch API cannot load ${new URL(this.origin).protocol.slice(0, -1)}` &&
+        page.context().browser()?.browserType().name() === "webkit" && observation.text.endsWith(" due to access control checks.")) {
+        const url = accessControlURL(this.origin, observation.text)
+        if (url !== undefined) {
+          const at = Date.now()
+          this.nativeCandidates.push({
+            observation, classify: history.candidate(url, at),
+            receipt: `${new Date(at).toISOString()} ${pathOf(url)} key=${createHash("sha256").update(url).digest("hex").slice(0, 16)} navigation=${JSON.stringify(history.progress())} witness=${JSON.stringify(history.witness(url, at))}`,
+          })
+          return
+        }
+      }
+      this.note(observation)
+    } })
+  }
+
+  /** The real-browser regression requires this native diagnostic and its cancellation/navigation ordering. */
+  navigationCancellations(): readonly string[] {
+    return this.nativeCandidates.filter(candidate => candidate.classify?.() === true).map(candidate => candidate.receipt)
   }
 
   /**
@@ -38,11 +126,19 @@ export class Watched extends Problems {
    * each problem the test didn't declare, for `expect.soft(…, UNDECLARED).toEqual([])`.
    */
   check(testInfo: TestInfo, log: Array<string>): Array<string> {
+    for (const candidate of this.nativeCandidates.splice(0)) {
+      const cancelled = candidate.classify?.() === true
+      this.cancellationRecords.push(`${cancelled ? "navigation cancellation" : "access-control"} ${candidate.receipt}`)
+      if (!cancelled) this.note(candidate.observation)
+    }
     const environment = environmentAnnotations(lacks())
     const declared = [...testInfo.annotations, ...environment]
+    log.push(...this.cancellationRecords)
     if (environment.length > 0) log.push(`problems the environment declares: ${environment.map((each) => each.description).join(", ")}`)
     log.push(...this.report(declared))
-    return this.undeclared(declared)
+    const undeclared = this.undeclared(declared)
+    if (undeclared.length > 0 && this.cancellationRecords.length > 0) console.info(`Network cancellation witnesses:\n${this.cancellationRecords.join("\n")}`)
+    return undeclared
   }
 }
 

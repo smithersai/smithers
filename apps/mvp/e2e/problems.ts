@@ -20,7 +20,7 @@ export type Observation =
   | { readonly kind: "response"; readonly method: string; readonly url: string; readonly status: number }
   | { readonly kind: "failed"; readonly method: string; readonly url: string; readonly error: string }
   | { readonly kind: "console"; readonly text: string; readonly url: string | undefined }
-  | { readonly kind: "page"; readonly text: string }
+  | { readonly kind: "page"; readonly text: string; readonly name?: string }
 
 /** A problem: its line in the list, and what a declaration matches it by. */
 export type Problem =

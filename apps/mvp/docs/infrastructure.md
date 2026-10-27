@@ -332,6 +332,17 @@ Every e2e test, locally and against a deployment, fails on each of these that it
 
 The check watches every browser context a test opens: the default page's, each device's (`e2e/devices.ts`) and any the test opens itself. A failing test's `browser.log` ends with the list. Each problem shows its status, method and path, with the query's parameter names but no values, then its count, marked `declared` or `UNDECLARED`.
 
+WebKit also emits a native `Fetch API cannot load … due to access control checks` diagnostic when navigation
+discards a document before its fetch reaches the network. Playwright turns this into `pageerror` despite no window
+error or unhandled rejection. The watcher records it as a navigation cancellation only for a same-origin API URL,
+after an actual old-document request cancellation, while the main-frame navigation is uncommitted, for at most two
+seconds. WebKit can report that cancellation up to 100 ms before its navigation request event. The watcher observes
+a stable token in the real window because `framenavigated` also fires for `pushState`, and binds navigation failures
+to their request and redirect chain. Unknown identity establishes no exemption. Classification waits until teardown
+and checks every matching read; a pending read, HTTP refusal, completed read or transport error remains a failure.
+A diagnostic on a committed or active page gets no exemption. `request-cancellation.spec.ts` requires the native
+receipt against a compiled deployment; development also exercises cancellation, which Vite may handle quietly.
+
 A test that causes one on purpose declares it, in its body or in a file or describe block:
 
 ```ts

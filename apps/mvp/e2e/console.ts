@@ -49,5 +49,5 @@ export const recordConsole = (page: Page, log: Array<string> | undefined, prefix
       log[index] = `${head}${text}`
     })
   })
-  if (errors !== undefined) page.on("pageerror", (error) => errors.note({ kind: "page", text: error.message }))
+  if (errors !== undefined) page.on("pageerror", (error) => errors.note({ kind: "page", text: error.message, name: error.name }))
 }

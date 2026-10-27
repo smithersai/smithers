@@ -5,6 +5,20 @@ import { routeTemplate } from "../src/apiRoutes"
 
 requires("member")
 
+test.afterEach(async ({ page, browserLog }, testInfo) => {
+  const capabilities = await page.evaluate(async () => {
+    let directory: string
+    try { await navigator.storage.getDirectory(); directory = "available" } catch (error) { directory = error instanceof Error ? error.name : "unavailable" }
+    const session = await fetch("/api/auth/session").then(async response => {
+      const value = await response.json()
+      return { status: response.status, signedIn: value.signedIn, role: value.role, hasModel: value.hasModel, hostedModel: value.hostedModel }
+    }).catch(error => ({ error: error instanceof Error ? error.name : "unavailable" }))
+    return { directory, persisted: await navigator.storage.persisted(), session }
+  }).catch(() => ({ closed: true }))
+  const storageLog = browserLog.filter(line => /flows\.editor\.storage|browser\.(engine|runtime)|persistence unavailable|auth\.device_identity/.test(line))
+  await testInfo.attach("storage-receipts", { body: JSON.stringify({ capabilities, storageLog }, null, 2), contentType: "application/json" })
+})
+
 // The shared page fixture supplies a new persistent WebKit profile (persistent.ts),
 // records the page and checks every error before intentionally closing the device.
 // Chromium's fresh context supports the same OPFS API without asking persist().
