@@ -1,4 +1,4 @@
-import { acknowledgeNavigation, admissionReceipt, beginAdmission, identifyAdmission, executionOf, finishAdmission, forgetAdmission, WriteIntents } from "../../writeAdmission"
+import { acknowledgeNavigation, admissionReceipt, beginAdmission, identifyAdmission, executionOf, finishAdmission, finishRetainedAdmission, whileAdmitting, forgetAdmission, WriteIntents } from "../../writeAdmission"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { keep } from "./writes"
 import type { Commitment } from "./lifecycle"
@@ -173,20 +173,23 @@ export const create = (owner: string, name: string) => Effect.gen(function* () {
 })
 
 /** Retry a locally retained admission under its original id; the server and outbox deduplicate it. */
-export const retryWrite = (writeId: string) => Effect.gen(function* () {
+export const retryWrite = (writeId: string) => whileAdmitting(writeId, Effect.gen(function* () {
   const store = yield* IssuesStore
   const held = yield* store.requested.get(writeId)
   if (Option.isNone(held) || held.value.status !== "not_sent" || held.value.reason !== null) return
   const { queued } = yield* store.queue(held.value)
-  if (!queued) return
-  const row = held.value
-  const key = row.op === "issue/create" ? newDraftKey(row.repoId) : commentDraftKey(row.repoId, row.number)
-  const draft = yield* store.drafts.get(key)
-  if (Option.isSome(draft) && draft.value.body === row.body && (row.op !== "issue/create" || draft.value.title.trim() === row.title)) {
-    yield* store.drafts.delete(key).pipe(Effect.flatMap((removed) => removed.persisted), Effect.ignore)
-    yield* store.view.update(VIEW, (view) => { if (view.draftKey === key) delete view.submissionFailed }).pipe(Effect.orDie)
+  let cleaned = true
+  if (queued) {
+    const row = held.value
+    const key = row.op === "issue/create" ? newDraftKey(row.repoId) : commentDraftKey(row.repoId, row.number)
+    const draft = yield* store.drafts.get(key)
+    if (Option.isSome(draft) && draft.value.body === row.body && (row.op !== "issue/create" || draft.value.title.trim() === row.title)) {
+      cleaned = yield* store.drafts.delete(key).pipe(Effect.flatMap((removed) => removed.persisted), Effect.as(true), Effect.orElseSucceed(() => false))
+      yield* store.view.update(VIEW, (view) => { if (view.draftKey === key) delete view.submissionFailed }).pipe(Effect.orDie)
+    }
   }
-})
+  yield* finishRetainedAdmission(writeId, queued, cleaned)
+}))
 
 /** Comment on issue `number` of `owner/name`: `issue/comment` with its draft. Answers whether it ran. */
 export const comment = (owner: string, name: string, number: number) =>

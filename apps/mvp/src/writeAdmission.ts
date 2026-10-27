@@ -94,18 +94,46 @@ export const identifyAdmission = (intent: WriteIntent, executionId: string, writ
   yield* Effect.logInfo("write.identity").pipe(Effect.annotateLogs({ commandId: intent.commandId, executionId, writeId }))
 })
 
+const release = (store: WriteIntents["Service"], key: string) => {
+  const remaining = (store.admitting.get(key) ?? 1) - 1
+  if (remaining === 0) store.admitting.delete(key)
+  else store.admitting.set(key, remaining)
+}
+const settle = (store: WriteIntents["Service"], intent: WriteIntent, admitted: boolean, cleaned: boolean) => {
+  const previous = store.pending().find(row => row.commandId === intent.commandId)
+  store.update(intent.commandId, { admitted: admitted || previous?.admitted === true, cleaned: (admitted && cleaned) || previous?.cleaned === true })
+  const latest = store.pending().find(row => row.commandId === intent.commandId)
+  if (latest?.admitted && latest.cleaned && (latest.flow !== "issue/create" || latest.navigated)) store.forget(intent.commandId)
+}
+
 export const finishAdmission = (intent: WriteIntent, admitted: boolean, cleaned = true) => Effect.gen(function* () {
   const store = yield* Effect.serviceOption(WriteIntents)
   if (Option.isSome(store)) {
-    const remaining = (store.value.admitting.get(intent.commandId) ?? 1) - 1
-    if (remaining === 0) store.value.admitting.delete(intent.commandId)
-    else store.value.admitting.set(intent.commandId, remaining)
-    const previous = store.value.pending().find(row => row.commandId === intent.commandId)
-    store.value.update(intent.commandId, { admitted: admitted || previous?.admitted === true, cleaned: (admitted && cleaned) || previous?.cleaned === true })
-    const latest = store.value.pending().find(row => row.commandId === intent.commandId)
-    if (latest?.admitted && latest.cleaned && (latest.flow !== "issue/create" || latest.navigated)) store.value.forget(intent.commandId)
+    release(store.value, intent.commandId)
+    settle(store.value, intent, admitted, cleaned)
   }
   yield* recordAdmission(intent.commandId, intent.flow, "outbox", admitted ? "admitted" : "not_admitted", yield* Clock.currentTimeMillis)
+})
+
+/** Explicit Retry completes the same input lifecycle without releasing another caller's admission fence. */
+export const finishRetainedAdmission = (writeId: string, admitted: boolean, cleaned: boolean) => Effect.gen(function* () {
+  const store = yield* Effect.serviceOption(WriteIntents)
+  if (Option.isNone(store)) return
+  const intent = store.value.pending().find(row => row.writeId === writeId || store.value.byWrite.get(writeId) === row.commandId)
+  if (intent === undefined) return
+  settle(store.value, intent, admitted, cleaned)
+  yield* recordAdmission(intent.commandId, intent.flow, "outbox", admitted ? "admitted" : "not_admitted", yield* Clock.currentTimeMillis)
+})
+
+/** Includes legacy recovery rows that have no input snapshot. Finalization also releases cancellation/failure. */
+export const whileAdmitting = <A, E, R>(writeId: string, effect: Effect.Effect<A, E, R>) => Effect.gen(function* () {
+  const store = yield* Effect.serviceOption(WriteIntents)
+  if (Option.isNone(store)) return yield* effect
+  return yield* Effect.acquireUseRelease(
+    Effect.sync(() => store.value.admitting.set(writeId, (store.value.admitting.get(writeId) ?? 0) + 1)),
+    () => effect,
+    () => Effect.sync(() => release(store.value, writeId)),
+  )
 })
 
 /** Navigation and delivery are independent receipts; neither may retire the other. */
@@ -122,6 +150,7 @@ export const acknowledgeNavigation = (writeId: string) => Effect.gen(function* (
 export const forgetAdmission = (_namespace: string, writeId: string) => Effect.gen(function* () {
   const store = yield* Effect.serviceOption(WriteIntents)
   if (Option.isNone(store)) return true
+  if (store.value.admitting.has(writeId)) return false
   for (const intent of store.value.pending()) {
     if (intent.writeId !== writeId && store.value.byWrite.get(writeId) !== intent.commandId) continue
     if (store.value.admitting.has(intent.commandId) || !store.value.forget(intent.commandId)) return false
@@ -134,7 +163,7 @@ export const forgetDraftAdmissions = (draftId: string) => Effect.gen(function* (
   const store = yield* Effect.serviceOption(WriteIntents)
   if (Option.isNone(store)) return true
   const intents = store.value.pending().filter(row => row.draftId === draftId)
-  if (intents.some(intent => store.value.admitting.has(intent.commandId))) return false
+  if (intents.some(intent => store.value.admitting.has(intent.commandId) || (intent.writeId !== undefined && store.value.admitting.has(intent.writeId)))) return false
   return intents.every(intent => store.value.forget(intent.commandId))
 })
 

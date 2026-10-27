@@ -1,4 +1,4 @@
-import { admissionReceipt, beginAdmission, executionOf, finishAdmission, forgetAdmission, forgetDraftAdmissions, identifyAdmission } from "../../writeAdmission"
+import { admissionReceipt, beginAdmission, executionOf, finishAdmission, finishRetainedAdmission, whileAdmitting, forgetAdmission, forgetDraftAdmissions, identifyAdmission } from "../../writeAdmission"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Clock, Effect, Metric, Option } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
@@ -198,17 +198,18 @@ export const edit = (opId: string) => handle(opId, "edit")
 export const discard = (opId: string) => Effect.asVoid(handle(opId, "discard"))
 
 /** Retries local admission using the retained identity, without inventing another TODO. */
-export const retryChange = (id: string) => Effect.gen(function* () {
+export const retryChange = (id: string) => whileAdmitting(id, Effect.gen(function* () {
   const store = yield* TodosStore
   const row = yield* store.requested.get(id)
   if (Option.isNone(row) || row.value.status !== "not_sent" || row.value.reason !== null) return
   const { kept } = yield* store.queue(row.value)
-  if (!kept || row.value.op !== "commit") return
-  for (const draft of yield* store.drafts.toArray) {
+  let cleaned = true
+  if (kept && row.value.op === "commit") for (const draft of yield* store.drafts.toArray) {
     const opId = yield* Uuid.v5(OP_ID_NAMESPACE, yield* commitExecutionId(draft)).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
-    if (opId === id) yield* store.drafts.delete(draft.id).pipe(Effect.flatMap((removed) => removed.persisted), Effect.ignore)
+    if (opId === id) cleaned = (yield* store.drafts.delete(draft.id).pipe(Effect.flatMap((removed) => removed.persisted), Effect.as(true), Effect.orElseSucceed(() => false))) && cleaned
   }
-})
+  yield* finishRetainedAdmission(id, kept, cleaned)
+}))
 
 /** Retry returns once the durable launch is requested; the outbox sends in the background. */
 export const retry = (owner: string, name: string, number: number) => admitChange("retry", owner, name, number)

@@ -187,3 +187,46 @@ for (const source of ["comment", "issue", "todo"] as const) {
     expect(held).toBe("Newer typing")
   })
 }
+
+for (const source of ["issue", "todo", "legacy"] as const) test(`Retry fences Discard and completes the retained ${source} lifecycle`, async () => {
+  const tab = await opening()
+  const { beginAdmission, finishAdmission, identifyAdmission } = await import("./writeAdmission")
+  const { retryWrite, discard, comment } = await import("./features/issues/actions")
+  const { retryChange, discard: discardTodo } = await import("./features/todos/actions")
+  const todo = source === "todo"
+  const flow = todo ? "todo/commit" : "issue/comment"
+  const key = todo ? crypto.randomUUID() : commentDraftKey(repoId, 45)
+  const payload = todo ? { repo: TEST_REPOSITORY, title: "Retained TODO", prompt: "Prompt" } : { repo: TEST_REPOSITORY, number: 45, body: "Retained comment" }
+  const intent = Option.getOrThrow(await tab.app.runPromise(beginAdmission(flow, payload, todo ? { namespace: OP_ID_NAMESPACE, value: JSON.stringify([key, TEST_REPOSITORY, "Retained TODO", "Prompt", [], null]) } : undefined, key)))
+  const id = await uuid(todo ? OP_ID_NAMESPACE : WRITE_ID_NAMESPACE, await tab.app.runPromise(executionOf(intent)))
+  await tab.app.runPromise(identifyAdmission(intent, intent.commandId, id))
+  await tab.app.runPromise(finishAdmission(intent, false))
+  if (source === "legacy") tab.intents.forget(intent.commandId)
+  if (todo) {
+    await tab.app.runPromise(tab.todos.drafts.insert({ id: key, repo: TEST_REPOSITORY, repoId, title: "Retained TODO", prompt: "Prompt", acceptance: [], answerId: null, createdAt: 1 }))
+    await tab.app.runPromise(tab.todos.requested.insert({ id, repo: TEST_REPOSITORY, repoId, op: "commit", number: 0, title: "Retained TODO", prompt: "Prompt", acceptance: [], queuedAt: 1, status: "not_sent", reason: null, taken: null }))
+  } else {
+    await tab.issues.actions.open(owner, name, 45)
+    await tab.app.runPromise(tab.store.drafts.insert({ id: key, title: "", body: "Retained comment" }))
+    await tab.app.runPromise(tab.store.requested.insert({ id, repo: TEST_REPOSITORY, repoId, op: "issue/comment", number: 45, title: "", body: "Retained comment", queuedAt: 1, status: "not_sent", reason: null }))
+  }
+  const gate = await Effect.runPromise(Deferred.make<void>())
+  let waiting = false
+  const retry = todo
+    ? retryChange(id).pipe(Effect.provideService(TodosStore, { ...tab.todos, queue: row => Effect.sync(() => { waiting = true }).pipe(Effect.andThen(Deferred.await(gate)), Effect.andThen(tab.todos.queue(row))) }))
+    : retryWrite(id).pipe(Effect.provideService(IssuesStore, { ...tab.store, queue: row => Effect.sync(() => { waiting = true }).pipe(Effect.andThen(Deferred.await(gate)), Effect.andThen(tab.store.queue(row))) }))
+  const fiber = tab.app.runFork(retry)
+  await until(() => expect(waiting).toBe(true))
+  await tab.app.runPromise(todo ? discardTodo(id) : discard(id))
+  expect(todo ? tab.todos.requested.tanstack.has(id) : tab.store.requested.tanstack.has(id)).toBe(true)
+  await Effect.runPromise(Deferred.succeed(gate, undefined))
+  await Effect.runPromise(Fiber.join(fiber))
+  expect(tab.intents.pending()).toEqual([])
+  if (!todo) {
+    expect(tab.store.drafts.tanstack.get(key)).toBeUndefined()
+    await tab.app.runPromise(tab.store.drafts.insert({ id: key, title: "", body: "Retained comment" }))
+    await tab.app.runPromise(comment(owner, name, 45))
+    const ids = new Set([...tab.store.sending.tanstack.toArray, ...tab.store.requested.tanstack.toArray].map(row => row.id))
+    expect(ids.size).toBe(2)
+  }
+})
