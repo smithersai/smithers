@@ -119,9 +119,11 @@ export function PersonalModelSettings({ canSave }: { readonly canSave: boolean }
           return (
             <Field key={tier} className="personal-model-tier">
               <Label htmlFor={`personal-model-${tier}`}>{TIER_LABEL[tier]}</Label>
+              <span id={`personal-model-${tier}-purpose`}>{({ fast: "Chat", implement: "Code", hard: "Plans & reviews" })[tier]}</span>
               <div className="personal-model-tier-row">
                 <Input
                   id={`personal-model-${tier}`}
+                  aria-describedby={`personal-model-${tier}-purpose`}
                   name={FIELDS.model(tier)}
                   type="text"
                   autoComplete="off"

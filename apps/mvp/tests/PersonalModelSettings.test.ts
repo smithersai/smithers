@@ -262,3 +262,13 @@ test("provider fields have distinct accessible names without relying on group co
     expect(tab.input(`personal-model-${protocol}-key`).getAttribute("aria-label")).toBe(`${label} Key`)
   }
 })
+
+
+test("each tier names its purpose beside its model and describes the input", async () => {
+  const tab = await section([])
+  for (const [tier, purpose] of [["fast", "Chat"], ["implement", "Code"], ["hard", "Plans & reviews"]]) {
+    const input = tab.input(`personal-model-${tier}`)
+    const description = tab.container.querySelector(`#${input.getAttribute("aria-describedby")}`)
+    expect(description?.textContent).toBe(purpose)
+  }
+})
