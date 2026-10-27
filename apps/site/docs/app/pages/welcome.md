@@ -3,9 +3,9 @@ title: "Welcome to Smithers"
 summary: "What Smithers is, and the two ways to use it."
 ---
 
-Smithers is a web app for working on a GitHub repository with people and coding agents. On smithers.sh, you open a repository at the path it has on GitHub and read it. On your own Mac, the `smthrs` CLI runs a coding agent on your project on your own subscription.
+Automate maintaining your codebase with Smithers. On smithers.sh, you open a repository at the path it has on GitHub and read it. On your own Mac, the `smthrs` CLI runs a coding agent on your project on your own subscription.
 
-![The smithers.sh home page: Sign in at the top right (1) and the command that adds a coding flow to a repository (2)](images/welcome-home.webp)
+![The smithers.sh home page with Get started for free](images/welcome-home.webp)
 
 ## How Smithers relates to GitHub
 

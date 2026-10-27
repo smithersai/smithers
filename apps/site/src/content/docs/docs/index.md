@@ -11,11 +11,11 @@ head:
       href: /docs/index.md
 ---
 
-Smithers is a web app for working on a GitHub repository with people and coding agents. On smithers.sh, you open a repository at the path it has on GitHub and read it. On your own Mac, the `smthrs` CLI runs a coding agent on your project on your own subscription.
+Automate maintaining your codebase with Smithers. On smithers.sh, you open a repository at the path it has on GitHub and read it. On your own Mac, the `smthrs` CLI runs a coding agent on your project on your own subscription.
 
 <figure class="docs-shot">
-<img src="/images/docs/welcome-home.light.webp" alt="The smithers.sh home page: Sign in at the top right (1) and the command that adds a coding flow to a repository (2)" width="1440" height="900" loading="lazy" decoding="async" class="dark:sl-hidden" />
-<img src="/images/docs/welcome-home.dark.webp" alt="The smithers.sh home page: Sign in at the top right (1) and the command that adds a coding flow to a repository (2)" width="1440" height="900" loading="lazy" decoding="async" class="light:sl-hidden" />
+<img src="/images/docs/welcome-home.light.webp" alt="The smithers.sh home page with Get started for free" width="1440" height="900" loading="lazy" decoding="async" class="dark:sl-hidden" />
+<img src="/images/docs/welcome-home.dark.webp" alt="The smithers.sh home page with Get started for free" width="1440" height="900" loading="lazy" decoding="async" class="light:sl-hidden" />
 </figure>
 
 ## How Smithers relates to GitHub

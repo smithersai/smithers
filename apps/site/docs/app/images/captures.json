@@ -44,21 +44,21 @@
   {
     "id": "quickstart-repo-home",
     "page": "quickstart",
-    "alt": "The smithersai/vibelang repository on smithers.sh, open on its file tree: the branch (1) and a folder (2), with the latest commit's author hidden",
+    "alt": "The smithersai/vibelang repository on its Home tab",
     "path": "/smithersai/vibelang",
     "auth": "signed-out",
     "origin": "https://smithers.sh",
-    "build": "7ad93f31b6fa10268ab0c600110cc12df76e8be9",
+    "build": "production capture 2026-10-26",
     "themes": {
       "light": {
         "file": "quickstart-repo-home.light.webp",
-        "bytes": 49322,
-        "pixelSha256": "449a99da0cf53902d5eb191ab78208160e64980455dcc01178470c6056a04cad"
+        "bytes": 133472,
+        "pixelSha256": "8e4817027ceb9183a8a5dbc0b0d768e47b93de744f89e54a0516e1aa97a817c8"
       },
       "dark": {
         "file": "quickstart-repo-home.dark.webp",
-        "bytes": 51910,
-        "pixelSha256": "2ccdeeb61022bd7b41f26ed0475228998cd02e62a78e55c0da51cead43f94569"
+        "bytes": 137720,
+        "pixelSha256": "c92e09fd9d33cafe8b5759762d3e311bd350a915040025a12c4069659e0d762c"
       }
     }
   },
@@ -86,21 +86,21 @@
   {
     "id": "welcome-home",
     "page": "welcome",
-    "alt": "The smithers.sh home page: Sign in at the top right (1) and the command that adds a coding flow to a repository (2)",
+    "alt": "The smithers.sh home page with Get started for free",
     "path": "/",
     "auth": "signed-out",
     "origin": "https://smithers.sh",
-    "build": "7ad93f31b6fa10268ab0c600110cc12df76e8be9",
+    "build": "production capture 2026-10-26",
     "themes": {
       "light": {
         "file": "welcome-home.light.webp",
-        "bytes": 64496,
-        "pixelSha256": "1bd06288d4378c37ee2884771cff273a2036eb67b096202e005dbd3e1d4a0ff9"
+        "bytes": 35858,
+        "pixelSha256": "73a96225085caa40bd907ff80e5aa6dafa3997380e076128d99047d5dcdd6719"
       },
       "dark": {
         "file": "welcome-home.dark.webp",
-        "bytes": 67860,
-        "pixelSha256": "46bb5cf98cfe477cd4d05a47160c7520c563a98b3d2cc4a57054ee256f15416d"
+        "bytes": 35462,
+        "pixelSha256": "4499ceeb2632ae185e638177ef39443725b94416901e0262263a14c5734016fe"
       }
     }
   }

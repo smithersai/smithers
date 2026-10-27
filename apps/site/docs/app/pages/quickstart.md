@@ -9,35 +9,35 @@ This page takes you from the smithers.sh home page to a repository's files and i
 
 ## 1. Open smithers.sh
 
-Go to [smithers.sh](https://smithers.sh). **Sign in** (1) is at the top right.
+Go to [smithers.sh](https://smithers.sh). Choose **Get started for free** to sign in, or open a repository below.
 
-![The smithers.sh home page: Sign in at the top right (1) and the command that adds a coding flow to a repository (2)](images/welcome-home.webp)
+![The smithers.sh home page with Get started for free](images/welcome-home.webp)
 
 ## 2. Open a repository
 
 A repository on smithers.sh has the path it has on GitHub: replace `github.com` with `smithers.sh` in the repository's address. For example, `https://smithers.sh/smithersai/vibelang` opens the `smithersai/vibelang` repository.
 
-The repository opens on its files, on the branch shown at the top left (1).
+The repository opens on **Home**. Choose **Code** to browse its files and select a branch.
 
-![The smithersai/vibelang repository on smithers.sh, open on its file tree: the branch (1) and a folder (2), with the latest commit's author hidden](images/quickstart-repo-home.webp)
+![The smithersai/vibelang repository on its Home tab](images/quickstart-repo-home.webp)
 
-If smithers.sh doesn't have the repository yet, the page says so and asks you to sign in with GitHub.
+A repository not yet cloned offers **Sign in to clone**. A missing or inaccessible repository shows **Not found**; a failed lookup shows an error.
 
 ## 3. Read a file
 
-Choose a folder (2) to open it, or a file to read it. The file's path (1) is at the top. Choose the repository's name in the path to go back to its files.
+Choose **Code**, then a folder to open it, or a file to read it. The file's path is at the top. Choose the repository's name in the path to go back to its files.
 
 ![package.json in smithersai/vibelang on smithers.sh, with the file's path at the top (1)](images/quickstart-file.webp)
 
 ## 4. Read issues and pull requests
 
-Choose **Issues** (1) to list the repository's open and closed issues, or **Pull requests** (2) to list its pull requests. Choose an issue to read it.
+Choose **Issues** to list the repository's open and closed issues, or **Pull requests** to list its pull requests. Choose an issue to read it.
 
 ![The Issues tab of smithersai/vibelang on smithers.sh: Issues (1) and Pull requests (2), with each issue's author hidden](images/quickstart-issues.webp)
 
 ## 5. Sign in with GitHub
 
-Choose **Sign in**. GitHub asks you to sign in, then to authorize Smithers to read your account and email address and to access your repositories.
+From the home page, choose **Get started for free**. GitHub asks you to sign in, then to authorize Smithers to read your account and email address and to access your repositories.
 
 ![GitHub's sign-in page, opened from Sign in on smithers.sh](images/quickstart-sign-in.webp)
 
