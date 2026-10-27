@@ -47,7 +47,7 @@ jj new
 smthrs generate flow coding
 ```
 
-Open `.smithers/flows/coding/flow.ts` and set both `seat` and `model` to `"openai:gpt-6.1-sol"`. Keep credentials out of the file.
+The generated `.smithers/flows/coding/flow.ts` already sets both `seat` and `model` to `"openai:gpt-6-sol"`. Keep these defaults for Codex. Keep credentials out of the file.
 
 Use your Codex login instead of an API key:
 
