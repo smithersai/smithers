@@ -648,3 +648,27 @@ test("the panel's sheet: fixed at the top-right, its list scrolls, full width on
   expect(smithersUiCss).toContain("@media (max-width: 640px) { .sui-notification-panel { top:0; right:0; left:0;");
   expect(smithersUiCss).toMatch(/button\.sui-toast-open \{[^}]*cursor:pointer;/);
 });
+
+ test("a direct-open row keeps Details separate and failure distinct from dismiss", async () => {
+  let opened = 0;
+  const changes: boolean[] = [];
+  await render(<ul><NotificationEntry entryId="run:direct" tone="failed" expanded={false}
+    onActivate={() => opened++} onOpen={() => opened++} onExpandedChange={value => changes.push(value)} onHide={noop} /></ul>);
+  const row = $("[data-slot=notification-row]")!;
+  await click(row);
+  expect(opened).toBe(1);
+  expect(changes).toEqual([]);
+  expect(row.hasAttribute("aria-expanded")).toBe(false);
+  expect($(".sui-notification-glyph")!.textContent).toBe("!");
+  await click(byText("Details"));
+  await press(row, "e");
+  expect(changes).toEqual([true, true]);
+ });
+
+ test("an entry without a destination exposes details without a dead Open action", async () => {
+  await render(<ul><NotificationEntry entryId="clone:missing" tone="failed" expanded
+    onExpandedChange={noop} onHide={noop} note="Not found" /></ul>);
+  expect(byText("Open")).toBeNull();
+  expect($("[data-slot=notification-row]")!.getAttribute("aria-keyshortcuts")).toBe("E H");
+  await press($("[data-slot=notification-row]")!, "o");
+ });

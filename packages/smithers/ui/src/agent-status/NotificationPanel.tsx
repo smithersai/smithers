@@ -173,7 +173,9 @@ export type NotificationEntryProps = Omit<ComponentProps<"li">, "children" | "on
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
   /** Opens what it is about: the body's Open button, or O. */
-  onOpen: () => void;
+  onOpen?: () => void;
+  /** A row may open its subject directly; Details and E still expand it. */
+  onActivate?: () => void;
   /** The body's open button's label. Default `Open`. */
   openLabel?: string;
   /** A: answers its question. */
@@ -213,6 +215,7 @@ export function NotificationEntry({
   expanded,
   onExpandedChange,
   onOpen,
+  onActivate,
   openLabel = "Open",
   onAnswer,
   onHide,
@@ -246,7 +249,7 @@ export function NotificationEntry({
     run();
   };
   const shortcuts = [
-    NOTICE_KEYS.open,
+    onOpen === undefined ? null : NOTICE_KEYS.open,
     NOTICE_KEYS.expand,
     onAnswer === undefined ? null : NOTICE_KEYS.answer,
     NOTICE_KEYS.hide,
@@ -267,10 +270,10 @@ export function NotificationEntry({
           type="button"
           data-slot="notification-row"
           className="sui-notification-row"
-          aria-expanded={expanded}
-          aria-controls={expanded ? bodyId : undefined}
+          aria-expanded={onActivate === undefined ? expanded : undefined}
+          aria-controls={onActivate === undefined && expanded ? bodyId : undefined}
           aria-keyshortcuts={shortcuts}
-          onClick={() => onExpandedChange(!expanded)}
+          onClick={onActivate ?? (() => onExpandedChange(!expanded))}
           onKeyDown={keys}
         >
           {unread ? (
@@ -279,7 +282,7 @@ export function NotificationEntry({
             </span>
           ) : null}
           <span aria-hidden className="sui-notification-glyph">
-            {NOTICE_GLYPHS[tone]}
+            {tone === "failed" ? "!" : NOTICE_GLYPHS[tone]}
           </span>
           <span className="sui-notification-text">
             <b>{word === undefined ? NOTICE_WORDS[tone] : word}</b>
@@ -287,6 +290,10 @@ export function NotificationEntry({
           </span>
           {time === undefined ? null : <span className="sui-notification-time">{time}</span>}
         </button>
+        {onActivate === undefined ? null : (
+          <Button variant="ghost" size="sm" aria-expanded={expanded} aria-controls={expanded ? bodyId : undefined}
+            onClick={() => onExpandedChange(!expanded)}>Details</Button>
+        )}
         <Button
           variant="ghost"
           size="icon"
@@ -318,9 +325,9 @@ export function NotificationEntry({
           {children}
           <div className="sui-notification-actions">
             {actions}
-            <Button size="sm" aria-keyshortcuts={NOTICE_KEYS.open} onClick={onOpen}>
+            {onOpen === undefined ? null : <Button size="sm" aria-keyshortcuts={NOTICE_KEYS.open} onClick={onOpen}>
               {openLabel}
-            </Button>
+            </Button>}
           </div>
         </div>
       ) : null}

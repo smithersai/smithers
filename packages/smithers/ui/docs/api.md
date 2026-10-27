@@ -1420,3 +1420,5 @@ This isolated entry point exports `copyText`, `CopyResult`, and `CopyFailureCode
 `RunWaterfall` additionally accepts `cursorMs` and `segments` (`stepId`, `startedAtMs`, `endedAtMs`, `state`). Waiting segments are hatched; failed segments use the failure color. Nested rows use the existing `StepRow.depth`. Existing callers retain their behavior.
 
 Repository hero install commands preserve one line and scroll inside their code field. The field accepts keyboard focus; Copy remains beside it at phone widths.
+
+`NotificationEntry.onActivate` makes the row open its subject directly; Details and E expand it. O and the body's Open button require `onOpen`; omit it when there is no destination.

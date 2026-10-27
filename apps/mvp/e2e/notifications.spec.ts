@@ -1,4 +1,4 @@
-import { createHmac, randomBytes } from "node:crypto"
+import { createHmac } from "node:crypto"
 import { expect, type Tab, test } from "./devices"
 import { requires, scriptedAgent } from "./target"
 
@@ -102,16 +102,16 @@ test("live work: Ann's run toasts for Ben on her branch, and her notifications f
   }
 
   // Ann's top bar says a run waits on her. One click on it opens her notifications at that run, expanded with its
-  // question; clicking the entry collapses it and again expands it; A focuses the field, and she answers there.
+  // question; Details collapses it and again expands it; A focuses the field, and she answers there.
   await expect(bell(a1), "Ann: the top bar says she is needed").toContainText("Needs you")
   await inPanel(a1, async () => {
     await expect(notification(a1, subject), "Ann: in her list").toContainText(`Needs you · ${PROMPT}`, { timeout: 2_000 })
     await expect(notification(a1, subject)).toHaveAttribute("data-expanded", "", { timeout: 2_000 })
     await expect(notification(a1, subject).getByRole("button", { name: "docs-v2" })).toBeVisible({ timeout: 2_000 })
   })
-  await notification(a1, subject).locator('[data-slot="notification-row"]').click()
+  await notification(a1, subject).getByRole("button", { name: "Details", exact: true }).click()
   await expect(notification(a1, subject)).not.toHaveAttribute("data-expanded", "")
-  await notification(a1, subject).locator('[data-slot="notification-row"]').click()
+  await notification(a1, subject).getByRole("button", { name: "Details", exact: true }).click()
   await expect(notification(a1, subject).getByRole("button", { name: "docs-v2" })).toBeVisible()
   await notification(a1, subject).locator('[data-slot="notification-row"]').focus()
   await press(a1, "a", "answer")
@@ -163,12 +163,15 @@ test("live work: Ann's run toasts for Ben on her branch, and her notifications f
 const secret = process.env.E2E_GITHUB_WEBHOOK_SECRET
 
 test("repository events: `main` moving and a new release reach both people as entries", async ({ devices }) => {
-  requires("webhookSecret", "devPeople")
+  requires("webhookSecret", "devPeople", "syncedRepository")
   test.setTimeout(180_000)
   const repository = process.env.GITHUB_REPOSITORY ?? "smithersai/smithers"
   const [a] = await devices.open("Ann")
   const [b] = await devices.openTeammate("Ben")
-  const sha = randomBytes(20).toString("hex")
+  const refs = await a.page.request.get(`/api/repos/${repository}/refs`)
+  expect(refs.ok()).toBe(true)
+  const { head: sha } = await refs.json() as { head: string }
+  expect(sha).toMatch(/^[0-9a-f]{40}$/)
   const tag = `v0.0.0-${devices.word}`
   const deliver = async (event: string, payload: unknown) => {
     const body = JSON.stringify(payload)
@@ -208,11 +211,11 @@ test("repository events: `main` moving and a new release reach both people as en
       )
     })
   }
-  // Expanded, main says who pushed; Open takes Ben to the repository.
-  await notification(b, `main:github/${owner}/${name}`).locator('[data-slot="notification-row"]').click()
+  // Expanded, main says who pushed; Open takes Ben to the recorded commit.
+  await notification(b, `main:github/${owner}/${name}`).getByRole("button", { name: "Details", exact: true }).click()
   await expect(notification(b, `main:github/${owner}/${name}`).locator('[data-slot="notification-body"]')).toContainText("dana")
   await notification(b, `main:github/${owner}/${name}`).getByRole("button", { name: "Open" }).click()
-  await expect(b.page).toHaveURL(new RegExp(`/${owner}/${name}$`, "i"))
+  await expect(b.page).toHaveURL(new RegExp(`/${owner}/${name}/tree/${sha}/?$`, "i"))
 })
 
 test("live notification: own-branch toast opens, expands and dismisses across two devices", {
@@ -236,9 +239,9 @@ test("live notification: own-branch toast opens, expands and dismisses across tw
     await inPanel(b, () => expect(notification(b, subject)).toContainText(prompt, { timeout: 2_000 }))
     const item = notification(b, subject)
     // The bell may already expand the waiting question. Collapse, then click to prove expansion.
-    if (await item.getAttribute("data-expanded") !== null) await item.locator('[data-slot="notification-row"]').click()
+    if (await item.getAttribute("data-expanded") !== null) await item.getByRole("button", { name: "Details", exact: true }).click()
     await expect(item).not.toHaveAttribute("data-expanded", "")
-    await item.locator('[data-slot="notification-row"]').click()
+    await item.getByRole("button", { name: "Details", exact: true }).click()
     await expect(item).toHaveAttribute("data-expanded", "")
     await expect(item.getByRole("button", { name: "Blue", exact: true })).toBeVisible()
     await item.getByRole("button", { name: "Blue", exact: true }).click()
@@ -256,7 +259,7 @@ test("live notification: own-branch toast opens, expands and dismisses across tw
     await inPanel(a, async () => {
       const item = notification(a, subject)
       if (await item.count() === 0) return
-      if (await item.getAttribute("data-expanded") === null) await item.locator('[data-slot="notification-row"]').click()
+      if (await item.getAttribute("data-expanded") === null) await item.getByRole("button", { name: "Details", exact: true }).click()
       const choice = item.getByRole("button", { name: "Blue", exact: true })
       if (await choice.isVisible()) await choice.click()
     }).catch(() => undefined)
