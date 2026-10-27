@@ -12,7 +12,7 @@
 // production served about 2 shape requests a second at most: 20 at once, even malformed ones Electric refuses at once,
 // waited up to 26 s, while Electric's container used at most a fifth of its CPU (docs/infrastructure.md#electric).
 import { Logger } from "@smthrs/observability"
-import { Clock, Duration, Effect } from "effect"
+import { Clock, Duration, Effect, Metric } from "effect"
 
 /**
  * How long the container keeps running after the object's last request: Cloudflare's maximum, 6 hours. A longer one
@@ -155,3 +155,13 @@ export const tagOf = (error: unknown): string => {
   }
   return typeof error
 }
+
+export const containerStarts = Metric.counter("electric_container_starts", { incremental: true })
+
+/** Records a successful container start, never an object reconstruction or failed start. No request data. */
+export const recordStart = <A, E, R>(start: Effect.Effect<A, E, R>, instanceId: string): Effect.Effect<A, E, R> =>
+  start.pipe(Effect.tap(() => Effect.gen(function* () {
+    const startedAt = yield* Clock.currentTimeMillis
+    yield* Metric.update(containerStarts, 1)
+    yield* Effect.logInfo("electric.container.start").pipe(Effect.annotateLogs({ instanceId, startedAt }))
+  })), Effect.withSpan("electric.container.start"))

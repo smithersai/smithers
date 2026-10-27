@@ -1,11 +1,11 @@
 # Infrastructure
 
-The app is two Cloudflare Workers beside Postgres and Electric ([decision 0001](decisions/0001-electric-postgres-tanstack-db.md)). In production, `alchemy.run.ts` declares all of it: a Neon Postgres project, the migrations, Hyperdrive, Electric in a Cloudflare Container behind its gateway Worker, and the two Workers (`infra/`). Locally, Postgres and Electric are Docker Compose services.
+The app has site and ChatApi Workers, a private shape gateway and a separate Electric runtime beside Postgres ([decision 0001](decisions/0001-electric-postgres-tanstack-db.md)). In production, `alchemy.run.ts` declares all of it: a Neon Postgres project, the migrations, Hyperdrive, Electric in a Cloudflare Container owned by its runtime Worker, and the site/API Workers (`infra/`). Locally, Postgres and Electric are Docker Compose services.
 
 ```
 browser ── site Worker ── service binding ── ChatApi Worker ── Hyperdrive ──────────────────────────▶ Postgres
                                                  │                                          (logical replication)
-                                                 └─ GET /api/shapes/messages ── Electric gateway ── Electric ─┘
+                                                 └─ GET /api/shapes/messages ── Electric gateway ── ElectricRuntime object/container ─┘
 ```
 
 | Piece | Local (`pnpm db:up`, `pnpm dev`) | Production (`pnpm run deploy`) |
@@ -429,3 +429,65 @@ The size rollout caused many handle resets, so its first row is not steady-state
 At [Cloudflare's published rates](https://developers.cloudflare.com/containers/platform/pricing/), `standard-1` supplies half a vCPU, 4 GiB RAM and 8 GB disk. Thirty days continuously provisioned cost about $27.37 for RAM and disk versus $7.21 for `basic` (roughly $20 more), before allowances. CPU costs $0.000020 per active vCPU-second; continuous full allocation would add $25.92 versus $12.96 per month. These are estimates excluding Workers, Durable Objects and egress. No sizing change is retained.
 
 Each trial restored the then-current main revision through Alchemy under the production lock. The final restoration used `cc6dee07`; afterward, initial reads of `items`, `pulls`, `github-sync` and `comments` each returned HTTP 200. Cache activation and the larger instance remain experimental. Abort and deliberate mid-load restart runs were not executed after the failed load gates. The two-person, twenty-tabs-each isolation run additionally needs a second real production test account: the saved production sessions identify the same person. No isolation, restart, abort or launch-capacity pass is claimed. Decision [0114](decisions/0114-electric-cache-trial.md) records the boundary and the remaining gates.
+
+## Electric deployment isolation
+
+[Decision 0118](decisions/0118-electric-runtime-worker.md): `ElectricRuntime` owns `ElectricObject` and its container;
+`ElectricGateway` binds that namespace across scripts. ChatApi, frontend and gateway cache edits must not update the
+runtime script or its container resource. `ElectricConfig.ts` carries the container's long-poll setting, independent
+of gateway policy. Only the runtime receives `ELECTRIC_DATABASE_URL`. Both Workers have no public URL.
+
+`electric.container.start` records `startedAt` (milliseconds when a successful start returns) and `instanceId` (the
+Durable Object identity that owns the container). A failed start records no success. This record is not the provider's
+placement timestamp; use the provider's placement/start receipt for deployment verification. No URL, environment,
+shape parameter or credential is logged. Existing `electric.object.request` records retain wake timings and status.
+
+### Lander procedure
+
+Run under the existing deployment lock and private hosted Layer. No builder deployment or production load test is
+part of this change. Keep raw plan/state/API outputs private; publish only hashes, counts and safe lifecycle fields.
+
+1. Rebase onto pushed main. Run `pnpm plan` from `apps/mvp`. Inspect the initial plan: new `ElectricRuntime`, same
+   `ElectricObject` class and `electric` instance name, same Electric image/env/instance type. The destination declares
+   `transferredFrom: "ElectricGateway"`; gateway's namespace binding has the destination's script name. Stop if the
+   existing namespace is scheduled for deletion or a second fresh namespace is created instead of transferred.
+2. Run `pnpm run deploy --yes`. Alchemy's `.from(runtime.workerName)` dependency orders the runtime before the
+   gateway. The destination prepares the expecting-transfer export and the source relinquishes it with a transferred
+   export; Alchemy performs this handshake. Do not create the destination class first, delete the old namespace, or
+   remove `transferredFrom`. The class transfer may cause this **one** cold start. Verify the original namespace ID
+   now belongs to the runtime, the container application points at it, and the gateway references that same ID.
+   Deploy again if Alchemy's interrupted transfer needs convergence; never manually recreate either resource.
+3. Warm shapes with the private `prod-health/check.py --minutes 15 --rounds 1 --devices 1`; let migration recovery
+   finish. Save a safe provider container snapshot as `electric-before.json` containing exactly `instanceId` and
+   `startedAt`. Use the private infrastructure tooling's container placement/instance query; these are provider
+   values, not Worker deployment time or the time of the snapshot. Configure a local executable `$ELECTRIC_SNAPSHOT`
+   to print exactly those two fields for the same Electric container. Verify it emits no URLs or secrets.
+4. Make a ChatApi-only observable edit: change `worker/ChatApi.ts` props' `observability.logs.invocationLogs` from
+   `true` to `false`. Run `pnpm plan`: **ElectricRuntime and Electric container must be noop**. Save the private plan
+   and runtime bundle/metadata hashes. Run `pnpm run deploy --yes`. Start the gate immediately:
+
+   ```sh
+   python3 scripts/check-electric-deploy.py --baseline electric-before.json \
+     --health-check "$PROD_HEALTH_CHECK" -- "$ELECTRIC_SNAPSHOT"
+   ```
+
+   `$PROD_HEALTH_CHECK` is the lander's existing private `prod-health/check.py`. Add the new runtime script to that
+   private probe's analytics script selection. The gate probes one device, stops on the first failed probe, and
+   compares provider start/instance before, during and after 15 minutes. Save its exit code and counts; require zero
+   503s and zero other 5xx, signed in and signed out. This is a health check, never a load run against smithers.sh.
+5. Restore `invocationLogs: true`, plan and deploy; again require runtime/container noop and unchanged provider
+   lifecycle receipt. Run the existing gateway/sync/recovery deployment specs. Keep the proof receipts with the
+   deployment record. No live restart-survival or zero-503 claim is made until this lander gate passes.
+
+Migration state check: Electric uses Alchemy's existing default/fleet container, not
+`schedulingPolicy: "durable_object"`. Keep the root `Electric` resource and the transferred namespace ID unchanged.
+No host-keyed `ElectricObject-Containers` resource or state alias is needed. The initial plan must not delete or
+replace the existing Electric application. `electric_container_starts` counts successful starts; instance identity
+stays in logs, not metric labels.
+
+The snapshot adapter uses the provider's
+[`GET /accounts/{account_id}/containers/applications/{application_id}/instances/{instance_id}`](https://developers.cloudflare.com/api/resources/containers/subresources/applications/subresources/instances/methods/get/):
+require `status.state == "running"`, select only `id` as `instanceId` and `started_at` as `startedAt`, and fail if either
+is missing. The instance id is the 64-character Durable Object actor id (`electric.container.start`'s identity).
+Keep account/application selection and credential injection in the private hosted Layer. The gate rejects extra
+snapshot fields so accidentally passing the full provider response cannot leak it into proof output.

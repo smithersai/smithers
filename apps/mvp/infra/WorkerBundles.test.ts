@@ -5,13 +5,14 @@
 // in the tests passed. patches/alchemy@2.0.0-beta.83.patch hands hasChanged the Worker's own build options.
 import { NodeServices } from "@effect/platform-node"
 import { Effect, Exit, Stream } from "effect"
-import { readFileSync, realpathSync } from "node:fs"
+import { readFileSync, realpathSync, writeFileSync } from "node:fs"
 import { spawnSync } from "node:child_process"
 import { join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { describe, expect, test } from "vitest"
 import * as ChatApi from "../worker/ChatApi.ts"
 import * as ElectricGateway from "./ElectricGateway.ts"
+import * as ElectricRuntime from "./ElectricRuntime.ts"
 
 const MVP = fileURLToPath(new URL("..", import.meta.url))
 const ALCHEMY = realpathSync(join(MVP, "node_modules", "alchemy"))
@@ -44,7 +45,7 @@ const bundle = async (id: string, props: WorkerProps, build: unknown) => {
       id,
       main: props.main,
       compatibility: props.compatibility,
-      entry: { kind: "effect", exports: {} },
+      entry: { kind: "effect", exports: id === "ElectricRuntime" ? { ElectricObject: { kind: "durableObject" } } : {} },
       stack: { name: "smithers-mvp", stage: "test" },
       extraOptions: build,
     })
@@ -55,6 +56,7 @@ const bundle = async (id: string, props: WorkerProps, build: unknown) => {
 const WORKERS: ReadonlyArray<readonly [string, WorkerProps]> = [
   ["ChatApi", ChatApi.props],
   ["ElectricGateway", ElectricGateway.props],
+  ["ElectricRuntime", ElectricRuntime.props],
 ]
 
 describe("the Workers alchemy plan bundles", () => {
@@ -115,5 +117,34 @@ describe("the Workers alchemy plan bundles", () => {
 test("the gateway cache is private and versioned, with Electric's measured ten-second hold", () => {
   expect(ElectricGateway.props.workersDev).toEqual({ enabled: false, previewsEnabled: false })
   expect(ElectricGateway.props.cache).toEqual({ enabled: true, crossVersionCache: false })
-  expect(ElectricGateway.containerProps.env.ELECTRIC_LONG_POLL_TIMEOUT).toBe("10000")
+  expect(ElectricRuntime.containerProps.env.ELECTRIC_LONG_POLL_TIMEOUT).toBe("10000")
 })
+
+
+test("ChatApi and gateway edits leave Electric's actual bundle and props byte-identical", async () => {
+  const originalProps = JSON.stringify({ worker: ElectricRuntime.props, container: ElectricRuntime.containerProps })
+  const before = await bundle("ElectricRuntime", ElectricRuntime.props, undefined)
+  expect(Exit.isSuccess(before), String(before)).toBe(true)
+  const paths = [join(MVP, "worker/ChatApi.ts"), join(MVP, "infra/ElectricGateway.ts")]
+  const originals = paths.map((path) => readFileSync(path, "utf8"))
+  try {
+    // A real default Worker's identity changes, rather than a tree-shaken comment or unused export.
+    expect(originals[0]).toContain('"ChatApi"')
+    writeFileSync(paths[0], originals[0].replace('"ChatApi"', '"ChatApiIsolationProbe"'))
+    const chatOnly = await bundle("ElectricRuntime", ElectricRuntime.props, undefined)
+    expect(chatOnly).toEqual(before)
+    writeFileSync(paths[1], originals[1].replace("crossVersionCache: false", "crossVersionCache: true"))
+    const gatewayToo = await bundle("ElectricRuntime", ElectricRuntime.props, undefined)
+    expect(gatewayToo).toEqual(before)
+    expect(JSON.stringify({ worker: ElectricRuntime.props, container: ElectricRuntime.containerProps })).toBe(originalProps)
+    // Positive control: an Electric configuration change must invalidate the owner's content hash.
+    const configPath = join(MVP, "infra/ElectricConfig.ts")
+    const config = readFileSync(configPath, "utf8")
+    try {
+      writeFileSync(configPath, config.replace("10_000", "11_000"))
+      const electricChanged = await bundle("ElectricRuntime", ElectricRuntime.props, undefined)
+      expect(Exit.isSuccess(electricChanged), String(electricChanged)).toBe(true)
+      expect(electricChanged).not.toEqual(before)
+    } finally { writeFileSync(configPath, config) }
+  } finally { paths.forEach((path, i) => writeFileSync(path, originals[i])) }
+}, 120_000)

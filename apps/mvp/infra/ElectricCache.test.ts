@@ -3,7 +3,8 @@
 import { Effect, Logger } from "effect"
 import { HttpEffect, HttpServerResponse } from "effect/http"
 import { describe, expect, test } from "vitest"
-import { cacheControl, cachePolicy, enabledFor, LONG_POLL_TIMEOUT_MS, NO_STORE, serve } from "./ElectricCache.ts"
+import { LONG_POLL_TIMEOUT_MS } from "./ElectricConfig.ts"
+import { cacheControl, cachePolicy, enabledFor, NO_STORE, serve } from "./ElectricCache.ts"
 
 /** Electric 1.8.1's `cache-control` for each kind of answer (lib/electric/shapes/api/response.ex). */
 const INITIAL = "public, max-age=604800, s-maxage=3600, stale-while-revalidate=2629746"

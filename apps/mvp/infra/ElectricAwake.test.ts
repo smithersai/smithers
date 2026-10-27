@@ -1,6 +1,6 @@
 // Electric's container stays running between visits, and each request the gateway's object forwards is recorded
 // (infra/ElectricAwake.ts), over a host that records the object's calls to the container in order.
-import { Deferred, Effect, Fiber, Logger } from "effect"
+import { Deferred, Effect, Fiber, Logger, Metric } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, test } from "vitest"
 import { directOr, forward, type Host, isLive, logged, makeAwake, makeInFlight, type Woken } from "./ElectricAwake.ts"
@@ -250,4 +250,21 @@ describe("logged", () => {
       annotations: { live: false, outcome: "answered", status: 200, awakeMs: expect.any(Number), headersMs: expect.any(Number), started: false, held: true },
     })
   })
+})
+
+test("container starts record time and instance identity only after success", async () => {
+  const { recordStart, containerStarts } = await import("./ElectricAwake.ts")
+  const before = Effect.runSync(Metric.value(containerStarts))
+  const good = runLogged(recordStart(Effect.succeed("started"), "instance-one"))
+  expect(good.exit).toMatchObject({ _tag: "Success", value: "started" })
+  expect(good.log).toHaveLength(1)
+  expect(good.log[0]).toMatchObject({ message: "electric.container.start", level: "INFO" })
+  expect(Object.keys(good.log[0].annotations).sort()).toEqual(["instanceId", "startedAt"])
+  expect(good.log[0].annotations.instanceId).toBe("instance-one")
+  expect(good.log[0].annotations.startedAt).toEqual(expect.any(Number))
+  const bad = runLogged(recordStart(Effect.fail(new Error("injected fault")), "instance-two"))
+  expect(bad.exit._tag).toBe("Failure")
+  expect(bad.log).toEqual([])
+  const after = Effect.runSync(Metric.value(containerStarts))
+  expect(after.count - before.count).toBe(1)
 })

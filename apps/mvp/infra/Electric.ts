@@ -1,5 +1,5 @@
 // What ChatApi needs to reach Electric in production, and nothing else: the container and its gateway Worker live in
-// infra/ElectricGateway.ts, which alchemy.run.ts declares. Under `alchemy dev` ChatApi reaches the compose Electric.
+// infra/ElectricRuntime.ts and infra/ElectricGateway.ts, which alchemy.run.ts declares. Under `alchemy dev` ChatApi reaches the compose Electric.
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as Output from "alchemy/Output"
 import { Context, Effect, Option } from "effect"

@@ -1020,3 +1020,13 @@ while only the private hop retains Electric's public TTL. Workerd checks that
 header boundary; deployed measurements must verify actual edge hits and collapse.
 See [decision 0115](decisions/0115-electric-workers-cache.md) for the measured
 trial, limitations and rollback.
+
+## Electric container lifecycle
+
+`infra/ElectricAwake.ts` records a successful container start as the Info event and span
+`electric.container.start`, with `instanceId` (owning Durable Object actor ID) and `startedAt` (successful-start
+receipt time in milliseconds). `electric_container_starts` increments once after success; failures do not increment
+or emit a successful-start record. No URL, shape, environment or secret is included. Actor IDs never label metrics.
+`infra/ElectricAwake.test.ts` verifies success and injected failure, the exact field set and counter delta.
+The provider's `started_at` is authoritative for the [deployment isolation gate](infrastructure.md#electric-deployment-isolation),
+which compares placement receipts separately from these start-call records.

@@ -11,9 +11,6 @@ import { relay } from "./ElectricRelay.ts"
 /** What the gateway's response says when Workers Cache must not keep it. */
 export const NO_STORE = "no-store"
 
-/** The ten-second empty live hold proven in S5b; this is not a cache TTL. */
-export const LONG_POLL_TIMEOUT_MS = 10_000
-
 /** SSE is unbounded and must never enter the finite-response cache. */
 export const enabledFor = (url: string): boolean => {
   const params = new URL(url, "http://electric").searchParams

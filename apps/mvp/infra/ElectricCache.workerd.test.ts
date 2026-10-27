@@ -32,8 +32,12 @@ beforeAll(async () => {
       ELECTRIC_GATEWAY: { type: "worker", worker: "gateway" },
     } } },
     { config: { ...config, name: "gateway", cache: { enabled: true, crossVersionCache: false }, env: {
-      ROLE: { type: "text", value: "gateway" }, ELECTRIC_URL: { type: "text", value: electric },
+      ROLE: { type: "text", value: "gateway" },
+      ELECTRIC_OBJECT: { type: "durable-object", worker: "electric-runtime", exportName: "ElectricObject" },
     } } },
+    { config: { ...config, name: "electric-runtime", env: {
+      ELECTRIC_URL: { type: "text", value: electric },
+    }, exports: { ElectricObject: { type: "durable-object", storage: "sqlite" } } } },
   ] })
 }, 120_000)
 afterAll(async () => { await worker?.dispose() })
