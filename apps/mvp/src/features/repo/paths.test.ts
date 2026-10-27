@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest"
 import {
   blobKey,
+  canonicalRepoHref,
   copyPayloadOf,
   encodePath,
   editHrefFor,
@@ -260,4 +261,16 @@ describe("Markdown edited in place", () => {
   for (const hash of ["", "overview", "L0", "L1-12", "L1-L0", "L1000000000"]) {
     expect(parseLineHash(hash)).toEqual({ line: null, lineEnd: null })
   }
+})
+
+
+test("canonical repository URLs preserve route, search and fragment with GitHub's casing", () => {
+  const params = { owner: "SmithersAI", repo: "SMITHERS" }
+  const location = { pathname: "/SmithersAI/SMITHERS/issues/12", searchStr: "?a=1", hash: "L3" }
+  expect(canonicalRepoHref(location, params, "smithersai/smithers")).toBe("/smithersai/smithers/issues/12?a=1#L3")
+  expect(canonicalRepoHref(location, params, undefined)).toBeUndefined()
+  expect(canonicalRepoHref(location, params, "invalid")).toBeUndefined()
+  expect(canonicalRepoHref({ ...location, hash: "#L3" }, params, "smithersai/smithers")).toBe("/smithersai/smithers/issues/12?a=1#L3")
+  expect(canonicalRepoHref({ pathname: "/o/r/tree/main/a%20b.ts", searchStr: "", hash: "" }, { owner: "o", repo: "r" }, "o/r", true)).toBe("/o/r/blob/main/a%20b.ts")
+  expect(canonicalRepoHref({ pathname: "/o/r/issues", searchStr: "", hash: "" }, { owner: "o", repo: "r" }, "o/r", true)).toBeUndefined()
 })

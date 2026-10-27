@@ -1,7 +1,7 @@
 import { Context, Data, Effect, Layer, Option } from "effect"
 import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { clone, copy, navigate, open, rawHref, refresh, retryAbout, retryClone, role, warm } from "./actions"
+import { aboutOf, clone, copy, navigate, open, rawHref, refresh, retryAbout, retryClone, role, warm } from "./actions"
 import type { RepoClient } from "./api"
 import type { CopyKind } from "./contract"
 import { type RouteParams, type Target, targetOf } from "./paths"
@@ -48,6 +48,9 @@ export interface RepoLookups {
 
 /** What a person does, as plain functions. Each returns at once, or with a promise of what the flow did. */
 export interface RepoActions {
+  /** GitHub's canonical owner/name after the public metadata read settles. */
+  readonly canonicalName: (owner: string, name: string) => Promise<string | undefined>
+
   /** Clone pressed; `false` when `owner/name` isn't a GitHub repository. */
   readonly clone: (owner: string, name: string) => boolean
   /** Try again on a failed or refused clone. */
@@ -113,6 +116,7 @@ export class Repo extends Context.Service<
           readme: (id, sha, dir) => now(device.readme(id, sha, dir)),
         },
         actions: {
+          canonicalName: (owner, name) => promise(Effect.map(aboutOf(owner, name), (row) => row.about?.name)),
           clone: (owner, name) => run(clone(owner, name)),
           retryClone: (owner, name) => run(retryClone(owner, name)),
           retryAbout: (owner, name) => run(retryAbout(owner, name)),

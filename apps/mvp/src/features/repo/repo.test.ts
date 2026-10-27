@@ -800,3 +800,12 @@ test("leaving during Refresh cannot reopen the old file when its read finishes",
   await waitFor(() => expect(tab.repo.lookups.file("github/octocat/spoon-knife", headSha, "README.md")?.state).toBe("text"))
   expect(tab.view().view).toMatchObject({ kind: "tree", ref: null, path: "" })
 })
+
+
+test("canonical naming comes from GitHub; an absent repository invents no spelling", async () => {
+  const h = await repoHarness(server)
+  h.github.publish("octocat", "Spoon-Knife")
+  const tab = await open(h)
+  expect(await tab.repo.actions.canonicalName("octocat", "Spoon-Knife")).toBe("octocat/Spoon-Knife")
+  expect(await tab.repo.actions.canonicalName("octocat", "Gone")).toBeUndefined()
+})

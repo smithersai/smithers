@@ -42,3 +42,5 @@ click, or app/navigate ─────────▶ route beforeLoad ──▶
 Unknown routes use the router's not-found component: the shared `@smthrs/ui` `NotFound` view, navigation, theme and account controls, and a Back to chat link. Route errors retain the same recovery shell and Retry. No raw error details are shown.
 
 Compatibility paths redirect with replacement: `/settings` to `/app/settings`, repository `/secrets` to `/settings/secrets`, and repository `/actions` to `/runs`. Runs is the canonical repository list; it shows Smithers flow runs.
+
+Repository routes adopt the owner/name spelling GitHub returns, preserving the route suffix, search and fragment. A failed metadata lookup never invents a canonical name.

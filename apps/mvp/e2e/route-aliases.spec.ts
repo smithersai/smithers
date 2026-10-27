@@ -11,3 +11,9 @@ for (const [alias, canonical] of [
     await expect(page.getByText("Not found", { exact: true })).toHaveCount(0)
   })
 }
+
+test("repository casing follows GitHub", async ({ page }) => {
+  await page.goto("/SmithersAI/SMITHERS")
+  await expect(page).toHaveURL(/\/smithersai\/smithers$/)
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("smithersai / smithers")
+})

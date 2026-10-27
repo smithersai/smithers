@@ -12,7 +12,7 @@ import { PULL_TABS, type PullTab } from "./features/pulls/contract"
 import type { PullsLayer } from "./features/pulls/pulls"
 import { type StackFilter, stackFilterOf, todoNumberOf } from "./features/todos/contract"
 import type { TodosView } from "./features/todos/todos"
-import { lineSearch } from "./features/repo/paths"
+import { canonicalRepoHref, lineSearch } from "./features/repo/paths"
 import type { RepoView } from "./features/repo/repo"
 import type { RunsView } from "./features/runs/runs"
 import type { SecretsLayer } from "./features/secrets/secrets"
@@ -105,6 +105,7 @@ export const PRELOAD_DELAY_MS = 50
 /** What a route's `beforeLoad` knows of the load it is part of. */
 interface Load {
   /** A link's hover or focus, not a navigation. */
+  readonly location: { readonly pathname: string; readonly searchStr: string; readonly hash: string }
   readonly preload: boolean
   /** Aborted once a newer navigation takes over. */
   readonly abortController: AbortController
@@ -133,7 +134,12 @@ const enterRepo = (
   warm: () => unknown,
   open: () => unknown,
 ): Promise<void> =>
-  enter(load, warm, () => {
+  enter(load, async () => {
+    await warm()
+    const canonical = await context.repo.actions.canonicalName(params.owner, params.repo)
+    const href = canonicalRepoHref(load.location, params, canonical)
+    if (href !== undefined) throw redirect({ href, replace: true })
+  }, () => {
     context.repo.actions.role(params.owner, params.repo)
     return open()
   })

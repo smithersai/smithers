@@ -220,3 +220,19 @@ export const copyPayloadOf = (view: CopySource, what: CopyKind) => {
     ...(view.kind === "blob" && view.lineEnd !== null ? { lineEnd: view.lineEnd } : {}),
   }
 }
+
+/** Keep the full routed suffix, query and fragment while adopting GitHub's authoritative repository name. */
+export const canonicalRepoHref = (
+  location: { readonly pathname: string; readonly searchStr: string; readonly hash: string },
+  requested: { readonly owner: string; readonly repo: string },
+  canonical: string | undefined,
+  fileAtTree = false,
+): string | undefined => {
+  const prefix = `/${encodeURIComponent(requested.owner)}/${encodeURIComponent(requested.repo)}`
+  const name = canonical?.split("/")
+  const nextPrefix = name?.length === 2 ? `/${encodeURIComponent(name[0]!)}/${encodeURIComponent(name[1]!)}` : prefix
+  const suffix = location.pathname.slice(prefix.length)
+  const nextSuffix = fileAtTree ? suffix.replace(/^\/tree\//, "/blob/") : suffix
+  const pathname = `${nextPrefix}${nextSuffix}`
+  return pathname === location.pathname ? undefined : `${pathname}${location.searchStr}${location.hash === "" ? "" : `#${location.hash.replace(/^#/, "")}`}`
+}
