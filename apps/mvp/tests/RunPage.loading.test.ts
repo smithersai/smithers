@@ -57,6 +57,8 @@ test("a reloaded run shows its frame and persisted header within five seconds wh
   try {
     await Effect.runPromise(api.remote.ready(runId))
     const seedRuns = await seed.runPromise(Effect.service(Runs))
+    // Seed through the same repository authority read as the production route.
+    await (await seed.runPromise(Effect.service(Repo))).actions.role("octo", "hello")
     seedRuns.queries.repoRuns.startSyncImmediate()
     await seedRuns.actions.openRepoRuns("octo", "hello")
     await vi.waitFor(() => expect(host.stored("repo-runs:octo/hello")).toBe(1), { timeout: 30_000 })
