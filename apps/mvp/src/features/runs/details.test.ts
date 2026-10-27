@@ -116,7 +116,7 @@ describe("detailsOf", () => {
       ["todo/Publish", "failed", "GitHubRefused"],
       ["ci/job", "pending", null],
     ])
-    expect(details.jobs[1]!.steps.map((step) => [step.label, step.state])).toEqual([["ci/step", "running"]])
+    expect(details.jobs[1]!.steps.map((step) => [step.label, step.state])).toEqual([["ci/step", "cancelled"]])
     // The sleep is the graph's, never a job's step.
     expect(graphOf(page(), null, 3000).steps.some((step) => step.row.kind === "sleep")).toBe(true)
     expect(details.jobs.flatMap((job) => job.steps).some((step) => step.label.includes("sleep"))).toBe(false)

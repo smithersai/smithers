@@ -6,4 +6,5 @@ import { SESSION_ROUTE } from "../features/auth/contract"
 
 /** The worker's first session read, started as its bundle loads. A failure nothing has read yet is never unhandled. */
 export const started: Promise<Response> = self.fetch(`${self.location.origin}${SESSION_ROUTE}`)
+// expected: observe early rejection only; firstReadFrom returns the original rejected promise to the device owner check.
 started.catch(() => undefined)

@@ -377,9 +377,9 @@ describe("records", () => {
 })
 
 describe("a person's door", () => {
-  test("`/navigate <path>` runs app/navigate with the path, for anyone, its row the description's first sentence", () => {
+  test("`/navigate <path>` runs app/navigate with the path, for anyone, its row the short slash description", () => {
     const command = COMMANDS.find(({ flow }) => flow === "app/navigate")
-    expect(command).toMatchObject({ name: "navigate", minimum: "anyone", description: "Open a page of this app in the person's tab." })
+    expect(command).toMatchObject({ name: "navigate", minimum: "anyone", description: "Go to a page" })
     expect(slashSubmit("/navigate /octocat/Spoon-Knife/blob/main/README.md?L=12", COMMANDS)).toEqual({
       kind: "run",
       command,

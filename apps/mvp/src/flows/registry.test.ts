@@ -88,6 +88,7 @@ describe("the parity law", () => {
     expect(agentFlows).toEqual(names.filter(modelInvocable))
     expect(agentFlows).toEqual([
       "app/theme/set",
+      "conversation/new",
       "app/navigate",
       "file/open",
       "file/close",
@@ -131,7 +132,6 @@ describe("the parity law", () => {
       "branch/publish",
       "branch/update",
       "branch/resync",
-      "conversation/new",
       "conversation/archive",
       "issue/create",
       "issue/comment",
@@ -190,6 +190,7 @@ describe("names and placement", () => {
       "timeline/summarize",
       "auth/refresh",
       "app/theme/set",
+      "conversation/new",
       "app/navigate",
       "file/open",
       "file/close",
@@ -241,7 +242,6 @@ describe("names and placement", () => {
       "branch/publish",
       "branch/update",
       "branch/resync",
-      "conversation/new",
       "conversation/archive",
       "branch/share",
       "terminal/open",

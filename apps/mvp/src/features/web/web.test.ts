@@ -561,7 +561,7 @@ describe("a person's door", () => {
     expect(command).toMatchObject({
       name: "web",
       minimum: "member",
-      description: "Open an outside web page (an https URL) for the person.",
+      description: "Open a web page",
     })
     expect(command!.fields.map(({ name, required }) => [name, required])).toEqual([["url", true], ["mode", false]])
   })

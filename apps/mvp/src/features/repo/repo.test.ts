@@ -699,7 +699,7 @@ describe("what GitHub says, cloned or not", () => {
     const tab = await open(h)
     tab.repo.actions.openRoute("tree", { owner: "octocat", repo: "Gone" }, {})
     await waitFor(() => expect(tab.about().about).toMatchObject({ state: "missing", message: NOT_FOUND }))
-    await waitFor(() => expect(header(tab)).toEqual({ kind: "clone", status: NOT_FOUND }))
+    await waitFor(() => expect(header(tab)).toEqual({ kind: "missing" }))
     expect(tab.view().about).toMatchObject({ state: "missing", message: NOT_FOUND })
     expect(tab.view().repository).toBeUndefined()
     expect(tab.view().clone).toBeUndefined()
