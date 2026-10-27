@@ -191,6 +191,11 @@ const viewRoute = createRoute({
 
 /** `/app/flows`: your own flows and drafts (decision 0014 §5). `app` is a reserved owner, so no repository matches. */
 const flowsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/app/flows", component: FlowsScreen })
+const flowsAliasRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/flows",
+  beforeLoad: () => { throw redirect({ to: "/app/flows" }) },
+})
 
 /** `/app/flows/new`: a new flow of your own; `?name=` drafts the next revision of the flow by that name. */
 const newFlowRoute = createRoute({
@@ -632,6 +637,7 @@ export const router = createRouter({
     appRoute,
     viewRoute,
     flowsRoute,
+    flowsAliasRoute,
     newFlowRoute,
     draftRoute,
     codeRoute,
