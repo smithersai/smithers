@@ -52,6 +52,7 @@ import * as Fiber from "effect/Fiber"
 import * as Metric from "effect/Metric"
 import * as Queue from "effect/Queue"
 import type * as Scope from "effect/Scope"
+import * as BrowserScheduler from "./BrowserScheduler.ts"
 import type * as Protocol from "./internal/LanguageProtocol.ts"
 import * as TypeScriptWorkspace from "./internal/TypeScriptWorkspace.ts"
 
@@ -470,10 +471,12 @@ export const program = (
 /**
  * The worker entry: call it once at the top of the module {@link make}'s
  * `worker` starts. It runs {@link program} on the worker's own messages
- * until the worker ends.
+ * until the worker ends, on `BrowserScheduler.make()`.
  *
  * @category running
  * @since 1.0.0
  */
 export const serve = (options: ServeOptions): Fiber.Fiber<never> =>
-  Effect.runFork(Effect.scoped(program({ ...options, port: options.port ?? (globalThis as unknown as Protocol.Port) })))
+  Effect.runFork(Effect.scoped(program({ ...options, port: options.port ?? (globalThis as unknown as Protocol.Port) })), {
+    scheduler: BrowserScheduler.make()
+  })

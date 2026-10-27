@@ -79,6 +79,14 @@ export * as BrowserEngine from "./BrowserEngine.ts"
 export * as BrowserRuntime from "./BrowserRuntime.ts"
 
 /**
+ * Effect's fiber scheduler for a browser tab or worker, without the browser's
+ * 4 ms hold on nested timers.
+ *
+ * @since 1.0.0
+ */
+export * as BrowserScheduler from "./BrowserScheduler.ts"
+
+/**
  * SQLite on the origin private file system, through Effect SQL.
  *
  * @since 1.0.0

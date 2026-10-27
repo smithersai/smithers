@@ -25,6 +25,7 @@ import type * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import type { SqlClient } from "effect/sql/SqlClient"
+import * as BrowserScheduler from "./BrowserScheduler.ts"
 import type * as BrowserSqlite from "./BrowserSqlite.ts"
 import type * as Engine from "./internal/Engine.ts"
 import type * as Leader from "./internal/Leader.ts"
@@ -275,7 +276,9 @@ export interface RunOptions<Registered, RegistrationError, RegistrationRequireme
  * The worker entry: call it once at the top of the module a tab starts as
  * its engine worker. It runs {@link serve} over {@link layerHost} with the
  * browser's own Web Locks and `BroadcastChannel`, until the worker ends, with
- * `telemetry`, when given, as where its records go.
+ * `telemetry`, when given, as where its records go. The program runs on
+ * `BrowserScheduler.make()`, so the engine's fibers never wait out the
+ * browser's 4 ms hold on nested timers.
  *
  * ```ts
  * import wasmUrl from "@journeyapps/wa-sqlite/dist/wa-sqlite.wasm?url"
@@ -323,7 +326,8 @@ export const run = <
           )
         })
       )
-    )
+    ),
+    { scheduler: BrowserScheduler.make() }
   )
 
 /** The worker scope's listeners for what nothing caught: `addEventListener` on the global, when it has one. */
@@ -350,13 +354,19 @@ const uncaught = Effect.gen(function*() {
   if (typeof target.addEventListener !== "function") return
   const log = Effect.runSyncWith(yield* Effect.context<never>())
   const listener = (event: unknown) => {
-    const { type, error, reason } = event as { readonly type: string; readonly error?: unknown; readonly reason?: unknown }
-    log(Effect.logError("browser.runtime.uncaught").pipe(
-      Effect.annotateLogs({
-        kind: type === "error" ? "error" : "rejection",
-        "error.type": nameOf(type === "error" ? error : reason)
-      })
-    ))
+    const { type, error, reason } = event as {
+      readonly type: string
+      readonly error?: unknown
+      readonly reason?: unknown
+    }
+    log(
+      Effect.logError("browser.runtime.uncaught").pipe(
+        Effect.annotateLogs({
+          kind: type === "error" ? "error" : "rejection",
+          "error.type": nameOf(type === "error" ? error : reason)
+        })
+      )
+    )
   }
   yield* Effect.acquireRelease(
     Effect.sync(() => {

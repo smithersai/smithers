@@ -30,6 +30,7 @@ describe("@smthrs/platform-browser barrel", () => {
         "BrowserHost",
         "BrowserLanguageServer",
         "BrowserRuntime",
+        "BrowserScheduler",
         "BrowserServices",
         "BrowserSqlite",
         "SharedSqlite",
