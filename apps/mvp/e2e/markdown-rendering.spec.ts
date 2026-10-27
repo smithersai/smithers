@@ -38,3 +38,8 @@ test("phone tables scroll inside the document without splitting words", async ({
   }))).toEqual({ scrolls: true, overflow: "auto", layout: "auto", words: "normal" })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
+
+test("issue code fences have language colors", async ({ page }) => {
+  await page.goto("/smithersai/smithers/issues/4255")
+  await expect(page.locator('[data-slot="markdown"] .sui-rh-tok-keyword').first()).toBeVisible({ timeout: 30_000 })
+})

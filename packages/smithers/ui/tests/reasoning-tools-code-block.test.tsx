@@ -122,9 +122,10 @@ describe("CodeBlockGroup", () => {
     expect(html).toContain('data-slot="code-block-group"');
     expect(html).toContain('role="tablist"');
     expect(html).toContain("sui-codeblock-filename");
-    expect(html).toContain("const a = 1;");
+    const dom = document.createElement("div");
+    dom.innerHTML = html;
+    expect([...dom.querySelectorAll("pre code")].map(code => code.textContent)).toEqual(["const a = 1;", "const b = 2;"]);
     // Inactive items render as hidden tabpanels so tab aria-controls resolve.
-    expect(html).toContain("const b = 2;");
     expect(html.match(/role="tabpanel"/g)!.length).toBe(2);
     expect(html).toContain("hidden");
   });

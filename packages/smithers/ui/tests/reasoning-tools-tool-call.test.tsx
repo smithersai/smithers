@@ -216,7 +216,9 @@ describe("ToolCallOutput parts", () => {
     expect(html).toContain("<img");
     expect(html).toContain('alt="chart of hits"');
     expect(html).toContain('data-slot="code-block"');
-    expect(html).toContain("return 1;");
+    const dom = document.createElement("div");
+    dom.innerHTML = html;
+    expect(dom.querySelector("pre code")?.textContent).toBe("return 1;");
     expect(html).toContain("partial failure");
     expect(html).toContain('role="alert"');
   });

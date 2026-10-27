@@ -973,3 +973,5 @@ export { NotFound, type NotFoundProps } from "./not-found";
 export { PageFocus } from "./page-focus";
 
 export { markdownDocumentBody } from "./primitives/markdownDocumentBody";
+
+export { highlight as highlightCode, type Token as CodeToken, type TokenKind as CodeTokenKind } from "./repository-home/highlight";

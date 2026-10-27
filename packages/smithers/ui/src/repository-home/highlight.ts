@@ -12,7 +12,7 @@ export type TokenKind = "comment" | "string" | "number" | "keyword" | "type" | "
 export type Token = { readonly text: string; readonly kind?: TokenKind };
 
 /** The languages this colors. */
-export const colored: ReadonlySet<string> = new Set(["ts", "tsx", "typescript", "js", "jsx", "javascript", "mjs", "cjs", "vibe"]);
+export const colored: ReadonlySet<string> = new Set(["ts", "tsx", "typescript", "js", "jsx", "javascript", "mjs", "cjs", "vibe", "sh", "bash", "shell", "zsh"]);
 
 /** VibeLang's own keywords, beside TypeScript's. */
 const VIBE_KEYWORDS = new Set(["catch", "control", "do", "error", "fork", "handle", "join", "match", "provide", "resume", "schema", "service", "throw", "when"]);
@@ -41,7 +41,10 @@ const wordKind = (word: string, code: string, end: number, vibe: boolean): Token
 };
 
 /** `code`'s tokens, in order. */
-const tokensOf = (code: string, vibe: boolean): ReadonlyArray<Token> => {
+const SHELL_PATTERN = /(#[^\n]*)|("(?:[^"\\\n]|\\.)*"?|'(?:[^'\\\n]|\\.)*'?)|(\b\d[\d_]*(?:\.\d+)?\b)|([A-Za-z_$][\w$]*)/y;
+const SHELL_KEYWORDS = new Set("if then else elif fi for in do done case esac while until function export source return exit echo cd npm pnpm npx bun node cargo curl git jj".split(" "));
+
+const tokensOf = (code: string, vibe: boolean, shell: boolean): ReadonlyArray<Token> => {
   const tokens: Array<Token> = [];
   let plain = "";
   const flush = () => {
@@ -49,8 +52,9 @@ const tokensOf = (code: string, vibe: boolean): ReadonlyArray<Token> => {
     plain = "";
   };
   for (let index = 0; index < code.length;) {
-    PATTERN.lastIndex = index;
-    const match = PATTERN.exec(code);
+    const pattern = shell ? SHELL_PATTERN : PATTERN;
+    pattern.lastIndex = index;
+    const match = pattern.exec(code);
     if (match === null) {
       plain += code[index];
       index += 1;
@@ -64,7 +68,7 @@ const tokensOf = (code: string, vibe: boolean): ReadonlyArray<Token> => {
       ? "string"
       : number !== undefined
       ? "number"
-      : wordKind(word!, code, end, vibe);
+      : shell ? (SHELL_KEYWORDS.has(word!) ? "keyword" : undefined) : wordKind(word!, code, end, vibe);
     if (kind === undefined) plain += text;
     else {
       flush();
@@ -84,7 +88,7 @@ const tokensOf = (code: string, vibe: boolean): ReadonlyArray<Token> => {
 export const highlight = (code: string, language: string | undefined): ReadonlyArray<ReadonlyArray<Token>> => {
   if (language === undefined || !colored.has(language)) return code.split("\n").map((line) => [{ text: line }]);
   const lines: Array<Array<Token>> = [[]];
-  for (const token of tokensOf(code, language === "vibe")) {
+  for (const token of tokensOf(code, language === "vibe", ["sh", "bash", "shell", "zsh"].includes(language))) {
     token.text.split("\n").forEach((part, index) => {
       if (index > 0) lines.push([]);
       if (part !== "") lines[lines.length - 1]!.push(token.kind === undefined ? { text: part } : { text: part, kind: token.kind });

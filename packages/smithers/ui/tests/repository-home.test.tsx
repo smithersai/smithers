@@ -497,7 +497,7 @@ describe("RepositoryHome: highlight", () => {
   });
 
   test("another language, or none, is plain", () => {
-    expect(kinds("const a = 1", "sh")).toEqual([[["const a = 1", "plain"]]]);
+    expect(kinds("const a = 1", "python")).toEqual([[["const a = 1", "plain"]]]);
     expect(highlight("a\nb", undefined)).toEqual([[{ text: "a" }], [{ text: "b" }]]);
   });
 });
@@ -987,4 +987,16 @@ describe("LinkTabs", () => {
     expect(texts($$("nav > a"))).toEqual(["Home", "Code"]);
     expect(smithersUiCss).toMatch(/\.sui-link-tabs > a\[aria-current="page"\] \{[^}]*border-bottom-color/);
   });
+});
+
+
+test("shell highlighting keeps comments, commands, strings, numbers and unknown words distinct", () => {
+  const code = "# install\npnpm add 'vibelang' --save\necho 12\nunknown";
+  const tokens = highlight(code, "bash");
+  expect(tokens.map(line => line.map(token => token.text).join("")).join("\n")).toBe(code);
+  expect(tokens[0]).toEqual([{ text: "# install", kind: "comment" }]);
+  expect(tokens[1]?.find(token => token.text === "pnpm")?.kind).toBe("keyword");
+  expect(tokens[1]?.find(token => token.text === "'vibelang'")?.kind).toBe("string");
+  expect(tokens[2]?.find(token => token.text === "12")?.kind).toBe("number");
+  expect(tokens[3]).toEqual([{ text: "unknown" }]);
 });

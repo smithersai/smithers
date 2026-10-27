@@ -12,7 +12,9 @@ describe("Markdown fenced CodeBlock routing", () => {
     expect(html).toContain("sui-codeblock-lang");
     expect(html).toContain("typescript");
     expect(html).not.toContain("title=example");
-    expect(html).toContain("const x = 1;");
+    const dom = document.createElement("div");
+    dom.innerHTML = html;
+    expect(dom.querySelector("pre code")?.textContent).toBe("const x = 1;");
   });
 
   test("an unterminated fence has exactly the terminated block structure", () => {
@@ -33,4 +35,16 @@ describe("Markdown fenced CodeBlock routing", () => {
     });
   }
 
+});
+
+test("Markdown fences use repository-home highlighting for TypeScript, Bash and VibeLang", () => {
+  for (const [language, source] of [
+    ["ts", 'const value = "safe"'],
+    ["bash", '# install\npnpm add "vibelang"\necho 12'],
+    ["vibe", "service Store {}"],
+  ]) {
+    const html = renderToStaticMarkup(<Markdown content={`\`\`\`${language}\n${source}\n\`\`\``} variant="document" />);
+    expect(html).toContain("sui-rh-tok-keyword");
+    expect(html).not.toContain("<script>");
+  }
 });

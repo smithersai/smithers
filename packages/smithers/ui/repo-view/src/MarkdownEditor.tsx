@@ -10,6 +10,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { markdownCode } from "./markdownCode";
 import { markdownDocumentBody } from "@smthrs/ui";
 import { markdownHtml, joinMarkdownHtml } from "./markdownHtml";
 import { crepeThemeCss } from "./crepeTheme.generated";
@@ -177,7 +178,8 @@ const hostCss = `
 .sui-markdown-editor[data-readonly] .cm-editor, .sui-markdown-editor[data-readonly] .cm-gutters, .sui-markdown-editor[data-readonly] .cm-activeLine { background:transparent; color:inherit; }
 .sui-markdown-editor[data-readonly] .cm-gutter, .sui-markdown-editor[data-readonly] .cm-gutterElement { background:transparent; color:var(--text-muted, inherit); }
 .sui-markdown-editor[data-readonly] .milkdown-code-block .tools { display:none; }
-.sui-markdown-editor[data-readonly] .cm-content, .sui-markdown-editor[data-readonly] .cm-content * { color:inherit; }
+.sui-markdown-editor[data-readonly] .sui-markdown-code { font-family:var(--crepe-font-code, ui-monospace,monospace); overflow-x:auto; white-space:pre; max-width:100%; }
+.sui-markdown-editor[data-readonly] .sui-markdown-code code { display:block; width:max-content; font:inherit; white-space:pre; }
 `.trim();
 
 /**
@@ -336,7 +338,11 @@ const loadMilkdown = async (): Promise<MarkdownEditorModule> => {
         // Crepe's ImageBlock writes the block's display ratio into the alt
         // field, so every image would save as `![1.00](src)` (#3903). Images
         // stay commonmark inline nodes, which keep their alt text and title.
-        super({ ...options, features: { [Crepe.Feature.ImageBlock]: false } });
+        super({ ...options, features: { [Crepe.Feature.ImageBlock]: false },
+          featureConfigs: readOnly ? { [Crepe.Feature.CodeMirror]: {
+            renderPreview: markdownCode, previewOnlyByDefault: true,
+          } } : undefined,
+        });
         if (readOnly) this.editor.config(ctx => {
           ctx.update(remarkPluginsCtx, plugins => [...plugins, { plugin: () => (tree, file) => {
             const source = String(file.value);

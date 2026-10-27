@@ -9,12 +9,13 @@ import {
   useRef,
   useState,
 } from "react";
+import { highlight as highlightCode, type TokenKind } from "../repository-home/highlight";
 import { cn } from "../cn";
 import { canCopyText, type CopyFailureCode } from "../internal/copyToClipboard";
 import { useCopyFeedback } from "../internal/useCopyFeedback";
 import { useInjectUiCss } from "../styles";
 
-export type HighlightedToken = { text: string; color?: string; };
+export type HighlightedToken = { text: string; color?: string; kind?: TokenKind; };
 export type HighlightLine = readonly HighlightedToken[];
 export type CodeBlockHighlighter = (code: string, language: string | undefined) => readonly HighlightLine[] | null;
 
@@ -64,7 +65,7 @@ export function CodeBlock({
       highlighted = null;
     }
   }
-  const lines: readonly HighlightLine[] = highlighted ?? code.split("\n").map((line) => [{ text: line }]);
+  const lines: readonly HighlightLine[] = highlighted ?? highlightCode(code, language);
 
   function toggleWrap() {
     const next = !wrap;
@@ -128,7 +129,7 @@ export function CodeBlock({
                 </span>
               ) : null}
               {line.map((token, tokenIndex) => (
-                <span key={tokenIndex} style={token.color ? { color: token.color } : undefined}>
+                <span key={tokenIndex} className={token.kind ? `sui-rh-tok-${token.kind}` : undefined} style={token.color ? { color: token.color } : undefined}>
                   {token.text}
                 </span>
               ))}
