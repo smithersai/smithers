@@ -1,7 +1,7 @@
 import { admissionRecords } from "./admissionRecords"
 import { reloadAfter } from "../src/test/reloadTiming"
 import { expect, test as base } from "./devices"
-import { requires, stackRepository } from "./target"
+import { appHome, requires, stackRepository } from "./target"
 
 const test = base.extend<{ records: (page: import("@playwright/test").Page) => Promise<void> }>({
   records: async ({}, use, info) => {
@@ -16,8 +16,8 @@ for (const delay of [0, 100, 300] as const) {
     requires("writableStack", "member")
     test.setTimeout(180_000)
     const repo = stackRepository()
-    const [person] = await devices.open("Maya")
-    const page = person!.page
+    const person = await devices.openNew("Maya", appHome())
+    const page = person.page
     await records(page)
     const title = `bugbash4-w14w-todo-${delay}-${devices.word}`
     await page.goto(`/${repo}/stack`)

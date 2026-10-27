@@ -615,11 +615,12 @@ export const test = base.extend<{ devices: Devices; spendGuard: void; problems: 
   problems: [...problems],
   // A deployment run stops asking once its answers spent the run's token budget (e2e/spend.ts).
   spendGuard: [async ({ playwright }, use) => use(await guardSpend(() => playwright.request.newContext())), { auto: true }],
-  devices: async ({ browser, browserName, playwright, problems }, use, testInfo) => {
+  devices: async ({ browser, browserName, playwright, context, contextOptions, baseURL, ignoreHTTPSErrors, problems }, use, testInfo) => {
     const profiles: Array<Awaited<ReturnType<typeof persistent>>> = []
     const openContext = async (options: BrowserContextOptions) => {
       if (browserName !== "webkit") return browser.newContext(options)
-      const profile = await persistent(playwright.webkit, options)
+      const profile = await persistent(playwright.webkit, { ...contextOptions, baseURL, ignoreHTTPSErrors, ...options })
+      await profile.context.addCookies((await context.storageState()).cookies)
       profiles.push(profile)
       return profile.context
     }
