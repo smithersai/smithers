@@ -336,6 +336,6 @@ describe("branch/publish, branch/update and branch/resync on the engine", { time
     const registration = registrationAt(server.origin).pipe(Layer.provide(FetchHttpClient.layer), Layer.provideMerge(Action.layerImplementations))
     const ran = await runFlow(BranchUpdate, { repo: "octo/hello", branch: "try-1" }, registration, { maxConnections: 2 })
     expect(Exit.isFailure(ran.exit) && Cause.squash(ran.exit.cause)).toEqual(new BranchTrackRefused({ reason: "forbidden" }))
-    expect(server.seen.map((seen) => seen.url)).toEqual(["/api/branches"])
+    expect(server.seen.map((seen) => seen.url)).toEqual(["/api/branches?optional=true"])
   })
 })

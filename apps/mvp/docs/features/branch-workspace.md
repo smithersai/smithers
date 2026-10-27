@@ -248,3 +248,5 @@ refusal removes the saved route; sign-out wipes it with the device.
 Regression: `src/features/branch/offlineConversation.test.ts`; browser proof:
 `e2e/local-first.spec.ts` “offline branch”. Both exercise the real device store
 and outbox. No model call is needed to prove restoring queued questions.
+
+Automatic branch reads use `POST /api/branches?optional=true`. An inaccessible workspace answers `204` with `x-branch-state: forbidden`; the device retains its access refusal while the repository remains readable. Explicit creation and ordinary API calls still answer `403`. No branch or conversation is recorded for a denied reader.

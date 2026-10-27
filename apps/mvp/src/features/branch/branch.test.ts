@@ -348,6 +348,13 @@ const trackedBody = {
 }
 
 describe("the branch client", () => {
+  test("an unavailable optional workspace keeps the access refusal", async () => {
+    expect(await client(async () => new Response(null, {
+      status: 204, headers: { "x-branch-state": "forbidden" },
+    }))).toEqual(new TrackRefused({ status: 403, code: "forbidden" }))
+    expect(await client(async () => new Response(null, { status: 204 }))).toEqual(new TrackRefused({ status: 204 }))
+  })
+
   test("posts the branch; 200 or 201 with the branch is tracked, and anything else is a TrackRefused", async () => {
     const posted: Array<{ readonly url: string; readonly body: unknown }> = []
     const recording: typeof globalThis.fetch = async (input, init) => {
@@ -356,7 +363,7 @@ describe("the branch client", () => {
       return Response.json(trackedBody, { status: 201 })
     }
     expect(await client(recording)).toEqual(trackedBody)
-    expect(posted).toEqual([{ url: "http://chat.test/api/branches", body: { owner: "octo", name: "hello", ref: "feature/one" } }])
+    expect(posted).toEqual([{ url: "http://chat.test/api/branches?optional=true", body: { owner: "octo", name: "hello", ref: "feature/one" } }])
     expect(await client(async () => Response.json(trackedBody))).toEqual(trackedBody)
 
     expect(await client(() => Promise.reject(new TypeError("offline")))).toEqual(new TrackRefused({}))

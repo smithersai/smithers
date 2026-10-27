@@ -282,6 +282,24 @@ describe("POST /api/branches", () => {
     expect(h.github.seen).toEqual([])
   })
 
+  test("a reader browsing a branch gets an explicit unavailable workspace without a failed request", async () => {
+    const h = await open({ actor: { ...member, role: "guest" } })
+    const body = { owner: "octocat", name: "Spoon-Knife", ref: "feature" }
+    const answer = await h.fetch("/api/branches?optional=true", { method: "POST", body: JSON.stringify(body) })
+    expect(answer.status).toBe(204)
+    expect(answer.headers.get("x-branch-state")).toBe("forbidden")
+    expect(answer.headers.get("cache-control")).toBe("no-store")
+    expect(await answer.text()).toBe("")
+    expect(h.only("branch.track").annotations).toMatchObject({ outcome: "forbidden", status: 204 })
+    expect(h.github.seen).toEqual([])
+    expect(await rows()).toEqual([])
+    // Optional browsing never softens an explicit create or the ordinary API contract.
+    expect((await h.fetch("/api/branches?optional=true", {
+      method: "POST", body: JSON.stringify({ ...body, create: true }),
+    })).status).toBe(403)
+    expect((await track(h, body)).status).toBe(403)
+  })
+
   test("only a Member or above tracks: 401 signed out, 403 for a Guest or a person with no role", async () => {
     const body = { owner: "octocat", name: "Spoon-Knife", ref: "feature" }
     const signedOut = await branchHarness(runtime, { github: github() })

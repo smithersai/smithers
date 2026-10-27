@@ -80,19 +80,28 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, app
     const request = yield* HttpServerRequest.HttpServerRequest
     const startedAt = yield* Clock.currentTimeMillis
     const fields: Fields = {}
+    let browsing = false
+    const answerRefusal = (status: number, code: string) => {
+      if (browsing && status === 403) {
+        fields.outcome = code
+        return HttpServerResponse.empty({ status: 204, headers: { ...noStore, "x-branch-state": code } })
+      }
+      return refusal(status, code)
+    }
     const madeBy = (branchId: string) => Conversations.createRequestOf(branchId).pipe(Effect.provide(database))
     const response = yield* Effect.gen(function* () {
       if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
       const actor = yield* (yield* Sessions).resolve
-      if (Option.isNone(actor)) return refusal(401, "authentication")
+      if (Option.isNone(actor)) return answerRefusal(401, "authentication")
       const body = yield* readBounded(request, MAX_TRACK_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
         Effect.result,
       )
-      if (body._tag === "Failure") return refusal(body.failure.reason === "too_large" ? 413 : 400, "invalid")
+      if (body._tag === "Failure") return answerRefusal(body.failure.reason === "too_large" ? 413 : 400, "invalid")
       const decoded = yield* decodeTrack(body.success).pipe(Effect.option)
       if (Option.isNone(decoded) || (decoded.value.openedAt ?? 0) > startedAt + 24 * 60 * 60 * 1000) {
-        return refusal(400, "invalid")
+        return answerRefusal(400, "invalid")
       }
+      browsing = decoded.value.create !== true && new URL(request.url, "http://localhost").searchParams.get("optional") === "true"
       const { ref, request: createRequest, openedAt } = decoded.value
       const home = yield* Conversations.homeRepositoryNames
       const owner = decoded.value.owner ?? home.owner
@@ -103,7 +112,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, app
         fields.forge = "github"
         const reject = (status: number, code: string) => {
           fields.outcome = code
-          return refusal(status, code)
+          return answerRefusal(status, code)
         }
         // A Member or above on the repository itself (decision 0079); GitHub creation checks it again on GitHub.
         if (!(yield* isMemberOn(actor, repo).pipe(Effect.provide(database)))) return reject(403, "forbidden")
@@ -142,11 +151,11 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, app
       const known = yield* Conversations.find(repo, ref).pipe(Effect.provide(database))
       if (known !== undefined) {
         const found = yield* branchAccess(actor, known.branchId).pipe(Effect.provide(database))
-        if (found === undefined) return refusal(404, "not_found")
-        if (!canView(found.access)) return refusal(403, "forbidden")
+        if (found === undefined) return answerRefusal(404, "not_found")
+        if (!canView(found.access)) return answerRefusal(403, "forbidden")
         if (createRequest !== undefined && (yield* madeBy(known.branchId)) !== createRequest) {
           fields.outcome = "exists"
-          return refusal(409, "exists")
+          return answerRefusal(409, "exists")
         }
         yield* ConversationPeople.opened(known.conversationId, actor.value.subject.id, owner, name, ref, openedAt).pipe(
           Effect.provide(database),
@@ -157,7 +166,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, app
       }
       // Tracking a branch makes it the tracker's: only a Member or above may (`repo:branch-create`, decision 0007), by
       // their role on the repository itself (decision 0079).
-      if (!(yield* isMemberOn(actor, repo).pipe(Effect.provide(database)))) return refusal(403, "forbidden")
+      if (!(yield* isMemberOn(actor, repo).pipe(Effect.provide(database)))) return answerRefusal(403, "forbidden")
       let resolvedDefault: string | undefined
       if (decoded.value.create === true) {
         // A new branch: made on the forge at the default branch's head, then tracked as any other. A name the forge
@@ -169,26 +178,26 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, app
           if (from._tag === "Failure") Object.assign(fields, failureFields("default_branch", from.failure))
           fields.forge = from._tag === "Failure" ? from.failure.code : "no_default_branch"
           return from._tag === "Failure" && from.failure.code !== "not_found" && from.failure.code !== "empty"
-            ? refusal(503, "unavailable")
-            : refusal(404, "not_found")
+            ? answerRefusal(503, "unavailable")
+            : answerRefusal(404, "not_found")
         }
         resolvedDefault = from.success.branch
         if (ref === resolvedDefault) {
           fields.created = "exists"
           fields.outcome = "exists"
-          return refusal(409, "exists")
+          return answerRefusal(409, "exists")
         }
         // App identity is repository + name, so a private ephemeral ref cannot claim an ordinary ref's URL.
         const ordinary = yield* branchHead({ owner, name }, ref).pipe(Effect.result)
         if (ordinary._tag === "Success") {
           fields.created = "exists"
           fields.outcome = "exists"
-          return refusal(409, "exists")
+          return answerRefusal(409, "exists")
         }
         if (ordinary.failure.code !== "ref_not_found") {
           Object.assign(fields, failureFields("refs_read", ordinary.failure))
           fields.outcome = "unavailable"
-          return refusal(503, "unavailable")
+          return answerRefusal(503, "unavailable")
         }
         const made = yield* createBranch({ owner, name }, ref, from.success.branch).pipe(Effect.result)
         fields.created = made._tag === "Success" ? "created" : made.failure.code
@@ -196,15 +205,15 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, app
           Object.assign(fields, failureFields("create_ref", made.failure))
           if (made.failure.code === "exists") {
             fields.outcome = "exists"
-            return refusal(409, "exists")
+            return answerRefusal(409, "exists")
           }
           return made.failure.code === "forbidden"
-            ? refusal(403, "forbidden")
+            ? answerRefusal(403, "forbidden")
             : made.failure.code === "not_found"
-            ? refusal(404, "not_found")
+            ? answerRefusal(404, "not_found")
             : made.failure.code === "not_configured"
-            ? refusal(503, "not_configured")
-            : refusal(503, "unavailable")
+            ? answerRefusal(503, "not_configured")
+            : answerRefusal(503, "unavailable")
         }
       }
       const namespace = decoded.value.create === true ? "ephemeral" : "default"
@@ -215,15 +224,15 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, app
         const code = head.failure.code
         fields.forge = code
         return code === "not_found" || code === "ref_not_found" || code === "empty"
-          ? refusal(404, "not_found")
-          : refusal(503, "unavailable")
+          ? answerRefusal(404, "not_found")
+          : answerRefusal(503, "unavailable")
       }
       if (resolvedDefault === undefined) {
         const remoteDefault = yield* defaultBranch({ owner, name }).pipe(Effect.result)
         if (remoteDefault._tag === "Failure" || remoteDefault.success.branch === undefined) {
           if (remoteDefault._tag === "Failure") Object.assign(fields, failureFields("default_branch", remoteDefault.failure))
           fields.forge = remoteDefault._tag === "Failure" ? remoteDefault.failure.code : "no_default_branch"
-          return refusal(503, "unavailable")
+          return answerRefusal(503, "unavailable")
         }
         resolvedDefault = remoteDefault.success.branch
       }
@@ -234,8 +243,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, app
       if (decoded.value.create === true && tracked.created) yield* Repos.refsChanged(repo).pipe(Effect.provide(database))
       // Two people tracking one new branch at once: the one whose insert won owns it; the other may not see it.
       const found = yield* branchAccess(actor, tracked.branch.branchId).pipe(Effect.provide(database))
-      if (found === undefined) return refusal(404, "not_found")
-      if (!canView(found.access)) return refusal(403, "forbidden")
+      if (found === undefined) return answerRefusal(404, "not_found")
+      if (!canView(found.access)) return answerRefusal(403, "forbidden")
       yield* ConversationPeople.opened(tracked.branch.conversationId, actor.value.subject.id, owner, name, ref, openedAt)
         .pipe(Effect.provide(database))
       fields.outcome = tracked.created ? "tracked" : "existing"
@@ -249,7 +258,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, app
       Effect.catchCause((cause) =>
         Effect.sync(() => {
           fields.errorCode = codeOf(Cause.squash(cause))
-          return refusal(503, "unavailable")
+          return answerRefusal(503, "unavailable")
         })
       ),
     )
