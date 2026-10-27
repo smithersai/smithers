@@ -24,7 +24,22 @@ const standard = BuildAndCheckTypeScriptPackage({
 const lib = standard.lib
 const check = standard.check
 const fmt = standard.fmt
-const docs = standard.docs
+/** Every registered build command needs an inventory link and a section. */
+const docs = Smithers.DocsParity({
+  readme: Smithers.file("README.md"),
+  cwd: "packages/smithers/build",
+  deps: [
+    standard.docs,
+    Smithers.Shell.Test({
+      shell: "node --test packages/smithers/build/scripts/reference-docs.test.mjs",
+      data: [
+        Smithers.file("scripts/reference-docs.test.mjs"),
+        Smithers.file("docs/reference/cli.md"),
+        Smithers.file("build-cli/src/Cli.ts")
+      ]
+    })
+  ]
+})
 const circular = standard.circular
 
 /**

@@ -21,7 +21,7 @@ Commands: [`cache`](#cache), [`show`](#show), [`targets`](#targets),
 [`build`](#build), [`test`](#test),
 [`lint`](#lint), [`docs`](#docs), [`review`](#review), [`run`](#run),
 [`target`](#target), [`git-hooks`](#git-hooks), [`ci`](#ci),
-[`query`](#query), [`owners`](#owners), and [`graph`](#graph). An argv whose
+[`query`](#query), [`index`](#index), [`owners`](#owners), and [`graph`](#graph). An argv whose
 first token starts with `//` or `:` is rewritten to `target <label>`, the
 bare-label form.
 
@@ -545,6 +545,39 @@ and the packages it depends on. Both are build system only and take one
 exact or default target.
 
 Failure: error code `query_failed`, exit code 1.
+
+---
+
+## index
+
+Lists selected target declarations without executing them.
+
+```sh
+smithers-build index '//...'
+smithers-build index '//packages/api/...' --format json
+```
+
+| Argument | Description |
+| --- | --- |
+| `pattern` | A target label or pattern. |
+
+Accepts the [common options](#common-options): `--workspace` (`-w`) and
+`--cache-dir`.
+
+The structured result is `{ pattern, targets }`, with targets sorted by label.
+Each row carries `label`, `package`, `name`, `rule`, `kinds`, `cacheable`,
+`inputs`, `outputs` and labeled `dependencies`. Optional fields carry `summary`,
+`featured`, `lifecycle`, `mode`, `exclusive`, `reviewPolicy`, `hosts`,
+`destinations`, `toolchain`, `source: { file }` and a child repository's
+`refusal`. Input paths and output paths are workspace-relative. Rows describe
+declarations; they contain no execution result or content digest.
+
+Human output shows label, rule and kinds, with outputs after an arrow and a
+star for featured targets. The root `//:targetIndex` target writes these same
+rows to `.smithers/target-index.json`.
+
+Failure: error code `index_failed`, exit code 1, including invalid patterns,
+workspace loading failures and missing declared inputs.
 
 ---
 
