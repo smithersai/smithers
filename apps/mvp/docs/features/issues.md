@@ -320,3 +320,5 @@ A signed-out reader of a public issue can sign in from the conversation; sign-in
 
 Cold issue and pull request lists say “Syncing issues…” or “Syncing pull requests…” while counts are unknown. Cached rows remain visible; no spinner or false empty count appears. `issue-list-feedback.spec.ts` observes every painted frame until content arrives.
 
+
+Agent attribution names the requester only when their stored GitHub login exists. Without one, new text is attributed to “Smithers”; it never fabricates an `@unknown` mention. Historical issue bodies remain GitHub's text, including the old scratch issue #16.

@@ -63,6 +63,7 @@ describe("ids and keys", () => {
     expect(commentDraftKey("github/octo/hello", 7)).toBe("comment:github/octo/hello#7")
     expect(issuesChannel("smithers")).toBe("smithers/issues")
     expect(agentAttribution("maya")).toBe("Smithers for @maya")
+    expect(agentAttribution(null)).toBe("Smithers")
   })
 
   test("a stale read's reconcile run is one per repository and 5-minute bucket", () => {

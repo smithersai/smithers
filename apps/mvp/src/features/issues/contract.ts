@@ -259,7 +259,7 @@ export const newDraftKey = (repoId: string): string => `new:${repoId}`
 export const commentDraftKey = (repoId: string, number: number): string => `comment:${itemId(repoId, number)}`
 
 /** The line the agent's text ends with on GitHub: agent text never shows under a person's name (decision 0012 §5). */
-export const agentAttribution = (login: string): string => `Smithers for @${login}`
+export const agentAttribution = (login: string | null): string => login === null ? "Smithers" : `Smithers for @${login}`
 
 /**
  * Why a write this device made stays Not sent: the route refused it (`WriteRefusal`, by its status), or the server's

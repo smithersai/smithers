@@ -237,7 +237,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
       }
       /** A body as GitHub gets it: the agent's says whom it acted for. `GitHub.Once` adds the write's marker. */
       const attributed = (text: string) =>
-        write.via === "agent" ? `${text}\n\n${agentAttribution(write.login ?? "unknown")}` : text
+        write.via === "agent" ? `${text}\n\n${agentAttribution(write.login)}` : text
       /** Keyed by the write's own id, which the route recorded before the flow started and the projection joins on. */
       const keyed = { key: write.id }
       // The triage state the issue had before a person's override: what the override metric counts it from.
