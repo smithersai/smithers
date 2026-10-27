@@ -1,6 +1,7 @@
 import { Breadcrumbs, EmptyState } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useNavigate, useParams } from "@tanstack/react-router"
+import { SignInButton } from "../../features/auth/components/SignInButton"
 import { useAuth } from "../../features/auth/components/AuthContext"
 import { mayManageDomains } from "../../features/auth/contract"
 import { DomainSettings } from "../../features/domains/components/DomainSettings"
@@ -25,7 +26,7 @@ export function RepoSettingsScreen() {
         onNavigate={(item) => void navigate({ href: item.href! })}
       />
       <h1>{SETTINGS}</h1>
-      {maintainer ? <DomainSettings /> : <EmptyState title="No settings available" />}
+      {maintainer ? <DomainSettings /> : <EmptyState title="No settings available" action={session?.status === "signed_out" ? <SignInButton /> : undefined} />}
     </main>
   )
 }

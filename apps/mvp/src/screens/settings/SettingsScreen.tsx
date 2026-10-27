@@ -1,5 +1,6 @@
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link } from "@tanstack/react-router"
+import { SignInButton } from "../../features/auth/components/SignInButton"
 import { useAuth } from "../../features/auth/components/AuthContext"
 import { PersonalModelSettings } from "../../features/personal-model/components/PersonalModelSettings"
 import { canSave } from "../../features/personal-model/view"
@@ -21,6 +22,7 @@ export function SettingsScreen() {
         <Link to="/app">Back to chat</Link>
         <h1>Settings</h1>
       </header>
+      {session?.status === "signed_out" ? <SignInButton /> : null}
       {session?.status === "signed_in" ? <PersonalModelSettings canSave={canSave(session)} /> : null}
       {admin ? <AlertSettings /> : null}
       {admin ? <SandboxLimitsSettings /> : null}

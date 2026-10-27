@@ -107,17 +107,17 @@ test("direct feature pages keep navigation, fence the deployment's own repositor
       expect(html).not.toContain('aria-label="Commitment"')
       })
     }
-    // A visitor's gated runs shape never answers: the page must offer sign-in instead of staying blank.
+    // Visitors can sign in directly from every gated settings page.
     await app.runPromise(auth.session.update("session", (row) => { row.status = "signed_out"; row.available = true }))
-    {
+    for (const [path, component] of [["runs", ActionsScreen], ["settings", RepoSettingsScreen], ["settings/secrets", SecretsScreen]] as const) {
       const root = createRootRoute()
-      const route = createRoute({ getParentRoute: () => root, path: "/$owner/$repo/runs", component: ActionsScreen })
-      const router = createRouter({ routeTree: root.addChildren([route]), history: createMemoryHistory({ initialEntries: ["/smithersai/vibelang/runs"] }) })
+      const route = createRoute({ getParentRoute: () => root, path: `/$owner/$repo/${path}`, component })
+      const router = createRouter({ routeTree: root.addChildren([route]), history: createMemoryHistory({ initialEntries: [`/smithersai/vibelang/${path}`] }) })
       await router.load()
       await vi.waitFor(() => {
         const html = renderRepositoryPages(router, services)
         expect(html).toContain("Sign in with GitHub")
-        expect(html).toContain("return=%2Fsmithersai%2Fvibelang%2Fruns")
+        expect(html).toContain(`return=${encodeURIComponent(`/smithersai/vibelang/${path}`)}`)
         expect(html).not.toContain("No runs yet")
       })
     }

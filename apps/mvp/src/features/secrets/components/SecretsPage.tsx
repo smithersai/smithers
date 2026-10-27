@@ -1,6 +1,7 @@
 import { Button, EmptyState, Field, Input, Label, RelativeTime, Textarea } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import type { FormEvent } from "react"
+import { SignInButton } from "../../auth/components/SignInButton"
 import { useAuth } from "../../auth/components/AuthContext"
 import { useRepoAnswer } from "../../repo/components/RepoContext"
 import { repoId } from "../../repo/contract"
@@ -51,7 +52,7 @@ export function SecretsPage({ owner, repo }: { readonly owner: string; readonly 
   const answer = useRepoAnswer(owner, repo)
   const access = accessOf(session, answer)
   if (access === "loading") return null
-  if (access === "none") return <EmptyState title={CANT_SEE} />
+  if (access === "none") return <EmptyState title={CANT_SEE} action={session?.status === "signed_out" ? <SignInButton /> : undefined} />
   const admin = access === "write"
   const added = formOf(forms, formKey(id, "add", ""))
   return (
