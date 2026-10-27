@@ -136,3 +136,5 @@ ChatApi: `bug.request` and `smithers_bug_requests` (op, outcome, status), `bug.s
 ## Not built
 
 - **The screenshot.** The form has no "include a screenshot" toggle yet: capturing only the page's own render needs a DOM-to-image library behind an Effect wrapper in `@smthrs/platform-browser`.
+
+Repository home links to `/bug` open `/app/bugs/report`, both on a direct visit through the docs site and through the app's router. They never prepare a GitHub issue. The report's build must match `/version.json`.

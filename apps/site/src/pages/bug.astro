@@ -1,14 +1,4 @@
 ---
-// GitHub owns issue creation; this page only opens its prefilled form with
-// public diagnostics, never the visitor's URL or session.
-const body = [
-  "## What happened\n\n", "## Expected\n\n", "## Steps\n\n",
-  "Route kind: other",
-  `Build: ${import.meta.env.SMITHERS_BUILD_SHA ?? "unknown"}`
-].join("\n")
-const url = new URL("https://github.com/smithersai/smithers/issues/new")
-url.searchParams.set("title", "Bug report")
-url.searchParams.set("body", body)
-
-return Astro.redirect(url.href)
+// Repository-owned /bug links share the app's report form.
+return Astro.redirect("/app/bugs/report")
 ---

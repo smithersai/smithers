@@ -160,6 +160,13 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({ component: Root 
 
 const landingRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: Landing })
 
+// Repository homes may still link /bug; use the same report form during client navigation.
+const bugRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/bug",
+  beforeLoad: () => { throw redirect({ href: "/app/bugs/report" }) },
+})
+
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/app",
@@ -647,6 +654,7 @@ const secretsRoute = createRoute({
 export const router = createRouter({
   routeTree: rootRoute.addChildren([
     landingRoute,
+    bugRoute,
     appRoute,
     viewRoute,
     flowsRoute,

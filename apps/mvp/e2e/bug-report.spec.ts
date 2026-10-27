@@ -86,7 +86,10 @@ test("bug report: /bug opens the form, Send files it with the page and the tab's
         reporterRole: me().role,
         actedBy: "flow",
       })
-      expect(report!.build).toMatch(/^[\w.,+-]+$/)
+      const version = await page.request.get("/version.json")
+      expect(version.ok()).toBe(true)
+      expect(report!.build).toBe((await version.json() as { build: string }).build)
+      expect(report!.build).not.toBe("unknown")
       expect(report!.runs.length).toBeGreaterThan(0)
       expect(report!.traces.every((trace) => /^[0-9a-f]{32}$/.test(trace))).toBe(true)
       expect(report!.browser).toContain("Mozilla")
