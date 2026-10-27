@@ -242,6 +242,20 @@ describe("the menu", () => {
     expect(tab.labels()).toEqual([])
   })
 
+  test("oversize input stays intact with its limit and never dispatches", async () => {
+    const tab = await open()
+    await ready(tab)
+    const text = "x".repeat(8001)
+    tab.actions.type(text)
+    expect(tab.menu()?.refusal).toBe("8,000 characters max")
+    tab.actions.submit(text)
+    expect(tab.menu()?.refusal).toBe("8,000 characters max")
+    expect(tab.draft()).toBe(text)
+    expect(tab.shown()).toEqual([])
+    tab.actions.type("x".repeat(8000))
+    expect(tab.menu()?.refusal).toBeNull()
+  })
+
   test("exact repository commands show their format on the first Enter", async () => {
     const tab = await open()
     await ready(tab)

@@ -3,6 +3,7 @@ import { Effect, Metric, Option, Ref } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { AuthStore, SESSION } from "../auth/store"
 import { ask, setDraft } from "../chat/actions"
+import { MAX_QUESTION_LENGTH } from "../chat/contract"
 import type { DraftSelection } from "../chat/sharedPrompt"
 import { COMPOSER, PLACE } from "../chat/schema"
 import { ChatStore } from "../chat/store"
@@ -66,7 +67,7 @@ const list = (draft: string, refusal: string | null = null) =>
   })
 
 /** Typing: the composer's draft becomes `text`, with `selection` after, and the menu lists what it completes to. */
-export const type = (text: string, selection?: DraftSelection) => Effect.andThen(setDraft(text, selection), list(text))
+export const type = (text: string, selection?: DraftSelection) => Effect.andThen(setDraft(text, selection), list(text, text.trim().length > MAX_QUESTION_LENGTH ? "8,000 characters max" : null))
 
 /** The arrows or the pointer moved the highlight to row `index`. */
 export const highlight = (index: number) => write({ highlighted: index })
@@ -136,6 +137,7 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>, draft
  */
 export const submit = (text: string) =>
   Effect.gen(function* () {
+    if (text.trim().length > MAX_QUESTION_LENGTH) return yield* refuse("invalid", "8,000 characters max")
     const submitted = slashSubmit(text, yield* offered)
     switch (submitted.kind) {
       case "empty":

@@ -191,6 +191,16 @@ test("missing page: navigation stays in chat with a reason", async ({ devices })
   await expect(a.composer).toHaveValue("/navigate /nope-page")
 })
 
+test("message limit: refuses oversize text without truncating it", async ({ devices }) => {
+  const [a] = await devices.open("A")
+  await a.openComposer()
+  const text = "x".repeat(8001)
+  await a.composer.fill(text)
+  await a.composer.press("Enter")
+  await expect(a.composer).toHaveValue(text)
+  await expect(a.composerForm.getByText("8,000 characters max")).toBeVisible()
+})
+
 test("repository hints: first Enter shows the argument format", async ({ devices }) => {
   const [a] = await devices.open("A")
   await a.openComposer()

@@ -61,7 +61,7 @@ export function Composer({ docked = true, readOnly = false }: { readonly docked?
         onChoose: commands.actions.choose,
         onDismiss: commands.actions.dismiss,
       }}
-      statusText={menu?.refusal}
+      statusText={menu?.refusal ?? (composer.draft.length === 0 ? null : `${composer.draft.length}/${MAX_QUESTION_LENGTH}`)}
       lifecycleStatus="ready"
       placeholder="Message Smithers"
       inputAriaLabel="Message Smithers"
@@ -71,7 +71,6 @@ export function Composer({ docked = true, readOnly = false }: { readonly docked?
           // request focus, even when Suspense has left it on the document body.
           if (element !== null && actions.takeComposerFocus()) element.focus()
         },
-        maxLength: MAX_QUESTION_LENGTH,
         "data-draft": (prompt === undefined ? composer.saved : prompt.stored) ? "saved" : "unsaved",
       }}
       actions={

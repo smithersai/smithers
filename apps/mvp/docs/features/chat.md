@@ -234,4 +234,4 @@ Agent calls first journal a timestamp from `/api/message-pin/stamp`, newer than 
 
 Queued and unsent questions pin immediately. The versioned intent keeps a local copy, including if its original is taken back or discarded, until Unpin. Retry preserves that copy and its expected answer id. A conflicting synced message with the same id cannot replace its text: the same durable flow waits for the matching question and answer before syncing the pin to other devices; a newer pin or unpin ends an obsolete wait. This also works for the first question, before any message has synced. No message text enters the flow payload or telemetry.
 
-The composer keeps keystrokes arriving immediately after its shortcut, before the input mounts.
+The composer keeps keystrokes arriving immediately after its shortcut, before the input mounts. Typed text shows its character count and the 8,000-character limit. Oversize input stays intact with a refusal; it is neither truncated nor sent.
