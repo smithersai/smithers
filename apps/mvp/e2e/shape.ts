@@ -25,10 +25,10 @@ type ShapeMessage<A = Row> = {
   headers: { operation?: "insert" | "update" | "delete"; control?: string }
 }
 
-/** A complete snapshot, through the real shape endpoint; a first HTTP chunk is not the whole shape. */
+/** A fresh complete snapshot. Electric caches each immutable HTTP page; one nonce survives all its continuations. */
 export const shapeRows = async <A extends object>(request: APIRequestContext, path: string): Promise<Array<A>> => {
   const rows = new Map<string, A>()
-  const query = new URLSearchParams({ offset: "-1" })
+  const query = new URLSearchParams({ offset: "-1", "cache-buster": crypto.randomUUID() })
   for (let page = 0; page < 1_000; page++) {
     const response = await request.get(`${path}${path.includes("?") ? "&" : "?"}${query}`)
     expect(response.status(), `${path} serves a complete fixture snapshot`).toBe(200)

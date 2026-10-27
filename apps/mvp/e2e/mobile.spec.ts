@@ -491,7 +491,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           await page.goto(`/${stackRepository()}/stack`)
           await page.getByRole("button", { name: "New TODO" }).click()
           const draft = page.getByRole("form", { name: "TODO draft" }).first()
-          const title = `Mobile layout ${crypto.randomUUID()}`
+          const title = `bugbash4-w14w-mobile-${crypto.randomUUID()}`
           await draft.getByLabel("Title").fill(title)
           await draft.getByLabel("Prompt").fill("Check that every control remains accessible on a narrow screen.")
           await audit(page, info, "draft")
