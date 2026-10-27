@@ -34,6 +34,7 @@ test("page changes focus the new heading or main; initial load and filters prese
         createElement(PageFocus, { pathname: "/new" })))
     })
     expect(document.activeElement).toBe(host.querySelector("input"))
+    expect(host.querySelector("input")!.tabIndex).toBe(0)
     await render("/empty", false, false)
     expect(document.activeElement).toBe(document.body)
   } finally {
