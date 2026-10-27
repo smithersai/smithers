@@ -10,6 +10,7 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import { RemoteReadFailed, RemoteRunsClient } from "./api"
 import type { CloudRun, Inspection } from "./schema"
 import { VIEW } from "./schema"
+import { AuthStore, SESSION } from "../auth/store"
 import { openList } from "./actions"
 import { Runs } from "./runs"
 import { flowSummary } from "./summary"
@@ -59,7 +60,7 @@ afterEach(async () => {
   for (const runtime of runtimes.splice(0)) await runtime.dispose()
 })
 
-const open = (answers: Answers) => {
+const open = (answers: Answers, withAuth = false) => {
   const events = Effect.runSync(PubSub.unbounded<BrowserEngine.RunEvent>())
   const engine = Layer.succeed(BrowserEngine.BrowserEngine, BrowserEngine.BrowserEngine.of({
     start: () => Effect.die("unused"),
@@ -82,13 +83,14 @@ const open = (answers: Answers) => {
   }))
   const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
   const runtime = ManagedRuntime.make(
-    RunsStore.layer({ origin: "http://chat.test" }).pipe(Layer.provide(Layer.mergeAll(engine, remote, Persistence.memory, Logger.layer([Logger.make((options) => void logs.push(Logger.formatStructured.log(options)))])))),
+    RunsStore.layer({ origin: "http://chat.test" }).pipe(Layer.provideMerge(withAuth ? AuthStore.layer : Layer.empty), Layer.provide(Layer.mergeAll(engine, remote, Persistence.memory, Logger.layer([Logger.make((options) => void logs.push(Logger.formatStructured.log(options)))])))),
   )
   runtimes.push(runtime as never)
   const store = runtime.runSync(Effect.service(RunsStore))
   const page = (runId: string) => Option.getOrUndefined(runtime.runSync(store.pages.get(runId)))
   return {
     store,
+    auth: runtime.runSync(Effect.serviceOption(AuthStore)),
     logs,
     page,
     run: <A, E>(effect: Effect.Effect<A, E, RunsStore>) => runtime.runPromise(effect.pipe(
@@ -1023,4 +1025,21 @@ describe("the runs on Cloudflare in the list (ruling FLOW-13)", () => {
     await vi.waitFor(async () => expect(Option.getOrThrow(await t.run(t.store.view.get(VIEW))).listRevision).toBeGreaterThan(revision))
     expect(asked.length).toBe(settledCount)
   })
+})
+
+test("a visitor's cloud history resolves without issuing an authenticated read", async () => {
+  let reads = 0
+  const t = open({ inspect: () => refused("unused"), list: () => Effect.succeed({ runs: [], cursor: null }),
+    cloud: () => { reads++; return Effect.succeed([]) },
+  }, true)
+  const auth = Option.getOrThrow(t.auth)
+  auth.sessionState.tanstack.startSyncImmediate()
+  const loading = t.run(t.store.readCloud)
+  await t.run(auth.session.update(SESSION, (row) => { row.status = "signed_out" }))
+  await loading
+  expect(reads).toBe(0)
+  expect(Option.getOrThrow(await t.run(t.store.view.get(VIEW))).cloudLoaded).toBe(true)
+  await t.run(auth.session.update(SESSION, (row) => { row.status = "signed_in" }))
+  await t.run(t.store.readCloud)
+  expect(reads).toBe(1)
 })

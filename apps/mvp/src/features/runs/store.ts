@@ -11,7 +11,7 @@ import { domainOutcomeOf, hasDomainOutcome } from "./todoRun"
 import { repoId } from "../repo/contract"
 import { AuthStore } from "../auth/store"
 import { RepoStore } from "../repo/store"
-import { memberRunSource } from "./source"
+import { cloudRunList, memberRunSource } from "./source"
 import { codeOf } from "../../errorCode"
 
 // Runs on this tab (decision 0014 §1 and §3, docs/features/runs.md#the-browser): the list of this device's runs, each
@@ -608,7 +608,7 @@ export class RunsStore extends Context.Service<
       const cloudReading = yield* Semaphore.make(1)
       const readCloud: Effect.Effect<void> = Semaphore.withPermits(cloudReading, 1)(Effect.gen(function* () {
         const startedAt = yield* Clock.currentTimeMillis
-        const read = yield* Effect.result(remote.list)
+        const read = yield* Effect.result(cloudRunList(remote.list, auth))
         yield* view.update(VIEW, (row) => { row.cloudLoaded = true })
         // A list that couldn't be read keeps what it showed: signed out, a Guest, or ChatApi unreachable.
         if (read._tag === "Failure") return yield* recordRead("cloud", stateOf(read.failure), startedAt, undefined, read.failure)

@@ -1,5 +1,5 @@
 import { ShapeSource } from "@smthrs/effect-electric"
-import { Option, Stream } from "effect"
+import { Effect, Option, Stream } from "effect"
 import type { AuthStore } from "../auth/store"
 import type { RepoStore } from "../repo/store"
 
@@ -19,3 +19,14 @@ export const memberRunSource = (
         (role === "member" || role === "maintainer" || role === "admin")
     }).pipe(Stream.changes),
 )
+
+/** Wait for sign-in to resolve before reading the authenticated cloud index. */
+export const cloudRunList = <A, E, R>(
+  read: Effect.Effect<ReadonlyArray<A>, E, R>,
+  auth: Option.Option<AuthStore["Service"]>,
+): Effect.Effect<ReadonlyArray<A>, E, R> => Option.isNone(auth) ? read :
+  auth.value.sessionState.rows.pipe(
+    Stream.filter((rows) => rows[0]!.status === "signed_in" || rows[0]!.status === "signed_out"),
+    Stream.runHead,
+    Effect.flatMap((rows) => Option.isSome(rows) && rows.value[0]!.status === "signed_in" ? read : Effect.succeed([])),
+  )

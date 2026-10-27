@@ -1,10 +1,10 @@
-import { Effect, Layer, ManagedRuntime, Option } from "effect"
+import { Effect, Layer, ManagedRuntime, Option, Stream } from "effect"
 import { expect, test } from "vitest"
 import { ShapeSource } from "@smthrs/effect-electric"
 import { AuthStore, SESSION } from "../auth/store"
 import { RepoStore } from "../repo/store"
 import { Persistence } from "@smthrs/effect-tanstack-db"
-import { memberRunSource } from "./source"
+import { cloudRunList, memberRunSource } from "./source"
 
 test("run authority follows the named repository, never a public receipt or a stale signed-in role", async () => {
   const runtime = ManagedRuntime.make(RepoStore.layer({ origin: "https://unused.test" }).pipe(
@@ -40,3 +40,28 @@ test("run authority follows the named repository, never a public receipt or a st
     }
   } finally { await runtime.dispose() }
 }, 60_000)
+
+test("cloud history waits for authentication and never requests a visitor's index", async () => {
+  const runtime = ManagedRuntime.make(AuthStore.layer.pipe(Layer.provide(Persistence.memory)))
+  try {
+    const auth = await runtime.runPromise(Effect.service(AuthStore))
+    auth.sessionState.tanstack.startSyncImmediate()
+    let reads = 0
+    const read = Effect.sync(() => { reads++; return ["run"] })
+    expect(await runtime.runPromise(cloudRunList(read, Option.some(auth)).pipe(Effect.timeoutOption("20 millis")))).toEqual(Option.none())
+    expect(reads).toBe(0)
+    for (const status of ["signed_out", "signed_in"] as const) {
+      await runtime.runPromise(auth.session.update(SESSION, (row) => { row.status = status }))
+      expect(await runtime.runPromise(cloudRunList(read, Option.some(auth)))).toEqual(status === "signed_in" ? ["run"] : [])
+    }
+    expect(reads).toBe(1)
+    await runtime.runPromise(auth.session.update(SESSION, (row) => { row.status = "unreachable" }))
+    expect(await runtime.runPromise(cloudRunList(read, Option.some(auth)).pipe(Effect.timeoutOption("20 millis")))).toEqual(Option.none())
+    expect(reads).toBe(1)
+    expect(await runtime.runPromise(cloudRunList(read, Option.none()))).toEqual(["run"])
+    // A failed session service that ends without a row grants no network read.
+    const ended = { ...auth, sessionState: { ...auth.sessionState, rows: Stream.empty } }
+    expect(await runtime.runPromise(cloudRunList(read, Option.some(ended)))).toEqual([])
+    expect(reads).toBe(2)
+  } finally { await runtime.dispose() }
+})
