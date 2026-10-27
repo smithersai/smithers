@@ -17,7 +17,7 @@ for (const delay of [0, 100, 300] as const) {
     await draft.getByLabel("Prompt", { exact: true }).fill("Keep the durable admission regression")
     await draft.getByRole("button", { name: "Commit", exact: true }).click()
     await reloadAfter(delay, () => page.reload())
-    const row = page.getByRole("row").filter({ hasText: title })
+    const row = page.getByRole("listitem").filter({ has: page.getByText(title, { exact: true }) })
     await expect.poll(async () => await row.count() > 0 || await page.getByRole("button", { name: "Retry", exact: true }).count() > 0, { timeout: 60_000 }).toBe(true)
     if (await page.getByRole("button", { name: "Retry", exact: true }).count()) await page.getByRole("button", { name: "Retry", exact: true }).click()
     await expect(row).toHaveCount(1)

@@ -20,7 +20,8 @@ test(`Create survives reload ${delay} ms after the press`, async ({ devices }) =
   await expect.poll(async () => /\/issues\/\d+$/.test(new URL(page.url()).pathname) || await page.getByRole("button", { name: "Retry", exact: true }).isVisible(), { timeout: 90_000 }).toBe(true)
   if (await page.getByRole("button", { name: "Retry", exact: true }).isVisible()) await page.getByRole("button", { name: "Retry", exact: true }).click()
   await expect(page).toHaveURL(/\/issues\/\d+$/, { timeout: 90_000 })
-  await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible()
+  const number = new URL(page.url()).pathname.split("/").at(-1)!
+  await expect(page.getByRole("heading", { name: `${title} #${number}`, exact: true })).toBeVisible()
   const issues = await pollGitHub(() => github<Array<{ title: string }>>(page, `/repos/${repo}/issues?state=all&per_page=100`), (rows) => rows.some((row) => row.title === title))
   expect(issues.filter((row) => row.title === title)).toHaveLength(1)
 })
