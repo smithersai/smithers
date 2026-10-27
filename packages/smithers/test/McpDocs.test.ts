@@ -29,6 +29,12 @@ const unified = new Set(
 )
 
 describe("the unified MCP docs", () => {
+  it("keeps local-only commands out of the canonical install-tool examples", () => {
+    expect(reference).not.toMatch(/`(?:flow_list|flow_plan|flow_execute|runs_show|approvals_list)`/)
+    expect(reference).toContain("`flows`")
+    expect(reference).toContain("`flow_show`")
+  })
+
   it("says the approval-bearing verbs are absent, and they are", () => {
     const sentence = guide.replaceAll(/\s+/g, " ").match(/([^.]*) are absent from both discovery and dispatch/)?.[1]
     const absent = names(sentence ?? "")

@@ -4,8 +4,8 @@ description: "Connect the canonical MCP command surface and keep approval decisi
 ---
 
 `smthrs --mcp` serves the Smithers MCP server on stdio, over the same control
-plane the verbs use. An agent can inspect flows, plan work, execute an already
-approved plan, and observe runs. Approval decisions are excluded by default.
+plane the install verbs use. An agent can inspect the install's flows and TODOs
+and request work through its catalog. Approval decisions are excluded.
 
 ## Register it
 
@@ -72,19 +72,20 @@ SIGINT cancels MCP mode even when launched as `smthrs tui --mcp`.
 
 The executable uses the unified command tree through Incur's MCP discovery
 tools: `search_tools`, `get_tool_details`, `call_read_tool`, and
-`call_write_tool`. Discover canonical names such as `flow_list`, `flow_plan`,
-`flow_execute`, `runs_show`, and `approvals_list`; fetch their schema before
-invoking them. Every command declares `readOnlyHint`: call a `true` tool such
-as `flow_list` or `runs_show` through `call_read_tool`, and a `false` tool such
-as `flow_plan`, which records the plan and its approval token, through
-`call_write_tool`. A local `flow_list` reads the discovery snapshot and opens no
-project database.
+`call_write_tool`. Discover canonical names such as `flows`, `flow_show`,
+`todo_show`, and `todo_new`; fetch their schema before invoking them. Every
+command declares `readOnlyHint`: call a `true` tool such as `flows` or
+`todo_show` through `call_read_tool`, and a `false` tool such as `todo_new`
+through `call_write_tool`. These install tools use the configured backend;
+`flows` does not list the current directory's local flow files. Use
+`smthrs flow list`, `smthrs flow plan`, and `smthrs flow execute` locally for
+that lifecycle. Local approval listing is not an MCP discovery tool.
 
 `approvals_approve`, `approvals_deny`, and `flow_start` are absent from both
 discovery and dispatch. `flow_start` is excluded because it implicitly approves
 the plan. The operator can instead review the payload and use
-`smthrs approvals approve` or `smthrs approvals deny` locally. An agent can then
-execute the approved plan. Changing `--audience` changes presentation, not
+`smthrs approvals approve` or `smthrs approvals deny` locally. Execute the
+approved local plan with `smthrs flow execute`. Changing `--audience` changes presentation, not
 approval authority. MCP invocations carry the local actor `mcp/agent`.
 
 This is an approval boundary, not an operating-system sandbox. Do not grant
