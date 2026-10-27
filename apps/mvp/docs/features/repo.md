@@ -376,3 +376,5 @@ concurrent visitors wait for that read. Authenticated holds and other refusals r
 GitHub file fragments (`#L72`, `#L5-L12`) select and reveal their lines, including when only the fragment changes. Existing `?L=` links remain supported.
 
 A missing file names its revision and links back to Code. Browser file reads use `?optional=true`: a confirmed absent path at a readable commit is `204`, so a normal missing-file page produces no browser error. Missing repositories and unreadable commits retain their error status.
+
+An optional preview that exceeds the display limit answers `200` with `x-file-state: too_large` and its size metadata. The client retains the Too large to show state and GitHub Raw link. Direct blob and raw reads retain `413`.

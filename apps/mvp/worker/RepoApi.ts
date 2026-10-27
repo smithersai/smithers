@@ -13,6 +13,7 @@ import {
   isFilePath,
   isRepository,
   MAX_REQUEST_BYTES,
+  MAX_BLOB_BYTES,
   type Refusal,
   repoId,
   LAUNCH_ROUTE,
@@ -383,7 +384,11 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
                 case "not_found":
                   return Effect.succeed(refuse(404, "not_found"))
                 case "too_large":
-                  return Effect.succeed(refuse(413, "too_large", refused.size === undefined ? {} : { size: refused.size }))
+                  return Effect.succeed(target.kind === "blob" && new URL(request.url, "http://localhost").searchParams.get("optional") === "true"
+                    ? HttpServerResponse.jsonUnsafe({ code: "too_large", size: refused.size ?? MAX_BLOB_BYTES + 1 }, {
+                      headers: { ...immutable, "x-file-state": "too_large" },
+                    })
+                    : refuse(413, "too_large", refused.size === undefined ? {} : { size: refused.size }))
                 case "capacity":
                   return Effect.succeed(refuse(503, "capacity"))
                 case "unavailable":

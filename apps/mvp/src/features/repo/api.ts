@@ -35,12 +35,12 @@ const retryAfter = (value: string | undefined): { readonly retryAfterMillis?: nu
   value !== undefined && /^\d+$/.test(value.trim()) ? { retryAfterMillis: Number(value.trim()) * 1000 } : {}
 
 /** A refusal from a non-2xx answer: its status, its `Retry-After`, and the `code` and `size` of its body. */
-const refusedBy = (response: HttpClientResponse.HttpClientResponse) =>
+const refusedBy = (response: HttpClientResponse.HttpClientResponse, status = response.status) =>
   Effect.gen(function* () {
     yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
     const body = decodeRefusal(yield* Effect.orElseSucceed(response.text, () => ""))
     return yield* new RepoRefused({
-      status: response.status,
+      status,
       ...retryAfter(response.headers["retry-after"]),
       ...Option.match(body, {
         onNone: () => ({}),
@@ -129,8 +129,10 @@ export const getBlob = Effect.fn("repo.blob.get")(function* (
     HttpClientRequest.get(`${origin}${blobRoute(file.owner, file.name, file.sha, file.path)}?optional=true`),
     within,
     (status) => status === 200 || status === 204,
-    (response) =>
-      // Keep the existing home state contract while absence travels as a successful HTTP response.
+    (response) => response.headers["x-file-state"] === "too_large"
+      ? refusedBy(response, 413)
+      :
+      // Keep the file-state contract while absence travels as a successful HTTP response.
       response.status === 204 ? Effect.fail(new RepoRefused({ status: 404, code: "not_found" })) : response.arrayBuffer.pipe(
         Effect.map((buffer): Blob => ({ bytes: new Uint8Array(buffer) })),
         Effect.mapError(() => new RepoRefused({ status: response.status })),

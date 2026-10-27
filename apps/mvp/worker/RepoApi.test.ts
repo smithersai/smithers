@@ -6,6 +6,8 @@ import * as Conversations from "./branch/Conversations.ts"
 // provider, or give RepoApi a faulty service; nothing intercepts a request.
 import { Action } from "@smthrs/flow"
 import { Cause, Effect, Exit, Layer, Redacted } from "effect"
+import { FetchHttpClient } from "effect/http"
+import { RepoClient } from "../src/features/repo/api.ts"
 import { SqlClient } from "effect/sql"
 import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest"
 import * as Database from "../db/Database.ts"
@@ -434,6 +436,9 @@ describe("reads", () => {
     const big = await quirky.fetch(blobRoute("octocat", "Spoon-Knife", headSha, "big.txt"))
     expect(big.status).toBe(413)
     expect(await big.json()).toEqual({ code: "too_large" })
+    const preview = await quirky.fetch(`${blobRoute("octocat", "Spoon-Knife", headSha, "big.txt")}?optional=true`)
+    expect(preview.status).toBe(200)
+    expect(await preview.json()).toEqual({ code: "too_large", size: 512 * 1024 + 1 })
     const reader = await Effect.runPromise(Effect.service(RepoFlows.RepoReader).pipe(Effect.provide(quirky.reader())))
     expect(await Effect.runPromise(reader.read("octocat", "Spoon-Knife", headSha, "big.txt"))).toEqual({
       state: "too-large",
@@ -460,6 +465,18 @@ describe("reads", () => {
     expect(big.status).toBe(413)
     expect(await big.json()).toEqual({ code: "too_large", size: 600 * 1024 })
     expect(h.count(RepoMetrics.reads, { kind: "blob", status: "413" })).toBe(1)
+    const preview = await h.fetch(`${blobRoute("octocat", "Spoon-Knife", headSha, "big.txt")}?optional=true`)
+    expect(preview.status).toBe(200)
+    expect(preview.headers.get("x-file-state")).toBe("too_large")
+    expect((await h.fetch(`${rawRoute("octocat", "Spoon-Knife", headSha, "big.txt")}?optional=true`)).status).toBe(413)
+    expect(await preview.json()).toEqual({ code: "too_large", size: 600 * 1024 })
+    const browserRead = await Effect.runPromise(Effect.flatMap(RepoClient, (client) => Effect.result(client.blob("octocat", "Spoon-Knife", headSha, "big.txt"))).pipe(
+      Effect.provide(RepoClient.layer({ origin: h.origin, within: "2 seconds" }).pipe(
+        Layer.provide(FetchHttpClient.layer),
+        Layer.provide(Layer.succeed(FetchHttpClient.Fetch, h.fetch)),
+      )),
+    ))
+    expect(browserRead).toMatchObject({ _tag: "Failure", failure: { status: 413, code: "too_large", size: 600 * 1024 } })
     const missing = await h.fetch(blobRoute("octocat", "Spoon-Knife", headSha, "nope.md"))
     expect(missing.status).toBe(404)
     expect(await missing.json()).toEqual({ code: "not_found" })
@@ -475,6 +492,27 @@ describe("reads", () => {
     expect((await h.fetch(`${blobRoute("octocat", "Missing", headSha, ".smithers/home.json")}?optional=true`)).status).toBe(404)
     h.scripted.fail("readFile", h.scripted.error("readFile", "internal_error", 500))
     expect((await h.fetch(`${blobRoute("octocat", "Spoon-Knife", headSha, ".smithers/home.json")}?optional=true`)).status).toBe(503)
+  })
+
+  test("a commit the mirror has not synced retains its retryable state even if refresh cannot start", async () => {
+    const h = await repoHarness(runtime)
+    await h.seed("octocat", "Spoon-Knife")
+    const route = treeRoute("octocat", "Spoon-Knife", shaOf("not-yet-synced"))
+    const response = await h.fetch(route)
+    expect(response.status).toBe(503)
+    expect(response.headers.get("retry-after")).toBe("2")
+    expect(await response.json()).toEqual({ code: "not_synced" })
+    const unavailable = await repoHarness(runtime, {
+      scripted: h.scripted,
+      starter: FlowStarter.of({ start: () => Effect.fail(new StartUnavailable({ errorCode: "offline" })) }),
+    })
+    const again = await unavailable.fetch(route)
+    expect(again.status).toBe(503)
+    expect(await again.json()).toEqual({ code: "not_synced" })
+    // A refresh launch failure cannot turn an already readable ref list into an outage.
+    const refs = await unavailable.fetch(refsRoute("octocat", "Spoon-Knife"))
+    expect(refs.status).toBe(200)
+    expect((await refs.json() as { branches: Array<{ name: string }> }).branches.map((branch) => branch.name)).toContain("main")
   })
 
   test("refuses bad input: a method, a SHA, a path, a name, a route", async () => {
