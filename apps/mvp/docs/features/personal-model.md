@@ -210,3 +210,5 @@ carry ops, outcomes, codes, statuses, roles and counts: never a key, a base URL,
   handler.
 - `e2e/personal-model.spec.ts`: a real provider, saved with Fast and Implement named, shown again after a reload with
   Hard's resolved placeholder, tested, asked and removed in the browser, locally and in production.
+
+An unnamed tier labels its fallback as `Default: <model>` so the placeholder cannot be mistaken for a saved model.

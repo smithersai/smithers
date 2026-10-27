@@ -71,7 +71,7 @@ test("your model: tiers on a key show after a reload; a refused key names the pr
     await expect(hard).toHaveValue("")
     // A preset when the key is at its provider's own host, else the tier Hard falls back to: Implement's model.
     const saved = { protocol: PROTOCOL, baseUrl: baseUrlOf(BASE_URL)!, fastModel: MODEL, implementModel: MODEL, hardModel: null }
-    await expect(hard).toHaveAttribute("placeholder", resolveTier([saved], "hard")!.modelId)
+    await expect(hard).toHaveAttribute("placeholder", `Default: ${resolveTier([saved], "hard")!.modelId}`)
   })
 
   await step("Test: the provider refuses the key, by its host and status", async () => {

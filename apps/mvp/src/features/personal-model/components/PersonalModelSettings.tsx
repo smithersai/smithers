@@ -123,7 +123,7 @@ export function PersonalModelSettings({ canSave }: { readonly canSave: boolean }
                   autoComplete="off"
                   spellCheck={false}
                   autoCapitalize="off"
-                  {...(shown.placeholder === undefined ? {} : { placeholder: shown.placeholder })}
+                  {...(shown.placeholder === undefined ? {} : { placeholder: `Default: ${shown.placeholder}` })}
                   ref={follow(shown.model)}
                 />
                 {/* Keyed by the key it starts on: a save elsewhere shows at once. */}

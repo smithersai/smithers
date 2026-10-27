@@ -167,8 +167,8 @@ test("with saved keys: base URLs and named models until edited, each key's tail,
   expect(tab.input("personal-model-implement").value).toBe("gpt-test")
   // Hard names no model: its placeholder is the one it uses anyway, here the preset at the Anthropic-compatible key's host.
   expect(tab.input("personal-model-hard").value).toBe("")
-  expect(tab.input("personal-model-hard").placeholder).toBe(resolveTier(rows, "hard")!.modelId)
-  expect(tab.input("personal-model-hard").placeholder).toBe("claude-opus-5-5")
+  expect(tab.input("personal-model-hard").placeholder).toBe(`Default: ${resolveTier(rows, "hard")!.modelId}`)
+  expect(tab.input("personal-model-hard").placeholder).toBe("Default: claude-opus-5-5")
   expect(MODEL_TIERS.map((tier) => tab.select(tierKeyLabel(tier))?.textContent)).toEqual([
     "Anthropic-compatible",
     "OpenAI-compatible",
