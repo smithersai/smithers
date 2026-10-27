@@ -46,3 +46,10 @@ Compatibility paths redirect with replacement: `/settings` to `/app/settings`, r
 Repository routes adopt the owner/name spelling GitHub returns, preserving the route suffix, search and fragment. A failed metadata lookup never invents a canonical name.
 
 A tree URL naming a file in the resolved revision redirects to its blob URL. Directories, unknown paths and missing revisions retain their own URLs and absence handling.
+
+## Keyboard navigation
+
+After a pathname change commits, focus moves to the new main heading, or main
+when the page has no heading. Search and filter changes preserve control focus.
+`tests/PageFocus.test.ts` covers the DOM lifecycle; `e2e/accessibility-navigation.spec.ts`
+covers the keyboard through the real router.

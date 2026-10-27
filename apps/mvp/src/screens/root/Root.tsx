@@ -5,6 +5,7 @@ import { NotificationsPanel } from "../../features/attention/components/Notifica
 import { PageNotices } from "../../features/attention/components/PageNotices"
 import { floatsBell } from "../../features/attention/contract"
 import { IntentPreload } from "../../features/navigation/components/IntentPreload"
+import { PageFocus } from "../../features/navigation/components/PageFocus"
 import "./root.css"
 
 // Every route's frame: the page's LoadingBar, the route's screen, the top bar's bell where the screen's header doesn't hold
@@ -13,6 +14,7 @@ import "./root.css"
 // router keeps this one on screen, and the bar shows only once that has taken LOADING_DELAY_MS
 // (docs/features/navigation.md). A plain link's hover or focus preloads its page (IntentPreload).
 export function Root() {
+  const pathname = useRouterState({ select: (state) => state.resolvedLocation?.pathname ?? state.location.pathname })
   const loading = useRouterState({ select: (state) => state.status === "pending" })
   const routeId = useRouterState({ select: (state) => state.matches.at(-1)?.routeId })
   return (
@@ -21,6 +23,7 @@ export function Root() {
       <IntentPreload>
         <PageNotices />
         <Outlet />
+        <PageFocus pathname={pathname} />
         {floatsBell(routeId) ? (
           <div className="root-bell">
             <NotificationsBell />
