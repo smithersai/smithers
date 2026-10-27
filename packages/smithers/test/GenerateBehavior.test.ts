@@ -329,7 +329,7 @@ describe("generator command behavior", () => {
     )
   })
 
-  it.each(["Github.Workflow", "GithubCiGen"])("selects %s for CI without passing a package name", async (rule) => {
+  it.each(["Github.CiGen", "GithubCiGen"])("selects %s for CI without passing a package name", async (rule) => {
     ports.openPackageIndex.mockResolvedValue({
       targets: () => [declaration("NewPackage", "//:package"), declaration(rule, "//:ci")]
     })
@@ -371,7 +371,7 @@ describe("generator command behavior", () => {
       expect(result.codes).toContain(1)
       expect(result.stdout).toContain(`No declared ${args[0]} generator matches`)
       expect(result.stdout).toContain("generator_missing")
-      expect(result.stdout).toContain(args[0] === "package" ? "S.NewPackage" : "S.Github.Workflow")
+      expect(result.stdout).toContain(args[0] === "package" ? "S.NewPackage" : "S.Github.CiGen")
       expect(ports.runPackageVerb).not.toHaveBeenCalled()
     }
   )
@@ -379,8 +379,8 @@ describe("generator command behavior", () => {
   it("refuses ambiguous selection and explicit labels that are not matching generators", async () => {
     ports.openPackageIndex.mockResolvedValue({
       targets: () => [
-        declaration("Github.Workflow", "//:one"),
-        declaration("GithubCiGen", "//:two"),
+        declaration("Github.CiGen", "//:one"),
+        declaration("Github.CiGen", "//:two"),
         declaration("Filegroup", "//:files")
       ]
     })
@@ -395,7 +395,7 @@ describe("generator command behavior", () => {
   })
 
   it("preserves plan-only outcomes without requiring an execution ok field", async () => {
-    ports.openPackageIndex.mockResolvedValue({ targets: () => [declaration("Github.Workflow", "//:ci")] })
+    ports.openPackageIndex.mockResolvedValue({ targets: () => [declaration("Github.CiGen", "//:ci")] })
     ports.runPackageVerb.mockResolvedValue({ planned: [".github/workflows/ci.yml"] })
     const result = await invoke(["ci", "--plan"], { stderr: undefined, environment: undefined })
     expect(result.codes).not.toContain(1)
@@ -408,7 +408,7 @@ describe("generator command behavior", () => {
     expect(discovery.codes).toContain(1)
     expect(discovery.stdout).toContain("workspace failed to load")
     expect(ports.runPackageVerb).not.toHaveBeenCalled()
-    ports.openPackageIndex.mockResolvedValue({ targets: () => [declaration("Github.Workflow", "//:ci")] })
+    ports.openPackageIndex.mockResolvedValue({ targets: () => [declaration("Github.CiGen", "//:ci")] })
     ports.runPackageVerb.mockRejectedValueOnce(new Error("executor unavailable"))
     const execution = await invoke(["ci"])
     expect(execution.codes).toContain(1)

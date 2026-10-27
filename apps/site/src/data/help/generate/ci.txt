@@ -1,4 +1,4 @@
-smthrs generate ci — Generate CI files using the workspace's declared GitHub workflow target
+smthrs generate ci — Generate CI files using the workspace's declared Github.CiGen target
 
 Usage: smthrs generate ci [options]
 

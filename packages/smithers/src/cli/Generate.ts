@@ -142,7 +142,7 @@ const generateTarget = async (
   const index = await openPackageIndex(options, config)
   const candidates = index.targets().filter((row) => {
     const rule = Target.metadata(row.target).target
-    return kind === "package" ? rule === "NewPackage" : rule === "Github.Workflow" || rule === "GithubCiGen"
+    return kind === "package" ? rule === "NewPackage" : rule === "Github.CiGen" || rule === "GithubCiGen"
   })
   const selected = options.target === undefined ? candidates : candidates.filter((row) => row.label === options.target)
   if (selected.length === 0) {
@@ -150,7 +150,7 @@ const generateTarget = async (
       fault: "user",
       code: "generator_missing",
       message: `No declared ${kind} generator matches; add a ${
-        kind === "package" ? "S.NewPackage" : "S.Github.Workflow"
+        kind === "package" ? "S.NewPackage" : "S.Github.CiGen"
       } target to PACKAGE.ts${options.target ? ` (${options.target})` : ""}`
     })
   }
@@ -218,7 +218,7 @@ export const createGenerateCli = (config: RuntimeConfig = {}) =>
       run: (c) => safe(c, () => generateTarget("package", c.options, config, c.args.name))
     })
     .command("ci", {
-      description: "Generate CI files using the workspace's declared GitHub workflow target",
+      description: "Generate CI files using the workspace's declared Github.CiGen target",
       mcp: { annotations: { readOnlyHint: false } },
       options: generatorOptions,
       run: (c) => safe(c, () => generateTarget("ci", c.options, config))

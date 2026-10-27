@@ -651,7 +651,7 @@ smthrs generate package <name> [options]
 
 ### `generate ci`
 
-Generate CI files using the workspace's declared GitHub workflow target
+Generate CI files using the workspace's declared Github.CiGen target
 
 ```text
 smthrs generate ci [options]

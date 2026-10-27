@@ -73,7 +73,11 @@ conservatively select more work.
 
 For scripts, target commands and `generate ci/package` document `--workspace`
 in their schemas but the executable also accepts `--root` as an alias;
-flow and operator commands use `--root`. Flow control, ordinary run management, and approvals select a host from
+flow and operator commands use `--root`.
+`generate ci` runs a declared `S.Github.CiGen({ workflows: [...] })` target.
+`S.Github.Workflow` declares its input; it does not render files by itself.
+When several renderers exist, select one with `--target`.
+Flow control, ordinary run management, and approvals select a host from
 `SMITHERS_REMOTE` or `--remote` and authenticate with the saved login or `SMITHERS_TOKEN`.
 The saved `smithers auth login` session is shared with repository commands; `SMITHERS_TOKEN` is the non-interactive override.
 Flow listings preserve distinct discovery warnings from every control-plane page;
