@@ -68,7 +68,6 @@ export default defineConfig({
     appDocsAssets(),
     starlight({
       title: "Smithers",
-      routeMiddleware: "./scripts/docs-notice.mjs",
       disable404Route: true,
       description: project.description,
       logo: { src: "./src/docs-assets/logo.png", alt: "Smithers" },
