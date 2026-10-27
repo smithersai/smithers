@@ -35,9 +35,9 @@ const execute = <A>(context: Presentation.Failing, body: () => Promise<A>) =>
 
 const namespaceFields = {
   namespace: z.string().default("user:cli").describe(
-    "Memory namespace: user:cli, flow:<id>, agent:<id>, or global:<id>"
+    "Memory namespace: user:cli, flow:<id>, agent:<id>, or global:<id>; a bare kind's ID defaults to cli"
   ),
-  id: z.string().optional().describe("Namespace identifier when --namespace is a bare lifetime such as user")
+  id: z.string().optional().describe("Namespace identifier for a bare kind; defaults to cli")
 }
 const options = z.object({ ...localFields, ...namespaceFields })
 const limited = options.extend({ limit: z.number().int().positive().max(10000).default(100) })
@@ -365,9 +365,11 @@ export const createMemoryCli = () => {
       mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ key: z.string(), value: z.string() }),
       options: options.extend({
-        valueJson: z.boolean().default(false),
-        ttlMs: z.number().int().positive().optional(),
-        tag: z.array(z.string()).default([])
+        valueJson: z.boolean().default(false).describe("Require valid JSON instead of falling back to a string"),
+        ttlMs: z.number().int().positive().optional().describe("Fact TTL in positive integer milliseconds"),
+        tag: z.array(z.string()).default([]).describe(
+          "At most 16 unique tags with branch:, stream:, source:, or scope: prefixes"
+        )
       }),
       run: (context) =>
         execute(context, () =>
@@ -449,7 +451,7 @@ export const createMemoryCli = () => {
       options: z.object({
         ...localFields,
         summary: z.string().min(1),
-        before: z.number().int().nonnegative(),
+        before: z.number().int().nonnegative().describe("Required exclusive cutoff in Unix epoch milliseconds"),
         keep: z.number().int().nonnegative().default(10),
         dryRun: z.boolean().default(false)
       }),

@@ -327,14 +327,17 @@ declared request's kind, options, and schema to shape the answer.
 | `eval` | `list/run/baseline/compare`; discover `evals/**/*.eval.ts` modules exporting `suite` and `executor`, and compare saved results with committed baselines. `run` also records score observations in the project's `.flows/engine.db` when it exists. |
 
 Memory defaults to `--namespace user:cli` and accepts `kind:id` or a bare kind
-with `--id`. Bare `memory` prints help. Missing fact arguments, such as
+with optional `--id`; a bare kind's ID defaults to `cli`. Bare `memory` prints help. Missing fact arguments, such as
 `memory get` without a key, return Incur validation errors (exit 1) without
 opening the store. Invalid namespace identities are also rejected before
 opening the store. Facts automatically decode valid JSON. Recall supports
 `--method keyword` and `--method fts`; FTS is enabled for the requested
 namespaces. Semantic recall remains a library binding that needs a configured
-embedding provider. `compact` takes an explicit `--summary`, `--before`
-timestamp, and retained-message count (`--keep`); `--dry-run` previews it.
+embedding provider. Fact `--tag` values must be unique (at most 16) and start
+with `branch:`, `stream:`, `source:`, or `scope:`; `--ttl-ms` is a positive
+integer TTL in milliseconds. `compact` requires `--summary` and an exclusive
+`--before` cutoff in Unix epoch milliseconds, and accepts a retained-message
+count (`--keep`); `--dry-run` previews it.
 
 `memory messages add --message-id <id>` is idempotent for the same thread,
 role and text. When `--at` is omitted, a retry keeps the saved timestamp;
