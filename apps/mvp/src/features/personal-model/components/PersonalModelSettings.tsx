@@ -71,7 +71,9 @@ export function PersonalModelSettings({ canSave }: { readonly canSave: boolean }
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const data = new FormData(event.currentTarget)
-    actions.save(readForm((name) => String(data.get(name) ?? "")))
+    const draft = readForm((name) => String(data.get(name) ?? ""))
+    if ((event.nativeEvent as SubmitEvent).submitter?.getAttribute("value") === "test") actions.test(draft)
+    else actions.save(draft)
   }
   return (
     <section className="personal-model" aria-label={YOUR_MODEL}>
@@ -145,7 +147,7 @@ export function PersonalModelSettings({ canSave }: { readonly canSave: boolean }
           <Button type="submit" disabled={waiting}>{SAVE}</Button>
           {rows.length === 0 ? null : (
             <>
-              <Button type="button" variant="outline" disabled={waiting} onClick={actions.test}>{TEST}</Button>
+              <Button type="submit" value="test" variant="outline" disabled={waiting}>{TEST}</Button>
               <Button type="button" variant="outline" disabled={waiting} onClick={actions.remove}>{REMOVE}</Button>
             </>
           )}

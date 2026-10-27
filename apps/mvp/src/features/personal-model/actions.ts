@@ -4,6 +4,7 @@ import { FlowDispatch } from "../../flows/dispatch"
 import { type ModelNotTaken, PersonalModelClient } from "./api"
 import { checkSave, type Refusal } from "./contract"
 import { record } from "./metrics"
+import { testDraftProblem } from "./testDraft"
 import { FORM, type Form, type Sent, TEST } from "./schema"
 import { PersonalModelStore } from "./store"
 import { lastFailure, latestUpdate, onItsWay, type SaveForm } from "./view"
@@ -163,14 +164,27 @@ export const remove = Effect.gen(function* () {
 
 /**
  * Test: dispatches `model/test`, door `button`. It returns at once; the section shows the result, or why there was
- * none, once the flow ends. Answers whether it was sent: not while a test or a write is on its way.
+ * none, once the flow ends. A supplied form is checked synchronously and must match the saved model; only a refusal
+ * code survives that check. Answers whether it was sent: not while a test or a write is on its way.
  */
-export const test = Effect.gen(function* () {
+export const test = (draft?: SaveForm) => Effect.gen(function* () {
   const store = yield* PersonalModelStore
   const flows = yield* FlowDispatch
   const held = yield* store.tests.get(TEST)
   const write = yield* store.form.get(FORM)
   if (Option.isSome(held) && held.value.state === "testing" || Option.isSome(write) && onItsWay(write.value)) return false
+  if (draft !== undefined) {
+    const failure = testDraftProblem(draft, yield* current)
+    if (failure !== undefined) {
+      // Replace an old result without storing the draft, especially its keys.
+      if (Option.isSome(write)) yield* store.form.update(FORM, (row) => void (row.quiet = true))
+      const refused = { id: TEST, state: "failed" as const, result: null, failure, failedAt: lastFailure(yield* current)?.failedAt ?? null }
+      if (Option.isSome(held)) yield* store.tests.update(TEST, (row) => void Object.assign(row, refused))
+      else yield* store.tests.insert(refused)
+      yield* record("test", "refused", { code: failure })
+      return false
+    }
+  }
   // The test takes the status line from the last write's outcome. The form keeps its count, which keys its fields.
   if (Option.isSome(write)) yield* store.form.update(FORM, (draft) => void (draft.quiet = true))
   const testing = { id: TEST, state: "testing" as const, result: null, failure: null, failedAt: null }

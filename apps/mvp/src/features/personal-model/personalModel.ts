@@ -28,8 +28,8 @@ export interface PersonalModelActions {
   readonly save: (form: SaveForm) => boolean
   /** Remove: whether it was sent. */
   readonly remove: () => boolean
-  /** Test: whether it was sent. */
-  readonly test: () => boolean
+  /** Test the saved model: an optional visible draft must validate and match it before sending. */
+  readonly test: (draft?: SaveForm) => boolean
 }
 
 export class PersonalModel extends Context.Service<
@@ -51,7 +51,7 @@ export class PersonalModel extends Context.Service<
         actions: {
           save: (form) => run(save(form)),
           remove: () => run(remove),
-          test: () => run(test),
+          test: (draft) => run(test(draft)),
         },
       })
     }),

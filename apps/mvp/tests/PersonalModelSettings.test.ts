@@ -70,6 +70,7 @@ const section = async (initial: ReadonlyArray<PersonalModelRow>, canSave = true)
   })))
   const pressed: Array<string> = []
   const saved: Array<SaveForm> = []
+  const tested: Array<SaveForm | undefined> = []
   const view: PersonalModelView = {
     queries: built.queries,
     actions: {
@@ -81,7 +82,8 @@ const section = async (initial: ReadonlyArray<PersonalModelRow>, canSave = true)
         pressed.push("remove")
         return true
       },
-      test: () => {
+      test: (draft) => {
+        tested.push(draft)
         pressed.push("test")
         return true
       },
@@ -111,6 +113,7 @@ const section = async (initial: ReadonlyArray<PersonalModelRow>, canSave = true)
     run,
     container,
     saved,
+    tested,
     pressed,
     input,
     buttons,
@@ -235,4 +238,18 @@ test("someone who may no longer save sees Remove alone while a key is saved, and
   expect(saved.pressed).toEqual(["remove"])
   const none = await section([], false)
   expect(none.container.innerHTML).toBe("")
+})
+
+
+test("Test submits the visible draft, including unsaved keys, only to the synchronous validation boundary", async () => {
+  const tab = await section([OPENAI])
+  tab.input("personal-model-openai-chat-base-url").value = "not a url"
+  tab.input("personal-model-openai-chat-key").value = "sk-unsaved-key-sentinel"
+  const button = [...tab.container.querySelectorAll("button")].find((button) => button.textContent === "Test")!
+  await act(async () => button.click())
+  expect(tab.tested).toEqual([{
+    keys: [{ protocol: "openai-chat", baseUrl: "not a url", key: "sk-unsaved-key-sentinel" }],
+    models: { implement: { protocol: "openai-chat", modelId: "gpt-test" } },
+  }])
+  expect(tab.saved).toEqual([])
 })

@@ -116,7 +116,7 @@ export const testText = (result: TestResult): string => {
 }
 
 /** A refusal's phrase. */
-export const refusalText = (refusal: Refusal): string => REFUSAL_COPY[refusal]
+export const refusalText = (refusal: Refusal | "unsaved"): string => REFUSAL_COPY[refusal]
 
 /**
  * What the one status line says: words (`text`), or a saved key's failure with when it happened (`failure`, `at` in epoch

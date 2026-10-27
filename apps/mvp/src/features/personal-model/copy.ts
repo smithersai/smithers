@@ -50,8 +50,9 @@ export const OK = "OK"
 /** The key field's placeholder once a model is saved: its last characters behind dots. */
 export const keyPlaceholder = (keyLast4: string): string => `····${keyLast4}`
 
-/** Why ChatApi refused a write or a test, one phrase per refusal. */
-export const REFUSAL_COPY: Record<Refusal, string> = {
+/** Why a write or test was refused, including an unsaved local draft. */
+export const REFUSAL_COPY: Record<Refusal | "unsaved", string> = {
+  unsaved: "Save first",
   authentication: "Sign in to use your model",
   forbidden: "Only Members can use their own model",
   invalid: "Your model wasn't saved",

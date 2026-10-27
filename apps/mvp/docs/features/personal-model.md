@@ -212,3 +212,11 @@ carry ops, outcomes, codes, statuses, roles and counts: never a key, a base URL,
   Hard's resolved placeholder, tested, asked and removed in the browser, locally and in production.
 
 An unnamed tier labels its fallback as `Default: <model>` so the placeholder cannot be mistaken for a saved model.
+
+### Testing edits
+
+Test validates the on-screen form with Save's `checkSave` before dispatching anything. A valid draft that differs
+from the synced configuration says **Save first**; it never tests a different, saved configuration on behalf of the
+draft. Typing any key requires saving, even if its last four characters match. Only an unchanged configuration
+runs the existing durable `model/test {}`. No draft key enters a collection, flow, journal, log or metric; refusals
+record only their code through `personal_model.test` and `smithers_web_personal_model_writes`.

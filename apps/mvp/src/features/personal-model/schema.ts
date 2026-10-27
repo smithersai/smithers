@@ -105,14 +105,15 @@ export type Form = typeof Form.Type
 
 /**
  * The last Test on this tab: `testing` until `model/test` ends, then `done` with its result, or `failed` with ChatApi's
- * refusal (`unavailable` when the flow couldn't run); and the rows' latest `failedAt` when the result came, so a later
+ * refusal (`unavailable` when the flow couldn't run, `unsaved` for an edited local draft); and the rows' latest
+ * `failedAt` when the result came, so a later
  * failure of a real call shows in its place.
  */
 export const TestRow = Schema.Struct({
   id: Schema.String,
   state: Schema.Literals(["testing", "done", "failed"]),
   result: Schema.NullOr(TestResult),
-  failure: Schema.NullOr(Refusal),
+  failure: Schema.NullOr(Schema.Literals([...REFUSALS, "unsaved"])),
   failedAt: Schema.NullOr(Schema.String),
 })
 export type TestRow = typeof TestRow.Type

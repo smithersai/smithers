@@ -463,6 +463,35 @@ describe("a Member's own model, on ChatApi's real routes", () => {
     expect([tab.count({ op: "put", outcome: "unknown" }), tab.count({ op: "put", outcome: "started" })]).toEqual([2, 1])
   }, WITHIN)
 
+  test("Test draft guard: invalid and unsaved drafts never call a provider; unchanged form tests the saved model", async () => {
+    let answer: Reply = { text: "ok" }
+    const tab = await open({ provider: () => answer })
+    // Without a prior write or test, validation still creates a visible refusal.
+    expect(tab.actions.test({ keys: [], models: {} })).toBe(false)
+    expect(tab.status()).toMatchObject({ text: "Your model wasn't saved" })
+    expect(tab.actions.save(SCRIPTED(KEY))).toBe(true)
+    await until(() => expect(tab.form()).toMatchObject({ state: "done" }))
+    for (const baseUrl of ["not a url", "https://exa mple.test/v1"]) {
+      expect(tab.actions.test(one("openai-chat", baseUrl, "gpt-test", ""))).toBe(false)
+      expect(tab.status()).toMatchObject({ text: "Base URLs are https:// on a public host, with no port" })
+    }
+    expect(tab.actions.test(SCRIPTED(ROTATED))).toBe(false)
+    expect(tab.status()).toMatchObject({ text: "Save first" })
+    expect(tab.actions.test(one("openai-chat", OPENAI_ORIGIN, "changed", ""))).toBe(false)
+    expect(tab.api.providerCalls).toHaveLength(0)
+    expect(tab.count({ op: "test", outcome: "refused" })).toBe(5)
+    expect(tab.kept()).not.toContain(ROTATED)
+    expect(tab.actions.test(SCRIPTED(""))).toBe(true)
+    await until(() => expect(tab.test()).toMatchObject({ state: "done", result: { ok: true } }))
+    expect(tab.api.providerCalls).toHaveLength(1)
+    answer = { status: 401, error: { message: "Incorrect API key" } }
+    expect(tab.actions.test(SCRIPTED(""))).toBe(true)
+    await until(() => expect(tab.row()).toMatchObject({ failureStatus: 401 }))
+    await until(() => expect(tab.test()).toMatchObject({ state: "done" }))
+    expect(tab.actions.test(SCRIPTED(ROTATED))).toBe(false)
+    expect(tab.status()).toMatchObject({ text: "Save first" })
+  }, WITHIN)
+
   test("Test through its flow: OK; the provider's refusal, recorded on the row, shows in Settings; OK clears it", async () => {
     let answer: Reply = { text: "ok" }
     const tab = await open({ provider: () => answer })
