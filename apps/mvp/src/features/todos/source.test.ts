@@ -1,8 +1,9 @@
 import { ShapeSource } from "@smthrs/effect-electric"
-import { Effect, Layer, Option } from "effect"
+import { Deferred, Effect, Layer, Option } from "effect"
 import { expect, test, vi } from "vitest"
 import { openTestApp, TEST_REPOSITORY } from "../../test/chatApi"
 import type { Session } from "../auth/schema"
+import { role as readRole } from "../repo/actions"
 import { repoId } from "../repo/contract"
 import { TodosStore } from "./store"
 import { stackAccess } from "./source"
@@ -36,4 +37,32 @@ test("a real signed-out stack opens no TODO or prompt shape and learns access fr
     await runtime.runPromise(Effect.sleep("100 millis"))
     expect(requests.filter((path) => path === "/api/shapes/todos" || path === "/api/shapes/todo-requests")).toEqual([])
   } finally { await runtime.dispose() }
+}, 90_000)
+
+
+test("a granted stack stays unknown until its real shape is applied", async () => {
+  const entered = Deferred.makeUnsafe<void>()
+  const release = Deferred.makeUnsafe<void>()
+  const source: ShapeSource.Source = { ...ShapeSource.fetchSource, request: (url, init) => Effect.gen(function* () {
+    if (new URL(url).pathname === "/api/shapes/todos") {
+      yield* Deferred.succeed(entered, undefined)
+      yield* Deferred.await(release)
+    }
+    return yield* ShapeSource.fetchSource.request(url, init)
+  }) }
+  const runtime = openTestApp({ replace: Layer.succeed(ShapeSource.ShapeSource, source) })
+  try {
+    const [owner, name] = TEST_REPOSITORY.split("/") as [string, string]
+    await runtime.runPromise(readRole(owner, name))
+    const store = await runtime.runPromise(Effect.service(TodosStore))
+    const key = repoId(owner, name)
+    await runtime.runPromise(store.stackOf(key))
+    await runtime.runPromise(Deferred.await(entered))
+    expect(Option.getOrThrow(await runtime.runPromise(store.access.get(key))).status).toBe("unknown")
+    await runtime.runPromise(Deferred.succeed(release, undefined))
+    await vi.waitFor(async () => expect(Option.getOrThrow(await runtime.runPromise(store.access.get(key))).status).toBe("allowed"), { timeout: 30_000 })
+  } finally {
+    await runtime.runPromise(Deferred.succeed(release, undefined))
+    await runtime.dispose()
+  }
 }, 90_000)

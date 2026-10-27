@@ -161,7 +161,11 @@ const make = Effect.fnUntraced(function* (config: TodosConfig) {
       )
       // Unknown until the session and repository role answer.
       yield* Effect.ignore(access.insert({ id, status: "unknown" }))
-      yield* authority.pipe(
+      yield* Stream.zipLatestWith(
+        authority,
+        Stream.concat(Stream.make(false), Stream.fromEffect(Effect.as(todos.currentApplied, true))),
+        (status, applied) => status === "allowed" && !applied ? "unknown" as const : status,
+      ).pipe(
         Stream.runForEach((status) => Effect.ignore(access.update(id, (row) => { row.status = status }))),
         Effect.forkIn(scope, { startImmediately: true }),
       )

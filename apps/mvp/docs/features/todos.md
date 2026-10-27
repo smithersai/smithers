@@ -330,3 +330,5 @@ and retried closes. A close refusal never blocks cancellation or settlement.
 Publish compares the branch machine's complete working tree with the attempt's recorded base, including commits the agent already made and pending edits. An equal tree fails `empty_change`. The host publishes the resulting files as one commit with the TODO message, using the same path validation and expected-head fence; only the TODO branch is written (decision 0016).
 
 An issue’s TODO links include the TODO number and title.
+
+A direct TODO load shows Syncing TODO until the stack shape has applied. Repository permission alone never certifies that a TODO is missing. Revocation remains immediate while sync is pending.

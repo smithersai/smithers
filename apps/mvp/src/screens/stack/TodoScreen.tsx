@@ -48,6 +48,7 @@ export function TodoScreen() {
         ]}
         onNavigate={(item) => void navigate({ href: item.href! })}
       />
+      {screen.kind === "waiting" ? <p role="status">Syncing TODO…</p> : null}
       {screen.kind === "missing" ? <EmptyState title={NOT_FOUND} /> : null}
       {screen.kind === "page" ? (
         <ItemConversation
