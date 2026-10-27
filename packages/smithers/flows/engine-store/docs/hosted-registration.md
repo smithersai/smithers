@@ -2,9 +2,10 @@
 
 `engine-store.registration.recovered` records, once per runtime start, how
 many registrations recovered clocks and deferred completions (`registrations`)
-and how long they took in all (`durationMs`). Each registration's own recovery
-is `engine-store.registration.flow.recovered` at Debug, with the flow tag and
-its `durationMs`. Neither contains a payload. A duration includes database
+and how long they took in all (`durationMs`): under `Runtime.layer`, one
+recovery for every registration (`deferRecovery`). A registration that
+recovers on its own logs `engine-store.registration.flow.recovered` at Debug,
+with the flow tag and its `durationMs`. Neither contains a payload. A duration includes database
 reads and any recovery writes, not just CPU. On Cloudflare the summary
 precedes `cloudflare.execution.ready`; compare the two before attributing
 startup time to module compilation or a cold object. See

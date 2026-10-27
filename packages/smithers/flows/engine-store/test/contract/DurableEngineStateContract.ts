@@ -642,5 +642,43 @@ export const describeContract = (harness: Harness): void => {
           { flowName: "Contract/Flow", executionId: "deferred-run", deferredName: "answer" }
         ])
       }))
+
+    it.effect("lists every flow's unconsumed completions when no flow is named, and one execution's with its id", () =>
+      Effect.gen(function*() {
+        const completion = (flowName: string, executionId: string, deferredName: string) => ({
+          flowName,
+          executionId,
+          deferredName,
+          exit: { value: deferredName },
+          completedAtMs: 10
+        })
+        const result = yield* harness.run((context) =>
+          Effect.gen(function*() {
+            for (const runId of ["every-a", "every-b", "every-consumed", "every-closed"]) {
+              yield* context.seedRun(runId, owner, "running")
+            }
+            yield* context.state.completeDeferred(completion("Contract/EveryA", "every-a", "answer"))
+            yield* context.state.completeDeferred(completion("Contract/EveryB", "every-b", "answer"))
+            yield* context.state.completeDeferred(completion("Contract/EveryB", "every-b", "second"))
+            const consumed = completion("Contract/EveryA", "every-consumed", "answer")
+            yield* context.state.completeDeferred(consumed)
+            yield* context.state.consumeDeferred(consumed, 20)
+            yield* context.state.completeDeferred(completion("Contract/EveryA", "every-closed", "answer"))
+            yield* context.setStatus("every-closed", "completed")
+            return {
+              every: yield* context.state.completedDeferreds(undefined),
+              one: yield* context.state.completedDeferreds(undefined, "every-b")
+            }
+          })
+        )
+
+        // Consumed completions and those of settled runs are never listed, whichever flow is asked about.
+        expect(result.every).toEqual([
+          { flowName: "Contract/EveryA", executionId: "every-a", deferredName: "answer" },
+          { flowName: "Contract/EveryB", executionId: "every-b", deferredName: "answer" },
+          { flowName: "Contract/EveryB", executionId: "every-b", deferredName: "second" }
+        ])
+        expect(result.one).toEqual(result.every.slice(1))
+      }))
   })
 }

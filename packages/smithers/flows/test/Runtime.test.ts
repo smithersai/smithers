@@ -275,8 +275,9 @@ it("runs a flow on a host with no filesystem, from injected services alone", asy
 })
 
 // A browser engine registers hundreds of flows per start. At Info per registration, every cold page load wrote one
-// `engine-store.registration.recovered` line per registration (446 in production on 2026-10-25).
-it("logs registration recovery once at Info when registration finishes, and each registration at Debug", async () => {
+// `engine-store.registration.recovered` line per registration (446 in production on 2026-10-25), and each
+// registration read the store for its own clocks and completions: 1,000 statements before the first page rendered.
+it("recovers every registration at once when registration finishes, and logs that once at Info", async () => {
   const Bye = Flow.make("Runtime/Bye", {
     payload: { name: Schema.String },
     success: Schema.String,
@@ -307,21 +308,23 @@ it("logs registration recovery once at Info when registration finishes, and each
       )
     )
     const summary = lines.filter((line) => line.message === "engine-store.registration.recovered")
-    const detail = lines.filter((line) => line.message === "engine-store.registration.flow.recovered")
     expect(summary).toHaveLength(1)
     expect(summary[0]!.level).toBe("INFO")
-    expect(summary[0]!.annotations).toEqual({ registrations: detail.length, durationMs: expect.any(Number) })
-    expect(detail.every((line) => line.level === "DEBUG")).toBe(true)
-    // The summary follows every registration.
-    expect(lines.indexOf(summary[0]!)).toBeGreaterThan(lines.indexOf(detail.at(-1)!))
-    return detail.map((line) => line.annotations["smithers.flow"])
+    expect(summary[0]!.annotations).toEqual({ registrations: expect.any(Number), durationMs: expect.any(Number) })
+    // No registration recovered on its own: the one recovery covered them all.
+    expect(lines.filter((line) => line.message === "engine-store.registration.flow.recovered")).toEqual([])
+    // The summary follows the registration phase.
+    const registered = lines.findIndex((line) =>
+      line.message === "flows.runtime.phase" && line.annotations["phase"] === "registration"
+    )
+    expect(registered).toBeGreaterThanOrEqual(0)
+    expect(lines.indexOf(summary[0]!)).toBeGreaterThan(registered)
+    return summary[0]!.annotations["registrations"]
   }
-  const all = await recovery(options)
-  expect(all).toEqual(expect.arrayContaining([Hello._tag, Bye._tag]))
   // Each flow and each system flow its interpreter registers.
-  expect(all.length).toBeGreaterThan(2)
+  expect(await recovery(options)).toBeGreaterThan(2)
   // A hosted store recovers only its execution's flow, and counts that one.
-  expect(await recovery({ ...options, sweep: { host: "hello-1", flow: Hello._tag } })).toEqual([Hello._tag])
+  expect(await recovery({ ...options, sweep: { host: "hello-1", flow: Hello._tag } })).toBe(1)
 })
 
 it("provides a declared cache environment under the engine, where an action reads it", async () => {

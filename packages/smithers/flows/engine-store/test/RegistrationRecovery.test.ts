@@ -19,6 +19,7 @@ import * as Logger from "effect/Logger"
 import * as References from "effect/References"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
+import * as Tracer from "effect/Tracer"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
@@ -38,8 +39,8 @@ const jj = Layer.succeed(
   })
 )
 
-const engine = (sweep: EngineStore.Sweep) =>
-  EngineStore.layer({ owner: { hostId: "recovery" }, journalSource: "recovery-engine", sweep }).pipe(
+const engine = (sweep: EngineStore.Sweep, deferRecovery = false) =>
+  EngineStore.layer({ owner: { hostId: "recovery" }, journalSource: "recovery-engine", sweep, deferRecovery }).pipe(
     Layer.provideMerge(Layer.mergeAll(TestStores.layerAt(":memory:"), StepBoundary.layerUnsupported, jj))
   )
 
@@ -49,19 +50,33 @@ const catalog = ["recovery/a", "recovery/b", "recovery/c"].map((tag) =>
 
 type Line = ReturnType<typeof Logger.formatStructured.log>
 
-/** Runs `use` over `sweep`'s engine, given every line it logs at Debug and above. */
+/**
+ * Runs `use` over `sweep`'s engine, given every line it logs at Debug and above and the name of every span it opens.
+ */
 const observed = <A, E>(
   sweep: EngineStore.Sweep,
-  use: (lines: ReadonlyArray<Line>) => Effect.Effect<A, E, FlowRuntime.FlowRuntime | EngineStore.Driver | Scope.Scope>
+  use: (
+    lines: ReadonlyArray<Line>,
+    spans: ReadonlyArray<string>
+  ) => Effect.Effect<A, E, FlowRuntime.FlowRuntime | EngineStore.Driver | Scope.Scope>,
+  deferRecovery = false
 ) => {
   const lines: Array<Line> = []
   const logger = Logger.make((options) => {
     lines.push(Logger.formatStructured.log(options))
   })
-  return withCrypto(Effect.scoped(use(lines).pipe(Effect.provide(engine(sweep))))).pipe(
+  const spans: Array<string> = []
+  const tracer = Tracer.make({
+    span(options) {
+      spans.push(options.name)
+      return new Tracer.NativeSpan(options)
+    }
+  })
+  return withCrypto(Effect.scoped(use(lines, spans).pipe(Effect.provide(engine(sweep, deferRecovery))))).pipe(
     Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
     Effect.provideService(References.MinimumLogLevel, "Debug"),
-    Effect.map((value) => ({ value, lines }))
+    Effect.provideService(Tracer.Tracer, tracer),
+    Effect.map((value) => ({ value, lines, spans }))
   )
 }
 
@@ -124,6 +139,50 @@ describe("registration recovery", () => {
           })
       )
       expect(value).toEqual([0, 2, 0, 1])
+    }))
+
+  it.effect("defers every registration's recovery to the first report, which sweeps once for all of them", () =>
+    Effect.gen(function*() {
+      const { lines, value } = yield* observed(
+        "process",
+        (logged, spans) =>
+          Effect.gen(function*() {
+            const sweeps = (name: string) => spans.filter((span) => span === `DeferredPersistence.${name}`).length
+            yield* registerAll([...catalog, catalog[0]!])
+            const registering = { sweepDue: sweeps("sweepDue"), sweepFlows: sweeps("sweepFlows") }
+            const detail = named(logged, "engine-store.registration.flow.recovered").length
+            const driver = yield* EngineStore.Driver
+            const first = yield* driver.reportRecovery
+            const reported = { sweepDue: sweeps("sweepDue"), sweepFlows: sweeps("sweepFlows") }
+            // A registration after the report recovers as it registers, as on any store.
+            yield* registerAll(catalog.slice(1, 2))
+            const later = yield* driver.reportRecovery
+            const after = { sweepDue: sweeps("sweepDue"), sweepFlows: sweeps("sweepFlows") }
+            return { registering, detail, first, reported, later, after }
+          }),
+        true
+      )
+      expect(value.registering).toEqual({ sweepDue: 0, sweepFlows: 0 })
+      expect(value.detail).toBe(0)
+      expect(value.first).toEqual({ registrations: 4, durationMs: expect.any(Number) })
+      expect(value.reported).toEqual({ sweepDue: 0, sweepFlows: 1 })
+      expect(value.later.registrations).toBe(1)
+      expect(value.after).toEqual({ sweepDue: 1, sweepFlows: 1 })
+      expect(named(lines, "engine-store.registration.flow.recovered").map((line) => line.annotations["smithers.flow"]))
+        .toEqual(["recovery/b"])
+      expect(named(lines, "engine-store.registration.recovered").map((line) => line.annotations["registrations"]))
+        .toEqual([4, 1])
+    }))
+
+  it.effect("sweeps nothing in a first report that follows no registration", () =>
+    Effect.gen(function*() {
+      const { spans, value } = yield* observed(
+        "process",
+        () => Effect.flatMap(EngineStore.Driver, (driver) => driver.reportRecovery),
+        true
+      )
+      expect(value).toEqual({ registrations: 0, durationMs: 0 })
+      expect(spans.filter((span) => span.startsWith("DeferredPersistence.sweep"))).toEqual([])
     }))
 
   it.effect("counts only the hosted flow's registration on a hosted store", () =>

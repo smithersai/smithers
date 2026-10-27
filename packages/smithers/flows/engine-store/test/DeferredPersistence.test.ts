@@ -372,6 +372,69 @@ describe("DeferredPersistence", () => {
       expect(result.events.filter((event) => event === "emit:flows.engine.deferred-completed")).toHaveLength(1)
     }))
 
+  it.effect("sweeps every named flow's clocks and completions after a restart with one read each, and no other's", () =>
+    Effect.gen(function*() {
+      const Other = Flow.make("DeferredPersistence/Other", {
+        payload: {},
+        success: Schema.String,
+        body: () => Node.succeed("unused")
+      })
+      const Unnamed = Flow.make("DeferredPersistence/Unnamed", {
+        payload: {},
+        success: Schema.String,
+        body: () => Node.succeed("unused")
+      })
+      const result = yield* withCrypto(
+        Effect.scoped(Effect.gen(function*() {
+          const state = DurableEngineState.makeMemory()
+          const resumes: Array<string> = []
+          const journal = makeJournal([])
+          const clock = DurableClock.make({ name: "wake", duration: "10 seconds" })
+
+          yield* Effect.scoped(Effect.gen(function*() {
+            const first = yield* build(state, journal, resumes)
+            yield* first.scheduleClock(TestFlow, { executionId: "clock-test", clock })
+            yield* first.scheduleClock(Unnamed, { executionId: "clock-unnamed", clock })
+            for (const [flow, executionId] of [[Other, "done-other"], [Unnamed, "done-unnamed"]] as const) {
+              yield* state.completeDeferred({
+                flowName: flow._tag,
+                executionId,
+                deferredName: "answer",
+                exit: Exit.succeed("persisted"),
+                completedAtMs: 0
+              })
+            }
+          }))
+          // The first incarnation's timers went with it.
+          yield* TestClock.adjust("5 seconds")
+          yield* Effect.yieldNow
+          const beforeSweep = [...resumes]
+
+          let reads = 0
+          const counted = DurableEngineState.DurableEngineState.of({
+            ...state,
+            pendingClocks: (scope) => Effect.andThen(Effect.sync(() => reads++), state.pendingClocks(scope)),
+            completedDeferreds: (flowName, executionId) =>
+              Effect.andThen(Effect.sync(() => reads++), state.completedDeferreds(flowName, executionId))
+          })
+          const restarted = yield* build(counted, journal, resumes)
+          yield* restarted.sweepFlows(new Set([TestFlow._tag, Other._tag]))
+          yield* Effect.yieldNow
+          // Both clocks come due; only the named flow's was armed again.
+          yield* TestClock.adjust("5 seconds")
+          yield* Effect.yieldNow
+          yield* TestDatabase.until(Effect.sync(() => resumes.length >= 2))
+          yield* TestClock.adjust("1 second")
+          yield* Effect.yieldNow
+          return { beforeSweep, resumes, reads }
+        })).pipe(Effect.provide(TestClock.layer()))
+      )
+
+      expect(result.beforeSweep).toEqual([])
+      expect([...result.resumes].sort()).toEqual(["clock-test:clock", "done-other:deferred"])
+      expect(result.reads).toBe(2)
+    }))
+
   it.effect("does not fire a clock again when a replayed sleep re-schedules it", () =>
     Effect.gen(function*() {
       const result = yield* withCrypto(

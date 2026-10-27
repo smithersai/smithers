@@ -522,7 +522,9 @@ export interface Service {
   /** Whether one execution has an unconsumed completion or a due clock. */
   readonly hasDueWake: (executionId: string, nowMs: number) => Effect.Effect<boolean>
   /**
-   * Lists unconsumed completed deferred addresses for registration-time wake recovery.
+   * Lists unconsumed completed deferred addresses for registration-time wake recovery:
+   * `flowName`'s, or every flow's when it is `undefined`, as one recovery for
+   * many registrations reads them.
    * Observed results remain readable through `deferred` but cannot re-drive a
    * run that has moved on to a later wait.
    *
@@ -532,7 +534,7 @@ export interface Service {
    * that can wake nothing.
    */
   readonly completedDeferreds: (
-    flowName: string,
+    flowName: string | undefined,
     executionId?: string
   ) => Effect.Effect<ReadonlyArray<DeferredAddress>>
   /**
@@ -1497,7 +1499,7 @@ const completedDeferreds = (db: Database): Service["completedDeferreds"] =>
         execution_id AS "executionId",
         deferred_name AS "deferredName"
       FROM flows_deferred_completions
-      WHERE flow_name = ${flowName}
+      WHERE ${flowName === undefined ? db.sql`1 = 1` : db.sql`flow_name = ${flowName}`}
         AND ${executionId === undefined ? db.sql`1 = 1` : db.sql`execution_id = ${executionId}`}
         AND consumed_at_ms IS NULL
         AND EXISTS (
@@ -2558,7 +2560,8 @@ const memoryCompletedDeferreds = (memory: Memory): Service["completedDeferreds"]
     Effect.sync(() =>
       Array.from(memory.deferreds.values())
         .filter((row) =>
-          row.flowName === flowName && (executionId === undefined || row.executionId === executionId) &&
+          (flowName === undefined || row.flowName === flowName) &&
+          (executionId === undefined || row.executionId === executionId) &&
           isLive(memory, row.executionId) && !memory.consumedDeferreds.has(deferredKey(row))
         )
         .map(({ flowName, executionId, deferredName }) => ({

@@ -102,6 +102,12 @@ export interface Service {
    * one flow and, when `executionId` is given, to that execution alone.
    */
   readonly sweepDue: (flowName?: string, executionId?: string) => Effect.Effect<void>
+  /**
+   * {@link Service.sweepDue} for every flow in `flowNames` at once, with one
+   * read of the pending clocks and one of the unconsumed completions however
+   * many flows it names: what one recovery for many registrations does.
+   */
+  readonly sweepFlows: (flowNames: ReadonlySet<string>, executionId?: string) => Effect.Effect<void>
 }
 
 const clockKey = (row: DurableEngineState.ClockAddress): string =>
@@ -387,37 +393,52 @@ export const make = (
       })
     )
 
-    const sweepDue: Service["sweepDue"] = Effect.fn("DeferredPersistence.sweepDue")((flowName, executionId) =>
-      Effect.gen(function*() {
-        const rows = yield* state.pendingClocks({
-          ...(flowName === undefined ? {} : { flowName }),
-          ...(executionId === undefined ? {} : { executionId })
-        })
-        yield* Effect.forEach(
-          rows,
-          (row) => recordClockScheduled(row).pipe(Effect.andThen(armClock(row))),
-          { discard: true }
-        )
-        if (flowName !== undefined) {
-          const completions = yield* state.completedDeferreds(flowName, executionId)
-          yield* Effect.forEach(
-            completions,
-            (address) =>
-              dependencies.scheduleResume(
+    /** Re-announces and re-arms each pending clock row. */
+    const rearm = (rows: ReadonlyArray<DurableEngineState.ClockRow>) =>
+      Effect.forEach(
+        rows,
+        (row) => recordClockScheduled(row).pipe(Effect.andThen(armClock(row))),
+        { discard: true }
+      )
+
+    /** Schedules the resume each unconsumed completion is owed. */
+    const reschedule = (completions: ReadonlyArray<DurableEngineState.DeferredAddress>) =>
+      Effect.forEach(
+        completions,
+        (address) =>
+          dependencies.scheduleResume(
+            address.flowName,
+            address.executionId,
+            "deferred",
+            `${dependencies.journalSource}:wake:${
+              JSON.stringify([
                 address.flowName,
                 address.executionId,
-                "deferred",
-                `${dependencies.journalSource}:wake:${
-                  JSON.stringify([
-                    address.flowName,
-                    address.executionId,
-                    address.deferredName
-                  ])
-                }`
-              ),
-            { discard: true }
-          )
-        }
+                address.deferredName
+              ])
+            }`
+          ),
+        { discard: true }
+      )
+
+    const sweepDue: Service["sweepDue"] = Effect.fn("DeferredPersistence.sweepDue")((flowName, executionId) =>
+      Effect.gen(function*() {
+        yield* rearm(
+          yield* state.pendingClocks({
+            ...(flowName === undefined ? {} : { flowName }),
+            ...(executionId === undefined ? {} : { executionId })
+          })
+        )
+        if (flowName !== undefined) yield* reschedule(yield* state.completedDeferreds(flowName, executionId))
+      })
+    )
+
+    const sweepFlows: Service["sweepFlows"] = Effect.fn("DeferredPersistence.sweepFlows")((flowNames, executionId) =>
+      Effect.gen(function*() {
+        const rows = yield* state.pendingClocks(executionId === undefined ? {} : { executionId })
+        yield* rearm(rows.filter((row) => flowNames.has(row.flowName)))
+        const completions = yield* state.completedDeferreds(undefined, executionId)
+        yield* reschedule(completions.filter((address) => flowNames.has(address.flowName)))
       })
     )
 
@@ -461,6 +482,7 @@ export const make = (
         })
       ),
       scheduleClock,
-      sweepDue
+      sweepDue,
+      sweepFlows
     }
   })

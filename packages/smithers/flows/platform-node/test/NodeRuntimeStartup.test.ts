@@ -84,9 +84,10 @@ it("logs what registration recovered once, at Info, when the host starts", async
     rmSync(directory, { recursive: true, force: true })
   }
   const summary = lines.filter((line) => line.message === "engine-store.registration.recovered")
-  const detail = lines.filter((line) => line.message === "engine-store.registration.flow.recovered")
-  expect(summary.map((line) => [line.level, line.annotations["registrations"]])).toEqual([["INFO", detail.length]])
-  expect(detail.map((line) => line.annotations["smithers.flow"])).toContain(Started._tag)
+  expect(summary.map((line) => line.level)).toEqual(["INFO"])
+  // The flow, its step's flow form and the interpreter's system flows, recovered at once in that report.
+  expect(summary[0]!.annotations["registrations"]).toBeGreaterThan(1)
+  expect(lines.filter((line) => line.message === "engine-store.registration.flow.recovered")).toEqual([])
 })
 
 /** The injected filesystem a host confines to its workspace, which refuses any

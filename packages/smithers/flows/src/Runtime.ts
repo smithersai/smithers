@@ -17,9 +17,11 @@
  * `registerFlows` finishes before the resulting services are exposed. The
  * engine's own registration hook then re-arms durable clocks and deferred
  * wakes, so a persisted run cannot resume through this composition before its
- * flow has been registered. Once every flow is registered, the runtime logs
- * that recovery once, as `engine-store.registration.recovered` with
- * `registrations` and `durationMs` (`EngineStore.Driver.reportRecovery`).
+ * flow has been registered. Once every flow is registered, the runtime
+ * recovers them together, with one read of the store
+ * (`EngineStore.Options.deferRecovery`), and logs that recovery once, as
+ * `engine-store.registration.recovered` with `registrations` and `durationMs`
+ * (`EngineStore.Driver.reportRecovery`).
  *
  * @since 0.1.0
  */
@@ -135,7 +137,10 @@ export const layer = <
     sourceRevision: validated.sourceRevision,
     sweep: validated.sweep,
     resumeConcurrency: validated.resumeConcurrency,
-    placement: validated.placement
+    placement: validated.placement,
+    // Registration is the last phase and its report follows it, before any run can resume through this runtime: every
+    // registration's clocks and completions recover together, in that report.
+    deferRecovery: true
   }
   // A host that guards the ambient `Jj` for action bodies keeps the engine's
   // own snapshots on its privileged repository, as `layerHost` does.

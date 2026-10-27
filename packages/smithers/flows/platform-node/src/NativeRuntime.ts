@@ -469,7 +469,9 @@ export const make = (platform: Platform) => {
         requestResume: validated.requestResume,
         // The same declaration `Runtime.layer` passes: the tree this host
         // read its flows out of, or nothing (D-068).
-        sourceRevision: validated.sourceRevision
+        sourceRevision: validated.sourceRevision,
+        // As in `Runtime.layer`: the report below follows registration, so every registration recovers in it.
+        deferRecovery: true
       },
       privilegedJj
     ).pipe(

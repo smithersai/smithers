@@ -191,6 +191,11 @@ export class Driver extends Context.Service<Driver, {
    * `Runtime.layer` and the native hosts' `layerHost` do. A report with
    * nothing new answers zero registrations.
    *
+   * On a store built with {@link Options.deferRecovery}, the first report
+   * first recovers every registration made before it, with one read of the
+   * pending clocks and one of the completions, and counts that recovery's
+   * time once; those registrations log no Debug line of their own.
+   *
    * @since 1.0.0-rc.17
    */
   readonly reportRecovery: Effect.Effect<Recovery>
@@ -391,6 +396,23 @@ export interface Options {
    * @since 1.0.0-rc.17
    */
   readonly placement?: string | undefined
+  /**
+   * Recovers the registrations made before the host's first
+   * {@link Driver.reportRecovery} together, in that report, instead of each as
+   * it registers: one read of the pending clocks and one of the unconsumed
+   * completions, for every flow registered by then, however many there are.
+   * Every registration after that report recovers as it registers. Defaults
+   * to `false`.
+   *
+   * A host sets it when it reports as soon as its registrations are built and
+   * resumes no run before that, as `@smthrs/flows` `Runtime.layer` and the
+   * native hosts' `layerHost` do. A browser engine registers about 500 flows
+   * on every start, and one read per registration was 1,000 statements on its
+   * one SQLite connection before its first page could render.
+   *
+   * @since 1.0.0
+   */
+  readonly deferRecovery?: boolean | undefined
 }
 
 type PublicRequirements =
@@ -494,6 +516,12 @@ type RecordedPlan = { readonly provenance: PlanProvenance; readonly payload: Rea
 /** No registration has recovered anything yet. */
 const noRecovery: Recovery = { registrations: 0, durationMs: 0 }
 
+/** The recovery a store defers to its host's first report: the flows registered so far, and how many registrations. */
+interface DeferredRecovery {
+  readonly flows: Set<string>
+  registrations: number
+}
+
 /**
  * Opens one engine store: the services it captures at composition, the
  * in-process tables its dispatches share, its run driver, and its deferred
@@ -551,6 +579,9 @@ const openStore = Effect.fnUntraced(function*(options: Options) {
     resumeConcurrency: options.resumeConcurrency,
     placement: options.placement
   })
+  const deferredRecovery: DeferredRecovery | undefined = options.deferRecovery === true
+    ? { flows: new Set<string>(), registrations: 0 }
+    : undefined
   const deferred = yield* DeferredPersistence.make({
     owner,
     journalSource: options.journalSource,
@@ -608,6 +639,9 @@ const openStore = Effect.fnUntraced(function*(options: Options) {
     deferred,
     // What registrations recovered since the host last asked (`Driver.reportRecovery`); milliseconds unrounded.
     recovery: yield* Ref.make(noRecovery),
+    // Under `deferRecovery`, until the first report: the flows registered so far, and how many registrations, whose
+    // recovery that report does at once.
+    deferredRecovery,
     // The budget of each execution a budgeted `drive` is driving now.
     budgets: new Map<string, DriveBudget.DriveBudget>(),
     // The instances action dispatches run their bodies under. A dispatch
@@ -1192,6 +1226,54 @@ const readSeed = (store: Store, runId: string): Effect.Effect<ReplaySeed.Seed> =
   )
 
 /**
+ * What one registration recovers: its flow's clocks and completions, swept now, or, while the store defers recovery
+ * (`Options.deferRecovery`), listed for the host's first report to sweep with every other.
+ */
+const recoverRegistration = (store: Store, flow: Flow.Any): Effect.Effect<void> =>
+  Effect.suspend(() => {
+    const deferred = store.deferredRecovery
+    if (deferred !== undefined) {
+      deferred.flows.add(flow._tag)
+      deferred.registrations++
+      return Effect.void
+    }
+    return store.deferred.sweepDue(flow._tag, store.hostedExecution).pipe(
+      Effect.timed,
+      // At Debug: a catalog registers hundreds of flows per start, and the host reports their sum at Info.
+      Effect.flatMap(([elapsed]) => {
+        const durationMs = Duration.toMillis(elapsed)
+        return Ref.update(store.recovery, (recovered) => ({
+          registrations: recovered.registrations + 1,
+          durationMs: recovered.durationMs + durationMs
+        })).pipe(
+          Effect.andThen(Effect.logDebug("engine-store.registration.flow.recovered")),
+          Effect.annotateLogs({ "smithers.flow": flow._tag, durationMs: Math.round(durationMs) })
+        )
+      })
+    )
+  })
+
+/**
+ * The recovery the store deferred (`Options.deferRecovery`), done once: every flow registered so far swept together,
+ * counted as the registrations it covers. Later registrations recover as they register.
+ */
+const recoverDeferred = (store: Store): Effect.Effect<void> =>
+  Effect.suspend(() => {
+    const deferred = store.deferredRecovery
+    store.deferredRecovery = undefined
+    if (deferred === undefined || deferred.registrations === 0) return Effect.void
+    return store.deferred.sweepFlows(deferred.flows, store.hostedExecution).pipe(
+      Effect.timed,
+      Effect.flatMap(([elapsed]) =>
+        Ref.update(store.recovery, (recovered) => ({
+          registrations: recovered.registrations + deferred.registrations,
+          durationMs: recovered.durationMs + Duration.toMillis(elapsed)
+        }))
+      )
+    )
+  })
+
+/**
  * The engine operations this store answers: the run driver's, deferred
  * persistence's, and the action and node records it writes itself.
  */
@@ -1206,20 +1288,7 @@ const adapter = (store: Store): FlowEngine.Encoded => ({
       Effect.tap(() =>
         store.hostedFlow !== undefined && store.hostedFlow !== flow._tag
           ? Effect.void
-          : store.deferred.sweepDue(flow._tag, store.hostedExecution).pipe(
-            Effect.timed,
-            // At Debug: a catalog registers hundreds of flows per start, and the host reports their sum at Info.
-            Effect.flatMap(([elapsed]) => {
-              const durationMs = Duration.toMillis(elapsed)
-              return Ref.update(store.recovery, (recovered) => ({
-                registrations: recovered.registrations + 1,
-                durationMs: recovered.durationMs + durationMs
-              })).pipe(
-                Effect.andThen(Effect.logDebug("engine-store.registration.flow.recovered")),
-                Effect.annotateLogs({ "smithers.flow": flow._tag, durationMs: Math.round(durationMs) })
-              )
-            })
-          )
+          : recoverRegistration(store, flow)
       )
     ),
   execute: store.driver.execute,
@@ -1429,6 +1498,7 @@ const hostDriver = (store: Store) =>
       return outcome
     }, CapabilitySet.attenuateGroups(store.host.groups)),
     reportRecovery: Effect.gen(function*() {
+      yield* recoverDeferred(store)
       const recovered = yield* Ref.getAndSet(store.recovery, noRecovery)
       const report: Recovery = {
         registrations: recovered.registrations,

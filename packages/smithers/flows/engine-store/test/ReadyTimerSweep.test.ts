@@ -137,7 +137,7 @@ it.effect("skips deleted, settled and unregistered timer cursors while recoverin
         completedDeferreds: (flowName, executionId) =>
           state.completedDeferreds(flowName, executionId).pipe(Effect.tap(() =>
             Effect.sync(() => {
-              if (executionId === undefined) completionQueries.push(flowName)
+              if (executionId === undefined) completionQueries.push(flowName ?? "(every flow)")
             })
           )),
         waitingRuns: (filter) =>
