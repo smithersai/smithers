@@ -2210,7 +2210,12 @@ export const executeEffect = (
             return cached === undefined ? (yield* run()) : green("hit")
           }
           switch (node.rule) {
-            case "Filegroup":
+            case "Filegroup": {
+              const cached = yield* cacheGet(node)
+              if (cached !== undefined) return green("hit")
+              yield* cachePut(node, { kind: "filegroup" })
+              return green("ran")
+            }
             // A crate set is a value, not a run: it names manifests and produces
             // no process. The set itself was expanded at plan time and is key
             // material on every target that took it as a selector.

@@ -1,5 +1,5 @@
 /** Standard package targets for the published build CLI. */
-import { CircularImports, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
+import { CircularImports, ImportRules, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import { rootInvariantsConfig, rootJSDocConfig } from "../../../../PACKAGE.ts"
 
@@ -10,6 +10,26 @@ const tests = Smithers.glob("test/**/*.test.ts")
 const helpers = Smithers.glob("test/helpers/**/*.ts")
 /** Runnable examples; `test/examples.test.ts` imports and runs each one. */
 const examples = Smithers.glob("examples/**/*.ts")
+
+/** Cache regressions exercise real files and public execution boundaries. */
+const importRules = ImportRules({
+  cwd: "packages/smithers/build/build-cli",
+  rules: [{
+    kind: "forbidCalls",
+    files: ["test/FilegroupCache.test.ts", "test/ValueTargetsCli.test.ts"],
+    callees: [
+      "vi.mock",
+      "vi.doMock",
+      "vi.spyOn",
+      "vi.stubGlobal",
+      "jest.mock",
+      "setTimeout",
+      "*.sleep",
+      "*.waitForTimeout"
+    ],
+    because: "TEST-2/TEST-7: cache regressions use real files and execution receipts, never mocks or fixed sleeps."
+  }]
+})
 
 /**
  * The workspace trees the suites load: PACKAGE.ts and WORKSPACE.ts fixtures,
@@ -339,6 +359,7 @@ export const Package = Smithers.Package({
     docs,
     docsFiles,
     fmt,
+    importRules,
     lib,
     lint,
     reviewDocsAgainstCode,

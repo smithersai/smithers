@@ -8,6 +8,10 @@ sidebar:
 A cached target does not run. Everything below is about deciding when that is
 safe.
 
+Filegroup is cacheable: a successful execution stores its content key, and an
+unchanged subsequent execution reads that result and reports a hit. Changed
+member bytes change the key. There are no produced files to restore.
+
 ## The cache directory
 
 Every workspace command takes `--cache-dir`, a workspace-relative directory

@@ -6,6 +6,10 @@ description: "How a target's content key is built, what the result cache stores,
 Every target gets a content key. The executor looks the key up before running a
 cacheable target and stores the result after a green run.
 
+Filegroup follows this same contract: the first run stores success, and an
+unchanged subsequent run reports a cache hit. Changing a member's content
+changes the key. A hit does not restore files; Filegroup only describes inputs.
+
 ## The content key
 
 The planner builds four fields of key material for each target, encodes them
