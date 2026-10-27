@@ -219,6 +219,50 @@ describe("whose quota a read spends", () => {
     expect(JSON.stringify(one.logs)).not.toContain("ghp_curated")
   })
 
+  test.each([undefined, "anonymous", "deployment", "app"] as const)("a curated cached rate limit from %s recovers only onto a different authenticated quota", async (via) => {
+    const github = scriptedGitHub()
+    github.publish("Effect-TS", "effect")
+    const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+    const store = AboutStore.postgres(scratch.database)
+    await runtime.runPromise(store.refuse("github/effect-ts/effect", "rate_limited", Date.now() + 600_000, via))
+    const one = await isolate(github, { config: { GITHUB_TOKEN: "ghp_curated" } })
+    const outcome = await one.answer("Effect-TS", "effect")
+    if (via === undefined || via === "anonymous") {
+      expect(answered(outcome)).toMatchObject({ via: "deployment", cache: "miss" })
+      expect(one.reads()).toHaveLength(1)
+      expect(answered(await one.answer("Effect-TS", "effect"))).toMatchObject({ cache: "hit" })
+    } else {
+      expect(outcome).toMatchObject({ _tag: "Refused", cache: "refusal", refusalVia: via })
+      expect(RepoAbout.fieldsOf(outcome)).toMatchObject({ refusalVia: via, retryAfterMs: expect.any(Number) })
+      expect(github.calls).toEqual([])
+    }
+  })
+
+  test("a competing authenticated recovery waits for the winner rather than serving the old anonymous refusal", async () => {
+    const github = scriptedGitHub()
+    github.publish("Effect-TS", "effect")
+    const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+    const store = AboutStore.postgres(scratch.database)
+    await runtime.runPromise(store.refuse("github/effect-ts/effect", "rate_limited", Date.now() + 600_000, "anonymous"))
+    const winner = await isolate(github, { config: { GITHUB_TOKEN: "ghp_curated" } })
+    // Inject a competing claim that finishes the real winner before reporting this request lost its claim.
+    const loser = await isolate(github, { config: { GITHUB_TOKEN: "ghp_curated" }, store: {
+      ...store, claim: () => Effect.promise(() => winner.answer("Effect-TS", "effect")).pipe(Effect.as(false)),
+    }, timing: { waitFor: Duration.seconds(1), poll: Duration.millis(1) } })
+    expect(answered(await loser.answer("Effect-TS", "effect"))).toMatchObject({ cache: "hit", via: "deployment", waitedMs: expect.any(Number) })
+    expect(winner.reads()).toHaveLength(1)
+    expect(loser.reads()).toHaveLength(0)
+  })
+
+  test("a curated cached anonymous rate limit stays held without an authenticated fallback", async () => {
+    const github = scriptedGitHub()
+    const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+    await runtime.runPromise(AboutStore.postgres(scratch.database).refuse("github/effect-ts/effect", "rate_limited", Date.now() + 600_000, "anonymous"))
+    const one = await isolate(github)
+    expect(await one.answer("Effect-TS", "effect")).toMatchObject({ _tag: "Refused", cache: "refusal", refusalVia: "anonymous" })
+    expect(github.calls).toEqual([])
+  })
+
   test("a curated visitor falls back to the configured App's metadata read token when its own installation is absent", async () => {
     const github = scriptedGitHub()
     github.publish("Effect-TS", "effect")
@@ -485,6 +529,24 @@ describe("many visitors, one read", () => {
     expect(await first).toMatchObject({ _tag: "Refused", code: "github_unavailable", cache: "miss" })
     expect(await waiting).toMatchObject({ _tag: "Refused", code: "github_unavailable", cache: "refusal", waitedMs: expect.any(Number) })
     expect(github.calls).toEqual([""])
+  })
+
+  test("a legacy reader's refusal remains readable both by its waiter and later cached requests", async () => {
+    const github = scriptedGitHub()
+    const watchedStore = await watched()
+    const now = Date.now()
+    await runtime.runPromise(watchedStore.store.claim(SPOON, now, now + 30_000))
+    const one = await isolate(github, { store: watchedStore.store, timing: { waitFor: Duration.seconds(2), poll: Duration.millis(10) } })
+    const waiting = one.answer("octocat", "Spoon-Knife")
+    await until(() => watchedStore.looks.count >= 2)
+    await runtime.runPromise(watchedStore.store.refuse(SPOON, "rate_limited", now + 60_000))
+    const waited = await waiting
+    expect(waited).toMatchObject({ _tag: "Refused", cache: "refusal", code: "rate_limited", waitedMs: expect.any(Number) })
+    expect(waited).not.toHaveProperty("refusalVia")
+    const cached = await one.answer("octocat", "Spoon-Knife")
+    expect(cached).toMatchObject({ _tag: "Refused", cache: "refusal", code: "rate_limited" })
+    expect(cached).not.toHaveProperty("refusalVia")
+    expect(github.calls).toEqual([])
   })
 
   test("a first read that never lands: the waiting request asks the browser to come back, a store that fails included", async () => {

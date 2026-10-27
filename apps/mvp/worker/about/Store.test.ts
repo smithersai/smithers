@@ -81,3 +81,19 @@ test("Postgres that can't be reached refuses every operation as StoreUnavailable
   expect(await refused(down.refuse(ID, "not_found", NOW))).toBe("refuse")
   expect(await refused(down.appAbsent(ID, NOW))).toBe("app_absent")
 })
+
+
+test("anonymous quota recovery is atomic, preserves authenticated holds, and clears refusal provenance", async () => {
+  const kept = await store()
+  for (const via of [undefined, "anonymous", "deployment", "app"] as const) {
+    await run(kept.refuse(ID, "rate_limited", NOW + 10 * MINUTE, via))
+    const claims = await Promise.all([run(kept.claim(ID, NOW, NOW + MINUTE, true)), run(kept.claim(ID, NOW, NOW + MINUTE, true))])
+    expect(claims.filter(Boolean)).toHaveLength(via === undefined || via === "anonymous" ? 1 : 0)
+    if (via === "deployment" || via === "app") expect(Option.getOrThrow(await run(kept.get(ID))).refusalVia).toBe(via)
+    else expect(Option.getOrThrow(await run(kept.get(ID))).refusal).toBeNull()
+  }
+  await run(kept.refuse(ID, "github_unavailable", NOW + MINUTE, "anonymous"))
+  expect(await run(kept.claim(ID, NOW, NOW + MINUTE, true))).toBe(false)
+  await run(kept.keep(ID, { text: "ok", via: "deployment", readAtMs: NOW, freshUntilMs: NOW + MINUTE }))
+  expect(Option.getOrThrow(await run(kept.get(ID))).refusalVia).toBeUndefined()
+})

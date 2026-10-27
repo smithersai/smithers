@@ -438,3 +438,16 @@ Both designs were written independently, then Opus merged them. Claims adopted f
 ## Addendum — 2026-10-26: current visibility
 
 For visitor reads of repository rows, “a current GitHub metadata read says the repository is public” means a definite answer at most 60 seconds old. Each isolate caches only completed public/private-or-gone values by repository ID for 60 seconds; concurrent misses read independently, and unavailable answers are never cached.
+
+## W9 follow-up: quota-scoped About refusals
+
+An About rate-limit refusal belongs to the quota that produced it. Persist `refusal_via` beside the refusal
+(migration 0070); old rows have unknown provenance. A curated public home with no usable answer and an available
+deployment token may atomically claim a rate-limited anonymous or legacy row before its hold expires. This is one
+read on a different quota, without a retry loop. The claim clears the refusal so concurrent requests wait; a losing
+claim waits for its winner. Authenticated rate limits, not-found and unavailable holds retain their deadlines.
+Records of held refusals include quota provenance and the remaining hold, never credentials or provider text.
+
+Production evidence on 2026-10-26: signed-out browser loads reproduced cached `rate_limited` refusals. Once the hold
+expired, the same home answered through `deployment` with 8,674 requests remaining. The old row cannot identify the
+original failed read's quota; the new record closes that diagnostic gap.

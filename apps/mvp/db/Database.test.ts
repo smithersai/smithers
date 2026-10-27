@@ -1555,3 +1555,19 @@ describe("0069_branch_resync", () => {
       expect(await on(through("0069"))).toEqual([])
     }))
 })
+
+describe("0070_about_refusal_quota", () => {
+  test("preserves legacy refusals and constrains new quota provenance", () => emptySchema(async (url) => {
+    const database = Database.layer(Effect.succeed(Redacted.make(url)))
+    const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+    await on(through("0069"))
+    await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`INSERT INTO repo_about (repo_id, refusal) VALUES ('github/a/b', 'rate_limited')`))
+    expect((await on(through("0070"))).map(([id, name]) => `${id}_${name}`)).toEqual(["70_about_refusal_quota"])
+    expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`SELECT refusal_via AS "refusalVia" FROM repo_about`))).toEqual([{ refusalVia: null }])
+    for (const via of ["anonymous", "deployment", "app"]) {
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE repo_about SET refusal_via = ${via}`))
+    }
+    expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE repo_about SET refusal_via = 'token-value'`).pipe(Effect.as("taken"), Effect.orElseSucceed(() => "refused")))).toBe("refused")
+    expect(await on(through("0070"))).toEqual([])
+  }))
+})

@@ -32,6 +32,7 @@ export interface Kept {
   /** Nobody asks GitHub before this instant; `null`, a read is due now. */
   readonly nextReadAtMs: number | null
   readonly refusal: KeptRefusal | null
+  readonly refusalVia?: Via
   /** The Smithers App wasn't installed on the repository when last asked; nobody asks again before this instant. */
   readonly appAbsentUntilMs: number | null
 }
@@ -49,11 +50,11 @@ export interface AboutStore<R = never> {
    * Takes `repoId`'s next read until `untilMs`, only when it is due at `nowMs` (no row, or `next_read_at` passed):
    * `true` when this caller holds it.
    */
-  readonly claim: (repoId: string, nowMs: number, untilMs: number) => Effect.Effect<boolean, StoreUnavailable, R>
+  readonly claim: (repoId: string, nowMs: number, untilMs: number, recoverAnonymous?: boolean) => Effect.Effect<boolean, StoreUnavailable, R>
   /** Keeps a fresh answer, due again at its `freshUntilMs`, and forgets any refusal; an older read never overwrites a newer. */
   readonly keep: (repoId: string, answer: KeptAnswer) => Effect.Effect<void, StoreUnavailable, R>
   /** Keeps GitHub's refusal with no read before `nextReadAtMs`; `not_found` also drops the answer. */
-  readonly refuse: (repoId: string, refusal: KeptRefusal, nextReadAtMs: number) => Effect.Effect<void, StoreUnavailable, R>
+  readonly refuse: (repoId: string, refusal: KeptRefusal, nextReadAtMs: number, via?: Via) => Effect.Effect<void, StoreUnavailable, R>
   /** Remembers that the Smithers App isn't installed on `repoId`, until `untilMs`. */
   readonly appAbsent: (repoId: string, untilMs: number) => Effect.Effect<void, StoreUnavailable, R>
 }
@@ -67,6 +68,7 @@ interface Row {
   readonly freshUntilMs: number | null
   readonly nextReadAtMs: number | null
   readonly refusal: KeptRefusal | null
+  readonly refusalVia: Via | null
   readonly appAbsentUntilMs: number | null
 }
 
@@ -80,6 +82,7 @@ const keptOf = (row: Row): Kept => ({
     : Option.some({ text: row.about, via: row.via!, readAtMs: row.readAtMs!, freshUntilMs: row.freshUntilMs! }),
   nextReadAtMs: row.nextReadAtMs,
   refusal: row.refusal,
+  ...(row.refusalVia === null ? {} : { refusalVia: row.refusalVia }),
   appAbsentUntilMs: row.appAbsentUntilMs,
 })
 
@@ -100,18 +103,20 @@ export const postgres = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>)
               (extract(epoch FROM read_at) * 1000)::float8 AS "readAtMs",
               (extract(epoch FROM fresh_until) * 1000)::float8 AS "freshUntilMs",
               (extract(epoch FROM next_read_at) * 1000)::float8 AS "nextReadAtMs",
-              refusal,
+              refusal, refusal_via AS "refusalVia",
               (extract(epoch FROM app_absent_until) * 1000)::float8 AS "appAbsentUntilMs"
             FROM repo_about WHERE repo_id = ${repoId}`,
           ([row]) => Option.map(Option.fromNullishOr(row), keptOf),
         )),
-    claim: (repoId, nowMs, untilMs) =>
+    claim: (repoId, nowMs, untilMs, recoverAnonymous = false) =>
       run("claim", (sql) =>
         Effect.map(
           sql<{ readonly repoId: string }>`
             INSERT INTO repo_about (repo_id, next_read_at) VALUES (${repoId}, ${iso(untilMs)}::timestamptz)
-            ON CONFLICT (repo_id) DO UPDATE SET next_read_at = EXCLUDED.next_read_at
+            ON CONFLICT (repo_id) DO UPDATE SET next_read_at = EXCLUDED.next_read_at, refusal = NULL, refusal_via = NULL
             WHERE repo_about.next_read_at IS NULL OR repo_about.next_read_at <= ${iso(nowMs)}::timestamptz
+              OR (${recoverAnonymous} AND repo_about.refusal = 'rate_limited' AND
+                (repo_about.refusal_via IS NULL OR repo_about.refusal_via = 'anonymous'))
             RETURNING repo_id AS "repoId"`,
           (rows) => rows.length === 1,
         )),
@@ -122,14 +127,14 @@ export const postgres = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>)
           VALUES (${repoId}, ${answer.text}, ${answer.via}, ${iso(answer.readAtMs)}::timestamptz,
             ${iso(answer.freshUntilMs)}::timestamptz, ${iso(answer.freshUntilMs)}::timestamptz, NULL)
           ON CONFLICT (repo_id) DO UPDATE SET about = EXCLUDED.about, via = EXCLUDED.via, read_at = EXCLUDED.read_at,
-            fresh_until = EXCLUDED.fresh_until, next_read_at = EXCLUDED.next_read_at, refusal = NULL
+            fresh_until = EXCLUDED.fresh_until, next_read_at = EXCLUDED.next_read_at, refusal = NULL, refusal_via = NULL
           WHERE repo_about.read_at IS NULL OR repo_about.read_at <= EXCLUDED.read_at`.pipe(Effect.asVoid)),
-    refuse: (repoId, refusal, nextReadAtMs) =>
+    refuse: (repoId, refusal, nextReadAtMs, via) =>
       run("refuse", (sql) =>
         sql`
-          INSERT INTO repo_about (repo_id, refusal, next_read_at)
-          VALUES (${repoId}, ${refusal}, ${iso(nextReadAtMs)}::timestamptz)
-          ON CONFLICT (repo_id) DO UPDATE SET refusal = EXCLUDED.refusal, next_read_at = EXCLUDED.next_read_at,
+          INSERT INTO repo_about (repo_id, refusal, next_read_at, refusal_via)
+          VALUES (${repoId}, ${refusal}, ${iso(nextReadAtMs)}::timestamptz, ${via ?? null})
+          ON CONFLICT (repo_id) DO UPDATE SET refusal = EXCLUDED.refusal, next_read_at = EXCLUDED.next_read_at, refusal_via = EXCLUDED.refusal_via,
             about = CASE WHEN EXCLUDED.refusal = 'not_found' THEN NULL ELSE repo_about.about END,
             via = CASE WHEN EXCLUDED.refusal = 'not_found' THEN NULL ELSE repo_about.via END,
             read_at = CASE WHEN EXCLUDED.refusal = 'not_found' THEN NULL ELSE repo_about.read_at END,

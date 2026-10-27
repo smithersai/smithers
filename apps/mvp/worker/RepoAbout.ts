@@ -149,7 +149,7 @@ export type Answer =
   & { readonly read?: GitHubRead; readonly store?: ReadonlyArray<string> }
 
 /** One request's answer; `waitedMs` says how long it waited for another request's first read. */
-export type Outcome = Answer & { readonly waitedMs?: number }
+export type Outcome = Answer & { readonly waitedMs?: number; readonly refusalVia?: Via }
 
 /**
  * What an answer's `repo.about` line records: where it came from (`cache`), the token (`via`: this request's read of
@@ -158,6 +158,8 @@ export type Outcome = Answer & { readonly waitedMs?: number }
  */
 export const fieldsOf = (outcome: Outcome): Record<string, string | number> => ({
   cache: outcome.cache,
+  ...(outcome.refusalVia === undefined ? {} : { refusalVia: outcome.refusalVia }),
+  ...(outcome._tag === "Refused" && outcome.retryAfterMillis !== undefined ? { retryAfterMs: outcome.retryAfterMillis } : {}),
   ...(outcome.waitedMs === undefined ? {} : { waitedMs: outcome.waitedMs }),
   ...(outcome._tag === "Answered" ? { via: outcome.via } : {}),
   ...(outcome.store === undefined ? {} : { store: outcome.store.join(",") }),
@@ -340,6 +342,7 @@ export const make = <E, R>(
               _tag: "Refused" as const,
               code: refusal,
               cache: "refusal" as const,
+              ...(row!.refusalVia === undefined ? {} : { refusalVia: row!.refusalVia }),
               retryAfterMillis: Math.max(1000, row!.nextReadAtMs! - nowMs),
               waitedMs,
             }
@@ -375,26 +378,34 @@ export const make = <E, R>(
           onNone: () => true,
           onSome: (found) => found.nextReadAtMs === null || found.nextReadAtMs <= nowMs,
         })
+        // An anonymous rate limit belongs to a different quota. A curated home may recover once with the
+        // deployment token; the store atomically replaces the refusal with a claim, so concurrent reads still wait.
+        const recovery = !due && Option.isNone(usable) && Curated.find(owner, name) !== undefined &&
+          Option.isSome(row) && row.value.refusal === "rate_limited" &&
+          (row.value.refusalVia === undefined || row.value.refusalVia === "anonymous")
+          ? yield* tokenFor(owner, name, id, row.value.appAbsentUntilMs, nowMs, member, failed) : undefined
+        const recoverAnonymous = recovery !== undefined && Option.isSome(recovery.token)
         // A claim the store can't answer reads GitHub only when there is nothing to serve: a crowd during a store
         // outage serves the stale answer rather than all asking GitHub.
-        const claim = store.claim(id, nowMs, nowMs + ms(CLAIM)).pipe(Effect.catch(storeDown("claim", Option.isNone(usable))))
-        const claimed = Option.isNone(kept) || (due && (yield* claim))
+        const claim = store.claim(id, nowMs, nowMs + ms(CLAIM), recoverAnonymous).pipe(Effect.catch(storeDown("claim", Option.isNone(usable))))
+        const claimed = Option.isNone(kept) || ((due || recoverAnonymous) && (yield* claim))
         if (!claimed) {
           if (Option.isSome(usable)) return { ...answered(usable.value, "stale", nowMs), ...extra() }
           const found = Option.getOrUndefined(row)
           const refusal = found?.refusal ?? null
           // Nothing to serve yet: another request is reading it for the first time.
-          if (refusal === null) return { ...(yield* awaitRead(id, nowMs)), ...extra() }
+          if (refusal === null || recoverAnonymous) return { ...(yield* awaitRead(id, nowMs)), ...extra() }
           // A kept refusal always has its wait: `refuse` writes both.
           return {
             _tag: "Refused" as const,
             code: refusal,
             cache: "refusal" as const,
+            ...(found!.refusalVia === undefined ? {} : { refusalVia: found!.refusalVia }),
             retryAfterMillis: Math.max(1000, found!.nextReadAtMs! - nowMs),
             ...extra(),
           }
         }
-        const chosen = yield* tokenFor(owner, name, id, Option.getOrUndefined(row)?.appAbsentUntilMs ?? null, nowMs, member, failed)
+        const chosen = recovery ?? (yield* tokenFor(owner, name, id, Option.getOrUndefined(row)?.appAbsentUntilMs ?? null, nowMs, member, failed))
         const { read, rateRemaining } = yield* fromGitHub(owner, name, chosen.token)
         const durationMs = (yield* Clock.currentTimeMillis) - nowMs
         const facts = {
@@ -426,7 +437,7 @@ export const make = <E, R>(
           missing: [],
         }
         yield* recorded(id, record)
-        yield* store.refuse(id, refusal.code, nowMs + holdFor(refusal, nowMs)).pipe(Effect.catch(storeDown("refuse", undefined)))
+        yield* store.refuse(id, refusal.code, nowMs + holdFor(refusal, nowMs), chosen.via).pipe(Effect.catch(storeDown("refuse", undefined)))
         // GitHub can't answer now: the last good answer serves. A repository GitHub says isn't there has none.
         if (refusal.code !== "not_found" && Option.isSome(usable)) {
           return { ...answered(usable.value, "stale", nowMs), read: record, ...extra() }

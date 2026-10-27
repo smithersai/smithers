@@ -366,3 +366,9 @@ Curated public repository homes use the deployment read token for visitors too. 
 listed by the deployment, so arbitrary visitor input cannot spend that quota. They use REST, including its private
 repository refusal, since the deployment installation token need not have GraphQL access to that repository.
 The existing shared About cache and rate-limit holds still apply; real upstream failures remain errors.
+
+
+A cached About rate limit records its quota (`refusal_via`). A curated public home with no usable answer may replace
+an anonymous or legacy rate-limit hold with one deployment-token read. The database claim clears the refusal atomically;
+concurrent visitors wait for that read. Authenticated holds and other refusals remain in force. `repo.about` records
+`refusalVia` and `retryAfterMs` when serving a held refusal, without credentials or provider response text.
