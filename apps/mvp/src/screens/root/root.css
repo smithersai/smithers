@@ -22,3 +22,6 @@ main > header > a,
 .recovery-shell { min-height:100dvh; color:var(--foreground); background:var(--background); }
 .recovery-shell-header { display:flex; align-items:center; flex-wrap:wrap; gap:1rem; padding:1rem 4rem 1rem 1rem; border-bottom:1px solid var(--border); }
 .recovery-shell-header nav { display:flex; flex-wrap:wrap; gap:1rem; margin-right:auto; }
+
+.root-skip { position: fixed; inset-block-start: 0.5rem; inset-inline-start: 0.5rem; z-index: 100; transform: translateY(-200%); padding: 0.5rem; background: var(--background); color: var(--brand); }
+.root-skip:focus { transform: none; }

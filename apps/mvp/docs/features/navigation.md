@@ -53,3 +53,6 @@ After a pathname change commits, focus moves to the new main heading, or main
 when the page has no heading. Search and filter changes preserve control focus.
 `tests/PageFocus.test.ts` covers the DOM lifecycle; `e2e/accessibility-navigation.spec.ts`
 covers the keyboard through the real router.
+
+The first Tab exposes **Skip to content**, targeting the current main region.
+`e2e/accessibility-skip.spec.ts` exercises the link by keyboard.

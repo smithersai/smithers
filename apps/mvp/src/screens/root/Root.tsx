@@ -19,6 +19,7 @@ export function Root() {
   const routeId = useRouterState({ select: (state) => state.matches.at(-1)?.routeId })
   return (
     <>
+      <a className="root-skip" href="#main-content">Skip to content</a>
       <LoadingBar loading={loading} label="Loading page" />
       <IntentPreload>
         <PageNotices />
