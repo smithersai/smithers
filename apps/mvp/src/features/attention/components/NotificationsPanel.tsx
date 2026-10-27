@@ -1,3 +1,4 @@
+import { useSpend } from "../../spend/components/SpendContext"
 import { SpendAlertEntries } from "../../spend/components/SpendAlertEntries"
 import { Button, NeedsYouCard, NotificationEntry, NotificationPanel, RelativeTime } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
@@ -15,6 +16,8 @@ import { useAttention } from "./AttentionContext"
 // Alt+N open it; Escape, × or a click outside close it.
 export function NotificationsPanel() {
   const { queries, actions } = useAttention()
+  const spend = useSpend()
+  const { data: alerts } = useLiveQuery(spend.queries.open)
   const surface = surfaceOf(useRouterState({ select: (state) => state.matches.at(-1)?.routeId }))
   const { data: panel } = useLiveQuery(queries.panel)
   const { data: feed } = useLiveQuery(queries.feed)
@@ -25,7 +28,7 @@ export function NotificationsPanel() {
       onOpenChange={(open) => (open ? actions.openPanel("key") : actions.closePanel())}
       focus={panel?.focus}
     >
-      <SpendAlertEntries expanded={panel?.expanded ?? null} onExpand={actions.expand} />
+      {alerts.length === 0 ? null : <SpendAlertEntries expanded={panel?.expanded ?? null} onExpand={actions.expand} />}
       {feed.map((entry) => (
         <Notification
           key={entry.id}
