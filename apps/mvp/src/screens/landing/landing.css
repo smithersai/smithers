@@ -2,9 +2,10 @@
 .landing {
   min-height: 100dvh;
   padding: 2rem 1.25rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  display: grid;
+  grid-template-columns: max-content max-content;
+  column-gap: 0.9rem;
+  align-content: center;
   justify-content: center;
   text-align: center;
 }
@@ -23,4 +24,15 @@
   flex-wrap: wrap;
   justify-content: center;
   gap: 0.9rem;
+}
+
+.landing-header, .landing-tagline { grid-column: 1 / -1; }
+.landing-body { grid-column: 1 / -1; grid-row: 2; display: grid; grid-template-columns: subgrid; }
+.landing-actions { grid-column: 1; justify-content: flex-end; }
+.landing-footer { grid-column: 2; grid-row: 2; align-self: end; justify-self: start; }
+@media (max-width: 28rem) {
+  .landing { grid-template-columns: minmax(0, 1fr); }
+  .landing-body { grid-column: 1; grid-template-columns: minmax(0, 1fr); }
+  .landing-actions { justify-content: center; }
+  .landing-footer { grid-column: 1; grid-row: 3; justify-self: center; margin-top: 0.9rem; }
 }
