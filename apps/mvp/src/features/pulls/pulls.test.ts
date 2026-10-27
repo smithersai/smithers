@@ -1,4 +1,5 @@
 import { role as readRepositoryRole } from "../repo/actions"
+import { router } from "../../router"
 // Pull requests on the tab (decision 0012 §6, docs/features/pulls.md#the-browser), driven as React drives them: the
 // pulls layer's plain actions and its live queries, with no React. Each device runs the browser's own layer (`appLayer`)
 // on a Node device (src/test/chatApi.ts), against ChatApi's real handler and its git routes (worker/github/Api.ts) over
@@ -484,6 +485,42 @@ describe("the list and a pull request's page", () => {
 })
 
 describe("the Files tab", () => {
+  test("Files follows changed base and head SHAs while the pull remains open", async () => {
+    const tab = await open()
+    const scripted = tab.api.github.scripted
+    const base = scripted.refs.get("main")!
+    const head = scripted.push("smithers/t2", { "README.md": "# Widgets\n\nA line\n" })
+    await server(tab.api).pull(pullOf(2, { base, head }))
+    await tab.actions.open(OWNER, NAME, 2, "files")
+    await until(() => expect(tab.queries.files.toArray).toContainEqual(expect.objectContaining({ id: `${base}...${head}`, status: "ready" })))
+    await tab.actions.open(OWNER, NAME, 2, "files")
+    // A detail refresh or another merge can move the base after the first comparison finished.
+    const nextBase = scripted.push("main", { "BASE.md": "Base moved\n" })
+    await server(tab.api).pull(pullOf(2, { base: nextBase, head }))
+    await until(() => expect(tab.pull()?.baseSha).toBe(nextBase))
+    await until(() => expect(tab.queries.files.toArray).toContainEqual(expect.objectContaining({ id: `${nextBase}...${head}`, status: "ready" })))
+    const nextHead = scripted.push("smithers/t2", { "HEAD.md": "Head moved\n" })
+    await server(tab.api).pull(pullOf(2, { base: nextBase, head: nextHead }))
+    await until(() => expect(tab.queries.files.toArray).toContainEqual(expect.objectContaining({ id: `${nextBase}...${nextHead}`, status: "ready" })))
+    // The real route's exit to Chat ends the subscription even though no other pull route opens.
+    tab.actions.closeFiles("another-owner", NAME, 2)
+    tab.actions.closeFiles(OWNER, "another-repository", 2)
+    tab.actions.closeFiles(OWNER, NAME, 3)
+    expect(tab.view()?.tab).toBe("files")
+    type Leave = (match: { context: { pulls: { actions: typeof tab.actions } }; params: { owner: string; repo: string; number: number; tab: string } }) => void
+    const leave = router.routesById["/$owner/$repo/pull/$number/$tab"].options.onLeave as Leave
+    const match = { context: { pulls: { actions: tab.actions } }, params: { owner: OWNER, repo: NAME, number: 2, tab: "commits" } }
+    leave(match)
+    expect(tab.view()?.tab).toBe("files")
+    leave({ ...match, params: { ...match.params, tab: "files" } })
+    expect(tab.view()?.tab).toBe("conversation")
+    tab.actions.closeFiles(OWNER, NAME, 2)
+    const away = scripted.push("main", { "AWAY.md": "Changed away\n" })
+    await server(tab.api).pull(pullOf(2, { base: away, head: nextHead }))
+    await until(() => expect(tab.pull()?.baseSha).toBe(away))
+    expect(tab.queries.files.toArray.some(row => row.id === `${away}...${nextHead}`)).toBe(false)
+  }, WITHIN)
+
   test("reads the files the base and head differ by once, through the compare route, kept on the tab", async () => {
     const tab = await open()
     const scripted = tab.api.github.scripted

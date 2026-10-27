@@ -1,4 +1,4 @@
-import { Effect, Metric, Option, Stream } from "effect"
+import { Effect, Metric, Stream } from "effect"
 import { codeOf } from "../../errorCode"
 import { open as openIssues, reconnectShapes as reconnectIssueShapes } from "../issues/actions"
 import { recordShapeRetry } from "../issues/shapeSync"
@@ -39,6 +39,8 @@ export const open = (owner: string, name: string, number?: number, tab: PullTab 
   Effect.gen(function* () {
     const store = yield* PullsStore
     yield* store.forRepo(repoId(owner, name), number)
+    const previous = (yield* store.view.toArray)[0]!
+    const alreadyFollowing = previous.owner === owner && previous.name === name && previous.number === number && previous.tab === "files"
     yield* store.view.update(VIEW, (row) => {
       const same = row.number === (number ?? null) && row.owner === owner && row.name === name
       row.owner = owner
@@ -57,19 +59,30 @@ export const open = (owner: string, name: string, number?: number, tab: PullTab 
     // Sync status is shared with issues and must follow this route's repository too.
     yield* openIssues(owner, name, number)
     yield* store.route(repoId(owner, name), number)
-    // The Files tab reads its comparison once the device has the pull request's base and head.
-    if (number !== undefined && tab === "files") {
-      yield* store.routed().pull.rows.pipe(
-        Stream.filter((rows) => rows.some((row) => row.number === number && SHA.test(row.headSha))),
-        Stream.take(1),
-        Stream.runForEach((rows) => {
-          const row = rows.find((candidate) => candidate.number === number)!
-          return loadFiles(owner, name, row.baseSha, row.headSha)
+    // A detail refresh or another merge may move either SHA after the first comparison.
+    // Follow the pair while this route shows Files; each immutable pair is still read only once.
+    if (number !== undefined && tab === "files" && !alreadyFollowing) {
+      const route = store.view.changes({ initial: true }).pipe(Stream.mapEffect(() => store.view.toArray))
+      yield* Stream.zipLatest(route, store.routed().pull.rows).pipe(
+        Stream.takeWhile(([views]) => {
+          const view = views[0]!
+          return view.owner === owner && view.name === name && view.number === number && view.tab === "files"
         }),
+        Stream.map(([, rows]) => rows.find((row) => row.number === number && SHA.test(row.baseSha) && SHA.test(row.headSha))),
+        Stream.filter((row) => row !== undefined),
+        Stream.map((row) => ({ baseSha: row.baseSha, headSha: row.headSha })),
+        Stream.changesWith((before, after) => before.baseSha === after.baseSha && before.headSha === after.headSha),
+        Stream.runForEach((row) => loadFiles(owner, name, row.baseSha, row.headSha)),
         Effect.forkIn(store.scope),
       )
     }
   }).pipe(Effect.orDie)
+
+/** A Files route left. Bound to that page so a late exit cannot close the next pull's Files tab. */
+export const closeFiles = (owner: string, name: string, number: number) =>
+  Effect.flatMap(PullsStore, (store) => store.view.update(VIEW, (row) => {
+    if (row.owner === owner && row.name === name && row.number === number && row.tab === "files") row.tab = "conversation"
+  })).pipe(Effect.orDie)
 
 /** Reads the files `base` and `head` differ by into this tab, once: a comparison of two SHAs never changes. */
 export const loadFiles = (owner: string, name: string, base: string, head: string) =>

@@ -12,7 +12,7 @@ export function PageFocus({ pathname }: { readonly pathname: string }) {
       main.tabIndex = -1
       if (previous.current !== pathname) {
         const heading = main.querySelector<HTMLElement>("h1")
-        const preferred = main.querySelector<HTMLElement>("[data-page-focus] input")
+        const preferred = main.querySelector<HTMLElement>("[data-page-focus] input, [data-page-focus] textarea")
         const target = preferred ?? heading ?? main
         if (preferred === null) target.tabIndex = -1
         target.focus({ preventScroll: true })

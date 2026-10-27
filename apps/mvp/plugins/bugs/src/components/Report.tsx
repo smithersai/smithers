@@ -13,6 +13,7 @@ export function Report({ tab }: { readonly tab: BugsTab }) {
   return (
     <form
       className="bugs-form"
+      data-page-focus=""
       aria-label="Report a bug"
       onSubmit={(event) => {
         event.preventDefault()

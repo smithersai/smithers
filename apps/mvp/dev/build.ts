@@ -39,11 +39,19 @@ export const VERSION_FILE = "version.json"
 
 /**
  * The Vite plugin: defines `__SMITHERS_BUILD__` as `build` for the app's code (src/main.tsx) and emits
- * `version.json` with it beside the app, which the site serves as a static file.
+ * `version.json` with it beside the app, and serves the same receipt during development.
  */
 export const smithersBuild = (build: string): Plugin => ({
   name: "smithers-build",
   config: () => ({ define: { __SMITHERS_BUILD__: JSON.stringify(build) } }),
+  configureServer(server) {
+    server.middlewares.use((request, response, next) => {
+      if (request.url!.split("?")[0] !== `/${VERSION_FILE}` || !["GET", "HEAD"].includes(request.method!)) return next()
+      response.setHeader("content-type", "application/json; charset=utf-8")
+      response.setHeader("cache-control", "no-store")
+      response.end(`${JSON.stringify({ build })}\n`)
+    })
+  },
   generateBundle() {
     this.emitFile({ type: "asset", fileName: VERSION_FILE, source: `${JSON.stringify({ build })}\n` })
   },

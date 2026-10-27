@@ -605,6 +605,9 @@ const pullTabRoute = createRoute({
       () => context.pulls.actions.warm(params.owner, params.repo, params.number),
       () => context.pulls.actions.open(params.owner, params.repo, params.number, params.tab),
     ),
+  onLeave: ({ context, params }) => {
+    if (params.tab === "files") context.pulls.actions.closeFiles(params.owner, params.repo, params.number)
+  },
 })
 
 /**

@@ -38,3 +38,23 @@ test("page changes focus the new heading or main; initial load and filters prese
     host.remove()
   }
 })
+
+
+test("a report form keeps its preferred textarea focused after client navigation", async () => {
+  const host = document.createElement("div")
+  document.body.append(host)
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(createElement("div", null, createElement("main", null, "Chat"), createElement(PageFocus, { pathname: "/app" }))))
+    await act(async () => root.render(createElement("div", null,
+      createElement("main", null,
+        createElement("h1", null, "Report a bug"),
+        createElement("form", { "data-page-focus": "" }, createElement("textarea", { "aria-label": "What happened?", autoFocus: true }))),
+      createElement(PageFocus, { pathname: "/app/bugs/report" }))))
+    expect(document.activeElement).toBe(host.querySelector("textarea"))
+    expect(host.querySelector("textarea")!.tabIndex).toBe(0)
+  } finally {
+    await act(async () => root.unmount())
+    host.remove()
+  }
+})

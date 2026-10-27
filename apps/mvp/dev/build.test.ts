@@ -1,7 +1,7 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { build } from "vite"
+import { build, createServer } from "vite"
 import { afterAll, describe, expect, test } from "vitest"
 import { buildOf, REVISION_TEMPLATE, type Run, smithersBuild, VERSION_FILE } from "./build"
 
@@ -54,6 +54,30 @@ describe("the build's name", () => {
 })
 
 describe("the Vite plugin", () => {
+  test("serves its build over HTTP during development without serving unrelated paths or writes", async () => {
+    const root = mkdtempSync(join(tmpdir(), "smithers-build-dev-"))
+    const server = await createServer({ root, configFile: false, logLevel: "silent", plugins: [smithersBuild("build-w14")], server: { host: "127.0.0.1", port: 0 } })
+    try {
+      await server.listen()
+      const origin = server.resolvedUrls!.local[0]!
+      for (const path of ["version.json", "version.json?fresh=1"]) {
+        const response = await fetch(new URL(path, origin))
+        expect(response.status).toBe(200)
+        expect(response.headers.get("cache-control")).toBe("no-store")
+        expect(response.headers.get("content-type")).toContain("application/json")
+        expect(await response.json()).toEqual({ build: "build-w14" })
+      }
+      const head = await fetch(new URL("version.json", origin), { method: "HEAD" })
+      expect(head.status).toBe(200)
+      expect(await head.text()).toBe("")
+      expect((await fetch(new URL("version.json", origin), { method: "POST" })).status).not.toBe(200)
+      expect((await fetch(new URL("missing.json", origin))).status).toBe(404)
+    } finally {
+      await server.close()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   const out = mkdtempSync(join(tmpdir(), "smithers-build-out-"))
   afterAll(() => rmSync(out, { recursive: true, force: true }))
 

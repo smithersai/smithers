@@ -23,5 +23,9 @@ main > header > a,
 .recovery-shell-header { display:flex; align-items:center; flex-wrap:wrap; gap:1rem; padding:1rem 4rem 1rem 1rem; border-bottom:1px solid var(--border); }
 .recovery-shell-header nav { display:flex; flex-wrap:wrap; gap:1rem; margin-right:auto; }
 
+@media (max-width: 60rem) {
+  .recovery-shell a { display:inline-flex; align-items:center; min-height:32px; min-width:32px; }
+}
+
 .root-skip { position: fixed; inset-block-start: 0.5rem; inset-inline-start: 0.5rem; z-index: 100; clip-path: inset(50%); white-space: nowrap; padding: 0.5rem; background: var(--bg, #fff); color: var(--brand); }
 .root-skip:focus { clip-path: none; }

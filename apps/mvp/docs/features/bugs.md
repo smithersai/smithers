@@ -19,7 +19,7 @@ All of them are the first-party plugin `plugins/bugs/` on the public plugin inte
 
 A signed-out visitor sees **Sign in with GitHub**, returning to the report page. Send still requires a session.
 
-One field, **What happened?**, and **Send**. A whitespace-only report stays in the field with **Write what happened** and sends nothing. Send runs the form's `send` event, which the manifest binds to `app/bug/report`. The form says **Sending** until the report's row comes back from Postgres through sync, then **Sent** and **Open on GitHub**, and the field starts empty. A report filed offline is sent when the device is back, for an hour.
+One field, **What happened?**, and **Send**. Client navigation focuses the field through the shared page-focus contract. A whitespace-only report stays in the field with **Write what happened** and sends nothing. Send runs the form's `send` event, which the manifest binds to `app/bug/report`. The form says **Sending** until the report's row comes back from Postgres through sync, then **Sent** and **Open on GitHub**, and the field starts empty. A report filed offline is sent when the device is back, for an hour.
 
 A report that isn't sent never stays **Sending**. The form hears how the run ended (`PluginHost.dispatch`'s `settled`, [plugins](plugins.md#the-host-contract)) and says **Not sent** with the reason: `signed out` (401), `not allowed`, `not accepted` (ChatApi refused the report, or the host refused the press), `too long`, `couldn't reach Smithers` (an hour offline), else the failure's code. The words stay in the field and the button says **Retry**: the same words file the same report again under its id, so a retry never makes a second copy; changed words are a new report.
 

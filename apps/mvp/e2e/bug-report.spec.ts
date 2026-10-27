@@ -1,7 +1,8 @@
 import type { APIRequestContext } from "@playwright/test"
 import { BUG_REPORTS_ROUTE } from "../src/features/bugs/contract"
 import type { BugReport } from "../src/features/bugs/schema"
-import { expect, test } from "./devices"
+import { expect, test } from "./fixtures"
+import { openComposer } from "./composer"
 import { baseURL, me, onThisMachine, partly, requires, target } from "./target"
 
 // Bug reports, end to end (docs/features/bugs.md): the real app, its engine worker, the bug plugin, ChatApi, Postgres
@@ -25,11 +26,12 @@ const readAsAdmin = async (request: APIRequestContext, words: string): Promise<B
 
 test("bug report: /bug opens the form, Send files it with the page and the tab's runs, and no chat reaches the report", {
   annotation: { type: "summary", description: "/bug, a sentence and Send: the report lands with its page and ids, never the chat." },
-}, async ({ devices, playwright }) => {
+}, async ({ page, playwright }) => {
   test.setTimeout(120_000)
-  const [a] = await devices.open("A")
-  const page = a.page
-  const words = `The run page stayed blank after Retry ${devices.word}`
+  // This journey uses one online page; the multi-device fixture also waits for offline precaching.
+  await page.goto("/app")
+  await expect(page.getByRole("main", { name: "App", exact: true })).toBeVisible({ timeout: 30_000 })
+  const words = `The run page stayed blank after Retry ${crypto.randomUUID()}`
   // Where the person was, and what the conversation says there: the report names the page and none of its chat.
   const from = new URL(page.url()).pathname
   const chat = (await page.locator(".sui-chat-messages .sui-chat-message").allTextContents())
@@ -37,11 +39,11 @@ test("bug report: /bug opens the form, Send files it with the page and the tab's
     .filter((text) => text.length >= 12)
 
   await test.step("Type /bug", async () => {
-    await a.openComposer()
-    await a.composer.pressSequentially("/bug", typing)
-    await expect(a.composer).toHaveValue("/bug")
+    const composer = await openComposer(page)
+    await composer.pressSequentially("/bug", typing)
+    await expect(composer).toHaveValue("/bug")
     await expect(page.getByRole("option").first().locator(".sui-completion-label")).toHaveText("/bug")
-    await a.composer.press("Enter")
+    await composer.press("Enter")
     await expect(page).toHaveURL(/\/app\/bugs\/report$/)
   })
 
