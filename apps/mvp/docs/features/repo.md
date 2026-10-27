@@ -388,3 +388,5 @@ A read beyond the supported file-path length is absent (404), while malformed tr
 Before a clone, Code's empty state says **Clone to browse files**. The root preview comes from the cached GitHub About answer (root entries and README only); nested reads use Code Storage. Browsing arbitrary GitHub paths must not spend an installation's quota for repositories without that installation.
 
 Uncached file and issue pages keep **Back to chat** while pending. When the shared connection is offline, their pending content says **Offline** instead of waiting on a skeleton or claiming an issue is syncing. Cached content remains readable. The existing connection records and reconnect behavior apply; this adds no network work.
+
+A `/tree/<ref>/<path>` URL naming a file redirects to `/blob/<ref>/<path>` once the tree confirms that exact file. Directory, missing and unresolved paths keep their existing behavior; a truncated tree never guesses that an omitted entry is a file. The redirect replaces history so Back does not revisit the invalid directory view.

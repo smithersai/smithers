@@ -17,7 +17,7 @@ import {
 import { LiveMarkdownEditor, RepoView, type RepoViewLocation } from "@smthrs/repo-view"
 import { Fragment, type ReactNode } from "react"
 import { useLiveQuery } from "@tanstack/react-db"
-import { Link, useLocation, useNavigate } from "@tanstack/react-router"
+import { Link, Navigate, useLocation, useNavigate } from "@tanstack/react-router"
 import {
   CLONING,
   cloneUrl,
@@ -38,6 +38,7 @@ import {
   atRoot,
   type Commit,
   countLabel,
+  directoryFileOf,
   type Counts,
   countsOf,
   fileLinksOf,
@@ -227,6 +228,9 @@ export function RepoPage({ editFiles = false, liveMarkdown }: {
   const shown = page.repository
   const revision = view.revision ?? shown.defaultBranch ?? ""
   const href = (location: RepoViewLocation) => viewHrefFor(shown, revision, location, editFiles)
+  if (directoryFileOf(view.kind, view.path, tree?.tree)) {
+    return <Navigate to="/$owner/$repo/blob/$ref/$" params={{ owner: view.owner, repo: view.name, ref: revision, _splat: view.path }} replace />
+  }
   // The Markdown file this page edits in place, for someone who may write the branch, once its text loaded.
   const editing = markdownInPlace(texts, liveMarkdown?.conversationId, view.kind, view.path)
   const at = (ref: string) => hrefFor(shown, ref, { kind: view.kind, path: view.path })

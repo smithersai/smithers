@@ -428,3 +428,7 @@ export const generatedLinksFor = (
     folder,
   )
 }
+
+/** Whether a directory URL names a file the loaded tree actually contains. */
+export const directoryFileOf = (kind: "tree" | "blob", path: string, tree: TreeRow | undefined): boolean =>
+  kind === "tree" && path !== "" && tree?.state === "ready" && tree.paths.includes(path)

@@ -4,6 +4,7 @@ import { type AboutRow, type BlobRow, type CloneRow, emptyView, type RefsRow, ty
 import type { About, Repository } from "./schema"
 import {
   aboutFailed,
+  directoryFileOf,
   aboutOf,
   aboutProps,
   atRoot,
@@ -598,4 +599,17 @@ describe("what the page shows", () => {
   expect(missingRefOf({ ...missing, missing: false })).toBe(false)
   expect(missingRefOf({ ...missing, ref: null })).toBe(false)
   expect(missingRefOf({ ...missing, refsKey: null })).toBe(false)
+})
+
+ test("a tree URL naming a confirmed file redirects without guessing absent paths", () => {
+  const tree: TreeRow = { key: "tree", state: "ready", paths: ["README.md", "docs/a b.md"], truncated: false, message: null }
+  expect(directoryFileOf("tree", "README.md", tree)).toBe(true)
+  expect(directoryFileOf("tree", "docs/a b.md", { ...tree, truncated: true })).toBe(true)
+  expect(directoryFileOf("tree", "docs", tree)).toBe(false)
+  expect(directoryFileOf("tree", "absent.md", tree)).toBe(false)
+  expect(directoryFileOf("tree", "", tree)).toBe(false)
+  expect(directoryFileOf("blob", "README.md", tree)).toBe(false)
+  expect(directoryFileOf("tree", "README.md", undefined)).toBe(false)
+  expect(directoryFileOf("tree", "README.md", { ...tree, state: "loading" })).toBe(false)
+  expect(directoryFileOf("tree", "README.md", { ...tree, state: "failed" })).toBe(false)
 })
