@@ -13,7 +13,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, Graph, Interpreter } from "@smthrs/flow"
 import { Node, Plan } from "@smthrs/plan"
-import { Effect, Schema } from "effect"
+import { Context, Effect, Schema } from "effect"
 import * as DeclarationSite from "../src/internal/DeclarationSite.ts"
 import * as Sleep from "../src/Sleep.ts"
 import { withCrypto } from "./Crypto.ts"
@@ -246,6 +246,53 @@ describe("declaration provenance parsing", () => {
     // A percent escape no decoder accepts is an unparseable stack, never a
     // throw out of a declaration.
     expect(DeclarationSite.parseStack("    at make (file:///repo/%E0%A4%A/build.ts:2:2)")).toBeUndefined()
+  })
+
+  // V8 formats a stack, and calls `Error.prepareStackTrace`, only when `stack` is first read; JavaScriptCore (Bun) does
+  // so as the error is made, so only V8 can tell a captured stack from a formatted one.
+  it.skipIf(typeof (globalThis as { readonly Bun?: unknown }).Bun !== "undefined")(
+    "formats a declaration's stack only when its site is first read, and once",
+    () => {
+      const original = Error.prepareStackTrace
+      let formatted = 0
+      Error.prepareStackTrace = (error, frames) => {
+        formatted++
+        return original === undefined
+          ? `${error}\n${frames.map((frame) => `    at ${frame}`).join("\n")}`
+          : original(error, frames)
+      }
+      try {
+        const LazyNote = Context.Reference<string>("test/DeclarationProvenance/LazyNote", { defaultValue: () => "" })
+        const Lazy = Flow.make("provenance/lazy", { payload: {}, success: Schema.Number, body: () => Node.succeed(1) })
+        const Copy = Lazy.annotate(LazyNote, "copied")
+        const LazyAction = Action.make("provenance/lazy-action", { payload: {}, success: Schema.Number })
+        // Declaring, and copying a declaration, format nothing.
+        expect(formatted).toBe(0)
+        const site = DeclarationSite.declaredAt(Lazy)
+        expect(site?.path.endsWith("test/DeclarationProvenance.test.ts")).toBe(true)
+        expect(formatted).toBe(1)
+        // The copy carries the same captured stack, already parsed.
+        expect(DeclarationSite.declaredAt(Copy)).toEqual(site)
+        expect(DeclarationSite.declaredAt(Lazy)).toEqual(site)
+        expect(formatted).toBe(1)
+        expect(DeclarationSite.declaredAt(LazyAction)?.line).toBeGreaterThan(site!.line)
+        expect(formatted).toBe(2)
+      } finally {
+        Error.prepareStackTrace = original
+      }
+    }
+  )
+
+  it("reads a given site as itself, and a captured stack as its author's frame on every read", () => {
+    const given = { path: "/repo/given.ts", line: 3 }
+    expect(DeclarationSite.resolve(given)).toBe(given)
+    expect(DeclarationSite.resolve(undefined)).toBeUndefined()
+    expect(DeclarationSite.siteOf(DeclarationSite.annotate({}, given))).toBe(given)
+    expect(DeclarationSite.siteOf(1)).toBeUndefined()
+    const captured = DeclarationSite.capture()
+    const first = DeclarationSite.resolve(captured)
+    expect(first?.path.endsWith("test/DeclarationProvenance.test.ts")).toBe(true)
+    expect(DeclarationSite.resolve(captured)).toBe(first)
   })
 
   it("keeps the first site a value was annotated with, and reads none off a primitive", () => {

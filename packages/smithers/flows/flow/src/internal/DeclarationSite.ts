@@ -167,12 +167,81 @@ export const parseStack = (stack: string | undefined): DeclaredAt | undefined =>
 }
 
 /**
- * Where the caller of the function calling this was written.
+ * A stack a declaration captured, and the site parsed from it the first time
+ * the site is read. @private
+ */
+interface Pending {
+  stack: Error | undefined
+  site: DeclaredAt | undefined
+}
+
+/**
+ * Stacks captured but not yet parsed, by the token a declaration carries in
+ * their place. Shared by every copy of this module, as `sources` is, so a site
+ * one bundle captured reads in another. @private
+ */
+const pendingKey = Symbol.for("@smthrs/flow/DeclaredAt/pending/v1")
+const pendingGlobals = globalThis as typeof globalThis & { [pendingKey]?: WeakMap<object, Pending> }
+const pending = pendingGlobals[pendingKey] ??= new WeakMap<object, Pending>()
+
+/**
+ * A declaration's captured stack, read as its {@link DeclaredAt} only when
+ * something asks for it.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export interface Captured {
+  readonly [CapturedBrand]: typeof CapturedBrand
+}
+
+/** The type-only brand that keeps a {@link Captured} token from reading as a {@link DeclaredAt}. @private */
+declare const CapturedBrand: unique symbol
+
+/**
+ * What a declaration carries for its source position: the position itself,
+ * or a {@link Captured} stack parsed on first read.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type Site = DeclaredAt | Captured
+
+/**
+ * The position a {@link Site} names: a captured stack parsed once, on this
+ * first read, and the parsed answer every read after.
+ *
+ * @since 1.0.0
+ * @category accessors
+ */
+export const resolve = (site: Site | undefined): DeclaredAt | undefined => {
+  const entry = site === undefined ? undefined : pending.get(site)
+  if (entry === undefined) return site as DeclaredAt | undefined
+  if (entry.stack !== undefined) {
+    entry.site = parseStack(entry.stack.stack)
+    entry.stack = undefined
+  }
+  return entry.site
+}
+
+/**
+ * Where the caller of the function calling this was written, as a
+ * {@link Captured} stack.
+ *
+ * Only the stack is captured here. Formatting it, which needs the source
+ * positions of every frame, waits until the site is read ({@link resolve},
+ * {@link declaredAt}): a browser worker declares hundreds of flows while it
+ * loads and reads few of their sites, and formatting each stack as it was
+ * captured cost it about 120 ms before it could open its store.
  *
  * @since 1.0.0
  * @category constructors
  */
-export const capture = (): DeclaredAt | undefined => parseStack(new Error().stack)
+export const capture = (): Captured => {
+  const token = Object.freeze({}) as unknown as Captured
+  pending.set(token, { stack: new Error(), site: undefined })
+  return token
+}
 
 /**
  * Carries a source position on a declaration without adding a field to it.
@@ -184,7 +253,7 @@ export const capture = (): DeclaredAt | undefined => parseStack(new Error().stac
  * @since 1.0.0
  * @category constructors
  */
-export const annotate = <A extends object>(value: A, site: DeclaredAt | undefined): A => {
+export const annotate = <A extends object>(value: A, site: Site | undefined): A => {
   // A declaration annotated twice keeps the FIRST site. The property is
   // non-configurable, so a second `defineProperty` would throw rather than
   // overwrite, and a copy that carries its own site has already recorded it.
@@ -207,8 +276,17 @@ export const annotate = <A extends object>(value: A, site: DeclaredAt | undefine
  * @since 1.0.0
  * @category accessors
  */
-export const declaredAt = (value: unknown): DeclaredAt | undefined => {
+export const declaredAt = (value: unknown): DeclaredAt | undefined => resolve(siteOf(value))
+
+/**
+ * The {@link Site} a value carries, unparsed, for a copy of a declaration to
+ * carry the same one. Read like {@link declaredAt}.
+ *
+ * @since 1.0.0
+ * @category accessors
+ */
+export const siteOf = (value: unknown): Site | undefined => {
   if (Object(value) !== value) return undefined
   const descriptor = Object.getOwnPropertyDescriptor(value, TypeId)
-  return descriptor === undefined ? undefined : descriptor.value as DeclaredAt | undefined
+  return descriptor === undefined ? undefined : descriptor.value as Site | undefined
 }

@@ -96,7 +96,7 @@ const Proto = {
         maxRounds: this.maxRounds,
         deadline: this.deadline
       }),
-      DeclarationSite.declaredAt(this)
+      DeclarationSite.siteOf(this)
     )
   },
   annotateMerge(this: AnyWithProps, context: Context.Context<any>) {
@@ -121,7 +121,7 @@ const Proto = {
         maxRounds: this.maxRounds,
         deadline: this.deadline
       }),
-      DeclarationSite.declaredAt(this)
+      DeclarationSite.siteOf(this)
     )
   },
   call(this: AnyWithProps, payload: unknown) {

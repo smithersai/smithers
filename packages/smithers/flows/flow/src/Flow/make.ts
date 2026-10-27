@@ -247,7 +247,7 @@ export const make: {
   // (`internal/DeclarationSite.ts`).
   const site = options.declaredFrom === undefined
     ? DeclarationSite.capture()
-    : DeclarationSite.declaredAt(options.declaredFrom)
+    : DeclarationSite.siteOf(options.declaredFrom)
   const payloadSchema = (Schema.isSchema(options.payload)
     ? options.payload
     : Schema.Struct(options.payload as any)) as PayloadSchemaOf<Payload>

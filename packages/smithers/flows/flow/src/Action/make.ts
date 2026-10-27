@@ -255,7 +255,7 @@ const makeDeclared = <
   Payload extends Schema.Struct.Fields | Flow.AnyStructSchema,
   Success extends Schema.Top = Schema.Void,
   Error extends Schema.Top = Schema.Never
->(tag: Tag, options: DeclaredOptions<Payload, Success, Error>, site: DeclarationSite.DeclaredAt | undefined): Declared<
+>(tag: Tag, options: DeclaredOptions<Payload, Success, Error>, site: DeclarationSite.Site | undefined): Declared<
   Tag,
   Payload extends Schema.Struct.Fields ? Schema.Struct<Payload> : Payload,
   Success,
@@ -461,7 +461,7 @@ export const make: {
   return makeDeclared(
     first,
     options,
-    options.declaredFrom === undefined ? DeclarationSite.capture() : DeclarationSite.declaredAt(options.declaredFrom)
+    options.declaredFrom === undefined ? DeclarationSite.capture() : DeclarationSite.siteOf(options.declaredFrom)
   )
 }) as any
 
@@ -502,7 +502,7 @@ export const makeSystem = <
   makeDeclared(
     tag,
     options,
-    options.declaredFrom === undefined ? DeclarationSite.capture() : DeclarationSite.declaredAt(options.declaredFrom)
+    options.declaredFrom === undefined ? DeclarationSite.capture() : DeclarationSite.siteOf(options.declaredFrom)
   ) as unknown as Declared<
     Tag,
     Payload extends Schema.Struct.Fields ? Schema.Struct<Payload> : Payload,
