@@ -92,3 +92,12 @@ export const signedOut: Effect.Effect<boolean> = Effect.flatMap(
     onSome: (auth) => Effect.map(auth.session.get(SESSION), (row) => Option.isSome(row) && row.value.status === "signed_out"),
   }),
 )
+
+/** A new run may ask for a session credential only after this tab confirmed sign-in. */
+export const anonymousRun: Effect.Effect<boolean> = Effect.flatMap(
+  Effect.serviceOption(AuthStore),
+  Option.match({
+    onNone: () => Effect.succeed(false),
+    onSome: (auth) => Effect.map(auth.session.get(SESSION), (row) => Option.isNone(row) || row.value.status !== "signed_in"),
+  }),
+)

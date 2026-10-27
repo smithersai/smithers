@@ -318,3 +318,5 @@ Queued agent issue writes renew their original signed run proof at delivery thro
 Reconnection diagnostics record `auth.session_subscription` (`listening`/`stopped`), `auth.session_refresh` (`via: startup`/`online`/`retry`) and `smithers_auth_session_refreshes`. These distinguish browser event delivery, subscription lifetime and the next session check without recording identities or content.
 
 The scoped auth lifecycle owns the initial session read: it subscribes to network events first, queues one startup check, and consumes startup and online checks serially; a check that fails starts `auth/refresh` ([when ChatApi can't say](#when-chatapi-cant-say)). Boot waits only for registration before rendering, never for HTTP. A network transition before subscription is covered by that initial read, without a duplicate request during layer construction.
+
+A newly dispatched run uses anonymous reads until this tab confirms sign-in. Loading and unreachable session states do not request a session credential; signed-out visitors never POST a credential merely by opening a repository.

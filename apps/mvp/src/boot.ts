@@ -18,7 +18,7 @@ import { Auth, bindSessionConnectivity, type AuthView } from "./features/auth/au
 import { Branch, type BranchView } from "./features/branch/branch"
 import { BranchStore } from "./features/branch/store"
 import { DeviceWipe } from "./features/auth/device"
-import { AuthStore, signedOut } from "./features/auth/store"
+import { AuthStore, anonymousRun } from "./features/auth/store"
 import { ChatClient } from "./features/chat/api"
 import { Chat, type ChatView } from "./features/chat/chat"
 import { bindConnectivity } from "./features/chat/connectivity"
@@ -217,7 +217,7 @@ export const appLayer = <S = never>(
   const auth = Layer.mergeAll(
     Auth.layer,
     tabSession({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer)),
-    tabDoors({ name: host.engineName, signedOut }).pipe(Layer.provide(TabChannel.layer)),
+    tabDoors({ name: host.engineName, signedOut: anonymousRun }).pipe(Layer.provide(TabChannel.layer)),
   ).pipe(Layer.provideMerge(DeviceWipe.layer(host.wipe)))
   return Layer.mergeAll(
     Chat.layer,
