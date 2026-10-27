@@ -37,6 +37,6 @@ for (const delay of [0, 100, 300] as const) {
     await page.getByRole("button", { name: "Drop", exact: true }).click()
     await page.getByRole("dialog", { name: `Drop T${number}?` }).getByRole("button", { name: "Drop", exact: true }).click()
     await reloadAfter(delay, () => page.reload())
-    await expect(page.locator("[data-status=dropped]")).toBeVisible({ timeout: 60_000 })
+    await expect(page.locator("article[data-status=dropped]")).toBeVisible({ timeout: 60_000 })
   })
 }
