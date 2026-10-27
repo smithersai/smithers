@@ -354,6 +354,17 @@ Nothing else may declare one, and `e2e/health.spec.ts` declares none. A spec bui
 
 ### Limits
 
+### W10 Electric release measurement (2026-10-26)
+
+The pushed W10 build `5527d82bfd9c` uses the private Workers Cache, a ten-second live hold and summary-only list shapes. `bench/electric-load`'s S5b marker-aware runner followed routes observed from the deployed pages: 50 signed-out clients across three networks and 20 signed-in clients of one person, each for 120 seconds. The signed-in home route set additionally follows `github-sync` to observe the same uniquely marked write as the signed-out pulls page. Write latency starts at the scheduled SQL write time and includes SQL latency; it is not a two-person isolation or restart proof.
+
+| Clients | Aggregate window s | Requests | 5xx | 503 | 429 | Unanswered | Up-to-date p99 ms | Never up to date | Write-to-all p99 ms | Missed write | Release thresholds |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| 50 signed out + 20 signed in | 121 | 8180 | 0 | 0 | 0 | 0 | 4386 | 0 | 417 | 0 | PASS |
+
+The release thresholds are zero 5xx/503/429, up-to-date p99 at most 10,000 ms and write-to-all p99 at most 25,000 ms, with every observed route and write reaching its client. This is one observed run, not a capacity guarantee. Content-free evidence: [W10 release record](../bench/electric-load/evidence/w10-release-2026-10-26.json).
+
+
 - **Answers run in browsers.** ChatApi answers nothing itself: each answer is a run on the asking browser's engine ([agent.md](features/agent.md)), so an answer pauses while that browser has no tab of the app open and resumes when one opens. An answer whose browser never comes back stops holding up later answers once it has gone `ANSWER_TURN_LIVE_SECONDS` without a write, and the remote flow `chat/Expire`, which ChatApi starts for every question it takes, settles it `failed` (`abandoned`) once its queue (it, and the earlier answers in its conversation) has been still for `ANSWER_EXPIRY` (25 minutes) ([agent.md](features/agent.md#settling)).
 - **Budgets.** The model endpoint refuses calls once the deployment's tokens for the UTC day reach `MODEL_DAILY_TOKEN_BUDGET`, and bounds each call's output tokens and messages; a call whose spend is unknown (cancelled, failed, or never reported) counts at its worst case ([model-endpoint.md](features/model-endpoint.md#budget)). There is no budget per person yet.
 - **Connections.** ChatApi opens one Postgres connection per request, within Workers' limit of six open connections per invocation. The database's connections are budgeted per client ([Connections](#connections)).
