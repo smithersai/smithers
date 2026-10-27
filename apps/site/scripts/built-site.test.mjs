@@ -263,3 +263,15 @@ test("origin robots allows crawlers and advertises the sitemap", () => {
   assert.match(robots, /^Sitemap: https:\/\/smithers\.sh\/sitemap-index\.xml$/m)
   assert.doesNotMatch(robots, /^Disallow: \/$/m)
 })
+
+
+test("the bug door can link to the app-owned report route, but unknown app paths still fail", (t) => {
+  const root = fixture(t, {
+    "bug/index.html": '<a href="/app/bugs/report">Report a bug</a><a href="https://smithers.sh/app/bugs/report">Report</a>',
+  })
+  const contract = readFileSync(new URL("../../mvp/src/features/bugs/contract.ts", import.meta.url), "utf8")
+  assert.match(contract, /export const BUG_FORM_PATH = "\/app\/bugs\/report"/)
+  assert.deepEqual(checkBuiltSite(root).failures, [])
+  assert.equal(checkBuiltSite(root, ["/app/bugs/missing"]).failures.length, 1)
+  assert.equal(checkBuiltSite(root, ["/app/bugs/report#missing"]).failures.length, 1)
+})
