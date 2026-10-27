@@ -4,6 +4,7 @@ export function documentLocale(language: string): { readonly lang: string; reado
     const locale = new Intl.Locale(language)
     const script = locale.maximize().script
     return { lang: locale.toString(), dir: /^(Arab|Hebr|Thaa|Nkoo|Adlm|Rohg|Syrc|Samr|Mand)$/.test(script ?? "") ? "rtl" : "ltr" }
+  // expected: an invalid language preference falls back to English.
   } catch {
     return { lang: "en", dir: "ltr" }
   }
