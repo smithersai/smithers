@@ -36,7 +36,8 @@ export function ChatTranscript({
   return (
     <div
       data-slot="chat-transcript"
-      role="log"
+      role="region"
+      aria-label="Conversation"
       aria-busy={pending}
       className={cn("sui-chat-transcript", className)}
       {...props}
@@ -52,7 +53,7 @@ export function ChatTranscript({
       <MessageScrollerProvider scrollAnchor="bottom">
         <div data-slot="message-scroller" className="sui-msg-scroller" data-streaming={pending ? "true" : "false"}>
           <MessageScrollerViewport fade>
-            <MessageScrollerContent className="sui-chat-messages">
+            <MessageScrollerContent className="sui-chat-messages" aria-label="Messages">
               {isEmpty && empty ? <div className="sui-chat-empty">{empty}</div> : children}
               {pending ? <ChatMessage role="assistant" pending pendingLabel={pendingLabel} /> : null}
             </MessageScrollerContent>
