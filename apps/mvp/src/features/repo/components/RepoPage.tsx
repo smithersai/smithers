@@ -59,6 +59,7 @@ import { codeIntelParts, useCodeIntelRow } from "../../code-intel/components/Cod
 import { markdownInPlace, saveLabelOf } from "../../coedit/view"
 import { GeneratedFileChip, GeneratedFileWarning } from "./FileMarks"
 import { RepoAside } from "./RepoAside"
+import { OfflineFallback } from "../../navigation/components/OfflineFallback"
 import { useRepo } from "./RepoContext"
 
 /** The commit row: its first line, its author, its short SHA, when, and how many commits there are. */
@@ -135,7 +136,7 @@ export function RepoPage({ editFiles = false, liveMarkdown }: {
   const anchor = parseLineHash(useLocation().hash)
   const page = pageOf(current)
   // The live query's first read, or a repository the device can't tell about yet: a skeleton in the files' place.
-  if (current === undefined || page.kind === "loading") return <Skeleton className="repo-page-loading" />
+  if (current === undefined || page.kind === "loading") return <OfflineFallback><Skeleton className="repo-page-loading" /></OfflineFallback>
   const { view, repository } = current
   const about = aboutOf(aboutRow?.about)
   const root = atRoot(view)
@@ -153,7 +154,7 @@ export function RepoPage({ editFiles = false, liveMarkdown }: {
       </Button>
     } />
   ) : <NotFound title="Repository not found" back={view.signedIn === false ? <SignInButton /> : null} />
-  if (page.kind === "failure") return <EmptyState title={page.text} />
+  if (page.kind === "failure") return <OfflineFallback><EmptyState title={page.text} /></OfflineFallback>
   if (page.kind === "retry") return (
     <Card className="repo-page-empty">
       <EmptyState

@@ -1,3 +1,4 @@
+import { OfflineFallback } from "../../features/navigation/components/OfflineFallback"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
 import { Button, EmptyState, NotFound, ItemAsideSection, ItemConversation, Kbd, TriageControl } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
@@ -65,7 +66,7 @@ export function IssueScreen() {
       } />
     </main>
   )
-  if (item === undefined) return <main className="issues-screen"><RepoHeader />{back}<p role="status">Syncing issue…</p></main>
+  if (item === undefined) return <main className="issues-screen"><RepoHeader />{back}<OfflineFallback><p role="status">Syncing issue…</p></OfflineFallback></main>
   const shown = conversationProps(item, rows ?? [], { owner, name: repo })
   const made = todosByIssue(todosRepoId, todoRows, owner, repo).get(number)
   const make = mayMakeTodo(session !== undefined && mayChange(session, confirmed, answer), shown)

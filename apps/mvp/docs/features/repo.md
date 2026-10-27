@@ -386,3 +386,5 @@ About reads settle on their first refusal. A failed upstream read shows its reas
 A read beyond the supported file-path length is absent (404), while malformed traversal paths remain invalid (400). Breadcrumbs wrap within the header.
 
 Before a clone, Code's empty state says **Clone to browse files**. The root preview comes from the cached GitHub About answer (root entries and README only); nested reads use Code Storage. Browsing arbitrary GitHub paths must not spend an installation's quota for repositories without that installation.
+
+Uncached file and issue pages keep **Back to chat** while pending. When the shared connection is offline, their pending content says **Offline** instead of waiting on a skeleton or claiming an issue is syncing. Cached content remains readable. The existing connection records and reconnect behavior apply; this adds no network work.

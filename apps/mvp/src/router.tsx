@@ -40,6 +40,7 @@ import { Landing } from "./screens/landing/Landing"
 import { DocsScreen } from "./screens/docs/DocsScreen"
 import { RepoHomeScreen } from "./screens/repo/RepoHomeScreen"
 import { BranchesScreen } from "./screens/repo/BranchesScreen"
+import { RepoPendingScreen } from "./screens/repo/RepoPendingScreen"
 import { RepoScreen } from "./screens/repo/RepoScreen"
 import { Root } from "./screens/root/Root"
 import { RouteNotFound } from "./screens/root/RouteNotFound"
@@ -490,6 +491,7 @@ const issueRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/$owner/$repo/issues/$number",
   component: IssueScreen,
+  pendingComponent: RepoPendingScreen,
   params: {
     parse: (params) => {
       const number = issueNumberOf(params.number)

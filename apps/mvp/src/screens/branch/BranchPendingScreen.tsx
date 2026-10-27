@@ -1,3 +1,5 @@
+import { Button } from "@smthrs/ui"
+import { OfflineFallback } from "../../features/navigation/components/OfflineFallback"
 import { Link, useParams } from "@tanstack/react-router"
 import { BranchHeader } from "../../features/branch/components/BranchHeader"
 import { ConnectionPill } from "../../features/chat/components/ConnectionPill"
@@ -20,7 +22,12 @@ export function BranchPendingScreen() {
           <ConnectionPill />
         </div>
       </header>
-      <BranchHeader access={undefined} pending />
+      <div className="branch-screen-view">
+        <OfflineFallback>
+          <BranchHeader access={undefined} pending />
+          <Button asChild variant="ghost"><Link to="/app">Back to chat</Link></Button>
+        </OfflineFallback>
+      </div>
     </main>
   )
 }
