@@ -170,6 +170,8 @@ export const choose = (index: number, how: "accept" | "complete") =>
     const item = menu.items[index]
     if (item === undefined || menu.draft !== (yield* draftNow)) return
     yield* Metric.update(Metric.withAttributes(choices, { kind: menu.kind, how }), 1)
-    if (how === "accept" && item.runs) return yield* submit(item.draft)
+    if (how === "accept" && (item.runs || menu.draft.trim() === item.label)) {
+      return yield* submit(item.runs ? item.draft : menu.draft)
+    }
     yield* type(item.draft)
   }).pipe(Effect.annotateLogs({ feature: "commands" }))

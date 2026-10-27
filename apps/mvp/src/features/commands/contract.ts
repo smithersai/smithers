@@ -8,8 +8,11 @@ export const COMMANDS = "Commands"
 export const unknownCommand = (name: string) => `/${name} isn't a command`
 
 /** The status line after `/<command>` left out required arguments, by field label. */
-export const missingArguments = (command: string, fields: ReadonlyArray<string>) =>
-  `/${command} needs ${fields.join(" and ")}`
+export const missingArguments = (command: string, fields: ReadonlyArray<string>) => {
+  if (command === "repo" || command === "issues") return `/${command} owner/name`
+  if (command === "docs") return "/docs owner/name query"
+  return `/${command} needs ${fields.join(" and ")}`
+}
 
 /** The status line after an argument that isn't one of its field's options. */
 export const invalidArgument = (command: string, options: ReadonlyArray<string>) =>

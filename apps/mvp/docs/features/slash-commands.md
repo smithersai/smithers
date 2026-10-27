@@ -108,3 +108,5 @@ Signed out, and for a Guest, the sign-in prompt or "Members can ask Smithers." s
 GIFs: `pnpm e2e:gifs` writes `slash-commands-complete-and-run.gif`, `slash-commands-escape.gif` and `slash-commands-roles.gif`.
 
 Slash doors carry short `description` copy for the menu; the agent retains the flow's full instructions. `/new` precedes `/navigate` among prefix matches.
+
+Enter on an exact `/repo`, `/issues` or `/docs` command shows its argument format on the first press.

@@ -180,3 +180,14 @@ test("shortcut: accepts typing immediately without waiting for the composer", as
   await a.page.keyboard.type(text)
   await expect(a.composer).toHaveValue(text)
 })
+
+test("repository hints: first Enter shows the argument format", async ({ devices }) => {
+  const [a] = await devices.open("A")
+  await a.openComposer()
+  for (const [command, hint] of [["/repo", "/repo owner/name"], ["/issues", "/issues owner/name"], ["/docs", "/docs owner/name query"]]) {
+    await a.composer.fill(command)
+    await a.composer.press("Enter")
+    await expect(a.composerForm.getByText(hint, { exact: true })).toBeVisible()
+    await expect(a.composer).toHaveValue(command)
+  }
+})

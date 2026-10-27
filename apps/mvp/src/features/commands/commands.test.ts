@@ -238,6 +238,18 @@ describe("the menu", () => {
     expect(tab.labels()).toEqual([])
   })
 
+  test("exact repository commands show their format on the first Enter", async () => {
+    const tab = await open()
+    await ready(tab)
+    for (const [name, hint] of [["repo", "/repo owner/name"], ["issues", "/issues owner/name"], ["docs", "/docs owner/name query"]]) {
+      tab.actions.type(`/${name}`)
+      tab.actions.choose(0, "accept")
+      expect(tab.draft()).toBe(`/${name}`)
+      expect(tab.menu()?.refusal).toBe(hint)
+    }
+    expect(tab.shown()).toEqual([])
+  })
+
   test("Tab completes a command to its argument values, labelled by the field; the arrows move; Tab completes a value", async () => {
     const tab = await open()
     tab.actions.choose(await ready(tab), "complete")
