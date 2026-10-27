@@ -307,6 +307,7 @@ This rule governs every spec and design. Until the panel's design is reviewed by
 - **COMM-5** Say plainly whether work is done, and give an ETA when asked. Will, 2026-10-19 16:06: "Are we done or not I can't tell". 16:07: "What is ETA we got more work to do and most of our quality comes from my feedback and iterating".
 - **COMM-6** One thing at a time, explained well. Will, 2026-10-19 22:16: "Can you do one at a time and explain it better".
 - **COMM-7** Offer only quick questions or real blockers. Will, 2026-10-20 13:25: "are there any other questions that are quick and fast for me to answer or a blocker that is blocking a lot of work from finishing/continuing?"
+- **COMM-8** When Will is away, an agent that needs him messages him on Telegram (`~/Smithers-Ops/bin/tg send --to will`), and at least one agent always watches his Telegram messages and relays them. Will, 2026-10-27 about 12:58 PDT: "I'm at lunch you have to have that agent message me on telegram if they need me and there should be at least 1 agent watching me on telegram for any messages". This overrides `~/Smithers-Ops/Org/Telegram.md`'s "Decisions go to his decision queue, not Telegram" while he is away.
 
 ## 16. Auth, roles and spend
 
