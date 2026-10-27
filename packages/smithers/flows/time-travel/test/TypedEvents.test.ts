@@ -42,6 +42,34 @@ const projection: Replay.Projection<ReadonlyArray<unknown>> = {
 }
 
 describe("typed history admission", () => {
+  it.effect("rejects inspect and replay frames past the committed SQL journal tail", () =>
+    Effect.gen(function*() {
+      const journal = yield* Journal.Journal
+      for (let seq = 0; seq < 2; seq++) {
+        yield* journal.emitDurableUnfenced({
+          runId,
+          sourceId,
+          sourceSeq: JournalEvent.SourceSeq.make(seq),
+          eventType: "test.recorded",
+          payload: { seq },
+          meta: { lineageId }
+        })
+      }
+      yield* Effect.gen(function*() {
+        const reader = yield* ReadOnlyTimeTravel
+        for (const seq of [0, 1]) {
+          const position = { runId, frame: { lineageId, seq } }
+          expect(yield* reader.inspect(position, projection)).toHaveLength(seq + 1)
+          expect(yield* reader.replay(position, projection, { pageSize: 1 })).toHaveLength(seq + 1)
+        }
+        for (const seq of [2, 999]) {
+          const position = { runId, frame: { lineageId, seq } }
+          expect((yield* Effect.flip(reader.inspect(position, projection))).code).toBe("not_found")
+          expect((yield* Effect.flip(reader.replay(position, projection, { pageSize: 1 }))).code).toBe("not_found")
+        }
+      }).pipe(Effect.provide(TimeTravel.readOnly))
+    }).pipe(Effect.provide(stack)))
+
   it.effect("decodes every v2 state family from real journal fixtures before replay", () =>
     Effect.gen(function*() {
       const journal = yield* Journal.Journal

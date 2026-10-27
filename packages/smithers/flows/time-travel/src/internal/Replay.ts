@@ -119,6 +119,7 @@ export const rederive = <S>(
        */
       const seen = new Map<number, string>()
       let lastSeq = -1
+      let observedTail = -1
       yield* JournalPages.forEachPage(
         journal,
         {
@@ -147,6 +148,7 @@ export const rederive = <S>(
                   error("invalid", `journal replay returned seq ${entry.seq} after seq ${lastSeq} for ${options.runId}`)
                 )
               }
+              observedTail = entry.seq
               if (entry.seq > frame.seq) return JournalPages.Stop
               seen.set(entry.seq, entry.eventId)
               lastSeq = entry.seq
@@ -185,6 +187,11 @@ export const rederive = <S>(
       )
       if (!foundLineage) {
         return yield* Effect.fail(error("not_found", `lineage ${frame.lineageId} is not present in ${options.runId}`))
+      }
+      if (frame.seq > observedTail) {
+        return yield* Effect.fail(
+          error("not_found", `frame ${frame.seq} is past the journal tail for ${options.runId}`)
+        )
       }
       return state
     })

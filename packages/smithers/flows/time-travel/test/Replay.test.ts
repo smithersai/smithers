@@ -392,7 +392,7 @@ describe("Replay bounds", () => {
       let served = 0
       const journal = Journal.makeNoop({ entries: () => Effect.sync(() => pages[served++]!) })
 
-      const state = yield* Replay.rederive({ lineageId: "run/root", seq: 5 }, fold, { runId: "run" }).pipe(
+      const state = yield* Replay.rederive({ lineageId: "run/root", seq: 2 }, fold, { runId: "run" }).pipe(
         Effect.provide(Layer.succeed(Journal.Journal, journal)),
         Effect.provide(CacheStore.layerNoop())
       )
