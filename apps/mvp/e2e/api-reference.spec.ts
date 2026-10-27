@@ -55,7 +55,7 @@ test("harness reference indexes lifecycle and realm execution", async ({ page })
 test("build reference publishes install and manifest contracts", async ({ page }) => {
   const main = await open(page, "build")
   for (const name of ["Requires", "InstallFlow", "StoreManifest", "storeManifest", "linkedTreeManifest", "lookupEnvironmentNames"]) {
-    await expect(main.getByRole("row").filter({ hasText: name }).first()).toContainText(name)
+    await expect(main.getByRole("row").filter({ has: page.getByRole("cell", { name, exact: true }) })).toContainText(name)
   }
 })
 

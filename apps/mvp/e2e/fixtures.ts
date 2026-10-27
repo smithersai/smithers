@@ -1,6 +1,6 @@
 import { persistent } from "./persistent"
 import { type APIRequestContext, test as base, expect, type Locator, type Page, type TestInfo } from "@playwright/test"
-import { readdir, writeFile } from "node:fs/promises"
+import { mkdir, readdir, writeFile } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
 import { recordConsole } from "./console"
 import { describeCrashes, watchCrashes } from "./crashes"
@@ -219,11 +219,13 @@ export const writeManifest = async (
 }
 
 /** The videos of the contexts a test opened itself, under its output directory, each named by its folder. */
-const ownVideos = async (testInfo: TestInfo): Promise<Array<Video>> =>
-  (await readdir(testInfo.outputDir, { recursive: true }))
+const ownVideos = async (testInfo: TestInfo): Promise<Array<Video>> => {
+  await mkdir(testInfo.outputDir, { recursive: true })
+  return (await readdir(testInfo.outputDir, { recursive: true }))
     .filter((path) => path.endsWith(".webm") && path.includes("/"))
     .sort()
     .map((path) => ({ name: dirname(path), video: join(testInfo.outputDir, path), openedAt: 0 }))
+}
 
 const writeLog = async (path: string, log: Array<string>) => {
   await writeFile(path, log.join("\n"))

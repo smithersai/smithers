@@ -279,6 +279,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
               expectServerError(signedIn ? 403 : 401, "/api/shapes/remote-runs")
             }
             if (screen.name === "runs" && !signedIn) expectServerError(401, "/api/cloud-runs")
+            if (screen.name === "plugin-path-unavailable") expectServerError(404, screen.path)
             await test.step(`Open ${screen.name}`, async () => {
               if (screen.name === "conversations" && signedIn) {
                 requires("personalModel", "member", "ownConversation")

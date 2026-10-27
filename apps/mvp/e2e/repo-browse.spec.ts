@@ -29,8 +29,12 @@ const openSpoon = async (page: import("@playwright/test").Page) => {
   await expect(header).toContainText("octocat / Spoon-Knife", { timeout: 30_000 })
   const picker = page.getByRole("button", { name: "main", exact: true })
   const clone = header.getByRole("button", { name: "Clone" })
-  await expect(picker.or(clone)).toBeVisible({ timeout: 60_000 })
+  await expect(picker.or(clone).first()).toBeVisible({ timeout: 60_000 })
   if (await clone.isVisible()) await clone.click()
+  await expect.poll(async () =>
+    (await shapeRows<{ id: string; status: string }>(page.request, REPOSITORIES_SHAPE_ROUTE))
+      .find((row) => row.id === "github/octocat/spoon-knife")?.status,
+  { timeout: 120_000, message: "the cloned repository has a real ready receipt" }).toBe("ready")
   await expect(picker).toBeVisible({ timeout: 120_000 })
   await expect(page.getByText("Well hello there!").first()).toBeVisible({ timeout: 30_000 })
 }
@@ -137,7 +141,7 @@ test.describe("cloned repositories", () => {
       // Try again's new attempt raises the entry again, and stops for the same reason.
       await expect(entry).toContainText(`Clone · ${repository} · Not found`, { timeout: 120_000 })
       await expect(entry.getByRole("button", { name: "Retry", exact: true })).toBeVisible()
-      await expect(page.locator(`[data-slot="toast"][data-subject="${subject}"]`)).not.toContainText("Requested")
+      await expect(page.locator(`[data-slot="toast"][data-subject="${subject}"]`).filter({ hasText: "Requested" })).toHaveCount(0)
     },
   )
 
