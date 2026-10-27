@@ -41,6 +41,7 @@ import * as Schema from "effect/Schema"
 import * as Semaphore from "effect/Semaphore"
 import * as Tracer from "effect/Tracer"
 import * as Endpoint from "./Endpoint.ts"
+import * as ExportRedaction from "./internal/exportRedaction.ts"
 import * as Split from "./internal/split.ts"
 import * as Resource from "./Resource.ts"
 
@@ -233,21 +234,30 @@ const boundedClient = (limits: Limits) =>
               ?? answers[answers.length - 1]
               ?? HttpClientResponse.fromWeb(request, new Response(null, { status: 204 })))
         })
-      return HttpClient.transform(client, (requestEffect, request) =>
-        Effect.suspend(() => {
-          // layerJson always supplies a Uint8Array body with a byte length.
-          const bytes = (request.body as HttpBody.Uint8Array).contentLength
-          const whole = bytes <= limits.maxRequestBytes && limits.maxRecords === Infinity
-          const sent = whole ? confined(requestEffect).pipe(deadline(request, bytes)) : sendParts(request, bytes)
-          return sent.pipe(
-            permits.withPermitsIfAvailable(1),
-            Effect.flatMap(Option.match({
-              onNone: () =>
-                discard("saturated", request, bytes),
-              onSome: Effect.succeed
-            }))
-          )
-        }))
+      return HttpClient.mapRequest(
+        HttpClient.transform(client, (requestEffect, request) =>
+          Effect.suspend(() => {
+            // layerJson always supplies a Uint8Array body with a byte length.
+            const bytes = (request.body as HttpBody.Uint8Array).contentLength
+            const whole = bytes <= limits.maxRequestBytes && limits.maxRecords === Infinity
+            const sent = whole ? confined(requestEffect).pipe(deadline(request, bytes)) : sendParts(request, bytes)
+            return sent.pipe(
+              permits.withPermitsIfAvailable(1),
+              Effect.flatMap(Option.match({
+                onNone: () =>
+                  discard("saturated", request, bytes),
+                onSome: Effect.succeed
+              }))
+            )
+          })),
+        (request) => {
+          // Sanitize the encoded boundary, including upstream log-to-span events
+          // and attributes supplied when a span was created. Size/split checks
+          // must see the redacted bytes, which can grow for short secrets.
+          const body = (request.body as HttpBody.Uint8Array).body
+          return HttpClientRequest.bodyUint8Array(request, ExportRedaction.redact(body), "application/json")
+        }
+      )
     })
   )
 

@@ -148,13 +148,13 @@ Every request is OTLP/HTTP JSON. Its `user-agent` is
 `OtlpLogger` or `OtlpMetrics` for the other two signals, after any `user-agent`
 you set in `headers`.
 
-| Part        | What it carries                                                                                                                                                                                                                                               |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Resource    | `telemetry.sdk.name` (`effect`), `telemetry.sdk.language` (`nodejs` or `webjs`) and `telemetry.sdk.version` (the Effect version), then your `attributes`, `service.name` and `service.version`.                                                               |
-| Scope       | Spans and log records name their scope `effect`, with the Effect version. Metrics name their scope for your service.                                                                                                                                          |
-| Spans       | Status `1` on success. Status `2` on failure, with the first error's message and one `exception` event per error. Status `0` and the attribute `effect.fiber.interrupted` on interruption. Failure text and string attributes are redacted before they leave. |
-| Log records | Your annotations as attributes, plus `effect.fiberId` and, for each log span, `effect.log_span.<label>` holding the elapsed milliseconds as a number. A record logged with a cause adds `exception.type`, `exception.message` and `exception.stacktrace`.     |
-| Metrics     | Counters, gauges and histograms under the names the producing package declares. A timer's unit is `ms`. A histogram lists every boundary it declares in `explicitBounds` and counts values above the last one in a final bucket.                              |
+| Part        | What it carries                                                                                                                                                                                                                                           |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Resource    | `telemetry.sdk.name` (`effect`), `telemetry.sdk.language` (`nodejs` or `webjs`) and `telemetry.sdk.version` (the Effect version), then your `attributes`, `service.name` and `service.version`.                                                           |
+| Scope       | Spans and log records name their scope `effect`, with the Effect version. Metrics name their scope for your service.                                                                                                                                      |
+| Spans       | Status `1` on success. Status `2` on failure, with the first error's message and one `exception` event per error. Status `0` and the attribute `effect.fiber.interrupted` on interruption. Failure text and attributes are redacted before they leave.    |
+| Log records | Your annotations as attributes, plus `effect.fiberId` and, for each log span, `effect.log_span.<label>` holding the elapsed milliseconds as a number. A record logged with a cause adds `exception.type`, `exception.message` and `exception.stacktrace`. |
+| Metrics     | Counters, gauges and histograms under the names the producing package declares. A timer's unit is `ms`. A histogram lists every boundary it declares in `explicitBounds` and counts values above the last one in a final bucket.                          |
 
 The names of the spans themselves are in
 [Instrumentation and export](../concepts/instrumentation-and-export.md#spans-effect-names).
@@ -190,3 +190,18 @@ Two consequences worth planning for:
   endpoint is not enough.
 - [Read the runtime metrics](./read-runtime-metrics.md): what the exported
   series mean.
+
+## Credential redaction
+
+`Otlp.layer` and `Otlp.layerFetch` sanitize every OTLP/JSON payload before
+size checks, splitting and transport. Logs (bodies, causes and annotations),
+spans (including creation-time attributes), span events and metric attributes
+all use the journal's case-insensitive credential key rules and token-shaped
+value rules. Nested arrays, objects, OTLP key/value lists and JSON-encoded
+structured log arguments are covered. Credential-bearing attributes become a string
+`[REDACTED]`, regardless of their original value type. Known numeric token
+accounting fields retain their counts, following the journal policy.
+
+This is a credential boundary, not permission to record user content. Emit
+content-free event names and metadata; arbitrary prose cannot reliably be
+classified as private by its shape.
