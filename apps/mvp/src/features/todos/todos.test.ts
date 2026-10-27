@@ -538,7 +538,7 @@ describe("from an issue", () => {
     expect(await sql(tab.api, `SELECT number, issue_number AS "issue" FROM todos`)).toEqual([{ number: 1, issue: 7 }])
     // On the other device, the issue lists its TODO.
     expect(todosByIssue(REPO_ID, other.stack().todos, OWNER, NAME).get(7)).toEqual({
-      links: [{ label: "T1", href: `/${OWNER}/${NAME}/stack/1` }],
+      links: [{ label: "T1 · Fix the README", href: `/${OWNER}/${NAME}/stack/1` }],
     })
     // Remote arrival can precede local cleanup; the next wait must observe a new draft.
     await until(() => expect(tab.drafts()).toEqual([]))
@@ -553,7 +553,7 @@ describe("from an issue", () => {
       ])
     )
     expect(todosByIssue(REPO_ID, other.stack().todos, OWNER, NAME).get(7)).toEqual({
-      links: [{ label: "T2", href: `/${OWNER}/${NAME}/stack/2` }, { label: "T1", href: `/${OWNER}/${NAME}/stack/1` }],
+      links: [{ label: "T2 · Fix the README", href: `/${OWNER}/${NAME}/stack/2` }, { label: "T1 · Fix the README", href: `/${OWNER}/${NAME}/stack/1` }],
     })
   }, WITHIN)
 

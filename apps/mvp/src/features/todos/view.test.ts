@@ -561,9 +561,9 @@ describe("TODOs made from issues", () => {
     const made = todosByIssue(REPO, todos, "octo", "hello")
     expect([...made.keys()].sort()).toEqual([7, 9])
     expect(made.get(7)).toEqual({
-      links: [{ label: "T3", href: "/octo/hello/stack/3" }, { label: "T1", href: "/octo/hello/stack/1" }],
+      links: [{ label: "T3 · T3", href: "/octo/hello/stack/3" }, { label: "T1 · T1", href: "/octo/hello/stack/1" }],
     })
-    expect(made.get(9)).toEqual({ links: [{ label: "T2", href: "/octo/hello/stack/2" }] })
+    expect(made.get(9)).toEqual({ links: [{ label: "T2 · T2", href: "/octo/hello/stack/2" }] })
   })
 
   test("Make TODO shows for a person who may change the stack on any open issue, its TODOs open or not", () => {
@@ -588,7 +588,7 @@ describe("TODOs made from issues", () => {
     )
     // Issue 7's TODO is open, and Make TODO still shows: one issue can become a stack of TODOs.
     expect(rows.map((row) => [row.links, row.menu?.map((item) => item.label)])).toEqual([
-      [[{ label: "T3", href: "/octo/hello/stack/3" }], ["Make TODO"]],
+      [[{ label: "T3 · T3", href: "/octo/hello/stack/3" }], ["Make TODO"]],
       [[{ label: "x", href: "/x" }], ["Make TODO"]],
       [undefined, undefined],
       [undefined, undefined],

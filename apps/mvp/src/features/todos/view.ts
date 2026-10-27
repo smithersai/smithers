@@ -431,7 +431,7 @@ export const todosByIssue = (
   for (const todo of made) {
     const was = found.get(todo.issueNumber!) ?? { links: [] }
     found.set(todo.issueNumber!, {
-      links: [...was.links, { label: `T${todo.number}`, href: todoPath(owner, name, todo.number) }],
+      links: [...was.links, { label: `T${todo.number} · ${todo.title}`, href: todoPath(owner, name, todo.number) }],
     })
   }
   return found
