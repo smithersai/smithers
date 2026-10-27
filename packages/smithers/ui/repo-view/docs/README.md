@@ -54,3 +54,10 @@ Read-only Markdown preserves GitHub-style HTML paragraphs, emphasis, centered
 preformatted logos, and safe links and images. Comments, executable elements,
 styles, event attributes, and unsafe URL schemes are removed before nodes enter
 the document. Editable Markdown retains its source.
+
+Leading YAML metadata is hidden. Tables scroll within their own box on phones.
+GitHub alerts retain their named titles; image-only links receive accessible
+names from their alt, title, or destination. Read-only fences use the shared
+repository-home tokenizer for TypeScript, JavaScript, VibeLang and shell.
+Crepe mounts code previews when they approach the viewport; that boundary is
+covered by the app's browser spec, not the layout-free DOM suite.
