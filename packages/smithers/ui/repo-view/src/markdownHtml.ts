@@ -26,6 +26,11 @@ export function markdownHtml(source: string): HTMLElement {
         const value = element.getAttribute(attr);
         if (value !== null && ((name === "a" && attr === "href") || (name === "img" && attr === "src")) && safeUrl(value)) target.setAttribute(attr, value);
       }
+      const alert = element.getAttribute("data-github-alert");
+      if (name === "strong" && alert !== null && /^(note|tip|important|warning|caution)$/.test(alert)) {
+        target.className = "sui-markdown-alert-title";
+        target.dataset.kind = alert;
+      }
       const align = element.getAttribute("align");
       if (align !== null && /^(left|center|right)$/i.test(align)) target.style.textAlign = align.toLowerCase();
       if (name === "a") target.setAttribute("rel", "noopener noreferrer");

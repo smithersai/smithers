@@ -43,3 +43,11 @@ test("issue code fences have language colors", async ({ page }) => {
   await page.goto("/smithersai/smithers/issues/4255")
   await expect(page.locator('[data-slot="markdown"] .sui-rh-tok-keyword').first()).toBeVisible({ timeout: 30_000 })
 })
+
+test("repository README draws GitHub warning alerts", async ({ page }) => {
+  requires("codeStorage")
+  await page.goto("/smithersai/vibelang/blob/main/README.md")
+  const preview = page.locator(".sui-markdown-editor[data-readonly]")
+  await expect(preview.locator('.sui-markdown-alert-title[data-kind="warning"]')).toHaveText("Warning", { timeout: 30_000 })
+  await expect(preview).not.toContainText("[!WARNING]")
+})

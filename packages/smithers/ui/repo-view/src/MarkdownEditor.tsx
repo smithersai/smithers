@@ -10,6 +10,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { markdownAlerts } from "./markdownAlerts";
 import { markdownCode } from "./markdownCode";
 import { markdownDocumentBody } from "@smthrs/ui";
 import { markdownHtml, joinMarkdownHtml } from "./markdownHtml";
@@ -178,6 +179,9 @@ const hostCss = `
 .sui-markdown-editor[data-readonly] .cm-editor, .sui-markdown-editor[data-readonly] .cm-gutters, .sui-markdown-editor[data-readonly] .cm-activeLine { background:transparent; color:inherit; }
 .sui-markdown-editor[data-readonly] .cm-gutter, .sui-markdown-editor[data-readonly] .cm-gutterElement { background:transparent; color:var(--text-muted, inherit); }
 .sui-markdown-editor[data-readonly] .milkdown-code-block .tools { display:none; }
+.sui-markdown-editor[data-readonly] blockquote:has(.sui-markdown-alert-title) { border-left:3px solid var(--warning, currentColor); padding-left:16px; }
+.sui-markdown-editor[data-readonly] blockquote:has(.sui-markdown-alert-title)::before { display:none; }
+.sui-markdown-editor[data-readonly] .sui-markdown-alert-title { display:block; color:var(--warning, inherit); }
 .sui-markdown-editor[data-readonly] .sui-markdown-code { font-family:var(--crepe-font-code, ui-monospace,monospace); overflow-x:auto; white-space:pre; max-width:100%; }
 .sui-markdown-editor[data-readonly] .sui-markdown-code code { display:block; width:max-content; font:inherit; white-space:pre; }
 `.trim();
@@ -348,6 +352,7 @@ const loadMilkdown = async (): Promise<MarkdownEditorModule> => {
             const source = String(file.value);
             const removed = source.length - markdownDocumentBody(source).length;
             tree.children = tree.children.filter(child => (child.position?.start.offset ?? 0) >= removed);
+            markdownAlerts(tree);
             joinMarkdownHtml(tree);
           }, options: {} }]);
           ctx.update(htmlSchema.key, previous => context => {
