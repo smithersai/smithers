@@ -95,6 +95,19 @@ const treeManifests = () => {
 
 const catalogPath = new URL("../docs/reference/api/index.mdx", import.meta.url)
 
+test("the API index links every published @smthrs package to its reference page", () => {
+  const page = readFileSync(catalogPath, "utf8")
+  const missing = publishedPackages.filter((name) => name.startsWith("@smthrs/")).filter((name) => {
+    const slug = name.slice("@smthrs/".length)
+    return !page.includes(`[\`${name}\`](/docs/reference/api/${slug}/)`)
+  })
+  assert.deepEqual(missing, [], "published packages missing from the API index")
+  for (const name of publishedPackages.filter((name) => name.startsWith("@smthrs/"))) {
+    const slug = name.slice("@smthrs/".length)
+    assert.ok(existsSync(new URL(`../src/content/docs/docs/reference/api/${slug}.mdx`, import.meta.url)), `${name}: missing reference destination`)
+  }
+})
+
 test("the API index agrees with the release roster", () => {
   const tree = { manifests: treeManifests(), roster: new Set(publishedPackages) }
   assert.deepEqual(catalogPublicationErrors(readFileSync(catalogPath, "utf8"), tree), [])

@@ -748,7 +748,7 @@ Install any single package the same way, by name with `@next`.
 
 ## Reading these pages
 
-Published pages mirror each package's colocated `docs/api.md` or `docs/reference/` source. `internal/*` is never public, and neither are nested `*/index` subpaths. Every documented namespace is also importable as a subpath of its package (for example `@smthrs/cli/<Module>` beside `@smthrs/cli`).
+Published pages mirror each package's colocated `docs/api.md` or `docs/reference/` source. `internal/*` is never public, and neither are nested `*/index` subpaths. Use the package root or a subpath explicitly listed in its export map.
 
 ## Packages
 
@@ -761,6 +761,7 @@ Published pages mirror each package's colocated `docs/api.md` or `docs/reference
 | [`@smthrs/engine-store`](/docs/reference/api/engine-store/) | Effect services for durable engine action persistence and replay boundaries |
 | [`@smthrs/journal`](/docs/reference/api/journal/) | Effect services for the Smithers event journal: the immutable run history and the owner fence on its durable channel |
 | [`@smthrs/plan`](/docs/reference/api/plan/) | The persisted flows plan: a keyed action graph, its append-only store, and its diff |
+| [`@smthrs/plan-store`](/docs/reference/api/plan-store/) | Append-only SQL plan persistence and migrations |
 | [`@smthrs/core`](/docs/reference/api/core/) | Flow and Node builders: the pure plan-time data model of the Smithers harness |
 | [`@smthrs/patterns`](/docs/reference/api/patterns/) | Higher-order flow patterns and decorators for flows |
 | [`@smthrs/run-store`](/docs/reference/api/run-store/) | Effect services for flows run state, attempts, and ownership arbitration |
@@ -783,6 +784,8 @@ Published pages mirror each package's colocated `docs/api.md` or `docs/reference
 | [`@smthrs/plugin`](/docs/reference/api/plugin/) | Vite-style typed plugin kernel for flows: hooks, resolution, and config execution |
 | [`@smthrs/registry`](/docs/reference/api/registry/) | Portable flow descriptor discovery and progressive-disclosure registry services |
 | [`@smthrs/std`](/docs/reference/api/std/) | The flows standard tool library: filesystem, search, HTTP, web-search, shell, and language-server flows |
+| [`@smthrs/integrations`](/docs/reference/api/integrations/) | Provider clients, outbound actions and webhook ingress |
+| [`@smthrs/triggers`](/docs/reference/api/triggers/) | Durable schedules, webhook triggers and occurrence admission |
 | [`@smthrs/chain`](/docs/reference/api/chain/) **workspace-private** | The Agent Chain spine: an append-only journal, keyed replayable calls, and the trampoline that runs model-authored flow scripts |
 | [`@smthrs/evals`](/docs/reference/api/evals/) | Fixed-suite evaluation, baselines, regression reports, and score gates for flows |
 | [`@smthrs/scorers`](/docs/reference/api/scorers/) | Flow-native scoring, durable observations, and asynchronous score runners for flows |
@@ -799,6 +802,7 @@ Published pages mirror each package's colocated `docs/api.md` or `docs/reference
 | [`@smthrs/platform-node`](/docs/reference/api/platform-node/) | Node.js Host bundle for flows: Effect's Node platform services composed into the closed Host surface |
 | [`@smthrs/platform-bun`](/docs/reference/api/platform-bun/) | Bun Host bundle for flows: Effect's Bun platform services composed into the closed Host surface |
 | [`@smthrs/platform-browser`](/docs/reference/api/platform-browser/) | Browser implementations of Effect platform services backed by ZenFS and just-bash |
+| [`@smthrs/platform-cloudflare`](/docs/reference/api/platform-cloudflare/) | Cloudflare host, execution, edge-cache and container adapters |
 
 ### Control and wire
 
@@ -823,6 +827,7 @@ Published pages mirror each package's colocated `docs/api.md` or `docs/reference
 | Package | Role |
 | --- | --- |
 | [`@smthrs/build`](/docs/reference/api/build/) | Effect services and durable install flows for the build system |
+| [`@smthrs/build-cli`](/docs/reference/api/build-cli/) | Target execution, inspection and cache commands |
 | [`@smthrs/targets`](/docs/reference/api/targets/) | Workspace target declarations, inputs and graph contracts |
 
 ### Distribution

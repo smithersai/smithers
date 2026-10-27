@@ -44017,12 +44017,21 @@
         "path": "apps/site/docs/reference/api/index.mdx"
       },
       {
+        "kind": "glob",
+        "pattern": "apps/site/src/content/docs/docs/reference/api/*.mdx",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": ".smithers/flows/release/pack-release.mjs"
       },
       {
         "kind": "file",
         "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-workspace.yaml"
       },
       {
         "kind": "file",
@@ -44945,6 +44954,29 @@
     ],
     "outputs": [],
     "dependencies": [],
+    "source": {
+      "file": "apps/site/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/site:docs",
+    "package": "apps/site",
+    "name": "docs",
+    "rule": "DocsParity",
+    "kinds": [
+      "docs"
+    ],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "apps/site/README.md"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//apps/site:catalogPublicationTest"
+    ],
     "source": {
       "file": "apps/site/PACKAGE.ts"
     }

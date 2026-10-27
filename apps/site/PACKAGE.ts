@@ -471,12 +471,21 @@ const catalogPublicationTest = Smithers.Shell.Test({
     Smithers.file("scripts/catalog-publication.mjs"),
     Smithers.file("scripts/catalog-publication.test.mjs"),
     Smithers.file("docs/reference/api/index.mdx"),
+    Smithers.glob("src/content/docs/docs/reference/api/*.mdx"),
     Smithers.file("//.smithers/flows/release/pack-release.mjs"),
     Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
+    Smithers.file("//pnpm-workspace.yaml"),
     // The roster is checked against what every member manifest declares, so a
     // manifest flipping `private` has to re-run this.
     ...workspacePackages().map(({ dir }) => Smithers.file(`//${dir}/package.json`))
   ]
+})
+
+/** The API index must link every published package; keep this in the docs verb. */
+const docs = Smithers.DocsParity({
+  cwd,
+  readme: Smithers.file("README.md"),
+  deps: [catalogPublicationTest]
 })
 
 /**
@@ -763,6 +772,7 @@ export const Package = Smithers.Package({
     publishedLinksUnit,
     smithersLinks,
     catalogPublicationTest,
+    docs,
     docsRuntimeTests,
     docsRedirectCheck,
     docsRedirectTests,
