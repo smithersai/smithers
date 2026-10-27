@@ -65,7 +65,8 @@ export function IssuesScreen() {
   }
   return (
     <main className="issues-screen" aria-label="Issues">{header}<HomeTabs />
-      <nav aria-label="Commitment">
+      <nav aria-label="Schedule">
+        <span>Schedule</span>
         {[undefined, ...COMMITMENTS].map((commitment) => (
           <Button key={commitment ?? "all"} variant={search.commitment === commitment ? "secondary" : "ghost"} size="sm" asChild>
             <Link to="/$owner/$repo/issues" params={{ owner, repo }} search={{ ...search, commitment }} aria-current={search.commitment === commitment ? "page" : undefined}>

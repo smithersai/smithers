@@ -9,3 +9,10 @@ test("model tier purposes are readable before entering credentials", async ({ pa
     await expect(section.getByLabel(label!, { exact: true })).toHaveAccessibleDescription(purpose!)
   }
 })
+
+ test("issues name their scheduling filter", async ({ page }) => {
+  await page.goto("/smithersai/smithers/issues")
+  const schedule = page.getByRole("navigation", { name: "Schedule", exact: true })
+  await expect(schedule.getByText("Schedule", { exact: true })).toBeVisible()
+  await expect(schedule.getByRole("link", { name: "Unscheduled", exact: true })).toBeVisible()
+})

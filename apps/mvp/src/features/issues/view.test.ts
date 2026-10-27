@@ -371,7 +371,7 @@ describe("triage", () => {
 
 
 test("commitment chips reflect GitHub labels and preserve a conflict", () => {
-  for (const [commitment, word] of [["now", "Now"], ["next", "Next"], ["later", "Later"], ["none", "No commitment"], ["conflict", "Commitment conflict"]]) {
+  for (const [commitment, word] of [["now", "Now"], ["next", "Next"], ["later", "Later"], ["none", "Unscheduled"], ["conflict", "Commitment conflict"]]) {
     expect(issueOf({ ...synced, commitment }).labels).toEqual([word])
   }
   for (const commitment of [null, undefined, "wrong"]) expect(issueOf({ ...synced, commitment }).labels).toBeUndefined()

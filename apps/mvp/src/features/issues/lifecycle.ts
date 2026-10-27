@@ -32,7 +32,7 @@ export const hasReproCandidate = (texts: ReadonlyArray<string>): boolean =>
 export const COMMITMENTS = ["now", "next", "later", "none"] as const
 export type Commitment = (typeof COMMITMENTS)[number]
 export const COMMITMENT_COPY: Readonly<Record<Commitment, string>> = {
-  now: "Now", next: "Next", later: "Later", none: "No commitment",
+  now: "Now", next: "Next", later: "Later", none: "Unscheduled",
 }
 export const commitmentLabel = (commitment: Commitment): string => `smithers:commit-${commitment}`
 export const commitmentOf = (labels: ReadonlyArray<string>): Commitment | "conflict" | null => {
