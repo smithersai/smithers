@@ -63,6 +63,7 @@ test.describe("shape demand", () => {
         const { routes, settled } = follow(page)
         await step(`Open ${path} signed out and let its shapes catch up`, async () => {
           await page.goto(path)
+          if (path !== "/") await expect.poll(() => routes.has("item-summaries"), { timeout: 60_000 }).toBe(true)
           await settled()
         })
         test.info().annotations.push({ type: "shapes", description: `${routes.size}: ${[...routes].sort().join(" ")}` })

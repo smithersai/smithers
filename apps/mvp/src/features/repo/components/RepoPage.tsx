@@ -78,7 +78,7 @@ function RefCounts({ counts, owner, name }: { readonly counts: Counts; readonly 
   if (counts.branches === undefined && counts.tags === undefined) return null
   return (
     <span className="repo-counts">
-      {counts.branches === undefined ? null : <Link to="/$owner/$repo/branches" params={{ owner, repo: name }}>{countLabel(counts.branches, "Branch", "Branches")}</Link>}
+      {counts.branches === undefined ? null : <Button asChild variant="ghost" size="sm"><Link to="/$owner/$repo/branches" params={{ owner, repo: name }}>{countLabel(counts.branches, "Branch", "Branches")}</Link></Button>}
       {counts.tags === undefined ? null : <span>{countLabel(counts.tags, "Tag", "Tags")}</span>}
     </span>
   )

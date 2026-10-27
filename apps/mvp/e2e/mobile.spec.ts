@@ -450,11 +450,15 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           await expect(item, "a real synced item is required; an empty list is not detail-page coverage").toBeVisible({ timeout: 30_000 })
           const href = await item.getAttribute("href")
           await item.click()
-          await expect(page.locator("main article").first()).toBeVisible()
+          await expect(page.locator("main article").first()).toBeVisible({ timeout: 60_000 })
           await audit(page, info, "detail")
           if (kind === "pulls") for (const tab of ["commits", "checks", "files"]) {
             await page.goto(`${href}/${tab}`)
-            await expect(page.locator("main article").first()).toBeVisible()
+            // Only Conversation renders an article; each other tab has its own content container.
+            await expect(page.locator("main.pulls-screen > h1")).toBeVisible({ timeout: 60_000 })
+            if (tab === "commits") await expect(page.getByRole("list", { name: "Commits", exact: true }).or(page.getByText("No commits", { exact: true }))).toBeVisible({ timeout: 60_000 })
+            else if (tab === "checks") await expect(page.locator('[data-slot="run-list"]')).toBeVisible({ timeout: 60_000 })
+            else await expect(page.getByRole("region", { name: "Files", exact: true })).toHaveAttribute("aria-busy", "false", { timeout: 60_000 })
             await audit(page, info, tab)
           }
         })

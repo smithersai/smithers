@@ -5,15 +5,15 @@ import { requires } from "./target"
 test("issue and pull detail pages retain their list and title", async ({ page }) => {
   requires("githubApp")
   await page.goto("/smithersai/smithers/issues/4432")
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("#4432", { timeout: 60_000 })
-  await expect(page.getByRole("link", { name: "Issues", exact: true })).toHaveAttribute("href", "/smithersai/smithers/issues")
+  await expect(page.getByRole("heading", { level: 1 }).filter({ hasText: "#4432" })).toContainText("#4432", { timeout: 60_000 })
+  await expect(page.locator("main.issues-screen > a").filter({ hasText: /^Issues$/ })).toHaveAttribute("href", "/smithersai/smithers/issues")
   await page.goto("/smithersai/smithers/pull/4436")
-  const heading = page.getByRole("heading", { level: 1 })
+  const heading = page.getByRole("heading", { level: 1 }).filter({ hasText: "#4436" })
   await expect(heading).toContainText("#4436", { timeout: 60_000 })
   const title = await heading.innerText()
   for (const tab of ["Checks", /^Commits/]) {
     await page.getByRole("link", { name: tab }).click()
     await expect(heading).toHaveText(title)
-    await expect(page.getByRole("link", { name: "Pull requests", exact: true })).toHaveAttribute("href", "/smithersai/smithers/pulls")
+    await expect(page.locator("main.pulls-screen > a").filter({ hasText: /^Pull requests$/ })).toHaveAttribute("href", "/smithersai/smithers/pulls")
   }
 })

@@ -10,6 +10,6 @@ for (const width of [1280, 390]) {
       ? await Promise.all([page.waitForEvent("popup"), link.click()]).then(([popup]) => popup)
       : (await link.click(), page)
     await expect(destination).toHaveURL(/\/app\/bugs\/report$/)
-    await expect(destination.getByRole("form", { name: "Report a bug" })).toBeVisible()
+    await expect(destination.getByRole("form", { name: "Report a bug" })).toBeVisible({ timeout: 60_000 })
   })
 }

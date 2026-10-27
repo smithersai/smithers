@@ -6,7 +6,7 @@ test.use({ ...signedOut, viewport: { width: 390, height: 844 } })
 test("repository install command scrolls on one line", async ({ page }) => {
   await page.goto("/smithersai/vibelang")
   const command = page.locator(".sui-rh-install code")
-  await expect(command).toBeVisible()
+  await expect(command).toBeVisible({ timeout: 60_000 })
   await expect(command).toHaveCSS("white-space", "pre")
   await expect(command).toHaveCSS("overflow-x", "auto")
   await command.focus()

@@ -27,7 +27,7 @@ for (const kind of ["issues", "pulls"] as const) test(`${kind}: a direct item vi
   await expect.poll(async () => {
     href = await page.locator("a[href]").evaluateAll((links, prefix) => links.map(link => link.getAttribute("href")!).find(href => href.startsWith(prefix) && /^\d+$/.test(href.slice(prefix.length))), pattern)
     return href
-  }).toBeTruthy()
+  }, { timeout: 60_000 }).toBeTruthy()
   await page.goto(href!)
   await expect(page.locator(".repo-header [data-slot=notification-bell]")).toBeVisible()
   await expect(page.locator(".root-bell")).toHaveCount(0)

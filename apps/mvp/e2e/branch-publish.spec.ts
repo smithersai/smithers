@@ -73,7 +73,7 @@ test("publish: a Smithers-only branch reaches GitHub only through Publish, as a 
       await page.getByRole("button", { name: /^Chat\b/ }).click()
       const composer = page.getByRole("textbox", { name: "Message Smithers" })
       await expect(composer).toBeVisible()
-      await composer.fill("/new")
+      await composer.fill(`/new ${repo}`)
       await composer.press("Enter")
       // The page starts on the default branch's tree, which a plain `/tree/<name>` pattern already matches.
       await expect(page).toHaveURL(new RegExp(`/${repo}/tree/(?!${facts.default_branch}$)[^/]+$`), { timeout: 120_000 })
