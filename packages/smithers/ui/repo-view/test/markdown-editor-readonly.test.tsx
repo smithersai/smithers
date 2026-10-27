@@ -25,7 +25,7 @@ test("a read-only document renders sanitized inline and block HTML", async () =>
   document.body.appendChild(container);
   const created = createRoot(container);
   root = created;
-  const document_ = "Some <b>bold</b> words.\n\n<div onclick=\"alert(1)\">block</div>\n";
+  const document_ = "---\ntitle: Quickstart\nsidebar:\n  order: 2\n---\n\nSome <b>bold</b> words.\n\n<div onclick=\"alert(1)\">block</div>\n";
   await act(async () => created.render(<MarkdownEditor value={document_} readOnly aria-label="README" fallback={false} />));
   const deadline = Date.now() + 10_000;
   let content: HTMLElement | null = null;
@@ -35,6 +35,8 @@ test("a read-only document renders sanitized inline and block HTML", async () =>
       await new Promise((resolve) => setTimeout(resolve, 10));
     });
   }
+  expect(content.textContent).not.toContain("title:");
+  expect(content.textContent).not.toContain("sidebar:");
   expect(content.getAttribute("aria-readonly")).toBe("true");
   expect(content.querySelector("b")?.textContent).toBe("bold");
   expect(content.querySelector("[onclick]")).toBeNull();

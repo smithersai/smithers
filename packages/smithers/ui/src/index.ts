@@ -971,3 +971,5 @@ export { ChatTimeline, timelineKey, timelineLabel, timelineCapacity, timelineLev
 export { NotFound, type NotFoundProps } from "./not-found";
 
 export { PageFocus } from "./page-focus";
+
+export { markdownDocumentBody } from "./primitives/markdownDocumentBody";

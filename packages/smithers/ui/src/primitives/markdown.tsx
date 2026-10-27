@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 import { type ComponentProps, createContext, Fragment, memo, type MouseEvent, type ReactNode, useContext, useMemo } from "react";
+import { markdownDocumentBody } from "./markdownDocumentBody";
 import { CodeBlock } from "./CodeBlock";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../table";
 import { cn } from "../cn";
@@ -452,7 +453,7 @@ type BlockSpan = { readonly kind: BlockKind; readonly lines: ReadonlyArray<strin
  * stable, which is what makes it safe to cache.
  */
 function scanBlocks(content: string, variant: MarkdownVariant = "chat"): BlockSpan[] {
-  const lines = content.split("\n");
+  const lines = (variant === "document" ? markdownDocumentBody(content) : content).split("\n");
   const spans: BlockSpan[] = [];
   const document = variant === "document";
   let i = 0;

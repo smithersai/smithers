@@ -13,3 +13,13 @@ test("repository README renders sanitized HTML and hides comments", async ({ pag
   await expect(preview).not.toContainText('<pre align="center">')
   await expect(preview.locator("script, style, [onclick], [onerror]")).toHaveCount(0)
 })
+
+test("repository Markdown hides YAML metadata", async ({ page }) => {
+  requires("codeStorage")
+  await page.goto("/smithersai/smithers/blob/main/packages/smithers/flows/docs/quickstart.md")
+  const preview = page.locator(".sui-markdown-editor[data-readonly]")
+  await expect(preview.locator(".ProseMirror")).toBeVisible({ timeout: 30_000 })
+  await expect(preview).not.toContainText("sidebar:")
+  await expect(preview).not.toContainText('title: "Quickstart"')
+  await expect(preview.getByRole("heading", { name: "Quickstart", exact: true })).toBeVisible()
+})

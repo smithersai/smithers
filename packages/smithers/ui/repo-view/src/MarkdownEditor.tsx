@@ -10,6 +10,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { markdownDocumentBody } from "@smthrs/ui";
 import { markdownHtml, joinMarkdownHtml } from "./markdownHtml";
 import { crepeThemeCss } from "./crepeTheme.generated";
 
@@ -334,7 +335,12 @@ const loadMilkdown = async (): Promise<MarkdownEditorModule> => {
         // stay commonmark inline nodes, which keep their alt text and title.
         super({ ...options, features: { [Crepe.Feature.ImageBlock]: false } });
         if (readOnly) this.editor.config(ctx => {
-          ctx.update(remarkPluginsCtx, plugins => [...plugins, { plugin: () => tree => { joinMarkdownHtml(tree); }, options: {} }]);
+          ctx.update(remarkPluginsCtx, plugins => [...plugins, { plugin: () => (tree, file) => {
+            const source = String(file.value);
+            const removed = source.length - markdownDocumentBody(source).length;
+            tree.children = tree.children.filter(child => (child.position?.start.offset ?? 0) >= removed);
+            joinMarkdownHtml(tree);
+          }, options: {} }]);
           ctx.update(htmlSchema.key, previous => context => {
             const schema = previous(context);
             return { ...schema, toDOM: node => markdownHtml(String(node.attrs.value)) };
