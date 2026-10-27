@@ -74,3 +74,7 @@ No record carries a value of a run.
 | `e2e/ci.spec.ts` | a real push, repository run list, run page and reload; `requires("localLogs", "repoFlows")` plus `githubAppKey` on deployments, or `githubPushToken` and `webhookSecret` locally, declare the prerequisites; its recording supplies the run-view GIF |
 
 Triggered runs are recorded by `triggers/Start` before the Durable Object start. A repeated delivery or failed start reuses the execution and its row.
+# Visitor access
+
+Repository Runs offers sign-in while the visitor's runs shape is gated.
+

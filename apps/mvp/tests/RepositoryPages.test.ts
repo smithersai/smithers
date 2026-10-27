@@ -105,6 +105,21 @@ test("direct feature pages keep navigation, fence the deployment's own repositor
       expect(html).not.toContain('aria-label="Commitment"')
       })
     }
+    // A visitor's gated runs shape never answers: the page must offer sign-in instead of staying blank.
+    await app.runPromise(auth.session.update("session", (row) => { row.status = "signed_out"; row.available = true }))
+    {
+      const root = createRootRoute()
+      const route = createRoute({ getParentRoute: () => root, path: "/$owner/$repo/actions", component: ActionsScreen })
+      const router = createRouter({ routeTree: root.addChildren([route]), history: createMemoryHistory({ initialEntries: ["/smithersai/vibelang/actions"] }) })
+      await router.load()
+      await vi.waitFor(() => {
+        const html = renderRepositoryPages(router, services)
+        expect(html).toContain("Sign in with GitHub")
+        expect(html).toContain("return=%2Fsmithersai%2Fvibelang%2Factions")
+        expect(html).not.toContain("No runs yet")
+      })
+    }
+    await app.runPromise(auth.session.update("session", (row) => { row.status = "signed_in"; row.role = "admin" }))
     // The deployment's own repository only once ChatApi answers it is, with the person's role there (decision 0079).
     await app.runPromise(put(repo.roles, "github/smithersai/vibelang", { id: "github/smithersai/vibelang", role: "admin", own: true }))
     for (const [path, component, expected] of [
