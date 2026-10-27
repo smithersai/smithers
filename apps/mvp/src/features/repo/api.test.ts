@@ -60,12 +60,14 @@ describe("RepoClient against a gateway", () => {
         Effect.result(client.tree("octocat", "Spoon-Knife", SHA)),
         Effect.result(client.blob("octocat", "Spoon-Knife", SHA, "a b/c#.md")),
         Effect.result(client.refs("octocat", "Spoon-Knife")),
+        Effect.result(client.about("octocat", "Spoon-Knife")),
       ]))
     expect(s.paths).toEqual([
       "POST /api/repos",
       `GET /api/repos/octocat/Spoon-Knife/tree/${SHA}`,
-      `GET /api/repos/octocat/Spoon-Knife/blob/${SHA}/a%20b/c%23.md`,
+      `GET /api/repos/octocat/Spoon-Knife/blob/${SHA}/a%20b/c%23.md?optional=true`,
       "GET /api/repos/octocat/Spoon-Knife/refs",
+      "GET /api/repos/octocat/Spoon-Knife/about",
     ])
   })
 

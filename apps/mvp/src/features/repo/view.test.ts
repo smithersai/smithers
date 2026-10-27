@@ -12,6 +12,7 @@ import {
   generatedLinksFor,
   headCommitOf,
   pageOf,
+  missingFileOf,
   previewCommitOf,
   previewReadmeOf,
   previewTreeOf,
@@ -577,4 +578,13 @@ describe("what the page shows", () => {
     expect(headCommitOf(undefined, null, about({ head: null }))).toBeUndefined()
     expect(headCommitOf(undefined, head, undefined)).toBeUndefined()
   })
+})
+
+ test("only a confirmed absent file shows the missing-file recovery", () => {
+  const row: BlobRow = { key: "file", state: "failed", contents: null, size: null, message: "Not found" }
+  expect(missingFileOf("blob", row)).toBe(true)
+  expect(missingFileOf("tree", row)).toBe(false)
+  expect(missingFileOf("blob", undefined)).toBe(false)
+  expect(missingFileOf("blob", { ...row, state: "loading" })).toBe(false)
+  expect(missingFileOf("blob", { ...row, message: "Reading paused" })).toBe(false)
 })

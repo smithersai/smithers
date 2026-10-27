@@ -11,6 +11,10 @@ import type { About, Ref, Repository } from "./schema"
 // What the view shows, from the rows the queries read (decision 0006 §2): pure functions, so a component only renders
 // their result and a TUI can show the same.
 
+/** A missing file of a known revision has a path-specific way back to Code. */
+export const missingFileOf = (kind: "tree" | "blob", row: BlobRow | undefined): boolean =>
+  kind === "blob" && row?.state === "failed" && row.message === NOT_FOUND
+
 /** A public root whose About retries ended must show the refusal, not an absent clone. */
 export const aboutFailed = (row: AboutRow | undefined, header: Header, root: boolean): boolean =>
   (header.kind === "clone" || header.kind === "sign_in") && root && row?.state === "failed"

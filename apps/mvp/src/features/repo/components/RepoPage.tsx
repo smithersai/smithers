@@ -43,6 +43,7 @@ import {
   fileProps,
   headCommitOf,
   pageOf,
+  missingFileOf,
   previewCommitOf,
   previewReadmeOf,
   previewTreeOf,
@@ -206,6 +207,13 @@ export function RepoPage({ editFiles = false, liveMarkdown }: {
       </Card>
     )
   }
+  if (missingFileOf(view.kind, file?.file)) return (
+    <EmptyState title={`File not found at ${view.revision ?? view.ref ?? "this revision"}`} action={
+      <Button asChild variant="outline">
+        <a href={hrefFor(page.repository, view.revision ?? page.repository.defaultBranch ?? "", { kind: "tree", path: "" })}>Code</a>
+      </Button>
+    } />
+  )
   const shown = page.repository
   const revision = view.revision ?? shown.defaultBranch ?? ""
   const href = (location: RepoViewLocation) => viewHrefFor(shown, revision, location, editFiles)

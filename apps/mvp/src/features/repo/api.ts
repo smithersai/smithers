@@ -1,6 +1,5 @@
 import { Context, Data, type Duration, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
-import { HOME_FILE } from "../home/contract"
 import { repoRoleRoute } from "../auth/contract"
 import { RepoRoleAnswer } from "../auth/schema"
 import { aboutRoute, blobRoute, LAUNCH_ROUTE, refsRoute, REPOS_ROUTE, treeRoute } from "./contract"
@@ -127,7 +126,7 @@ export const getBlob = Effect.fn("repo.blob.get")(function* (
   within: Duration.Input,
 ) {
   return yield* exchange(
-    HttpClientRequest.get(`${origin}${blobRoute(file.owner, file.name, file.sha, file.path)}${file.path === HOME_FILE ? "?optional=true" : ""}`),
+    HttpClientRequest.get(`${origin}${blobRoute(file.owner, file.name, file.sha, file.path)}?optional=true`),
     within,
     (status) => status === 200 || status === 204,
     (response) =>
