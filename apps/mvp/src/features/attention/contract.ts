@@ -51,6 +51,7 @@ export const BELL_ROUTES: ReadonlySet<string> = new Set([
   "/app",
   "/$owner/$repo",
   "/$owner/$repo/tree/$ref/$",
+  "/$owner/$repo/branches",
   "/$owner/$repo/blob/$ref/$",
   "/$owner/$repo/raw/$ref/$",
   "/$owner/$repo/docs",

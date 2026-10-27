@@ -38,6 +38,7 @@ import { NewIssueScreen } from "./screens/issues/NewIssueScreen"
 import { Landing } from "./screens/landing/Landing"
 import { DocsScreen } from "./screens/docs/DocsScreen"
 import { RepoHomeScreen } from "./screens/repo/RepoHomeScreen"
+import { BranchesScreen } from "./screens/repo/BranchesScreen"
 import { RepoScreen } from "./screens/repo/RepoScreen"
 import { Root } from "./screens/root/Root"
 import { RouteError } from "./screens/root/RouteError"
@@ -298,6 +299,16 @@ const repoRoute = createRoute({
         context.home.actions.open(params.owner, params.repo)
       },
     ),
+})
+
+/** Repository browsing infrastructure: the same visible refs as the picker, at GitHub's branch-list URL. */
+const branchesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/$owner/$repo/branches",
+  component: BranchesScreen,
+  beforeLoad: ({ context, params, ...load }) =>
+    enterRepo(context, params, load, () => context.repo.actions.warmRoute("tree", params, {}), () =>
+      context.repo.actions.openRoute("tree", params, {})),
 })
 
 /**
@@ -651,6 +662,7 @@ export const router = createRouter({
     repoRoute,
     treeRoute,
     blobRoute,
+    branchesRoute,
     rawRoute,
     docsRoute,
     docsPageRoute,
