@@ -6,9 +6,14 @@ import { requires } from "./target"
 requires("githubSignIn", "member")
 
 test("failed history opens on its failure with records and consistent skipped steps", async ({ page }) => {
+  requires("failedRun")
+  const execution = process.env.E2E_FAILED_RUN!
+  const receipt = await page.request.get(`/api/remote-runs/${encodeURIComponent(execution)}?limit=1`)
+  expect(receipt.status(), "the failed-run prerequisite must be visible to this person").toBe(200)
+  expect(await receipt.json()).toMatchObject({ run: { status: "failed" } })
   await page.goto("/app/runs")
-  const rows = page.getByRole("table", { name: "Runs", exact: true }).locator("tr[data-run]")
-  const failed = rows.filter({ has: page.getByText("Failed", { exact: true }) }).first()
+  const failed = page.getByRole("table", { name: "Runs", exact: true }).locator(`tr[data-run="${execution}"]`)
+  await expect(failed).toContainText("Failed")
   await expect(failed).toBeVisible()
   await failed.locator(".sui-run-list-flow a").click()
   const graph = page.getByRole("group", { name: "Run graph" })
@@ -22,8 +27,10 @@ test("failed history opens on its failure with records and consistent skipped st
 })
 
 test("repository history returns to personal Runs and keeps engine names in details", async ({ page }) => {
+  requires("repositoryRun")
   await page.goto("/app/runs")
-  const link = page.getByRole("table", { name: "Runs", exact: true }).locator('.sui-run-list-flow a[href*="/actions/runs/"]').first()
+  const execution = process.env.E2E_REPOSITORY_RUN!
+  const link = page.getByRole("table", { name: "Runs", exact: true }).locator(`tr[data-run="${execution}"] .sui-run-list-flow a[href*="/actions/runs/"]`)
   await expect(link).toBeVisible()
   await link.click()
   await expect(page.getByRole("group", { name: "Run graph" })).toBeVisible()

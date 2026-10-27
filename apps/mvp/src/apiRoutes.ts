@@ -23,20 +23,24 @@ export const ROUTE_WORDS: ReadonlySet<string> = new Set([
 const TELEMETRY_PREFIX = "/api/telemetry/"
 
 /**
- * `pathname` as a template: a route word kept, the two segments after `repos` that aren't route words `:owner` and
- * `:repo`, and any other segment `:id`. `/api/repos/acme/widgets/stack` is `/api/repos/:owner/:repo/stack`.
+ * `pathname` as a template: route words kept, repository owner/name replaced even when they are route words,
+ * and any other segment `:id`. `/api/repos/acme/widgets/stack` is `/api/repos/:owner/:repo/stack`.
  */
 export const routeTemplate = (pathname: string): string => {
   const template: Array<string> = []
   // How many of the segments after `repos` still name its owner and repository.
   let naming = 0
   for (const segment of pathname.split("/").slice(1)) {
-    if (segment === "" || ROUTE_WORDS.has(segment)) {
+    if (segment === "") {
       template.push(segment)
-      naming = segment === "repos" ? 2 : 0
+    } else if (naming > 0) {
+      template.push(naming === 2 ? ":owner" : ":repo")
+      naming -= 1
+    } else if (ROUTE_WORDS.has(segment)) {
+      template.push(segment)
+      naming = segment === "repos" && pathname.split("/").filter(Boolean).length > 3 ? 2 : 0
     } else {
-      template.push(naming === 2 ? ":owner" : naming === 1 ? ":repo" : ":id")
-      naming = Math.max(0, naming - 1)
+      template.push(":id")
     }
   }
   return `/${template.join("/")}`

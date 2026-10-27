@@ -304,7 +304,7 @@ Code is structured to scale: one folder per screen and per feature, and each fil
 
 ### plugin.core-names-no-plugin
 
-The core names each built-in plugin in its registry: `src/plugins/builtin.ts` for UI, `src/plugins/builtinFlows.ts` for flow source. Deleting a plugin's folder and its registry line removes the feature. The flow registry is server-safe and imports no browser UI.
+The core names each built-in plugin in its registry: `src/plugins/manifests.ts` for declarative metadata, `src/plugins/builtin.ts` for UI loaders, and `src/plugins/builtinFlows.ts` for flow source. The HTTP route matcher reads metadata without importing UI chunks. Deleting a plugin's folder and its registry line removes the feature. The flow registry is server-safe and imports no browser UI.
 
 - **Will:** "It's very important that we similar to webpack try to treat everything like a plugin." (2026-10-20 14:40, PLUGIN-1).
 - **Scope:** every core source in `apps/mvp` (`src/`, `worker/`), only those two registry entries left out.
@@ -655,3 +655,5 @@ undici's response body and drops the original, and undici cancels that body when
 the original is garbage-collected. A test that awaited every response before
 reading any body lost one under a loaded host's collection ("Body has already
 been read"); the guard makes such a read fail every run.
+
+Timed reload regressions use `src/test/reloadTiming.ts` and the Effect clock to unload at 0, 100 or 300 ms (Will, 2026-10-27 bug bash 4 brief). This injects the requested failure timing; it is not permission to sleep while waiting for readiness.

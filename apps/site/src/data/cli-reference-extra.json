@@ -557,7 +557,15 @@
             ]
           },
           "budgetTokens": {
-            "description": "Override the token ceiling per turn and worker",
+            "description": "Token cap per turn and worker (default 200M; 0 or none disables)",
+            "type": "string"
+          },
+          "budgetDailyTokens": {
+            "description": "Token cap per UTC day on this machine (default 2B; 0 or none disables)",
+            "type": "string"
+          },
+          "box": {
+            "description": "Run worker tools in a Smithers Cloud workspace: owner/repo/id",
             "type": "string"
           },
           "environment": {

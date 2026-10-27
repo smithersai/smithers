@@ -94,8 +94,8 @@ const openDevice = async (
 
 type Device = Awaited<ReturnType<typeof openDevice>>
 
-const ask = (device: Device, text: string) => {
-  const asked = device.chat.actions.ask(text)
+const ask = async (device: Device, text: string) => {
+  const asked = (await device.chat.actions.ask(text))
   if (!asked.asked) throw new Error(`the question was refused: ${asked.reason}`)
   return asked.answerId
 }
@@ -121,7 +121,7 @@ describe("the feed on two people's devices", { timeout: ENGINE_WITHIN }, () => {
     await until(async () => expect(await watchesOf(api, "person-member")).toHaveLength(2))
     await until(async () => expect(await watchesOf(api, "person-ben")).toHaveLength(2))
 
-    const answerId = ask(ann, "Deploy the docs preview")
+    const answerId = await ask(ann, "Deploy the docs preview")
     const subject = `run:${answerId}`
     const first = await Effect.runPromise(api.answerTo("Deploy the docs preview"))
     // Live: Ann sees it in the conversation, so no toast over it; Ben sees a quiet toast naming her on any page.
@@ -213,7 +213,7 @@ describe("the feed on two people's devices", { timeout: ENGINE_WITHIN }, () => {
     const ann = await openDevice(api)
     // Ann's tablet: its engine never leads, so what it dispatches never runs, and its acts stay its own.
     const tablet = await openDevice(api, { answers: false })
-    const answerId = ask(ann, "Clean up old previews")
+    const answerId = await ask(ann, "Clean up old previews")
     const subject = `run:${answerId}`
     const first = await Effect.runPromise(api.answerTo("Clean up old previews"))
     first.cell(askCell(`{ kind: "approval", prompt: "Delete the stale preview docs-v1?" }`))
@@ -268,11 +268,11 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
     const ann = await openDevice(api)
     const annToo = await openDevice(api)
 
-    const doneId = ask(ann, "Summarize the release notes")
+    const doneId = await ask(ann, "Summarize the release notes")
     const done = `run:${doneId}`
     ;(await Effect.runPromise(api.answerTo("Summarize the release notes"))).cell(`ctx.done("Three fixes, one feature.")`)
     await until(() => expect(ann.entry(done)).toMatchObject({ state: "done", listed: true, unread: true }))
-    const askId = ask(ann, "Deploy the docs preview")
+    const askId = await ask(ann, "Deploy the docs preview")
     const asks = `run:${askId}`
     ;(await Effect.runPromise(api.answerTo("Deploy the docs preview"))).cell(
       askCell(`{ kind: "question", prompt: "Which branch should I deploy?", options: ["main", "docs-v2"] }`),
@@ -367,7 +367,7 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
   test("Retry on a failed run asks its question again and dismisses the entry; elsewhere it does nothing", async () => {
     const api = await openApi()
     const ann = await openDevice(api)
-    const failedId = ask(ann, "Fail, please")
+    const failedId = await ask(ann, "Fail, please")
     const failed = `run:${failedId}`
     // Nothing waits on her: the panel opens at its first entry.
     ann.attention.actions.openPanel("more")
@@ -376,12 +376,12 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
     ;(await Effect.runPromise(api.answerTo("Fail, please"))).fail()
     await until(() => expect(ann.entry(failed)).toMatchObject({ state: "failed", listed: true }))
     // Not expanded: nothing to retry from.
-    ann.attention.actions.retry(failed)
-    ann.attention.actions.retry("run:nowhere")
+    await ann.attention.actions.retry(failed)
+    await ann.attention.actions.retry("run:nowhere")
     ann.attention.actions.expand(failed)
     await until(() => expect(ann.detail()).toMatchObject({ id: failed, note: "Model error", retry: true }))
     ann.chat.queries.conversation.startSyncImmediate()
-    ann.attention.actions.retry(failed)
+    await ann.attention.actions.retry(failed)
     await until(() => expect(ann.entry(failed)).toBeUndefined())
     // Asked again, under new ids: the model hears it a second time.
     await until(() =>
@@ -391,12 +391,12 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
     ;(await Effect.runPromise(api.answerTo("Fail, please", 1))).cell(`ctx.done("Done this time.")`)
     expect(panelCount(ann, { act: "retry" })).toBe(1)
     // A finished entry, expanded, has no Retry.
-    const doneId = ask(ann, "Say hi")
+    const doneId = await ask(ann, "Say hi")
     ;(await Effect.runPromise(api.answerTo("Say hi"))).cell(`ctx.done("Hi.")`)
     await until(() => expect(ann.entry(`run:${doneId}`)).toMatchObject({ state: "done" }))
     ann.attention.actions.expand(`run:${doneId}`)
     await until(() => expect(ann.detail()).toMatchObject({ id: `run:${doneId}`, retry: false }))
-    ann.attention.actions.retry(`run:${doneId}`)
+    await ann.attention.actions.retry(`run:${doneId}`)
     expect(panelCount(ann, { act: "retry" })).toBe(1)
   })
 
@@ -412,7 +412,7 @@ describe("the notifications panel", { timeout: ENGINE_WITHIN }, () => {
         sql`INSERT INTO branch_shares (branch_id, grantee, access) VALUES (${branchId}, 'repository', 'edit')`,
       ], { discard: true }))))
     await ann.run(show(conversationId))
-    const answerId = ask(ann, "Rename the feature branch")
+    const answerId = await ask(ann, "Rename the feature branch")
     const subject = `run:${answerId}`
     ;(await Effect.runPromise(api.answerTo("Rename the feature branch"))).cell(
       askCell(`{ kind: "approval", prompt: "Rename feature to feature-2?" }`),
@@ -501,7 +501,7 @@ describe("a clone in the feed", { timeout: ENGINE_WITHIN }, () => {
     )
     ann.attention.actions.expand(subject)
     await until(() => expect(ann.detail()).toMatchObject({ id: subject, retry: true }))
-    ann.attention.actions.retry(subject)
+    await ann.attention.actions.retry(subject)
     // This ChatApi has no Code Storage, so RepoApi refuses the clone; the flow ran, from the person's button.
     await until(() =>
       expect(ann.count(Metric.withAttributes(dispatches, { flow: "repo/clone", door: "button", outcome: "failed" }))).toBe(1)

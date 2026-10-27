@@ -1,12 +1,13 @@
+import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Clock, Effect, Metric, Option } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { repoId } from "../repo/contract"
-import { isPrompt, isTitle, stackPath } from "./contract"
+import { isPrompt, isTitle, OP_ID_NAMESPACE, stackPath } from "./contract"
 import { pendingActions } from "./metrics"
-import { type Draft, VIEW } from "./schema"
+import { type Draft, type QueuedOp, VIEW } from "./schema"
 import { TodosStore } from "./store"
 
-// What a person does with TODOs, as Effects that finish synchronously (decision 0016 §3, docs/features/todos.md). Commit
+// TODO writes await local durable admission (decision 0016 §3, docs/features/todos.md). Commit
 // and Drop are the flows `todo/commit` and `todo/drop`, dispatched with door `button` in the store's scope: the press
 // returns at once, and a committed draft goes once its change is queued. Sending runs in the outbox, never in an action.
 
@@ -67,11 +68,12 @@ const setCommitting = (id: string, committing: boolean) =>
       row.committing = committing ? [...row.committing, id] : row.committing.filter((other) => other !== id)
     })))
 
-/**
- * Commit on draft `id`: `todo/commit` with its title, prompt and criteria, in the store's scope; the draft goes once the
- * change is queued, and stays if it wasn't. Answers the stack's page to show, or nothing when it didn't run: a draft the
- * device doesn't have, a blank title or prompt, or while its Commit is on its way.
- */
+/** Stable for an unchanged draft snapshot; its content never enters the flow's recorded identity. */
+const commitExecutionId = (draft: Draft) => Uuid.v5(OP_ID_NAMESPACE,
+  JSON.stringify([draft.id, draft.repo, draft.title.trim(), draft.prompt, draft.acceptance, draft.issue ?? null]),
+).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+
+/** Commit retains its draft until the device durably admits its snapshot. */
 export const commit = (id: string) =>
   Effect.gen(function* () {
     const store = yield* TodosStore
@@ -82,23 +84,17 @@ export const commit = (id: string) =>
     if (!isTitle(draft.title) || !isPrompt(draft.prompt)) return undefined
     const flows = yield* FlowDispatch
     yield* setCommitting(id, true)
-    const done = Effect.gen(function* () {
-      // Queued: the flow answered Requested. Its declared failure, or no run at all, keeps the draft.
-      const queued = yield* flows.dispatch(
-        "todo/commit",
-        {
-          repo: draft.repo,
-          title: draft.title.trim(),
-          prompt: draft.prompt,
-          ...(draft.acceptance.length === 0 ? {} : { acceptance: draft.acceptance }),
-          ...(draft.issue === undefined ? {} : { issue: draft.issue }),
-        },
-        { door: "button" },
-      ).pipe(Effect.map((dispatched) => dispatched._tag === "Done"), Effect.orElseSucceed(() => false))
-      if (queued) yield* Effect.ignore(store.drafts.delete(id))
-      yield* setCommitting(id, false)
-    })
-    yield* Effect.forkIn(done, store.scope, { startImmediately: true })
+    const executionId = yield* commitExecutionId(draft)
+    const opId = yield* Uuid.v5(OP_ID_NAMESPACE, executionId).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+    const payload = { repo: draft.repo, title: draft.title.trim(), prompt: draft.prompt,
+      ...(draft.acceptance.length === 0 ? {} : { acceptance: draft.acceptance }),
+      ...(draft.issue === undefined ? {} : { issue: draft.issue }) }
+    const { kept } = yield* store.queue({ ...payload, id: opId, op: "commit", number: 0, acceptance: draft.acceptance })
+    if (kept) {
+      yield* store.drafts.delete(id).pipe(Effect.flatMap((removed) => removed.persisted), Effect.ignore)
+      yield* flows.dispatch("todo/commit", payload, { door: "button", executionId }).pipe(Effect.ignore, Effect.forkIn(store.scope, { startImmediately: true }))
+    }
+    yield* setCommitting(id, false)
     const [owner, name] = draft.repo.split("/") as [string, string]
     return stackPath(owner, name)
   })
@@ -136,16 +132,21 @@ export const fromIssue = (owner: string, name: string, number: number) =>
   })
 
 /** Drop on TODO `number` of `owner/name` (`todo/drop`): the press returns at once, and the TODO shows Requested. */
-export const drop = (owner: string, name: string, number: number) =>
+const admitChange = (op: "drop" | "retry", owner: string, name: string, number: number) =>
   Effect.gen(function* () {
     const store = yield* TodosStore
     const flows = yield* FlowDispatch
-    yield* Effect.forkIn(
-      Effect.ignore(flows.dispatch("todo/drop", { repo: `${owner}/${name}`, number }, { door: "button" })),
-      store.scope,
-      { startImmediately: true },
+    const executionId = crypto.randomUUID()
+    const id = yield* Uuid.v5(OP_ID_NAMESPACE, executionId).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+    const payload = { repo: `${owner}/${name}`, number }
+    const row: QueuedOp = { ...payload, id, op, title: "", prompt: "", acceptance: [] }
+    const { kept } = yield* store.queue(row)
+    if (kept) yield* flows.dispatch(op === "drop" ? "todo/drop" : "todo/Retry", payload, { door: "button", executionId }).pipe(
+      Effect.ignore, Effect.forkIn(store.scope, { startImmediately: true }),
     )
   })
+
+export const drop = (owner: string, name: string, number: number) => admitChange("drop", owner, name, number)
 
 /**
  * Edit or Discard on a change that wasn't sent: Edit puts a commit's text back in a new draft first. The change goes
@@ -182,12 +183,18 @@ export const edit = (opId: string) => handle(opId, "edit")
 /** Discard on a change that wasn't sent: it goes. */
 export const discard = (opId: string) => Effect.asVoid(handle(opId, "discard"))
 
+/** Retries local admission using the retained identity, without inventing another TODO. */
+export const retryChange = (id: string) => Effect.gen(function* () {
+  const store = yield* TodosStore
+  const row = yield* store.requested.get(id)
+  if (Option.isNone(row) || row.value.status !== "not_sent" || row.value.reason !== null) return
+  const { kept } = yield* store.queue(row.value)
+  if (!kept || row.value.op !== "commit") return
+  for (const draft of yield* store.drafts.toArray) {
+    const opId = yield* Uuid.v5(OP_ID_NAMESPACE, yield* commitExecutionId(draft)).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+    if (opId === id) yield* store.drafts.delete(draft.id).pipe(Effect.flatMap((removed) => removed.persisted), Effect.ignore)
+  }
+})
+
 /** Retry returns once the durable launch is requested; the outbox sends in the background. */
-export const retry = (owner: string, name: string, number: number) =>
-  Effect.gen(function* () {
-    const store = yield* TodosStore
-    yield* Effect.forkIn(
-      Effect.ignore((yield* FlowDispatch).dispatch("todo/Retry", { repo: `${owner}/${name}`, number }, { door: "button" })),
-      store.scope, { startImmediately: true },
-    )
-  })
+export const retry = (owner: string, name: string, number: number) => admitChange("retry", owner, name, number)

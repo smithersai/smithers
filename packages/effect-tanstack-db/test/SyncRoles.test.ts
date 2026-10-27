@@ -203,3 +203,24 @@ describe("Persistence.reportRoles", () => {
     }
   })
 })
+
+test("writer and watcher diagnostics identify the collection kind without a private repository", async () => {
+  const on = device()
+  const marker = "private-repository-election"
+  const collection = `issue-summaries:${marker}`
+  const writing = await program(on)
+  const watching = await program(on)
+  await writing.collection(collection)
+  await watching.collection(collection)
+  await writing.report()
+  await watching.report()
+  expect(roles(on, "issue-summaries", "writer")).toBe(1)
+  expect(roles(on, "issue-summaries", "watcher")).toBe(1)
+  expect(roles(on, collection, "writer")).toBe(0)
+  const lines = [...writing.lines, ...watching.lines]
+  expect(JSON.stringify(lines)).not.toContain(marker)
+  expect(logged(lines, "persisted sync role")).toEqual(expect.arrayContaining([
+    expect.objectContaining({ collection: "issue-summaries", role: "writer" }),
+    expect.objectContaining({ collection: "issue-summaries", role: "watcher" })
+  ]))
+})

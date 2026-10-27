@@ -39,7 +39,8 @@ test("bug report: /bug opens the form, Send files it with the page and the tab's
   await test.step("Type /bug", async () => {
     await a.openComposer()
     await a.composer.pressSequentially("/bug", typing)
-    await expect(page.getByRole("option", { name: /^\/bug\b/ }).first()).toBeVisible()
+    await expect(a.composer).toHaveValue("/bug")
+    await expect(page.getByRole("option").first().locator(".sui-completion-label")).toHaveText("/bug")
     await a.composer.press("Enter")
     await expect(page).toHaveURL(/\/app\/bugs\/report$/)
   })

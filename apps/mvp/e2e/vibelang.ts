@@ -76,11 +76,12 @@ export const openHome = (page: Page, audience: "everyone" | "contributor" | "mai
     await expect(homeOf(page)).toHaveAttribute("data-audience", audience, { timeout: 60_000 })
   })
 
-/** VibeLang's landing page, which every audience sees below its own sections. */
+/** W12 production reads VibeLang's declared .smithers/home.json (2026-10-27); its copy supersedes the design fixture.
+ * VibeLang's landing page, which every audience sees below its own sections. */
 export const landing = async (page: Page) => {
   const home = homeOf(page)
   await expect(home.getByRole("heading", { name: "VibeLang", exact: true, level: 2 })).toBeVisible()
-  await expect(home.getByText("Reliable TypeScript for the AI era, built on Effect.")).toBeVisible()
+  await expect(home.getByText("Write Effect programs in TypeScript syntax, with typed errors and services the compiler checks.")).toBeVisible()
   await expect(home.getByText("npm create vibelang@latest my-app", { exact: true }).first()).toBeVisible()
   await expect(home.getByRole("figure", { name: "users.vibe" })).toContainText("service Users")
   await expect(home.getByRole("link", { name: "Get started" })).toHaveAttribute("target", "_blank")
@@ -96,7 +97,8 @@ export const contribute = async (page: Page) => {
   const section = page.getByRole("region", { name: "Contribute" })
   await expect(section.getByText("sh scripts/setup.sh", { exact: true })).toBeVisible()
   await expect(section.getByRole("heading", { name: "How a change lands" })).toBeVisible()
-  await expect(section.getByText("A pull request; a person merges")).toBeVisible()
+  await expect(section.getByRole("heading", { name: "Open one focused PR per accepted issue", exact: true })).toBeVisible()
+  await expect(section.getByText("A person merges. Agents never approve or merge.", { exact: true })).toBeVisible()
   await expect(section.getByRole("link", { name: "Issues" })).toHaveAttribute("href", "https://github.com/smithersai/vibelang/issues")
   await expect(section.getByRole("heading", { name: "Ask about the code" })).toHaveCount(0)
   await expect(section.getByRole("link", { name: "Ask about VibeLang's compiler…" })).toHaveCount(0)

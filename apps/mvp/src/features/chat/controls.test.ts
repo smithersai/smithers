@@ -110,7 +110,7 @@ const openOffline = async () => {
 
 /** Asks `text` and has the model answer `answer`, settled. */
 const answered = async (tab: Tab, api: TestChatApi["Service"], text: string, answer: string) => {
-  const result = tab.actions.ask(text)
+  const result = (await tab.actions.ask(text))
   if (!result.asked) throw new Error(result.reason)
   const reply = await tab.run(api.answerTo(text))
   reply.say(answer)
@@ -158,7 +158,7 @@ describe("Copy", () => {
   test("only finished messages copy: not an answer still streaming, a failed one, or a view", async () => {
     const { api, device } = await openApi()
     const tab = await openOn(api, device)
-    const { answerId } = tab.actions.ask("hello") as { readonly answerId: string }
+    const { answerId } = (await tab.actions.ask("hello")) as { readonly answerId: string }
     const reply = await tab.run(api.answerTo("hello"))
     reply.say("Hal")
     await until(() => expect(tab.shown()).toEqual(["user done hello", "assistant streaming Hal"]))
@@ -177,7 +177,7 @@ describe("Edit on a queued question", () => {
     const tab = await openOn(api, device, true)
     const faults = await tab.run(Effect.service(QuestionFaults))
     // Offline, the question waits in the outbox, queued, once this tab leads it.
-    const first = tab.actions.ask("frist question")
+    const first = (await tab.actions.ask("frist question"))
     if (!first.asked) throw new Error(first.reason)
     await until(() => expect(tab.shown()).toEqual(["user queued frist question"]))
 
@@ -191,7 +191,7 @@ describe("Edit on a queued question", () => {
     // Online, the outbox sends only the edit: the question taken back never reaches Postgres.
     await tab.run(faults.failNext("invalid_response"))
     tab.actions.setDraft("first question")
-    const replacement = tab.actions.ask("first question")
+    const replacement = (await tab.actions.ask("first question"))
     if (!replacement.asked) throw new Error(replacement.reason)
     tab.actions.setDraft("next")
     network.online()
@@ -218,7 +218,7 @@ describe("Edit on a queued question", () => {
     const tab = await openOn(api, device, true)
     const faults = await tab.run(Effect.service(QuestionFaults))
     await tab.run(faults.failNext("bad_request"))
-    tab.actions.ask("refused")
+    ;(await tab.actions.ask("refused"))
     await until(() => expect(tab.shown()).toEqual(["user unsent refused"]))
     const slash = await tab.dispatch("chat/edit", {}, "slash")
     expect(slash).toMatchObject({ _tag: "Success", success: { _tag: "Done", value: { edited: true } } })
@@ -226,7 +226,7 @@ describe("Edit on a queued question", () => {
     await until(() => expect(tab.shown()).toEqual([]))
 
     network.offline()
-    const queued = tab.actions.ask("queued")
+    const queued = (await tab.actions.ask("queued"))
     if (!queued.asked) throw new Error(queued.reason)
     await until(() => expect(tab.shown()).toEqual(["user queued queued"]))
     tab.actions.edit(queued.questionId)
@@ -241,7 +241,7 @@ describe("Edit on a queued question", () => {
     const engine = await tab.run(Effect.service(EngineFaults))
     // ChatApi takes the question, and the send waits for this device's engine to record the run that answers it.
     await tab.run(engine.holdStarts)
-    const asked = tab.actions.ask("on its way")
+    const asked = (await tab.actions.ask("on its way"))
     if (!asked.asked) throw new Error(asked.reason)
     await until(async () => expect((await tab.run(api.rows)).map(({ text }) => text)).toContain("on its way"))
     tab.actions.setDraft("typing")
@@ -256,7 +256,7 @@ describe("Edit on a queued question", () => {
     // The outbox's storage refuses deletes, as a browser's IndexedDB can (test.faults-by-injection).
     const storage = { ...device.outbox.storage, delete: () => Promise.reject(new Error("storage refused the delete")) }
     const tab = await openOn(api, { ...device, outbox: { ...device.outbox, storage } } as NodeDevice)
-    const asked = tab.actions.ask("stuck")
+    const asked = (await tab.actions.ask("stuck"))
     if (!asked.asked) throw new Error(asked.reason)
     await until(() => expect(tab.shown()).toEqual(["user queued stuck"]))
     tab.actions.setDraft("typing")
@@ -270,7 +270,7 @@ describe("Edit on a queued question", () => {
     const { api, device, network } = await openOffline()
     const leads = async (tab: Tab) => Option.getOrThrow(await tab.run(Stream.runHead(tab.store.outbox.status))).leader
     const first = await openOn(api, device)
-    const asked = first.actions.ask("asked here")
+    const asked = (await first.actions.ask("asked here"))
     if (!asked.asked) throw new Error(asked.reason)
     await until(() => expect(first.shown()).toEqual(["user queued asked here"]))
     // Another tab on the device takes the lead, as the tab a person moves to does.
@@ -285,7 +285,7 @@ describe("Edit on a queued question", () => {
 
     // Online, only what is asked next is sent: the question taken back never reaches Postgres.
     network.online()
-    const next = first.actions.ask("next")
+    const next = (await first.actions.ask("next"))
     if (!next.asked) throw new Error(next.reason)
     await until(async () =>
       expect((await first.run(api.rows)).map(({ text }) => text).filter((text) => text !== "")).toEqual(["next"])
@@ -327,7 +327,7 @@ describe("the saved draft", () => {
     await until(() => expect(device.stored("chat-drafts")).toBe(2))
 
     // Asking sends the draft and forgets it; clearing the draft forgets it too.
-    second.actions.ask("branch draft")
+    ;(await second.actions.ask("branch draft"))
     expect(second.store.drafts.tanstack.has("branch-a")).toBe(false)
     await second.run(show(null))
     second.actions.setDraft("")
@@ -355,7 +355,7 @@ describe("the saved draft", () => {
     first.actions.setDraft("typo")
     expect(first.composer()).toMatchObject({ draft: "typo", saved: false })
     first.actions.setDraft("fixed")
-    first.actions.ask("fixed")
+    ;(await first.actions.ask("fixed"))
     first.actions.setDraft("half a thought")
     // Saved once the device stored the latest draft; an earlier draft's write never marks a later one saved.
     await until(() => expect(first.composer()).toMatchObject({ draft: "half a thought", saved: true }))

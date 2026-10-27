@@ -328,7 +328,6 @@ export const NOT_FOUND = "Not found"
 export const ISSUES_TELEMETRY = {
   records: [
     "issues.write.admission",
-    "issues.submission.not_sent",
     "smithers_issue_write_admissions",
     "smithers_issue_submission_failures",
     "issues.write.queue",

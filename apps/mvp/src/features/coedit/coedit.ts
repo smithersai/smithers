@@ -21,7 +21,7 @@ export interface CoeditQueries {
 
 export interface CoeditActions {
   /** The person typed in text `textId`, making it `value`. */
-  readonly type: (textId: string, value: string, edit?: Edit) => void
+  readonly type: (textId: string, value: string, edit?: Edit) => Promise<void>
   /** The person moved their caret or selection in text `textId`. */
   readonly select: (textId: string, selection: Selection) => void
   /**
@@ -47,7 +47,7 @@ export class Coedit extends Context.Service<Coedit, { readonly queries: CoeditQu
     return Coedit.of({
       queries: { texts: store.textsState.tanstack },
       actions: {
-        type: (textId, value, edit) => sync(type(textId, value, edit)),
+        type: (textId, value, edit) => run(type(textId, value, edit)),
         select: (textId, selection) => sync(select(textId, selection)),
         // A route cancels a file it no longer shows with its signal.
         showFile: (branchId, path, signal) => run(showFile(branchId, path), { signal }),

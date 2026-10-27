@@ -128,20 +128,25 @@ describe("a write", () => {
 
   test("that doesn't get through is sent again, whatever its status, until it does", async () => {
     const world = await setup([new Outbox.Retry({}), new Outbox.Retry({ status: 400 })])
-    const { result: statuses, logs } = await withLogs(Effect.scoped(Effect.gen(function*() {
-      const { notes, outbox } = yield* start(world)
-      const seen: Array<Outbox.Status> = []
-      yield* outbox.status.pipe(Stream.runForEach((status) => Effect.sync(() => seen.push(status))), Effect.forkScoped)
-      const write = yield* save(outbox, notes, note("a", 1))
-      // The library waits 1 s, then 2 s; retryNow sends at once.
-      yield* Effect.promise(() => until(() => expect(world.sent).toHaveLength(1)))
-      yield* outbox.retryNow
-      yield* Effect.promise(() => until(() => expect(world.sent).toHaveLength(2)))
-      yield* Queue.offer(world.outcomes, "ok")
-      yield* outbox.retryNow
-      yield* write.settled
-      return seen
-    })).pipe(Effect.provide(ownMetrics())))
+    const { result: statuses, logs } = await withLogs(
+      Effect.scoped(Effect.gen(function*() {
+        const { notes, outbox } = yield* start(world)
+        const seen: Array<Outbox.Status> = []
+        yield* outbox.status.pipe(
+          Stream.runForEach((status) => Effect.sync(() => seen.push(status))),
+          Effect.forkScoped
+        )
+        const write = yield* save(outbox, notes, note("a", 1))
+        // The library waits 1 s, then 2 s; retryNow sends at once.
+        yield* Effect.promise(() => until(() => expect(world.sent).toHaveLength(1)))
+        yield* outbox.retryNow
+        yield* Effect.promise(() => until(() => expect(world.sent).toHaveLength(2)))
+        yield* Queue.offer(world.outcomes, "ok")
+        yield* outbox.retryNow
+        yield* write.settled
+        return seen
+      })).pipe(Effect.provide(ownMetrics()))
+    )
     expect(world.sent.map(({ idempotencyKey }) => idempotencyKey)).toEqual(["a", "a", "a"])
     // Logged on its first retry only, by its status; every send is counted.
     const retrying = logs.filter(({ message }) => (message as Array<unknown>)[0] === "outbox write retrying")
@@ -154,17 +159,19 @@ describe("a write", () => {
 
   test("the server refuses is never sent again, rolls back, and is logged and counted", async () => {
     const world = await setup([new Outbox.Refused({ status: 409 })])
-    const { result: seen, logs } = await withLogs(Effect.scoped(Effect.gen(function*() {
-      const { notes, outbox } = yield* start(world)
-      const write = yield* save(outbox, notes, note("a", 1))
-      const settled = yield* Effect.exit(write.settled)
-      return {
-        settled: Exit.isFailure(settled),
-        rows: texts(yield* notes.toArray),
-        refused: (yield* Metric.value(Metric.withAttributes(Outbox.refused, { name: "save", status: "409" }))).count,
-        left: [...world.storage.entries.keys()]
-      }
-    })).pipe(Effect.provide(ownMetrics())))
+    const { result: seen, logs } = await withLogs(
+      Effect.scoped(Effect.gen(function*() {
+        const { notes, outbox } = yield* start(world)
+        const write = yield* save(outbox, notes, note("a", 1))
+        const settled = yield* Effect.exit(write.settled)
+        return {
+          settled: Exit.isFailure(settled),
+          rows: texts(yield* notes.toArray),
+          refused: (yield* Metric.value(Metric.withAttributes(Outbox.refused, { name: "save", status: "409" }))).count,
+          left: [...world.storage.entries.keys()]
+        }
+      })).pipe(Effect.provide(ownMetrics()))
+    )
     expect(seen).toEqual({ settled: true, rows: [], refused: 1, left: [] })
     expect(logs).toContainEqual(expect.objectContaining({
       message: ["outbox write refused"],
@@ -1102,4 +1109,77 @@ describe("principal", () => {
     }))
     expect({ offered, listed }).toEqual({ offered: ["ben-1"], listed: ["ben-1"] })
   })
+})
+
+for (const accepts of [true, false]) {
+  test(`live admission lookup and joining share a ${accepts ? "stored" : "refused"} receipt`, async () => {
+    const world = await setup(["ok"])
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const online = offline()
+    const storage = {
+      ...world.storage,
+      set: async (key: string, value: string) => {
+        await held
+        if (!accepts) throw new Error("quota")
+        return world.storage.set(key, value)
+      }
+    }
+    await scoped(Effect.gen(function*() {
+      const { outbox, notes } = yield* start({ ...world, storage, online })
+      expect(yield* outbox.admission("save", "a")).toEqual(Option.none())
+      const first = yield* outbox.transact(
+        "save",
+        { idempotencyKey: "a", joinExisting: true },
+        Effect.asVoid(notes.insert(note("a", 1)))
+      )
+      const joined = yield* outbox.transact(
+        "save",
+        { idempotencyKey: "a", joinExisting: true },
+        Effect.die("must not mutate twice")
+      )
+      expect(joined.id).toBe(first.id)
+      expect((yield* outbox.admission("save", "a")).pipe(Option.map((write) => write.id))).toEqual(
+        Option.some(first.id)
+      )
+      expect(yield* outbox.admission("another-mutation", "a")).toEqual(Option.none())
+      release()
+      const admitted = yield* Effect.result(joined.admitted)
+      expect(admitted._tag).toBe(accepts ? "Success" : "Failure")
+      if (accepts) online.connect()
+      yield* Effect.result(first.settled)
+      yield* Effect.promise(() =>
+        until(async () => expect(await Effect.runPromise(outbox.admission("save", "a"))).toEqual(Option.none()))
+      )
+      expect(world.sent).toHaveLength(accepts ? 1 : 0)
+    }))
+  })
+}
+
+test("an older non-joined write settling cannot erase a newer receipt with the same key", async () => {
+  const world = await setup([])
+  await scoped(Effect.gen(function*() {
+    const { outbox, notes } = yield* start(world)
+    const first = yield* outbox.transact(
+      "save",
+      { idempotencyKey: "shared" },
+      Effect.asVoid(notes.insert(note("first", 1)))
+    )
+    const second = yield* outbox.transact(
+      "save",
+      { idempotencyKey: "shared" },
+      Effect.asVoid(notes.insert(note("second", 1)))
+    )
+    yield* first.admitted
+    yield* second.admitted
+    yield* Queue.offer(world.outcomes, "ok")
+    yield* first.settled
+    expect((yield* outbox.admission("save", "shared")).pipe(Option.map((write) => write.id))).toEqual(
+      Option.some(second.id)
+    )
+    yield* Queue.offer(world.outcomes, "ok")
+    yield* second.settled
+  }))
 })

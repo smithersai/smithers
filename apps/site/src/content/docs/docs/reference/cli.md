@@ -1432,7 +1432,9 @@ smthrs tui [directory] [options]
 | `--resume`, `-r` | boolean | `false` | no | Pick a session to continue |
 | `--print`, `-p` | string |  | no | Answer one prompt, print it, and exit |
 | `--approve` | one of `all`, `ask`, `deny` |  | no | Consequential calls: all, ask, or deny |
-| `--budget-tokens` | string |  | no | Override the token ceiling per turn and worker |
+| `--budget-tokens` | string |  | no | Token cap per turn and worker (default 200M; 0 or none disables) |
+| `--budget-daily-tokens` | string |  | no | Token cap per UTC day on this machine (default 2B; 0 or none disables) |
+| `--box` | string |  | no | Run worker tools in a Smithers Cloud workspace: owner/repo/id |
 | `--environment` | string |  | no | Run the TUI app in a saved execution environment |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 

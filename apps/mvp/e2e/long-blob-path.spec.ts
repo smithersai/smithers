@@ -5,7 +5,7 @@ import { expectServerError } from "./watch"
 requires("codeStorage")
 test("an overlong file path is absent and stays inside the header", async ({ page }) => {
   expectServerError(404, "/api/repos/smithersai/smithers/blob/*")
-  const response = page.waitForResponse(response => new URL(response.url()).pathname.includes("/blob/") && new URL(response.url()).pathname.length > 2400)
+  const response = page.waitForResponse(response => new URL(response.url()).pathname.startsWith("/api/repos/smithersai/smithers/blob/") && new URL(response.url()).pathname.length > 2400)
   await page.goto(`/smithersai/smithers/blob/main/${"a".repeat(2500)}`)
   expect((await response).status()).toBe(404)
   await expect(page.getByText("File not found at main", { exact: true })).toBeVisible({ timeout: 60_000 })

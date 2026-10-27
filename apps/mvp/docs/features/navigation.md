@@ -55,6 +55,12 @@ when the page has no heading. Search and filter changes preserve control focus.
 covers the keyboard through the real router.
 
 The first Tab exposes **Skip to content**, targeting the current main region.
+Before focus its box stays inside the viewport and is clipped with `clip-path`;
+focus removes the clip. Layout audits focus the link and check its full hit target.
 `e2e/accessibility-skip.spec.ts` exercises the link by keyboard.
 
 Repository alias checks share the route warmup budget. Unavailable metadata or file lists leave the URL unchanged and let cached or offline branch navigation open; a later read can verify the redirect. Branch-root URLs need no file lookup.
+
+`repo.alias.check` records and counts whether that bounded check verified a file,
+remained unconfirmed, or ran out of time, with a correlated span and duration.
+The path and file contents are never recorded. A deadline is not absence.

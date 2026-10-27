@@ -113,6 +113,7 @@ export function IssueScreen() {
           actions: comment.editable
             ? (
               <>
+                {comment.reason === undefined ? <Button variant="outline" size="sm" onClick={() => void actions.retryWrite(comment.id)}>Retry</Button> : null}
                 <Button variant="outline" size="sm" onClick={() => actions.edit(comment.id)}>{EDIT}</Button>
                 <Button variant="ghost" size="sm" onClick={() => actions.discard(comment.id)}>{DISCARD}</Button>
               </>

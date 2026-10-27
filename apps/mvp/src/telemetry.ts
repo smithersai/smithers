@@ -95,6 +95,9 @@ export const APP_TELEMETRY = {
     "browser.language_server.failed",
   ],
   fields: [
+    "page",
+    "render",
+    "services",
     "feature",
     "granted",
     "name",

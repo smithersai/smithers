@@ -44,7 +44,7 @@ const texts = (rows: ReadonlyArray<Note>) => rows.map(({ id, text }) => `${id}:$
 describe("a persisted collection", () => {
   test("keeps its rows for the next program, which restores them and records how long that took", async () => {
     const path = databaseFile()
-    const collection = id("notes")
+    const collection = `${id("notes")}:private-repository-restore`
     await program(
       path,
       Effect.gen(function*() {
@@ -63,7 +63,9 @@ describe("a persisted collection", () => {
         yield* second.restored
         const rows = yield* second.toArray
         // The restore time is recorded in the scope's background, once restored: wait until it is.
-        const count = yield* Metric.value(Metric.withAttributes(Persistence.restoreMs, { collection })).pipe(
+        const count = yield* Metric.value(
+          Metric.withAttributes(Persistence.restoreMs, { collection: collection.split(":", 1)[0]! })
+        ).pipe(
           Effect.map(({ count }) => count),
           Effect.repeat({ until: (count) => count > 0, schedule: Schedule.spaced("5 millis"), times: 400 })
         )
@@ -76,7 +78,7 @@ describe("a persisted collection", () => {
 
   test("a write the device couldn't store rolls back, logged by collection, operation and error name, and counted", async () => {
     const path = databaseFile()
-    const collection = id("refused")
+    const collection = `${id("refused")}:private-repository-write`
     const refusing = { now: false }
     const refusingLayer = Persistence.layer({
       open: () => {
@@ -104,7 +106,9 @@ describe("a persisted collection", () => {
         ]
         for (const write of writes) yield* Effect.flip(write.persisted)
         const failures = (operation: string) =>
-          Metric.value(Metric.withAttributes(Persistence.writeFailures, { collection, operation })).pipe(
+          Metric.value(
+            Metric.withAttributes(Persistence.writeFailures, { collection: collection.split(":", 1)[0]!, operation })
+          ).pipe(
             Effect.map(({ count }) => count),
             Effect.repeat({ until: (count) => count > 0, schedule: Schedule.spaced("5 millis"), times: 400 })
           )
@@ -119,10 +123,16 @@ describe("a persisted collection", () => {
     const failed = logs.filter(({ message }) => (message as Array<unknown>)[0] === "persisted write failed")
     expect(failed.map(({ level, annotations }) => ({ level, ...annotations }))).toEqual(
       ["update", "delete", "insert"].map((operation) =>
-        expect.objectContaining({ level: "Warn", collection, operation, error: expect.any(String) })
+        expect.objectContaining({
+          level: "Warn",
+          collection: collection.split(":", 1)[0]!,
+          operation,
+          error: expect.any(String)
+        })
       )
     )
     expect(JSON.stringify(failed)).not.toContain("SENTINEL")
+    expect(JSON.stringify(failed)).not.toContain("private-repository-write")
   })
 })
 

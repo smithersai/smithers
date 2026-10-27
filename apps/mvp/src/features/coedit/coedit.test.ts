@@ -1,3 +1,4 @@
+import { reloadAfter } from "../../test/reloadTiming"
 // Co-editing in the browser (decision 0013 §4, docs/features/coedit.md): the browser's own layer (`appLayer`) on Node
 // devices whose engines lead, two people's, against ChatApi's real text routes and shapes (worker/branch/Texts.ts,
 // src/test/chatApi.ts) over the compose Postgres and Electric, and real presence rooms on loopback (src/test/rooms.ts).
@@ -235,8 +236,8 @@ describe("the shared prompt", () => {
     await until(() => expect(owner.prompt()?.stored).toBe(true))
     await until(() => expect(benTabOpen.draft()).toBe("hello"))
     // A caret moved without a change sends nothing; a text this tab hasn't opened takes nothing.
-    owner.branch.coedit.actions.type(owner.prompt()!.id, "hello", { selection: { anchor: 5, head: 5 } })
-    owner.branch.coedit.actions.type(crypto.randomUUID(), "nowhere")
+    ;(await owner.branch.coedit.actions.type(owner.prompt()!.id, "hello", { selection: { anchor: 5, head: 5 } }))
+    ;(await owner.branch.coedit.actions.type(crypto.randomUUID(), "nowhere"))
     owner.branch.coedit.actions.select(crypto.randomUUID(), { anchor: 0, head: 0 })
     expect(owner.unsent()).toBe(0)
     // Each types before hearing the other: Ben at the end, the owner at the start.
@@ -899,3 +900,21 @@ test("a synced history deletion cannot erase text already applied to an open edi
   await until(() => expect(host.stored(`text-updates:${id}`)).toBe(0))
   expect(other.draft()).toBe("stands")
 }, WITHIN)
+
+
+for (const delay of [0, 100, 300] as const) {
+  test(`an admitted text update survives device reload after ${delay} ms`, async () => {
+    const opened = await open()
+    const base = nodeDevice({ agent: opened.api })
+    const host = { ...base, outbox: { ...base.outbox, online: { ...base.outbox.online, isOnline: () => false } } }
+    const first = await opened.ownTab(host)
+    await openShared(opened, first)
+    const id = first.prompt()!.id
+    await first.branch.coedit.actions.type(id, `Offline text ${delay}`)
+    expect(await host.outbox.storage.keys()).not.toHaveLength(0)
+    await reloadAfter(delay, () => first.close())
+    const second = await opened.ownTab(host)
+    await openShared(opened, second)
+    await until(() => expect(second.prompt()?.text).toBe(`Offline text ${delay}`))
+  }, WITHIN)
+}

@@ -61,7 +61,7 @@ test("asking: asked, stored and not sent, one trace from the ask through the out
   const tab = await open({ answers: true })
   const secret = sentinel()
   tab.actions.openComposer("button")
-  const stored = tab.actions.ask(`What is ${secret}?`)
+  const stored = (await tab.actions.ask(`What is ${secret}?`))
   if (!stored.asked) throw new Error("not asked")
   const reply = await tab.onApi(tab.api.answerTo(`What is ${secret}?`))
   reply.say(`It is ${secret}.`)
@@ -73,7 +73,7 @@ test("asking: asked, stored and not sent, one trace from the ask through the out
   })
   expect(tab.api.modelRequests(`What is ${secret}?`)).toBe(1)
   tab.fault(tab.questions.failNext("bad_request"))
-  const refused = tab.actions.ask(`And ${secret} again?`)
+  const refused = (await tab.actions.ask(`And ${secret} again?`))
   if (!refused.asked) throw new Error("not asked")
   await until(() => expect(shown(tab).at(-1)).toBe("user unsent"))
   tab.actions.discardUnsent(refused.questionId)
@@ -135,7 +135,7 @@ test("asking: asked, stored and not sent, one trace from the ask through the out
 
 test("an answer not started: ChatApi took the question, but this tab has no engine to record its run, so it is sent again", async () => {
   const tab = await open({ host: nodeDevice({ engineWorker: failingWorker }) })
-  const asked = tab.actions.ask(`What is ${sentinel()}?`)
+  const asked = (await tab.actions.ask(`What is ${sentinel()}?`))
   if (!asked.asked) throw new Error("not asked")
   const retried = Metric.withAttributes(Outbox.attempts, { name: "ask", outcome: "retry" })
   await until(() => expect(tab.runtime.runSync(Metric.value(retried)).count).toBeGreaterThanOrEqual(1), 10_000)

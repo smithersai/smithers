@@ -72,7 +72,8 @@ describe("the parity law", () => {
     for (const path of paths) {
       const source = program.getSourceFile(path)!
       for (const argument of dispatchArguments(source)) {
-        const type = checker.getTypeAtLocation(argument)
+        const inferred = checker.getTypeAtLocation(argument)
+        const type = checker.getBaseConstraintOfType(inferred) ?? inferred
         for (const member of type.isUnion() ? type.types : [type]) {
           // Constants, unions and template literals must resolve to registered names; an unconstrained string fails.
           expect(member.isStringLiteral(), `${path}: ${argument.getText(source)}`).toBe(true)
@@ -81,6 +82,7 @@ describe("the parity law", () => {
       }
     }
     expect(dispatched).toContain("app/theme/set")
+    expect(dispatched).toContain("triage/enable")
     for (const name of dispatched) expect(names).toContain(name)
   }, 90_000)
 

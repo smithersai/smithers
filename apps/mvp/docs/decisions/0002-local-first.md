@@ -265,3 +265,5 @@ The real-SQLite regressions live in `src/features/files/persistence.test.ts` and
 ## Issue-create admission correction (2026-10-27)
 
 The button records a recoverable receipt containing the write identity and payload before asking the device outbox to admit it. Create returns after local admission, with network delivery independent of the initiating tab and its engine startup. The public flow joins the admitted write under the same derived id. A reload during admission retains Not sent and Retry; a retry keeps that id. This uses the existing outbox and device collections, without an application retry loop.
+
+The admission rule applies to every outbox mutation: questions, issue operations, TODO operations, text updates and steering. An action resolves after local storage accepts the write; delivery stays in the background. Recoverable issue, TODO and steer receipts precede admission and use the original identity on retry. The initiating tab and engine startup are not delivery owners.

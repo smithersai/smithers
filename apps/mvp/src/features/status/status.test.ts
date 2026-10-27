@@ -68,8 +68,8 @@ const openDevice = async (
   }
 }
 
-const ask = (device: Awaited<ReturnType<typeof openDevice>>, text: string) => {
-  const asked = device.chat.actions.ask(text)
+const ask = async (device: Awaited<ReturnType<typeof openDevice>>, text: string) => {
+  const asked = (await device.chat.actions.ask(text))
   if (!asked.asked) throw new Error(`the question was refused: ${asked.reason}`)
   return asked.answerId
 }
@@ -81,7 +81,7 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
     const api = await openApi()
     const a = await openDevice(api)
     const b = await openDevice(api)
-    const answerId = ask(a, "Deploy the docs preview")
+    const answerId = await ask(a, "Deploy the docs preview")
     const first = await Effect.runPromise(api.answerTo("Deploy the docs preview"))
     // Working first: the answer streams.
     await until(() => expect(a.statusOf(answerId)?.state).toBe("working"))
@@ -153,7 +153,7 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
       latest.startSyncImmediate()
       return { statusOf: (id: string) => statuses.toArray.find((row) => row.id === id), latest: () => latest.toArray[0] }
     }
-    const answerId = ask(a, "Deploy the branch preview")
+    const answerId = await ask(a, "Deploy the branch preview")
     const first = await Effect.runPromise(api.answerTo("Deploy the branch preview"))
     first.cell(askCell(`{ kind: "question", prompt: "Which region?", options: ["us", "eu"] }`))
 
@@ -194,7 +194,7 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
   test("an approval answered with a note on the same device resumes the run; nothing acts on a question that isn't open", async () => {
     const api = await openApi()
     const a = await openDevice(api, { titled: false })
-    const answerId = ask(a, "Clean up old previews")
+    const answerId = await ask(a, "Clean up old previews")
     // Nothing is open yet: every action is a no-op.
     a.status.actions.answer(answerId, true)
     a.status.actions.setDraft(answerId, "x")
@@ -221,7 +221,7 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
     const api = await openApi()
     const a = await openDevice(api)
     const b = await openDevice(api, { faulty: true })
-    const answerId = ask(a, "Pick two regions")
+    const answerId = await ask(a, "Pick two regions")
     const first = await Effect.runPromise(api.answerTo("Pick two regions"))
     first.cell(askCell(`{ kind: "question", prompt: "First region?" }`))
     // Both devices show the question before either answers: an answer to a question a device doesn't show yet is
@@ -246,11 +246,11 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
   test("a second question waits its turn behind one that needs the person, and the latest answer says so", async () => {
     const api = await openApi()
     const a = await openDevice(api)
-    const first = ask(a, "First, deploy")
+    const first = await ask(a, "First, deploy")
     const reply = await Effect.runPromise(api.answerTo("First, deploy"))
     reply.cell(askCell(`{ kind: "question", prompt: "Which branch?" }`))
     await until(() => expect(a.statusOf(first)?.state).toBe("needs_you"))
-    const second = ask(a, "Then bump the version")
+    const second = await ask(a, "Then bump the version")
     await until(() => expect(a.statusOf(second)?.state).toBe("waiting"))
     expect(a.latest()).toMatchObject({ id: second, state: "waiting" })
     expect(a.waits().map((wait) => wait.runId)).toEqual([first])
@@ -265,7 +265,7 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
   test("a failed answer is failed, whatever its run's row says", async () => {
     const api = await openApi()
     const a = await openDevice(api)
-    const answerId = ask(a, "Fail, please")
+    const answerId = await ask(a, "Fail, please")
     ;(await Effect.runPromise(api.answerTo("Fail, please"))).fail()
     await until(() => expect(a.statusOf(answerId)?.state).toBe("failed"))
     expect(a.latest()).toMatchObject({ id: answerId, state: "failed" })

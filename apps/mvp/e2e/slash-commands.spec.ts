@@ -1,3 +1,4 @@
+import { broken } from "./target"
 import { questionIn } from "./messages"
 import type { Page } from "@playwright/test"
 import { SIGN_IN_TO_ASK, SIGN_OUT } from "../src/features/auth/contract"
@@ -212,7 +213,8 @@ test("repository hints: first Enter shows the argument format", async ({ devices
   }
 })
 
-test.fixme("missing repository: issues refuses without storing a card", async ({ devices }) => {
+test("missing repository: issues refuses without storing a card", async ({ devices }) => {
+  broken("issuesAdmission")
   // Deferred: template admission currently persists the view before repository access resolves.
   const [a] = await devices.open("A")
   await a.openComposer()

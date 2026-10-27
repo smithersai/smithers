@@ -37,6 +37,7 @@ export interface IssuesQueries {
   readonly writes: Store["writeRows"]["tanstack"]
   /** The repository's issues, this device's own new ones first. */
   readonly list: RepoIssues["list"]["tanstack"]
+  readonly publicList: RepoIssues["publicList"]["tanstack"]
   /** The routed issue, once the device has it. */
   readonly item: RepoIssues["item"]["tanstack"]
   /** Its comments, this device's own last. */
@@ -63,9 +64,9 @@ export interface IssuesQueries {
   readonly unsyncedOf: (id: string) => RepoIssues["unsynced"]["tanstack"]
 }
 
-/** What a person does, as plain functions. Each returns at once. */
+/** What a person does, as plain functions. Writes resolve after local admission. */
 export interface IssuesActions {
-  readonly setCommitment: (owner: string, name: string, number: number, commitment: import("./lifecycle").Commitment, previousWriteId?: string) => void
+  readonly setCommitment: (owner: string, name: string, number: number, commitment: import("./lifecycle").Commitment, previousWriteId?: string) => Promise<void>
   /** What an issue route calls on a navigation: resolves once the repository's issues are open. */
   readonly open: (owner: string, name: string, number?: number) => Promise<void>
   /** What an issue route calls on a link's hover or focus: starts the repository's issues' sync without showing a page. */
@@ -79,18 +80,18 @@ export interface IssuesActions {
   readonly create: (owner: string, name: string) => Promise<boolean>
   readonly retryWrite: (writeId: string) => Promise<void>
   /** Comment: whether it ran. */
-  readonly comment: (owner: string, name: string, number: number) => boolean
+  readonly comment: (owner: string, name: string, number: number) => Promise<boolean>
   /** Discard on a write that wasn't sent. */
   readonly discard: (writeId: string) => void
   /** Edit on a write that wasn't sent: the path where its text is back in a draft. */
   readonly edit: (writeId: string) => string | undefined
   /** Accept or Not accepted on an issue. */
-  readonly triage: (owner: string, name: string, number: number, decision: TriageDecision) => void
+  readonly triage: (owner: string, name: string, number: number, decision: TriageDecision) => Promise<boolean>
   /** Run triage again on an issue. */
-  readonly runTriageAgain: (owner: string, name: string, number: number) => void
+  readonly runTriageAgain: (owner: string, name: string, number: number) => Promise<boolean>
   /** Enable or Pause the repository's triage flow. */
-  readonly enableTriage: (owner: string, name: string) => void
-  readonly pauseTriage: (owner: string, name: string) => void
+  readonly enableTriage: (owner: string, name: string) => Promise<boolean>
+  readonly pauseTriage: (owner: string, name: string) => Promise<boolean>
 }
 
 export class Issues extends Context.Service<Issues, { readonly queries: IssuesQueries; readonly actions: IssuesActions }>()(
@@ -108,6 +109,7 @@ export class Issues extends Context.Service<Issues, { readonly queries: IssuesQu
           view: store.viewState.tanstack,
           writes: store.writeRows.tanstack,
           get list() { return store.routed().list.tanstack },
+          get publicList() { return store.routed().publicList.tanstack },
           get item() { return store.routed().item.tanstack },
           get conversation() { return store.routed().conversation.tanstack },
           get synced() { return store.routed().synced.tanstack },
@@ -122,7 +124,7 @@ export class Issues extends Context.Service<Issues, { readonly queries: IssuesQu
           unsyncedOf: (id) => (store.opened(id) ?? store.empty).unsynced.tanstack,
         },
         actions: {
-          setCommitment: (owner, name, number, commitment, previousWriteId) => run(setCommitment(owner, name, number, commitment, previousWriteId)),
+          setCommitment: (owner, name, number, commitment, previousWriteId) => promise(setCommitment(owner, name, number, commitment, previousWriteId)),
           open: (owner, name, number) => promise(open(owner, name, number)),
           warm: (owner, name, number) => promise(warm(owner, name, number)),
           retry: () => run(retry),
@@ -131,13 +133,13 @@ export class Issues extends Context.Service<Issues, { readonly queries: IssuesQu
           setCommentDraft: (owner, name, number, body) => run(setCommentDraft(owner, name, number, body)),
           create: (owner, name) => promise(create(owner, name)),
           retryWrite: (writeId) => promise(retryWrite(writeId)),
-          comment: (owner, name, number) => run(comment(owner, name, number)),
+          comment: (owner, name, number) => promise(comment(owner, name, number)),
           discard: (writeId) => run(discard(writeId)),
           edit: (writeId) => run(edit(writeId)),
-          triage: (owner, name, number, decision) => run(triage(owner, name, number, decision)),
-          runTriageAgain: (owner, name, number) => run(runTriageAgain(owner, name, number)),
-          enableTriage: (owner, name) => run(enableTriage(owner, name)),
-          pauseTriage: (owner, name) => run(pauseTriage(owner, name)),
+          triage: (owner, name, number, decision) => promise(triage(owner, name, number, decision)),
+          runTriageAgain: (owner, name, number) => promise(runTriageAgain(owner, name, number)),
+          enableTriage: (owner, name) => promise(enableTriage(owner, name)),
+          pauseTriage: (owner, name) => promise(pauseTriage(owner, name)),
         },
       })
     }),

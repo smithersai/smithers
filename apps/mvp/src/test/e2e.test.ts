@@ -77,7 +77,7 @@ test("the window's questions switches: the next question fails, and asked lists 
   expect(faults.questions.asked()).toEqual([])
 
   faults.questions.failNext("bad_request")
-  const lost = chat.actions.ask("  lost  ")
+  const lost = (await chat.actions.ask("  lost  "))
   if (!lost.asked) throw new Error(`the question was refused: ${lost.reason}`)
   await chat.queries.conversation.preload()
   await until(() =>
@@ -87,7 +87,7 @@ test("the window's questions switches: the next question fails, and asked lists 
   expect(await host.runPromise(api.rows)).toEqual([])
 
   // The fault was for one question: the next goes through to ChatApi, and asked lists both, in order.
-  const kept = chat.actions.ask("kept")
+  const kept = (await chat.actions.ask("kept"))
   if (!kept.asked) throw new Error(`the question was refused: ${kept.reason}`)
   await until(async () => expect((await host.runPromise(api.rows)).map(({ id }) => id)).toEqual([kept.questionId, kept.answerId]))
   expect(faults.questions.asked().map(({ text }) => text)).toEqual(["lost", "kept"])

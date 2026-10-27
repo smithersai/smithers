@@ -42,7 +42,6 @@ const setRow = (live: Live, change: Partial<Omit<Shared, "id">>) =>
 const send = (live: Live, update: Uint8Array | undefined): Effect.Effect<void, never, Needs> =>
   Effect.gen(function* () {
     const chat = yield* ChatStore
-    const { scope } = yield* CoeditStore
     const pending = [...(yield* Ref.getAndSet(live.unsent, [])), ...(update === undefined ? [] : [update])]
     if (pending.length === 0) return
     const merged = pending.length === 1 ? pending[0]! : SharedText.merge(pending)
@@ -53,7 +52,7 @@ const send = (live: Live, update: Uint8Array | undefined): Effect.Effect<void, n
     if (Option.isNone(write)) {
       // Only a tab that doesn't lead is refused at once: it takes the lead, then sends what waits.
       yield* keep
-      yield* chat.lead.pipe(Effect.andThen(send(live, undefined)), Effect.forkIn(scope))
+      yield* chat.lead.pipe(Effect.andThen(send(live, undefined)))
       return
     }
     yield* Ref.update(live.admitting, (count) => count + 1)
@@ -68,7 +67,7 @@ const send = (live: Live, update: Uint8Array | undefined): Effect.Effect<void, n
         Effect.annotateLogs({ feature: "coedit", outcome: "failed", reason: failure.reason, errorCode: codeOf(failure) }),
         Effect.andThen(keep),
       )
-    yield* write.value.admitted.pipe(Effect.catch(refused), Effect.ensuring(settled), Effect.forkIn(scope))
+    yield* write.value.admitted.pipe(Effect.catch(refused), Effect.ensuring(settled))
   }).pipe(Effect.orDie)
 
 /** Puts `row` in the outbox: its write, or nothing in a tab that doesn't lead the outbox. */
@@ -76,7 +75,7 @@ const admit = (row: Sending) =>
   Effect.gen(function* () {
     const chat = yield* ChatStore
     const { sending } = yield* TextWrites
-    return yield* chat.outbox.transact(TEXT_UPDATE, { idempotencyKey: row.id }, Effect.asVoid(sending.insert(row))).pipe(
+    return yield* chat.outbox.transact(TEXT_UPDATE, { idempotencyKey: row.id, joinExisting: true }, Effect.asVoid(sending.insert(row))).pipe(
       Effect.map(Option.some),
       // expected: a follower tab takes the lead and sends later
       Effect.catchTag("NotAdmitted", () => Effect.succeedNone),
@@ -102,9 +101,9 @@ export const type = (textId: string, value: string, edit: Edit = {}) =>
     const live = store.live(textId)
     if (live === undefined) return
     const update = yield* live.replica.replace(value, { caret: edit.selection?.head, base: edit.base })
-    if (update !== undefined) yield* send(live, update)
     if (edit.selection !== undefined) yield* place(live, edit.selection)
     yield* store.refresh(live)
+    if (update !== undefined) yield* send(live, update)
   })
 
 /** The person moved their caret or selection in text `textId`: everyone in it sees where. */

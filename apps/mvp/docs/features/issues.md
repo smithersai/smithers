@@ -341,5 +341,8 @@ A known pending issue write says **Requested**, including while offline. A pendi
 
 After device restoration and the relevant queries are ready, a write URL without a matching receipt says **Request unavailable** and links to **Issues**. Absence on this device does not claim that a write submitted elsewhere failed.
 
-A Comment whose flow or engine cannot admit it retains the draft and shows **Not sent**. The existing Comment button retries; a fresh attempt clears the old failure only while that attempt runs. Navigating away prevents an old attempt from changing the later page.
+Comments resolve after local admission; the durable outbox delivers even when the engine cannot start the joining flow. Device storage refusal retains the draft and shows **Not sent** with Retry under the same identity. An earlier retry cannot clear a later page’s draft or feedback.
 
+Visitor issue counts use the public summary query, which never waits on signed-in write history. Counts remain unknown until the summary snapshot is applied and that query is ready.
+
+Failed authority reads persist their content-free refusal; the list shows the GitHub limit or unavailability and offers retry and the source link. An incomplete snapshot says “Issues not synced”.

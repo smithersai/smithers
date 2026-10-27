@@ -1,3 +1,4 @@
+import { ROUTE_PATHS } from "../../mvp/src/routePaths.ts"
 import assert from "node:assert/strict"
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -281,8 +282,9 @@ test("personal-flow and settings guides can link to declared app routes without 
     "docs/guide/index.html": '<a href="https://smithers.sh/app/flows">Flows</a><a href="https://smithers.sh/app/settings">Settings</a>'
   })
   const router = readFileSync(new URL("../../mvp/src/router.tsx", import.meta.url), "utf8")
-  for (const path of ["/app/flows", "/app/settings"]) {
-    assert.ok(router.includes(`path: "${path}"`), path)
+  for (const [name, path] of [["flows", "/app/flows"], ["settings", "/app/settings"]]) {
+    assert.equal(ROUTE_PATHS[name], path)
+    assert.ok(router.includes(`path: ROUTE_PATHS.${name}`), path)
     assert.equal(checkBuiltSite(root, [`${path}#missing`]).failures.length, 1)
     assert.equal(checkBuiltSite(root, [`${path}/missing`]).failures.length, 1)
   }

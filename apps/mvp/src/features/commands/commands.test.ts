@@ -1,16 +1,23 @@
-import { Effect, type ManagedRuntime, Metric } from "effect"
+import { Collection } from "@smthrs/effect-tanstack-db"
+import { Deferred, Effect, Logger, type ManagedRuntime, Metric, Scope } from "effect"
 import { slashMenu, slashSubmit } from "@smthrs/ui"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { DispatchFailed, FlowDispatch, dispatches } from "../../flows/dispatch"
 import { NavigationRefused } from "../navigation/flows"
-import { submit as submitCommand } from "./actions"
+import { choose as chooseCommand, submit as submitCommand, type as typeCommand } from "./actions"
 import { entryOf, names } from "../../flows/registry"
 import type { Actor } from "../../../worker/Actor.ts"
 import { nodeDevice, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
 import { AuthStore, SESSION } from "../auth/store"
 import { Chat } from "../chat/chat"
-import { PLACE } from "../chat/schema"
+import { PLACE, Place } from "../chat/schema"
 import { ChatStore } from "../chat/store"
+import { SharedPrompt } from "../chat/sharedPrompt"
+import { WebTab } from "../web/actions"
+import type { IssuesStore } from "../issues/store"
+import type { TodosStore } from "../todos/store"
+import type { RunSteers } from "../runs/steers"
+import type { SteerWrites } from "../runs/writes"
 import { ThemeStore } from "../theme/store"
 import { CANT_OPEN } from "../web/contract"
 import { Load } from "@smthrs/plugin"
@@ -45,7 +52,7 @@ const person = (role: Actor["role"]): Actor => ({ subject: { kind: "person", id:
  */
 const open = async (options: TabOptions = {}, actor: Actor | null = person("member")) => {
   const runtime: ManagedRuntime.ManagedRuntime<
-    Commands | Chat | ChatStore | CommandsStore | ThemeStore | AuthStore | TestChatApi | Plugins,
+    Commands | Chat | ChatStore | CommandsStore | ThemeStore | AuthStore | TestChatApi | Plugins | FlowDispatch | IssuesStore | TodosStore | RunSteers | SteerWrites,
     unknown
   > = openTestApp(options, { actor })
   runtimes.push(runtime)
@@ -317,7 +324,62 @@ describe("the menu", () => {
   })
 })
 
+describe("shared draft admission", () => {
+  test("typing lists immediately and older admissions never replace newer menus or dismissals", async () => {
+    const tab = await open()
+    await ready(tab)
+    const store = await tab.runtime.runPromise(Effect.service(ChatStore))
+    const isolatedPlace = await tab.runtime.runPromise(Collection.local<Place, string>({
+      id: "command-admission-place", schema: Place, getKey: row => row.id,
+      initialData: [{ id: PLACE, conversationId: crypto.randomUUID(), shared: true }],
+    }).pipe(Effect.provideService(Scope.Scope, store.scope)))
+    const sharedStore = { ...store, place: isolatedPlace }
+    const entered = [Effect.runSync(Deferred.make<void>()), Effect.runSync(Deferred.make<void>())]
+    const admitted = [Effect.runSync(Deferred.make<void>()), Effect.runSync(Deferred.make<void>())]
+    const pending: Promise<void>[] = []
+    const shared = { set: (draft: string) => {
+      const index = draft === "/the" ? 0 : 1
+      return Effect.andThen(Deferred.succeed(entered[index]!, undefined), Deferred.await(admitted[index]!))
+    } }
+    try {
+      pending.push(tab.runtime.runPromise(typeCommand("/the").pipe(Effect.provideService(ChatStore, sharedStore), Effect.provideService(SharedPrompt, shared))))
+      await Effect.runPromise(Deferred.await(entered[0]!))
+      await until(() => expect(tab.labels()).toContain("/theme"))
+      pending.push(tab.runtime.runPromise(typeCommand("/bug").pipe(Effect.provideService(ChatStore, sharedStore), Effect.provideService(SharedPrompt, shared))))
+      await Effect.runPromise(Deferred.await(entered[1]!))
+      await until(() => expect(tab.labels()).toContain("/bug"))
+      Effect.runSync(Deferred.succeed(admitted[1]!, undefined))
+      await pending[1]
+      tab.actions.dismiss()
+      Effect.runSync(Deferred.succeed(admitted[0]!, undefined))
+      await pending[0]
+      expect(tab.draft()).toBe("/bug")
+      await until(() => expect(tab.menu()).toMatchObject({ items: [] }))
+    } finally {
+      for (const gate of admitted) Effect.runSync(Deferred.succeed(gate, undefined))
+      await Promise.all(pending)
+    }
+  })
+})
+
 describe("submitting", () => {
+  test("a web tab opens inside the gesture before a shared prompt waits for admission", async () => {
+    const tab = await open()
+    const store = await tab.runtime.runPromise(Effect.service(ChatStore))
+    await tab.runtime.runPromise(store.place.update(PLACE, (row) => { row.conversationId = crypto.randomUUID(); row.shared = true }))
+    const entered = Effect.runSync(Deferred.make<void>())
+    const admitted = Effect.runSync(Deferred.make<void>())
+    const opened: string[] = []
+    const submitting = tab.runtime.runPromise(submitCommand("/web https://example.com/ tab").pipe(
+      Effect.provideService(SharedPrompt, { set: () => Effect.andThen(Deferred.succeed(entered, undefined), Deferred.await(admitted)) }),
+      Effect.provideService(WebTab, { policy: { localHttp: false, appOrigin: "https://app.example.test" }, openTab: (href) => { opened.push(href); return true } }),
+    ))
+    try {
+      await Effect.runPromise(Deferred.await(entered))
+      expect(opened).toEqual(["https://example.com/"])
+    } finally { Effect.runSync(Deferred.succeed(admitted, undefined)); await submitting }
+  })
+
   test("/theme dark runs app/theme/set through dispatch, door slash, and the device's theme changes", async () => {
     const tab = await open({ answers: true })
     await ready(tab)
@@ -536,7 +598,7 @@ describe("submitting", () => {
     tab.actions.submit("")
     expect(tab.draft()).toBe("/")
     tab.actions.type("What is /etc/hosts?")
-    tab.actions.submit("What is /etc/hosts?")
+    await tab.actions.submit("What is /etc/hosts?")
     expect(tab.draft()).toBe("")
     expect(tab.shown()).toEqual(["user What is /etc/hosts?"])
     expect(tab.count(submits)).toBe(0)
@@ -592,4 +654,54 @@ test("/new asks for its repository before dispatch and exposes it in the command
 test("slash descriptions fit a menu row and /n offers /new first", () => {
   for (const command of COMMANDS) expect(command.description.length).toBeLessThanOrEqual(40)
   expect(slashMenu("/n", COMMANDS).items.slice(0, 2).map(item => item.label)).toEqual(["/new", "/navigate"])
+})
+
+
+for (const keyboard of [false, true]) test(`an exact command wins on Enter; pointer choice stays explicit (${keyboard})`, async () => {
+  const tab = await open({ answers: true })
+  await ready(tab)
+  tab.actions.type("/bug")
+  expect(tab.labels()).toEqual(["/bug", "/bugs"])
+  // A displaced highlight used to turn /bug into another command despite the exact typed name.
+  tab.actions.highlight(1)
+  tab.actions.choose(1, "accept", keyboard)
+  expect(tab.count(Metric.withAttributes(submits, { outcome: "run", command: keyboard ? "bug" : "bugs" }))).toBe(1)
+  expect(tab.draft()).toBe("")
+  await until(() => expect(tab.count(Metric.withAttributes(dispatches, { flow: "app/navigate", door: "slash", outcome: "done" }))).toBe(1))
+})
+
+test("keyboard selection ranks command prefixes over description matches without changing argument completion", async () => {
+  const tab = await open()
+  await ready(tab)
+  tab.actions.type("/n")
+  const description = tab.menu()!.items.findIndex(item => !item.label.startsWith("/n"))
+  expect(description).toBeGreaterThan(0)
+  tab.actions.choose(description, "complete", true)
+  expect(tab.draft()).toBe("/new ")
+  tab.actions.type("/dark")
+  tab.actions.choose(0, "complete", true)
+  expect(tab.draft()).toBe("/theme ")
+  tab.actions.type("/theme ")
+  tab.actions.choose(0, "complete", true)
+  expect(tab.draft()).toBe("/theme light")
+  tab.actions.type("/unknown-no-match")
+  tab.actions.choose(0, "accept", true)
+  expect(tab.draft()).toBe("/unknown-no-match")
+})
+
+
+test("command-choice records explain keyboard matching without retaining the typed line", async () => {
+  const tab = await open({ answers: true })
+  await ready(tab)
+  tab.actions.type("/bug")
+  const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+  await tab.runtime.runPromise(chooseCommand(1, "accept", true).pipe(
+    Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make(entry => void logs.push(Logger.formatStructured.log(entry)))])),
+  ))
+  expect(logs).toContainEqual(expect.objectContaining({
+    message: "slash.choose", level: "INFO",
+    annotations: expect.objectContaining({ feature: "commands", kind: "commands", how: "accept", via: "keyboard", match: "exact", index: 1 }),
+  }))
+  expect(JSON.stringify(logs)).not.toContain("/bug")
+  await until(() => expect(tab.count(Metric.withAttributes(dispatches, { flow: "app/navigate", door: "slash", outcome: "done" }))).toBe(1))
 })

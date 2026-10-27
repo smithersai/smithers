@@ -69,13 +69,13 @@ const failedAs = (tag: string): WebOutcome =>
  * its declared failure, or, when it never ran, `refused` for a payload its schema refuses (a URL over the limit) and
  * `unavailable` for anything else.
  */
-export const dispatchOpen = (page: { readonly url: string; readonly mode: WebMode }, door: Door) =>
+export const dispatchOpen = (page: { readonly url: string; readonly mode: WebMode }, door: Door, askedIn?: string | null) =>
   Effect.gen(function* () {
     // The conversation this tab shows now is where the person asked: pinned in the payload, so switching branches
     // before the step runs, or a run resumed later, still adds the view there (decision 0013 §1).
     const chat = yield* Effect.serviceOption(ChatStore)
     const place = Option.isSome(chat) ? Option.getOrUndefined(yield* chat.value.place.get(PLACE)) : undefined
-    const conversationId = place?.conversationId ?? undefined
+    const conversationId = (askedIn === undefined ? place?.conversationId : askedIn) ?? undefined
     const dispatched = yield* (yield* FlowDispatch).dispatch(
       "app/web/open",
       conversationId === undefined ? page : { ...page, conversationId },
@@ -101,11 +101,12 @@ export const openWebPage = (
   page: { readonly url: string; readonly mode?: WebMode | undefined },
   door: Door,
   scope: Scope.Scope,
+  askedIn?: string | null,
 ) =>
   Effect.gen(function* () {
     const shown = { url: page.url, mode: page.mode ?? "embed" }
     if (yield* openFromGesture(shown, door)) return
-    yield* dispatchOpen(shown, door).pipe(Effect.forkIn(scope))
+    yield* dispatchOpen(shown, door, askedIn).pipe(Effect.forkIn(scope))
   })
 
 /** A person opened a card's page in a new tab: their click on its Open button, door `view`. */

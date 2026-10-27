@@ -1,3 +1,4 @@
+import { ROUTE_PATHS } from "./routePaths"
 import { openBranchPage } from "./features/branch/navigation"
 import { createRootRouteWithContext, createRoute, createRouter, notFound, redirect } from "@tanstack/react-router"
 import type { BranchView } from "./features/branch/branch"
@@ -168,18 +169,18 @@ const local = () => undefined
 
 const rootRoute = createRootRouteWithContext<RouterContext>()({ component: Root, notFoundComponent: RouteNotFound })
 
-const landingRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: Landing })
+const landingRoute = createRoute({ getParentRoute: () => rootRoute, path: ROUTE_PATHS.landing, component: Landing })
 
 // Repository homes may still link /bug; use the same report form during client navigation.
 const bugRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/bug",
+  path: ROUTE_PATHS.bug,
   beforeLoad: () => { throw redirect({ href: "/app/bugs/report" }) },
 })
 
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/app",
+  path: ROUTE_PATHS.app,
   component: AppScreen,
   // The home conversation (decision 0013 §5): a tab that showed a branch asks here again.
   beforeLoad: (load) =>
@@ -197,7 +198,7 @@ const appRoute = createRoute({
  */
 const viewRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/app/views/$viewId",
+  path: ROUTE_PATHS.view,
   component: ViewScreen,
   validateSearch: (search: Record<string, unknown>): { readonly conversation?: string } =>
     typeof search.conversation === "string" && /^[0-9a-f-]{36}$/i.test(search.conversation)
@@ -208,17 +209,17 @@ const viewRoute = createRoute({
 })
 
 /** `/app/flows`: your own flows and drafts (decision 0014 §5). `app` is a reserved owner, so no repository matches. */
-const flowsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/app/flows", component: FlowsScreen })
+const flowsRoute = createRoute({ getParentRoute: () => rootRoute, path: ROUTE_PATHS.flows, component: FlowsScreen })
 const flowsAliasRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/flows",
+  path: ROUTE_PATHS.flowsAlias,
   beforeLoad: () => { throw redirect({ to: "/app/flows" }) },
 })
 
 /** `/app/flows/new`: a new flow of your own; `?name=` drafts the next revision of the flow by that name. */
 const newFlowRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/app/flows/new",
+  path: ROUTE_PATHS.newFlow,
   component: NewFlowScreen,
   validateSearch: (search: Record<string, unknown>): { readonly name?: string } =>
     typeof search.name === "string" && search.name !== "" ? { name: search.name } : {},
@@ -228,7 +229,7 @@ const newFlowRoute = createRoute({
 /** `/app/flows/drafts/$draftId`: one draft at its full size. */
 const draftRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/app/flows/drafts/$draftId",
+  path: ROUTE_PATHS.draft,
   component: DraftScreen,
   beforeLoad: (load) => enter(load, local, () => load.context.flows.actions.openDraft(load.params.draftId)),
 })
@@ -236,7 +237,7 @@ const draftRoute = createRoute({
 /** `/app/flows/code/$name`: a flow's code, to read and edit. */
 const codeRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/app/flows/code/$name",
+  path: ROUTE_PATHS.code,
   component: CodeScreen,
   beforeLoad: (load) => enter(load, local, () => load.context.flows.actions.openCode(load.params.name)),
 })
@@ -247,7 +248,7 @@ const codeRoute = createRoute({
  */
 const runsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/app/runs",
+  path: ROUTE_PATHS.runs,
   component: RunsScreen,
   validateSearch: runsSearch,
   beforeLoad: (load) =>
@@ -257,7 +258,7 @@ const runsRoute = createRoute({
 /** `/app/conversations`: your conversations, one per branch, synced to every device of yours. */
 const conversationsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/app/conversations",
+  path: ROUTE_PATHS.conversations,
   component: ConversationsScreen,
 })
 
@@ -265,7 +266,7 @@ const conversationsRoute = createRoute({
  * `/app/$plugin` and `/app/$plugin/<path>`: a plugin's view at its full size (decision 0017, `views`). The host shows it
  * while the route is open, so its keys and its strip act on it; a path no plugin declares is not found.
  */
-const pluginRoute = (path: "/app/$plugin" | "/app/$plugin/$") =>
+const pluginRoute = (path: (typeof ROUTE_PATHS)["pluginIndex" | "pluginPath"]) =>
   createRoute({
     getParentRoute: () => rootRoute,
     path,
@@ -277,16 +278,16 @@ const pluginRoute = (path: "/app/$plugin" | "/app/$plugin/$") =>
     },
     onLeave: ({ context }) => context.plugins.actions.show(null),
   })
-const pluginIndexRoute = pluginRoute("/app/$plugin")
-const pluginPathRoute = pluginRoute("/app/$plugin/$")
+const pluginIndexRoute = pluginRoute(ROUTE_PATHS.pluginIndex)
+const pluginPathRoute = pluginRoute(ROUTE_PATHS.pluginPath)
 
 /** `/app/settings`: the deployment's settings, for an Admin; their rows sync to an Admin's devices. */
-const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/app/settings", component: SettingsScreen })
+const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: ROUTE_PATHS.settings, component: SettingsScreen })
 
 /** `/app/runs/$runId`: one run's page, read from this device's engine. */
 const runRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/app/runs/$runId",
+  path: ROUTE_PATHS.run,
   component: RunScreen,
   beforeLoad: (load) => enter(load, local, () => load.context.runs.actions.openRun(load.params.runId)),
   onLeave: ({ context, params }) => context.runs.actions.closeRun(params.runId),
@@ -298,7 +299,7 @@ const runRoute = createRoute({
  */
 const repoRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/$owner/$repo",
+  path: ROUTE_PATHS.repo,
   component: RepoHomeScreen,
   validateSearch: lineSearch,
   beforeLoad: ({ context, params, search, ...load }) =>
@@ -321,7 +322,7 @@ const repoRoute = createRoute({
 /** Repository browsing infrastructure: the same visible refs as the picker, at GitHub's branch-list URL. */
 const branchesRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/$owner/$repo/branches",
+  path: ROUTE_PATHS.branches,
   component: BranchesScreen,
   beforeLoad: ({ context, params, ...load }) =>
     enterRepo(context, params, load, () => context.repo.actions.warmRoute("tree", params, {}), () =>
@@ -336,7 +337,7 @@ const branchesRoute = createRoute({
  */
 const treeRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/$owner/$repo/tree/$ref/$",
+  path: ROUTE_PATHS.tree,
   component: TreeScreen,
   pendingComponent: BranchPendingScreen,
   validateSearch: branchSearch,
@@ -361,7 +362,7 @@ const treeRoute = createRoute({
  */
 const blobRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/$owner/$repo/blob/$ref/$",
+  path: ROUTE_PATHS.blob,
   component: BlobScreen,
   pendingComponent: BranchPendingScreen,
   validateSearch: lineSearch,
@@ -400,7 +401,7 @@ const leaveWorkspace = (context: RouterContext) => {
  */
 const rawRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/$owner/$repo/raw/$ref/$",
+  path: ROUTE_PATHS.raw,
   component: RepoScreen,
   // Nothing to warm: a preload would load the raw file in place of the app.
   beforeLoad: ({ context, params, ...load }) =>
@@ -442,14 +443,14 @@ const docsBeforeLoad = (
 
 const docsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/$owner/$repo/docs",
+  path: ROUTE_PATHS.docs,
   component: DocsScreen,
   beforeLoad: docsBeforeLoad,
 })
 
 const docsPageRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/$owner/$repo/docs/$",
+  path: ROUTE_PATHS.docsPage,
   component: DocsScreen,
   beforeLoad: docsBeforeLoad,
 })
@@ -460,7 +461,7 @@ const docsPageRoute = createRoute({
  */
 const issuesRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/$owner/$repo/issues",
+  path: ROUTE_PATHS.issues,
   component: IssuesScreen,
   validateSearch: (search) => ({ ...commitmentSearch(search), ...listSearch(search) }),
   beforeLoad: ({ context, params, ...load }) =>
@@ -478,7 +479,7 @@ const issuesRoute = createRoute({
 /** `/$owner/$repo/issues/new`: the new-issue form. */
 const newIssueRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/$owner/$repo/issues/new",
+  path: ROUTE_PATHS.newIssue,
   component: NewIssueScreen,
   validateSearch: (search: Record<string, unknown>): { readonly write?: string } =>
     typeof search.write === "string" && /^[0-9a-f-]{36}$/i.test(search.write) ? { write: search.write } : {},
@@ -489,7 +490,7 @@ const newIssueRoute = createRoute({
 /** `/$owner/$repo/issues/$number`: one issue, and the TODOs made from it; any other `$number` matches no route. */
 const issueRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/$owner/$repo/issues/$number",
+  path: ROUTE_PATHS.issue,
   component: IssueScreen,
   pendingComponent: RepoPendingScreen,
   params: {
@@ -516,7 +517,7 @@ const issueRoute = createRoute({
 /** `/$owner/$repo/actions`: the repository's runs on Cloudflare (docs/features/actions.md); Electric keeps them. */
 const actionsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/$owner/$repo/runs",
+  path: ROUTE_PATHS.actions,
   component: ActionsScreen,
   beforeLoad: ({ context, params, ...load }) => enterRepository(context, params, load, () => context.runs.actions.openRepoRuns(params.owner, params.repo), local),
 })
@@ -524,7 +525,7 @@ const actionsRoute = createRoute({
 /** `/$owner/$repo/actions/runs/$runId`: one of them, its jobs and their logs, read and followed on Cloudflare. */
 const actionRunRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/$owner/$repo/actions/runs/$runId",
+  path: ROUTE_PATHS.actionRun,
   component: ActionRunScreen,
   validateSearch: runOriginSearch,
   beforeLoad: (load) =>
@@ -536,7 +537,7 @@ const actionRunRoute = createRoute({
 /** `/$owner/$repo/pulls`: the repository's pull requests (decision 0012 §6). */
 const pullsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/$owner/$repo/pulls",
+  path: ROUTE_PATHS.pulls,
   component: PullsScreen,
   validateSearch: listSearch,
   beforeLoad: ({ context, params, ...load }) =>
@@ -558,7 +559,7 @@ const pullParams = {
 /** GitHub-style plural item links open the canonical pull request page. */
 const pluralPullRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/$owner/$repo/pulls/$number",
+  path: ROUTE_PATHS.pluralPull,
   params: pullParams,
   beforeLoad: ({ params, location }) => {
     throw redirect({ to: "/$owner/$repo/pull/$number", params, replace: true, hash: location.hash })
@@ -568,7 +569,7 @@ const pluralPullRoute = createRoute({
 /** `/$owner/$repo/pull/$number`: one pull request's conversation, with Merge for a Maintainer. */
 const pullRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/$owner/$repo/pull/$number",
+  path: ROUTE_PATHS.pull,
   component: () => <PullScreen tab="conversation" />,
   params: pullParams,
   beforeLoad: ({ context, params, ...load }) =>
@@ -578,7 +579,7 @@ const pullRoute = createRoute({
 /** `/$owner/$repo/pull/$number/$tab`: its commits, its checks (the Smithers runs on its head), or its files. */
 const pullTabRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/$owner/$repo/pull/$number/$tab",
+  path: ROUTE_PATHS.pullTab,
   component: function PullTab() {
     const { tab } = pullTabRoute.useParams()
     return <PullScreen tab={tab} />
@@ -612,7 +613,7 @@ const pullTabRoute = createRoute({
  */
 const repoSettingsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/$owner/$repo/settings",
+  path: ROUTE_PATHS.repoSettings,
   component: RepoSettingsScreen,
   beforeLoad: ({ context, params, ...load }) =>
     enterRepository(context, params, load, local, () => context.domains.actions.open(params.owner, params.repo)),
@@ -624,7 +625,7 @@ const repoSettingsRoute = createRoute({
  */
 const stackRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/$owner/$repo/stack",
+  path: ROUTE_PATHS.stack,
   component: StackScreen,
   validateSearch: (search: Record<string, unknown>): { readonly state?: StackFilter } =>
     stackFilterOf(search.state) === "closed" ? { state: "closed" } : {},
@@ -639,7 +640,7 @@ const stackRoute = createRoute({
 /** `/$owner/$repo/stack/$number`: TODO `T<number>`'s page, as GitHub's issue page; any other `$number` matches no route. */
 const todoRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/$owner/$repo/stack/$number",
+  path: ROUTE_PATHS.todo,
   component: TodoScreen,
   params: {
     parse: (params) => {
@@ -664,7 +665,7 @@ const todoRoute = createRoute({
  */
 const secretsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/$owner/$repo/settings/secrets",
+  path: ROUTE_PATHS.secrets,
   component: SecretsScreen,
   beforeLoad: ({ context, params, ...load }) =>
     enterRepository(context, params,
@@ -677,17 +678,17 @@ const secretsRoute = createRoute({
 // Compatibility URLs use router redirects before opening a feature or starting its work.
 const settingsAliasRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/settings",
+  path: ROUTE_PATHS.settingsAlias,
   beforeLoad: () => { throw redirect({ to: "/app/settings", replace: true }) },
 })
 const secretsAliasRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/$owner/$repo/secrets",
+  path: ROUTE_PATHS.secretsAlias,
   beforeLoad: ({ params }) => { throw redirect({ to: "/$owner/$repo/settings/secrets", params, replace: true }) },
 })
 const actionsAliasRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/$owner/$repo/actions",
+  path: ROUTE_PATHS.actionsAlias,
   beforeLoad: ({ params }) => { throw redirect({ to: "/$owner/$repo/runs", params, replace: true }) },
 })
 

@@ -22,8 +22,8 @@ export function DraftCard({ draft }: { readonly draft: Draft }) {
       committing={view?.committing.includes(draft.id) === true}
       onTitleChange={(title) => actions.setTitle(draft.id, title)}
       onPromptChange={(prompt) => actions.setPrompt(draft.id, prompt)}
-      onCommit={() => {
-        const to = actions.commit(draft.id)
+      onCommit={async () => {
+        const to = await actions.commit(draft.id)
         if (to !== undefined) void navigate({ href: to })
       }}
       onDiscard={() => actions.discardDraft(draft.id)}

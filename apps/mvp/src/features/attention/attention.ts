@@ -44,7 +44,7 @@ export interface AttentionActions {
   /** Expands entry `subject` in the panel, or collapses it. */
   readonly expand: (subject: string) => void
   /** Retry on the person's failed run, from the panel. */
-  readonly retry: (subject: string) => void
+  readonly retry: (subject: string) => Promise<void>
 }
 
 export class Attention extends Context.Service<
@@ -57,7 +57,7 @@ export class Attention extends Context.Service<
     Effect.gen(function* () {
       const store = yield* AttentionStore
       type Needs<A> = A extends (...args: never) => Effect.Effect<unknown, unknown, infer R> ? R : never
-      const { runSync: run } = runners(
+      const { runSync: run, runPromise: promise } = runners(
         yield* Effect.context<
           | Needs<typeof open>
           | Needs<typeof answer>
@@ -89,7 +89,7 @@ export class Attention extends Context.Service<
           togglePanel: (via) => run(togglePanel(via)),
           closePanel: () => run(closePanel),
           expand: (subject) => run(expand(subject)),
-          retry: (subject) => run(retry(subject)),
+          retry: (subject) => promise(retry(subject)),
         },
       })
     }),

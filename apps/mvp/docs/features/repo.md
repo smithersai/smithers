@@ -403,3 +403,15 @@ Before a clone, Code's empty state says **Clone to browse files**. The root prev
 Uncached file and issue pages keep **Back to chat** while pending. When the shared connection is offline, their pending content says **Offline** instead of waiting on a skeleton or claiming an issue is syncing. Cached content remains readable. The existing connection records and reconnect behavior apply; this adds no network work.
 
 A `/tree/<ref>/<path>` URL naming a file redirects to `/blob/<ref>/<path>` once the tree confirms that exact file. Directory, missing and unresolved paths keep their existing behavior; a truncated tree never guesses that an omitted entry is a file. The redirect replaces history so Back does not revisit the invalid directory view.
+
+
+### GitHub's anonymous quota
+
+A visitor's uncached read outside installed or curated repositories uses GitHub's
+anonymous quota, shared by the Worker's egress IP. Once it is spent, **GitHub limit
+reached** and **Try again** mean the repository's existence is unknown. A 503
+`rate_limited` is never evidence of absence. The durable read retains that refusal
+through its retry window. Do not replace it with Not found or widen token access.
+
+The repository header's bell participates in the header's wrapping flow, including
+on tablet issue and pull pages; it reserves its own space beside the actions.

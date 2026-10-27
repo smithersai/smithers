@@ -1,3 +1,4 @@
+import { repositoryAbout } from "./repository-prerequisites"
 import { expect, test } from "./fixtures"
 import { requires } from "./target"
 
@@ -13,7 +14,9 @@ for (const [path, title, list, name] of [
   })
 }
 test("an unsynced repository's item settles with its source link", async ({ page }) => {
-  await page.goto("/smithersai/smithers-infra/issues/1")
+  requires("unsyncedRepository")
+  const repository = await repositoryAbout("unsyncedRepository")
+  await page.goto(`/${repository}/issues/1`)
   await expect(page.getByText("Issue unavailable here", { exact: true })).toBeVisible({ timeout: 60_000 })
-  await expect(page.getByRole("link", { name: "Open on GitHub ↗", exact: true })).toHaveAttribute("href", "https://github.com/smithersai/smithers-infra/issues/1")
+  await expect(page.getByRole("link", { name: "Open on GitHub ↗", exact: true })).toHaveAttribute("href", `https://github.com/${repository}/issues/1`)
 })

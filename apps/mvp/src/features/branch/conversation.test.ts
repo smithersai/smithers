@@ -119,7 +119,7 @@ const tabOn = async <R, E>(
 
 const openChat = (options: TabOptions = {}) => tabOn(openTestApp(options))
 
-const asked = (result: ReturnType<Chat["Service"]["actions"]["ask"]>) => {
+const asked = (result: Awaited<ReturnType<Chat["Service"]["actions"]["ask"]>>) => {
   if (!result.asked) throw new Error(`the question was refused: ${result.reason}`)
   return result
 }
@@ -131,7 +131,7 @@ describe("a branch's conversation", () => {
     await tab.chat.actions.show(branch)
     expect(tab.place()).toBe(branch)
 
-    const { answerId } = asked(tab.chat.actions.ask("asked in the branch"))
+    const { answerId } = asked((await tab.chat.actions.ask("asked in the branch")))
     expect(tab.shown(branch)).toEqual(["user queued asked in the branch"])
     await until(() => expect(tab.shown(branch)).toEqual(["user done asked in the branch", "assistant streaming "]))
     const reply = await tab.runtime.runPromise(tab.api.answerTo("asked in the branch"))
@@ -147,7 +147,7 @@ describe("a branch's conversation", () => {
     expect(tab.place()).toBe(branch)
     await tab.chat.actions.show(null)
     expect(tab.place()).toBeNull()
-    asked(tab.chat.actions.ask("asked at home"))
+    asked((await tab.chat.actions.ask("asked at home")))
     await until(() => expect(tab.shown(null)).toEqual(["user done asked at home", "assistant streaming "]))
     expect(tab.shown(branch)).toEqual(["user done asked in the branch", "assistant done Here."])
   }, WITHIN)
@@ -157,7 +157,7 @@ describe("a branch's conversation", () => {
     const [first, second] = [await tab.branch("feature/one"), await tab.branch("feature/two")]
     await tab.chat.actions.show(first)
 
-    asked(tab.chat.actions.ask("asked in the first"))
+    asked((await tab.chat.actions.ask("asked in the first")))
     await tab.chat.actions.show(second)
 
     await until(() => expect(tab.shown(first)).toEqual(["user done asked in the first", "assistant streaming "]))
@@ -204,7 +204,7 @@ describe("a branch's conversation", () => {
     const tab = await openChat()
     const branch = await tab.branch("feature/one")
     await tab.chat.actions.show(branch)
-    const first = asked(tab.chat.actions.ask("hello branch"))
+    const first = asked((await tab.chat.actions.ask("hello branch")))
     const reply = await tab.runtime.runPromise(tab.api.answerTo("hello branch"))
     reply.fail()
     await until(() => expect(tab.shown(branch)).toEqual(["user done hello branch", `assistant failed ${COULDNT_ANSWER}`]))
@@ -250,7 +250,7 @@ describe("a branch's unsent questions", () => {
     await tab.chat.actions.show(branch)
     tab.runtime.runSync(questions.failNext("bad_request"))
 
-    const { questionId } = asked(tab.chat.actions.ask("refused in the branch"))
+    const { questionId } = asked((await tab.chat.actions.ask("refused in the branch")))
 
     await until(() => expect(tab.shown(branch)).toEqual(["user unsent refused in the branch"]))
     expect(tab.store.unsent.tanstack.get(questionId)).toMatchObject({ reason: "refused", conversationId: branch })
@@ -274,7 +274,7 @@ describe("a branch's unsent questions", () => {
     const branch = await tab.branch("feature/one")
     await tab.chat.actions.show(branch)
     refusing.now = true
-    const { questionId } = asked(tab.chat.actions.ask("kept in the branch"))
+    const { questionId } = asked((await tab.chat.actions.ask("kept in the branch")))
     await until(() => expect(tab.shown(branch)).toEqual(["user unsent kept in the branch"]))
     // Home now: Retry still sends it where it was asked.
     await tab.chat.actions.show(null)
@@ -329,7 +329,7 @@ describe("delivering to a branch's conversation", () => {
     tab.runtime.runSync(shapes.stall())
     tab.runtime.runSync(questions.failNext("duplicate"))
 
-    const { questionId } = asked(tab.chat.actions.ask("sent twice"))
+    const { questionId } = asked((await tab.chat.actions.ask("sent twice")))
 
     // The answer's run started: the send is past it, waiting for its own conversation to deliver the question.
     await tab.runtime.runPromise(tab.api.answerTo("sent twice"))
@@ -458,8 +458,8 @@ describe("pages in a branch's conversation", () => {
     await tab.chat.actions.show(to)
     await tab.chat.actions.show(from)
 
-    tab.commands.actions.type("/web https://example.com/")
-    tab.commands.actions.submit("/web https://example.com/")
+    await tab.commands.actions.type("/web https://example.com/")
+    await tab.commands.actions.submit("/web https://example.com/")
     // The tab moves to another branch at once; the flow's steps run on the engine after.
     await tab.chat.actions.show(to)
 
@@ -506,7 +506,7 @@ describe("pages in a branch's conversation", () => {
     const [asking, moved] = [await tab.branch("feature/asking"), await tab.branch("feature/moved")]
     await tab.chat.actions.show(moved)
     await tab.chat.actions.show(asking)
-    asked(tab.chat.actions.ask("Show me example.com"))
+    asked((await tab.chat.actions.ask("Show me example.com")))
     const call = await tab.runtime.runPromise(tab.api.answerTo("Show me example.com"))
 
     // The person moves to another branch before the agent's call runs.

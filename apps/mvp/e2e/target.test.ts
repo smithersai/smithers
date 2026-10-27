@@ -143,6 +143,11 @@ describe("needs", () => {
       "alertProviders",
       "oldBuild",
       "githubSignIn",
+      "absentRepository",
+      "unsyncedRepository",
+      "failedRun",
+      "repositoryRun",
+      "emptySecretsRepository",
       "syncedRepository",
       "modelQuotaRefusal",
       "liveModel",
@@ -396,7 +401,7 @@ describe("needs", () => {
 
   it("each say why, and missing account or fixture prerequisites block the run", () => {
     for (const name of Object.keys(NEEDS) as Array<NeedName>) expect(NEEDS[name].reason.length, name).toBeGreaterThan(20)
-    expect((Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].blocked)).toEqual(["vibelangMaintainer", "syncedRepository", "member", "ownConversation", "maintainer"])
+    expect((Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].blocked)).toEqual(["vibelangMaintainer", "absentRepository", "unsyncedRepository", "failedRun", "repositoryRun", "emptySecretsRepository", "syncedRepository", "member", "ownConversation", "maintainer"])
   })
 })
 
@@ -536,5 +541,23 @@ describe("the specs", () => {
   it("never tell local from deployed by the URL themselves", async () => {
     const offenders = (await specs()).filter(({ source }) => /localhost\|127|process\.env\.BASE_URL|E2E_SESSION_COOKIE|\bDEV_URL\b/.test(source)).map(({ name }) => name)
     expect(offenders, "use target, requires and the stored session from e2e/target.ts").toEqual([])
+  })
+})
+
+
+describe("retained production prerequisites", () => {
+  it("requires explicit absent, unsynced and empty-secret repositories", () => {
+    for (const [need, variable] of [["absentRepository", "E2E_ABSENT_REPOSITORY"], ["unsyncedRepository", "E2E_UNSYNCED_REPOSITORY"], ["emptySecretsRepository", "E2E_EMPTY_SECRETS_REPOSITORY"]] as const) {
+      for (const name of [undefined, "", "owner", "owner/repo/other", "owner/repo?token=secret"]) {
+        expect(NEEDS[need].met(deployedAs("member", { [variable]: name }))).toBe(false)
+      }
+      expect(NEEDS[need].met(deployedAs("member", { [variable]: "owner/fixture" }))).toBe(true)
+    }
+  })
+  it("requires real retained execution identifiers instead of assuming history is populated", () => {
+    for (const [need, variable] of [["failedRun", "E2E_FAILED_RUN"], ["repositoryRun", "E2E_REPOSITORY_RUN"]] as const) {
+      for (const id of [undefined, ""]) expect(NEEDS[need].met(deployedAs("member", { [variable]: id }))).toBe(false)
+      expect(NEEDS[need].met(deployedAs("member", { [variable]: "repo:fixture:1" }))).toBe(true)
+    }
   })
 })

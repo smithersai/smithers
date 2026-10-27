@@ -981,3 +981,20 @@ The interrupt budget exposes `arm(ms, polls)`, `pause(ms)` and `poll()`;
 Quarantine is shared by compiled module identity and permits at most one
 abandoned runtime. These utilities install no host bridge or object hardening;
 each consumer retains its security policy.
+
+## RealmFlow
+
+`import { RealmFlow } from "@smthrs/harness"`
+
+| Export | Kind | Contract |
+| --- | --- | --- |
+| `Request` | interface | `{ _tag: "Action"; key: string; name: string; payload: unknown }`, addressed by the canonical interpreter node. |
+| `Receipt` | interface | Extends Request with `outcome`: Success carrying `value`, or Failure carrying `error`. Immutable host-journaled progress. |
+| `Input` | interface | Pinned `source`, `expectedTag`, decoded `payload`, `allowedActions`, optional prior `receipts`. |
+| `Result` | type | Request, or `{ _tag: "Complete"; value: unknown }` after success-schema validation. |
+| `agentAction` | constant | `"@smthrs/agent/AgentAction"`; offer it in allowedActions to admit agent steps. |
+| `AgentPayload` | schema | `{ step: string; seat: string; prompt: string }`; the host owns the model and limits. |
+| `RealmFlowError` | tagged error | Sanitized `code`: invalid_source, execution_failed, limit_exceeded, runtime_failed, forbidden_import, action_not_allowed. Source and values stay out of diagnostics. |
+| `version` | constant | Digest of the pinned compiler/runtime inputs used to identify realm semantics. |
+| `step` | function | `(input: Input) => Effect<Result, RealmFlowError, QuickJSVariant.Variant>`; a fresh bounded realm runs the actual SDK interpreter. The host journals each returned action before invoking step again. |
+| `layerDefaultVariant` | layer | The default single-file QuickJS variant, required by step. |

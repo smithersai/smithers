@@ -8,7 +8,7 @@ test("repository README renders sanitized HTML and hides comments", async ({ pag
   await page.goto("/smithersai/smithers/blob/main/README.md")
   const preview = page.locator(".sui-markdown-editor[data-readonly]")
   await expect(preview.locator(".sui-markdown-html pre")).toContainText("██", { timeout: 30_000 })
-  await expect(preview.locator("strong")).toContainText("Automate maintaining your codebase")
+  await expect(preview.locator("strong").filter({ hasText: "Automate maintaining your codebase" })).toHaveText("Automate maintaining your codebase")
   await expect(preview).not.toContainText("<!--")
   await expect(preview).not.toContainText('<pre align="center">')
   await expect(preview.locator("script, style, [onclick], [onerror]")).toHaveCount(0)

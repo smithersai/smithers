@@ -180,16 +180,20 @@ through `n - 1`. See [Trampoline rounds](./concepts/trampoline-rounds.md).
 
 ### Refusals
 
-| Export                      | Fields                                                                         | Raised when                                                                                                                                   |
+| Refusal                     | Fields                                                                         | Raised when                                                                                                                                   |
 | --------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `FlowNotRegistered`         | `code`, `flowName`, `message`                                                  | A flow executes, or a handoff names a target, that no registration covers.                                                                    |
-| `ExecutionIdentityConflict` | `code`, `executionId`, `field`, `expected`, `actual`, `status`, `message`      | A reused execution id disagrees with persisted flow, payload, lineage, round, or parent identity, or a deferred is addressed to another flow. |
+| `FlowRuntime.ExecutionIdentityConflict` (`@smthrs/flow`) | `code`, `executionId`, `field`, `expected`, `actual`, `status`, `message`      | A reused execution id disagrees with persisted flow, payload, lineage, round, or parent identity, or a deferred is addressed to another flow. |
 | `SuspendedResumeGaveUp`     | `code`, `flowName`, `executionId`, `attempt`, `elapsedMs`, `reason`, `message` | A caller polling a suspended lineage spends its `suspendedRetryPolicy`. `reason` is `"expired"` or `"exhausted"`.                             |
 | `SnapshotBoundaryRequired`  | `code`, `actionName`, `message`                                                | A compensable action runs with no `SnapshotBoundary` in context.                                                                              |
 
-All four are `Schema.TaggedError` classes tagged `@smthrs/engine/<Name>`, and
-the engine raises them as defects. Their `code` values are
-`flow_not_registered`, `execution_identity_conflict`,
+`FlowEngine.FlowNotRegistered`, `FlowEngine.SuspendedResumeGaveUp`, and
+`FlowEngine.SnapshotBoundaryRequired` are engine exports raised as defects.
+`FlowRuntime.ExecutionIdentityConflict` is exported by `@smthrs/flow`, not by
+`@smthrs/engine`. Its historical tag remains
+`@smthrs/engine/ExecutionIdentityConflict`. The durable driver returns this
+identity refusal as a typed failure; `FlowEngine.layerMemory` raises it as a
+defect. The codes are `flow_not_registered`, `execution_identity_conflict`,
 `suspended_resume_gave_up`, and `snapshot_boundary_required`.
 
 ## FlowProxy

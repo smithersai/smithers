@@ -1,10 +1,11 @@
-import { Context, Data, Effect, Layer, Option } from "effect"
+import { Clock, Context, Data, Effect, Layer, Metric, Option } from "effect"
 import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
 import { aboutOf, fileAtTree, clone, copy, navigate, open, rawHref, refresh, retryAbout, retryClone, role, warm } from "./actions"
 import type { RepoClient } from "./api"
 import type { CopyKind } from "./contract"
 import { type RouteParams, type Target, targetOf } from "./paths"
+import { aliasChecks } from "./metrics"
 import { reads } from "./queries"
 import type { BlobRow, TreeRow } from "./rows"
 import type { Repository } from "./schema"
@@ -117,9 +118,15 @@ export class Repo extends Context.Service<
           readme: (id, sha, dir) => now(device.readme(id, sha, dir)),
         },
         actions: {
-          fileAtTree: (params) => promise(fileAtTree(targetOf("tree", params, {})).pipe(
-            Effect.timeoutOption(store.pageWait), Effect.map(Option.getOrElse(() => false)),
-          )),
+          fileAtTree: (params) => promise(Effect.gen(function* () {
+            const startedAt = yield* Clock.currentTimeMillis
+            const checked = yield* fileAtTree(targetOf("tree", params, {})).pipe(Effect.timeoutOption(store.pageWait))
+            const outcome = Option.isNone(checked) ? "timed_out" : checked.value ? "file" : "unconfirmed"
+            const durationMs = (yield* Clock.currentTimeMillis) - startedAt
+            yield* Metric.update(Metric.withAttributes(aliasChecks, { outcome }), 1)
+            yield* Effect.logInfo("repo.alias.check").pipe(Effect.annotateLogs({ outcome, durationMs, feature: "repo" }))
+            return Option.getOrElse(checked, () => false)
+          }).pipe(Effect.withSpan("repo.alias.check"))),
           canonicalName: (owner, name) => promise(aboutOf(owner, name).pipe(
             Effect.timeoutOption(store.pageWait), Effect.map((row) => Option.isSome(row) ? row.value.about?.name : undefined),
           )),

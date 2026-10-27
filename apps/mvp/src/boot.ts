@@ -1,4 +1,5 @@
 import type { PendingSnapshot } from "@smthrs/platform-browser"
+import { telemetryExport } from "./telemetryExport"
 import { FlowRegistry } from "./flows/registry"
 import { FetchFailures, LogFailures, Otlp } from "@smthrs/observability"
 import { Persistence } from "@smthrs/effect-tanstack-db"
@@ -248,7 +249,7 @@ export const appLayer = <S = never>(
     Home.layer.pipe(Layer.provide(HomeStore.layer)),
     // A repository's docs (docs/features/docs.md): the Docs tab, over ChatApi's docs routes.
     Docs.layer.pipe(Layer.provide(DocsStore.layer)),
-    Commands.layer,
+    Commands.layer.pipe(Layer.provide(RunSteers.layer)),
     Views.layer,
     // The repository and issues views in the conversation the tab shows: what each renders, loaded as it arrives.
     embedsLayer,
@@ -295,7 +296,7 @@ export const appLayer = <S = never>(
     // put the message in the device's outbox.
     tabRuns({ name: host.engineName }).pipe(Layer.provideMerge(RunSteers.layer), Layer.provide(TabChannel.layer)),
     // Your own flows and this device's runs (decision 0014): their pages, and the router's navigate their acts open.
-    Layer.merge(Runs.layer.pipe(Layer.provide(RunsStore.layer({ origin }))), FlowsUi.layer.pipe(Layer.provide(FlowsUiStore.layer({
+    Layer.merge(Runs.layer.pipe(Layer.provide(RunSteers.layer), Layer.provide(RunsStore.layer({ origin }))), FlowsUi.layer.pipe(Layer.provide(FlowsUiStore.layer({
       origin,
       editorTabId: host.editorTabId,
       ...(host.formSnapshot === undefined ? {} : { formSnapshot: host.formSnapshot }),
@@ -425,6 +426,7 @@ export const appLayer = <S = never>(
                 baseUrl: `${origin}${TELEMETRY_ROUTE}`,
                 serviceName: WEB_SERVICE,
                 spans: EXPORTED_SPANS,
+                transform: telemetryExport,
                 ...TELEMETRY_LIMITS,
               }),
             ),

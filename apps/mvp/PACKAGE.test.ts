@@ -36,10 +36,10 @@ const scopes = [
 const reads = (files: ReadonlyArray<string>, path: string) => files.some((glob) => matchesGlob(path, glob))
 
 describe("the app's rule scopes", () => {
-  it("allows only the two built-in registry entries to name plugin modules", () => {
+  it("allows only the built-in metadata, UI and flow registries to name plugin modules", () => {
     const rule = importRules.find((rule) => rule.because.startsWith("plugin.core-names-no-plugin:"))!
     const files = rule.files!
-    expect(["src/plugins/builtin.ts", "src/plugins/builtinFlows.ts"].filter((path) => reads(files, path))).toEqual([])
+    expect(["src/plugins/builtin.ts", "src/plugins/builtinFlows.ts", "src/plugins/manifests.ts"].filter((path) => reads(files, path))).toEqual([])
     for (const path of ["src/plugins/plugins.ts", "src/plugins/other.ts", "src/plugins/nested/builtin.ts", "src/features/branch/steps.ts", "worker/branch/Creation.ts"]) {
       expect(reads(files, path), path).toBe(true)
     }

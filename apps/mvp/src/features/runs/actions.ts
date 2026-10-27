@@ -1,7 +1,10 @@
+import { SteerWrites } from "./writes"
+import { Uuid, WebCrypto } from "@smthrs/crypto"
+import { RunSteers } from "./steers"
 import { BrowserEngine } from "@smthrs/platform-browser"
-import { Context, Effect, Metric, Option } from "effect"
+import { Context, Effect, Metric, Option, Ref } from "effect"
 import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch"
-import { RETRY_ID_SEARCH_LIMIT, retriedRunId, retryActId, runPath } from "./contract"
+import { isRemoteRun, MAX_STEER_CHARS, STEER_ID_NAMESPACE, RETRY_ID_SEARCH_LIMIT, retriedRunId, retryActId, runPath } from "./contract"
 import { todoRetryPayload } from "./todoRun"
 import { retriesOf } from "./page"
 import type { Inspection, RepoName, RunTab, RunView } from "./schema"
@@ -260,10 +263,14 @@ export const afterFailedSteer = (latest: RunView, runId: string | null, body: st
   latest.runId === runId && (latest.steerDraft ?? "") === "" ? { steerDraft: body, refusal: "unavailable" } : { refusal: "unavailable" }
 
 /** What the steer composer holds, as a person types (docs/features/runs.md#steering). */
-export const setSteerDraft = (text: string) => setView({ steerDraft: text })
+export const setSteerDraft = (text: string) => Effect.gen(function* () {
+  const store = yield* RunsStore
+  yield* Ref.update(store.steerRevision, (revision) => revision + 1)
+  yield* setView({ steerDraft: text })
+})
 
 /**
- * Steer: `run/steer` on the open run with the composer's message, door `composer`. The composer empties at once; the
+ * Steer: `run/steer` on the open run with the composer's message, door `composer`. The composer empties after admission; the
  * message shows Sending from the outbox until the route answers. A run that couldn't queue it says `unavailable`, and
  * gives the words back to the composer only while the page still shows that run and nothing new was typed there.
  */
@@ -272,10 +279,15 @@ export const steer = Effect.gen(function* () {
   const current = Option.getOrThrow(yield* store.view.get(VIEW))
   const body = (current.steerDraft ?? "").trim()
   if (current.runId === null || body === "") return
-  yield* setView({ steerDraft: "", refusal: null })
-  const dispatched = yield* (yield* FlowDispatch).dispatch("run/steer", { runId: current.runId, body }, { door: "composer" })
-    .pipe(Effect.result)
-  if (dispatched._tag === "Failure" || dispatched.success._tag === "Failed") {
-    yield* setView(afterFailedSteer(Option.getOrThrow(yield* store.view.get(VIEW)), current.runId, body))
-  }
+  if (!isRemoteRun(current.runId) || body.length > MAX_STEER_CHARS) return yield* setView({ refusal: "unavailable" })
+  const revision = yield* Ref.get(store.steerRevision)
+  const executionId = yield* Uuid.v5(STEER_ID_NAMESPACE, JSON.stringify([store.steerNamespace, revision, current.runId, body])).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+  const recovery = (yield* (yield* SteerWrites).sent.toArray).find((row) => row.runId === current.runId && row.body === body && row.status === "not_sent" && row.reason === null)
+  const id = recovery?.id ?? (yield* Uuid.v5(STEER_ID_NAMESPACE, executionId).pipe(Effect.provide(WebCrypto.layer), Effect.orDie))
+  const { kept } = yield* (yield* RunSteers).queue({ id, runId: current.runId, body })
+  if (!kept) return yield* setView(afterFailedSteer(Option.getOrThrow(yield* store.view.get(VIEW)), current.runId, body))
+  const latest = Option.getOrThrow(yield* store.view.get(VIEW))
+  if (latest.runId === current.runId && latest.steerDraft === current.steerDraft && (yield* Ref.get(store.steerRevision)) === revision) yield* setView({ steerDraft: "", refusal: null })
+  if (recovery === undefined) yield* (yield* FlowDispatch).dispatch("run/steer", { runId: current.runId, body }, { door: "composer", executionId })
+    .pipe(Effect.ignore, Effect.forkIn(store.scope, { startImmediately: true }))
 })

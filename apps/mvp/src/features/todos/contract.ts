@@ -356,6 +356,8 @@ export const dropTitle = (number: number): string => `Drop T${number}?`
 /** What the TODOs feature records in the browser (docs/observability.md#todos), by name, and their fields: never text. */
 export const TODOS_TELEMETRY = {
   records: [
+    "todos.write.admission",
+    "smithers_todo_write_admissions",
     "todos.draft",
     "todos.queue",
     "todos.send",

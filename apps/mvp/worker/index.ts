@@ -1,5 +1,6 @@
 // The site Worker serves origin-aware HTML and forwards API and docs requests.
 import { DOCS_SITE_FOLDERS } from "../src/pwa.ts"
+import { isAppRoute } from "./appRoute.ts"
 
 interface Env {
   readonly ASSETS: Fetcher
@@ -20,9 +21,10 @@ export default {
     const headers = new Headers(response.headers)
     headers.delete("content-length")
     headers.delete("etag")
+    const status = url.pathname === "/index.html" || isAppRoute(url.pathname) ? 200 : 404
+    if (status === 404) headers.set("x-robots-tag", "noindex")
     return new Response((await response.text()).replaceAll("__SMITHERS_ORIGIN__", url.origin), {
-      status: response.status,
-      statusText: response.statusText,
+      status,
       headers,
     })
   },

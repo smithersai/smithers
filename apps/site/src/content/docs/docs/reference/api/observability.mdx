@@ -71,6 +71,7 @@ interface Options {
   readonly exportInterval?: Duration.Input | undefined
   readonly shutdownTimeout?: Duration.Input | undefined
   readonly spans?: ReadonlyArray<string> | undefined
+  readonly transform?: ((payload: unknown) => unknown) | undefined
   readonly maxRequestBytes?: number | undefined
   readonly maxRecords?: number | undefined
 }
@@ -1080,3 +1081,5 @@ const layerOtel: (options: Options) => Layer.Layer<never, Resource.InvalidResour
 Builds a scoped browser OpenTelemetry layer over the validated resource. A
 layer with no processor factories at all still builds; it provides the resource
 and bridges nothing.
+
+`transform` applies the application privacy policy to OTLP JSON before credential redaction, size checks, splitting and transport. It runs for logs, metrics and traces, including exception events and span status messages. Keep the transformation synchronous and total.

@@ -102,3 +102,5 @@ Content-free: ids, sizes, scopes' kinds, statuses and outcomes; never a text, an
 
 - Carets in the Markdown editor: Markdown files merge everyone's typing, but only the code editor draws carets, because the editor shows rendered Markdown, not its source positions.
 - Compaction: a text is every update ever written to it; a long-lived file reloads them all.
+
+Typing updates the visible replica before waiting for durable outbox admission. The action resolves after admission, so a device reload restores that update while network delivery continues in the background.

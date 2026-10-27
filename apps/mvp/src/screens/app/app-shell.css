@@ -34,7 +34,7 @@
 @media (max-width: 60rem) {
   .app-shell-header { flex-wrap: wrap; }
   .app-shell-header [aria-label="Account"] { min-width: 0; }
-  .app-shell-header [aria-label="Account"] > span { max-width: 4rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .app-shell-header [aria-label="Account"] > span { overflow-wrap: anywhere; }
   .app-shell-nav { order: 1; flex: 0 0 100%; overflow-x: auto; flex-wrap: nowrap; }
   .app-shell-nav > * { flex-shrink: 0; }
   .app-shell-nav > a { display: inline-flex; align-items: center; min-width: 32px; min-height: 32px; }

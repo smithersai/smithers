@@ -97,6 +97,8 @@ Logs:
 | `auth.refresh` | a check ChatApi couldn't answer started `auth/refresh`; how it ended is dispatch's `flow.dispatch` line | Info | `feature: auth`, `stage: started` |
 | `timeline.summary.unavailable` | the timeline couldn't get an entry's summary (`timeline/summarize` failed); the entry shows without one | Warn | none |
 | `timeline.summary.unconfigured` | the summary role has no model, so the timeline stops asking until the app opens again | Warn | none |
+| `repo.alias.check` | bounded tree-to-file alias resolution | Info | `outcome` (`file`, `unconfirmed`, `timed_out`), `durationMs`, `feature: repo`; correlated span, never the file path |
+| `slash.choose` | a menu row was accepted or completed; typed names are resolved again for keyboard acceptance | Info | `feature: commands`, `kind`, `how`, `via` (`keyboard` for typed-name acceptance, `selection` for the shared row handler), `match` (`exact`, `prefix`, `row`), numeric `index`; never the typed line |
 | `slash.run` | a slash command ran its flow from the composer ([slash commands](features/slash-commands.md)); the flow's own record is `flow.dispatch`, door `slash` | Info | `feature: commands`, `command`, `flow`; never the arguments |
 | `slash.refused` | a line naming no command, or missing or misusing an argument, stayed in the composer | Warn | `feature: commands`, `outcome` (`unknown`, `missing`, `invalid`), `command` when the app offers it; never what was typed |
 
@@ -135,6 +137,7 @@ Metrics (`src/features/chat/metrics.ts`, `src/boot.ts`, `src/page.ts`, and `@smt
 | `smithers_web_storage_persisted` | counter | `granted` = `true` or `false` |
 | `smithers_web_boot_ms` | histogram | from page start to the conversation restored from the device |
 | `smithers_web_page_reloads` | counter | a page restored from the back/forward cache; reaches the relay only if an export runs before the page unloads |
+| `smithers_web_repo_alias_checks` | counter | tree-to-file alias checks by `outcome`: `file`, `unconfirmed`, `timed_out` |
 | `smithers_slash_choices` | counter | rows chosen from the command menu: `kind` = `commands` or `values`, `how` = `accept` (Enter or a click) or `complete` (Tab) |
 | `smithers_slash_submits` | counter | command lines submitted: `outcome` = `run`, `unknown`, `missing` or `invalid`, and `command` for a command the app offers |
 | `outbox_attempts` | counter | `name`, `outcome` = `sent`, `retry`, `refused`, `defect`, or `sent_elsewhere` (a write this tab queued that the tab which took the lead sent meanwhile; settled here without a second send) |
@@ -1033,7 +1036,10 @@ which compares placement receipts separately from these start-call records.
 
 Issue Create admission records `issues.write.admission` and `smithers_issue_write_admissions` by `queued`, `not_admitted`, or `storage_failed`, with the write id and operation only. A durable local recovery receipt precedes admission; neither title nor body enters these records.
 
-Failed comment admission records `issues.submission.not_sent` and `smithers_issue_submission_failures`, correlated by submission id and classified as `dispatch` or `flow`, without comment text.
+Comment recovery-storage refusal counts `smithers_issue_submission_failures` as `storage`; every issue operation records `issues.write.admission` by write id and local admission outcome. Engine startup is independent of admitted delivery.
 
 `github.write.notice` traces and logs admission and settlement of Publish and Update branch by write id, operation and state. The same database transaction folds the shared notification and counts `smithers_notifications_routed` with `kind=write`; replays neither raise a new version nor count an unchanged state. Client launch toasts use the shared `smithers_notifications_shown` lifecycle, without titles or descriptions from the publication.
 
+Browser and engine OTLP exports apply `telemetryExport` before network transmission. HTTP paths use route templates; full URLs, exception text/stack and span status messages are withheld on the device. Persisted collection diagnostics use the collection kind, never repository-qualified storage IDs.
+
+TODO local admission logs `todos.write.admission` and counts `smithers_todo_write_admissions` by operation and outcome (`queued`, `not_admitted`, `storage_failed`), correlated by op id, without the title, prompt or repository name.

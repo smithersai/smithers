@@ -34,6 +34,12 @@ import { Binding, Egress, Placeholder, Scrub } from "@smthrs/secrets"
 | `checkValue`                             | `(value: Redacted<string>) => Effect<void, ValueInvalid>`                                                |
 | `ValueInvalid`                           | `{ reason }`, never the value                                                                            |
 
+
+| Export | Contract |
+| --- | --- |
+| `ValueProblem` | Type union `too_short`, `too_long`, `control_character`, `malformed_text`; `valueProblem(value)` returns it or undefined, without disclosing the value. |
+
+
 ## `Scrub`
 
 | Export     | Signature                                                                                                                                                                          |
@@ -41,6 +47,12 @@ import { Binding, Egress, Placeholder, Scrub } from "@smthrs/secrets"
 | `forms`    | `(value: string) => ReadonlyArray<string>`: the value, percent-encoded (upper and lower hexadecimal, `+` for space), JSON-escaped, and base64 and base64url at each byte alignment |
 | `make`     | `(targets: ReadonlyArray<{ value: Redacted<string>, replacement: string }>) => Scrubber`                                                                                           |
 | `Scrubber` | `{ active, text(value), stream(body) }`; the longer form wins at one position                                                                                                      |
+
+
+| Export | Contract |
+| --- | --- |
+| `Target` | `{ value: Redacted<string>; replacement: string }`, one target passed to `make(targets)`. The scrubber reveals the value only internally and emits the replacement, never the secret. |
+
 
 ## `Egress`
 

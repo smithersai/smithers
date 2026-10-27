@@ -1,3 +1,4 @@
+import { telemetryExport } from "../telemetryExport"
 import { FetchFailures, LogFailures, Otlp } from "@smthrs/observability"
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
@@ -28,6 +29,7 @@ export const engineTelemetry = (origin: string) =>
         baseUrl: `${origin}${TELEMETRY_ROUTE}`,
         serviceName: ENGINE_SERVICE,
         spans: EXPORTED_SPANS,
+                transform: telemetryExport,
         ...TELEMETRY_LIMITS,
       }),
     ),

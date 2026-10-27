@@ -340,6 +340,7 @@ export const REPO_TELEMETRY = {
   records: [
     "repo.clone",
     "repo.open",
+    "repo.alias.check",
     "repo.tree.load",
     "repo.blob.load",
     "repo.refs.load",
@@ -362,6 +363,7 @@ export const REPO_TELEMETRY = {
     "smithers_web_repo_clone_clicks",
     "smithers_web_repo_clones",
     "smithers_web_repo_opens",
+    "smithers_web_repo_alias_checks",
     "smithers_web_repo_tree_load_ms",
     "smithers_web_repo_blob_load_ms",
     "smithers_web_repo_refs_load_ms",

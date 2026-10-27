@@ -54,7 +54,7 @@ test("an idle page and a page receiving N messages cause at most N summary calls
   await until(() => expect(model.queries.form.toArray[0]).toMatchObject({ state: "done" }))
 
   const ask = async (text: string) => {
-    const asked = a.chat.actions.ask(text)
+    const asked = (await a.chat.actions.ask(text))
     if (!asked.asked) throw new Error(asked.reason)
     await until(() => expect(["done", "failed"]).toContain(a.answers().find(row => row.id === asked.answerId)?.status))
     // A failed answer says which model calls it made, so a red run explains itself.

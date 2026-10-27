@@ -3,7 +3,8 @@ import { answerAskingTab } from "../../flows/askingTab"
 import { ChatStore } from "../chat/store"
 import { runsChannel } from "./contract"
 import { type QueuedSteer, RunsCall } from "./schema"
-import { RUN_STEER, SteerWrites } from "./writes"
+import { keep, RUN_STEER, SteerWrites } from "./writes"
+import { sendingAdmitted } from "../../outboxAdmission"
 
 // The tab's side of steering (docs/features/runs.md#steering): a `run/steer` step, in the leader tab's engine worker,
 // asks the tab that started its run to put the message in the device's outbox, which chat's store leads. Every tab
@@ -28,12 +29,21 @@ export class RunSteers extends Context.Service<
       return RunSteers.of({
         queue: (steer) =>
           Effect.gen(function* () {
-            if (Option.isSome(yield* sending.get(steer.id)) || Option.isSome(yield* sent.get(steer.id))) return { kept: true }
-            yield* chat.lead
+            const held = yield* sent.get(steer.id)
+            if (Option.isSome(yield* sending.get(steer.id))) return { kept: yield* sendingAdmitted(chat.outbox, RUN_STEER, steer.id) }
+            if (Option.isSome(held) && (held.value.status === "sent" || held.value.reason !== null)) return { kept: true }
             const row = { ...steer, queuedAt: yield* Clock.currentTimeMillis, v: 1 as const }
+            const recovery = yield* Effect.result(keep(sent, row, "not_sent", null))
+            if (recovery._tag === "Failure") return { kept: false }
+            yield* chat.lead
             const admitted = yield* chat.outbox
-              .transact(RUN_STEER, { idempotencyKey: steer.id }, Effect.asVoid(sending.insert(row)))
-              .pipe(Effect.flatMap((taken) => taken.admitted), Effect.result)
+              .transact(RUN_STEER, { idempotencyKey: steer.id, joinExisting: true }, Effect.asVoid(sending.insert(row)))
+              .pipe(Effect.flatMap((taken) => taken.admitted.pipe(Effect.catch((error) => Effect.andThen(Effect.ignore(taken.settled), Effect.fail(error))))), Effect.result)
+            const pending = yield* sent.get(steer.id)
+            if (admitted._tag === "Success" && Option.isSome(pending) && pending.value.status === "not_sent" && pending.value.reason === null) {
+              const removed = yield* sent.delete(steer.id).pipe(Effect.orDie)
+              yield* Effect.ignore(removed.persisted)
+            }
             return { kept: admitted._tag === "Success" }
           }),
       })

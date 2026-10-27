@@ -21,9 +21,10 @@ import {
   TRIAGE_OFF,
 } from "../../features/issues/contract"
 import { COMMITMENTS, COMMITMENT_COPY, filterCommitment } from "../../features/issues/lifecycle"
-import { listProps, mayManageTriageOnList, mayWrite, syncsHere, triageSwitchOf } from "../../features/issues/view"
+import { listFailureOf, listProps, mayManageTriageOnList, mayWrite, syncsHere, triageSwitchOf } from "../../features/issues/view"
 import "./issues-screen.css"
-import { useRepoAnswer } from "../../features/repo/components/RepoContext"
+import { useRepo, useRepoAnswer } from "../../features/repo/components/RepoContext"
+import { repoId } from "../../features/repo/contract"
 
 // /$owner/$repo/issues: the repository's issues, this device's own new ones first with their chip, each with its triage
 // chip and the TODOs made from it, Make TODO in its menu for a Member (docs/features/todos.md#from-an-issue), New issue
@@ -33,15 +34,21 @@ export function IssuesScreen() {
   const { owner, repo } = useParams({ from: "/$owner/$repo/issues" })
   const { queries, actions } = useIssues()
   const auth = useAuth()
-  const { data: rows, isReady } = useLiveQuery(queries.list)
+  const { data: session } = useLiveQuery(auth.queries.session)
+  const { data: privateRows, isReady: privateReady } = useLiveQuery(queries.list)
+  const { data: publicRows, isReady: publicReady } = useLiveQuery(queries.publicList)
+  const rows = session?.status === "signed_out" ? publicRows : privateRows
+  const isReady = session?.status === "signed_out" ? publicReady : privateReady
   const { data: synced } = useLiveQuery(queries.synced)
   const { data: access } = useLiveQuery(queries.access)
   const { data: unsynced } = useLiveQuery(queries.unsynced)
   const { data: triage } = useLiveQuery(queries.triage)
   const { data: triagePending } = useLiveQuery(queries.triagePending)
-  const { data: session } = useLiveQuery(auth.queries.session)
   const { data: confirmed } = useLiveQuery(auth.queries.confirmed)
   const answer = useRepoAnswer(owner, repo)
+  const repository = useRepo()
+  const { data: roles } = useLiveQuery(repository.queries.roles)
+  const { data: about } = useLiveQuery(repository.queries.about)
   const todos = useTodos()
   const { data: todosView } = useLiveQuery(todos.queries.view)
   const todosRepoId = todosView?.repoId ?? ""
@@ -49,6 +56,8 @@ export function IssuesScreen() {
   const navigate = useNavigate()
   const search = useSearch({ from: "/$owner/$repo/issues" })
   const list = listProps(rows ?? [], synced, access, triage !== undefined && !triage.paused)
+  const failure = listFailureOf(access, roles?.find((row) => row.id === repoId(owner, repo))?.failure,
+    (list.unknown || !isReady || access?.installed !== true) && about?.view.repoId === repoId(owner, repo) ? about.about : undefined)
   const visible = listProps(visibleRows(filterCommitment(rows ?? [], search.commitment), search), synced, access, triage !== undefined && !triage.paused).issues
   const triageSwitch = triageSwitchOf(triage, triagePending ?? [])
   // The full-screen size of the repository's issues view in the chat (ruling FE-9): Back to chat minimizes it.
@@ -65,6 +74,10 @@ export function IssuesScreen() {
   }
   return (
     <main className="issues-screen" aria-label="Issues">{header}<HomeTabs />
+      {failure === undefined ? null : <p role="status"><span>{failure}</span>{" "}
+        <Button variant="outline" onClick={() => { repository.actions.retryAbout(owner, repo); repository.actions.role(owner, repo); actions.retry() }}>Try again</Button>{" "}
+        <a href={githubList(owner, repo, "issues").href}>Open on GitHub ↗</a>
+      </p>}
       <nav aria-label="Schedule">
         <span>Schedule</span>
         {[undefined, ...COMMITMENTS].map((commitment) => (
@@ -75,7 +88,7 @@ export function IssuesScreen() {
           </Button>
         ))}
       </nav>
-      {(list.unknown || !isReady || access?.installed !== true) ? <p role="status" data-list-sync="">Syncing issues…</p> : null}
+      {failure === undefined && (list.unknown || !isReady || access?.installed !== true) ? <p role="status" data-list-sync="">Issues not synced · <a href={githubList(owner, repo, "issues").href}>Open on GitHub ↗</a></p> : null}
       <div className="list-search-tools" role="search" aria-label="Search issues">
         <Input aria-label="Search issues" placeholder="Search issues" value={search.q ?? ""}
           onChange={(event) => void navigate({ to: "/$owner/$repo/issues", params: { owner, repo }, search: { ...search, q: event.currentTarget.value }, replace: true, resetScroll: false })} />

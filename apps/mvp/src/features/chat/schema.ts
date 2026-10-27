@@ -114,6 +114,9 @@ export const Composer = Schema.Struct({
 })
 export type Composer = typeof Composer.Type
 
+/** A question accepted on this device, under stable question and answer identities. */
+export interface QuestionSubmitted { readonly asked: true; readonly questionId: string; readonly answerId: string }
+
 /**
  * This tab's connection, as the connection pill shows it. One row:
  * - `up`: nothing to show;

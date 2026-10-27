@@ -111,5 +111,14 @@ Slash doors carry short `description` copy for the menu; the agent retains the f
 
 Enter on an exact `/repo`, `/issues` or `/docs` command shows its argument format on the first press. Navigation checks the router before moving; a failed navigation keeps the command in chat with a short reason.
 
-
 Malformed repository arguments stay in the composer with `needs owner/name`; rejected dispatches also restore their line unless newer typing, dismissal or navigation superseded it.
+
+Enter resolves the typed command name before a displaced menu highlight: an exact
+name wins, then a name prefix over description matches. A pointer click keeps its
+explicit row choice. This protects `/bug` while the composer and menu queries
+update independently; completion and dispatch still use the shared UI grammar.
+
+
+Composer write actions return promises that resolve after local outbox admission. Commands capture their conversation and branch before clearing a shared prompt, so navigation during admission cannot send a command into another conversation.
+
+Slash commands backed by the device outbox admit their typed payload before resolving or clearing the composer. Their public flows join the same identity in the background. A local refusal keeps the command and its recovery receipt; retry keeps that write id.

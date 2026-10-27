@@ -248,6 +248,8 @@ export interface Write {
  * @since 0.2.0
  */
 export interface Service {
+  /** This program's live receipt for a key; restored writes are already durable and have no live receipt here. */
+  readonly admission: (name: string, idempotencyKey: string) => Effect.Effect<Option.Option<Write>>
   /**
    * Writes through mutation `name`: `mutate` runs at once, synchronously, inside the write, so its inserts, updates
    * and deletes show as optimistic rows until the write settles. Fails with `NotAdmitted` when this program doesn't
@@ -256,7 +258,7 @@ export interface Service {
    */
   readonly transact: (
     name: string,
-    ids: { readonly idempotencyKey: string },
+    ids: { readonly idempotencyKey: string; readonly joinExisting?: boolean },
     mutate: Effect.Effect<void, MutationRefused>
   ) => Effect.Effect<Write, NotAdmitted | MutationRefused>
   /** The outbox's state now, then each change. */
@@ -431,11 +433,12 @@ const parkedIn = (storage: StorageAdapter, principal: Principal | undefined): Ef
     return writes
   }).pipe(Effect.catch((error) =>
     Effect.as(
-      Effect.logWarning("outbox couldn't read its parked writes").pipe(Effect.annotateLogs({ error: errorName(error) })),
+      Effect.logWarning("outbox couldn't read its parked writes").pipe(
+        Effect.annotateLogs({ error: errorName(error) })
+      ),
       []
     )
   ))
-
 
 // The error names a mutation's failure becomes. Their messages are fixed, so the library's substring rules never read
 // anything else, and `shouldRetry` decides on the name alone.
@@ -496,6 +499,7 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
       // One permit for the moment a send claims its write and for `withdraw`, so a write is never both sent and
       // taken back.
       const permit = yield* Semaphore.make(1)
+      const creating = yield* Semaphore.make(1)
       // The write this program's send claimed, held until the library is done with it. The library sends one write at
       // a time. A write sent or refused stays held until the library deletes it, so `withdraw` finds it held or gone.
       // A write to be sent again (`retry`) is released once the library has stored its next attempt, so `withdraw`
@@ -508,6 +512,7 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
 
       // Admission is the storage write of the write's own key; whoever waits on a write learns of it here.
       const admissions = new Map<string, Deferred.Deferred<void, NotAdmitted>>()
+      const liveAdmissions = new Map<string, Write>()
       // Another principal's stored write is sealed: the library never sees it, so it never loads, sends or deletes it.
       const sealed = (key: string, stored: string | null) =>
         key.startsWith(KEY_PREFIX) && stored !== null && !owns(options.principal, stampOf(stored))
@@ -592,12 +597,16 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
               ? Effect.all([
                 outcome("refused"),
                 Metric.update(Metric.withAttributes(refused, { name, status }), 1),
-                Effect.logWarning("outbox write refused").pipe(Effect.annotateLogs({ name, status, outcome: "refused" }))
+                Effect.logWarning("outbox write refused").pipe(
+                  Effect.annotateLogs({ name, status, outcome: "refused" })
+                )
               ], { discard: true })
               : Effect.andThen(
                 outcome("retry"),
                 attempt === 1
-                  ? Effect.logWarning("outbox write retrying").pipe(Effect.annotateLogs({ name, status, outcome: "retry" }))
+                  ? Effect.logWarning("outbox write retrying").pipe(
+                    Effect.annotateLogs({ name, status, outcome: "retry" })
+                  )
                   : Effect.void
               )
           }),
@@ -705,8 +714,11 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
         return now === undefined ? {} : { principal: now }
       }
 
-      const transact: Service["transact"] = (name, { idempotencyKey }, mutate) =>
+      const transact: Service["transact"] = (name, { idempotencyKey, joinExisting }, mutate) =>
         Effect.gen(function*() {
+          const key = JSON.stringify([name, idempotencyKey])
+          const existing = liveAdmissions.get(key)
+          if (joinExisting && existing !== undefined) return existing
           // A follower would get the library's online-only transaction, with no storage and no retry: refuse instead.
           if (!executor.isOfflineEnabled) return yield* new NotAdmitted({ reason: "follower" })
           const services = yield* Effect.context<never>()
@@ -740,6 +752,15 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
               live.delete(transaction.id)
             )
           )
+          const write = {
+            id: transaction.id,
+            admitted: Deferred.await(admission),
+            settled: Effect.tryPromise({
+              try: () => transaction.isPersisted.promise,
+              catch: (cause) => new TransactionFailed({ cause })
+            }).pipe(Effect.asVoid)
+          } satisfies Write
+          liveAdmissions.set(key, write)
           // Admitted, the write settles through the executor; refused by the storage, it rolls back before that.
           void offline.commit().catch(() => undefined)
           void transaction.isPersisted.promise.then(
@@ -751,16 +772,12 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
                   reason: executor.isOfflineEnabled ? "storage" : "follower"
                 })
               ))
-          ).finally(() => admissions.delete(transaction.id))
-          return {
-            id: transaction.id,
-            admitted: Deferred.await(admission),
-            settled: Effect.tryPromise({
-              try: () => transaction.isPersisted.promise,
-              catch: (cause) => new TransactionFailed({ cause })
-            }).pipe(Effect.asVoid)
-          } satisfies Write
-        })
+          ).finally(() => {
+            admissions.delete(transaction.id)
+            if (liveAdmissions.get(key)?.id === transaction.id) liveAdmissions.delete(key)
+          })
+          return write
+        }).pipe(Semaphore.withPermits(creating, 1))
 
       const notWithdrawn = (reason: NotWithdrawn["reason"]) => new NotWithdrawn({ reason })
       const withdraw: Service["withdraw"] = (idempotencyKey) =>
@@ -815,7 +832,9 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
             Effect.annotateLogs({ name: (JSON.parse(stored) as StoredParked).name })
           )
         }).pipe(Effect.catch((error) =>
-          Effect.logWarning("outbox couldn't discard a parked write").pipe(Effect.annotateLogs({ error: errorName(error) }))
+          Effect.logWarning("outbox couldn't discard a parked write").pipe(
+            Effect.annotateLogs({ error: errorName(error) })
+          )
         ))
 
       // Each parked write goes to its feature, which shows it Not sent; one it took leaves the outbox.
@@ -831,6 +850,8 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
       }
 
       return Outbox.of({
+        admission: (name, key) =>
+          Effect.sync(() => Option.fromUndefinedOr(liveAdmissions.get(JSON.stringify([name, key])))),
         transact,
         status: SubscriptionRef.changes(status),
         retryNow: Effect.sync(() => executor.getOnlineDetector().notifyOnline()),

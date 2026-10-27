@@ -1,3 +1,4 @@
+import { reloadAfter } from "../../test/reloadTiming"
 import { RepoStore } from "../repo/store"
 import { RepoClient } from "../repo/api"
 import { role as readRepositoryRole } from "../repo/actions"
@@ -40,7 +41,7 @@ import { TodosStore } from "./store"
 import { issuesSynced } from "./tab"
 import { Todos } from "./todos"
 import { accessFor, draftsOfAnswer, draftsOfRepo, notSentRows, stackRows, todoCardOf, todosByIssue } from "./view"
-import { keep } from "./writes"
+import { keep, StackWrites } from "./writes"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -179,7 +180,7 @@ const drafted = (tab: Tab, title: string, prompt: string) => {
 
 /** Commits a new draft on `tab` and waits until the stack numbered it on that device. */
 const committed = async (tab: Tab, title: string, number: number) => {
-  tab.actions.commit(drafted(tab, title, `${title}, please.`))
+  await tab.actions.commit(drafted(tab, title, `${title}, please.`))
   await until(() => expect(tab.rows()).toContainEqual(expect.objectContaining({ number, title })))
 }
 
@@ -192,7 +193,7 @@ describe("a shared TODO status read", () => {
     )
     expect(await inspect()).toEqual({ _tag: "Done", value: { kind: "not_found", number: 1 } })
     await tab.actions.open(OWNER, NAME)
-    tab.actions.commit(drafted(tab, "Private title", "Private prompt"))
+    await tab.actions.commit(drafted(tab, "Private title", "Private prompt"))
     await until(() => expect(tab.rows()).toEqual([
       { id: expect.any(String), number: 1, title: "Private title", state: "queued" },
     ]))
@@ -237,10 +238,10 @@ describe("a commit", () => {
       // Another device has none of this device's drafts.
       expect(other.drafts()).toEqual([])
 
-      expect(tab.actions.commit(draftId)).toBe(stackPath(OWNER, NAME))
-      expect(tab.view()?.committing).toEqual([draftId])
+      expect((await tab.actions.commit(draftId))).toBe(stackPath(OWNER, NAME))
+      expect(tab.view()?.committing).toEqual([])
       // A second press while the first is on its way runs nothing.
-      expect(tab.actions.commit(draftId)).toBeUndefined()
+      expect((await tab.actions.commit(draftId))).toBeUndefined()
 
       await Effect.runPromise(Deferred.await(held.entered))
       await until(() =>
@@ -294,12 +295,12 @@ describe("a commit", () => {
     const tab = await open()
     await tab.actions.open(OWNER, NAME)
     const id = tab.actions.newDraft(OWNER, NAME)
-    expect(tab.actions.commit(id)).toBeUndefined()
+    expect((await tab.actions.commit(id))).toBeUndefined()
     tab.actions.setTitle(id, "Title")
-    expect(tab.actions.commit(id)).toBeUndefined()
+    expect((await tab.actions.commit(id))).toBeUndefined()
     tab.actions.setPrompt(id, "   ")
-    expect(tab.actions.commit(id)).toBeUndefined()
-    expect(tab.actions.commit("no-such-draft")).toBeUndefined()
+    expect((await tab.actions.commit(id))).toBeUndefined()
+    expect((await tab.actions.commit("no-such-draft"))).toBeUndefined()
     // Text for a draft that went stays gone.
     tab.actions.setTitle("no-such-draft", "x")
     expect(tab.drafts()).toHaveLength(1)
@@ -321,7 +322,7 @@ describe("a commit", () => {
     client.state.down = true
     const tab = await open({ replace: client.layer })
     await tab.actions.open(OWNER, NAME)
-    tab.actions.commit(drafted(tab, "Offline commit", "Made offline."))
+    await tab.actions.commit(drafted(tab, "Offline commit", "Made offline."))
     await until(() => expect(client.state.sends).toBeGreaterThan(0))
     expect(tab.rows()).toEqual([expect.objectContaining({ number: null, pending: "requested" })])
 
@@ -336,7 +337,7 @@ describe("a commit", () => {
     client.next("drop")
     const tab = await open({ replace: client.layer })
     await tab.actions.open(OWNER, NAME)
-    tab.actions.commit(drafted(tab, "Once", "Only once."))
+    await tab.actions.commit(drafted(tab, "Once", "Only once."))
     await until(() => expect(tab.rows()).toEqual([expect.objectContaining({ number: 1, title: "Once" })]))
     // The outbox sends it again after its backoff, and ChatApi answers what it answered.
     await until(() => expect(tab.count(sends, { op: "commit", outcome: "existing" })).toBe(1))
@@ -405,7 +406,7 @@ describe("refusals", () => {
     await committed(tab, "Fills it", 1)
     await sql(tab.api, `UPDATE stacks SET max_open = 1`)
 
-    tab.actions.commit(drafted(tab, "One too many", "Over the limit."))
+    await tab.actions.commit(drafted(tab, "One too many", "Over the limit."))
     await until(() =>
       expect(tab.notSent()).toEqual([{ id: expect.any(String), op: "commit", label: "One too many", reason: "Stack full" }])
     )
@@ -429,7 +430,7 @@ describe("refusals", () => {
     const guest = await open({}, gus)
     await guest.actions.open(OWNER, NAME)
     await until(() => expect(guest.access()).toBe("forbidden"))
-    guest.actions.commit(drafted(guest, "As a Guest", "Not allowed."))
+    await guest.actions.commit(drafted(guest, "As a Guest", "Not allowed."))
     await until(() => expect(guest.notSent()).toEqual([expect.objectContaining({ reason: "Not allowed" })]))
 
     const visitor = await open({}, null)
@@ -443,7 +444,7 @@ describe("the agent", () => {
     const tab = await open()
     const other = await another(tab.api)
     const chat = await tab.runtime.runPromise(Effect.service(Chat))
-    const asked = chat.actions.ask("Make a TODO to retry webhooks")
+    const asked = (await chat.actions.ask("Make a TODO to retry webhooks"))
     if (!asked.asked) throw new Error("not asked")
     const first = await Effect.runPromise(tab.api.answerTo("Make a TODO to retry webhooks"))
     first.cell(
@@ -472,7 +473,7 @@ describe("the agent", () => {
 
     // The person commits the agent's draft, its criteria with it.
     await tab.actions.open(OWNER, NAME, 1)
-    tab.actions.commit(draftsOfAnswer(asked.answerId, tab.drafts())[0]!.id)
+    await tab.actions.commit(draftsOfAnswer(asked.answerId, tab.drafts())[0]!.id)
     await until(() =>
       expect(tab.card()).toMatchObject({
         number: 1,
@@ -490,7 +491,7 @@ describe("the agent", () => {
     await committed(tab, "Keep me", 1)
     const chat = await tab.runtime.runPromise(Effect.service(Chat))
     const question = "Commit a TODO and drop T1"
-    const asked = chat.actions.ask(question)
+    const asked = (await chat.actions.ask(question))
     if (!asked.asked) throw new Error("not asked")
     ;(await Effect.runPromise(tab.api.answerTo(question))).cell(
       `const tried = []\n` +
@@ -533,7 +534,7 @@ describe("from an issue", () => {
         expect.objectContaining({ title: "Fix the README", prompt: "The README says **hello**.", issue: 7, answerId: null }),
       ])
     )
-    tab.actions.commit(tab.drafts()[0]!.id)
+    await tab.actions.commit(tab.drafts()[0]!.id)
     await until(() => expect(other.stack().todos).toEqual([expect.objectContaining({ number: 1, issueNumber: 7 })]))
     expect(await sql(tab.api, `SELECT number, issue_number AS "issue" FROM todos`)).toEqual([{ number: 1, issue: 7 }])
     // On the other device, the issue lists its TODO.
@@ -545,7 +546,7 @@ describe("from an issue", () => {
     // T1 still open, Make TODO makes a second TODO from the same issue: one issue, a stack of TODOs, newest first.
     tab.actions.fromIssue(OWNER, NAME, 7)
     await until(() => expect(draftsOfRepo(REPO_ID, tab.drafts())).toEqual([expect.objectContaining({ issue: 7 })]))
-    tab.actions.commit(tab.drafts()[0]!.id)
+    await tab.actions.commit(tab.drafts()[0]!.id)
     await until(() =>
       expect([...other.stack().todos].sort((a, b) => a.number - b.number)).toEqual([
         expect.objectContaining({ number: 1, issueNumber: 7, state: "queued" }),
@@ -566,7 +567,7 @@ describe("from an issue", () => {
 
     tab.actions.fromIssue(OWNER, NAME, 9)
     await until(() => expect(draftsOfRepo(REPO_ID, tab.drafts())).toEqual([expect.objectContaining({ issue: 9 })]))
-    tab.actions.commit(tab.drafts()[0]!.id)
+    await tab.actions.commit(tab.drafts()[0]!.id)
     await until(() => expect(tab.notSent()).toEqual([expect.objectContaining({ op: "commit", reason: "Stack full" })]))
     await until(() => expect(tab.view()?.committing).toEqual([]))
 
@@ -582,7 +583,7 @@ describe("from an issue", () => {
     await tab.actions.open(OWNER, NAME)
     const chat = await tab.runtime.runPromise(Effect.service(Chat))
     const question = "Make a TODO from issue 8"
-    const asked = chat.actions.ask(question)
+    const asked = (await chat.actions.ask(question))
     if (!asked.asked) throw new Error("not asked")
     ;(await Effect.runPromise(tab.api.answerTo(question))).cell(
       `console.log(JSON.stringify(await ctx.call("todo/issue", { repo: "${TEST_REPOSITORY}", issue: 8, ` +
@@ -648,7 +649,7 @@ describe("slash commands", () => {
         }),
       ])
     )
-    tab.actions.commit(tab.drafts()[0]!.id)
+    await tab.actions.commit(tab.drafts()[0]!.id)
     await until(() => expect(tab.rows()).toEqual([expect.objectContaining({ number: 1 })]))
     send(`/todo.drop ${TEST_REPOSITORY} 1`)
     await until(() => expect(tab.rows()).toEqual([expect.objectContaining({ number: 1, state: "dropped" })]))
@@ -751,41 +752,72 @@ describe("the device", () => {
     client.next(503)
     const tab = await open({ replace: client.layer })
     await tab.actions.open(OWNER, NAME)
-    tab.actions.commit(drafted(tab, "After a 503", "Sent twice."))
+    await tab.actions.commit(drafted(tab, "After a 503", "Sent twice."))
     await until(() => expect(tab.count(sends, { op: "commit", outcome: "retry" })).toBe(1))
     await tab.runtime.runPromise(Effect.flatMap(ChatStore, (chat) => chat.outbox.retryNow))
     await until(() => expect(tab.rows()).toEqual([expect.objectContaining({ number: 1, title: "After a 503" })]))
   }, WITHIN)
 
   // The step asks its tab again for 30 s (`ASK_RETRY`), then fails `not_kept`.
-  test("an outbox that can't store the change: the flow fails, nothing is queued, and the draft stays", async () => {
+  test("a refused TODO admission retains a retryable identity and its draft", async () => {
     const opened = await open({ answers: false })
     const device = nodeDevice({ agent: opened.api })
     const real = device.outbox.storage
+    let full = true
     const storage: Outbox.Options<never>["storage"] = {
       get: (key) => real.get(key),
       keys: () => real.keys(),
       delete: (key) => real.delete(key),
       clear: () => real.clear(),
-      set: () => Promise.reject(new Error("quota")),
+      set: (key, value) => full ? Promise.reject(new Error("quota")) : real.set(key, value),
     }
     const tab = await another(opened.api, { host: { ...device, outbox: { ...device.outbox, storage } } })
     await tab.actions.open(OWNER, NAME)
     const id = drafted(tab, "Not stored", "Never queued.")
-    tab.actions.commit(id)
+    await tab.actions.commit(id)
     await until(() => expect(tab.view()?.committing).toEqual([]), 150_000)
     expect(tab.drafts().map((draft) => draft.id)).toEqual([id])
-    expect(tab.rows()).toEqual([])
+    expect(tab.rows()).toEqual([expect.objectContaining({ title: "Not stored", pending: "not_sent" })])
+    const retained = tab.store.requested.tanstack.toArray[0]!
+    await tab.actions.retryChange(retained.id)
+    expect(tab.store.requested.tanstack.toArray[0]!.id).toBe(retained.id)
+    const newer = drafted(tab, "Other draft", "Keep this independent draft")
+    tab.actions.setPrompt(id, "Newer edits in the original draft")
+    full = false
+    await tab.actions.retryChange(retained.id)
+    expect(tab.drafts().find((draft) => draft.id === id)?.prompt).toBe("Newer edits in the original draft")
+    await until(() => expect(tab.rows()).toContainEqual(expect.objectContaining({ id: retained.id, number: 1 })))
+    await tab.actions.commit(id)
+    expect(tab.drafts().map((draft) => draft.id)).toEqual([newer])
+    await until(() => expect(tab.rows()).toContainEqual(expect.objectContaining({ number: 2, title: "Not stored" })))
+    expect(tab.rows().find((row) => row.number === 2)?.id).not.toBe(retained.id)
+
+    full = true
+    await tab.actions.drop(OWNER, NAME, 1)
+    const drop = tab.store.requested.tanstack.toArray.find((row) => row.op === "drop")!
+    expect(drop.status).toBe("not_sent")
+    full = false
+    await tab.actions.retryChange(drop.id)
+    await until(() => expect(tab.rows()).toContainEqual(expect.objectContaining({ number: 1, state: "dropped" })))
+    expect(tab.drafts().map((draft) => draft.id)).toEqual([newer])
+    full = true
+    await tab.actions.commit(drafted(tab, "Unchanged retry", "Retain this snapshot"))
+    const unchanged = tab.store.requested.tanstack.toArray.find((row) => row.title === "Unchanged retry")!
+    full = false
+    await tab.actions.retryChange(unchanged.id)
+    expect(tab.drafts().map((draft) => draft.id)).toEqual([newer])
+    await until(() => expect(tab.rows()).toContainEqual(expect.objectContaining({ number: 3, title: "Unchanged retry" })))
   }, WITHIN)
 
-  test("a tab with no engine: the commit never runs, and the draft stays", async () => {
+  test("a TODO commit is durably admitted even when its engine cannot run the join flow", async () => {
     const opened = await open({ answers: false })
     const tab = await another(opened.api, { host: nodeDevice({ engineWorker: failingWorker }) })
     await tab.actions.open(OWNER, NAME)
     const id = drafted(tab, "No engine", "Never runs.")
-    expect(tab.actions.commit(id)).toBe(stackPath(OWNER, NAME))
+    expect((await tab.actions.commit(id))).toBe(stackPath(OWNER, NAME))
     await until(() => expect(tab.view()?.committing).toEqual([]))
-    expect(Option.isSome(await tab.runtime.runPromise(tab.store.drafts.get(id)))).toBe(true)
+    expect(Option.isSome(await tab.runtime.runPromise(tab.store.drafts.get(id)))).toBe(false)
+    await until(() => expect(tab.rows()).toHaveLength(1))
   }, WITHIN)
 })
 
@@ -851,3 +883,67 @@ test("Retry on a failed TODO sends the same identity through the public action a
   await until(() => expect(tab.stack().todos[0]?.state).toBe("queued"))
   expect(tab.stack().todos[0]).toMatchObject({ number: 1, title: "Retry this" })
 }, WITHIN)
+
+
+for (const delay of [0, 100, 300] as const) {
+  test(`TODO admission survives reloading its device after ${delay} ms`, async () => {
+    const client = faultyClient()
+    client.state.down = true
+    const opened = await open({ answers: false })
+    const host = nodeDevice({ agent: opened.api })
+    const tab = await another(opened.api, { host, replace: client.layer })
+    await tab.actions.open(OWNER, NAME)
+    await tab.actions.commit(drafted(tab, `Reload TODO ${delay}`, "Keep the admitted prompt"))
+    const rows = [...tab.store.sending.tanstack.toArray, ...tab.store.requested.tanstack.toArray]
+    expect(rows).toHaveLength(1)
+    expect(await host.outbox.storage.keys()).not.toHaveLength(0)
+    await reloadAfter(delay, () => tab.runtime.dispose())
+    runtimes.splice(runtimes.indexOf(tab.runtime), 1)
+    const restored = await another(opened.api, { host, replace: client.layer })
+    await restored.actions.open(OWNER, NAME)
+    expect(restored.drafts()).toEqual([])
+    await until(() => expect(restored.rows()).toContainEqual(expect.objectContaining({ id: rows[0]!.id, title: `Reload TODO ${delay}`, pending: "requested" })))
+    client.state.down = false
+    await restored.runtime.runPromise(Effect.flatMap(ChatStore, (chat) => chat.outbox.retryNow))
+    await until(() => expect(restored.rows()).toContainEqual(expect.objectContaining({ number: 1, title: `Reload TODO ${delay}` })))
+    expect(await sql(opened.api, "SELECT count(*)::int AS n FROM todos")).toEqual([{ n: 1 }])
+    await restored.actions.retryChange("absent")
+  }, WITHIN)
+}
+
+
+test("a device that cannot retain a TODO admission refuses it before delivery", async () => {
+  const runtime = openTestApp({ answers: false })
+  runtimes.push(runtime)
+  const api = await runtime.runPromise(Effect.service(TestChatApi))
+  await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+    const writes = yield* StackWrites
+    const requested = { ...writes.requested, insert: (row: Parameters<typeof writes.requested.insert>[0]) => writes.requested.insert(row).pipe(Effect.map((transaction) => ({
+      ...transaction, persisted: Effect.fail(new Collection.TransactionFailed({ cause: "quota" })),
+    }))) }
+    const built = yield* Layer.build(TodosStore.layer({ origin: api.origin }).pipe(Layer.provide(Layer.succeed(StackWrites, { ...writes, requested }))))
+    const store = Context.get(built, TodosStore)
+    expect(yield* store.queue({ id: crypto.randomUUID(), repo: TEST_REPOSITORY, op: "commit", title: "Keep draft", prompt: "Prompt", acceptance: [], number: 0 })).toEqual({ kept: false })
+    expect(yield* store.sending.toArray).toEqual([])
+  })))
+}, WITHIN)
+
+for (const delay of [0, 100, 300] as const) {
+  test(`TODO Drop and Retry survive device reload after ${delay} ms`, async () => {
+    const client = faultyClient()
+    client.state.down = true
+    const opened = await open({ answers: false })
+    const host = nodeDevice({ agent: opened.api })
+    const tab = await another(opened.api, { host, replace: client.layer })
+    await tab.actions.open(OWNER, NAME)
+    await tab.actions.drop(OWNER, NAME, 1)
+    await tab.actions.retry(OWNER, NAME, 2)
+    const rows = tab.store.sending.tanstack.toArray
+    expect(rows.map((row) => row.op).sort()).toEqual(["drop", "retry"])
+    await reloadAfter(delay, () => tab.runtime.dispose())
+    runtimes.splice(runtimes.indexOf(tab.runtime), 1)
+    const restored = await another(opened.api, { host, replace: client.layer })
+    await restored.actions.open(OWNER, NAME)
+    await until(() => expect(restored.store.sending.tanstack.toArray.map((row) => row.id).sort()).toEqual(rows.map((row) => row.id).sort()))
+  }, WITHIN)
+}

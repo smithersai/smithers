@@ -109,6 +109,9 @@ const audit = async (page: Page, info: TestInfo, name = "screen", scope?: Locato
   const controls = (scope ?? page).locator('a[href], button, input:not([type="hidden"]), textarea, select, summary, [role="button"], [role="tab"], [contenteditable="true"]')
   for (const control of await controls.all()) {
     if (!await control.isVisible()) continue
+    // Keyboard-only links are audited in their focused, visible state, including hit targets and overlap.
+    const keyboardOnly = await control.evaluate(element => getComputedStyle(element).clipPath === "inset(50%)")
+    if (keyboardOnly) await control.focus()
     // Long pages and scrollable panels are legitimate. Bring each target into view,
     // then verify it is reachable, rather than requiring the whole page above the fold.
     const issues = await control.evaluate((element) => {
@@ -156,6 +159,7 @@ const audit = async (page: Page, info: TestInfo, name = "screen", scope?: Locato
       return errors
     })
     findings.push(...issues)
+    if (keyboardOnly) await control.evaluate(element => (element as HTMLElement).blur())
   }
   findings.push(...await page.evaluate(() => {
     const errors: Finding[] = []
@@ -331,7 +335,9 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
               if (screen.name === "repo-settings" && signedIn && ["admin", "maintainer"].includes(me().role ?? "")) await expect(page.getByRole("region", { name: "Domains" })).toBeVisible({ timeout: 30_000 })
               if (screen.name === "issue-unavailable" || (screen.name.startsWith("pull-") && screen.name.endsWith("-unavailable"))) {
                 const main = page.getByRole("main")
-                const unavailable = main.locator('[data-slot="empty-state"]').filter({ hasText: /Not found|unavailable here/ })
+                // W12 bb4-recovery uses the shared resource-specific NotFound view.
+                const resource = screen.name === "issue-unavailable" ? "Issue" : "Pull request"
+                const unavailable = main.getByText(`${resource} not found`, { exact: true }).or(main.getByText(`${resource} unavailable here`, { exact: true }))
                 await expect(unavailable.or(main.getByRole("link", { name: "Sign in with GitHub", exact: true })).first()).toBeVisible({ timeout: 60_000 })
               }
               if (screen.name === "action-run" || screen.name === "run-unavailable" || screen.name === "code-unavailable") {
@@ -340,7 +346,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
               if (screen.name === "raw-unavailable" || screen.name === "todo-unavailable") {
                 await expect(page.locator('main [data-slot="empty-state"]').or(page.getByRole("link", { name: "Sign in with GitHub", exact: true })).first()).toBeVisible({ timeout: 60_000 })
               }
-              if (screen.name === "plugin-path-unavailable") await expect(page.getByText("Not Found", { exact: true })).toBeVisible()
+              if (screen.name === "plugin-path-unavailable") await expect(page.getByText("Not found", { exact: true })).toBeVisible()
               if (screen.name === "doc-page") await expect(page.getByRole("heading", { name: "Retrying", exact: true }).first()).toBeVisible({ timeout: 60_000 })
               if (screen.name === "branch") await expect(page.locator(".branch-screen-view")).toBeVisible({ timeout: 30_000 })
               if (screen.name === "terminal" && !signedIn) await expect(page.locator(".terminal-panel")).toHaveCount(0)
@@ -463,12 +469,12 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           }
         })
         if (signedIn) test("repository run: a real graph and journal fit", async ({ page }, info) => {
-          requires("githubApp", "syncedRepository")
+          requires("githubApp", "syncedRepository", "repositoryRun")
           const repository = syncedRepository()
           let execution: string | undefined
           await expect.poll(async () => {
             const rows = await shapeRows<{ execution: string | null }>(page.request, `/api/shapes/actions?repo=${encodeURIComponent(repository)}`)
-            execution = rows.find((row) => typeof row.execution === "string" && row.execution !== "")?.execution ?? undefined
+            execution = rows.find((row) => row.execution === process.env.E2E_REPOSITORY_RUN)?.execution ?? undefined
             return execution
           }, { timeout: 30_000, message: "a recorded repository run is required for populated deployment coverage" }).toBeTruthy()
           await page.goto(`/${repository}/actions/runs/${encodeURIComponent(execution!)}`)

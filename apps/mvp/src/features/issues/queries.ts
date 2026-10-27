@@ -43,6 +43,32 @@ const pendingOf = (mine: { readonly status: unknown }, write: { readonly status:
     "requested",
   )
 
+/** Public issue rows never depend on the signed-in person's gated write shape. */
+export const publicListQuery = (view: View, items: Synced<ItemSummary>) =>
+  LiveQuery.make((q) =>
+    q
+      .from({ listed: view.tanstack })
+      .innerJoin({ item: items.tanstack }, ({ listed, item }) => Query.eq(listed.repoId, item.repoId))
+      .where(({ item }) => Query.and(Query.eq(item.kind, "issue"), Query.isNull(item.deletedAt)))
+      .orderBy(({ item }) => item.number, "desc")
+      .select(({ item }) => ({
+        id: item.id,
+        number: item.number,
+        title: item.title,
+        state: item.state,
+        author: Query.coalesce(item.authorLogin, ""),
+        comments: item.comments,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+        triage: item.triage,
+        commitment: Query.coalesce(item.commitment, ""),
+        pending: "",
+        reason: "",
+        local: 0,
+        at: item.number,
+      })),
+  )
+
 /**
  * The routed repository's issues: GitHub's, newest first, after this device's own new issues, newest first. Each
  * branch of a union names its sources apart, as TanStack DB requires.

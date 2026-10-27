@@ -21,8 +21,9 @@ for (const width of [1280, 390, 320]) {
     }
     await expect(form.getByRole("textbox", { name: "OpenAI-compatible Base URL", exact: true })).toBeVisible()
     await expect(form.getByRole("textbox", { name: "Anthropic-compatible Base URL", exact: true })).toBeVisible()
+    // W12 shared TIER_PURPOSE copy (personal-model.md); each tier has one description.
     await expect(form.getByText("Chat", { exact: true })).toBeVisible()
-    await expect(form.getByText("Code", { exact: true })).toBeVisible()
-    await expect(form.getByText("Plans & reviews", { exact: true })).toBeVisible()
+    await expect(form.getByText("Coding", { exact: true })).toBeVisible()
+    await expect(form.getByText("Plans and reviews", { exact: true })).toBeVisible()
   })
 }

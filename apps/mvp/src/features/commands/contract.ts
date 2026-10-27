@@ -24,6 +24,6 @@ export const invalidArgument = (command: string, options: ReadonlyArray<string>)
  * command the app offers, never what someone typed: a line naming no command is counted without it.
  */
 export const COMMANDS_TELEMETRY = {
-  records: ["slash.run", "slash.refused", "smithers_slash_choices", "smithers_slash_submits"],
-  fields: ["command", "outcome", "kind", "how"],
+  records: ["slash.choose", "slash.run", "slash.refused", "smithers_slash_choices", "smithers_slash_submits"],
+  fields: ["command", "outcome", "kind", "how", "via", "match", "index"],
 } as const

@@ -66,6 +66,13 @@ export function Composer({ docked = true, readOnly = false }: { readonly docked?
       placeholder="Message Smithers"
       inputAriaLabel="Message Smithers"
       textareaProps={{
+        onKeyDown: (event) => {
+          if (event.key === "Enter" && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey &&
+            !event.nativeEvent.isComposing && menu?.kind === "commands" && menu.items.length > 0) {
+            event.preventDefault()
+            commands.actions.choose(menu.highlighted, "accept", true)
+          }
+        },
         ref: (element) => {
           // The opening action owns this request. Remounting a route does not
           // request focus, even when Suspense has left it on the document body.

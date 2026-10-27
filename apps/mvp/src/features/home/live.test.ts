@@ -93,7 +93,7 @@ describe("a curated home in the app", () => {
     const draft = todos.actions.newDraft(OWNER, NAME)
     todos.actions.setTitle(draft, "A TODO from home")
     todos.actions.setPrompt(draft, "Add a line, please.")
-    todos.actions.commit(draft)
+    ;(await todos.actions.commit(draft))
     await until(() => expect(tab.todos().map((todo) => todo.title)).toContain("A TODO from home"))
     const stack = stackOf(tab.todos(), OWNER, NAME, "allowed")
     expect("entries" in stack && stack.entries.map((entry) => [entry.label, entry.title, entry.status?.label])).toEqual([

@@ -1,0 +1,32 @@
+import { reloadAfter } from "../src/test/reloadTiming"
+import { expect, test } from "./devices"
+import { requires, stackRepository } from "./target"
+
+for (const delay of [0, 100, 300] as const) {
+  test(`TODO commit and drop survive reload ${delay} ms after the press`, async ({ devices }) => {
+    requires("writableStack", "member")
+    test.setTimeout(180_000)
+    const repo = stackRepository()
+    const [person] = await devices.open("Maya")
+    const page = person!.page
+    const title = `bugbash4-bb5-app-todo-${delay}-${devices.word}`
+    await page.goto(`/${repo}/stack`)
+    await page.getByRole("button", { name: "New TODO", exact: true }).click()
+    const draft = page.getByRole("form", { name: "TODO draft" })
+    await draft.getByLabel("Title", { exact: true }).fill(title)
+    await draft.getByLabel("Prompt", { exact: true }).fill("Keep the durable admission regression")
+    await draft.getByRole("button", { name: "Commit", exact: true }).click()
+    await reloadAfter(delay, () => page.reload())
+    const row = page.getByRole("row").filter({ hasText: title })
+    await expect.poll(async () => await row.count() > 0 || await page.getByRole("button", { name: "Retry", exact: true }).count() > 0, { timeout: 60_000 }).toBe(true)
+    if (await page.getByRole("button", { name: "Retry", exact: true }).count()) await page.getByRole("button", { name: "Retry", exact: true }).click()
+    await expect(row).toHaveCount(1)
+    await expect(row).toContainText(/T\d+/, { timeout: 60_000 })
+    const number = (await row.textContent())!.match(/T(\d+)/)![1]!
+    await row.getByRole("link", { name: title, exact: true }).click()
+    await page.getByRole("button", { name: "Drop", exact: true }).click()
+    await page.getByRole("dialog", { name: `Drop T${number}?` }).getByRole("button", { name: "Drop", exact: true }).click()
+    await reloadAfter(delay, () => page.reload())
+    await expect(page.locator("[data-status=dropped]")).toBeVisible({ timeout: 60_000 })
+  })
+}

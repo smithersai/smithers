@@ -38,8 +38,8 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import type * as Stream from "effect/Stream"
-import { errorName } from "./internal/errorName.ts"
 import * as Elections from "./internal/elections.ts"
+import { errorName } from "./internal/errorName.ts"
 import { type Change, type Key, LoadFailed, type MutationRefused, type Transaction } from "./internal/model.ts"
 import { oneWriter } from "./internal/oneWriter.ts"
 import { awaitRow, changes, mutate, preload, release, toArray } from "./internal/readers.ts"
@@ -268,9 +268,9 @@ const elected = <C extends { readonly sync: (params: never) => unknown }>(
       },
       became: (role) =>
         run(Effect.gen(function*() {
-          yield* Metric.update(Metric.withAttributes(syncRoles, { collection: id, role }), 1)
+          yield* Metric.update(Metric.withAttributes(syncRoles, { collection: id.split(":", 1)[0]!, role }), 1)
           const level = (yield* election.took(role)) ? Effect.logInfo : Effect.logDebug
-          yield* level("persisted sync role").pipe(Effect.annotateLogs({ collection: id, role }))
+          yield* level("persisted sync role").pipe(Effect.annotateLogs({ collection: id.split(":", 1)[0]!, role }))
         })),
       // A turn that failed, such as a source that throws as it starts, fails the collection: logged by its kind (the id
       // up to the first `:`) and the error's name, never its message.
@@ -338,7 +338,9 @@ const timedRestore = <A extends object, K extends Key, U extends UtilsRecord>(
     const made = yield* collection
     yield* made.restored.pipe(
       Effect.andThen(Clock.currentTimeMillis),
-      Effect.flatMap((now) => Metric.update(Metric.withAttributes(restoreMs, { collection: made.id }), now - start)),
+      Effect.flatMap((now) =>
+        Metric.update(Metric.withAttributes(restoreMs, { collection: made.id.split(":", 1)[0]! }), now - start)
+      ),
       Effect.catch(({ cause }) => {
         const kind = made.id.split(":", 1)[0]!
         return Metric.update(Metric.withAttributes(restoreFailures, { collection: kind }), 1).pipe(
@@ -381,7 +383,7 @@ export const local = <A extends object, K extends Key>(options: {
  * persisted collection without a sync source. Its writes apply at once, then
  * are stored; `preload` and `restored` wait for the stored rows. A write the
  * device couldn't store rolls back: it is logged as `persisted write failed`,
- * with the collection's id, the operation and the error's name, and counted in
+ * with the collection's kind, the operation and the error's name, and counted in
  * `Persistence.writeFailures`. Without a database, the same as `local`.
  *
  * @category constructors
@@ -415,7 +417,7 @@ export const persisted = <A extends object, K extends Key>(options: {
 
 /**
  * The collection, with each write the device couldn't store, which rolled
- * back, logged as `persisted write failed` with the collection's id, the
+ * back, logged as `persisted write failed` with the collection's kind, the
  * operation and the error's name, never its message, and counted in
  * `Persistence.writeFailures`, in the scope's background.
  */
@@ -426,10 +428,13 @@ const reportFailedWrites = <A extends object, K extends Key>(collection: Collect
       transaction.persisted.pipe(
         Effect.catch(({ cause }) =>
           Effect.andThen(
-            Metric.update(Metric.withAttributes(writeFailures, { collection: collection.id, operation }), 1),
+            Metric.update(
+              Metric.withAttributes(writeFailures, { collection: collection.id.split(":", 1)[0]!, operation }),
+              1
+            ),
             Effect.logWarning("persisted write failed").pipe(
               Effect.annotateLogs({
-                collection: collection.id,
+                collection: collection.id.split(":", 1)[0]!,
                 operation,
                 // TanStack DB rejects with an Error of its own; only its name is logged.
                 error: (cause as Error).name

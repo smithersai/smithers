@@ -332,3 +332,5 @@ Publish compares the branch machine's complete working tree with the attempt's r
 An issue’s TODO links include the TODO number and title.
 
 A direct TODO load shows Syncing TODO until the stack shape has applied. Repository permission alone never certifies that a TODO is missing. Revocation remains immediate while sync is pending.
+
+Commit, Drop and Retry first retain a recoverable local operation and await outbox admission. Commit derives its identity from the private draft and its content snapshot, so an unchanged admission attempt cannot create a second TODO. Retrying an earlier snapshot preserves newer edits. A local storage refusal remains Not sent with Retry under the same identity.

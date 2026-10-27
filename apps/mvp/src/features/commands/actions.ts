@@ -19,8 +19,11 @@ import { COMMANDS, invalidArgument, missingArguments, unknownCommand } from "./c
 import { choices, submits } from "./metrics"
 import { MENU, type Menu } from "./schema"
 import { CommandsStore } from "./store"
+import { admitCommand, hasOutboxAdmission } from "./admission"
+import { Uuid, WebCrypto } from "@smthrs/crypto"
+import { WRITE_ID_NAMESPACE } from "../issues/contract"
 
-// What a person does in the composer, as Effects that finish synchronously (docs/features/slash-commands.md). Typing
+// Composer actions await local write admission (docs/features/slash-commands.md). Typing
 // lists what the draft completes to; the keys and the pointer move, choose and close; submitting runs a command's flow
 // through `FlowDispatch`, door `slash`, or asks Smithers. The menu completes and submits from the commands this person
 // may run, read at that moment.
@@ -68,7 +71,7 @@ const list = (draft: string, refusal: string | null = null) =>
   })
 
 /** Typing: the composer's draft becomes `text`, with `selection` after, and the menu lists what it completes to. */
-export const type = (text: string, selection?: DraftSelection) => Effect.andThen(setDraft(text, selection), list(text, text.trim().length > MAX_QUESTION_LENGTH ? "8,000 characters max" : null))
+export const type = (text: string, selection?: DraftSelection) => Effect.andThen(list(text, text.trim().length > MAX_QUESTION_LENGTH ? "8,000 characters max" : null), setDraft(text, selection))
 
 /** The arrows or the pointer moved the highlight to row `index`. */
 export const highlight = (index: number) => write({ highlighted: index })
@@ -101,23 +104,32 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>, draft
     }
     const { place } = yield* ChatStore
     const conversation = (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId
-    yield* type("")
+    const pinned = command.flow.startsWith("sandbox/") || PINNED_FLOWS.has(command.flow)
+      ? yield* pinConversation(payload)
+      : command.flow === "branch/publish" || command.flow === "branch/update" || command.flow === "branch/resync"
+      ? yield* pinBranch(payload)
+      : payload
+    const { scope, revision, requestNamespace } = yield* CommandsStore
+    const before = yield* draftNow
+    const executionId = hasOutboxAdmission(command.flow)
+      ? yield* Uuid.v5(WRITE_ID_NAMESPACE, JSON.stringify([requestNamespace, yield* Ref.get(revision), conversation, command.flow, pinned])).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+      : crypto.randomUUID()
+    const admission = yield* admitCommand(command.flow, { ...pinned, ...command.args }, executionId)
+    if (Option.isSome(admission) && admission.value === "not_admitted") {
+      if ((yield* draftNow) === before && (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId === conversation) yield* refuse("invalid", "Not sent", command)
+      return
+    }
+    // A new tab must open while this keypress still owns browser activation, before shared-text admission waits.
+    if (command.flow === "app/web/open") yield* openWebPage(payload as never, "slash", scope, conversation)
+    if ((yield* draftNow) === before && (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId === conversation) yield* type("")
     // New typing, dismissal or another command advances the revision even when
     // its row is unchanged, so an older refusal cannot take over the composer.
-    const { scope, revision } = yield* CommandsStore
     const cleared = yield* Ref.get(revision)
     const flows = yield* FlowDispatch
-    // `/web … tab` opens its tab inside this keypress when the browser allows it (src/features/web/actions.ts).
-    if (command.flow === "app/web/open") yield* openWebPage(payload as never, "slash", scope)
-    else {
+    if (command.flow !== "app/web/open" && (Option.isNone(admission) || admission.value === "queued")) {
       // A sandbox tool runs on the branch of the conversation this tab shows now (src/features/sandbox/actions.ts), and
       // `/docs`, `/repo` and `/issues` show their views in that conversation. `/new` names its repository explicitly; `/publish`, `/branch.update` and `/branch.resync` act on that branch.
-      const pinned = command.flow.startsWith("sandbox/") || PINNED_FLOWS.has(command.flow)
-        ? yield* pinConversation(payload)
-        : command.flow === "branch/publish" || command.flow === "branch/update" || command.flow === "branch/resync"
-        ? yield* pinBranch(payload)
-        : payload
-      const dispatch = flows.dispatch(command.flow, { ...pinned, ...command.args } as never, { door: "slash" })
+      const dispatch = flows.dispatch(command.flow, { ...pinned, ...command.args } as never, { door: "slash", executionId })
       yield* Effect.gen(function* () {
         const result = yield* Effect.result(dispatch)
         const navigationFailed = command.flow === "app/navigate" &&
@@ -173,12 +185,26 @@ const lower = (label: string) => label.toLowerCase()
  * lists what follows, such as a command's argument values. Accepting a row whose draft names every required argument
  * runs it. A row of a menu for an older draft does nothing.
  */
-export const choose = (index: number, how: "accept" | "complete") =>
+export const choose = (index: number, how: "accept" | "complete", keyboard = false) =>
   Effect.gen(function* () {
     const menu = yield* menuNow
-    const item = menu.items[index]
-    if (item === undefined || menu.draft !== (yield* draftNow)) return
+    if (menu.draft !== (yield* draftNow)) return
+    let item: { readonly label: string; readonly draft: string; readonly runs: boolean } | undefined = menu.items[index]
+    let match = "row"
+    // React's menu query and the highlighted index may come from different renders. On Enter the typed command
+    // is authoritative; a pointer click still selects the row the person explicitly chose.
+    if (keyboard && menu.kind === "commands") {
+      const current = slashMenu(menu.draft, yield* offered)
+      const query = menu.draft.toLowerCase()
+      const exact = current.items.find(candidate => candidate.label.toLowerCase() === query)
+      const prefix = current.items.find(candidate => candidate.label.toLowerCase().startsWith(query))
+      item = exact ?? (item?.label.toLowerCase().startsWith(query) ? item : prefix) ?? item
+      match = exact !== undefined ? "exact" : prefix !== undefined ? "prefix" : "row"
+    }
+    if (item === undefined) return
     yield* Metric.update(Metric.withAttributes(choices, { kind: menu.kind, how }), 1)
+    yield* Effect.logInfo("slash.choose").pipe(Effect.annotateLogs({ kind: menu.kind, how,
+      via: keyboard ? "keyboard" : "selection", match, index }))
     if (how === "accept" && (item.runs || menu.draft.trim() === item.label)) {
       return yield* submit(item.runs ? item.draft : menu.draft)
     }

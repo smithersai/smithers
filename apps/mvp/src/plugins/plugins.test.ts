@@ -61,7 +61,7 @@ const openDevice = async (api: TestChatApi["Service"]) => {
   const keys = runtime.runFork(Effect.scoped(Effect.andThen(pluginKeys(window, true), Effect.never)))
   runtimes.push({ dispose: () => runtime.runPromise(Fiber.interrupt(keys)).then(() => undefined) })
   const ask = async (text: string, need: string) => {
-    const asked = chat.actions.ask(text)
+    const asked = (await chat.actions.ask(text))
     if (!asked.asked) throw new Error(`refused: ${asked.reason}`)
     const reply = await Effect.runPromise(api.answerTo(text))
     reply.cell(`const heard = await ctx.call("app/agent/ask", ${need})\nconsole.log(JSON.stringify(heard))`)

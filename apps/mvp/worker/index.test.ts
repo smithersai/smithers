@@ -74,3 +74,23 @@ test("conditional asset responses retain their empty body", async () => {
   const env = { CHAT_API: binding("CHAT_API", []), ASSETS: { fetch: () => Promise.resolve(response) } as unknown as Fetcher }
   expect(await site.fetch(new Request("https://custom.example/") as Parameters<typeof site.fetch>[0], env)).toBe(response)
 })
+
+test.each(["/definitely-missing-page", "/sitemap.xml", "/favicon.ico", "/app/conversations/missing", "/owner/repo/issues/0"])("the SPA fallback keeps recovery HTML with a true 404: %s", async (path) => {
+  const env = { CHAT_API: binding("CHAT_API", []), ASSETS: { fetch: async () => new Response("<html>__SMITHERS_ORIGIN__</html>", { headers: { "content-type": "text/html" } }) } as unknown as Fetcher }
+  const response = await site.fetch(new Request(`https://app.test${path}`) as Parameters<typeof site.fetch>[0], env)
+  expect(response.status).toBe(404)
+  expect(response.headers.get("x-robots-tag")).toBe("noindex")
+  expect(await response.text()).toBe("<html>https://app.test</html>")
+})
+
+
+test("the real index HTML resource keeps its successful status and origin metadata", async () => {
+  const env = { CHAT_API: binding("CHAT_API", []), ASSETS: {
+    fetch: async () => new Response("<html>__SMITHERS_ORIGIN__</html>", { headers: { "content-type": "text/html", etag: '"shell"' } }),
+  } as unknown as Fetcher }
+  const response = await site.fetch(new Request("https://app.test/index.html") as Parameters<typeof site.fetch>[0], env)
+  expect(response.status).toBe(200)
+  expect(response.headers.get("x-robots-tag")).toBeNull()
+  expect(response.headers.get("etag")).toBeNull()
+  expect(await response.text()).toBe("<html>https://app.test</html>")
+})

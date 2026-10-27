@@ -51,6 +51,10 @@ export interface Options {
   readonly approve?: "all" | "ask" | "deny" | undefined
   /** Validated by the TUI. */
   readonly budgetTokens?: string | undefined
+  /** Validated by the TUI, including 0 and none. */
+  readonly budgetDailyTokens?: string | undefined
+  /** Smithers Cloud workspace, owner/repo/id. */
+  readonly box?: string | undefined
 }
 
 /**
@@ -66,6 +70,8 @@ export const argv = (options: Options): Array<string> => [
   ...(options.print === undefined ? [] : ["--print", options.print]),
   ...(options.approve === undefined ? [] : ["--approve", options.approve]),
   ...(options.budgetTokens === undefined ? [] : ["--budget-tokens", options.budgetTokens]),
+  ...(options.budgetDailyTokens === undefined ? [] : ["--budget-daily-tokens", options.budgetDailyTokens]),
+  ...(options.box === undefined ? [] : ["--box", options.box]),
   ...(options.directory === undefined ? [] : [options.directory])
 ]
 

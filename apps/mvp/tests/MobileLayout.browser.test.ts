@@ -163,6 +163,8 @@ for (const width of [390, 768, 1280]) {
       const controls = page.locator("a, button")
       await controls.first().waitFor()
       for (const control of await controls.all()) {
+        const keyboardOnly = await control.evaluate(element => getComputedStyle(element).clipPath === "inset(50%)")
+        if (keyboardOnly) await control.focus()
         await control.scrollIntoViewIfNeeded()
         const result = await control.evaluate((element) => {
           const box = element.getBoundingClientRect()
@@ -176,6 +178,7 @@ for (const width of [390, 768, 1280]) {
           return { height: box.height, width: box.width, clipped, covered: points.some(([x, y]) => !element.contains(document.elementFromPoint(x!, y!))) }
         })
         expect.soft(result, await control.textContent() ?? "bell").toMatchObject({ clipped: false, covered: false })
+        if (keyboardOnly) await control.evaluate(element => (element as HTMLElement).blur())
         if (width <= 960) {
           expect.soft(result.height).toBeGreaterThanOrEqual(32)
           expect.soft(result.width).toBeGreaterThanOrEqual(32)
@@ -210,15 +213,50 @@ for (const width of [390, 768, 1280]) test(`${width}: navigation uses theme link
   } finally { await page.close() }
 })
 
-for (const width of [390, 1280]) test(`${width}: the repository bell stays beside its heading`, async () => {
+for (const width of [390, 768, 1280]) test(`${width}: the repository bell stays in its header without covering actions`, async () => {
   const page = await browser.newPage({ viewport: { width, height: 844 } })
   try {
     await page.goto(`${origin}?screen=issues`)
     const bell = page.getByRole("button", { name: "Notifications", exact: true })
     await bell.waitFor()
-    const heading = (await page.locator(".repo-header-name").boundingBox())!
+    const header = (await page.locator(".repo-header").boundingBox())!
     const box = (await bell.boundingBox())!
-    expect(box.y).toBeLessThan(heading.y + heading.height)
-    expect(box.x).toBeGreaterThanOrEqual(heading.x + heading.width)
+    expect(box.y).toBeGreaterThanOrEqual(header.y)
+    expect(box.y + box.height).toBeLessThanOrEqual(header.y + header.height)
+    for (const action of await page.locator(".repo-header > button").all()) {
+      expect(await action.evaluate(element => {
+        const rect = element.getBoundingClientRect()
+        return element.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2))
+      })).toBe(true)
+    }
+  } finally { await page.close() }
+})
+
+for (const width of [390, 768, 1280]) test(`${width}: skip stays inside the viewport and appears for keyboard navigation`, async () => {
+  const page = await browser.newPage({ viewport: { width, height: 844 } })
+  try {
+    await page.goto(`${origin}?screen=shell`)
+    const skip = page.getByRole("link", { name: "Skip to content", exact: true })
+    await skip.waitFor()
+    const box = (await skip.boundingBox())!
+    expect(box.x).toBeGreaterThanOrEqual(0)
+    expect(box.y).toBeGreaterThanOrEqual(0)
+    expect(box.x + box.width).toBeLessThanOrEqual(width)
+    expect(await skip.evaluate(element => getComputedStyle(element).clipPath)).toBe("inset(50%)")
+    await page.keyboard.press("Tab")
+    expect(await skip.evaluate(element => element === document.activeElement)).toBe(true)
+    expect(await skip.evaluate(element => getComputedStyle(element).clipPath)).toBe("none")
+    await page.keyboard.press("Enter")
+    expect(await page.locator("main").evaluate(element => element === document.activeElement)).toBe(true)
+  } finally { await page.close() }
+})
+
+test("tablet: the full account name remains readable", async () => {
+  const page = await browser.newPage({ viewport: { width: 768, height: 1024 } })
+  try {
+    await page.goto(`${origin}?screen=shell`)
+    const name = page.locator('[aria-label="Account"] > span')
+    await name.waitFor()
+    expect(await name.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
   } finally { await page.close() }
 })

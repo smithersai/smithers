@@ -29,10 +29,10 @@ export const pendingActions = Metric.counter("smithers_issue_pending_actions", {
 
 /** Create presses durably admitted, retained for Retry, or refused by device storage; never their text. */
 export const admissions = Metric.counter("smithers_issue_write_admissions", {
-  description: "Issue-create local admissions by outcome", incremental: true,
+  description: "Issue-write local admissions by outcome", incremental: true,
 })
 
 /** Comment submissions that never obtained a queue receipt, without recording their text. */
 export const submissionFailures = Metric.counter("smithers_issue_submission_failures", {
-  description: "Failed comment admission by dispatch or flow", incremental: true,
+  description: "Failed comment recovery storage", incremental: true,
 })

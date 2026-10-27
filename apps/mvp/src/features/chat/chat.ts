@@ -62,29 +62,29 @@ export interface ChatQueries {
 /** Copy didn't put the message on the clipboard: the clipboard refused, or the message is gone. */
 export class NotCopied extends Data.TaggedError("NotCopied") {}
 
-/** What a person does, as plain functions. Each finishes before it returns, but Copy, which resolves once it copied. */
+/** Plain actions; write promises resolve after local admission, before network delivery. */
 export interface ChatActions {
   readonly retryPin: (conversationId: string) => void
   readonly pin: (messageId: string, local?: boolean) => void
   readonly unpin: () => void
   readonly collapsePin: (messageId: string, collapsed: boolean) => void
-  readonly ask: (text: string) => AskResult
+  readonly ask: (text: string) => Promise<AskResult>
   /** Asks from a form or a view: its submit label or event label, with the view and the values (docs/features/views.md). */
-  readonly askFromView: (text: string, from: FromView) => AskResult
+  readonly askFromView: (text: string, from: FromView) => Promise<AskResult>
   readonly openComposer: (via: Via) => void
   readonly closeComposer: () => void
   /** Consume an opening's focus request when the frontend input mounts. */
   readonly takeComposerFocus: () => boolean
-  readonly setDraft: (text: string) => void
+  readonly setDraft: (text: string) => Promise<void>
   readonly loadEarlier: () => void
   /** Retry on the connection pill: sync and send now. */
   readonly retry: () => void
   /** Retry on an answer Smithers couldn't give. */
-  readonly retryAnswer: (answerId: string) => void
-  readonly editUnsent: (questionId: string) => void
+  readonly retryAnswer: (answerId: string) => Promise<void>
+  readonly editUnsent: (questionId: string) => Promise<void>
   readonly discardUnsent: (questionId: string) => void
   /** Retry on a question the outbox couldn't take. */
-  readonly resendUnsent: (questionId: string) => void
+  readonly resendUnsent: (questionId: string) => Promise<void>
   /** Copy on a message, through `chat/copy`: resolves once its text is on the clipboard, rejects `NotCopied` otherwise. */
   readonly copy: (messageId: string) => Promise<void>
   /** Edit on a queued question, through `chat/edit`: its text goes to the composer once the outbox gives it back. */
@@ -204,18 +204,18 @@ export class Chat extends Context.Service<Chat, { readonly queries: ChatQueries;
             if (Option.isSome(yield* rows.get(id))) yield* rows.update(id, r => { r.collapsed = collapsed })
             else yield* rows.insert({ id, collapsed })
           }).pipe(Effect.orDie)),
-          ask: (text) => run(ask(text)),
-          askFromView: (text, from) => run(ask(text, from)),
+          ask: (text) => runAsync(ask(text)),
+          askFromView: (text, from) => runAsync(ask(text, from)),
           openComposer: (via) => run(openComposer(via)),
           closeComposer: () => run(closeComposer),
           takeComposerFocus: () => run(takeComposerFocus),
-          setDraft: (text) => run(setDraft(text)),
+          setDraft: (text) => runAsync(setDraft(text)),
           loadEarlier: () => run(loadEarlier),
           retry: () => run(retry("button")),
-          retryAnswer: (answerId) => run(retryAnswer(answerId)),
-          editUnsent: (id) => run(editUnsent(id)),
+          retryAnswer: (answerId) => runAsync(retryAnswer(answerId)),
+          editUnsent: (id) => runAsync(editUnsent(id)),
           discardUnsent: (id) => run(discardUnsent(id)),
-          resendUnsent: (id) => run(resendUnsent(id)),
+          resendUnsent: (id) => runAsync(resendUnsent(id)),
           copy: (messageId) =>
             runAsync(Effect.flatMap(copy(messageId), (copied) => (copied ? Effect.void : Effect.fail(new NotCopied())))),
           edit: (questionId) => run(edit(questionId)),

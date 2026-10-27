@@ -290,7 +290,13 @@ export const makeCli = (
         resume: z.boolean().default(false).describe("Pick a session to continue"),
         print: z.string().optional().describe("Answer one prompt, print it, and exit"),
         approve: z.enum(["all", "ask", "deny"]).optional().describe("Consequential calls: all, ask, or deny"),
-        budgetTokens: z.string().optional().describe("Override the token ceiling per turn and worker"),
+        budgetTokens: z.string().optional().describe(
+          "Token cap per turn and worker (default 200M; 0 or none disables)"
+        ),
+        budgetDailyTokens: z.string().optional().describe(
+          "Token cap per UTC day on this machine (default 2B; 0 or none disables)"
+        ),
+        box: z.string().optional().describe("Run worker tools in a Smithers Cloud workspace: owner/repo/id"),
         environment: z.string().optional().describe("Run the TUI app in a saved execution environment")
       }),
       alias: { model: "m", continue: "c", resume: "r", print: "p" },

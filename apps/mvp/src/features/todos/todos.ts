@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { retry, commit, discard, discardDraft, drop, edit, fromIssue, newDraft, open, setPrompt, setTitle, warm } from "./actions"
+import { retryChange, retry, commit, discard, discardDraft, drop, edit, fromIssue, newDraft, open, setPrompt, setTitle, warm } from "./actions"
 import { type RepoStack, TodosStore } from "./store"
 
 // TODOs as a frontend sees it: live queries to read and plain functions to act, with no Effect in sight. React renders
@@ -30,7 +30,7 @@ export interface TodosQueries {
   readonly stack: (repoId: string) => StackQueries
 }
 
-/** What a person does, as plain functions. Each returns at once. */
+/** What a person does, as plain functions. Writes resolve after local admission. */
 export interface TodosActions {
   /** What a stack route calls on a navigation: resolves once the stack is open, so its queries have its rows. */
   readonly open: (owner: string, name: string, number?: number) => Promise<void>
@@ -41,16 +41,17 @@ export interface TodosActions {
   readonly setTitle: (draftId: string, title: string) => void
   readonly setPrompt: (draftId: string, prompt: string) => void
   /** Commit on a draft: the stack's page to show, or nothing when it didn't run. */
-  readonly commit: (draftId: string) => string | undefined
+  readonly commit: (draftId: string) => Promise<string | undefined>
   readonly discardDraft: (draftId: string) => void
-  readonly retry: (owner: string, name: string, number: number) => void
-  readonly drop: (owner: string, name: string, number: number) => void
+  readonly retry: (owner: string, name: string, number: number) => Promise<void>
+  readonly drop: (owner: string, name: string, number: number) => Promise<void>
   /** Make TODO on an issue: drafts a TODO from it; answers the stack's page, where the draft shows. */
   readonly fromIssue: (owner: string, name: string, number: number) => string
   /** Edit on a commit that wasn't sent: the stack's page, where its draft is. */
   readonly edit: (opId: string) => string | undefined
   /** Discard on a change that wasn't sent. */
   readonly discard: (opId: string) => void
+  readonly retryChange: (opId: string) => Promise<void>
 }
 
 export class Todos extends Context.Service<Todos, { readonly queries: TodosQueries; readonly actions: TodosActions }>()(
@@ -77,15 +78,16 @@ export class Todos extends Context.Service<Todos, { readonly queries: TodosQueri
           stack: (repoId) => stackQueries(store.opened(repoId) ?? store.empty),
         },
         actions: {
+          retryChange: (id) => runAsync(retryChange(id)),
           open: (owner, name, number) => runAsync(open(owner, name, number)),
           warm: (owner, name) => runAsync(warm(owner, name)),
           newDraft: (owner, name) => run(newDraft(owner, name)),
           setTitle: (draftId, title) => run(setTitle(draftId, title)),
           setPrompt: (draftId, prompt) => run(setPrompt(draftId, prompt)),
-          commit: (draftId) => run(commit(draftId)),
+          commit: (draftId) => runAsync(commit(draftId)),
           discardDraft: (draftId) => run(discardDraft(draftId)),
-          retry: (owner, name, number) => run(retry(owner, name, number)),
-          drop: (owner, name, number) => run(drop(owner, name, number)),
+          retry: (owner, name, number) => runAsync(retry(owner, name, number)),
+          drop: (owner, name, number) => runAsync(drop(owner, name, number)),
           fromIssue: (owner, name, number) => run(fromIssue(owner, name, number)),
           edit: (opId) => run(edit(opId)),
           discard: (opId) => run(discard(opId)),

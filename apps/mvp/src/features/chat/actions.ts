@@ -1,5 +1,5 @@
 import type { Outbox } from "@smthrs/effect-tanstack-db"
-import { Clock, Effect, Metric, Option, Ref, type Types } from "effect"
+import { Clock, Deferred, Effect, Metric, Option, Ref, type Types } from "effect"
 import { Clipboard } from "../../clipboard"
 import { codeOf } from "../../errorCode"
 import { FlowDispatch } from "../../flows/dispatch"
@@ -17,6 +17,7 @@ import {
   HOME_DRAFT,
   PLACE,
   type Source,
+  type QuestionSubmitted,
 } from "./schema"
 import type { FormValues } from "../views/schema"
 import { type DraftSelection, SharedPrompt } from "./sharedPrompt"
@@ -89,9 +90,9 @@ export const setDraft = (draft: string, selection?: DraftSelection) =>
 
 /** The composer's draft becomes `draft`, as the shared prompt now reads with everyone's typing in it. */
 export const mirrorDraft = (draft: string) =>
-  changeComposer((composer) => {
+  Effect.andThen(Effect.flatMap(ChatStore, (store) => Ref.update(store.draftRevision, (revision) => revision + 1)), changeComposer((composer) => {
     composer.draft = draft
-  })
+  }))
 
 /**
  * Keeps `draft` on the device for the conversation this tab shows, or forgets it when it is empty. The composer is
@@ -162,7 +163,7 @@ export const share = (shared: boolean) =>
 const notAdmitted = (row: Asking, refused: Outbox.NotAdmitted) =>
   Effect.gen(function* () {
     const store = yield* ChatStore
-    yield* keepUnsent(store.unsent, row, "not_admitted")
+    yield* Effect.flatten(keepUnsent(store.unsent, row, "not_admitted"))
     yield* Metric.update(Metric.withAttributes(askFailures, { reason: "not_admitted" }), 1)
     yield* (refused.reason === "follower" ? Effect.logInfo : Effect.logWarning)("question not admitted").pipe(
       Effect.annotateLogs({
@@ -190,12 +191,11 @@ export const lead = Effect.gen(function* () {
 const admit = (row: Asking) =>
   Effect.gen(function* () {
     const store = yield* ChatStore
-    const write = yield* store.outbox.transact("ask", { idempotencyKey: row.id }, Effect.asVoid(store.asking.insert(row)))
-    yield* write.admitted.pipe(
-      Effect.catch((refused) => notAdmitted(row, refused)),
-      Effect.forkIn(store.scope),
+    const write = yield* store.outbox.transact("ask", { idempotencyKey: row.id, joinExisting: true }, Effect.asVoid(store.asking.insert(row)))
+    return yield* write.admitted.pipe(
+      Effect.as(true),
+      Effect.catch((refused) => Effect.andThen(Effect.ignore(write.settled), Effect.as(notAdmitted(row, refused), false))),
     )
-    return true
   }).pipe(
     // `transact` refuses at once only in a tab that doesn't lead (`follower`); a refusing storage fails `admitted`.
     Effect.catchTag("NotAdmitted", (refused) => Effect.as(Effect.andThen(notAdmitted(row, refused), lead), false)),
@@ -241,7 +241,7 @@ export const show = (conversationId: string | null, shared = false) =>
   }).pipe(Effect.annotateLogs({ feature: "chat" }))
 
 export type AskResult =
-  | { readonly asked: true; readonly questionId: string; readonly answerId: string }
+  | QuestionSubmitted
   | { readonly asked: false; readonly reason: "empty" | "too_long" }
 
 /** Where a question asked from a view came from, and the values sent with it (docs/features/views.md). */
@@ -258,18 +258,13 @@ export interface FromView {
  * `MAX_QUESTION_LENGTH` changes nothing, so the draft stays. Sent from a view (`from`), it names the view and carries
  * the values, goes to the view's own conversation, and leaves the draft as it is.
  */
-export const ask = (text: string, from?: FromView): Effect.Effect<AskResult, never, ChatStore> =>
+const askAdmitted = (question: string, from: FromView | undefined, conversationId: string | undefined, draft: string, store: ChatStore["Service"]): Effect.Effect<QuestionSubmitted, never, ChatStore> =>
   Effect.gen(function* () {
-    const question = text.trim()
-    if (question === "") return { asked: false, reason: "empty" } as const
-    if (question.length > MAX_QUESTION_LENGTH) return { asked: false, reason: "too_long" } as const
-    const store = yield* ChatStore
     const questionId = crypto.randomUUID()
     const answerId = crypto.randomUUID()
     const askedAt = yield* Clock.currentTimeMillis
     const queuedAt = yield* Ref.updateAndGet(store.lastQueuedAt, (last) => Math.max(askedAt, last + 1))
     const queued = Option.getOrThrow(yield* store.connection.get(CONNECTION)).status !== "up"
-    const conversationId = from === undefined ? yield* placeNow : from.conversationId
     yield* admit({
       id: questionId,
       answerId,
@@ -282,13 +277,35 @@ export const ask = (text: string, from?: FromView): Effect.Effect<AskResult, nev
     }).pipe(
       Effect.withSpan("chat.ask", { attributes: { questionId, answerId, "question.length": question.length } }),
     )
-    if (from === undefined) yield* setDraft("")
+    if (from === undefined && (yield* placeNow) === conversationId && (yield* composerNow).draft === draft) yield* setDraft("")
     yield* Metric.update(Metric.withAttributes(questionsAsked, { queued: String(queued) }), 1)
     yield* Effect.forkIn(timeFirstText(answerId, askedAt), store.scope, { startImmediately: true })
     yield* Effect.logInfo("question asked").pipe(
       Effect.annotateLogs({ questionId, answerId, "question.length": question.length, queued }),
     )
     return { asked: true, questionId, answerId } as const
+  })
+
+export const ask = (text: string, from?: FromView): Effect.Effect<AskResult, never, ChatStore> =>
+  Effect.gen(function* () {
+    const question = text.trim()
+    if (question === "") return { asked: false, reason: "empty" } as const
+    if (question.length > MAX_QUESTION_LENGTH) return { asked: false, reason: "too_long" } as const
+    const store = yield* ChatStore
+    const conversationId = from === undefined ? yield* placeNow : from.conversationId
+    const draft = (yield* composerNow).draft
+    const revision = from === undefined ? yield* Ref.get(store.draftRevision) : 0
+    const key = JSON.stringify([conversationId, question, revision, from?.source, from?.data])
+    return yield* Effect.uninterruptibleMask((restore) => Effect.gen(function* () {
+      const pending = yield* Deferred.make<QuestionSubmitted>()
+      const existing = yield* Ref.modify(store.pendingAsks, (held) => held.has(key)
+        ? [held.get(key), held] as const
+        : [undefined, new Map(held).set(key, pending)] as const)
+      if (existing !== undefined) return yield* restore(Deferred.await(existing))
+      // Reserve and install cleanup atomically, so cancellation cannot strand another Send.
+      return yield* restore(askAdmitted(question, from, conversationId, draft, store)).pipe(Effect.onExit((exit) =>
+        Effect.andThen(Deferred.done(pending, exit), Ref.update(store.pendingAsks, (held) => { const next = new Map(held); next.delete(key); return next }))))
+    }))
   }).pipe(Effect.annotateLogs({ feature: "chat" }))
 
 const unsentRow = (id: string) =>

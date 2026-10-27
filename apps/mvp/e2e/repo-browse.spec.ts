@@ -1,7 +1,9 @@
 import { REPOSITORIES_SHAPE_ROUTE } from "../src/features/repo/contract"
 import { shapeRows } from "./shape"
 import { expect, test, visibleText } from "./fixtures"
-import { requires } from "./target"
+import { baseURL, requires, writeHeaders } from "./target"
+import { repositoryAbout } from "./repository-prerequisites"
+import { expectConsoleError, expectServerError } from "./watch"
 
 // Browsing a repository as Will reviewed it (docs/features/repo.md#the-page), against the real app, Worker, Postgres,
 // Electric, GitHub and Code Storage:
@@ -95,30 +97,34 @@ test.describe("cloned repositories", () => {
     "the clone in the feed: a toast says how far it came, then why it stopped, with Try again",
     { annotation: { type: "summary", description: "A clone reports in the toasts, and a failed one offers Try again." } },
     async ({ page, request }) => {
-      const name = `no-such-repo-${Date.now().toString(36)}`
-      await page.goto(`/octocat/${name}`)
+      requires("absentRepository")
+      test.setTimeout(180_000)
+      const repository = await repositoryAbout("absentRepository")
+      const [owner, name] = repository.split("/")
+      expectServerError(404, `/api/repos/${repository}/about`)
+      await page.goto(`/${repository}`)
       const header = page.locator('header[aria-label="Repository"]')
-      await expect(header).toContainText(`octocat / ${name}`, { timeout: 30_000 })
-      // GitHub has no such repository: the page says so before anyone clones it.
-      await expect(page.getByText("Not found").first()).toBeVisible({ timeout: 30_000 })
-      await header.getByRole("button", { name: "Clone" }).click()
-      // The clone reports in the person's feed, never a spinner. This one stops within a second, and a stopped clone's
-      // toast shows for 4 s after its row changed, which a slow sync can miss: so the toast, or the stop it reports.
-      const subject = `clone:github/octocat/${name}`
+      await expect(header).toContainText(`${owner} / ${name}`, { timeout: 30_000 })
+      // W12 missing-repository recovery deliberately removes Clone once absence is known (repo.md).
+      await expect(page.getByText("Repository not found", { exact: true })).toBeVisible({ timeout: 30_000 })
+      await expect(header.getByRole("button", { name: "Clone", exact: true })).toHaveCount(0)
+      // Exercise the Member's actual admission API to retain the failed-clone/feed/retry coverage.
+      const admitted = await request.post("/api/repos", { headers: writeHeaders(), data: { owner, name } })
+      expect(admitted.ok()).toBe(true)
+      const { cloneId } = await admitted.json() as { cloneId: string }
+      const launched = await request.post("/api/repos/launch", { headers: writeHeaders(), data: { owner, name, cloneId } })
+      expect(launched.ok()).toBe(true)
+      const subject = `clone:github/${repository.toLowerCase()}`
       const toast = page.locator(`[data-slot="toast"][data-subject="${subject}"]`)
-      const stopped = header.getByRole("status").filter({ hasText: "Not found" })
-      await expect(toast.or(stopped).first()).toBeVisible({ timeout: 60_000 })
-      const shown = await toast.textContent({ timeout: 100 }).catch(() => null)
-      if (shown !== null) expect(shown).toContain(`Clone · octocat/${name}`)
-      // It stopped: the header says why, with Try again, and the entry stays in the person's list.
-      await expect(stopped).toBeVisible({ timeout: 60_000 })
       await page.getByRole("button", { name: /^Notifications/ }).click()
       const entry = page.locator(`li[data-entry="${subject}"]`)
-      await expect(entry).toContainText(`Clone · octocat/${name} · Not found`, { timeout: 30_000 })
-      await entry.getByRole("button", { name: new RegExp(`Clone · octocat/${name}`) }).click()
+      await expect(entry).toContainText(`Clone · ${repository} · Not found`, { timeout: 60_000 })
+      const shown = await toast.textContent({ timeout: 100 }).catch(() => null)
+      if (shown !== null) expect(shown).toContain(`Clone · ${repository}`)
+      await entry.getByRole("button", { name: new RegExp(`Clone · ${repository.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`) }).click()
       type CloneRow = { id: string; attempt: string | number; status: string; failure: string | null }
       const current = async () => {
-        const row = (await shapeRows<CloneRow>(request, REPOSITORIES_SHAPE_ROUTE)).find(row => row.id === `github/octocat/${name}`)
+        const row = (await shapeRows<CloneRow>(request, REPOSITORIES_SHAPE_ROUTE)).find(row => row.id === `github/${repository.toLowerCase()}`)
         return row === undefined ? undefined : { ...row, attempt: Number(row.attempt) }
       }
       const before = await current()
@@ -129,7 +135,7 @@ test.describe("cloned repositories", () => {
         attempt: before!.attempt + 1, status: "failed", failure: "not_found",
       })
       // Try again's new attempt raises the entry again, and stops for the same reason.
-      await expect(entry).toContainText(`Clone · octocat/${name} · Not found`, { timeout: 120_000 })
+      await expect(entry).toContainText(`Clone · ${repository} · Not found`, { timeout: 120_000 })
       await expect(entry.getByRole("button", { name: "Retry", exact: true })).toBeVisible()
       await expect(page.locator(`[data-slot="toast"][data-subject="${subject}"]`)).not.toContainText("Requested")
     },
@@ -172,6 +178,11 @@ test.describe("cloned repositories", () => {
     "HTML: Code, Preview and Split, the page live in a frame that can't reach the app or the network",
     { annotation: { type: "summary", description: "An HTML file shows live beside its source, sandboxed." } },
     async ({ page }) => {
+      // These are the preview policy's intentional refusals, including our network probe below.
+      expectConsoleError(`Loading the stylesheet '${new URL(`${SPOON}/blob/main/styles.css`, baseURL).href}' violates the following Content Security Policy directive: "style-src 'unsafe-inline'"`)
+      expectConsoleError(`Loading the image '${new URL(`${SPOON}/blob/main/forkit.gif`, baseURL).href}' violates the following Content Security Policy directive: "img-src data: blob:"`)
+      expectConsoleError("Connecting to 'https://example.com/' violates the following Content Security Policy directive")
+      expectConsoleError("Fetch API cannot load https://example.com/. Refused to connect because it violates the document's Content Security Policy.")
       await openSpoon(page)
       await page.goto(`${SPOON}/blob/main/index.html`)
       const file = page.locator('article[aria-label="index.html"]')

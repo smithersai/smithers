@@ -1,4 +1,5 @@
-import { create as createAction, open as openAction, retryWrite } from "./actions"
+import { reloadAfter } from "../../test/reloadTiming"
+import { comment as commentAction, create as createAction, open as openAction, retryWrite, triage as triageAction } from "./actions"
 import { dispatches, FlowDispatch } from "../../flows/dispatch"
 import { RepoStore } from "../repo/store"
 import { RepoClient } from "../repo/api"
@@ -45,6 +46,7 @@ import {
   writeExecutionId,
 } from "./contract"
 import { Issues } from "./issues"
+import { IssueWrites } from "./writes"
 import { pendingActions, sends } from "./metrics"
 import { shapeRetries, shapeTransitions } from "./shapeSync"
 import { IssuesStore } from "./store"
@@ -420,11 +422,11 @@ describe("a comment", () => {
     await tab.actions.open(OWNER, NAME, 7)
     await until(() => expect(tab.issues.queries.item.toArray[0]).toMatchObject({ number: 7, title: "Crash on start" }))
     expect(pageOf(tab.issues.queries.item.toArray[0], tab.issues.queries.synced.toArray[0], true, true)).toBe("shown")
-    expect(tab.actions.comment(OWNER, NAME, 7)).toBe(false)
+    expect((await tab.actions.comment(OWNER, NAME, 7))).toBe(false)
     tab.actions.setCommentDraft(OWNER, NAME, 7, "Looks good")
     expect(tab.view()).toMatchObject({ number: 7, body: "Looks good" })
 
-    expect(tab.actions.comment(OWNER, NAME, 7)).toBe(true)
+    expect((await tab.actions.comment(OWNER, NAME, 7))).toBe(true)
     await until(() => expect(tab.comments()).toEqual([expect.objectContaining({ body: "Looks good", pending: "requested" })]))
     const writeId = tab.comments()[0]!.id
     await until(() => expect(tab.view()).toMatchObject({ body: undefined, submitting: false }))
@@ -678,6 +680,9 @@ describe("who reads a repository's issues", () => {
     await later.actions.open(OWNER, NAME)
     await until(() => expect(access(later)).toMatchObject({ status: "allowed" }))
     await until(() => expect(later.list().issues.map(({ title }) => title)).toEqual(["Public issue"]))
+    await until(() => expect(later.issues.queries.publicList.isReady()).toBe(true), 3_000)
+    await until(() => expect(access(later)).toMatchObject({ installed: true }))
+    expect(listProps(later.issues.queries.publicList.toArray, undefined, access(later)).unknown).toBe(false)
   }, WITHIN)
 })
 
@@ -711,11 +716,11 @@ describe("refused writes stay Not sent, with Edit and Discard", () => {
     await tab.actions.open(OWNER, NAME, 4)
     client.next(409, 413)
     tab.actions.setCommentDraft(OWNER, NAME, 4, "First")
-    tab.actions.comment(OWNER, NAME, 4)
+    await tab.actions.comment(OWNER, NAME, 4)
     await until(() => expect(tab.comments()).toHaveLength(1))
     await until(() => expect(tab.view()?.submitting).toBe(false))
     tab.actions.setCommentDraft(OWNER, NAME, 4, "Second")
-    tab.actions.comment(OWNER, NAME, 4)
+    await tab.actions.comment(OWNER, NAME, 4)
     await until(() =>
       expect(tab.comments().map(({ body, pending, reason, editable }) => ({ body, pending, reason, editable }))).toEqual([
         { body: "First", pending: "not_sent", reason: "Conflict", editable: true },
@@ -723,11 +728,12 @@ describe("refused writes stay Not sent, with Edit and Discard", () => {
       ])
     )
     const [first, second] = tab.comments()
+    await tab.actions.retryWrite(first!.id)
 
     expect(tab.actions.edit(second!.id)).toBe(issuePath(OWNER, NAME, 4))
     expect(tab.store.drafts.tanstack.get(commentDraftKey(REPO_ID, 4))).toMatchObject({ body: "Second" })
     tab.actions.discard(first!.id)
-    expect(tab.comments()).toEqual([])
+    await until(() => expect(tab.comments()).toEqual([]))
     expect(tab.count(pendingActions, { action: "discard" })).toBe(1)
     expect(await server(tab.api).writes()).toEqual([])
   }, WITHIN)
@@ -737,11 +743,11 @@ describe("refused writes stay Not sent, with Edit and Discard", () => {
     await server(tab.api).seed(5, "Docs")
     await tab.actions.open(OWNER, NAME, 5)
     tab.actions.setCommentDraft(OWNER, NAME, 5, "One")
-    tab.actions.comment(OWNER, NAME, 5)
+    await tab.actions.comment(OWNER, NAME, 5)
     await until(() => expect(tab.store.requested.tanstack.size).toBe(1))
     await until(() => expect(tab.view()?.submitting).toBe(false))
     tab.actions.setCommentDraft(OWNER, NAME, 5, "Two")
-    tab.actions.comment(OWNER, NAME, 5)
+    await tab.actions.comment(OWNER, NAME, 5)
     await until(() => expect(tab.store.requested.tanstack.size).toBe(2))
     const [one, two] = tab.comments()
 
@@ -758,18 +764,15 @@ describe("refused writes stay Not sent, with Edit and Discard", () => {
 })
 
 describe("sending", () => {
-  test("failed comment admission retains a visible Not sent outcome and the draft", async () => {
+  test("comment admission survives an engine that cannot start its join flow", async () => {
     const opened = await open({ answers: false })
     const tab = await another(opened.api, { host: nodeDevice({ engineWorker: failingWorker }) })
     await tab.actions.open(OWNER, NAME, 45)
     tab.actions.setCommentDraft(OWNER, NAME, 45, "Keep my comment")
-    expect(tab.actions.comment(OWNER, NAME, 45)).toBe(true)
-    await until(() => expect(tab.view()?.submitting).toBe(false))
-    expect(tab.view()).toMatchObject({ body: "Keep my comment", submissionFailed: true })
-    expect(tab.actions.comment(OWNER, NAME, 45)).toBe(true)
-    await until(() => expect(tab.view()?.submitting).toBe(false))
-    expect(tab.view()).toMatchObject({ body: "Keep my comment", submissionFailed: true })
-    expect(await server(opened.api).writes()).toEqual([])
+    expect(await tab.actions.comment(OWNER, NAME, 45)).toBe(true)
+    expect(tab.view()).toMatchObject({ submitting: false })
+    expect(tab.store.drafts.tanstack.get(commentDraftKey(REPO_ID, 45))).toBeUndefined()
+    await until(async () => expect(await server(opened.api).writes()).toHaveLength(1))
   }, WITHIN)
 
   test("offline, the issue waits in the outbox as Requested; back online, it is sent once", async () => {
@@ -844,9 +847,11 @@ describe("sending", () => {
     expect(tab.list().issues).toEqual([expect.objectContaining({ title: "Not stored", pending: "not_sent" })])
     const writeId = tab.list().issues[0]!.id!
     expect(tab.store.sending.tanstack.toArray).toEqual([])
+    tab.actions.setNewTitle(OWNER, NAME, "Later draft")
     storageDown = false
     await tab.actions.retryWrite(writeId)
     await until(async () => expect(await server(opened.api).writes()).toEqual([{ id: writeId }]))
+    expect(tab.view()?.title).toBe("Later draft")
     await tab.actions.retryWrite(writeId)
     expect(await server(opened.api).writes()).toEqual([{ id: writeId }])
   }, WITHIN)
@@ -867,7 +872,7 @@ describe("doors", () => {
     const tab = await open()
     await tab.actions.open(OWNER, NAME)
     const chat = await tab.runtime.runPromise(Effect.service(Chat))
-    const asked = chat.actions.ask("Open an issue about the crash")
+    const asked = (await chat.actions.ask("Open an issue about the crash"))
     if (!asked.asked) throw new Error("not asked")
     const first = await Effect.runPromise(tab.api.answerTo("Open an issue about the crash"))
     first.cell(
@@ -1219,25 +1224,187 @@ test("an old comment admission cannot clear or fail a later page's draft", async
   await runtime.runPromise(faults.holdStarts)
   await tab.actions.open(OWNER, NAME, 45)
   tab.actions.setCommentDraft(OWNER, NAME, 45, "Earlier comment")
-  expect(tab.actions.comment(OWNER, NAME, 45)).toBe(true)
+  expect((await tab.actions.comment(OWNER, NAME, 45))).toBe(true)
   await tab.actions.open(OWNER, NAME, 99)
   tab.actions.setCommentDraft(OWNER, NAME, 99, "Later draft")
   await runtime.runPromise(faults.releaseStarts)
   await until(() => expect(tab.count(dispatches, { flow: "issue/comment", door: "button", outcome: "done" })).toBe(1))
   expect(tab.view()).toMatchObject({ number: 99, body: "Later draft", submitting: false, submissionFailed: undefined })
-  expect(tab.store.drafts.tanstack.get(commentDraftKey(REPO_ID, 45))?.body).toBe("Earlier comment")
+  expect(tab.store.drafts.tanstack.get(commentDraftKey(REPO_ID, 45))).toBeUndefined()
 }, WITHIN)
 
 test("a comment flow refused by outbox storage keeps its Not sent outcome", async () => {
   const opened = await open({ answers: false })
   const device = nodeDevice({ agent: opened.api })
+  let full = true
   const tab = await another(opened.api, { host: { ...device, outbox: { ...device.outbox, storage: {
-    ...device.outbox.storage, set: () => Promise.reject(new Error("quota")),
+    ...device.outbox.storage, set: (key, value) => full ? Promise.reject(new Error("quota")) : device.outbox.storage.set(key, value),
   } } } })
   await tab.actions.open(OWNER, NAME, 45)
   tab.actions.setCommentDraft(OWNER, NAME, 45, "Not admitted by the outbox")
-  expect(tab.actions.comment(OWNER, NAME, 45)).toBe(true)
+  expect((await tab.actions.comment(OWNER, NAME, 45))).toBe(true)
   await until(() => expect(tab.view()?.submitting).toBe(false), 75_000)
   expect(tab.view()).toMatchObject({ body: "Not admitted by the outbox", submissionFailed: true })
   expect(await server(opened.api).writes()).toEqual([])
+  const writeId = tab.store.requested.tanstack.toArray[0]!.id
+  await tab.actions.comment(OWNER, NAME, 45)
+  expect(tab.store.requested.tanstack.toArray.map((row) => row.id)).toEqual([writeId])
+  full = false
+  await tab.actions.comment(OWNER, NAME, 45)
+  await until(async () => expect(await server(opened.api).writes()).toHaveLength(1))
+  expect(tab.store.drafts.tanstack.get(commentDraftKey(REPO_ID, 45))).toBeUndefined()
+  expect(tab.view()?.submissionFailed).toBeUndefined()
+  await tab.actions.retryWrite(writeId)
+  full = true
+  tab.actions.setCommentDraft(OWNER, NAME, 45, "Earlier retained comment")
+  await tab.actions.comment(OWNER, NAME, 45)
+  const earlier = tab.store.requested.tanstack.toArray.find((row) => row.body === "Earlier retained comment")!
+  await tab.actions.open(OWNER, NAME, 99)
+  tab.actions.setCommentDraft(OWNER, NAME, 99, "Later page's draft")
+  full = false
+  await tab.actions.retryWrite(earlier.id)
+  expect(tab.view()).toMatchObject({ number: 99, body: "Later page's draft", submissionFailed: undefined })
 }, WITHIN)
+
+
+for (const delay of [0, 100, 300] as const) {
+  test(`comment admission survives reloading its device after ${delay} ms`, async () => {
+    const client = faultyClient()
+    client.state.down = true
+    const opened = await open({ answers: false })
+    await server(opened.api).seed(45, "Comment target")
+    const host = nodeDevice({ agent: opened.api })
+    const tab = await another(opened.api, { host, replace: client.layer })
+    await tab.actions.open(OWNER, NAME, 45)
+    tab.actions.setCommentDraft(OWNER, NAME, 45, `Reload comment ${delay}`)
+    expect(await tab.actions.comment(OWNER, NAME, 45)).toBe(true)
+    expect(await host.outbox.storage.keys()).not.toHaveLength(0)
+    const write = [...tab.store.sending.tanstack.toArray, ...tab.store.requested.tanstack.toArray].find((row) => row.op === "issue/comment")!
+    expect(write.body).toBe(`Reload comment ${delay}`)
+    await reloadAfter(delay, () => tab.runtime.dispose())
+    runtimes.splice(runtimes.indexOf(tab.runtime), 1)
+    const restored = await another(opened.api, { host, replace: client.layer })
+    await restored.actions.open(OWNER, NAME, 45)
+    await until(() => expect(restored.comments()).toContainEqual(expect.objectContaining({ id: write.id, body: write.body, pending: "requested" })))
+    expect(await restored.runtime.runPromise(restored.store.queue(write))).toEqual({ queued: true })
+    client.state.down = false
+    await restored.runtime.runPromise(restored.chat.outbox.retryNow)
+    await until(async () => expect((await server(opened.api).writes()).filter((row) => row.id === write.id)).toHaveLength(1))
+  }, WITHIN)
+}
+
+for (const delay of [0, 100, 300] as const) {
+  test(`every issue operation survives device reload after ${delay} ms`, async () => {
+    const client = faultyClient()
+    client.state.down = true
+    const opened = await open({ answers: false })
+    const host = nodeDevice({ agent: opened.api })
+    const tab = await another(opened.api, { host, replace: client.layer })
+    await tab.actions.open(OWNER, NAME, 7)
+    await tab.actions.triage(OWNER, NAME, 7, "accept")
+    await tab.actions.runTriageAgain(OWNER, NAME, 7)
+    await tab.actions.enableTriage(OWNER, NAME)
+    await tab.actions.pauseTriage(OWNER, NAME)
+    await tab.actions.setCommitment(OWNER, NAME, 7, "next")
+    const rows = tab.store.sending.tanstack.toArray
+    expect(rows.map((row) => row.op).sort()).toEqual(["issue/commitment", "issue/triage", "triage/enable", "triage/pause", "triage/run"])
+    expect(new Set(rows.map((row) => row.id)).size).toBe(5)
+    await reloadAfter(delay, () => tab.runtime.dispose())
+    runtimes.splice(runtimes.indexOf(tab.runtime), 1)
+    const restored = await another(opened.api, { host, replace: client.layer })
+    await restored.actions.open(OWNER, NAME, 7)
+    await until(() => expect(restored.store.sending.tanstack.toArray.map((row) => row.id).sort()).toEqual(rows.map((row) => row.id).sort()))
+  }, WITHIN)
+}
+
+test("a comment whose local recovery receipt fails keeps its draft and failure feedback", async () => {
+  const tab = await open({ answers: false })
+  await tab.actions.open(OWNER, NAME, 45)
+  tab.actions.setCommentDraft(OWNER, NAME, 45, "Retain comment")
+  const real = tab.store.requested
+  const requested = { ...real, insert: (row: Parameters<typeof real.insert>[0]) => real.insert(row).pipe(Effect.map((transaction) => ({
+    ...transaction, persisted: Effect.fail(new Collection.TransactionFailed({ cause: "quota" })),
+  }))) }
+  expect(await tab.runtime.runPromise(commentAction(OWNER, NAME, 45).pipe(Effect.provideService(IssuesStore, { ...tab.store, requested })))).toBe(false)
+  expect(tab.view()).toMatchObject({ body: "Retain comment", submitting: false, submissionFailed: true })
+  expect(tab.store.sending.tanstack.size).toBe(0)
+  expect(await tab.runtime.runPromise(triageAction(OWNER, NAME, 45, "accept").pipe(Effect.provideService(IssuesStore, { ...tab.store, requested })))).toBe(false)
+  expect(tab.view()?.submissionFailed).toBe(true)
+}, WITHIN)
+
+test("triage admission cannot take ownership of an in-flight comment's form", async () => {
+  const opened = await open({ answers: false })
+  const host = nodeDevice({ agent: opened.api })
+  let enter!: () => void
+  let release!: () => void
+  const entered = new Promise<void>((resolve) => { enter = resolve })
+  const held = new Promise<void>((resolve) => { release = resolve })
+  const tab = await another(opened.api, { host: { ...host, outbox: { ...host.outbox, storage: { ...host.outbox.storage,
+    set: async (key, value) => { enter(); await held; return host.outbox.storage.set(key, value) },
+  } } } })
+  await tab.actions.open(OWNER, NAME, 45)
+  tab.actions.setCommentDraft(OWNER, NAME, 45, "Concurrent comment")
+  const commenting = tab.actions.comment(OWNER, NAME, 45)
+  let triaging: Promise<boolean> | undefined
+  try {
+    await entered
+    const submission = tab.store.view.tanstack.get("view")?.submissionKey
+    triaging = tab.actions.triage(OWNER, NAME, 45, "accept")
+    await until(() => expect(tab.store.requested.tanstack.toArray.some((row) => row.op === "issue/triage")).toBe(true))
+    expect(tab.store.view.tanstack.get("view")).toMatchObject({ submissionKey: submission, submitting: true })
+  } finally { release(); await commenting; await triaging }
+  expect(tab.store.drafts.tanstack.get(commentDraftKey(REPO_ID, 45))).toBeUndefined()
+  expect(tab.store.view.tanstack.get("view")?.submitting).toBe(false)
+}, WITHIN)
+
+test("an issue write with no durable recovery receipt never starts delivery", async () => {
+  const runtime = openTestApp({ answers: false })
+  runtimes.push(runtime)
+  const api = await runtime.runPromise(Effect.service(TestChatApi))
+  await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+    const writes = yield* IssueWrites
+    const requested = { ...writes.requested, insert: (row: Parameters<typeof writes.requested.insert>[0]) => writes.requested.insert(row).pipe(Effect.map((transaction) => ({
+      ...transaction, persisted: Effect.fail(new Collection.TransactionFailed({ cause: "quota" })),
+    }))) }
+    const built = yield* Layer.build(IssuesStore.layer({ origin: api.origin }).pipe(Layer.provide(Layer.succeed(IssueWrites, { ...writes, requested }))))
+    const store = Context.get(built, IssuesStore)
+    expect(yield* store.queue({ id: crypto.randomUUID(), repo: "octo/hello", op: "issue/comment", title: "", number: 7, body: "Keep receipt" })).toEqual({ queued: false })
+    expect(yield* store.sending.toArray).toEqual([])
+  })))
+}, WITHIN)
+
+for (const accepts of [true, false]) {
+  test(`duplicate issue callers await the same ${accepts ? "accepted" : "refused"} storage receipt`, async () => {
+    const opened = await open({ answers: false })
+    const device = nodeDevice()
+    let enter!: () => void
+    let release!: () => void
+    const entered = new Promise<void>((resolve) => { enter = resolve })
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const tab = await another(opened.api, { answers: false, host: { ...device, outbox: { ...device.outbox,
+      online: { ...device.outbox.online, isOnline: () => false },
+      storage: { ...device.outbox.storage, set: async (key, value) => {
+        enter(); await held
+        if (!accepts) throw new Error("quota")
+        return device.outbox.storage.set(key, value)
+      } },
+    } } })
+    const write = { id: crypto.randomUUID(), repo: TEST_REPOSITORY, op: "issue/comment" as const, title: "", number: 7, body: "One receipt" }
+    let completed = 0
+    const queue = () => tab.runtime.runPromise(tab.store.queue(write)).then((value) => { completed++; return value })
+    const first = queue()
+    let second: ReturnType<typeof queue> | undefined
+    try {
+      await entered
+      expect(tab.store.sending.tanstack.get(write.id)).toBeDefined()
+      second = queue()
+      // A real collection read after the duplicate starts lets its optimistic-row path run.
+      await tab.runtime.runPromise(tab.store.sending.toArray)
+      expect(completed).toBe(0)
+    } finally { release() }
+    expect(await first).toEqual({ queued: accepts })
+    expect(await second).toEqual({ queued: accepts })
+    expect(completed).toBe(2)
+    expect(await server(opened.api).writes()).toEqual([])
+  }, WITHIN)
+}

@@ -1,5 +1,8 @@
 import { Metric } from "effect"
 
+/** Local admission outcomes, independent of engine startup and network delivery. */
+export const admissions = Metric.counter("smithers_todo_write_admissions", { incremental: true })
+
 // The TODOs feature's usage metrics in the browser (docs/observability.md#todos), exported over OTLP with the tab's and
 // the engine worker's other records. None carries a title or a prompt.
 

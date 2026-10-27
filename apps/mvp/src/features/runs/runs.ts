@@ -1,3 +1,4 @@
+import { RunSteers } from "./steers"
 import { LiveQuery } from "@smthrs/effect-tanstack-db"
 import type { BrowserEngine } from "@smthrs/platform-browser"
 import { Context, Effect, Layer } from "effect"
@@ -79,7 +80,7 @@ export interface RunsActions {
   readonly retryFrom: (step: string) => void
   readonly resume: () => void
   readonly setSteerDraft: (text: string) => void
-  readonly steer: () => void
+  readonly steer: () => Promise<void>
 }
 
 export class Runs extends Context.Service<Runs, { readonly queries: RunsQueries; readonly actions: RunsActions }>()(
@@ -93,7 +94,7 @@ export class Runs extends Context.Service<Runs, { readonly queries: RunsQueries;
       const writes = yield* SteerWrites
       const steerSending = yield* sendingQuery(writes)
       const steerSent = yield* sentQuery(writes)
-      const context = yield* Effect.context<RunsStore | FlowDispatch | RunsNavigation | BrowserEngine.BrowserEngine>()
+      const context = yield* Effect.context<RunsStore | FlowDispatch | RunsNavigation | BrowserEngine.BrowserEngine | RunSteers | SteerWrites>()
       const { runPromise: promise, runFork } = runners(context, "runs")
       const fork = (effect: Effect.Effect<void, never, RunsStore | FlowDispatch | RunsNavigation | BrowserEngine.BrowserEngine>) =>
         void runFork(effect)
@@ -127,7 +128,7 @@ export class Runs extends Context.Service<Runs, { readonly queries: RunsQueries;
           retryFrom: (step) => fork(retryFrom(step)),
           resume: () => fork(resume),
           setSteerDraft: (text) => fork(setSteerDraft(text)),
-          steer: () => fork(steer),
+          steer: () => promise(steer),
         },
       })
     }),

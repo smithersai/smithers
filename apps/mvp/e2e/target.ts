@@ -234,6 +234,31 @@ const needs = {
       (/^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_STACK_REPOSITORY ?? "") && !/^smithersai\//i.test(run.env.E2E_STACK_REPOSITORY!)),
     reason: "it commits and drops TODOs: locally on octocat/Spoon-Knife; a deployment needs E2E_STACK_REPOSITORY naming a writable scratch repository with stack shapes and repository membership, never a smithersai one",
   },
+  absentRepository: {
+    met: (run) => /^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_ABSENT_REPOSITORY ?? ""),
+    reason: "it needs an authoritative absent public repository: set E2E_ABSENT_REPOSITORY and prime About through an authenticated Member with a working read token; an anonymous GitHub quota is not a fixture",
+    blocked: true,
+  },
+  unsyncedRepository: {
+    met: (run) => /^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_UNSYNCED_REPOSITORY ?? ""),
+    reason: "it needs an existing public repository outside this deployment's synced repositories: E2E_UNSYNCED_REPOSITORY; authenticated About must answer before the visitor opens it",
+    blocked: true,
+  },
+  failedRun: {
+    met: (run) => (run.env.E2E_FAILED_RUN ?? "") !== "",
+    reason: "it needs a retained real failed run with failure attempts and undispatched steps, visible to this account: E2E_FAILED_RUN names its execution; never insert fabricated history",
+    blocked: true,
+  },
+  repositoryRun: {
+    met: (run) => (run.env.E2E_REPOSITORY_RUN ?? "") !== "",
+    reason: "it needs a retained real repository execution visible to this account: E2E_REPOSITORY_RUN names its execution on E2E_SYNCED_REPOSITORY",
+    blocked: true,
+  },
+  emptySecretsRepository: {
+    met: (run) => /^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_EMPTY_SECRETS_REPOSITORY ?? ""),
+    reason: "it needs this deployment's own repository with zero saved secrets and this account's repository role exactly Member: E2E_EMPTY_SECRETS_REPOSITORY; the API fixture verifies ownership, role and the empty snapshot",
+    blocked: true,
+  },
   syncedRepository: {
     met: (run) => /^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_SYNCED_REPOSITORY ?? ""),
     reason: "it needs existing synced issues and pull requests: set E2E_SYNCED_REPOSITORY to the deployment's synced public owner/name; an empty or unfinished sync fails the fixture check",
@@ -348,6 +373,10 @@ export type Broken = { readonly in: ReadonlyArray<Target>; readonly reason: stri
  * Remove an entry and its marks once the behavior is fixed.
  */
 export const KNOWN_BROKEN: Readonly<Record<string, Broken>> = {
+  issuesAdmission: {
+    in: ["local", "deployment"],
+    reason: "ui/issues persists its template before repository access resolves; missing-repository admission is deferred (W12 slash-commands:215)",
+  },
   vibelangRoles: {
     in: ["deployment"],
     when: (run) => (run.env.GITHUB_REPOSITORY ?? run.env.E2E_SYNCED_REPOSITORY ?? "smithersai/smithers").toLowerCase() !== "smithersai/vibelang",

@@ -1011,4 +1011,28 @@ describe("Otlp", () => {
       d: "x=y"
     })
   })
+
+  it.effect("applies the application policy before transport and retains final credential redaction", () =>
+    Effect.gen(function*() {
+      const collector = recordingFetch()
+      const seen: unknown[] = []
+      yield* runExporting(
+        Effect.logInfo("application record"),
+        Otlp.layerFetch({
+          baseUrl: "http://127.0.0.1:4318",
+          transform: (payload) => {
+            seen.push(payload)
+            return {
+              ...payload as object,
+              attributes: [{ key: "apiKey", value: { stringValue: "policy-must-not-bypass-redaction" } }]
+            }
+          }
+        }),
+        collector.fetch
+      )
+      expect(seen.length).toBeGreaterThan(0)
+      expect(JSON.stringify(seen)).toContain("application record")
+      expect(JSON.stringify(collector.requests)).not.toContain("policy-must-not-bypass-redaction")
+      expect(JSON.stringify(collector.requests)).toContain("[REDACTED]")
+    }))
 })

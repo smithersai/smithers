@@ -74,6 +74,8 @@ export type RepoRoleAnswer = typeof RepoRoleAnswer.Type
  */
 export const RepoRole = Schema.Struct({
   id: Schema.String,
+  /** Content-free refusal of the latest authority read; no shape starts until a successful retry. */
+  failure: Schema.optional(Schema.String),
   role: Schema.NullOr(Schema.Literals(ROLES)),
   own: Schema.Boolean,
   /** Repository shapes may be read; with no role this is an explicit public-read receipt. */

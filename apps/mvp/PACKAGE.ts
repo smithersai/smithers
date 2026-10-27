@@ -43,7 +43,7 @@ function pluginSources() {
 const coreSources = [
   "src/!(test|plugins)/**/!(*.test).ts",
   "src/!(*.test).ts",
-  "src/plugins/!(builtin|builtinFlows|*.test).ts",
+  "src/plugins/!(builtin|builtinFlows|manifests|*.test).ts",
   "src/plugins/*/**/!(*.test).ts",
   "src/**/!(main).tsx",
   "src/main.tsx",
@@ -74,7 +74,7 @@ export const importRules: ReadonlyArray<ImportRule> = [
     kind: "forbid",
     files: coreSources,
     modules: ["**/plugins/*/src", "**/plugins/*/src/**", "**/plugins/*/plugin.json"],
-    because: "plugin.core-names-no-plugin: the core names a built-in plugin only in src/plugins/builtin.ts (UI) or builtinFlows.ts (flows), so " +
+    because: "plugin.core-names-no-plugin: the core names a built-in plugin only in src/plugins/manifests.ts (data), builtin.ts (UI) or builtinFlows.ts (flows), so " +
       "deleting the plugin's folder and its registry line removes the feature. See \"Everything is a plugin\" in the " +
       "root AGENTS.md and apps/mvp/docs/rules.md."
   },

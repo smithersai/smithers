@@ -56,6 +56,7 @@ import {
   Source,
   Unsent,
   type UnsentReason,
+  type QuestionSubmitted,
 } from "./schema"
 
 /**
@@ -164,6 +165,8 @@ export class ChatStore extends Context.Service<
     readonly pageSize: number
     /** When this tab last queued a question: each takes a later `queuedAt`, so questions asked in one millisecond keep their order. */
     readonly lastQueuedAt: Ref.Ref<number>
+    readonly draftRevision: Ref.Ref<number>
+    readonly pendingAsks: Ref.Ref<ReadonlyMap<string, Deferred.Deferred<QuestionSubmitted>>>
     /** The browser went offline (`true`) or online (`false`). */
     readonly browserOffline: (offline: boolean) => Effect.Effect<void>
     /** Whether the browser says it is online: `isOnline` at boot, then its `online` and `offline` events. */
@@ -642,6 +645,8 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     scope,
     pageSize,
     lastQueuedAt: yield* Ref.make(0),
+    draftRevision: yield* Ref.make(0),
+    pendingAsks: yield* Ref.make<ReadonlyMap<string, Deferred.Deferred<QuestionSubmitted>>>(new Map()),
     lead: leader.take,
     browserOffline: (offline) =>
       Effect.andThen(SubscriptionRef.set(browserOnline, !offline), update(() => ({ offline }))),

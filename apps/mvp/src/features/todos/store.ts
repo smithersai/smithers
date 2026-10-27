@@ -1,12 +1,13 @@
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Persistence } from "@smthrs/effect-tanstack-db"
-import { Cache, Clock, Context, Effect, Exit, Layer, Option, Scope, Stream } from "effect"
+import { Cache, Clock, Context, Effect, Exit, Layer, Metric, Option, Scope, Stream } from "effect"
 import { AuthStore } from "../auth/store"
 import { RepoStore } from "../repo/store"
 import { repositoryShapeSource } from "../issues/source"
 import { stackAccess } from "./source"
 import { ChatStore } from "../chat/store"
 import { repoId } from "../repo/contract"
+import { sendingAdmitted } from "../../outboxAdmission"
 import { TODO_REQUESTS_SHAPE_ROUTE, TODOS_SHAPE_ROUTE } from "./contract"
 import {
   Access,
@@ -21,7 +22,8 @@ import {
   VIEW,
 } from "./schema"
 import { deliveredOf } from "./view"
-import { StackWrites, TODO_OP } from "./writes"
+import { keep, StackWrites, TODO_OP } from "./writes"
+import { admissions } from "./metrics"
 
 // TODOs on this tab (decision 0016 §1, docs/features/todos.md#the-browser): each repository's TODOs and their prompts
 // in Postgres, synced by Electric while a page shows that repository's stack and kept on the device; this device's own
@@ -198,13 +200,26 @@ const make = Effect.fnUntraced(function* (config: TodosConfig) {
    */
   const queue = (op: QueuedOp) =>
     Effect.gen(function* () {
-      if (Option.isSome(yield* sending.get(op.id)) || Option.isSome(yield* requested.get(op.id))) return { kept: true }
-      yield* chat.lead
+      const held = yield* requested.get(op.id)
+      if (Option.isSome(yield* sending.get(op.id))) return { kept: yield* sendingAdmitted(chat.outbox, TODO_OP, op.id) }
+      if (Option.isSome(held) && (held.value.status === "requested" || held.value.reason !== null)) return { kept: true }
       const [owner, name] = op.repo.split("/") as [string, string]
       const row: Sending = { ...op, repoId: repoId(owner, name), queuedAt: yield* Clock.currentTimeMillis, v: 2 }
+      const recovery = yield* Effect.result(keep(requested, row, "not_sent", null, null))
+      if (recovery._tag === "Failure") {
+        yield* recordAdmission(op, "storage_failed")
+        return { kept: false }
+      }
+      yield* chat.lead
       const admitted = yield* chat.outbox
-        .transact(TODO_OP, { idempotencyKey: op.id }, Effect.asVoid(sending.insert(row)))
-        .pipe(Effect.flatMap((taken) => taken.admitted), Effect.result)
+        .transact(TODO_OP, { idempotencyKey: op.id, joinExisting: true }, Effect.asVoid(sending.insert(row)))
+        .pipe(Effect.flatMap((taken) => taken.admitted.pipe(Effect.catch((error) => Effect.andThen(Effect.ignore(taken.settled), Effect.fail(error))))), Effect.result)
+      const pending = yield* requested.get(op.id)
+      if (admitted._tag === "Success" && Option.isSome(pending) && pending.value.status === "not_sent" && pending.value.reason === null) {
+        const removed = yield* requested.delete(op.id).pipe(Effect.orDie)
+        yield* Effect.ignore(removed.persisted)
+      }
+      yield* recordAdmission(op, admitted._tag === "Success" ? "queued" : "not_admitted")
       return { kept: admitted._tag === "Success" }
     })
 
@@ -226,4 +241,9 @@ const make = Effect.fnUntraced(function* (config: TodosConfig) {
     queue,
     scope,
   })
+})
+
+const recordAdmission = (op: QueuedOp, outcome: "queued" | "not_admitted" | "storage_failed") => Effect.gen(function* () {
+  yield* Metric.update(Metric.withAttributes(admissions, { op: op.op, outcome }), 1)
+  yield* Effect.logInfo("todos.write.admission").pipe(Effect.annotateLogs({ opId: op.id, op: op.op, outcome }))
 })

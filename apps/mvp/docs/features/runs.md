@@ -293,3 +293,7 @@ Results and engine event identifiers start collapsed. Personal Runs links rememb
 their return list through repository job pages. Tables use readable system flow
 names, branch names without transport prefixes, and the shared duration formatter.
 Signed-out visitors read their device's history without requesting cloud history.
+
+Steer actions retain a device recovery receipt before awaiting durable outbox admission. Retrying a storage refusal keeps the message identity. Admission never clears newer typing or another run’s draft; delivery is independent of the joining flow’s startup.
+
+Repeated Steer of a pending draft shares its write id. Retyping after admission creates a new message, including when its words are the same.

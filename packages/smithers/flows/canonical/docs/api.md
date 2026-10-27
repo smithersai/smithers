@@ -281,6 +281,15 @@ const admitted = BoundedJson.admitStrict({ tags: ["release"] }, {
 // admitted.ok === true; containers contains the tags array, then the record.
 ```
 
+
+| Export | Contract |
+| --- | --- |
+| `Limits` | Required `maxDepth`, `maxMembers`, `maxNodes`; optional `maxBytes`, `maxTotalMembers`, `maxStringBytes`, `maxKeyBytes`. Bounds apply to depth, per-container and cumulative members, nodes, and UTF-8 lengths. |
+| `Json` | Recursive detached JSON type: null, boolean, finite admitted number, string, readonly JSON array or string-keyed JSON record. |
+| `IssueCode` | Refusal union: `depth`, `nodes`, `bytes`, `number`, `string`, `value`, `cycle`, `arrayLength`, `arrayMember`, `arrayExtra`, `members`, `object`, `symbol`, `accessor`, `key`, `inspection`. |
+| `StrictOptions` | Optional `ordinaryRecords`, `boundedText`, `onContainer(copy)` postorder callback and trusted `native(object)` leaf adapter returning `{ value, bytes }` or undefined. Callback exceptions become inspection refusals; native leaves are neither copied nor frozen nor validated again. |
+
+
 ## ReadonlyMap.make
 
 Import `make` from `@smthrs/canonical/ReadonlyMap`; it is not a root export.

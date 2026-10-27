@@ -120,7 +120,6 @@ export function PersonalModelSettings({ canSave }: { readonly canSave: boolean }
           return (
             <Field key={tier} className="personal-model-tier">
               <Label htmlFor={`personal-model-${tier}`}>{TIER_LABEL[tier]}</Label>
-              <span id={`personal-model-${tier}-purpose`}>{({ fast: "Chat", implement: "Code", hard: "Plans & reviews" })[tier]}</span>
               <span id={`personal-model-${tier}-purpose`}>{TIER_PURPOSE[tier]}</span>
               <div className="personal-model-tier-row">
                 <Input

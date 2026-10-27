@@ -19,7 +19,7 @@ describe("routeTemplate", () => {
     expect(routeTemplate("/api/repos/acme/widgets/stack")).toBe("/api/repos/:owner/:repo/stack")
     expect(routeTemplate("/api/repos/acme/widgets/secrets/STRIPE_KEY")).toBe("/api/repos/:owner/:repo/secrets/:id")
     expect(routeTemplate("/api/repos/launch")).toBe("/api/repos/launch")
-    expect(routeTemplate("/api/repos/r-1/file")).toBe("/api/repos/:owner/file")
+    expect(routeTemplate("/api/repos/r-1/file")).toBe("/api/repos/:owner/:repo")
     expect(routeTemplate("/api/runs/run-1/credential")).toBe("/api/runs/:id/credential")
     expect(routeTemplate("/api/branches/b-1/shares")).toBe("/api/branches/:id/shares")
     expect(routeTemplate("/api/shapes/items")).toBe("/api/shapes/items")
@@ -54,4 +54,9 @@ describe("apiRoute", () => {
     expect(route(new URL("https://smithers.sh/assets/index.js"))).toBeUndefined()
     expect(route(new URL("https://smithers.sh/api/telemetry/v1/logs"))).toBeUndefined()
   })
+})
+
+// Repository names remain private even when they happen to be route vocabulary.
+it("templates repository identifiers that match route words", () => {
+  expect(routeTemplate("/api/repos/issues/branches/about")).toBe("/api/repos/:owner/:repo/about")
 })

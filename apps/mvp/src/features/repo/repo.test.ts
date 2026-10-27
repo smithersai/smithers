@@ -19,7 +19,7 @@ import { RepoClient, RepoRefused } from "./api"
 import { BUSY, COULDNT_LOAD, GITHUB_DOWN, GITHUB_LIMIT, NOT_FOUND, rawRoute, READING_PAUSED, repoId } from "./contract"
 import { TabClipboard } from "./copy"
 import { RepoCloneRequest, RepoCopy, RepoCopyRefused, RepoRead, RepoRefs, RepoTree } from "./flows"
-import { aboutLoadMs, blobLoadMs, clones, copies, refsLoadMs, roleAnswers, treeLoadMs } from "./metrics"
+import { aliasChecks, aboutLoadMs, blobLoadMs, clones, copies, refsLoadMs, roleAnswers, treeLoadMs } from "./metrics"
 import { NotCopied } from "./repo"
 import { aboutOf, generatedLinksFor, headerOf, previewReadmeOf, previewTreeOf } from "./view"
 import * as Repos from "../../../worker/Repos.ts"
@@ -567,7 +567,7 @@ describe("who the person is on a repository (decision 0079)", () => {
     expect(tab.repo.queries.roles.toArray).toHaveLength(2)
   })
 
-  test("a refused answer keeps the row this tab had, and says so in its records", async () => {
+  test("a refused authority answer clears stale authority, retains its failure and records the refusal", async () => {
     const h = await repoHarness(server, { roles: "octocat/Spoon-Knife" })
     let refusing = false
     const real = RepoClient.layer({ origin: h.origin, within: "10 seconds" }).pipe(
@@ -595,9 +595,15 @@ describe("who the person is on a repository (decision 0079)", () => {
     tab.repo.actions.role("octocat", "Spoon-Knife")
     tab.repo.actions.role("acme", "widgets")
     await waitFor(() => expect(tab.count(roleAnswers, { outcome: "refused", role: "unknown" })).toBe(2))
-    expect(rolesOf(tab)).toEqual([{ id: "github/octocat/spoon-knife", role: "member", own: true }])
+    expect(tab.repo.queries.roles.toArray).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "github/octocat/spoon-knife", role: null, own: false, failure: "unavailable" }),
+      expect.objectContaining({ id: "github/acme/widgets", role: null, own: false, failure: "unavailable" }),
+    ]))
     expect(tab.lines("repo.role").filter((line) => line.annotations.outcome === "refused").map((line) => [line.level, line.annotations.status]))
       .toEqual(expect.arrayContaining([["WARN", 503], ["WARN", 0]]))
+    refusing = false
+    tab.repo.actions.role("octocat", "Spoon-Knife")
+    await waitFor(() => expect(tab.repo.queries.roles.toArray.find((row) => row.id === "github/octocat/spoon-knife")).toMatchObject({ role: "member", own: true, failure: undefined }))
   })
 })
 
@@ -817,12 +823,17 @@ test("tree URLs redirect only files present at the resolved revision", async () 
   const tab = await open(h)
   const at = (ref: string, path: string) => tab.repo.actions.fileAtTree({ owner: "octocat", repo: "Spoon-Knife", ref, _splat: path })
   expect(await at("main", "README.md")).toBe(true)
+  expect(tab.count(aliasChecks, { outcome: "file" })).toBe(1)
+  const check = tab.lines("repo.alias.check")[0]!
+  expect(check.annotations).toMatchObject({ outcome: "file", durationMs: expect.any(Number), feature: "repo" })
+  expect(JSON.stringify(check)).not.toContain("README.md")
   expect(await at("main", "docs")).toBe(false)
   expect(await at("main", "gone.ts")).toBe(false)
   expect(await at("main", "")).toBe(false)
   expect(await at("feature", "x")).toBe(false)
   expect(await at("gone", "README.md")).toBe(false)
   expect(await tab.repo.actions.fileAtTree({ owner: "octocat", repo: "Gone", ref: "main", _splat: "README.md" })).toBe(false)
+  expect(tab.count(aliasChecks, { outcome: "unconfirmed" })).toBeGreaterThan(0)
 })
 
 
@@ -844,9 +855,35 @@ test("a held tree read cannot block route alias checks and its late answer remai
   const params = { owner: "octocat", repo: "Spoon-Knife", ref: "main", _splat: "README.md" }
   try {
     expect(await tab.repo.actions.fileAtTree(params)).toBe(false)
+    expect(tab.count(aliasChecks, { outcome: "timed_out" })).toBe(1)
+    expect(tab.lines("repo.alias.check")[0]!.annotations).toMatchObject({ outcome: "timed_out", durationMs: expect.any(Number) })
     expect(Effect.runSync(Deferred.isDone(requested))).toBe(true)
   } finally {
     await Effect.runPromise(Deferred.succeed(held, undefined))
   }
   await waitFor(async () => expect(await tab.repo.actions.fileAtTree(params)).toBe(true))
+})
+
+
+test("a held About read leaves canonical spelling unknown until its real answer arrives", async () => {
+  const h = await repoHarness(server)
+  h.github.publish("octocat", "Spoon-Knife")
+  const existing = await open(h)
+  const client = await existing.runtime.runPromise(Effect.service(RepoClient))
+  const held = Effect.runSync(Deferred.make<void>())
+  const requested = Effect.runSync(Deferred.make<void>())
+  const tab = await openTab({ origin: h.origin, fetch: h.fetch, pageWait: "100 millis", client: Layer.succeed(RepoClient, { ...client,
+    about: (...args) => Effect.gen(function* () {
+      yield* Deferred.succeed(requested, undefined)
+      yield* Deferred.await(held)
+      return yield* client.about(...args)
+    }),
+  }) })
+  tabs.push(tab)
+  try {
+    const checking = tab.repo.actions.canonicalName("octocat", "Spoon-Knife")
+    await Effect.runPromise(Deferred.await(requested).pipe(Effect.timeout("10 seconds")))
+    expect(await checking).toBeUndefined()
+  } finally { await Effect.runPromise(Deferred.succeed(held, undefined)) }
+  await waitFor(async () => expect(await tab.repo.actions.canonicalName("octocat", "Spoon-Knife")).toBe("octocat/Spoon-Knife"))
 })

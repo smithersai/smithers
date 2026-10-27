@@ -93,3 +93,10 @@ test("transport events cannot grant or revoke authority; failures, recovery and 
     }
   }
 })
+
+
+test("a failed authority read stays unavailable even after a previous public or synced answer", () => {
+  for (const who of [session("signed_out"), session("signed_in", "admin")]) {
+    expect(repositoryAccess(who, [{ id: "repo", own: true, role: "admin", readable: true, synced: true, failure: "rate_limited" }], "repo")).toBe("unavailable")
+  }
+})

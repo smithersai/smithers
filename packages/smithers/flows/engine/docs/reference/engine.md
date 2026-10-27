@@ -142,12 +142,12 @@ The refusal a compensable action raises when it is admitted with no snapshot bou
 
 The refusal raised when a flow operation names a declaration this engine has not registered. Both `layerMemory` on `execute` and `makeUnsafe` on an unresolvable handoff target raise it as a defect.
 
-### `FlowEngine.ExecutionIdentityConflict`
+### `FlowRuntime.ExecutionIdentityConflict` (`@smthrs/flow`)
 
 - **Type:** `class ExecutionIdentityConflict extends Schema.TaggedError<ExecutionIdentityConflict>()("@smthrs/engine/ExecutionIdentityConflict", { code, executionId, field, expected, actual, status, message })`
 - **Since:** `1.0.0`
 
-The refusal raised when a caller reuses an execution id for different persisted run identity. `field` is `"flow"`, `"payload"`, `"lineage"`, `"round"`, or `"parent"`. Answering would attach the caller to a run or trampoline round it did not name. `layerMemory` raises it as a defect on `execute` and on a `deferredDone` addressed to the wrong flow; the durable driver also raises it when an existing run row disagrees with the requested flow, encoded payload, lineage, round, or predecessor.
+This class belongs to `@smthrs/flow`'s `FlowRuntime` namespace; it is not an engine export. Its historical tag still names `@smthrs/engine`. The refusal is raised when a caller reuses an execution id for different persisted run identity. `field` is `"flow"`, `"payload"`, `"lineage"`, `"round"`, or `"parent"`. Answering would attach the caller to a run or trampoline round it did not name. `layerMemory` raises it as a defect on `execute` and on a `deferredDone` addressed to the wrong flow; the durable driver returns it as a typed failure when an existing run row disagrees with the requested flow, encoded payload, lineage, round, or predecessor.
 
 ### `FlowEngine.keyEncodings`
 

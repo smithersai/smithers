@@ -491,3 +491,9 @@ require `status.state == "running"`, select only `id` as `instanceId` and `start
 is missing. The instance id is the 64-character Durable Object actor id (`electric.container.start`'s identity).
 Keep account/application selection and credential injection in the private hosted Layer. The gate rejects extra
 snapshot fields so accidentally passing the full provider response cannot leak it into proof output.
+# Missing documents
+
+The site Worker matches the shared TanStack route declarations before returning the app shell. Unsupported document paths return 404 with the same recovery UI and `X-Robots-Tag: noindex`. Supported deep links keep 200; their resource reads decide access and existence. Plugin paths come from their public manifests.
+
+
+The documentation build omits the legacy `/bug/` noindex redirect from generated sitemap chunks; the app form remains its destination.

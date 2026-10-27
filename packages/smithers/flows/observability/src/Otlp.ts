@@ -145,7 +145,7 @@ const withoutBody = (response: HttpClientResponse.HttpClientResponse): HttpClien
   return HttpClientResponse.fromWeb(response.request, answer)
 }
 
-const boundedClient = (limits: Limits) =>
+const boundedClient = (limits: Limits, transform?: (payload: unknown) => unknown) =>
   Layer.effect(
     HttpClient.HttpClient,
     Effect.gen(function*() {
@@ -255,7 +255,15 @@ const boundedClient = (limits: Limits) =>
           // and attributes supplied when a span was created. Size/split checks
           // must see the redacted bytes, which can grow for short secrets.
           const body = (request.body as HttpBody.Uint8Array).body
-          return HttpClientRequest.bodyUint8Array(request, ExportRedaction.redact(body), "application/json")
+          return HttpClientRequest.bodyUint8Array(
+            request,
+            ExportRedaction.redact(
+              transform === undefined
+                ? body
+                : new TextEncoder().encode(JSON.stringify(transform(JSON.parse(new TextDecoder().decode(body)))))
+            ),
+            "application/json"
+          )
         }
       )
     })
@@ -405,6 +413,8 @@ export interface Options {
    * would drop.
    */
   readonly spans?: ReadonlyArray<string> | undefined
+  /** Application privacy policy on OTLP/JSON, before credential redaction, splitting and transport. */
+  readonly transform?: ((payload: unknown) => unknown) | undefined
   /**
    * The largest export request the collector accepts, in encoded bytes, at
    * most and by default {@link maxRequestBytes}. A larger batch is split into
@@ -494,7 +504,7 @@ export const layer = (
             Layer.provide(boundedClient({
               maxRequestBytes: Math.min(options.maxRequestBytes ?? maxRequestBytes, maxRequestBytes),
               maxRecords: Math.max(1, options.maxRecords ?? Infinity)
-            })),
+            }, options.transform)),
             // Upstream merges OTEL_RESOURCE_ATTRIBUTES even with explicit
             // options. Keep unvalidated ambient metadata out of every request.
             Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),

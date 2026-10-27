@@ -96,3 +96,10 @@ export const roleAnswers = Metric.counter("smithers_web_repo_role_answers", {
   description: "Answers of who the person is on a repository, by outcome and role",
   incremental: true,
 })
+
+
+/** Bounded tree-to-file alias checks: file confirmed, still unconfirmed, or the route's deadline elapsed. */
+export const aliasChecks = Metric.counter("smithers_web_repo_alias_checks", {
+  description: "Tree-to-file alias checks by outcome",
+  incremental: true,
+})

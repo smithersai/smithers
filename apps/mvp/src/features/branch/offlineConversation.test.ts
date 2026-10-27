@@ -39,7 +39,7 @@ test.each(["browser", "sync"])("reopening a verified branch with %s offline rest
   online = false
   await first.runPromise(wentOffline)
   await first.runPromise(questions.failNext("unreachable"))
-  expect(chat.actions.ask("kept offline").asked).toBe(true)
+  expect((await chat.actions.ask("kept offline")).asked).toBe(true)
   await vi.waitFor(() => expect(store.asking.tanstack.toArray).toHaveLength(1))
   await first.dispose()
 

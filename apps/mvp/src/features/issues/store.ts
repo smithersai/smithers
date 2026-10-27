@@ -7,8 +7,9 @@ import { ChatStore } from "../chat/store"
 import { role } from "../repo/actions"
 import { RepoClient } from "../repo/api"
 import { repoId } from "../repo/contract"
+import { sendingAdmitted } from "../../outboxAdmission"
 import { RepoStore } from "../repo/store"
-import { repositoryAccessChanges, repositoryShapeSource, syncStatusAfter, type Transport } from "./source"
+import { repositoryAccess, repositoryAccessChanges, repositoryShapeSource, syncStatusAfter, type Transport } from "./source"
 import {
   COMMENTS_SHAPE_ROUTE,
   ITEMS_SHAPE_ROUTE,
@@ -24,6 +25,7 @@ import {
   deliveredQuery,
   itemQuery,
   listQuery,
+  publicListQuery,
   type LiveRows,
   rowsQuery,
   syncedQuery,
@@ -52,7 +54,7 @@ import {
   WriteRow,
 } from "./schema"
 import { observeIssueShape } from "./shapeSync"
-import { ISSUE_WRITE, IssueWrites } from "./writes"
+import { ISSUE_WRITE, IssueWrites, keep } from "./writes"
 
 // Issues on this tab (decision 0012 §6, docs/features/issues.md#the-browser): each repository's issues, comments, sync
 // state and triage settings in Postgres, synced by Electric per repository (`?repo=`, decision 0079 slice 1b) and kept
@@ -95,6 +97,7 @@ export interface RepoIssues {
   readonly newestFirst: Query<typeof allIssuesQuery>
   readonly walked: Query<typeof syncedRepositoriesQuery>
   readonly list: Query<typeof listQuery>
+  readonly publicList: Query<typeof publicListQuery>
   readonly item: Query<typeof itemQuery>
   readonly conversation: Query<typeof conversationQuery>
   readonly synced: Query<typeof syncedQuery>
@@ -207,6 +210,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
       newestFirst: allIssuesQuery(items),
       walked: syncedRepositoriesQuery(sync),
       list: listQuery(view, items, requested, sending, writes),
+      publicList: publicListQuery(view, items),
       item: itemQuery(view, details),
       conversation: conversationQuery(view, items, comments, requested, sending, writes),
       synced: syncedQuery(view, sync),
@@ -249,15 +253,16 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     reconnect: Effect.void,
   }
 
-  const followAvailability = (collection: ElectricCollection.ElectricCollection<ItemSummary> | ElectricCollection.ElectricCollection<Item>, access: Collection.Collection<Access, string>) =>
+  const followAvailability = (collection: ElectricCollection.ElectricCollection<ItemSummary> | ElectricCollection.ElectricCollection<Item>, access: Collection.Collection<Access, string>, id: string) =>
     Effect.gen(function* () {
       const installed = yield* Ref.make(false)
       const lastTransport = yield* Ref.make<Transport>("allowed")
       const publish = Effect.gen(function* () {
         const status = yield* Ref.get(lastTransport)
         const hasRows = yield* Ref.get(installed)
+        const authority = repositoryAccess((yield* auth.session.toArray)[0]!, yield* repos.roles.toArray, id)
         yield* Effect.ignore(access.update(ACCESS, (row) => {
-          row.status = syncStatusAfter(row.status, status)
+          row.status = authority === "allowed" ? syncStatusAfter(authority, status) : authority
           row.installed = hasRows && ["allowed", "unavailable", "elsewhere"].includes(row.status)
         }))
       })
@@ -366,7 +371,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
         Effect.forkIn(scope, { startImmediately: true }),
       )
       // Availability follows the shape the page reads. A summary receipt never certifies a missing detail body.
-      yield* followAvailability(items, access)
+      yield* followAvailability(items, access, id)
       yield* observeIssueShape(details.sync).pipe(Effect.annotateLogs({ projection: "detail" }), Effect.forkIn(scope, { startImmediately: true }))
       // The follower: a requested write of this repository whose GitHub row arrived goes, and the synced row shows in
       // its place.
@@ -433,7 +438,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
       row.status = status
       if (status !== "allowed") row.installed = false
     }))), Effect.forkIn(scope, { startImmediately: true }))
-    yield* followAvailability(details, access)
+    yield* followAvailability(details, access, id)
     yield* observeIssueShape(details.sync).pipe(Effect.annotateLogs({ projection: "item" }), Effect.forkIn(scope, { startImmediately: true }))
     const delivered = yield* deliveredQuery(requested, repo.items, comments, writes)
     yield* delivered.rows.pipe(
@@ -462,21 +467,25 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
    */
   const queue = (write: QueuedWrite) =>
     Effect.gen(function* () {
-      yield* forRepo(repoIdOf(write.repo))
       const held = yield* requested.get(write.id)
-      if (Option.isSome(yield* sending.get(write.id)) || (Option.isSome(held) && (held.value.status === "requested" || held.value.reason !== null))) {
+      if (Option.isSome(yield* sending.get(write.id))) return { queued: yield* sendingAdmitted(chat.outbox, ISSUE_WRITE, write.id) }
+      if (Option.isSome(held) && (held.value.status === "requested" || held.value.reason !== null)) {
         return { queued: true }
       }
-      yield* chat.lead
       const row: Sending = {
         ...write,
         repoId: repoIdOf(write.repo),
         queuedAt: yield* Clock.currentTimeMillis,
         v: 3,
       }
+      const recoveryKept = yield* Effect.result(keep(requested, row, "not_sent", null))
+      if (recoveryKept._tag === "Failure") return { queued: false }
+      // Following server receipts must not hold local admission behind a repository read or shape startup.
+      yield* forRepo(row.repoId).pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }))
+      yield* chat.lead
       const admitted = yield* chat.outbox
-        .transact(ISSUE_WRITE, { idempotencyKey: write.id }, Effect.asVoid(sending.insert(row)))
-        .pipe(Effect.flatMap((taken) => taken.admitted.pipe(Effect.onError(() => Effect.ignore(taken.settled)))), Effect.result)
+        .transact(ISSUE_WRITE, { idempotencyKey: write.id, joinExisting: true }, Effect.asVoid(sending.insert(row)))
+        .pipe(Effect.flatMap((taken) => taken.admitted.pipe(Effect.catch((error) => Effect.andThen(Effect.ignore(taken.settled), Effect.fail(error))))), Effect.result)
       // Remove only the pre-admission recovery receipt. A concurrent server refusal or accepted receipt wins.
       const recovery = yield* requested.get(write.id)
       if (admitted._tag === "Success" && Option.isSome(recovery) && recovery.value.status === "not_sent" && recovery.value.reason === null) {

@@ -1,5 +1,4 @@
-import bugs from "../../plugins/bugs/plugin.json" with { type: "json" }
-import queue from "../../plugins/queue/plugin.json" with { type: "json" }
+import { bugs, queue } from "./manifests"
 
 // The built-in plugins (decision 0017, "What stays hardcoded"): the one place the core names a plugin, as webpack's
 // `WebpackOptionsApply` lists its own. Each is a manifest, read without running plugin code, and two chunks loaded only

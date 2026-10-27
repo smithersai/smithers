@@ -20,7 +20,9 @@ import { ArtifactStore } from "@smthrs/artifacts"
 import { Capability, Permission } from "@smthrs/capability"
 import { EngineStore, OwnerIdentity, StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import { Action } from "@smthrs/flow"
-import { Runtime } from "@smthrs/flows"
+// Runtime's public subpath avoids the aggregate barrel's browser sync graph.
+// The native host needs the injected runtime, not Yjs or browser storage.
+import * as Runtime from "@smthrs/flows/Runtime"
 import { RedactedLogger } from "@smthrs/journal"
 import {
   type ContainedSpawner,

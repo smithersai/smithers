@@ -220,3 +220,8 @@ from the synced configuration says **Save first**; it never tests a different, s
 draft. Typing any key requires saving, even if its last four characters match. Only an unchanged configuration
 runs the existing durable `model/test {}`. No draft key enters a collection, flow, journal, log or metric; refusals
 record only their code through `personal_model.test` and `smithers_web_personal_model_writes`.
+
+
+Each model tier has one purpose label and one unique description id: Fast is
+**Chat**, Implement is **Coding**, Hard is **Plans and reviews**. The same text
+visibly labels its model and supplies that input's accessible description.

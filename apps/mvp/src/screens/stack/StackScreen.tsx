@@ -92,6 +92,7 @@ export function StackScreen() {
             <li key={change.id} className="stack-not-sent-row">
               <span className="stack-not-sent-label">{change.label}</span>
               <Badge variant="destructive">{change.reason}</Badge>
+              {change.reason === "Not sent" ? <Button variant="outline" size="sm" onClick={() => void actions.retryChange(change.id)}>Retry</Button> : null}
               {change.op === "commit" ? (
                 <Button variant="outline" size="sm" onClick={() => actions.edit(change.id)}>{EDIT}</Button>
               ) : null}

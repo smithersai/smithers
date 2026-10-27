@@ -1,13 +1,16 @@
+import { SteerWrites } from "./writes"
+import { MAX_STEER_CHARS } from "./contract"
+import { reloadAfter } from "../../test/reloadTiming"
 import { writeFile } from "node:fs/promises"
 import { ShapeSource } from "@smthrs/effect-electric"
-import { Persistence } from "@smthrs/effect-tanstack-db"
+import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
 // Watching a TODO's run on Cloudflare from a tab (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare): the
 // browser's own layer (`appLayer`) on a Node device, against ChatApi's real handler with its remote runs routes
 // (worker/RemoteRuns.ts) and the compose Postgres and Electric (src/test/chatApi.ts). The run is the remote host's
 // `probe/Pause`, run under a TODO attempt's id by an engine on a schema of its own, as the Durable Object runs a TODO's
 // `todo` run: so what the tab reads, and when it reads it again, is what it does for a TODO's run.
-import { Effect, Layer, Logger, ManagedRuntime, Option } from "effect"
+import { Context, Effect, Layer, Logger, ManagedRuntime, Option } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { read as telemetry } from "../../test/otlp"
 import { SqlClient } from "effect/sql"
@@ -518,3 +521,160 @@ test("a real repository run records the route's inspection and first subscribed 
     await Effect.runPromise(t.api.remote.release(runId))
   }
 }, 120_000)
+
+
+for (const delay of [0, 100, 300] as const) {
+  test(`an admitted steer survives device reload after ${delay} ms`, async () => {
+    const t = await open(undefined, true)
+    const runId = await Effect.runPromise(t.api.remote.todoRun(`Steer admission ${delay}`))
+    const base = nodeDevice({ agent: t.api })
+    const host = { ...base, outbox: { ...base.outbox, online: { ...base.outbox.online, isOnline: () => false } } }
+    const first = openTab(t.api, { host })
+    runtimes.push(first)
+    const runs = await first.runPromise(Effect.service(Runs))
+    runs.queries.view.startSyncImmediate()
+    await runs.actions.openRun(runId)
+    runs.actions.setSteerDraft(`Offline steer ${delay}`)
+    await until(() => expect(runs.queries.view.toArray[0]?.steerDraft).toBe(`Offline steer ${delay}`))
+    await runs.actions.steer()
+    expect(await host.outbox.storage.keys()).not.toHaveLength(0)
+    await reloadAfter(delay, () => first.dispose())
+    const second = openTab(t.api, { host })
+    runtimes.push(second)
+    const restored = await second.runPromise(Effect.service(Runs))
+    restored.queries.steerSending.startSyncImmediate()
+    await restored.actions.openRun(runId)
+    await until(() => expect(restored.queries.steerSending.toArray).toContainEqual(expect.objectContaining({ runId, body: `Offline steer ${delay}` })))
+  }, 90_000)
+}
+
+
+test("steering refuses overlong input before retaining a request", async () => {
+  const t = await open(undefined, true)
+  const runId = await Effect.runPromise(t.api.remote.todoRun("Long steer"))
+  await t.runs.actions.openRun(runId)
+  t.runs.actions.setSteerDraft("x".repeat(MAX_STEER_CHARS + 1))
+  await until(() => expect(t.draft()?.length).toBe(MAX_STEER_CHARS + 1))
+  await t.runs.actions.steer()
+  expect(t.runs.queries.view.toArray[0]?.refusal).toBe("unavailable")
+  expect(t.runs.queries.steerSent.toArray).toEqual([])
+})
+
+test("a refused steer admission retries the retained identity and keeps one visible message", async () => {
+  const t = await open(undefined, true)
+  const runId = await Effect.runPromise(t.api.remote.todoRun("Retry steer admission"))
+  const base = nodeDevice({ agent: t.api })
+  let full = true
+  const host = { ...base, outbox: { ...base.outbox, storage: { ...base.outbox.storage,
+    set: (key: string, value: string) => full ? Promise.reject(new Error("quota")) : base.outbox.storage.set(key, value),
+  } } }
+  const tab = openTab(t.api, { host })
+  runtimes.push(tab)
+  const runs = await tab.runPromise(Effect.service(Runs))
+  runs.queries.view.startSyncImmediate()
+  runs.queries.steerSent.startSyncImmediate()
+  await runs.actions.openRun(runId)
+  runs.actions.setSteerDraft("Retain this steer")
+  await until(() => expect(runs.queries.view.toArray[0]?.steerDraft).toBe("Retain this steer"))
+  await runs.actions.steer()
+  expect(runs.queries.view.toArray[0]).toMatchObject({ refusal: "unavailable", steerDraft: "Retain this steer" })
+  const id = runs.queries.steerSent.toArray[0]!.id
+  await runs.actions.steer()
+  expect(runs.queries.steerSent.toArray.map((row) => row.id)).toEqual([id])
+  full = false
+  await runs.actions.steer()
+  expect(runs.queries.view.toArray[0]?.steerDraft).toBe("")
+  await until(() => expect(runs.queries.steerSent.toArray.map((row) => row.id)).toEqual([id]))
+})
+
+for (const change of ["typing", "navigation"] as const) {
+  test(`a steer admission cannot clear newer ${change}`, async () => {
+    const t = await open(undefined, true)
+    const runId = await Effect.runPromise(t.api.remote.todoRun("Held steer admission"))
+    const nextRun = await Effect.runPromise(t.api.remote.repoRun("probe/Pause"))
+    const base = nodeDevice({ agent: t.api })
+    let enter!: () => void
+    let release!: () => void
+    const entered = new Promise<void>((resolve) => { enter = resolve })
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const host = { ...base, outbox: { ...base.outbox, storage: { ...base.outbox.storage,
+      set: async (key: string, value: string) => { enter(); await held; return base.outbox.storage.set(key, value) },
+    } } }
+    const tab = openTab(t.api, { host })
+    runtimes.push(tab)
+    const runs = await tab.runPromise(Effect.service(Runs))
+    runs.queries.view.startSyncImmediate()
+    await runs.actions.openRun(runId)
+    runs.actions.setSteerDraft("Earlier steer")
+    await until(() => expect(runs.queries.view.toArray[0]?.steerDraft).toBe("Earlier steer"))
+    const admitted = runs.actions.steer()
+    try {
+      await entered
+      if (change === "navigation") await runs.actions.openRun(nextRun)
+      runs.actions.setSteerDraft("Newer steer")
+      await until(() => expect(runs.queries.view.toArray[0]?.steerDraft).toBe("Newer steer"))
+    } finally { release() }
+    await admitted
+    expect(runs.queries.view.toArray[0]?.steerDraft).toBe("Newer steer")
+  })
+}
+
+test("a steer without a durable recovery receipt never enters the outbox", async () => {
+  const t = await open(undefined, true)
+  await t.tab.runPromise(Effect.scoped(Effect.gen(function* () {
+    const writes = yield* SteerWrites
+    const sent = { ...writes.sent, insert: (row: Parameters<typeof writes.sent.insert>[0]) => writes.sent.insert(row).pipe(Effect.map((transaction) => ({
+      ...transaction, persisted: Effect.fail(new Collection.TransactionFailed({ cause: "quota" })),
+    }))) }
+    const built = yield* Layer.build(Layer.fresh(RunSteers.layer).pipe(Layer.provide(Layer.succeed(SteerWrites, { ...writes, sent }))))
+    const steers = Context.get(built, RunSteers)
+    expect(yield* steers.queue({ id: crypto.randomUUID(), runId: `todo:${crypto.randomUUID()}`, body: "Retain me" })).toEqual({ kept: false })
+    expect(yield* writes.sending.toArray).toEqual([])
+  })))
+})
+
+test("an already refused steer stays refused when its asking flow replays", async () => {
+  const t = await open(undefined, true)
+  const runId = await Effect.runPromise(t.api.remote.todoRun("Refused before start"))
+  const steers = await t.tab.runPromise(Effect.service(RunSteers))
+  const writes = await t.tab.runPromise(Effect.service(SteerWrites))
+  const steer = { id: crypto.randomUUID(), runId, body: "Keep the refusal" }
+  expect(await t.tab.runPromise(steers.queue(steer))).toEqual({ kept: true })
+  await until(async () => expect(await t.tab.runPromise(writes.sent.get(steer.id))).toMatchObject({ value: { status: "not_sent", reason: "not_working" } }))
+  expect(await t.tab.runPromise(steers.queue(steer))).toEqual({ kept: true })
+  expect(await t.tab.runPromise(writes.sending.toArray)).toEqual([])
+})
+
+test("repeated Steer joins one pending draft, while typing the same text again creates another write", async () => {
+  const t = await open(undefined, true)
+  const runId = await Effect.runPromise(t.api.remote.todoRun("One pending steer"))
+  const base = nodeDevice({ agent: t.api })
+  let enter!: () => void
+  let release!: () => void
+  const entered = new Promise<void>((resolve) => { enter = resolve })
+  const held = new Promise<void>((resolve) => { release = resolve })
+  const host = { ...base, outbox: { ...base.outbox, online: { ...base.outbox.online, isOnline: () => false }, storage: { ...base.outbox.storage,
+    set: async (key: string, value: string) => { enter(); await held; return base.outbox.storage.set(key, value) },
+  } } }
+  const tab = openTab(t.api, { host })
+  runtimes.push(tab)
+  const runs = await tab.runPromise(Effect.service(Runs))
+  const writes = await tab.runPromise(Effect.service(SteerWrites))
+  runs.queries.view.startSyncImmediate()
+  await runs.actions.openRun(runId)
+  runs.actions.setSteerDraft("Same words")
+  const first = runs.actions.steer()
+  let repeated: typeof first | undefined
+  try {
+    await entered
+    repeated = runs.actions.steer()
+    await tab.runPromise(Effect.yieldNow)
+    expect(await tab.runPromise(writes.sending.toArray)).toHaveLength(1)
+    // Retyping the same text is a new user act, and must survive the older admission.
+    runs.actions.setSteerDraft("Same words")
+  } finally { release() }
+  await Promise.all([first, repeated])
+  expect(runs.queries.view.toArray[0]?.steerDraft).toBe("Same words")
+  await runs.actions.steer()
+  expect(await tab.runPromise(writes.sending.toArray)).toHaveLength(2)
+})

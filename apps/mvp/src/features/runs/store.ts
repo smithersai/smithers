@@ -1,7 +1,7 @@
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Persistence, Query } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
-import { Clock, Context, Duration, Effect, Layer, Metric, Option, Scope, Semaphore, Stream } from "effect"
+import { Clock, Context, Duration, Effect, Layer, Metric, Option, Ref, Scope, Semaphore, Stream } from "effect"
 import { RemoteReadFailed, RemoteRunsClient } from "./api"
 import { isRemoteRun, JOURNAL_PAGE, REMOTE_RUN_SHAPE_ROUTE, RUN_LIST_LIMIT, settled } from "./contract"
 import { ACTIONS_SHAPE_ROUTE } from "../actions/contract"
@@ -203,6 +203,9 @@ export const repoRunsSynced = (rows: {
 export class RunsStore extends Context.Service<
   RunsStore,
   {
+    readonly scope: Scope.Scope
+    readonly steerRevision: Ref.Ref<number>
+    readonly steerNamespace: string
     readonly runs: Collection.Collection<RunRow, string>
     readonly pages: Collection.Collection<RunPage, string>
     readonly view: Collection.Collection<RunView, string>
@@ -687,6 +690,9 @@ export class RunsStore extends Context.Service<
       }))
 
       return RunsStore.of({
+        scope,
+        steerRevision: yield* Ref.make(0),
+        steerNamespace: crypto.randomUUID(),
         runs,
         pages,
         view,

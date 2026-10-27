@@ -14,7 +14,7 @@ beforeAll(async () => {
   await copyFile("public/icon-192.png", join(directory, "icon-192.png"))
   await copyFile("public/social-card.png", join(directory, "social-card.png"))
   // Workspace packages export their source, which can hold `.vibe` modules.
-  const bundle = await build({ entryPoints: ["worker/index.ts"], bundle: true, write: false, format: "esm", plugins: [vibelang()] })
+  const bundle = await build({ entryPoints: ["worker/index.ts"], bundle: true, write: false, format: "esm", conditions: ["workerd"], plugins: [vibelang()] })
   worker = new Miniflare({
     workers: [{ config: {
       name: "site",

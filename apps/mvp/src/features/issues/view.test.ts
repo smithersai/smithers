@@ -14,6 +14,7 @@ import {
   draftOf,
   issueOf,
   listProps,
+  listFailureOf,
   type ListRow,
   mayManageTriage,
   mayManageTriageOnList,
@@ -400,4 +401,17 @@ test("unavailable item transport settles or retains only a completely installed 
 test("an applied empty summary is known even without a server sync marker", () => {
   expect(listProps([], undefined, { status: "allowed", installed: false }).unknown).toBe(true)
   expect(listProps([], undefined, { status: "allowed", installed: true }).unknown).toBe(false)
+})
+
+
+test("list availability explains a GitHub limit or a failed shape without claiming synchronization", () => {
+  expect(listFailureOf(undefined)).toBeUndefined()
+  expect(listFailureOf({ status: "allowed" })).toBeUndefined()
+  expect(listFailureOf({ status: "unavailable" })).toBe("Issues unavailable")
+  expect(listFailureOf({ status: "allowed" }, "unavailable")).toBe("Issues unavailable")
+  expect(listFailureOf({ status: "unavailable" }, "rate_limited")).toBe("GitHub limit reached")
+  expect(listFailureOf({ status: "allowed" }, undefined, { state: "failed", message: "GitHub limit reached" })).toBe("GitHub limit reached")
+  expect(listFailureOf({ status: "allowed" }, undefined, { state: "failed", message: "Couldn't load" })).toBe("Issues unavailable")
+  expect(listFailureOf({ status: "allowed" }, undefined, { state: "ready", message: null })).toBeUndefined()
+  expect(listFailureOf({ status: "allowed" }, undefined, null)).toBeUndefined()
 })

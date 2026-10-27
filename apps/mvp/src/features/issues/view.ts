@@ -2,6 +2,7 @@ import { COMMITMENTS, COMMITMENT_COPY, type Commitment } from "./lifecycle"
 import type { IssuesViewIssue, IssuesViewTriage } from "@smthrs/ui"
 import { mayAsk, type Role } from "../auth/contract"
 import { hereOf, type RepoAnswer } from "../auth/viewer"
+import { GITHUB_LIMIT } from "../repo/contract"
 import { githubIssueUrl, MAX_BODY_LENGTH, MAX_TITLE_LENGTH, NOT_SENT_COPY, TRIAGE_STATES, type TriageState } from "./contract"
 
 type Pending = NonNullable<IssuesViewIssue["pending"]>
@@ -84,6 +85,12 @@ export type Refused = "sign_in" | "forbidden"
 /** The shape's refusal, from the access query's row; none while unknown or allowed. */
 export const refusedOf = (access: { readonly status: string } | undefined): Refused | undefined =>
   access?.status === "sign_in" || access?.status === "forbidden" ? access.status : undefined
+
+/** Authority or transport failure is terminal feedback, including before any issue shape can start. */
+export const listFailureOf = (access: { readonly status: string } | undefined, failure?: string, about?: { readonly state: string; readonly message: string | null } | null): string | undefined =>
+  failure === "rate_limited" || about?.state === "failed" && about.message === GITHUB_LIMIT
+    ? GITHUB_LIMIT
+    : failure !== undefined || access?.status === "unavailable" || about?.state === "failed" ? "Issues unavailable" : undefined
 
 /**
  * A repository's issues view in a conversation (decision 0004 §3): the repository's synced issues (queries.ts

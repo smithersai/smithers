@@ -14,6 +14,7 @@ import type { Access } from "./schema"
 export const repositoryAccess = (session: Session, roles: ReadonlyArray<RepoRole>, id: string): Access["status"] => {
   const row = roles.find((role) => role.id === id)
   if (row === undefined) return "unknown"
+  if (row.failure !== undefined) return "unavailable"
   if (row.synced === false) return "elsewhere"
   if (row.role === null && row.readable === true) return "allowed"
   if (session.status === "signed_in") return (row.own ? session.role : row.role) === null ? "forbidden" : "allowed"

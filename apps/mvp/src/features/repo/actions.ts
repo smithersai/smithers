@@ -260,13 +260,14 @@ export const role = (owner: string, name: string) =>
     const result = yield* Effect.result((yield* RepoClient).role(owner, name))
     const durationMs = (yield* Clock.currentTimeMillis) - startedAt
     if (result._tag === "Failure") {
+      yield* put(store.roles, id, { id, role: null, own: false, failure: result.failure.code ?? "unavailable" })
       yield* Metric.update(Metric.withAttributes(roleAnswers, { outcome: "refused", role: "unknown" }), 1)
       return yield* Effect.logWarning("repo.role").pipe(
         Effect.annotateLogs({ outcome: "refused", status: result.failure.status ?? 0, durationMs }),
       )
     }
     const { role: held, own, readable, synced } = result.success
-    yield* put(store.roles, id, { id, role: held, own, readable, synced })
+    yield* put(store.roles, id, { id, role: held, own, readable, synced, failure: undefined })
     yield* Metric.update(Metric.withAttributes(roleAnswers, { outcome: "answered", role: held ?? "none" }), 1)
     yield* Effect.logInfo("repo.role").pipe(
       Effect.annotateLogs({ outcome: "answered", role: held ?? "none", own, durationMs }),

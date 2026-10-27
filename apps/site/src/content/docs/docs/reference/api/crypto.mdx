@@ -78,6 +78,12 @@ the explicit synchronous entry point, for pure plan and identity construction.
 - Runs on the calling thread. See
   [when not to use the synchronous path](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/crypto/docs/guides/hash-in-synchronous-code.md#know-when-not-to-use-the-synchronous-path).
 
+
+| Export | Contract |
+| --- | --- |
+| `makeDigestPartsSync` | Direct package-root export: `() => (parts: ReadonlyArray<string>) => Digest`. Produces a reusable synchronous SHA-256 parts digester. It is not a method on the `Sha256` schema; it requires no Effect service. The result equals `digestSync(parts.join(""))`; fragment boundaries are not hashed. Every fragment must be well-formed UTF-8 text on its own; split surrogate pairs are refused. The returned function throws `Sha256Error` for invalid/unreadable input or encoding failure, retaining its last successful reusable prefixes. |
+
+
 ## Schemas
 
 ### Digest
