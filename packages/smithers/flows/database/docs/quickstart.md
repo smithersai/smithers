@@ -102,7 +102,7 @@ lifetime of a scope, and closing the scope closes the database.
 Run the file with your TypeScript runner. The output is the row you inserted:
 
 ```text
-[ { body: 'hello' } ]
+[ [Object: null prototype] { body: 'hello' } ]
 ```
 
 ## Prove the migration is recorded
