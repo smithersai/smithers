@@ -28,6 +28,9 @@ export const ATTENTION_WITHIN = "15 seconds"
 /** A finished run or a repository event stays in the person's list this long, unless dismissed (0009 §3). */
 export const LISTED_FOR_MS = 7 * 24 * 60 * 60 * 1000
 
+/** The recipient of a row this device made itself (decision 0124): no person's id, so no act on it reaches the server. */
+export const LOCAL_RECIPIENT = ""
+
 /** The longest title a toast shows: the first line of a question, a commit or a release, cut here. */
 export const MAX_TITLE_LENGTH = 80
 

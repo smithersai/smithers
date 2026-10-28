@@ -1,7 +1,7 @@
 import { admissionReceipt } from "../../writeAdmission"
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Persistence } from "@smthrs/effect-tanstack-db"
-import { Cache, Clock, Context, Effect, Exit, Layer, Metric, Option, Scope, Stream } from "effect"
+import { Cache, Clock, Context, Effect, Exit, Layer, Metric, Option, PubSub, Scope, Stream } from "effect"
 import { AuthStore } from "../auth/store"
 import { RepoStore } from "../repo/store"
 import { repositoryShapeSource } from "../issues/source"
@@ -81,6 +81,8 @@ export class TodosStore extends Context.Service<
     readonly keepDraft: (draft: Draft) => Effect.Effect<{ readonly kept: boolean }>
     readonly queue: (op: QueuedOp) => Effect.Effect<{ readonly kept: boolean }>
     readonly scope: Scope.Scope
+    /** Once after any change to an opened stack's synced TODOs, its first rows included: what a commit's result reads on. */
+    readonly todosChanged: Stream.Stream<void>
   }
 >()("@smthrs/mvp/todos/TodosStore") {
   /** The store; its collections cleaned up and its shapes closed when the scope closes. Needs chat's store's outbox. */
@@ -93,6 +95,7 @@ const viewOf = (view: Collection.Collection<StackView, string>) =>
 
 const make = Effect.fnUntraced(function* (config: TodosConfig) {
   const scope = yield* Effect.scope
+  const changedTodos = yield* PubSub.unbounded<void>()
   const auth = yield* AuthStore
   const repos = yield* RepoStore
   const persistence = yield* Persistence.Persistence
@@ -155,6 +158,10 @@ const make = Effect.fnUntraced(function* (config: TodosConfig) {
         persist: { schemaVersion: 1 },
       }).pipe(Effect.provideService(ShapeSource.ShapeSource, guarded))
       const stack: RepoStack = { todos: yield* rowsOf(todos), requests: yield* rowsOf(requests) }
+      yield* stack.todos.rows.pipe(
+        Stream.runForEach(() => PubSub.publish(changedTodos, undefined)),
+        Effect.forkIn(scope, { startImmediately: true }),
+      )
       // A requested change whose result arrived goes. Access follows the device session and repository role.
       yield* Stream.zipLatest(stack.todos.rows, requestedQuery.rows).pipe(
         Stream.runForEach(([rows, mine]) =>
@@ -226,6 +233,7 @@ const make = Effect.fnUntraced(function* (config: TodosConfig) {
     })
 
   return TodosStore.of({
+    todosChanged: Stream.fromPubSub(changedTodos),
     stackOf,
     opened: (id) => stacks.get(id),
     empty,

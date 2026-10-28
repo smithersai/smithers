@@ -121,3 +121,36 @@ export const UnsentV1 = Schema.Struct({
 })
 export type UnsentV1 = typeof UnsentV1.Type
 
+
+/** The issue outbox's operations before `answeredAt` (2026-10-28). */
+const OUTBOX_WRITE_OPS_20261028 = [
+  "issue/create", "issue/comment", "issue/triage", "issue/commitment", "triage/run", "triage/enable", "triage/pause", "pr/merge",
+] as const
+
+/** `issue-requested`, version 2: a write the server took or refused, before the route's answer carried its time. */
+export const IssueRequestedV2 = Schema.Struct({
+  id: Schema.String,
+  repo: Schema.String,
+  op: Schema.Literals(OUTBOX_WRITE_OPS_20261028),
+  title: Schema.String,
+  number: Schema.Number,
+  body: Schema.String,
+  decision: Schema.optional(Schema.Literals(["accept", "reject"])),
+  dailyTokens: Schema.optional(Schema.Number),
+  commitment: Schema.optional(Schema.Literals(["now", "next", "later", "none"])),
+  repoId: Schema.String,
+  queuedAt: Schema.Number,
+  status: Schema.Literals(["requested", "not_sent"]),
+  reason: Schema.NullOr(Schema.Literals(NOT_SENT_REASONS_7B96F878)),
+})
+
+/** `todo-requested`, version 3: a change the route took or refused, before its answer carried its time. */
+export const TodoRequestedV3 = Schema.Struct({
+  id: Schema.String, repo: Schema.String, op: Schema.Literals(["commit", "drop", "retry"]),
+  title: Schema.String, prompt: Schema.String, acceptance: Schema.Array(Schema.String),
+  number: Schema.Number, issue: Schema.optionalKey(Schema.Number),
+  repoId: Schema.String, queuedAt: Schema.Number,
+  status: Schema.Literals(["requested", "not_sent"]),
+  reason: Schema.NullOr(Schema.Literals(["invalid", "authentication", "forbidden", "not_found", "conflict", "stack_full", "merged", "not_retryable", "too_large", "app_not_installed"])),
+  taken: Schema.NullOr(Schema.Number),
+})

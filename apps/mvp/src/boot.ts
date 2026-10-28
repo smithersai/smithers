@@ -215,7 +215,7 @@ export const realServices = (options: Pick<AppOptions, "origin" | "answerWithin"
  */
 export const appLayer = <S = never>(
   options: AppOptions,
-  services: Layer.Layer<ChatClient | AuthClient | S, never, HttpClient.HttpClient | ClientEngine>,
+  services: Layer.Layer<ChatClient | AuthClient | S, never, HttpClient.HttpClient | ClientEngine | BrowserEngine.BrowserEngine>,
 ) => {
   const { origin, reload, host, fetch: _fetch, answerWithin: _answerWithin, ...chat } = options
   // Sign-in, and this tab's answers to the `auth/refresh` it starts when a session check fails: both check the session,
@@ -323,6 +323,7 @@ export const appLayer = <S = never>(
         Layer.provideMerge(BugsStore.layer({ origin })),
         Layer.provideMerge(
           AttentionStore.layer({ origin }).pipe(
+            Layer.provide(RunSteers.layer),
             Layer.provideMerge(Layer.succeed(AttentionNavigation, AttentionNavigation.of({ navigate: host.navigate }))),
             Layer.provideMerge(
               StatusStore.layer({ origin }).pipe(Layer.provideMerge(Layer.succeed(TabTitle, host.title ?? TabTitle.none))),
@@ -667,7 +668,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
  */
 export const start = <S = never>(
   options: AppOptions & BootOptions,
-  services: Layer.Layer<ChatClient | AuthClient | S, never, HttpClient.HttpClient | ClientEngine>,
+  services: Layer.Layer<ChatClient | AuthClient | S, never, HttpClient.HttpClient | ClientEngine | BrowserEngine.BrowserEngine>,
 ) => {
   const { target, startedAt, render, mac, timeline, records, ...app } = options
   const runtime = ManagedRuntime.make(appLayer(app, services))

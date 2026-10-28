@@ -32,6 +32,7 @@ import {
   SteerSentStore,
   SpendSeenStore,
   PersonalModelHiddenStore,
+  AttentionDismissedStore,
   AttentionPendingStore,
   TodoDraftsStore,
   TodoRequestedStore,
@@ -136,7 +137,8 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
       flows: legacy ? "resync 1→2 migrated 0 kept 0" : "current 2→2 migrated 0 kept 0",
       "issue-drafts": "current 1→1 migrated 0 kept 0",
       "issue-items": legacy ? "resync 1→3 migrated 0 kept 0" : "current 3→3 migrated 0 kept 0",
-      "issue-requested": legacy ? "migrated 1→2 migrated 2 kept 0" : "current 2→2 migrated 0 kept 0",
+      // Version 3 adds when the route answered (decision 0124): every kept row is migrated, as it was.
+      "issue-requested": `migrated ${legacy ? 1 : 2}→3 migrated ${rowsOf(fixture, "issue-requested").length} kept 0`,
       preferences: "current 1→1 migrated 0 kept 0",
       "repo-repositories": legacy ? "resync 2→4 migrated 0 kept 0" : "resync 3→4 migrated 0 kept 0",
       runs: "resync 1→2 migrated 0 kept 0",
@@ -320,6 +322,7 @@ test("device-local records restore and replace by their declared identity", asyn
     [SpendSeenStore, { kind: "budget", through: "first" }, "through", "next"],
     [PersonalModelHiddenStore, { id: "failure", failedAt: "2026-10-24T17:00:00.000Z" }, "failedAt", "2026-10-24T18:00:00.000Z"],
     [AttentionPendingStore, { id: "ack", subject: "run:one", act: "read", version: 1 }, "version", 2],
+    [AttentionDismissedStore, { id: "run:one", at: 1 }, "at", 2],
     [TodoDraftsStore, { id: "draft", repo: "a/b", repoId: "repo", title: "First", prompt: "Build", acceptance: [], answerId: null, createdAt: 1 }, "title", "Next"],
     [TodoRequestedStore, { id: "op", op: "drop", repo: "a/b", title: "", prompt: "", acceptance: [], number: 1, repoId: "repo", queuedAt: 1, status: "requested", reason: null, taken: null }, "taken", 2],
   ] as const

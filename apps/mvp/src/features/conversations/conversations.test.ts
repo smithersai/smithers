@@ -319,13 +319,19 @@ describe("a new conversation", () => {
     expect((await laptop.runtime.runPromise(Effect.service(ChatStore))).composer.tanstack.get(COMPOSER)?.draft).toBe(`/new ${DEFAULT_REPOSITORY}`)
   }, WITHIN)
 
-  test("an unavailable engine reports the same existing error and restores /new", async () => {
+  test("an unavailable engine keeps /new in the composer, staged, and claims no failure it can't prove", async () => {
+    // No reply from the engine proves nothing either way (decision 0124): the line stays the person's, its input stays
+    // staged for the next page open, and the composer says nothing went wrong.
     const api = await openApi()
     const laptop = await openDevice(api, nodeDevice({ engineWorker: failingWorker }))
     laptop.commands.queries.menu.startSyncImmediate()
     laptop.commands.actions.type(`/new ${DEFAULT_REPOSITORY}`)
     laptop.commands.actions.submit(`/new ${DEFAULT_REPOSITORY}`)
-    await until(() => expect(laptop.commands.queries.menu.toArray[0]?.refusal).toBe(ACTION_FAILED))
+    await until(() =>
+      expect(laptop.count(dispatches, { flow: "conversation/new", door: "slash", outcome: "error" })).toBe(1)
+    )
+    expect(laptop.commands.queries.menu.toArray[0]?.refusal ?? null).toBeNull()
+    expect((await laptop.runtime.runPromise(Effect.service(ChatStore))).composer.tanstack.get(COMPOSER)?.draft).toBe(`/new ${DEFAULT_REPOSITORY}`)
     expect(laptop.host.navigated).toEqual([])
   }, WITHIN)
 
@@ -373,8 +379,10 @@ describe("a new conversation", () => {
         expect(laptop.count(dispatches, { flow: "conversation/new", door: "slash", outcome: "failed" })).toBe(1)
       )
       expect(laptop.commands.queries.menu.toArray[0]?.refusal ?? null).toBeNull()
+      // The line stays until its run finished (decision 0124): a run that failed leaves it, and says nothing over newer
+      // work.
       expect(store.composer.tanstack.get(COMPOSER)?.draft).toBe(
-        change === "typing" ? "/theme" : change === "draft" ? "next question" : "",
+        change === "typing" ? "/theme" : change === "draft" ? "next question" : `/new ${DEFAULT_REPOSITORY} taken`,
       )
       expect(laptop.host.navigated).toEqual([])
     },

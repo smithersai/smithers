@@ -42,6 +42,21 @@ notifications ─▶ Electric (/api/shapes/notifications, your rows) ─▶ ever
 - **A failed run's toast** shows for 4 s like a finished one; the failure stays in its conversation with Retry and in your list until you dismiss it.
 - Every toast fades in after 300 ms.
 
+## Background progress
+
+`/new`, Make TODO, Create issue and Commit each show one toast from the press until their result, on every page, through a reload ([0124](../decisions/0124-background-progress.md)). Nothing is stored for it: the toast says what the operation's own receipts prove, the strongest one deciding.
+
+| Operation | Requested | Working | Done | Failed |
+|---|---|---|---|---|
+| `/new`, Make TODO | the press, until the engine records its run | the engine's run | the run completed | the run failed; the engine refused the start (Try again) |
+| Create issue | the press, the outbox, the route taking it | GitHub's write pending | GitHub made the issue (Open goes to it) | GitHub or the route refused it; the outbox refused it (Try again) |
+| Commit | the press, the outbox | | the stack numbered the TODO (Open goes to it) | the route refused it; the outbox refused it (Try again) |
+
+- **The press is this tab's.** Its input receipt survives a reload and is admitted again with the same identity, so Requested reconnects. Another tab shows the operation once a device or server receipt exists, and never a failure it can't see.
+- **No reply is no failure.** A start whose answer was lost stays Requested until the engine's run answers.
+- **Done and Failed** come from the person's notification, folded with the result on the server (`worker/github/WriteFeed.ts`, `worker/stack/StackFeed.ts`), or from the device's receipt until that row syncs. Their 4 s count from the receipt's own time.
+- **A failure this device toasted** is listed until you dismiss it; Dismiss keeps that receipt's time on the device (`attention-dismissed`), so a later Try again shows again.
+
 ## The top bar
 
 The top bar's bell (`NotificationsBell`, `@smthrs/ui` `NotificationBell`) is the one way in to what waits on you, on every page: in `/app`'s header or the repository header where present, and floated at the window's top-right on other pages (`src/screens/root/Root.tsx`). It counts your unread entries, and while a run of yours waits on you it reads `◆ Needs you` in gold (with the count above 1), replacing agent status's header pill. Clicking it or Alt+N opens the panel at the newest run waiting on you, expanded with its question; O or Open goes to it.
@@ -115,7 +130,8 @@ The run report and answer routes (`worker/Runs.ts`) fold in their own transactio
 |---|---|
 | `notifications` | your rows, an Electric collection kept on the device (`persist: { schemaVersion: 1 }`) |
 | `attention-pending` | Read, Dismiss and Hide held until the synced rows show them; an act that cannot land is removed |
-| `attention-entries` | what the views read, worked out by `feedOf` (`entries.ts`, pure) from the rows, the pending acts, the clock and the conversation the tab shows; again when a toast is due to hide |
+| `attention-entries` | what the views read, worked out by `feedOf` (`entries.ts`, pure) from the rows, the device's own progress rows (`progressOf`, `progress.ts`, pure), the pending acts, the clock and the conversation the tab shows; again when a receipt changes or a toast is due to hide |
+| `attention-dismissed` | your Dismiss of a failure this device toasted itself, by subject and the receipt's time; kept on the device, forgotten once the list no longer shows such a failure |
 | `stack`, `stackHere`, `list`, `listHere` | the current toasts and the rest of your list, on a page and over a conversation |
 | `attention-panel` | the panel on this tab: open, the entry expanded, the entry to focus, A's focus requests |
 | `attention-details` | the expanded entry's detail (`detailOf`), worked out again when the entry, its answer, its run row or the tab's draft changes, including changes to the expanded entry's branch conversation |

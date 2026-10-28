@@ -41,7 +41,8 @@ export class IssueWrites extends Context.Service<
         id: "issue-requested",
         schema: Requested,
         getKey: (row) => row.id,
-        schemaVersion: 2,
+        // Version 3 adds when the route answered (decision 0124).
+        schemaVersion: 3,
       })
       const context = yield* Effect.context<IssuesClient>()
       const mutation: Outbox.Mutation<never> = (params) => send(requested, params).pipe(Effect.provideContext(context))
@@ -65,7 +66,12 @@ export const keep = (
   row: Sending,
   status: Requested["status"],
   reason: NotSentReason | null,
-) => storeRow(requested, row, status, reason).pipe(Effect.mapError(() => new Outbox.Retry({})))
+) =>
+  Effect.gen(function* () {
+    // The route's answer, taken or refused, keeps when it came; the pre-admission receipt has none (decision 0124).
+    const answeredAt = status === "requested" || reason !== null ? yield* Clock.currentTimeMillis : undefined
+    return yield* storeRow(requested, row, status, reason, answeredAt)
+  }).pipe(Effect.mapError(() => new Outbox.Retry({})))
 
 /** `keep`, failing with what the device's store failed with. */
 const storeRow = (
@@ -73,6 +79,7 @@ const storeRow = (
   row: Sending,
   status: Requested["status"],
   reason: NotSentReason | null,
+  answeredAt?: number,
 ) =>
   Effect.gen(function* () {
     const kept = Option.isNone(yield* requested.get(row.id))
@@ -90,10 +97,13 @@ const storeRow = (
         queuedAt: row.queuedAt,
         status,
         reason,
+        ...(answeredAt === undefined ? {} : { answeredAt }),
       })
       : yield* requested.update(row.id, (draft) => {
         draft.status = status
         draft.reason = reason
+        if (answeredAt === undefined) delete draft.answeredAt
+        else draft.answeredAt = answeredAt
       })
     yield* kept.persisted
   })

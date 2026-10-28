@@ -3,7 +3,7 @@ import { noticeDismissDelay, workNoticeVisible } from "@smthrs/ui"
 import { mayAsk } from "../auth/contract"
 import { cloneDetail } from "../repo/contract"
 import type { Session } from "../auth/schema"
-import { HOME_HREF, LISTED_FOR_MS } from "./contract"
+import { HOME_HREF, LISTED_FOR_MS, LOCAL_RECIPIENT } from "./contract"
 import type { Entry, Notice, NoticeState, Pending } from "./schema"
 
 // The feed as a person sees it (decision 0009 §4), from the synced rows, this device's acts on their way and the clock.
@@ -109,12 +109,15 @@ export const feedOf = (
     const listed = !notice.quiet && open && (!settled || nowMs < updatedAtMs + LISTED_FOR_MS)
     if (listed && settled) due(updatedAtMs + LISTED_FOR_MS)
     if (!stack && !listed) continue
-    const here = notice.kind === "run" &&
+    // A row this device made (src/features/attention/progress.ts) is no conversation's own run.
+    const local = notice.recipient === LOCAL_RECIPIENT || (notice.kind === "write" && notice.ref === "launch")
+    const here = !local && notice.kind === "run" &&
       (place === null ? notice.href === HOME_HREF : notice.conversationId === place)
+    const words = wordsOf(notice)
     entries.push({
       id: notice.subject,
       kind: notice.kind,
-      ...(notice.kind === "write" && notice.ref === "launch" ? { local: true } : {}),
+      ...(local ? { local: true } : {}),
       state: notice.state,
       mine: notice.mine,
       runId: notice.runId,
@@ -122,10 +125,12 @@ export const feedOf = (
       actor: notice.actor,
       // When it happened, as the row says: GitHub's time for a repository's event, the latest report for a run.
       atMs: timeOf(notice.occurredAt) || updatedAtMs,
-      ...wordsOf(notice),
+      ...words,
+      // Requested before anything durable took it (decision 0124).
+      ...(local && (notice.ref === "requested" || notice.ref === "unanswered") ? { word: "Requested" } : {}),
       action: notice.kind === "run" && notice.mine && notice.state === "needs_you"
         ? "answer"
-        : notice.kind === "clone" && notice.mine && notice.state === "failed"
+        : (notice.kind === "clone" && notice.mine && notice.state === "failed") || (local && (notice.ref === "retry" || notice.ref === "unanswered"))
         ? "retry"
         : "open",
       href: notice.kind === "main" && notice.ref !== null

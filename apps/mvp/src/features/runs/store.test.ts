@@ -65,6 +65,7 @@ const open = (answers: Answers, withAuth = false) => {
   const engine = Layer.succeed(BrowserEngine.BrowserEngine, BrowserEngine.BrowserEngine.of({
     start: () => Effect.die("unused"),
     result: () => Effect.die("unused"),
+    runs: () => Stream.empty,
     cancel: () => Effect.die("unused"),
     signal: () => Effect.die("unused"),
     inspect: (runId, options) => answers.inspect(runId, options),

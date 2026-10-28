@@ -1,8 +1,10 @@
 import { Collection } from "@smthrs/effect-tanstack-db"
-import { Deferred, Effect, Logger, type ManagedRuntime, Metric, Scope } from "effect"
+import { PendingSnapshot } from "@smthrs/platform-browser"
+import { Deferred, Effect, Exit, Logger, type ManagedRuntime, Metric, Scope } from "effect"
 import { slashMenu, slashSubmit } from "@smthrs/ui"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { DispatchFailed, FlowDispatch, dispatches } from "../../flows/dispatch"
+import { WriteIntents } from "../../writeAdmission"
 import { NavigationRefused } from "../navigation/flows"
 import { choose as chooseCommand, submit as submitCommand, type as typeCommand } from "./actions"
 import { entryOf, names } from "../../flows/registry"
@@ -54,9 +56,18 @@ const person = (role: Actor["role"]): Actor => ({ subject: { kind: "person", id:
  * The app over a fresh ChatApi as `actor` (a Member unless set), with the commands layer and its menu started. The test
  * ChatApi serves no sign-in routes, so the tab's session row is set as sign-in's `load` sets it from ChatApi's answer.
  */
+/** A device whose tab keeps its input receipts, as a browser's session storage does. */
+const keepingInputs = () => {
+  const data = new Map<string, string>()
+  return {
+    ...nodeDevice(),
+    writeSnapshot: PendingSnapshot.make({ getItem: (key) => data.get(key) ?? null, setItem: (key, value) => void data.set(key, value), removeItem: (key) => void data.delete(key) }, "pending"),
+  }
+}
+
 const open = async (options: TabOptions = {}, actor: Actor | null = person("member")) => {
   const runtime: ManagedRuntime.ManagedRuntime<
-    Commands | Chat | ChatStore | CommandsStore | ThemeStore | AuthStore | TestChatApi | Plugins | FlowDispatch | IssuesStore | TodosStore | RunSteers | SteerWrites | BranchStore | RepoStore,
+    Commands | Chat | ChatStore | CommandsStore | ThemeStore | AuthStore | TestChatApi | Plugins | FlowDispatch | IssuesStore | TodosStore | RunSteers | SteerWrites | BranchStore | RepoStore | WriteIntents,
     unknown
   > = openTestApp(options, { actor })
   runtimes.push(runtime)
@@ -453,22 +464,103 @@ describe("submitting", () => {
     }
   })
 
-  test("new conversation dispatch outcomes restore only refused commands", async () => {
+  test("typing while the engine admits /new keeps the new text: no refusal or cleared line replaces it", async () => {
     const tab = await open()
     await ready(tab)
-    for (const [index, result] of [
-      Effect.fail(new DispatchFailed({ flow: "conversation/new", reason: "unavailable" })),
-      Effect.succeed({ _tag: "Failed" }),
-      Effect.succeed({ _tag: "Done", value: {} }),
-    ].entries()) {
-      const draft = "/new roninjin10/smithers-github-tests bugbash3-bb2-chat-refused"
+    for (const outcome of ["admitted", "refused"] as const) {
+      const draft = `/new roninjin10/smithers-github-tests typed-meanwhile-${outcome}`
       tab.actions.type(draft)
-      tab.runtime.runSync(submitCommand(draft).pipe(
-        Effect.provideService(FlowDispatch, FlowDispatch.of({ dispatch: () => result as never })),
+      const gate = Effect.runSync(Deferred.make<void>())
+      const submitted = tab.runtime.runPromise(submitCommand(draft).pipe(
+        Effect.provideService(FlowDispatch, FlowDispatch.of({ dispatch: ((_name, _payload, options) => Effect.gen(function* () {
+          yield* Deferred.await(gate)
+          const started = outcome === "admitted" ? Exit.void : Exit.fail(new DispatchFailed({ flow: "conversation/new", reason: "refused" }))
+          if (options.admitted !== undefined) yield* Deferred.done(options.admitted, started)
+          if (Exit.isFailure(started)) return yield* Effect.failCause(started.cause)
+          return yield* Effect.never
+        })) as FlowDispatch["Service"]["dispatch"] })),
+      ))
+      await tab.actions.type(`newer ${outcome}`)
+      Effect.runSync(Deferred.succeed(gate, undefined))
+      await submitted
+      await tab.runtime.runPromise(Effect.yieldNow)
+      expect(tab.draft()).toBe(`newer ${outcome}`)
+      expect(tab.menu()?.refusal ?? null).toBeNull()
+      tab.actions.type("")
+    }
+  })
+
+  test("a /new pressed again after its run failed is a new execution, never the failed one joined", async () => {
+    const tab = await open({ host: keepingInputs() })
+    await ready(tab)
+    const executions: Array<string> = []
+    const failing = FlowDispatch.of({ dispatch: ((_name, _payload, options) => Effect.gen(function* () {
+      executions.push(options.executionId!)
+      if (options.admitted !== undefined) yield* Deferred.succeed(options.admitted, undefined)
+      return { _tag: "Failed", error: {} }
+    })) as FlowDispatch["Service"]["dispatch"] })
+    const line = "/new roninjin10/smithers-github-tests again"
+    tab.actions.type(line)
+    const intents = await tab.runtime.runPromise(Effect.service(WriteIntents))
+    await tab.runtime.runPromise(submitCommand(line).pipe(Effect.provideService(FlowDispatch, failing)))
+    // The failed run's own answer retires its input; the line stays.
+    await vi.waitFor(() => expect(intents.answered.size).toBe(1))
+    await vi.waitFor(() => expect(intents.pending()).toEqual([]))
+    expect(tab.draft()).toBe(line)
+    await tab.runtime.runPromise(submitCommand(line).pipe(Effect.provideService(FlowDispatch, failing)))
+    expect(executions).toHaveLength(2)
+    expect(new Set(executions).size).toBe(2)
+  })
+
+  test("after its start was admitted, the run dying settles it; a refused or lost read of its end keeps its input", async () => {
+    const tab = await open({ host: keepingInputs() })
+    await ready(tab)
+    const intents = await tab.runtime.runPromise(Effect.service(WriteIntents))
+    for (const [reason, kept] of [["defect", false], ["refused", true], ["unavailable", true]] as const) {
+      const line = `/new roninjin10/smithers-github-tests ended-${reason}`
+      tab.actions.type(line)
+      await tab.runtime.runPromise(submitCommand(line).pipe(Effect.provideService(FlowDispatch, FlowDispatch.of({
+        dispatch: ((_name, _payload, options) => Effect.gen(function* () {
+          if (options.admitted !== undefined) yield* Deferred.succeed(options.admitted, undefined)
+          return yield* new DispatchFailed({ flow: "conversation/new", reason })
+        })) as FlowDispatch["Service"]["dispatch"],
+      }))))
+      await vi.waitFor(() => expect(intents.pending().some((intent) => intent.payload.branch === `ended-${reason}`)).toBe(kept))
+      expect(tab.draft()).toBe(line)
+      // Only the run dying says so under the line.
+      await vi.waitFor(() => expect(tab.menu()?.refusal ?? null).toBe(reason === "defect" ? "Couldn't make a branch" : null))
+      tab.actions.type("")
+    }
+  })
+
+  test("new conversation outcomes: the engine's refusal is Not sent, a run that fails says so under its line, no reply keeps it", async () => {
+    // `/new` is admitted once the engine records its run (decision 0124): the line clears then, and comes back with why
+    // if the run fails; the engine refusing to record it keeps the line, Not sent; a start that got no reply proves
+    // nothing, so the line stays as it was, staged for the next page open.
+    const tab = await open()
+    await ready(tab)
+    const outcomes = [
+      { start: Effect.fail(new DispatchFailed({ flow: "conversation/new", reason: "refused" })), draft: "kept", refusal: "Not sent" },
+      { start: Effect.fail(new DispatchFailed({ flow: "conversation/new", reason: "unavailable" })), draft: "kept", refusal: null },
+      { start: Effect.void, result: Effect.succeed({ _tag: "Failed" }), draft: "kept", refusal: "Couldn't make a branch" },
+      // Admitted, the line stays until the run's own answer says Done (decision 0124).
+      { start: Effect.void, result: Effect.succeed({ _tag: "Done", value: {} }), draft: "", refusal: null },
+    ] as const
+    for (const [index, outcome] of outcomes.entries()) {
+      const draft = `/new roninjin10/smithers-github-tests bugbash3-bb2-chat-${index}`
+      tab.actions.type(draft)
+      await tab.runtime.runPromise(submitCommand(draft).pipe(
+        Effect.provideService(FlowDispatch, FlowDispatch.of({ dispatch: ((_name, _payload, options) => Effect.gen(function* () {
+          const started = yield* Effect.exit(outcome.start)
+          if (options.admitted !== undefined) yield* Deferred.done(options.admitted, started)
+          if (Exit.isFailure(started)) return yield* Effect.failCause(started.cause)
+          return yield* ("result" in outcome ? outcome.result : Effect.never)
+        })) as FlowDispatch["Service"]["dispatch"] })),
       ))
       await tab.runtime.runPromise(Effect.yieldNow)
-      expect(tab.draft()).toBe(index === 2 ? "" : draft)
-      if (tab.draft() !== "") expect(tab.menu()?.refusal).toBe("Couldn't make a branch")
+      await vi.waitFor(() => expect(tab.draft()).toBe(outcome.draft === "kept" ? draft : ""))
+      await vi.waitFor(() => expect(tab.menu()?.refusal ?? null).toBe(outcome.refusal))
+      tab.actions.type("")
     }
   })
 

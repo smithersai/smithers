@@ -4,6 +4,8 @@ import { admissionReceipt, beginAdmission, executionOf, finishAdmission, finishR
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Clock, Effect, Metric, Option } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
+import { startOperation } from "../commands/admission"
+import { followRun } from "../../resumeAdmissions"
 import { repoId } from "../repo/contract"
 import { isPrompt, isTitle, OP_ID_NAMESPACE, stackPath } from "./contract"
 import { pendingActions } from "./metrics"
@@ -133,12 +135,17 @@ export const discardDraft = (id: string) =>
 export const fromIssue = (owner: string, name: string, number: number) =>
   Effect.gen(function* () {
     const store = yield* TodosStore
-    const flows = yield* FlowDispatch
-    yield* Effect.forkIn(
-      Effect.ignore(flows.dispatch("todo/issue", { repo: `${owner}/${name}`, issue: number }, { door: "button" })),
-      store.scope,
-      { startImmediately: true },
-    )
+    const payload = { repo: `${owner}/${name}`, issue: number }
+    // Staged first, so a reload starts the same run again; a second press before the run settled joins it (decision
+    // 0124). The engine recording the run admits it. A tab that can't stage it keeps it in memory: it is always kept.
+    const intent = Option.getOrThrow(yield* beginAdmission("todo/issue", payload, undefined, `todo/issue:${payload.repo}#${number}`, undefined, "button"))
+    const executionId = yield* executionOf(intent)
+    yield* identifyAdmission(intent, executionId)
+    yield* Effect.gen(function* () {
+      const { started, run } = yield* startOperation("todo/issue", payload, { executionId, door: "button", scope: store.scope })
+      yield* finishAdmission(intent, started === "admitted", true, started === "unconfirmed")
+      if (started === "admitted") yield* followRun({ ...intent, executionId }, run, store.scope)
+    }).pipe(Effect.forkIn(store.scope, { startImmediately: true }))
     return stackPath(owner, name)
   })
 

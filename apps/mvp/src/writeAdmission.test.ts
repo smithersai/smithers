@@ -1,7 +1,7 @@
 import { PendingSnapshot } from "@smthrs/platform-browser"
 import { Context, Effect, Layer, Option } from "effect"
 import { expect, test } from "vitest"
-import { beginAdmission, executionOf, finishAdmission, WriteIntents, type WriteIntent } from "./writeAdmission"
+import { beginAdmission, executionOf, finishAdmission, settledEngineInputs, whileAdmitting, WriteIntents, type WriteIntent } from "./writeAdmission"
 
 const intent = (commandId: string, flow = "issue/comment"): WriteIntent => ({ commandId, flow, payload: { repo: "private/name", body: "private content" } })
 const device = () => {
@@ -254,4 +254,80 @@ test("a slash-created issue retires after delivery and cleanup without a navigat
   expect((await storeOf(host.snapshot)).pending()).toHaveLength(1)
   await Effect.runPromise(finishAdmission(row, true, true).pipe(Effect.provideService(WriteIntents, store)))
   expect((await storeOf(host.snapshot)).pending()).toEqual([])
+})
+
+test("an engine operation's input is the feed's to settle once its run did; a tab that can't stage it keeps it in memory", async () => {
+  const host = device()
+  const store = await storeOf(host.snapshot)
+  const engine = (commandId: string, fields: Partial<WriteIntent> = {}): WriteIntent => ({ ...intent(commandId, "todo/issue"), executionId: `exec-${commandId}`, ...fields })
+  for (const row of [engine("done"), engine("failed"), engine("running"), { ...intent("outbox", "issue/create"), executionId: "exec-outbox" }]) {
+    expect(store.retain(row)).toBe(true)
+  }
+  // Admission alone retires no engine operation's input.
+  const admitting = Option.getOrThrow(await Effect.runPromise(beginAdmission("todo/issue", { repo: "a/b", issue: 9 }).pipe(Effect.provideService(WriteIntents, store))))
+  store.update(admitting.commandId, { executionId: "exec-admitting" })
+  const results = new Map([["run:exec-done", "done"], ["run:exec-failed", "failed"], ["run:exec-admitting", "done"], ["run:exec-outbox", "done"]] as const)
+  expect(settledEngineInputs(store, results).map(({ intent, state }) => [intent.commandId, state])).toEqual([["done", "done"], ["failed", "failed"]])
+  await Effect.runPromise(finishAdmission(admitting, true).pipe(Effect.provideService(WriteIntents, store)))
+  expect(store.pending().map((row) => row.commandId)).toContain(admitting.commandId)
+  // Session storage that refuses: only an engine operation's input is kept, in memory, and goes with forget.
+  host.state.refused = true
+  expect(store.retain(intent("write", "issue/create"))).toBe(false)
+  expect(store.retain(engine("memory"))).toBe(true)
+  expect(store.pending().map((row) => row.commandId)).toContain("memory")
+  expect(store.update("memory", { admitted: true })).toBe(true)
+  expect(store.pending().find((row) => row.commandId === "memory")).toMatchObject({ admitted: true })
+  expect(store.forget("memory")).toBe(true)
+  expect(store.pending().map((row) => row.commandId)).not.toContain("memory")
+  // Once storage works again, the input moves back to it.
+  expect(store.retain(engine("back"))).toBe(true)
+  host.state.refused = false
+  expect(store.retain(engine("back", { admitted: true }))).toBe(true)
+  expect((await storeOf(host.snapshot)).pending().map((row) => row.commandId)).toContain("back")
+})
+
+test("each attempt speaks for its command: a new one clears the last refusal, and a refusal while another attempt runs says nothing (decision 0124)", async () => {
+  const store = await storeOf(device().snapshot)
+  const run = <A>(effect: Effect.Effect<A, never, WriteIntents>) => Effect.runPromise(effect.pipe(Effect.provideService(WriteIntents, store)))
+  const first = Option.getOrThrow(await run(beginAdmission("todo/issue", { repo: "a/b", issue: 1 }, undefined, "make:1")))
+  await run(finishAdmission(first, false))
+  expect(store.refused.has(first.commandId)).toBe(true)
+  // Try again: the new attempt's reply never comes. Nothing proves the old refusal still holds.
+  const again = Option.getOrThrow(await run(beginAdmission("todo/issue", { repo: "a/b", issue: 1 }, undefined, "make:1")))
+  expect(again.commandId).toBe(first.commandId)
+  expect(store.refused.has(first.commandId)).toBe(false)
+  await run(finishAdmission(again, false, true, true))
+  expect(store.refused.has(first.commandId)).toBe(false)
+  // Two attempts at once: the one refused while the other still runs says nothing; the last to end decides.
+  const one = Option.getOrThrow(await run(beginAdmission("todo/issue", { repo: "a/b", issue: 1 }, undefined, "make:1")))
+  const two = Option.getOrThrow(await run(beginAdmission("todo/issue", { repo: "a/b", issue: 1 }, undefined, "make:1")))
+  await run(finishAdmission(one, false))
+  expect(store.refused.has(one.commandId)).toBe(false)
+  await run(finishAdmission(two, false))
+  expect(store.refused.has(one.commandId)).toBe(true)
+  // A page Retry under the write id is an attempt too.
+  store.update(one.commandId, { writeId: "w1" })
+  await run(whileAdmitting("w1", Effect.sync(() => expect(store.refused.has(one.commandId)).toBe(false))))
+  await run(whileAdmitting("unknown", Effect.sync(() => expect(store.admitting.get("unknown")).toBe(1))))
+})
+
+test("an engine operation's newer copy in memory wins over the older one storage kept (decision 0124)", async () => {
+  const host = device()
+  const store = await storeOf(host.snapshot)
+  const staged = Option.getOrThrow(await Effect.runPromise(beginAdmission("todo/issue", { repo: "a/b", issue: 3 }, undefined, "make:3").pipe(Effect.provideService(WriteIntents, store))))
+  // Storage takes the staging, then refuses every later write.
+  host.state.refused = true
+  expect(store.update(staged.commandId, { executionId: "exec-3" })).toBe(true)
+  await Effect.runPromise(finishAdmission(staged, false).pipe(Effect.provideService(WriteIntents, store)))
+  expect(store.pending()).toEqual([expect.objectContaining({ commandId: staged.commandId, executionId: "exec-3", admitted: false })])
+  expect(store.refused.has(staged.commandId)).toBe(true)
+})
+
+test("a press joins an engine operation's input until it retires, cleaned or not; a cleaned write's input it never joins", async () => {
+  const store = await storeOf(device().snapshot)
+  const run = <A>(effect: Effect.Effect<A, never, WriteIntents>) => Effect.runPromise(effect.pipe(Effect.provideService(WriteIntents, store)))
+  expect(store.retain({ ...intent("engine", "todo/issue"), payload: { repo: "a/b", issue: 1 }, draftId: "make:1", admitted: true, cleaned: true })).toBe(true)
+  expect(store.retain({ ...intent("write", "issue/create"), payload: { repo: "a/b", title: "t" }, draftId: "new:a/b", admitted: true, cleaned: true })).toBe(true)
+  expect(Option.getOrThrow(await run(beginAdmission("todo/issue", { repo: "a/b", issue: 1 }, undefined, "make:1"))).commandId).toBe("engine")
+  expect(Option.getOrThrow(await run(beginAdmission("issue/create", { repo: "a/b", title: "t" }, undefined, "new:a/b"))).commandId).not.toBe("write")
 })

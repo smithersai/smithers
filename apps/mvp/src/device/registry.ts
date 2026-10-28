@@ -1,6 +1,6 @@
 import { Pin, Pending as PinPending } from "../features/pins/schema"
 import { Migrations } from "@smthrs/effect-tanstack-db"
-import { Notice, Pending } from "../features/attention/schema"
+import { Dismissed, Notice, Pending } from "../features/attention/schema"
 import { ConversationRoute } from "../features/branch/schema"
 import { Mine, Pending as ConversationPending } from "../features/conversations/schema"
 import { Confirmed } from "../features/auth/schema"
@@ -29,7 +29,7 @@ import { BugReport } from "../features/bugs/schema"
 import { RepoRunRow, SteerSending, SteerSent } from "../features/runs/schema"
 import { Run } from "../features/status/schema"
 import { Preference } from "../features/theme/schema"
-import { TodoSendingV1, TodoRequestedV2 } from "./history"
+import { IssueRequestedV2, TodoSendingV1, TodoRequestedV2, TodoRequestedV3 } from "./history"
 import { Draft as TodoDraft, Requested as TodoRequested, Sending as TodoSending, Todo, TodoRequest } from "../features/todos/schema"
 import { View } from "../features/views/schema"
 import { CuratedRowV1, HomeRowV2 } from "./home-history"
@@ -69,8 +69,9 @@ export const ChatDraftsStore = Migrations.local({ id: "chat-drafts", versions: [
  */
 export const IssueRequestedStore = Migrations.local({
   id: "issue-requested",
-  versions: [RequestedV1, IssueRequested],
-  migrations: [Migrations.step(RequestedV1, IssueRequested, ({ via: _via, ...row }) => row)],
+  versions: [RequestedV1, IssueRequestedV2, IssueRequested],
+  // Version 3 adds when the route answered (`answeredAt`, decision 0124); a row kept before has none.
+  migrations: [Migrations.step(RequestedV1, IssueRequestedV2, ({ via: _via, ...row }) => row), Migrations.step(IssueRequestedV2, IssueRequested, (row) => row)],
   getKey: (row) => row.id,
 })
 
@@ -115,6 +116,13 @@ export const AttentionPendingStore = Migrations.local({
   getKey: (row) => row.id,
 })
 
+/** The person's Dismiss of failures this device toasted itself, by subject and receipt time (decision 0124). */
+export const AttentionDismissedStore = Migrations.local({
+  id: "attention-dismissed",
+  versions: [Dismissed],
+  getKey: (row) => row.id,
+})
+
 /** Archives and restores of your conversations not yet synced back (src/features/conversations/store.ts). */
 export const ConversationPendingStore = Migrations.local({
   id: "conversation-pending",
@@ -146,8 +154,13 @@ export const FlowCodeStore = Migrations.local({ id: "flow-code", versions: [Flow
  */
 export const TodoRequestedStore = Migrations.local({
   id: "todo-requested",
-  versions: [TodoRequestedV1, TodoRequestedV2, TodoRequested],
-  migrations: [Migrations.step(TodoRequestedV1, TodoRequestedV2, (row) => row), Migrations.step(TodoRequestedV2, TodoRequested, (row) => row)],
+  versions: [TodoRequestedV1, TodoRequestedV2, TodoRequestedV3, TodoRequested],
+  // Version 4 adds when the route answered (`answeredAt`, decision 0124); a row kept before has none.
+  migrations: [
+    Migrations.step(TodoRequestedV1, TodoRequestedV2, (row) => row),
+    Migrations.step(TodoRequestedV2, TodoRequestedV3, (row) => row),
+    Migrations.step(TodoRequestedV3, TodoRequested, (row) => row),
+  ],
   getKey: (row) => row.id,
 })
 
@@ -258,6 +271,7 @@ export const deviceRegistry = Migrations.registry({
     HomesStore,
     CuratedHomesStore,
     AttentionPendingStore,
+    AttentionDismissedStore,
     ConversationPendingStore,
     SpendSeenStore,
     PersonalModelHiddenStore,

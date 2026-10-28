@@ -78,6 +78,13 @@ export const Pending = Schema.Struct({
 export type Pending = typeof Pending.Type
 
 /**
+ * The person's Dismiss of a failure this device toasted itself (decision 0124), keyed by its subject: `at` is the time of
+ * the receipt they dismissed, so a later receipt of the same subject, such as a Retry's, shows again.
+ */
+export const Dismissed = Schema.Struct({ id: Schema.String, at: Schema.Number })
+export type Dismissed = typeof Dismissed.Type
+
+/**
  * An entry's one action: Answer the person's own question, Try again on the person's own failed clone, or Open where it
  * happened.
  */

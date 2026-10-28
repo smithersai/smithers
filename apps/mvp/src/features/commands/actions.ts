@@ -2,8 +2,9 @@ import { clearComposerSource } from "../../admissionSource"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { admissionReceipt, beginAdmission, executionOf, finishAdmission, identifyAdmission } from "../../writeAdmission"
 import { slashMenu, slashSubmit } from "@smthrs/ui"
-import { Effect, Exit, Metric, Option, Ref, Schema } from "effect"
-import { FlowDispatch } from "../../flows/dispatch"
+import { Effect, Exit, Fiber, Metric, Option, Ref, Schema } from "effect"
+import { type DispatchFailed, type Dispatched, FlowDispatch } from "../../flows/dispatch"
+import type { FlowName } from "../../flows/registry"
 import { AuthStore, SESSION } from "../auth/store"
 import { ask, setDraft } from "../chat/actions"
 import { MAX_QUESTION_LENGTH } from "../chat/contract"
@@ -22,7 +23,8 @@ import { COMMANDS, invalidArgument, missingArguments, unknownCommand } from "./c
 import { choices, submits } from "./metrics"
 import { MENU, type Menu } from "./schema"
 import { CommandsStore } from "./store"
-import { admissionNamespace, admitCommand, hasOutboxAdmission } from "./admission"
+import { admissionNamespace, admitCommand, hasEngineAdmission, hasOutboxAdmission, startOperation } from "./admission"
+import { followRun, runEnded } from "../../resumeAdmissions"
 import { BranchStore } from "../branch/store"
 import { CURRENT } from "../branch/schema"
 import { RepoStore } from "../repo/store"
@@ -131,20 +133,69 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>, draft
     const before = yield* draftNow
     const generation = Option.getOrThrow(yield* composer.get(COMPOSER)).generation
     const input = { ...pinned, ...command.args }
-    const staged = hasOutboxAdmission(command.flow)
-      ? yield* beginAdmission(command.flow, input, { namespace: WRITE_ID_NAMESPACE, value: JSON.stringify([requestNamespace, yield* Ref.get(revision), conversation, command.flow, pinned]) }, undefined, { conversationId: conversation, text: before, generation })
+    // An outbox write, or an engine operation such as `/new`, stages its input first, so a reload resumes it (decisions
+    // 0123, 0124).
+    const engine = hasEngineAdmission(command.flow)
+    const staging = engine || hasOutboxAdmission(command.flow)
+    // An engine operation's execution is its staged command's: a press that joins its input joins its run, and a press
+    // once it settled is a new one (decision 0124).
+    const staged = staging
+      ? yield* beginAdmission(command.flow, input, engine ? undefined : { namespace: WRITE_ID_NAMESPACE, value: JSON.stringify([requestNamespace, yield* Ref.get(revision), conversation, command.flow, pinned]) }, undefined, { conversationId: conversation, text: before, generation }, engine ? "slash" : undefined)
       : Option.none()
-    if (hasOutboxAdmission(command.flow) && Option.isNone(staged)) return yield* refuse("invalid", "Not sent", command)
+    if (staging && Option.isNone(staged)) return yield* refuse("invalid", "Not sent", command)
     const executionId = Option.isSome(staged) ? yield* executionOf(staged.value) : crypto.randomUUID()
     if (Option.isSome(staged)) {
-      const writeId = yield* Uuid.v5(admissionNamespace(command.flow), executionId).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+      const writeId = engine ? undefined : yield* Uuid.v5(admissionNamespace(command.flow), executionId).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
       yield* identifyAdmission(staged.value, executionId, writeId)
+    }
+    const unchanged = Effect.gen(function* () {
+      return (yield* draftNow) === before && Option.getOrThrow(yield* composer.get(COMPOSER)).generation === generation &&
+        (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId === conversation
+    })
+    /** A failed run puts its line back, unless the composer moved on; a failed navigation says so. */
+    const restoreOnFailure = (ran: Effect.Effect<Dispatched<FlowName>, DispatchFailed>, cleared: number) =>
+      Effect.gen(function* () {
+        const result = yield* Effect.result(ran)
+        const navigationFailed = command.flow === "app/navigate" &&
+          (result._tag === "Failure" || result.success._tag === "Failed" ||
+            !(result.success.value as { readonly moved: boolean }).moved)
+        if (!navigationFailed && result._tag === "Success" && result.success._tag === "Done") return
+        if ((yield* Ref.get(revision)) !== cleared || (yield* draftNow) !== "" ||
+          (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId !== conversation) return
+        yield* type(draft)
+        yield* list(draft, navigationFailed ? "Couldn’t open page" : ACTION_FAILED)
+      }).pipe(Effect.forkIn(scope))
+    if (engine) {
+      // Admitted once the engine records its run, which then goes on in the background. The line stays the person's
+      // until that run finished: its result clears it (decision 0124), so a run that fails, or a reload meanwhile, never
+      // loses it. A refusal keeps it, Not sent; a reply that never came keeps it too, and proves nothing.
+      const intent = Option.getOrThrow(staged)
+      const { started, run: running } = yield* startOperation(command.flow, input, { executionId, door: "slash", scope })
+      yield* finishAdmission(intent, started === "admitted", false, started === "unconfirmed")
+      if (started === "admitted") yield* followRun({ ...intent, executionId }, running, scope)
+      if (started === "refused") {
+        if (yield* unchanged) yield* refuse("invalid", "Not sent", command)
+        return
+      }
+      if (started === "admitted") {
+        // A run that fails says so under its line, if the composer still holds it and the person did nothing since:
+        // new typing, a dismissal or another command advances the revision.
+        const admittedAt = yield* Ref.get(revision)
+        // Only the run's own end says it failed: a read of it that failed proves nothing.
+        yield* Effect.gen(function* () {
+          if (runEnded(yield* Effect.exit(Fiber.join(running))) !== "failed") return
+          if ((yield* Ref.get(revision)) === admittedAt && (yield* unchanged)) yield* list(draft, ACTION_FAILED)
+        }).pipe(Effect.forkIn(scope))
+      }
+      yield* Metric.update(Metric.withAttributes(submits, { outcome: "run", command: command.name }), 1)
+      yield* Effect.logInfo("slash.run").pipe(Effect.annotateLogs({ command: command.name, flow: command.flow }))
+      return
     }
     const admission = yield* admitCommand(command.flow, input, executionId)
     if (Option.isSome(admission) && admission.value === "not_admitted") {
       // Only an outbox command can return not_admitted, so its input was staged above.
       yield* finishAdmission(Option.getOrThrow(staged), false)
-      if ((yield* draftNow) === before && Option.getOrThrow(yield* composer.get(COMPOSER)).generation === generation && (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId === conversation) yield* refuse("invalid", "Not sent", command)
+      if (yield* unchanged) yield* refuse("invalid", "Not sent", command)
       return
     }
     // A new tab must open while this keypress still owns browser activation, before shared-text admission waits.
@@ -156,7 +207,7 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>, draft
       ), staged.value.commandId, command.flow, "source").pipe(Effect.exit))
       if ((yield* draftNow) === "" && (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId === conversation) yield* list("")
       yield* finishAdmission(staged.value, Option.isSome(admission) && admission.value !== "not_admitted", cleaned)
-    } else if ((yield* draftNow) === before && Option.getOrThrow(yield* composer.get(COMPOSER)).generation === generation && (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId === conversation) yield* type("")
+    } else if (yield* unchanged) yield* type("")
     // New typing, dismissal or another command advances the revision even when
     // its row is unchanged, so an older refusal cannot take over the composer.
     const cleared = yield* Ref.get(revision)
@@ -164,18 +215,7 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>, draft
     if (command.flow !== "app/web/open" && (Option.isNone(admission) || admission.value === "queued")) {
       // A sandbox tool runs on the branch of the conversation this tab shows now (src/features/sandbox/actions.ts), and
       // `/docs`, `/repo` and `/issues` show their views in that conversation. `/new` names its repository explicitly; `/publish`, `/branch.update` and `/branch.resync` act on that branch.
-      const dispatch = flows.dispatch(command.flow, { ...pinned, ...command.args } as never, { door: "slash", executionId })
-      yield* Effect.gen(function* () {
-        const result = yield* Effect.result(dispatch)
-        const navigationFailed = command.flow === "app/navigate" &&
-          (result._tag === "Failure" || result.success._tag === "Failed" ||
-            !(result.success.value as { readonly moved: boolean }).moved)
-        if (!navigationFailed && result._tag === "Success" && result.success._tag === "Done") return
-        if ((yield* Ref.get(revision)) !== cleared || (yield* draftNow) !== "" ||
-          (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId !== conversation) return
-        yield* type(draft)
-        yield* list(draft, navigationFailed ? "Couldn’t open page" : ACTION_FAILED)
-      }).pipe(Effect.forkIn(scope))
+      yield* restoreOnFailure(flows.dispatch(command.flow, { ...pinned, ...command.args } as never, { door: "slash", executionId }), cleared)
     }
     yield* Metric.update(Metric.withAttributes(submits, { outcome: "run", command: command.name }), 1)
     yield* Effect.logInfo("slash.run").pipe(Effect.annotateLogs({ command: command.name, flow: command.flow }))

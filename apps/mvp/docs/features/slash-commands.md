@@ -70,7 +70,7 @@ The composer stays a textbox. While the list shows, it points at it (`aria-contr
 
 | The line | What happens |
 |---|---|
-| a command this person may run, with every required argument | its flow runs in the background, door `slash`; the composer clears |
+| a command this person may run, with every required argument | its flow runs in the background, door `slash`; the composer clears. An outbox write or `/new` stages its input first; a write's line clears once the outbox took it, `/new`'s once its run finished, and a run that fails leaves it with `Couldn't make a branch`; refused, the line stays with `Not sent` ([0123](../decisions/0123-write-input-receipts.md), [0124](../decisions/0124-background-progress.md)) |
 | `/` and a name this person may not run, or no command has | stays in the composer, with `/<name> isn't a command`; the agent never sees it |
 | a command missing a required argument | stays, with `/<command> needs <argument>`, and the list shows the command again |
 | an argument that isn't one of its values | stays, with `/<command> takes light or dark` |

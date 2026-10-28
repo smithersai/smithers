@@ -386,3 +386,63 @@ test("recovering a slash-created issue never takes over the New issue form", asy
   await tab.issues.actions.open(owner, name, undefined, null)
   expect(Option.getOrThrow(await tab.app.runPromise(tab.store.view.get("view"))).createdWriteId).toBeUndefined()
 })
+
+test("a settled run admits its engine input whatever became of its Start reply; only a finished one's line leaves the composer (decision 0124)", async () => {
+  const { settleFromRuns } = await import("./resumeAdmissions")
+  const tab = await opening()
+  const text = "/new octo/hello topic"
+  const engine = (commandId: string, fields: Partial<WriteIntent> = {}): WriteIntent => ({
+    commandId, flow: "conversation/new", payload: { repo: TEST_REPOSITORY }, executionId: `exec-${commandId}`, door: "slash", ...fields,
+  })
+  for (const row of [engine("clean", { admitted: true, cleaned: true }), engine("dirty", { admitted: true, cleaned: false }), engine("running")]) tab.intents.retain(row)
+  // A failed run's input retires, and its line stays the person's.
+  tab.intents.retain(engine("failed", { composer: { conversationId: null, text, generation: "g1" } }))
+  await tab.app.runPromise(tab.chat.composer.update(COMPOSER, (row) => { row.draft = text; row.generation = "g1" }))
+  const results = new Map([["run:exec-clean", "done"], ["run:exec-dirty", "done"], ["run:exec-failed", "failed"]] as const)
+  await tab.app.runPromise(settleFromRuns(results, new Set()))
+  // "dirty" has no line to clear: its run's result confirms the cleanup its admission couldn't.
+  await until(() => expect(tab.intents.pending().map((row) => row.commandId).sort()).toEqual(["running"]))
+  expect(tab.chat.composer.tanstack.get(COMPOSER)?.draft).toBe(text)
+  // A finished run's line leaves the composer, and its input retires.
+  tab.intents.retain(engine("done", { composer: { conversationId: null, text, generation: "g1" } }))
+  await tab.app.runPromise(settleFromRuns(new Map([["run:exec-done", "done"]]), new Set()))
+  await until(() => expect(tab.intents.pending().map((row) => row.commandId)).not.toContain("done"))
+  expect(tab.chat.composer.tanstack.get(COMPOSER)?.draft).toBe("")
+  // A cleanup that can't confirm, behind an unsaved replacement, keeps the input admitted for the next page open, once.
+  await tab.app.runPromise(tab.chat.composer.update(COMPOSER, (row) => { row.draft = "New text"; row.generation = "new"; row.saved = false }))
+  tab.intents.retain(engine("unclean", { composer: { conversationId: null, text, generation: "g2" } }))
+  await tab.app.runPromise(settleFromRuns(new Map([["run:exec-unclean", "done"]]), new Set()))
+  await until(() => expect(tab.intents.pending().find((row) => row.commandId === "unclean")).toMatchObject({ admitted: true, cleaned: false }))
+  await tab.app.runPromise(settleFromRuns(new Map([["run:exec-unclean", "done"]]), new Set()))
+  expect(tab.intents.pending().find((row) => row.commandId === "unclean")).toMatchObject({ admitted: true, cleaned: false })
+  expect(tab.chat.composer.tanstack.get(COMPOSER)?.draft).toBe("New text")
+  // The cleanup itself, awaited: unconfirmed, it leaves the input for the next page open.
+  const { completeFromRun } = await import("./resumeAdmissions")
+  tab.intents.retain(engine("awaited", { composer: { conversationId: null, text, generation: "g3" } }))
+  await tab.app.runPromise(completeFromRun(engine("awaited", { composer: { conversationId: null, text, generation: "g3" } }), "done"))
+  expect(tab.intents.pending().find((row) => row.commandId === "awaited")).toMatchObject({ admitted: true, cleaned: false })
+})
+
+test("a settled run's input this tab can't forget is tried once, and the refused forget wakes nothing", async () => {
+  const { settleFromRuns } = await import("./resumeAdmissions")
+  const { Context, Fiber, Layer, Ref, Stream } = await import("effect")
+  const tab = await opening()
+  const engine = (commandId: string): WriteIntent => ({
+    commandId, flow: "todo/issue", payload: { repo: TEST_REPOSITORY, issue: 7 }, executionId: `exec-${commandId}`, admitted: true, cleaned: true,
+  })
+  tab.intents.retain(engine("kept"))
+  tab.intents.retain(engine("other"))
+  // Storage now refuses to rewrite the receipts: the forget can't land.
+  const refusing = { ...tab.snapshot, stage: () => undefined, acknowledge: () => undefined }
+  const store = await Effect.runPromise(Effect.scoped(Effect.map(Layer.build(WriteIntents.layer(refusing)), (context) => Context.get(context, WriteIntents))))
+  const wakes = await Effect.runPromise(Ref.make(0))
+  const counting = Effect.runFork(store.changes.pipe(Stream.runForEach(() => Ref.update(wakes, (n) => n + 1))))
+  await Effect.runPromise(Effect.yieldNow)
+  const attempted = new Set<string>()
+  for (let i = 0; i < 3; i++) await tab.app.runPromise(settleFromRuns(new Map([["run:exec-kept", "done"]]), attempted).pipe(Effect.provideService(WriteIntents, store)))
+  await Effect.runPromise(Effect.sleep("50 millis"))
+  expect(store.pending().map((row) => row.commandId).sort()).toEqual(["kept", "other"])
+  expect(await Effect.runPromise(Ref.get(wakes))).toBe(0)
+  expect([...attempted]).toEqual(["kept"])
+  await Effect.runPromise(Fiber.interrupt(counting))
+})

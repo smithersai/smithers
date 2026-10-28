@@ -41,8 +41,9 @@ export class StackWrites extends Context.Service<
         id: "todo-requested",
         schema: RequestedRow,
         getKey: (row) => row.id,
-        // Version 3 adds repository installation refusals after retry (version 2).
-        schemaVersion: 3,
+        // Version 3 adds repository installation refusals after retry (version 2); version 4 when the route answered
+        // (decision 0124).
+        schemaVersion: 4,
       })
       const context = yield* Effect.context<StackClient>()
       const mutation: Outbox.Mutation<never> = (params) => send(requested, params).pipe(Effect.provideContext(context))
@@ -66,12 +67,16 @@ export const keep = (
 ) =>
   Effect.gen(function* () {
     const { v: _, ...fields } = row
+    // The route's answer, taken or refused, keeps when it came; the pre-admission receipt has none (decision 0124).
+    const answeredAt = status === "requested" || reason !== null ? yield* Clock.currentTimeMillis : undefined
     const kept = yield* (Option.isNone(yield* requested.get(row.id))
-      ? requested.insert({ ...fields, status, reason, taken })
+      ? requested.insert({ ...fields, status, reason, taken, ...(answeredAt === undefined ? {} : { answeredAt }) })
       : requested.update(row.id, (draft) => {
         draft.status = status
         draft.reason = reason
         draft.taken = taken
+        if (answeredAt === undefined) delete draft.answeredAt
+        else draft.answeredAt = answeredAt
       })).pipe(Effect.orDie)
     // A record the device couldn't store would be gone at the next reload while the outbox let its write go: the send
     // is settled only once it is stored, and sent again otherwise (the route answers a repeated op as it did).

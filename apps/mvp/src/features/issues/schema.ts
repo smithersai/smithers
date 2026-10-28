@@ -155,6 +155,8 @@ export const Requested = Schema.Struct({
   queuedAt: Schema.Number,
   status: Schema.Literals(["requested", "not_sent"]),
   reason: Schema.NullOr(NotSentReason),
+  /** When the route took or refused it (epoch ms): where its toast's time counts from (decision 0124). */
+  answeredAt: Schema.optional(Schema.Number),
 })
 export type Requested = typeof Requested.Type
 

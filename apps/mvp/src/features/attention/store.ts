@@ -1,28 +1,41 @@
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection } from "@smthrs/effect-tanstack-db"
-import { Clock, Context, Duration, Effect, Exit, FiberHandle, Layer, Metric, Option, Queue, type Scope, Stream } from "effect"
+import { BrowserEngine } from "@smthrs/platform-browser"
+import { Clock, Context, Duration, Effect, Exit, FiberHandle, Layer, Metric, Option, Queue, Ref, type Scope, Stream } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
+import { retryInput, settleFromRuns } from "../../resumeAdmissions"
+import { WriteIntents } from "../../writeAdmission"
+import { RunSteers } from "../runs/steers"
+import { IssuesStore } from "../issues/store"
+import { TodosStore } from "../todos/store"
 import { signedInShapeSource } from "../auth/source"
 import { AuthStore } from "../auth/store"
 import { ChatStore } from "../chat/store"
 import { StatusStore } from "../status/store"
-import { NOTIFICATIONS_SHAPE_ROUTE } from "./contract"
+import { LISTED_FOR_MS, NOTIFICATIONS_SHAPE_ROUTE } from "./contract"
 import { detailOf } from "./detail"
 import { feedOf, follows, landed } from "./entries"
 import { shown } from "./metrics"
 import { detailQuery, feedQuery, listQuery, needsQuery, panelQuery, stackQuery, unreadQuery } from "./queries"
-import { Detail, Entry, Notice, PANEL, Panel, Pending } from "./schema"
+import { type Input, merged, OPERATION_RUNS, OPERATION_WRITES, progressOf, repoOf, type RunSummary } from "./progress"
+import { Detail, Dismissed, Entry, Notice, PANEL, Panel, Pending } from "./schema"
 
 // The personal feed on this tab (decision 0009, docs/features/notifications.md#the-browser): the person's
 // `notifications`, synced by Electric and kept on the device; the acts this device took that haven't synced back yet,
 // kept on the device too; and the entries the views read, worked out from both, the clock and the conversation the tab
 // shows (`feedOf`). Two followers run while the store lives:
 // - the feed: works the entries out again whenever a row, an act or the conversation changes, and when a toast is due
-//   to hide; forgets acts the rows show; records each toast once per version;
+//   to hide; forgets acts the rows show; records each toast once per version. Beside the synced rows it shows what
+//   this device's own receipts say of `/new`, Make TODO, Create issue and Commit until a synced row of the same subject
+//   replaces them (`progressOf`, decision 0124): this tab's staged inputs, the engine's runs, the outbox's and the
+//   recovery rows the device has stored, and the person's own writes as the server has them;
 // - the watch: follows the branch and repository of each conversation the tab shows (`watch/set`, door `view`), once
 //   per person per conversation per tab, for a Member (or while sign-in can't say who is signed in);
 // - the detail: what the entry expanded in the notifications panel shows besides its row (`detailOf`), worked out again
 //   whenever the entry, its answer, its run row or the tab's draft of the answer changes.
+
+/** How many runs of the operations it follows the stack reads a page, back to the list's week (`LISTED_FOR_MS`). */
+const RUNS_READ = 200
 
 /** Where the feed syncs from: ChatApi's origin, the site's own. */
 export interface AttentionConfig {
@@ -47,6 +60,8 @@ export class AttentionStore extends Context.Service<
     readonly notices: ElectricCollection.ElectricCollection<Notice>
     readonly launches: Collection.Collection<Notice, string>
     readonly pending: Collection.Collection<Pending, string>
+    /** The person's Dismiss of failures this device toasted itself, kept on the device. */
+    readonly dismissed: Collection.Collection<Dismissed, string>
     readonly entries: Collection.Collection<Entry, string>
     readonly stack: Success<typeof stackQuery>
     readonly stackHere: Success<typeof stackQuery>
@@ -63,9 +78,14 @@ export class AttentionStore extends Context.Service<
     readonly detail: Success<typeof detailQuery>
     /** Where the background work an action starts runs. */
     readonly scope: Scope.Scope
+    /** Try again on this tab's refused admission of `subject`: its staged input again (decision 0124). Whether it started. */
+    readonly retryInput: (subject: string) => Effect.Effect<boolean>
   }
 >()("@smthrs/mvp/attention/AttentionStore") {
-  /** The store, its followers running until the scope closes. Needs chat's, agent status's and sign-in's stores, and dispatch. */
+  /**
+   * The store, its followers running until the scope closes. Needs chat's, agent status's, sign-in's, issues' and TODOs'
+   * stores, this tab's input receipts, its engine, steers' outbox (Try again admits through it) and dispatch.
+   */
   static readonly layer = (config: AttentionConfig) =>
     Layer.effect(
       AttentionStore,
@@ -76,6 +96,12 @@ export class AttentionStore extends Context.Service<
         const status = yield* StatusStore
         const auth = yield* AuthStore
         const flows = yield* FlowDispatch
+        const issues = yield* IssuesStore
+        const todos = yield* TodosStore
+        const intents = yield* WriteIntents
+        const engine = yield* BrowserEngine.BrowserEngine
+        // What Try again on this tab's refusal admits through: the same stores and dispatch as opening the page.
+        const admitting = yield* Effect.context<IssuesStore | TodosStore | WriteIntents | FlowDispatch | RunSteers | ChatStore>()
         const notices = yield* ElectricCollection.make<Notice>({
           id: "notifications",
           schema: Notice,
@@ -91,6 +117,12 @@ export class AttentionStore extends Context.Service<
         const pending = yield* Collection.persisted<Pending, string>({
           id: "attention-pending",
           schema: Pending,
+          getKey: (row) => row.id,
+          schemaVersion: 1,
+        })
+        const dismissed = yield* Collection.persisted<Dismissed, string>({
+          id: "attention-dismissed",
+          schema: Dismissed,
           getKey: (row) => row.id,
           schemaVersion: 1,
         })
@@ -116,13 +148,71 @@ export class AttentionStore extends Context.Service<
         const ticks = yield* Queue.unbounded<void>()
         const timer = yield* FiberHandle.make<void, never>()
         const recorded = new Set<string>()
+        // The engine's runs of the operations the stack follows, as its last read said; read again soon after its events
+        // and each new leader, so a run this tab just started replaces its input's Requested without a gap.
+        const runs = yield* Ref.make<ReadonlyArray<RunSummary>>([])
+        yield* engine.runs({ limit: RUNS_READ, flows: Object.keys(OPERATION_RUNS), within: LISTED_FOR_MS, every: "50 millis" }).pipe(
+          Stream.runForEach((read) => Effect.andThen(Ref.set(runs, read.runs), Queue.offer(ticks, undefined))),
+          Effect.forkIn(scope, { startImmediately: true }),
+        )
+        /** This tab's staged inputs of the operations the stack follows, with what this tab knows of their admission. */
+        const inputs = Effect.sync((): ReadonlyArray<Input> =>
+          intents.pending().filter((intent) => OPERATION_RUNS[intent.flow] !== undefined || intent.flow in OPERATION_WRITES).map((intent) => ({
+            flow: intent.flow,
+            executionId: intent.executionId,
+            writeId: intent.writeId,
+            repo: repoOf(intent.payload),
+            stagedAt: intent.stagedAt,
+            admitted: intent.admitted === true,
+            admitting: intents.admitting.has(intent.commandId) || (intent.writeId !== undefined && intents.admitting.has(intent.writeId)),
+            refusedAt: intents.refused.get(intent.commandId),
+          })))
+        /** The rows of `collection` the device has stored: an optimistic recovery row is no receipt yet. */
+        const stored = <A extends { readonly id: string }>(collection: Collection.Collection<A, string>) =>
+          Effect.flatMap(collection.toArray, (rows) => Effect.filter(rows, (row) => collection.isSynced(row.id)))
+        // The subjects this tab has shown from a receipt stronger than its own input: an admitted input of one says no
+        // more (decision 0124). In memory: a reload reads the receipts again.
+        const seen = new Set<string>()
+        // The engine inputs whose settled run this tab already admitted or retired, once each (`settleFromRuns`).
+        const settling = new Set<string>()
         const work = Effect.gen(function* () {
           const now = yield* Clock.currentTimeMillis
           const synced = yield* notices.toArray
           const known = new Set(synced.map((row) => row.subject))
           const optimistic = yield* launches.toArray
           for (const row of optimistic) if (known.has(row.subject)) yield* launches.delete(row.subject)
-          const rows = [...synced, ...optimistic.filter((row) => !known.has(row.subject))]
+          const acted = yield* dismissed.toArray
+          const commitSending = yield* todos.sending.toArray
+          const commitRequested = yield* stored(todos.requested)
+          const stagedInputs = yield* inputs
+          // The stacks this device committed to that this tab holds: their TODOs are those commits' results.
+          const stacks = new Set([...commitSending, ...commitRequested].map((row) => row.repoId))
+          for (const input of stagedInputs) if (input.flow === "todo/commit" && input.repo !== undefined) stacks.add(`github/${input.repo}`)
+          const committed = yield* Effect.forEach([...stacks], (repoId) => Option.match(Option.fromUndefinedOr(todos.opened(repoId)), {
+            onNone: () => Effect.succeed([]),
+            onSome: (stack) => stack.todos.toArray,
+          }))
+          const progress = progressOf({
+            inputs: stagedInputs,
+            runs: yield* Ref.get(runs),
+            issueWrites: yield* issues.writes.toArray,
+            issueRequested: yield* stored(issues.requested),
+            issueSending: yield* issues.sending.toArray,
+            todoRequested: commitRequested,
+            todoSending: commitSending,
+            todos: committed.flat(),
+            dismissed: acted,
+            answered: intents.answered,
+            seen,
+          }, now)
+          for (const subject of [...known, ...progress.decided]) seen.add(subject)
+          // An engine operation's input bridges until its run settled; then the run's result admits and retires it.
+          yield* settleFromRuns(progress.results, settling).pipe(Effect.provideContext(admitting))
+
+          // A dismissal outlives the failure it hid only as long as the list could still show that failure.
+          const lapsed = acted.filter((row) => row.at < now - LISTED_FOR_MS).map((row) => row.id)
+          if (lapsed.length > 0) yield* Effect.ignore(dismissed.delete(lapsed))
+          const rows = merged(synced, optimistic, progress)
           const acts = yield* pending.toArray
           // Chat's place always holds its one row.
           const where = (yield* place.toArray)[0]!
@@ -143,7 +233,7 @@ export class AttentionStore extends Context.Service<
               recorded.add(key)
               yield* Metric.update(Metric.withAttributes(shown, { state: entry.state }), 1)
               yield* Effect.logInfo("notifications.shown").pipe(
-                Effect.annotateLogs({ subject: entry.id, version: entry.version, state: entry.state, kind: entry.kind }),
+                Effect.annotateLogs({ subject: entry.id, version: entry.version, state: entry.state, kind: entry.kind, local: entry.local === true }),
               )
             }
           }
@@ -169,6 +259,15 @@ export class AttentionStore extends Context.Service<
             Stream.map(launches.changes({ initial: true }), () => undefined),
             Stream.map(pending.changes({ initial: true }), () => undefined),
             Stream.map(place.changes({ initial: true }), () => undefined),
+            Stream.map(dismissed.changes(), () => undefined),
+            intents.changes,
+            Stream.map(issues.writes.changes(), () => undefined),
+            Stream.map(issues.requested.changes(), () => undefined),
+            Stream.map(issues.sending.changes(), () => undefined),
+            Stream.map(todos.requested.changes(), () => undefined),
+            Stream.map(todos.sending.changes(), () => undefined),
+            // A commit's synced TODO is its result, whichever transport else answered or didn't.
+            todos.todosChanged,
             Stream.fromQueue(ticks),
           ],
           { concurrency: "unbounded" },
@@ -272,6 +371,7 @@ export class AttentionStore extends Context.Service<
           notices,
           launches,
           pending,
+          dismissed,
           entries,
           stack: yield* stackQuery(entries, "stack"),
           stackHere: yield* stackQuery(entries, "stackHere"),
@@ -285,6 +385,7 @@ export class AttentionStore extends Context.Service<
           panelState: yield* panelQuery(panel),
           detail: yield* detailQuery(details),
           scope,
+          retryInput: (subject) => retryInput(subject).pipe(Effect.provideContext(admitting)),
         })
       }),
     )

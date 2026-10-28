@@ -1,5 +1,5 @@
 {
-  "epoch": 97,
+  "epoch": 100,
   "stores": {
     "message-pin-pending": {
       "kind": "local",
@@ -31,7 +31,8 @@
       "kind": "local",
       "versions": {
         "1": "52197947eaf596c8",
-        "2": "a652bcc3bfcce151"
+        "2": "a652bcc3bfcce151",
+        "3": "070a8bd29d2b17eb"
       }
     },
     "issue-drafts": {
@@ -85,6 +86,12 @@
         "1": "05618a6f6026892d"
       }
     },
+    "attention-dismissed": {
+      "kind": "local",
+      "versions": {
+        "1": "abd9f43701bea8d4"
+      }
+    },
     "conversation-pending": {
       "kind": "local",
       "versions": {
@@ -132,7 +139,8 @@
       "versions": {
         "1": "dabd1d95e7d0a02f",
         "2": "3bc5b0ecf965a1b5",
-        "3": "f85ad0ef5fe9761d"
+        "3": "f85ad0ef5fe9761d",
+        "4": "3c9220a7796be4b1"
       }
     },
     "steer-sent": {

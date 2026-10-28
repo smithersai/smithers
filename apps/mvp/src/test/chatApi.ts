@@ -1505,7 +1505,7 @@ export const tabLayer = (api: TestChatApi["Service"], options: TabOptions = {}) 
 /** The browser app on `api` with the faulty services and their switches (src/test/faults.ts). */
 export const faultyTabLayer = (api: TestChatApi["Service"], options: TabOptions = {}, start?: StartFaults) => {
   const tab = app(api, options)
-  const layer = appLayer(tab, isolateShapes.pipe(Layer.provideMerge(faultyServices(tab, start, options.shapeFailures))))
+  const layer = appLayer(tab, isolateShapes.pipe(Layer.provideMerge(Layer.merge(faultyServices(tab, start, options.shapeFailures), options.replace ?? Layer.empty))))
   const started = options.sessionLifecycle === false
     ? layer
     : Layer.effectDiscard(bindSessionConnectivity(new EventTarget())).pipe(Layer.provideMerge(layer))

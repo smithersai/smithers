@@ -1,7 +1,8 @@
 import { ShapeSource } from "@smthrs/effect-electric"
 import type { Persistence } from "@smthrs/effect-tanstack-db"
 import { Interpreter } from "@smthrs/flow"
-import { Context, Effect, Exit, Latch, Layer, Ref } from "effect"
+import { BrowserEngine } from "@smthrs/platform-browser"
+import { Context, Effect, Exit, Latch, Layer, Ref, Stream, SubscriptionRef } from "effect"
 import { AuthClient } from "../features/auth/api"
 import { ChatClient, type Question, QuestionNotTaken } from "../features/chat/api"
 import { type AppOptions, realServices } from "../boot"
@@ -121,6 +122,23 @@ const faultyClient = Layer.effectContext(
 export class EngineFaults extends Context.Service<
   EngineFaults,
   {
+    /**
+     * Every start of `flow` from now on reaches the real engine, and its reply is lost: the start fails `unavailable`
+     * after the engine recorded the run, as when the leader dies before answering.
+     */
+    readonly loseStartReplies: (flow: string) => Effect.Effect<void>
+    /**
+     * Every start of `flow` from now on fails `unavailable` before it reaches the engine, as when this tab's worker failed
+     * and no leader answers.
+     */
+    readonly dropStarts: (flow: string) => Effect.Effect<void>
+    /** The next read of how a run of `flow` ended is refused, as a leader whose store failed the read; the run goes on. */
+    readonly refuseNextResult: (flow: string) => Effect.Effect<void>
+    /** Starts of `flow` reach the real engine again, and answer: undoes `refuseStarts`, `dropStarts` and `loseStartReplies`. */
+    readonly admitStarts: (flow: string) => Effect.Effect<void>
+    /** The engine's run reads (`BrowserEngine.runs`) answer nothing until `readRuns`, as a leader whose reads fail. */
+    readonly holdRunReads: Effect.Effect<void>
+    readonly readRuns: Effect.Effect<void>
     readonly holdStarts: Effect.Effect<void>
     readonly releaseStarts: Effect.Effect<void>
     readonly refuseResults: (flow: string, code: Interpreter.InterpreterError["code"]) => Effect.Effect<void>
@@ -135,29 +153,55 @@ const faultyEngine = Layer.effectContext(
     const starts = yield* Latch.make(true)
     const refusing = yield* Ref.make<ReadonlyMap<string, Interpreter.InterpreterError["code"]>>(new Map())
     const refusingStarts = yield* Ref.make<ReadonlySet<string>>(new Set())
+    const losing = yield* Ref.make<ReadonlySet<string>>(new Set())
+    const dropping = yield* Ref.make<ReadonlySet<string>>(new Set())
+    const reads = yield* SubscriptionRef.make(true)
+    const browser = yield* BrowserEngine.BrowserEngine
+    const refusingResults = yield* Ref.make<ReadonlySet<string>>(new Set())
     const result: ClientEngine["Service"]["result"] = (flow, run) =>
-      Effect.flatMap(Ref.get(refusing), (refused) => {
+      Effect.flatMap(Ref.modify(refusingResults, (held) => [held.has(flow._tag), new Set([...held].filter((name) => name !== flow._tag))] as const), (refuseRead) => refuseRead
+        ? Effect.fail(new DispatchFailed({ flow: flow._tag, reason: "refused" }))
+        : Effect.flatMap(Ref.get(refusing), (refused) => {
         const code = refused.get(flow._tag)
         return code === undefined
           ? real.result(flow, run)
           : Effect.succeed(
             Exit.die(new Interpreter.InterpreterError({ code, flow: flow._tag, node: flow._tag, message: "refused" })),
           )
-      })
+      }))
     return Context.make(
       ClientEngine,
       ClientEngine.of({
         start: (flow, run) =>
-          Effect.flatMap(Ref.get(refusingStarts), (refused) =>
+          Effect.flatMap(Effect.all([Ref.get(refusingStarts), Ref.get(losing), Ref.get(dropping)]), ([refused, lost, dropped]) =>
             refused.has(flow._tag)
               ? Effect.fail(new DispatchFailed({ flow: flow._tag, reason: "refused" }))
-              : starts.whenOpen(real.start(flow, run))),
+              : dropped.has(flow._tag)
+              ? Effect.fail(new DispatchFailed({ flow: flow._tag, reason: "unavailable" }))
+              : starts.whenOpen(real.start(flow, run)).pipe(
+                Effect.andThen(lost.has(flow._tag) ? Effect.fail(new DispatchFailed({ flow: flow._tag, reason: "unavailable" })) : Effect.void),
+              )),
         result,
       }),
     ).pipe(
       Context.add(
+        BrowserEngine.BrowserEngine,
+        // Held, a running read stream stops and nothing reads; released, a new one reads from its first snapshot.
+        BrowserEngine.BrowserEngine.of({
+          ...browser,
+          runs: (options) => SubscriptionRef.changes(reads).pipe(Stream.switchMap((open) => open ? browser.runs(options) : Stream.empty)),
+        }),
+      ),
+      Context.add(
         EngineFaults,
         EngineFaults.of({
+          loseStartReplies: (flow) => Ref.update(losing, (lost) => new Set([...lost, flow])),
+          refuseNextResult: (flow) => Ref.update(refusingResults, (held) => new Set([...held, flow])),
+          dropStarts: (flow) => Ref.update(dropping, (dropped) => new Set([...dropped, flow])),
+          admitStarts: (flow) =>
+            Effect.asVoid(Effect.all([refusingStarts, dropping, losing].map((held) => Ref.update(held, (flows) => new Set([...flows].filter((name) => name !== flow)))))),
+          holdRunReads: SubscriptionRef.set(reads, false),
+          readRuns: SubscriptionRef.set(reads, true),
           holdStarts: Effect.asVoid(starts.close),
           releaseStarts: Effect.asVoid(starts.open),
           refuseResults: (flow, code) => Ref.update(refusing, (refused) => new Map([...refused, [flow, code]])),
@@ -168,16 +212,26 @@ const faultyEngine = Layer.effectContext(
   }),
 )
 
-/** A finite 503 outage on a new branch's message shape; every healthy request uses the real source. */
-export class ShapeRecovery extends Context.Service<ShapeRecovery, { readonly failures: Effect.Effect<number> }>()(
+/**
+ * A finite 503 outage on a new branch's message shape (`failures`), and `withhold(route)`: every request for the shape at
+ * `route` answers 503 until `release(route)`, as when that one shape's sync is down; every other request uses the real
+ * source.
+ */
+export class ShapeRecovery extends Context.Service<ShapeRecovery, {
+  readonly failures: Effect.Effect<number>
+  readonly withhold: (route: string) => Effect.Effect<void>
+  readonly release: (route: string) => Effect.Effect<void>
+}>()(
   "@smthrs/mvp/test/ShapeRecovery",
 ) {}
 
 const recoveringSource = (failures: number) => Layer.effectContext(Effect.gen(function* () {
   const real = yield* ShapeSource.ShapeSource
   const failed = yield* Ref.make(0)
+  const withheld = yield* Ref.make<ReadonlySet<string>>(new Set())
   const source = ShapeSource.ShapeSource.of({ request: (url, init) => Effect.gen(function* () {
     const target = new URL(url)
+    if ((yield* Ref.get(withheld)).has(target.pathname)) return new Response(null, { status: 503 })
     if (target.pathname === "/api/shapes/messages" && target.searchParams.has("conversation") &&
       (yield* Ref.get(failed)) < failures) {
       yield* Ref.update(failed, (count) => count + 1)
@@ -186,7 +240,11 @@ const recoveringSource = (failures: number) => Layer.effectContext(Effect.gen(fu
     return yield* real.request(url, init)
   }) })
   return Context.make(ShapeSource.ShapeSource, source).pipe(
-    Context.add(ShapeRecovery, ShapeRecovery.of({ failures: Ref.get(failed) })),
+    Context.add(ShapeRecovery, ShapeRecovery.of({
+      failures: Ref.get(failed),
+      withhold: (route) => Ref.update(withheld, (routes) => new Set([...routes, route])),
+      release: (route) => Ref.update(withheld, (routes) => new Set([...routes].filter((held) => held !== route))),
+    })),
   )
 }))
 

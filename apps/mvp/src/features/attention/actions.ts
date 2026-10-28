@@ -73,8 +73,22 @@ const record = (subject: string, act: Inbox.Act) =>
 /** Hides entry `subject`'s toast: on every device, and it stays in the person's list. */
 export const hide = (subject: string) => Effect.asVoid(record(subject, "hide"))
 
-/** Dismisses entry `subject`: it leaves the person's list on every device. */
-export const dismiss = (subject: string) => Effect.asVoid(record(subject, "dismiss"))
+/**
+ * Dismisses entry `subject`: it leaves the person's list on every device. A failure this device toasted itself leaves
+ * this device's list: the receipt it showed is dismissed, so a later one of the same subject shows again (decision 0124).
+ */
+export const dismiss = (subject: string) =>
+  Effect.gen(function* () {
+    const { entries, dismissed } = yield* AttentionStore
+    const entry = yield* entries.get(subject)
+    if (Option.isNone(entry) || entry.value.local !== true) return yield* Effect.asVoid(record(subject, "dismiss"))
+    if (!entry.value.settled) return
+    // A failure the feed shows is newer than any dismissal of its subject: this one moves it on.
+    const at = entry.value.atMs
+    if (Option.isNone(yield* dismissed.get(subject))) yield* dismissed.insert({ id: subject, at })
+    else yield* dismissed.update(subject, (row) => void (row.at = at))
+    yield* Effect.logInfo("notifications.dismissed").pipe(Effect.annotateLogs({ feature: "attention", subject, local: true }))
+  }).pipe(Effect.orDie)
 
 /** Marks entry `subject` read on every device, if it is unread. */
 export const read = (subject: string) =>
@@ -208,6 +222,12 @@ export const retry = (subject: string) =>
   Effect.gen(function* () {
     const { entries, details, scope } = yield* AttentionStore
     const entry = yield* entries.get(subject)
+    if (Option.isSome(entry) && entry.value.action === "retry" && entry.value.local === true) {
+      // This tab's refused admission: its staged input again, under the same identity (decision 0124).
+      const started = yield* (yield* AttentionStore).retryInput(subject)
+      yield* recorded("retry", started ? { subject, outcome: "started" } : { subject, outcome: "failed" })
+      return
+    }
     if (Option.isSome(entry) && entry.value.action === "retry") {
       // The clone's new attempt raises the entry again once RepoApi takes it; the press returns at once.
       const flows = yield* FlowDispatch
