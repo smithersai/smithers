@@ -25,13 +25,18 @@
 import type { RunInspection } from "@smthrs/engine-store"
 import type { Flow as FlowTypes } from "@smthrs/flow"
 import { RetryPolicy, RunMetrics } from "@smthrs/flow"
+import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
 import * as Deferred from "effect/Deferred"
+import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import type * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
+import * as Option from "effect/Option"
 import * as PubSub from "effect/PubSub"
+import * as Queue from "effect/Queue"
+import * as Ref from "effect/Ref"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
@@ -181,11 +186,37 @@ export interface Service {
   ) => Effect.Effect<RunInspection.Inspection, RequestRefused | EngineUnavailable>
   /**
    * Lists the leader's runs newest first, `limit` at a time (200 at most)
-   * from `cursor`; `roots`, the default, keeps the runs with no parent.
+   * from `cursor`; `roots`, the default, keeps the runs with no parent;
+   * `flows` keeps only the runs of those flows, by tag (64 at most).
    */
   readonly list: (
-    options?: { readonly limit?: number; readonly cursor?: string; readonly roots?: boolean }
+    options?: {
+      readonly limit?: number
+      readonly cursor?: string
+      readonly roots?: boolean
+      readonly flows?: ReadonlyArray<string>
+    }
   ) => Effect.Effect<RunInspection.RunList, RequestRefused | EngineUnavailable>
+  /**
+   * The leader's runs as `list` reads them (`limit`, `roots` and `flows` as
+   * there): read once subscribed, then again after the events committed
+   * since and after each new leader, at most once per `every` (250 ms unless
+   * set). With `within`, each read is every run created that long ago or
+   * since, page after page, rather than the newest page. A run that settled
+   * appears in the next read without an event of its own. A read that fails
+   * emits nothing, logs `browser.engine.runs` once per run of failures, and is
+   * read again after a backoff from 250 ms doubling to 5 s, or sooner on the
+   * next event or leader. The stream never fails.
+   */
+  readonly runs: (
+    options?: {
+      readonly limit?: number
+      readonly roots?: boolean
+      readonly flows?: ReadonlyArray<string>
+      readonly within?: Duration.Input
+      readonly every?: Duration.Input
+    }
+  ) => Stream.Stream<RunInspection.RunList>
   /** Every event the leader's engine commits from now on, for every run. */
   readonly events: Stream.Stream<RunEvent>
   /**
@@ -223,6 +254,10 @@ export const Inspection = RunReads.Inspection
  * @since 1.0.0
  */
 export const RunList = RunReads.RunList
+
+/** The first wait before `runs` reads again after a failed read, and the longest. */
+const RUNS_BACKOFF_MS = 250
+const RUNS_BACKOFF_CAP_MS = 5_000
 
 /**
  * Requests this tab sent, by `request` and `outcome` (`replied` or `refused`).
@@ -405,6 +440,66 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
         )
       )
 
+    const list: Service["list"] = (options = {}) => read({ _tag: "List", ...options }, RunReads.decodeRunList)
+
+    /** One read for `runs`: the newest page, or, `within` a window, every page back to its start. */
+    const readWindow = (
+      options: { readonly limit?: number; readonly roots?: boolean; readonly flows?: ReadonlyArray<string> },
+      within: Duration.Input | undefined
+    ) =>
+      within === undefined ? list(options) : Effect.gen(function*() {
+        const since = (yield* Clock.currentTimeMillis) - Duration.toMillis(within)
+        let page = yield* list(options)
+        const runs = [...page.runs]
+        // Newest first: the window ends at the first run created before it, or with the runs.
+        while (page.cursor !== null && page.runs.every((run) => run.createdAtMs >= since)) {
+          page = yield* list({ ...options, cursor: page.cursor })
+          runs.push(...page.runs)
+        }
+        return { runs: runs.filter((run) => run.createdAtMs >= since), cursor: null }
+      })
+
+    const runs: Service["runs"] = (
+      { every = "250 millis", within, ...options }: NonNullable<Parameters<Service["runs"]>[0]> = {}
+    ) =>
+      Stream.unwrap(Effect.gen(function*() {
+        // Subscribed before the first read, so a change between the read and
+        // the next one is not missed.
+        const changes = yield* PubSub.subscribe(notices)
+        // A failed read reads again on its own: no later event may come.
+        const again = yield* Queue.unbounded<void>()
+        const failures = yield* Ref.make(0)
+        const scope = yield* Effect.scope
+        const snapshot = readWindow(options, within).pipe(
+          Effect.tap(() => Ref.set(failures, 0)),
+          Effect.map(Option.some),
+          Effect.catch((failure) =>
+            Effect.gen(function*() {
+              const failed = yield* Ref.getAndUpdate(failures, (count) => count + 1)
+              // Once per run of failures, never again until a read succeeds.
+              yield* failed > 0 ? Effect.void : Effect.logWarning("browser.engine.runs").pipe(
+                Effect.annotateLogs({
+                  outcome: "unread",
+                  "error.type": failure._tag === "@smthrs/platform-browser/RequestRefused"
+                    ? failure.error
+                    : failure.reason
+                })
+              )
+              const wait = Math.min(RUNS_BACKOFF_MS * 2 ** failed, RUNS_BACKOFF_CAP_MS)
+              yield* Effect.forkIn(Effect.andThen(Effect.sleep(wait), Queue.offer(again, undefined)), scope)
+              return Option.none<RunInspection.RunList>()
+            })
+          )
+        )
+        return Stream.concat(
+          Stream.fromEffect(snapshot),
+          Stream.merge(Stream.fromSubscription(changes).pipe(Stream.as(undefined)), Stream.fromQueue(again)).pipe(
+            Stream.groupedWithin(Number.MAX_SAFE_INTEGER, every),
+            Stream.mapEffect(() => snapshot)
+          )
+        ).pipe(Stream.filterMap((read) => Option.isSome(read) ? Result.succeed(read.value) : Result.failVoid))
+      }))
+
     return BrowserEngine.of({
       start: (flow, { executionId, payload }) =>
         (Schema.encodeEffect(Schema.toCodecJson(flow.payloadSchema))(payload) as Effect.Effect<
@@ -447,7 +542,8 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
       signal: (flow, executionId, name, value) =>
         Effect.asVoid(request({ _tag: "Signal", flow: flow._tag, executionId, name, value })),
       inspect: (runId, options = {}) => read({ _tag: "Inspect", runId, ...options }, RunReads.decodeInspection),
-      list: (options = {}) => read({ _tag: "List", ...options }, RunReads.decodeRunList),
+      list,
+      runs,
       events: Stream.fromPubSub(notices).pipe(
         Stream.filterMap((notice) =>
           notice._tag === "RunChanged"

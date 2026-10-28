@@ -97,7 +97,8 @@ export const List = Schema.TaggedStruct("List", {
   ...addressed,
   limit: Schema.optionalKey(Schema.Number),
   cursor: Schema.optionalKey(Schema.String),
-  roots: Schema.optionalKey(Schema.Boolean)
+  roots: Schema.optionalKey(Schema.Boolean),
+  flows: Schema.optionalKey(Schema.Array(Schema.String))
 })
 
 /**

@@ -321,6 +321,136 @@ describe("BrowserEngine", () => {
   })
 })
 
+describe("BrowserEngine.runs", () => {
+  it.live("reads the leader's runs once subscribed, a settled run included without another event", () =>
+    Effect.gen(function*() {
+      const { engine } = yield* setup()
+      yield* engine.start(Steps, { executionId: "listed-1", payload: { prefix: "l" } })
+      yield* engine.result(Steps, "listed-1")
+      const [first] = yield* engine.runs().pipe(Stream.take(1), Stream.runCollect)
+      expect(first!.runs.find((run) => run.runId === "listed-1")).toMatchObject({ status: "completed" })
+    }).pipe(Effect.scoped))
+
+  it.live("reads again after a run's events, at most once per interval", () =>
+    Effect.gen(function*() {
+      const { engine } = yield* setup()
+      const reads = yield* engine.runs({ every: "20 millis" }).pipe(
+        Stream.filter((read) => read.runs.some((run) => run.runId === "later-1" && run.status === "completed")),
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.forkChild
+      )
+      yield* Effect.sleep("50 millis")
+      yield* engine.start(Steps, { executionId: "later-1", payload: { prefix: "n" } })
+      const [settled] = yield* Fiber.join(reads)
+      expect(settled!.runs.map((run) => run.runId)).toContain("later-1")
+    }).pipe(Effect.scoped))
+
+  it.live("reads only the flows it names", () =>
+    Effect.gen(function*() {
+      const { engine } = yield* setup()
+      yield* engine.start(Steps, { executionId: "named-1", payload: { prefix: "a" } })
+      yield* engine.start(Sleeper, { executionId: "other-1", payload: { prefix: "b", pauseMs: 0 } })
+      yield* engine.result(Steps, "named-1")
+      yield* engine.result(Sleeper, "other-1")
+      const [read] = yield* engine.runs({ flows: [Steps._tag] }).pipe(Stream.take(1), Stream.runCollect)
+      expect(read!.runs.map((run) => run.runId)).toEqual(["named-1"])
+      expect((yield* engine.list({ flows: [Sleeper._tag] })).runs.map((run) => run.runId)).toEqual(["other-1"])
+    }).pipe(Effect.scoped))
+
+  it.live("reads every page of a window, newest first, and none before it", () =>
+    Effect.gen(function*() {
+      const { engine } = yield* setup()
+      yield* engine.start(Steps, { executionId: "window-old", payload: { prefix: "o" } })
+      yield* engine.result(Steps, "window-old")
+      yield* Effect.sleep("1 second")
+      const recent = Date.now()
+      for (const id of ["window-b", "window-c"]) {
+        yield* engine.start(Steps, { executionId: id, payload: { prefix: id } })
+        yield* engine.result(Steps, id)
+      }
+      const ids = (within: number | string) =>
+        engine.runs({ limit: 1, within }).pipe(
+          Stream.take(1),
+          Stream.runCollect,
+          Effect.map(([read]) => read!.runs.map((run) => run.runId))
+        )
+      // One run a page: the window's two pages, then the page that reaches past it.
+      expect(yield* ids(Date.now() - recent + 100)).toEqual(["window-c", "window-b"])
+      // A window older than every run reads to the last page.
+      expect(yield* ids("1 hour")).toEqual(["window-c", "window-b", "window-old"])
+    }).pipe(Effect.scoped))
+
+  it.live("reads again on its own after the leader refuses, with no event or leader to wake it, and logs the run of failures once without content", () => {
+    const telemetry = Telemetry.make()
+    return telemetry.observed(
+      Effect.gen(function*() {
+        const name = Engines.name()
+        const engine = yield* Engines.tab(name)
+        // A leader that refuses the first two lists and answers every later one.
+        const stranger = yield* Effect.flatMap(TabChannel.TabChannel, (channels) => channels.open(name)).pipe(
+          Effect.provide(TabChannel.layer)
+        )
+        const inbox = yield* stranger.subscribe
+        let lists = 0
+        yield* Stream.fromQueue(inbox).pipe(
+          Stream.runForEach((input) => {
+            const message = Protocol.decode(input)
+            if (message?._tag !== "List") return Effect.void
+            lists++
+            return stranger.post(Protocol.encode(
+              lists <= 2
+                ? { _tag: "Refused", client: message.client, id: message.id, error: "@smthrs/run-store/RunStoreError" }
+                : { _tag: "Replied", client: message.client, id: message.id, result: { runs: [], cursor: null } }
+            ))
+          }),
+          Effect.forkChild
+        )
+        // It never announces itself, and nothing changes: no run event, no new leader. Only the backoff reads again,
+        // 250 ms after the first refusal and 500 ms after the second.
+        const started = Date.now()
+        expect(yield* engine.runs({ every: "10 millis" }).pipe(Stream.take(1), Stream.runCollect)).toEqual([
+          { runs: [], cursor: null }
+        ])
+        expect(Date.now() - started).toBeGreaterThanOrEqual(700)
+        expect(lists).toBe(3)
+        expect(telemetry.lines("browser.engine.runs").map((line) => line.annotations)).toEqual([
+          expect.objectContaining({ outcome: "unread", "error.type": "@smthrs/run-store/RunStoreError" })
+        ])
+      }).pipe(Effect.scoped)
+    )
+  })
+
+  it.live("logs an unavailable engine's reason when the tab's worker failed", () => {
+    const telemetry = Telemetry.make()
+    return telemetry.observed(
+      Effect.gen(function*() {
+        const engine = yield* BrowserEngine.make({
+          name: Engines.name(),
+          worker: () => {
+            throw new TypeError("private")
+          }
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              TabChannel.layer,
+              Layer.succeed(StoragePersistence.StoragePersistence)(
+                StoragePersistence.make({ persist: () => Promise.resolve(true) })
+              )
+            )
+          )
+        )
+        yield* engine.unavailable
+        const read = yield* engine.runs().pipe(Stream.take(1), Stream.runCollect, Effect.forkChild)
+        while (telemetry.lines("browser.engine.runs").length === 0) yield* Effect.sleep("5 millis")
+        expect(read.pollUnsafe()).toBeUndefined()
+        expect(telemetry.lines("browser.engine.runs")[0]!.annotations).toMatchObject({ "error.type": "worker-failed" })
+        expect(Telemetry.dump(telemetry)).not.toContain("private")
+      }).pipe(Effect.scoped)
+    )
+  })
+})
+
 describe("BrowserEngine.layer", () => {
   it.live("uses a new leader after its own worker failed to build", () =>
     Effect.gen(function*() {

@@ -153,21 +153,21 @@ full walkthrough.
 
 ## Modules
 
-| Module                       | What it provides                                                                                                  |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `BrowserFileSystem`          | `make` and `layer` over a ZenFS-shaped promises API, plus the `ZenFsPromisesLike` slice that API has to satisfy.  |
-| `BrowserChildProcessSpawner` | `make` and `layer` over a just-bash interpreter, plus the `JustBashLike` slice, whose one member is `exec`.       |
-| `BrowserServices`            | `layer({ bash, fs })`: the spawner, the filesystem, and `Path`, mirroring `NodeServices.layer`.                   |
-| `BrowserHost`                | `layer({ bash, fs, jj })`: the closed Host bundle, adding the wasm-backed `Jj` and Effect's fetch `HttpClient`.   |
-| `BrowserRuntime`             | The durable engine in a dedicated worker: `run`, the worker entry, over `serve`, `layerHost` and `layer`.         |
-| `BrowserEngine`              | `layer({ name, worker })`: a tab's `start`, `result`, `cancel`, `signal` and `events`, sent to the leader.        |
-| `BrowserSqlite`              | `layerSqlite`: one wa-sqlite build and OPFS VFS per worker; `layer`: a `SqlClient` over one database file on it.  |
-| `SharedSqlite`               | `layer({ name })` and `open({ name })`: a tab's `execute` on the app's own database, run by the leader.           |
-| `WebLock`, `TabChannel`      | The Web Lock that elects the leader, taken with `steal` by a focused tab, and the `BroadcastChannel` tabs use.    |
-| `StoragePersistence`         | `persist`: asks the browser for persistent storage, so it does not clear the engine's store.                      |
-| `BrowserCache`               | `layer({ name?, maxEntryBytes? })`: `@smthrs/artifacts`' `ImmutableCache` over the origin's Cache Storage.        |
-| `TerminalSocket`             | `connect(url, { onOutput })`: a page's socket to a terminal over `TerminalProtocol`; redials on a `RetryPolicy`.  |
-| `BrowserLanguageServer`      | `make({ worker, workspace })` in a tab and `serve` in its worker: `@smthrs/std`'s `LanguageServer` on TypeScript. |
+| Module                       | What it provides                                                                                                   |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `BrowserFileSystem`          | `make` and `layer` over a ZenFS-shaped promises API, plus the `ZenFsPromisesLike` slice that API has to satisfy.   |
+| `BrowserChildProcessSpawner` | `make` and `layer` over a just-bash interpreter, plus the `JustBashLike` slice, whose one member is `exec`.        |
+| `BrowserServices`            | `layer({ bash, fs })`: the spawner, the filesystem, and `Path`, mirroring `NodeServices.layer`.                    |
+| `BrowserHost`                | `layer({ bash, fs, jj })`: the closed Host bundle, adding the wasm-backed `Jj` and Effect's fetch `HttpClient`.    |
+| `BrowserRuntime`             | The durable engine in a dedicated worker: `run`, the worker entry, over `serve`, `layerHost` and `layer`.          |
+| `BrowserEngine`              | `layer({ name, worker })`: a tab's `start`, `result`, `cancel`, `signal`, `events` and `runs`, sent to the leader. |
+| `BrowserSqlite`              | `layerSqlite`: one wa-sqlite build and OPFS VFS per worker; `layer`: a `SqlClient` over one database file on it.   |
+| `SharedSqlite`               | `layer({ name })` and `open({ name })`: a tab's `execute` on the app's own database, run by the leader.            |
+| `WebLock`, `TabChannel`      | The Web Lock that elects the leader, taken with `steal` by a focused tab, and the `BroadcastChannel` tabs use.     |
+| `StoragePersistence`         | `persist`: asks the browser for persistent storage, so it does not clear the engine's store.                       |
+| `BrowserCache`               | `layer({ name?, maxEntryBytes? })`: `@smthrs/artifacts`' `ImmutableCache` over the origin's Cache Storage.         |
+| `TerminalSocket`             | `connect(url, { onOutput })`: a page's socket to a terminal over `TerminalProtocol`; redials on a `RetryPolicy`.   |
+| `BrowserLanguageServer`      | `make({ worker, workspace })` in a tab and `serve` in its worker: `@smthrs/std`'s `LanguageServer` on TypeScript.  |
 
 Three properties are worth knowing before you compose them.
 

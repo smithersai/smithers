@@ -240,7 +240,8 @@ const readRequest = (request: ReadRequest) =>
       reads.list({
         ...(request.limit === undefined ? {} : { limit: request.limit }),
         ...(request.cursor === undefined ? {} : { cursor: request.cursor }),
-        ...(request.roots === undefined ? {} : { roots: request.roots })
+        ...(request.roots === undefined ? {} : { roots: request.roots }),
+        ...(request.flows === undefined ? {} : { flows: request.flows })
       }))
 
 /** The span attributes that name what a request acts on. */
