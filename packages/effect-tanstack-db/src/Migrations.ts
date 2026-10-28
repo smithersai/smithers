@@ -783,8 +783,8 @@ const record = (outcome: CollectionReport) =>
       : outcome.outcome === "migrated" && outcome.kept + outcome.dropped > 0
       ? Effect.logWarning
       : Effect.logInfo)("device.migrate").pipe(
-      Effect.annotateLogs({ ...outcome, store: outcome.store ?? "undeclared", to: outcome.to ?? "none" })
-    )
+        Effect.annotateLogs({ ...outcome, store: outcome.store ?? "undeclared", to: outcome.to ?? "none" })
+      )
   ], { discard: true })
 
 /**

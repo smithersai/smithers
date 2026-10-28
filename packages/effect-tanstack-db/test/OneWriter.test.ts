@@ -297,8 +297,7 @@ describe("one writer per persisted synced collection", () => {
     expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({ _tag: "LoadFailed" })
     expect(broken.notes.tanstack.status).toBe("error")
     // Logged by the collection and the error's name, never its message.
-    const failed = () =>
-      broken.logs.filter(({ message }) => (message as Array<unknown>)[0] === "persisted sync failed")
+    const failed = () => broken.logs.filter(({ message }) => (message as Array<unknown>)[0] === "persisted sync failed")
     await until(() => failed().length > 0)
     expect(failed().map(({ level, annotations }) => [level, annotations])).toEqual([
       ["Warn", { collection: on.collection, error: "Error" }]
