@@ -125,11 +125,18 @@ export const mutate = (
   apply: () => TanStackTransaction<any>
 ): Effect.Effect<Transaction, MutationRefused> =>
   Effect.try({ try: apply, catch: (cause) => new MutationRefused({ operation, cause }) }).pipe(
-    Effect.map((transaction) => ({
-      id: transaction.id,
-      persisted: Effect.tryPromise({
-        try: () => transaction.isPersisted.promise,
-        catch: (cause) => new TransactionFailed({ cause })
-      }).pipe(Effect.asVoid)
-    }))
+    Effect.map(receipt)
   )
+
+/**
+ * One actual TanStack persistence receipt, shared by mutations and pending-key reads.
+ * @private
+ * @since 0.1.0
+ */
+export const receipt = (transaction: TanStackTransaction<any>): Transaction => ({
+  id: transaction.id,
+  persisted: Effect.tryPromise({
+    try: () => transaction.isPersisted.promise,
+    catch: (cause) => new TransactionFailed({ cause })
+  }).pipe(Effect.asVoid)
+})

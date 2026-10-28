@@ -42,7 +42,7 @@ import * as Elections from "./internal/elections.ts"
 import { errorName } from "./internal/errorName.ts"
 import { type Change, type Key, LoadFailed, type MutationRefused, type Transaction } from "./internal/model.ts"
 import { oneWriter } from "./internal/oneWriter.ts"
-import { awaitRow, changes, mutate, preload, release, toArray } from "./internal/readers.ts"
+import { awaitRow, changes, mutate, preload, receipt, release, toArray } from "./internal/readers.ts"
 import { wholeTransactions } from "./internal/wholeTransactions.ts"
 import { declared } from "./Migrations.ts"
 import type { Lock } from "./Outbox.ts"
@@ -85,6 +85,8 @@ export interface Collection<A extends object, K extends Key = Key, U extends Uti
    * a mutation inserted is not synced until its handler persists it and the source delivers it back.
    */
   readonly isSynced: (key: K) => Effect.Effect<boolean>
+  /** Actual unsettled write receipts for this key, including optimistic deletion. A read never retries a write. */
+  readonly pendingWrites: (key: K) => Effect.Effect<ReadonlyArray<Transaction>>
   /** Starts the collection's sync and waits for its first rows: for a synced collection, the network's. */
   readonly preload: Effect.Effect<void, LoadFailed>
   /**
@@ -478,17 +480,38 @@ const restored = <A extends object, K extends Key, U extends UtilsRecord>(
 
 const wrap = <A extends object, K extends Key, U extends UtilsRecord>(
   tanstack: TanStackCollection<A, K, U>
-): Collection<A, K, U> => ({
-  id: tanstack.id,
-  tanstack,
-  toArray: toArray(tanstack),
-  get: (key) => Effect.sync(() => Option.fromUndefinedOr(tanstack.get(key))),
-  isSynced: (key) => Effect.sync(() => tanstack.get(key)?.$synced === true),
-  preload: preload(tanstack),
-  restored: restored(tanstack),
-  changes: (options) => changes(tanstack, options),
-  awaitRow: (match, timeout) => awaitRow(tanstack, match).pipe(Effect.timeout(timeout)),
-  insert: (rows) => mutate("insert", () => tanstack.insert(Array.isArray(rows) ? [...rows] : rows as A)),
-  update: (key, recipe) => mutate("update", () => tanstack.update(key, recipe)),
-  delete: (keys) => mutate("delete", () => tanstack.delete(Array.isArray(keys) ? [...keys] : keys as K))
-})
+): Collection<A, K, U> => {
+  const pending = new Map<string, ReturnType<TanStackCollection<A, K, U>["insert"]>>()
+  const capture = (apply: () => ReturnType<TanStackCollection<A, K, U>["insert"]>) => () => {
+    const transaction = apply()
+    pending.set(transaction.id, transaction)
+    const settled = () => {
+      pending.delete(transaction.id)
+    }
+    // Observe the actual receipt even when the caller stops waiting or never awaits its returned Effect.
+    void transaction.isPersisted.promise.then(settled, settled)
+    return transaction
+  }
+  return {
+    id: tanstack.id,
+    tanstack,
+    toArray: toArray(tanstack),
+    get: (key) => Effect.sync(() => Option.fromUndefinedOr(tanstack.get(key))),
+    isSynced: (key) => Effect.sync(() => tanstack.get(key)?.$synced === true),
+    pendingWrites: (key) =>
+      Effect.sync(() =>
+        [...pending.values()]
+          .filter((transaction) =>
+            transaction.mutations.some((mutation) => mutation.collection.id === tanstack.id && mutation.key === key)
+          )
+          .map(receipt)
+      ),
+    preload: preload(tanstack),
+    restored: restored(tanstack),
+    changes: (options) => changes(tanstack, options),
+    awaitRow: (match, timeout) => awaitRow(tanstack, match).pipe(Effect.timeout(timeout)),
+    insert: (rows) => mutate("insert", capture(() => tanstack.insert(Array.isArray(rows) ? [...rows] : rows as A))),
+    update: (key, recipe) => mutate("update", capture(() => tanstack.update(key, recipe))),
+    delete: (keys) => mutate("delete", capture(() => tanstack.delete(Array.isArray(keys) ? [...keys] : keys as K)))
+  }
+}

@@ -344,3 +344,101 @@ test("a schema's refinements apply to every row", async () => {
   }))
   expect(error).toMatchObject({ _tag: "MutationRefused", operation: "insert" })
 })
+
+describe("pending write receipts", () => {
+  for (const operation of ["insert", "update", "delete"] as const) {
+    test(`${operation} exposes its actual receipt even when its row is optimistically absent`, async () => {
+      await run(Effect.gen(function*() {
+        let resolve!: () => void
+        const gate = new Promise<void>((done) => {
+          resolve = done
+        })
+        const collection = yield* Collection.make(Note, {
+          id: id("pending"),
+          getKey: (row) => row.id,
+          sync: {
+            sync: (source) => {
+              source.begin()
+              source.write({ type: "insert", value: note("a", 1) })
+              source.commit()
+              source.markReady()
+            }
+          },
+          onInsert: () => gate,
+          onUpdate: () => gate,
+          onDelete: () => gate
+        })
+        yield* collection.preload
+        const write = yield* operation === "insert" ?
+          collection.insert([note("b", 2), note("c", 3)])
+          : operation === "update"
+          ? collection.update("a", (row) => {
+            row.n = 2
+          })
+          : collection.delete("a")
+        const key = operation === "insert" ? "b" : "a"
+        expect((yield* collection.pendingWrites(key)).map((row) => row.id)).toEqual([write.id])
+        expect(yield* collection.pendingWrites("absent")).toEqual([])
+        if (operation === "insert") {
+          expect((yield* collection.pendingWrites("c")).map((row) => row.id)).toEqual([write.id])
+        }
+        if (operation === "delete") expect(yield* collection.get(key)).toEqual(Option.none())
+        const waiter = yield* write.persisted.pipe(Effect.forkChild({ startImmediately: true }))
+        yield* Fiber.interrupt(waiter)
+        expect((yield* collection.pendingWrites(key)).map((row) => row.id)).toEqual([write.id])
+        resolve()
+        yield* write.persisted
+        expect(yield* collection.pendingWrites(key)).toEqual([])
+      }))
+    })
+  }
+
+  test("a failed actual receipt releases pending state and retains its typed failure", async () => {
+    await run(Effect.gen(function*() {
+      let reject!: (error: Error) => void
+      const gate = new Promise<void>((_, fail) => {
+        reject = fail
+      })
+      const collection = yield* Collection.make(Note, {
+        id: id("pending-failure"),
+        getKey: (row) => row.id,
+        sync: {
+          sync: (source) => {
+            source.markReady()
+          }
+        },
+        onInsert: () => gate
+      })
+      const write = yield* collection.insert(note("a", 1))
+      expect((yield* collection.pendingWrites("a")).map((row) => row.id)).toEqual([write.id])
+      reject(new Error("refused"))
+      const failed = yield* Effect.flip(write.persisted)
+      expect(failed._tag).toBe("TransactionFailed")
+      expect(yield* collection.pendingWrites("a")).toEqual([])
+    }))
+  })
+
+  test("a transaction across collections reports only the queried collection's keys", async () => {
+    const { createTransaction } = await import("@tanstack/db")
+    await run(Effect.gen(function*() {
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const left = yield* notes()
+      const right = yield* notes()
+      const transaction = createTransaction({ autoCommit: false, mutationFn: () => gate })
+      transaction.mutate(() => {
+        Effect.runSync(left.insert(note("left", 1)))
+        Effect.runSync(right.insert(note("right", 2)))
+      })
+      expect((yield* left.pendingWrites("left")).map((row) => row.id)).toEqual([transaction.id])
+      expect(yield* left.pendingWrites("right")).toEqual([])
+      expect((yield* right.pendingWrites("right")).map((row) => row.id)).toEqual([transaction.id])
+      const commit = transaction.commit()
+      release()
+      yield* Effect.promise(() => commit)
+      expect(yield* left.pendingWrites("left")).toEqual([])
+    }))
+  })
+})

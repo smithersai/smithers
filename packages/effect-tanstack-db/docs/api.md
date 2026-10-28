@@ -706,3 +706,7 @@ changes without a new version fails a test. The guide is
 Diagnostic `collection` attributes identify the collection kind (the prefix before `:`), never its repository-qualified storage identity. This applies to writer roles, restore timing and write failures. Storage and coordination continue using the full identity.
 
 `outbox.admission(name, idempotencyKey)` reads this program's live `Write` receipt. None does not certify absence: a restored write was already durably stored by an earlier program. `transact(name, { idempotencyKey, joinExisting: true }, mutate)` joins a live write of that mutation and key without running `mutate` again. It shares both admission and settlement, including storage refusal. Joining is opt-in; callers allocate a new key for a different operation.
+
+### Pending writes by key
+
+`collection.pendingWrites(key)` reads the actual unsettled transaction receipts affecting a key, including an optimistic deletion whose row is absent. Each receipt exposes its stable `id` and `persisted` Effect. Await the captured receipts before treating absence as durable, then check for newer pending writes before acknowledging cleanup. Cancellation of a waiter does not cancel persistence; failed receipts remain typed `TransactionFailed`. Reading receipts never starts or retries a write. Collection reads remain optimistic.
