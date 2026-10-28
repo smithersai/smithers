@@ -18,13 +18,14 @@ const closing: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => { for (const app of closing.splice(0).reverse()) await app.dispose() })
 const [owner, name] = TEST_REPOSITORY.split("/") as [string, string]
 const repoId = `github/${TEST_REPOSITORY}`
-const opening = async () => {
+const opening = async (offline = false) => {
   const server = openTestApp({ answers: false })
   closing.push(server)
   const api = await server.runPromise(Effect.service(TestChatApi))
   const data = new Map<string, string>()
   const snapshot = PendingSnapshot.make({ getItem: key => data.get(key) ?? null, setItem: (key, value) => { data.set(key, value) }, removeItem: key => { data.delete(key) } }, "pending")
-  const host = { ...nodeDevice({ agent: api }), writeSnapshot: snapshot }
+  const device = nodeDevice({ agent: api })
+  const host = { ...device, writeSnapshot: snapshot, ...(offline ? { outbox: { ...device.outbox, online: { ...device.outbox.online, isOnline: () => false } } } : {}) }
   const app = openTab(api, { host })
   closing.push(app)
   const services = await app.runPromise(Effect.all({ issues: Issues, store: IssuesStore, todos: TodosStore, intents: WriteIntents, chat: ChatStore }))
@@ -32,6 +33,65 @@ const opening = async () => {
 }
 const uuid = (namespace: string, value: string) => Effect.runPromise(Uuid.v5(namespace, value).pipe(Effect.provide(WebCrypto.layer), Effect.orDie))
 const until = (assertion: () => void) => vi.waitFor(assertion, { timeout: 20_000 })
+
+for (const source of ["comment", "todo"] as const) test(`live and retried ${source} cleanup failures retain the original input`, async () => {
+  const tab = await opening(true)
+  const key = source === "comment" ? commentDraftKey(repoId, 45) : crypto.randomUUID()
+  const commentDraft = { id: key, title: "", body: "Retain failed cleanup" }
+  const todoDraft = { id: key, repo: TEST_REPOSITORY, repoId, title: "Retain failed cleanup", prompt: "Prompt", acceptance: [], answerId: null, createdAt: 1 }
+  let failures = 0
+  const failedReceipt = Effect.sync(() => { failures++; }).pipe(Effect.andThen(Effect.fail(new Collection.TransactionFailed({ cause: "quota" }))))
+  const { comment, retryWrite } = await import("./features/issues/actions")
+  const { commit, retryChange } = await import("./features/todos/actions")
+  const issueDrafts = { ...tab.store.drafts, delete: (id: string | ReadonlyArray<string>) => tab.store.drafts.delete(id).pipe(Effect.map(write => ({ ...write, persisted: failedReceipt }))) }
+  const todoDrafts = { ...tab.todos.drafts, delete: (id: string | ReadonlyArray<string>) => tab.todos.drafts.delete(id).pipe(Effect.map(write => ({ ...write, persisted: failedReceipt }))) }
+  if (source === "comment") {
+    await tab.issues.actions.open(owner, name, 45)
+    await tab.app.runPromise(tab.store.drafts.insert(commentDraft).pipe(Effect.flatMap(write => write.persisted)))
+    await tab.app.runPromise(comment(owner, name, 45).pipe(Effect.provideService(IssuesStore, { ...tab.store, drafts: issueDrafts })))
+  } else {
+    await tab.app.runPromise(tab.todos.drafts.insert(todoDraft).pipe(Effect.flatMap(write => write.persisted)))
+    await tab.app.runPromise(commit(key).pipe(Effect.provideService(TodosStore, { ...tab.todos, drafts: todoDrafts })))
+  }
+  const [intent] = tab.intents.pending()
+  expect(intent).toMatchObject({ admitted: true, cleaned: false })
+  if (source === "comment") {
+    await tab.app.runPromise(tab.store.drafts.insert(commentDraft).pipe(Effect.flatMap(write => write.persisted)))
+    await tab.app.runPromise(tab.store.requested.insert({ id: intent!.writeId!, repo: TEST_REPOSITORY, repoId, op: "issue/comment", number: 45, title: "", body: commentDraft.body, queuedAt: 1, status: "not_sent", reason: null }))
+    await tab.app.runPromise(retryWrite(intent!.writeId!).pipe(Effect.provideService(IssuesStore, { ...tab.store, drafts: issueDrafts })))
+  } else {
+    await tab.app.runPromise(tab.todos.drafts.insert(todoDraft).pipe(Effect.flatMap(write => write.persisted)))
+    await tab.app.runPromise(tab.todos.requested.insert({ id: intent!.writeId!, repo: TEST_REPOSITORY, repoId, op: "commit", number: 0, title: todoDraft.title, prompt: todoDraft.prompt, acceptance: [], queuedAt: 1, status: "not_sent", reason: null, taken: null }))
+    await tab.app.runPromise(retryChange(intent!.writeId!).pipe(Effect.provideService(TodosStore, { ...tab.todos, drafts: todoDrafts })))
+  }
+  expect(failures).toBe(2)
+  expect(tab.intents.pending()).toEqual([expect.objectContaining({ commandId: intent!.commandId, writeId: intent!.writeId, admitted: true, cleaned: false })])
+})
+
+test("repeated refused TODO presses reuse ephemeral recovery and Discard needs no stored row", async () => {
+  const tab = await opening(true)
+  const { drop, retry, discard } = await import("./features/todos/actions")
+  const { VIEW } = await import("./features/todos/schema")
+  const requested = { ...tab.todos.requested, insert: () => Effect.fail(new Collection.MutationRefused({ operation: "insert", cause: "quota" })) }
+  const refusing = { ...tab.intents, retain: () => false }
+  for (const press of [drop("other", name, 1), retry(owner, name, 1), drop(owner, name, 2), drop(owner, name, 1)]) {
+    await tab.app.runPromise(press.pipe(Effect.provideService(WriteIntents, refusing), Effect.provideService(TodosStore, { ...tab.todos, requested })))
+  }
+  const failures = () => Option.getOrThrow(tab.app.runSync(tab.todos.view.get(VIEW))).admissionFailures ?? []
+  const original = failures().find(row => row.repo === TEST_REPOSITORY && row.op === "drop" && row.number === 1)!
+  await until(() => expect(tab.intents.admitting.size).toBe(0))
+  expect(tab.todos.requested.tanstack.has(original.id)).toBe(false)
+  const admitted: string[] = []
+  await tab.app.runPromise(drop(owner, name, 1).pipe(Effect.provideService(TodosStore, {
+    ...tab.todos, queue: row => tab.todos.queue(row).pipe(Effect.tap(() => Effect.sync(() => { admitted.push(row.id) }))),
+  })))
+  expect(admitted).toEqual([original.id])
+  expect(failures().some(row => row.id === original.id)).toBe(false)
+  const discarded = failures()[0]!
+  await tab.app.runPromise(discard(discarded.id))
+  expect(failures().some(row => row.id === discarded.id)).toBe(false)
+  expect(failures()).toHaveLength(2)
+})
 
 test("a restored Create recovers its route and retires only the navigation receipt that route acknowledged", async () => {
   const tab = await opening()

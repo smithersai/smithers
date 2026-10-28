@@ -126,7 +126,8 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>, draft
     }
     const admission = yield* admitCommand(command.flow, input, executionId)
     if (Option.isSome(admission) && admission.value === "not_admitted") {
-      if (Option.isSome(staged)) yield* finishAdmission(staged.value, false)
+      // Only an outbox command can return not_admitted, so its input was staged above.
+      yield* finishAdmission(Option.getOrThrow(staged), false)
       if ((yield* draftNow) === before && Option.getOrThrow(yield* composer.get(COMPOSER)).generation === generation && (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId === conversation) yield* refuse("invalid", "Not sent", command)
       return
     }

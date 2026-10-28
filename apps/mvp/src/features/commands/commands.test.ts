@@ -363,6 +363,17 @@ describe("shared draft admission", () => {
 })
 
 describe("submitting", () => {
+  test("opening a browser tab cannot clear source text changed by the host's opening callback", async () => {
+    const tab = await open()
+    const source = "/web https://example.com/ tab"
+    tab.actions.type(source)
+    await tab.runtime.runPromise(submitCommand(source).pipe(Effect.provideService(WebTab, {
+      policy: { localHttp: false, appOrigin: "https://app.example.test" },
+      openTab: () => { tab.actions.type("Later typing"); return true },
+    })))
+    expect(tab.draft()).toBe("Later typing")
+  })
+
   test("a web tab opens inside the gesture before a shared prompt waits for admission", async () => {
     const tab = await open()
     const store = await tab.runtime.runPromise(Effect.service(ChatStore))
