@@ -122,3 +122,5 @@ update independently; completion and dispatch still use the shared UI grammar.
 Composer write actions return promises that resolve after local outbox admission. Commands capture their conversation and branch before clearing a shared prompt, so navigation during admission cannot send a command into another conversation.
 
 Slash commands backed by the device outbox admit their typed payload before resolving or clearing the composer. Their public flows join the same identity in the background. A local refusal keeps the command and its recovery receipt; retry keeps that write id.
+
+The private draft’s generation distinguishes an unchanged Retry from a newly retyped identical command across reload. Live submission, replay and page Retry await the same source-cleanup receipts; navigation or optimistic deletion cannot claim that cleanup finished.

@@ -17,3 +17,7 @@ Reload can restore a pre-admission `not_sent` row alongside the same write's dur
 A live admission receipt, like startup replay, clears only its exact submitted source snapshot. Typing into that draft while admission waits creates a newer source that the older receipt cannot delete. Faulted real queue services exercise this ordering for Create, Comment and TODO Commit.
 
 Explicit Retry fences the original write throughout local persistence and admission, including older recovery rows without an input snapshot. Successful cleanup retires the input so a later identical press is a new write. Slash cleanup waits for the actual private composer transaction before retiring its identity. A TODO input refusal is visible as Not sent immediately; it persists the same recovery identity once when device persistence is usable and never starts delivery automatically.
+
+Private composer drafts v2 retain an optional source generation. An actual edit changes that generation; restoration of an older row preserves its absent generation until edited. Admission joins only the same unchanged source, so clearing and retyping identical content creates an independent write. The migration leaves historical rows intact.
+
+Live submission, startup recovery and page Retry share composer cleanup. `Collection.pendingWrites(key)` supplies actual unsettled receipts, including an optimistic deletion after navigation. Cleanup awaits those receipts and retains its input when a newer write or unsaved replacement still prevents confirmation. No application retry loop is added.

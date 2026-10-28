@@ -1051,4 +1051,4 @@ Stages cover input retention, restored input, device recovery persistence, outbo
 outbox storage and engine admission. A `pending` record without a terminal receipt identifies
 the interrupted boundary. `write.identity` links the input command to its execution and write
 ids. `smithers_write_admission_stages` counts by flow, stage and outcome, without ids.
-No record includes payloads, hash inputs, repository names or credentials.
+The receipt effect inherits command, flow and stage annotations, correlating its existing transaction records. Explicit Retry records source cleanup through the same stages. No record includes payloads, hash inputs, repository names or credentials.
