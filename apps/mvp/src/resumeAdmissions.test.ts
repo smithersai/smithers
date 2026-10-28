@@ -95,7 +95,7 @@ test("repeated refused TODO presses reuse ephemeral recovery and Discard needs n
 
 test("a restored Create recovers its route and retires only the navigation receipt that route acknowledged", async () => {
   const tab = await opening()
-  const first = { commandId: crypto.randomUUID(), flow: "issue/create", payload: { repo: TEST_REPOSITORY, title: "Earlier", body: "Earlier" } }
+  const first = { commandId: crypto.randomUUID(), flow: "issue/create", draftId: newDraftKey(repoId), payload: { repo: TEST_REPOSITORY, title: "Earlier", body: "Earlier" } }
   const last = { commandId: crypto.randomUUID(), flow: "issue/create", draftId: newDraftKey(repoId), payload: { repo: TEST_REPOSITORY, title: "Recovered", body: "Exact snapshot" } }
   tab.intents.retain(first)
   tab.intents.retain(last)
@@ -374,4 +374,15 @@ for (const replacement of [false, true]) test(`a pending source deletion cannot 
   } else reject(new Error("quota"))
   expect(await Effect.runPromise(Fiber.join(fiber))).toBe(false)
   inserted()
+})
+
+
+test("recovering a slash-created issue never takes over the New issue form", async () => {
+  const tab = await opening()
+  tab.intents.retain({ commandId: crypto.randomUUID(), flow: "issue/create", payload: { repo: TEST_REPOSITORY, title: "From slash", body: "" } })
+  await tab.app.runPromise(resumeAdmissions)
+  await until(() => expect(tab.intents.pending()).toEqual([]))
+  expect(tab.intents.resumed.size).toBe(0)
+  await tab.issues.actions.open(owner, name, undefined, null)
+  expect(Option.getOrThrow(await tab.app.runPromise(tab.store.view.get("view"))).createdWriteId).toBeUndefined()
 })

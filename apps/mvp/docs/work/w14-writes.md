@@ -7,7 +7,7 @@ updated: 2026-10-27
 links:
   - ../decisions/0002-local-first.md
   - ../decisions/0009-notifications-and-live-work.md
-  - ../decisions/0122-write-input-receipts.md
+  - ../decisions/0123-write-input-receipts.md
 ---
 
 Immediate-reload probes identified an asynchronous identity/persistence interval before any outbox transaction. Inputs now retain an owner-scoped synchronous receipt and resume through the existing outbox with their original identities. Recovery projections prefer actual admission over an unrefused stale local row. Cleanup waits for real persistence, preserves newer source generations, and fences Retry and Discard.

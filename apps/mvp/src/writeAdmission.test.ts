@@ -50,7 +50,7 @@ test("receipts clear their own inputs and cannot erase a newer command", async (
 test("a Create retains navigation recovery after outbox admission", async () => {
   const host = device()
   const store = await storeOf(host.snapshot)
-  const row = intent("create", "issue/create")
+  const row = { ...intent("create", "issue/create"), draftId: "new-issue-form" }
   store.retain(row)
   await Effect.runPromise(finishAdmission(row, true).pipe(Effect.provideService(WriteIntents, store)))
   expect((await storeOf(host.snapshot)).pending()).toEqual([expect.objectContaining(row)])
@@ -127,7 +127,7 @@ test("navigation before admission or cleanup cannot retire a Create receipt", as
   const { acknowledgeNavigation, identifyAdmission } = await import("./writeAdmission")
   const host = device()
   const store = await storeOf(host.snapshot)
-  const row = intent("creation", "issue/create")
+  const row = { ...intent("creation", "issue/create"), draftId: "new-issue-form" }
   store.retain(row)
   await Effect.runPromise(identifyAdmission(row, row.commandId, "write").pipe(Effect.provideService(WriteIntents, store)))
   await Effect.runPromise(acknowledgeNavigation("unrelated").pipe(Effect.provideService(WriteIntents, store)))
@@ -242,4 +242,16 @@ test("a refused identity update still fences and completes Retry through its in-
   await Effect.runPromise(Fiber.interrupt(fiber))
   await Effect.runPromise(provide(finishRetainedAdmission("write", true, true)))
   expect(store.pending()).toEqual([])
+})
+
+
+test("a slash-created issue retires after delivery and cleanup without a navigation receipt", async () => {
+  const host = device()
+  const store = await storeOf(host.snapshot)
+  const row = { ...intent("slash-create", "issue/create"), composer: { conversationId: null, text: "/issue owner/repo title" } }
+  store.retain(row)
+  await Effect.runPromise(finishAdmission(row, true, false).pipe(Effect.provideService(WriteIntents, store)))
+  expect((await storeOf(host.snapshot)).pending()).toHaveLength(1)
+  await Effect.runPromise(finishAdmission(row, true, true).pipe(Effect.provideService(WriteIntents, store)))
+  expect((await storeOf(host.snapshot)).pending()).toEqual([])
 })

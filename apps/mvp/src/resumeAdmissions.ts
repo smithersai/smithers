@@ -23,7 +23,7 @@ export const resumeAdmissions = Effect.gen(function* () {
     const id = yield* Uuid.v5(admissionNamespace(intent.flow as FlowName), executionId).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
     yield* identifyAdmission(intent, executionId, id)
     receipts.admitting.set(intent.commandId, (receipts.admitting.get(intent.commandId) ?? 0) + 1)
-    if (intent.flow === "issue/create") receipts.resumed.set(intent.payload.repo as string, id)
+    if (intent.flow === "issue/create" && intent.draftId !== undefined) receipts.resumed.set(intent.payload.repo as string, id)
     yield* recordAdmission(intent.commandId, intent.flow, "restore", "recovered", started)
     yield* Effect.gen(function* () {
       const result = yield* admitCommand(intent.flow as FlowName, intent.payload, executionId)

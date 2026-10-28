@@ -103,7 +103,7 @@ const settle = (store: WriteIntents["Service"], intent: WriteIntent, admitted: b
   const previous = store.pending().find(row => row.commandId === intent.commandId)
   store.update(intent.commandId, { admitted: admitted || previous?.admitted === true, cleaned: (admitted && cleaned) || previous?.cleaned === true })
   const latest = store.pending().find(row => row.commandId === intent.commandId)
-  if (latest?.admitted && latest.cleaned && (latest.flow !== "issue/create" || latest.navigated)) store.forget(intent.commandId)
+  if (latest?.admitted && latest.cleaned && (latest.flow !== "issue/create" || latest.draftId === undefined || latest.navigated)) store.forget(intent.commandId)
 }
 
 export const finishAdmission = (intent: WriteIntent, admitted: boolean, cleaned = true) => Effect.gen(function* () {

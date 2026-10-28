@@ -349,4 +349,4 @@ Failed authority reads persist their content-free refusal; the list shows the Gi
 
 A reload can restore both the pre-admission recovery row and its admitted outbox row.
 The outbox receipt keeps that write Requested; a real server refusal or failure still
-shows Not sent. See [write input receipts](../decisions/0122-write-input-receipts.md).
+shows Not sent. See [write input receipts](../decisions/0123-write-input-receipts.md).
