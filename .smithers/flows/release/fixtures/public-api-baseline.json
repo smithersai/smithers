@@ -2284,6 +2284,7 @@
         "internal/RegistryWorkspace.d.ts": "194a8490635dc67bde0afb77fc1b2f8927d3ad395c104a5a667b38d236cecd45",
         "internal/ReleasedChildResume.d.ts": "acbb7069978f178b107ed3c3cce85d397b40e555c83f04cd7a3e8ca2a5f55335",
         "internal/ReplacedFlowPolicy.d.ts": "95b92976f5df5f1e646abcd0fca896f7394033e1f4f21827f7b1e692908d9884",
+        "internal/RetiredSkills.d.ts": "f788fe203ab61857b559473a1d169dc5d1a065e0f9dfe38d73aa0cdcbb81310b",
         "internal/RoleProfile.d.ts": "51dcf009ca2cae4be552adc1b99ef5c8dc9c39bcb5f96534d7108b34561c83bf",
         "internal/RunListing.d.ts": "47a1258469aadce4b4f62902db2ee7899e0b507b7942c07ddf8a85e7dff5acd0",
         "internal/SourceRevision.d.ts": "b11a30db31eb0fdb50b26381fe0404bab829ec6ee69f88ad108f08055ca952a3",
