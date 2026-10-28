@@ -1586,3 +1586,23 @@ describe("0071_branch_write_notices", () => {
     expect(await on(through("0071"))).toEqual([])
   }))
 })
+
+describe("0072_role_observations", () => {
+  test("preserves existing authority order and issues later generations for new observations", () => emptySchema(async url => {
+    const database = Database.layer(Effect.succeed(Redacted.make(url)))
+    const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+    await on(through("0071"))
+    const personId = crypto.randomUUID()
+    await on(Effect.flatMap(SqlClient.SqlClient, sql => sql`INSERT INTO people (id, github_id, github_login) VALUES (${personId}, 1, 'person')`))
+    for (const [role, age] of [["guest", 0], ["member", 3600]] as const) await on(Effect.flatMap(SqlClient.SqlClient, sql => sql`
+      INSERT INTO sessions (id, token_digest, person_id, role, role_checked_at, expires_at)
+      VALUES (gen_random_uuid(), ${role}, ${personId}, ${role}, now() - make_interval(secs => ${age}), now() + interval '1 day')`))
+    expect((await on(through("0072"))).map(([id, name]) => `${id}_${name}`)).toEqual(["72_role_observations"])
+    const rows = await on(Effect.flatMap(SqlClient.SqlClient, sql => sql<{ role: string; generation: string }>`
+      SELECT role, role_generation::text AS generation FROM sessions ORDER BY role_generation`))
+    expect(rows.map(row => row.role)).toEqual(["member", "guest"])
+    const [next] = await on(Effect.flatMap(SqlClient.SqlClient, sql => sql<{ generation: string }>`SELECT nextval('role_observations')::text AS generation`))
+    expect(BigInt(next!.generation)).toBeGreaterThan(BigInt(rows[1]!.generation))
+    expect(await on(through("0072"))).toEqual([])
+  }))
+})

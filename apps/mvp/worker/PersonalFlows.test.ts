@@ -94,17 +94,24 @@ const draftRow = async (draftId: string) => {
 }
 
 describe("who may use the routes", () => {
-  test("signed out is 401 and a Guest is 403, on every route; nothing is written", async () => {
+  test("signed out is 401 on every route; nothing is written", async () => {
     const draftId = crypto.randomUUID()
-    for (const [actor, status] of [[null, 401], [guest, 403]] as const) {
-      const h = await open(actor)
-      expect((await send(h, "GET", "/api/flows")).status).toBe(status)
-      expect((await send(h, "GET", "/api/flow-drafts")).status).toBe(status)
-      expect((await writeRound(h, draftId, round("notes"))).status).toBe(status)
-      expect((await send(h, "POST", "/api/flows/save", saving(draftId, "notes"))).status).toBe(status)
-      expect((await send(h, "POST", "/api/flows/write", writing("notes", 1))).status).toBe(status)
-    }
+    const h = await open(null)
+    expect((await send(h, "GET", "/api/flows")).status).toBe(401)
+    expect((await send(h, "GET", "/api/flow-drafts")).status).toBe(401)
+    expect((await writeRound(h, draftId, round("notes"))).status).toBe(401)
+    expect((await send(h, "POST", "/api/flows/save", saving(draftId, "notes"))).status).toBe(401)
+    expect((await send(h, "POST", "/api/flows/write", writing("notes", 1))).status).toBe(401)
     expect(await draftRow(draftId)).toBeUndefined()
+  })
+
+  test("a Guest of the deployment's repository has flows of their own: their lists, and a draft round they write (ruling AUTH-8)", async () => {
+    const draftId = crypto.randomUUID()
+    const h = await open(guest)
+    expect(await json(await send(h, "GET", "/api/flows"))).toEqual([200, expect.anything()])
+    expect((await send(h, "GET", "/api/flow-drafts")).status).toBe(200)
+    expect((await writeRound(h, draftId, round("notes"))).status).toBeLessThan(300)
+    expect(await draftRow(draftId)).toBeDefined()
   })
 
   test("Postgres failing is 503 unavailable, logged by its code", async () => {

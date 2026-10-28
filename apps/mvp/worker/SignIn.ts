@@ -12,11 +12,12 @@ import {
   SIGN_IN_ROUTE,
   SIGN_OUT_ROUTE,
 } from "../src/features/auth/contract.ts"
+import { installUrl } from "../src/features/repo/contract.ts"
 import * as Actor from "./Actor.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as Flows from "./Flows.ts"
 import { RevokeGitHubToken, revokeExecutionId } from "./flows/RevokeGitHubToken.ts"
-import { GitHubAuth, type GitHubRefused, roleOf } from "./GitHubAuth.ts"
+import { appSlug, GitHubAuth, type GitHubRefused, roleOf } from "./GitHubAuth.ts"
 import * as HostedModel from "./HostedModel.ts"
 import * as RunCredentials from "./RunCredentials.ts"
 import * as SessionKeys from "./SessionKeys.ts"
@@ -210,6 +211,8 @@ class CallbackFailed extends Schema.TaggedError<CallbackFailed>()("CallbackFaile
  * when sign-in isn't configured (local development's developer), else nobody. The fallback signs out and back in with
  * the dev signed-out cookie, never reaching GitHub. `options.teammates` are local development's other people: a
  * browser whose dev person cookie names one is signed in as them instead, so two people can share a laptop's app.
+ * `options.newcomer` names more of them by the cookie's value, each a person whose id is that value, so a test can be
+ * a person nobody was before (worker/DevChatApi.ts `newcomer`).
  */
 export const make = <E, R>(
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
@@ -217,12 +220,15 @@ export const make = <E, R>(
     readonly github?: GitHubAuth["Service"]
     readonly fallback?: Signed
     readonly teammates?: Readonly<Record<string, Signed>>
+    readonly newcomer?: (name: string) => Signed | undefined
     /** `HOSTED_MODEL_ENABLED`'s default: on only under `alchemy dev` (decision 0099). */
     readonly hostedModel?: boolean
   } = {},
 ) =>
   Effect.gen(function* () {
     const setup = yield* configured(options.github)
+    // Where Install goes (the GitHub App's installation on GitHub), when this deployment signs in with the App.
+    const install = Option.isSome(setup) ? installUrl(yield* appSlug) : undefined
     // Whether the deployment's own model answers when no Admin set it (decision 0099); a value that doesn't parse is off.
     const hostedDefault = yield* HostedModel.hostedModelDefault(options.hostedModel).pipe(Effect.orElseSucceed(() => false))
 
@@ -253,7 +259,7 @@ export const make = <E, R>(
           ? undefined
           : Object.hasOwn(options.teammates ?? {}, person)
           ? options.teammates![person]
-          : undefined
+          : options.newcomer?.(person)
         return Option.fromNullishOr(teammate ?? options.fallback)
       }
       const { keys, recheckAfterMs } = setup.value
@@ -386,22 +392,27 @@ export const make = <E, R>(
           Effect.mapError(effect, (error) => failing(`${error.step}_${error.reason}`))
         const tokens = yield* fromGitHub(github.exchange({ code: Redacted.make(code), codeVerifier, redirectUri }))
         const user = yield* fromGitHub(github.user(tokens.accessToken))
+        const roleGeneration = yield* SessionStore.roleObservation.pipe(
+          Effect.provide(database),
+          Effect.mapError((error) => new CallbackFailed({ reason: "database", returnTo, errorCode: codeOf(error) })),
+        )
         const role = roleOf(yield* fromGitHub(github.permission(tokens.accessToken, repository)))
         const sessionId = crypto.randomUUID()
         const token = yield* keys.token
         const seal = (value: Redacted.Redacted<string>, name: "github_access" | "github_refresh") =>
           keys.seal(value, { id: sessionId, name, version: 1 })
-        const personId = yield* Effect.gen(function* () {
+        const signedIn = yield* Effect.gen(function* () {
           const personId = yield* SessionStore.upsertPerson({
             id: crypto.randomUUID(),
             githubId: user.id,
             login: user.login,
           })
-          yield* SessionStore.createSession({
+          const effectiveRole = yield* SessionStore.createSession({
             id: sessionId,
             tokenDigest: SessionKeys.digest(token),
             personId,
             role,
+            roleGeneration,
             access: yield* seal(tokens.accessToken, "github_access"),
             accessExpiresAt: tokens.expiresAt,
             refresh: tokens.refreshToken === null ? null : yield* seal(tokens.refreshToken, "github_refresh"),
@@ -412,12 +423,12 @@ export const make = <E, R>(
           })
           // The session this browser held ends now, so it is refused at once; its admitted flow revokes its tokens.
           if (Option.isSome(ending)) yield* SessionStore.revoke({ id: ending.value }, "sign_out")
-          return personId
+          return { personId, role: effectiveRole }
         }).pipe(
           Effect.provide(database),
           Effect.mapError((error) => new CallbackFailed({ reason: "database", returnTo, errorCode: codeOf(error) })),
         )
-        return { personId, role, returnTo, cookie: yield* keys.sign("session", token), maxAgeSeconds }
+        return { ...signedIn, returnTo, cookie: yield* keys.sign("session", token), maxAgeSeconds }
       }).pipe(
         // A bug: logged by its name, and the browser told sign-in failed.
         Effect.catchDefect((defect) =>
@@ -525,15 +536,17 @@ export const make = <E, R>(
     )
 
     /**
-     * `GET /api/auth/session`: who this browser is signed in as, and, signed in, whether the deployment's own model
-     * answers anyone (`hostedModel`). A setting Postgres can't read says it does: the endpoint refuses each call
-     * itself, so the composer shows and the answer fails visibly rather than hiding chat.
+     * `GET /api/auth/session`: who this browser is signed in as, and whether the deployment's own model answers them
+     * (`hostedModel`): on, and they are a Member or above of its own repository (ruling AUTH-8). Signed out, whether it
+     * answers anyone, so a visitor's first run shows the steps they will have (decision 0121). A setting Postgres can't
+     * read says it does: the endpoint refuses each call itself, so the composer shows and the answer fails visibly
+     * rather than hiding chat. Signed in, where Install goes (`install`), when the deployment signs in with the App.
      */
     const session = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest
       if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
       const signed = yield* current
-      const hostedModel = Option.isNone(signed) ? true : yield* HostedModel.enabled(hostedDefault).pipe(
+      const hostedModel = yield* HostedModel.enabled(hostedDefault).pipe(
         Effect.provide(database),
         Effect.catchCause((cause) =>
           Effect.as(record("session", { outcome: "failed", reason: "hosted_model", errorCode: codeOf(Cause.squash(cause)) }), true)
@@ -545,9 +558,10 @@ export const make = <E, R>(
           personId: signed.value.actor.subject.id,
           login: signed.value.login,
           role: signed.value.actor.role,
-          hostedModel,
+          hostedModel: hostedModel && Actor.canAsk(signed.value.actor),
+          ...(install === undefined ? {} : { install }),
         }
-        : { signedIn: false, available: Option.isSome(setup) || options.fallback !== undefined }
+        : { signedIn: false, available: Option.isSome(setup) || options.fallback !== undefined, hostedModel }
       return HttpServerResponse.jsonUnsafe(state, { status: 200, headers: noStore })
     }).pipe(
       Effect.catchTag("@smthrs/mvp/auth/SessionsUnavailable", () =>
@@ -594,7 +608,9 @@ export const make = <E, R>(
     const personOf = (claims: RunCredentials.Claims): Effect.Effect<Option.Option<Actor.Actor>, Actor.SessionsUnavailable, R> =>
       Option.isNone(setup)
         ? Effect.succeed(
-          Option.fromNullishOr(local.find((signed) => signed?.actor.subject.id === claims.sub)).pipe(
+          Option.fromNullishOr(
+            local.find((signed) => signed?.actor.subject.id === claims.sub) ?? options.newcomer?.(claims.sub),
+          ).pipe(
             Option.map((signed) => ({ ...signed.actor, login: signed.login })),
           ),
         )

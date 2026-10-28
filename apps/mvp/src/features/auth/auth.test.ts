@@ -384,6 +384,14 @@ describe("the composer", () => {
     // prompt; the prompt once ChatApi can't be reached.
     expect(composerAccess(at("loading", null), undefined)).toBe("wait")
     expect(composerAccess(at("unreachable", null), undefined)).toBe("sign_in")
+    // A branch page's repository decides where its access says (ruling AUTH-8): a Member there asks, whatever their
+    // role on the deployment's own repository, and one below Member there doesn't.
+    for (const role of ["guest", null, "admin"]) {
+      expect(composerAccess(at("signed_in", role), undefined, "saved", true), String(role)).toBe("ask")
+      expect(composerAccess(at("signed_in", role), undefined, "saved", false), String(role)).toBe("members_only")
+      expect(composerAccess(at("unreachable", null), { role: role as null }, "saved", true), String(role)).toBe("ask")
+    }
+    expect(composerAccess({ ...at("signed_in", null), hostedModel: false }, undefined, "none", true)).toBe("add_model")
   })
 
   test("while the deployment's model is off, a member without a model of their own sees the way to add one", () => {

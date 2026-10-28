@@ -1,8 +1,8 @@
 # Quickstart
 
-> Open a repository on smithers.sh, read its files and issues, and sign in with GitHub.
+> Open a repository on smithers.sh, read its files and issues, sign in with GitHub, and ask Smithers.
 
-This page takes you from the smithers.sh home page to a repository's files and issues, then to signing in with GitHub. It takes about five minutes.
+This page takes you from the smithers.sh home page to a repository's files and issues, then through signing in with GitHub to your first question. It takes about five minutes.
 
 **Before you start:** you need a GitHub account to sign in. To open a private repository, you also need read access to it on GitHub.
 
@@ -36,13 +36,19 @@ Choose **Issues** to list the repository's open and closed issues, or **Pull req
 
 ## 5. Sign in with GitHub
 
-From the home page, choose **Get started for free**. GitHub asks you to sign in, then to authorize Smithers to read your account and email address and to access your repositories.
+From the home page, choose **Get started for free**. Until your first conversation, the app lists its steps above the chat: **Sign in**, **Add your model**, then **Ask Smithers** or **Open your repository**, each checked once done. Choose **Sign in with GitHub** on the first step. GitHub asks you to sign in, then to authorize Smithers to read your account and email address and to access your repositories.
 
 ![GitHub's sign-in page, opened from Sign in on smithers.sh](https://smithers.sh/images/docs/quickstart-sign-in.light.webp)
 
+## 6. Add your model and ask
+
+Smithers answers with your own model. On **Add your model**, choose **Open settings**, enter your provider's base URL, key and model under **Your model**, and save. Back in the chat, choose **Chat** on **Ask Smithers**, type a question and press Enter. Once you have asked, the steps are gone.
+
+You ask Smithers in a repository where you have write access or more on GitHub. When the chat's own repository isn't one of yours, the last step is **Open your repository** instead: choose **Install** to add the Smithers GitHub App to a public repository of yours, type the repository as `owner/name`, and choose **Open**. On its page, choose **Clone**, then open a file or folder: the branch's conversation is beside it, and you ask there. A repository where you only read says **Members can ask Smithers.**
+
 ## Result
 
-You opened a repository on smithers.sh, read a file, listed its issues, and started signing in with GitHub.
+You opened a repository on smithers.sh, read a file, listed its issues, signed in with GitHub, and asked Smithers your first question.
 
 ## Next steps
 

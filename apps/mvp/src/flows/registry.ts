@@ -137,7 +137,7 @@ export const registry = {
   "conversation/new": {
     flow: ConversationNew,
     changes: "makes a new branch of the repository, with its conversation, and opens it in the person's tab",
-    slash: { command: "new", description: "Start a conversation", minimum: "member", fields: ["repo", "branch"], hints: { fields: { repo: { required: true } } } },
+    slash: { command: "new", description: "Start a conversation", minimum: "guest", fields: ["repo", "branch"], hints: { fields: { repo: { required: true } } } },
   },
   "app/navigate": { flow: Navigate, changes: "moves the person's tab", slash: { command: "navigate", description: "Go to a page", minimum: "anyone" } },
   // File tabs (docs/features/files.md): the strip's clicks and keys dispatch these, and the agent calls them to show code.
@@ -209,7 +209,7 @@ export const registry = {
   "repo/clone": {
     flow: RepoCloneRequest,
     changes: "clones the repository, which spends the deployment's storage",
-    slash: { command: "clone", description: "Clone a repository", minimum: "member" },
+    slash: { command: "clone", description: "Clone a repository", minimum: "guest" },
   },
   "repo/copy": { flow: RepoCopy, changes: "writes the person's clipboard" },
   // No slash command: a person's run would have nowhere to show its verdicts. A person asks Smithers instead.

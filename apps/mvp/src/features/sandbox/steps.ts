@@ -51,7 +51,7 @@ export const refusalOf = (refused: CallRefused): SandboxCallRefused | SandboxCom
     : refused.status === 401
     ? new SandboxCallRefused({ reason: "sign_in" })
     : refused.status === 403
-    ? new SandboxCallRefused({ reason: "forbidden" })
+    ? new SandboxCallRefused({ reason: refused.code === "members_only" ? "members_only" : "forbidden" })
     : refused.status === 409 && refused.code === "locked"
     ? new SandboxCallRefused({ reason: "locked" })
     : refused.status === 404

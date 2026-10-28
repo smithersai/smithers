@@ -1,6 +1,6 @@
 # 0007: Roles and labels: four roles, one per-action policy, labels as flows
 
-Status: accepted (Will, 2026-10-19). Will asked: "We need ability to assign roles like maintainer, contributor etc. (just like GitHub). We also will want ability to add tags to issues and PRs like GitHub too. These will be important later but we need it architected." His answers are under [Questions for Will](#questions-for-will). This record covers authorization: what an actor may do. Identity, meaning who the actor is, is [0008](0008-auth.md); §9 is the seam between the two. Branch and sandbox permissions follow [0005](0005-sandboxes-secrets-and-the-forge.md).
+Status: accepted (Will, 2026-10-19). Amended 2026-10-27 by [0122](0122-who-may-ask.md) (ruling AUTH-8): `repo:ask` and a clone (`repo:branch-create`) are decided by the role on the repository the act concerns; saving one's own model needs only sign-in. Will asked: "We need ability to assign roles like maintainer, contributor etc. (just like GitHub). We also will want ability to add tags to issues and PRs like GitHub too. These will be important later but we need it architected." His answers are under [Questions for Will](#questions-for-will). This record covers authorization: what an actor may do. Identity, meaning who the actor is, is [0008](0008-auth.md); §9 is the seam between the two. Branch and sandbox permissions follow [0005](0005-sandboxes-secrets-and-the-forge.md).
 
 ## Decision
 
@@ -57,7 +57,7 @@ Each row is a `repo:` action in `@smthrs/capability`. A flow declares the action
 | `repo:read` | code, branches, issues, PRs, labels and runs; watching a branch live | anyone if public, else Guest | run |
 | `repo:issue-open`, `repo:comment` | opening an issue; commenting on an issue or PR | Guest | run |
 | `repo:pr-open` | opening a PR from a fork or a branch | Guest | run |
-| `repo:ask` | asking Smithers about the repository | Member | run |
+| `repo:ask` | asking Smithers about the repository: by the person's role on that repository, never another's (ruling AUTH-8, [0122](0122-who-may-ask.md)) | Member | run |
 | `repo:triage` | assigning, closing, reopening, marking duplicate | Member; an author may close their own issue | run |
 | `repo:label` | creating, editing, deleting, applying and removing labels | Member | run |
 | `repo:branch-create` | creating a branch and its sandbox | Member | run |

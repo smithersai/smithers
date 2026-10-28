@@ -151,8 +151,12 @@ Metrics (`src/features/chat/metrics.ts`, `src/boot.ts`, `src/page.ts`, and `@smt
 | `smithers_web_sign_in_presses` | counter | Sign in with GitHub presses |
 | `smithers_web_sign_outs` | counter | `outcome` = `signed_out` or `failed` |
 | `smithers_web_device_wipes` | counter | `outcome` = `wiped` or `failed` |
+| `first_run.step` | log, span | `step` = `sign_in`, `model`, `ask` or `members`, and `steps`, how many the list shows: each step `/app`'s first run comes to show ([first run](features/first-run.md#observability)) |
+| `smithers_web_first_run_steps` | counter | `step`: how often a tab's first run showed it; `members` counts the signed-in people the Member rule stops |
+| `first_run.press` | log, span | `step` = `model`: Open settings pressed on the first run's list |
+| `smithers_web_first_run_presses` | counter | `step` |
 
-Every name above, and every attribute, is in the feature's contract (`CHAT_TELEMETRY` in `src/features/chat/contract.ts`, `AUTH_TELEMETRY` in `src/features/auth/contract.ts`, `COMMANDS_TELEMETRY` in `src/features/commands/contract.ts`, and the app's own `APP_TELEMETRY` in `src/telemetry.ts`), which the relay keeps ([below](#relayed-browser-records)).
+Every name above, and every attribute, is in the feature's contract (`CHAT_TELEMETRY` in `src/features/chat/contract.ts`, `AUTH_TELEMETRY` in `src/features/auth/contract.ts`, `FIRST_RUN_TELEMETRY` in `src/features/first-run/contract.ts`, `COMMANDS_TELEMETRY` in `src/features/commands/contract.ts`, and the app's own `APP_TELEMETRY` in `src/telemetry.ts`), which the relay keeps ([below](#relayed-browser-records)).
 
 #### The engine worker
 
@@ -288,7 +292,7 @@ Logs (`worker/Chat.ts`, and `ShapeProxy` from `@smthrs/effect-electric`, mounted
 
 | Message | When | Level | Fields |
 |---|---|---|---|
-| `chat.question` | every `POST /api/questions` | Info 2xx, Warn 4xx, Error 5xx | `status`, `bytes` (body bytes read, absent when a declared length was refused), `durationMs`; `questionId`, `answerId` once the body is valid; `existing: true` for a retry; `expiry: started` for a question ChatApi acknowledged; `errorCode` for every 4xx and 5xx (below), and `defect`, the defect's name, for 500 |
+| `chat.question` | every `POST /api/questions` | Info 2xx, Warn 4xx, Error 5xx | `status`, `bytes` (body bytes read, absent when a declared length was refused), `durationMs`; `questionId`, `answerId` once the body is valid; `role`, the asker's on the conversation's repository, which decides (`none` for no role; ruling AUTH-8); `existing: true` for a retry; `expiry: started` for a question ChatApi acknowledged; `errorCode` for every 4xx and 5xx (below), and `defect`, the defect's name, for 500 |
 | `chat.answer.expire` | ChatApi stored a question but couldn't start its `chat/Expire`, and answered `503` | Warn | `answerId`, `outcome: not_started`, `errorCode` (the remote host's code, or `conflict`) |
 | `chat.shape` | every shape request, once it has ended | Error 5xx or a failed body, Warn other 4xx, Info otherwise | `status` (499 when the browser left before Electric answered), `live`, `durationMs` (to the body's end), `bytes` (body bytes sent), `outcome` (`complete`, `aborted` or `failed`) |
 | `chat.view.add` | every `POST /api/views` ([web pages](features/web-pages.md#the-views-table)) | Info 2xx, Warn 4xx, Error 5xx | `status`, `bytes`, `durationMs`; `viewId`, `template` once the body is valid; `reason` for a page it refused; `existing: true` for the same add again; `errorCode` for 503. Never the URL |
@@ -479,7 +483,7 @@ RepoApi (`worker/RepoApi.ts`), the clone (`worker/flows/RepoClone.ts`) and the b
 
 | Message | When | Level | Fields |
 |---|---|---|---|
-| `repo.clone.request` | every `POST /api/repos`, which persists the request and starts nothing | Info 2xx, Warn 4xx, Error 5xx | `outcome` (`requested`, `existing`, `method`, or the refusal's code), `status`, `durationMs`; `id`, `attempt` and `cloneId` once valid; `row` (the existing row's status); `errorCode` for 503 |
+| `repo.clone.request` | every `POST /api/repos`, which persists the request and starts nothing | Info 2xx, Warn 4xx, Error 5xx | `outcome` (`requested`, `existing`, `method`, or the refusal's code), `status`, `durationMs`; `id`, `attempt` and `cloneId` once valid; `role`, the person's on the repository cloned, which decides (ruling AUTH-8); `row` (the existing row's status); `scope` (`person` or `deployment`), `used`, `limit` for `repository_limit`; `errorCode` for 503 |
 | `repo.clone.launch` | every `POST /api/repos/launch` | Info 2xx, Warn 4xx, Error 5xx and `conflict` | `outcome` (`launched`, `settled`, `conflict`, `method`, or the refusal's code), `status`, `durationMs`; `id` and `cloneId` once valid, `attempt` for a launch; `row` (a settled or superseded row's status); `errorCode` for 503 and for `conflict` (the start found another payload under the attempt's execution id, and the attempt settled `failed`) |
 | `repo.tree`, `repo.blob`, `repo.raw`, `repo.refs` | every read | Info 200, Warn 4xx, Error 5xx | `repoId`, `status`, `bytes` (returned), `durationMs`; `sha` for a tree or a file; `errorCode` (`not_found`, `too_large`, `capacity`, `unavailable`, or a defect's name) |
 | `repo.about` | every `GET /api/repos/<owner>/<name>/about` | Info 200, Warn 4xx, Error 5xx | `repoId`, `status`, `bytes`, `durationMs`; `cache` (`hit`, `miss` when GitHub was read now, `stale`, `refusal` for a kept refusal, `wait` when another request's first read didn't land within 10 seconds), `via` (`app`, `deployment` or `anonymous`), `waitedMs` (how long it waited in the store for another request's first read), `store` (the store operations that failed, comma-separated); when GitHub was read, `read` (its outcome), `rateRemaining`, and on a GitHub refusal finite `stage` and numeric `upstreamStatus`; `errorCode` (`not_found`, `rate_limited`, `github_unavailable`, `unavailable`, or a defect's name) |
@@ -494,7 +498,7 @@ RepoApi (`worker/RepoApi.ts`), the clone (`worker/flows/RepoClone.ts`) and the b
 
 | Span | Kind | Attributes |
 |---|---|---|
-| `repo.clone.request` | server | `smithers.repo.id`, `http.response.status_code` |
+| `repo.clone.request` | server | `smithers.repo.id`, `http.response.status_code`, `smithers.repo.limit.scope` on a count refusal |
 | `repo.clone.launch` | server | `http.response.status_code` |
 | `repo.tree`, `repo.blob`, `repo.raw`, `repo.refs` | server | `http.response.status_code`, `smithers.repo.bytes` |
 | `repo.about` | server; `repo.about.answer` inside, then the store's `repo.about.store.<op>` and the GitHub read, `repo.about.graphql` or `repo.about.rest`, each call a `GitHubClient.request` span | `http.response.status_code` |
@@ -1052,3 +1056,6 @@ outbox storage and engine admission. A `pending` record without a terminal recei
 the interrupted boundary. `write.identity` links the input command to its execution and write
 ids. `smithers_write_admission_stages` counts by flow, stage and outcome, without ids.
 The receipt effect inherits command, flow and stage annotations, correlating its existing transaction records. Explicit Retry records source cleanup through the same stages. No record includes payloads, hash inputs, repository names or credentials.
+
+
+Clone caps (decision 0122): `repo_capacity` counts `person_repositories` and `deployment_repositories`; `repo_clone_requests` counts `repository_limit`. `repo.clone.request` records `scope`, `used` and `limit`. Machine routes record `members_only` refusals. No person id, key or user content is recorded.

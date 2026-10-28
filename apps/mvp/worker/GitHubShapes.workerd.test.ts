@@ -63,6 +63,7 @@ beforeAll(async () => {
       tokenDigest: SessionKeys.digest(token),
       personId,
       role: "member",
+      roleGeneration: yield* SessionStore.roleObservation,
       access: { ciphertext: "unused", nonce: "unused" },
       accessExpiresAt: null,
       refresh: null,

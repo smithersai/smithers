@@ -1,3 +1,4 @@
+import { MEMBERS_ASK, mayAsk, type Role } from "../auth/contract"
 import type { Room } from "../presence/schema"
 import { type Access, ACCESS_LABELS } from "./contract"
 import type { Current } from "./schema"
@@ -21,6 +22,16 @@ export const accessNow = (
   if (current.access === "owner") return "owner"
   return self === "write" ? "edit" : self === "read" ? "view" : current.access
 }
+
+/** What a branch's page says where the conversation would be when the person may not open it. */
+export const NO_ACCESS = "No access"
+
+/**
+ * The words in the conversation's place when the person may not open the branch: `MEMBERS_ASK` for someone signed in
+ * whose role on its repository (`answer`, ChatApi's) is below Member (ruling AUTH-8), else {@link NO_ACCESS}.
+ */
+export const deniedTitleOf = (signedIn: boolean, answer: { readonly role: Role | null } | undefined): string =>
+  signedIn && answer !== undefined && !mayAsk(answer.role) ? MEMBERS_ASK : NO_ACCESS
 
 /** Whether `access` writes: asks in the conversation and types in the terminals. */
 export const writes = (access: Access | "none" | undefined): boolean => access === "owner" || access === "edit"

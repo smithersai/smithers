@@ -27,7 +27,8 @@ import * as ShapeAccess from "./ShapeAccess.ts"
 //   watching the repository.
 // - `POST /api/watches`: the person follows the branch and the repository of a conversation their tab shows.
 // - `POST /api/notifications/ack`: Read, Dismiss or Hide at a version, merged with `greatest()`.
-// - `GET /api/shapes/notifications`: the signed-in Member's own rows. Anyone else gets none.
+// - `GET /api/shapes/notifications`: the signed-in Member's own rows; anyone else signed in, the rows of their own
+//   acts (`mine`), ruling AUTH-8. Signed out gets none.
 
 /** Feed route requests, by `route` (`watch`, `ack`) and `status`. */
 export const requests = Metric.counter("smithers_notification_requests", {
@@ -184,8 +185,8 @@ export const foldRun = (runId: string, launcherLogin: string | undefined) =>
     const existing = yield* sql<Existing>`
       SELECT recipient, state, mine, quiet, title, version FROM notifications WHERE subject = ${subject} FOR UPDATE`
     const before = new Map(existing.map((row) => [row.recipient, row]))
-    // Every recipient hears only of a branch they may still open (worker/branch/Access.ts): a feed is a Member's, so each is
-    // checked as one, against the branch's shares as they are now.
+    // Every recipient hears only of a branch they may still open (worker/branch/Access.ts): only a Member follows one
+    // (`watch`), so each is checked as one, against the branch's shares as they are now.
     const policy = run.branchId === null ? undefined : yield* policyOf(run.branchId)
     const mayRead = (principal: string) => run.branchId === null
       ? principal === run.launchedBy
@@ -437,7 +438,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
   Effect.gen(function* () {
     const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
 
-    /** Runs one route: method, sign-in and the Member check, then `handle`; logs, counts and spans it. */
+    /** Runs one route: method and sign-in, then `handle`; logs, counts and spans it. */
     const route = (
       name: "watch" | "ack",
       handle: (body: string, actor: Option.Some<Actor>, fields: Fields) => Effect.Effect<
@@ -453,9 +454,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         const response = yield* Effect.gen(function* () {
           if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
           const actor = yield* (yield* Sessions).resolve
+          // A feed is anyone's signed in, of their own rows (ruling AUTH-8); following is a Member's (`watch`).
           if (Option.isNone(actor)) return refusal(401, "authentication")
-          // A feed is a Member's or above's (worker/branch/Access.ts).
-          if (!isMember(actor)) return refusal(403, "forbidden")
           const body = yield* readBounded(request, MAX_ATTENTION_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
             Effect.result,
           )
@@ -484,6 +484,9 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
     /** `POST /api/watches`: follow the branch and repository of a conversation, `null` for the home one. */
     const watch = route("watch", (body, actor, fields) =>
       Effect.gen(function* () {
+        // Following is a Member's or above's of the deployment's own repository, the session's role, as `foldRun`
+        // checks each recipient as one.
+        if (!isMember(actor)) return refusal(403, "forbidden")
         const decoded = yield* decodeWatch(body).pipe(Effect.option)
         if (Option.isNone(decoded)) return refusal(400, "invalid")
         const named = decoded.value.conversationId?.toLowerCase() ?? null
@@ -515,13 +518,19 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         return ok(txid)
       }))
 
-    /** `GET /api/shapes/notifications`: the signed-in Member's rows; anyone else, none; sessions unreadable, 503. */
+    /**
+     * `GET /api/shapes/notifications`: the signed-in Member's rows, anyone else's own acts' rows; signed out, none;
+     * sessions unreadable, 503.
+     */
     const shape = ShapeProxy.make({
       ...connection,
+      // A Member or above of the deployment's own repository, as before, syncs every row of theirs, which only they
+      // follow (`watch`); anyone else signed in, the rows of their own acts (`mine`: their runs, clones and writes), so
+      // a person whose role was taken keeps no feed of what others do (ruling AUTH-8).
       shape: Effect.map(ShapeAccess.actor, (actor) => ({
         table: NOTIFICATIONS_TABLE,
-        where: "recipient = $1",
-        params: { "1": isMember(actor) ? actor.value.subject.id : NOBODY },
+        where: isMember(actor) ? "recipient = $1" : "recipient = $1 AND mine = true",
+        params: { "1": Option.isSome(actor) ? actor.value.subject.id : NOBODY },
         columns: SYNCED_NOTIFICATION_COLUMNS,
       })),
       name: "notifications.shape",

@@ -34,8 +34,10 @@ export const COMMAND_MAX_SECONDS: number = globalThis.__SANDBOX_COMMAND_MAX_SECO
  */
 export class SandboxCallRefused extends Schema.TaggedError<SandboxCallRefused>()(
   "@smthrs/mvp/sandbox/SandboxCallRefused",
-  { reason: Schema.Literals(["sign_in", "forbidden", "locked", "not_found", "invalid"]) },
-) {}
+  { reason: Schema.Literals(["sign_in", "members_only", "forbidden", "locked", "not_found", "invalid"]) },
+) {
+  override get message(): string { return this.reason === "members_only" ? "Members can run machines." : this.reason }
+}
 
 /** The command is past the deployment's limit; the agent can ask for a shorter run. */
 export class SandboxCommandTooLong extends Schema.TaggedError<SandboxCommandTooLong>()(

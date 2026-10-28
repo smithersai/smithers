@@ -48,7 +48,7 @@ POST /api/model/<role>  (every role; and a todo run's coding seat and its review
   when the body has no key for it). A tier left out uses a preset or falls back ([tiers](#tiers)); a body with which no
   tier resolves to a model is refused `no_model`.
 
-- **Who:** a signed-in Member or above, in person. An agent, flow, frame or sandbox acting for them is refused
+- **Who:** anyone signed in, in person: it is their key (ruling AUTH-8, decision [0122](../decisions/0122-who-may-ask.md)). An agent, flow, frame or sandbox acting for them is refused
   `forbidden` and counted (`smithers_person_only_refusals`, act `model`): the key would pass through them.
 - **Protocol:** `openai-chat` (OpenAI-compatible Chat Completions, `<base URL>/v1/chat/completions`) or
   `anthropic-messages` (Anthropic-compatible Messages, `<base URL>/v1/messages`).
@@ -146,11 +146,11 @@ it exactly as their endpoint calls are answered, so the run works on their key w
 answers `200` with one `TestResult`, the first failure's or else the `fast` tier's: `{ ok: true, latencyMs, sample }`
 (the model's first 80 characters), or `{ ok: false, latencyMs, code, status, host }`:
 the `ModelError` code (`unusable` for a saved model that can't be used here), the provider's HTTP status or `null`, and
-the provider's host. Nothing saved is `404 none`; a Guest or someone with no role, `403 forbidden`.
+the provider's host. Nothing saved is `404 none`; anyone signed in may test their own.
 
 ## The Settings section
 
-`/app/settings`, the header's Settings link, shows **Your model** to a signed-in Member or above: a group per protocol,
+`/app/settings`, the header's Settings link, shows **Your model** to anyone signed in: a group per protocol,
 "OpenAI-compatible" and "Anthropic-compatible", each with Base URL and Key (a password field; once saved, its
 placeholder is the key's last four characters, and left empty it keeps the saved key); then Fast (Chat), Implement (Coding) and Hard (Plans and reviews),
 each a model id and the key it runs on ("Fast key"). A tier's model field shows the saved model it names, or as its

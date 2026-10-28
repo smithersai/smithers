@@ -82,15 +82,11 @@ const tested = (fields: Partial<TestRow> = {}): TestRow => ({
 const STATES: ReadonlyArray<FormState> = ["sending", "confirming", "late", "done", "failed", "unknown"]
 
 describe("who saves a model", () => {
-  test("a person signed in as a Member or above; nobody else, nor anyone while sign-in doesn't know", () => {
+  test("anyone signed in, whatever their role (ruling AUTH-8); nobody signed out, nor anyone while sign-in doesn't know", () => {
     const seen = (status: string, role: "admin" | "maintainer" | "member" | "guest" | null) => canSave({ status, role })
-    expect([seen("signed_in", "admin"), seen("signed_in", "maintainer"), seen("signed_in", "member")]).toEqual([true, true, true])
-    expect([seen("signed_in", "guest"), seen("signed_in", null), seen("signed_out", null), seen("loading", null)]).toEqual([
-      false,
-      false,
-      false,
-      false,
-    ])
+    expect([seen("signed_in", "admin"), seen("signed_in", "member"), seen("signed_in", "guest"), seen("signed_in", null)])
+      .toEqual([true, true, true, true])
+    expect([seen("signed_out", null), seen("loading", null), seen("unreachable", "member")]).toEqual([false, false, false])
     expect(canSave(undefined)).toBe(false)
   })
 })

@@ -3,17 +3,20 @@
 // cases run ChatApi's real handler (worker/test/harness.ts) with sign-in's sessions.
 import { credentialRoute } from "../src/flows/contract.ts"
 import { ModelRequest } from "@smthrs/model"
-import { ConfigProvider, Effect, Option, Redacted, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
+import { ConnectionError, SqlError } from "effect/sql/SqlError"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../db/Database.ts"
+import * as TestDatabase from "../db/TestDatabase.ts"
 import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA, type SessionState } from "../src/features/auth/contract.ts"
 import * as Flows from "./Flows.ts"
 import * as RevokeGitHubToken from "./flows/RevokeGitHubToken.ts"
 import * as SessionKeys from "./SessionKeys.ts"
 import * as SignIn from "./SignIn.ts"
-import { localDeveloper } from "./DevChatApi.ts"
+import { devRoles, localDeveloper, newcomer, STRANGERS_REPOSITORY } from "./DevChatApi.ts"
+import { repositoryOf } from "./github/Config.ts"
 import { scriptedGitHub } from "./test/github.ts"
 import { answers, harness, recorded, testFile } from "./test/harness.ts"
 import { CLIENT_SECRET, configured, cookie, SECRET, setCookies, signInHarness } from "./test/signIn.ts"
@@ -191,6 +194,23 @@ describe("starting sign-in", () => {
 })
 
 describe("the callback", () => {
+  test("a failed authority observation refuses sign-in before reading a permission or creating a session", async () => {
+    const scratch = await runtime.runPromise(TestDatabase.Scratch)
+    const faulty = Layer.effect(SqlClient.SqlClient, Effect.map(SqlClient.SqlClient, real => new Proxy(real, {
+      apply(target, receiver, args) {
+        return String(args[0]).includes("nextval('role_observations')")
+          ? Effect.fail(new SqlError({ reason: new ConnectionError({ cause: "authority observation unavailable" }) }))
+          : Reflect.apply(target, receiver, args)
+      },
+    }))).pipe(Layer.provide(scratch.database))
+    const h = await signInHarness(runtime, { database: faulty })
+    const { response } = await h.signInAs()
+    expect(response.headers.get("location")).toBe("/app?sign_in=failed")
+    expect(h.github.calls).toEqual(["exchange", "user"])
+    expect(await sessionRows()).toEqual([])
+    expect(h.line("auth.callback")[0]!.annotations).toMatchObject({ reason: "database", errorCode: "sql:ConnectionError" })
+  })
+
   test.each([false, true])("revalidates an older attempt's return path before redirecting (denied=%s)", async (denied) => {
     const h = await signInHarness(runtime)
     for (const target of ["//first.test//second.test", "//evil.test/app", "/.//evil.test", "/a/%2e%2e//evil.test"]) {
@@ -232,7 +252,15 @@ describe("the callback", () => {
     const rows = await stored()
     expect(rows).not.toContain(Redacted.value(tokens.accessToken))
     expect(rows).not.toContain(Redacted.value(tokens.refreshToken!))
-    expect(await h.session(cookies)).toEqual({ signedIn: true, personId: expect.any(String), login: "octocat", role: "member", hostedModel: false } satisfies SessionState)
+    expect(await h.session(cookies)).toEqual({
+      signedIn: true,
+      personId: expect.any(String),
+      login: "octocat",
+      role: "member",
+      hostedModel: false,
+      // Where Install goes: the App's installation, by GITHUB_APP_SLUG (ruling AUTH-8).
+      install: "https://github.com/apps/smithers/installations/new",
+    } satisfies SessionState)
     expect(h.github.repositories).toEqual(["smithersai/smithers"])
     const [line] = h.line("auth.callback")
     expect(line!.annotations).toMatchObject({ outcome: "signed_in", role: "member", personId: session!.personId })
@@ -374,19 +402,41 @@ describe("the callback", () => {
     expect(h.line("auth.callback")[0]!.annotations).toMatchObject({ reason: "error", errorCode: "unknown" })
   })
 
-  test("a signed-in session says whether the deployment's model answers: an Admin's setting, else HOSTED_MODEL_ENABLED", async () => {
+  test("signed in, the deployment's model answers only a Member or above of its own repository; Install goes to GITHUB_APP_SLUG's App (ruling AUTH-8)", async () => {
+    await query((sql) => sql`DELETE FROM hosted_model`)
+    for (const [permission, answers] of [["write", true], ["read", false], ["none", false]] as const) {
+      const github = scriptedGitHub()
+      github.permission = permission
+      const h = await signInHarness(runtime, { github, config: { ...configured, HOSTED_MODEL_ENABLED: "true", GITHUB_APP_SLUG: "smithers-test" } })
+      const { cookies } = await h.signInAs()
+      expect(await h.session(cookies), permission).toMatchObject({
+        signedIn: true,
+        hostedModel: answers,
+        install: "https://github.com/apps/smithers-test/installations/new",
+      })
+      // A visitor is told whether it answers anyone, and no Install.
+      expect(await h.session(), permission).toEqual({ signedIn: false, available: true, hostedModel: true })
+    }
+  })
+
+  test("a session says whether the deployment's model answers, signed in or out: an Admin's setting, else HOSTED_MODEL_ENABLED", async () => {
     await query((sql) => sql`DELETE FROM hosted_model`)
     const on = await signInHarness(runtime, { config: { ...configured, HOSTED_MODEL_ENABLED: "true" } })
     const { cookies } = await on.signInAs()
     expect(await on.session(cookies)).toMatchObject({ signedIn: true, hostedModel: true })
+    // A visitor is told too, so their first run shows the steps they will have once signed in (decision 0121).
+    expect(await on.session()).toEqual({ signedIn: false, available: true, hostedModel: true })
     await query((sql) => sql`INSERT INTO hosted_model (enabled, updated_by) VALUES (false, 'person-admin')`)
     try {
       expect(await on.session(cookies)).toMatchObject({ signedIn: true, hostedModel: false })
+      expect(await on.session()).toEqual({ signedIn: false, available: true, hostedModel: false })
       // A setting Postgres can't read: the composer shows, and the model endpoint refuses each call itself.
       await query((sql) => sql`ALTER TABLE hosted_model RENAME TO hosted_model_away`)
       try {
         expect(await on.session(cookies)).toMatchObject({ signedIn: true, hostedModel: true })
+        expect(await on.session()).toEqual({ signedIn: false, available: true, hostedModel: true })
         expect(on.line("auth.session")).toEqual([
+          expect.objectContaining({ annotations: expect.objectContaining({ outcome: "failed", reason: "hosted_model" }) }),
           expect.objectContaining({ annotations: expect.objectContaining({ outcome: "failed", reason: "hosted_model" }) }),
         ])
       } finally {
@@ -409,7 +459,7 @@ describe("the callback", () => {
     github.expiring = false
     const h = await signInHarness(runtime, { github })
     const { cookies } = await h.signInAs()
-    expect(await h.session(cookies)).toEqual({ signedIn: true, personId: expect.any(String), login: "octocat", role: "member", hostedModel: false })
+    expect(await h.session(cookies)).toEqual({ signedIn: true, personId: expect.any(String), login: "octocat", role: "member", hostedModel: false, install: "https://github.com/apps/smithers/installations/new" })
     const [session] = await sessionRows()
     expect(session!.refresh).toBeNull()
   })
@@ -428,7 +478,7 @@ describe("the callback", () => {
     const rows = await sessionRows()
     expect(rows.map((row) => row.revokedReason)).toEqual(["sign_out", null])
     expect(rows[0]!.personId).toBe(rows[1]!.personId)
-    expect(await h.session(first.cookies)).toEqual({ signedIn: false, available: true })
+    expect(await h.session(first.cookies)).toEqual({ signedIn: false, available: true, hostedModel: false })
     const people = await query((sql) => sql<{ readonly login: string }>`SELECT github_login AS login FROM people`)
     expect(people).toEqual([{ login: "octocat-renamed" }])
   })
@@ -462,7 +512,7 @@ describe("roles", () => {
       github.permission = permission
       const h = await signInHarness(runtime, { github })
       const { cookies } = await h.signInAs()
-      expect(await h.session(cookies), permission).toEqual({ signedIn: true, personId: expect.any(String), login: "octocat", role, hostedModel: false })
+      expect(await h.session(cookies), permission).toEqual({ signedIn: true, personId: expect.any(String), login: "octocat", role, hostedModel: false, install: "https://github.com/apps/smithers/installations/new" })
     }
   })
 
@@ -519,7 +569,7 @@ describe("signing out", () => {
     expect(session!.refresh).not.toBeNull()
     expect(h.revocations).toEqual([session!.id])
     // The old cookie, replayed, is nobody.
-    expect(await h.session(cookies)).toEqual({ signedIn: false, available: true })
+    expect(await h.session(cookies)).toEqual({ signedIn: false, available: true, hostedModel: false })
     expect(h.count({ route: "sign_out", outcome: "signed_out" })).toBe(1)
     // Signing out again while its tokens wait for the flow starts the same execution again, a no-op on the host.
     const signOut = async () =>
@@ -672,19 +722,19 @@ describe("sessions", () => {
     const h = await signInHarness(runtime)
     const { cookies } = await h.signInAs()
     const [token] = cookies["smithers_session"]!.split(".")
-    expect(await h.session({ smithers_session: `${token}.${"0".repeat(64)}` })).toEqual({ signedIn: false, available: true })
-    expect(await h.session({ smithers_session: "nothing" })).toEqual({ signedIn: false, available: true })
+    expect(await h.session({ smithers_session: `${token}.${"0".repeat(64)}` })).toEqual({ signedIn: false, available: true, hostedModel: false })
+    expect(await h.session({ smithers_session: "nothing" })).toEqual({ signedIn: false, available: true, hostedModel: false })
     // A cookie signed with the secret, for a session Postgres doesn't have.
     const keys = await Effect.runPromise(SessionKeys.make(Redacted.make(SECRET)))
     expect(await h.session({ smithers_session: await Effect.runPromise(keys.sign("session", "made-up")) }))
-      .toEqual({ signedIn: false, available: true })
+      .toEqual({ signedIn: false, available: true, hostedModel: false })
     // A sign-in cookie is not a session cookie.
     expect(await h.session({ smithers_session: await Effect.runPromise(keys.sign("sign_in", token!)) }))
-      .toEqual({ signedIn: false, available: true })
+      .toEqual({ signedIn: false, available: true, hostedModel: false })
     await runtime.runPromise(
       Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE sessions SET expires_at = now() - interval '1 second'`),
     )
-    expect(await h.session(cookies)).toEqual({ signedIn: false, available: true })
+    expect(await h.session(cookies)).toEqual({ signedIn: false, available: true, hostedModel: false })
   })
 
   test("Postgres down is neither signed in nor out: 503", async () => {
@@ -707,7 +757,7 @@ describe("sessions", () => {
       const response = await off.fetch("/api/auth/sign-in")
       expect(response.status).toBe(503)
       expect(await response.json()).toEqual({ code: "not_configured" })
-      expect(await off.session()).toEqual({ signedIn: false, available: false })
+      expect(await off.session()).toEqual({ signedIn: false, available: false, hostedModel: false })
       expect((await off.callback({ code: "c", state: "s" })).headers.get("location")).toBe("/?sign_in=failed")
       const out = await off.fetch("/api/auth/sign-out", { method: "POST", headers: { origin: "http://smithers.test" } })
       expect(out.status).toBe(204)
@@ -734,7 +784,7 @@ describe("sessions", () => {
     expect(mark.line).toMatch(/Path=\//)
     expect(mark.line).toMatch(/Max-Age=2592000/)
     const signedOut = { smithers_dev_signed_out: mark.value }
-    expect(await dev.session(signedOut)).toEqual({ signedIn: false, available: true })
+    expect(await dev.session(signedOut)).toEqual({ signedIn: false, available: true, hostedModel: false })
     const ask = await chat.fetch("/api/model/agent", {
       method: "POST",
       body: modelRequest,
@@ -792,11 +842,12 @@ describe("sessions", () => {
     expect(await dev.session({ smithers_dev_person: "teammate", smithers_dev_signed_out: "1" })).toEqual({
       signedIn: false,
       available: true,
+      hostedModel: false,
     })
     const alone = await signInHarness(runtime, { config: {}, fallback: { actor: localDeveloper, login: "local-developer" } })
     expect(await alone.session({ smithers_dev_person: "teammate" })).toMatchObject({ login: "local-developer" })
     const none = await signInHarness(runtime, { config: {}, teammates: { teammate } })
-    expect(await none.session({ smithers_dev_person: "teammate" })).toEqual({ signedIn: false, available: false })
+    expect(await none.session({ smithers_dev_person: "teammate" })).toEqual({ signedIn: false, available: false, hostedModel: false })
   })
 
   test("configured with the GitHub App, sign-in builds the real App adapter unless one is injected", async () => {
@@ -820,7 +871,7 @@ describe("sessions", () => {
 
   test("a SESSION_SECRET shorter than 32 characters turns sign-in off, and says so", async () => {
     const h = await signInHarness(runtime, { config: { ...configured, SESSION_SECRET: "short" } })
-    expect(await h.session()).toEqual({ signedIn: false, available: false })
+    expect(await h.session()).toEqual({ signedIn: false, available: false, hostedModel: false })
     expect(h.line("auth.config")[0]!.annotations).toMatchObject({ errorCode: "session_secret_too_short" })
   })
 })
@@ -963,6 +1014,48 @@ test("a page that opened none of the device's data signs its cookie's person out
   expect((await sessionRows()).every((row) => row.revokedAt !== null)).toBe(true)
 })
 
+test("local development's newcomer is a Member nobody was before, named by the dev person cookie, whose run credentials verify", async () => {
+  const dev = await signInHarness(runtime, { config: {}, fallback: { actor: localDeveloper, login: "local-developer" }, newcomer })
+  const name = `newcomer-${Date.now().toString(36)}`
+  expect(await dev.session({ smithers_dev_person: name })).toEqual({
+    signedIn: true,
+    personId: name,
+    login: name,
+    role: "member",
+    hostedModel: false,
+  })
+  // A value that names no newcomer is the developer, as any other unknown name is.
+  for (const person of ["newcomer-", "newcomer-Upper", `newcomer-${"a".repeat(33)}`]) {
+    expect(await dev.session({ smithers_dev_person: person })).toMatchObject({ login: "local-developer", role: "admin" })
+  }
+  // The newcomer's own press mints a run credential, and a credential naming them verifies: their agent acts for them.
+  const app = await harness(runtime, answers("Unused"), { sessions: dev.sessions })
+  const headers = { cookie: `smithers_dev_person=${name}`, [DEVICE_PERSON_HEADER]: name }
+  const root = await app.fetch(credentialRoute("newcomer-root"), { method: "POST", headers, body: JSON.stringify({ flow: "watch/set" }) })
+  expect(root.status).toBe(200)
+  const { token } = await root.json() as { token: string }
+  const nested = await app.fetch(credentialRoute("newcomer-child"), {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}` },
+    body: JSON.stringify({ flow: "watch/set" }),
+  })
+  expect(nested.status).toBe(200)
+})
+
+test("local development's strangers hold no role on its repository; an owner- is Admin, a reader- a Guest, of Spoon-Knife alone", async () => {
+  const dev = await signInHarness(runtime, { config: {}, fallback: { actor: localDeveloper, login: "local-developer" }, newcomer })
+  for (const kind of ["owner", "reader"] as const) {
+    const name = `${kind}-${Date.now().toString(36)}`
+    expect(await dev.session({ smithers_dev_person: name }), kind).toEqual({ signedIn: true, personId: name, login: name, role: null, hostedModel: false })
+    const actor = { subject: { kind: "person" as const, id: name }, role: null }
+    expect(devRoles(actor, repositoryOf(STRANGERS_REPOSITORY)), kind).toBe(kind === "owner" ? "admin" : "guest")
+    expect(devRoles(actor, repositoryOf("octocat/Hello-World")), kind).toBeNull()
+  }
+  // Anyone else keeps the session's role there, as before.
+  expect(devRoles(localDeveloper, repositoryOf(STRANGERS_REPOSITORY))).toBeUndefined()
+  expect(newcomer("stranger-x")).toBeUndefined()
+})
+
 test("local development's old bound sign-out cannot change the next person's session", async () => {
   const teammate = { actor: { subject: { kind: "person" as const, id: "local-teammate" }, role: "member" as const }, login: "local-teammate" }
   const dev = await signInHarness(runtime, { config: {}, fallback: { actor: localDeveloper, login: "local-developer" }, teammates: { teammate } })
@@ -1014,7 +1107,7 @@ test("a forged sign-out cookie revokes nobody, and a signed run without a sessio
   }))))
   const response = await h.fetch("/api/auth/session", { headers: { authorization: `Bearer ${token}` } })
   expect(response.status).toBe(200)
-  expect(await response.json()).toEqual({ signedIn: false, available: true })
+  expect(await response.json()).toEqual({ signedIn: false, available: true, hostedModel: false })
   // Identity reads intentionally ignore bearer credentials; a protected app route verifies this token.
   const app = await harness(runtime, answers("Unused"), { sessions: h.sessions })
   const write = await app.fetch("/api/watches", { method: "POST", headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({ conversationId: null }) })

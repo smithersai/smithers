@@ -71,6 +71,7 @@ export const signedIn = async (
       tokenDigest: digestSync(sessionId),
       personId,
       role: "member",
+      roleGeneration: yield* SessionStore.roleObservation,
       access,
       accessExpiresAt: options.expiresInMs === null
         ? null

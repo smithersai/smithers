@@ -43,13 +43,14 @@ export type RefsRow = typeof RefsRow.Type
 
 /**
  * A clone this tab asked for that Postgres doesn't show yet, keyed by the repository's id: `requesting` until Electric
- * delivers the row; or why RepoApi didn't take it: `sign_in` (401), `limit` (429) or `failed` (anything else).
+ * delivers the row; or why RepoApi didn't take it: `sign_in` (401), `forbidden` (403: not a Member or above on the
+ * repository, ruling AUTH-8), `limit` (429) or `failed` (anything else).
  */
 export const CloneRow = Schema.Struct({
   id: Schema.String,
   owner: Schema.String,
   name: Schema.String,
-  status: Schema.Literals(["requesting", "sign_in", "limit", "failed"]),
+  status: Schema.Literals(["requesting", "sign_in", "forbidden", "limit", "failed"]),
 })
 export type CloneRow = typeof CloneRow.Type
 

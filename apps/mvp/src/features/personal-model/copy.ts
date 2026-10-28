@@ -61,7 +61,8 @@ export const keyPlaceholder = (keyLast4: string): string => `····${keyLast4}
 export const REFUSAL_COPY: Record<Refusal | "unsaved", string> = {
   unsaved: "Save first",
   authentication: "Sign in to use your model",
-  forbidden: "Only Members can use their own model",
+  // Anyone signed in saves their own (ruling AUTH-8); only someone acting for them is refused.
+  forbidden: "Only you can save your model",
   invalid: "Your model wasn't saved",
   invalid_protocol: "Choose a protocol",
   invalid_base_url: "Base URLs are https:// on a public host, with no port",

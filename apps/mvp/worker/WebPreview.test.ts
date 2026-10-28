@@ -182,7 +182,7 @@ describe("POST /api/web/preview", () => {
     }
   })
 
-  test("refuses what the policy refuses, and anyone who may not ask, asking nothing", async () => {
+  test("refuses what the policy refuses, and anyone signed out, asking nothing; anyone signed in previews (ruling AUTH-8)", async () => {
     const { h, check, asked } = await open()
     const refused = async (response: Response) => [response.status, await response.json()]
     expect(await refused(await check({ url: "javascript:alert(1)", mode: "embed" }))).toEqual([400, { code: "refused" }])
@@ -204,10 +204,14 @@ describe("POST /api/web/preview", () => {
 
     const signedOut = await open({ actor: null })
     expect(await refused(await signedOut.check({ url: ALLOWS, mode: "embed" }))).toEqual([401, { code: "authentication" }])
-    const guest = await open({ actor: { subject: { kind: "person", id: "person-guest" }, role: "guest" } })
-    expect(await refused(await guest.check({ url: ALLOWS, mode: "embed" }))).toEqual([403, { code: "forbidden" }])
-    expect([...asked, ...signedOut.asked, ...guest.asked]).toEqual([])
+    expect([...asked, ...signedOut.asked]).toEqual([])
     expect(h.count(WebPreview.previews, { status: "400" })).toBe(5)
+    // A Guest of the deployment's repository, or someone with no role, previews a page: it adds nothing anywhere.
+    for (const role of ["guest", null] as const) {
+      const stranger = await open({ actor: { subject: { kind: "person", id: `person-${role ?? "none"}` }, role } })
+      expect((await stranger.check({ url: ALLOWS, mode: "embed" })).status, String(role)).toBe(200)
+      expect(stranger.asked, String(role)).toHaveLength(1)
+    }
   })
 
   test("sessions that can't be read are 503, logged by their error code", async () => {

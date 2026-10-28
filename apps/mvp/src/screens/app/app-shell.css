@@ -12,6 +12,10 @@
 
 .app-shell-conversation { order: 1; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
+/* The first run's steps, right above the composer's place; it takes no room once they're gone. */
+.app-shell-start { order: 2; }
+.app-shell-start:empty { display: none; }
+
 .app-shell-composer { order: 2; display: flex; justify-content: center; }
 .app-shell-composer > * { flex: 1; }
 .app-shell-composer > button { flex: none; }

@@ -490,6 +490,15 @@ describe("another repository's stack (decision 0079)", () => {
       roles: { app: Option.some(app({ privateKey: key ??= await appKey() })), http: github.http },
     })
 
+  test.each([null, "guest"] as const)("a Member on their own repository with deployment role %s cannot start or retry TODO machines", async role => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "write")
+    const h = await onGitHub(github, { ...maya, role })
+    expect(await json(await post(h, commitBody(), {}, OTHER))).toEqual([403, { code: "forbidden" }])
+    expect(await json(await post(h, { opId: uuid(), op: "retry", number: 1 }, {}, OTHER))).toEqual([403, { code: "forbidden" }])
+    expect(await sql("SELECT id FROM todos")).toEqual([])
+  })
+
   test("a Member of the deployment's own repository commits to another only when GitHub makes them one there", async () => {
     const github = scriptedGitHub("acme", "widgets")
     github.roles.set("maya", "read")

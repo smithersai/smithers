@@ -8,7 +8,7 @@
 // unsupported, 1008 no access, 1011 failed). `terminal/open`'s client and step are also driven over an injected
 // `fetch` for the answers a valid request never gets (test.faults-by-injection).
 import { NodeWS } from "@effect/platform-node/NodeSocket"
-import { Effect, Layer, Logger, Metric, Scheduler } from "effect"
+import { Effect, Layer, Logger, Metric, Ref, Scheduler } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { TestClock } from "effect/testing"
@@ -17,7 +17,7 @@ import type { Actor } from "../../../worker/Actor.ts"
 import * as Conversations from "../../../worker/branch/Conversations.ts"
 import { shaOf } from "../../../worker/test/branch.ts"
 import { type ChatApiOptions, failingWorker, member, nodeDevice, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
-import { dispatches } from "../../flows/dispatch"
+import { FlowDispatch, dispatches } from "../../flows/dispatch"
 import { AuthStore, SESSION } from "../auth/store"
 import { Branch } from "../branch/branch"
 import { OpenRefused, TerminalClient } from "./api"
@@ -25,7 +25,7 @@ import { ADMIT_WAIT_SECONDS, DEFAULT_COLS, DEFAULT_ROWS, OPEN_DEADLINE_SECONDS, 
 import { TerminalOpenRefused, TerminalOpenUnavailable } from "./flows"
 import { bytes, ended, openMs, opens, reconnects } from "./metrics"
 import { requestOpen } from "./steps"
-import { show, socketUrl } from "./actions"
+import { attach as attachTerminal, open as openTerminal, show, socketUrl } from "./actions"
 import { PANEL } from "./schema"
 import { TerminalStore } from "./store"
 import { Terminal } from "./terminal"
@@ -482,6 +482,98 @@ describe("Open terminal settles", () => {
     expect(await stopped.rows(branchId)).toEqual([])
   }, WITHIN)
 
+  test.each([null, "guest"] as const)("an existing terminal is refused for deployment role %s before any socket can dial", async role => {
+    const host = await terminalHost()
+    const tab = await open({}, { origin: host.origin })
+    const branchId = await tab.track("feature/one")
+    const terminalId = crypto.randomUUID()
+    await tab.insert({ id: terminalId, branchId, ownerId: other, status: "open" })
+    const { session } = await tab.runtime.runPromise(Effect.service(AuthStore))
+    await tab.runtime.runPromise(session.update(SESSION, row => { row.role = role }))
+    await tab.actions.show(branchId, terminalId)
+    expect(tab.panel()?.phase).toBe("members_only")
+    expect(panelViewOf(tab.panel(), [], true)).toMatchObject({ badge: "Members can run machines.", open: undefined })
+    tab.actions.attach(terminalId, frame().sink)
+    expect(host.peers).toEqual([])
+    expect(tab.panel()?.phase).toBe("members_only")
+  }, WITHIN)
+
+  test("a Member's terminal remains usable while the session view is reconnecting; the server still authorizes the socket", async () => {
+    const host = await terminalHost()
+    const tab = await open({}, { origin: host.origin })
+    const branchId = await tab.track("feature/one")
+    const terminalId = crypto.randomUUID()
+    await tab.insert({ id: terminalId, branchId, ownerId: member.subject.id, status: "open" })
+    const { session } = await tab.runtime.runPromise(Effect.service(AuthStore))
+    await tab.runtime.runPromise(session.update(SESSION, row => { row.status = "unreachable" }))
+    await tab.actions.show(branchId)
+    const detach = tab.actions.attach(terminalId, frame().sink)
+    await until(() => expect(host.peers).toHaveLength(1))
+    host.peers[0]!.ready("write")
+    await until(() => expect(tab.panel()?.phase).toBe("open"))
+    detach()
+  }, WITHIN)
+
+  test.each([null, "guest", "signed_out", "another_person"] as const)("a live terminal closes on confirmed %s and never redials", async role => {
+    const host = await terminalHost()
+    const tab = await open({}, { origin: host.origin })
+    const branchId = await tab.track("feature/one")
+    const terminalId = crypto.randomUUID()
+    await tab.insert({ id: terminalId, branchId, ownerId: member.subject.id, status: "open" })
+    await tab.actions.show(branchId)
+    const { session } = await tab.runtime.runPromise(Effect.service(AuthStore))
+    await tab.runtime.runPromise(Effect.gen(function* () {
+      yield* attachTerminal(terminalId, frame().sink)
+      yield* Effect.promise(() => until(() => expect(host.peers).toHaveLength(1)))
+      const peer = host.peers[0]!
+      peer.ready("write")
+      yield* Effect.promise(() => until(() => expect(tab.panel()?.phase).toBe("open")))
+      yield* session.update(SESSION, row => {
+        if (role === "signed_out") row.status = "signed_out"
+        else if (role === "another_person") row.login = "another-person"
+        else row.role = role
+      })
+      yield* Effect.promise(() => until(() => expect(tab.panel()?.phase).toBe(role === "signed_out" || role === "another_person" ? "no_access" : "members_only"), 10_000))
+      yield* Effect.promise(() => peer.closed)
+      expect(yield* Ref.get(tab.store.connection)).toBeUndefined()
+      // Advance beyond every initial reconnect delay: the cancelled connection must have no pending dial.
+      yield* TestClock.adjust(60_000)
+      expect(host.peers).toHaveLength(1)
+      tab.actions.input("must not reach the old shell")
+      expect(peer.frames).toEqual([])
+    }).pipe(Effect.provide(TestClock.layer())))
+  }, WITHIN)
+
+  test("a deployment role lost after selection is checked again before the existing terminal dials", async () => {
+    const host = await terminalHost()
+    const tab = await open({}, { origin: host.origin })
+    const branchId = await tab.track("feature/one")
+    const terminalId = crypto.randomUUID()
+    await tab.insert({ id: terminalId, branchId, ownerId: member.subject.id, status: "open" })
+    await tab.actions.show(branchId)
+    expect(tab.panel()?.phase).toBe("connecting")
+    const { session } = await tab.runtime.runPromise(Effect.service(AuthStore))
+    await tab.runtime.runPromise(session.update(SESSION, row => { row.role = null }))
+    tab.actions.attach(terminalId, frame().sink)
+    expect(tab.panel()?.phase).toBe("members_only")
+    expect(host.peers).toEqual([])
+  }, WITHIN)
+
+  test("a machine membership refusal ends opening and shows why without offering another attempt", async () => {
+    const tab = await open()
+    const branchId = await tab.track("feature/one")
+    await tab.actions.show(branchId)
+    let attempts = 0
+    // Inject the dispatch service's refusal, as a durable terminal/open result would deliver it.
+    await tab.runtime.runPromise(openTerminal.pipe(Effect.provideService(FlowDispatch, {
+      dispatch: () => { attempts++; return Effect.succeed({ _tag: "Failed", error: new TerminalOpenRefused({ reason: "members_only" }) }) as never },
+    })))
+    expect(tab.panel()?.phase).toBe("members_only")
+    expect(panelViewOf(tab.panel(), [], true)).toMatchObject({ badge: "Members can run machines.", open: undefined })
+    expect(attempts).toBe(1)
+    expect(await tab.rows(branchId)).toEqual([])
+  }, WITHIN)
+
   test.each<[string, Actor | null]>([
     ["signed out", null],
     ["a Guest", { subject: { kind: "person", id: "person-guest" }, role: "guest" }],
@@ -818,6 +910,7 @@ describe("the step", () => {
   test.each<[number, string | undefined, TerminalOpenRefused | TerminalOpenUnavailable, string]>([
     [401, undefined, new TerminalOpenRefused({ reason: "sign_in" }), "sign_in"],
     [403, undefined, new TerminalOpenRefused({ reason: "forbidden" }), "forbidden"],
+    [403, "members_only", new TerminalOpenRefused({ reason: "members_only" }), "members_only"],
     [409, "locked", new TerminalOpenRefused({ reason: "locked" }), "locked"],
     [409, "id_taken", new TerminalOpenUnavailable(), "unavailable"],
     [404, undefined, new TerminalOpenRefused({ reason: "not_found" }), "not_found"],

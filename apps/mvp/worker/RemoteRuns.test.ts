@@ -350,7 +350,7 @@ const rolesOn = (roles: Readonly<Record<string, Actor.Role | null>>): RepoRoles.
 })
 
 describe("a TODO's run on another repository (decision 0079)", () => {
-  test("the role there decides watching, following and steering; the deployment's role never does", async () => {
+  test("repository roles decide watching; steering also requires deployment membership", async () => {
     const start = await attempt("github/acme/widgets")
     const runId = todoExecutionId(start.attemptId)
     await withEngine(async (engine) => {
@@ -361,12 +361,12 @@ describe("a TODO's run on another repository (decision 0079)", () => {
       expect((await firstShape(outsider, runId)).status).toBe(403)
       const steer = await outsider.fetch(steersRoute(runId), post({ id: uuid(), body: "Use tabs" }))
       expect([steer.status, await steer.json()]).toEqual([403, { code: "forbidden" }])
-      // The deployment's Guest, a Member of acme/widgets: reads and follows it; the settled run takes no steer.
+      // The deployment's Guest, a Member of acme/widgets: reads and follows, but cannot steer its machine.
       const insider = await routes(engine, { actor: guest, roles: rolesOn({ "github/acme/widgets": "member" }) })
       expect((await insider.fetch(remoteRunRoute(runId))).status).toBe(200)
       expect((await firstShape(insider, runId)).status).toBe(200)
       const settled = await insider.fetch(steersRoute(runId), post({ id: uuid(), body: "Use tabs" }))
-      expect([settled.status, await settled.json()]).toEqual([409, { code: "not_working" }])
+      expect([settled.status, await settled.json()]).toEqual([403, { code: "forbidden" }])
     })
   })
 
@@ -668,6 +668,32 @@ const post = (body: unknown) => ({
 })
 
 describe("POST /api/remote-runs/<runId>/steers", () => {
+  test.each([null, "guest"] as const)("a repository Member with deployment role %s cannot steer a working TODO machine", async role => {
+    const start = await attempt("github/acme/widgets")
+    const runId = todoExecutionId(start.attemptId)
+    await withEngine(async engine => {
+      await engine.start(runId, 60_000)
+      await eventually(async () => (await engine.status(runId)) === "suspended" || (await engine.status(runId)) === "running", 10_000)
+      const h = await routes(engine, { actor: { ...guest, role }, roles: rolesOn({ "github/acme/widgets": "member" }) })
+      const response = await h.fetch(steersRoute(runId), post({ id: uuid(), body: "Run a command" }))
+      expect([response.status, await response.json()]).toEqual([403, { code: "forbidden" }])
+      expect(await pendingOf(engine, runId)).toEqual([])
+    })
+  }, 60_000)
+
+  test("a deployment Member without a login steers with their stable identity as attribution", async () => {
+    const start = await attempt()
+    const runId = todoExecutionId(start.attemptId)
+    await withEngine(async engine => {
+      await engine.start(runId, 60_000)
+      await eventually(async () => (await engine.status(runId)) === "suspended" || (await engine.status(runId)) === "running", 10_000)
+      const { login: _login, ...actor } = member
+      const h = await routes(engine, { actor })
+      expect((await h.fetch(steersRoute(runId), post({ id: uuid(), body: "Keep it short" }))).status).toBe(202)
+      expect((await pendingOf(engine, runId))[0]!.provenance.attribution).toEqual({ login: member.subject.id, via: "person" })
+    })
+  }, 60_000)
+
   test("a Member's message joins the working run's queue once, as their steer; a resend answers what it answered", async () => {
     const start = await attempt()
     const runId = todoExecutionId(start.attemptId)

@@ -259,21 +259,24 @@ describe("PUT /api/me/model", () => {
     }
   })
 
-  test("signed out, a Guest, someone with no role, and an agent acting for the person are refused", async () => {
+  test("signed out and an agent acting for the person are refused, and nothing is written", async () => {
     expect(await json(await (await open()).fetch(PERSONAL_MODEL_ROUTE, put(SAVE)))).toEqual([
       401,
       { code: "authentication" },
     ])
-    for (const actor of [guest, roleless]) {
-      expect(await json(await (await open({ actor })).fetch(PERSONAL_MODEL_ROUTE, put(SAVE)))).toEqual([
-        403,
-        { code: "forbidden" },
-      ])
-    }
     const h = await open({ actor: agent })
     expect(await json(await h.fetch(PERSONAL_MODEL_ROUTE, put(SAVE)))).toEqual([403, { code: "forbidden" }])
     expect(h.count(Actor.personOnlyRefusals, { act: "model", by: "agent" })).toBe(1)
     expect(await rows(runtime)).toEqual([])
+  })
+
+  test("a Guest of the deployment's repository, and someone with no role, save their own (ruling AUTH-8)", async () => {
+    for (const actor of [guest, roleless]) {
+      const h = await open({ actor })
+      expect(await json(await h.fetch(PERSONAL_MODEL_ROUTE, put(SAVE))), String(actor.role)).toEqual([202, {}])
+      expect(h.count(PersonalApi.requests, { op: "put", outcome: "putting" })).toBe(1)
+    }
+    expect((await rows(runtime)).map((row) => row.personId).sort()).toEqual([guest.subject.id, roleless.subject.id].sort())
   })
 
   test("without SECRETS_KEY it is off; a flow that can't start is unavailable; a key that won't seal is unavailable", async () => {
@@ -480,9 +483,9 @@ describe("POST /api/me/model/test", () => {
     expect(await rows(runtime)).toEqual([expect.objectContaining({ failureStatus: null })])
   })
 
-  test("nothing saved is 404 none; a Guest is refused; a key that no longer opens is unusable, never the deployment's", async () => {
+  test("nothing saved is 404 none, a Guest's too; signed out is refused; a key that no longer opens is unusable, never the deployment's", async () => {
     expect(await testCall(await open({ actor: member }))).toEqual([404, { code: "none" }])
-    expect(await testCall(await open({ actor: guest }))).toEqual([403, { code: "forbidden" }])
+    expect(await testCall(await open({ actor: guest }))).toEqual([404, { code: "none" }])
     expect(await testCall(await open())).toEqual([401, { code: "authentication" }])
     expect((await (await open({ actor: member })).fetch(PERSONAL_MODEL_TEST_ROUTE, { method: "GET" })).headers.get("allow"))
       .toBe("POST")
@@ -619,6 +622,23 @@ describe("the model endpoint answers a person with their own model", () => {
     expect(h.count(PersonalUsage.tokens, { role: "agent", type: "input" })).toBe(7)
     expect(h.count(PersonalUsage.tokens, { role: "agent", type: "output" })).toBe(5)
     expect(leaks(JSON.stringify(h.logs))).toEqual([])
+  })
+
+  test("anyone signed in, a Guest of the deployment's repository included, is answered by their own model (ruling AUTH-8)", async () => {
+    for (const role of ["guest", null] as const) {
+      const person = `person-stranger-${role ?? "none"}`
+      await seed(runtime, person, {}, PERSONAL_KEYS)
+      const provider = scriptedProvider({ text: "mine" })
+      const h = await harness(runtime, deployment, { actor: { subject: { kind: "person", id: person }, role }, fetch: provider.fetch })
+      const answered = await call(h)
+      expect(answered.status, String(role)).toBe(200)
+      expect(answered.lines).toContainEqual(expect.objectContaining({ type: "text-delta", text: "mine" }))
+      // Their key paid: the deployment's model, which is on, was never asked, and nothing alerts.
+      expect(h.requests).toEqual([])
+      expect(provider.seen.map((seen) => seen.headers.get("authorization"))).toEqual([`Bearer ${VALUE}`])
+      expect(h.starts.filter((start) => start.flow === SpendAlert.SpendAlert._tag)).toEqual([])
+    }
+    expect(await modelUsage()).toEqual([])
   })
 
   test("each role is answered by its tier's model across the person's two keys, at the role's effort", async () => {
@@ -918,6 +938,8 @@ describe("a todo run on its committer's model (ModelEndpoint.local)", () => {
   }
   const inRun = (executionId: string) =>
     Stream.provideService(FlowRuntime.FlowInstance, { executionId } as unknown as FlowRuntime.FlowInstance["Service"])
+  /** A run of the person who saved a model, a Member of the deployment's own repository. */
+  const memberOwns: ModelEndpoint.Owned = { personId: "person-member", deploymentPays: true }
 
   test("inside a run its owner saved a model for, their model answers; any other call is the deployment's", async () => {
     await seed(runtime, "person-member")
@@ -929,7 +951,7 @@ describe("a todo run on its committer's model (ModelEndpoint.local)", () => {
     const starts: Array<string> = []
     const starter = Flows.FlowStarter.of({ start: (flow) => Effect.sync(() => void starts.push(flow._tag)) })
     const coding = await seat(provider.fetch, (executionId) =>
-      Effect.succeed(executionId === "todo:mine" ? Option.some("person-member") : Option.none()), starter)
+      Effect.succeed(executionId === "todo:mine" ? Option.some(memberOwns) : Option.none()), starter)
     const text = async (effect: Stream.Stream<ModelEvent.ModelEvent, unknown>) =>
       (await Effect.runPromise(Stream.runCollect(effect))).flatMap((event) => event.type === "text-delta" ? [event.text] : [])
     expect(await text(coding.model.stream(ask).pipe(inRun("todo:mine")))).toEqual(["theirs"])
@@ -954,18 +976,32 @@ describe("a todo run on its committer's model (ModelEndpoint.local)", () => {
   test("a summary made inside its run is its owner's: their model answers it", async () => {
     await seed(runtime, "person-member")
     const provider = scriptedProvider({ text: "summed up" }, globalThis.fetch, [OPENAI_ORIGIN, "https://deployment.example.com"])
-    const summary = await seat(provider.fetch, () => Effect.succeed(Option.some("person-member")), undefined, "summary")
+    const summary = await seat(provider.fetch, () => Effect.succeed(Option.some(memberOwns)), undefined, "summary")
     await Effect.runPromise(Stream.runCollect(summary.model.stream(ask).pipe(inRun("todo:mine"))))
     expect(provider.seen.map((seen) => [new URL(seen.url).origin, seen.body.model])).toEqual([[OPENAI_ORIGIN, "gpt-test"]])
     await eventually(async () => (await usage(runtime)).length === 1)
     expect(await usage(runtime)).toEqual([expect.objectContaining({ role: "summary" })])
   })
 
+  test("a run whose owner isn't a Member of the deployment's repository and saved no model is refused no_route (ruling AUTH-8)", async () => {
+    const provider = scriptedProvider({ text: "the deployment's" }, globalThis.fetch, ["https://deployment.example.com"])
+    const strangers: ModelEndpoint.Owned = { personId: "person-stranger", deploymentPays: false }
+    const coding = await seat(provider.fetch, () => Effect.succeed(Option.some(strangers)))
+    const exit = await Effect.runPromiseExit(Stream.runCollect(coding.model.stream(ask).pipe(inRun("todo:theirs"))))
+    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({ code: "no_route", httpStatus: 409 })
+    // The deployment's model, which is on, is never asked for them.
+    expect(provider.seen).toEqual([])
+    // A Member's run with no model of their own is the deployment's to answer.
+    const members = await seat(provider.fetch, () => Effect.succeed(Option.some({ personId: "person-other", deploymentPays: true })))
+    const answered = await Effect.runPromise(Stream.runCollect(members.model.stream(ask).pipe(inRun("todo:theirs"))))
+    expect(answered.flatMap((event) => event.type === "text-delta" ? [event.text] : [])).toEqual(["the deployment's"])
+  })
+
   test("with hosted inference off, a run nobody owns is refused no_route and its owner's run still answers", async () => {
     await seed(runtime, "person-member")
     const provider = scriptedProvider({ text: "theirs" }, globalThis.fetch, [OPENAI_ORIGIN, "https://deployment.example.com"])
     const coding = await seat(provider.fetch, (executionId) =>
-      Effect.succeed(executionId === "todo:mine" ? Option.some("person-member") : Option.none()), undefined, "coding", false)
+      Effect.succeed(executionId === "todo:mine" ? Option.some(memberOwns) : Option.none()), undefined, "coding", false)
     const exit = await Effect.runPromiseExit(Stream.runCollect(coding.model.stream(ask).pipe(inRun("triage:1"))))
     expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({ code: "no_route", httpStatus: 409 })
     const theirs = await Effect.runPromise(Stream.runCollect(coding.model.stream(ask).pipe(inRun("todo:mine"))))
@@ -976,7 +1012,7 @@ describe("a todo run on its committer's model (ModelEndpoint.local)", () => {
   test("its committer's refused key fails the run's call at once, and an owner lookup Postgres refuses fails it too", async () => {
     await seed(runtime, "person-member")
     const provider = scriptedProvider({ status: 401, error: { message: `bad key ${VALUE}` } })
-    const coding = await seat(provider.fetch, () => Effect.succeed(Option.some("person-member")))
+    const coding = await seat(provider.fetch, () => Effect.succeed(Option.some(memberOwns)))
     const refused = await Effect.runPromiseExit(Stream.runCollect(coding.model.stream(ask).pipe(inRun("todo:x"))))
     expect(refused).toMatchObject({ _tag: "Failure" })
     expect(JSON.stringify(refused)).toContain('"code":"authentication"')

@@ -24,7 +24,7 @@ export const WAITING_FOR_SANDBOX = "Waiting for a sandbox"
  *   says more.
  */
 export interface PanelView {
-  readonly badge: "Offline" | "Ended" | "No access" | undefined
+  readonly badge: "Offline" | "Ended" | "No access" | "Members can run machines." | undefined
   readonly open: "button" | "opening" | "waiting" | undefined
   readonly screen:
     | { readonly kind: "frame"; readonly terminalId: string; readonly readOnly: boolean }
@@ -36,6 +36,7 @@ const BADGES: Partial<Record<Panel["phase"], PanelView["badge"]>> = {
   offline: "Offline",
   ended: "Ended",
   no_access: "No access",
+  members_only: "Members can run machines.",
 }
 
 /** The Terminal view for this tab's `panel`, the branch's live `tabs`, and whether this person may open a terminal. */
@@ -49,7 +50,7 @@ export const panelViewOf = (
   const badge = BADGES[panel.phase]
   // A failed terminal can be retried unless another owned terminal is already available.
   const another = tabs.some((tab) => tab.mine && tab.id !== panel.terminalId)
-  const offered = canOpen && (panel.phase === "opening" || (panel.phase === "failed" && !another) || !tabs.some((tab) => tab.mine))
+  const offered = canOpen && panel.phase !== "members_only" && (panel.phase === "opening" || (panel.phase === "failed" && !another) || !tabs.some((tab) => tab.mine))
   const waiting = tabs.some((tab) => tab.id === panel.terminalId && tab.waiting)
   const open = !offered ? undefined : panel.phase !== "opening" ? "button" : waiting ? "waiting" : "opening"
   const attached = panel.terminalId !== null &&

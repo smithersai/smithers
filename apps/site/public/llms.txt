@@ -12,7 +12,7 @@
 ## Get started
 
 - [Welcome to Smithers](https://smithers.sh/docs/index.md): What Smithers is, and the two ways to use it.
-- [Quickstart](https://smithers.sh/docs/quickstart.md): Open a repository on smithers.sh, read its files and issues, and sign in with GitHub.
+- [Quickstart](https://smithers.sh/docs/quickstart.md): Open a repository on smithers.sh, read its files and issues, sign in with GitHub, and ask Smithers.
 - [Settings](https://smithers.sh/docs/settings.md): Choose your models, alert destinations and sandbox limits.
 
 ## On your own Mac

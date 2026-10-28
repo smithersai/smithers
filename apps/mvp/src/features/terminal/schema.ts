@@ -42,7 +42,7 @@ export const Panel = Schema.Struct({
   id: Schema.Literal(PANEL),
   branchId: Schema.NullOr(Schema.String),
   terminalId: Schema.NullOr(Schema.String),
-  phase: Schema.Literals(["loading", "idle", "opening", "connecting", "open", "offline", "ended", "failed", "no_access"]),
+  phase: Schema.Literals(["loading", "idle", "opening", "connecting", "open", "offline", "ended", "failed", "no_access", "members_only"]),
   access: Schema.NullOr(Schema.Literals(["write", "read"])),
 })
 export type Panel = typeof Panel.Type

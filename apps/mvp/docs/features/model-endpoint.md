@@ -7,7 +7,7 @@ Every model call the browser's agent makes goes through one server endpoint, `PO
 **A work in progress, off for a deploy, not released or documented for users until after the initial release** (Will, 2026-10-25 13:28 PDT; [decision 0099](../decisions/0099-hosted-inference-flag.md)). Everything below about roles, the budget and the deployment's models applies only while it is on.
 
 - **The flag:** the Admin's `hosted_model` row, read on every call, set with `admin/SetHostedModel { enabled }` (an Admin acting in person; an agent acting for one is refused `delegated`, anyone else `not_admin`; each change recorded in `hosted_model_changes`, once per step). Without a row, `HOSTED_MODEL_ENABLED` decides: off unless set, on under `alchemy dev` so a laptop and the scripted end-to-end tests answer.
-- **Off:** a call the person's own model doesn't answer is refused `409 no_route`, "Add your model in Settings to ask Smithers.", logged `model.endpoint` with `errorCode: hosted_off`, before any model, reservation or spend alert. A server flow's call nobody owns is refused the same way. `GET /api/auth/session` says `hostedModel: false` to a signed-in person, so the composer of a person who saved no model shows "Add your model" and a button to Settings instead ([chat](chat.md)); the triage switch reads "Triage off: needs hosted model".
+- **Off:** a call the person's own model doesn't answer is refused `409 no_route`, "Add your model in Settings to ask Smithers.", logged `model.endpoint` with `errorCode: hosted_off`, before any model, reservation or spend alert. On, the same refusal answers anyone who isn't a Member or above of `GITHUB_REPOSITORY`, logged `hosted_members_only` (ruling AUTH-8). A server flow's call nobody owns is refused the same way. `GET /api/auth/session` says `hostedModel: false` to a signed-in person, so the composer of a person who saved no model shows "Add your model" and a button to Settings instead ([chat](chat.md)); the triage switch reads "Triage off: needs hosted model".
 - **A setting Postgres can't read** refuses the call `503 provider_internal`; the session says `hostedModel: true`, so the composer shows and the answer fails visibly.
 
 ## How it works
@@ -16,7 +16,7 @@ Every model call the browser's agent makes goes through one server endpoint, `PO
 browser agent (a durable ModelStep) ── ModelProxy.layerClient ── POST /api/model/agent ──▶ ChatApi
   ChatApi: ModelProxy.serve
     prepare:  Sessions.resolve ─ none ──▶ 401 authentication
-                                └ Guest, no role ──▶ 403 authentication
+                                └ no model of their own, not a Member of GITHUB_REPOSITORY ──▶ 409 no_route
               bound the request ─ bad ──▶ 400 invalid_request      (over MODEL_MAX_REQUEST_BYTES: 413, before prepare)
                 (caps: maxTokens a whole number above 0, thinkingBudget one of at least 0)
               role ──▶ tier and effort                (ModelTiers: ROLE_TIERS, MODEL_ROLE_TIERS)
@@ -45,7 +45,7 @@ browser agent (a durable ModelStep) ── ModelProxy.layerClient ── POST /a
 
 ## Sign-in
 
-Signed-out people can't ask Smithers ([0008](../decisions/0008-auth.md) §11), and asking is `repo:ask`, Member or above ([0007](../decisions/0007-roles-and-tags.md) §2). A signed-in Guest, or a person with no role on the repository, is refused with `403` and code `authentication`: `ModelError` has no permission code, and a provider's own 403 classifies the same way. Neither refusal calls the model or meters anything. The endpoint reads who is asking through an injected service, `Sessions`, whose `resolve` gives the request's `Actor` or none; [sign-in](sign-in.md) provides it from the session cookie.
+Signed-out people can't ask Smithers ([0008](../decisions/0008-auth.md) §11). Anyone signed in is answered by their own model, whatever their role: where they may ask, ChatApi decides by their role on each conversation's repository (ruling AUTH-8, decision [0122](../decisions/0122-who-may-ask.md)). The deployment's own model answers only a Member or above of `GITHUB_REPOSITORY`, the session's role, whose spend its owner pays; anyone else without a model of their own is refused `409 no_route` "Add your model in Settings to ask Smithers.", logged `hosted_members_only`, even while hosted inference is on. A server flow's call on behalf of a person (a `todo` run's) is answered by the deployment's model only when a live session of theirs holds that role (`SessionStore.deploymentMember`). No refusal calls the model or meters anything. The endpoint reads who is asking through an injected service, `Sessions`, whose `resolve` gives the request's `Actor` or none; [sign-in](sign-in.md) provides it from the session cookie.
 
 - **Production:** sign-in's sessions. Until the GitHub App is configured (`GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`), nobody is signed in, and every call is refused with `401` and code `authentication`.
 - **Local development:** under `alchemy dev`, `alchemy.run.ts` declares `worker/DevChatApi.ts` in place of `worker/ChatApi.ts`: the same program, with a local developer signed in as an Admin while the GitHub App isn't configured; the developer can sign out (the dev signed-out cookie), and is then refused `401` like anyone signed out ([sign-in.md](sign-in.md#local-development)). A deploy bundles `worker/ChatApi.ts`, which never imports it.
@@ -138,7 +138,7 @@ Every refusal is a JSON body `{ code, message, requestId }` with a `ModelError` 
 |---|---|---|
 | `400` | `invalid_request` | the body isn't a `ModelRequest`, or the request breaks a bound above, a cap included |
 | `401` | `authentication` | nobody is signed in |
-| `403` | `authentication` | the caller is a Guest, or has no role on the repository |
+| `409` | `no_route` | the caller saved no model and isn't a Member or above of `GITHUB_REPOSITORY`, whom alone the deployment's model answers |
 | `404` | none (empty) | the role isn't `agent`, `coding`, `renderer`, `judge`, `summary`, `review` or `plan` |
 | `405` | `invalid_request` | not a `POST` |
 | `413` | `invalid_request` | the body is over `MODEL_MAX_REQUEST_BYTES` |
@@ -184,7 +184,7 @@ Migrations `0004_model_roles`, `0012_model_reservations`, `0017_model_charges`, 
 
 `worker/ModelEndpoint.test.ts` runs ChatApi's real handler on its own schema of the compose Postgres (`pnpm db:up`). The model provider is the only scripted seam: the default model is a scripted `Model`, and a model an admin sets is a real `HostModel` reaching a scripted OpenAI-compatible provider on loopback HTTP. `admin/SetModel` runs on the Node host (`worker/test/flowHost.ts`).
 
-- A signed-out call is refused with `401`, and a Guest's or a roleless person's with `403`; neither reaches a model or meters anything. A Member's call streams, and the browser's `ModelProxy.layerClient` reads it as a `Model`.
+- A signed-out call is refused with `401`, and a Guest's or a roleless person's without a model of their own with `409 no_route`, the deployment's model on; neither reaches a model or meters anything. Their own model answers them (`worker/personal/PersonalModels.test.ts`). A Member's call streams, and the browser's `ModelProxy.layerClient` reads it as a `Model`.
 - The request bounds: model id, output tokens, thinking budget, provider-run tools, message counts, and the body's size (`413`, never reaching a model or the budget). A cap that is negative, 0 for `maxTokens`, or fractional is `400` before any reservation; eight concurrent calls with a thinking budget of −8,000 never run (the regression from Opus review 4, P2-1); a thinking budget of 0 runs.
 - A role change by `admin/SetModel` applies on the next call, with the key sent only to the setting's origin; the other roles keep the default.
 - Tiers: `plan` and `review` answer with the `agent`'s and the `judge`'s settings; `TIER_MODELS` answers each role without a setting on its tier, before the role it inherits from, with its record's effort; a malformed `TIER_MODELS` is `409 unusable:config`; the default model gets a judge's `low` effort only when its id takes one (`gpt-oss-120b`, not `qwen-3.8-27b`), counted sent or dropped. A person's own keys by tier are in `worker/personal/PersonalModels.test.ts` ([Your model](personal-model.md#tests)).

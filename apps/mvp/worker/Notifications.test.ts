@@ -432,7 +432,7 @@ describe("POST /api/notifications/ack", () => {
     expect((await rowOf(second, "person-ann"))!.dismissedVersion).toBe(2)
   })
 
-  test("refuses someone else's row, a bad act, the signed out and a Guest", async () => {
+  test("refuses someone else's row, a bad act and the signed out; a Guest's ack of a row not theirs finds none", async () => {
     const a = await open(ann)
     const subject = await settledRun(a)
     const b = await open(ben)
@@ -441,7 +441,8 @@ describe("POST /api/notifications/ack", () => {
     expect(await json(await ack(a, subject, "read", 0))).toEqual([400, { code: "invalid" }])
     expect(await json(await ack(a, "", "read", 1))).toEqual([400, { code: "invalid" }])
     expect((await ack(await open(null), subject, "read", 1)).status).toBe(401)
-    expect((await ack(await open(guest), subject, "read", 1)).status).toBe(403)
+    // Anyone signed in acks their own rows (ruling AUTH-8): a Guest has none of Ann's.
+    expect(await json(await ack(await open(guest), subject, "read", 1))).toEqual([404, { code: "not_found" }])
     expect((await rowOf(subject, "person-ann"))!.readVersion).toBe(0)
   })
 })
@@ -487,12 +488,29 @@ describe("GET /api/shapes/notifications", () => {
     await eventually(() => h.line("notifications.shape").length === 1)
   })
 
-  test("signed out or a Guest, it holds no one's rows", async () => {
-    for (const actor of [null, guest]) {
-      const { h, upstream } = await proxy(actor)
-      expect((await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)).status).toBe(200)
-      expect(upstream[0]!.searchParams.get("params[1]")).toBe("")
-    }
+  test("signed out, it holds no one's rows; anyone else not a Member, their own acts' rows only (ruling AUTH-8)", async () => {
+    const out = await proxy(null)
+    expect((await out.h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)).status).toBe(200)
+    expect(out.upstream[0]!.searchParams.get("params[1]")).toBe("")
+    const theirs = await proxy(guest)
+    expect((await theirs.h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)).status).toBe(200)
+    expect(theirs.upstream[0]!.searchParams.get("params[1]")).toBe(guest.subject.id)
+    expect(theirs.upstream[0]!.searchParams.get("where")).toBe("recipient = $1 AND mine = true")
+    const member = await proxy(ann)
+    expect((await member.h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)).status).toBe(200)
+    expect(member.upstream[0]!.searchParams.get("where")).toBe("recipient = $1")
+  })
+
+  test("a former Member's rows of others' runs stay theirs in Postgres but no longer sync; their own do", async () => {
+    // Someone no shape was made for yet, so Electric's first answer is a snapshot of the rows below.
+    const former: Actor = { subject: { kind: "person", id: `person-former-${crypto.randomUUID()}` }, role: "guest" }
+    await sql(`
+      INSERT INTO notifications (recipient, subject, kind, state, mine, quiet, run_id, href)
+      VALUES ('${former.subject.id}', 'run:theirs', 'run', 'done', false, false, '${crypto.randomUUID()}', '/app'),
+        ('${former.subject.id}', 'run:mine', 'run', 'done', true, false, '${crypto.randomUUID()}', '/app')`)
+    const theirs = await proxy(former)
+    const response = await theirs.h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
+    expect((await values(response)).map((row) => row.subject)).toEqual(["run:mine"])
   })
 })
 

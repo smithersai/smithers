@@ -23,6 +23,7 @@ Conversations are part of the app's core, beside chat: every branch has one, and
 - **Search:** every word you type, ignoring case, in the repository (`owner/name`) or the branch's name. The search runs on the device, so it works offline.
 - **Open** and **Archived** switch between the two lists. A row's link opens its branch's page; Archive or Restore is its one button. An empty list says `No conversations` or `No archived conversations`.
 - **Reach it** from Conversations in the home page's header, or ask the agent.
+- **The first run** counts any row, archived or not: a person who has had one never sees `/app`'s [first run](first-run.md) again.
 
 Copy is `Conversations`, `Search`, `Open`, `Archived`, `Archive`, `Restore` and the two empty states. Nothing else (MINIMAL TEXT).
 

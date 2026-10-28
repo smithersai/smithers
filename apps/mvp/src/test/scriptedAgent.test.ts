@@ -54,6 +54,14 @@ describe("the queue script", () => {
   })
 })
 
+test("the hello script answers the word it was asked to greet, the latest ask's", async () => {
+  expect(await turnOf("Say hello to lfabc", undefined, "hello")).toContain(`ctx.done("Hello, lfabc.")`)
+  expect(await turnOf("Person: Say hello to one\nThe person now asks: Say hello to two", undefined, "hello")).toContain(
+    `ctx.done("Hello, two.")`,
+  )
+  expect(await turnOf("hi", undefined, "hello")).toContain(`ctx.done("Hello, nobody.")`)
+})
+
 test("the quota script injects a terminal credit refusal", async () => {
   const exit = await Effect.runPromiseExit(Stream.runCollect(scriptedModel("quota-refused")!.stream(request("hi"))))
   expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({ code: "out_of_credit", httpStatus: 402 })

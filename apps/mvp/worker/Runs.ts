@@ -11,7 +11,8 @@ import {
   type RunAnswer,
   RunAnswer as RunAnswerSchema,
 } from "../src/features/status/schema.ts"
-import { type Actor, boundTo, canAsk, refusesPersonOnly, Sessions } from "./Actor.ts"
+import { type Actor, boundTo, refusesPersonOnly, Sessions } from "./Actor.ts"
+import { askingOnAnswer } from "./branch/Access.ts"
 import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
 import { withAnswerConversation } from "./Messages.ts"
@@ -327,9 +328,14 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           const actor = yield* (yield* Sessions).resolve
           if (Option.isNone(actor)) return refusal(401, "authentication")
           if (kind === "credential") return yield* credential(request, runId, actor.value, fields).pipe(Effect.provide(database))
-          // A Guest, or a person with no role, may not ask, so has no runs to report or answer.
-          if (!canAsk(actor.value)) return refusal(403, "forbidden")
           const id = runId.toLowerCase()
+          // A run is its answer's (decision 0009 §2): only a Member or above on that conversation's repository who may
+          // edit its branch asks there, so reports or answers its runs (ruling AUTH-8).
+          const asking = yield* askingOnAnswer(actor.value, id).pipe(Effect.provide(database))
+          if (asking !== undefined && asking !== "ask") {
+            fields.errorCode = asking
+            return refusal(403, "forbidden")
+          }
           if (actor.value.act !== undefined) fields.act = actor.value.act.kind
           // Only the person answers what the agent asked them (decision 0017 slice 0).
           if (kind === "answer" && (yield* refusesPersonOnly(actor.value, "run/answer"))) {

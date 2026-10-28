@@ -29,8 +29,8 @@ import {
   ViewWrite,
 } from "../src/features/views/schema.ts"
 import { checkUrl } from "../src/features/web/url.ts"
-import { canAsk, Sessions } from "./Actor.ts"
-import { branchAccess, canEdit, canView } from "./branch/Access.ts"
+import { Sessions } from "./Actor.ts"
+import { askingOf, branchAccess, canView } from "./branch/Access.ts"
 import * as Conversations from "./branch/Conversations.ts"
 import { readBounded } from "./Body.ts"
 import { DocsSource } from "./docs/Source.ts"
@@ -41,8 +41,8 @@ import * as ViewRealm from "./ViewRealm.ts"
 
 // The conversation's views in ChatApi (docs/features/web-pages.md#the-views-table, decision 0004 §8): `POST /api/views`
 // adds one, and `GET /api/shapes/views` is Electric's `views`, which every device syncs like the messages. Only a
-// person who may ask (Member or above, decision 0007) adds a view, as only they may ask: a view is the browser's
-// agent's or their own `/web`. A view is added once by the id its writer chose, so a step run again changes nothing.
+// person who may ask in the conversation (Member or above on its repository, decision 0007, ruling AUTH-8) adds a view,
+// as only they may ask there: a view is the browser's agent's or their own `/web`. A view is added once by the id its writer chose, so a step run again changes nothing.
 //
 // A view's props are the page's URL and what the flow's check read from its head: a title, a description and an
 // `https:` icon, each bounded (src/features/views/schema.ts). The route checks the page again, as `app/web/open` does
@@ -352,8 +352,6 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         }
         const actor = yield* (yield* Sessions).resolve
         if (Option.isNone(actor)) return refusal(401, "authentication")
-        // A Guest, or a person with no role, may not ask, so may not add to the conversation either.
-        if (!canAsk(actor.value)) return refusal(403, "forbidden")
         const body = yield* readBounded(request, MAX_GENERATED_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
           Effect.result,
         )
@@ -388,6 +386,16 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           : write.conversationId === undefined
           ? yield* Conversations.home.pipe(Effect.provide(database))
           : write.conversationId.toLowerCase()
+        // Only a Member or above on the conversation's repository who may edit its branch adds to it (ruling AUTH-8),
+        // decided before a docs page is read from its site, and again under the conversation's lock below.
+        const asking = named === undefined ? undefined : yield* branchAccess(actor, named, "conversation").pipe(
+          Effect.map((found) => (found === undefined ? undefined : askingOf(found))),
+          Effect.provide(database),
+        )
+        if (asking !== undefined && asking !== "ask") {
+          fields.reason = asking
+          return refusal(403, "forbidden")
+        }
         // What the row keeps, decided before the conversation's lock is taken: a docs page is read from its site.
         let docsStored: Stored | undefined
         if (docs !== undefined && (yield* addedDocs(write.id, docs).pipe(Effect.provide(database)))) {
@@ -440,8 +448,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
               ? undefined
               : yield* branchAccess(actor, named, "conversation")
             if (found === undefined) return refusal(404, "conversation_not_found")
-            // Only someone who may edit the branch adds to its conversation (worker/branch/Access.ts).
-            if (!canEdit(found.access)) return refusal(403, "forbidden")
+            // Only a Member or above there who may edit the branch adds to its conversation (worker/branch/Access.ts).
+            if (askingOf(found) !== "ask") return refusal(403, "forbidden")
             const conversationId = found.conversationId
             fields.conversationId = conversationId
             let stored: Stored
@@ -539,7 +547,6 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
           const actor = yield* (yield* Sessions).resolve
           if (Option.isNone(actor)) return refusal(401, "authentication")
-          if (!canAsk(actor.value)) return refusal(403, "forbidden")
           const body = yield* readBounded(request, MAX_VIEW_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
             Effect.result,
           )
@@ -565,8 +572,9 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
                   if (view === undefined || view.template !== "generated" || view.code === null) {
                     return refusal(404, "not_found")
                   }
+                  // A Member or above on the view's repository who may edit its branch moves it (ruling AUTH-8).
                   const found = yield* branchAccess(actor, view.conversationId, "conversation")
-                  if (found === undefined || !canEdit(found.access)) return refusal(403, "forbidden")
+                  if (found === undefined || askingOf(found) !== "ask") return refusal(403, "forbidden")
                   // The same move again, whose answer was lost: what it made, never a stale board.
                   const [made] = yield* sql<{ readonly revision: number }>`
                     SELECT revision FROM view_moves WHERE view_id = ${viewId} AND move_id = ${move.value.moveId}`

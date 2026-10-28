@@ -144,7 +144,7 @@ const agentSeat = async (model: Model.Model, personal?: typeof globalThis.fetch)
   )
   return personal === undefined
     ? local("agent")
-    : local("coding", undefined, (executionId) => TodoMachine.ownerOf(executionId).pipe(Effect.provide(db)))
+    : local("coding", undefined, (executionId) => TodoMachine.ownerOf(executionId).pipe(Effect.map(Option.map(personId => ({ personId, deploymentPays: true }))), Effect.provide(db)))
 }
 
 /** Everything one run needs: the scripted GitHub, the machine, the agent, and the starts it asked its host for. */

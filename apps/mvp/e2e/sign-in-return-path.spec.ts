@@ -1,4 +1,5 @@
-import { CALLBACK_ROUTE, SIGN_IN, SIGN_IN_TO_ASK } from "../src/features/auth/contract"
+import { CALLBACK_ROUTE, SIGN_IN } from "../src/features/auth/contract"
+import { signInPrompt } from "./firstRun"
 import { expect, step, test } from "./fixtures"
 import { baseURL, requires, signedOut } from "./target"
 
@@ -35,7 +36,7 @@ test("sign-in return paths: declining GitHub stays on Smithers after URL normali
     expect(await response.json()).toMatchObject({ signedIn: false })
     await page.goto("/app")
     expect(new URL(page.url()).origin).toBe(origin)
-    await expect(page.getByText(SIGN_IN_TO_ASK)).toBeVisible({ timeout: 30_000 })
+    await expect(signInPrompt(page)).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole("link", { name: SIGN_IN }).first()).toBeVisible()
   })
 })

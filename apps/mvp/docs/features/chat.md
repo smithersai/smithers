@@ -8,7 +8,7 @@ The React view holds no focus state. See [decision 0081](../decisions/0081-keybo
 ## What the user does
 
 1. Opens the app (`/app`) and presses ⌘K (Ctrl+K), or clicks Chat ⌘K. The app opens at once, from the device, online or not. It installs as a PWA.
-2. Types a message and presses Enter or Send, whenever: offline, or while an answer streams. Asking needs sign-in as a Member or above: a signed-out person sees Sign in with GitHub where the composer would be ([sign-in.md](sign-in.md#the-browser)). Smithers answers with the person's own model ([Your model](personal-model.md)): a person who saved none sees "Add your model" and Open settings where the composer would be, unless the deployment's own model is on ([hosted inference](model-endpoint.md#hosted-inference), off for a deploy).
+2. Types a message and presses Enter or Send, whenever: offline, or while an answer streams. Asking needs sign-in as a Member or above: a signed-out person sees Sign in with GitHub where the composer would be ([sign-in.md](sign-in.md#the-browser)). Smithers answers with the person's own model ([Your model](personal-model.md)): a person who saved none sees "Add your model" and Open settings where the composer would be, unless the deployment's own model is on ([hosted inference](model-endpoint.md#hosted-inference), off for a deploy). On `/app`, until the person has had a conversation, those states show as the [first run](first-run.md)'s steps: Sign in, Add your model and Ask Smithers, each ✓ once done, the current one with its button.
 3. Hides the chat with ⌘K again, Esc, or the Hide button.
 4. Sees their message at once, then Smithers' answer growing as it streams. Questions asked in a row are sent in that order.
 5. Sees the same conversation, live, on every other device that has the app open. Reloading a tab mid-answer doesn't stop the answer; closing every tab of the asking browser pauses it until the app opens there again.
@@ -111,7 +111,7 @@ Rules:
 
 ### `POST /api/questions`
 
-- **Who may ask:** a signed-in Member or above (decision [0007](../decisions/0007-roles-and-tags.md): asking Smithers is `repo:ask`). ChatApi reads who is asking (`Sessions`, [sign-in.md](sign-in.md)) before it reads the body, and writes nothing for anyone else.
+- **Who may ask:** anyone signed in who is a Member or above on the conversation's repository and may edit its branch (ruling AUTH-8, decision [0122](../decisions/0122-who-may-ask.md); asking Smithers is `repo:ask`, decision [0007](../decisions/0007-roles-and-tags.md)). The role is read on that repository (`RepoRoles`, decision 0079): GitHub's permission there where Smithers recorded the App, else the session's; never the role on the deployment's own repository, which decides only its home conversation. ChatApi reads who is asking (`Sessions`, [sign-in.md](sign-in.md)) before it reads the body, then the conversation's access, and writes nothing for anyone who may not. `chat.question` logs the role decided with (`role`).
 - **Body:** `{ "id": uuid, "answerId": uuid, "text": string }`, two different UUIDs, where `text` is 1 to 8,000 characters after trimming. The question is stored trimmed.
 - **`traceparent`** (optional): a W3C `traceparent` of version `00`, exactly 55 characters of lowercase hex, neither id all zeros. ChatApi's spans for the request join its trace; its sampled flag is ignored, so a caller can't turn off ChatApi's records. Any other value, and `b3` headers, parent nothing.
 - **Responses:**
@@ -122,7 +122,8 @@ Rules:
   | `200` | `{ "txid": null, "existing": true }` | a retry: this question is already stored, with the same text, `answerId` and asker; nothing is written |
   | `400` | `{ "message" }` | invalid body, malformed UTF-8 or a body that breaks off included |
   | `401` | `{ "message": "Sign in to ask Smithers." }` | nobody is signed in; nothing is written |
-  | `403` | `{ "message": "Asking Smithers needs the Member role." }` | a Guest, or a person with no role on the repository; nothing is written |
+  | `403` | `{ "message": "Asking Smithers needs the Member role." }` | a Guest, or a person with no role, on the conversation's repository; nothing is written |
+  | `403` | `{ "message": "You can view this branch." }` | a Member there who may only view the branch; nothing is written |
   | `405` | | another method |
   | `409` | `{ "message": "id belongs to another message." }` | `id` is taken by another message: a different question, the same text with another `answerId` or from another person, or an answer; nothing is written |
   | `409` | `{ "message": "answerId belongs to another message." }` | `answerId` is taken; nothing is written |

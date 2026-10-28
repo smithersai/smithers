@@ -12,7 +12,7 @@ export const openFailure = (refused: OpenRefused): OpenFailure =>
   refused.status === 401
     ? new TerminalOpenRefused({ reason: "sign_in" })
     : refused.status === 403
-    ? new TerminalOpenRefused({ reason: "forbidden" })
+    ? new TerminalOpenRefused({ reason: refused.code === "members_only" ? "members_only" : "forbidden" })
     : refused.status === 409 && refused.code === "locked"
     ? new TerminalOpenRefused({ reason: "locked" })
     : refused.status === 404

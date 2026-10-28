@@ -559,6 +559,7 @@ describe("who the person is on a repository (decision 0079)", () => {
     )
     expect(tab.count(roleAnswers, { outcome: "answered", role: "member" })).toBe(1)
     expect(tab.count(roleAnswers, { outcome: "answered", role: "none" })).toBe(1)
+    expect(tab.repo.queries.roles.toArray.find(row => row.id === "github/acme/widgets")).toMatchObject({ role: null, workspaceRole: "member", own: false })
     expect(tab.lines("repo.role").map((line) => line.annotations)).toEqual(expect.arrayContaining([
       expect.objectContaining({ outcome: "answered", role: "member", own: true }),
     ]))

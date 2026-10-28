@@ -18,6 +18,7 @@ import { settle } from "../flows/SandboxCall.ts"
 import * as Messages from "../Messages.ts"
 import { branchHarness, type BranchHarness, resetBranches, shared, tracked } from "../test/branch.ts"
 import { recorded, testFile } from "../test/harness.ts"
+import { BranchRoles } from "./Access.ts"
 import * as BranchApi from "./BranchApi.ts"
 import * as Conversations from "./Conversations.ts"
 import * as SandboxCalls from "./SandboxCalls.ts"
@@ -71,6 +72,20 @@ const asked = async (conversationId: string, askedBy: string) => {
 }
 
 describe("POST /api/sandbox/calls", () => {
+  test.each([null, "guest"] as const)("a repository Member with deployment role %s cannot launch a sandbox tool as a person or agent", async role => {
+    const branch = await tracked(runtime, REPO, "feature/x")
+    const answer = await asked(branch.conversationId, member.subject.id)
+    for (const agent of [false, true]) {
+      const actor = { ...member, role, ...(agent ? { act: { kind: "agent" as const, id: answer.answerId } } : {}) }
+      const h = await open(actor, { branchRoles: Layer.succeed(BranchRoles, { roleOn: () => Effect.succeed("member"), uninstalled: () => "member" }) })
+      const response = await post(h, { callId: crypto.randomUUID(), call: run, ...(agent ? { answerId: answer.answerId } : { conversationId: branch.conversationId }) })
+      expect(await json(response)).toEqual([403, { code: "members_only", message: "Members can run machines." }])
+      expect(h.starts).toEqual([])
+      expect(h.only("sandbox.call").annotations).toMatchObject({ status: 403, code: "members_only" })
+    }
+    expect(await calls()).toEqual([])
+  })
+
   test("a person's call on a branch they may edit is 202, recorded running and started as sandbox/Call", async () => {
     const branch = await tracked(runtime, REPO, "feature/x")
     const h = await open()

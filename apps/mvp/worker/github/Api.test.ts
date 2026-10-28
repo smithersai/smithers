@@ -746,8 +746,15 @@ describe("the shapes", () => {
     const h = await githubHarness(runtime, { run: true })
     h.github.open("Reconciled issue", "", "sam")
     const reads = await Promise.all(Array.from({ length: 10 }, () => h.fetch(`${ITEMS_SHAPE_ROUTE}?offset=-1`)))
-    expect(reads.map((read) => read.status)).toEqual(Array(10).fill(200))
-    await Promise.all(reads.map((read) => read.arrayBuffer()))
+    await Promise.all(reads.map(async read => {
+      if (read.status === 409) {
+        // Reconciliation can invalidate an initial Electric shape while the other reads are still opening it.
+        expect(await read.json()).toEqual(expect.arrayContaining([expect.objectContaining({ headers: expect.objectContaining({ control: "must-refetch" }) })]))
+      } else {
+        expect(read.status).toBe(200)
+        await read.arrayBuffer()
+      }
+    }))
     // Each read that found no admitted bucket asked, with the bucket's one execution id: one execution.
     expect(new Set(h.starts.map((start) => start.executionId))).toEqual(new Set([reconcileExecutionId(REPOSITORY.id, Date.now())]))
     expect(h.starts.length).toBeGreaterThanOrEqual(1)

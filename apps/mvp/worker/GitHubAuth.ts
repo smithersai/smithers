@@ -1,5 +1,5 @@
 import { Core, GitHub } from "@smthrs/integrations"
-import { Clock, Context, Effect, Layer, Redacted, Schema } from "effect"
+import { Clock, Config, Context, Effect, Layer, Redacted, Schema } from "effect"
 import type { HttpClient } from "effect/http"
 import type { Role } from "../src/features/auth/contract.ts"
 
@@ -12,6 +12,10 @@ import type { Role } from "../src/features/auth/contract.ts"
 /** Where GitHub's web and API live, unless set: github.com. */
 export const GITHUB_WEB = "https://github.com"
 export const GITHUB_API = "https://api.github.com"
+
+/** `GITHUB_APP_SLUG`: the Smithers GitHub App's name in its URLs, `smithers` unless set: where Install goes. */
+export const appSlug = Config.schema(Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,99}$/)), "GITHUB_APP_SLUG")
+  .pipe(Config.withDefault("smithers"))
 
 /**
  * GitHub didn't do what sign-in asked:

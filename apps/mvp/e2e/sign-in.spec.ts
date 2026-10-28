@@ -1,4 +1,5 @@
-import { CALLBACK_ROUTE, SIGN_IN, SIGN_IN_TO_ASK, SIGN_OUT } from "../src/features/auth/contract"
+import { CALLBACK_ROUTE, SIGN_IN, SIGN_OUT } from "../src/features/auth/contract"
+import { signInPrompt } from "./firstRun"
 import { QUESTIONS_ROUTE, SHAPE_ROUTE } from "../src/features/chat/contract"
 import type { Dialog, Page } from "@playwright/test"
 import { faultyApp, faults } from "./faults"
@@ -21,7 +22,7 @@ test("signed out: the composer is gated, ChatApi refuses an ask, and signing in 
 
   // Sign out: the page continues as a visitor, with the sign-in prompt where the composer was.
   await page.getByRole("button", { name: SIGN_OUT }).click()
-  await expect(page.getByText(SIGN_IN_TO_ASK)).toBeVisible({ timeout: 30_000 })
+  await expect(signInPrompt(page)).toBeVisible({ timeout: 30_000 })
   await expect(a.chatButton).toBeHidden()
   await page.keyboard.press("ControlOrMeta+k")
   await expect(a.composer).toBeHidden()
@@ -35,7 +36,7 @@ test("signed out: the composer is gated, ChatApi refuses an ask, and signing in 
   // Sign in again: the button returns to this page, signed in, and the composer is back.
   await page.getByRole("link", { name: SIGN_IN }).first().click()
   await expect(a.chatButton).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByText(SIGN_IN_TO_ASK)).toBeHidden()
+  await expect(signInPrompt(page)).toBeHidden()
 })
 
 test("sign out wipes the device: its unsent questions go, and the conversation syncs again from scratch", { annotation: { type: "summary", description: "Signing out deletes the device's unsent questions, and the conversation syncs again from scratch." } }, async ({ devices }) => {
@@ -61,7 +62,7 @@ test("sign out wipes the device: its unsent questions go, and the conversation s
     if (url.pathname === SHAPE_ROUTE) shapes.push(url)
   })
   await page.getByRole("button", { name: SIGN_OUT }).click()
-  await expect(page.getByText(SIGN_IN_TO_ASK)).toBeVisible({ timeout: 30_000 })
+  await expect(signInPrompt(page)).toBeVisible({ timeout: 30_000 })
 
   // The unsent question is gone, and the conversation's first request after signing out starts over (offset -1, no
   // handle): nothing the device stored for the session survived.
@@ -109,7 +110,7 @@ test("sign out wipes the device for every tab: a tab still holding the data hold
     await leaving!.accept()
   }
   for (const tab of [one, two]) {
-    await expect(tab.page.getByText(SIGN_IN_TO_ASK), `${tab.name} opens as a visitor`).toBeVisible({ timeout: 60_000 })
+    await expect(signInPrompt(tab.page), `${tab.name} opens as a visitor`).toBeVisible({ timeout: 60_000 })
     await expect(tab.question(kept), `${tab.name} shows nothing of the session`).toHaveCount(0)
   }
   await expect.poll(() => wipeMark(one.page), { message: "the wipe finished", timeout: 30_000 }).toBeNull()
@@ -122,7 +123,7 @@ test("sign out wipes the device for every tab: a tab still holding the data hold
   }
   // No row of the session comes back: tab 1 opens again, and the unsent question stays gone from both.
   await one.reload()
-  await expect(one.page.getByText(SIGN_IN_TO_ASK)).toBeVisible({ timeout: 30_000 })
+  await expect(signInPrompt(one.page)).toBeVisible({ timeout: 30_000 })
   await expect(one.question(kept)).toHaveCount(0)
   await expect(two.question(kept)).toHaveCount(0)
 })
@@ -236,7 +237,7 @@ test("session expiry keeps Alice's draft for Alice; a different account sees it 
   // Change the real development session without invoking the app's sign-out/wipe action.
   await alice.device.context.addCookies([{ name: `${prefix}smithers_dev_signed_out`, value: "1", url: origin, secure }])
   await alice.reload()
-  await expect(alice.page.getByText(SIGN_IN_TO_ASK)).toBeVisible({ timeout: 30_000 })
+  await expect(signInPrompt(alice.page)).toBeVisible({ timeout: 30_000 })
   await alice.device.context.clearCookies({ name: `${prefix}smithers_dev_signed_out` })
   await alice.reload()
   await alice.openComposer()
@@ -278,7 +279,7 @@ test("a tab sealed while its owner was signed out opens their data once a sessio
   await step("Her session ends: the tab opens sealed", async () => {
     await alice.device.context.addCookies([{ name: signedOutCookie, value: "1", url: origin, secure }])
     await alice.reload()
-    await expect(alice.page.getByText(SIGN_IN_TO_ASK)).toBeVisible({ timeout: 30_000 })
+    await expect(signInPrompt(alice.page)).toBeVisible({ timeout: 30_000 })
   })
   await step("She is signed in again, and the next session check finds her: the tab reopens with her draft", async () => {
     await alice.device.context.clearCookies({ name: signedOutCookie })
@@ -336,7 +337,7 @@ test("an expired session renders sign-in while its private outbox stays closed, 
   await alice.page.close()
   await alice.device.online()
   const expired = await devices.tab(alice.device, "Expired")
-  await expect(expired.page.getByText(SIGN_IN_TO_ASK)).toBeVisible({ timeout: 45_000 })
+  await expect(signInPrompt(expired.page)).toBeVisible({ timeout: 45_000 })
   await expect(expired.question(pending)).toHaveCount(0)
   expect(await outboxSize(expired.page), "expiry preserves the sealed old outbox instead of loading it").toBeGreaterThan(0)
   await alice.device.context.clearCookies({ name: `${prefix}smithers_dev_signed_out` })
@@ -360,7 +361,7 @@ test("a signed-out follower cannot read the live owner's engine", { annotation: 
   await alice.device.context.addCookies([{ name: `${secure ? "__Host-" : ""}smithers_dev_signed_out`, value: "1", url: origin, secure }])
   // Keep Alice's page and leader alive throughout the follower's client-side navigation.
   const expired = await devices.tab(alice.device, "Signed out")
-  await expect(expired.page.getByText(SIGN_IN_TO_ASK)).toBeVisible({ timeout: 45_000 })
+  await expect(signInPrompt(expired.page)).toBeVisible({ timeout: 45_000 })
   await expired.page.getByRole("link", { name: "Runs", exact: true }).click()
   await expect(expired.page.getByText("No runs yet")).toBeVisible({ timeout: 30_000 })
   await expect(expired.page.getByRole("table", { name: "Runs" })).toHaveCount(0)
@@ -486,7 +487,7 @@ pageTest.describe("github", () => {
     const origin = new URL(baseURL).origin
     await step("Open Smithers signed out: Sign in with GitHub", async () => {
       await page.goto("/app")
-      await expect(page.getByText(SIGN_IN_TO_ASK)).toBeVisible({ timeout: 30_000 })
+      await expect(signInPrompt(page)).toBeVisible({ timeout: 30_000 })
       await expect(page.getByRole("link", { name: SIGN_IN }).first()).toBeVisible()
     })
     await step("Sign in with GitHub goes to GitHub's authorize page, coming back to this deployment", async () => {
@@ -521,7 +522,7 @@ test("a failed first session check: the composer comes back by itself once ChatA
   const tab = await devices.openNew("New device", faultyApp("session-503"))
   const page = tab.page
   await test.step("ChatApi can't say who is signed in: the sign-in prompt shows", async () => {
-    await expect(page.getByText(SIGN_IN_TO_ASK)).toBeVisible({ timeout: 30_000 })
+    await expect(signInPrompt(page)).toBeVisible({ timeout: 30_000 })
     await expect(tab.chatButton).toBeHidden()
   })
   await test.step("ChatApi answers again", async () => {
@@ -531,7 +532,7 @@ test("a failed first session check: the composer comes back by itself once ChatA
   })
   await test.step("The composer comes back by itself, on the same page", async () => {
     await expect(tab.chatButton).toBeVisible({ timeout: 35_000 })
-    await expect(page.getByText(SIGN_IN_TO_ASK)).toBeHidden()
+    await expect(signInPrompt(page)).toBeHidden()
     expect(await page.evaluate(() => (window as { e2eSamePage?: boolean }).e2eSamePage), "the page never reloaded").toBe(true)
     expect(tab.log.some((line) => line.includes("auth.device_identity") && line.includes("adopted")), "the visitor's data is the person's now").toBe(true)
   })

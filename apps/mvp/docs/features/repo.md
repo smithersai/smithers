@@ -5,7 +5,7 @@ streams the original bytes as an attachment with the original filename, using
 the same read budget without buffering or caching the download. The preview size limit stays on
 preview and ordinary Raw requests; the oversized Raw link still opens GitHub.
 
-A signed-in Member or above clones a public GitHub repository into Code Storage, and anyone browses a cloned one: its file tree, a directory with its README, and a file as highlighted code or rendered Markdown, at any branch, tag or commit. A file opens raw or downloads; Copy puts a permalink, a path, a file's text or the clone URL on the clipboard. The URLs are GitHub's: swapping `github.com` for the app's domain opens the same thing, raw files included. Every action is a registered flow that a person and the agent run alike: `repo/clone`, `repo/copy`, `repo/refs`, `repo/tree`, `repo/read`, and `app/navigate` to open a location. The first visit uses the page as GitHub's repository page does, before anyone clones: the top folder, the README, and the about panel from GitHub ([About](#about)). A clone reports its stages in the person's feed ([the clone in the feed](#the-clone-in-the-feed)), and a copy without the Smithers app is reclaimable ([reclaiming](#reclaiming)). Decision: [0006](../decisions/0006-repo-clone-and-view.md).
+A signed-in Member or above on the repository itself (ruling AUTH-8, decision [0122](../decisions/0122-who-may-ask.md)) clones a public GitHub repository into Code Storage, and anyone browses a cloned one: its file tree, a directory with its README, and a file as highlighted code or rendered Markdown, at any branch, tag or commit. A file opens raw or downloads; Copy puts a permalink, a path, a file's text or the clone URL on the clipboard. The URLs are GitHub's: swapping `github.com` for the app's domain opens the same thing, raw files included. Every action is a registered flow that a person and the agent run alike: `repo/clone`, `repo/copy`, `repo/refs`, `repo/tree`, `repo/read`, and `app/navigate` to open a location. The first visit uses the page as GitHub's repository page does, before anyone clones: the top folder, the README, and the about panel from GitHub ([About](#about)). A clone reports its stages in the person's feed ([the clone in the feed](#the-clone-in-the-feed)), and a copy without the Smithers app is reclaimable ([reclaiming](#reclaiming)). Decision: [0006](../decisions/0006-repo-clone-and-view.md).
 
 ## How it works
 
@@ -13,7 +13,7 @@ A signed-in Member or above clones a public GitHub repository into Code Storage,
 browser                         ChatApi (Cloudflare)                              Code Storage / GitHub
 Clone, /clone, the agent
   └ repo/clone (engine worker)
-     ── POST /api/repos ──────▶ RepoApi: sign-in, Member, bounds, REPO_MAX_REPOSITORIES
+     ── POST /api/repos ──────▶ RepoApi: sign-in, Member there, bounds, REPO_MAX_REPOSITORIES
             202 {txid, cloneId} ◀ INSERT repositories 'cloning'   (answers at once, starts nothing)
      ── POST /api/repos/launch ▶ RepoApi: the row still holds cloneId? ── FlowStarter ─┐
             202 {launched}  (the step retries a 503)                                 │
@@ -57,7 +57,7 @@ Refusals are `{ code }` JSON with `Cache-Control: no-store`:
 |---|---|---|
 | 400 | `invalid` | not `{ owner, name }` JSON, a name GitHub couldn't have, a reserved owner (`app`, `api`, `assets`), a SHA that isn't 40 hex, a path with an empty, `.` or `..` segment or over 1,024 characters or 64 segments |
 | 401 | `authentication` | cloning while signed out ([0008](../decisions/0008-auth.md): importing needs sign-in) |
-| 403 | `forbidden` | cloning as a Guest or a person with no role: a clone spends the deployment's Code Storage budget, so it needs the Member role or above, the tier of `repo:branch-create` ([0007](../decisions/0007-roles-and-tags.md)) |
+| 403 | `forbidden` | cloning as a Guest or a person with no role on the repository cloned: a clone spends the deployment's Code Storage budget, so it needs the Member role or above there, the tier of `repo:branch-create` ([0007](../decisions/0007-roles-and-tags.md)), read as branch access reads it (`BranchRoles`: GitHub's permission where the App is on the repository, else the session's, decision 0079), never the role on the deployment's own repository. The header says **Members can clone.** with Try again; `repo.clone.request` logs `role` |
 | 404 | `not_found` | no such route, repository, commit or file; for `refs`, a repository that isn't `ready` |
 | 405 | none | a method the route doesn't take (`allow` names it) |
 | 413 | `too_large` | a body over 1 KiB; a file over 512 KiB, with its `size` when Code Storage declared it, never reading the body |
@@ -122,6 +122,15 @@ Each attempt has an id of its own, `clone_id`: Postgres draws a UUID when `POST 
 
 ### Admission
 
+`CLONES_PER_PERSON` (Effect `Config`, default 3, positive integer) caps one person's distinct repositories. Members
+or above of `GITHUB_REPOSITORY` are exempt, using the latest-checked live session (`SessionStore.deploymentMember`).
+`Repos.request` holds the existing `repo_imports` lock and counts distinct repository ids in the person's existing clone feed records joined to `repositories`, including
+failed clones whose Code Storage copy may still exist. A retry of the same repository takes no extra place;
+a ready or running copy is reused without changing who caused its clone. Removing its repository row releases its place.
+At the cap it answers `429 repository_limit`, creates nothing and starts no run. The browser says "Clone limit reached."
+and the durable clone request refuses without retrying. `repo.clone.request` records the scope, count and limit;
+`repo_capacity{reason=person_repositories}` counts refusals. No person's id or content is recorded.
+
 In Inspect, after the size, one transaction holds `repo_imports`' row, so two imports can't both take the last headroom. The first rule that holds decides: imports `paused`; GitHub rate limited the size call (`size_unknown`, with `retry_at` at GitHub's reset); the size is over `REPO_MAX_SIZE_MB` (`too_large`); the stored bytes of the other `cloning` and `ready` rows plus this one are over `REPO_MAX_STORED_GB` (`storage`); this month's reads have reached `REPO_MAX_READ_GB_PER_MONTH` (`reads`); otherwise it writes `stored_bytes` and admits.
 
 ### Spend
@@ -178,7 +187,7 @@ Every repository action is one registered client flow (`src/features/repo/flows.
 
 ### Cloning
 
-`repo/clone` has two steps (`src/features/repo/clone.ts`). `repo/clone/request` is `POST /api/repos`, so RepoApi admits every clone (sign-in, the Member role, the repository cap and the budgets), persists it and answers at once. `repo/clone/launch` is `POST /api/repos/launch` for the attempt it answered, which starts the durable `repo/Clone` ([no remote door](remote-flows.md#no-remote-door)); its retry policy (1 s doubling to 15 s, for 2 minutes) tries again while RepoApi or the Durable Object can't take it, and the device's engine resumes it after a reload or a crash. A launch whose start conflicts with another payload (a bug: attempt ids never repeat) settles the attempt `failed` `unavailable`, never leaving it `cloning`. Its doors: Clone and Try again in the header, `/clone owner/name` for a Member or above, and the agent ("clone octocat/Spoon-Knife").
+`repo/clone` has two steps (`src/features/repo/clone.ts`). `repo/clone/request` is `POST /api/repos`, so RepoApi admits every clone (sign-in, the Member role on the repository, the repository cap and the budgets), persists it and answers at once. `repo/clone/launch` is `POST /api/repos/launch` for the attempt it answered, which starts the durable `repo/Clone` ([no remote door](remote-flows.md#no-remote-door)); its retry policy (1 s doubling to 15 s, for 2 minutes) tries again while RepoApi or the Durable Object can't take it, and the device's engine resumes it after a reload or a crash. A launch whose start conflicts with another payload (a bug: attempt ids never repeat) settles the attempt `failed` `unavailable`, never leaving it `cloning`. Its doors: Clone and Try again in the header, `/clone owner/name` for a Member or above, and the agent ("clone octocat/Spoon-Knife").
 
 ### Copy
 
@@ -270,6 +279,7 @@ It is a contribution to the repository's file view (`src/features/generated/cont
 | `GITHUB_APP_SLUG` | `smithers` | the Smithers GitHub App's name in its URL: where Install goes |
 | `REPO_ABOUT_FRESH_MINUTES` | `10` | how long an about answer read with a token is fresh |
 | `REPO_ABOUT_ANONYMOUS_FRESH_MINUTES` | `60` | how long an anonymous about answer is fresh |
+| `CLONES_PER_PERSON` | `3` | distinct repositories per person, deployment Members exempt |
 | `REPO_MAX_REPOSITORIES` | `100` | `cloning` and `ready` rows |
 | `REPO_MAX_STORED_GB` | `3` | their stored bytes together |
 | `REPO_MAX_READ_GB_PER_MONTH` | `40` | Code Storage reads this UTC month |
@@ -289,6 +299,7 @@ An [issues read](issues.md#sync) with stale sync state also awaits `github/Recon
 
 | Test | Proves |
 |---|---|
+| `worker/CloneCaps.test.ts` | a stranger's fourth reservation refuses before launch, a deployment Member's fourth succeeds, concurrent requests serialize, counts stay per person, failed repositories count, retaining a reservation works after a cap reduction or demotion, a takeover above the cap refuses, positive Config bounds, and content-free refusal records |
 | `worker/github/ReadToken.test.ts` | configured bot or App token, anonymous fallback and recovery, expiry refresh, a read that mints for itself while another read's mint is still in flight, and each mint's count and log by outcome without the token |
 | `worker/GitHubShapes.workerd.test.ts` | in workerd, through the bundled GitHub shape routes with the App configured, sign-in's sessions, real Postgres and Electric: eight signed-out and eight signed-in (a Member whose role check is due) first reads on a cold isolate, then each reader's 16 catch-up and live reads at once, all answer 200; the old shared permit failed 7 of the 8 signed-out first reads as hung while the Member's all answered |
 | `worker/RepoApi.test.ts` | the about route over a scripted GitHub (`worker/test/githubRest.ts`): every part, cached for its window, parts GitHub refuses left out, a rate limit failing the whole read uncached, 404 for missing or private, 503 for GitHub down; every route and refusal through RepoApi's real handler over the compose Postgres and Electric, with each clone's intent on an in-memory Durable Object storage and its run on the Node host: 202 then `ready`, a second request starting nothing, Try again's attempt 2 under a new id, a database reset that kept the Durable Objects (attempt 1 again starts and settles), a conflicting start settling its attempt `failed`, sign-in, a Guest's and a role-less person's 403, bounds, `repository_limit`, Postgres down and a start refused; trees page by page and truncated; files, binaries, 413 with and without a size, 404; raw files as plain text or bytes, never sniffed, sharing the file's cached read; the branches and tags cached under the head, paged and truncated at `REPO_MAX_REFS`, 404 before ready, 503 with `Retry-After`; the cache serving repeats and reads over budget; `Retry-After`; the meter; spend alerts once per threshold; the agent's flows over the server reads; the shape; and no file content, commit message or Code Storage text in telemetry |

@@ -1,0 +1,13 @@
+/* Layout only; components, colors and type come from @smthrs/ui. One step per row, its button at the row's end. */
+.first-run { display: flex; justify-content: center; min-width: 0; }
+.first-run-steps { display: grid; gap: 0.5rem; margin: 0; padding: 0; list-style: none; min-width: min(100%, 20rem); }
+.first-run-step { display: flex; align-items: center; gap: 0.75rem; min-height: 2rem; min-width: 0; }
+.first-run-step > [data-slot="badge"] { flex: none; min-width: 1.5rem; justify-content: center; }
+.first-run-title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.first-run-step[data-state="done"] .first-run-title,
+.first-run-step[data-state="later"] .first-run-title { color: var(--text-muted, inherit); }
+.first-run-step[data-state="next"] .first-run-title { font-weight: 600; }
+/* The repository step: its field, Open and Install on one row that wraps on a phone. */
+.first-run-step:has(.first-run-open) { flex-wrap: wrap; }
+.first-run-open { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; min-width: 0; }
+.first-run-open input { width: 14rem; max-width: 100%; }

@@ -3,6 +3,7 @@ import { Cause, Clock, Effect, FiberHandle, Metric, Option, Ref, Stream } from "
 import { runners } from "../../boundary"
 import { codeOf } from "../../errorCode"
 import { FlowDispatch } from "../../flows/dispatch"
+import { mayAsk, type Role } from "../auth/contract"
 import { AuthStore, SESSION } from "../auth/store"
 import { ADMIT_WAIT_SECONDS, DEFAULT_COLS, DEFAULT_ROWS, OPEN_DEADLINE_SECONDS, terminalSocketRoute } from "./contract"
 import { bytes, ended, openMs, reconnects } from "./metrics"
@@ -32,6 +33,21 @@ const OPEN_WITHIN = OPEN_DEADLINE_SECONDS * 1000
 const loginNow = Effect.gen(function* () {
   const { session } = yield* AuthStore
   return Option.getOrThrow(yield* session.get(SESSION)).login
+})
+
+/** A confirmed session refusal; loading and a transient loss of contact leave authorization to the server. */
+const machineRefusalOf = (now: { readonly status: string; readonly role: Role | null }) =>
+  now.status === "signed_out" ? "no_access" as const
+    : now.status === "signed_in" && !mayAsk(now.role) ? "members_only" as const : undefined
+
+/** Reject a known deployment non-Member before selecting or dialing a shared terminal. The server rechecks it too. */
+const machineRefused = Effect.gen(function* () {
+  const { session } = yield* AuthStore
+  const phase = machineRefusalOf(Option.getOrThrow(yield* session.get(SESSION)))
+  if (phase === undefined) return false
+  yield* setPanel({ phase, access: null })
+  yield* Effect.logWarning("terminal.show").pipe(Effect.annotateLogs({ outcome: phase, feature: "terminal" }))
+  return true
 })
 
 /** The person's live terminal among `rows`, if they have one. */
@@ -115,6 +131,7 @@ export const show = (branchId: string | null, watching?: string) =>
       Effect.map(loginNow, (login) => mineOf(rows, login) ?? rows.find((row) => row.status === "open" || row.status === "opening"))
     const showRow = (shown: TerminalRow) =>
       Effect.gen(function* () {
+        if (yield* machineRefused) return
         yield* setPanel({ branchId, terminalId: shown.id, phase: shown.status === "open" ? "connecting" : phaseOf(shown), access: null })
         if (shown.status === "opening") yield* Effect.forkIn(awaitOpen(branchId, shown.id, undefined), store.scope)
       })
@@ -213,7 +230,7 @@ export const open = Effect.gen(function* () {
       ? dispatched.success.error
       : undefined
     const refused = error?._tag === "@smthrs/mvp/terminal/TerminalOpenRefused" ? error.reason : undefined
-    return yield* setPanel({ phase: refused === "sign_in" || refused === "forbidden" ? "no_access" : "failed" })
+    return yield* setPanel({ phase: refused === "members_only" ? "members_only" : refused === "sign_in" || refused === "forbidden" ? "no_access" : "failed" })
   }
   const answered = dispatched.success.value.terminalId
   yield* setPanel({ terminalId: answered })
@@ -259,9 +276,24 @@ export const socketUrl = (origin: string, terminalId: string) =>
 export const attach = (terminalId: string, sink: Sink) =>
   Effect.gen(function* () {
     const store = yield* TerminalStore
+    if (yield* machineRefused) {
+      yield* FiberHandle.clear(store.attached)
+      return
+    }
     // The socket calls back with each frame outside any fiber: its records run with this attach's services.
     const { runSync: record } = runners(yield* Effect.context<TerminalStore>(), "terminal")
-    const run = Effect.scoped(Effect.gen(function* () {
+    const { session } = yield* AuthStore
+    const initial = Option.getOrThrow(yield* session.get(SESSION))
+    // Include current rows when subscribing, so a demotion between the first check and this watch cannot be missed.
+    const authorizationEnds = session.changes({ initial: true }).pipe(
+      Stream.map(batch => batch.map(change => machineRefusalOf(change.value) ??
+        (change.value.status === "signed_in" && change.value.login !== initial.login ? "no_access" as const : undefined)
+      ).find(phase => phase !== undefined)),
+      Stream.filter((phase): phase is "members_only" | "no_access" => phase !== undefined),
+      Stream.runHead,
+      Effect.map(Option.getOrThrow),
+    )
+    const connected = Effect.scoped(Effect.gen(function* () {
       const connection = yield* TerminalSocket.connect(socketUrl(store.origin, terminalId), {
         onOutput: (chunk) => {
           sink.output(chunk)
@@ -285,6 +317,14 @@ export const attach = (terminalId: string, sink: Sink) =>
       Effect.ensuring(Effect.flatMap(TerminalStore, (s) => Ref.set(s.connection, undefined))),
       Effect.withSpan("terminal.connect"),
     )
+    const run = Effect.gen(function* () {
+      const phase = yield* Effect.raceFirst(connected.pipe(Effect.as(undefined)), authorizationEnds)
+      // The connection's scope closes before the refusal is shown, so a late socket status cannot overwrite it.
+      if (phase !== undefined) {
+        yield* setPanel({ phase, access: null })
+        yield* Effect.logWarning("terminal.show").pipe(Effect.annotateLogs({ outcome: phase, feature: "terminal" }))
+      }
+    })
     yield* FiberHandle.run(store.attached, run)
   }).pipe(Effect.annotateLogs({ feature: "terminal" }))
 

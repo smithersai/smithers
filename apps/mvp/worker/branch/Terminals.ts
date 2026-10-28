@@ -12,7 +12,7 @@ import {
   TERMINALS_TABLE,
 } from "../../src/features/terminal/contract.ts"
 import type { Actor } from "../Actor.ts"
-import { refusesPersonOnly, Sessions } from "../Actor.ts"
+import { refusesPersonOnly, canAsk, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
@@ -63,7 +63,7 @@ const isUuid = Schema.is(Schema.String.check(Schema.isUUID()))
 const NO_BRANCH = "00000000-0000-0000-0000-000000000000"
 
 const noStore = { "cache-control": "no-store" }
-const refusal = (status: number, code: string) => HttpServerResponse.jsonUnsafe({ code }, { status, headers: noStore })
+const refusal = (status: number, code: string) => HttpServerResponse.jsonUnsafe({ code, ...(code === "members_only" ? { message: "Members can run machines." } : {}) }, { status, headers: noStore })
 
 type Fields = Record<string, string | number | boolean>
 
@@ -186,6 +186,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           const branch = yield* branchAccess(actor, branchId).pipe(Effect.provide(database))
           if (branch === undefined) return refuse(fields, 404, "not_found")
           if (!canEdit(branch.access)) return refuse(fields, 403, "forbidden")
+          if (!canAsk(actor.value)) return refuse(fields, 403, "members_only")
           // No terminal on a locked branch, nor yet on a restricted one, whose writers come with 0007's modes.
           if (branch.mode !== "open") return refuse(fields, 409, "locked")
           // The terminal keeps the role on the branch's repository its host re-checks shares with (decision 0079).
@@ -269,6 +270,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
             const branch = yield* branchAccess(actor, row.branchId).pipe(Effect.provide(database))
             // A terminal's branch is never deleted while its rows stand (the foreign key).
             if (!canView(branch!.access)) return refuse(fields, 403, "forbidden")
+            if (!canAsk(actor.value)) return refuse(fields, 403, "members_only")
             const access = canEdit(branch!.access) ? "write" : "read"
             fields.access = access
             if (row.status !== "open") return refuse(fields, 409, row.status)

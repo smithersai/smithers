@@ -52,9 +52,12 @@ export const startSync = Effect.flatMap(
 
 // --- Cloning ---
 
-/** How the header shows a clone `repo/clone` didn't start: sign in, imports paused at the cap, or couldn't clone. */
+/**
+ * How the header shows a clone `repo/clone` didn't start: sign in, Members only, imports paused at the cap, or couldn't
+ * clone.
+ */
 const refusedStatus = (reason: string | undefined): CloneRow["status"] =>
-  reason === "sign_in" ? "sign_in" : reason === "limit" ? "limit" : "failed"
+  reason === "sign_in" ? "sign_in" : reason === "forbidden" ? "forbidden" : reason === "limit" ? "limit" : "failed"
 
 /**
  * Dispatches `repo/clone`, door `button`, then waits for Electric to deliver what RepoApi did. The flow's step records
@@ -266,8 +269,8 @@ export const role = (owner: string, name: string) =>
         Effect.annotateLogs({ outcome: "refused", status: result.failure.status ?? 0, durationMs }),
       )
     }
-    const { role: held, own, readable, synced } = result.success
-    yield* put(store.roles, id, { id, role: held, own, readable, synced, failure: undefined })
+    const { role: held, workspaceRole, own, readable, synced } = result.success
+    yield* put(store.roles, id, { id, role: held, workspaceRole, own, readable, synced, failure: undefined })
     yield* Metric.update(Metric.withAttributes(roleAnswers, { outcome: "answered", role: held ?? "none" }), 1)
     yield* Effect.logInfo("repo.role").pipe(
       Effect.annotateLogs({ outcome: "answered", role: held ?? "none", own, durationMs }),

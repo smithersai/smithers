@@ -9,7 +9,7 @@ import {
   SANDBOX_CALLS_ROUTE,
 } from "../../src/features/sandbox/contract.ts"
 import type { Actor } from "../Actor.ts"
-import { boundTo, Sessions } from "../Actor.ts"
+import { boundTo, canAsk, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
@@ -49,7 +49,7 @@ const callRequest = Schema.Struct({
 const isUuid = Schema.is(Uuid)
 
 const noStore = { "cache-control": "no-store" }
-const refusal = (status: number, code: string) => HttpServerResponse.jsonUnsafe({ code }, { status, headers: noStore })
+const refusal = (status: number, code: string) => HttpServerResponse.jsonUnsafe({ code, ...(code === "members_only" ? { message: "Members can run machines." } : {}) }, { status, headers: noStore })
 
 type Fields = Record<string, string | number | boolean>
 
@@ -168,6 +168,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, com
         if (branch === undefined) return refuse(fields, 404, "not_found")
         fields.branchId = branch.branchId
         if (!canEdit(branch.access)) return refuse(fields, 403, "forbidden")
+        if (!canAsk(actor.value)) return refuse(fields, 403, "members_only")
         if (branch.mode === "locked") return refuse(fields, 409, "locked")
         if (call.tool === "run" && (call.timeoutSeconds ?? 60) > commandSeconds) {
           fields.code = "too_long"

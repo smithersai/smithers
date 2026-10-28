@@ -59,6 +59,7 @@ interface RouteOptions {
   readonly local?: boolean
   /** Which repositories the deployment syncs (worker/github/Api.ts `maySync`); unset, the answer doesn't say. */
   readonly maySync?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<boolean>
+  readonly mayRead?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<boolean>
 }
 
 /**
@@ -89,6 +90,7 @@ const route = async (options: RouteOptions = {}) => {
       roles,
       ...(options.files === undefined ? {} : { files: options.files }),
       ...(options.maySync === undefined ? {} : { maySync: options.maySync }),
+      ...(options.mayRead === undefined ? {} : { mayRead: options.mayRead }),
     }).fetch.pipe(
       Effect.provide(options.sessions ?? Actor.signedOut),
       Effect.provideService(Tracer.Tracer, tracer),
@@ -416,7 +418,7 @@ describe("GET /api/repos/<owner>/<name>/role (decision 0079)", () => {
     github.roles.set("maya", "admin")
     github.installed = false
     const notInstalled = await route({ sessions: signedIn(person("admin")), github })
-    expect(await roleOf(await notInstalled.get(ROLE_WIDGETS))).toEqual([200, { role: null, own: false }])
+    expect(await roleOf(await notInstalled.get(ROLE_WIDGETS))).toEqual([200, { role: null, workspaceRole: "admin", own: false }])
     expect(notInstalled.logs.find((log) => log.message === "repo.role")).toMatchObject({
       annotations: { outcome: "answered", role: null, source: "no_role_here", refused: "app_not_installed" },
     })
@@ -507,4 +509,13 @@ describe("the curated homes", () => {
     expect(Curated.find("a", "b", files)).toBe("invalid")
     expect(Curated.find("a", "b", [{ ...files[0]!, home: "not a home" }])).toBe("invalid")
   })
+})
+
+
+test("a public-read receipt stays separate from GitHub authority and the workspace-copy role", async () => {
+  const r = await route({ sessions: signedIn(person("member")), mayRead: () => Effect.succeed(true) })
+  const response = await r.get("/api/repos/acme/widgets/role")
+  expect([response.status, await response.json()]).toEqual([200, {
+    role: null, workspaceRole: "member", own: false, readable: true,
+  }])
 })

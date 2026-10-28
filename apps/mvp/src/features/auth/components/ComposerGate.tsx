@@ -6,12 +6,14 @@ import { usePersonalModel } from "../../personal-model/components/PersonalModelC
 import { ADD_YOUR_MODEL, composerAccess, MEMBERS_ASK, OPEN_SETTINGS, type OwnModel, SIGN_IN_TO_ASK } from "../contract"
 import { useAuth } from "./AuthContext"
 
-// Asking Smithers is for Members and above (decision 0007 §2, `repo:ask`; decision 0008 §11): the composer for them,
-// even offline after a reload; a short line for a signed-in Guest or a person with no role; and the sign-in prompt for
-// anyone signed out, so nothing they type leaves the browser. While the deployment's own model is off (decision 0099),
-// a person without a model of their own sees the way to add one instead of a composer whose answers would all fail.
-// `composerAccess` decides.
-export function ComposerGate({ children }: { readonly children: ReactNode }) {
+// Asking Smithers is for Members and above on the conversation's repository (decision 0007 §2, `repo:ask`; decision 0008
+// §11; ruling AUTH-8): the composer for them, even offline after a reload; a short line for a signed-in Guest or a
+// person with no role there; and the sign-in prompt for anyone signed out, so nothing they type leaves the browser.
+// While the deployment's own model doesn't answer them (decision 0099), a person without a model of their own sees the
+// way to add one instead of a composer whose answers would all fail. `member` is what a branch page's access says of
+// its repository; without it, the person's role on the deployment's own repository, whose home conversation `/app`
+// shows. `composerAccess` decides.
+export function ComposerGate({ children, member }: { readonly children: ReactNode; readonly member?: boolean }) {
   const { queries } = useAuth()
   const model = usePersonalModel()
   const navigate = useNavigate()
@@ -20,7 +22,7 @@ export function ComposerGate({ children }: { readonly children: ReactNode }) {
   const { data: rows, isReady } = useLiveQuery(model.queries.saved)
   if (session === undefined) return null
   const own: OwnModel = rows.length > 0 ? "saved" : isReady ? "none" : "loading"
-  switch (composerAccess(session, confirmed, own)) {
+  switch (composerAccess(session, confirmed, own, member)) {
     case "ask":
       return children
     case "members_only":

@@ -63,7 +63,7 @@ a run: sandbox/Command (its own job, below) ────────────
      └ refused, lost, no machine, no checkout ─▶ sandbox/ToolFailed ─▶ sandbox/Settle (failed, with why)
 ```
 
-The tool's result is `sandbox/Tool`'s journaled success, so a replay reads it and never runs the tool again. Refusals, a refused checkout and a start that ran past `SANDBOX_START_TIMEOUT_SECONDS` (`start_timeout`) aren't retried; an unreachable machine is, for 2 minutes. A `run` is a [long command](#long-commands): its child `sandbox/Command` job settles the call with the command's result, or `lost`, and an unreachable machine is tried again within the job's deadline. A command settles with no `generation`.
+The tool's result is `sandbox/Tool`'s journaled success, so a replay reads it and never runs the tool again. Refusals, a refused checkout, and a start that ran past `SANDBOX_START_TIMEOUT_SECONDS` (`start_timeout`) aren't retried; an unreachable machine is, for 2 minutes. A `run` is a [long command](#long-commands): its child `sandbox/Command` job settles the call with the command's result, or `lost`, and an unreachable machine is tried again within the job's deadline. A command settles with no `generation`.
 
 ## Long commands
 
@@ -158,3 +158,5 @@ Content-free: ids, tools, outcomes, exit codes, statuses, counts and durations; 
 - `SANDBOX_SECRETS` on by default: it waits for an e2e through a real box ([secrets](secrets.md#wiring-into-the-box)).
 - A host beyond the package registries for a box without secrets: `EGRESS_ALLOW_HOSTS` applies only to the secrets egress.
 - Rust: the image has no toolchain, and rustup's host isn't a registry.
+
+Starting or using a machine requires Member or above on `GITHUB_REPOSITORY` as well as edit access on its branch. Others receive "Members can run machines."; the agent's tool step refuses without retrying (decision 0122 amendment).

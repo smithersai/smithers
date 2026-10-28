@@ -1,7 +1,8 @@
 import { broken } from "./target"
 import { questionIn } from "./messages"
+import { signInPrompt } from "./firstRun"
 import type { Page } from "@playwright/test"
-import { SIGN_IN_TO_ASK, SIGN_OUT } from "../src/features/auth/contract"
+import { SIGN_OUT } from "../src/features/auth/contract"
 import { COMMANDS } from "../src/features/commands/contract"
 import { THEME_ATTRIBUTE } from "../src/features/theme/contract"
 import { expect, test } from "./devices"
@@ -128,7 +129,7 @@ test("roles: a member-only command is offered to an Admin, never to a signed-out
   // Signed out, the sign-in prompt stands where the composer was (decision 0008): no list is offered, and typing a
   // member-only command, with ⌘K first, opens nothing and runs nothing.
   await page.getByRole("button", { name: SIGN_OUT }).click()
-  await expect(page.getByText(SIGN_IN_TO_ASK)).toBeVisible({ timeout: 30_000 })
+  await expect(signInPrompt(page)).toBeVisible({ timeout: 30_000 })
   const pages = page.context().pages().length
   const url = page.url()
   await page.keyboard.press("ControlOrMeta+k")

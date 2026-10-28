@@ -554,12 +554,11 @@ describe("a Member's own model, on ChatApi's real routes", () => {
 })
 
 describe("who has a model of their own", () => {
-  test("a Guest's save is refused, as the server decides, and nothing syncs", async () => {
+  test("a Guest of the deployment's repository saves their own, and it syncs back (ruling AUTH-8)", async () => {
     const tab = await open({ actor: guest })
     expect(tab.actions.save(SCRIPTED(KEY))).toBe(true)
-    await until(() => expect(tab.form()).toMatchObject({ state: "failed", failure: "forbidden" }))
-    expect(tab.status()).toEqual({ _tag: "Text", text: "Only Members can use their own model" })
-    expect(tab.rows()).toEqual([])
+    await until(() => expect(tab.rows()).toHaveLength(1))
+    expect(tab.form()).not.toMatchObject({ state: "failed" })
   }, WITHIN)
 
   test("a tab signed out never asks for the row; its Test and Remove are refused for want of a session", async () => {

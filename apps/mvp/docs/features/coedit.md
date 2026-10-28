@@ -104,3 +104,5 @@ Content-free: ids, sizes, scopes' kinds, statuses and outcomes; never a text, an
 - Compaction: a text is every update ever written to it; a long-lived file reloads them all.
 
 Typing updates the visible replica before waiting for durable outbox admission. The action resolves after admission, so a device reload restores that update while network delivery continues in the background.
+
+AUTH-8: a run’s answer draft follows its launcher’s current permission to ask in that run’s conversation, including Members of another repository with no deployment role. Every write, shape read and room join rechecks that repository. Another person never inherits the draft; losing the repository or branch refuses writes and joins and empties the shape.

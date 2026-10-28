@@ -116,6 +116,8 @@ interface HarnessOptions {
   readonly model?: HostModel["Service"]
   /** `MODEL_SPEND_ALERTS`' default, as the dev stack sets it to `false`; production's, on, unless set. */
   readonly spendAlerts?: boolean
+  /** The host's default when HOSTED_MODEL_ENABLED is unset, as `alchemy dev` supplies it. */
+  readonly hostedModel?: boolean
   /** The curated homes a `docs` view's repository may name its docs in: the real ones unless set. */
   readonly homes?: ReadonlyArray<CuratedFile>
   /** People's own models in place of the real ones over the file's schema, under `PERSONAL_KEYS`. */
@@ -183,6 +185,7 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
     observed(
       Chat.make(database, {
         ...(options.spendAlerts === undefined ? {} : { spendAlerts: options.spendAlerts }),
+        ...(options.hostedModel === undefined ? {} : { hostedModel: options.hostedModel }),
         // Generated views render in the realm Node compiles, loaded once for the whole file (worker/ViewRealm.ts).
         realm: nodeRealm,
       }).pipe(

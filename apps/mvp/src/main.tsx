@@ -34,6 +34,7 @@ import { SpendProvider } from "./features/spend/components/SpendContext"
 import { PluginsProvider } from "./plugins/components/PluginsContext"
 import { DomainsProvider } from "./features/domains/components/DomainsContext"
 import { PersonalModelProvider } from "./features/personal-model/components/PersonalModelContext"
+import { FirstRunProvider } from "./features/first-run/components/FirstRunContext"
 import { TerminalProvider } from "./features/terminal/components/TerminalContext"
 import { TodosProvider } from "./features/todos/components/TodosContext"
 import { ViewsProvider } from "./features/views/components/ViewsContext"
@@ -422,6 +423,7 @@ const render: BootOptions["render"] = (
   docs,
   domains,
   personalModel,
+  firstRun,
 ) =>
   root.render(
     <StrictMode>
@@ -440,6 +442,7 @@ const render: BootOptions["render"] = (
                       <SpendProvider value={spend}>
                         <DomainsProvider value={domains}>
                           <PersonalModelProvider value={personalModel}>
+                          <FirstRunProvider value={firstRun}>
                           <BranchProvider value={branch}>
                             <TerminalProvider value={terminal}>
                               {/* The routes' loaders open what they show through `repo`, `views`, `branch` and `terminal`
@@ -472,6 +475,7 @@ const render: BootOptions["render"] = (
                               </IssuesProvider>
                             </TerminalProvider>
                           </BranchProvider>
+                          </FirstRunProvider>
                           </PersonalModelProvider>
                         </DomainsProvider>
                       </SpendProvider>

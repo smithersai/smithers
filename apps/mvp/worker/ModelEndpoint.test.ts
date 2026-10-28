@@ -248,16 +248,17 @@ describe("sign-in", () => {
   test.each([
     ["a Guest", "guest" as const],
     ["a person with no role", null],
-  ])("%s is refused with 403, never reaches a model, and nothing is metered", async (_, role) => {
+  ])("%s of the deployment's repository with no model of their own is refused 409, never reaching the deployment's model, which is on (ruling AUTH-8)", async (_, role) => {
     const h = await harness(runtime, answering, { actor: { subject: { kind: "person", id: "person-other" }, role } })
 
     const { status, error } = await call(h, ask("hi"))
 
-    expect(status).toBe(403)
-    expect(error).toMatchObject({ code: "authentication", message: "Asking Smithers needs the Member role." })
+    expect(status).toBe(409)
+    expect(error).toMatchObject({ code: "no_route", message: "Add your model in Settings to ask Smithers." })
     expect(h.requests).toEqual([])
     expect(await usageRows()).toEqual([])
-    expect(h.only("model.proxy.serve").annotations).toMatchObject({ role: "agent", outcome: "refused", status: 403 })
+    expect(h.only("model.proxy.serve").annotations).toMatchObject({ role: "agent", outcome: "refused", status: 409 })
+    expect(h.only("model.endpoint").annotations).toMatchObject({ role: "agent", errorCode: "hosted_members_only" })
   })
 
   test("sessions that can't be read are 503 provider_internal, logged by their code, and never reach a model", async () => {
@@ -276,8 +277,8 @@ describe("sign-in", () => {
     })
   })
 
-  test("a signed-in call streams the role's model and ends with the end line", async () => {
-    const h = await harness(runtime, answering, { actor: member })
+  test("a signed-in call streams the role's model with spend alerts disabled by the host", async () => {
+    const h = await harness(runtime, answering, { actor: member, spendAlerts: false })
 
     const { status, lines } = await call(h, ask("hi"))
 
@@ -659,6 +660,19 @@ const setHosted = async (actor: Actor, enabled: boolean) =>
   )
 
 describe("hosted inference", () => {
+  test.each([false, true])("ChatApi carries the host's hosted-model default %s to the endpoint when its flag is unset", async (hostedModel) => {
+    const h = await harness(runtime, answering, {
+      actor: member,
+      hostedModel,
+      config: { HOSTED_MODEL_ENABLED: undefined as unknown as string },
+    })
+    const result = await call(h, ask("hi"))
+    expect(result.status).toBe(hostedModel ? 200 : 409)
+    expect(h.requests).toHaveLength(hostedModel ? 1 : 0)
+    if (hostedModel) expect(result.lines[0]).toEqual({ type: "text-delta", id: "t", text: "default answer" })
+    else expect(result.error).toMatchObject({ code: "no_route", message: "Add your model in Settings to ask Smithers." })
+  })
+
   test("off by default: a person without a model of their own is told to add one, and the deployment's model never runs", async () => {
     const h = await harness(runtime, answering, { actor: member, config: { HOSTED_MODEL_ENABLED: "not a boolean" } })
     const unset = await harness(runtime, answering, { actor: member, config: { HOSTED_MODEL_ENABLED: undefined as unknown as string } })

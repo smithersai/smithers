@@ -5,7 +5,7 @@ import * as Conversations from "./branch/Conversations.ts"
 // Clones run on the Node host in this process (worker/test/repos.ts). Unhappy paths arm a fault on the scripted
 // provider, or give RepoApi a faulty service; nothing intercepts a request.
 import { Action } from "@smthrs/flow"
-import { Cause, Effect, Exit, Layer, Redacted, Stream } from "effect"
+import { Cause, Effect, Exit, Layer, Option, Redacted, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { RepoClient } from "../src/features/repo/api.ts"
 import { SqlClient } from "effect/sql"
@@ -21,7 +21,11 @@ import * as Repos from "./Repos.ts"
 import { fixture, scripted, shaOf } from "./test/codeStorage.ts"
 import { runFlow } from "./test/flowHost.ts"
 import { recorded, testFile } from "./test/harness.ts"
-import { APP_ID, appKey } from "./github/test/scriptedGitHub.ts"
+import { accountIdOf, APP_ID, appKey, scriptedGitHub as scriptedApp } from "./github/test/scriptedGitHub.ts"
+import { app } from "./github/test/harness.ts"
+import { repositoryOf } from "./github/Config.ts"
+import * as RepoRoles from "./github/RepoRoles.ts"
+import { BranchRoles } from "./branch/Access.ts"
 import { scriptedGitHub, spoonKnife } from "./test/githubRest.ts"
 import { notificationRow, repoHarness, repositoryRow, resetRepos, usageRow } from "./test/repos.ts"
 
@@ -319,6 +323,56 @@ describe("POST /api/repos", () => {
     expect(await response.json()).toEqual({ code: "forbidden" })
     expect(await repositoryRow(runtime, "github/octocat/spoon-knife")).toBeUndefined()
     expect(h.count(RepoMetrics.cloneRequests, { outcome: "forbidden" })).toBe(1)
+  })
+
+  describe("by the role on the repository cloned, never the deployment's own (ruling AUTH-8)", () => {
+    const MAYA = "7e1f4b3c-0a5e-4c7d-9f2b-3a4c5d6e7f80"
+    const maya = (role: Actor.Role | null): Actor.Actor => ({ subject: { kind: "person", id: MAYA }, role, login: "maya" })
+    /** `BranchRoles` through the App, the deployment's own repository acme/home, Maya's permission on acme/widgets. */
+    const throughApp = async (permission?: "admin" | "write" | "read") => {
+      const github = scriptedApp("acme", "widgets")
+      if (permission !== undefined) github.roles.set("maya", permission)
+      const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+      const roles = await runtime.runPromise(RepoRoles.make(scratch.database, {
+        repository: repositoryOf("acme/home"),
+        app: Option.some(app({ privateKey: await appKey() })),
+        http: github.http,
+      }))
+      return BranchRoles.layer(roles)
+    }
+    const quiet = FlowStarter.of({ start: () => Effect.void })
+    beforeEach(() =>
+      runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.andThen(
+        sql`TRUNCATE github_repo_roles, github_repositories`,
+        sql`INSERT INTO people (id, github_id, github_login) VALUES (${MAYA}, ${accountIdOf("maya")}, 'maya') ON CONFLICT DO NOTHING`,
+      ))))
+
+    test.each([["admin"], ["write"]] as const)("GitHub's %s there clones, with no role on the deployment's own repository", async (permission) => {
+      const h = await repoHarness(runtime, { actor: maya(null), branchRoles: await throughApp(permission), starter: quiet })
+      const response = await h.clone("acme", "widgets")
+      expect(response.status).toBe(202)
+      expect(await repositoryRow(runtime, "github/acme/widgets")).toMatchObject({ status: "cloning" })
+      expect(h.line("repo.clone.request").at(-1)?.annotations).toMatchObject({ outcome: "requested", role: permission === "admin" ? "admin" : "member" })
+    })
+
+    test.each([
+      ["a Guest there", maya(null), "read" as const],
+      ["no role there", maya(null), undefined],
+      ["the deployment's own Admin who only reads there", maya("admin"), "read" as const],
+    ])("%s: 403 forbidden, and nothing is written", async (_, actor, permission) => {
+      const h = await repoHarness(runtime, { actor, branchRoles: await throughApp(permission), starter: quiet })
+      const response = await h.clone("acme", "widgets")
+      expect([response.status, await response.json()]).toEqual([403, { code: "forbidden" }])
+      expect(await repositoryRow(runtime, "github/acme/widgets")).toBeUndefined()
+      expect(h.line("repo.clone.request").at(-1)?.annotations).toMatchObject({ outcome: "forbidden", role: permission === undefined ? "none" : "guest" })
+    })
+
+    test("a launch is decided the same way: once GitHub says read there, 403", async () => {
+      const body = JSON.stringify({ owner: "acme", name: "widgets", cloneId: "c" })
+      const h = await repoHarness(runtime, { actor: maya(null), branchRoles: await throughApp("read"), starter: quiet })
+      const response = await h.fetch("/api/repos/launch", { method: "POST", headers: { "content-type": "application/json" }, body })
+      expect([response.status, await response.json()]).toEqual([403, { code: "forbidden" }])
+    })
   })
 
   test("refuses what it can't take: method, body, names, size, and a deployment without Code Storage", async () => {
@@ -842,7 +896,7 @@ describe("spend", () => {
 
   test("each threshold alerts on its own as the month's spend grows", async () => {
     // $1 a month; each step below adds stored bytes worth a fixed share of it.
-    const budgets = { maxRepositories: 100, maxStoredBytes: 1e12, maxReadBytes: 1e12, maxRepositoryBytes: 1e12, budgetUsd: 1 }
+    const budgets = { maxRepositories: 100, clonesPerPerson: 3, maxStoredBytes: 1e12, maxReadBytes: 1e12, maxRepositoryBytes: 1e12, budgetUsd: 1 }
     const alerts: Array<number | null> = []
     const store = (id: string, gb: number) =>
       sql(`INSERT INTO repositories (id, owner, name, status, stored_bytes) VALUES ('${id}', 'a', '${id}', 'cloning', ${Math.round(gb * 1e9)})`)

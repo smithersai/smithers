@@ -10,6 +10,8 @@ import type { Plugins } from "../../plugins/plugins"
 import type { IssuesStore } from "../issues/store"
 import type { TodosStore } from "../todos/store"
 import type { RunSteers } from "../runs/steers"
+import type { BranchStore } from "../branch/store"
+import type { RepoStore } from "../repo/store"
 import type { SteerWrites } from "../runs/writes"
 
 // Slash commands as a frontend sees them: the menu's live query to read and plain functions to act, with no Effect in
@@ -49,7 +51,7 @@ export class Commands extends Context.Service<
     Commands,
     Effect.gen(function* () {
       const store = yield* CommandsStore
-      const { runSync: run, runPromise: promise } = runners(yield* Effect.context<CommandsStore | ChatStore | AuthStore | FlowDispatch | Plugins | IssuesStore | TodosStore | RunSteers | SteerWrites>(), "commands")
+      const { runSync: run, runPromise: promise } = runners(yield* Effect.context<CommandsStore | ChatStore | AuthStore | FlowDispatch | Plugins | IssuesStore | TodosStore | RunSteers | SteerWrites | BranchStore | RepoStore>(), "commands")
       return Commands.of({
         queries: { menu: store.menuState.tanstack },
         actions: {

@@ -1,6 +1,7 @@
 // What a branch's page lets this person do right now (src/features/branch/view.ts, docs/features/branch-workspace.md#sharing).
 import { describe, expect, test } from "vitest"
-import { accessNow, statusOf, writes } from "./view"
+import { MEMBERS_ASK } from "../auth/contract"
+import { accessNow, deniedTitleOf, NO_ACCESS, statusOf, writes } from "./view"
 
 describe("accessNow", () => {
   test("nothing until the branch is ready; what tracking answered until the room says otherwise", () => {
@@ -41,5 +42,16 @@ describe("statusOf", () => {
     expect([statusOf("owner"), statusOf("edit"), statusOf("view")]).toEqual(["Owner", "Can edit", "Can view"])
     expect(statusOf("none")).toBeUndefined()
     expect(statusOf(undefined)).toBeUndefined()
+  })
+})
+
+describe("deniedTitleOf", () => {
+  test("someone signed in below Member on the repository reads Members can ask Smithers.; anyone else No access (ruling AUTH-8)", () => {
+    expect(deniedTitleOf(true, { role: "guest" })).toBe(MEMBERS_ASK)
+    expect(deniedTitleOf(true, { role: null })).toBe(MEMBERS_ASK)
+    // A Member there denied a branch is denied the branch: someone else's, not shared with them.
+    expect(deniedTitleOf(true, { role: "member" })).toBe(NO_ACCESS)
+    expect(deniedTitleOf(true, undefined)).toBe(NO_ACCESS)
+    expect(deniedTitleOf(false, { role: null })).toBe(NO_ACCESS)
   })
 })

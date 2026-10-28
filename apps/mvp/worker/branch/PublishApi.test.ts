@@ -9,8 +9,9 @@ import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { PUBLICATIONS_SHAPE_ROUTE, publishExecutionId, resyncExecutionId, updateExecutionId } from "../../src/features/branch/contract.ts"
 import { writesRoute } from "../../src/features/issues/contract.ts"
+import { repositoryOf } from "../github/Config.ts"
 import type * as Actor from "../Actor.ts"
-import { REPOSITORY, reset, sql } from "../github/test/fixtures.ts"
+import { REPOSITORY, reset, signedIn, sql } from "../github/test/fixtures.ts"
 import { githubHarness, member } from "../github/test/harness.ts"
 import { branchHarness, type BranchHarness, resetBranches, shared, tracked } from "../test/branch.ts"
 import { eventually, testFile } from "../test/harness.ts"
@@ -60,6 +61,20 @@ const writes = async () =>
   }>
 
 describe("Publish and Update branch through the writes route", () => {
+  test.each([null, "guest"] as const)("a repository Member with deployment role %s cannot launch machine-backed branch operations", async role => {
+    const person = await signedIn(runtime, { login: "maya", token: Redacted.make("ghu_unused") })
+    const actor = { ...member(person.personId, person.sessionId), role, login: "maya" }
+    const branchId = await ephemeral(actor.subject.id)
+    const h = await githubHarness(runtime, { actor, own: repositoryOf("acme/home") })
+    h.github.roles.set("maya", "write")
+    for (const body of [publishBody(branchId), { writeId: crypto.randomUUID(), op: "branch/update", branchId }, { writeId: crypto.randomUUID(), op: "branch/resync", branchId }]) {
+      const response = await h.fetch(writesRoute("acme", "widgets"), post(body))
+      expect([response.status, await response.json()]).toEqual([403, { code: "forbidden" }])
+    }
+    expect(h.starts).toEqual([])
+    expect(await writes()).toEqual([])
+  })
+
   test("the owner's Publish: recorded with their session and the trimmed title, branch/Publish started under its id", async () => {
     const actor = member()
     const branchId = await ephemeral(actor.subject.id)

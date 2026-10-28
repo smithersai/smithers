@@ -290,6 +290,18 @@ export const scriptedRenderer = Model.make({
     ]),
 })
 
+/**
+ * `hello` (e2e/first-run.spec.ts): asked to "Say hello to <word>", the agent answers `Hello, <word>.` at once, so a new
+ * person's first question gets an answer on a dev server with no model key.
+ */
+const hello = Model.make({
+  stream: (request) => {
+    const text = [...request.system.map((part) => part.text), textOf(request)].join("\n")
+    const word = [...text.matchAll(/Say hello to ([a-z0-9-]+)/g)].at(-1)?.[1] ?? "nobody"
+    return turn(`ctx.done(${JSON.stringify(`Hello, ${word}.`)})`)
+  },
+})
+
 /** The scripted model named `name`, or `undefined` for a name no script has. */
 export const scriptedModel = (name: string): Model.Model | undefined => {
   // A terminal provider refusal, already normalized by the model endpoint.
@@ -304,6 +316,7 @@ export const scriptedModel = (name: string): Model.Model | undefined => {
   if (name === "todo-draft") return todoDraft
   if (name === "show-code") return showCode
   if (name === "reasoning-order") return reasoningOrder
+  if (name === "hello") return hello
   if (name === "queue") return queue
   if (name === "form") return formAsk
   if (name === "board") return board

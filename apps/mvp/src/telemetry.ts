@@ -34,6 +34,7 @@ import { BUGS_TELEMETRY } from "./features/bugs/contract"
 import { PLUGINS_TELEMETRY } from "./plugins/contract"
 import { DOMAINS_TELEMETRY } from "./features/domains/contract"
 import { PERSONAL_MODEL_TELEMETRY } from "./features/personal-model/contract"
+import { FIRST_RUN_TELEMETRY } from "./features/first-run/contract"
 import { STATUS_TELEMETRY } from "./features/status/contract"
 import { TERMINAL_TELEMETRY } from "./features/terminal/contract"
 import { PRESENCE_TELEMETRY } from "./features/presence/contract"
@@ -195,6 +196,7 @@ const features: ReadonlyArray<Telemetry> = [
   PLUGINS_TELEMETRY,
   DOMAINS_TELEMETRY,
   PERSONAL_MODEL_TELEMETRY,
+  FIRST_RUN_TELEMETRY,
   HOME_TELEMETRY,
   DOCS_TELEMETRY,
   ATTENTION_TELEMETRY,

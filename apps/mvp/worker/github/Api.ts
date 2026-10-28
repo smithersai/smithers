@@ -610,6 +610,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           // Publish, Update branch and Resync: a branch of this repository the writer may edit; Publish and Resync, one
           // at a time per branch.
           if (write.op === "branch/publish" || write.op === "branch/update" || write.op === "branch/resync") {
+            if (!canAsk(signed)) return refused(403, "forbidden")
             const branchId = write.branchId.toLowerCase()
             fields.branchId = branchId
             const branch = yield* branchAccess(Option.some(who), branchId).pipe(Effect.provide(database))

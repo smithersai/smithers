@@ -80,11 +80,14 @@ export type OwnModel = "saved" | "none" | "loading"
 
 /**
  * What stands where the composer goes, from what ChatApi said (`status`, `role` and whether the deployment's own model
- * answers, `hostedModel`), and, while it hasn't said or can't be reached, the last session it confirmed on this device
- * (`confirmed`, once `restored` from the device): a person who reloads offline keeps asking. The sign-in prompt shows
- * only when ChatApi says signed out, or when ChatApi can't be reached and the device never confirmed a session. While
- * the deployment's model is off, a person who may ask needs their own (`own`): without one, the way to add it, never a
- * composer whose every answer would fail; nothing until their row has synced.
+ * answers this person, `hostedModel`), and, while it hasn't said or can't be reached, the last session it confirmed on
+ * this device (`confirmed`, once `restored` from the device): a person who reloads offline keeps asking. The sign-in
+ * prompt shows only when ChatApi says signed out, or when ChatApi can't be reached and the device never confirmed a
+ * session. While the deployment's model doesn't answer them, a person who may ask needs their own (`own`): without
+ * one, the way to add it, never a composer whose every answer would fail; nothing until their row has synced.
+ * `member` is whether they are a Member or above on the repository of the conversation the composer asks in (ruling
+ * AUTH-8), as its branch's access says; absent, their role on the deployment's own repository (`role`) decides, as in
+ * its home conversation.
  */
 export const composerAccess = (
   session: {
@@ -95,32 +98,38 @@ export const composerAccess = (
   },
   confirmed: { readonly role: Role | null } | undefined,
   own: OwnModel = "saved",
+  member?: boolean,
 ): ComposerAccess => {
   if (session.status === "signed_in") {
-    if (!mayAsk(session.role)) return "members_only"
+    if (!(member ?? mayAsk(session.role))) return "members_only"
     if (session.hostedModel === false && own !== "saved") return own === "none" ? "add_model" : "wait"
     return "ask"
   }
   if (session.status === "signed_out") return "sign_in"
-  if (confirmed !== undefined) return mayAsk(confirmed.role) ? "ask" : "members_only"
+  if (confirmed !== undefined) return (member ?? mayAsk(confirmed.role)) ? "ask" : "members_only"
   return session.restored && session.status === "unreachable" ? "sign_in" : "wait"
 }
 
 /**
  * What `GET /api/auth/session` answers:
- * - signed out, with whether this deployment can sign anyone in (`available`: the GitHub App is configured);
- * - signed in, with the person's stable id, their GitHub login, their role on the repository, `null` when they have
- *   none, and whether the deployment's own model answers anyone (`hostedModel`, decision 0099). The id and
- *   `hostedModel` are optional only so a build from before they were added still reads.
+ * - signed out, with whether this deployment can sign anyone in (`available`: the GitHub App is configured), and
+ *   whether its own model answers anyone (`hostedModel`), so a visitor's first run shows the steps they will have
+ *   (decision 0121);
+ * - signed in, with the person's stable id, their GitHub login, their role on the deployment's own repository, `null`
+ *   when they have none, whether the deployment's own model answers them (`hostedModel`, decision 0099: on, and they
+ *   are a Member or above of its repository, ruling AUTH-8), and where Install goes (`install`: the Smithers GitHub
+ *   App's installation on GitHub), when the deployment signs in with the App. The id, `hostedModel` and `install` are
+ *   optional only so a build from before they were added still reads.
  */
 export type SessionState =
-  | { readonly signedIn: false; readonly available: boolean }
+  | { readonly signedIn: false; readonly available: boolean; readonly hostedModel?: boolean }
   | {
     readonly signedIn: true
     readonly personId?: string
     readonly login: string
     readonly role: Role | null
     readonly hostedModel?: boolean
+    readonly install?: string
   }
 
 /** How a tab's session check ended: ChatApi said signed in or signed out, or couldn't say (`unreachable`). */
@@ -150,7 +159,7 @@ export const SIGN_IN = "Sign in with GitHub"
 /** Where the composer would be, for a signed-out person. */
 export const SIGN_IN_TO_ASK = "Sign in to ask Smithers."
 
-/** Where the composer would be, for a signed-in Guest or a person with no role. */
+/** Where the composer would be, for a signed-in Guest or a person with no role on the conversation's repository. */
 export const MEMBERS_ASK = "Members can ask Smithers."
 
 /** Where the composer goes while the deployment's model is off and the person has none of their own. */

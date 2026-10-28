@@ -31,6 +31,7 @@ import * as ModelEndpoint from "./ModelEndpoint.ts"
 import { PersonalModels } from "./personal/Models.ts"
 import { SecretKeys } from "./secrets/Keys.ts"
 import * as TodoMachine from "./flows/TodoMachine.ts"
+import * as SessionStore from "./SessionStore.ts"
 import * as Placement from "./Placement.ts"
 import * as RepoRuns from "./RepoRuns.ts"
 import * as RepoConfig from "./RepoConfig.ts"
@@ -185,7 +186,16 @@ const object = <E, R>(
         Effect.provide(PersonalModels.layer(appDatabase).pipe(Layer.provide(SecretKeys.layerConfig))),
         Effect.orDie,
       )
-      const todoOwner = (executionId: string) => TodoMachine.ownerOf(executionId).pipe(Effect.provide(appDatabase))
+      // A run's person, and whether the deployment pays for the calls their own model doesn't answer: only its own
+      // Members' (ruling AUTH-8).
+      const ownedBy = (personId: string) =>
+        Effect.map(SessionStore.deploymentMember(personId), (deploymentPays) => Option.some({ personId, deploymentPays }))
+      // A `todo` run's committer.
+      const todoOwner = (executionId: string) =>
+        TodoMachine.ownerOf(executionId).pipe(
+          Effect.flatMap(Option.match({ onNone: () => Effect.succeedNone, onSome: ownedBy })),
+          Effect.provide(appDatabase),
+        )
       // `ops/SpendAlert` sends by email and Telegram through the deployment's providers, from its secrets
       // (docs/features/spend-alerts.md#channels).
       const alertChannels = yield* AlertChannels.channelsConfig(options).pipe(Effect.orDie)
@@ -292,7 +302,7 @@ const object = <E, R>(
               ...services,
               // A head's review is its TODO owner's, on the `review` role (`hard` tier, decision 0107): their own model
               // reviews it when they saved one (decision 0099).
-              reviewerFor: (ownerId: string) => seats("review", started, () => Effect.succeed(Option.some(ownerId))),
+              reviewerFor: (ownerId: string) => seats("review", started, () => ownedBy(ownerId).pipe(Effect.provide(appDatabase))),
               invalidateTodo: (stop: typeof TodoBaseClosed.Request.Type) => ExecutionHost.intent(TodoBaseClosed.Invalidate, {
                 executionId: `todo-closed:${stop.attemptId}`, payload: stop,
               }).pipe(Effect.flatMap((intent) => executions.getByName(intent.executionId).start(intent)),

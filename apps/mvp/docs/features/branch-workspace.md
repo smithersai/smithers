@@ -252,3 +252,5 @@ and outbox. No model call is needed to prove restoring queued questions.
 Automatic branch reads use `POST /api/branches?optional=true`. An inaccessible workspace answers `204` with `x-branch-state: forbidden`; the device retains its access refusal while the repository remains readable. Explicit creation and ordinary API calls still answer `403`. No branch or conversation is recorded for a denied reader.
 
 A confirmed missing branch answers optional browsing with `204` and `x-branch-state: not_found`; ordinary calls still answer `404`. The repository page says Branch not found and links to Code, preserving Not synced yet only for a mirror that actually reports that state.
+
+Opening or attaching to a terminal also requires Member or above on `GITHUB_REPOSITORY`, independently of the branch repository role (decision 0122 amendment). A stranger receives "Members can run machines." before the machine is contacted.

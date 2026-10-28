@@ -42,6 +42,9 @@ const VIEWPORT = { width: 1280, height: 800 }
 
 export type Message = { role: string; text: string; state: "pending" | "streaming" | "settled" }
 
+/** A cookie a device opens with: one of local development's (worker/SignIn.ts `cookieNames`), by its plain name. */
+type Cookie = { readonly name: string; readonly value: string }
+
 // A small device label in each video, so a GIF shows which device is which and which is offline.
 // It sits outside the app's root, ignores the pointer and is hidden from assistive technology.
 const label = (name: string) => {
@@ -176,6 +179,9 @@ export class Device {
 }
 
 const isQuestions = (url: string) => new URL(url).pathname === "/api/questions"
+
+/** Local development's people named by the cookie, each nobody before (worker/DevChatApi.ts `newcomer`). */
+export type DevPerson = `newcomer-${string}` | `owner-${string}` | `reader-${string}`
 
 export class Tab {
   readonly conversation: Locator
@@ -472,10 +478,19 @@ class Devices {
     return this.openOn(false, names, { name: "smithers_dev_person", value: "teammate" })
   }
 
-  // As `open`, signed in as local development's person `person` (`teammate`, a Member, `guest`, a Guest, or
-  // `maintainer`, a Maintainer: worker/DevChatApi.ts), so a test has up to four people on one laptop.
-  openAs(person: "teammate" | "guest" | "maintainer", ...names: Array<string>) {
+  // As `open`, signed in as local development's person `person` (`teammate`, a Member, `guest`, a Guest,
+  // `maintainer`, a Maintainer, `newcomer-<id>`, a Member nobody was before, or `owner-<id>` and `reader-<id>`, people
+  // with no role on its repository who are the Admin and a Guest of octocat/Spoon-Knife: worker/DevChatApi.ts), so a
+  // test has several people on one laptop.
+  openAs(person: "teammate" | "guest" | "maintainer" | DevPerson, ...names: Array<string>) {
     return this.openOn(false, names, { name: "smithers_dev_person", value: person })
+  }
+
+  // As `openAs`, but signed out from the first page, as a visitor who is `person` once they press Sign in with GitHub:
+  // local development's sign-in clears its signed-out cookie and keeps the person's (worker/SignIn.ts).
+  openVisitorAs(person: DevPerson, ...names: Array<string>) {
+    guard("devSignIn")
+    return this.openOn(false, names, { name: "smithers_dev_person", value: person }, { name: "smithers_dev_signed_out", value: "1" })
   }
 
   // Opens one new device straight at `path`, as a person's first visit: no service worker in control yet and no second
@@ -488,19 +503,20 @@ class Devices {
     })
   }
 
-  private openOn(faulty: boolean, names: Array<string>, cookie?: { readonly name: string; readonly value: string }) {
+  private openOn(faulty: boolean, names: Array<string>, cookie?: Cookie, signedOut?: Cookie) {
     // A dev build's faulty services and local development's people: `requires("faults")`, `requires("devPeople")`.
     if (faulty) guard("faults")
     if (cookie !== undefined) guard("devPeople")
-    const how = faulty ? " on faulty services" : cookie !== undefined ? ` as the ${cookie.value}` : ""
-    return step(`Open ${names.join(", ")}${how}`, () => this.openEach(faulty, names, cookie))
+    const how = faulty ? " on faulty services" : cookie !== undefined ? ` as the ${cookie.value}${signedOut === undefined ? "" : ", signed out"}` : ""
+    return step(`Open ${names.join(", ")}${how}`, () => this.openEach(faulty, names, cookie, undefined, signedOut))
   }
 
   private async openEach(
     faulty: boolean,
     names: Array<string>,
-    cookie?: { readonly name: string; readonly value: string },
+    cookie?: Cookie,
     path?: string,
+    signedOut?: Cookie,
   ) {
     return Promise.all(
       names.map(async (name) => {
@@ -511,12 +527,13 @@ class Devices {
           colorScheme: themeOf(this.testInfo),
           recordVideo: { dir: this.testInfo.outputPath("videos"), size: this.viewport },
         })
-        if (cookie !== undefined) {
+        const cookies = [cookie, signedOut].filter((each): each is Cookie => each !== undefined)
+        if (cookies.length > 0) {
           // Over HTTPS, as the dev server and production serve the app, ChatApi reads the `__Host-` name, which a
           // browser keeps only when it is Secure (worker/SignIn.ts `cookieNames`).
           const url = this.testInfo.project.use.baseURL ?? DEV_URL
           const secure = url.startsWith("https:")
-          await context.addCookies([{ name: `${secure ? "__Host-" : ""}${cookie.name}`, value: cookie.value, url, secure }])
+          await context.addCookies(cookies.map((each) => ({ name: `${secure ? "__Host-" : ""}${each.name}`, value: each.value, url, secure })))
         }
         const device = new Device(name, context, faulty)
         this.all.push(device)

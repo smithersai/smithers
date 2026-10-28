@@ -1,3 +1,4 @@
+import { canAsk } from "../Actor.ts"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -288,6 +289,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, rol
           }
           const scopedActor = { ...who, role: resolved.success.role }
           if (admitted.op === "retry" ? !mayRead(Option.some(scopedActor)) : !mayChange(scopedActor)) return refused("forbidden")
+          if (!canAsk(who)) return refused("forbidden")
           const held = resolved.success.held
           let stoppedAttemptId: string | undefined
           if (admitted.op === "retry" && Option.isSome(runs) && runs.value.isStopped !== undefined) {

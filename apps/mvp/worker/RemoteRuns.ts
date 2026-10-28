@@ -23,7 +23,7 @@ import {
   type SteerRefusal,
   type StopRefusal,
 } from "../src/features/runs/contract.ts"
-import { type Actor, Sessions } from "./Actor.ts"
+import { type Actor, canAsk, Sessions } from "./Actor.ts"
 import { readBounded } from "./Body.ts"
 import * as CloudRuns from "./CloudRuns.ts"
 import { codeOf } from "./ErrorCode.ts"
@@ -342,6 +342,7 @@ export const make = <E, R, EE, ER, RS>(
           const attempt = yield* attemptOf(runId).pipe(Effect.provide(database))
           if (Option.isNone(attempt)) return refused(404, "not_found")
           if (!(yield* memberOn(actor.value.value, attempt.value.repoId))) return refused(403, "forbidden")
+          if (!canAsk(actor.value.value)) return refused(403, "forbidden")
           fields.runId = runId
           const admitted = yield* Effect.gen(function* () {
             const journal = yield* Journal.Journal.Journal

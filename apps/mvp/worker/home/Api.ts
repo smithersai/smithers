@@ -224,7 +224,11 @@ export const make = <R>({ roles, files = Curated.files, mayRead, maySync }: Opti
       return yield* record(refusedAnswer(decided.failure), { outcome: "role_unavailable", refused: decided.failure.code })
     }
     const own = repositoryOf(`${target.owner}/${target.name}`).id === roles.repository.id
+    const workspaceRole = decided.success.source === "no_role_here" && Option.isSome(actor.success)
+      ? RepoRoles.uninstalledRole(roles, actor.success.value, repositoryOf(`${target.owner}/${target.name}`))
+      : decided.success.role
     const answer: RepoRoleAnswer = { role: decided.success.role, own,
+      ...(workspaceRole === decided.success.role ? {} : { workspaceRole }),
       ...(mayRead === undefined ? {} : { readable: yield* mayRead(repositoryOf(`${target.owner}/${target.name}`)) }),
       ...(maySync === undefined ? {} : { synced: yield* maySync(repositoryOf(`${target.owner}/${target.name}`)) }),
     }

@@ -3,12 +3,13 @@ import { repoId } from "../../features/repo/contract"
 import { Card, EmptyState } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useSearch } from "@tanstack/react-router"
+import { useAuth } from "../../features/auth/components/AuthContext"
 import { ComposerGate } from "../../features/auth/components/ComposerGate"
 import { BranchCompare } from "../../features/branch/components/BranchCompare"
 import { BranchHeader } from "../../features/branch/components/BranchHeader"
 import { useBranch } from "../../features/branch/components/BranchContext"
 import { comparesOf } from "../../features/branch/publishView"
-import { accessNow, writes } from "../../features/branch/view"
+import { accessNow, deniedTitleOf, writes } from "../../features/branch/view"
 import { Composer } from "../../features/chat/components/Composer"
 import { SharedFile } from "../../features/coedit/components/SharedFile"
 import { FileTabsBar } from "../../features/files/components/FileTabsBar"
@@ -16,6 +17,7 @@ import { HomeTabs } from "../../features/home/components/HomeTabs"
 import { Conversation } from "../../features/chat/components/Conversation"
 import { NO_MESSAGES } from "../../features/chat/contract"
 import { selfAccessOf } from "../../features/presence/view"
+import { useRepoAnswer } from "../../features/repo/components/RepoContext"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
 import { RepoPage } from "../../features/repo/components/RepoPage"
 import { TerminalPanel } from "../../features/terminal/components/TerminalPanel"
@@ -41,6 +43,8 @@ export function BranchScreen({ homeTabs = false }: { readonly homeTabs?: boolean
   const { data: room } = useLiveQuery(presence.queries.room)
   const { data: participants } = useLiveQuery(presence.queries.participants)
   const search = useSearch({ strict: false }) as { readonly terminal?: string; readonly edit?: string; readonly compare?: true }
+  const { data: session } = useLiveQuery(useAuth().queries.session)
+  const answer = useRepoAnswer(current?.owner ?? "", current?.repo ?? "")
   const access = accessNow(current, room, selfAccessOf(participants))
   const open = access !== undefined && access !== "none"
   const savedConversation = current?.status === "offline" && current.conversationId !== null
@@ -74,7 +78,7 @@ export function BranchScreen({ homeTabs = false }: { readonly homeTabs?: boolean
       {denied ? (
         <div className="branch-screen-side">
           <Card className="branch-screen-denied">
-            <EmptyState title="No access" />
+            <EmptyState title={deniedTitleOf(session?.status === "signed_in", answer)} />
           </Card>
         </div>
       ) : null}
@@ -85,7 +89,8 @@ export function BranchScreen({ homeTabs = false }: { readonly homeTabs?: boolean
           </Card>
           {open ? <div className="branch-screen-composer">
             {writes(access) ? (
-              <ComposerGate>
+              // Writing the branch means a Member or above on its repository: the gate asks only sign-in and a model.
+              <ComposerGate member>
                 <Composer docked={false} />
               </ComposerGate>
             ) : <Composer docked={false} readOnly />}

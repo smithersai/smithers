@@ -21,7 +21,7 @@ import {
   type TestResult,
   writeExecutionId,
 } from "../../src/features/personal-model/contract.ts"
-import { canAsk, refusesPersonOnly, Sessions } from "../Actor.ts"
+import { refusesPersonOnly, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
@@ -36,14 +36,14 @@ import * as PersonalUsage from "./Usage.ts"
 // route answers one.
 //
 // - `PUT /api/me/model { keys, models }`: saves the person's keys, one per protocol, and the models their tiers use,
-//   replacing what they saved. It admits the write (signed in, Member or above, the person in person: never an agent,
+//   replacing what they saved. It admits the write (anyone signed in, ruling AUTH-8, the person in person: never an agent,
 //   flow or sandbox, since a key would pass through them), checks every field (`checkSave`), seals each key typed under
 //   SECRETS_KEY and starts `model/Put` with only ciphertext. A key's base URL changes only with the key, so nobody
 //   points a saved key at another host.
 // - `DELETE /api/me/model`: removes every key through `model/Delete`, for anyone signed in. The agent may, for the
 //   person (FLOW-3).
-// - `POST /api/me/model/test`: one tiny real call with each key the tiers use, answered as one `TestResult`, Member or
-//   above. The agent may.
+// - `POST /api/me/model/test`: one tiny real call with each key the tiers use, answered as one `TestResult`, for anyone
+//   signed in. The agent may.
 // - `GET /api/shapes/personal-model`: the person's own rows, never another's, never a sealed key.
 //
 // No log line, span, metric or answer carries a key, and a refusal names a code, never the input.
@@ -235,8 +235,8 @@ export const make = <E, R>(
         fields.outcome = "deleting"
         return HttpServerResponse.jsonUnsafe({}, { status: 202, headers: noStore })
       }
-      // Only a person who may ask Smithers makes model calls, so only they save or test a model (decision 0007).
-      if (!canAsk(actor.value)) return refuse(403, "forbidden")
+      // Anyone signed in saves and tests a model of their own: it is their key, and it answers only their calls (ruling
+      // AUTH-8). Where they may ask, ChatApi decides by their role on each conversation's repository.
       if (op === "test") {
         const result = yield* test(personId)
         if (Option.isNone(result)) return refuse(404, "none")

@@ -126,3 +126,9 @@ describe("panelViewOf", () => {
     expect(panelViewOf(panel({ phase: "failed" }), [tab()], false)!.screen).toEqual({ kind: "empty", text: undefined })
   })
 })
+
+test("a machine refusal explains membership and never offers another open", () => {
+  expect(panelViewOf(panel({ phase: "members_only" }), [], true)).toEqual({
+    badge: "Members can run machines.", open: undefined, screen: { kind: "empty", text: undefined },
+  })
+})

@@ -96,6 +96,7 @@ import { Domains, type DomainsView } from "./features/domains/domains"
 import { PersonalModelClient } from "./features/personal-model/api"
 import { PersonalModel, type PersonalModelView } from "./features/personal-model/personalModel"
 import { PersonalModelStore } from "./features/personal-model/store"
+import { FirstRun, type FirstRunView } from "./features/first-run/firstRun"
 import { type ThemeHost, ThemeStore } from "./features/theme/store"
 import { Theme, type ThemeView } from "./features/theme/theme"
 import { embedsLayer } from "./features/views/embeds"
@@ -226,7 +227,7 @@ export const appLayer = <S = never>(
     tabSession({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer)),
     tabDoors({ name: host.engineName, signedOut: anonymousRun }).pipe(Layer.provide(TabChannel.layer)),
   ).pipe(Layer.provideMerge(DeviceWipe.layer(host.wipe)))
-  return Layer.mergeAll(
+  const app = Layer.mergeAll(
     Chat.layer,
     auth,
     Theme.layer,
@@ -439,6 +440,9 @@ export const appLayer = <S = never>(
     ),
     Layer.provide(Layer.succeed(FetchHttpClient.Fetch, options.fetch)),
   )
+  // The first run (decision 0121), above everything: its follower reads sign-in's, your model's, your conversations'
+  // and chat's stores, which the layers below build once.
+  return FirstRun.layer.pipe(Layer.provideMerge(app))
 }
 
 /**
@@ -517,7 +521,7 @@ export const requestPersistentStorage = (storage: StoragePersistence.Service) =>
 
 /**
  * Where the boot program renders and listens: the window, the page's start, and a renderer for the chat, sign-in,
- * theme, repository, slash-command, views, web-page, agent-status, branch, terminal and issues layers.
+ * theme, repository, slash-command, views, web-page, agent-status, branch, terminal, issues and first-run layers.
  */
 export interface BootOptions {
   readonly target: EventTarget
@@ -558,6 +562,7 @@ export interface BootOptions {
     docs: DocsView,
     domains: DomainsView,
     personalModel: PersonalModelView,
+    firstRun: FirstRunView,
   ) => void
 }
 
@@ -596,6 +601,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
     const docs = yield* Docs
     const domains = yield* Domains
     const personalModel = yield* PersonalModel
+    const firstRun = yield* FirstRun
     const store = yield* ChatStore
     yield* bindSessionConnectivity(options.target)
     yield* resumeAdmissions
@@ -628,6 +634,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
         docs,
         domains,
         personalModel,
+        firstRun,
       )
     )
     if (timeline !== undefined) {

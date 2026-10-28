@@ -115,7 +115,7 @@ describe("auth/RevokeGitHubToken", () => {
     expect(ran.exit).toEqual(Exit.succeed({ outcome: "revoked" }))
     expect(await tokens(id)).toMatchObject({ ...forgotten, revokedReason: "sign_out" })
     expect(github.accepts(github.issued[0]!.accessToken)).toBe(false)
-    expect(await h.session(cookies)).toEqual({ signedIn: false, available: true })
+    expect(await h.session(cookies)).toEqual({ signedIn: false, available: true, hostedModel: false })
   })
 
   test("signing in again in the same browser starts the revocation of the session it ended", async () => {

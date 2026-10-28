@@ -37,9 +37,9 @@ import {
   FLOWS_SHAPE_ROUTE,
 } from "../src/features/flows-ui/contract.ts"
 import { BROWSER_TELEMETRY, TELEMETRY_LIMITS } from "../src/telemetry.ts"
-import { type Actor, canAsk, refusesPersonOnly, Sessions } from "./Actor.ts"
+import { type Actor, refusesPersonOnly, Sessions } from "./Actor.ts"
 import * as Answers from "./Answers.ts"
-import { branchAccess, canEdit, canView } from "./branch/Access.ts"
+import { askingOf, branchAccess, canView } from "./branch/Access.ts"
 import * as ConversationPeople from "./branch/ConversationPeople.ts"
 import * as Conversations from "./branch/Conversations.ts"
 import { readBounded } from "./Body.ts"
@@ -241,7 +241,7 @@ export const make = <E, R>(
       const fields: Record<string, string | number | boolean> = {}
       const response = yield* Effect.gen(function* () {
         if (request.method !== "POST") return yield* new Refusal({ status: 405, errorCode: "method" })
-        const asker = yield* mayAsk
+        const asker = yield* signedIn
         // Asking starts the agent's run, and the agent never asks itself (decision 0017 slice 0).
         if (yield* refusesPersonOnly(asker, "chat/Answer")) {
           return yield* new Refusal({ status: 403, errorCode: "person_only", explanation: "Only the person asks." })
@@ -252,7 +252,7 @@ export const make = <E, R>(
         )
         // Lowercase, as Postgres prints a uuid: one answer has one id in rows, logs and the browser's agent.
         // The asker is the session's person, never the body's: only they may write the answer (worker/Answers.ts).
-        const conversationId = yield* conversationOf(decoded.conversationId, asker)
+        const conversationId = yield* conversationOf(decoded.conversationId, asker, fields)
         const question = {
           id: decoded.id.toLowerCase(),
           answerId: decoded.answerId.toLowerCase(),
@@ -338,10 +338,13 @@ export const make = <E, R>(
 
     /**
      * The conversation a question belongs to: the one it names, which must exist (404 otherwise), or the home
-     * conversation when it names none (503 when there is none to bind it to). The asker must be able to edit its
-     * branch (403 otherwise): someone it is shared with to view reads the conversation, never asks in it.
+     * conversation when it names none (503 when there is none to bind it to). The asker must be a Member or above on
+     * its branch's repository (`repo:ask`, decision 0007; ruling AUTH-8), never by their role on another (403
+     * `forbidden` otherwise), and able to edit its branch (403 `view_only` otherwise): someone it is shared with to view
+     * reads the conversation, never asks in it. Nothing is written for any of them: a Guest's question would leave a
+     * `streaming` answer that no agent may answer, which holds up every later answer's turn.
      */
-    const conversationOf = (named: string | undefined, asker: Actor) =>
+    const conversationOf = (named: string | undefined, asker: Actor, fields: Record<string, string | number | boolean>) =>
       Effect.gen(function* () {
         const id = named !== undefined
           ? named.toLowerCase()
@@ -360,7 +363,17 @@ export const make = <E, R>(
             explanation: "No such conversation.",
           })
         }
-        if (!canEdit(found.access)) {
+        // The role the asker holds there, by which they ask: never their role on the deployment's own repository.
+        fields.role = found.role ?? "none"
+        const asking = askingOf(found)
+        if (asking === "forbidden") {
+          return yield* new Refusal({
+            status: 403,
+            errorCode: "forbidden",
+            explanation: "Asking Smithers needs the Member role.",
+          })
+        }
+        if (asking === "view_only") {
           return yield* new Refusal({ status: 403, errorCode: "view_only", explanation: "You can view this branch." })
         }
         return found.conversationId
@@ -451,24 +464,15 @@ const notTaken = "Smithers couldn't take the question. Try again."
 const unreachable = "Smithers can't reach its database. Try again."
 
 /**
- * The actor asking, or a refusal of a caller who may not ask Smithers (`repo:ask`, decision 0007): signed out (401),
- * signed in without the Member role or above (403), or whose session can't be read (503). Nothing is written for any
- * of them: a Guest's question would leave a `streaming` answer that no agent may answer, which holds up every later
- * answer's turn.
+ * The actor asking, or a refusal of a caller who may not: signed out (401), or whose session can't be read (503). Who
+ * may ask in the conversation, by their role on its repository, `conversationOf` decides (ruling AUTH-8).
  */
-const mayAsk = Effect.gen(function* () {
+const signedIn = Effect.gen(function* () {
   const actor = yield* (yield* Sessions).resolve.pipe(
     Effect.mapError((error) => new Refusal({ status: 503, errorCode: codeOf(error), explanation: unreachable })),
   )
   if (Option.isNone(actor)) {
     return yield* new Refusal({ status: 401, errorCode: "authentication", explanation: "Sign in to ask Smithers." })
-  }
-  if (!canAsk(actor.value)) {
-    return yield* new Refusal({
-      status: 403,
-      errorCode: "forbidden",
-      explanation: "Asking Smithers needs the Member role.",
-    })
   }
   return actor.value
 })

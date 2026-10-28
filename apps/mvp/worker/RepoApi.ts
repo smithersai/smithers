@@ -1,4 +1,4 @@
-import type { BranchRoles } from "./branch/Access.ts"
+import { BranchRoles } from "./branch/Access.ts"
 import * as MirrorRefresh from "./MirrorRefresh.ts"
 import * as RefReads from "./branch/RefReads.ts"
 import { ImmutableCache } from "@smthrs/artifacts"
@@ -24,7 +24,7 @@ import {
   SHA_PATTERN,
   textOf,
 } from "../src/features/repo/contract.ts"
-import { canClone, Sessions } from "./Actor.ts"
+import { type Actor, canClone, Sessions } from "./Actor.ts"
 import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
 import { FlowStarter } from "./Flows.ts"
@@ -42,7 +42,8 @@ import * as Repos from "./Repos.ts"
 // `ImmutableCache` (the Workers Cache API in ChatApi): all three are in context per request.
 //
 // Reading is open to everyone; cloning needs sign-in (decision 0008, "Sign-in is needed to: import") and the Member role
-// or above (decision 0007), because a clone spends the deployment's Code Storage budget. Every input is bounded: the
+// or above on the repository cloned (decision 0007, ruling AUTH-8), because a clone spends the deployment's Code Storage
+// budget. Every input is bounded: the
 // body, the owner and name, the SHA and the path.
 
 const noStore = { "cache-control": "no-store" }
@@ -99,6 +100,19 @@ const parseAbout = (path: string) => {
 /** A raw file's type: text as UTF-8 plain text, anything else as bytes to save. */
 const rawType = (bytes: Uint8Array): string =>
   textOf(bytes) === undefined ? "application/octet-stream" : "text/plain; charset=utf-8"
+
+/**
+ * Whether `actor` may clone repository `id` (`canClone`): a Member or above on that repository itself, by `BranchRoles`
+ * (GitHub's role there where the App is on it, else the session's, decision 0079), never by their role on another
+ * (ruling AUTH-8). The role decided is the request's `role` field. GitHub or Postgres not answering fails, which the
+ * route answers `503 unavailable`, never a guessed role.
+ */
+const clonesHere = (actor: Actor, id: string, fields: Record<string, string | number>) =>
+  Effect.gen(function* () {
+    const role = yield* (yield* BranchRoles).roleOn(actor, id)
+    fields.role = role ?? "none"
+    return canClone({ ...actor, role })
+  })
 
 /** What RepoApi needs besides its database: the Code Storage client, when this deployment has an organization. */
 export interface Options {
@@ -164,8 +178,6 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
         if (Option.isNone(actor)) return refused(503, "unavailable")
         if (Option.isNone(actor.value)) return refused(401, "authentication")
-        if (!canClone(actor.value.value)) return refused(403, "forbidden")
-        if (Option.isNone(options.codeStorage)) return refused(503, "not_configured")
         const text = yield* readBounded(request, MAX_REQUEST_BYTES).pipe(Effect.result)
         if (text._tag === "Failure") {
           return text.failure.reason === "too_large" ? refused(413, "too_large") : refused(400, "invalid")
@@ -175,10 +187,19 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         const id = repoId(body.value.owner, body.value.name)
         fields.id = id
         yield* Effect.annotateCurrentSpan({ "smithers.repo.id": id })
+        if (!(yield* clonesHere(actor.value.value, id, fields))) return refused(403, "forbidden")
+        if (Option.isNone(options.codeStorage)) return refused(503, "not_configured")
         const requested = yield* Repos.request({ id, ...body.value }, budgets, actor.value.value.subject.id).pipe(
           Effect.provide(database),
         )
-        if (requested.kind === "limit") return refused(429, "repository_limit")
+        if (requested.kind === "limit") {
+          fields.scope = requested.scope
+          fields.used = requested.used
+          fields.limit = requested.limit
+          yield* Effect.annotateCurrentSpan({ "smithers.repo.limit.scope": requested.scope })
+          yield* Metric.update(Metric.withAttributes(RepoMetrics.capacity, { reason: `${requested.scope}_repositories` }), 1)
+          return refused(429, "repository_limit")
+        }
         fields.attempt = requested.attempt
         fields.cloneId = requested.cloneId
         // The request is persisted: it answers now, and the asker's `repo/clone` launches it (`launch`, below).
@@ -246,7 +267,6 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
         if (Option.isNone(actor)) return refused(503, "unavailable")
         if (Option.isNone(actor.value)) return refused(401, "authentication")
-        if (!canClone(actor.value.value)) return refused(403, "forbidden")
         const text = yield* readBounded(request, MAX_REQUEST_BYTES).pipe(Effect.result)
         if (text._tag === "Failure") {
           return text.failure.reason === "too_large" ? refused(413, "too_large") : refused(400, "invalid")
@@ -256,6 +276,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         const id = repoId(body.value.owner, body.value.name)
         fields.id = id
         fields.cloneId = body.value.cloneId
+        if (!(yield* clonesHere(actor.value.value, id, fields))) return refused(403, "forbidden")
         const row = yield* Repos.current(id).pipe(Effect.provide(database))
         if (Option.isNone(row)) {
           return Option.isNone(options.codeStorage) ? refused(503, "not_configured") : refused(404, "not_found")
@@ -456,7 +477,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           if (!isRepository(target.owner, target.name)) return refuse(404, "not_found")
           if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
           fields.repoId = repoId(target.owner, target.name)
-          // Whether the asker is a Member or above: asked only when a read must choose the deployment's token.
+          // Whether the asker is a Member or above of the deployment's own repository (the session's role): asked only
+          // when a read must choose the deployment's token, whose quota is the deployment's (ruling AUTH-8).
           const sessions = yield* Effect.context<Sessions | HttpServerRequest.HttpServerRequest>()
           const member = Effect.gen(function* () {
             const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)

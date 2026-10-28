@@ -233,6 +233,9 @@ export const COPY_CLONE_URL = "Copy clone URL"
 /** Where Clone would be, for a signed-out person. */
 export const SIGN_IN_TO_CLONE = "Sign in to clone"
 
+/** Where Clone was, once RepoApi refused it: the person isn't a Member or above on the repository (ruling AUTH-8). */
+export const MEMBERS_CLONE = "Members can clone."
+
 /** A repository GitHub doesn't have, or keeps private. */
 export const NOT_FOUND = "Not found"
 

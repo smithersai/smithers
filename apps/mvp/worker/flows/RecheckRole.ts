@@ -249,13 +249,13 @@ export const check = (sessionId: string, redemption: Redemption, services: Servi
     }
     const access = yield* Effect.option(keys.open(held.access, sealContext(sessionId, "github_access")))
     if (Option.isNone(access)) return yield* end("unreadable")
+    const generation = yield* SessionStore.roleObservation
     const permission = yield* github.permission(access.value, repository).pipe(
       Effect.map(Option.some),
       Effect.catchIf(isRejected, () => Effect.succeedNone),
     )
     if (Option.isNone(permission)) return yield* end("github_refused")
-    const role = roleOf(permission.value)
-    yield* SessionStore.setRole(sessionId, role)
+    const role = yield* SessionStore.setRole(sessionId, roleOf(permission.value), generation)
     return { outcome: "checked", role } satisfies Checked
   })
 

@@ -96,7 +96,14 @@ export const underPolicy = (policy: Policy, principal: string, role: Role | null
  */
 export class BranchRoles extends Context.Service<
   BranchRoles,
-  { readonly roleOn: (actor: Actor, repoId: string) => Effect.Effect<Role | null, RepoRoles.RoleRefused> }
+  {
+    readonly roleOn: (actor: Actor, repoId: string) => Effect.Effect<Role | null, RepoRoles.RoleRefused>
+    /**
+     * The role on a repository Smithers recorded no App installation on, asking no one (`RepoRoles.uninstalledRole`).
+     * Absent, the session's.
+     */
+    readonly uninstalled?: (actor: Actor, repoId: string) => Role | null
+  }
 >()("@smthrs/mvp/branch/BranchRoles") {
   /** `BranchRoles` over `roles`, with what its database needs taken from where the layer is built. */
   static readonly layer = <R>(roles: RepoRoles.RepoRoles<R>): Layer.Layer<BranchRoles, never, R> =>
@@ -106,24 +113,26 @@ export class BranchRoles extends Context.Service<
         BranchRoles.of({
           roleOn: (actor, repoId) =>
             RepoRoles.workRole(roles, actor, repositoryOf(repoId.replace(/^github\//, ""))).pipe(Effect.provideContext(context)),
+          uninstalled: (actor, repoId) => RepoRoles.uninstalledRole(roles, actor, repositoryOf(repoId.replace(/^github\//, ""))),
         })),
     )
 }
 
 /**
  * The role `actor` works with on repository `repoId` (`installed`: whether Smithers recorded the App's installation on
- * it): `BranchRoles`' where the App is installed, else the session's, asking GitHub nothing.
+ * it): `BranchRoles`' where the App is installed, else the session's (or local development's own), asking GitHub
+ * nothing.
  */
 export const roleOn = (
   actor: Actor,
   repoId: string,
   installed: boolean,
 ): Effect.Effect<Role | null, RepoRoles.RoleRefused, BranchRoles> =>
-  installed
-    ? Effect.gen(function* () {
-      return yield* (yield* BranchRoles).roleOn(actor, repoId)
-    })
-    : Effect.succeed(actor.role)
+  Effect.gen(function* () {
+    const roles = yield* BranchRoles
+    if (installed) return yield* roles.roleOn(actor, repoId)
+    return roles.uninstalled === undefined ? actor.role : roles.uninstalled(actor, repoId)
+  })
 
 /** Whether Smithers recorded the App's installation on repository `repoId`. */
 export const installedOn = (repoId: string) =>
@@ -248,3 +257,29 @@ export const policyOf = (branchId: string) =>
 /** Whether `actor` is a Member or above: who may track a branch, and own one (`repo:branch-create`, decision 0007). */
 export const isMember = (actor: Option.Option<Actor>): actor is Option.Some<Actor> =>
   Option.isSome(actor) && canAsk(actor.value)
+
+/**
+ * What a person may do in a conversation (`repo:ask`, decision 0007; ruling AUTH-8): `ask`, as a Member or above on its
+ * branch's repository who may edit the branch; `view_only`, as one there who may not; or `forbidden`, as no Member
+ * there, whatever their role on the deployment's own repository.
+ */
+export type Asking = "ask" | "view_only" | "forbidden"
+
+/** What the person `found` was decided for may do in its conversation, by their role on its repository. */
+export const askingOf = (found: BranchAccess): Asking =>
+  found.role === null || !MEMBER_OR_ABOVE.has(found.role) ? "forbidden" : canEdit(found.access) ? "ask" : "view_only"
+
+/**
+ * `askingOf` for the conversation answer `answerId` is in, by `actor`'s role on its repository (`branchAccess`):
+ * `forbidden` once its branch is deleted, `undefined` when there is no such message.
+ */
+export const askingOnAnswer = (actor: Actor, answerId: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<{ readonly conversationId: string }>`
+      SELECT conversation_id AS "conversationId" FROM messages WHERE id = ${answerId}`
+    if (row === undefined) return undefined
+    // A deleted branch's conversation is nobody's to ask in.
+    const found = yield* branchAccess(Option.some(actor), row.conversationId, "conversation")
+    return found === undefined ? "forbidden" : askingOf(found)
+  })

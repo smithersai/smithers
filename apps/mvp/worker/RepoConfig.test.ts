@@ -59,7 +59,7 @@ describe("RepoConfig", () => {
     const value = Option.getOrThrow(services)
     expect(Duration.toMillis(value.deadline)).toBe(5 * 60_000)
     expect(value.budgets).toEqual({
-      maxRepositories: 100,
+      maxRepositories: 100, clonesPerPerson: 3,
       maxStoredBytes: 2e9,
       maxReadBytes: 40e9,
       maxRepositoryBytes: 1e9,

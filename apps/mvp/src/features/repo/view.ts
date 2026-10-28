@@ -1,4 +1,4 @@
-import { CAPACITY_COPY, CLONING, COULDNT_LOAD, FAILURE_COPY, formatBytes, githubRawUrl, NOT_FOUND, NOT_CLONED, rawRoute, SIGN_IN_TO_CLONE } from "./contract"
+import { CAPACITY_COPY, CLONING, COULDNT_LOAD, FAILURE_COPY, formatBytes, githubRawUrl, MEMBERS_CLONE, NOT_FOUND, NOT_CLONED, rawRoute, SIGN_IN_TO_CLONE } from "./contract"
 import { Option } from "effect"
 import { folderOf } from "../generated/contract"
 import { generatedFiles } from "../generated/contribution"
@@ -152,8 +152,11 @@ export const headerOf = (
         return { kind: "cloning" }
       case "sign_in":
         return { kind: "sign_in", text: SIGN_IN_TO_CLONE }
+      case "forbidden":
+        // Members only, with Try again: installing the App or a role given there lets the next try in (ruling AUTH-8).
+        return { kind: "refused", text: MEMBERS_CLONE }
       case "limit":
-        return { kind: "refused", text: CAPACITY_COPY.paused }
+        return { kind: "refused", text: "Clone limit reached." }
       case "failed":
         return { kind: "refused", text: FAILURE_COPY.unavailable }
     }

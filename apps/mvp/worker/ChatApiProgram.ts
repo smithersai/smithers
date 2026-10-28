@@ -82,11 +82,15 @@ const ChatDatabase = Effect.gen(function* () {
  * unless its environment says otherwise (docs/features/spend-alerts.md). `dev`, which only `alchemy dev` sets, lets an
  * alert provider pointed at a local fake send without its key (docs/features/spend-alerts.md#channels). `hostedModel`,
  * which only `alchemy dev` sets, to `true`, is `HOSTED_MODEL_ENABLED`'s default: a deploy answers only with people's
- * own models unless its environment or an Admin turns the deployment's model on (decision 0099).
+ * own models unless its environment or an Admin turns the deployment's model on (decision 0099). `localRoles`, which only
+ * `alchemy dev` sets, are its people's roles on other repositories while the App isn't configured
+ * (`RepoRoles.LocalRoles`).
  */
 export interface ProgramOptions {
   readonly fallback?: SignIn.Signed
   readonly teammates?: Readonly<Record<string, SignIn.Signed>>
+  readonly newcomer?: (name: string) => SignIn.Signed | undefined
+  readonly localRoles?: RepoRoles.LocalRoles
   readonly localHttp?: boolean
   readonly spendAlerts?: boolean
   readonly dev?: boolean
@@ -168,6 +172,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       app,
       allowed,
       local: options.fallback !== undefined && Option.isNone(app),
+      ...(options.localRoles === undefined ? {} : { localRoles: options.localRoles }),
     })
     // The git loop (docs/features/issues.md): GitHub's webhook, the writes route and the issues' shapes, for every
     // repository the deployment acts on (decision 0079, slice 1b).

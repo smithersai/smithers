@@ -3,7 +3,7 @@
 // Electric (`pnpm db:up`). Updates are real Yjs updates from `@smthrs/sync`'s `SharedText`; the texts' rooms are a test
 // `Rooms` that records who joined and what each change of sharing held them to.
 import { SharedText } from "@smthrs/sync"
-import { Effect, Layer, Redacted, Result } from "effect"
+import { Effect, Layer, Option, Redacted, Result } from "effect"
 import { Base64 } from "effect/encoding"
 import { SqlClient } from "effect/sql"
 import { beforeAll, beforeEach, describe, expect, test } from "vitest"
@@ -22,6 +22,11 @@ import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
 import { branchHarness, type BranchHarness, resetBranches, shared, tracked } from "../test/branch.ts"
 import { eventually, recorded, testFile } from "../test/harness.ts"
 import * as Texts from "./Texts.ts"
+import { BranchRoles } from "./Access.ts"
+import * as RepoRoles from "../github/RepoRoles.ts"
+import { repositoryOf } from "../github/Config.ts"
+import { app } from "../github/test/harness.ts"
+import { accountIdOf, appKey, INSTALLATION_ID, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 
 const runtime = testFile("texts")
 beforeEach(() => resetBranches(runtime))
@@ -404,4 +409,70 @@ describe("Texts", () => {
     const h = await open()
     expect((await h.fetch("/api/texts/x/other")).status).toBe(404)
   })
+})
+
+
+test("AUTH-8: the launcher's repository role controls answer-draft writes, sync and rooms, including demotion", async () => {
+  const personId = crypto.randomUUID()
+  const actor: Actor = { subject: { kind: "person", id: personId }, role: null, login: "maya" }
+  const repository = "github/acme/widgets"
+  const github = scriptedGitHub("acme", "widgets")
+  github.roles.set("maya", "write")
+  await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => Effect.all([
+    sql`INSERT INTO people (id, github_id, github_login) VALUES (${personId}::uuid, ${accountIdOf("maya")}, 'maya')`,
+    sql`INSERT INTO github_repositories (repo_id, installation_id) VALUES (${repository}, ${INSTALLATION_ID})`,
+  ])))
+  const branch = await tracked(runtime, repository, "answer-draft", "open", personId)
+  const runId = await run(personId)
+  await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => sql`
+    UPDATE runs SET conversation_id = ${branch.conversationId}::uuid, branch_id = ${branch.branchId}::uuid, repo_id = ${repository}
+    WHERE id = ${runId}::uuid`))
+  const scratch = await runtime.runPromise(TestDatabase.Scratch)
+  const roles = await runtime.runPromise(RepoRoles.make(scratch.database, {
+    repository: repositoryOf("smithersai/smithers"),
+    app: Option.some(app({ privateKey: await appKey() })), http: github.http,
+  }))
+  const branchRoles = BranchRoles.layer(roles)
+  const h = await open(actor, { branchRoles })
+  const textId = crypto.randomUUID()
+  const update = typed("answer draft")
+  const updateId = crypto.randomUUID()
+  expect((await write(h, textId, { run: runId }, update, { id: updateId })).status).toBe(200)
+  const shape = await h.fetch(`${TEXTS_SHAPE_ROUTE}?offset=-1&text=${textId}&run=${runId}`)
+  expect(shape.status).toBe(200)
+  expect(h.electric.at(-1)!.searchParams.get("params[1]")).toBe(`run:${runId}`)
+  const join = () => h.fetch(`${textRoomRoute(textId)}?run=${runId}`, {
+    headers: { upgrade: "websocket", connection: "Upgrade", origin: "http://chat.test" },
+  })
+  expect((await join()).status).toBe(200)
+  expect(h.rooms.joined.at(-1)!.member).toMatchObject({ principal: personId, role: "member", access: "owner" })
+  const other = await open({ ...actor, subject: { kind: "person", id: crypto.randomUUID() } }, { branchRoles })
+  expect((await write(other, textId, { run: runId }, typed("not the launcher"))).status).toBe(403)
+  // Runs that carry only a repository or branch still use that repository, never the deployment's role.
+  await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => sql`UPDATE runs SET conversation_id = NULL, branch_id = NULL WHERE id = ${runId}::uuid`))
+  expect((await write(h, textId, { run: runId }, update, { id: updateId })).status).toBe(200)
+  await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => sql`UPDATE runs SET branch_id = ${branch.branchId}::uuid WHERE id = ${runId}::uuid`))
+  expect((await write(h, textId, { run: runId }, update, { id: updateId })).status).toBe(200)
+  await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => sql`UPDATE runs SET branch_id = NULL WHERE id = ${runId}::uuid`))
+  // Even a deployment Admin cannot retain the draft after a repository demotion.
+  github.roles.set("maya", "read")
+  await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => sql`TRUNCATE github_repo_roles`))
+  const demoted = await open({ ...actor, role: "admin" }, { branchRoles })
+  expect((await write(demoted, textId, { run: runId }, typed("denied"))).status).toBe(403)
+  const hidden = await demoted.fetch(`${TEXTS_SHAPE_ROUTE}?offset=-1&text=${textId}&run=${runId}`)
+  expect(hidden.status).toBe(200)
+  expect(demoted.electric.at(-1)!.searchParams.get("params[1]")).toBe("none")
+  expect((await demoted.fetch(`${textRoomRoute(textId)}?run=${runId}`, {
+    headers: { upgrade: "websocket", connection: "Upgrade", origin: "http://chat.test" },
+  })).status).toBe(403)
+  expect(textOf(await stored(`run:${runId}`, textId))).toBe("answer draft")
+  await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => sql`UPDATE runs SET conversation_id = ${branch.conversationId}::uuid, branch_id = ${branch.branchId}::uuid WHERE id = ${runId}::uuid`))
+  await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => sql`UPDATE branches SET deleted_at = now() WHERE id = ${branch.branchId}::uuid`))
+  expect((await write(demoted, textId, { run: runId }, typed("deleted branch"))).status).toBe(403)
+})
+
+test("a legacy run without a conversation is refused when its home repository is unavailable", async () => {
+  const runId = await run("person-maya")
+  const h = await open(maya, { config: { GITHUB_REPOSITORY: "nobody/nothing" } })
+  expect((await write(h, crypto.randomUUID(), { run: runId }, typed("no home"))).status).toBe(403)
 })

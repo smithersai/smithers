@@ -132,6 +132,11 @@ export interface RepoHarnessOptions {
    * there alone. Unless set, a repository no test opens, so a role counts nowhere.
    */
   readonly roles?: string
+  /**
+   * Who has which role on a repository other than `roles`: as a deployment without the App gives them (the session's)
+   * unless set, as a test of roles through the App sets them (worker/branch/Access.ts `BranchRoles`).
+   */
+  readonly branchRoles?: Layer.Layer<BranchRoles>
   /** RepoApi's and the flow's configuration, in place of the environment. */
   readonly config?: Record<string, string>
   /** The scripted Code Storage and GitHub: a fresh one unless set. */
@@ -283,7 +288,7 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
   const handler = HttpEffect.toWebHandler(
     observed(
       repo.fetch.pipe(
-        Effect.provide(BranchRoles.layer(roles)),
+        Effect.provide(options.branchRoles ?? BranchRoles.layer(roles)),
         Effect.provide(
           options.sessions ?? (options.actor === null ? Actor.signedOut : signedIn(options.actor ?? member)),
         ),

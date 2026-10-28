@@ -6,6 +6,7 @@ import { repoId } from "../src/features/repo/contract.ts"
 import { type AboutRefused, type AboutStage, graphql, rest } from "./about/GitHubRead.ts"
 import type { AboutStore, KeptAnswer, KeptRefusal, Via } from "./about/Store.ts"
 import { codeOf } from "./ErrorCode.ts"
+import { appSlug } from "./GitHubAuth.ts"
 import * as GitHubConfig from "./github/Config.ts"
 import * as ReadToken from "./github/ReadToken.ts"
 import { allowed as allowedRepositories } from "./github/RepoRoles.ts"
@@ -100,8 +101,7 @@ export const settings = Effect.gen(function* () {
   return {
     token: yield* ReadToken.fromConfig,
     apiBaseUrl: yield* Config.String("GITHUB_API_URL").pipe(Config.withDefault(GitHubConfig.DEFAULT_API_URL)),
-    appSlug: yield* Config.schema(Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,99}$/)), "GITHUB_APP_SLUG")
-      .pipe(Config.withDefault("smithers")),
+    appSlug: yield* appSlug,
     freshFor: yield* minutes("REPO_ABOUT_FRESH_MINUTES", 10),
     anonymousFreshFor: yield* minutes("REPO_ABOUT_ANONYMOUS_FRESH_MINUTES", 60),
     app: yield* GitHubConfig.configured.pipe(Effect.orElseSucceed(() => Option.none<GitHubConfig.GitHubApp>())),

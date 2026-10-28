@@ -1,6 +1,5 @@
 import { ConnectionPill } from "../../chat/components/ConnectionPill"
 import { OFFLINE } from "../../chat/contract"
-import { ownRepository } from "../../auth/viewer"
 import { useRepoAnswer } from "../../repo/components/RepoContext"
 import { mayAsk } from "../../auth/contract"
 import { RepositoryHome, type RepositoryHomeLive, SegmentedControl, Skeleton } from "@smthrs/ui"
@@ -106,7 +105,7 @@ function HomeContent({ tree }: { readonly tree: ReactNode }) {
       data-audience={page.audience}
       sections={page.sections}
       files={filesOf(files ?? [])}
-      askHref={session?.status === "signed_in" && mayAsk(session.role) && ownRepository(answer) ? page.askHref : undefined}
+      askHref={session?.status === "signed_in" && answer !== undefined && mayAsk(answer.role) ? page.askHref : undefined}
       onAsk={ask}
       offered={offered}
       live={live}

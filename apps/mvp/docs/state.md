@@ -54,7 +54,7 @@ When a second frontend (the TUI) starts using a feature's machine, the framework
 
 ## Sign-in (2026-10-20)
 
-`src/features/auth/` follows every rule above: one local row (`AuthStore`) saying who is signed in, and the last session ChatApi confirmed, kept on the device (`auth-confirmed`), so a Member who reloads offline can still ask; `load`, `pressSignIn` and `signOut` as actions; after ChatApi ends the session, `signOut` runs the host's `wipe` (`DeviceWipe`), which deletes the device's database, the engine's store and the outbox at the next boot of every tab; and `Auth` binding them for frontends. Its components are a link ("Sign in with GitHub"), the account in the header and `ComposerGate`, which shows the composer only to a Member or above ("Members can ask Smithers." for a Guest, the sign-in prompt when signed out). Its unit tests (`auth.test.ts`) run against sign-in's real routes with the scripted GitHub. See [sign-in.md](features/sign-in.md#the-browser).
+`src/features/auth/` follows every rule above: one local row (`AuthStore`) saying who is signed in, and the last session ChatApi confirmed, kept on the device (`auth-confirmed`), so a Member who reloads offline can still ask; `load`, `pressSignIn` and `signOut` as actions; after ChatApi ends the session, `signOut` runs the host's `wipe` (`DeviceWipe`), which deletes the device's database, the engine's store and the outbox at the next boot of every tab; and `Auth` binding them for frontends. Its components are a link ("Sign in with GitHub"), the account in the header and `ComposerGate`, which shows the composer only to a Member or above of the conversation's repository ("Members can ask Smithers." for a Guest there, the sign-in prompt when signed out; ruling AUTH-8). Its unit tests (`auth.test.ts`) run against sign-in's real routes with the scripted GitHub. See [sign-in.md](features/sign-in.md#the-browser).
 
 ## Slash commands (2026-10-20)
 
@@ -151,6 +151,10 @@ Tests: `src/features/chat/chat.test.ts` (asking, sending and resending, refusals
 ## Your conversations (2026-10-22)
 
 `src/features/conversations/` follows every rule above ([conversations.md](features/conversations.md#the-browser), decision [0013](decisions/0013-branch-workspace.md)); the branch layer composes it, so frontends reach it as `branch.conversations`. `my-conversations` is an Electric collection of the person's own `conversation_people` rows, kept on the device; `conversation-pending` keeps the archives and restores this device did until the rows show them; `conversation-search` and `conversation-list` are local rows, the list worked out by the pure `listOf` from the other three in a follower that also forgets landed acts. Archive and Restore write `conversation-pending` and dispatch `conversation/archive`; `/new` dispatches `conversation/new` with the repository of the branch the tab shows (`BranchStore`, which `appLayer` now provides below the composer's store).
+
+## First run (2026-10-27)
+
+`src/features/first-run/` follows every rule above ([first-run.md](features/first-run.md), decision [0121](decisions/0121-first-run.md)). `first-run` is one local row: what `/app` shows in the composer's place, worked out by the pure `firstRunOf` in a follower over sign-in's session and confirmed rows, your model's rows, your conversations' rows and chat's composer row, which also logs and counts each step it comes to show. `press` records the list's own Open settings. `appLayer` builds `FirstRun` above every store it reads; `render` gets `firstRun`, which main.tsx gives the `FirstRunProvider`. Tests: `view.test.ts`, `firstRun.test.ts` (the whole app on a Node device), `tests/FirstRun.test.ts`.
 
 ## File tabs (2026-10-21)
 

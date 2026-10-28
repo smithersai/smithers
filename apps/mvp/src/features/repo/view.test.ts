@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { CAPACITY_COPY, CLONING, COULDNT_LOAD, FAILURE_COPY, NOT_CLONED, READING_PAUSED, SIGN_IN_TO_CLONE } from "./contract"
+import { CAPACITY_COPY, CLONING, COULDNT_LOAD, FAILURE_COPY, MEMBERS_CLONE, NOT_CLONED, READING_PAUSED, SIGN_IN_TO_CLONE } from "./contract"
 import { type AboutRow, type BlobRow, type CloneRow, emptyView, type RefsRow, type TreeRow, type ViewRow } from "./rows"
 import type { About, Repository } from "./schema"
 import {
@@ -129,6 +129,8 @@ describe("codeEmptyOf", () => {
     expect(codeEmptyOf(headerOf(undefined, undefined, false))).toBe(NOT_CLONED)
     expect(codeEmptyOf(headerOf(repository({ status: "failed", failure: "timed_out" }), undefined, true))).toBe(NOT_CLONED)
     expect(codeEmptyOf(headerOf(undefined, clone("limit"), true))).toBe(NOT_CLONED)
+    expect(headerOf(undefined, clone("forbidden"), true)).toEqual({ kind: "refused", text: MEMBERS_CLONE })
+    expect(codeEmptyOf(headerOf(undefined, clone("forbidden"), true))).toBe(NOT_CLONED)
     expect(codeEmptyOf(headerOf(repository({ status: "cloning" }), undefined, true))).toBe(CLONING)
     expect(codeEmptyOf(headerOf(undefined, clone("requesting"), true))).toBe(CLONING)
   })
@@ -163,7 +165,7 @@ describe("headerOf", () => {
       kind: "cloning",
     })
     expect(headerOf(undefined, clone("sign_in"), null)).toEqual({ kind: "sign_in", text: SIGN_IN_TO_CLONE })
-    expect(headerOf(undefined, clone("limit"), true)).toEqual({ kind: "refused", text: CAPACITY_COPY.paused })
+    expect(headerOf(undefined, clone("limit"), true)).toEqual({ kind: "refused", text: "Clone limit reached." })
     expect(headerOf(undefined, clone("failed"), true)).toEqual({ kind: "refused", text: FAILURE_COPY.unavailable })
   })
 

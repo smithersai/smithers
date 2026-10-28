@@ -4,8 +4,8 @@ import { SqlClient } from "effect/sql"
 import { MAX_ANSWER_BODY_BYTES } from "../src/features/agent/contract.ts"
 import { AnswerWrite, type Turn } from "../src/features/agent/schema.ts"
 import { agentLiveSeconds } from "../src/features/model/contract.ts"
-import { type Actor, boundTo, canAsk, Sessions } from "./Actor.ts"
-import { branchAccess, canEdit } from "./branch/Access.ts"
+import { boundTo, Sessions } from "./Actor.ts"
+import { askingOnAnswer } from "./branch/Access.ts"
 import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as Notifications from "./Notifications.ts"
@@ -14,9 +14,10 @@ import * as Messages from "./Messages.ts"
 // The answer routes (docs/features/agent.md#the-answer-routes): the server's write path for the answers the browser's
 // agent gives (decision 0011). The agent reads its turn here, then writes its parts while it streams and its text or
 // failure when it settles. Only the person who asked the question may (`asked_by`, recorded from their session when
-// they asked), and only while they may still ask (Member or above, decision 0007) and edit the conversation's branch
-// (worker/branch/Access.ts), like the model endpoint: another Member, or an asker whose access to the branch was taken
-// away, can't read the turn, write, settle or learn whether a settle landed. An answer changes only while it is
+// they asked), and only while they may still ask there (Member or above on the conversation's repository, decision 0007,
+// ruling AUTH-8) and edit the conversation's branch (worker/branch/Access.ts `askingOnAnswer`): another Member, or an
+// asker whose role there or access to the branch was taken away, can't read the turn, write, settle or learn whether a
+// settle landed. An answer changes only while it is
 // `streaming`; a settle sent again after it landed is answered as landed. Confirmed durable-engine heartbeats renew
 // liveness independently of visible text. A later turn fences expired predecessors as abandoned before reading history.
 
@@ -160,21 +161,6 @@ const landed = (
     : write.status === "failed" && row.status === "failed" && row.failure === write.failure
 
 /**
- * Whether `actor` may still edit the branch of answer `answerId`'s conversation: `true` when there is no such message,
- * which the turn and write answer 404 themselves.
- */
-const mayEdit = (actor: Actor, answerId: string) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly conversationId: string }>`
-      SELECT conversation_id AS "conversationId" FROM messages WHERE id = ${answerId}`
-    if (row === undefined) return true
-    // Every message's conversation has its branch (the foreign keys).
-    const branch = yield* branchAccess(Option.some(actor), row.conversationId, "conversation")
-    return canEdit(branch!.access)
-  })
-
-/**
  * Reads `ANSWER_TURN_LIVE_SECONDS` and returns the answer routes' handler for one answer id: `GET` reads its turn,
  * `POST` writes it. Each request is a log line `chat.answer.turn` or `chat.answer.write`, a span
  * `chat.answer.request` and a count. `database` opens a Postgres client for the scope of each request.
@@ -268,12 +254,13 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           if (!Schema.is(Schema.String.check(Schema.isUUID()))(answerId)) return refusal(404, "not_found")
           const actor = yield* (yield* Sessions).resolve
           if (Option.isNone(actor)) return refusal(401, "authentication")
-          // A Guest, or a person with no role, may not ask, so may not write an answer either.
-          if (!canAsk(actor.value)) return refusal(403, "forbidden")
           // A run's credential writes only the answer its chain started from (decision 0017 slice 0).
           if (!boundTo(actor.value, answerId.toLowerCase())) return refusal(403, "other_run")
-          if (!(yield* mayEdit(actor.value, answerId).pipe(Effect.provide(database)))) {
-            fields.errorCode = "view_only"
+          // Only a Member or above on the conversation's repository who may edit its branch asks there, so writes its
+          // answers (ruling AUTH-8): a Guest there, or a person with no role there, never.
+          const asking = yield* askingOnAnswer(actor.value, answerId).pipe(Effect.provide(database))
+          if (asking !== undefined && asking !== "ask") {
+            fields.errorCode = asking
             return refusal(403, "forbidden")
           }
           // Only the asker, or an agent acting for them, writes their answer.

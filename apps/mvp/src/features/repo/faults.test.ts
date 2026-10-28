@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import { openTab, type Tab } from "../../test/repoDevice"
 import { AuthStore } from "../auth/store"
 import { RepoClient, RepoRefused } from "./api"
-import { CAPACITY_COPY, FAILURE_COPY, SIGN_IN_TO_CLONE } from "./contract"
+import { CAPACITY_COPY, FAILURE_COPY, MEMBERS_CLONE, SIGN_IN_TO_CLONE } from "./contract"
 import { cloneClicks, clones, opens } from "./metrics"
 import { NotCopied } from "./repo"
 import { VIEW } from "./rows"
@@ -91,8 +91,22 @@ describe("cloning when RepoApi doesn't take it", () => {
     expect(tab.lines("repo.clone")[0]!.annotations).toMatchObject({ outcome: "sign_in", status: 401, feature: "repo" })
   })
 
+  test("not a Member there (403): the header says Members can clone., and Try again asks again once that changed (ruling AUTH-8)", async () => {
+    let answer: Effect.Effect<never, RepoRefused> | undefined = Effect.fail(new RepoRefused({ status: 403, code: "forbidden" }))
+    const client = cloning(() => answer ?? Effect.fail(new RepoRefused({ status: 429, code: "repository_limit" })))
+    const tab = await open(client.layer)
+    tab.repo.actions.open({ owner: "o", name: "n", kind: "tree", ref: null, path: "", line: null, lineEnd: null })
+    tab.repo.actions.clone("o", "n")
+    await waitFor(() => expect(header(tab)).toEqual({ kind: "refused", text: MEMBERS_CLONE }))
+    expect(tab.count(clones, { outcome: "forbidden" })).toBe(1)
+    // The person installed the App on it: Try again asks RepoApi again, which now answers otherwise.
+    answer = undefined
+    tab.repo.actions.retryClone("o", "n")
+    await waitFor(() => expect(header(tab)).toEqual({ kind: "refused", text: "Clone limit reached." }))
+    expect(client.calls).toEqual(["o/n", "o/n"])
+  })
+
   test.each([
-    [403, "forbidden", "forbidden"],
     [400, "invalid", "invalid"],
     [503, "not_configured", "not_configured"],
     [503, "unavailable", "unavailable"],
@@ -110,7 +124,7 @@ describe("cloning when RepoApi doesn't take it", () => {
     const tab = await open(client.layer)
     tab.repo.actions.open({ owner: "octocat", name: "Spoon-Knife", kind: "tree", ref: null, path: "", line: null, lineEnd: null })
     tab.repo.actions.clone("octocat", "Spoon-Knife")
-    await waitFor(() => expect(header(tab)).toEqual({ kind: "refused", text: CAPACITY_COPY.paused }))
+    await waitFor(() => expect(header(tab)).toEqual({ kind: "refused", text: "Clone limit reached." }))
     tab.repo.actions.retryClone("octocat", "Spoon-Knife")
     await waitFor(() => expect(tab.count(clones, { outcome: "limit" })).toBe(2))
     expect(client.calls).toEqual(["octocat/Spoon-Knife", "octocat/Spoon-Knife"])
@@ -149,10 +163,22 @@ describe("cloning when RepoApi doesn't take it", () => {
     expect(tab.lines("repo.clone.launch").map((line) => line.annotations.outcome)).toEqual(["unavailable", "launched"])
   })
 
-  test("a launch RepoApi refuses is final: Couldn't clone, and it isn't asked again", async () => {
+  test("a launch RepoApi refuses is final: Members can clone. once the role there is gone, and it isn't asked again", async () => {
     const client = cloning(
       () => Effect.succeed({ txid: 42, id: "github/o/n", attempt: 1, cloneId: "c1" }),
       () => Effect.fail(new RepoRefused({ status: 403, code: "forbidden" })),
+    )
+    const tab = await open(client.layer)
+    tab.repo.actions.open({ owner: "o", name: "n", kind: "tree", ref: null, path: "", line: null, lineEnd: null })
+    tab.repo.actions.clone("o", "n")
+    await waitFor(() => expect(header(tab)).toEqual({ kind: "refused", text: MEMBERS_CLONE }))
+    expect(client.launches).toEqual(["o/n c1"])
+  })
+
+  test("a launch RepoApi refuses for another reason is final: Couldn't clone, and it isn't asked again", async () => {
+    const client = cloning(
+      () => Effect.succeed({ txid: 42, id: "github/o/n", attempt: 1, cloneId: "c1" }),
+      () => Effect.fail(new RepoRefused({ status: 400, code: "invalid" })),
     )
     const tab = await open(client.layer)
     tab.repo.actions.open({ owner: "o", name: "n", kind: "tree", ref: null, path: "", line: null, lineEnd: null })

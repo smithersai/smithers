@@ -20,15 +20,15 @@ import {
   WriteRequest,
 } from "../src/features/flows-ui/schema.ts"
 import { placementOf, SOURCE_PATH } from "../src/features/flows-ui/source.ts"
-import { type Actor, canAsk, refusesPersonOnly, Sessions } from "./Actor.ts"
+import { type Actor, refusesPersonOnly, Sessions } from "./Actor.ts"
 import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as ShapeAccess from "./ShapeAccess.ts"
 
 // A person's own flows in ChatApi (decision 0014 §1 and §2, docs/features/flows.md#your-own-flows). A person's flow is
 // flow source, a `Flow.make` module stored here and synced to their devices, with where its latest revision runs
-// (`placement`, read from the source by `placementOf`). Only its owner reads or writes it, and only a person who may ask
-// Smithers (Member or above, decision 0007) has any, because running one asks the model.
+// (`placement`, read from the source by `placementOf`). Only its owner reads or writes it, and anyone signed in may have
+// some: running one asks their own model (ruling AUTH-8).
 //
 // - `GET /api/flows`: the person's live flows, newest first.
 // - `GET /api/flows/source?name=<name>[&revision=<n>][&flowId=<id>]`: one flow's source at a revision (the latest
@@ -482,9 +482,9 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         const fields: Fields = { route }
         const response = yield* Effect.gen(function* () {
           const actor = yield* (yield* Sessions).resolve
+          // Anyone signed in: a person's own flows are theirs and ask their own model (ruling AUTH-8); none runs on a
+          // machine yet (docs/features/flows.md#your-own-flows).
           if (Option.isNone(actor)) return refusal(401, "authentication")
-          // A Guest, or a person with no role, may not ask, so has no flows to write or run.
-          if (!canAsk(actor.value)) return refusal(403, "forbidden")
           return yield* handle(request, actor.value, fields).pipe(Effect.provide(database))
         }).pipe(
           Effect.catchCause((cause) =>

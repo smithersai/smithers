@@ -14,6 +14,25 @@ const sealedOrNull = (value: unknown) => (value === null ? null : decodeSealed(v
 const json = (value: Sealed | null) => (value === null ? null : JSON.stringify(value))
 const millis = (value: string | null) => (value === null ? null : Number(value))
 
+/** The person's newest authority receipt, including a verified demotion from a session later signed out. */
+const latestRole = (sql: SqlClient.SqlClient, person: Statement.Fragment) => sql`(
+  SELECT authority.role FROM sessions authority WHERE authority.person_id = ${person}
+  ORDER BY authority.role_generation DESC, authority.role_checked_at DESC, authority.created_at DESC, authority.id DESC LIMIT 1
+)`
+
+const latestGeneration = (sql: SqlClient.SqlClient, person: Statement.Fragment) => sql`(
+  SELECT max(authority.role_generation) FROM sessions authority WHERE authority.person_id = ${person}
+)`
+
+/** Issue before contacting GitHub. Sequence order survives delayed replies, clock changes and transaction rollbacks. */
+export const roleObservation = Effect.flatMap(SqlClient.SqlClient, sql => Effect.map(
+  sql<{ generation: string }>`SELECT nextval('role_observations')::text AS generation`, rows => rows[0]!.generation))
+
+/** Serialize verified receipts and failed-refresh copies for the same person, across all their sessions. */
+const lockRole = (sql: SqlClient.SqlClient, sessionId: string) => sql`
+  SELECT id FROM people WHERE id = (SELECT person_id FROM sessions WHERE id = ${sessionId}) FOR UPDATE`
+
+
 /**
  * Why a session ended early: the person signed out, GitHub refused its tokens, or its sealed tokens no longer open
  * (SESSION_SECRET changed).
@@ -66,12 +85,13 @@ export const upsertPerson = (person: { readonly id: string; readonly githubId: n
     return row!.id
   })
 
-/** A new session, its role checked now, ending `maxAgeSeconds` from now. */
+/** A new session with its pre-read observation generation; returns the person's effective role. */
 export const createSession = (session: {
   readonly id: string
   readonly tokenDigest: string
   readonly personId: string
   readonly role: Role | null
+  readonly roleGeneration: string
   readonly access: Sealed
   readonly accessExpiresAt: number | null
   readonly refresh: Sealed | null
@@ -80,14 +100,19 @@ export const createSession = (session: {
 }) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    yield* sql`
-      INSERT INTO sessions (id, token_digest, person_id, role, role_checked_at, github_access, github_access_expires_at,
+    return yield* sql.withTransaction(Effect.gen(function* () {
+      yield* sql`SELECT id FROM people WHERE id = ${session.personId} FOR UPDATE`
+      yield* sql`
+      INSERT INTO sessions (id, token_digest, person_id, role, role_generation, role_checked_at, github_access, github_access_expires_at,
         github_refresh, github_refresh_digest, expires_at)
-      VALUES (${session.id}, ${session.tokenDigest}, ${session.personId}, ${session.role}, now(),
+      VALUES (${session.id}, ${session.tokenDigest}, ${session.personId}, ${session.role}, ${session.roleGeneration}::bigint, clock_timestamp(),
         ${json(session.access)}::jsonb,
         ${session.accessExpiresAt === null ? null : new Date(session.accessExpiresAt).toISOString()}::timestamptz,
         ${json(session.refresh)}::jsonb, ${session.refreshDigest},
         now() + make_interval(secs => ${session.maxAgeSeconds}))`
+      const [row] = yield* sql<{ role: Role | null }>`SELECT ${latestRole(sql, sql`${session.personId}::uuid`)} AS role`
+      return row!.role
+    }))
   })
 
 /** A live session: its id, its person's id and login, its role and when the role was last checked (epoch ms). */
@@ -104,7 +129,7 @@ const findLiveBy = (which: (sql: SqlClient.SqlClient) => Statement.Fragment) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<Omit<Live, "roleCheckedAt"> & { readonly roleCheckedAt: string }>`
-      SELECT s.id, s.person_id AS "personId", p.github_login AS login, s.role,
+      SELECT s.id, s.person_id AS "personId", p.github_login AS login, ${latestRole(sql, sql`s.person_id`)} AS role,
         (extract(epoch FROM s.role_checked_at) * 1000)::bigint::text AS "roleCheckedAt"
       FROM sessions s JOIN people p ON p.id = s.person_id
       WHERE ${which(sql)} AND s.revoked_at IS NULL AND s.expires_at > now()`
@@ -116,6 +141,23 @@ const findLiveBy = (which: (sql: SqlClient.SqlClient) => Statement.Fragment) =>
 
 /** The live session whose token has `tokenDigest`: not signed out, not revoked and not past its end. */
 export const findLive = (tokenDigest: string) => findLiveBy((sql) => sql`s.token_digest = ${tokenDigest}`)
+
+/**
+ * Whether person `personId` is a Member or above of the deployment's own repository (`GITHUB_REPOSITORY`), as sign-in
+ * last observed it on any session of theirs, with at least one session still live: the people whose model calls without a model of their own, and whose
+ * clones, the deployment pays for (ruling AUTH-8). The latest check decides, so a demotion found on one session
+ * outranks an older session's role. A person with no live session is not one.
+ */
+export const deploymentMember = (personId: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<{ readonly member: boolean | null }>`
+      SELECT ${latestRole(sql, sql`p.id`)} IN ('member', 'maintainer', 'admin') AS member FROM people p
+      WHERE p.id::text = ${personId} AND EXISTS (
+        SELECT 1 FROM sessions live WHERE live.person_id = p.id AND live.revoked_at IS NULL AND live.expires_at > now()
+      )`
+    return row?.member === true
+  })
 
 /** A verified cookie's stable person, including an ended session whose GitHub revocation still needs delivery. */
 export const ownerOf = (tokenDigest: string) => Effect.gen(function* () {
@@ -232,19 +274,30 @@ export const replaceTokens = (
     return rows.length > 0
   })
 
-/** Records session `id`'s role, checked now. */
-export const setRole = (id: string, role: Role | null) =>
+/** Publishes a pre-read observation without replacing a newer receipt; returns the person's effective role. */
+export const setRole = (id: string, role: Role | null, generation: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    yield* sql`UPDATE sessions SET role = ${role}, role_checked_at = now() WHERE id = ${id} AND revoked_at IS NULL`
+    return yield* sql.withTransaction(Effect.gen(function* () {
+      yield* lockRole(sql, id)
+      yield* sql`UPDATE sessions SET role = ${role}, role_generation = ${generation}::bigint, role_checked_at = clock_timestamp()
+        WHERE id = ${id} AND role_generation <= ${generation}::bigint`
+      const [row] = yield* sql<{ role: Role | null }>`SELECT ${latestRole(sql, sql`(SELECT person_id FROM sessions WHERE id = ${id})`)} AS role`
+      return row!.role
+    }))
   })
 
 /**
- * Keeps session `id`'s role and records a check now, after one that couldn't reach GitHub or Postgres: the role stays
- * until the next check, which starts once this one is `ROLE_RECHECK_MINUTES` old.
+ * A failed refresh schedules the next check while copying the person's newest role receipt. It cannot promote an
+ * older session over a confirmed demotion, even if the session that learned it was later signed out.
  */
 export const keepRole = (id: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    yield* sql`UPDATE sessions SET role_checked_at = now() WHERE id = ${id} AND revoked_at IS NULL`
+    yield* sql.withTransaction(Effect.gen(function* () {
+      yield* lockRole(sql, id)
+      yield* sql`UPDATE sessions s SET role = ${latestRole(sql, sql`s.person_id`)},
+        role_generation = ${latestGeneration(sql, sql`s.person_id`)}, role_checked_at = clock_timestamp()
+        WHERE id = ${id} AND revoked_at IS NULL`
+    }))
   })

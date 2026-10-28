@@ -6,8 +6,9 @@ import { useAuth } from "./AuthContext"
 import { SignInButton } from "./SignInButton"
 
 // Who is signed in, for the header: their GitHub login and Sign out; or, signed out, the sign-in button, with
-// "Couldn't sign in." after GitHub's callback failed.
-export function Account() {
+// "Couldn't sign in." after GitHub's callback failed. A page whose own content offers sign-in, `/app`'s first run, passes
+// `signIn={false}`, so the page has one sign-in action.
+export function Account({ signIn = true }: { readonly signIn?: boolean } = {}) {
   const { queries, actions } = useAuth()
   const { data: session } = useLiveQuery(queries.session)
   const search: Record<string, unknown> = useSearch({ strict: false })
@@ -25,7 +26,7 @@ export function Account() {
   return (
     <span aria-label="Account">
       {search[SIGN_IN_FAILED_PARAM] === "failed" ? <span role="alert">{SIGN_IN_FAILED}</span> : null}
-      <SignInButton />
+      {signIn ? <SignInButton /> : null}
     </span>
   )
 }

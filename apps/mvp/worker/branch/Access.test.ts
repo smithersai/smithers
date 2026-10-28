@@ -3,8 +3,8 @@
 // share it with people by name, to view or edit, or with anyone in the repository who has the link, Members only.
 // Every check decides with the person's role on the branch's own repository (decision 0079), from the real `RepoRoles`
 // over the scripted GitHub where the App is installed; elsewhere the session's role.
-import { Effect, Exit, type Layer, Option, type Redacted } from "effect"
-import type { SqlClient } from "effect/sql"
+import { Effect, Exit, Layer, Option, type Redacted } from "effect"
+import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import type { Actor, Role } from "../Actor.ts"
@@ -17,6 +17,8 @@ import { resetBranches, shared, tracked } from "../test/branch.ts"
 import { branchRoles, testFile } from "../test/harness.ts"
 import {
   accessOf,
+  askingOf,
+  askingOnAnswer,
   branchAccess as branchAccessIn,
   branchAccessAs,
   BranchRoles,
@@ -275,6 +277,24 @@ describe("roles per repository (decision 0079)", () => {
     expect(await run(roleOn(Option.getOrThrow(maya(null)), WIDGETS, true), await withApp(github))).toBe("admin")
   })
 
+  test("a repository Smithers hasn't recorded the App on takes BranchRoles' uninstalled role when it has one", async () => {
+    const branch = await tracked(runtime, WIDGETS, "main")
+    await shared(runtime, branch.branchId, "repository", "edit")
+    const asked: Array<string> = []
+    const local = Layer.succeed(BranchRoles, BranchRoles.of({
+      roleOn: () => Effect.die("never asked: the App isn't recorded there"),
+      uninstalled: (_, repoId) => {
+        asked.push(repoId)
+        return "admin"
+      },
+    }))
+    expect(await run(branchAccessIn(maya(null), branch.branchId), local)).toMatchObject({ access: "edit", role: "admin" })
+    expect(asked).toEqual([WIDGETS])
+    // A BranchRoles with no uninstalled role keeps the session's.
+    const plain = Layer.succeed(BranchRoles, BranchRoles.of({ roleOn: () => Effect.die("never asked: the App isn't recorded there") }))
+    expect(await run(branchAccessIn(maya("member"), branch.branchId), plain)).toMatchObject({ access: "edit", role: "member" })
+  })
+
   test("branchAccessAs decides with the role the actor carries, asking no one", async () => {
     const branch = await tracked(runtime, WIDGETS, "main")
     await shared(runtime, branch.branchId, "repository", "edit")
@@ -282,5 +302,34 @@ describe("roles per repository (decision 0079)", () => {
     expect(await runtime.runPromise(branchAccessAs(maya("member"), branch.branchId))).toMatchObject({ access: "edit", role: "member" })
     expect(await runtime.runPromise(branchAccessAs(maya("guest"), branch.branchId, "branch"))).toMatchObject({ access: "none" })
     expect(await runtime.runPromise(branchAccessAs(maya("member"), crypto.randomUUID()))).toBeUndefined()
+  })
+})
+
+describe("who may ask in a conversation (ruling AUTH-8)", () => {
+  const found = (role: Role | null, access: "owner" | "edit" | "view" | "none") =>
+    ({ branchId: "b", conversationId: "c", repoId: REPO, name: "main", mode: "open", createdBy: null, access, role, shared: false }) as const
+
+  test("a Member or above there who may edit asks; one who may not only views; anyone below Member there is refused", () => {
+    for (const role of ["admin", "maintainer", "member"] as const) {
+      expect([askingOf(found(role, "owner")), askingOf(found(role, "edit")), askingOf(found(role, "view")), askingOf(found(role, "none"))], role)
+        .toEqual(["ask", "ask", "view_only", "view_only"])
+    }
+    expect([askingOf(found("guest", "view")), askingOf(found(null, "none"))]).toEqual(["forbidden", "forbidden"])
+  })
+
+  test("askingOnAnswer reads the answer's conversation: none for no message, forbidden once its branch is deleted", async () => {
+    const branch = await tracked(runtime, REPO, `ask-${crypto.randomUUID().slice(0, 8)}`)
+    await shared(runtime, branch.branchId, "repository", "edit")
+    const answerId = crypto.randomUUID()
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      client`INSERT INTO messages (id, role, text, status, conversation_id) VALUES (${answerId}, 'user', 'Hello', 'done', ${branch.conversationId})`))
+    const roles = await withoutApp()
+    const on = (actor: Actor, id = answerId) => runtime.runPromise(askingOnAnswer(actor, id).pipe(Effect.provide(roles)))
+    expect(await on(Option.getOrThrow(person("member")))).toBe("ask")
+    expect(await on(Option.getOrThrow(person("guest")))).toBe("forbidden")
+    expect(await on(Option.getOrThrow(person("member")), crypto.randomUUID())).toBeUndefined()
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) =>
+      client`UPDATE branches SET deleted_at = now() WHERE id = ${branch.branchId}`))
+    expect(await on(Option.getOrThrow(person("member")))).toBe("forbidden")
   })
 })

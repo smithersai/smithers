@@ -25,6 +25,10 @@ import { BUILTIN } from "../../plugins/builtin"
 import { Plugins } from "../../plugins/plugins"
 import { hostFacts } from "../../plugins/facts"
 import { type Command, COMMANDS, commandsFor, commandsOf, pluginCommands, rankOf, summary, type Viewer, viewerOf } from "./catalog"
+import { BranchStore } from "../branch/store"
+import { CURRENT } from "../branch/schema"
+import { RepoStore } from "../repo/store"
+import { repoId } from "../repo/contract"
 import { Commands } from "./commands"
 import { choices, submits } from "./metrics"
 import { CommandsStore } from "./store"
@@ -52,7 +56,7 @@ const person = (role: Actor["role"]): Actor => ({ subject: { kind: "person", id:
  */
 const open = async (options: TabOptions = {}, actor: Actor | null = person("member")) => {
   const runtime: ManagedRuntime.ManagedRuntime<
-    Commands | Chat | ChatStore | CommandsStore | ThemeStore | AuthStore | TestChatApi | Plugins | FlowDispatch | IssuesStore | TodosStore | RunSteers | SteerWrites,
+    Commands | Chat | ChatStore | CommandsStore | ThemeStore | AuthStore | TestChatApi | Plugins | FlowDispatch | IssuesStore | TodosStore | RunSteers | SteerWrites | BranchStore | RepoStore,
     unknown
   > = openTestApp(options, { actor })
   runtimes.push(runtime)
@@ -715,4 +719,84 @@ test("command-choice records explain keyboard matching without retaining the typ
   }))
   expect(JSON.stringify(logs)).not.toContain("/bug")
   await until(() => expect(tab.count(Metric.withAttributes(dispatches, { flow: "app/navigate", door: "slash", outcome: "done" }))).toBe(1))
+})
+
+
+describe("repository slash authority (AUTH-8)", () => {
+  test("the conversation's repository Member gets sandbox commands despite no deployment role", async () => {
+    const tab = await open({}, person(null))
+    const branches = await tab.runtime.runPromise(Effect.service(BranchStore))
+    const repos = await tab.runtime.runPromise(Effect.service(RepoStore))
+    await tab.runtime.runPromise(repos.roles.insert({ id: repoId("my", "repo"), role: "member", own: false }))
+    await tab.runtime.runPromise(branches.current.update(CURRENT, row => void Object.assign(row, {
+      owner: "my", repo: "repo", conversationId: "own-repo-conversation", status: "ready", access: "owner",
+    })))
+    await tab.showConversation("own-repo-conversation")
+    await tab.actions.type("/status")
+    expect(tab.menu()?.items.map(item => item.label)).toContain("/status")
+    await tab.actions.type("/read")
+    expect(tab.menu()?.refusal).toBeNull()
+    expect(tab.menu()?.kind).not.toBe("unknown")
+    // Returning to home restores deployment authority.
+    await tab.runtime.runPromise(Effect.service(ChatStore).pipe(Effect.flatMap(store => store.place.update(PLACE, row => { row.conversationId = null }))))
+    await tab.actions.type("/status")
+    expect(tab.menu()?.items).toEqual([])
+  })
+
+  test("a deployment Admin never carries commands onto a Guest, unanswered or failed repository", async () => {
+    const tab = await open({}, person("admin"))
+    const branches = await tab.runtime.runPromise(Effect.service(BranchStore))
+    const repos = await tab.runtime.runPromise(Effect.service(RepoStore))
+    await tab.runtime.runPromise(branches.current.update(CURRENT, row => void Object.assign(row, {
+      owner: "other", repo: "repo", conversationId: "guest-conversation", status: "ready", access: "view",
+    })))
+    await tab.showConversation("guest-conversation")
+    await tab.actions.type("/status")
+    expect(tab.menu()?.items).toEqual([])
+    await tab.runtime.runPromise(repos.roles.insert({ id: repoId("other", "repo"), role: "guest", own: false }))
+    await tab.actions.submit("/status")
+    expect(tab.menu()?.refusal).toBe("/status isn't a command")
+    await tab.runtime.runPromise(repos.roles.update(repoId("other", "repo"), row => { row.role = "admin"; row.failure = "unavailable" }))
+    await tab.actions.type("/status")
+    expect(tab.menu()?.items).toEqual([])
+    await tab.runtime.runPromise(repos.roles.update(repoId("other", "repo"), row => { row.role = null; delete row.failure }))
+    await tab.actions.type("/status")
+    expect(tab.menu()?.items).toEqual([])
+    await tab.runtime.runPromise(branches.current.update(CURRENT, row => { row.conversationId = "stale-conversation" }))
+    await tab.actions.type("/status")
+    expect(tab.menu()?.items).toEqual([])
+    await tab.runtime.runPromise(branches.current.update(CURRENT, row => { row.status = "tracking" }))
+    await tab.actions.type("/status")
+    expect(tab.menu()?.items).toEqual([])
+  })
+
+  test("signed out never inherits a repository role left on the device", async () => {
+    const tab = await open({}, null)
+    const branches = await tab.runtime.runPromise(Effect.service(BranchStore))
+    const repos = await tab.runtime.runPromise(Effect.service(RepoStore))
+    await tab.runtime.runPromise(repos.roles.insert({ id: repoId("other", "repo"), role: "admin", own: false }))
+    await tab.runtime.runPromise(branches.current.update(CURRENT, row => void Object.assign(row, {
+      owner: "other", repo: "repo", conversationId: "prior-conversation", status: "ready", access: "owner",
+    })))
+    await tab.showConversation("prior-conversation")
+    await tab.actions.type("/status")
+    expect(tab.menu()?.items).toEqual([])
+  })
+})
+
+
+test("slash commands use the effective role on an uninstalled repository copy without granting GitHub authority", async () => {
+  const tab = await open({}, person("member"))
+  const branches = await tab.runtime.runPromise(Effect.service(BranchStore))
+  const repos = await tab.runtime.runPromise(Effect.service(RepoStore))
+  await tab.runtime.runPromise(repos.roles.insert({ id: repoId("public", "copy"), role: null, workspaceRole: "member", own: false }))
+  await tab.runtime.runPromise(branches.current.update(CURRENT, row => void Object.assign(row, {
+    owner: "public", repo: "copy", conversationId: "copied-conversation", status: "ready", access: "owner",
+  })))
+  await tab.showConversation("copied-conversation")
+  await tab.actions.type("/status")
+  expect(tab.menu()?.items.map(item => item.label)).toContain("/status")
+  await tab.runtime.runPromise(repos.roles.update(repoId("public", "copy"), row => { row.workspaceRole = null }))
+  await tab.actions.type("/status")
+  expect(tab.menu()?.items).toEqual([])
 })

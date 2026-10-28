@@ -23,6 +23,10 @@ import { choices, submits } from "./metrics"
 import { MENU, type Menu } from "./schema"
 import { CommandsStore } from "./store"
 import { admissionNamespace, admitCommand, hasOutboxAdmission } from "./admission"
+import { BranchStore } from "../branch/store"
+import { CURRENT } from "../branch/schema"
+import { RepoStore } from "../repo/store"
+import { repoId } from "../repo/contract"
 import { WRITE_ID_NAMESPACE } from "../issues/contract"
 
 // Composer actions await local write admission (docs/features/slash-commands.md). Typing
@@ -35,8 +39,20 @@ const offered = Effect.gen(function* () {
   const { session, confirmed } = yield* AuthStore
   const { contributions } = yield* Plugins
   const now = Option.getOrThrow(yield* session.get(SESSION))
+  let viewer = viewerOf(now, Option.getOrUndefined(yield* confirmed.get(SESSION)))
+  const { place } = yield* ChatStore
+  const conversation = Option.getOrThrow(yield* place.get(PLACE)).conversationId
+  if (conversation !== null) {
+    const branch = yield* BranchStore
+    const repos = yield* RepoStore
+    const current = Option.getOrThrow(yield* branch.current.get(CURRENT))
+    const role = current.status === "ready" && current.conversationId === conversation
+      ? Option.getOrUndefined(yield* repos.roles.get(repoId(current.owner, current.repo)))
+      : undefined
+    if (current.status !== "none") viewer = { signedIn: viewer.signedIn, role: viewer.signedIn && role?.failure === undefined ? (role?.workspaceRole === undefined ? role?.role ?? null : role.workspaceRole) : null }
+  }
   return commandsFor(
-    viewerOf(now, Option.getOrUndefined(yield* confirmed.get(SESSION))),
+    viewer,
     [...COMMAND_LIST, ...pluginCommands(contributions.commands)],
   )
 })

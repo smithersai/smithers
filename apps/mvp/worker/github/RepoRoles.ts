@@ -136,10 +136,20 @@ export interface Options {
   readonly http?: HttpClient.HttpClient
   /**
    * Local development without the App (`alchemy dev`'s developer, worker/DevChatApi.ts): there is no GitHub to ask, so
-   * the session's role holds on every repository, as it did before decision 0079. A deploy never sets it.
+   * the session's role holds on every repository, as it did before decision 0079, unless `localRoles` names another. A
+   * deploy never sets it.
    */
   readonly local?: boolean
+  /** With `local`, local development's people's roles on other repositories (`LocalRoles`). */
+  readonly localRoles?: LocalRoles
 }
+
+/**
+ * Local development's roles on a repository other than the deployment's own (worker/DevChatApi.ts `devRoles`), so the
+ * end-to-end tests have a person who is Admin or Guest of a repository without GitHub to ask: a role, `null` for none,
+ * or `undefined` for the session's.
+ */
+export type LocalRoles = (actor: Actor, repository: Repository) => Role | null | undefined
 
 /** The `RepoRoles` interface every route asks; `R` is what its database's layer needs. */
 export interface RepoRoles<R = never> {
@@ -147,6 +157,11 @@ export interface RepoRoles<R = never> {
   readonly repository: Repository
   /** `actor`'s role on `repository`, or why there is none to give. */
   readonly resolve: (actor: Actor, repository: Repository) => Effect.Effect<Resolved, RoleRefused, R>
+  /**
+   * `actor`'s role on a repository Smithers recorded no App installation on, asking no one: the session's, as before
+   * decision 0079, or local development's own (`localRoles`). Absent, the session's.
+   */
+  readonly uninstalled?: (actor: Actor, repository: Repository) => Role | null
 }
 
 /** `RepoRoles` over `database`: `resolve` opens a Postgres client for each read. */
@@ -172,6 +187,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         }).pipe(client),
       })
       : Option.none()
+
+    /** The role where there is no App to ask: local development's own, else the session's. */
+    const uninstalled = (actor: Actor, repository: Repository): Role | null => {
+      const local = options.local === true ? options.localRoles?.(actor, repository) : undefined
+      return local === undefined ? actor.role : local
+    }
 
     /** The person's permission on `repository`, read with the App; `None` when GitHub knows no such person there. */
     const fromGitHub = (configured: NonNullable<Option.Option.Value<typeof app>>, repository: Repository, login: string) =>
@@ -210,7 +231,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           return { source: "session", resolved: { role: actor.role, held: Option.none<Held>() } }
         }
         if (Option.isNone(app)) {
-          if (options.local === true) return { source: "local", resolved: { role: actor.role, held: Option.none<Held>() } }
+          if (options.local === true) return { source: "local", resolved: { role: uninstalled(actor, repository), held: Option.none<Held>() } }
           return yield* new RoleRefused({ code: "not_configured" })
         }
         if (Option.isSome(allowedIds) && !allowedIds.value.has(repository.id)) {
@@ -272,21 +293,26 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         return decided.success.resolved
       }).pipe(Effect.withSpan("github.repo_role"))
 
-    return { repository: options.repository, resolve } satisfies RepoRoles<R>
+    return { repository: options.repository, resolve, uninstalled } satisfies RepoRoles<R>
   })
 
 /**
  * The role `actor` works with on Smithers' own copy of `repository`: a branch's workspace, its conversation, its
  * terminals, a new branch, a run's page. Where the deployment may act on the repository, the role `resolve` gives
  * there. Where it can't (`CANT_ACT`), nothing done in that copy reaches GitHub, so the session's role on the
- * deployment's own repository decides, as before decision 0079: a public repository without the App is cloned and
- * worked on as Smithers' copy (GH-4). GitHub or Postgres not answering passes on as the refusal, never a guess.
+ * deployment's own repository decides, as before decision 0079 (`uninstalledRole`): a public repository without the App
+ * is cloned and worked on as Smithers' copy by the deployment's own Members (GH-4, GH-5), and by nobody else (ruling
+ * AUTH-8). GitHub or Postgres not answering passes on as the refusal, never a guess.
  */
 export const workRole = <R>(roles: RepoRoles<R>, actor: Actor, repository: Repository): Effect.Effect<Role | null, RoleRefused, R> =>
   roles.resolve(actor, repository).pipe(
     Effect.map((resolved) => resolved.role),
-    Effect.catch((refused) => CANT_ACT.has(refused.code) ? Effect.succeed(actor.role) : Effect.fail(refused)),
+    Effect.catch((refused) => CANT_ACT.has(refused.code) ? Effect.succeed(uninstalledRole(roles, actor, repository)) : Effect.fail(refused)),
   )
+
+/** `roles.uninstalled`, else the session's role: the role on a repository the App isn't on (decision 0079). */
+export const uninstalledRole = <R>(roles: RepoRoles<R>, actor: Actor, repository: Repository): Role | null =>
+  roles.uninstalled === undefined ? actor.role : roles.uninstalled(actor, repository)
 
 /** `millis` as a `retryAfterSeconds` field, when GitHub said a wait. */
 const waitOf = (millis: number | undefined) =>

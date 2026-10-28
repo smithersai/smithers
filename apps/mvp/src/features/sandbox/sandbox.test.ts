@@ -12,6 +12,7 @@ import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
+import { BranchRoles } from "../../../worker/branch/Access.ts"
 import { settle } from "../../../worker/flows/SandboxCall.ts"
 import * as Messages from "../../../worker/Messages.ts"
 import { branchHarness, resetBranches, tracked } from "../../../worker/test/branch.ts"
@@ -57,8 +58,8 @@ const WITHIN = 90_000
 const callIdOf = (executionId: string) => Effect.runPromise(Uuid.v5(CALL_ID_NAMESPACE, executionId).pipe(Effect.provide(WebCrypto.layer)))
 
 /** The tools' flows on the Node host's engine, calling ChatApi's real routes as a Member: a run, the harness and records. */
-const openEngine = async (commandMaxSeconds = COMMAND_LIMIT_SECONDS) => {
-  const h = await branchHarness(runtime, { actor: member, config: { SANDBOX_COMMAND_MAX_SECONDS: String(commandMaxSeconds) } })
+const openEngine = async (commandMaxSeconds = COMMAND_LIMIT_SECONDS, options: Parameters<typeof branchHarness>[1] = {}) => {
+  const h = await branchHarness(runtime, { actor: member, config: { SANDBOX_COMMAND_MAX_SECONDS: String(commandMaxSeconds) }, ...options })
   const fetch: typeof globalThis.fetch = (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input))
     return h.fetch(`${url.pathname}${url.search}`, input instanceof Request ? input : init)
@@ -119,6 +120,22 @@ const ran = {
 } as const
 
 describe("the flows", () => {
+  test("a repository Member's machine refusal settles each durable tool after exactly one request", async () => {
+    const engine = await openEngine(COMMAND_LIMIT_SECONDS, {
+      actor: { ...member, role: null },
+      branchRoles: Layer.succeed(BranchRoles, { roleOn: () => Effect.succeed("member"), uninstalled: () => "member" }),
+    })
+    const branch = await tracked(runtime, REPO, "feature/stranger")
+    const failure = new SandboxCallRefused({ reason: "members_only" })
+    expect(await engine.execute(SandboxRun, "stranger-run", { command: "pwd", conversationId: branch.conversationId })).toEqual(Exit.fail(failure))
+    expect(await engine.execute(SandboxRead, "stranger-read", { path: "README.md", conversationId: branch.conversationId })).toEqual(Exit.fail(failure))
+    expect(engine.h.line("sandbox.call")).toHaveLength(2)
+    expect(engine.h.starts).toEqual([])
+    expect(await rows()).toEqual([])
+    expect(engine.count({ tool: "run", outcome: "members_only" })).toBe(1)
+    expect(engine.count({ tool: "read", outcome: "members_only" })).toBe(1)
+  }, WITHIN)
+
   test("a lowered limit reaches the browser's flow once, without starting a command; a shorter new call runs", async () => {
     const engine = await openEngine(900)
     const branch = await tracked(runtime, REPO, `feature/${crypto.randomUUID()}`)
@@ -307,9 +324,18 @@ describe("the steps", () => {
     expect(reading.count("run", "too_long")).toBe(1)
   })
 
+  test("a machine membership refusal explains itself and is never retried by a sandbox tool", () => {
+    const refused = refusalOf(new CallRefused({ status: 403, code: "members_only" }))
+    expect(refused.message).toBe("Members can run machines.")
+    expect(new SandboxCallRefused({ reason: "forbidden" }).message).toBe("forbidden")
+    expect(START_RETRY.nonRetryable).toContain(refused._tag)
+    expect(RESULT_RETRY.nonRetryable).toContain(refused._tag)
+  })
+
   test.each<[number | undefined, string | undefined, SandboxCallRefused | SandboxCallUnavailable]>([
     [401, undefined, new SandboxCallRefused({ reason: "sign_in" })],
     [403, "forbidden", new SandboxCallRefused({ reason: "forbidden" })],
+    [403, "members_only", new SandboxCallRefused({ reason: "members_only" })],
     [409, "locked", new SandboxCallRefused({ reason: "locked" })],
     [404, "not_found", new SandboxCallRefused({ reason: "not_found" })],
     [400, "invalid", new SandboxCallRefused({ reason: "invalid" })],

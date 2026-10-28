@@ -188,6 +188,8 @@ export default defineConfig({
         "db/migrations/0024_sandbox_calls.ts",
         // Sandbox budgets: the limits, the ledger and a terminal's wait (docs/features/sandbox-budgets.md).
         "db/migrations/0062_sandbox_budgets.ts",
+        // Sequence-ordered session role receipts (decision 0122).
+        "db/migrations/0072_role_observations.ts",
         // Bug reports: filing one, the Admins' read and the reports' shape (docs/features/bugs.md).
         "worker/bugs/*.ts",
         "db/migrations/0064_bug_reports.ts",

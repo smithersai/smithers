@@ -184,3 +184,5 @@ Publish and Update attempts log `branch.write.identity` and count `smithers_bran
 Compare keeps its section frame while the comparison arrives, then fills in commits and files without a loading skeleton. The production `branch-publish.spec.ts` journey checks this throughout navigation.
 
 Publish and Update branch use the shared toast stack. A launch is Requested until the server admits its write; admission keeps the toast working until the actual write settles, including after navigation or reload. The notification links back to the branch's durable publication result. Failed admission shows a failed toast and keeps the existing retry control. The launch has no notification acknowledgment controls until its server receipt exists.
+
+Publish, Update branch and Resync use the branch machine and also require Member or above on `GITHUB_REPOSITORY` (decision 0122 amendment). Repository edit access alone cannot admit these operations.

@@ -6,13 +6,14 @@ import { CHECK_OUTCOMES, ROLES } from "./contract"
 
 /** What `GET /api/auth/session` answers (contract.ts `SessionState`), checked as it arrives. */
 export const SessionState = Schema.Union([
-  Schema.Struct({ signedIn: Schema.Literal(false), available: Schema.Boolean }),
+  Schema.Struct({ signedIn: Schema.Literal(false), available: Schema.Boolean, hostedModel: Schema.optional(Schema.Boolean) }),
   Schema.Struct({
     signedIn: Schema.Literal(true),
     personId: Schema.optional(Schema.String),
     login: Schema.String,
     role: Schema.NullOr(Schema.Literals(ROLES)),
     hostedModel: Schema.optional(Schema.Boolean),
+    install: Schema.optional(Schema.String),
   }),
 ])
 
@@ -20,7 +21,8 @@ export const SessionState = Schema.Union([
  * This tab's view of who is signed in, one row:
  * - `status`: `loading` until ChatApi answers, then `signed_in` or `signed_out`; `unreachable` when it couldn't ask;
  * - `login` and `role` when signed in; `available` whether this deployment can sign anyone in; `hostedModel` whether
- *   its own model answers anyone (decision 0099), unknown until ChatApi says;
+ *   its own model answers this person (decision 0099, ruling AUTH-8), unknown until ChatApi says; `install` where
+ *   Install goes, when ChatApi said one;
  * - `signingOut` while a sign-out is on its way;
  * - `restored` once the device's last confirmed session (`Confirmed`) has been read.
  */
@@ -31,6 +33,7 @@ export const Session = Schema.Struct({
   role: Schema.NullOr(Schema.Literals(ROLES)),
   available: Schema.Boolean,
   hostedModel: Schema.optional(Schema.Boolean),
+  install: Schema.optional(Schema.String),
   signingOut: Schema.Boolean,
   restored: Schema.Boolean,
 })
@@ -60,6 +63,8 @@ export type SessionAnswer = typeof SessionAnswer.Type
 /** What `GET /api/repos/<owner>/<name>/role` answers (contract.ts `repoRoleRoute`), checked as it arrives. */
 export const RepoRoleAnswer = Schema.Struct({
   role: Schema.NullOr(Schema.Literals(ROLES)),
+  /** Effective role on Smithers' workspace copy; separate from GitHub/home authority. */
+  workspaceRole: Schema.optional(Schema.NullOr(Schema.Literals(ROLES))),
   own: Schema.Boolean,
   /** Repository shapes may be read; with no role this is an explicit public-read receipt. */
   readable: Schema.optional(Schema.Boolean),
@@ -77,6 +82,8 @@ export const RepoRole = Schema.Struct({
   /** Content-free refusal of the latest authority read; no shape starts until a successful retry. */
   failure: Schema.optional(Schema.String),
   role: Schema.NullOr(Schema.Literals(ROLES)),
+  /** Effective role on Smithers' workspace copy; separate from GitHub/home authority. */
+  workspaceRole: Schema.optional(Schema.NullOr(Schema.Literals(ROLES))),
   own: Schema.Boolean,
   /** Repository shapes may be read; with no role this is an explicit public-read receipt. */
   readable: Schema.optional(Schema.Boolean),

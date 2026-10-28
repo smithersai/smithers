@@ -1,4 +1,4 @@
-import { mayAsk, type Role } from "../auth/contract"
+import type { Role } from "../auth/contract"
 import { MODEL_TIERS, type ModelTier } from "../model/contract"
 import { hostOf, type Protocol, PROTOCOLS, type Refusal, resolveTier, type SavedKey, TIER_FIELDS } from "./contract"
 import { codeText, LATE, OK, REFUSAL_COPY, REMOVING, SAVING, UNKNOWN } from "./copy"
@@ -14,9 +14,9 @@ export interface Reader {
   readonly role: Role | null
 }
 
-/** Whether a person may save and test a model of their own: signed in as a Member or above, who may ask Smithers. */
+/** Whether a person may save and test a model of their own: anyone signed in, since it is their key (ruling AUTH-8). */
 export const canSave = (session: Reader | undefined): boolean =>
-  session !== undefined && session.status === "signed_in" && mayAsk(session.role)
+  session !== undefined && session.status === "signed_in"
 
 
 /** Whether a write is on its way: sent, or taken and not yet in the rows. A second one waits. */

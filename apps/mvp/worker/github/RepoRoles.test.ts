@@ -10,7 +10,7 @@ import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import type { Actor } from "../Actor.ts"
 import { testFile } from "../test/harness.ts"
-import type { Repository } from "./Config.ts"
+import { type Repository, repositoryOf } from "./Config.ts"
 import * as RepoRoles from "./RepoRoles.ts"
 import * as Store from "./Store.ts"
 import { reset, sql } from "./test/fixtures.ts"
@@ -235,6 +235,26 @@ describe("resolve", () => {
     expect(refusal(await resolve(await roles(github, { app: Option.none(), local: false })))).toEqual({ code: "not_configured" })
     // With the App, local or not, GitHub decides.
     expect(roleOf(await resolve(await roles(github, { local: true })))).toBeNull()
+  })
+
+  test("local development's own roles on other repositories (`localRoles`): theirs where they name one, else the session's", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    const named: RepoRoles.LocalRoles = (actor, repository) =>
+      actor.subject.id !== MAYA ? undefined : repository.id === OTHER.id ? "maintainer" : null
+    const local = await roles(github, { app: Option.none(), local: true, localRoles: named })
+    expect(roleOf(await resolve(local))).toBe("maintainer")
+    expect(roleOf(await resolve(local, maya, repositoryOf("acme/gadgets")))).toBeNull()
+    // The deployment's own repository is the session's role, whatever they name.
+    expect(roleOf(await resolve(local, maya, OWN))).toBe("admin")
+    // Someone they name nothing for keeps the session's.
+    const ben: Actor = { subject: { kind: "person", id: "ben" }, role: "member" }
+    expect(roleOf(await resolve(local, ben))).toBe("member")
+    expect(local.uninstalled!(maya, OTHER)).toBe("maintainer")
+    expect(local.uninstalled!(ben, OTHER)).toBe("member")
+    // A deploy (not local) never reads them: the session's role where the App isn't.
+    const deployed = await roles(github, { app: Option.none(), localRoles: named })
+    expect(deployed.uninstalled!(maya, OTHER)).toBe("admin")
+    expect(RepoRoles.uninstalledRole({ repository: OWN, resolve: deployed.resolve }, maya, OTHER)).toBe("admin")
   })
 })
 

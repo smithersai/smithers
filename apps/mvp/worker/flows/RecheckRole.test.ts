@@ -21,6 +21,9 @@ import * as RecheckRole from "./RecheckRole.ts"
 
 const runtime = testFile("recheck_role")
 
+/** Where Install goes, as the session answers it with the App configured (ruling AUTH-8). */
+const INSTALL = "https://github.com/apps/smithers/installations/new"
+
 beforeEach(() =>
   runtime.runPromise(
     Effect.flatMap(SqlClient.SqlClient, (sql) => sql`TRUNCATE sessions, sign_in_attempts, people CASCADE`),
@@ -72,6 +75,85 @@ const checking = (s: Awaited<ReturnType<typeof signedIn>>, sessionId = s.id, dat
 const checkOnce = (s: Awaited<ReturnType<typeof signedIn>>) => Effect.runPromiseExit(checking(s))
 
 describe("auth/RecheckRole", () => {
+  test("a demotion observed before sign-out remains authoritative when its delayed write arrives afterward", async () => {
+    const older = await signedIn()
+    const newer = await signedIn()
+    newer.github.permission = "read"
+    const observed = Effect.runSync(Deferred.make<void>())
+    const release = Effect.runSync(Deferred.make<void>())
+    const github = { ...newer.github.service,
+      permission: (access: Redacted.Redacted<string>, repository: string) => newer.github.service.permission(access, repository).pipe(
+        Effect.tap(() => Deferred.succeed(observed, undefined)), Effect.tap(() => Deferred.await(release)),
+      ),
+    }
+    const pending = Effect.runPromiseExit(checking({ ...newer, services: { ...newer.services, github } }))
+    await Effect.runPromise(Deferred.await(observed))
+    try {
+      await runtime.runPromise(SessionStore.revoke({ id: newer.id }, "sign_out"))
+    } finally {
+      Effect.runSync(Deferred.succeed(release, undefined))
+    }
+    expect(await pending).toEqual(Exit.succeed({ outcome: "checked", role: "guest" }))
+    expect((await session(newer.id)).revokedReason).toBe("sign_out")
+    expect(await newer.h.session(newer.cookies)).toMatchObject({ signedIn: false })
+    expect(await older.h.session(older.cookies)).toMatchObject({ signedIn: true, role: "guest" })
+    expect(await runtime.runPromise(SessionStore.deploymentMember(older.personId))).toBe(false)
+  })
+
+  test.each(["check", "sign-in"] as const)("a delayed %s Member observation cannot overwrite a newer verified demotion", async source => {
+    const older = await signedIn()
+    const observed = Effect.runSync(Deferred.make<void>())
+    const release = Effect.runSync(Deferred.make<void>())
+    const github = { ...older.github, service: { ...older.github.service,
+      permission: (access: Redacted.Redacted<string>, repository: string) => older.github.service.permission(access, repository).pipe(
+        Effect.tap(() => Deferred.succeed(observed, undefined)), Effect.tap(() => Deferred.await(release)),
+      ),
+    } }
+    const h = await signInHarness(runtime, { github })
+    const pending = source === "check"
+      ? Effect.runPromiseExit(checking({ ...older, services: { ...older.services, github: github.service } }))
+      : h.signInAs()
+    await Effect.runPromise(Deferred.await(observed))
+    try {
+      const demoted = scriptedGitHub()
+      demoted.permission = "read"
+      await signedIn(demoted)
+      expect(await runtime.runPromise(SessionStore.deploymentMember(older.personId))).toBe(false)
+    } finally {
+      Effect.runSync(Deferred.succeed(release, undefined))
+    }
+    const result = await pending
+    expect(await runtime.runPromise(SessionStore.deploymentMember(older.personId))).toBe(false)
+    expect(await older.h.session(older.cookies)).toMatchObject({ signedIn: true, role: "guest" })
+    if ("cookies" in result) expect(await h.session(result.cookies)).toMatchObject({ signedIn: true, role: "guest" })
+    else expect(result).toEqual(Exit.succeed({ outcome: "checked", role: "guest" }))
+  })
+
+  test("a failed refresh on an older Member session cannot outrank another session's verified demotion", async () => {
+    const older = await signedIn()
+    await sql(`UPDATE sessions SET role_checked_at = now() - interval '2 hours'`)
+    const github = scriptedGitHub()
+    github.permission = "read"
+    const newer = await signedIn(github)
+    expect(newer.personId).toBe(older.personId)
+    const member = () => runtime.runPromise(SessionStore.deploymentMember(older.personId))
+    expect(await member()).toBe(false)
+    older.github.faults.permission = "unavailable"
+    const kept = await runFlow(RecheckRole.RecheckRole, { sessionId: older.id }, RecheckRole.registration(older.database, older.services))
+    expect(kept.exit).toEqual(Exit.succeed({ outcome: "kept", role: null }))
+    expect((await session(older.id)).role).toBe("guest")
+    expect(await member()).toBe(false)
+    // Signing out the session that observed the demotion cannot revive the stale Member receipt.
+    await runtime.runPromise(SessionStore.revoke({ id: newer.id }, "sign_out"))
+    expect(await member()).toBe(false)
+    expect(await older.h.session(older.cookies)).toMatchObject({ signedIn: true, role: "guest" })
+    delete older.github.faults.permission
+    expect(await checkOnce(older)).toEqual(Exit.succeed({ outcome: "checked", role: "member" }))
+    expect(await member()).toBe(true)
+    await runtime.runPromise(SessionStore.revoke({ id: older.id }, "sign_out"))
+    expect(await member()).toBe(false)
+  }, 60_000)
+
   test("runs on the Node host: reads the role again and records when", async () => {
     const s = await signedIn()
     await sql(`UPDATE sessions SET role_checked_at = now() - interval '2 hours'`)
@@ -82,7 +164,7 @@ describe("auth/RecheckRole", () => {
     const after = await session(s.id)
     expect(after.role).toBe("admin")
     expect(after.age).toBeLessThan(60)
-    expect(await s.h.session(s.cookies)).toEqual({ signedIn: true, personId: s.personId, login: "octocat", role: "admin", hostedModel: false })
+    expect(await s.h.session(s.cookies)).toEqual({ signedIn: true, personId: s.personId, login: "octocat", role: "admin", hostedModel: false, install: INSTALL })
   })
 
   test("a GitHub that fails once is retried by the step's retry policy", async () => {
@@ -155,7 +237,7 @@ describe("auth/RecheckRole", () => {
     const after = await session(s.id)
     expect(after.revokedReason).toBe("github_refused")
     expect(after.forgotten).toBe(true)
-    expect(await s.h.session(s.cookies)).toEqual({ signedIn: false, available: true })
+    expect(await s.h.session(s.cookies)).toEqual({ signedIn: false, available: true, hostedModel: false })
   })
 
   test("a refresh refused because another check rotated the token first doesn't end the session", async () => {
@@ -329,7 +411,7 @@ describe("one check of a session at a time", () => {
       await Effect.runPromise(Deferred.await(redeemed))
       // The next request comes an hour later, in the next hour, while A still holds the replacement.
       h.advance(60 * 60 * 1000)
-      expect(await h.session(cookies)).toEqual({ signedIn: true, personId, login: "octocat", role: "member", hostedModel: false })
+      expect(await h.session(cookies)).toEqual({ signedIn: true, personId, login: "octocat", role: "member", hostedModel: false, install: INSTALL })
       h.advance(-60 * 60 * 1000)
       // B runs before A goes on: a check of its own runs to its end first; the same check is A, still paused.
       if (started[1] !== started[0]) await runs[1]
@@ -348,7 +430,7 @@ describe("one check of a session at a time", () => {
         Exit.succeed({ outcome: "checked", role: "member" }),
         Exit.succeed({ outcome: "checked", role: "member" }),
       ])
-      expect(await h.session(cookies)).toEqual({ signedIn: true, personId, login: "octocat", role: "member", hostedModel: false })
+      expect(await h.session(cookies)).toEqual({ signedIn: true, personId, login: "octocat", role: "member", hostedModel: false, install: INSTALL })
       // The check recorded the role, so the next stale request names a new check.
       await sql(`UPDATE sessions SET role_checked_at = role_checked_at - interval '2 hours'`)
       await h.session(cookies)
@@ -421,7 +503,7 @@ describe("one check of a session at a time", () => {
       const after = await session(s.id)
       expect(after.revokedReason).toBeNull()
       expect(after.refreshDigest).toBe(SessionKeys.digest(Redacted.value(s.github.issued[1]!.refreshToken!)))
-      expect(await s.h.session(s.cookies)).toEqual({ signedIn: true, personId: s.personId, login: "octocat", role: "member", hostedModel: false })
+      expect(await s.h.session(s.cookies)).toEqual({ signedIn: true, personId: s.personId, login: "octocat", role: "member", hostedModel: false, install: INSTALL })
     } finally {
       await removeFault()
     }

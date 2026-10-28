@@ -14,7 +14,7 @@ import { Opened } from "./schema"
  */
 export class TerminalOpenRefused extends Schema.TaggedError<TerminalOpenRefused>()(
   "@smthrs/mvp/terminal/TerminalOpenRefused",
-  { reason: Schema.Literals(["sign_in", "forbidden", "locked", "not_found", "invalid"]) },
+  { reason: Schema.Literals(["sign_in", "members_only", "forbidden", "locked", "not_found", "invalid"]) },
 ) {}
 
 /** ChatApi couldn't open the terminal now: unreachable, or Postgres or the remote host didn't answer. */

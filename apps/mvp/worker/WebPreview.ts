@@ -4,7 +4,7 @@ import { Cause, Clock, Config, Duration, Effect, Metric, Option, Schema } from "
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { MAX_PREVIEW_BODY_BYTES, MAX_URL_LENGTH, WEB_MODES } from "../src/features/web/contract.ts"
 import { checkUrl, LOCAL_HOSTS } from "../src/features/web/url.ts"
-import { canAsk, Sessions } from "./Actor.ts"
+import { Sessions } from "./Actor.ts"
 import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
 import { localHttpConfig, policyFor } from "./Views.ts"
@@ -18,7 +18,8 @@ import { localHttpConfig, policyFor } from "./Views.ts"
 // then `WebPage.check`'s guard on every hop: named hosts only, never an IP literal, `localhost` or a local name, at most
 // five redirects, an 8 s deadline and 256 KiB of the head. `WEB_PAGES_LOCAL_HTTP` (development: `alchemy dev`) also lets
 // it read this machine's pages. A name that resolves to a private address is Cloudflare's to refuse: a Worker's fetch
-// reaches public addresses only. Only a person who may ask (Member or above) asks a page, as only they add views.
+// reaches public addresses only. Anyone signed in asks a page; only a person who may ask in a conversation adds it there
+// as a view (worker/Views.ts, ruling AUTH-8).
 //
 // The answer is kept for `WEB_PAGE_CHECK_KEPT` (5 minutes) in the edge cache, by the page's URL and the app's origin,
 // in windows of that length: a page asked again within one is answered without a request. The cache sees only a hash
@@ -68,9 +69,9 @@ export const make = (options: { readonly localHttp?: boolean } = {}) =>
       const response = yield* Effect.gen(function* () {
         if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
         const actor = yield* (yield* Sessions).resolve
+        // Anyone signed in: a preview adds nothing to a conversation, which the views route checks by its repository
+        // (ruling AUTH-8), and it is one bounded page read, kept for everyone who asks for the same page.
         if (Option.isNone(actor)) return refusal(401, "authentication")
-        // A Guest, or a person with no role, may not ask, so may not add a page to the conversation either.
-        if (!canAsk(actor.value)) return refusal(403, "forbidden")
         const body = yield* readBounded(request, MAX_PREVIEW_BODY_BYTES).pipe(Effect.result)
         if (body._tag === "Failure") {
           return body.failure.reason === "too_large" ? refusal(413, "too_large") : refusal(400, "invalid")

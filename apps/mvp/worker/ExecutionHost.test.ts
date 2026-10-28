@@ -753,7 +753,7 @@ describe("ExecutionHost over the compose Postgres", () => {
     const provider = scripted()
     provider.publish("octocat", "Spoon-Knife")
     const database = (await app.runPromise(Effect.service(TestDatabase.Scratch))).database
-    const budgets = { maxRepositories: 100, maxStoredBytes: 3e9, maxReadBytes: 40e9, maxRepositoryBytes: 1e9, budgetUsd: 20 }
+    const budgets = { clonesPerPerson: 3, maxRepositories: 100, maxStoredBytes: 3e9, maxReadBytes: 40e9, maxRepositoryBytes: 1e9, budgetUsd: 20 }
     const requested = await app.runPromise(
       Repos.request({ id: "github/octocat/spoon-knife", owner: "octocat", name: "Spoon-Knife" }, budgets, "octocat"),
     )

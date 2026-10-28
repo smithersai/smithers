@@ -87,14 +87,14 @@ Migration `0020_notifications`:
 
 ## The routes
 
-`worker/Notifications.ts`, in ChatApi. A feed is a Member's or above's.
+`worker/Notifications.ts`, in ChatApi. A feed is anyone's signed in, of their own rows, which only acts a person may take on a repository write (ruling AUTH-8); following a conversation is a Member's or above's of the deployment's own repository, as the fold checks each follower as one.
 
 | Route | Answers |
 |---|---|
 | `POST /api/watches` `{ conversationId }` (`null`: home) | `200 { txid }`, or `{ txid: null }` when already followed; a level already chosen is kept. `403` for a branch you may not open; `404` for no such conversation |
 | `POST /api/notifications/ack` `{ subject, version, act }` | `200 { txid }`; `{ txid: null }` when it changes nothing; `404` for a row that isn't yours. `act` is `read`, `dismiss` or `hide`, merged as `greatest(…, least(version, row version))` |
-| `GET /api/shapes/notifications` | Electric's `notifications` where `recipient` is you; signed out or a Guest, no rows; sessions unreadable, `503` |
-| all | `401` signed out; `403` below Member; `400` invalid; `405` another method; `413` over 2 KiB; `503 { code: "unavailable" }` when Postgres can't be reached |
+| `GET /api/shapes/notifications` | Electric's `notifications` where `recipient` is you: every row for a Member or above of `GITHUB_REPOSITORY`, else only the rows of your own acts (`mine`: your runs, clones and writes, ruling AUTH-8); signed out, no rows; sessions unreadable, `503` |
+| all | `401` signed out; `403` a follow below Member; `400` invalid; `405` another method; `413` over 2 KiB; `503 { code: "unavailable" }` when Postgres can't be reached |
 
 The run report and answer routes (`worker/Runs.ts`) fold in their own transaction: a report that writes the run's row routes it (`foldRun`), and an answer closes the question for everyone. The answer's own settled status wins over the run's row, as in the conversation: settling an answer (`POST /api/answers/<id>`, `worker/Answers.ts`) folds it too, and `chat/Expire` abandoning one fails its run and folds it, so a run whose tab never came back doesn't read `Working` forever. GitHub's webhook (`worker/github/Api.ts`) records `main` and releases of the repository it syncs.
 

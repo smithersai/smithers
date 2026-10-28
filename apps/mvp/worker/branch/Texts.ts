@@ -20,7 +20,7 @@ import { type Actor, type Role, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"
-import { branchAccess, canEdit, canView, isMember, type Policy } from "./Access.ts"
+import { askingOf, branchAccess, canEdit, canView, installedOn, isMember, roleOn, type Policy } from "./Access.ts"
 import * as Conversations from "./Conversations.ts"
 import { Rooms } from "./Rooms.ts"
 import { isUpgrade, sameOrigin } from "./Upgrade.ts"
@@ -100,15 +100,31 @@ export const scopeAccess = (actor: Option.Option<Actor>, scope: TextScope) =>
   Effect.gen(function* () {
     if ("run" in scope) {
       const sql = yield* SqlClient.SqlClient
-      const [run] = yield* sql<{ readonly launchedBy: string }>`
-        SELECT launched_by AS "launchedBy" FROM runs WHERE id = ${scope.run.toLowerCase()}`
+      const [run] = yield* sql<{ readonly launchedBy: string; readonly conversationId: string | null; readonly branchId: string | null; readonly repoId: string | null }>`
+        SELECT r.launched_by AS "launchedBy", coalesce(r.conversation_id, m.conversation_id) AS "conversationId", r.branch_id AS "branchId", r.repo_id AS "repoId"
+        FROM runs r LEFT JOIN messages m ON m.id = r.id WHERE r.id = ${scope.run.toLowerCase()}`
       if (run === undefined) return undefined
-      const access = isMember(actor) && actor.value.subject.id === run.launchedBy ? "owner" : "none"
+      const key = `run:${scope.run.toLowerCase()}`
+      if (Option.isNone(actor) || actor.value.subject.id !== run.launchedBy) {
+        return { key, kind: "run", access: "none", role: null } satisfies Scoped
+      }
+      // Only genuinely unscoped historical runs use home. A missing/deleted linked branch never changes repository.
+      const conversation = run.conversationId ?? (run.repoId === null && run.branchId === null ? yield* Conversations.home : undefined)
+      const branch = conversation !== undefined
+        ? yield* branchAccess(actor, conversation, "conversation")
+        : run.branchId !== null ? yield* branchAccess(actor, run.branchId) : undefined
+      const repositoryOnly = conversation === undefined && run.branchId === null && run.repoId !== null
+      const role = repositoryOnly
+        ? yield* roleOn(actor.value, run.repoId!, yield* installedOn(run.repoId!))
+        : branch?.role ?? null
+      const access = repositoryOnly
+        ? isMember(Option.some({ ...actor.value, role })) ? "owner" : "none"
+        : branch !== undefined && askingOf(branch) === "ask" ? "owner" : "none"
       return {
-        key: `run:${scope.run.toLowerCase()}`,
+        key,
         kind: "run",
         access,
-        role: Option.isSome(actor) ? actor.value.role : null,
+        role,
       } satisfies Scoped
     }
     const conversation = scope.conversation === HOME ? yield* Conversations.home : scope.conversation.toLowerCase()

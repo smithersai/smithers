@@ -1,9 +1,11 @@
 import { NotificationsBell } from "../../features/attention/components/NotificationsBell"
-import { Account } from "../../features/auth/components/Account"
 import { SettingsLink } from "../../features/auth/components/SettingsLink"
 import { ComposerGate } from "../../features/auth/components/ComposerGate"
 import { ConnectionPill } from "../../features/chat/components/ConnectionPill"
 import { Composer } from "../../features/chat/components/Composer"
+import { FirstRunAccount } from "../../features/first-run/components/FirstRunAccount"
+import { FirstRunGate } from "../../features/first-run/components/FirstRunGate"
+import { FirstRunSteps } from "../../features/first-run/components/FirstRunSteps"
 import { Conversation } from "../../features/chat/components/Conversation"
 import { HeaderStatus } from "../../features/status/components/HeaderStatus"
 import { ThemeButton } from "../../features/theme/components/ThemeButton"
@@ -37,15 +39,22 @@ export function AppShell() {
         {/* Your notifications (decision 0009): the unread count, and the panel it opens. */}
         <NotificationsBell />
         <ThemeButton />
-        <Account />
+        <FirstRunAccount />
       </header>
       {/* The toasts, under the header and its pill: the open composer docks over the column's foot, so a toast there
           would hide behind it (decision 0015). */}
       <Toasts />
+      {/* Until the person has a conversation of their own, the steps to their first one, above the composer's place,
+          which they take while a step before Ask shows (decision 0121). */}
+      <div className="app-shell-start">
+        <FirstRunSteps />
+      </div>
       <div className="app-shell-composer">
-        <ComposerGate>
-          <Composer />
-        </ComposerGate>
+        <FirstRunGate>
+          <ComposerGate>
+            <Composer />
+          </ComposerGate>
+        </FirstRunGate>
       </div>
       <section className="app-shell-conversation" aria-label="Conversation">
         <Conversation />

@@ -106,6 +106,24 @@ describe("POST /api/terminals", () => {
     expect(recorded(h)).not.toContain("mona")
   })
 
+  test.each([null, "guest"] as const)("a repository Member with deployment role %s is refused a machine before persisting or launching", async role => {
+    const branch = await tracked(runtime, REPO, "feature/x")
+    const h = await open({ ...member, role }, { branchRoles: Layer.succeed(BranchRoles, { roleOn: () => Effect.succeed("member"), uninstalled: () => "member" }) })
+    const response = await post(h, request(branch.branchId))
+    expect(await json(response)).toEqual([403, { code: "members_only", message: "Members can run machines." }])
+    expect(await terminalRows(runtime, branch.branchId)).toEqual([])
+    expect(h.starts).toEqual([])
+    expect(h.only("terminal.open").annotations).toMatchObject({ status: 403, code: "members_only" })
+  })
+
+  test("an agent cannot open a person's shell even for a deployment Member", async () => {
+    const branch = await tracked(runtime, REPO, "feature/x")
+    const h = await open({ ...member, act: { kind: "agent", id: crypto.randomUUID() } })
+    expect(await json(await post(h, request(branch.branchId)))).toEqual([403, { code: "person_only" }])
+    expect(await terminalRows(runtime, branch.branchId)).toEqual([])
+    expect(h.starts).toEqual([])
+  })
+
   test("a resend answers the same terminal and starts the same execution; another id answers the live one", async () => {
     const branch = await tracked(runtime, REPO, "feature/x")
     const h = await open()
@@ -410,15 +428,24 @@ describe("GET /api/terminals/<id>: the socket", () => {
     expect(owner.span("terminal.connect")).toHaveLength(1)
   })
 
+  test.each([null, "guest"] as const)("a repository editor with deployment role %s cannot attach to an existing machine", async role => {
+    const { branchId, terminalId } = await opened()
+    await shared(runtime, branchId, other.subject.id, "edit")
+    const h = await open({ ...other, role }, { branchRoles: Layer.succeed(BranchRoles, { roleOn: () => Effect.succeed("member"), uninstalled: () => "member" }) })
+    expect(await json(await connect(h, terminalId))).toEqual([403, { code: "members_only", message: "Members can run machines." }])
+    expect(h.sockets.checked).toEqual([])
+    expect(h.sockets.attached).toEqual([])
+  })
+
   test("someone it is shared with to edit types into the owner's terminal; a viewer reads; anyone else is refused", async () => {
     const { branchId, terminalId } = await opened()
     await shared(runtime, branchId, "person-other", "edit")
     const editor = await open(other)
     expect(await json(await connect(editor, terminalId))).toEqual([200, { attached: as(terminalId, other, "write") }])
-    // A Guest shared to edit only reads: GitHub gives them no write.
+    // A deployment Guest cannot attach to a machine, even when a branch share would allow reading.
     await shared(runtime, branchId, "person-guest", "edit")
     const guestViewer = await open(guest)
-    expect(await json(await connect(guestViewer, terminalId))).toEqual([200, { attached: as(terminalId, guest, "read") }])
+    expect(await json(await connect(guestViewer, terminalId))).toEqual([403, { code: "members_only", message: "Members can run machines." }])
     // A Member it isn't shared with may not even watch.
     const stranger = await open({ subject: { kind: "person", id: "person-stranger" }, role: "admin" })
     expect(await json(await connect(stranger, terminalId))).toEqual([403, { code: "forbidden" }])

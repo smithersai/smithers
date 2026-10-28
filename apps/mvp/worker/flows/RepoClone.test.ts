@@ -33,7 +33,7 @@ const scratch = () => runtime.runPromise(Effect.service(TestDatabase.Scratch))
 const unreachable = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
 
 const limits = (overrides: Partial<Repos.Budgets> = {}): Repos.Budgets => ({
-  maxRepositories: 100,
+  maxRepositories: 100, clonesPerPerson: 100,
   maxStoredBytes: 3e9,
   maxReadBytes: 40e9,
   maxRepositoryBytes: 1e9,

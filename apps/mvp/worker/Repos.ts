@@ -2,6 +2,7 @@ import { Config, Effect, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import type { CapacityReason, Failure, Status } from "../src/features/repo/contract.ts"
 import * as CloneFeed from "./CloneFeed.ts"
+import { deploymentMember } from "./SessionStore.ts"
 
 // The `repositories` table and Code Storage's spend (docs/features/repo.md, decision 0006 "Capacity and spend"): asking
 // for a clone, admission, settling, and metering what Code Storage serves. Code Storage bills usage above its minimum
@@ -19,6 +20,7 @@ export const ALERT_THRESHOLDS = [50, 80, 100] as const
 /**
  * The deployment's Code Storage budgets, read from Effect `Config` (defaults hold a worst-case month to about $17):
  * - `maxRepositories` (`REPO_MAX_REPOSITORIES`, 100): `cloning` and `ready` rows;
+ * - `clonesPerPerson` (`CLONES_PER_PERSON`, 3): repository reservations per person, deployment Members exempt;
  * - `maxStoredBytes` (`REPO_MAX_STORED_GB`, 3): their `stored_bytes` together;
  * - `maxReadBytes` (`REPO_MAX_READ_GB_PER_MONTH`, 40): what Code Storage served this UTC month;
  * - `maxRepositoryBytes` (`REPO_MAX_SIZE_MB`, 1,000): one repository's size on GitHub;
@@ -26,6 +28,7 @@ export const ALERT_THRESHOLDS = [50, 80, 100] as const
  */
 export interface Budgets {
   readonly maxRepositories: number
+  readonly clonesPerPerson: number
   readonly maxStoredBytes: number
   readonly maxReadBytes: number
   readonly maxRepositoryBytes: number
@@ -37,6 +40,7 @@ const count = Schema.Int.check(Schema.isGreaterThan(0))
 
 /** Reads {@link Budgets}. */
 export const budgets = Effect.gen(function* () {
+  const clonesPerPerson = yield* Config.schema(count, "CLONES_PER_PERSON").pipe(Config.withDefault(3))
   const maxRepositories = yield* Config.schema(count, "REPO_MAX_REPOSITORIES").pipe(Config.withDefault(100))
   const storedGb = yield* Config.schema(positive, "REPO_MAX_STORED_GB").pipe(Config.withDefault(3))
   const readGb = yield* Config.schema(positive, "REPO_MAX_READ_GB_PER_MONTH").pipe(Config.withDefault(40))
@@ -44,6 +48,7 @@ export const budgets = Effect.gen(function* () {
   const budgetUsd = yield* Config.schema(positive, "REPO_BUDGET_USD").pipe(Config.withDefault(20))
   return {
     maxRepositories,
+    clonesPerPerson,
     maxStoredBytes: storedGb * GB,
     maxReadBytes: readGb * GB,
     maxRepositoryBytes: sizeMb * 1_000_000,
@@ -67,7 +72,7 @@ const thisMonth = (sql: SqlClient.SqlClient) => sql`(date_trunc('month', now() A
 export type Requested =
   | ({ readonly kind: "started"; readonly txid: number } & Clone)
   | ({ readonly kind: "existing"; readonly status: Status } & Clone)
-  | { readonly kind: "limit" }
+  | { readonly kind: "limit"; readonly scope: "deployment" | "person"; readonly used: number; readonly limit: number }
 
 /**
  * The clone a row asks for: who asked for it as which repository; its attempt, counted from 1, and the attempt's own
@@ -90,7 +95,8 @@ export interface Attempt {
 
 /**
  * Asks for a clone of `owner/name` under `id` for person `requestedBy`, in one transaction that holds `repo_imports`'
- * row, so two requests can't both take the last place under `maxRepositories`. A new attempt starts at stage
+ * row, so two requests cannot take the last place in either the deployment or per-person budget.
+ * Failed reservations still count; retrying the same repository takes no additional place. A new attempt starts at stage
  * `requested` and is folded into `requestedBy`'s feed in the same transaction.
  */
 export const request = (
@@ -103,14 +109,26 @@ export const request = (
     return yield* sql.withTransaction(Effect.gen(function* () {
       yield* sql`SELECT 1 FROM repo_imports WHERE id = 1 FOR UPDATE`
       const [existing] = yield* sql<Clone & { readonly status: Status }>`
-        SELECT status, owner, name, ${attemptColumns(sql)} FROM repositories WHERE id = ${repository.id} FOR UPDATE`
+        SELECT status, owner, name, ${attemptColumns(sql)}
+        FROM repositories WHERE id = ${repository.id} FOR UPDATE`
       if (existing !== undefined && (existing.status === "cloning" || existing.status === "ready")) {
         const { status, owner, name, attempt, cloneId, requestedAt } = existing
         return { kind: "existing", status, owner, name, attempt, cloneId, requestedAt } satisfies Requested
       }
       const [held] = yield* sql<{ readonly n: number }>`
         SELECT count(*)::int AS n FROM repositories WHERE status IN ('cloning', 'ready')`
-      if (held!.n >= limits.maxRepositories) return { kind: "limit" } satisfies Requested
+      if (held!.n >= limits.maxRepositories) {
+        return { kind: "limit", scope: "deployment", used: held!.n, limit: limits.maxRepositories } satisfies Requested
+      }
+      // The clone feed retains each person's acts when another person retries the same repository. Count distinct
+      // existing repositories from those records, rather than transferring capacity with the latest attempt's owner.
+      const [mine] = yield* sql<{ readonly n: number; readonly held: boolean }>`
+        SELECT count(DISTINCT n.repo_id)::int AS n, coalesce(bool_or(n.repo_id = ${repository.id}), false) AS held
+        FROM notifications n JOIN repositories r ON r.id = n.repo_id
+        WHERE n.recipient = ${requestedBy} AND n.kind = 'clone' AND n.mine`
+      if (mine!.n >= limits.clonesPerPerson && !mine!.held && !(yield* deploymentMember(requestedBy))) {
+        return { kind: "limit", scope: "person", used: mine!.n, limit: limits.clonesPerPerson } satisfies Requested
+      }
       const [row] = existing === undefined
         ? yield* sql<Clone & { readonly txid: string }>`
           INSERT INTO repositories (id, owner, name, status, stage)

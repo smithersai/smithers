@@ -336,3 +336,7 @@ A direct TODO load shows Syncing TODO until the stack shape has applied. Reposit
 Commit, Drop and Retry first retain a recoverable local operation and await outbox admission. Commit derives its identity from the private draft and its content snapshot, so an unchanged admission attempt cannot create a second TODO. Retrying an earlier snapshot preserves newer edits. A local storage refusal remains Not sent with Retry under the same identity.
 
 Input storage refusal shows Not sent on both the stack and TODO detail. The same operation identity stays available for Retry or Discard; its recovery row is persisted once if device persistence is usable. No delivery starts from a refused input receipt. Explicit Retry fences Discard until admission finishes and completes the original input cleanup lifecycle.
+
+Machine access remains restricted to Members or above of `GITHUB_REPOSITORY` (decision 0122 amendment). Per-person sandbox hours and concurrent TODO-machine accounting are held for a separate design.
+
+Steering a running TODO also requires deployment membership; a repository Member without it may still read the run (decision 0122 amendment).

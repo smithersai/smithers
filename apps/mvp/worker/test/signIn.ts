@@ -55,6 +55,8 @@ export interface Options {
   readonly fallback?: SignIn.Signed
   /** Local development's other people, by the name their dev person cookie gives. */
   readonly teammates?: Readonly<Record<string, SignIn.Signed>>
+  /** Local development's newcomers, by their dev person cookie's value (worker/DevChatApi.ts `newcomer`). */
+  readonly newcomer?: (name: string) => SignIn.Signed | undefined
   /** Where the browser is: `http://smithers.test` unless set. */
   readonly origin?: string
   /** Where a request starts a role check: one that records each start in `roleChecks` unless set. */
@@ -106,6 +108,7 @@ export const signInHarness = async (runtime: Runtime, options: Options = {}) => 
         github: github.service,
         ...(options.fallback === undefined ? {} : { fallback: options.fallback }),
         ...(options.teammates === undefined ? {} : { teammates: options.teammates }),
+        ...(options.newcomer === undefined ? {} : { newcomer: options.newcomer }),
       }).pipe(Effect.provide(FetchHttpClient.layer)),
     ),
   )

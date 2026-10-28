@@ -73,3 +73,5 @@ An Admin sets the three numbers at **Settings → Sandboxes** and presses Save (
 
 - Snapshot retention for branches untouched in 30 days: snapshots aren't built ([sandbox tools](sandbox-tools.md#whats-not-built)).
 - A waiting sandbox call or command says nothing in the conversation; only the terminal says Waiting for a sandbox.
+
+Machine access remains restricted to Members or above of `GITHUB_REPOSITORY` (decision 0122 amendment). Per-person sandbox hours and concurrent TODO-machine accounting are held for a separate design.
