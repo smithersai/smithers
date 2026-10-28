@@ -1,4 +1,5 @@
 import { expect, test } from "./devices"
+import { showChat } from "./chat-composer"
 import { faults, faultyApp } from "./faults"
 import { requires, scratchRepository } from "./target"
 
@@ -16,7 +17,7 @@ test("new branch: progress lasts until the branch exists, and chat stays usable"
   const [person] = await devices.open("Maya")
   const page = person!.page
   await page.goto("/app")
-  const composer = page.locator("textarea").first()
+  const composer = await showChat(page)
   const branch = `progress-new-${devices.word}`
   await composer.fill(`/new ${scratchRepository()} ${branch}`)
   await composer.press("Enter")
@@ -36,7 +37,7 @@ test("a start the engine holds stays Requested through a reload, which starts it
   const page = person!.page
   await page.goto(faultyApp())
   await faults(page).engine.holdStarts()
-  const composer = page.locator("textarea").first()
+  const composer = await showChat(page)
   const branch = `progress-held-${devices.word}`
   await composer.fill(`/new ${scratchRepository()} ${branch}`)
   await composer.press("Enter")
@@ -61,7 +62,7 @@ test("a start the engine refuses is Failed with Try again, which keeps its ident
   const page = person!.page
   await page.goto(faultyApp())
   await faults(page).engine.refuseStarts("conversation/new")
-  const composer = page.locator("textarea").first()
+  const composer = await showChat(page)
   await composer.fill("/new octo/hello never-admitted")
   await composer.press("Enter")
   const toast = toastOf(page)
