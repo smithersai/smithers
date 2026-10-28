@@ -148,6 +148,19 @@ test.each(["empty", "mine", "watching"] as const)(
     await vi.waitFor(() => expect(runtime.runSync(Ref.get(presence.where))).toEqual(
       { view: "terminal", terminalId: kind === "empty" ? null : terminalId }))
     if (kind === "empty") {
+      // The same person's auth observation changes while the route stays open. The view must explain and recover
+      // without mutating terminal state into a permanent refusal or waiting for another terminal row.
+      await runtime.runPromise(session.update(SESSION, row => { row.role = null }))
+      await vi.waitFor(() => {
+        expect(screen()).toContain("Members can run machines.")
+        expect(screen()).not.toContain("Open terminal")
+      })
+      expect(panel()).toMatchObject({ branchId, phase: "idle", terminalId: null })
+      await runtime.runPromise(session.update(SESSION, row => { row.role = "member" }))
+      await vi.waitFor(() => {
+        expect(screen()).toContain("Open terminal")
+        expect(screen()).not.toContain("Members can run machines.")
+      })
       let called = false
       context.terminal.actions.showInBackground(branchId, undefined, async () => { called = true }, AbortSignal.abort())
       await new Promise<void>((resolve) => setImmediate(resolve))

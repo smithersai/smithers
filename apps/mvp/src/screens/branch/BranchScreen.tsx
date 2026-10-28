@@ -1,3 +1,4 @@
+import { mayAsk } from "../../features/auth/contract"
 import { useTodos } from "../../features/todos/components/TodosContext"
 import { repoId } from "../../features/repo/contract"
 import { Card, EmptyState } from "@smthrs/ui"
@@ -15,6 +16,8 @@ import { SharedFile } from "../../features/coedit/components/SharedFile"
 import { FileTabsBar } from "../../features/files/components/FileTabsBar"
 import { HomeTabs } from "../../features/home/components/HomeTabs"
 import { Conversation } from "../../features/chat/components/Conversation"
+import { useEngineStopped } from "../../features/chat/components/useEngineStopped"
+import { branchUnavailable, BRANCH_UNAVAILABLE, COMPARE_UNAVAILABLE, FILE_UNAVAILABLE, TERMINAL_UNAVAILABLE } from "../../features/chat/engineAvailability"
 import { NO_MESSAGES } from "../../features/chat/contract"
 import { selfAccessOf } from "../../features/presence/view"
 import { useRepoAnswer } from "../../features/repo/components/RepoContext"
@@ -36,6 +39,7 @@ import "./branch-screen.css"
 // route's loader opens the location, the branch, its room and its terminal; this screen only renders what the device
 // has.
 export function BranchScreen({ homeTabs = false }: { readonly homeTabs?: boolean } = {}) {
+  const stopped = useEngineStopped()
   const { queries, presence, publishing } = useBranch()
   const { data: current } = useLiveQuery(queries.current)
   const { data: publication } = useLiveQuery(publishing.queries.publication)
@@ -44,6 +48,8 @@ export function BranchScreen({ homeTabs = false }: { readonly homeTabs?: boolean
   const { data: participants } = useLiveQuery(presence.queries.participants)
   const search = useSearch({ strict: false }) as { readonly terminal?: string; readonly edit?: string; readonly compare?: true }
   const { data: session } = useLiveQuery(useAuth().queries.session)
+  const { data: confirmed } = useLiveQuery(useAuth().queries.confirmed)
+  const unavailable = branchUnavailable(stopped, session, confirmed)
   const answer = useRepoAnswer(current?.owner ?? "", current?.repo ?? "")
   const access = accessNow(current, room, selfAccessOf(participants))
   const open = access !== undefined && access !== "none"
@@ -57,10 +63,18 @@ export function BranchScreen({ homeTabs = false }: { readonly homeTabs?: boolean
       {/* Offline before tracking answered: the pending view's public chrome until the route opens again online. */}
       {open ? <BranchHeader access={access} /> : current?.status === "offline" ? <BranchHeader access={undefined} pending /> : null}
       <div className="branch-screen-notices"><Toasts surface={open ? "conversation" : "page"} /></div>
+      {unavailable && !open && search.terminal === undefined && search.edit === undefined && search.compare === undefined
+        ? <EmptyState title={BRANCH_UNAVAILABLE} /> : null}
       <div className="branch-screen-view">
         {homeTabs ? <HomeTabs active="code" /> : null}
-        {open && search.terminal !== undefined
-          ? <TerminalPanel canOpen={writes(access) && current?.mode === "open"} />
+        {search.terminal !== undefined && unavailable
+          ? <section className="terminal-panel" aria-label="Terminal"><EmptyState title={TERMINAL_UNAVAILABLE} /></section>
+          : open && search.terminal !== undefined
+          ? <TerminalPanel canOpen={writes(access) && current?.mode === "open"} deploymentMember={session?.status !== "signed_in" || mayAsk(session.role)} />
+          : unavailable && search.edit !== undefined
+          ? <EmptyState title={FILE_UNAVAILABLE} />
+          : unavailable && search.compare !== undefined
+          ? <EmptyState title={COMPARE_UNAVAILABLE} />
           : open && search.edit !== undefined && current?.conversationId != null
           ? <SharedFile conversationId={current.conversationId} path={search.edit} readOnly={!writes(access)} />
           : search.compare !== undefined && comparesOf(access, publication)

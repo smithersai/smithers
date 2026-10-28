@@ -94,6 +94,8 @@ export const APP_TELEMETRY = {
     "pwa.update",
     "app.unhandled",
     "browser.language_server.failed",
+    "browser.sqlite.open",
+    "smithers_browser_sqlite_openings",
   ],
   fields: [
     "page",
@@ -115,6 +117,7 @@ export const APP_TELEMETRY = {
     "failures",
     "boundary",
     "outcome",
+    "stage",
     "trigger",
     "kind",
     "errorCode",

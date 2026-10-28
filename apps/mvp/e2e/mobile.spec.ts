@@ -9,7 +9,11 @@ import { openComposer } from "./composer"
 import { serveFramedPage } from "./framed-page"
 import { shapeRows } from "./shape"
 import { redactRequestErrors } from "./redact"
-import { baseURL, requires, scriptedAgent, target, writeHeaders, me, stackRepository, syncedRepository, ownPlace, signedOut, sessionFiles } from "./target"
+import { baseURL, meets, requires, scriptedAgent, target, writeHeaders, me, stackRepository, syncedRepository, ownPlace, signedOut, sessionFiles } from "./target"
+import { BRANCH_UNAVAILABLE, COMMIT_UNAVAILABLE, COPY_DRAFT, FLOW_UNAVAILABLE, TERMINAL_UNAVAILABLE } from "../src/features/chat/engineAvailability"
+
+/** A private context can refuse OPFS; it must then explain actions that require the durable engine. */
+const hasDeviceStorage = (page: Page) => page.evaluate(() => navigator.storage.getDirectory().then(() => true, () => false))
 
 // Real pages and services. Persist a structured audit even when several checks fail,
 // so the first run is the red receipt for each subsequent layout change.
@@ -284,6 +288,10 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
               if (screen.name === "conversations" && signedIn) {
                 requires("personalModel", "member", "ownConversation")
                 await page.goto(ownPlace()?.path ?? "/octocat/Spoon-Knife/tree/test-branch")
+                if (!(await hasDeviceStorage(page))) {
+                  await expect(page.getByText(BRANCH_UNAVAILABLE, { exact: true })).toBeVisible()
+                  return
+                }
                 await expect(page.getByRole("navigation", { name: "Branch" })).toBeVisible({ timeout: 30_000 })
                 await expect.poll(async () => {
                   const rows = await shapeRows<{ conversation_id: string; owner: string; repo: string; branch: string; archived_at: string | null }>(page.request, "/api/shapes/my-conversations")
@@ -328,8 +336,13 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
               await page.goto(screen.path)
               // Tracking needs sign-in; a visitor reads the public repository view,
               // without the private workspace's Branch navigation or terminal.
-              const ready = (screen.name === "terminal" || screen.name === "branch") && !signedIn ? ".branch-screen-view" : screen.ready
+              const privateBranch = screen.name === "branch" && signedIn && !(await hasDeviceStorage(page))
+              const ready = privateBranch || (screen.name === "terminal" || screen.name === "branch") && !signedIn ? ".branch-screen-view" : screen.ready
               await expect(page.locator(ready).first()).toBeVisible({ timeout: 30_000 })
+              if (screen.name === "terminal" && signedIn && !(await hasDeviceStorage(page))) {
+                await expect(page.getByText(TERMINAL_UNAVAILABLE, { exact: true })).toBeVisible()
+              }
+              if (privateBranch) await expect(page.getByText(BRANCH_UNAVAILABLE, { exact: true })).toBeVisible()
               if (screen.name === "conversations" && signedIn) await expect(page.getByRole("list", { name: "Conversations" })
                 .locator(`a[href="${ownPlace()?.path ?? "/octocat/Spoon-Knife/tree/test-branch"}"]`)).toBeVisible({ timeout: 30_000 })
               if (screen.name === "secrets" && signedIn && me().role === "admin") await expect(page.getByRole("form", { name: "Add secret" })).toBeVisible({ timeout: 30_000 })
@@ -359,6 +372,14 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
               const bounds = (await conversations.boundingBox())!
               expect(bounds.x).toBeGreaterThanOrEqual(0)
               expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width)
+            }
+            // Without a configured GitHub App, local lists deliberately link to GitHub instead of rendering Sort.
+            if ((target === "deployment" || meets("githubApp")) && (screen.name === "issues" || screen.name === "pulls")) {
+              const sort = page.getByRole("combobox", { name: "Sort", exact: true })
+              await expect(sort).toBeVisible()
+              const bounds = (await sort.boundingBox())!
+              expect(bounds.height, "Sort uses the house control height on every engine").toBeGreaterThanOrEqual(32)
+              expect(bounds.width).toBeGreaterThanOrEqual(32)
             }
             await audit(page, info)
           })
@@ -432,7 +453,11 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           const { flowId } = await saved.json() as { flowId: string }
           try {
             await page.goto(`/app/flows/code/${name}`)
-            await expect(page.getByRole("textbox", { name: "Code", exact: true })).toHaveValue(source, { timeout: 30_000 })
+            if (await hasDeviceStorage(page)) {
+              await expect(page.getByRole("textbox", { name: "Code", exact: true })).toHaveValue(source, { timeout: 30_000 })
+            } else {
+              await expect(page.getByText(FLOW_UNAVAILABLE, { exact: true })).toBeVisible()
+            }
             await audit(page, info, "flow-code")
           } finally {
             expect((await page.request.post(`/api/flows/${flowId}/delete`, { headers: writeHeaders(), data: {} })).ok()).toBe(true)
@@ -495,6 +520,12 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           await draft.getByLabel("Title").fill(title)
           await draft.getByLabel("Prompt").fill("Check that every control remains accessible on a narrow screen.")
           await audit(page, info, "draft")
+          if (!(await hasDeviceStorage(page))) {
+            await expect(draft.getByRole("button", { name: "Commit", exact: true })).toBeDisabled()
+            await expect(page.getByText(`${COMMIT_UNAVAILABLE} ${COPY_DRAFT}`, { exact: true })).toBeVisible()
+            await draft.getByRole("button", { name: "Discard", exact: true }).click()
+            return
+          }
           todos.push({ repository: stackRepository(), title })
           await draft.getByRole("button", { name: "Commit", exact: true }).click()
           const row = page.locator('[data-slot="issues-row"]', { hasText: title })

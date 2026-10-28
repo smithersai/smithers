@@ -1,3 +1,5 @@
+import { expectConsoleError, expectServerError } from "./watch"
+import { offlineTransport } from "./offlineTransport"
 import { admissionRecords } from "./admissionRecords"
 import { reloadAfter } from "../src/test/reloadTiming"
 import { expect, test as base } from "./devices"
@@ -38,21 +40,43 @@ test(`Create survives reload ${delay} ms after the press`, async ({ devices, rec
 
 }
 
-test("an offline Create remains Requested through reload", async ({ devices, records }) => {
+test("an offline Create remains Requested through reload", async ({ devices, records, problems }, info) => {
   requires("githubScratch", "member")
-  const repo = scratchRepository()
-  const [person] = await devices.open("Maya")
-  const page = person!.page
-  await records(page)
-  await page.goto(`/${repo}/issues/new`)
-  await page.getByLabel("Title", { exact: true }).fill(`bugbash4-w14w-offline-${devices.word}`)
-  await person!.offline()
-  await page.getByRole("button", { name: "Create issue", exact: true }).click()
-  await expect(page).toHaveURL(/\?write=/)
-  await expect(page.getByRole("status").filter({ hasText: /^Requested$/ })).toBeVisible()
-  await page.reload()
-  await expect(page.getByRole("status").filter({ hasText: /^Requested$/ })).toBeVisible()
-  await expect(page.getByText("Creating issue…", { exact: true })).toHaveCount(0)
+  const transport = await offlineTransport()
+  devices.withProxy(transport.proxy)
+  try {
+    const repo = scratchRepository()
+    const [person] = await devices.open("Maya")
+    const page = person!.page
+    await records(page)
+    await page.goto(`/${repo}/issues/new`)
+    await page.getByLabel("Title", { exact: true }).fill(`bugbash4-w14w-offline-${devices.word}`)
+    await person!.offline()
+    await page.getByRole("button", { name: "Create issue", exact: true }).click()
+    await expect(page).toHaveURL(/\?write=/)
+    await expect(page.getByRole("status").filter({ hasText: /^Requested$/ })).toBeVisible()
+    const requestedUrl = page.url()
+    const openedAt = await page.evaluate(() => performance.timeOrigin)
+    // Online setup must be clean before declaring failures caused by this test's disconnected relay.
+    expect(problems.undeclared(info.annotations)).toEqual([])
+    expectServerError("failed", "/api/*")
+    expectConsoleError("kCFErrorDomainCFNetwork error 310.")
+    // The relay remains disconnected while releasing only WebKit's emulation.
+    transport.disconnect()
+    const forwarded = transport.forwarded()
+    expect(forwarded, "this device used the relay before disconnect").toBeGreaterThan(0)
+    await person!.device.context.setOffline(false)
+    await page.reload()
+    await expect(page).toHaveURL(requestedUrl)
+    expect(await page.evaluate(() => performance.timeOrigin), "a new document restored the request").toBeGreaterThan(openedAt)
+    await expect(page.getByRole("status").filter({ hasText: /^Requested$/ })).toBeVisible()
+    await expect(page.getByText("Creating issue…", { exact: true })).toHaveCount(0)
+    const reachable = await page.evaluate(() => fetch("/api/auth/session", { cache: "no-store" }).then(() => true, () => false))
+    expect(reachable, "the reloaded page cannot reach the real session endpoint").toBe(false)
+    expect(transport.forwarded(), "no connection reached the network after disconnect").toBe(forwarded)
+    await expect(page.getByRole("status").filter({ hasText: /^Requested$/ })).toBeVisible()
+    await info.attach("offline-transport", { body: JSON.stringify({ connectionsBeforeCut: forwarded, connectionsAfterCut: transport.forwarded(), reachable }), contentType: "application/json" })
+  } finally { await transport.close() }
 })
 
 test("a write URL unavailable on this device recovers to Issues", async ({ devices, records }) => {

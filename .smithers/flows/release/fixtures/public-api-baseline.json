@@ -8136,6 +8136,7 @@
         "internal/SqlConnection.d.ts": "967dac918ee7900c918bb4d35f3b8b0e511aef802016f9e464160b0bf6d5756a",
         "internal/SqlProtocol.d.ts": "935d053b9d299838c1d945b0e39517b4fa7608beb37b87d49953fc3e026df552",
         "internal/Statements.d.ts": "f712df2496a285c5284abb545852237832000d14984e8ecb1f32e92af6ebbb25",
+        "internal/StorageDiagnostics.d.ts": "dcb6be2e0603922f49299849f32eb64c5d8bdc8e6894e3ab870767b71746cbfc",
         "internal/TypeScriptWorkspace.d.ts": "aa8d862f1ab879144eae0dde4df207ee23b95a724f80d3464173e32d5da485f7"
       }
     },

@@ -40,6 +40,13 @@ You need Docker with Compose v2, Node 26 (it runs the TypeScript scripts directl
 | Is Electric up? | `curl localhost:30001/v1/health` |
 | ChatApi's logs | `.alchemy/log/dev_<user>/ChatApi/` |
 
+The development service worker precaches only `index.html`; modules enter its runtime cache on a controlled visit.
+Generated files left in its temporary directory are never globbed into that precache. A stale `registerSW.js` is
+not served by Vite and would fail installation. Device tests bound first activation to 90 seconds before reloading under
+worker control. The offline write test then cuts a real CONNECT relay before releasing browser offline emulation:
+WebKit's emulation blocks even a service-worker navigation response. The relay forwards opaque TLS bytes only and
+remains disconnected through teardown; no queued write reaches the server.
+
 ### HTTPS and HTTP/2
 
 Certificate programs run asynchronously so first startup leaves the event loop responsive. Closing the plugin waits

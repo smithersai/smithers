@@ -465,6 +465,21 @@ browser; Firefox asks the person.
 **Fix.** Install the app as a PWA. Without persistent storage the engine still
 runs, but the browser may clear its store.
 
+## The browser engine cannot open storage
+
+`browser.sqlite.open` logs and spans identify the `stage`: `build` (JavaScript,
+WASM and instantiation), `opfs` (the access-handle pool), `database` or `journal`.
+Each records `opening`, then `ready`, `failed`, or `interrupted` on cancellation; `smithers_browser_sqlite_openings`
+counts the same stage and outcome. A failed stage includes a bounded native
+`error.type`, such as `SecurityError`, without its message, path or SQL. The
+worker's `browser.runtime.stopped` and tab's `browser.engine.unavailable` record
+the resulting engine failure. These records must reach the host's exporter.
+
+An OPFS refusal in private browsing is different from a denied `persist()`
+request: the engine cannot run. Open a regular browser window or reload after
+restoring storage access. An app may keep editor text in memory, but must identify
+that text as unretained and cannot claim that flow work survives a reload.
+
 ## `BrowserCache.layer` fails with `unavailable`
 
 **Symptom.** Building the layer fails with `ImmutableCacheError`, operation

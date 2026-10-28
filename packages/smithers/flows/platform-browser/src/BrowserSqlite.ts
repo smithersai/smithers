@@ -45,6 +45,7 @@ import type { SqlError } from "effect/sql/SqlError"
 import * as Statement from "effect/sql/Statement"
 import * as Stream from "effect/Stream"
 import * as Statements from "./internal/Statements.ts"
+import * as StorageDiagnostics from "./internal/StorageDiagnostics.ts"
 
 /**
  * An open wa-sqlite database: the API built from the module, and the
@@ -259,11 +260,11 @@ export const layerSqlite = (options: SqliteOptions): Layer.Layer<Sqlite, SqlErro
   Layer.effect(
     Sqlite,
     Effect.gen(function*() {
-      const { Factory, module, Vfs } = yield* load(options.build).pipe(
+      const { Factory, module, Vfs } = yield* StorageDiagnostics.observe("build", load(options.build)).pipe(
         Effect.mapError((cause) => Statements.failed(cause, "Failed to load wa-sqlite", "connect"))
       )
       const sqlite3 = Factory(module)
-      const vfs = yield* openPool(options.directory, module, Vfs)
+      const vfs = yield* StorageDiagnostics.observe("opfs", openPool(options.directory, module, Vfs))
       sqlite3.vfs_register(vfs as unknown as SQLiteVFS, false)
       // The pool's one worker holds every file, and opens each once: `engine.db` and the app's database.
       return { sqlite3, vfs: options.directory, exclusive: true }
@@ -311,17 +312,23 @@ export const open = (filename: string): Effect.Effect<Database, SqlError, Sqlite
   Effect.gen(function*() {
     const { exclusive, sqlite3, vfs } = yield* Sqlite
     const db = yield* Effect.acquireRelease(
-      opening(sqlite3).withPermits(1)(Effect.tryPromise({
-        try: () => sqlite3.open_v2(filename, undefined, vfs),
-        catch: (cause) => Statements.failed(cause, "Failed to open database", "connect")
-      })),
+      StorageDiagnostics.observe(
+        "database",
+        opening(sqlite3).withPermits(1)(Effect.tryPromise({
+          try: () => sqlite3.open_v2(filename, undefined, vfs),
+          catch: (cause) => Statements.failed(cause, "Failed to open database", "connect")
+        }))
+      ),
       (db) => Effect.promise(() => sqlite3.close(db))
     )
     if (exclusive === true) {
-      yield* Effect.tryPromise({
-        try: () => Statements.runAll({ sqlite3, db }, JOURNAL, [], "array"),
-        catch: (cause) => Statements.failed(cause, "Failed to journal database", "connect")
-      })
+      yield* StorageDiagnostics.observe(
+        "journal",
+        Effect.tryPromise({
+          try: () => Statements.runAll({ sqlite3, db }, JOURNAL, [], "array"),
+          catch: (cause) => Statements.failed(cause, "Failed to journal database", "connect")
+        })
+      )
     }
     return { sqlite3, db }
   })

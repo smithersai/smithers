@@ -111,3 +111,6 @@ The docs e2e oracle (`e2e/live-docs.ts`) reads vibelang.sh’s live index and se
 The VibeLang sidebar includes Effect reference pages because VibeLang publishes them in its docs index. The app keeps that index's pages and sections; it does not curate a second sidebar. The hosted Smithers docs search suppresses Pagefind's repeated `#_top` title sub-result while keeping section matches.
 
 An unavailable page keeps the docs index visible and says “Page unavailable · choose from the list”. The reader can open a listed page without leaving the repository.
+
+The repository navigation reserves space for its scrollbar, with block link targets so wrapped titles stay reachable.
+`mobile.spec.ts` checks every target after scrolling at phone, tablet and desktop widths in both engines.

@@ -12,6 +12,7 @@ import { afterEach, beforeEach } from "vitest"
 import { BrowserSqlite } from "../src/index.ts"
 import * as MemoryOpfs from "./fixtures/MemoryOpfs.ts"
 import * as MemorySqlite from "./fixtures/MemorySqlite.ts"
+import * as Telemetry from "./fixtures/Telemetry.ts"
 
 const sql = SqlClient.SqlClient
 
@@ -257,12 +258,32 @@ describe("BrowserSqlite over OPFS", () => {
 
   it.effect("fails an OPFS that cannot be opened at all without retrying", () =>
     Effect.gen(function*() {
+      const telemetry = Telemetry.make()
+      let attempts = 0
       Object.defineProperty(navigator, "storage", {
         configurable: true,
-        value: { getDirectory: () => Promise.reject(new TypeError("no OPFS here")) }
+        value: {
+          getDirectory: () => {
+            attempts++
+            return Promise.reject(new DOMException("private payload", "UnknownError"))
+          }
+        }
       })
-      const refused = yield* Layer.build(sqlite()).pipe(Effect.scoped, Effect.flip)
+      const refused = yield* Layer.build(sqlite()).pipe(Effect.scoped, Effect.flip, telemetry.observed)
       expect(refused.message).toContain("Failed to open the OPFS directory")
+      expect(attempts).toBe(1)
+      expect(
+        telemetry.lines("browser.sqlite.open").map((log) => {
+          const { stage, outcome, "error.type": type } = log.annotations
+          return { stage, outcome, ...(type === undefined ? {} : { "error.type": type }) }
+        })
+      ).toEqual([
+        { stage: "build", outcome: "opening" },
+        { stage: "build", outcome: "ready" },
+        { stage: "opfs", outcome: "opening" },
+        { stage: "opfs", outcome: "failed", "error.type": "UnknownError" }
+      ])
+      expect(JSON.stringify(telemetry.logs)).not.toContain("private payload")
     }))
 
   it.effect("fails bytes that are not WebAssembly, before they reach the build", () =>

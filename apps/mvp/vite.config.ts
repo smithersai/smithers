@@ -21,7 +21,7 @@ const API = /^\/api\//
 const COMMAND_MAX_SECONDS = Effect.runSync(commandMaxSeconds.parse(ConfigProvider.fromEnv()))
 
 // Alchemy injects the Cloudflare plugin, which runs worker/index.ts beside the app in dev and build.
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [
     // A workspace package exports its source, so the app and worker/index.ts can import `.vibe` modules; each compiles
     // with its own package's tsconfig.
@@ -71,7 +71,8 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: SHELL,
+        // Dev caches only its explicit shell plus modules fetched at runtime. Never precache stale generator files.
+        globPatterns: command === "serve" ? [] : SHELL,
         // The language server's worker and TypeScript's lib files (src/features/code-intel/language.worker.ts) load
         // only when a TypeScript or JavaScript file first shows; the runtime cache below keeps them once they have.
         globIgnores: ["**/language.worker-*.js", "**/lib.*.d-*.js"],
@@ -130,4 +131,4 @@ export default defineConfig({
     warmup: { clientFiles: ["./src/main.tsx", "./src/flows/engine.worker.ts", "./src/features/code-intel/language.worker.ts"] },
   },
   build: { target: "esnext" },
-})
+}))

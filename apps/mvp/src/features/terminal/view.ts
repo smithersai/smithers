@@ -44,8 +44,10 @@ export const panelViewOf = (
   panel: Panel | undefined,
   tabs: ReadonlyArray<Tab>,
   canOpen: boolean,
+  deploymentMember = true,
 ): PanelView | undefined => {
   if (panel === undefined || panel.branchId === null) return undefined
+  if (!deploymentMember) return { badge: "Members can run machines.", open: undefined, screen: { kind: "empty", text: undefined } }
   if (panel.phase === "loading") return { badge: undefined, open: undefined, screen: { kind: "empty", text: undefined } }
   const badge = BADGES[panel.phase]
   // A failed terminal can be retried unless another owned terminal is already available.

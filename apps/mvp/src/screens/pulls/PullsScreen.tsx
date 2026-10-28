@@ -1,3 +1,4 @@
+import { IssueSort } from "../../features/issues/components/IssueSort"
 import { visibleRows } from "../../features/issues/list"
 import { githubList } from "../../features/repo/scope"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
@@ -43,10 +44,8 @@ export function PullsScreen() {
       <div className="list-search-tools" role="search" aria-label="Search pulls">
         <Input aria-label="Search pulls" placeholder="Search pulls" value={search.q ?? ""}
           onChange={(event) => void navigate({ to: "/$owner/$repo/pulls", params: { owner, repo }, search: { ...search, q: event.currentTarget.value }, replace: true, resetScroll: false })} />
-        <select aria-label="Sort" value={search.sort ?? "updated"}
-          onChange={(event) => void navigate({ to: "/$owner/$repo/pulls", params: { owner, repo }, search: { ...search, sort: event.currentTarget.value as "newest" | "oldest" | "updated" }, resetScroll: false })}>
-          <option value="newest">Newest</option><option value="oldest">Oldest</option><option value="updated">Recently updated</option>
-        </select>
+        <IssueSort value={search.sort ?? "updated"}
+          onChange={(sort) => void navigate({ to: "/$owner/$repo/pulls", params: { owner, repo }, search: { ...search, sort }, resetScroll: false })} />
       </div>
       <IssuesView
         repo={`${owner}/${repo}`}

@@ -132,3 +132,22 @@ test("a machine refusal explains membership and never offers another open", () =
     badge: "Members can run machines.", open: undefined, screen: { kind: "empty", text: undefined },
   })
 })
+
+// Auth is a live query in BranchScreen: a role change recomputes this view without trapping the device in a refused phase.
+test("an empty terminal explains nonmembership and offers Open terminal to a Member", () => {
+  const empty = panel()
+  expect(panelViewOf(empty, [], true, false)).toEqual({
+    badge: "Members can run machines.", open: undefined, screen: { kind: "empty", text: undefined },
+  })
+  expect(empty.phase).toBe("idle")
+  expect(panelViewOf(empty, [], true, true)).toEqual({ badge: undefined, open: "button", screen: { kind: "open" } })
+  expect(panelViewOf(empty, [], true, false)?.open).toBeUndefined()
+})
+
+test("known deployment non-Members never see a stale terminal frame or an open button", () => {
+  for (const phase of ["loading", "opening", "connecting", "open", "offline", "failed", "ended"] as const) {
+    expect(panelViewOf(panel({ phase, terminalId: "t-1" }), [tab()], true, false)).toEqual({
+      badge: "Members can run machines.", open: undefined, screen: { kind: "empty", text: undefined },
+    })
+  }
+})

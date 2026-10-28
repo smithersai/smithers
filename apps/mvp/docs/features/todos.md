@@ -4,6 +4,10 @@ A person asks Smithers for a TODO, or makes one from an issue, edits the draft a
 
 ## How it works
 
+When this browser's engine is unavailable, drafts remain editable and Commit is
+disabled. The card offers a regular window or reload and asks the person to copy
+the draft first. It never presents a session-only draft as a durable admission.
+
 ```
 the device                                      ChatApi (Cloudflare)
 "make a TODO …" ─▶ the agent ─▶ todo/draft

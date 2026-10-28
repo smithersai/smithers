@@ -438,6 +438,10 @@ export const serverRows = async (request: APIRequestContext, word: string): Prom
 
 class Devices {
   private extraHTTPHeaders: Record<string, string> = {}
+  private proxy: BrowserContextOptions["proxy"]
+
+  /** This device reaches the real server through a transport the test can disconnect. */
+  withProxy(proxy: NonNullable<BrowserContextOptions["proxy"]>) { this.proxy = proxy }
 
   /** Content-free capture headers, applied before any device starts its worker. */
   withRequestHeaders(headers: Record<string, string>) { this.extraHTTPHeaders = { ...headers } }
@@ -521,6 +525,7 @@ class Devices {
     return Promise.all(
       names.map(async (name) => {
         const context = await this.openContext({
+          proxy: this.proxy,
           viewport: this.viewport,
           extraHTTPHeaders: this.extraHTTPHeaders,
           // The test's mode, from the first frame (e2e/fixtures.ts `themeOf`).
@@ -561,9 +566,23 @@ class Devices {
     await page.goto(path ?? (device.faulty ? faultyApp() : appHome()))
     await tab.ready()
     if (first) {
-      await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined))
+      // Synchronous polling survives activation's reload and never holds a WebKit registration Promise open.
+      await step("Wait for this device's service worker to control the page", async () => {
+        try {
+          // A fresh production profile precaches the full shell over its real network before taking control.
+          await page.waitForFunction(() => navigator.serviceWorker.controller?.state === "activated", undefined, { timeout: 90_000 })
+        } finally {
+          const state = await page.evaluate(() => ({
+            controlled: navigator.serviceWorker.controller !== null,
+            controllerState: navigator.serviceWorker.controller?.state,
+            protocols: [...new Set((performance.getEntriesByType("resource") as PerformanceResourceTiming[]).map(entry => entry.nextHopProtocol))],
+          })).catch(() => ({ documentDeparted: true }))
+          await this.testInfo.attach("service-worker-activation", { body: JSON.stringify(state), contentType: "application/json" })
+        }
+      })
       await tab.reload()
-      await page.waitForFunction(() => navigator.serviceWorker.controller !== null, undefined, { timeout: 30_000 })
+      await step("Verify service worker control after reload", () =>
+        page.waitForFunction(() => navigator.serviceWorker.controller !== null, undefined, { timeout: 30_000 }))
     }
     tab.opened = true
     return tab

@@ -11,13 +11,13 @@ import { useTerminal } from "./TerminalContext"
 // are the branch's live terminals, by owner. The screen, the terminal's place on the page, is always there: the
 // terminal, Open terminal in its middle (with a calm bar along its top while the machine wakes), or `No terminals`
 // (`../view.ts`).
-export function TerminalPanel({ canOpen }: { readonly canOpen: boolean }) {
+export function TerminalPanel({ canOpen, deploymentMember = true }: { readonly canOpen: boolean; readonly deploymentMember?: boolean }) {
   const { queries, actions } = useTerminal()
   const mode = useShownMode()
   const params = useParams({ strict: false })
   const { data: panel } = useLiveQuery(queries.panel)
   const { data: tabs } = useLiveQuery(queries.tabs)
-  const view = panelViewOf(panel, tabs, canOpen)
+  const view = panelViewOf(panel, tabs, canOpen, deploymentMember)
   if (panel === undefined || view === undefined) return null
   const routeParams = { owner: params.owner ?? "", repo: params.repo ?? "", ref: params.ref ?? "", _splat: params._splat ?? "" }
   const openButton = view.open === undefined ? null : (

@@ -1,5 +1,9 @@
 # Branch workspace
 
+If the browser engine cannot run, a requested terminal still shows its panel,
+with an unavailable state and a regular-window or reload recovery. No terminal
+launch or reload-retention claim is made by that state.
+
 A branch is a workspace: it has one conversation for as long as it lives, and a terminal for each person on the branch's own machine. This page covers the first slice of [decision 0013](../decisions/0013-branch-workspace.md) (its §9, S1): open a repository's existing branch, ask in that branch's conversation, open the branch's terminal in a frame, run `git log` in a real container, reload and keep the same shell; another branch has its own conversation and terminal. It also covers the next slice, [sharing](#sharing) a branch Google Docs style and the people on it [live](#presence).
 
 People on a shared branch type its prompt and its files together, with each other's carets ([co-editing](coedit.md)). Snapshots and branch creation come later ([What's not built](#whats-not-built)); the machine's tools, sleep and wake are [sandbox tools](sandbox-tools.md).
@@ -254,3 +258,8 @@ Automatic branch reads use `POST /api/branches?optional=true`. An inaccessible w
 A confirmed missing branch answers optional browsing with `204` and `x-branch-state: not_found`; ordinary calls still answer `404`. The repository page says Branch not found and links to Code, preserving Not synced yet only for a mirror that actually reports that state.
 
 Opening or attaching to a terminal also requires Member or above on `GITHUB_REPOSITORY`, independently of the branch repository role (decision 0122 amendment). A stranger receives "Members can run machines." before the machine is contacted.
+
+A signed-in person with no deployment membership sees `Members can run machines.` even on an empty branch.
+The terminal view follows the session live, so a membership change updates the refusal without persisting a blocked panel.
+Existing terminal actions and the server still refuse unauthorized socket connections.
+Their repository membership and personal model still authorize their conversation (decision 0122).

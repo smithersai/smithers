@@ -2,6 +2,10 @@
 
 Every action a person or the agent takes is one `Flow.make` declaration, listed once in the app's registry. A button, a slash command, a view and the composer dispatch a registered name; the agent calls the same declarations from its cells. Every registered flow runs on this device's durable engine; a flow that needs something the device lacks is a [remote flow](remote-flows.md), started by the route that admits it. Decisions: [0003](../decisions/0003-flows-and-the-agent.md), [0011](../decisions/0011-the-agent-runs-in-the-browser.md).
 
+When the engine cannot run, saved-flow code explains its unavailability and offers
+a regular window or reload as recovery. Already loaded code remains editable,
+with Save disabled. Session editors do not promise reload retention (0120).
+
 ## How a dispatch runs
 
 ```
