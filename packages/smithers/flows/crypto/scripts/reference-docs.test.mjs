@@ -1,7 +1,8 @@
 /** Check every public declaration, including the root's wildcard exports. */
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
-import { test } from "node:test"
+// The docs target uses Node; the package suite also discovers this same guard.
+const { test } = await import(process.env.VITEST ? "vitest" : "node:test")
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8")
 

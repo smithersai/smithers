@@ -1,7 +1,7 @@
 import { REPOSITORIES_SHAPE_ROUTE } from "../src/features/repo/contract"
 import { shapeRows } from "./shape"
 import { expect, test, visibleText } from "./fixtures"
-import { requires, writeHeaders } from "./target"
+import { requires } from "./target"
 import { repositoryAbout } from "./repository-prerequisites"
 import { expectConsoleError, expectServerError } from "./watch"
 import { showChat } from "./chat-composer"
@@ -113,12 +113,16 @@ test.describe("cloned repositories", () => {
       // W12 missing-repository recovery deliberately removes Clone once absence is known (repo.md).
       await expect(page.getByText("Repository not found", { exact: true })).toBeVisible({ timeout: 30_000 })
       await expect(header.getByRole("button", { name: "Clone", exact: true })).toHaveCount(0)
-      // Exercise the Member's actual admission API to retain the failed-clone/feed/retry coverage.
-      const admitted = await request.post("/api/repos", { headers: writeHeaders(), data: { owner, name } })
-      expect(admitted.ok()).toBe(true)
-      const { cloneId } = await admitted.json() as { cloneId: string }
-      const launched = await request.post("/api/repos/launch", { headers: writeHeaders(), data: { owner, name, cloneId } })
-      expect(launched.ok()).toBe(true)
+      // Retain the real absent-repository fixture and exercise the person's /clone command.
+      await page.goto("/app")
+      const composer = await showChat(page)
+      await expect(composer).toBeEnabled({ timeout: 30_000 })
+      await composer.fill(`/clone ${repository}`)
+      const launched = page.waitForResponse(response => response.request().method() === "POST" &&
+        new URL(response.url()).pathname === "/api/repos/launch" && response.request().postDataJSON()?.name === name)
+      await composer.press("Enter")
+      expect([200, 202]).toContain((await launched).status())
+      await page.goto(`/${repository}`)
       const subject = `clone:github/${repository.toLowerCase()}`
       const toast = page.locator(`[data-slot="toast"][data-subject="${subject}"]`)
       await page.getByRole("button", { name: /^Notifications/ }).click()
