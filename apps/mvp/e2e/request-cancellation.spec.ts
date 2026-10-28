@@ -27,6 +27,12 @@ test("navigation cancels WebKit's old page live read without a server or access-
     query.set("cursor", cursor!)
     const page = await device.context.newPage()
     await page.goto("/app/flows")
+    await expect(page.getByRole("heading", { name: "Flows", exact: true })).toBeVisible({ timeout: 30_000 })
+    // Exporters reuse a URL. A successful earlier batch is independent of the attempt WebKit refuses before
+    // dispatch while leaving this document. No telemetry content or persistent product state is written here.
+    expect(await page.evaluate(async () => (await fetch("/api/telemetry/v1/logs", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resourceLogs: [] }),
+    })).status)).toBe(200)
     const address = new URL(`/api/shapes/flows?${query}`, page.url()).href
     const failed: string[] = []
     page.on("requestfailed", request => {
@@ -35,7 +41,12 @@ test("navigation cancels WebKit's old page live read without a server or access-
     const started = page.waitForRequest(request => request.url() === address)
     await page.evaluate(url => {
       // The old document handles rejection; leaving it deliberately cancels its live poll.
-      void fetch(url).then(response => response.text()).catch(() => undefined)
+      void fetch(url).then(response => response.text()).catch(() => {
+        // WebKit handles this rejection on the outgoing document before pagehide and before network dispatch.
+        void fetch("/api/telemetry/v1/logs", {
+          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resourceLogs: [] }),
+        }).catch(() => undefined)
+      })
     }, address)
     await started
     await page.goto("/app/flows/new")
@@ -44,7 +55,7 @@ test("navigation cancels WebKit's old page live read without a server or access-
     const receipts = problems.navigationCancellations()
     // The compiled bootstrap reproduces WebKit's pre-dispatch refusal; Vite's module loading can finish quietly.
     // Production must exercise the native diagnostic, beyond a dispatched cancellation any watcher already permits.
-    if (target === "deployment") expect(receipts.length).toBeGreaterThan(0)
+    if (target === "deployment") expect(receipts.some(receipt => receipt.includes("/api/telemetry/v1/logs"))).toBe(true)
     const path = testInfo.outputPath("navigation-cancellations.json")
     await writeFile(path, JSON.stringify({ failed, receipts }, null, 2))
     await testInfo.attach("navigation-cancellations", { path, contentType: "application/json" })

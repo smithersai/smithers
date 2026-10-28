@@ -2,7 +2,7 @@ import { type Browser, type BrowserContext, expect, test as base, type Page, typ
 import { appendFile } from "node:fs/promises"
 import { createHash } from "node:crypto"
 import { recordConsole } from "./console"
-import { accessControlURL, DocumentRequests } from "./cancellations"
+import { DocumentRequests, nativeAccessControlURL } from "./cancellations"
 import { consoleErrorAnnotation, environmentAnnotations, pathOf, Problems, serverErrorAnnotation, type Observation, type Status, UNDECLARED } from "./problems"
 import { baseURL, DOT_ENV, dotEnvSets, meets, onThisMachine, target } from "./target"
 
@@ -67,7 +67,7 @@ export class Watched extends Problems {
     })
     context.on("requestfinished", request => {
       const trace = this.trace(request)
-      trace?.history.finish(trace.id)
+      trace?.history.finish(trace.id, Date.now())
     })
     context.on("requestfailed", (request) => {
       const error = request.failure()?.errorText ?? ""
@@ -100,17 +100,14 @@ export class Watched extends Problems {
     })
     // Its console's errors and its uncaught errors, without a log: the test's own log records the lines it keeps.
     recordConsole(page, undefined, undefined, { note: (observation) => {
-      if (observation.kind === "page" && observation.name === `Fetch API cannot load ${new URL(this.origin).protocol.slice(0, -1)}` &&
-        page.context().browser()?.browserType().name() === "webkit" && observation.text.endsWith(" due to access control checks.")) {
-        const url = accessControlURL(this.origin, observation.text)
-        if (url !== undefined) {
-          const at = Date.now()
-          this.nativeCandidates.push({
-            observation, classify: history.candidate(url, at),
-            receipt: `${new Date(at).toISOString()} ${pathOf(url)} key=${createHash("sha256").update(url).digest("hex").slice(0, 16)} navigation=${JSON.stringify(history.progress())} witness=${JSON.stringify(history.witness(url, at))}`,
-          })
-          return
-        }
+      const url = nativeAccessControlURL(this.origin, page.context().browser()?.browserType().name(), observation)
+      if (url !== undefined) {
+        const at = Date.now()
+        this.nativeCandidates.push({
+          observation, classify: history.candidate(url, at),
+          receipt: `${new Date(at).toISOString()} ${pathOf(url)} key=${createHash("sha256").update(url).digest("hex").slice(0, 16)} kind=${observation.kind} navigation=${JSON.stringify(history.progress())} witness=${JSON.stringify(history.witness(url, at))}`,
+        })
+        return
       }
       this.note(observation)
     } })

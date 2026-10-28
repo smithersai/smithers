@@ -333,15 +333,22 @@ Every e2e test, locally and against a deployment, fails on each of these that it
 The check watches every browser context a test opens: the default page's, each device's (`e2e/devices.ts`) and any the test opens itself. A failing test's `browser.log` ends with the list. Each problem shows its status, method and path, with the query's parameter names but no values, then its count, marked `declared` or `UNDECLARED`.
 
 WebKit also emits a native `Fetch API cannot load … due to access control checks` diagnostic when navigation
-discards a document before its fetch reaches the network. Playwright turns this into `pageerror` despite no window
+discards a document before its fetch reaches the network. Playwright delivers it as `pageerror` or a console error despite no window
 error or unhandled rejection. The watcher records it as a navigation cancellation only for a same-origin API URL,
 after an actual old-document request cancellation, while the main-frame navigation is uncommitted, for at most two
 seconds. WebKit can report that cancellation up to 100 ms before its navigation request event. The watcher observes
 a stable token in the real window because `framenavigated` also fires for `pushState`, and binds navigation failures
 to their request and redirect chain. Unknown identity establishes no exemption. Classification waits until teardown
-and checks every matching read; a pending read, HTTP refusal, completed read or transport error remains a failure.
+and checks every matching read; a pending read, HTTP refusal, read completed during departure or transport error remains a failure.
+A successful request completed before departure is a previous exchange, not the later pre-dispatch fetch: repeated
+telemetry exports share a URL. Its completion time distinguishes those exchanges without recording payloads.
 A diagnostic on a committed or active page gets no exemption. `request-cancellation.spec.ts` requires the native
 receipt against a compiled deployment; development also exercises cancellation, which Vite may handle quietly.
+
+On macOS, WebKit’s embedder isolates cookies and IndexedDB by `userDataDir` but shares OPFS through Foundation’s
+home directory. `e2e/persistent.ts` gives each browser process a separate `CFFIXED_USER_HOME`; closing it removes
+only that device’s directory. The native `browser-isolation.spec.ts` opens no app JavaScript and verifies that a
+second device cannot read the first device’s OPFS marker. No stored owner or authorization check is bypassed.
 
 A test that causes one on purpose declares it, in its body or in a file or describe block:
 

@@ -105,3 +105,17 @@ test("bug report: /bug opens the form, Send files it with the page and the tab's
     })
   }
 })
+
+test("bug report: leaving the form keeps the inbox usable without sending a report", async ({ page }) => {
+  // A read-only production companion to the Send journey: its full-document departure used to report a native
+  // credential access-control diagnostic. Retain the strict watcher and do not file another report to test it.
+  await page.goto("/app")
+  await expect(page.getByRole("main", { name: "App", exact: true })).toBeVisible({ timeout: 30_000 })
+  const composer = await openComposer(page)
+  await composer.fill("/bug")
+  await expect(page.getByRole("option").first().locator(".sui-completion-label")).toHaveText("/bug")
+  await composer.press("Enter")
+  await expect(page.getByRole("textbox", { name: "What happened?" })).toBeFocused()
+  await page.goto("/app/bugs")
+  await expect(page.getByRole("list", { name: "Bug reports", exact: true }).or(page.getByText("No bug reports", { exact: true }))).toBeVisible({ timeout: 30_000 })
+})

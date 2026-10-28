@@ -1,3 +1,5 @@
+import type { Observation } from "./problems"
+
 /** WebKit's native network message, including the shortened URL Playwright gives its pageerror event. */
 export const accessControlURL = (origin: string, text: string): string | undefined => {
   const suffix = " due to access control checks."
@@ -13,6 +15,16 @@ export const accessControlURL = (origin: string, text: string): string | undefin
   }
 }
 
+/** Both native delivery forms still need a document/request witness before they can be classified. */
+export const nativeAccessControlURL = (origin: string, browser: string | undefined, observation: Observation): string | undefined => {
+  if (browser !== "webkit") return undefined
+  if ((observation.kind === "page" && observation.name === `Fetch API cannot load ${new URL(origin).protocol.slice(0, -1)}`) ||
+    (observation.kind === "console" && observation.text.startsWith("Fetch API cannot load "))) {
+    return accessControlURL(origin, observation.text)
+  }
+  return undefined
+}
+
 export type RequestState = "pending" | "finished" | "cancelled" | "failed"
 interface Read {
   readonly url: string
@@ -21,6 +33,7 @@ interface Read {
   state: RequestState
   status?: number
   cancelledAt?: number
+  finishedAt?: number
 }
 interface Navigation {
   readonly document: string | undefined
@@ -92,9 +105,12 @@ export class DocumentRequests {
     if (read !== undefined) read.status = Math.max(read.status ?? status, status)
   }
 
-  finish(id: number): void {
+  finish(id: number, at: number): void {
     const read = this.reads.get(id)
-    if (read !== undefined && read.state !== "failed") read.state = "finished"
+    if (read !== undefined && read.state !== "failed") {
+      read.state = "finished"
+      read.finishedAt = at
+    }
   }
 
   fail(id: number, error: string, at: number): void {
@@ -114,6 +130,7 @@ export class DocumentRequests {
     return read === undefined ? undefined : {
       state: read.state,
       status: read.status,
+      completedBeforeNavigation: read.finishedAt !== undefined && this.navigation !== undefined && read.finishedAt < this.navigation.at,
       previousDocument: read.document !== undefined && (read.document !== this.document || this.navigation?.document === read.document),
       afterNavigationMs: this.navigation?.open !== true ? undefined : at - this.navigation.at,
     }
@@ -121,7 +138,7 @@ export class DocumentRequests {
 
   /**
    * WebKit refuses old-document fetches before network dispatch during navigation. Playwright presents the native
-   * diagnostic as pageerror despite no DOM exception. Capture its navigation interval now, then require a bounded
+   * diagnostic as pageerror or a console error despite no DOM exception. Capture its navigation interval now, then require a bounded
    * cancellation of that specific outgoing document and reconsider all matching outcomes at teardown.
    */
   candidate(url: string, at: number): (() => boolean) | undefined {
@@ -129,6 +146,7 @@ export class DocumentRequests {
     if (navigation?.open !== true || navigation.document === undefined || at < navigation.at || at - navigation.at > 2_000) return undefined
     return () => !navigation.aborted && this.cancelled(navigation) && [...this.reads.values()]
       .filter(read => read.url === url && read.at <= at && (read.document === undefined || read.document === navigation.document))
-      .every(read => read.document !== undefined && read.state === "cancelled" && (read.status === undefined || read.status < 400))
+      .every(read => read.document !== undefined && (read.status === undefined || read.status < 400) &&
+        (read.state === "cancelled" || (read.state === "finished" && read.status !== undefined && read.finishedAt! < navigation.at)))
   }
 }

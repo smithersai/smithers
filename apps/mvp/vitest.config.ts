@@ -223,6 +223,7 @@ export default defineConfig({
         // (docs/infrastructure.md#server-and-console-errors).
         "e2e/problems.ts",
         "e2e/cancellations.ts",
+        "e2e/browserProfile.ts",
         "e2e/sync.ts",
         // The dev server over HTTPS and HTTP/2, as production serves the app (docs/infrastructure.md#https-and-http2).
         "dev/https.ts"
