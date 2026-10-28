@@ -257,7 +257,10 @@ describe("BrowserRuntime over OPFS", () => {
     it.live("run logs what nothing caught on the worker's global while it runs, by kind and name, never the message", () =>
       Effect.gen(function*() {
         const listeners = new Map<string, (event: unknown) => void>()
-        vi.stubGlobal("addEventListener", (type: string, listener: (event: unknown) => void) => listeners.set(type, listener))
+        vi.stubGlobal(
+          "addEventListener",
+          (type: string, listener: (event: unknown) => void) => listeners.set(type, listener)
+        )
         vi.stubGlobal("removeEventListener", (type: string) => listeners.delete(type))
         const telemetry = Telemetry.make()
         const name = Engines.name()

@@ -256,7 +256,9 @@ export const make = (options: Options): Effect.Effect<LanguageServer.LanguageSer
             message: "The language server stopped"
           })
           failed = stopped
-          yield* Effect.logError("browser.language_server.failed").pipe(Effect.annotateLogs({ "error.type": event.error }))
+          yield* Effect.logError("browser.language_server.failed").pipe(
+            Effect.annotateLogs({ "error.type": event.error })
+          )
           return yield* Effect.forEach(pending.values(), (waiting) => Deferred.fail(waiting, stopped), {
             discard: true
           })
@@ -477,6 +479,9 @@ export const program = (
  * @since 1.0.0
  */
 export const serve = (options: ServeOptions): Fiber.Fiber<never> =>
-  Effect.runFork(Effect.scoped(program({ ...options, port: options.port ?? (globalThis as unknown as Protocol.Port) })), {
-    scheduler: BrowserScheduler.make()
-  })
+  Effect.runFork(
+    Effect.scoped(program({ ...options, port: options.port ?? (globalThis as unknown as Protocol.Port) })),
+    {
+      scheduler: BrowserScheduler.make()
+    }
+  )

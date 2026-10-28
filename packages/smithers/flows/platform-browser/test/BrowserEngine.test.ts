@@ -5,6 +5,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Flow, RunMetrics } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
+import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
@@ -369,7 +370,7 @@ describe("BrowserEngine.runs", () => {
         yield* engine.start(Steps, { executionId: id, payload: { prefix: id } })
         yield* engine.result(Steps, id)
       }
-      const ids = (within: number | string) =>
+      const ids = (within: Duration.Input) =>
         engine.runs({ limit: 1, within }).pipe(
           Stream.take(1),
           Stream.runCollect,
