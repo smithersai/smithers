@@ -1062,10 +1062,11 @@ describe("BrowserFileSystem operations over node:fs/promises", () => {
         reason: { _tag: "PermissionDenied", method: "access", pathOrDescriptor: path("ro.txt") }
       })
       expect(Exit.isFailure(outcome.writableOnReadOnly)).toBe(true)
-      const backendReadable = yield* Effect.promise(() =>
-        NodeFsPromises.access(path("wo.txt"), NodeFsPromises.constants.R_OK).then(() => true, () => false)
-      )
-      expect(Exit.isSuccess(outcome.readableOnWriteOnly)).toBe(backendReadable)
+      // The browser contract checks mode bits even when the Node test process can bypass them.
+      expect(Exit.isFailure(outcome.readableOnWriteOnly)).toBe(true)
+      expect(yield* (Effect.flip(fileSystem.access(path("wo.txt"), { readable: true })))).toMatchObject({
+        reason: { _tag: "PermissionDenied", method: "access", pathOrDescriptor: path("wo.txt") }
+      })
     }))
 
   /**
