@@ -46,8 +46,8 @@ export interface Receipts {
   readonly issueSending: ReadonlyArray<Pick<IssueSending, "id" | "op" | "repo" | "queuedAt">>
   readonly todoRequested: ReadonlyArray<TodoRequested>
   readonly todoSending: ReadonlyArray<Pick<TodoSending, "id" | "op" | "repo" | "queuedAt">>
-  /** The synced TODOs the device holds of the repositories this device's commits went to: a commit's TODO is its result. */
-  readonly todos: ReadonlyArray<Pick<Todo, "id" | "number" | "createdAt">>
+  /** This person's synced TODOs in opened stacks: a commit's TODO is its durable result. */
+  readonly todos: ReadonlyArray<Pick<Todo, "id" | "number" | "createdAt" | "repoId">>
   readonly dismissed: ReadonlyArray<Dismissed>
   /** The engine's own answers to this tab's dispatches, by execution id (src/writeAdmission.ts `answered`). */
   readonly answered: ReadonlyMap<string, { readonly flow: string; readonly repo?: string | undefined; readonly state: "done" | "failed"; readonly at: number }>
@@ -193,7 +193,7 @@ const commitRow = (
   input: Input | undefined,
   seen: ReadonlySet<string>,
 ): Row | undefined => {
-  const repo = recovery?.repo ?? sending?.repo ?? input?.repo
+  const repo = recovery?.repo ?? sending?.repo ?? input?.repo ?? todo?.repoId.slice("github/".length)
   const base = { subject: `write:${id}`, kind: "write" as const, title: OPERATION_WRITES["todo/commit"], repo, href: `/${repo}/stack` }
   // The stack's TODO under the commit's id: the stack took it, whatever the device's own rows still say.
   if (todo !== undefined) return { ...base, state: "done", ref: "local", at: timeOf(todo.createdAt) || 0, href: `/${repo}/stack/${todo.number}` }
@@ -278,7 +278,7 @@ export const progressOf = (receipts: Receipts, nowMs: number): Progress => {
   const todos = new Map(receipts.todos.map((row) => [row.id, row]))
   const commitRecovery = new Map(receipts.todoRequested.filter((row) => row.op === "commit").map((row) => [row.id, row]))
   const commitSending = new Map(receipts.todoSending.filter((row) => row.op === "commit").map((row) => [row.id, row]))
-  for (const id of new Set([...commitRecovery.keys(), ...commitSending.keys(), ...commitInputs.keys()])) {
+  for (const id of new Set([...todos.keys(), ...commitRecovery.keys(), ...commitSending.keys(), ...commitInputs.keys()])) {
     const input = commitInputs.get(id)
     const row = commitRow(id, todos.get(id), commitRecovery.get(id), commitSending.get(id), input, receipts.seen)
     if (row === undefined) continue

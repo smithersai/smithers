@@ -9,7 +9,7 @@ import { RunSteers } from "../runs/steers"
 import { IssuesStore } from "../issues/store"
 import { TodosStore } from "../todos/store"
 import { signedInShapeSource } from "../auth/source"
-import { AuthStore } from "../auth/store"
+import { AuthStore, SESSION } from "../auth/store"
 import { ChatStore } from "../chat/store"
 import { StatusStore } from "../status/store"
 import { LISTED_FOR_MS, NOTIFICATIONS_SHAPE_ROUTE } from "./contract"
@@ -185,13 +185,11 @@ export class AttentionStore extends Context.Service<
           const commitSending = yield* todos.sending.toArray
           const commitRequested = yield* stored(todos.requested)
           const stagedInputs = yield* inputs
-          // The stacks this device committed to that this tab holds: their TODOs are those commits' results.
-          const stacks = new Set([...commitSending, ...commitRequested].map((row) => row.repoId))
-          for (const input of stagedInputs) if (input.flow === "todo/commit" && input.repo !== undefined) stacks.add(`github/${input.repo}`)
-          const committed = yield* Effect.forEach([...stacks], (repoId) => Option.match(Option.fromUndefinedOr(todos.opened(repoId)), {
-            onNone: () => Effect.succeed([]),
-            onSome: (stack) => stack.todos.toArray,
-          }))
+          // A synced TODO is the commit's own durable result, even after the outbox and recovery rows leave.
+          // Read only this person's commits from stacks already opened; this opens no new shapes.
+          const session = Option.getOrThrow(yield* auth.session.get(SESSION))
+          const committed = yield* Effect.forEach(todos.openedStacks(), (stack) => stack.todos.toArray)
+          const mine = committed.flat().filter((todo) => session.status === "signed_in" && todo.createdLogin === session.login)
           const progress = progressOf({
             inputs: stagedInputs,
             runs: yield* Ref.get(runs),
@@ -200,7 +198,7 @@ export class AttentionStore extends Context.Service<
             issueSending: yield* issues.sending.toArray,
             todoRequested: commitRequested,
             todoSending: commitSending,
-            todos: committed.flat(),
+            todos: mine,
             dismissed: acted,
             answered: intents.answered,
             seen,

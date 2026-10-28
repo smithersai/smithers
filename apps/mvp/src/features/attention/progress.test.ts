@@ -220,13 +220,13 @@ describe("the device's receipts", () => {
     // The stack's TODO under its id is the result: once the device dropped its answered row, a lingering outbox row
     // never brings Requested back.
     expect(only({
-      todos: [{ id: "op1", number: 4, createdAt: "2026-10-28 11:59:59+00" }],
+      todos: [{ repoId: `github/${REPO}`, id: "op1", number: 4, createdAt: "2026-10-28 11:59:59+00" }],
       todoSending: [{ id: "op1", op: "commit", repo: REPO, queuedAt: NOW - 2_000 }],
     })).toMatchObject({ state: "done", href: `/${REPO}/stack/4`, at: Date.parse("2026-10-28T11:59:59Z") })
-    expect(progressOf({ ...none, todos: [{ id: "op1", number: 4, createdAt: "x" }], inputs: [input({ flow: "todo/commit", writeId: "op1", admitted: true })] }, NOW).decided)
+    expect(progressOf({ ...none, todos: [{ repoId: `github/${REPO}`, id: "op1", number: 4, createdAt: "x" }], inputs: [input({ flow: "todo/commit", writeId: "op1", admitted: true })] }, NOW).decided)
       .toEqual(new Set(["write:op1"]))
-    // A TODO no commit of this device's names is no row.
-    expect(rowsOf({ todos: [{ id: "someone-else", number: 5, createdAt: "2026-10-28 11:59:59+00" }] })).toEqual([])
+    // This person's synced result still projects Done after every temporary command receipt has left.
+    expect(only({ todos: [{ repoId: `github/${REPO}`, id: "kept-result", number: 5, createdAt: "2026-10-28 11:59:59+00" }] })).toMatchObject({ subject: "write:kept-result", state: "done", href: `/${REPO}/stack/5` })
     // A drop is no Commit.
     expect(rowsOf({ todoRequested: [todoRecovery({ id: "op2", op: "drop", status: "requested", taken: 3 })] })).toEqual([])
   })

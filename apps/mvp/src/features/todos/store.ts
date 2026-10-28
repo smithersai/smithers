@@ -67,6 +67,8 @@ export class TodosStore extends Context.Service<
   {
     readonly stackOf: (repoId: string) => Effect.Effect<RepoStack, Collection.LoadFailed>
     readonly opened: (repoId: string) => RepoStack | undefined
+    /** The stacks this tab has opened; their stored TODOs remain results after recovery cleanup. */
+    readonly openedStacks: () => ReadonlyArray<RepoStack>
     readonly empty: RepoStack
     readonly sending: Collection.Collection<Sending, string>
     readonly requested: Collection.Collection<Requested, string>
@@ -236,6 +238,7 @@ const make = Effect.fnUntraced(function* (config: TodosConfig) {
     todosChanged: Stream.fromPubSub(changedTodos),
     stackOf,
     opened: (id) => stacks.get(id),
+    openedStacks: () => [...stacks.values()],
     empty,
     sending,
     requested,

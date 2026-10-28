@@ -278,6 +278,32 @@ describe("Commit", () => {
   }, WITHIN)
 })
 
+describe("Commit after recovery cleanup", () => {
+  test("the synced TODO keeps Done after the successful outbox and recovery rows leave, before its notification arrives", async () => {
+    const api = await openApi()
+    const tab = await tabOn(api, deviceOf(api), { faulty: true })
+    const shapes = await tab.runtime.runPromise(Effect.serviceOption(ShapeRecovery))
+    await tab.runtime.runPromise(Option.getOrThrow(shapes).withhold(NOTIFICATIONS_SHAPE_ROUTE))
+    await tab.runtime.runPromise(readRepositoryRole(OWNER, NAME))
+    await tab.todos.actions.open(OWNER, NAME)
+    const draft = tab.todos.actions.newDraft(OWNER, NAME)
+    tab.todos.actions.setTitle(draft, "Successful answer")
+    tab.todos.actions.setPrompt(draft, "Keep the result until its notification arrives.")
+    await tab.todos.actions.commit(draft)
+    await until(() => expect(tab.runtime.runSync(tab.todosStore.opened(REPO_ID)!.todos.toArray)).toHaveLength(1))
+    await until(() => expect(tab.runtime.runSync(tab.todosStore.sending.toArray)).toEqual([]))
+    await until(() => expect(tab.runtime.runSync(tab.todosStore.requested.toArray)).toEqual([]))
+    await until(() => expect(tab.intents.pending()).toEqual([]))
+    // Let the feed process the cleanup changes while the successful result is still inside its four-second toast window.
+    await tab.runtime.runPromise(Effect.sleep("250 millis"))
+    await until(() => expect(tab.titled("Commit TODO")).toMatchObject({ state: "done", href: `/${TEST_REPOSITORY}/stack/1`, local: true }))
+    const subject = tab.titled("Commit TODO")!.id
+    expect(tab.runtime.runSync(tab.attention.notices.toArray).some((row) => row.subject === subject)).toBe(false)
+    await tab.runtime.runPromise(Option.getOrThrow(shapes).release(NOTIFICATIONS_SHAPE_ROUTE))
+    await until(() => { expect(tab.entry(subject)).toMatchObject({ state: "done" }); expect(tab.entry(subject)?.local).toBeUndefined() })
+  }, WITHIN)
+})
+
 describe("Commit whose answers are lost", () => {
   test("the stack committed it, its route reply was lost and its notification withheld: the synced TODO alone makes it Done", async () => {
     const api = await openApi()
