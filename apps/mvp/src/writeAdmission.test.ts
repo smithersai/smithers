@@ -223,3 +223,23 @@ test("identical content in a new composer generation is an independent press", a
   expect(begin("second").commandId).not.toBe(first.commandId)
 })
 
+test("a refused identity update still fences and completes Retry through its in-memory correlation", async () => {
+  const { Deferred, Fiber } = await import("effect")
+  const { finishRetainedAdmission, forgetDraftAdmissions, identifyAdmission, whileAdmitting } = await import("./writeAdmission")
+  const host = device()
+  const store = await storeOf(host.snapshot)
+  const provide = <A, E>(effect: Effect.Effect<A, E>) => effect.pipe(Effect.provideService(WriteIntents, store))
+  const row = Option.getOrThrow(Effect.runSync(provide(beginAdmission("todo/commit", {}, undefined, "source"))))
+  host.state.refused = true
+  await Effect.runPromise(provide(identifyAdmission(row, row.commandId, "write")))
+  expect(store.pending()[0]!.writeId).toBeUndefined()
+  host.state.refused = false
+  await Effect.runPromise(provide(finishAdmission(row, false)))
+  await Effect.runPromise(provide(finishRetainedAdmission("unrelated", true, true)))
+  const gate = await Effect.runPromise(Deferred.make<void>())
+  const fiber = Effect.runFork(provide(whileAdmitting("write", Deferred.await(gate))))
+  expect(Effect.runSync(provide(forgetDraftAdmissions("source")))).toBe(false)
+  await Effect.runPromise(Fiber.interrupt(fiber))
+  await Effect.runPromise(provide(finishRetainedAdmission("write", true, true)))
+  expect(store.pending()).toEqual([])
+})

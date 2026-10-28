@@ -163,7 +163,7 @@ export const forgetDraftAdmissions = (draftId: string) => Effect.gen(function* (
   const store = yield* Effect.serviceOption(WriteIntents)
   if (Option.isNone(store)) return true
   const intents = store.value.pending().filter(row => row.draftId === draftId)
-  if (intents.some(intent => store.value.admitting.has(intent.commandId) || (intent.writeId !== undefined && store.value.admitting.has(intent.writeId)))) return false
+  if (intents.some(intent => store.value.admitting.has(intent.commandId) || (intent.writeId !== undefined && store.value.admitting.has(intent.writeId)) || [...store.value.byWrite].some(([id, command]) => command === intent.commandId && store.value.admitting.has(id)))) return false
   return intents.every(intent => store.value.forget(intent.commandId))
 })
 
@@ -171,6 +171,6 @@ export const forgetDraftAdmissions = (draftId: string) => Effect.gen(function* (
 export const admissionReceipt = <A, E, R>(effect: Effect.Effect<A, E, R>, commandId: string, flow: string, stage: string) => Effect.gen(function* () {
   const startedAt = yield* Clock.currentTimeMillis
   yield* recordAdmission(commandId, flow, stage, "pending", startedAt)
-  return yield* effect.pipe(Effect.onExit(exit => recordAdmission(commandId, flow, stage,
+  return yield* effect.pipe(Effect.annotateLogs({ commandId, flow, stage }), Effect.onExit(exit => recordAdmission(commandId, flow, stage,
     Exit.isSuccess(exit) ? "confirmed" : Cause.hasInterruptsOnly(exit.cause) ? "interrupted" : "failed", startedAt)))
 })
