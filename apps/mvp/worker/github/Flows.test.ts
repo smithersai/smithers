@@ -104,6 +104,28 @@ describe("github/Write", () => {
     ])
   })
 
+  test("a new issue's receipts reach its person's feed with them: Working once admitted, then Done on its issue, or Failed", async () => {
+    const github = scriptedGitHub()
+    const person = await maya(github)
+    const notice = async (writeId: string) => (await sql(runtime,
+      `SELECT recipient, kind, state, title, href, version FROM notifications WHERE subject = 'write:${writeId}'`)) as ReadonlyArray<unknown>
+    const writeId = await admit(runtime, { actorId: person.personId, sessionId: person.sessionId, via: "person", payload: issueWrite() })
+    expect(await notice(writeId)).toEqual([
+      { recipient: person.personId, kind: "write", state: "working", title: "Create issue", href: `/${REPO}/issues`, version: 1 },
+    ])
+    const { services: value } = await services(runtime, github)
+    await runWrite(writeId, value)
+    expect(await notice(writeId)).toEqual([
+      { recipient: person.personId, kind: "write", state: "done", title: "Create issue", href: `/${REPO}/issues/1`, version: 2 },
+    ])
+    const failed = await admit(runtime, { actorId: person.personId, sessionId: person.sessionId, via: "person", payload: issueWrite() })
+    await Effect.runPromise(Write.steps(value).giveUp({ writeId: failed }))
+    expect(await notice(failed)).toEqual([expect.objectContaining({ state: "failed", href: `/${REPO}/issues`, version: 2 })])
+    // A comment's receipts stay off the feed.
+    const comment = await admit(runtime, { actorId: person.personId, sessionId: person.sessionId, via: "person", payload: { op: "issue/comment", number: 1, body: "x" } })
+    expect(await notice(comment)).toEqual([])
+  })
+
   test("the agent's issue is the App's, says whom it acted for, and its token can only write issues", async () => {
     const github = scriptedGitHub()
     const person = await maya(github)

@@ -9,6 +9,7 @@ import * as TestDatabase from "../../db/TestDatabase.ts"
 import { openOf, type Row, violations } from "../../src/features/todos/stack.ts"
 import { testFile, uuid } from "../test/harness.ts"
 import * as Stack from "./Stack.ts"
+import { foldCommit } from "./StackFeed.ts"
 
 const runtime = testFile("stack_writer")
 beforeEach(() =>
@@ -151,6 +152,36 @@ describe("a commit", () => {
     expect(await applyOn(refused)).toEqual({ kind: "repeated", receipt: { outcome: "stack_full", starts: [] } })
     expect(await stack()).toEqual({ nextNumber: 2, version: 2 })
     expect(await todos()).toHaveLength(1)
+  })
+
+  test("its result reaches its person's feed in the same transaction, once; a refusal reaches nothing", async () => {
+    const observed = observe()
+    const first = commit()
+    await applyOn(first, false, observed)
+    await applyOn(first)
+    const notices = (opId: string) => sql(
+      `SELECT recipient, kind, state, mine, quiet, title, href, version, repo_id AS "repoId" FROM notifications WHERE subject = 'write:${opId}'`,
+    )
+    expect(await notices(first.opId)).toEqual([{
+      recipient: "person-maya", kind: "write", state: "done", mine: true, quiet: false, title: "Commit TODO",
+      href: "/octo/hello/stack/1", version: 2, repoId: REPO,
+    }])
+    expect(observed.lines.find((line) => line.message === "stack.commit.notice")?.annotations).toMatchObject({ opId: first.opId, state: "done" })
+    await sql(`UPDATE stacks SET max_open = 1 WHERE repo_id = '${REPO}'`)
+    const refused = commit()
+    expect(await applyOn(refused)).toMatchObject({ receipt: { outcome: "stack_full" } })
+    expect(await notices(refused.opId)).toEqual([])
+  })
+
+  test("a fold that finds its person's notification already there changes nothing and records nothing", async () => {
+    const observed = observe()
+    const opId = uuid()
+    await sql(`INSERT INTO notifications (recipient, subject, kind, state, mine, quiet, repo_id, title, href, version)
+      VALUES ('person-maya', 'write:${opId}', 'write', 'done', true, false, '${REPO}', 'Commit TODO', '/octo/hello/stack/9', 2)`)
+    const folded = await runtime.runPromise(observed.provide(foldCommit({ opId, repoId: REPO, actorId: "person-maya", number: 1 })))
+    expect(folded).toBe(0)
+    expect(await sql(`SELECT href FROM notifications WHERE subject = 'write:${opId}'`)).toEqual([{ href: "/octo/hello/stack/9" }])
+    expect(observed.lines.filter((line) => line.message === "stack.commit.notice")).toEqual([])
   })
 
   test("stacks are per repository: each counts its own numbers", async () => {
@@ -512,11 +543,13 @@ describe("observability", () => {
     await applyOn({ ...change, op: { kind: "drop", number: 1 } }, false, observed)
 
     expect(observed.lines.map((line) => [line.message, line.annotations.outcome, line.annotations.op])).toEqual([
+      // The commit's result reaches its person's feed inside its transaction (decision 0124).
+      ["stack.commit.notice", undefined, undefined],
       ["stack.apply", "committed", "commit"],
       ["stack.apply", "repeated", "commit"],
       ["stack.apply", "conflict", "drop"],
     ])
-    expect(observed.lines[0]!.annotations).toMatchObject({ repoId: REPO, opId: change.opId, number: 1, version: 1, via: "person" })
+    expect(observed.lines[1]!.annotations).toMatchObject({ repoId: REPO, opId: change.opId, number: 1, version: 1, via: "person" })
     // Each holds its transaction's spans; the SQL client's spans carry no parameter, so no title or prompt.
     expect(observed.spans.filter((span) => span.name === "stack.apply")).toHaveLength(3)
     expect(observed.count(Stack.changes, { op: "commit", outcome: "committed" })).toBe(1)

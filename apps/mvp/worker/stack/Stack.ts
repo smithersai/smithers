@@ -1,6 +1,7 @@
 import { digestSync } from "@smthrs/crypto"
 import { Clock, Context, Effect, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
+import { foldCommit } from "./StackFeed.ts"
 import { todoExecutionId } from "../../src/features/pulls/contract.ts"
 import {
   STACK_OUTCOMES,
@@ -250,6 +251,8 @@ export const apply = <E = never, R = never>(
           VALUES (${change.opId}::uuid, 1, ${change.repoId}, ${change.op.prompt},
             ARRAY(SELECT jsonb_array_elements_text(${JSON.stringify(change.op.acceptance)}::jsonb)),
             ${change.actor.login})`
+        // Commit's result reaches its person's feed in the same transaction (decision 0124).
+        yield* foldCommit({ opId: change.opId, repoId: change.repoId, actorId: change.actor.id, number: created.number })
       }
       // Every TODO the change moved, settled or started, in one statement: positions are unique per repository at the
       // statement's end, so closing a gap needs no order.
