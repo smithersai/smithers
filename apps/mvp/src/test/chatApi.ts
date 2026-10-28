@@ -1416,7 +1416,8 @@ const sqliteFile = (path: string, turn: ReturnType<typeof deviceTurn>) => {
         statement.run(...(params as Array<SQLInputValue>))
         return []
       } finally {
-        if (!database.isTransaction) turn.give(tab)
+        // A late callback after close must release its turn; isTransaction throws on a closed connection.
+        if (!database.isOpen || !database.isTransaction) turn.give(tab)
       }
     },
     close: () => {
