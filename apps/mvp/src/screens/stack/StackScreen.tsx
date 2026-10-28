@@ -1,6 +1,7 @@
+import { NotSentChanges } from "../../features/todos/components/NotSentChanges"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
 import { HomeTabs } from "../../features/home/components/HomeTabs"
-import { Badge, Breadcrumbs, Button, EmptyState, IssuesView } from "@smthrs/ui"
+import { Breadcrumbs, Button, EmptyState, IssuesView } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
@@ -8,8 +9,6 @@ import { SignInButton } from "../../features/auth/components/SignInButton"
 import { DraftCard } from "../../features/todos/components/DraftCard"
 import { useTodos } from "../../features/todos/components/TodosContext"
 import {
-  DISCARD,
-  EDIT,
   NEW_TODO,
   NO_TODOS,
   STACK,
@@ -21,7 +20,6 @@ import {
   accessFor,
   draftsOfRepo,
   mayChange,
-  notSentRows,
   stackItemsOf,
   stackRows,
   withDrop,
@@ -60,7 +58,6 @@ export function StackScreen() {
   }
   const rows = stackRows(repoId, todos, sending, requested)
   const may = status === "allowed" && session !== undefined && mayChange(session, confirmed, answer)
-  const notSent = notSentRows(repoId, requested, sending)
   return (
     <main className="stack-screen" aria-label="Stack"><RepoHeader /><HomeTabs />
       <Breadcrumbs
@@ -86,21 +83,7 @@ export function StackScreen() {
         onNavigate={(_, href) => void navigate({ href })}
         actions={may ? <Button onClick={() => actions.newDraft(owner, repo)}>{NEW_TODO}</Button> : undefined}
       />
-      {notSent.length === 0 ? null : (
-        <ul className="stack-not-sent" aria-label="Not sent">
-          {notSent.map((change) => (
-            <li key={change.id} className="stack-not-sent-row">
-              <span className="stack-not-sent-label">{change.label}</span>
-              <Badge variant="destructive">{change.reason}</Badge>
-              {change.reason === "Not sent" ? <Button variant="outline" size="sm" onClick={() => void actions.retryChange(change.id)}>Retry</Button> : null}
-              {change.op === "commit" ? (
-                <Button variant="outline" size="sm" onClick={() => actions.edit(change.id)}>{EDIT}</Button>
-              ) : null}
-              <Button variant="ghost" size="sm" onClick={() => actions.discard(change.id)}>{DISCARD}</Button>
-            </li>
-          ))}
-        </ul>
-      )}
+      <NotSentChanges repoId={repoId} />
     </main>
   )
 }

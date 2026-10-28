@@ -230,3 +230,29 @@ for (const source of ["issue", "todo", "legacy"] as const) test(`Retry fences Di
     expect(ids.size).toBe(2)
   }
 })
+
+test("a refused TODO Drop or Retry remains visibly Not sent and retries the same identity", async () => {
+  const tab = await opening()
+  const { drop, retry, retryChange, discard } = await import("./features/todos/actions")
+  const { VIEW } = await import("./features/todos/schema")
+  const real = tab.todos.requested
+  const requested = { ...real, insert: (row: Parameters<typeof real.insert>[0]) => real.insert(row).pipe(Effect.map(write => ({ ...write, persisted: Effect.fail(new Collection.TransactionFailed({ cause: "quota" })) }))) }
+  const todos = { ...tab.todos, requested }
+  const refusing = { ...tab.intents, retain: () => false }
+  for (const [op, press] of [["drop", drop], ["retry", retry]] as const) {
+    await tab.app.runPromise(press(owner, name, 1).pipe(Effect.provideService(WriteIntents, refusing), Effect.provideService(TodosStore, todos)))
+    const failed = Option.getOrThrow(await tab.app.runPromise(tab.todos.view.get(VIEW))).admissionFailures ?? []
+    const held = failed.find(row => row.op === op)!
+    expect(held?.status).toBe("not_sent")
+    expect(tab.todos.sending.tanstack.toArray.some(row => row.id === held.id)).toBe(false)
+    await until(() => expect(tab.intents.admitting.has(held.id)).toBe(false))
+    await tab.app.runPromise(retryChange(held.id))
+    expect((Option.getOrThrow(await tab.app.runPromise(tab.todos.view.get(VIEW))).admissionFailures ?? []).some(row => row.id === held.id)).toBe(false)
+    expect([...tab.todos.sending.tanstack.toArray, ...tab.todos.requested.tanstack.toArray].some(row => row.id === held.id)).toBe(true)
+  }
+  await tab.app.runPromise(drop(owner, name, 2).pipe(Effect.provideService(WriteIntents, refusing), Effect.provideService(TodosStore, todos)))
+  const [held] = Option.getOrThrow(await tab.app.runPromise(tab.todos.view.get(VIEW))).admissionFailures!
+  await until(() => expect(tab.intents.admitting.has(held!.id)).toBe(false))
+  await tab.app.runPromise(discard(held!.id))
+  expect(Option.getOrThrow(await tab.app.runPromise(tab.todos.view.get(VIEW))).admissionFailures).toEqual([])
+})

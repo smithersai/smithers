@@ -149,6 +149,7 @@ export const StackView = Schema.Struct({
   repoId: Schema.String,
   number: Schema.NullOr(Schema.Number),
   committing: Schema.Array(Schema.String),
+  admissionFailures: Schema.optional(Schema.Array(Requested)),
 })
 export type StackView = typeof StackView.Type
 

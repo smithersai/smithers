@@ -1,3 +1,4 @@
+import { keep } from "./writes"
 import { admissionReceipt, beginAdmission, executionOf, finishAdmission, finishRetainedAdmission, whileAdmitting, forgetAdmission, forgetDraftAdmissions, identifyAdmission } from "../../writeAdmission"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Clock, Effect, Metric, Option } from "effect"
@@ -5,7 +6,7 @@ import { FlowDispatch } from "../../flows/dispatch"
 import { repoId } from "../repo/contract"
 import { isPrompt, isTitle, OP_ID_NAMESPACE, stackPath } from "./contract"
 import { pendingActions } from "./metrics"
-import { type Draft, type QueuedOp, VIEW } from "./schema"
+import { type Draft, type QueuedOp, type Requested, VIEW } from "./schema"
 import { TodosStore } from "./store"
 
 // TODO writes await local durable admission (decision 0016 §3, docs/features/todos.md). Commit
@@ -146,8 +147,18 @@ const admitChange = (op: "drop" | "retry", owner: string, name: string, number: 
     const store = yield* TodosStore
     const flows = yield* FlowDispatch
     const payload = { repo: `${owner}/${name}`, number }
+    const refused = Option.getOrThrow(yield* store.view.get(VIEW)).admissionFailures?.find(row => row.repo === payload.repo && row.op === op && row.number === number)
+    if (refused !== undefined) return yield* retryChange(refused.id)
     const admission = yield* beginAdmission(op === "drop" ? "todo/drop" : "todo/Retry", payload)
-    if (Option.isNone(admission)) return
+    if (Option.isNone(admission)) {
+      const row: Requested = { ...payload, id: crypto.randomUUID(), repoId: repoId(owner, name), op, title: "", prompt: "", acceptance: [], queuedAt: yield* Clock.currentTimeMillis, status: "not_sent", reason: null, taken: null }
+      yield* store.view.update(VIEW, view => { view.admissionFailures = [...view.admissionFailures ?? [], { ...row, acceptance: [...row.acceptance] }] }).pipe(Effect.orDie)
+      // Refusal is visible synchronously. Persist its same-identity recovery row once when that store is usable.
+      yield* whileAdmitting(row.id, admissionReceipt(keep(store.requested, { ...row, v: 2 }, "not_sent", null, null), row.id, op === "drop" ? "todo/drop" : "todo/Retry", "refusal").pipe(
+        Effect.andThen(clearFailure(row.id)), Effect.ignore,
+      )).pipe(Effect.forkIn(store.scope, { startImmediately: true }))
+      return
+    }
     const executionId = yield* executionOf(admission.value)
     const id = yield* Uuid.v5(OP_ID_NAMESPACE, executionId).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
     yield* identifyAdmission(admission.value, executionId, id)
@@ -161,6 +172,15 @@ const admitChange = (op: "drop" | "retry", owner: string, name: string, number: 
 
 export const drop = (owner: string, name: string, number: number) => admitChange("drop", owner, name, number)
 
+const recoveryRow = (id: string) => Effect.gen(function* () {
+  const store = yield* TodosStore
+  const held = yield* store.requested.get(id)
+  return Option.isSome(held) ? held : Option.fromUndefinedOr(Option.getOrThrow(yield* store.view.get(VIEW)).admissionFailures?.find(row => row.id === id))
+})
+const clearFailure = (id: string) => Effect.flatMap(TodosStore, store => store.view.update(VIEW, view => {
+  view.admissionFailures = (view.admissionFailures ?? []).filter(row => row.id !== id)
+})).pipe(Effect.orDie)
+
 /**
  * Edit or Discard on a change that wasn't sent: Edit puts a commit's text back in a new draft first. The change goes
  * from the device. Answers the stack's page, or nothing for a change the device doesn't have.
@@ -168,7 +188,7 @@ export const drop = (owner: string, name: string, number: number) => admitChange
 const handle = (opId: string, action: "edit" | "discard") =>
   Effect.gen(function* () {
     const { requested, drafts } = yield* TodosStore
-    const found = yield* requested.get(opId)
+    const found = yield* recoveryRow(opId)
     if (Option.isNone(found)) return undefined
     const change = found.value
     if (!(yield* forgetAdmission(OP_ID_NAMESPACE, change.id))) return undefined
@@ -185,7 +205,8 @@ const handle = (opId: string, action: "edit" | "discard") =>
         ...(change.issue === undefined ? {} : { issue: change.issue }),
       }))
     }
-    yield* Effect.ignore(requested.delete(opId))
+    if (Option.isSome(yield* requested.get(opId))) yield* Effect.ignore(requested.delete(opId))
+    yield* clearFailure(opId)
     yield* record(action, { opId, op: change.op })
     const [owner, name] = change.repo.split("/") as [string, string]
     return stackPath(owner, name)
@@ -200,7 +221,7 @@ export const discard = (opId: string) => Effect.asVoid(handle(opId, "discard"))
 /** Retries local admission using the retained identity, without inventing another TODO. */
 export const retryChange = (id: string) => whileAdmitting(id, Effect.gen(function* () {
   const store = yield* TodosStore
-  const row = yield* store.requested.get(id)
+  const row = yield* recoveryRow(id)
   if (Option.isNone(row) || row.value.status !== "not_sent" || row.value.reason !== null) return
   const { kept } = yield* store.queue(row.value)
   let cleaned = true
@@ -208,6 +229,7 @@ export const retryChange = (id: string) => whileAdmitting(id, Effect.gen(functio
     const opId = yield* Uuid.v5(OP_ID_NAMESPACE, yield* commitExecutionId(draft)).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
     if (opId === id) cleaned = (yield* store.drafts.delete(draft.id).pipe(Effect.flatMap((removed) => removed.persisted), Effect.as(true), Effect.orElseSucceed(() => false))) && cleaned
   }
+  if (kept) yield* clearFailure(id)
   yield* finishRetainedAdmission(id, kept, cleaned)
 }))
 

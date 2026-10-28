@@ -334,3 +334,5 @@ An issue’s TODO links include the TODO number and title.
 A direct TODO load shows Syncing TODO until the stack shape has applied. Repository permission alone never certifies that a TODO is missing. Revocation remains immediate while sync is pending.
 
 Commit, Drop and Retry first retain a recoverable local operation and await outbox admission. Commit derives its identity from the private draft and its content snapshot, so an unchanged admission attempt cannot create a second TODO. Retrying an earlier snapshot preserves newer edits. A local storage refusal remains Not sent with Retry under the same identity.
+
+Input storage refusal shows Not sent on both the stack and TODO detail. The same operation identity stays available for Retry or Discard; its recovery row is persisted once if device persistence is usable. No delivery starts from a refused input receipt. Explicit Retry fences Discard until admission finishes and completes the original input cleanup lifecycle.

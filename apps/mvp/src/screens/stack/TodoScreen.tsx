@@ -1,3 +1,4 @@
+import { NotSentChanges } from "../../features/todos/components/NotSentChanges"
 import { Button, Breadcrumbs, ConfirmButton, EmptyState, ItemAsideSection, ItemConversation, ItemStateIcon } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useNavigate, useParams } from "@tanstack/react-router"
@@ -97,6 +98,7 @@ export function TodoScreen() {
             )}
         />
       ) : null}
+      <NotSentChanges repoId={repoId} />
     </main>
   )
 }

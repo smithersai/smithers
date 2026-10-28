@@ -13,6 +13,7 @@ import { AuthFaults, EngineFaults, ShapeRecovery, type QuestionFault, QuestionFa
 
 /** What a test can throw, on `window.faults`. Each mirrors a switch of the faulty services (src/test/faults.ts). */
 export interface Switches {
+  readonly admission: { readonly refuseInputs: () => void; readonly heal: () => void }
   readonly shapes: {
     readonly down: (requests?: ShapeSource.Requests) => void
     readonly refuse: (status?: number, requests?: ShapeSource.Requests) => void
@@ -63,10 +64,14 @@ export const opening = (search: string): ((switches: ShapeSource.Switches) => Ef
 export const startWithFaults = async (page: AppOptions & BootOptions, search: string, target: object) => {
   let rendered!: () => void
   const ready = new Promise<void>((resolve) => { rendered = resolve })
-  const { runtime, stop } = start({ ...page, render: (...views) => { page.render(...views); rendered() } }, faultyServices(page, opening(search), new URLSearchParams(search).get("faults") === "recovery" ? 3 : 0, sessionDown(search)))
+  let refuseInputs = false
+  const snapshot = page.host.writeSnapshot
+  const host = { ...page.host, ...(snapshot === undefined ? {} : { writeSnapshot: { ...snapshot, stage: (value: unknown) => refuseInputs ? undefined : snapshot.stage(value) } }) }
+  const { runtime, stop } = start({ ...page, host, render: (...views) => { page.render(...views); rendered() } }, faultyServices(page, opening(search), new URLSearchParams(search).get("faults") === "recovery" ? 3 : 0, sessionDown(search)))
   const [shapes, questions, engine, session] = await runtime.runPromise(Effect.all([ShapeSource.Faults, QuestionFaults, EngineFaults, AuthFaults]))
   const recovery = await runtime.runPromise(Effect.service(ShapeRecovery))
   const faults: Switches = {
+    admission: { refuseInputs: () => { refuseInputs = true }, heal: () => { refuseInputs = false } },
     shapes: {
       down: (requests) => runtime.runSync(shapes.down(requests)),
       refuse: (status, requests) => runtime.runSync(shapes.refuse(status, requests)),
