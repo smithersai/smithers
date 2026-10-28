@@ -98,7 +98,7 @@ export function TodoScreen() {
             )}
         />
       ) : null}
-      <NotSentChanges repoId={repoId} />
+      <NotSentChanges repoId={repoId} number={number} />
     </main>
   )
 }

@@ -546,7 +546,11 @@ void Promise.all([wipe.open(), claimEditorTabId({
       root.unmount()
       return stop()
     })
-  if (import.meta.env.DEV && new URLSearchParams(window.location.search).has("faults")) {
+  if (import.meta.env.DEV && new URLSearchParams(window.location.search).has("admission-faults")) {
+    void import("./test/e2e")
+      .then(e2e => e2e.startWithAdmissionFaults(opened, window))
+      .then(({ stop }) => leaving(stop))
+  } else if (import.meta.env.DEV && new URLSearchParams(window.location.search).has("faults")) {
     void import("./test/e2e")
       .then((e2e) => e2e.startWithFaults(opened, window.location.search, window))
       .then(({ stop }) => leaving(stop))

@@ -1,7 +1,7 @@
 import { ShapeSource } from "@smthrs/effect-electric"
 import type { Interpreter } from "@smthrs/flow"
 import { Effect } from "effect"
-import { type AppOptions, type BootOptions, start } from "../boot"
+import { type AppOptions, type BootOptions, realServices, start } from "../boot"
 import type { Question } from "../features/chat/api"
 import { AuthFaults, EngineFaults, ShapeRecovery, type QuestionFault, QuestionFaults, faultyServices } from "./faults"
 
@@ -13,7 +13,6 @@ import { AuthFaults, EngineFaults, ShapeRecovery, type QuestionFault, QuestionFa
 
 /** What a test can throw, on `window.faults`. Each mirrors a switch of the faulty services (src/test/faults.ts). */
 export interface Switches {
-  readonly admission: { readonly refuseInputs: () => void; readonly heal: () => void }
   readonly shapes: {
     readonly down: (requests?: ShapeSource.Requests) => void
     readonly refuse: (status?: number, requests?: ShapeSource.Requests) => void
@@ -64,14 +63,10 @@ export const opening = (search: string): ((switches: ShapeSource.Switches) => Ef
 export const startWithFaults = async (page: AppOptions & BootOptions, search: string, target: object) => {
   let rendered!: () => void
   const ready = new Promise<void>((resolve) => { rendered = resolve })
-  let refuseInputs = false
-  const snapshot = page.host.writeSnapshot
-  const host = { ...page.host, ...(snapshot === undefined ? {} : { writeSnapshot: { ...snapshot, stage: (value: unknown) => refuseInputs ? undefined : snapshot.stage(value) } }) }
-  const { runtime, stop } = start({ ...page, host, render: (...views) => { page.render(...views); rendered() } }, faultyServices(page, opening(search), new URLSearchParams(search).get("faults") === "recovery" ? 3 : 0, sessionDown(search)))
+  const { runtime, stop } = start({ ...page, render: (...views) => { page.render(...views); rendered() } }, faultyServices(page, opening(search), new URLSearchParams(search).get("faults") === "recovery" ? 3 : 0, sessionDown(search)))
   const [shapes, questions, engine, session] = await runtime.runPromise(Effect.all([ShapeSource.Faults, QuestionFaults, EngineFaults, AuthFaults]))
   const recovery = await runtime.runPromise(Effect.service(ShapeRecovery))
   const faults: Switches = {
-    admission: { refuseInputs: () => { refuseInputs = true }, heal: () => { refuseInputs = false } },
     shapes: {
       down: (requests) => runtime.runSync(shapes.down(requests)),
       refuse: (status, requests) => runtime.runSync(shapes.refuse(status, requests)),
@@ -97,5 +92,15 @@ export const startWithFaults = async (page: AppOptions & BootOptions, search: st
   }
   Object.assign(target, { faults })
   await ready
+  return { stop }
+}
+
+/** An isolated faulty host capability; unrelated clients and engine services remain the real ones. */
+export const startWithAdmissionFaults = (page: AppOptions & BootOptions, target: object) => {
+  let refusing = false
+  const snapshot = page.host.writeSnapshot
+  const host = { ...page.host, ...(snapshot === undefined ? {} : { writeSnapshot: { ...snapshot, stage: (value: unknown) => refusing ? undefined : snapshot.stage(value) } }) }
+  const { stop } = start({ ...page, host }, realServices(page))
+  Object.assign(target, { admissionFaults: { refuseInputs: () => { refusing = true }, heal: () => { refusing = false } } })
   return { stop }
 }

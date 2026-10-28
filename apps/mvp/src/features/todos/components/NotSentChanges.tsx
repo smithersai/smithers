@@ -5,13 +5,13 @@ import { DISCARD, EDIT } from "../contract"
 import { notSentRows } from "../view"
 
 /** One recovery surface on both the list and detail, including refused input storage. */
-export function NotSentChanges({ repoId }: { readonly repoId: string }) {
+export function NotSentChanges({ repoId, number }: { readonly repoId: string; readonly number?: number }) {
   const { queries, actions } = useTodos()
   const { data: view } = useLiveQuery(queries.view)
   const { data: requested } = useLiveQuery(queries.requested)
   const { data: sending } = useLiveQuery(queries.sending)
   const failures = (view?.admissionFailures ?? []).filter(row => !requested.some(held => held.id === row.id))
-  const notSent = notSentRows(repoId, [...requested, ...failures], sending)
+  const notSent = notSentRows(repoId, [...requested, ...failures].filter(row => number === undefined || row.number === number), sending)
   return (
     <>
       {notSent.length === 0 ? null : (

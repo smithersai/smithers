@@ -29,10 +29,6 @@ export const faults = (page: Page) => {
     await page.waitForFunction(() => "faults" in window, undefined, { timeout: 30_000 })
   }
   return {
-    admission: {
-      refuseInputs: async () => { await built(); await page.evaluate(() => (window as unknown as OnWindow).faults.admission.refuseInputs()) },
-      heal: async () => { await built(); await page.evaluate(() => (window as unknown as OnWindow).faults.admission.heal()) },
-    },
     shapes: {
       /** Shape requests fail on the network and never reach Electric, as when the sync service is down. */
       down: async (requests?: ShapeSource.Requests) => {
@@ -85,5 +81,16 @@ export const faults = (page: Page) => {
         await page.evaluate(({ flow, code }) => (window as unknown as OnWindow).faults.engine.refuseResults(flow, code), { flow, code })
       },
     },
+  }
+}
+
+/** Only input storage is faulty. The app's production clients and engine still run unchanged. */
+export const admissionFaults = (page: Page) => {
+  guard("faults")
+  type HostFault = { readonly admissionFaults: { readonly refuseInputs: () => void; readonly heal: () => void } }
+  const built = () => page.waitForFunction(() => "admissionFaults" in window, undefined, { timeout: 30_000 })
+  return {
+    refuseInputs: async () => { await built(); await page.evaluate(() => (window as unknown as HostFault).admissionFaults.refuseInputs()) },
+    heal: async () => { await built(); await page.evaluate(() => (window as unknown as HostFault).admissionFaults.heal()) },
   }
 }
