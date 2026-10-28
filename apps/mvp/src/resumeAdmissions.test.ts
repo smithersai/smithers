@@ -3,7 +3,7 @@ import { ChatStore } from "./features/chat/store"
 import { COMPOSER, HOME_DRAFT, PLACE } from "./features/chat/schema"
 import { PendingSnapshot } from "@smthrs/platform-browser"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
-import { Deferred, Effect, Fiber, Option } from "effect"
+import { Deferred, Effect, Fiber, Option, Scope } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
 import { nodeDevice, openTab, openTestApp, TEST_REPOSITORY, TestChatApi } from "./test/chatApi"
 import { Issues } from "./features/issues/issues"
@@ -255,4 +255,63 @@ test("a refused TODO Drop or Retry remains visibly Not sent and retries the same
   await until(() => expect(tab.intents.admitting.has(held!.id)).toBe(false))
   await tab.app.runPromise(discard(held!.id))
   expect(Option.getOrThrow(await tab.app.runPromise(tab.todos.view.get(VIEW))).admissionFailures).toEqual([])
+})
+
+for (const state of ["matching", "new_generation", "new_unstored_generation", "restore_failure", "delete_failure"] as const) test(`Retry composer cleanup respects its ${state} source receipt`, async () => {
+  const { clearComposerSource, clearWriteComposer } = await import("./admissionSource")
+  expect(await Effect.runPromise(clearWriteComposer("absent"))).toBe(true)
+  expect(await Effect.runPromise(clearComposerSource({ conversationId: null, text: "source" }))).toBe(false)
+  const tab = await opening()
+  const source = { conversationId: null, text: "/comment", generation: "original" }
+  const row = { commandId: "source", flow: "issue/comment", payload: {}, composer: source }
+  tab.intents.retain(row)
+  tab.intents.byWrite.set("write", row.commandId)
+  await tab.app.runPromise(tab.chat.drafts.insert({ id: HOME_DRAFT, text: source.text, generation: state.startsWith("new_") ? "later" : "original" }).pipe(Effect.flatMap(write => write.persisted)))
+  await tab.app.runPromise(tab.chat.composer.update(COMPOSER, composer => { composer.draft = source.text; composer.generation = state.startsWith("new_") ? "later" : "original" }))
+  const drafts = state === "new_unstored_generation" ? { ...tab.chat.drafts, isSynced: () => Effect.succeed(false) }
+    : state === "restore_failure" ? { ...tab.chat.drafts, restored: Effect.fail(new Collection.LoadFailed({ cause: "quota" })) }
+    : state === "delete_failure" ? { ...tab.chat.drafts, delete: (id: string | ReadonlyArray<string>) => tab.chat.drafts.delete(id).pipe(Effect.map(write => ({ ...write, persisted: Effect.fail(new Collection.TransactionFailed({ cause: "quota" })) }))) }
+    : tab.chat.drafts
+  expect(await tab.app.runPromise(clearWriteComposer("write").pipe(Effect.provideService(ChatStore, { ...tab.chat, drafts })))).toBe(state === "matching" || state === "new_generation")
+  expect(tab.chat.composer.tanstack.get(COMPOSER)?.draft).toBe(state === "matching" || state === "delete_failure" ? "" : source.text)
+})
+
+test("an unsaved replacement composer keeps the earlier input cleanup pending", async () => {
+  const { clearComposerSource } = await import("./admissionSource")
+  const tab = await opening()
+  await tab.app.runPromise(tab.chat.composer.update(COMPOSER, composer => { composer.draft = "New text"; composer.generation = "new"; composer.saved = false }))
+  expect(await tab.app.runPromise(clearComposerSource({ conversationId: null, text: "Earlier", generation: "earlier" }))).toBe(false)
+  expect(tab.chat.composer.tanstack.get(COMPOSER)?.draft).toBe("New text")
+})
+
+for (const replacement of [false, true]) test(`a pending source deletion cannot confirm cleanup after navigation (${replacement})`, async () => {
+  const { clearComposerSource } = await import("./admissionSource")
+  const { ChatDraft } = await import("./features/chat/schema")
+  const { setDraft } = await import("./features/chat/actions")
+  const tab = await opening()
+  let deleted!: () => void
+  let reject!: (error: Error) => void
+  let inserted!: () => void
+  const deletion = new Promise<void>((resolve, fail) => { deleted = resolve; reject = fail })
+  const insertion = new Promise<void>(resolve => { inserted = resolve })
+  const drafts = await tab.app.runPromise(Scope.provide(Collection.make(ChatDraft, {
+    id: `source-${crypto.randomUUID()}`, getKey: row => row.id,
+    sync: { sync: source => { source.begin(); source.write({ type: "insert", value: { id: HOME_DRAFT, text: "Original", generation: "first" } }); source.commit(); source.markReady() } },
+    onDelete: () => deletion, onInsert: () => insertion,
+  }), tab.store.scope))
+  await tab.app.runPromise(drafts.preload)
+  const chat = { ...tab.chat, drafts }
+  await tab.app.runPromise(tab.chat.composer.update(COMPOSER, composer => { composer.draft = "Original"; composer.generation = "first" }))
+  await tab.app.runPromise(setDraft("").pipe(Effect.provideService(ChatStore, chat)))
+  await tab.app.runPromise(tab.chat.place.update(PLACE, place => { place.conversationId = "another" }))
+  let completed = false
+  const fiber = tab.app.runFork(clearComposerSource({ conversationId: null, text: "Original", generation: "first" }).pipe(Effect.provideService(ChatStore, chat), Effect.tap(() => Effect.sync(() => { completed = true }))))
+  await Effect.runPromise(Effect.yieldNow)
+  expect(completed, "absence is optimistic while its deletion receipt is unresolved").toBe(false)
+  if (replacement) {
+    await tab.app.runPromise(drafts.insert({ id: HOME_DRAFT, text: "Later", generation: "later" }))
+    deleted()
+  } else reject(new Error("quota"))
+  expect(await Effect.runPromise(Fiber.join(fiber))).toBe(false)
+  inserted()
 })

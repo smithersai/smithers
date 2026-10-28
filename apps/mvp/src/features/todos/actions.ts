@@ -1,3 +1,4 @@
+import { clearWriteComposer } from "../../admissionSource"
 import { keep } from "./writes"
 import { admissionReceipt, beginAdmission, executionOf, finishAdmission, finishRetainedAdmission, whileAdmitting, forgetAdmission, forgetDraftAdmissions, identifyAdmission } from "../../writeAdmission"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
@@ -230,6 +231,7 @@ export const retryChange = (id: string) => whileAdmitting(id, Effect.gen(functio
     if (opId === id) cleaned = (yield* store.drafts.delete(draft.id).pipe(Effect.flatMap((removed) => removed.persisted), Effect.as(true), Effect.orElseSucceed(() => false))) && cleaned
   }
   if (kept) yield* clearFailure(id)
+  if (kept) cleaned = (yield* clearWriteComposer(id)) && cleaned
   yield* finishRetainedAdmission(id, kept, cleaned)
 }))
 

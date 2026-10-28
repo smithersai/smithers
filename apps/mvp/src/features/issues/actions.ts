@@ -1,3 +1,4 @@
+import { clearWriteComposer } from "../../admissionSource"
 import { acknowledgeNavigation, admissionReceipt, beginAdmission, identifyAdmission, executionOf, finishAdmission, finishRetainedAdmission, whileAdmitting, forgetAdmission, WriteIntents } from "../../writeAdmission"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { keep } from "./writes"
@@ -188,6 +189,7 @@ export const retryWrite = (writeId: string) => whileAdmitting(writeId, Effect.ge
       yield* store.view.update(VIEW, (view) => { if (view.draftKey === key) delete view.submissionFailed }).pipe(Effect.orDie)
     }
   }
+  if (queued) cleaned = (yield* clearWriteComposer(writeId)) && cleaned
   yield* finishRetainedAdmission(writeId, queued, cleaned)
 }))
 

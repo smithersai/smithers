@@ -230,6 +230,21 @@ test("an input-storage refusal keeps the slash source and never queues delivery"
   expect(issues.requested.tanstack.toArray).toEqual([])
 })
 
+for (const text of ["/comment octo/hello 7 Retry the slash source", "/todo.drop octo/hello 7"]) test(`page Retry cleans the retained slash source: ${text.split(" ")[0]}`, async () => {
+  const t = await open(true)
+  const { retryWrite } = await import("../issues/actions")
+  const { retryChange } = await import("../todos/actions")
+  await t.commands.actions.type(text)
+  await t.commands.actions.submit(text)
+  const intents = await t.tab.runPromise(Effect.service(WriteIntents))
+  const [held] = intents.pending()
+  t.down.value = false
+  await t.tab.runPromise(text.startsWith("/comment") ? retryWrite(held!.writeId!) : retryChange(held!.writeId!))
+  const chat = await t.tab.runPromise(Effect.service(ChatStore))
+  expect(chat.composer.tanstack.get(COMPOSER)?.draft).toBe("")
+  expect(intents.pending()).toEqual([])
+})
+
 test("a new identical press stays independent while the earlier source cleanup waits", async () => {
   const t = await open()
   const { Deferred, Fiber } = await import("effect")

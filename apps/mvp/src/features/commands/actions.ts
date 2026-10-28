@@ -1,3 +1,4 @@
+import { clearComposerSource } from "../../admissionSource"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { admissionReceipt, beginAdmission, executionOf, finishAdmission, identifyAdmission } from "../../writeAdmission"
 import { slashMenu, slashSubmit } from "@smthrs/ui"
@@ -72,7 +73,7 @@ const list = (draft: string, refusal: string | null = null) =>
   })
 
 /** Typing: the composer's draft becomes `text`, with `selection` after, and the menu lists what it completes to. */
-export const type = (text: string, selection?: DraftSelection, awaitPersistence = false) => Effect.andThen(list(text, text.trim().length > MAX_QUESTION_LENGTH ? "8,000 characters max" : null), setDraft(text, selection, awaitPersistence))
+export const type = (text: string, selection?: DraftSelection) => Effect.andThen(list(text, text.trim().length > MAX_QUESTION_LENGTH ? "8,000 characters max" : null), setDraft(text, selection))
 
 /** The arrows or the pointer moved the highlight to row `index`. */
 export const highlight = (index: number) => write({ highlighted: index })
@@ -132,11 +133,13 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>, draft
     // A new tab must open while this keypress still owns browser activation, before shared-text admission waits.
     if (command.flow === "app/web/open") yield* openWebPage(payload as never, "slash", scope, conversation)
     let cleaned = true
-    if ((yield* draftNow) === before && Option.getOrThrow(yield* composer.get(COMPOSER)).generation === generation && (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId === conversation) {
-      if (Option.isSome(staged)) cleaned = Exit.isSuccess(yield* admissionReceipt(type("", undefined, true), staged.value.commandId, command.flow, "source").pipe(Effect.exit))
-      else yield* type("")
-    }
-    if (Option.isSome(staged)) yield* finishAdmission(staged.value, Option.isSome(admission) && admission.value !== "not_admitted", cleaned)
+    if (Option.isSome(staged)) {
+      cleaned = Exit.isSuccess(yield* admissionReceipt(clearComposerSource(staged.value.composer!).pipe(
+        Effect.flatMap(confirmed => confirmed ? Effect.void : Effect.fail("unconfirmed")),
+      ), staged.value.commandId, command.flow, "source").pipe(Effect.exit))
+      if ((yield* draftNow) === "" && (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId === conversation) yield* list("")
+      yield* finishAdmission(staged.value, Option.isSome(admission) && admission.value !== "not_admitted", cleaned)
+    } else if ((yield* draftNow) === before && Option.getOrThrow(yield* composer.get(COMPOSER)).generation === generation && (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId === conversation) yield* type("")
     // New typing, dismissal or another command advances the revision even when
     // its row is unchanged, so an older refusal cannot take over the composer.
     const cleared = yield* Ref.get(revision)
