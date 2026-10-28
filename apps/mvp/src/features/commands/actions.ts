@@ -1,7 +1,7 @@
 import { Uuid, WebCrypto } from "@smthrs/crypto"
-import { beginAdmission, executionOf, finishAdmission, identifyAdmission } from "../../writeAdmission"
+import { admissionReceipt, beginAdmission, executionOf, finishAdmission, identifyAdmission } from "../../writeAdmission"
 import { slashMenu, slashSubmit } from "@smthrs/ui"
-import { Effect, Metric, Option, Ref, Schema } from "effect"
+import { Effect, Exit, Metric, Option, Ref, Schema } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { AuthStore, SESSION } from "../auth/store"
 import { ask, setDraft } from "../chat/actions"
@@ -72,7 +72,7 @@ const list = (draft: string, refusal: string | null = null) =>
   })
 
 /** Typing: the composer's draft becomes `text`, with `selection` after, and the menu lists what it completes to. */
-export const type = (text: string, selection?: DraftSelection) => Effect.andThen(list(text, text.trim().length > MAX_QUESTION_LENGTH ? "8,000 characters max" : null), setDraft(text, selection))
+export const type = (text: string, selection?: DraftSelection, awaitPersistence = false) => Effect.andThen(list(text, text.trim().length > MAX_QUESTION_LENGTH ? "8,000 characters max" : null), setDraft(text, selection, awaitPersistence))
 
 /** The arrows or the pointer moved the highlight to row `index`. */
 export const highlight = (index: number) => write({ highlighted: index })
@@ -114,7 +114,7 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>, draft
     const before = yield* draftNow
     const input = { ...pinned, ...command.args }
     const staged = hasOutboxAdmission(command.flow)
-      ? yield* beginAdmission(command.flow, input, { namespace: WRITE_ID_NAMESPACE, value: JSON.stringify([requestNamespace, yield* Ref.get(revision), conversation, command.flow, pinned]) }, undefined, { conversationId: conversation, text: draft })
+      ? yield* beginAdmission(command.flow, input, { namespace: WRITE_ID_NAMESPACE, value: JSON.stringify([requestNamespace, yield* Ref.get(revision), conversation, command.flow, pinned]) }, undefined, { conversationId: conversation, text: before })
       : Option.none()
     if (hasOutboxAdmission(command.flow) && Option.isNone(staged)) return yield* refuse("invalid", "Not sent", command)
     const executionId = Option.isSome(staged) ? yield* executionOf(staged.value) : crypto.randomUUID()
@@ -130,8 +130,12 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>, draft
     }
     // A new tab must open while this keypress still owns browser activation, before shared-text admission waits.
     if (command.flow === "app/web/open") yield* openWebPage(payload as never, "slash", scope, conversation)
-    if ((yield* draftNow) === before && (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId === conversation) yield* type("")
-    if (Option.isSome(staged)) yield* finishAdmission(staged.value, Option.isSome(admission) && admission.value !== "not_admitted")
+    let cleaned = true
+    if ((yield* draftNow) === before && (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId === conversation) {
+      if (Option.isSome(staged)) cleaned = Exit.isSuccess(yield* admissionReceipt(type("", undefined, true), staged.value.commandId, command.flow, "source").pipe(Effect.exit))
+      else yield* type("")
+    }
+    if (Option.isSome(staged)) yield* finishAdmission(staged.value, Option.isSome(admission) && admission.value !== "not_admitted", cleaned)
     // New typing, dismissal or another command advances the revision even when
     // its row is unchanged, so an older refusal cannot take over the composer.
     const cleared = yield* Ref.get(revision)

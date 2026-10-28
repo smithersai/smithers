@@ -181,3 +181,51 @@ for (const [name, payload] of writes.filter(([flow]) => flow === "issue/comment"
   })
 }
 
+for (const failure of ["hold", "fail"] as const) test(`slash input identity survives a ${failure} in source cleanup`, async () => {
+  const t = await open()
+  const { Collection } = await import("@smthrs/effect-tanstack-db")
+  const { Fiber } = await import("effect")
+  const { submit } = await import("./actions")
+  const { resumeAdmissions } = await import("../../resumeAdmissions")
+  const chat = await t.tab.runPromise(Effect.service(ChatStore))
+  const text = "/comment octo/hello 7 Retain the cleanup receipt"
+  await t.commands.actions.type(text)
+  const real = chat.drafts
+  let deleting = false
+  const drafts = { ...real, delete: (id: string | ReadonlyArray<string>) => real.delete(id).pipe(Effect.map(write => {
+    deleting = true
+    return { ...write, persisted: failure === "hold" ? Effect.never : Effect.fail(new Collection.TransactionFailed({ cause: "quota" })) }
+  })) }
+  const fiber = t.tab.runFork(submit(text).pipe(Effect.provideService(ChatStore, { ...chat, drafts })))
+  await until(() => expect(deleting).toBe(true))
+  const intents = await t.tab.runPromise(Effect.service(WriteIntents))
+  const [held] = intents.pending()
+  expect(held?.writeId).toBeDefined()
+  if (failure === "hold") await Effect.runPromise(Fiber.interrupt(fiber))
+  else await Effect.runPromise(Fiber.join(fiber))
+  expect(intents.pending().map(row => row.writeId)).toEqual([held!.writeId])
+  await t.tab.dispose()
+  runtimes.splice(runtimes.indexOf(t.tab), 1)
+  const restored = openTab(t.api, { host: t.host, answers: false })
+  runtimes.push(restored)
+  await restored.runPromise(resumeAdmissions)
+  const issues = await restored.runPromise(Effect.service(IssuesStore))
+  await until(() => expect(issues.sending.tanstack.toArray.map(row => row.id)).toEqual([held!.writeId]))
+  const next = await restored.runPromise(Effect.service(WriteIntents))
+  await until(() => expect(next.pending()).toEqual([]))
+})
+
+test("an input-storage refusal keeps the slash source and never queues delivery", async () => {
+  const t = await open()
+  const { submit } = await import("./actions")
+  const text = "/comment octo/hello 7 Retain the refused input"
+  await t.commands.actions.type(text)
+  const intents = await t.tab.runPromise(Effect.service(WriteIntents))
+  await t.tab.runPromise(submit(text).pipe(Effect.provideService(WriteIntents, { ...intents, retain: () => false })))
+  const chat = await t.tab.runPromise(Effect.service(ChatStore))
+  expect(chat.composer.tanstack.get(COMPOSER)?.draft).toBe(text)
+  const issues = await t.tab.runPromise(Effect.service(IssuesStore))
+  expect(issues.sending.tanstack.toArray).toEqual([])
+  expect(issues.requested.tanstack.toArray).toEqual([])
+})
+

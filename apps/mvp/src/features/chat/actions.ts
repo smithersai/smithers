@@ -79,13 +79,14 @@ const placeRow = Effect.flatMap(ChatStore, ({ place }) => Effect.map(place.get(P
  * prompt keeps it across reloads. Anywhere else the draft is this person's alone, and the device keeps it for the
  * conversation (`keepDraft`), as Slack, Linear and GitHub keep a draft per person.
  */
-export const setDraft = (draft: string, selection?: DraftSelection) =>
+/** Admission cleanup opts into the actual private-draft persistence receipt. Ordinary typing stays synchronous. */
+export const setDraft = (draft: string, selection?: DraftSelection, awaitPersistence = false) =>
   Effect.gen(function* () {
     const base = (yield* composerNow).draft
     yield* mirrorDraft(draft)
     const shared = yield* Effect.serviceOption(SharedPrompt)
     if (Option.isSome(shared) && (yield* placeRow).shared) return yield* shared.value.set(draft, { base, selection })
-    yield* keepDraft(draft)
+    yield* keepDraft(draft, awaitPersistence)
   })
 
 /** The composer's draft becomes `draft`, as the shared prompt now reads with everyone's typing in it. */
@@ -98,7 +99,7 @@ export const mirrorDraft = (draft: string) =>
  * Keeps `draft` on the device for the conversation this tab shows, or forgets it when it is empty. The composer is
  * `saved` once the device has stored it, unless the draft changed since.
  */
-const keepDraft = (draft: string) =>
+const keepDraft = (draft: string, awaitPersistence = false) =>
   Effect.gen(function* () {
     const { drafts, scope } = yield* ChatStore
     const key = (yield* placeNow) ?? HOME_DRAFT
@@ -111,18 +112,14 @@ const keepDraft = (draft: string) =>
       ? undefined
       : yield* drafts.insert({ id: key, text: draft })
     // Nothing to write leaves the composer as saved as it was.
-    yield* write === undefined ? Effect.void : Effect.andThen(
-      changeComposer((composer) => {
-        composer.saved = false
-      }),
-      persistDraft(write, key).pipe(
-        Effect.andThen(changeComposer((composer) => {
-          if (composer.draft === draft) composer.saved = true
-        })),
-        Effect.ignore,
-        Effect.forkIn(scope),
-      ),
-    )
+    if (write === undefined) return
+    yield* changeComposer((composer) => { composer.saved = false })
+    const persisted = persistDraft(write, key).pipe(Effect.andThen(changeComposer((composer) => {
+      if (composer.draft === draft) composer.saved = true
+    })))
+    // Admission cleanup awaits this actual transaction; ordinary typing continues to save in the background.
+    if (awaitPersistence) yield* persisted
+    else yield* persisted.pipe(Effect.ignore, Effect.forkIn(scope))
   }).pipe(Effect.orDie)
 
 /** The draft the device kept for the conversation this tab shows; empty when none. */
