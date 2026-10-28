@@ -214,3 +214,12 @@ test("explicit admissions fence legacy writes and release on success, failure an
   await Effect.runPromise(finishRetainedAdmission("write", true, true).pipe(Effect.provideService(WriteIntents, store)))
   expect(store.pending()).toEqual([])
 })
+
+test("identical content in a new composer generation is an independent press", async () => {
+  const store = await storeOf(device().snapshot)
+  const begin = (generation: string) => Option.getOrThrow(Effect.runSync(beginAdmission("issue/comment", { body: "Same" }, undefined, undefined, { conversationId: null, text: "/comment", generation }).pipe(Effect.provideService(WriteIntents, store))))
+  const first = begin("first")
+  expect(begin("first").commandId).toBe(first.commandId)
+  expect(begin("second").commandId).not.toBe(first.commandId)
+})
+

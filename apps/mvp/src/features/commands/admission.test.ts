@@ -132,17 +132,18 @@ test("a recovered slash command delivers the original write without starting a s
   expect(await rows()).toEqual([{ id: held!.id }])
 }, 90_000)
 
-test("steer command recovery reuses only the matching local refusal", async () => {
+test("steer command recovery reuses its retained identity", async () => {
   const t = await open(true)
   const sent = (await t.tab.runPromise(Effect.service(SteerWrites))).sent
   const payload = { runId: `todo:${crypto.randomUUID()}`, body: "Retained steer" }
   for (const fields of [{ status: "sent" as const, reason: null }, { status: "not_sent" as const, reason: "not_working" as const }, { status: "not_sent" as const, reason: null, body: "Another message" }]) {
     await t.tab.runPromise(sent.insert({ ...payload, id: crypto.randomUUID(), queuedAt: 1, ...fields }))
   }
-  expect(await t.tab.runPromise(admitCommand("run/steer", payload, crypto.randomUUID()))).toEqual(Option.some("not_admitted"))
+  const execution = crypto.randomUUID()
+  expect(await t.tab.runPromise(admitCommand("run/steer", payload, execution))).toEqual(Option.some("not_admitted"))
   const held = (await t.tab.runPromise(sent.toArray)).find((row) => row.body === payload.body && row.status === "not_sent" && row.reason === null)!
   t.down.value = false
-  expect(await t.tab.runPromise(admitCommand("run/steer", payload, crypto.randomUUID()))).toEqual(Option.some("recovered"))
+  expect(await t.tab.runPromise(admitCommand("run/steer", payload, execution))).toEqual(Option.some("queued"))
   expect((await t.tab.runPromise((await t.tab.runPromise(Effect.service(SteerWrites))).sending.toArray)).map((row) => row.id)).toEqual([held.id])
 })
 
@@ -172,8 +173,8 @@ for (const [name, payload] of writes.filter(([flow]) => flow === "issue/comment"
     const t = await open(true)
     const first = crypto.randomUUID()
     const second = crypto.randomUUID()
-    expect(await t.tab.runPromise(admitCommand(name, payload, first, "exact"))).toEqual(Option.some("not_admitted"))
-    expect(await t.tab.runPromise(admitCommand(name, payload, second, "exact"))).toEqual(Option.some("not_admitted"))
+    expect(await t.tab.runPromise(admitCommand(name, payload, first))).toEqual(Option.some("not_admitted"))
+    expect(await t.tab.runPromise(admitCommand(name, payload, second))).toEqual(Option.some("not_admitted"))
     const rows = name === "run/steer" ? (await t.tab.runPromise(Effect.service(SteerWrites))).sent
       : name === "todo/commit" ? (await t.tab.runPromise(Effect.service(TodosStore))).requested
       : (await t.tab.runPromise(Effect.service(IssuesStore))).requested
@@ -229,3 +230,51 @@ test("an input-storage refusal keeps the slash source and never queues delivery"
   expect(issues.requested.tanstack.toArray).toEqual([])
 })
 
+test("a new identical press stays independent while the earlier source cleanup waits", async () => {
+  const t = await open()
+  const { Deferred, Fiber } = await import("effect")
+  const { submit } = await import("./actions")
+  const chat = await t.tab.runPromise(Effect.service(ChatStore))
+  const gate = await Effect.runPromise(Deferred.make<void>())
+  const text = "/comment octo/hello 7 Another legitimate press"
+  await t.commands.actions.type(text)
+  let deleting = false
+  const drafts = { ...chat.drafts, delete: (id: string | ReadonlyArray<string>) => chat.drafts.delete(id).pipe(Effect.map(write => {
+    deleting = true
+    return { ...write, persisted: Deferred.await(gate) }
+  })) }
+  const fiber = t.tab.runFork(submit(text).pipe(Effect.provideService(ChatStore, { ...chat, drafts })))
+  try {
+    await until(() => expect(deleting).toBe(true))
+    expect(chat.composer.tanstack.get(COMPOSER)?.draft).toBe("")
+    await t.commands.actions.type(text)
+    await t.commands.actions.submit(text)
+    const issues = await t.tab.runPromise(Effect.service(IssuesStore))
+    expect(new Set(issues.sending.tanstack.toArray.map(row => row.id)).size).toBe(2)
+  } finally {
+    await Effect.runPromise(Deferred.succeed(gate, undefined))
+    await Effect.runPromise(Fiber.join(fiber))
+  }
+})
+
+test("admission cannot erase identical text retyped in a newer source generation", async () => {
+  const t = await open()
+  let entered!: () => void
+  let release!: () => void
+  const waiting = new Promise<void>(resolve => { entered = resolve })
+  const held = new Promise<void>(resolve => { release = resolve })
+  t.down.hold = async () => { entered(); await held }
+  const text = "/comment octo/hello 7 Retyped while admission waits"
+  await t.commands.actions.type(text)
+  const submitted = t.commands.actions.submit(text)
+  const chat = await t.tab.runPromise(Effect.service(ChatStore))
+  let generation: string | undefined
+  try {
+    await waiting
+    await t.commands.actions.type("")
+    await t.commands.actions.type(text)
+    generation = chat.composer.tanstack.get(COMPOSER)?.generation
+  } finally { release() }
+  await submitted
+  expect(chat.composer.tanstack.get(COMPOSER)).toMatchObject({ draft: text, generation })
+})

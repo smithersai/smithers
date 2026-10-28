@@ -90,8 +90,11 @@ export const setDraft = (draft: string, selection?: DraftSelection, awaitPersist
   })
 
 /** The composer's draft becomes `draft`, as the shared prompt now reads with everyone's typing in it. */
-export const mirrorDraft = (draft: string) =>
+export const mirrorDraft = (draft: string, generation?: string | null) =>
   Effect.andThen(Effect.flatMap(ChatStore, (store) => Ref.update(store.draftRevision, (revision) => revision + 1)), changeComposer((composer) => {
+    if (generation === null) delete composer.generation
+    else if (generation !== undefined) composer.generation = generation
+    else if (composer.draft !== draft || composer.generation === undefined) composer.generation = crypto.randomUUID()
     composer.draft = draft
   }))
 
@@ -104,13 +107,14 @@ const keepDraft = (draft: string, awaitPersistence = false) =>
     const { drafts, scope } = yield* ChatStore
     const key = (yield* placeNow) ?? HOME_DRAFT
     const kept = yield* drafts.get(key)
+    const generation = (yield* composerNow).generation
     const write = Option.isSome(kept)
-      ? kept.value.text === draft
+      ? kept.value.text === draft && kept.value.generation === generation
         ? undefined
-        : yield* draft === "" ? drafts.delete(key) : drafts.update(key, (row) => void (row.text = draft))
+        : yield* draft === "" ? drafts.delete(key) : drafts.update(key, (row) => { row.text = draft; row.generation = generation })
       : draft === ""
       ? undefined
-      : yield* drafts.insert({ id: key, text: draft })
+      : yield* drafts.insert({ id: key, text: draft, ...(generation === undefined ? {} : { generation }) })
     // Nothing to write leaves the composer as saved as it was.
     if (write === undefined) return
     yield* changeComposer((composer) => { composer.saved = false })
@@ -126,7 +130,7 @@ const keepDraft = (draft: string, awaitPersistence = false) =>
 const keptDraft = Effect.gen(function* () {
   const { drafts } = yield* ChatStore
   const kept = yield* drafts.get((yield* placeNow) ?? HOME_DRAFT)
-  return Option.match(kept, { onNone: () => "", onSome: ({ text }) => text })
+  return Option.getOrElse(kept, () => ({ text: "", generation: undefined }))
 })
 
 /**
@@ -135,9 +139,9 @@ const keptDraft = Effect.gen(function* () {
  */
 export const restoreDraft = Effect.gen(function* () {
   const draft = yield* keptDraft
-  if (draft === "" || (yield* composerNow).draft !== "") return
-  yield* mirrorDraft(draft)
-  yield* Effect.logInfo("chat draft restored").pipe(Effect.annotateLogs({ "draft.length": draft.length }))
+  if (draft.text === "" || (yield* composerNow).draft !== "") return
+  yield* mirrorDraft(draft.text, draft.generation ?? null)
+  yield* Effect.logInfo("chat draft restored").pipe(Effect.annotateLogs({ "draft.length": draft.text.length }))
 }).pipe(Effect.annotateLogs({ feature: "chat" }))
 
 /**
@@ -231,7 +235,8 @@ export const show = (conversationId: string | null, shared = false) =>
     yield* store.place.update(PLACE, (row) => void Object.assign(row, place)).pipe(Effect.orDie)
     // The composer shows the draft the device kept for the conversation shown; a shared prompt takes it in as it opens,
     // and brings its own text. The draft it had stays with its own conversation.
-    yield* mirrorDraft(yield* keptDraft)
+    const draft = yield* keptDraft
+    yield* mirrorDraft(draft.text, draft.generation ?? null)
     yield* Effect.logInfo("chat conversation shown").pipe(
       Effect.annotateLogs({ conversation: conversationId === null ? "home" : "branch" }),
     )

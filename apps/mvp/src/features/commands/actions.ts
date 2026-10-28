@@ -103,7 +103,7 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>, draft
     if (payload.repo !== undefined && !Schema.is(RepoName)(payload.repo)) {
       return yield* refuse("invalid", `/${command.name} needs owner/name`, command)
     }
-    const { place } = yield* ChatStore
+    const { place, composer } = yield* ChatStore
     const conversation = (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId
     const pinned = command.flow.startsWith("sandbox/") || PINNED_FLOWS.has(command.flow)
       ? yield* pinConversation(payload)
@@ -112,9 +112,10 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>, draft
       : payload
     const { scope, revision, requestNamespace } = yield* CommandsStore
     const before = yield* draftNow
+    const generation = Option.getOrThrow(yield* composer.get(COMPOSER)).generation
     const input = { ...pinned, ...command.args }
     const staged = hasOutboxAdmission(command.flow)
-      ? yield* beginAdmission(command.flow, input, { namespace: WRITE_ID_NAMESPACE, value: JSON.stringify([requestNamespace, yield* Ref.get(revision), conversation, command.flow, pinned]) }, undefined, { conversationId: conversation, text: before })
+      ? yield* beginAdmission(command.flow, input, { namespace: WRITE_ID_NAMESPACE, value: JSON.stringify([requestNamespace, yield* Ref.get(revision), conversation, command.flow, pinned]) }, undefined, { conversationId: conversation, text: before, generation })
       : Option.none()
     if (hasOutboxAdmission(command.flow) && Option.isNone(staged)) return yield* refuse("invalid", "Not sent", command)
     const executionId = Option.isSome(staged) ? yield* executionOf(staged.value) : crypto.randomUUID()
@@ -122,16 +123,16 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>, draft
       const writeId = yield* Uuid.v5(admissionNamespace(command.flow), executionId).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
       yield* identifyAdmission(staged.value, executionId, writeId)
     }
-    const admission = yield* admitCommand(command.flow, input, executionId, Option.isSome(staged) ? "exact" : "content")
+    const admission = yield* admitCommand(command.flow, input, executionId)
     if (Option.isSome(admission) && admission.value === "not_admitted") {
       if (Option.isSome(staged)) yield* finishAdmission(staged.value, false)
-      if ((yield* draftNow) === before && (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId === conversation) yield* refuse("invalid", "Not sent", command)
+      if ((yield* draftNow) === before && Option.getOrThrow(yield* composer.get(COMPOSER)).generation === generation && (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId === conversation) yield* refuse("invalid", "Not sent", command)
       return
     }
     // A new tab must open while this keypress still owns browser activation, before shared-text admission waits.
     if (command.flow === "app/web/open") yield* openWebPage(payload as never, "slash", scope, conversation)
     let cleaned = true
-    if ((yield* draftNow) === before && (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId === conversation) {
+    if ((yield* draftNow) === before && Option.getOrThrow(yield* composer.get(COMPOSER)).generation === generation && (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId === conversation) {
       if (Option.isSome(staged)) cleaned = Exit.isSuccess(yield* admissionReceipt(type("", undefined, true), staged.value.commandId, command.flow, "source").pipe(Effect.exit))
       else yield* type("")
     }

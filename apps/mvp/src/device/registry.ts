@@ -4,7 +4,7 @@ import { Notice, Pending } from "../features/attention/schema"
 import { ConversationRoute } from "../features/branch/schema"
 import { Mine, Pending as ConversationPending } from "../features/conversations/schema"
 import { Confirmed } from "../features/auth/schema"
-import { Asking, Message, Unsent } from "../features/chat/schema"
+import { Asking, ChatDraft, Message, Unsent } from "../features/chat/schema"
 import { Sending as TextSending, TextUpdate } from "../features/coedit/schema"
 import { AnswerRow as FlowAnswerRow, Code as FlowCode, Draft as FlowDraft, FlowRow, Form as FlowForm } from "../features/flows-ui/schema"
 import { FileTabRow } from "../features/files/schema"
@@ -61,7 +61,7 @@ export const ChatUnsentStore = Migrations.local({
  * The composer's draft in each conversation whose prompt isn't shared (src/features/chat/store.ts); on a branch its
  * owner shared, the branch's prompt adopts it (src/device/history.ts).
  */
-export const ChatDraftsStore = Migrations.local({ id: "chat-drafts", versions: [ChatDraftV1], getKey: (row) => row.id })
+export const ChatDraftsStore = Migrations.local({ id: "chat-drafts", versions: [ChatDraftV1, ChatDraft], migrations: [Migrations.step(ChatDraftV1, ChatDraft, row => row)], getKey: (row) => row.id })
 
 /**
  * Issue writes the server took or refused. Version 2 (after `7b96f878`): who acts is the server's to read from the

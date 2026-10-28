@@ -9,7 +9,7 @@ export const WriteIntent = Schema.Struct({
   payload: Schema.Record(Schema.String, Schema.Unknown),
   identity: Schema.optional(Schema.Struct({ namespace: Schema.String.check(Schema.isUUID()), value: Schema.String })),
   draftId: Schema.optional(Schema.String),
-  composer: Schema.optional(Schema.Struct({ conversationId: Schema.NullOr(Schema.String), text: Schema.String })),
+  composer: Schema.optional(Schema.Struct({ conversationId: Schema.NullOr(Schema.String), text: Schema.String, generation: Schema.optional(Schema.String) })),
   executionId: Schema.optional(Schema.String),
   writeId: Schema.optional(Schema.String),
   admitted: Schema.optional(Schema.Boolean),
@@ -71,7 +71,7 @@ const samePayload = (left: Readonly<Record<string, unknown>>, right: Readonly<Re
 export const beginAdmission = (flow: string, payload: Readonly<Record<string, unknown>>, identity?: WriteIntent["identity"], draftId?: string, composer?: WriteIntent["composer"]) => Effect.gen(function* () {
   const store = yield* Effect.serviceOption(WriteIntents)
   const held = Option.isNone(store) ? undefined : store.value.pending().find(row => row.flow === flow && row.cleaned !== true &&
-    (draftId !== undefined ? row.draftId === draftId : composer !== undefined && row.composer?.conversationId === composer.conversationId && row.composer.text === composer.text) && samePayload(row.payload, payload))
+    (draftId !== undefined ? row.draftId === draftId : composer !== undefined && row.composer?.conversationId === composer.conversationId && row.composer.text === composer.text && row.composer.generation === composer.generation) && samePayload(row.payload, payload))
   const intent: WriteIntent = held ?? { commandId: crypto.randomUUID(), flow, payload, ...(identity === undefined ? {} : { identity }), ...(draftId === undefined ? {} : { draftId }), ...(composer === undefined ? {} : { composer }) }
   const retained = Option.isNone(store) || store.value.retain(intent)
   if (retained && Option.isSome(store)) store.value.admitting.set(intent.commandId, (store.value.admitting.get(intent.commandId) ?? 0) + 1)

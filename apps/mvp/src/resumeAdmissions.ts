@@ -29,7 +29,7 @@ export const resumeAdmissions = Effect.gen(function* () {
     if (intent.flow === "issue/create") receipts.resumed.set(intent.payload.repo as string, id)
     yield* recordAdmission(intent.commandId, intent.flow, "restore", "recovered", started)
     yield* Effect.gen(function* () {
-      const result = yield* admitCommand(intent.flow as FlowName, intent.payload, executionId, "exact")
+      const result = yield* admitCommand(intent.flow as FlowName, intent.payload, executionId)
       const admitted = Option.isSome(result) && result.value !== "not_admitted"
       let cleaned = true
       if (admitted) {
@@ -66,12 +66,12 @@ const clearMatchingDraft = (intent: WriteIntent, issues: IssuesStore["Service"],
     yield* chat.drafts.restored
     const key = intent.composer.conversationId ?? HOME_DRAFT
     const draft = yield* chat.drafts.get(key)
-    if (Option.isSome(draft) && draft.value.text === intent.composer.text) {
+    if (Option.isSome(draft) && draft.value.text === intent.composer.text && draft.value.generation === intent.composer.generation) {
       yield* chat.drafts.delete(key).pipe(Effect.flatMap(write => write.persisted))
     }
     const place = Option.getOrThrow(yield* chat.place.get(PLACE))
     const composer = Option.getOrThrow(yield* chat.composer.get(COMPOSER))
-    if (place.conversationId === intent.composer.conversationId && composer.draft === intent.composer.text) {
+    if (place.conversationId === intent.composer.conversationId && composer.draft === intent.composer.text && composer.generation === intent.composer.generation) {
       yield* setDraft("").pipe(Effect.provideService(ChatStore, chat))
     }
   }

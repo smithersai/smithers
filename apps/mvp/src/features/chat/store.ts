@@ -25,7 +25,6 @@ import {
 } from "effect"
 import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { ChatDraftsStore, ChatUnsentStore, outboxUpgrade } from "../../device/registry"
-import type { ChatDraftV1 } from "../../device/history"
 import { OutboxWrites } from "../../outbox"
 import { ViewsStore } from "../views/store"
 import { ChatClient } from "./api"
@@ -44,6 +43,7 @@ import {
 import { FormValues } from "../views/schema"
 import {
   Asking,
+  type ChatDraft,
   COMPOSER,
   Composer,
   CONNECTION,
@@ -137,7 +137,7 @@ export class ChatStore extends Context.Service<
     readonly messages: ElectricCollection.ElectricCollection<Message>
     readonly asking: Collection.Collection<Asking, string>
     readonly unsent: Collection.Collection<Unsent, string>
-    readonly drafts: Collection.Collection<ChatDraftV1, string>
+    readonly drafts: Collection.Collection<ChatDraft, string>
     readonly composer: Collection.Collection<Composer, string>
     readonly connection: Collection.Collection<Connection, string>
     readonly history: Collection.Collection<History, string>

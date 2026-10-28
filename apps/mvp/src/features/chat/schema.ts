@@ -110,6 +110,7 @@ export const Composer = Schema.Struct({
   /** One focus request per opening, consumed by the mounted input. Never persisted. */
   focusRequested: Schema.Boolean,
   draft: Schema.String,
+  generation: Schema.optional(Schema.String),
   saved: Schema.Boolean,
 })
 export type Composer = typeof Composer.Type
@@ -180,3 +181,7 @@ export const EditCall = Schema.Struct(editPayload)
 /** How the edit went; `gone` is the step's own. */
 export const EditAnswer = Schema.Struct({ outcome: Schema.Literals(EDIT_ANSWERS) })
 export type EditAnswer = typeof EditAnswer.Type
+
+/** A private composer snapshot; generation distinguishes retyped identical content across reload. */
+export const ChatDraft = Schema.Struct({ id: Schema.String, text: Schema.String, generation: Schema.optional(Schema.String) })
+export type ChatDraft = typeof ChatDraft.Type

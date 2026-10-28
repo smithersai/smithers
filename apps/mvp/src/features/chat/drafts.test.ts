@@ -73,3 +73,38 @@ test("leaving a run through the frontend clears only that run and preserves a ne
   await tab.runtime.runPromise(Effect.yieldNow)
   expect(runs.queries.view.toArray[0]?.runId).toBe("second")
 })
+
+test("retyped identical draft text has a new generation that survives reload", async () => {
+  const host = nodeDevice()
+  const first = await open(host)
+  first.chat.actions.setDraft("Same text")
+  await vi.waitFor(() => expect(first.composer()).toMatchObject({ draft: "Same text", saved: true }))
+  const previous = first.composer()!.generation
+  expect(previous).toBeDefined()
+  first.chat.actions.setDraft("")
+  first.chat.actions.setDraft("Same text")
+  await vi.waitFor(() => expect(first.composer()).toMatchObject({ draft: "Same text", saved: true }))
+  const generation = first.composer()!.generation
+  expect(generation).not.toBe(previous)
+  await first.runtime.dispose()
+  const restored = await open(host)
+  expect(restored.composer()).toMatchObject({ draft: "Same text", generation })
+})
+
+test("a restored legacy draft preserves its absent generation until an actual edit", async () => {
+  const host = nodeDevice()
+  const first = await open(host)
+  console.info("draft.generation.receipt", { stage: "first_open" })
+  const store = await first.runtime.runPromise(Effect.service(ChatStore))
+  console.info("draft.generation.receipt", { stage: "insert_start" })
+  await first.runtime.runPromise(store.drafts.insert({ id: "branch-draft", text: "Legacy draft" }).pipe(Effect.flatMap(write => write.persisted)))
+  console.info("draft.generation.receipt", { stage: "insert_persisted" })
+  await first.runtime.dispose()
+  console.info("draft.generation.receipt", { stage: "first_closed" })
+  const restored = await open(host)
+  console.info("draft.generation.receipt", { stage: "second_open" })
+  expect(restored.composer()).toMatchObject({ draft: "Legacy draft" })
+  expect(restored.composer()!.generation).toBeUndefined()
+  restored.chat.actions.setDraft("Edited legacy draft")
+  expect(restored.composer()!.generation).toBeDefined()
+}, 90_000)

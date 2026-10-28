@@ -9,21 +9,19 @@ import { QueuedOp } from "../todos/schema"
 import { TodosStore } from "../todos/store"
 import { STEER_ID_NAMESPACE } from "../runs/contract"
 import { RunSteers } from "../runs/steers"
-import { SteerWrites } from "../runs/writes"
 
 const issueWrites = new Set<FlowName>(["issue/create", "issue/comment", "issue/triage", "issue/commitment", "triage/run", "triage/enable", "triage/pause"])
 const todoWrites = new Set<FlowName>(["todo/commit", "todo/drop", "todo/Retry"])
 export const hasOutboxAdmission = (name: FlowName): boolean => issueWrites.has(name) || todoWrites.has(name) || name === "run/steer"
 export const admissionNamespace = (name: FlowName) => issueWrites.has(name) ? WRITE_ID_NAMESPACE : todoWrites.has(name) ? OP_ID_NAMESPACE : STEER_ID_NAMESPACE
-const sameFields = (held: object, write: object) => Object.entries(write).every(([key, value]) => key === "id" || JSON.stringify((held as Record<string, unknown>)[key]) === JSON.stringify(value))
-const outcome = (queued: boolean, recovered: boolean) => Option.some(queued ? recovered ? "recovered" as const : "queued" as const : "not_admitted" as const)
+const outcome = (queued: boolean) => Option.some(queued ? "queued" as const : "not_admitted" as const)
 
 /** Core transport infrastructure: the existing public flow schemas feed their existing device outboxes. */
-export const admitCommand = (name: FlowName, payload: Readonly<Record<string, unknown>>, executionId: string, identity: "content" | "exact" = "content") =>
+export const admitCommand = (name: FlowName, payload: Readonly<Record<string, unknown>>, executionId: string) =>
   Effect.gen(function* () {
-    if (!hasOutboxAdmission(name)) return Option.none<"queued" | "recovered" | "not_admitted">()
+    if (!hasOutboxAdmission(name)) return Option.none<"queued" | "not_admitted">()
     const decoded = yield* Schema.decodeUnknownEffect(entryOf(name).flow.payloadSchema as unknown as Schema.Codec<unknown>)(payload).pipe(Effect.result)
-    if (decoded._tag === "Failure") return outcome(false, false)
+    if (decoded._tag === "Failure") return outcome(false)
     const value = decoded.success as Readonly<Record<string, unknown>>
     const id = yield* Uuid.v5(admissionNamespace(name), executionId).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
     if (issueWrites.has(name)) {
@@ -32,8 +30,7 @@ export const admitCommand = (name: FlowName, payload: Readonly<Record<string, un
         body: value.body ?? value.reason ?? "",
       }).pipe(Effect.orDie)
       const store = yield* IssuesStore
-      const held = identity === "exact" ? undefined : (yield* store.requested.toArray).find((row) => row.status === "not_sent" && row.reason === null && sameFields(row, write))
-      return outcome((yield* store.queue({ ...write, id: held?.id ?? write.id })).queued, held !== undefined && held.id !== write.id)
+      return outcome((yield* store.queue(write)).queued)
     }
     if (todoWrites.has(name)) {
       const op = yield* Schema.decodeUnknownEffect(QueuedOp)({ ...value, id,
@@ -41,10 +38,8 @@ export const admitCommand = (name: FlowName, payload: Readonly<Record<string, un
         title: typeof value.title === "string" ? value.title.trim() : "", prompt: value.prompt ?? "", acceptance: value.acceptance ?? [], number: value.number ?? 0,
       }).pipe(Effect.orDie)
       const store = yield* TodosStore
-      const held = identity === "exact" ? undefined : (yield* store.requested.toArray).find((row) => row.status === "not_sent" && row.reason === null && sameFields(row, op))
-      return outcome((yield* store.queue({ ...op, id: held?.id ?? op.id })).kept, held !== undefined && held.id !== op.id)
+      return outcome((yield* store.queue(op)).kept)
     }
     const steer = { id, runId: value.runId as string, body: value.body as string }
-    const held = identity === "exact" ? undefined : (yield* (yield* SteerWrites).sent.toArray).find((row) => row.status === "not_sent" && row.reason === null && sameFields(row, steer))
-    return outcome((yield* (yield* RunSteers).queue({ ...steer, id: held?.id ?? id })).kept, held !== undefined && held.id !== id)
+    return outcome((yield* (yield* RunSteers).queue(steer)).kept)
   })
