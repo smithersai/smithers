@@ -69,7 +69,9 @@ const observing = <A, E>(effect: Effect.Effect<A, E>, options: Partial<FetchFail
 const fetchWith = (input: RequestInfo | URL, init?: RequestInit) =>
   Effect.gen(function*() {
     const fetch = yield* FetchHttpClient.Fetch
-    return yield* Effect.promise(() => fetch(input, init).then((response) => response.status, () => "rejected" as const))
+    return yield* Effect.promise(() =>
+      fetch(input, init).then((response) => response.status, () => "rejected" as const)
+    )
   })
 
 const count = (attributes: Record<string, string>) =>
@@ -191,7 +193,9 @@ describe("FetchFailures", () => {
     Effect.gen(function*() {
       const global = globalThis as { location?: unknown }
       global.location = { href: `${origin}/` }
-      const result = yield* observing(fetchWith("/status/500")).pipe(Effect.ensuring(Effect.sync(() => delete global.location)))
+      const result = yield* observing(fetchWith("/status/500")).pipe(
+        Effect.ensuring(Effect.sync(() => delete global.location))
+      )
       expect(result.lines.map(({ annotations }) => annotations.route)).toEqual(["/status/:id"])
     }))
 

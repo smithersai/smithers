@@ -65,9 +65,18 @@ describe("permission", () => {
   })
 
   it("answers no account id when GitHub names no account", async () => {
-    await startGitHub({ maya: { permission: "read", role_name: "read" }, sam: { permission: "read", role_name: "read", user: null } })
-    expect(Option.getOrThrow(await run(Collaborators.permission("o", "r", "maya")))).toEqual({ permission: "read", roleName: "read" })
-    expect(Option.getOrThrow(await run(Collaborators.permission("o", "r", "sam")))).toEqual({ permission: "read", roleName: "read" })
+    await startGitHub({
+      maya: { permission: "read", role_name: "read" },
+      sam: { permission: "read", role_name: "read", user: null }
+    })
+    expect(Option.getOrThrow(await run(Collaborators.permission("o", "r", "maya")))).toEqual({
+      permission: "read",
+      roleName: "read"
+    })
+    expect(Option.getOrThrow(await run(Collaborators.permission("o", "r", "sam")))).toEqual({
+      permission: "read",
+      roleName: "read"
+    })
   })
 
   it("answers none when GitHub answers 404", async () => {

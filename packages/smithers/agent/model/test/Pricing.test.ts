@@ -20,7 +20,10 @@ describe("Pricing.lookup", () => {
     // $0.06/$0.32 is its cheapest provider's, and an alert that overstates is the safe side.
     const gateway = Pricing.lookup("alibaba/qwen3.8-27b", { at: 0 })
     expect(gateway).toMatchObject({ input: 0.99, output: 1.49 })
-    expect(gateway).toMatchObject({ input: Pricing.table["qwen-3.8-27b"]!.input, output: Pricing.table["qwen-3.8-27b"]!.output })
+    expect(gateway).toMatchObject({
+      input: Pricing.table["qwen-3.8-27b"]!.input,
+      output: Pricing.table["qwen-3.8-27b"]!.output
+    })
     const cost = Pricing.cost({ inputTokens: million, outputTokens: million }, "alibaba/qwen3.8-27b", { at: 0 })
     expect(cost?.costSource).toBe("estimated")
     expect(cost?.costUsd).toBeCloseTo(2.48, 9)

@@ -797,105 +797,124 @@ describe("SandboxTools rebase", () => {
     Effect.flatMap(exec(session, SandboxTools.rebaseCall(options)), (result) => SandboxTools.rebased(result as Run))
 
   const paths = (session: Sandbox.Session) =>
-    Effect.map(exec(session, { tool: "read", path: SandboxTools.REBASE_PATHS }), (read) =>
-      SandboxTools.rebasePaths(read as Read))
+    Effect.map(
+      exec(session, { tool: "read", path: SandboxTools.REBASE_PATHS }),
+      (read) => SandboxTools.rebasePaths(read as Read)
+    )
 
-  const status = (cwd: string) => git(cwd, "status", "--porcelain=v1", "--untracked-files=all").split("\n").filter(Boolean).sort()
+  const status = (cwd: string) =>
+    git(cwd, "status", "--porcelain=v1", "--untracked-files=all").split("\n").filter(Boolean).sort()
 
-  it.effect("plans, then applies: the working copy's changes and commits on top of the moved branch", () =>
-    Effect.gen(function*() {
-      const { base, origin } = remote()
-      yield* onMachine((session) =>
-        Effect.gen(function*() {
-          const wc = session.workdir
-          git(wc, "clone", "-q", "--branch", "try-1", "--single-branch", origin, ".")
-          const onto = move(origin, base)
-          // Saved as published (A, alike), a commit made in the terminal (L), an edit (X's first line), and a new file.
-          writeFileSync(join(wc, "L"), "local\n")
-          git(wc, "add", "L")
-          git(wc, "commit", "-q", "-m", "terminal")
-          writeFileSync(join(wc, "A"), "a pushed\nb\nc\n")
-          writeFileSync(join(wc, "N"), "new\n")
-          const planned = yield* run(session, { branch: "try-1", onto })
-          expect(planned).toMatchObject({ _tag: "Planned", paths: 3 })
-          expect([...(yield* paths(session))].sort()).toEqual(["M", "X", "gone"])
-          // Planning changed nothing.
-          expect(status(wc)).toEqual([" M A", "?? N"])
-          const tree = (planned as { readonly tree: string }).tree
-          const applied = yield* run(session, { branch: "try-1", onto, expect: tree })
-          expect(applied).toEqual({ ...planned, _tag: "Applied" })
-          expect(git(wc, "rev-parse", "HEAD").trim()).toBe(onto)
-          expect(readFileSync(join(wc, "A"), "utf8")).toBe("a pushed\nb\nc\n")
-          expect(readFileSync(join(wc, "X"), "utf8")).toBe("x1\nx2 main\n")
-          expect(readFileSync(join(wc, "M"), "utf8")).toBe("m main\n")
-          expect(existsSync(join(wc, "gone"))).toBe(false)
-          // What GitHub lacks stays, uncommitted: the terminal's commit and the new file.
-          expect(status(wc)).toEqual(["?? L", "?? N"])
-          // Again: HEAD is there already.
-          expect(yield* run(session, { branch: "try-1", onto })).toMatchObject({ _tag: "Current" })
-          expect(yield* paths(session)).toEqual([])
-        }), { git: false })
-    }), slow)
+  it.effect(
+    "plans, then applies: the working copy's changes and commits on top of the moved branch",
+    () =>
+      Effect.gen(function*() {
+        const { base, origin } = remote()
+        yield* onMachine((session) =>
+          Effect.gen(function*() {
+            const wc = session.workdir
+            git(wc, "clone", "-q", "--branch", "try-1", "--single-branch", origin, ".")
+            const onto = move(origin, base)
+            // Saved as published (A, alike), a commit made in the terminal (L), an edit (X's first line), and a new file.
+            writeFileSync(join(wc, "L"), "local\n")
+            git(wc, "add", "L")
+            git(wc, "commit", "-q", "-m", "terminal")
+            writeFileSync(join(wc, "A"), "a pushed\nb\nc\n")
+            writeFileSync(join(wc, "N"), "new\n")
+            const planned = yield* run(session, { branch: "try-1", onto })
+            expect(planned).toMatchObject({ _tag: "Planned", paths: 3 })
+            expect([...(yield* paths(session))].sort()).toEqual(["M", "X", "gone"])
+            // Planning changed nothing.
+            expect(status(wc)).toEqual([" M A", "?? N"])
+            const tree = (planned as { readonly tree: string }).tree
+            const applied = yield* run(session, { branch: "try-1", onto, expect: tree })
+            expect(applied).toEqual({ ...planned, _tag: "Applied" })
+            expect(git(wc, "rev-parse", "HEAD").trim()).toBe(onto)
+            expect(readFileSync(join(wc, "A"), "utf8")).toBe("a pushed\nb\nc\n")
+            expect(readFileSync(join(wc, "X"), "utf8")).toBe("x1\nx2 main\n")
+            expect(readFileSync(join(wc, "M"), "utf8")).toBe("m main\n")
+            expect(existsSync(join(wc, "gone"))).toBe(false)
+            // What GitHub lacks stays, uncommitted: the terminal's commit and the new file.
+            expect(status(wc)).toEqual(["?? L", "?? N"])
+            // Again: HEAD is there already.
+            expect(yield* run(session, { branch: "try-1", onto })).toMatchObject({ _tag: "Current" })
+            expect(yield* paths(session)).toEqual([])
+          }), { git: false })
+      }),
+    slow
+  )
 
-  it.effect("a conflict lists its files and changes nothing; a plan that went stale applies nothing", () =>
-    Effect.gen(function*() {
-      const { base, origin } = remote()
-      yield* onMachine((session) =>
-        Effect.gen(function*() {
-          const wc = session.workdir
-          git(wc, "clone", "-q", "--branch", "try-1", "--single-branch", origin, ".")
-          const onto = move(origin, base)
-          writeFileSync(join(wc, "M"), "m mine\n")
-          writeFileSync(join(wc, "X"), "x1\nx2 mine\n")
-          expect(yield* run(session, { branch: "try-1", onto })).toMatchObject({ _tag: "Conflicted", paths: 2 })
-          expect([...(yield* paths(session))].sort()).toEqual(["M", "X"])
-          expect(git(wc, "rev-parse", "HEAD").trim()).toBe(base)
-          expect(readFileSync(join(wc, "M"), "utf8")).toBe("m mine\n")
-          // Resolved by hand: X back as it was, M alike to main's. The plan holds no conflict; then a save moves on.
-          writeFileSync(join(wc, "X"), "x1\nx2\n")
-          writeFileSync(join(wc, "M"), "m main\n")
-          const planned = yield* run(session, { branch: "try-1", onto })
-          expect(planned).toMatchObject({ _tag: "Planned" })
-          writeFileSync(join(wc, "S"), "saved meanwhile\n")
-          const moved = yield* run(session, { branch: "try-1", onto, expect: (planned as { readonly tree: string }).tree })
-          expect(moved).toMatchObject({ _tag: "Moved" })
-          expect(git(wc, "rev-parse", "HEAD").trim()).toBe(base)
-          expect(status(wc)).toEqual([" M M", "?? S"])
-        }), { git: false })
-    }), slow)
+  it.effect(
+    "a conflict lists its files and changes nothing; a plan that went stale applies nothing",
+    () =>
+      Effect.gen(function*() {
+        const { base, origin } = remote()
+        yield* onMachine((session) =>
+          Effect.gen(function*() {
+            const wc = session.workdir
+            git(wc, "clone", "-q", "--branch", "try-1", "--single-branch", origin, ".")
+            const onto = move(origin, base)
+            writeFileSync(join(wc, "M"), "m mine\n")
+            writeFileSync(join(wc, "X"), "x1\nx2 mine\n")
+            expect(yield* run(session, { branch: "try-1", onto })).toMatchObject({ _tag: "Conflicted", paths: 2 })
+            expect([...(yield* paths(session))].sort()).toEqual(["M", "X"])
+            expect(git(wc, "rev-parse", "HEAD").trim()).toBe(base)
+            expect(readFileSync(join(wc, "M"), "utf8")).toBe("m mine\n")
+            // Resolved by hand: X back as it was, M alike to main's. The plan holds no conflict; then a save moves on.
+            writeFileSync(join(wc, "X"), "x1\nx2\n")
+            writeFileSync(join(wc, "M"), "m main\n")
+            const planned = yield* run(session, { branch: "try-1", onto })
+            expect(planned).toMatchObject({ _tag: "Planned" })
+            writeFileSync(join(wc, "S"), "saved meanwhile\n")
+            const moved = yield* run(session, {
+              branch: "try-1",
+              onto,
+              expect: (planned as { readonly tree: string }).tree
+            })
+            expect(moved).toMatchObject({ _tag: "Moved" })
+            expect(git(wc, "rev-parse", "HEAD").trim()).toBe(base)
+            expect(status(wc)).toEqual([" M M", "?? S"])
+          }), { git: false })
+      }),
+    slow
+  )
 
-  it.effect("refuses a commit origin doesn't serve, an origin it can't reach, unrelated history and no repository", () =>
-    Effect.gen(function*() {
-      const { origin } = remote()
-      yield* onMachine((session) =>
-        Effect.gen(function*() {
-          const wc = session.workdir
-          git(wc, "clone", "-q", "--branch", "try-1", "--single-branch", origin, ".")
-          expect(yield* Effect.flip(run(session, { branch: "try-1", onto: "0".repeat(40) }))).toEqual(
-            new SandboxTools.ToolRefused({ reason: "not_found" })
-          )
-          expect(yield* Effect.flip(run(session, { branch: "nope", onto: "0".repeat(40) }))).toEqual(
-            new SandboxTools.ToolRefused({ reason: "not_found" })
-          )
-          // An orphan branch on origin shares no commit with HEAD.
-          git(origin, "checkout", "-q", "--orphan", "other")
-          writeFileSync(join(origin, "O"), "o\n")
-          git(origin, "add", "-A")
-          git(origin, "commit", "-q", "-m", "orphan")
-          const orphan = git(origin, "rev-parse", "HEAD").trim()
-          expect(yield* run(session, { branch: "other", onto: orphan })).toMatchObject({ _tag: "Unrelated" })
-          git(wc, "remote", "set-url", "origin", "http://127.0.0.1:9/gone.git")
-          expect(yield* Effect.flip(run(session, { branch: "try-1", onto: "1".repeat(40) }))).toEqual(
-            new SandboxTools.ToolUnavailable({ code: "unavailable" })
-          )
-        }), { git: false })
-      yield* onMachine((session) =>
-        Effect.gen(function*() {
-          expect(yield* Effect.flip(run(session, { branch: "try-1", onto: "0".repeat(40) }))).toEqual(
-            new SandboxTools.ToolRefused({ reason: "not_a_repository" })
-          )
-        }), { git: false })
-    }), slow)
+  it.effect(
+    "refuses a commit origin doesn't serve, an origin it can't reach, unrelated history and no repository",
+    () =>
+      Effect.gen(function*() {
+        const { origin } = remote()
+        yield* onMachine((session) =>
+          Effect.gen(function*() {
+            const wc = session.workdir
+            git(wc, "clone", "-q", "--branch", "try-1", "--single-branch", origin, ".")
+            expect(yield* Effect.flip(run(session, { branch: "try-1", onto: "0".repeat(40) }))).toEqual(
+              new SandboxTools.ToolRefused({ reason: "not_found" })
+            )
+            expect(yield* Effect.flip(run(session, { branch: "nope", onto: "0".repeat(40) }))).toEqual(
+              new SandboxTools.ToolRefused({ reason: "not_found" })
+            )
+            // An orphan branch on origin shares no commit with HEAD.
+            git(origin, "checkout", "-q", "--orphan", "other")
+            writeFileSync(join(origin, "O"), "o\n")
+            git(origin, "add", "-A")
+            git(origin, "commit", "-q", "-m", "orphan")
+            const orphan = git(origin, "rev-parse", "HEAD").trim()
+            expect(yield* run(session, { branch: "other", onto: orphan })).toMatchObject({ _tag: "Unrelated" })
+            git(wc, "remote", "set-url", "origin", "http://127.0.0.1:9/gone.git")
+            expect(yield* Effect.flip(run(session, { branch: "try-1", onto: "1".repeat(40) }))).toEqual(
+              new SandboxTools.ToolUnavailable({ code: "unavailable" })
+            )
+          }), { git: false })
+        yield* onMachine((session) =>
+          Effect.gen(function*() {
+            expect(yield* Effect.flip(run(session, { branch: "try-1", onto: "0".repeat(40) }))).toEqual(
+              new SandboxTools.ToolRefused({ reason: "not_a_repository" })
+            )
+          }), { git: false })
+      }),
+    slow
+  )
 
   it.effect("decodes what a run answered, and only what the script prints", () =>
     Effect.gen(function*() {
@@ -924,7 +943,13 @@ describe("SandboxTools rebase", () => {
       expect(yield* decode({ timedOut: true, exitCode: 124 })).toMatchObject({ failure: { code: "timeout" } })
       expect(yield* decode({ exitCode: 125 })).toMatchObject({ failure: { code: "unknown", exitCode: 125 } })
       expect(
-        SandboxTools.rebasePaths({ tool: "read", path: SandboxTools.REBASE_PATHS, content: "a\0b c\0a\0", bytes: 8, truncated: false })
+        SandboxTools.rebasePaths({
+          tool: "read",
+          path: SandboxTools.REBASE_PATHS,
+          content: "a\0b c\0a\0",
+          bytes: 8,
+          truncated: false
+        })
       ).toEqual(["a", "b c"])
       const call = SandboxTools.rebaseCall({ branch: "it's", onto: "abc", expect: "t1", timeoutSeconds: 30 })
       expect(call).toMatchObject({ tool: "run", timeoutSeconds: 30 })

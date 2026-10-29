@@ -58,7 +58,9 @@ const program = [
  *
  * The rules are checked when the declaration is made: an empty list, an
  * unknown kind or key, a missing `because`, or a `files` glob that is not
- * package-relative throws a `TypeError` naming the rule. The target runs
+ * package-relative throws a `TypeError` naming the rule. At execution, every
+ * rule must cover at least one source; otherwise the target exits 2, naming
+ * every empty rule's index, kind, patterns and reason. The target runs
  * `packages/repo-targets/scripts/import-rules.mjs` in `cwd` with the rules as
  * JSON, keys on every source of the package and on the checking modules, and
  * is not cached, because the TypeScript parser it loads is not part of its

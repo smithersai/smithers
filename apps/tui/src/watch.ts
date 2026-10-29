@@ -9,7 +9,7 @@ import { type BigIntStats, type FSWatcher, lstatSync, readdirSync, statSync, wat
 import { lstat, readdir, stat as targetStat } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
 import * as Failures from "./failures.ts"
-import { FlowDiscoveryFailed } from "./flows.ts"
+import type { FlowDiscoveryFailed } from "./flows.ts"
 import * as Log from "./log.ts"
 import type { Failure as MonitorFailure } from "./monitors.ts"
 

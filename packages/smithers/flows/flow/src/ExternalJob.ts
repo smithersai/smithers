@@ -652,7 +652,9 @@ export const make = <
       if (handedOff) return yield* execute
       // A drive with a budget is waited on no later than its end: work still going then goes on as the job.
       const deadline = yield* DriveDeadline
-      const left = deadline === undefined ? waitMs : Math.min(waitMs, deadline - Math.floor(yield* Clock.currentTimeMillis))
+      const left = deadline === undefined
+        ? waitMs
+        : Math.min(waitMs, deadline - Math.floor(yield* Clock.currentTimeMillis))
       if (left <= 0) return yield* execute
       const begunAt = yield* Clock.currentTimeMillis
       const waited = (outcome: "collected" | "handed_off" | "interrupted") =>

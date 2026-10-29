@@ -57,10 +57,13 @@ it.effect("refuses forbidden imports, wrong tags, invalid payloads, and unavaila
   }))
 it.effect("refuses a forbidden import the module catches, and an unlisted action in a branch never taken", () =>
   Effect.gen(function*() {
-    const caught = `import { Flow } from '@smthrs/flow'; import { Node } from '@smthrs/plan'; import { Schema } from 'effect';
+    const caught =
+      `import { Flow } from '@smthrs/flow'; import { Node } from '@smthrs/plan'; import { Schema } from 'effect';
 let fs; try { fs = require('node:fs') } catch {}
 export default Flow.make('caught', { payload: {}, success: Schema.String, body: () => Node.succeed(typeof fs) });`
-    const refused = yield* Effect.result(run({ source: caught, expectedTag: "caught", payload: {}, allowedActions: [] }))
+    const refused = yield* Effect.result(
+      run({ source: caught, expectedTag: "caught", payload: {}, allowedActions: [] })
+    )
     expect(refused._tag === "Failure" && refused.failure.code).toBe("forbidden_import")
     const branch =
       `import {Flow,Action} from '@smthrs/flow'; import {Node} from '@smthrs/plan'; import {Schema} from 'effect';
@@ -68,10 +71,13 @@ const Read = Action.make('read', {payload: {}, success: Schema.Number});
 const Write = Action.make('write', {payload: {}, success: Schema.Number});
 export default Flow.make('branch', {payload: {}, success: Schema.Number, body: () => Read.call({}).pipe(Node.branch({
   if: (x) => x > 0, then: () => Node.succeed(1), else: () => Write.call({}) }))});`
-    const unlisted = yield* Effect.result(run({ source: branch, expectedTag: "branch", payload: {}, allowedActions: ["read"] }))
+    const unlisted = yield* Effect.result(
+      run({ source: branch, expectedTag: "branch", payload: {}, allowedActions: ["read"] })
+    )
     expect(unlisted._tag === "Failure" && unlisted.failure.code).toBe("action_not_allowed")
   }))
-const agent = `import { AgentAction } from '@smthrs/agent'; import { Flow } from '@smthrs/flow'; import { Schema } from 'effect';
+const agent =
+  `import { AgentAction } from '@smthrs/agent'; import { Flow } from '@smthrs/flow'; import { Schema } from 'effect';
 const instructions = ['Say ready.', 'Then stop.'].join('\\n');
 const Agent = AgentAction.make('ready/answer', {
   payload: { input: Schema.String },
@@ -83,7 +89,12 @@ export default Flow.make('ready', { description: 'Ready.', capabilities: [], flo
   success: Schema.String, error: Agent.errorSchema, body: ({ input }) => Agent.call({ input }) });`
 it.effect("lowers an agent step to the host's agent action with the prompt rendered in the realm", () =>
   Effect.gen(function*() {
-    const input = { source: agent, expectedTag: "ready", payload: { input: "now" }, allowedActions: [RealmFlow.agentAction] }
+    const input = {
+      source: agent,
+      expectedTag: "ready",
+      payload: { input: "now" },
+      allowedActions: [RealmFlow.agentAction]
+    }
     const first = yield* run(input)
     expect(first).toMatchObject({
       _tag: "Action",
@@ -125,7 +136,8 @@ it.effect("refuses an agent step with host options, no prompt, a blank seat, or 
   }))
 it.effect("takes raw callbacks: a dependent action and branch replay from receipts", () =>
   Effect.gen(function*() {
-    const code = `import {Flow,Action} from '@smthrs/flow'; import {Node} from '@smthrs/plan'; import {Schema} from 'effect';
+    const code =
+      `import {Flow,Action} from '@smthrs/flow'; import {Node} from '@smthrs/plan'; import {Schema} from 'effect';
 const Read = Action.make('read', {payload: {value: Schema.Number}, success: Schema.Number});
 export default Flow.make('raw', {payload: {value: Schema.Number}, success: Schema.Number,
   body: ({value}) => Read.call({value}).pipe(Node.branch({ if: (x) => x > 0, then: (x) => Read.call({value: x}), else: () => Node.succeed(0) }))});`
@@ -300,6 +312,11 @@ export default Flow.make('go', { payload: {}, success: Schema.String,
     const action = yield* Effect.result(run(input))
     expect(action._tag === "Success" ? action.success._tag : action.failure.code).toBe("Action")
     if (action._tag !== "Success" || action.success._tag !== "Action") return
-    expect(yield* run({ ...input, receipts: [{ ...action.success, outcome: { _tag: "Failure", error: "NavigationRefused" } }] }))
+    expect(
+      yield* run({
+        ...input,
+        receipts: [{ ...action.success, outcome: { _tag: "Failure", error: "NavigationRefused" } }]
+      })
+    )
       .toEqual({ _tag: "Complete", value: "refused: NavigationRefused" })
   }))

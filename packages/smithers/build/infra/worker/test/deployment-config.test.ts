@@ -259,7 +259,7 @@ describe("cache credential verification", () => {
             counters.set(counter, used)
             return { success: used <= props.simple.limit }
           }
-        }) as RateLimit,
+        }),
       metrics: (name: string) => ({ name })
     }
     const budgetFor = (stage: string) => {

@@ -15,6 +15,8 @@ Times are Pacific (PDT, UTC−7), from the session transcript of 2026-10-19. Quo
 
 A rule can have more than one kind: an `ImportRules` entry catches the syntax, and a Jev item catches the shapes no syntax rule can name.
 
+Every `ImportRules` entry must cover at least one source. A stale or empty scope fails with the rule's index, kind, patterns and reason; there is no empty-scope exception. VibeLang analysis remains blocked on compiler output preserving type-only references; see [the work note](work/importrules-vibelang-emit.md).
+
 `apps/mvp/PACKAGE.test.ts` checks each rule's `files` against the files on disk: a rule that reads a top-level Worker source must read every Worker source in a subdirectory (`worker/github`, `worker/branch`, `worker/flows`), and a rule that reads no tests must read no test support (`worker/test/**`, `worker/<folder>/test/**`). In a glob, `*` and `!(...)` match one path segment and only `**` crosses `/`.
 
 Jev sees one file per request, so a rule that compares files (docs against code, a feature against its e2e test) is not a Jev rule. Those use `ReviewDocsAgainstCode` or are listed as process. Jev reads about 32,000 tokens at once, so a file over 96 KiB is not judged: it gets a `not-judged` warning instead.

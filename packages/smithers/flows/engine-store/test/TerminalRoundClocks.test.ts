@@ -14,25 +14,33 @@ describe("terminal rounds close their clocks", () => {
   it.effect("activation consumes a clock wake once but retains its result and other event wakes", () =>
     Effect.gen(function*() {
       const runId = "round-clock-consumption"
-      const flow = Flow.make("RoundClocks/consumption", { payload: {}, success: Schema.String, body: opaqueHandlerBody })
+      const flow = Flow.make("RoundClocks/consumption", {
+        payload: {},
+        success: Schema.String,
+        body: opaqueHandlerBody
+      })
       const state = yield* DurableEngineState.DurableEngineState
-      const driver = yield* RunDriver.make({ owner, journalSource: "clock-consumption",
-        engine: Effect.succeed({} as FlowRuntime.FlowRuntime["Service"]) })
+      const driver = yield* RunDriver.make({
+        owner,
+        journalSource: "clock-consumption",
+        engine: Effect.succeed({} as FlowRuntime.FlowRuntime["Service"])
+      })
       let first = true
       const address = { flowName: flow._tag, executionId: runId, deferredName: "DurableClock/fallback" }
       const event = { ...address, deferredName: "WaitFor/external" }
-      yield* driver.register(flow, () => Effect.gen(function*() {
-        if (first) {
-          first = false
-          const instance = yield* FlowRuntime.FlowInstance
-          instance.waiting = { reason: "event" }
-          return yield* Flow.suspend(instance)
-        }
-        const pending = yield* state.completedDeferreds(flow._tag, runId)
-        expect(pending.map((wake) => wake.deferredName)).toEqual([event.deferredName])
-        expect(Option.getOrThrow(yield* state.deferred(address)).exit).toEqual({ _tag: "Success", value: "clock" })
-        return "done"
-      }))
+      yield* driver.register(flow, () =>
+        Effect.gen(function*() {
+          if (first) {
+            first = false
+            const instance = yield* FlowRuntime.FlowInstance
+            instance.waiting = { reason: "event" }
+            return yield* Flow.suspend(instance)
+          }
+          const pending = yield* state.completedDeferreds(flow._tag, runId)
+          expect(pending.map((wake) => wake.deferredName)).toEqual([event.deferredName])
+          expect(Option.getOrThrow(yield* state.deferred(address)).exit).toEqual({ _tag: "Success", value: "clock" })
+          return "done"
+        }))
       yield* driver.execute(flow, { executionId: runId, payload: {}, discard: false })
       const completedAtMs = yield* Clock.currentTimeMillis
       yield* state.completeDeferred({ ...address, exit: { _tag: "Success", value: "clock" }, completedAtMs })

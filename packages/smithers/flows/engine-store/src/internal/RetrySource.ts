@@ -89,7 +89,11 @@ interface Settled {
   readonly child: string | undefined
 }
 
-/** One journal record the fold reads: its sequence, type and payload. */
+/**
+ * One journal record the fold reads: its sequence, type and payload.
+ * @since 1.0.0
+ * @category models
+ */
 export interface Observed {
   readonly seq: number
   readonly eventType: string

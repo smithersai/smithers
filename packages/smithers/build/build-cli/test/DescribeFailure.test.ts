@@ -33,6 +33,33 @@ describe("describeFailure", () => {
     namesTheRun(describeFailure(execError()))
   })
 
+  it("keeps the failure reason when thousands of file arguments exceed the diagnostic budget", () => {
+    const argv = ["bun", "test", ...Array.from({ length: 5000 }, (_, i) => `packages/example/src/source-${i}.ts`)]
+    const rendered = describeFailure(execError({ argv, stdout: "runner output" }))
+    namesTheRun(rendered)
+    expect(JSON.parse(rendered)).toMatchObject({
+      code: "exit_status",
+      cwd: "apps/app",
+      exitCode: 1,
+      stdout: "runner output"
+    })
+    expect(rendered).toContain("more items omitted")
+    expect(rendered.length).toBeLessThanOrEqual(Diagnostic.maximumMessageCodeUnits)
+    expect(argv).toHaveLength(5002)
+  })
+
+  it("keeps failure metadata when the argument vector is a revoked proxy", () => {
+    const { proxy, revoke } = Proxy.revocable([], {})
+    revoke()
+    const rendered = describeFailure(execError({ argv: proxy }))
+    expect(JSON.parse(rendered)).toMatchObject({
+      argv: "<proxy>",
+      code: "exit_status",
+      exitCode: 1,
+      stderr: "3 fail\n  routes > agents > spawns a session"
+    })
+  })
+
   it.each([
     ["an undefined member", { signal: undefined }, "<undefined>"],
     ["a bigint member", { durationNs: 12345n }, "<bigint 12345>"],

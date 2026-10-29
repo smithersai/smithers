@@ -494,8 +494,8 @@ const renderFailureJson = (value: object): string | undefined => {
  * 64 KiB stdout tail overran the byte budget, the clone threw, and the CI log
  * read `<label>  failed  86.1s  target failed` and nothing else.
  *
- * Members are rendered in sorted key order, so `argv`, `code`, `cwd` and
- * `exitCode` all precede the stream tails and survive any later truncation.
+ * Members are rendered in sorted key order. An argument vector gets its own
+ * smaller budget so a large file list cannot hide the exit code and output.
  *
  * @category diagnostics
  * @since 0.1.0
@@ -804,9 +804,20 @@ const cloneJson = (
         if (!budget.lossy) throw new Error(`${childPath} is an accessor or non-enumerable property`)
       }
       spendOutputBudget(budget, Buffer.byteLength(key, "utf8") + 3, childPath)
-      encoded[key] = "value" in descriptor
-        ? cloneJson(descriptor.value, seen, budget, childPath, depth + 1)
-        : "<accessor>"
+      if (
+        budget.lossy && key === "argv" && "value" in descriptor &&
+        !NodeUtil.isProxy(descriptor.value) && Array.isArray(descriptor.value)
+      ) {
+        const argumentsBudget = lossyBudget(Math.max(0, Math.floor((budget.limit - budget.bytes) / 4)))
+        encoded[key] = cloneJson(descriptor.value, seen, argumentsBudget, childPath, depth + 1)
+        budget.bytes += argumentsBudget.bytes
+        budget.members += argumentsBudget.members
+        spendOutputBudget(budget, 0, childPath)
+      } else {
+        encoded[key] = "value" in descriptor
+          ? cloneJson(descriptor.value, seen, budget, childPath, depth + 1)
+          : "<accessor>"
+      }
       if (budget.exhausted) {
         const dropped = keys.length - index - 1
         if (dropped > 0) encoded["<truncated>"] = `${dropped} more members omitted`

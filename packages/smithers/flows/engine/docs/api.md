@@ -180,12 +180,12 @@ through `n - 1`. See [Trampoline rounds](./concepts/trampoline-rounds.md).
 
 ### Refusals
 
-| Refusal                     | Fields                                                                         | Raised when                                                                                                                                   |
-| --------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FlowNotRegistered`         | `code`, `flowName`, `message`                                                  | A flow executes, or a handoff names a target, that no registration covers.                                                                    |
+| Refusal                                                  | Fields                                                                         | Raised when                                                                                                                                   |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FlowNotRegistered`                                      | `code`, `flowName`, `message`                                                  | A flow executes, or a handoff names a target, that no registration covers.                                                                    |
 | `FlowRuntime.ExecutionIdentityConflict` (`@smthrs/flow`) | `code`, `executionId`, `field`, `expected`, `actual`, `status`, `message`      | A reused execution id disagrees with persisted flow, payload, lineage, round, or parent identity, or a deferred is addressed to another flow. |
-| `SuspendedResumeGaveUp`     | `code`, `flowName`, `executionId`, `attempt`, `elapsedMs`, `reason`, `message` | A caller polling a suspended lineage spends its `suspendedRetryPolicy`. `reason` is `"expired"` or `"exhausted"`.                             |
-| `SnapshotBoundaryRequired`  | `code`, `actionName`, `message`                                                | A compensable action runs with no `SnapshotBoundary` in context.                                                                              |
+| `SuspendedResumeGaveUp`                                  | `code`, `flowName`, `executionId`, `attempt`, `elapsedMs`, `reason`, `message` | A caller polling a suspended lineage spends its `suspendedRetryPolicy`. `reason` is `"expired"` or `"exhausted"`.                             |
+| `SnapshotBoundaryRequired`                               | `code`, `actionName`, `message`                                                | A compensable action runs with no `SnapshotBoundary` in context.                                                                              |
 
 `FlowEngine.FlowNotRegistered`, `FlowEngine.SuspendedResumeGaveUp`, and
 `FlowEngine.SnapshotBoundaryRequired` are engine exports raised as defects.

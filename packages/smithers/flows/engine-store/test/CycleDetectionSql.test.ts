@@ -1,4 +1,3 @@
-import { tempDirectory } from "./TempDirectory.ts"
 import { describe, expect, it } from "@effect/vitest"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
@@ -11,6 +10,7 @@ import { join } from "node:path"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as Migrations from "../src/Migrations.ts"
 import { withCrypto } from "./Sha256.ts"
+import { tempDirectory } from "./TempDirectory.ts"
 
 const migratedDatabase = Layer.provideMerge(Migrations.layer, TestDatabase.layer)
 
@@ -165,7 +165,7 @@ describe("SQL cycle rejection under concurrency (issue #65)", () => {
 describe("cross-connection cycle rejection (issue #74)", () => {
   it.effect("two writers on separate connections racing a mutual cycle: exactly one fails, graph stays acyclic", () =>
     Effect.gen(function*() {
-      const filename = join((yield* tempDirectory("flows-cycle-")), "cycle.sqlite")
+      const filename = join(yield* tempDirectory("flows-cycle-"), "cycle.sqlite")
       // Each owner builds its OWN connection layer over the same file, and the
       // layer scope stays open for the whole race so both connections are live
       // concurrently.

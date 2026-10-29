@@ -334,11 +334,9 @@ status and whether a claim or an owner holds it, never its state.
 Full model: [Ownership and fencing](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/concepts/ownership-and-fencing.md) and
 [Attempts and replay](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/concepts/attempts-and-replay.md).
 
-
-| Export | Contract |
-| --- | --- |
+| Export                  | Contract                                                                                                      |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `RequestedResumeReason` | Type union `"deferred"`, `"clock"`, `"parent"`; the host callback receives this reason with the execution id. |
-
 
 ## DurableEngineState
 
@@ -523,12 +521,10 @@ first-writer transaction rows. The tag is
 `@smthrs/engine-store/EngineStateFault`; these remain defects, not recoverable
 failures in the service error channel.
 
-
-| Export | Contract |
-| --- | --- |
-| `DeferredDigest` | `{ exit: string; metadata: string \| null }`, the digest pair for a completion's protected encoded values. |
-| `waitingTreeMaxDepth` | `64`, the nesting bound enforced when validating a persisted waiting tree. |
-
+| Export                | Contract                                                                                                   |
+| --------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `DeferredDigest`      | `{ exit: string; metadata: string \| null }`, the digest pair for a completion's protected encoded values. |
+| `waitingTreeMaxDepth` | `64`, the nesting bound enforced when validating a persisted waiting tree.                                 |
 
 ## StepBoundary
 
@@ -748,11 +744,9 @@ policy reports its owner dead; the default uses lease expiry. This applies to
 both engine dispatch and plan scheduling. `PlanScheduler.Options.isAlive` accepts
 the same `Ownership.LivenessCheck` as `EngineStore.Options.isAlive`.
 
-
-| Export | Contract |
-| --- | --- |
+| Export               | Contract                                                                                                       |
+| -------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `WorkspaceErrorCode` | Schema/type: `invalid_path`, `not_found`, `host_unavailable`, `path_escapes_workspace`, `commit_lock_timeout`. |
-
 
 ## PlanScheduler
 
@@ -1082,11 +1076,9 @@ applies the asymmetric rule: a hit becomes `confidence + 0.05 * (1 -
 confidence)`, a miss becomes `confidence * 0.5`. Training never creates edges
 and never writes journal records.
 
-
-| Export | Contract |
-| --- | --- |
+| Export                    | Contract                                                             |
+| ------------------------- | -------------------------------------------------------------------- |
 | `SelectionStoreErrorCode` | Schema/type: `invalid_input`, `decode_failed`, `persistence_failed`. |
-
 
 ## ArtifactSync
 
@@ -1209,11 +1201,9 @@ a root references is protected by the mtime fence anyway.
 
 Full guide: [Collect unreferenced artifacts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/guides/collect-unreferenced-artifacts.md).
 
-
-| Export | Contract |
-| --- | --- |
+| Export                | Contract                                                       |
+| --------------------- | -------------------------------------------------------------- |
 | `ArtifactGcErrorCode` | Schema/type: `invalid_options`, `mark_failed`, `sweep_failed`. |
-
 
 ## StepCacheFold
 
@@ -1463,11 +1453,9 @@ code rather than pretending to snapshot.
 
 Full guide: [Back up and restore the store](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/guides/back-up-and-restore.md).
 
-
-| Export | Contract |
-| --- | --- |
+| Export                      | Contract                                                                                                                                                                          |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DisasterRecoveryErrorCode` | Schema/type: `invalid_options`, `not_empty`, `invalid_manifest`, `missing_file`, `digest_mismatch`, `artifact_corruption`, `snapshot_incomplete`, `schema_mismatch`, `io`, `sql`. |
-
 
 ## Inconsistency
 
@@ -1666,11 +1654,9 @@ effect's exit byte-identically.
 
 Full guide: [Observe engine metrics](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/guides/observe-engine-metrics.md).
 
-
-| Export | Contract |
-| --- | --- |
+| Export              | Contract                                                                                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `heartbeatReceipts` | Counter `flows_engine_heartbeat_receipts`; outcome labels are `completed`, `skipped`, `failed`. External receipts are bounded and never block the ownership writer. |
-
 
 ## Migrations
 
@@ -1825,25 +1811,25 @@ The process driver dispatches `Interpreter.ExecutionOptions.onHeartbeat` after c
 Reconstructs clocks and completion timestamps from journal facts. Completion
 values remain in their existing protected rows; the journal carries digests.
 
-| Export | Contract |
-| --- | --- |
-| `eventTypes` | Readonly event-name list consumed by this fold. |
-| `checkpointKey` | `"flows.engine.deferred-clock"`, the checkpoint-state property. |
-| `Clock` | Schema/type: flow, execution, clock and deferred names; nonnegative safe-integer `dueAtMs`; nullable `completedAtMs`. |
-| `Deferred` | Schema/type: flow, execution and deferred names; nullable completion/consumption timestamps; optional exit and nullable metadata digests for compatibility with older facts. |
-| `State`, `initial` | Readonly `clocks` and `deferreds` maps, initially empty. |
-| `clockKey`, `deferredKey` | `(address) => string`; JSON tuple keys containing flow/execution and clock or deferred name. |
-| `reduce` | `(state: State, entry: JournalEvent.Entry) => State`; pure fold of recognized events. |
-| `projection` | `Projection<State>` with the same initial state and reducer. |
-| `Encoded`, `encode` | Checkpoint schema/type with clock/deferred arrays; `(state: State) => Encoded`. |
-| `fromCheckpoint` | `(checkpointState: unknown) => Option<State>`; `None` for missing or invalid fold state. |
-| `FoldIncompleteReason` | Schema of `row_missing`, `digest_mismatch`, `run_missing`, `checkpoint_missing`. |
-| `Unjoined` | Schema/type: `reason`, `executionId`, optional `flowName` and `name`. |
-| `FoldIncomplete` | Typed `fold_incomplete` failure with `message` and `unjoined` references; a rebuild writes nothing on this refusal. |
-| `capture` | `(runId: string, upTo: number) => Effect<Encoded, FoldIncomplete \| JournalError \| SqlError, Journal \| SqlClient>`; folds through the inclusive journal sequence, starting at a compaction checkpoint when present. |
-| `checkpointState` | `(runId, upTo, base?: Readonly<Record<string, unknown>>) => Effect<checkpoint, ...>`; preserves base properties and puts `capture` under `checkpointKey`, with the same requirements and failures. |
-| `Rebuilt` | Counts: `runs`, `clocks`, `deferreds`, `unexplained`. |
-| `rebuild` | `() => Effect<Rebuilt, FoldIncomplete \| JournalError \| SqlError \| DatabaseError, Journal \| SqlClient \| DurableWriter>`; validates all joins/digests before transactionally replacing clock rows and completion timestamps. Unexplained completion rows remain intact. |
+| Export                    | Contract                                                                                                                                                                                                                                                                   |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `eventTypes`              | Readonly event-name list consumed by this fold.                                                                                                                                                                                                                            |
+| `checkpointKey`           | `"flows.engine.deferred-clock"`, the checkpoint-state property.                                                                                                                                                                                                            |
+| `Clock`                   | Schema/type: flow, execution, clock and deferred names; nonnegative safe-integer `dueAtMs`; nullable `completedAtMs`.                                                                                                                                                      |
+| `Deferred`                | Schema/type: flow, execution and deferred names; nullable completion/consumption timestamps; optional exit and nullable metadata digests for compatibility with older facts.                                                                                               |
+| `State`, `initial`        | Readonly `clocks` and `deferreds` maps, initially empty.                                                                                                                                                                                                                   |
+| `clockKey`, `deferredKey` | `(address) => string`; JSON tuple keys containing flow/execution and clock or deferred name.                                                                                                                                                                               |
+| `reduce`                  | `(state: State, entry: JournalEvent.Entry) => State`; pure fold of recognized events.                                                                                                                                                                                      |
+| `projection`              | `Projection<State>` with the same initial state and reducer.                                                                                                                                                                                                               |
+| `Encoded`, `encode`       | Checkpoint schema/type with clock/deferred arrays; `(state: State) => Encoded`.                                                                                                                                                                                            |
+| `fromCheckpoint`          | `(checkpointState: unknown) => Option<State>`; `None` for missing or invalid fold state.                                                                                                                                                                                   |
+| `FoldIncompleteReason`    | Schema of `row_missing`, `digest_mismatch`, `run_missing`, `checkpoint_missing`.                                                                                                                                                                                           |
+| `Unjoined`                | Schema/type: `reason`, `executionId`, optional `flowName` and `name`.                                                                                                                                                                                                      |
+| `FoldIncomplete`          | Typed `fold_incomplete` failure with `message` and `unjoined` references; a rebuild writes nothing on this refusal.                                                                                                                                                        |
+| `capture`                 | `(runId: string, upTo: number) => Effect<Encoded, FoldIncomplete \| JournalError \| SqlError, Journal \| SqlClient>`; folds through the inclusive journal sequence, starting at a compaction checkpoint when present.                                                      |
+| `checkpointState`         | `(runId, upTo, base?: Readonly<Record<string, unknown>>) => Effect<checkpoint, ...>`; preserves base properties and puts `capture` under `checkpointKey`, with the same requirements and failures.                                                                         |
+| `Rebuilt`                 | Counts: `runs`, `clocks`, `deferreds`, `unexplained`.                                                                                                                                                                                                                      |
+| `rebuild`                 | `() => Effect<Rebuilt, FoldIncomplete \| JournalError \| SqlError \| DatabaseError, Journal \| SqlClient \| DurableWriter>`; validates all joins/digests before transactionally replacing clock rows and completion timestamps. Unexplained completion rows remain intact. |
 
 Use `checkpointState` when compacting: a compacted run without its fold checkpoint
 fails with `checkpoint_missing`. `capture` and `rebuild` read the existing

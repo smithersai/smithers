@@ -598,7 +598,9 @@ describe("RunInspection.list", () => {
       for (const id of ["a", "b", "c"]) yield* engine.execute(Child, { executionId: `ids-${id}`, payload: { n: 1 } })
       yield* executeRoot("ids-root")
       const reads = yield* RunInspection.RunInspection
-      const child = (yield* reads.list({ roots: false, limit: 500 })).runs.find((run) => run.parentRunId === "ids-root")!
+      const child = (yield* reads.list({ roots: false, limit: 500 })).runs.find((run) =>
+        run.parentRunId === "ids-root"
+      )!
 
       const asked = yield* reads.list({ runIds: ["ids-a", "ids-c", "never-held"] })
       expect(asked.runs.map((run) => run.runId)).toEqual(["ids-c", "ids-a"])

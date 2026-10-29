@@ -1,4 +1,8 @@
-/** Process-local admission for a keyed GitHub read-and-write sequence. */
+/**
+ * Process-local admission for a keyed GitHub read-and-write sequence.
+ * @since 1.0.0
+ */
+
 import { Effect, Semaphore } from "effect"
 
 interface Gate {
@@ -10,7 +14,11 @@ interface Gate {
 // uniqueness constraint: separate processes still need a single owner per key.
 const gates = new Map<string, Gate>()
 
-/** Waiters count as users, so cancellation never replaces an occupied gate. */
+/**
+ * Waiters count as users, so cancellation never replaces an occupied gate.
+ * @since 1.0.0
+ * @category concurrency
+ */
 export const withWriteLock = <A, E, R>(key: string, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
   Effect.acquireUseRelease(
     Effect.sync(() => {

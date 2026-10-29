@@ -161,7 +161,10 @@ const startGitHub = async (): Promise<FakeGitHub> => {
       const pull = state.pulls.find((candidate) => candidate["node_id"] === input.pullRequestId)
       if (pull === undefined) {
         const message = `Could not resolve to a node with the global id of '${input.pullRequestId}'`
-        return json(response, 200, { data: { updatePullRequestBranch: null }, errors: [{ type: "NOT_FOUND", message }] })
+        return json(response, 200, {
+          data: { updatePullRequestBranch: null },
+          errors: [{ type: "NOT_FOUND", message }]
+        })
       }
       const head = pull["head"] as Raw
       const branch = head["ref"] as string

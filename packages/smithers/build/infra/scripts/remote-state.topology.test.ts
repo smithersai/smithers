@@ -1,5 +1,4 @@
-import { readFile } from "node:fs/promises"
-import { mkdtemp, mkdir, readdir, realpath, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import * as NodePath from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"

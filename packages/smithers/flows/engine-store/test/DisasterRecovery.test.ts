@@ -1,5 +1,5 @@
-import { tempDirectory } from "./TempDirectory.ts"
 import * as Dialect from "@smthrs/database/Dialect"
+import { tempDirectory } from "./TempDirectory.ts"
 /**
  * Pins the backup/restore contract of `DisasterRecovery`: a hot backup is a
  * verified, manifest-described snapshot; a restore refuses anything that no
@@ -83,7 +83,7 @@ describe("backup", () => {
       Effect.gen(function*() {
         const exit = yield* run(
           backup({
-            directory: join((yield* root()), "backup"),
+            directory: join(yield* root(), "backup"),
             maxFileSizeBytes
           }).pipe(Effect.exit)
         )
@@ -96,19 +96,19 @@ describe("backup", () => {
   it.effect("admits zero and the largest safe integer as file-size options", () =>
     Effect.gen(function*() {
       const zeroExit = yield* run(
-        backup({ directory: join((yield* root()), "backup"), maxFileSizeBytes: 0 }).pipe(Effect.exit)
+        backup({ directory: join(yield* root(), "backup"), maxFileSizeBytes: 0 }).pipe(Effect.exit)
       )
       expect(failure(zeroExit).code).toBe("io")
 
       const manifest = yield* run(
-        backup({ directory: join((yield* root()), "backup"), maxFileSizeBytes: Number.MAX_SAFE_INTEGER })
+        backup({ directory: join(yield* root(), "backup"), maxFileSizeBytes: Number.MAX_SAFE_INTEGER })
       )
       expect(manifest.formatVersion).toBe(1)
     }))
 
   it.effect("leaves the backup directory empty after a failed capture, so a retry can reuse it", () =>
     Effect.gen(function*() {
-      const base = (yield* root())
+      const base = yield* root()
       const objects = join(base, "objects")
       plantBlob(objects, "retry-artifact")
       const backupDirectory = join(base, "backup")
@@ -124,7 +124,7 @@ describe("backup", () => {
 
   it.effect("captures the database, the artifact blobs, and a manifest written last", () =>
     Effect.gen(function*() {
-      const base = (yield* root())
+      const base = yield* root()
       const objects = join(base, "objects")
       const backupDirectory = join(base, "backup")
       const digestOne = plantBlob(objects, "artifact-one")
@@ -166,7 +166,7 @@ describe("backup", () => {
 
   it.effect("refuses an encoded manifest above the shared file-size ceiling", () =>
     Effect.gen(function*() {
-      const base = (yield* root())
+      const base = yield* root()
       const objects = join(base, "objects")
       const backupDirectory = join(base, "backup")
       const result = yield* withCrypto(
@@ -200,7 +200,7 @@ describe("backup", () => {
 
   it.effect("accepts a pre-created empty directory and no artifact tier at all", () =>
     Effect.gen(function*() {
-      const backupDirectory = join((yield* root()), "backup")
+      const backupDirectory = join(yield* root(), "backup")
       mkdirSync(backupDirectory, { recursive: true })
       const manifest = yield* run(backup({ directory: backupDirectory }))
       expect(manifest.artifacts).toEqual([])
@@ -208,7 +208,7 @@ describe("backup", () => {
 
   it.effect("records no blobs when the objects directory does not exist yet", () =>
     Effect.gen(function*() {
-      const base = (yield* root())
+      const base = yield* root()
       const manifest = yield* run(
         backup({
           directory: join(base, "backup"),
@@ -220,7 +220,7 @@ describe("backup", () => {
 
   it.effect("refuses a target directory that already holds anything", () =>
     Effect.gen(function*() {
-      const backupDirectory = join((yield* root()), "backup")
+      const backupDirectory = join(yield* root(), "backup")
       mkdirSync(backupDirectory, { recursive: true })
       writeFileSync(join(backupDirectory, "existing.txt"), "occupied")
       const exit = yield* run(backup({ directory: backupDirectory }).pipe(Effect.exit))
@@ -229,7 +229,7 @@ describe("backup", () => {
 
   it.effect("refuses to capture a blob whose bytes no longer hash to its address", () =>
     Effect.gen(function*() {
-      const base = (yield* root())
+      const base = yield* root()
       const objects = join(base, "objects")
       const digest = plantBlob(objects, "honest-bytes")
       writeFileSync(join(objects, digest.slice(0, 2), digest), "tampered-bytes")
@@ -241,7 +241,7 @@ describe("backup", () => {
 
   it.effect("refuses success when the frozen database references an absent artifact", () =>
     Effect.gen(function*() {
-      const base = (yield* root())
+      const base = yield* root()
       const missing = sha256("referenced-but-absent")
       const exit = yield* run(Effect.gen(function*() {
         const sql = yield* SqlClient.SqlClient
@@ -274,7 +274,7 @@ describe("backup", () => {
 
   it.effect("refuses success without an objects directory when the frozen database references a blob", () =>
     Effect.gen(function*() {
-      const base = (yield* root())
+      const base = yield* root()
       const missing = sha256("referenced-without-a-tier")
       const exit = yield* run(Effect.gen(function*() {
         const sql = yield* SqlClient.SqlClient
@@ -304,7 +304,7 @@ describe("backup", () => {
 
   it.effect("freezes artifact roots held only by attempt metadata and checkpoints", () =>
     Effect.gen(function*() {
-      const base = (yield* root())
+      const base = yield* root()
       const objects = join(base, "objects")
       const metadataDigest = plantBlob(objects, "attempt-metadata-root")
       const checkpointDigest = plantBlob(objects, "attempt-checkpoint-root")
@@ -346,7 +346,7 @@ describe("backup", () => {
   it.effect("fails closed on malformed frozen attempt metadata or checkpoints", () =>
     Effect.gen(function*() {
       for (const column of ["meta_json", "checkpoint_json"] as const) {
-        const base = (yield* root())
+        const base = yield* root()
         const exit = yield* run(Effect.gen(function*() {
           const sql = yield* SqlClient.SqlClient
           yield* sql`
@@ -376,7 +376,7 @@ describe("backup", () => {
 
   it.effect("surfaces the host filesystem's refusal as the io code", () =>
     Effect.gen(function*() {
-      const base = (yield* root())
+      const base = yield* root()
       // A regular file where the objects directory should be: `exists` reports
       // it, listing it fails.
       const notADirectory = join(base, "objects")
@@ -393,7 +393,7 @@ describe("backup", () => {
     Effect.gen(function*() {
       // An unmigrated database has no flows_migrations table to record.
       const exit = yield* withCrypto(
-        backup({ directory: join((yield* root()), "backup") }).pipe(
+        backup({ directory: join(yield* root(), "backup") }).pipe(
           Effect.exit,
           Effect.provide(Layer.mergeAll(TestDatabase.sqliteLayer, NodeFileSystem.layer))
         )
@@ -405,7 +405,7 @@ describe("backup", () => {
 describe("verify", () => {
   const captured = () =>
     Effect.gen(function*() {
-      const base = (yield* root())
+      const base = yield* root()
       const objects = join(base, "objects")
       const digest = plantBlob(objects, "verified-artifact")
       const backupDirectory = join(base, "backup")
@@ -419,7 +419,7 @@ describe("verify", () => {
     it.effect(`rejects a ${name} maxFileSizeBytes as invalid options`, () =>
       Effect.gen(function*() {
         const exit = yield* run(
-          DisasterRecovery.verify((yield* root()), { maxFileSizeBytes }).pipe(Effect.exit)
+          DisasterRecovery.verify(yield* root(), { maxFileSizeBytes }).pipe(Effect.exit)
         )
         const error = failure(exit)
         expect(error).toBeInstanceOf(DisasterRecovery.DisasterRecoveryError)
@@ -443,7 +443,7 @@ describe("verify", () => {
 
   it.effect("refuses a directory with no manifest", () =>
     Effect.gen(function*() {
-      const empty = (yield* root())
+      const empty = yield* root()
       const exit = yield* run(DisasterRecovery.verify(empty).pipe(Effect.exit))
       expect(failure(exit).code).toBe("missing_file")
     }))
@@ -514,7 +514,7 @@ describe("restore", () => {
   for (const [name, maxFileSizeBytes] of invalidFileSizeLimits) {
     it.effect(`rejects a ${name} maxFileSizeBytes as invalid options`, () =>
       Effect.gen(function*() {
-        const base = (yield* root())
+        const base = yield* root()
         const exit = yield* run(
           DisasterRecovery.restore({
             backupDirectory: base,
@@ -530,7 +530,7 @@ describe("restore", () => {
 
   it.effect("admits zero and the largest safe integer as file-size options", () =>
     Effect.gen(function*() {
-      const base = (yield* root())
+      const base = yield* root()
       const backupDirectory = join(base, "backup")
       const manifest = yield* run(backup({ directory: backupDirectory }))
       const zeroExit = yield* run(
@@ -552,7 +552,7 @@ describe("restore", () => {
 
   it.effect("restoreAndFence preserves invalid file-size option failures", () =>
     Effect.gen(function*() {
-      const base = (yield* root())
+      const base = yield* root()
       const exit = yield* run(
         DisasterRecovery.restoreAndFence({
           backupDirectory: base,
@@ -566,7 +566,7 @@ describe("restore", () => {
 
   it.effect("refuses a file above the configured size ceiling and restores at the boundary", () =>
     Effect.gen(function*() {
-      const base = (yield* root())
+      const base = yield* root()
       const backupDirectory = join(base, "backup")
       const manifest = yield* run(backup({ directory: backupDirectory }))
       const limit = manifest.database.sizeBytes
@@ -592,7 +592,7 @@ describe("restore", () => {
 
   it.effect("lands the verified store, the blobs, and the restored marker", () =>
     Effect.gen(function*() {
-      const base = (yield* root())
+      const base = yield* root()
       const objects = join(base, "objects")
       const digest = plantBlob(objects, "restored-artifact")
       const backupDirectory = join(base, "backup")
@@ -617,7 +617,7 @@ describe("restore", () => {
 
   it.effect("refuses a target directory that already holds anything", () =>
     Effect.gen(function*() {
-      const base = (yield* root())
+      const base = yield* root()
       const backupDirectory = join(base, "backup")
       yield* run(backup({ directory: backupDirectory }))
       const target = join(base, "restored")
@@ -631,7 +631,7 @@ describe("restore", () => {
 
   it.effect("leaves the target directory empty after a failed restore, so a retry can reuse it", () =>
     Effect.gen(function*() {
-      const base = (yield* root())
+      const base = yield* root()
       const objects = join(base, "objects")
       const digest = plantBlob(objects, "restore-retry-artifact")
       const backupDirectory = join(base, "backup")
@@ -656,7 +656,7 @@ describe("restore", () => {
 
   it.effect("restoreAndFence leaves no unfenced store behind when fencing refuses", () =>
     Effect.gen(function*() {
-      const base = (yield* root())
+      const base = yield* root()
       const backupDirectory = join(base, "backup")
       const manifest = yield* run(backup({ directory: backupDirectory }))
       const manifestPath = join(backupDirectory, DisasterRecovery.manifestFileName)
@@ -694,7 +694,7 @@ describe("restore", () => {
 
   it.effect("offers a one-shot restore-and-fence API over a supplied database layer", () =>
     Effect.gen(function*() {
-      const base = (yield* root())
+      const base = yield* root()
       const backupDirectory = join(base, "backup")
       const manifest = yield* run(backup({ directory: backupDirectory }))
       const restored = yield* run(
@@ -717,7 +717,7 @@ describe("restore", () => {
 describe("fence", () => {
   const restoredStore = () =>
     Effect.gen(function*() {
-      const base = (yield* root())
+      const base = yield* root()
       const backupDirectory = join(base, "backup")
       const manifest = yield* run(backup({ directory: backupDirectory }))
       const restored = yield* run(
@@ -783,7 +783,7 @@ describe("fence", () => {
   for (const [name, omitted] of upgrades) {
     it.effect(`restores, fences, and resumes with ${name}`, () =>
       Effect.gen(function*() {
-        const base = (yield* root())
+        const base = yield* root()
         const backupDirectory = join(base, "backup")
         const oldOwner = { hostId: "backup-host", pid: 7, nonce: "old-fence" }
         const newOwner = { hostId: "restore-host", pid: 8, nonce: "new-fence" }

@@ -1,6 +1,22 @@
 import { FetchError } from "@electric-sql/client"
 import { Collection, LiveQuery, Persistence } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, Exit, Fiber, Latch, Layer, Logger, Metric, Option, References, Schedule, Schema, Scope, Stream, Tracer } from "effect"
+import {
+  Context,
+  Effect,
+  Exit,
+  Fiber,
+  Latch,
+  Layer,
+  Logger,
+  Metric,
+  Option,
+  References,
+  Schedule,
+  Schema,
+  Scope,
+  Stream,
+  Tracer
+} from "effect"
 import { SqlClient } from "effect/sql"
 import { describe, expect, test } from "vitest"
 import { ElectricCollection, ShapeSource } from "../src/index.ts"
@@ -119,25 +135,27 @@ describe.skipIf(!electricUp)("make", () => {
       void lines.push({ message, level: logLevel, annotations: fiber.getRef(References.CurrentLogAnnotations) })
     )
     const kind = `notes-${crypto.randomUUID()}`
-    const counts = await run(Effect.gen(function*() {
-      const { table } = yield* scratchTable
-      const stopped = (id: string, status: number) =>
-        Effect.gen(function*() {
-          const notes = yield* notesOf(table, { id }).pipe(
-            Effect.provide(ShapeSource.layerFaulty((faults) => faults.refuse(status)))
+    const counts = await run(
+      Effect.gen(function*() {
+        const { table } = yield* scratchTable
+        const stopped = (id: string, status: number) =>
+          Effect.gen(function*() {
+            const notes = yield* notesOf(table, { id }).pipe(
+              Effect.provide(ShapeSource.layerFaulty((faults) => faults.refuse(status)))
+            )
+            const events = yield* record(notes)
+            yield* notes.preload.pipe(Effect.forkScoped)
+            yield* eventually(() => events.includes(`Stopped:${status}`))
+          })
+        yield* stopped(`${kind}:conversation-1`, 400)
+        yield* stopped(`${kind}:conversation-2`, 403)
+        const count = (status: string) =>
+          Metric.value(Metric.withAttributes(ElectricCollection.stops, { collection: kind, status })).pipe(
+            Effect.map(({ count }) => count)
           )
-          const events = yield* record(notes)
-          yield* notes.preload.pipe(Effect.forkScoped)
-          yield* eventually(() => events.includes(`Stopped:${status}`))
-        })
-      yield* stopped(`${kind}:conversation-1`, 400)
-      yield* stopped(`${kind}:conversation-2`, 403)
-      const count = (status: string) =>
-        Metric.value(Metric.withAttributes(ElectricCollection.stops, { collection: kind, status })).pipe(
-          Effect.map(({ count }) => count)
-        )
-      return [yield* count("400"), yield* count("403")]
-    }).pipe(Effect.provide(Logger.layer([logger])), Effect.provideService(Metric.MetricRegistry, new Map())))
+        return [yield* count("400"), yield* count("403")]
+      }).pipe(Effect.provide(Logger.layer([logger])), Effect.provideService(Metric.MetricRegistry, new Map()))
+    )
     expect(counts).toEqual([1, 1])
     const stops = lines.filter(({ message }) => (message as Array<unknown>)[0] === "electric.shape.stopped")
     expect(stops.map(({ level, annotations }) => [level, annotations])).toEqual([
@@ -863,24 +881,27 @@ describe.skipIf(!electricUp)("persisted", () => {
       persist: { schemaVersion }
     })
 
-  test.each([false, true])("a persisted writer certifies the first current batch, including empty (%s)", async (empty) => {
-    await run(Effect.gen(function*() {
-      const { table, write } = yield* scratchTable
-      if (!empty) yield* write({ id: "a", text: "one", n: 1 })
-      const path = databaseFile()
-      const device = `device-${crypto.randomUUID()}`
-      const result = yield* Effect.gen(function*() {
-        const notes = yield* persisted(table, `notes-${crypto.randomUUID()}`)
-        yield* notes.restored
-        const waiting = yield* notes.currentApplied.pipe(Effect.forkScoped({ startImmediately: true }))
-        yield* notes.preload
-        yield* Fiber.join(waiting).pipe(Effect.timeout("5 seconds"))
-        yield* notes.currentApplied.pipe(Effect.timeout("5 seconds"))
-        return ids(yield* notes.toArray)
-      }).pipe(Effect.provide(persistenceOn(path, device)))
-      expect(result).toEqual(empty ? [] : ["a"])
-    }))
-  })
+  test.each([false, true])(
+    "a persisted writer certifies the first current batch, including empty (%s)",
+    async (empty) => {
+      await run(Effect.gen(function*() {
+        const { table, write } = yield* scratchTable
+        if (!empty) yield* write({ id: "a", text: "one", n: 1 })
+        const path = databaseFile()
+        const device = `device-${crypto.randomUUID()}`
+        const result = yield* Effect.gen(function*() {
+          const notes = yield* persisted(table, `notes-${crypto.randomUUID()}`)
+          yield* notes.restored
+          const waiting = yield* notes.currentApplied.pipe(Effect.forkScoped({ startImmediately: true }))
+          yield* notes.preload
+          yield* Fiber.join(waiting).pipe(Effect.timeout("5 seconds"))
+          yield* notes.currentApplied.pipe(Effect.timeout("5 seconds"))
+          return ids(yield* notes.toArray)
+        }).pipe(Effect.provide(persistenceOn(path, device)))
+        expect(result).toEqual(empty ? [] : ["a"])
+      }))
+    }
+  )
 
   // A program on `path`, its shape requests through the faulty source, which `start` switches before it syncs.
   const program = <A, E>(

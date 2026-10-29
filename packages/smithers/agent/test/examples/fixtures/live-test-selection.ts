@@ -3,10 +3,10 @@
  *
  * @since 0.1.0
  */
-import { registerRootCleanup } from "../../../../../repo-targets/test-utils/vitest-root-temp.mjs"
 import assert from "node:assert/strict"
 import { existsSync } from "node:fs"
 import { createVitest } from "vitest/node"
+import { registerRootCleanup } from "../../../../../repo-targets/test-utils/vitest-root-temp.mjs"
 
 const implementations = new Set([
   new URL("../../../examples/12-agent-live-smoke.ts", import.meta.url).pathname,

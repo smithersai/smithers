@@ -292,6 +292,32 @@ describe("check: ordering", () => {
   })
 })
 
+describe("check: source coverage", () => {
+  it("refuses a stale .ts scope after its only source migrates to .vibe", () => {
+    expect(() => check([
+      { kind: "forbid", files: ["src/Answer.ts", "src/other/**/*.ts"], modules: ["ai"], because }
+    ], [{ path: "src/Answer.vibe", text: "export const answer = 42" }])).toThrow(
+      `ImportRules rule 0 (forbid) matches no source files; files: ["src/Answer.ts","src/other/**/*.ts"]. ${because}`
+    )
+  })
+
+  it("names every empty rule, including a default scope in an empty package", () => {
+    expect(() => check([
+      { kind: "forbid", modules: ["ai"], because },
+      { kind: "forbidCalls", files: ["test/**"], callees: ["setTimeout"], because }
+    ], [])).toThrow([
+      `ImportRules rule 0 (forbid) matches no source files; files: ["**/*"]. ${because}`,
+      `ImportRules rule 1 (forbidCalls) matches no source files; files: ["test/**"]. ${because}`
+    ].join("\n"))
+  })
+
+  it("accepts a scope when any one pattern matches a source", () => {
+    expect(check([
+      { kind: "forbid", files: ["src/old.ts", "src/Answer.{ts,vibe}"], modules: ["ai"], because }
+    ], [{ path: "src/Answer.ts", text: "export const answer = 42" }])).toEqual([])
+  })
+})
+
 describe("listSources", () => {
   it("lists source files, skipping dependencies, output, dot-directories, nested packages and links", () => {
     const directory = scratchPackage({
@@ -447,6 +473,18 @@ describe("the import-rules program", () => {
     expect(invalid.stderr).toContain("ImportRules needs a non-empty array of rules")
     const malformed = program(directory, ["apps/x", "{"])
     expect(malformed.status).toBe(2)
+  })
+
+  it("fails loudly when a rule's file patterns cover nothing", () => {
+    const directory = scratchPackage({ "src/Answer.vibe": "export const answer = 42" })
+    const empty = program(directory, ["apps/x", JSON.stringify([
+      { kind: "forbid", files: ["src/Answer.ts"], modules: ["ai"], because }
+    ])])
+    expect(empty.status).toBe(2)
+    expect(empty.stderr).toContain(
+      `ImportRules rule 0 (forbid) matches no source files; files: ["src/Answer.ts"]. ${because}`
+    )
+    expect(empty.stdout).not.toContain("passed")
   })
 })
 

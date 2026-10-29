@@ -34,11 +34,9 @@ import { Binding, Egress, Placeholder, Scrub } from "@smthrs/secrets"
 | `checkValue`                             | `(value: Redacted<string>) => Effect<void, ValueInvalid>`                                                |
 | `ValueInvalid`                           | `{ reason }`, never the value                                                                            |
 
-
-| Export | Contract |
-| --- | --- |
+| Export         | Contract                                                                                                                                                |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ValueProblem` | Type union `too_short`, `too_long`, `control_character`, `malformed_text`; `valueProblem(value)` returns it or undefined, without disclosing the value. |
-
 
 ## `Scrub`
 
@@ -48,11 +46,9 @@ import { Binding, Egress, Placeholder, Scrub } from "@smthrs/secrets"
 | `make`     | `(targets: ReadonlyArray<{ value: Redacted<string>, replacement: string }>) => Scrubber`                                                                                           |
 | `Scrubber` | `{ active, text(value), stream(body) }`; the longer form wins at one position                                                                                                      |
 
-
-| Export | Contract |
-| --- | --- |
+| Export   | Contract                                                                                                                                                                              |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Target` | `{ value: Redacted<string>; replacement: string }`, one target passed to `make(targets)`. The scrubber reveals the value only internally and emits the replacement, never the secret. |
-
 
 ## `Egress`
 

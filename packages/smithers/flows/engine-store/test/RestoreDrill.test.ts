@@ -137,7 +137,7 @@ const snapshotOf = (row: RunStore.RunRow): RunStore.RunSnapshot => ({
 describe("restore drill", () => {
   it.effect("restores and resumes a real registered flow from a mid-action hot backup", () =>
     Effect.gen(function*() {
-      const base = (yield* tempDirectory("flows-drill-engine-"))
+      const base = yield* tempDirectory("flows-drill-engine-")
       mkdirSync(join(base, "live"), { recursive: true })
       const liveDatabase = join(base, "live", DisasterRecovery.databaseFileName)
       const liveObjects = join(base, "live", DisasterRecovery.objectsDirectoryName)
@@ -283,7 +283,7 @@ describe("restore drill", () => {
 
   it.effect("hot-backs-up mid-action, fences the pre-backup owner, and resumes on the restored store", () =>
     Effect.gen(function*() {
-      const base = (yield* tempDirectory("flows-drill-"))
+      const base = yield* tempDirectory("flows-drill-")
       mkdirSync(join(base, "live"), { recursive: true })
       const liveDatabase = join(base, "live", DisasterRecovery.databaseFileName)
       const liveObjects = join(base, "live", DisasterRecovery.objectsDirectoryName)

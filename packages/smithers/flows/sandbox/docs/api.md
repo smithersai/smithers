@@ -273,14 +273,12 @@ else wait(TerminalProtocol.reconnectDelay(attempt))
   `undefined` after; a connection that reaches `ready` starts the count again. Keystrokes are never queued while
   disconnected: input whose delivery is unknown is not safe to repeat.
 
-
-| Export | Contract |
-| --- | --- |
-| `EndReason` | Type: `closed`, `slept`, `lost`, `revoked`. |
-| `ServerControl` | Type union `{ type: "ready"; access: Access }` or `{ type: "ended"; reason: EndReason }`. |
-| `encodeServerControl` | `(control: ServerControl) => string`; JSON server control frame. |
+| Export                | Contract                                                                                                                                                                                                                                 |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `EndReason`           | Type: `closed`, `slept`, `lost`, `revoked`.                                                                                                                                                                                              |
+| `ServerControl`       | Type union `{ type: "ready"; access: Access }` or `{ type: "ended"; reason: EndReason }`.                                                                                                                                                |
+| `encodeServerControl` | `(control: ServerControl) => string`; JSON server control frame.                                                                                                                                                                         |
 | `decodeClientControl` | `(text: string) => Resize \| undefined`; admits only `type: "resize"` with integer cols/rows within `maxCols`/`maxRows`. Malformed JSON, unsupported types and invalid dimensions return undefined, without I/O or a thrown parse error. |
-
 
 ## SandboxTools
 
@@ -358,20 +356,18 @@ conflicted or changed, are left NUL-separated in `REBASE_PATHS` (`.git/smithers-
 and `rebasePaths`. Because it runs through `run`, it keeps that tool's at-most-once fence and its working-copy
 checkpoint.
 
-
-| Export | Contract |
-| --- | --- |
-| `ExecuteOptions` | `{ callId: string; callsDirectory: string }`, the durable call receipt identity/storage for `execute`. |
-| `CommandOptions` | `{ key: string; callsDirectory: string }`, the command identity/storage used to inspect or cancel work. |
-| `ReadResult`, `WriteResult` | Schemas/types: read carries `tool: "read"`, `path`, `content`, `bytes`, `truncated`; write carries `tool: "write"`, `path`, `bytes`. |
-| `ListResult` | Schema/type: `tool: "list"`, `path`, `entries: ReadonlyArray<Entry>`, `truncated`. |
-| `StatusEntry`, `StatusResult` | Entry schema/type: `path`, `index`, `worktree`, optional `from`; result schema/type: `tool: "status"`, nullable `branch`, and `entries`. |
-| `DiffResult` | Schema/type: `tool: "diff"`, `diff`, `bytes`, `truncated`. |
-| `ToolFailure` | Schema/type union of `ToolRefused`, `ToolLost`, `ToolUnavailable`; no successful receipt is fabricated after these failures. |
-| `Checkpoint` | `{ head: string; patch: Uint8Array; bundle?: Uint8Array }`, the restore input preserving revision and pending changes. |
-| `RebaseOptions` | `{ branch: string; onto: string; expect?: string; timeoutSeconds?: number }`; optional expected head guards concurrent movement. |
-| `Rebased` | Tagged result: `Current`, `Unrelated`, `Conflicted`, `Planned`, `Moved`, `Applied`; each has `tree`. Conflicted has `paths`; Planned/Applied also have `result` and `paths`. |
-
+| Export                        | Contract                                                                                                                                                                     |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ExecuteOptions`              | `{ callId: string; callsDirectory: string }`, the durable call receipt identity/storage for `execute`.                                                                       |
+| `CommandOptions`              | `{ key: string; callsDirectory: string }`, the command identity/storage used to inspect or cancel work.                                                                      |
+| `ReadResult`, `WriteResult`   | Schemas/types: read carries `tool: "read"`, `path`, `content`, `bytes`, `truncated`; write carries `tool: "write"`, `path`, `bytes`.                                         |
+| `ListResult`                  | Schema/type: `tool: "list"`, `path`, `entries: ReadonlyArray<Entry>`, `truncated`.                                                                                           |
+| `StatusEntry`, `StatusResult` | Entry schema/type: `path`, `index`, `worktree`, optional `from`; result schema/type: `tool: "status"`, nullable `branch`, and `entries`.                                     |
+| `DiffResult`                  | Schema/type: `tool: "diff"`, `diff`, `bytes`, `truncated`.                                                                                                                   |
+| `ToolFailure`                 | Schema/type union of `ToolRefused`, `ToolLost`, `ToolUnavailable`; no successful receipt is fabricated after these failures.                                                 |
+| `Checkpoint`                  | `{ head: string; patch: Uint8Array; bundle?: Uint8Array }`, the restore input preserving revision and pending changes.                                                       |
+| `RebaseOptions`               | `{ branch: string; onto: string; expect?: string; timeoutSeconds?: number }`; optional expected head guards concurrent movement.                                             |
+| `Rebased`                     | Tagged result: `Current`, `Unrelated`, `Conflicted`, `Planned`, `Moved`, `Applied`; each has `tree`. Conflicted has `paths`; Planned/Applied also have `result` and `paths`. |
 
 ## SandboxCommand
 
@@ -433,11 +429,9 @@ Node.all({ lint: lint.call(target), test: test.call(target) })
 - **The host owns the machine.** One machine per `(target.run, job)`. The Smithers app's is a container of the branch
   sandbox's image that reaches the package registry and nothing else.
 
-
-| Export | Contract |
-| --- | --- |
+| Export    | Contract                                                                                                                                                                                                                                                                                               |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `RunStep` | Action `ci/job/Step`: payload `{ target: Target; job: Job; index: number; sofar: Result }`, success `Result`, typed `MachineUnavailable` failure and the CI retry policy. Dispatch through the durable engine with its registered implementation, not by calling a model or spawning another job loop. |
-
 
 ## SandboxMerge
 

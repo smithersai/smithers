@@ -2060,8 +2060,8 @@ The drafts, in node order, ready for `Plan.compile` or `Plan.append` unchanged. 
 
 The recoverable topology issues recorded during the build, such as a missing continuation builder or a continuation that produced no node. Fatal refusals, including computing on a planned value and a recursive inline `call`, throw from `Graph.build` and never appear here.
 
-| Export | Contract |
-| --- | --- |
+| Export       | Contract                                                                                                                                                                                                                                                                                           |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Inspection` | Result of `inspect(flow)`: node ids/kinds/dependencies/optional labels, edges, step ids/labels, diagnostics `{ code, message }`, and optional prompt source. It inspects an unresolved input in the same guest that loads the declaration; it does not choose a sample input or sandbox body code. |
 
 ## HumanTask
@@ -2371,10 +2371,10 @@ Registers a flow with the runtime and installs the handler that drives its body.
 
 Builds the interpreter and the action implementations against one fresh, isolated `Action.Implementations` table. The types require every action the flow names. `callbackIdentity` defaults to `"stable"`. A conflicting same-tag registration dies during layer construction unless it passes `{ override: true }`.
 
-| Export | Contract |
-| --- | --- |
-| `ExecutionOptions` | Extends `Graph.BuildOptions` with optional `onHeartbeat(executionId): Effect<void>`. Applies at registration and every resume, not automatically to child registrations. |
-| `maximumDispatchDigests` | `16`, maximum distinct step-key digests named by one node settlement; further dispatches keep the earliest digests to bound the journal entry. |
+| Export                   | Contract                                                                                                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ExecutionOptions`       | Extends `Graph.BuildOptions` with optional `onHeartbeat(executionId): Effect<void>`. Applies at registration and every resume, not automatically to child registrations. |
+| `maximumDispatchDigests` | `16`, maximum distinct step-key digests named by one node settlement; further dispatches keep the earliest digests to bound the journal entry.                           |
 
 ## Poll
 
@@ -2692,9 +2692,9 @@ Resolves `rounds` (at least two) and `on`: `stop` (the default), `park`, or `esc
 
 The state before the first round. `State`, `Policy`, and `Stalled` are schemas, so a trampoline carries the state in its payload and replay reads the same verdict.
 
-| Export | Contract |
-| --- | --- |
-| `Signal` | Schema/type: `"tree"`, `"checks"`, or `"output"`. |
+| Export        | Contract                                                                                                                                                                                                              |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Signal`      | Schema/type: `"tree"`, `"checks"`, or `"output"`.                                                                                                                                                                     |
 | `Observation` | `{ tree?: string; checks?: ReadonlyArray<string>; output?: unknown }` input to `observe`. Check order is ignored, empty check lists are not compared; output is compared by canonical JSON digest when representable. |
 
 ## StepIdentity
@@ -2861,34 +2861,34 @@ Provide a runtime that implements `FlowRuntime`, then run `Deploy.execute({ id: 
 
 ## `ExternalJob`
 
-| Export | Contract |
-| --- | --- |
-| `StatusOptions` | `{ waitMs: number }`, the adapter status call's wait allowance in milliseconds. |
-| `Operations` | `Operations<P, H, A, E, R>` adapter contract: `start(payload, key): Effect<H, E, R>`, `status(handle, key, options?): Effect<Status, E, R>`, `collect(handle, key, exited): Effect<A, E \| Again, R>`, `cancel(handle, key): Effect<void, E, R>`, optional `abandon(payload, key): Effect<void, E, R>`. Include the adapter failure union in the declaration's error schema. Cancel/abandon inside a step retain engine retries; rollback without a step attempts them once. |
-| `stepWaits` | Histogram `flows_external_job_step_wait_ms`, measuring how long run waited for job work inside its calling step; labels `job` and `outcome` (`collected`, `handed_off`, `interrupted`). |
+| Export          | Contract                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `StatusOptions` | `{ waitMs: number }`, the adapter status call's wait allowance in milliseconds.                                                                                                                                                                                                                                                                                                                                                                                              |
+| `Operations`    | `Operations<P, H, A, E, R>` adapter contract: `start(payload, key): Effect<H, E, R>`, `status(handle, key, options?): Effect<Status, E, R>`, `collect(handle, key, exited): Effect<A, E \| Again, R>`, `cancel(handle, key): Effect<void, E, R>`, optional `abandon(payload, key): Effect<void, E, R>`. Include the adapter failure union in the declaration's error schema. Cancel/abandon inside a step retain engine retries; rollback without a step attempts them once. |
+| `stepWaits`     | Histogram `flows_external_job_step_wait_ms`, measuring how long run waited for job work inside its calling step; labels `job` and `outcome` (`collected`, `handed_off`, `interrupted`).                                                                                                                                                                                                                                                                                      |
 
 ## `RunMetrics`
 
-| Export | Contract |
-| --- | --- |
-| `doors`, `Door`, `actors`, `Actor`, `placements`, `Placement`, `outcomes`, `Outcome`, `waitKinds`, `WaitKind` | Readonly closed vocabularies and their value types; door/actor/placement types also admit `other`. |
-| `door`, `actor`, `placement` | `(value: string \| undefined) =>` the respective label type; absent values become `unknown`, unlisted values `other`. |
-| `waitKind` | `(reason: string) => WaitKind`; `event` maps to `signal`, unrecognized reasons to `other`. |
-| `Origin`, `CurrentOrigin`, `withOrigin` | Origin is `{ door: string; actor: string }`. `CurrentOrigin` is a context reference, defaulting to unknown/unknown; `withOrigin(origin)(effect)` or `withOrigin(effect, origin)` scopes it without adding requirements. |
-| `LineLevel`, `layerInfoLines` | Context reference `Debug` or `Info` (default Debug), and the layer selecting Info usage lines. |
-| `Labels`, `makeLabels` | `makeLabels(limit): Labels` supplies `of(value): string` and `size(): number`; after `limit` distinct cleaned labels, unseen values become `other`. |
-| `clean`, `maxFlows`, `maxModels`, `maxCodes` | `clean(value): string` keeps identifier characters, cuts to 96 characters, and uses `unknown` for empty output. Per-process distinct-label limits: 200 flow tags, 50 model ids, 100 failure codes. |
-| `flow`, `model`, `code` | `(value: string) => string`; bounded label constructors. `code("none")` retains the success sentinel. |
-| `settlement` | `(exit: Exit<unknown, unknown>) => { outcome: Outcome; code: string }`; classifies success, typed failures, interpreter refusals, defects and interruption without diagnostic content. |
-| `durationBoundaries` | Readonly millisecond histogram buckets, from 10 ms through one day. |
-| `runsStarted`, `runsSettled`, `runDuration`, `runFirstStep` | Metrics `flows_runs_started`, `flows_runs_settled`, `flows_run_duration_ms`, `flows_run_first_step_ms`; counters then millisecond histograms. |
-| `steps`, `stepFailures`, `stepRetries`, `waits`, `waitDuration` | Counters `flows_steps`, `flows_step_failures`, `flows_step_retries`, `flows_waits`, and millisecond histogram `flows_wait_ms`. |
-| `modelCalls`, `modelTokens` | Counters `flows_model_calls`, `flows_model_tokens`; tokens split by input/output direction. |
-| `RunLabels` | `{ flow: string; door: string; actor: string; placement: string }` common recording fields. |
-| `recordStarted`, `recordSettled` | Return `Effect<void>`: started takes `RunLabels` plus `executionId`; settled also takes `outcome`, `code`, optional `durationMs`. |
-| `recordFirstStep`, `recordStep` | Return `Effect<void>`: first step takes `{ flow, placement, delayMs }`; step takes `{ flow, attempt, outcome, code?, runId? }`, counting retries after attempt 1 and recording failures. |
-| `recordWait`, `recordWaitEnded` | Return `Effect<void>`: `{ flow, kind: WaitKind }` counts a park; ended adds `durationMs` for its histogram. |
-| `recordModelCall` | `({ flow, model, outcome, inputTokens?, outputTokens? }) => Effect<void>`; records one provider call and its positive reported token counts. |
+| Export                                                                                                        | Contract                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `doors`, `Door`, `actors`, `Actor`, `placements`, `Placement`, `outcomes`, `Outcome`, `waitKinds`, `WaitKind` | Readonly closed vocabularies and their value types; door/actor/placement types also admit `other`.                                                                                                                      |
+| `door`, `actor`, `placement`                                                                                  | `(value: string \| undefined) =>` the respective label type; absent values become `unknown`, unlisted values `other`.                                                                                                   |
+| `waitKind`                                                                                                    | `(reason: string) => WaitKind`; `event` maps to `signal`, unrecognized reasons to `other`.                                                                                                                              |
+| `Origin`, `CurrentOrigin`, `withOrigin`                                                                       | Origin is `{ door: string; actor: string }`. `CurrentOrigin` is a context reference, defaulting to unknown/unknown; `withOrigin(origin)(effect)` or `withOrigin(effect, origin)` scopes it without adding requirements. |
+| `LineLevel`, `layerInfoLines`                                                                                 | Context reference `Debug` or `Info` (default Debug), and the layer selecting Info usage lines.                                                                                                                          |
+| `Labels`, `makeLabels`                                                                                        | `makeLabels(limit): Labels` supplies `of(value): string` and `size(): number`; after `limit` distinct cleaned labels, unseen values become `other`.                                                                     |
+| `clean`, `maxFlows`, `maxModels`, `maxCodes`                                                                  | `clean(value): string` keeps identifier characters, cuts to 96 characters, and uses `unknown` for empty output. Per-process distinct-label limits: 200 flow tags, 50 model ids, 100 failure codes.                      |
+| `flow`, `model`, `code`                                                                                       | `(value: string) => string`; bounded label constructors. `code("none")` retains the success sentinel.                                                                                                                   |
+| `settlement`                                                                                                  | `(exit: Exit<unknown, unknown>) => { outcome: Outcome; code: string }`; classifies success, typed failures, interpreter refusals, defects and interruption without diagnostic content.                                  |
+| `durationBoundaries`                                                                                          | Readonly millisecond histogram buckets, from 10 ms through one day.                                                                                                                                                     |
+| `runsStarted`, `runsSettled`, `runDuration`, `runFirstStep`                                                   | Metrics `flows_runs_started`, `flows_runs_settled`, `flows_run_duration_ms`, `flows_run_first_step_ms`; counters then millisecond histograms.                                                                           |
+| `steps`, `stepFailures`, `stepRetries`, `waits`, `waitDuration`                                               | Counters `flows_steps`, `flows_step_failures`, `flows_step_retries`, `flows_waits`, and millisecond histogram `flows_wait_ms`.                                                                                          |
+| `modelCalls`, `modelTokens`                                                                                   | Counters `flows_model_calls`, `flows_model_tokens`; tokens split by input/output direction.                                                                                                                             |
+| `RunLabels`                                                                                                   | `{ flow: string; door: string; actor: string; placement: string }` common recording fields.                                                                                                                             |
+| `recordStarted`, `recordSettled`                                                                              | Return `Effect<void>`: started takes `RunLabels` plus `executionId`; settled also takes `outcome`, `code`, optional `durationMs`.                                                                                       |
+| `recordFirstStep`, `recordStep`                                                                               | Return `Effect<void>`: first step takes `{ flow, placement, delayMs }`; step takes `{ flow, attempt, outcome, code?, runId? }`, counting retries after attempt 1 and recording failures.                                |
+| `recordWait`, `recordWaitEnded`                                                                               | Return `Effect<void>`: `{ flow, kind: WaitKind }` counts a park; ended adds `durationMs` for its histogram.                                                                                                             |
+| `recordModelCall`                                                                                             | `({ flow, model, outcome, inputTokens?, outputTokens? }) => Effect<void>`; records one provider call and its positive reported token counts.                                                                            |
 
 Recording functions need no host service and have no typed failure. They use Effect's metric/log context; they do not start work or read payloads.
 
@@ -5391,7 +5391,7 @@ itself; every default on the optional half is the conservative one.
 | `session`            | `string`                                                                                                                             | The durable session or lineage every call identity is scoped to. Required.                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `seat`               | `Seat.Seat`                                                                                                                          | The resolved seat this run streams from: model, route, and context window together. Required.                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `fallbackSeats`      | `ReadonlyArray<Seat.Seat>`                                                                                                           | Resolved seats tried in order after capacity refusal, context overflow, or HTTP 5xx failure. Rate limits cool the refused model on its route; account quota and HTTP 529 cool the route; overflow and 5xx do not park.                                                                                                                                                                                                                                                                                          |
-| `capacity`           | `{ park: boolean; maxParkMillis?: number; maxParks?: number }`                                                                       | Capacity handling. Parking defaults to true, with a one-hour wait ceiling (`maxParkMillis` defaults to `QuotaPolicy.maxWaitMillis`, 3,600,000 ms); unknown resets are re-probed after 15 minutes. `maxParkMillis` overrides that ceiling. `maxParks` (default `QuotaPolicy.defaultMaxParks`, 8) bounds the parks per run; the next refusal fails the run with the provider's typed `ModelError`.                                                                                                                                                                                                                                        |
+| `capacity`           | `{ park: boolean; maxParkMillis?: number; maxParks?: number }`                                                                       | Capacity handling. Parking defaults to true, with a one-hour wait ceiling (`maxParkMillis` defaults to `QuotaPolicy.maxWaitMillis`, 3,600,000 ms); unknown resets are re-probed after 15 minutes. `maxParkMillis` overrides that ceiling. `maxParks` (default `QuotaPolicy.defaultMaxParks`, 8) bounds the parks per run; the next refusal fails the run with the provider's typed `ModelError`.                                                                                                                |
 | `prompt`             | `string`                                                                                                                             | The task the run was admitted with. Required.                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `registry`           | `Registry.Registry`                                                                                                                  | The catalog shown to the model and the registry its calls resolve against. Required.                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `system`             | `ReadonlyArray<string>`                                                                                                              | Stable system teaching placed ahead of the cell contract.                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
@@ -9094,16 +9094,16 @@ tree pointing at nothing. `link` therefore always runs.
 
 ### Values and layers
 
-| Export                                          | What it is                                                                            |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `Content`                                       | The schema of what an install is keyed on: manager, lockfile digest, `.npmrc` digest. |
-| `LinkManifest`                                  | The schema of the flow's success value.                                               |
-| `payloadFields`                                 | The payload fields, `{ manager }`; `manager` admits only `"pnpm"`.                    |
-| `executeMeasure`, `executeFetch`, `executeLink` | The Effect implementations behind the three actions.                                  |
-| `MeasureLive`, `FetchPnpmLive`, `LinkLive`      | One layer per action.                                                                 |
-| `layer`                                         | All three merged, which is what an executor provides.                                 |
-| `Requires` | Type union of the Measure, FetchPnpm and Link action implementation requirements. |
-| `InstallFlow` | Type `Flow.Flow<"smithers-build/install", Schema.Struct<typeof payloadFields>, typeof LinkManifest, typeof PackageManager.PackageManagerError, Requires>`, the declaration made executable by the install layers. |
+| Export                                          | What it is                                                                                                                                                                                                        |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Content`                                       | The schema of what an install is keyed on: manager, lockfile digest, `.npmrc` digest.                                                                                                                             |
+| `LinkManifest`                                  | The schema of the flow's success value.                                                                                                                                                                           |
+| `payloadFields`                                 | The payload fields, `{ manager }`; `manager` admits only `"pnpm"`.                                                                                                                                                |
+| `executeMeasure`, `executeFetch`, `executeLink` | The Effect implementations behind the three actions.                                                                                                                                                              |
+| `MeasureLive`, `FetchPnpmLive`, `LinkLive`      | One layer per action.                                                                                                                                                                                             |
+| `layer`                                         | All three merged, which is what an executor provides.                                                                                                                                                             |
+| `Requires`                                      | Type union of the Measure, FetchPnpm and Link action implementation requirements.                                                                                                                                 |
+| `InstallFlow`                                   | Type `Flow.Flow<"smithers-build/install", Schema.Struct<typeof payloadFields>, typeof LinkManifest, typeof PackageManager.PackageManagerError, Requires>`, the declaration made executable by the install layers. |
 
 ## PackageManager
 
@@ -9132,31 +9132,31 @@ const layer = PackageManager.layerPnpm({
 })
 ```
 
-| Export                                                                                                                       | What it is                                                                                                                                                       |
-| ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PackageManager`                                                                                                             | The service tag, `smithers-build/PackageManager`.                                                                                                                |
-| `Service`                                                                                                                    | The contract: `name`, `projectRoot`, `storeDirectory`, `lockfileName`, `platformSensitive`, `requirement`, `version`, `verify`, `fetch`, `link`, `linkManifest`. |
-| `Options`                                                                                                                    | Layer options: `projectRoot`, `requirement`, and optional `environment`, `timeoutMs`, `executable`.                                                              |
-| `makePnpm`, `layerPnpm`                                                                                                      | The live pnpm implementation.                                                                                                                                    |
-| `makeBun`, `layerBun`                                                                                                        | The Bun seam for tool-running targets. It resolves, then refuses with `code: "unsupported"`.                                                                     |
-| `bunInstallUnsupportedMessage`, `bunInstallUnsupported`                                                                      | The refusal text, and the typed `unsupported` error, every install entry point returns for a Bun manager.                                                        |
-| `makeNoop`, `layerNoop`                                                                                                      | A service that satisfies the tag without touching a host, for tests.                                                                                             |
-| `PackageManagerError`, `ErrorCode`                                                                                           | The tagged error and its code union.                                                                                                                             |
-| `Name`                                                                                                                       | The manager union, `"pnpm"` or `"bun"`.                                                                                                                          |
-| `storeRoot`                                                                                                                  | `".flows/store"`, the fixed store parent.                                                                                                                        |
-| `maximumNpmrcBytes`, `maximumLockfileBytes`, `maximumPackageJsonBytes`, `defaultCommandTimeoutMs`, `maximumCommandTimeoutMs` | The bounds every read and every child process is held to.                                                                                                        |
-| `Diagnostic` | Schema/type alias of `Runtime.Diagnostic`, a bounded serializable host-failure description. |
-| `Digest` | SHA-256 content digest schema/type. |
-| `StoreManifest` | Schema/type: manager name, exact managerVersion, nullable platform and digest; describes fetch inputs, never package bytes. |
-| `pnpmfileNames` | Readonly default hook order: `.pnpmfile.mjs`, `.pnpmfile.cjs`; only the first present is selected. |
-| `pnpmfileOf` | `(projectRoot: string) => Effect<(typeof pnpmfileNames)[number] \| null, PackageManagerError, FileSystem.FileSystem>`; locates the first supported hook. |
-| `defaultCredentialHosts` | Readonly registry-host allowlist, default `["registry.npmjs.org"]`, used when `Options.credentialHosts` is absent. |
-| `storeManifestText` | `(input) => string`; canonical versioned tuple text. Input: manager, managerVersion, nullable platform, lockfileDigest, nullable npmrcDigest, optional nullable pnpmfileDigest/workspaceDigest. |
-| `storeManifest` | Same input as storeManifestText; returns `Effect<StoreManifest, never, Crypto>`, hashing that canonical text. |
-| `linkedTreeManifest` | `({ storeDigest, packageJsonDigest, managerEvidence }: digest fields) => Effect<Digest, never, Crypto>`; hashes metadata identity, not installed bytes. |
-| `npmrcDigest` | `(projectRoot: string) => Effect<Digest \| null, PackageManagerError, FileSystem.FileSystem \| Crypto.Crypto>`; hashes the complete project .npmrc, refusing literal credentials. No file yields null. |
-| `lockfileDigest` | `(projectRoot: string, lockfileName: string) => Effect<Digest, PackageManagerError, FileSystem.FileSystem \| Crypto.Crypto>`; bounded lockfile read and digest. |
-| `packageJsonDigest` | `(projectRoot: string) => Effect<Digest, PackageManagerError, FileSystem.FileSystem \| Crypto.Crypto>`; bounded root package.json read and digest. |
+| Export                                                                                                                       | What it is                                                                                                                                                                                             |
+| ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PackageManager`                                                                                                             | The service tag, `smithers-build/PackageManager`.                                                                                                                                                      |
+| `Service`                                                                                                                    | The contract: `name`, `projectRoot`, `storeDirectory`, `lockfileName`, `platformSensitive`, `requirement`, `version`, `verify`, `fetch`, `link`, `linkManifest`.                                       |
+| `Options`                                                                                                                    | Layer options: `projectRoot`, `requirement`, and optional `environment`, `timeoutMs`, `executable`.                                                                                                    |
+| `makePnpm`, `layerPnpm`                                                                                                      | The live pnpm implementation.                                                                                                                                                                          |
+| `makeBun`, `layerBun`                                                                                                        | The Bun seam for tool-running targets. It resolves, then refuses with `code: "unsupported"`.                                                                                                           |
+| `bunInstallUnsupportedMessage`, `bunInstallUnsupported`                                                                      | The refusal text, and the typed `unsupported` error, every install entry point returns for a Bun manager.                                                                                              |
+| `makeNoop`, `layerNoop`                                                                                                      | A service that satisfies the tag without touching a host, for tests.                                                                                                                                   |
+| `PackageManagerError`, `ErrorCode`                                                                                           | The tagged error and its code union.                                                                                                                                                                   |
+| `Name`                                                                                                                       | The manager union, `"pnpm"` or `"bun"`.                                                                                                                                                                |
+| `storeRoot`                                                                                                                  | `".flows/store"`, the fixed store parent.                                                                                                                                                              |
+| `maximumNpmrcBytes`, `maximumLockfileBytes`, `maximumPackageJsonBytes`, `defaultCommandTimeoutMs`, `maximumCommandTimeoutMs` | The bounds every read and every child process is held to.                                                                                                                                              |
+| `Diagnostic`                                                                                                                 | Schema/type alias of `Runtime.Diagnostic`, a bounded serializable host-failure description.                                                                                                            |
+| `Digest`                                                                                                                     | SHA-256 content digest schema/type.                                                                                                                                                                    |
+| `StoreManifest`                                                                                                              | Schema/type: manager name, exact managerVersion, nullable platform and digest; describes fetch inputs, never package bytes.                                                                            |
+| `pnpmfileNames`                                                                                                              | Readonly default hook order: `.pnpmfile.mjs`, `.pnpmfile.cjs`; only the first present is selected.                                                                                                     |
+| `pnpmfileOf`                                                                                                                 | `(projectRoot: string) => Effect<(typeof pnpmfileNames)[number] \| null, PackageManagerError, FileSystem.FileSystem>`; locates the first supported hook.                                               |
+| `defaultCredentialHosts`                                                                                                     | Readonly registry-host allowlist, default `["registry.npmjs.org"]`, used when `Options.credentialHosts` is absent.                                                                                     |
+| `storeManifestText`                                                                                                          | `(input) => string`; canonical versioned tuple text. Input: manager, managerVersion, nullable platform, lockfileDigest, nullable npmrcDigest, optional nullable pnpmfileDigest/workspaceDigest.        |
+| `storeManifest`                                                                                                              | Same input as storeManifestText; returns `Effect<StoreManifest, never, Crypto>`, hashing that canonical text.                                                                                          |
+| `linkedTreeManifest`                                                                                                         | `({ storeDigest, packageJsonDigest, managerEvidence }: digest fields) => Effect<Digest, never, Crypto>`; hashes metadata identity, not installed bytes.                                                |
+| `npmrcDigest`                                                                                                                | `(projectRoot: string) => Effect<Digest \| null, PackageManagerError, FileSystem.FileSystem \| Crypto.Crypto>`; hashes the complete project .npmrc, refusing literal credentials. No file yields null. |
+| `lockfileDigest`                                                                                                             | `(projectRoot: string, lockfileName: string) => Effect<Digest, PackageManagerError, FileSystem.FileSystem \| Crypto.Crypto>`; bounded lockfile read and digest.                                        |
+| `packageJsonDigest`                                                                                                          | `(projectRoot: string) => Effect<Digest, PackageManagerError, FileSystem.FileSystem \| Crypto.Crypto>`; bounded root package.json read and digest.                                                     |
 
 The Bun refusal is deliberate. Bun has no fetch-only or offline install
 command, so no install accepts it: the `Install` target, the planner,
@@ -9183,17 +9183,17 @@ const layer = Runtime.layerNode({
 })
 ```
 
-| Export                                                   | What it is                                                        |
-| -------------------------------------------------------- | ----------------------------------------------------------------- |
-| `Runtime`                                                | The service tag, `smithers-build/Runtime`.                        |
-| `Service`, `Options`                                     | The contract and its layer options.                               |
-| `layerNode`, `layerBun`, `layerNoop`, `make`, `makeNoop` | Implementations.                                                  |
-| `satisfies`                                              | The comparator a declared requirement is checked with.            |
-| `RuntimeError`, `ErrorCode`                              | The tagged error and its code union.                              |
-| `Platform`, `Name`                                       | The host facts schema, and the runtime union `"node"` or `"bun"`. |
-| `probeTimeoutMs`, `maximumVersionOutputBytes`            | The default probe deadline and maximum stdout bytes.              |
-| `Diagnostic` | Schema/type for bounded serializable host-failure diagnostics shared with PackageManager. |
-| `lookupEnvironmentNames` | Readonly `["PATH", "PATHEXT", "SYSTEMROOT", "WINDIR"]`; the only environment names forwarded to a runtime version probe. |
+| Export                                                   | What it is                                                                                                               |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `Runtime`                                                | The service tag, `smithers-build/Runtime`.                                                                               |
+| `Service`, `Options`                                     | The contract and its layer options.                                                                                      |
+| `layerNode`, `layerBun`, `layerNoop`, `make`, `makeNoop` | Implementations.                                                                                                         |
+| `satisfies`                                              | The comparator a declared requirement is checked with.                                                                   |
+| `RuntimeError`, `ErrorCode`                              | The tagged error and its code union.                                                                                     |
+| `Platform`, `Name`                                       | The host facts schema, and the runtime union `"node"` or `"bun"`.                                                        |
+| `probeTimeoutMs`, `maximumVersionOutputBytes`            | The default probe deadline and maximum stdout bytes.                                                                     |
+| `Diagnostic`                                             | Schema/type for bounded serializable host-failure diagnostics shared with PackageManager.                                |
+| `lookupEnvironmentNames`                                 | Readonly `["PATH", "PATHEXT", "SYSTEMROOT", "WINDIR"]`; the only environment names forwarded to a runtime version probe. |
 
 `Options.environment` supplies the host environment. A version probe receives
 only `PATH`, `PATHEXT`, `SYSTEMROOT`, and `WINDIR` from that record. When omitted,
@@ -10421,11 +10421,11 @@ const admitted = BoundedJson.admitStrict({ tags: ["release"] }, {
 // admitted.ok === true; containers contains the tags array, then the record.
 ```
 
-| Export | Contract |
-| --- | --- |
-| `Limits` | Required `maxDepth`, `maxMembers`, `maxNodes`; optional `maxBytes`, `maxTotalMembers`, `maxStringBytes`, `maxKeyBytes`. Bounds apply to depth, per-container and cumulative members, nodes, and UTF-8 lengths. |
-| `Json` | Recursive detached JSON type: null, boolean, finite admitted number, string, readonly JSON array or string-keyed JSON record. |
-| `IssueCode` | Refusal union: `depth`, `nodes`, `bytes`, `number`, `string`, `value`, `cycle`, `arrayLength`, `arrayMember`, `arrayExtra`, `members`, `object`, `symbol`, `accessor`, `key`, `inspection`. |
+| Export          | Contract                                                                                                                                                                                                                                                                                |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Limits`        | Required `maxDepth`, `maxMembers`, `maxNodes`; optional `maxBytes`, `maxTotalMembers`, `maxStringBytes`, `maxKeyBytes`. Bounds apply to depth, per-container and cumulative members, nodes, and UTF-8 lengths.                                                                          |
+| `Json`          | Recursive detached JSON type: null, boolean, finite admitted number, string, readonly JSON array or string-keyed JSON record.                                                                                                                                                           |
+| `IssueCode`     | Refusal union: `depth`, `nodes`, `bytes`, `number`, `string`, `value`, `cycle`, `arrayLength`, `arrayMember`, `arrayExtra`, `members`, `object`, `symbol`, `accessor`, `key`, `inspection`.                                                                                             |
 | `StrictOptions` | Optional `ordinaryRecords`, `boundedText`, `onContainer(copy)` postorder callback and trusted `native(object)` leaf adapter returning `{ value, bytes }` or undefined. Callback exceptions become inspection refusals; native leaves are neither copied nor frozen nor validated again. |
 
 ## ReadonlyMap.make
@@ -14424,8 +14424,8 @@ the explicit synchronous entry point, for pure plan and identity construction.
 - Runs on the calling thread. See
   [when not to use the synchronous path](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/crypto/docs/guides/hash-in-synchronous-code.md#know-when-not-to-use-the-synchronous-path).
 
-| Export | Contract |
-| --- | --- |
+| Export                | Contract                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `makeDigestPartsSync` | Direct package-root export: `() => (parts: ReadonlyArray<string>) => Digest`. Produces a reusable synchronous SHA-256 parts digester. It is not a method on the `Sha256` schema; it requires no Effect service. The result equals `digestSync(parts.join(""))`; fragment boundaries are not hashed. Every fragment must be well-formed UTF-8 text on its own; split surrogate pairs are refused. The returned function throws `Sha256Error` for invalid/unreadable input or encoding failure, retaining its last successful reusable prefixes. |
 
 ## Schemas
@@ -15922,8 +15922,8 @@ status and whether a claim or an owner holds it, never its state.
 Full model: [Ownership and fencing](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/concepts/ownership-and-fencing.md) and
 [Attempts and replay](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/concepts/attempts-and-replay.md).
 
-| Export | Contract |
-| --- | --- |
+| Export                  | Contract                                                                                                      |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `RequestedResumeReason` | Type union `"deferred"`, `"clock"`, `"parent"`; the host callback receives this reason with the execution id. |
 
 ## DurableEngineState
@@ -16109,10 +16109,10 @@ first-writer transaction rows. The tag is
 `@smthrs/engine-store/EngineStateFault`; these remain defects, not recoverable
 failures in the service error channel.
 
-| Export | Contract |
-| --- | --- |
-| `DeferredDigest` | `{ exit: string; metadata: string \| null }`, the digest pair for a completion's protected encoded values. |
-| `waitingTreeMaxDepth` | `64`, the nesting bound enforced when validating a persisted waiting tree. |
+| Export                | Contract                                                                                                   |
+| --------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `DeferredDigest`      | `{ exit: string; metadata: string \| null }`, the digest pair for a completion's protected encoded values. |
+| `waitingTreeMaxDepth` | `64`, the nesting bound enforced when validating a persisted waiting tree.                                 |
 
 ## StepBoundary
 
@@ -16332,8 +16332,8 @@ policy reports its owner dead; the default uses lease expiry. This applies to
 both engine dispatch and plan scheduling. `PlanScheduler.Options.isAlive` accepts
 the same `Ownership.LivenessCheck` as `EngineStore.Options.isAlive`.
 
-| Export | Contract |
-| --- | --- |
+| Export               | Contract                                                                                                       |
+| -------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `WorkspaceErrorCode` | Schema/type: `invalid_path`, `not_found`, `host_unavailable`, `path_escapes_workspace`, `commit_lock_timeout`. |
 
 ## PlanScheduler
@@ -16664,8 +16664,8 @@ applies the asymmetric rule: a hit becomes `confidence + 0.05 * (1 -
 confidence)`, a miss becomes `confidence * 0.5`. Training never creates edges
 and never writes journal records.
 
-| Export | Contract |
-| --- | --- |
+| Export                    | Contract                                                             |
+| ------------------------- | -------------------------------------------------------------------- |
 | `SelectionStoreErrorCode` | Schema/type: `invalid_input`, `decode_failed`, `persistence_failed`. |
 
 ## ArtifactSync
@@ -16789,8 +16789,8 @@ a root references is protected by the mtime fence anyway.
 
 Full guide: [Collect unreferenced artifacts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/guides/collect-unreferenced-artifacts.md).
 
-| Export | Contract |
-| --- | --- |
+| Export                | Contract                                                       |
+| --------------------- | -------------------------------------------------------------- |
 | `ArtifactGcErrorCode` | Schema/type: `invalid_options`, `mark_failed`, `sweep_failed`. |
 
 ## StepCacheFold
@@ -17041,8 +17041,8 @@ code rather than pretending to snapshot.
 
 Full guide: [Back up and restore the store](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/guides/back-up-and-restore.md).
 
-| Export | Contract |
-| --- | --- |
+| Export                      | Contract                                                                                                                                                                          |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DisasterRecoveryErrorCode` | Schema/type: `invalid_options`, `not_empty`, `invalid_manifest`, `missing_file`, `digest_mismatch`, `artifact_corruption`, `snapshot_incomplete`, `schema_mismatch`, `io`, `sql`. |
 
 ## Inconsistency
@@ -17242,8 +17242,8 @@ effect's exit byte-identically.
 
 Full guide: [Observe engine metrics](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/guides/observe-engine-metrics.md).
 
-| Export | Contract |
-| --- | --- |
+| Export              | Contract                                                                                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `heartbeatReceipts` | Counter `flows_engine_heartbeat_receipts`; outcome labels are `completed`, `skipped`, `failed`. External receipts are bounded and never block the ownership writer. |
 
 ## Migrations
@@ -17399,25 +17399,25 @@ The process driver dispatches `Interpreter.ExecutionOptions.onHeartbeat` after c
 Reconstructs clocks and completion timestamps from journal facts. Completion
 values remain in their existing protected rows; the journal carries digests.
 
-| Export | Contract |
-| --- | --- |
-| `eventTypes` | Readonly event-name list consumed by this fold. |
-| `checkpointKey` | `"flows.engine.deferred-clock"`, the checkpoint-state property. |
-| `Clock` | Schema/type: flow, execution, clock and deferred names; nonnegative safe-integer `dueAtMs`; nullable `completedAtMs`. |
-| `Deferred` | Schema/type: flow, execution and deferred names; nullable completion/consumption timestamps; optional exit and nullable metadata digests for compatibility with older facts. |
-| `State`, `initial` | Readonly `clocks` and `deferreds` maps, initially empty. |
-| `clockKey`, `deferredKey` | `(address) => string`; JSON tuple keys containing flow/execution and clock or deferred name. |
-| `reduce` | `(state: State, entry: JournalEvent.Entry) => State`; pure fold of recognized events. |
-| `projection` | `Projection<State>` with the same initial state and reducer. |
-| `Encoded`, `encode` | Checkpoint schema/type with clock/deferred arrays; `(state: State) => Encoded`. |
-| `fromCheckpoint` | `(checkpointState: unknown) => Option<State>`; `None` for missing or invalid fold state. |
-| `FoldIncompleteReason` | Schema of `row_missing`, `digest_mismatch`, `run_missing`, `checkpoint_missing`. |
-| `Unjoined` | Schema/type: `reason`, `executionId`, optional `flowName` and `name`. |
-| `FoldIncomplete` | Typed `fold_incomplete` failure with `message` and `unjoined` references; a rebuild writes nothing on this refusal. |
-| `capture` | `(runId: string, upTo: number) => Effect<Encoded, FoldIncomplete \| JournalError \| SqlError, Journal \| SqlClient>`; folds through the inclusive journal sequence, starting at a compaction checkpoint when present. |
-| `checkpointState` | `(runId, upTo, base?: Readonly<Record<string, unknown>>) => Effect<checkpoint, ...>`; preserves base properties and puts `capture` under `checkpointKey`, with the same requirements and failures. |
-| `Rebuilt` | Counts: `runs`, `clocks`, `deferreds`, `unexplained`. |
-| `rebuild` | `() => Effect<Rebuilt, FoldIncomplete \| JournalError \| SqlError \| DatabaseError, Journal \| SqlClient \| DurableWriter>`; validates all joins/digests before transactionally replacing clock rows and completion timestamps. Unexplained completion rows remain intact. |
+| Export                    | Contract                                                                                                                                                                                                                                                                   |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `eventTypes`              | Readonly event-name list consumed by this fold.                                                                                                                                                                                                                            |
+| `checkpointKey`           | `"flows.engine.deferred-clock"`, the checkpoint-state property.                                                                                                                                                                                                            |
+| `Clock`                   | Schema/type: flow, execution, clock and deferred names; nonnegative safe-integer `dueAtMs`; nullable `completedAtMs`.                                                                                                                                                      |
+| `Deferred`                | Schema/type: flow, execution and deferred names; nullable completion/consumption timestamps; optional exit and nullable metadata digests for compatibility with older facts.                                                                                               |
+| `State`, `initial`        | Readonly `clocks` and `deferreds` maps, initially empty.                                                                                                                                                                                                                   |
+| `clockKey`, `deferredKey` | `(address) => string`; JSON tuple keys containing flow/execution and clock or deferred name.                                                                                                                                                                               |
+| `reduce`                  | `(state: State, entry: JournalEvent.Entry) => State`; pure fold of recognized events.                                                                                                                                                                                      |
+| `projection`              | `Projection<State>` with the same initial state and reducer.                                                                                                                                                                                                               |
+| `Encoded`, `encode`       | Checkpoint schema/type with clock/deferred arrays; `(state: State) => Encoded`.                                                                                                                                                                                            |
+| `fromCheckpoint`          | `(checkpointState: unknown) => Option<State>`; `None` for missing or invalid fold state.                                                                                                                                                                                   |
+| `FoldIncompleteReason`    | Schema of `row_missing`, `digest_mismatch`, `run_missing`, `checkpoint_missing`.                                                                                                                                                                                           |
+| `Unjoined`                | Schema/type: `reason`, `executionId`, optional `flowName` and `name`.                                                                                                                                                                                                      |
+| `FoldIncomplete`          | Typed `fold_incomplete` failure with `message` and `unjoined` references; a rebuild writes nothing on this refusal.                                                                                                                                                        |
+| `capture`                 | `(runId: string, upTo: number) => Effect<Encoded, FoldIncomplete \| JournalError \| SqlError, Journal \| SqlClient>`; folds through the inclusive journal sequence, starting at a compaction checkpoint when present.                                                      |
+| `checkpointState`         | `(runId, upTo, base?: Readonly<Record<string, unknown>>) => Effect<checkpoint, ...>`; preserves base properties and puts `capture` under `checkpointKey`, with the same requirements and failures.                                                                         |
+| `Rebuilt`                 | Counts: `runs`, `clocks`, `deferreds`, `unexplained`.                                                                                                                                                                                                                      |
+| `rebuild`                 | `() => Effect<Rebuilt, FoldIncomplete \| JournalError \| SqlError \| DatabaseError, Journal \| SqlClient \| DurableWriter>`; validates all joins/digests before transactionally replacing clock rows and completion timestamps. Unexplained completion rows remain intact. |
 
 Use `checkpointState` when compacting: a compacted run without its fold checkpoint
 fails with `checkpoint_missing`. `capture` and `rebuild` read the existing
@@ -19872,8 +19872,8 @@ behavior and signatures.
 
 | Module                       | Public exports                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | What it is                                                                                               |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `QuickJSLifecycle` | `stackBytes`, `prelude`, `abandon`, `isQuarantined`, `interruptBudget`, `utf8Length` | Shared portable QuickJS resource limits, quarantine and bounded execution. |
-| `RealmFlow` | `Request`, `Receipt`, `Input`, `Result`, `agentAction`, `AgentPayload`, `RealmFlowError`, `version`, `step`, `layerDefaultVariant` | Fresh bounded execution of pinned Flow.make modules; host-journaled action requests cross as data. |
+| `QuickJSLifecycle`           | `stackBytes`, `prelude`, `abandon`, `isQuarantined`, `interruptBudget`, `utf8Length`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Shared portable QuickJS resource limits, quarantine and bounded execution.                               |
+| `RealmFlow`                  | `Request`, `Receipt`, `Input`, `Result`, `agentAction`, `AgentPayload`, `RealmFlowError`, `version`, `step`, `layerDefaultVariant`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Fresh bounded execution of pinned Flow.make modules; host-journaled action requests cross as data.       |
 | `HarnessError`               | `HarnessErrorCode`, `HarnessError`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Stable failures reported at the harness translation boundary.                                            |
 | `AgentEvent`                 | `Observer`, `Journal`, `RelevanceKind`, `CompactionMark`, `CompactionPin`, `MonitorKind`, `Stance`, `Suppression`, `UnjudgedReason`, `DisciplineArmed`, `TurnOpened`, `ModelRequested`, `ModelSelected`, `SeatFailedOver`, `ModelParked`, `ModelUnparked`, `ModelDelta`, `ModelRetried`, `ModelSettled`, `CellProduced`, `CellRejectedInFrame`, `CellCallStarted`, `CellCallSettled`, `CellPrinted`, `CellSettled`, `TransitionApplied`, `ReadOnlyDemandIssued`, `ReadOnlyDemanded`, `RepeatDemanded`, `NarrowedDemanded`, `UnmovedDemanded`, `UnresolvedDemanded`, `FailedCallDemanded`, `UnobservedDemanded`, `NarrowOnlyDemanded`, `ClaimDemanded`, `DecisionAnswer`, `decisionAnswers`, `DecisionSettled`, `SupervisorSettled`, `SupervisorUnjudged`, `DecisionUnjudged`, `RelevanceSettled`, `RelevanceRestored`, `SeatPanel`, `SeatRouted`, `SufficiencyObserved`, `VacuousVerificationObserved`, `MutationObserved`, `CheckpointMinted`, `Suspended`, `CompactionSettled`, `SteeringDrained`, `TurnClosed`, `PermissionRequired`, `Aborted`, `Resolved`, `AgentEvent`, `eventType` | Serializable events emitted by harness adapters.                                                         |
 | `Plan`                       | `Child`, `Batch`, `ChildResult`, `ChildProgress`, `ChildSettled`, `SpliceEvent`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Local structural plan nodes used at the harness-to-engine boundary.                                      |
@@ -22578,11 +22578,11 @@ decoded with `atob` and `TextDecoder`, so it runs in a browser and a Worker.
 
 ### GitHub.Collaborators
 
-| Export          | Signature                                                                            | Notes                                                                                                                                                                                 |
-| --------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `permission`    | `(owner, repo, login) => Effect<Option<Permission>, IntegrationError, GitHubClient>` | `GET /repos/{owner}/{repo}/collaborators/{login}/permission`; `Option.none()` on a 404, which GitHub answers for an account that does not exist or a repository the token cannot see. |
+| Export          | Signature                                                                            | Notes                                                                                                                                                                                                                                                                      |
+| --------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `permission`    | `(owner, repo, login) => Effect<Option<Permission>, IntegrationError, GitHubClient>` | `GET /repos/{owner}/{repo}/collaborators/{login}/permission`; `Option.none()` on a 404, which GitHub answers for an account that does not exist or a repository the token cannot see.                                                                                      |
 | `Permission`    | `{ permission: string; roleName: string; userId?: number }`                          | `permission` is the base role (`admin`, `write`, `read`, `none`); `roleName` may be `maintain`, `triage` or a custom role; `userId` is the account GitHub answered for, when it names one. A login can change hands after a rename; compare `userId` with the id you know. |
-| `LOGIN_PATTERN` | regex                                                                                | `Repository.OWNER_PATTERN`'s account name, optionally followed by `[bot]`.                                                                                                            |
+| `LOGIN_PATTERN` | regex                                                                                | `Repository.OWNER_PATTERN`'s account name, optionally followed by `[bot]`.                                                                                                                                                                                                 |
 
 ### GitHub.Pulls
 
@@ -23480,11 +23480,11 @@ stream, and refuses to create a run whose id begins with `companionPrefix`.
 same schemas, so an identifier the writer refuses is refused on every read with
 `invalid_event` rather than answered with an empty page.
 
-| Export | Contract |
-| --- | --- |
-| `decodeLineageId`, `decodeWaitId`, `decodeCommandId`, `decodePlanId`, `decodeDispatchId`, `decodeArtifactId` | `(value: unknown) => Effect<branded string, Schema.SchemaError>`; decode the corresponding public identifier schema. |
-| `decodeTimestampMs`, `decodeNonNegativeQuantity`, `decodePositiveQuantity` | `(value: unknown) => Effect<branded number, Schema.SchemaError>`; validate timestamps, nonnegative quantities and positive quantities respectively. |
-| `contentDigest` | `(text: string) => string`; synchronous digest of exact encoded text for journal value references, never a redaction of that text. |
+| Export                                                                                                       | Contract                                                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `decodeLineageId`, `decodeWaitId`, `decodeCommandId`, `decodePlanId`, `decodeDispatchId`, `decodeArtifactId` | `(value: unknown) => Effect<branded string, Schema.SchemaError>`; decode the corresponding public identifier schema.                                |
+| `decodeTimestampMs`, `decodeNonNegativeQuantity`, `decodePositiveQuantity`                                   | `(value: unknown) => Effect<branded number, Schema.SchemaError>`; validate timestamps, nonnegative quantities and positive quantities respectively. |
+| `contentDigest`                                                                                              | `(text: string) => string`; synchronous digest of exact encoded text for journal value references, never a redaction of that text.                  |
 
 ## SqlJournal
 
@@ -24013,26 +24013,26 @@ resuming a parked run cannot discard a later batch or fail after commit.
 Versioned JSON projections of authorized native cell calls. Outcomes execute from
 protected attempt records; these facts serve the public journal/outbox.
 
-| Export | Contract |
-| --- | --- |
-| `Identity` | Schema: `runId`, nonnegative integer `frame` and `ordinal`, `cell`, `declaration`, and string-array `layers`; coordinates remain stable across physical retries. |
-| `Call` | Schema/type: `callId` (`cell-call-v1:` plus 64 lowercase hex digits), `identity`, `flowName`, JSON `input`, and optional JSON display `descriptor`. |
-| `Annotation` | Effect service containing `phase: "invoked"` or `"settled"` and `call: Call`; data only, never part of the action key. |
-| `Result` | Success/failure schema: JSON `value`, optional string `message`; failure alone admits optional string `code`. |
-| `Fact` | Schema/type: version 1, call coordinates and phase; invoked facts carry input/optional descriptor, settled facts carry outcome/value/optional JSON message and code. Values may be bounded redacted projections. |
-| `eventType` | `"flows.harness.call-fact.v1"`; immutable native journal event committed with the controller record. |
+| Export       | Contract                                                                                                                                                                                                         |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Identity`   | Schema: `runId`, nonnegative integer `frame` and `ordinal`, `cell`, `declaration`, and string-array `layers`; coordinates remain stable across physical retries.                                                 |
+| `Call`       | Schema/type: `callId` (`cell-call-v1:` plus 64 lowercase hex digits), `identity`, `flowName`, JSON `input`, and optional JSON display `descriptor`.                                                              |
+| `Annotation` | Effect service containing `phase: "invoked"` or `"settled"` and `call: Call`; data only, never part of the action key.                                                                                           |
+| `Result`     | Success/failure schema: JSON `value`, optional string `message`; failure alone admits optional string `code`.                                                                                                    |
+| `Fact`       | Schema/type: version 1, call coordinates and phase; invoked facts carry input/optional descriptor, settled facts carry outcome/value/optional JSON message and code. Values may be bounded redacted projections. |
+| `eventType`  | `"flows.harness.call-fact.v1"`; immutable native journal event committed with the controller record.                                                                                                             |
 
 ## `StepFact`
 
 The first checkpoint observation of a native action, preserving its original
 generation, source sequence and timestamp across replay.
 
-| Export | Contract |
-| --- | --- |
-| `Step` | Schema/type: 64-character lowercase hex `stepId`, execution/action/scope strings, positive safe-integer `attempt`/`retry`, and `ask` as a nonnegative safe integer or `"repair"`. |
-| `Fact` | Schema/type: version 1, `step`, nonnegative safe-integer `generation`, `ordinal`, `sourceSequence`, integer `frame >= -1`, `cell`, nonnegative `at`, `control.agent.*` event type and JSON payload. |
-| `Annotation` | Empty Effect service marker: presence marks a checkpoint whose saved success is the fact to publish. |
-| `eventType` | `"flows.harness.step-fact.v1"`; outbox event committed with its owning checkpoint. |
+| Export       | Contract                                                                                                                                                                                            |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Step`       | Schema/type: 64-character lowercase hex `stepId`, execution/action/scope strings, positive safe-integer `attempt`/`retry`, and `ask` as a nonnegative safe integer or `"repair"`.                   |
+| `Fact`       | Schema/type: version 1, `step`, nonnegative safe-integer `generation`, `ordinal`, `sourceSequence`, integer `frame >= -1`, `cell`, nonnegative `at`, `control.agent.*` event type and JSON payload. |
+| `Annotation` | Empty Effect service marker: presence marks a checkpoint whose saved success is the fact to publish.                                                                                                |
+| `eventType`  | `"flows.harness.step-fact.v1"`; outbox event committed with its owning checkpoint.                                                                                                                  |
 
 These namespaces declare schemas, constants and annotation services, with no
 host requirements or I/O of their own. Schema decoding reports normal Effect
@@ -24042,10 +24042,10 @@ does not publish an event.
 
 ## `EngineEvent`
 
-| Export | Contract |
-| --- | --- |
-| `stateEventType`, `attemptEventType` | `"flows.engine.v2.state-event"` and `"flows.engine.v2.attempt-lifecycle"`, respectively. |
-| `stateEvent` | `(payload: StatePayload, sourceId: Event.SourceId, sourceSeq: Event.SourceSeq, diagnostics: Schema.Json = null) => Event.Input`; strictly validates the state payload and diagnostics, deriving runId from payload.lineage. Invalid inputs throw Schema decoding errors. |
+| Export                               | Contract                                                                                                                                                                                                                                                                 |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `stateEventType`, `attemptEventType` | `"flows.engine.v2.state-event"` and `"flows.engine.v2.attempt-lifecycle"`, respectively.                                                                                                                                                                                 |
+| `stateEvent`                         | `(payload: StatePayload, sourceId: Event.SourceId, sourceSeq: Event.SourceSeq, diagnostics: Schema.Json = null) => Event.Input`; strictly validates the state payload and diagnostics, deriving runId from payload.lineage. Invalid inputs throw Schema decoding errors. |
 
 ---
 
@@ -28782,19 +28782,19 @@ a span, metric or log line.
 A resolved model route: an endpoint, a protocol, a framing, and the
 credentials to authorize with.
 
-| Export                                                                    | Kind        | Behavior                                                                                                                                                                                                                                                                                       |
-| ------------------------------------------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Route`                                                                   | type        | `Config`: a configured, but not yet authenticated, protocol route.                                                                                                                                                                                                                             |
-| `Config`                                                                  | interface   | `{ id, protocol, endpoint, auth, framing, headers? }`.                                                                                                                                                                                                                                         |
-| `PreparedRequest`                                                         | interface   | `{ routeId, protocolId, method: "POST", url, publicHeaders, body, bodyText }`: the credential-free sealed-step view. `body` is a fresh `Uint8Array` per preparation; do not mutate it.                                                                                                         |
-| `prepare(route, request)`                                                 | constructor | `Effect<PreparedRequest, ModelError>`. Validates the request against `ModelRequest`, lowers and validates the provider body, checks the public headers, and encodes canonical bytes, exactly once per call.                                                                                    |
-| `make(config)`                                                            | constructor | Returns the config as a `Route`.                                                                                                                                                                                                                                                               |
-| `toModel(config)`                                                         | constructor | `Effect<Model, never, RequestExecutor>`: builds the `Model` implementation from a composed route.                                                                                                                                                                                              |
-| `layer(config)`                                                           | layer       | `Layer<Model, never, RequestExecutor>`: provides a configured route as the `Model` service.                                                                                                                                                                                                    |
-| `anthropic({ apiKey, baseUrl? })`                                         | constructor | `Result<Route, ModelError>`. Sends `x-api-key` and `anthropic-version: 2023-06-01`. `baseUrl` defaults to `Endpoint.providerOrigins.anthropic`.                                                                                                                                                |
-| `openai({ apiKey, baseUrl? })`                                            | constructor | `Result<Route, ModelError>`. Bearer auth against `api.openai.com`, or `baseUrl` when given.                                                                                                                                                                                                    |
-| `openaiResponsesCompatible({ id, baseUrl, apiKey, headers? })`            | constructor | A route for a provider that serves the Responses API without OpenAI's native deferred-tool extensions; `supportsDeferred` is forced off. `baseUrl` is the origin and the constructor appends `/v1/responses`, so `https://openrouter.ai/api` becomes `https://openrouter.ai/api/v1/responses`. |
-| `openaiChatCompatible({ id, baseUrl, path?, apiKey, structuredOutput?, extraBody? })` | constructor | A route for a Chat Completions provider. `path` defaults to `/v1/chat/completions`. `extraBody` adds fields beneath the protocol's own (see Routes above). `apiKey` may be a non-empty placeholder for a server that does not check it; `Auth.bearer` only rejects an empty credential.                                                                               |
+| Export                                                                                | Kind        | Behavior                                                                                                                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Route`                                                                               | type        | `Config`: a configured, but not yet authenticated, protocol route.                                                                                                                                                                                                                             |
+| `Config`                                                                              | interface   | `{ id, protocol, endpoint, auth, framing, headers? }`.                                                                                                                                                                                                                                         |
+| `PreparedRequest`                                                                     | interface   | `{ routeId, protocolId, method: "POST", url, publicHeaders, body, bodyText }`: the credential-free sealed-step view. `body` is a fresh `Uint8Array` per preparation; do not mutate it.                                                                                                         |
+| `prepare(route, request)`                                                             | constructor | `Effect<PreparedRequest, ModelError>`. Validates the request against `ModelRequest`, lowers and validates the provider body, checks the public headers, and encodes canonical bytes, exactly once per call.                                                                                    |
+| `make(config)`                                                                        | constructor | Returns the config as a `Route`.                                                                                                                                                                                                                                                               |
+| `toModel(config)`                                                                     | constructor | `Effect<Model, never, RequestExecutor>`: builds the `Model` implementation from a composed route.                                                                                                                                                                                              |
+| `layer(config)`                                                                       | layer       | `Layer<Model, never, RequestExecutor>`: provides a configured route as the `Model` service.                                                                                                                                                                                                    |
+| `anthropic({ apiKey, baseUrl? })`                                                     | constructor | `Result<Route, ModelError>`. Sends `x-api-key` and `anthropic-version: 2023-06-01`. `baseUrl` defaults to `Endpoint.providerOrigins.anthropic`.                                                                                                                                                |
+| `openai({ apiKey, baseUrl? })`                                                        | constructor | `Result<Route, ModelError>`. Bearer auth against `api.openai.com`, or `baseUrl` when given.                                                                                                                                                                                                    |
+| `openaiResponsesCompatible({ id, baseUrl, apiKey, headers? })`                        | constructor | A route for a provider that serves the Responses API without OpenAI's native deferred-tool extensions; `supportsDeferred` is forced off. `baseUrl` is the origin and the constructor appends `/v1/responses`, so `https://openrouter.ai/api` becomes `https://openrouter.ai/api/v1/responses`. |
+| `openaiChatCompatible({ id, baseUrl, path?, apiKey, structuredOutput?, extraBody? })` | constructor | A route for a Chat Completions provider. `path` defaults to `/v1/chat/completions`. `extraBody` adds fields beneath the protocol's own (see Routes above). `apiKey` may be a non-empty placeholder for a server that does not check it; `Auth.bearer` only rejects an empty credential.        |
 
 Behavior the composition guarantees:
 
@@ -39915,11 +39915,11 @@ else wait(TerminalProtocol.reconnectDelay(attempt))
   `undefined` after; a connection that reaches `ready` starts the count again. Keystrokes are never queued while
   disconnected: input whose delivery is unknown is not safe to repeat.
 
-| Export | Contract |
-| --- | --- |
-| `EndReason` | Type: `closed`, `slept`, `lost`, `revoked`. |
-| `ServerControl` | Type union `{ type: "ready"; access: Access }` or `{ type: "ended"; reason: EndReason }`. |
-| `encodeServerControl` | `(control: ServerControl) => string`; JSON server control frame. |
+| Export                | Contract                                                                                                                                                                                                                                 |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `EndReason`           | Type: `closed`, `slept`, `lost`, `revoked`.                                                                                                                                                                                              |
+| `ServerControl`       | Type union `{ type: "ready"; access: Access }` or `{ type: "ended"; reason: EndReason }`.                                                                                                                                                |
+| `encodeServerControl` | `(control: ServerControl) => string`; JSON server control frame.                                                                                                                                                                         |
 | `decodeClientControl` | `(text: string) => Resize \| undefined`; admits only `type: "resize"` with integer cols/rows within `maxCols`/`maxRows`. Malformed JSON, unsupported types and invalid dimensions return undefined, without I/O or a thrown parse error. |
 
 ## SandboxTools
@@ -39998,18 +39998,18 @@ conflicted or changed, are left NUL-separated in `REBASE_PATHS` (`.git/smithers-
 and `rebasePaths`. Because it runs through `run`, it keeps that tool's at-most-once fence and its working-copy
 checkpoint.
 
-| Export | Contract |
-| --- | --- |
-| `ExecuteOptions` | `{ callId: string; callsDirectory: string }`, the durable call receipt identity/storage for `execute`. |
-| `CommandOptions` | `{ key: string; callsDirectory: string }`, the command identity/storage used to inspect or cancel work. |
-| `ReadResult`, `WriteResult` | Schemas/types: read carries `tool: "read"`, `path`, `content`, `bytes`, `truncated`; write carries `tool: "write"`, `path`, `bytes`. |
-| `ListResult` | Schema/type: `tool: "list"`, `path`, `entries: ReadonlyArray<Entry>`, `truncated`. |
-| `StatusEntry`, `StatusResult` | Entry schema/type: `path`, `index`, `worktree`, optional `from`; result schema/type: `tool: "status"`, nullable `branch`, and `entries`. |
-| `DiffResult` | Schema/type: `tool: "diff"`, `diff`, `bytes`, `truncated`. |
-| `ToolFailure` | Schema/type union of `ToolRefused`, `ToolLost`, `ToolUnavailable`; no successful receipt is fabricated after these failures. |
-| `Checkpoint` | `{ head: string; patch: Uint8Array; bundle?: Uint8Array }`, the restore input preserving revision and pending changes. |
-| `RebaseOptions` | `{ branch: string; onto: string; expect?: string; timeoutSeconds?: number }`; optional expected head guards concurrent movement. |
-| `Rebased` | Tagged result: `Current`, `Unrelated`, `Conflicted`, `Planned`, `Moved`, `Applied`; each has `tree`. Conflicted has `paths`; Planned/Applied also have `result` and `paths`. |
+| Export                        | Contract                                                                                                                                                                     |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ExecuteOptions`              | `{ callId: string; callsDirectory: string }`, the durable call receipt identity/storage for `execute`.                                                                       |
+| `CommandOptions`              | `{ key: string; callsDirectory: string }`, the command identity/storage used to inspect or cancel work.                                                                      |
+| `ReadResult`, `WriteResult`   | Schemas/types: read carries `tool: "read"`, `path`, `content`, `bytes`, `truncated`; write carries `tool: "write"`, `path`, `bytes`.                                         |
+| `ListResult`                  | Schema/type: `tool: "list"`, `path`, `entries: ReadonlyArray<Entry>`, `truncated`.                                                                                           |
+| `StatusEntry`, `StatusResult` | Entry schema/type: `path`, `index`, `worktree`, optional `from`; result schema/type: `tool: "status"`, nullable `branch`, and `entries`.                                     |
+| `DiffResult`                  | Schema/type: `tool: "diff"`, `diff`, `bytes`, `truncated`.                                                                                                                   |
+| `ToolFailure`                 | Schema/type union of `ToolRefused`, `ToolLost`, `ToolUnavailable`; no successful receipt is fabricated after these failures.                                                 |
+| `Checkpoint`                  | `{ head: string; patch: Uint8Array; bundle?: Uint8Array }`, the restore input preserving revision and pending changes.                                                       |
+| `RebaseOptions`               | `{ branch: string; onto: string; expect?: string; timeoutSeconds?: number }`; optional expected head guards concurrent movement.                                             |
+| `Rebased`                     | Tagged result: `Current`, `Unrelated`, `Conflicted`, `Planned`, `Moved`, `Applied`; each has `tree`. Conflicted has `paths`; Planned/Applied also have `result` and `paths`. |
 
 ## SandboxCommand
 
@@ -40071,8 +40071,8 @@ Node.all({ lint: lint.call(target), test: test.call(target) })
 - **The host owns the machine.** One machine per `(target.run, job)`. The Smithers app's is a container of the branch
   sandbox's image that reaches the package registry and nothing else.
 
-| Export | Contract |
-| --- | --- |
+| Export    | Contract                                                                                                                                                                                                                                                                                               |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `RunStep` | Action `ci/job/Step`: payload `{ target: Target; job: Job; index: number; sofar: Result }`, success `Result`, typed `MachineUnavailable` failure and the CI retry policy. Dispatch through the durable engine with its registered implementation, not by calling a model or spawning another job loop. |
 
 ## SandboxMerge

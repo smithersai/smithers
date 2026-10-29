@@ -1207,11 +1207,9 @@ The drafts, in node order, ready for `Plan.compile` or `Plan.append` unchanged. 
 
 The recoverable topology issues recorded during the build, such as a missing continuation builder or a continuation that produced no node. Fatal refusals, including computing on a planned value and a recursive inline `call`, throw from `Graph.build` and never appear here.
 
-
-| Export | Contract |
-| --- | --- |
+| Export       | Contract                                                                                                                                                                                                                                                                                           |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Inspection` | Result of `inspect(flow)`: node ids/kinds/dependencies/optional labels, edges, step ids/labels, diagnostics `{ code, message }`, and optional prompt source. It inspects an unresolved input in the same guest that loads the declaration; it does not choose a sample input or sandbox body code. |
-
 
 ## HumanTask
 
@@ -1520,12 +1518,10 @@ Registers a flow with the runtime and installs the handler that drives its body.
 
 Builds the interpreter and the action implementations against one fresh, isolated `Action.Implementations` table. The types require every action the flow names. `callbackIdentity` defaults to `"stable"`. A conflicting same-tag registration dies during layer construction unless it passes `{ override: true }`.
 
-
-| Export | Contract |
-| --- | --- |
-| `ExecutionOptions` | Extends `Graph.BuildOptions` with optional `onHeartbeat(executionId): Effect<void>`. Applies at registration and every resume, not automatically to child registrations. |
-| `maximumDispatchDigests` | `16`, maximum distinct step-key digests named by one node settlement; further dispatches keep the earliest digests to bound the journal entry. |
-
+| Export                   | Contract                                                                                                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ExecutionOptions`       | Extends `Graph.BuildOptions` with optional `onHeartbeat(executionId): Effect<void>`. Applies at registration and every resume, not automatically to child registrations. |
+| `maximumDispatchDigests` | `16`, maximum distinct step-key digests named by one node settlement; further dispatches keep the earliest digests to bound the journal entry.                           |
 
 ## Poll
 
@@ -1843,12 +1839,10 @@ Resolves `rounds` (at least two) and `on`: `stop` (the default), `park`, or `esc
 
 The state before the first round. `State`, `Policy`, and `Stalled` are schemas, so a trampoline carries the state in its payload and replay reads the same verdict.
 
-
-| Export | Contract |
-| --- | --- |
-| `Signal` | Schema/type: `"tree"`, `"checks"`, or `"output"`. |
+| Export        | Contract                                                                                                                                                                                                              |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Signal`      | Schema/type: `"tree"`, `"checks"`, or `"output"`.                                                                                                                                                                     |
 | `Observation` | `{ tree?: string; checks?: ReadonlyArray<string>; output?: unknown }` input to `observe`. Check order is ignored, empty check lists are not compared; output is compared by canonical JSON digest when representable. |
-
 
 ## StepIdentity
 
@@ -2014,34 +2008,33 @@ Provide a runtime that implements `FlowRuntime`, then run `Deploy.execute({ id: 
 
 ## `ExternalJob`
 
-| Export | Contract |
-| --- | --- |
-| `StatusOptions` | `{ waitMs: number }`, the adapter status call's wait allowance in milliseconds. |
-| `Operations` | `Operations<P, H, A, E, R>` adapter contract: `start(payload, key): Effect<H, E, R>`, `status(handle, key, options?): Effect<Status, E, R>`, `collect(handle, key, exited): Effect<A, E \| Again, R>`, `cancel(handle, key): Effect<void, E, R>`, optional `abandon(payload, key): Effect<void, E, R>`. Include the adapter failure union in the declaration's error schema. Cancel/abandon inside a step retain engine retries; rollback without a step attempts them once. |
-| `stepWaits` | Histogram `flows_external_job_step_wait_ms`, measuring how long run waited for job work inside its calling step; labels `job` and `outcome` (`collected`, `handed_off`, `interrupted`). |
-
+| Export          | Contract                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `StatusOptions` | `{ waitMs: number }`, the adapter status call's wait allowance in milliseconds.                                                                                                                                                                                                                                                                                                                                                                                              |
+| `Operations`    | `Operations<P, H, A, E, R>` adapter contract: `start(payload, key): Effect<H, E, R>`, `status(handle, key, options?): Effect<Status, E, R>`, `collect(handle, key, exited): Effect<A, E \| Again, R>`, `cancel(handle, key): Effect<void, E, R>`, optional `abandon(payload, key): Effect<void, E, R>`. Include the adapter failure union in the declaration's error schema. Cancel/abandon inside a step retain engine retries; rollback without a step attempts them once. |
+| `stepWaits`     | Histogram `flows_external_job_step_wait_ms`, measuring how long run waited for job work inside its calling step; labels `job` and `outcome` (`collected`, `handed_off`, `interrupted`).                                                                                                                                                                                                                                                                                      |
 
 ## `RunMetrics`
 
-| Export | Contract |
-| --- | --- |
-| `doors`, `Door`, `actors`, `Actor`, `placements`, `Placement`, `outcomes`, `Outcome`, `waitKinds`, `WaitKind` | Readonly closed vocabularies and their value types; door/actor/placement types also admit `other`. |
-| `door`, `actor`, `placement` | `(value: string \| undefined) =>` the respective label type; absent values become `unknown`, unlisted values `other`. |
-| `waitKind` | `(reason: string) => WaitKind`; `event` maps to `signal`, unrecognized reasons to `other`. |
-| `Origin`, `CurrentOrigin`, `withOrigin` | Origin is `{ door: string; actor: string }`. `CurrentOrigin` is a context reference, defaulting to unknown/unknown; `withOrigin(origin)(effect)` or `withOrigin(effect, origin)` scopes it without adding requirements. |
-| `LineLevel`, `layerInfoLines` | Context reference `Debug` or `Info` (default Debug), and the layer selecting Info usage lines. |
-| `Labels`, `makeLabels` | `makeLabels(limit): Labels` supplies `of(value): string` and `size(): number`; after `limit` distinct cleaned labels, unseen values become `other`. |
-| `clean`, `maxFlows`, `maxModels`, `maxCodes` | `clean(value): string` keeps identifier characters, cuts to 96 characters, and uses `unknown` for empty output. Per-process distinct-label limits: 200 flow tags, 50 model ids, 100 failure codes. |
-| `flow`, `model`, `code` | `(value: string) => string`; bounded label constructors. `code("none")` retains the success sentinel. |
-| `settlement` | `(exit: Exit<unknown, unknown>) => { outcome: Outcome; code: string }`; classifies success, typed failures, interpreter refusals, defects and interruption without diagnostic content. |
-| `durationBoundaries` | Readonly millisecond histogram buckets, from 10 ms through one day. |
-| `runsStarted`, `runsSettled`, `runDuration`, `runFirstStep` | Metrics `flows_runs_started`, `flows_runs_settled`, `flows_run_duration_ms`, `flows_run_first_step_ms`; counters then millisecond histograms. |
-| `steps`, `stepFailures`, `stepRetries`, `waits`, `waitDuration` | Counters `flows_steps`, `flows_step_failures`, `flows_step_retries`, `flows_waits`, and millisecond histogram `flows_wait_ms`. |
-| `modelCalls`, `modelTokens` | Counters `flows_model_calls`, `flows_model_tokens`; tokens split by input/output direction. |
-| `RunLabels` | `{ flow: string; door: string; actor: string; placement: string }` common recording fields. |
-| `recordStarted`, `recordSettled` | Return `Effect<void>`: started takes `RunLabels` plus `executionId`; settled also takes `outcome`, `code`, optional `durationMs`. |
-| `recordFirstStep`, `recordStep` | Return `Effect<void>`: first step takes `{ flow, placement, delayMs }`; step takes `{ flow, attempt, outcome, code?, runId? }`, counting retries after attempt 1 and recording failures. |
-| `recordWait`, `recordWaitEnded` | Return `Effect<void>`: `{ flow, kind: WaitKind }` counts a park; ended adds `durationMs` for its histogram. |
-| `recordModelCall` | `({ flow, model, outcome, inputTokens?, outputTokens? }) => Effect<void>`; records one provider call and its positive reported token counts. |
+| Export                                                                                                        | Contract                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `doors`, `Door`, `actors`, `Actor`, `placements`, `Placement`, `outcomes`, `Outcome`, `waitKinds`, `WaitKind` | Readonly closed vocabularies and their value types; door/actor/placement types also admit `other`.                                                                                                                      |
+| `door`, `actor`, `placement`                                                                                  | `(value: string \| undefined) =>` the respective label type; absent values become `unknown`, unlisted values `other`.                                                                                                   |
+| `waitKind`                                                                                                    | `(reason: string) => WaitKind`; `event` maps to `signal`, unrecognized reasons to `other`.                                                                                                                              |
+| `Origin`, `CurrentOrigin`, `withOrigin`                                                                       | Origin is `{ door: string; actor: string }`. `CurrentOrigin` is a context reference, defaulting to unknown/unknown; `withOrigin(origin)(effect)` or `withOrigin(effect, origin)` scopes it without adding requirements. |
+| `LineLevel`, `layerInfoLines`                                                                                 | Context reference `Debug` or `Info` (default Debug), and the layer selecting Info usage lines.                                                                                                                          |
+| `Labels`, `makeLabels`                                                                                        | `makeLabels(limit): Labels` supplies `of(value): string` and `size(): number`; after `limit` distinct cleaned labels, unseen values become `other`.                                                                     |
+| `clean`, `maxFlows`, `maxModels`, `maxCodes`                                                                  | `clean(value): string` keeps identifier characters, cuts to 96 characters, and uses `unknown` for empty output. Per-process distinct-label limits: 200 flow tags, 50 model ids, 100 failure codes.                      |
+| `flow`, `model`, `code`                                                                                       | `(value: string) => string`; bounded label constructors. `code("none")` retains the success sentinel.                                                                                                                   |
+| `settlement`                                                                                                  | `(exit: Exit<unknown, unknown>) => { outcome: Outcome; code: string }`; classifies success, typed failures, interpreter refusals, defects and interruption without diagnostic content.                                  |
+| `durationBoundaries`                                                                                          | Readonly millisecond histogram buckets, from 10 ms through one day.                                                                                                                                                     |
+| `runsStarted`, `runsSettled`, `runDuration`, `runFirstStep`                                                   | Metrics `flows_runs_started`, `flows_runs_settled`, `flows_run_duration_ms`, `flows_run_first_step_ms`; counters then millisecond histograms.                                                                           |
+| `steps`, `stepFailures`, `stepRetries`, `waits`, `waitDuration`                                               | Counters `flows_steps`, `flows_step_failures`, `flows_step_retries`, `flows_waits`, and millisecond histogram `flows_wait_ms`.                                                                                          |
+| `modelCalls`, `modelTokens`                                                                                   | Counters `flows_model_calls`, `flows_model_tokens`; tokens split by input/output direction.                                                                                                                             |
+| `RunLabels`                                                                                                   | `{ flow: string; door: string; actor: string; placement: string }` common recording fields.                                                                                                                             |
+| `recordStarted`, `recordSettled`                                                                              | Return `Effect<void>`: started takes `RunLabels` plus `executionId`; settled also takes `outcome`, `code`, optional `durationMs`.                                                                                       |
+| `recordFirstStep`, `recordStep`                                                                               | Return `Effect<void>`: first step takes `{ flow, placement, delayMs }`; step takes `{ flow, attempt, outcome, code?, runId? }`, counting retries after attempt 1 and recording failures.                                |
+| `recordWait`, `recordWaitEnded`                                                                               | Return `Effect<void>`: `{ flow, kind: WaitKind }` counts a park; ended adds `durationMs` for its histogram.                                                                                                             |
+| `recordModelCall`                                                                                             | `({ flow, model, outcome, inputTokens?, outputTokens? }) => Effect<void>`; records one provider call and its positive reported token counts.                                                                            |
 
 Recording functions need no host service and have no typed failure. They use Effect's metric/log context; they do not start work or read payloads.

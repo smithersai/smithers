@@ -264,7 +264,13 @@ describe("RunMetrics recorders", () => {
   it.effect("records a failed step attempt by its code: flow.step.failed at Warn and flows_step_failures", () =>
     Effect.gen(function*() {
       const steps = Effect.gen(function*() {
-        yield* RunMetrics.recordStep({ flow: "repo/clone", attempt: 1, outcome: "failed", code: "sql:Connection", runId: "r-1" })
+        yield* RunMetrics.recordStep({
+          flow: "repo/clone",
+          attempt: 1,
+          outcome: "failed",
+          code: "sql:Connection",
+          runId: "r-1"
+        })
         yield* RunMetrics.recordStep({ flow: "repo/clone", attempt: 2, outcome: "failed" })
         yield* RunMetrics.recordStep({ flow: "repo/clone", attempt: 3, outcome: "succeeded", code: "ignored" })
         yield* RunMetrics.recordStep({ flow: "repo/clone", attempt: 4, outcome: "interrupted" })

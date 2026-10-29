@@ -249,7 +249,7 @@ describe("a persisted plan driven end to end under the production composition", 
     "re-runs only the cone below an edited input; every unchanged branch is a cache hit",
     () =>
       Effect.gen(function*() {
-        const root = (yield* tempDirectory("flows-plan-"))
+        const root = yield* tempDirectory("flows-plan-")
         const plan = yield* withCrypto(Plan.compile({ planId: "prod-plan", flow: "example/Render", nodes: graph() }))
         const first: Array<string> = []
         const second: Array<string> = []
@@ -318,7 +318,7 @@ describe("a persisted plan driven end to end under the production composition", 
 
   it.effect("pins a source-glob expansion once per run and re-keys when a new file matches", () =>
     Effect.gen(function*() {
-      const root = (yield* tempDirectory("flows-plan-glob-"))
+      const root = yield* tempDirectory("flows-plan-glob-")
       const output = join(root, "out/glob.txt")
       const plan = yield* withCrypto(Plan.compile({
         planId: "prod-glob-plan",
@@ -366,7 +366,7 @@ describe("a persisted plan driven end to end under the production composition", 
 
   it.effect("pins source members of a mixed glob while observing producer outputs after settlement", () =>
     Effect.gen(function*() {
-      const root = (yield* tempDirectory("flows-plan-mixed-glob-"))
+      const root = yield* tempDirectory("flows-plan-mixed-glob-")
       const glob: FileSet.Glob = { _tag: "Glob", include: ["src/**"] }
       const plan = yield* withCrypto(Plan.compile({
         planId: "mixed-glob-plan",
@@ -436,7 +436,7 @@ describe("a persisted plan driven end to end under the production composition", 
 
   it.effect("pins exact and glob inputs before a declared future writer or remover", () =>
     Effect.gen(function*() {
-      const root = (yield* tempDirectory("flows-plan-future-writer-"))
+      const root = yield* tempDirectory("flows-plan-future-writer-")
       const plan = yield* withCrypto(Plan.compile({
         planId: "future-writer-plan",
         flow: "example/FutureWriter",
@@ -492,7 +492,7 @@ describe("a persisted plan driven end to end under the production composition", 
 
   it.effect("executes a read-write-read-write-read sequence against each intended file version", () =>
     Effect.gen(function*() {
-      const root = (yield* tempDirectory("flows-plan-file-versions-"))
+      const root = yield* tempDirectory("flows-plan-file-versions-")
       const plan = yield* withCrypto(Plan.compile({
         planId: "file-versions-plan",
         flow: "example/FileVersions",
@@ -545,7 +545,7 @@ describe("a persisted plan driven end to end under the production composition", 
 
   it.effect("replays a self-updating source after independently reopening the database", () =>
     Effect.gen(function*() {
-      const root = (yield* tempDirectory("flows-plan-source-reopen-"))
+      const root = yield* tempDirectory("flows-plan-source-reopen-")
       mkdirSync(join(root, ".flows"))
       const database = join(root, ".flows/state.sqlite")
       const plan = yield* withCrypto(Plan.compile({
@@ -605,7 +605,7 @@ describe("a persisted plan driven end to end under the production composition", 
 
   it.effect("refuses an environment change on reopen before repeating a completed file update", () =>
     Effect.gen(function*() {
-      const root = (yield* tempDirectory("flows-plan-environment-reopen-"))
+      const root = yield* tempDirectory("flows-plan-environment-reopen-")
       mkdirSync(join(root, ".flows"))
       const database = join(root, ".flows/state.sqlite")
       const plan = yield* withCrypto(Plan.compile({
@@ -662,7 +662,7 @@ describe("a persisted plan driven end to end under the production composition", 
 
   it.effect("recovers prior pins and appended-generation glob membership across independent database openings", () =>
     Effect.gen(function*() {
-      const root = (yield* tempDirectory("flows-plan-generation-reopen-"))
+      const root = yield* tempDirectory("flows-plan-generation-reopen-")
       mkdirSync(join(root, ".flows"))
       const database = join(root, ".flows/state.sqlite")
       const base = yield* withCrypto(Plan.compile({
@@ -705,7 +705,7 @@ describe("a persisted plan driven end to end under the production composition", 
 
   it.effect("enumerates producer candidates only inside exact, glob, and tree writer scopes", () =>
     Effect.gen(function*() {
-      const root = (yield* tempDirectory("flows-plan-writer-scopes-"))
+      const root = yield* tempDirectory("flows-plan-writer-scopes-")
       const plan = yield* withCrypto(Plan.compile({
         planId: "writer-scope-plan",
         flow: "example/WriterScopes",
@@ -764,7 +764,7 @@ describe("a persisted plan driven end to end under the production composition", 
 
   it.effect("pins a newly observed appended-generation source at append time exactly once", () =>
     Effect.gen(function*() {
-      const root = (yield* tempDirectory("flows-plan-append-pin-"))
+      const root = yield* tempDirectory("flows-plan-append-pin-")
       const sourceGlob: FileSet.Glob = { _tag: "Glob", include: ["src/**"] }
       const plan = yield* withCrypto(Plan.compile({
         planId: "append-pin-plan",
@@ -847,7 +847,7 @@ describe("a persisted plan driven end to end under the production composition", 
 
   it.effect("admits only the read glob's own members from an overlapping writer glob's scope", () =>
     Effect.gen(function*() {
-      const root = (yield* tempDirectory("flows-plan-writer-scope-"))
+      const root = yield* tempDirectory("flows-plan-writer-scope-")
       const plan = yield* withCrypto(Plan.compile({
         planId: "writer-scope-plan",
         flow: "example/WriterScope",
@@ -892,7 +892,7 @@ describe("a persisted plan driven end to end under the production composition", 
 
   it.effect("skips an exact producer path that stats as a directory at dispatch", () =>
     Effect.gen(function*() {
-      const root = (yield* tempDirectory("flows-plan-dir-producer-"))
+      const root = yield* tempDirectory("flows-plan-dir-producer-")
       const plan = yield* withCrypto(Plan.compile({
         planId: "dir-producer-plan",
         flow: "example/DirProducer",

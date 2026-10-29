@@ -174,7 +174,7 @@ const vibePackage = (root: string, name: string) => {
     [
       "export error Missing { key: string }",
       "",
-      "export function lookup(key: string): string!Missing {",
+      "export function lookup(key: string): Effect<string, Missing> {",
       "  if (key === \"\") throw new Missing({ key })",
       "  return key.toUpperCase()",
       "}",
@@ -256,7 +256,7 @@ it("keeps tsc for a package with no VibeLang in reach, and does not follow insta
 
 it("fails the build on a type error in a .vibe module", async () => {
   const root = vibePackage(scratch(), "vibe-broken")
-  write(join(root, "src/Broken.vibe"), "export function count(): number!! {\n  return \"none\"\n}\n")
+  write(join(root, "src/Broken.vibe"), "export function count(): Effect<number> {\n  return \"none\"\n}\n")
   await expect(buildLibrary(root)).rejects.toThrow(/^package compiler exited 2$/)
   expect(existsSync(join(root, "dist/cjs"))).toBe(false)
 })

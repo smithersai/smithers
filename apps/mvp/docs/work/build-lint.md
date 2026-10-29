@@ -1,0 +1,26 @@
+---
+title: Build package lint and workspace lint audit
+status: in-progress
+area: build
+owner: Codex lander W22
+updated: 2026-10-29
+links: [../../../../packages/smithers/build/PACKAGE.ts, ../../../../packages/smithers/build/infra/PACKAGE.ts]
+---
+
+Fix the duplicate filesystem imports and redundant rate-limit assertion in the build infrastructure tests. Reproduce on Latitude, trace their introducing commits and the landing gates, and validate build lint, typecheck, coverage suites, and every workspace lint target. Library catalog entries: `@smthrs/build`, `@smthrs/build-infra`, and `@smthrs/targets`.
+
+The topology test introduced both duplicate-import errors in `1dd997ca9810f4e3e5baf8edec9815aa237249b7` (#2812). The colliding-stage budget test introduced its unnecessary `RateLimit` assertion in `725e310603cfe001a40e85f6ef24880de918e44d` (#2670). Combine the filesystem imports and let TypeScript infer the rate-limit implementation; retain all behavioral assertions.
+
+`//packages/smithers/build/infra:lint` declares the infra files, but its local ESLint config excludes `worker/test/**` and `**/*.test.ts`. The parent `//packages/smithers/build:lint` omits the nested package entirely, while the parent's `pnpm lint` script traverses it with stricter rules. Both introducing commits already contain that scope difference. Current lander job definitions run app lint, selected SDK lint, and the root target-index check, rather than every workspace lint target; their default SDK job selects platform-browser, not build or build-infra. No lint configuration is changed by this fix.
+
+The actual main revision `572b7369` ran 323 targets without cache reads: 296 passed and 27 failed. Beyond the reported build script errors, these include formatting, import/type assertions, missing JSDoc, FlowStore cleanup swallowing interruption, stale factory projection, and the documentation drift check timing out. Clean up the reported source files and formatting, regenerate projections through their owner, and preserve a failing cleanup-interruption regression. A large argument list also exhausted the failure diagnostic budget before its exit code or output could be reported; give argument vectors a smaller diagnostic budget, with a regression using thousands of source paths.
+
+Latitude package receipts: build lint/check/full suite pass, 328 tests, coverage 97.26% statements / 93.07% branches / 95.5% functions / 98.61% lines at unchanged thresholds. Build-infra lint/check/full suite pass at 100% in all four metrics. The interruption regression fails on the original FlowStore handler. Other catalog entries used for the workspace corrections: `@smthrs/flow`, `@smthrs/agent`, `@smthrs/platform-node`, and `@smthrs/gateway`.
+
+The flow package passes typecheck and its full 985-test suite at 100% in all four metrics. FlowStore's 64-test focused suite reaches 100% in all four metrics, including refusal to publish when confinement fails. Build-cli passes typecheck and 39 diagnostic/cache tests; the oversized-argument regression fails on the original renderer. Generated site pages and the factory projection are regenerated through their owners.
+
+All 18 manual Jev lint targets were explicitly attempted and refused execution without `AI_GATEWAY_API_KEY`; the normal workspace wildcard excludes these targets. Overall qualification remains blocked on an authorized credential-aware runner and the docs drift timeout. The final uncached automatic run passed 322 of 323 targets, with no skips; only `//:docsDrift` exceeded its five-minute deadline. This reproduces with both debug and source-matching release native helpers, without changing lint configuration or deadlines. An eight-second debug CPU sample spent 75% of its samples in native filesystem helper spawning. A direct docs flow eventually completed all 51 tarball checks, after its diagnostic parent invocation had already timed out; that is not a passing command receipt. Full workspace lint is not qualified green.
+
+W22 lander profile (2026-10-29): the source-matching release helper does not remove the startup cost. The durable `docs-sync` check completed successfully in 853.755 seconds, including all 51 tarballs; the remaining projection checks took 4.956 seconds. The CPU profile covers 853.314 seconds, with 735.743 seconds (86.2%) sampled in native filesystem-helper process spawning. Separately, tarball checks and projections completed in 47.850 seconds. Thus the five-minute target deadline cuts off valid work predominantly spent in the guarded host filesystem, rather than a hung tarball or a missing helper. Raise only `docsDrift` to 20 minutes: the measured complete 858.711-second check plus 341 seconds of host-load headroom. Keep every filesystem guard, tarball assertion, and projection check; no performance improvement is claimed.
+
+W22 reproduced all 27 main failures with the release helper, the same toolchain, and caching disabled: 16 formatting targets, eight lint targets, JSDoc, factory projection, and the docs timeout. The first 26 are source or generated-content defects, not missing dependencies. All 18 manual Jev targets remain blocked by the model-key prerequisite and gateway HTTP 402; W22 does not run them. Final automatic lint receipts are recorded by the lander.

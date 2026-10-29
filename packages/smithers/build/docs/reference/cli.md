@@ -557,8 +557,8 @@ smithers-build index '//...'
 smithers-build index '//packages/api/...' --format json
 ```
 
-| Argument | Description |
-| --- | --- |
+| Argument  | Description                |
+| --------- | -------------------------- |
 | `pattern` | A target label or pattern. |
 
 Accepts the [common options](#common-options): `--workspace` (`-w`) and

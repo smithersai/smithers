@@ -154,7 +154,13 @@ describe("ExternalJob run", () => {
         }
         expect(yield* Fiber.join(running)).toBe("collected handle:w")
         // Reads at 0, 400 and 800, each the moment the one before it ended: no schedule's sleep between them.
-        expect(p.calls).toEqual(["start w#g1", "status w#g1 1000", "status w#g1 600", "status w#g1 200", "collect w#g1"])
+        expect(p.calls).toEqual([
+          "start w#g1",
+          "status w#g1 1000",
+          "status w#g1 600",
+          "status w#g1 200",
+          "collect w#g1"
+        ])
         expect(yield* Clock.currentTimeMillis).toBe(900)
       })
     )
@@ -410,7 +416,9 @@ describe("ExternalJob run", () => {
       yield* on(
         held,
         Effect.gen(function*() {
-          const running = yield* Effect.forkChild(Job.run({ value: "m3" }, { executionId: "m3", operations: held.operations }))
+          const running = yield* Effect.forkChild(
+            Job.run({ value: "m3" }, { executionId: "m3", operations: held.operations })
+          )
           yield* turns
           yield* Fiber.interrupt(running)
         })

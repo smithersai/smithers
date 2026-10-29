@@ -75,7 +75,7 @@ Every rule takes:
 | --- | --- | --- |
 | `kind` | `"forbid"`, `"forbidNames"`, `"rootImportsOnly"`, `"forbidCalls"` or `"forbidHostModules"` | What the rule checks. |
 | `because` | `string`, required | Why, naming the `AGENTS.md` rule that governs it. Every violation prints it. |
-| `files` | `ReadonlyArray<string>`, optional | Package-relative globs of the sources the rule reads, matched with `node:path` `matchesGlob`: `*` stops at `/`, `**` crosses it. Default: every source. |
+| `files` | `ReadonlyArray<string>`, optional | Package-relative globs of the sources the rule reads, matched with `node:path` `matchesGlob`: `*` stops at `/`, `**` crosses it. Default: every source. Each rule must cover at least one source. |
 | `allowTypeOnly` | `boolean`, optional, not on `forbidCalls` | Let through a reference that loads nothing at runtime: `import type`, `export type`, a `type` modifier on a named element, or an `import()` type. Default `false`: type-only imports count. `import { type A } from "x"` still counts as importing `x`, because `verbatimModuleSyntax` keeps it. |
 
 | Kind | Field | Fails on |
@@ -101,7 +101,9 @@ A `forbidCalls` rule reads each call's callee as text, with parentheses, `as`, `
 
 An exact entry matches only its own text, so `page.route` misses `tab.page.route`. Use `*.<member>` when a member name belongs to one API, as Playwright's `route` does; a `*` anywhere else is refused. Both forms are syntactic: neither sees a callee reached through destructuring, as in `const { route } = page; route(url, handler)`, and an exact entry does not see `const model = yield* Model.Model; model.stream(request)`, an alias or a parameter.
 
-A source is a `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs` or VibeLang `.vibe` file under `cwd`, outside `node_modules`, `dist`, `coverage`, `target`, `tmp`, `test-results`, `playwright-report`, any dot-directory, and any nested directory with its own `package.json`. Each source is parsed once with the TypeScript compiler API, in `src/ImportAnalysis.ts`, which the repository's dependency-boundary gate and circular-import guard share. A `.vibe` file parses as TypeScript: VibeLang's imports, exports, type arguments and calls are TypeScript syntax, and the parser recovers from VibeLang's own declarations. A string or comment that mentions an import is not one.
+A source is a `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs` or VibeLang `.vibe` file under `cwd`, outside `node_modules`, `dist`, `coverage`, `target`, `tmp`, `test-results`, `playwright-report`, any dot-directory, and any nested directory with its own `package.json`. Before parsing, the check refuses every rule covering no source, reporting its zero-based index, kind, patterns and reason. An omitted `files` is reported as `["**/*"]`. There is no empty-scope exception.
+
+Each source is parsed once with the TypeScript compiler API, in `src/ImportAnalysis.ts`, which the repository's dependency-boundary gate and circular-import guard share. A string or comment that mentions an import is not one. **Known VibeLang blocker:** `.vibe` still goes through TypeScript error recovery, which can miss VibeLang syntax. It must use compiler output before migrations can rely on it. The installed `vibelang@0.0.8` project API emits JavaScript, erasing type-only imports that these rules forbid by default; it exposes no TypeScript emit preserving those references. The [work note](../../apps/mvp/docs/work/importrules-vibelang-emit.md) records the upstream gap and reproduction.
 
 The target runs `scripts/import-rules.mjs <cwd> '<rules JSON>'` in `cwd`. On a violation it prints one line per violation to stderr and exits 1:
 
@@ -111,7 +113,7 @@ ImportRules failed in apps/mvp: 1 violation of 5 rules over 69 source files.
 - apps/mvp/src/AppContext.tsx:1 imports "effect" (forbid). A component renders state and dispatches actions; ...
 ```
 
-With none it prints `ImportRules passed in <cwd>: <n> rules over <n> source files.` and exits 0. Invalid rules exit 2.
+With none it prints `ImportRules passed in <cwd>: <n> rules over <n> source files.` and exits 0. Invalid rules and empty rule scopes exit 2.
 
 Rules that hold for every package, such as the ban on substitute durable runtimes, belong to the repository-wide dependency-boundary gate (`contracts/check-dependency-boundaries.mjs`), not to an `ImportRules` default: that gate also covers packages with no `PACKAGE.ts`.
 

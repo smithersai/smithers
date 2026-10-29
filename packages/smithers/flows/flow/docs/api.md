@@ -202,11 +202,9 @@ Building also enforces effect authority. A flow that declared an `effects` envel
 
 A call node's key material folds in the declared schemas as their JSON Schema documents, so a change to what a callee accepts or produces re-keys the call. That identity is JSON-Schema-shaped, and the limit is worth stating: two schemas whose decoders disagree can serialize to the same document, so changing only a codec's behaviour does NOT re-key the call, and a result recorded under the old codec is replayed under the new one. Effect codecs are not serializable, so nothing can close this automatically. An author who changes a transformation and needs the call re-keyed renames the declaration.
 
-
-| Export | Contract |
-| --- | --- |
+| Export       | Contract                                                                                                                                                                                                                                                                                           |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Inspection` | Result of `inspect(flow)`: node ids/kinds/dependencies/optional labels, edges, step ids/labels, diagnostics `{ code, message }`, and optional prompt source. It inspects an unresolved input in the same guest that loads the declaration; it does not choose a sample input or sandbox body code. |
-
 
 ## `Interpreter`
 
@@ -239,12 +237,10 @@ remains a separate release requirement.
 
 The walk is demand-driven from the root rather than a sweep over the node list, because dependency order puts both branch arms before the branch that chooses between them, and executing an arm to discover it was not taken is exactly what static topology exists to avoid.
 
-
-| Export | Contract |
-| --- | --- |
-| `ExecutionOptions` | Extends `Graph.BuildOptions` with optional `onHeartbeat(executionId): Effect<void>`. Applies at registration and every resume, not automatically to child registrations. |
-| `maximumDispatchDigests` | `16`, maximum distinct step-key digests named by one node settlement; further dispatches keep the earliest digests to bound the journal entry. |
-
+| Export                   | Contract                                                                                                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ExecutionOptions`       | Extends `Graph.BuildOptions` with optional `onHeartbeat(executionId): Effect<void>`. Applies at registration and every resume, not automatically to child registrations. |
+| `maximumDispatchDigests` | `16`, maximum distinct step-key digests named by one node settlement; further dispatches keep the earliest digests to bound the journal entry.                           |
 
 ## `Sleep`
 
@@ -352,13 +348,11 @@ resolves an execution's flow by its tag. Exhaustion fails
 `ExternalJobLost` (`infra`), while timeout fails `ExternalJobTimedOut`
 (`dependency`). See [Run an external job](./guides/run-an-external-job.md).
 
-
-| Export | Contract |
-| --- | --- |
-| `StatusOptions` | `{ waitMs: number }`, the adapter status call's wait allowance in milliseconds. |
-| `Operations` | `Operations<P, H, A, E, R>` adapter contract: `start(payload, key): Effect<H, E, R>`, `status(handle, key, options?): Effect<Status, E, R>`, `collect(handle, key, exited): Effect<A, E \| Again, R>`, `cancel(handle, key): Effect<void, E, R>`, optional `abandon(payload, key): Effect<void, E, R>`. Include the adapter failure union in the declaration's error schema. Cancel/abandon inside a step retain engine retries; rollback without a step attempts them once. |
-| `stepWaits` | Histogram `flows_external_job_step_wait_ms`, measuring how long run waited for job work inside its calling step; labels `job` and `outcome` (`collected`, `handed_off`, `interrupted`). |
-
+| Export          | Contract                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `StatusOptions` | `{ waitMs: number }`, the adapter status call's wait allowance in milliseconds.                                                                                                                                                                                                                                                                                                                                                                                              |
+| `Operations`    | `Operations<P, H, A, E, R>` adapter contract: `start(payload, key): Effect<H, E, R>`, `status(handle, key, options?): Effect<Status, E, R>`, `collect(handle, key, exited): Effect<A, E \| Again, R>`, `cancel(handle, key): Effect<void, E, R>`, optional `abandon(payload, key): Effect<void, E, R>`. Include the adapter failure union in the declaration's error schema. Cancel/abandon inside a step retain engine retries; rollback without a step attempts them once. |
+| `stepWaits`     | Histogram `flows_external_job_step_wait_ms`, measuring how long run waited for job work inside its calling step; labels `job` and `outcome` (`collected`, `handed_off`, `interrupted`).                                                                                                                                                                                                                                                                                      |
 
 ## `Fault`
 
@@ -379,12 +373,10 @@ A failed agent run, and a launch the executor refused, journal the fault on `con
 
 `Stall` is the stall breaker round loops share. `Stall.policy({ rounds, on })` resolves `rounds` (at least two) and `on` (`stop`, the default, `park`, or `escalate`). `Stall.observe(policy, state, observation)` folds one round into the carried `State` and returns the next state with a `Stalled` verdict once one signal held for `rounds` rounds in a row. An observation reports any of `tree` (a tree fingerprint), `checks` (failing check ids, order ignored, empty not compared), and `output` (compared by the SHA-256 of its canonical JSON; a value with no canonical form is not compared). `Stall.initial` is the state before the first round. `State`, `Policy` and `Stalled` are schemas, so a trampoline carries the state in its payload and replay reads the same verdict. The loop decides what `on` means; `@smthrs/patterns` loops and the coding correction flow use it.
 
-
-| Export | Contract |
-| --- | --- |
-| `Signal` | Schema/type: `"tree"`, `"checks"`, or `"output"`. |
+| Export        | Contract                                                                                                                                                                                                              |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Signal`      | Schema/type: `"tree"`, `"checks"`, or `"output"`.                                                                                                                                                                     |
 | `Observation` | `{ tree?: string; checks?: ReadonlyArray<string>; output?: unknown }` input to `observe`. Check order is ignored, empty check lists are not compared; output is compared by canonical JSON digest when representable. |
-
 
 ## `HumanTask`
 
@@ -436,19 +428,19 @@ The package's [`examples/retry-and-stall.ts`](https://github.com/smithersai/smit
 
 Usage metrics for every flow run: which flows run, and how. The durable engine (`@smthrs/engine-store`) records them for every run, and `@smthrs/agent`'s model steps record their calls, so a flow gets them without declaring anything. Each record is a metric and a log line with the same fields, so a store that keeps only logs counts and percentiles them too.
 
-| Metric                    | Kind      | Attributes                                               | Log line                               |
-| ------------------------- | --------- | -------------------------------------------------------- | -------------------------------------- |
-| `flows_runs_started`      | counter   | `flow`, `door`, `actor`, `placement`                     | `flow.run.started`, with `executionId` |
-| `flows_runs_settled`      | counter   | `flow`, `outcome`, `code`, `door`, `actor`, `placement`  | `flow.run.settled`, with `durationMs`  |
-| `flows_run_duration_ms`   | histogram | `flow`, `outcome`, `placement`                           |                                        |
-| `flows_run_first_step_ms` | histogram | `flow`, `placement`                                      |                                        |
-| `flows_steps`             | counter   | `flow`, `outcome` (`succeeded`, `failed`, `interrupted`) |                                        |
-| `flows_step_retries`      | counter   | `flow`                                                   |                                        |
+| Metric                    | Kind      | Attributes                                               | Log line                                       |
+| ------------------------- | --------- | -------------------------------------------------------- | ---------------------------------------------- |
+| `flows_runs_started`      | counter   | `flow`, `door`, `actor`, `placement`                     | `flow.run.started`, with `executionId`         |
+| `flows_runs_settled`      | counter   | `flow`, `outcome`, `code`, `door`, `actor`, `placement`  | `flow.run.settled`, with `durationMs`          |
+| `flows_run_duration_ms`   | histogram | `flow`, `outcome`, `placement`                           |                                                |
+| `flows_run_first_step_ms` | histogram | `flow`, `placement`                                      |                                                |
+| `flows_steps`             | counter   | `flow`, `outcome` (`succeeded`, `failed`, `interrupted`) |                                                |
+| `flows_step_retries`      | counter   | `flow`                                                   |                                                |
 | `flows_step_failures`     | counter   | `flow`, `code`                                           | `flow.step.failed`, with `attempt` and `runId` |
-| `flows_waits`             | counter   | `flow`, `kind`                                           |                                        |
-| `flows_wait_ms`           | histogram | `flow`, `kind`                                           |                                        |
-| `flows_model_calls`       | counter   | `flow`, `model`, `outcome`                               | `flow.model.call`, with token counts   |
-| `flows_model_tokens`      | counter   | `flow`, `model`, `direction` (`input`, `output`)         |                                        |
+| `flows_waits`             | counter   | `flow`, `kind`                                           |                                                |
+| `flows_wait_ms`           | histogram | `flow`, `kind`                                           |                                                |
+| `flows_model_calls`       | counter   | `flow`, `model`, `outcome`                               | `flow.model.call`, with token counts           |
+| `flows_model_tokens`      | counter   | `flow`, `model`, `direction` (`input`, `output`)         |                                                |
 
 - **A failed step** is a step attempt whose body failed: `recordStep` with `outcome: "failed"` counts `flows_step_failures` by the failure's `code` (the engine passes `settlement(exit).code`; `failed` when none is given) and writes `flow.step.failed` with `flow`, `attempt`, `code` and the engine's `runId`. A retried step writes one line per failed attempt; the run's own failure is still `flow.run.settled`.
 - **A run** is counted when the engine admits it and when its lineage settles: a round that hands off to the next is not a settlement. Its duration runs from the first round's admission to the settlement; `flows_run_first_step_ms` from admission to the engine first starting it. A step answered from its record, and a model step replayed, are not counted again.
@@ -458,27 +450,26 @@ Usage metrics for every flow run: which flows run, and how. The durable engine (
 - **Log level.** The usage lines are written at `LineLevel`, `Debug` by default, so a command-line program's output stays its own. A host whose logs are its telemetry provides `layerInfoLines`, as the browser engine and the Cloudflare host do: `flow.run.started` and `flow.model.call` at Info, `flow.run.settled` at Info when the run succeeded and Warn otherwise, and `flow.step.failed`, each step attempt that failed, at Warn. The metrics are recorded at every level. The engine reads the level once, where its host builds it, so a run admitted from a caller's fiber, such as the browser leader's request handler, still writes at the host's level.
 - **Bounded and content-free.** `doors`, `actors`, `placements`, `outcomes` and `waitKinds` are closed sets; any other value reads `other`. A flow's tag, a model id and a failure code are cleaned to a short identifier (`clean`) and capped per process at `maxFlows` (200), `maxModels` (50) and `maxCodes` (100) distinct values; past the cap a new value reads `other`. `makeLabels(limit)` builds such a cap. No record carries a payload, a result, a failure's message or who started a run.
 
-
-| Export | Contract |
-| --- | --- |
-| `doors`, `Door`, `actors`, `Actor`, `placements`, `Placement`, `outcomes`, `Outcome`, `waitKinds`, `WaitKind` | Readonly closed vocabularies and their value types; door/actor/placement types also admit `other`. |
-| `door`, `actor`, `placement` | `(value: string \| undefined) =>` the respective label type; absent values become `unknown`, unlisted values `other`. |
-| `waitKind` | `(reason: string) => WaitKind`; `event` maps to `signal`, unrecognized reasons to `other`. |
-| `Origin`, `CurrentOrigin`, `withOrigin` | Origin is `{ door: string; actor: string }`. `CurrentOrigin` is a context reference, defaulting to unknown/unknown; `withOrigin(origin)(effect)` or `withOrigin(effect, origin)` scopes it without adding requirements. |
-| `LineLevel`, `layerInfoLines` | Context reference `Debug` or `Info` (default Debug), and the layer selecting Info usage lines. |
-| `Labels`, `makeLabels` | `makeLabels(limit): Labels` supplies `of(value): string` and `size(): number`; after `limit` distinct cleaned labels, unseen values become `other`. |
-| `clean`, `maxFlows`, `maxModels`, `maxCodes` | `clean(value): string` keeps identifier characters, cuts to 96 characters, and uses `unknown` for empty output. Per-process distinct-label limits: 200 flow tags, 50 model ids, 100 failure codes. |
-| `flow`, `model`, `code` | `(value: string) => string`; bounded label constructors. `code("none")` retains the success sentinel. |
-| `settlement` | `(exit: Exit<unknown, unknown>) => { outcome: Outcome; code: string }`; classifies success, typed failures, interpreter refusals, defects and interruption without diagnostic content. |
-| `durationBoundaries` | Readonly millisecond histogram buckets, from 10 ms through one day. |
-| `runsStarted`, `runsSettled`, `runDuration`, `runFirstStep` | Metrics `flows_runs_started`, `flows_runs_settled`, `flows_run_duration_ms`, `flows_run_first_step_ms`; counters then millisecond histograms. |
-| `steps`, `stepFailures`, `stepRetries`, `waits`, `waitDuration` | Counters `flows_steps`, `flows_step_failures`, `flows_step_retries`, `flows_waits`, and millisecond histogram `flows_wait_ms`. |
-| `modelCalls`, `modelTokens` | Counters `flows_model_calls`, `flows_model_tokens`; tokens split by input/output direction. |
-| `RunLabels` | `{ flow: string; door: string; actor: string; placement: string }` common recording fields. |
-| `recordStarted`, `recordSettled` | Return `Effect<void>`: started takes `RunLabels` plus `executionId`; settled also takes `outcome`, `code`, optional `durationMs`. |
-| `recordFirstStep`, `recordStep` | Return `Effect<void>`: first step takes `{ flow, placement, delayMs }`; step takes `{ flow, attempt, outcome, code?, runId? }`, counting retries after attempt 1 and recording failures. |
-| `recordWait`, `recordWaitEnded` | Return `Effect<void>`: `{ flow, kind: WaitKind }` counts a park; ended adds `durationMs` for its histogram. |
-| `recordModelCall` | `({ flow, model, outcome, inputTokens?, outputTokens? }) => Effect<void>`; records one provider call and its positive reported token counts. |
+| Export                                                                                                        | Contract                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `doors`, `Door`, `actors`, `Actor`, `placements`, `Placement`, `outcomes`, `Outcome`, `waitKinds`, `WaitKind` | Readonly closed vocabularies and their value types; door/actor/placement types also admit `other`.                                                                                                                      |
+| `door`, `actor`, `placement`                                                                                  | `(value: string \| undefined) =>` the respective label type; absent values become `unknown`, unlisted values `other`.                                                                                                   |
+| `waitKind`                                                                                                    | `(reason: string) => WaitKind`; `event` maps to `signal`, unrecognized reasons to `other`.                                                                                                                              |
+| `Origin`, `CurrentOrigin`, `withOrigin`                                                                       | Origin is `{ door: string; actor: string }`. `CurrentOrigin` is a context reference, defaulting to unknown/unknown; `withOrigin(origin)(effect)` or `withOrigin(effect, origin)` scopes it without adding requirements. |
+| `LineLevel`, `layerInfoLines`                                                                                 | Context reference `Debug` or `Info` (default Debug), and the layer selecting Info usage lines.                                                                                                                          |
+| `Labels`, `makeLabels`                                                                                        | `makeLabels(limit): Labels` supplies `of(value): string` and `size(): number`; after `limit` distinct cleaned labels, unseen values become `other`.                                                                     |
+| `clean`, `maxFlows`, `maxModels`, `maxCodes`                                                                  | `clean(value): string` keeps identifier characters, cuts to 96 characters, and uses `unknown` for empty output. Per-process distinct-label limits: 200 flow tags, 50 model ids, 100 failure codes.                      |
+| `flow`, `model`, `code`                                                                                       | `(value: string) => string`; bounded label constructors. `code("none")` retains the success sentinel.                                                                                                                   |
+| `settlement`                                                                                                  | `(exit: Exit<unknown, unknown>) => { outcome: Outcome; code: string }`; classifies success, typed failures, interpreter refusals, defects and interruption without diagnostic content.                                  |
+| `durationBoundaries`                                                                                          | Readonly millisecond histogram buckets, from 10 ms through one day.                                                                                                                                                     |
+| `runsStarted`, `runsSettled`, `runDuration`, `runFirstStep`                                                   | Metrics `flows_runs_started`, `flows_runs_settled`, `flows_run_duration_ms`, `flows_run_first_step_ms`; counters then millisecond histograms.                                                                           |
+| `steps`, `stepFailures`, `stepRetries`, `waits`, `waitDuration`                                               | Counters `flows_steps`, `flows_step_failures`, `flows_step_retries`, `flows_waits`, and millisecond histogram `flows_wait_ms`.                                                                                          |
+| `modelCalls`, `modelTokens`                                                                                   | Counters `flows_model_calls`, `flows_model_tokens`; tokens split by input/output direction.                                                                                                                             |
+| `RunLabels`                                                                                                   | `{ flow: string; door: string; actor: string; placement: string }` common recording fields.                                                                                                                             |
+| `recordStarted`, `recordSettled`                                                                              | Return `Effect<void>`: started takes `RunLabels` plus `executionId`; settled also takes `outcome`, `code`, optional `durationMs`.                                                                                       |
+| `recordFirstStep`, `recordStep`                                                                               | Return `Effect<void>`: first step takes `{ flow, placement, delayMs }`; step takes `{ flow, attempt, outcome, code?, runId? }`, counting retries after attempt 1 and recording failures.                                |
+| `recordWait`, `recordWaitEnded`                                                                               | Return `Effect<void>`: `{ flow, kind: WaitKind }` counts a park; ended adds `durationMs` for its histogram.                                                                                                             |
+| `recordModelCall`                                                                                             | `({ flow, model, outcome, inputTokens?, outputTokens? }) => Effect<void>`; records one provider call and its positive reported token counts.                                                                            |
 
 Recording functions need no host service and have no typed failure. They use Effect's metric/log context; they do not start work or read payloads.
 

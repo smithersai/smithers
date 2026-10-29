@@ -53,16 +53,16 @@ tree pointing at nothing. `link` therefore always runs.
 
 ### Values and layers
 
-| Export                                          | What it is                                                                            |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `Content`                                       | The schema of what an install is keyed on: manager, lockfile digest, `.npmrc` digest. |
-| `LinkManifest`                                  | The schema of the flow's success value.                                               |
-| `payloadFields`                                 | The payload fields, `{ manager }`; `manager` admits only `"pnpm"`.                    |
-| `executeMeasure`, `executeFetch`, `executeLink` | The Effect implementations behind the three actions.                                  |
-| `MeasureLive`, `FetchPnpmLive`, `LinkLive`      | One layer per action.                                                                 |
-| `layer`                                         | All three merged, which is what an executor provides.                                 |
-| `Requires` | Type union of the Measure, FetchPnpm and Link action implementation requirements. |
-| `InstallFlow` | Type `Flow.Flow<"smithers-build/install", Schema.Struct<typeof payloadFields>, typeof LinkManifest, typeof PackageManager.PackageManagerError, Requires>`, the declaration made executable by the install layers. |
+| Export                                          | What it is                                                                                                                                                                                                        |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Content`                                       | The schema of what an install is keyed on: manager, lockfile digest, `.npmrc` digest.                                                                                                                             |
+| `LinkManifest`                                  | The schema of the flow's success value.                                                                                                                                                                           |
+| `payloadFields`                                 | The payload fields, `{ manager }`; `manager` admits only `"pnpm"`.                                                                                                                                                |
+| `executeMeasure`, `executeFetch`, `executeLink` | The Effect implementations behind the three actions.                                                                                                                                                              |
+| `MeasureLive`, `FetchPnpmLive`, `LinkLive`      | One layer per action.                                                                                                                                                                                             |
+| `layer`                                         | All three merged, which is what an executor provides.                                                                                                                                                             |
+| `Requires`                                      | Type union of the Measure, FetchPnpm and Link action implementation requirements.                                                                                                                                 |
+| `InstallFlow`                                   | Type `Flow.Flow<"smithers-build/install", Schema.Struct<typeof payloadFields>, typeof LinkManifest, typeof PackageManager.PackageManagerError, Requires>`, the declaration made executable by the install layers. |
 
 ## PackageManager
 
@@ -91,31 +91,31 @@ const layer = PackageManager.layerPnpm({
 })
 ```
 
-| Export                                                                                                                       | What it is                                                                                                                                                       |
-| ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PackageManager`                                                                                                             | The service tag, `smithers-build/PackageManager`.                                                                                                                |
-| `Service`                                                                                                                    | The contract: `name`, `projectRoot`, `storeDirectory`, `lockfileName`, `platformSensitive`, `requirement`, `version`, `verify`, `fetch`, `link`, `linkManifest`. |
-| `Options`                                                                                                                    | Layer options: `projectRoot`, `requirement`, and optional `environment`, `timeoutMs`, `executable`.                                                              |
-| `makePnpm`, `layerPnpm`                                                                                                      | The live pnpm implementation.                                                                                                                                    |
-| `makeBun`, `layerBun`                                                                                                        | The Bun seam for tool-running targets. It resolves, then refuses with `code: "unsupported"`.                                                                     |
-| `bunInstallUnsupportedMessage`, `bunInstallUnsupported`                                                                      | The refusal text, and the typed `unsupported` error, every install entry point returns for a Bun manager.                                                        |
-| `makeNoop`, `layerNoop`                                                                                                      | A service that satisfies the tag without touching a host, for tests.                                                                                             |
-| `PackageManagerError`, `ErrorCode`                                                                                           | The tagged error and its code union.                                                                                                                             |
-| `Name`                                                                                                                       | The manager union, `"pnpm"` or `"bun"`.                                                                                                                          |
-| `storeRoot`                                                                                                                  | `".flows/store"`, the fixed store parent.                                                                                                                        |
-| `maximumNpmrcBytes`, `maximumLockfileBytes`, `maximumPackageJsonBytes`, `defaultCommandTimeoutMs`, `maximumCommandTimeoutMs` | The bounds every read and every child process is held to.                                                                                                        |
-| `Diagnostic` | Schema/type alias of `Runtime.Diagnostic`, a bounded serializable host-failure description. |
-| `Digest` | SHA-256 content digest schema/type. |
-| `StoreManifest` | Schema/type: manager name, exact managerVersion, nullable platform and digest; describes fetch inputs, never package bytes. |
-| `pnpmfileNames` | Readonly default hook order: `.pnpmfile.mjs`, `.pnpmfile.cjs`; only the first present is selected. |
-| `pnpmfileOf` | `(projectRoot: string) => Effect<(typeof pnpmfileNames)[number] \| null, PackageManagerError, FileSystem.FileSystem>`; locates the first supported hook. |
-| `defaultCredentialHosts` | Readonly registry-host allowlist, default `["registry.npmjs.org"]`, used when `Options.credentialHosts` is absent. |
-| `storeManifestText` | `(input) => string`; canonical versioned tuple text. Input: manager, managerVersion, nullable platform, lockfileDigest, nullable npmrcDigest, optional nullable pnpmfileDigest/workspaceDigest. |
-| `storeManifest` | Same input as storeManifestText; returns `Effect<StoreManifest, never, Crypto>`, hashing that canonical text. |
-| `linkedTreeManifest` | `({ storeDigest, packageJsonDigest, managerEvidence }: digest fields) => Effect<Digest, never, Crypto>`; hashes metadata identity, not installed bytes. |
-| `npmrcDigest` | `(projectRoot: string) => Effect<Digest \| null, PackageManagerError, FileSystem.FileSystem \| Crypto.Crypto>`; hashes the complete project .npmrc, refusing literal credentials. No file yields null. |
-| `lockfileDigest` | `(projectRoot: string, lockfileName: string) => Effect<Digest, PackageManagerError, FileSystem.FileSystem \| Crypto.Crypto>`; bounded lockfile read and digest. |
-| `packageJsonDigest` | `(projectRoot: string) => Effect<Digest, PackageManagerError, FileSystem.FileSystem \| Crypto.Crypto>`; bounded root package.json read and digest. |
+| Export                                                                                                                       | What it is                                                                                                                                                                                             |
+| ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PackageManager`                                                                                                             | The service tag, `smithers-build/PackageManager`.                                                                                                                                                      |
+| `Service`                                                                                                                    | The contract: `name`, `projectRoot`, `storeDirectory`, `lockfileName`, `platformSensitive`, `requirement`, `version`, `verify`, `fetch`, `link`, `linkManifest`.                                       |
+| `Options`                                                                                                                    | Layer options: `projectRoot`, `requirement`, and optional `environment`, `timeoutMs`, `executable`.                                                                                                    |
+| `makePnpm`, `layerPnpm`                                                                                                      | The live pnpm implementation.                                                                                                                                                                          |
+| `makeBun`, `layerBun`                                                                                                        | The Bun seam for tool-running targets. It resolves, then refuses with `code: "unsupported"`.                                                                                                           |
+| `bunInstallUnsupportedMessage`, `bunInstallUnsupported`                                                                      | The refusal text, and the typed `unsupported` error, every install entry point returns for a Bun manager.                                                                                              |
+| `makeNoop`, `layerNoop`                                                                                                      | A service that satisfies the tag without touching a host, for tests.                                                                                                                                   |
+| `PackageManagerError`, `ErrorCode`                                                                                           | The tagged error and its code union.                                                                                                                                                                   |
+| `Name`                                                                                                                       | The manager union, `"pnpm"` or `"bun"`.                                                                                                                                                                |
+| `storeRoot`                                                                                                                  | `".flows/store"`, the fixed store parent.                                                                                                                                                              |
+| `maximumNpmrcBytes`, `maximumLockfileBytes`, `maximumPackageJsonBytes`, `defaultCommandTimeoutMs`, `maximumCommandTimeoutMs` | The bounds every read and every child process is held to.                                                                                                                                              |
+| `Diagnostic`                                                                                                                 | Schema/type alias of `Runtime.Diagnostic`, a bounded serializable host-failure description.                                                                                                            |
+| `Digest`                                                                                                                     | SHA-256 content digest schema/type.                                                                                                                                                                    |
+| `StoreManifest`                                                                                                              | Schema/type: manager name, exact managerVersion, nullable platform and digest; describes fetch inputs, never package bytes.                                                                            |
+| `pnpmfileNames`                                                                                                              | Readonly default hook order: `.pnpmfile.mjs`, `.pnpmfile.cjs`; only the first present is selected.                                                                                                     |
+| `pnpmfileOf`                                                                                                                 | `(projectRoot: string) => Effect<(typeof pnpmfileNames)[number] \| null, PackageManagerError, FileSystem.FileSystem>`; locates the first supported hook.                                               |
+| `defaultCredentialHosts`                                                                                                     | Readonly registry-host allowlist, default `["registry.npmjs.org"]`, used when `Options.credentialHosts` is absent.                                                                                     |
+| `storeManifestText`                                                                                                          | `(input) => string`; canonical versioned tuple text. Input: manager, managerVersion, nullable platform, lockfileDigest, nullable npmrcDigest, optional nullable pnpmfileDigest/workspaceDigest.        |
+| `storeManifest`                                                                                                              | Same input as storeManifestText; returns `Effect<StoreManifest, never, Crypto>`, hashing that canonical text.                                                                                          |
+| `linkedTreeManifest`                                                                                                         | `({ storeDigest, packageJsonDigest, managerEvidence }: digest fields) => Effect<Digest, never, Crypto>`; hashes metadata identity, not installed bytes.                                                |
+| `npmrcDigest`                                                                                                                | `(projectRoot: string) => Effect<Digest \| null, PackageManagerError, FileSystem.FileSystem \| Crypto.Crypto>`; hashes the complete project .npmrc, refusing literal credentials. No file yields null. |
+| `lockfileDigest`                                                                                                             | `(projectRoot: string, lockfileName: string) => Effect<Digest, PackageManagerError, FileSystem.FileSystem \| Crypto.Crypto>`; bounded lockfile read and digest.                                        |
+| `packageJsonDigest`                                                                                                          | `(projectRoot: string) => Effect<Digest, PackageManagerError, FileSystem.FileSystem \| Crypto.Crypto>`; bounded root package.json read and digest.                                                     |
 
 The Bun refusal is deliberate. Bun has no fetch-only or offline install
 command, so no install accepts it: the `Install` target, the planner,
@@ -142,17 +142,17 @@ const layer = Runtime.layerNode({
 })
 ```
 
-| Export                                                   | What it is                                                        |
-| -------------------------------------------------------- | ----------------------------------------------------------------- |
-| `Runtime`                                                | The service tag, `smithers-build/Runtime`.                        |
-| `Service`, `Options`                                     | The contract and its layer options.                               |
-| `layerNode`, `layerBun`, `layerNoop`, `make`, `makeNoop` | Implementations.                                                  |
-| `satisfies`                                              | The comparator a declared requirement is checked with.            |
-| `RuntimeError`, `ErrorCode`                              | The tagged error and its code union.                              |
-| `Platform`, `Name`                                       | The host facts schema, and the runtime union `"node"` or `"bun"`. |
-| `probeTimeoutMs`, `maximumVersionOutputBytes`            | The default probe deadline and maximum stdout bytes.              |
-| `Diagnostic` | Schema/type for bounded serializable host-failure diagnostics shared with PackageManager. |
-| `lookupEnvironmentNames` | Readonly `["PATH", "PATHEXT", "SYSTEMROOT", "WINDIR"]`; the only environment names forwarded to a runtime version probe. |
+| Export                                                   | What it is                                                                                                               |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `Runtime`                                                | The service tag, `smithers-build/Runtime`.                                                                               |
+| `Service`, `Options`                                     | The contract and its layer options.                                                                                      |
+| `layerNode`, `layerBun`, `layerNoop`, `make`, `makeNoop` | Implementations.                                                                                                         |
+| `satisfies`                                              | The comparator a declared requirement is checked with.                                                                   |
+| `RuntimeError`, `ErrorCode`                              | The tagged error and its code union.                                                                                     |
+| `Platform`, `Name`                                       | The host facts schema, and the runtime union `"node"` or `"bun"`.                                                        |
+| `probeTimeoutMs`, `maximumVersionOutputBytes`            | The default probe deadline and maximum stdout bytes.                                                                     |
+| `Diagnostic`                                             | Schema/type for bounded serializable host-failure diagnostics shared with PackageManager.                                |
+| `lookupEnvironmentNames`                                 | Readonly `["PATH", "PATHEXT", "SYSTEMROOT", "WINDIR"]`; the only environment names forwarded to a runtime version probe. |
 
 `Options.environment` supplies the host environment. A version probe receives
 only `PATH`, `PATHEXT`, `SYSTEMROOT`, and `WINDIR` from that record. When omitted,

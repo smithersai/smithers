@@ -2,10 +2,10 @@
  * No engine state is inferred from the present-day inspection's step rows.
  * @since 1.0.0
  */
+
 import { CallFact, StepFact } from "@smthrs/journal"
 import { Option, Schema } from "effect"
-import type { JournalRecord } from "./RunTrace.ts"
-import { monitorFromJournal, type TraceRun } from "./RunTrace.ts"
+import { type JournalRecord, monitorFromJournal, type TraceRun } from "./RunTrace.ts"
 
 /** A redacted event released by RunInspection.
  * @since 1.0.0

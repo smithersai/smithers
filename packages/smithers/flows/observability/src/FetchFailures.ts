@@ -134,7 +134,10 @@ export const layer = (options: Options): Layer.Layer<never> =>
         if (streaks.size > remember) streaks.delete(streaks.keys().next().value!)
         const retried = before !== undefined
         run(Effect.gen(function*() {
-          yield* Metric.update(Metric.withAttributes(failures, { route, method, statusClass, retried: String(retried) }), 1)
+          yield* Metric.update(
+            Metric.withAttributes(failures, { route, method, statusClass, retried: String(retried) }),
+            1
+          )
           if (before !== undefined && before.status === status) return
           // A 5xx is the server's failure; a 4xx is the request's, and no answer is most often a device offline.
           yield* (statusClass === "5xx" ? Effect.logError : Effect.logWarning)("http.request.failed").pipe(
@@ -147,9 +150,11 @@ export const layer = (options: Options): Layer.Layer<never> =>
         const before = streaks.get(key)
         if (before === undefined) return
         streaks.delete(key)
-        run(Effect.logInfo("http.request.recovered").pipe(
-          Effect.annotateLogs({ route, method, failures: before.failures })
-        ))
+        run(
+          Effect.logInfo("http.request.recovered").pipe(
+            Effect.annotateLogs({ route, method, failures: before.failures })
+          )
+        )
       }
 
       const observed = ((input: RequestInfo | URL, init?: RequestInit) => {

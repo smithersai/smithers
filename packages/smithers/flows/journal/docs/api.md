@@ -215,13 +215,11 @@ stream, and refuses to create a run whose id begins with `companionPrefix`.
 same schemas, so an identifier the writer refuses is refused on every read with
 `invalid_event` rather than answered with an empty page.
 
-
-| Export | Contract |
-| --- | --- |
-| `decodeLineageId`, `decodeWaitId`, `decodeCommandId`, `decodePlanId`, `decodeDispatchId`, `decodeArtifactId` | `(value: unknown) => Effect<branded string, Schema.SchemaError>`; decode the corresponding public identifier schema. |
-| `decodeTimestampMs`, `decodeNonNegativeQuantity`, `decodePositiveQuantity` | `(value: unknown) => Effect<branded number, Schema.SchemaError>`; validate timestamps, nonnegative quantities and positive quantities respectively. |
-| `contentDigest` | `(text: string) => string`; synchronous digest of exact encoded text for journal value references, never a redaction of that text. |
-
+| Export                                                                                                       | Contract                                                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `decodeLineageId`, `decodeWaitId`, `decodeCommandId`, `decodePlanId`, `decodeDispatchId`, `decodeArtifactId` | `(value: unknown) => Effect<branded string, Schema.SchemaError>`; decode the corresponding public identifier schema.                                |
+| `decodeTimestampMs`, `decodeNonNegativeQuantity`, `decodePositiveQuantity`                                   | `(value: unknown) => Effect<branded number, Schema.SchemaError>`; validate timestamps, nonnegative quantities and positive quantities respectively. |
+| `contentDigest`                                                                                              | `(text: string) => string`; synchronous digest of exact encoded text for journal value references, never a redaction of that text.                  |
 
 ## SqlJournal
 
@@ -750,26 +748,26 @@ resuming a parked run cannot discard a later batch or fail after commit.
 Versioned JSON projections of authorized native cell calls. Outcomes execute from
 protected attempt records; these facts serve the public journal/outbox.
 
-| Export | Contract |
-| --- | --- |
-| `Identity` | Schema: `runId`, nonnegative integer `frame` and `ordinal`, `cell`, `declaration`, and string-array `layers`; coordinates remain stable across physical retries. |
-| `Call` | Schema/type: `callId` (`cell-call-v1:` plus 64 lowercase hex digits), `identity`, `flowName`, JSON `input`, and optional JSON display `descriptor`. |
-| `Annotation` | Effect service containing `phase: "invoked"` or `"settled"` and `call: Call`; data only, never part of the action key. |
-| `Result` | Success/failure schema: JSON `value`, optional string `message`; failure alone admits optional string `code`. |
-| `Fact` | Schema/type: version 1, call coordinates and phase; invoked facts carry input/optional descriptor, settled facts carry outcome/value/optional JSON message and code. Values may be bounded redacted projections. |
-| `eventType` | `"flows.harness.call-fact.v1"`; immutable native journal event committed with the controller record. |
+| Export       | Contract                                                                                                                                                                                                         |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Identity`   | Schema: `runId`, nonnegative integer `frame` and `ordinal`, `cell`, `declaration`, and string-array `layers`; coordinates remain stable across physical retries.                                                 |
+| `Call`       | Schema/type: `callId` (`cell-call-v1:` plus 64 lowercase hex digits), `identity`, `flowName`, JSON `input`, and optional JSON display `descriptor`.                                                              |
+| `Annotation` | Effect service containing `phase: "invoked"` or `"settled"` and `call: Call`; data only, never part of the action key.                                                                                           |
+| `Result`     | Success/failure schema: JSON `value`, optional string `message`; failure alone admits optional string `code`.                                                                                                    |
+| `Fact`       | Schema/type: version 1, call coordinates and phase; invoked facts carry input/optional descriptor, settled facts carry outcome/value/optional JSON message and code. Values may be bounded redacted projections. |
+| `eventType`  | `"flows.harness.call-fact.v1"`; immutable native journal event committed with the controller record.                                                                                                             |
 
 ## `StepFact`
 
 The first checkpoint observation of a native action, preserving its original
 generation, source sequence and timestamp across replay.
 
-| Export | Contract |
-| --- | --- |
-| `Step` | Schema/type: 64-character lowercase hex `stepId`, execution/action/scope strings, positive safe-integer `attempt`/`retry`, and `ask` as a nonnegative safe integer or `"repair"`. |
-| `Fact` | Schema/type: version 1, `step`, nonnegative safe-integer `generation`, `ordinal`, `sourceSequence`, integer `frame >= -1`, `cell`, nonnegative `at`, `control.agent.*` event type and JSON payload. |
-| `Annotation` | Empty Effect service marker: presence marks a checkpoint whose saved success is the fact to publish. |
-| `eventType` | `"flows.harness.step-fact.v1"`; outbox event committed with its owning checkpoint. |
+| Export       | Contract                                                                                                                                                                                            |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Step`       | Schema/type: 64-character lowercase hex `stepId`, execution/action/scope strings, positive safe-integer `attempt`/`retry`, and `ask` as a nonnegative safe integer or `"repair"`.                   |
+| `Fact`       | Schema/type: version 1, `step`, nonnegative safe-integer `generation`, `ordinal`, `sourceSequence`, integer `frame >= -1`, `cell`, nonnegative `at`, `control.agent.*` event type and JSON payload. |
+| `Annotation` | Empty Effect service marker: presence marks a checkpoint whose saved success is the fact to publish.                                                                                                |
+| `eventType`  | `"flows.harness.step-fact.v1"`; outbox event committed with its owning checkpoint.                                                                                                                  |
 
 These namespaces declare schemas, constants and annotation services, with no
 host requirements or I/O of their own. Schema decoding reports normal Effect
@@ -779,8 +777,7 @@ does not publish an event.
 
 ## `EngineEvent`
 
-| Export | Contract |
-| --- | --- |
-| `stateEventType`, `attemptEventType` | `"flows.engine.v2.state-event"` and `"flows.engine.v2.attempt-lifecycle"`, respectively. |
-| `stateEvent` | `(payload: StatePayload, sourceId: Event.SourceId, sourceSeq: Event.SourceSeq, diagnostics: Schema.Json = null) => Event.Input`; strictly validates the state payload and diagnostics, deriving runId from payload.lineage. Invalid inputs throw Schema decoding errors. |
-
+| Export                               | Contract                                                                                                                                                                                                                                                                 |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `stateEventType`, `attemptEventType` | `"flows.engine.v2.state-event"` and `"flows.engine.v2.attempt-lifecycle"`, respectively.                                                                                                                                                                                 |
+| `stateEvent`                         | `(payload: StatePayload, sourceId: Event.SourceId, sourceSeq: Event.SourceSeq, diagnostics: Schema.Json = null) => Event.Input`; strictly validates the state payload and diagnostics, deriving runId from payload.lineage. Invalid inputs throw Schema decoding errors. |

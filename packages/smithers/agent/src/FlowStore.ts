@@ -20,6 +20,7 @@
 import { Fault } from "@smthrs/flow"
 import { FileSystem as KernelFileSystem } from "@smthrs/kernel"
 import { Descriptor } from "@smthrs/registry"
+import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -405,7 +406,11 @@ const publish = (
       }))
       if (!retainGeneration) {
         yield* fs.remove(generation, { recursive: true }).pipe(
-          Effect.catchCause(() => Effect.logWarning("agent: flow staging cleanup failed; generation retained"))
+          Effect.catchCause((cause) =>
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.failCause(cause)
+              : Effect.logWarning("agent: flow staging cleanup failed; generation retained")
+          )
         )
       }
       if (Exit.isFailure(result)) return yield* Effect.failCause(result.cause)

@@ -233,7 +233,7 @@ export const providerFetch = (
             Effect.annotateLogs({ origin: new URL(String(target)).origin, protocol: "http/1.1" })
           )
         )
-        return await undici.fetch(target as never, { ...request, dispatcher: used } as never)
+        return await undici.fetch(target, { ...request, dispatcher: used } as never)
       } catch (error) {
         // Only connection/session failures before fetch returns headers qualify.
         // Streams cannot be replayed; aborts, status errors and body failures
@@ -262,7 +262,7 @@ export const providerFetch = (
           })
           await replacement
         }
-        return await undici.fetch(target as never, { ...request, dispatcher: pool } as never)
+        return await undici.fetch(target, { ...request, dispatcher: pool } as never)
       }
     }) as unknown as typeof globalThis.fetch
   })

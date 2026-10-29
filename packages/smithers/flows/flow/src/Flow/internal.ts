@@ -190,15 +190,14 @@ const Proto = {
     source: string,
     options: { readonly step: string; readonly executionId?: string | undefined }
   ) {
-    const self = this
-    return Effect.gen(function*() {
+    return Effect.gen({ self: this }, function*() {
       const engine = yield* FlowRuntime
       if (engine.retryFrom === undefined) {
         return yield* new RetryFromRefused({ code: "unsupported", executionId: source, step: options.step })
       }
       const executionId = options.executionId ?? (yield* Effect.orDie((yield* Crypto.Crypto).randomUUIDv4()))
       yield* Effect.annotateCurrentSpan({ executionId, source })
-      yield* identityConflictAsFailure(engine.retryFrom(self, { source, step: options.step, executionId }))
+      yield* identityConflictAsFailure(engine.retryFrom(this, { source, step: options.step, executionId }))
       return executionId
     }).pipe(SpanFailure.withSpan(`${this._tag}.retryFrom`, { captureStackTrace: false }))
   },

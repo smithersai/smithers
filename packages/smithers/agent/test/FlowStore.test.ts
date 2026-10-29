@@ -178,6 +178,35 @@ describe("FlowStore.makeMemory", () => {
 })
 
 describe("FlowStore.layerFileSystem", () => {
+  it("refuses publication when the host cannot confine the created root", async () => {
+    const directory = root()
+    const result = await Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      let created = false
+      const failing = FileSystem.FileSystem.of({
+        ...fs,
+        makeDirectory: (target, options) =>
+          fs.makeDirectory(target, options).pipe(Effect.tap(() =>
+            Effect.sync(() => {
+              created = true
+            })
+          )),
+        realPath: (target) =>
+          created
+            ? Effect.fail(PlatformError.systemError({
+              _tag: "PermissionDenied",
+              module: "FileSystem",
+              method: "realPath"
+            }))
+            : fs.realPath(target)
+      })
+      return yield* FlowStore.makeFileSystem(failing, path, directory).write("triage", files("triage"))
+    }).pipe(Effect.provide(platform), Effect.runPromiseExit)
+    expect(refused(result)).toMatchObject({ code: "write_failed", message: "could not confine the flows root" })
+    expect(readdirSync(directory)).toEqual([])
+  })
+
   it.each(["plain", "atomic"] as const)(
     "regression: refuses publication through a concurrently replaced parent (%s)",
     async (host) => {
@@ -235,6 +264,27 @@ describe("FlowStore.layerFileSystem", () => {
       expect(readFileSync(join(directory, relative), "utf8")).toBe(source)
     }
     expect(warnings).toContain("agent: flow staging cleanup failed; generation retained")
+    expect(readdirSync(directory).some((name) => name.startsWith(".flow-store-"))).toBe(true)
+  })
+
+  it("preserves interruption from staging cleanup after publishing the files", async () => {
+    const directory = root()
+    const warnings: Array<string> = []
+    const capture = Logger.make((entry) => warnings.push(String(entry.message)))
+    const result = await Effect.gen(function*() {
+      const fs = yield* confinedAt(directory)
+      const path = yield* Path.Path
+      const interrupted = FileSystem.FileSystem.of({
+        ...fs,
+        remove: (target, options) => target.includes(".flow-store-") ? Effect.interrupt : fs.remove(target, options)
+      })
+      return yield* FlowStore.makeFileSystem(interrupted, path, directory).write("triage", files("triage"))
+    }).pipe(Effect.provide(platform), Effect.provide(Logger.layer([capture])), Effect.runPromiseExit)
+    expect(Exit.isFailure(result) && Cause.hasInterruptsOnly(result.cause)).toBe(true)
+    expect(warnings).toEqual([])
+    for (const [relative, source] of Object.entries(files("triage"))) {
+      expect(readFileSync(join(directory, relative), "utf8")).toBe(source)
+    }
     expect(readdirSync(directory).some((name) => name.startsWith(".flow-store-"))).toBe(true)
   })
 

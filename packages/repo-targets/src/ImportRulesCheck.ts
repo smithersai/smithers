@@ -31,6 +31,8 @@ export interface RuleScope {
    * Package-relative globs of the sources the rule reads, matched with
    * `node:path` `matchesGlob`: `*` stops at `/` and `**` crosses it, so
    * `src/**\/*.tsx` is every `.tsx` file under `src/`.
+   * A rule must match at least one source; an empty scope throws with the
+   * rule's index, kind, patterns and reason before any source is analyzed.
    *
    * @default every source file in the package
    */
@@ -386,16 +388,26 @@ const breaches = (
  * Every violation of `rules` in `sources`, by file, then line, then rule.
  *
  * Each source is parsed at most once, and only when a rule reads it.
+ * Throws before parsing if any rule covers no source, naming every empty
+ * rule and its patterns. An omitted `files` means `**\/*` for this report.
  *
  * @category check
  * @since 0.1.0
  */
 export const check = (rules: ReadonlyArray<ImportRule>, sources: ReadonlyArray<Source>): ReadonlyArray<Violation> => {
+  const scopes = rules.map((rule, index) => ({
+    rule,
+    index,
+    sources: rule.files === undefined ? sources : sources.filter((source) => matchesAny(source.path, rule.files!))
+  }))
+  const empty = scopes.filter((scope) => scope.sources.length === 0).map(({ rule, index }) =>
+    `ImportRules rule ${index} (${rule.kind}) matches no source files; files: ${JSON.stringify(rule.files ?? ["**/*"])}. ${rule.because}`
+  )
+  if (empty.length > 0) throw new Error(empty.join("\n"))
   const analyses = new Map<string, ImportAnalysis.Analysis>()
   const violations: Array<Violation> = []
-  rules.forEach((rule, index) => {
-    for (const source of sources) {
-      if (rule.files !== undefined && !matchesAny(source.path, rule.files)) continue
+  scopes.forEach(({ rule, index, sources: scoped }) => {
+    for (const source of scoped) {
       let analysis = analyses.get(source.path)
       if (analysis === undefined) {
         analysis = ImportAnalysis.analyze(source.path, source.text)

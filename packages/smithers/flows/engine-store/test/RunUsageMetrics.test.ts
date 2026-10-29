@@ -303,7 +303,9 @@ describe("usage metrics", () => {
         { flow: "Usage/Fails", code: "Usage/Boom", count: 1 }
       ]))
       const stepFailures = lines.filter((line) => line.message === "flow.step.failed")
-      expect(stepFailures.map((line) => [line.level, line.annotations.flow, line.annotations.code, line.annotations.attempt]))
+      expect(
+        stepFailures.map((line) => [line.level, line.annotations.flow, line.annotations.code, line.annotations.attempt])
+      )
         .toEqual(expect.arrayContaining([
           ["WARN", "Usage/Gated", "failed", 1],
           ["WARN", "Usage/Fails", "Usage/Boom", 1]

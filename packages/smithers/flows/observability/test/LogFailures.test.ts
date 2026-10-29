@@ -101,19 +101,22 @@ describe("LogFailures", () => {
     })).pipe(Effect.map(({ value }) => expect(value).toBe(1 + 2))))
 
   it.effect("caps distinct codes and areas, and keeps only identifiers", () =>
-    counting(Effect.gen(function*() {
-      for (let index = 0; index < LogFailures.maxCodes + 1; index++) {
-        yield* Effect.logWarning("w").pipe(Effect.annotateLogs({ code: `code_${index}` }))
-      }
-      for (let index = 0; index < LogFailures.maxAreas + 1; index++) {
-        yield* Effect.logWarning("w").pipe(Effect.annotateLogs({ feature: `area_${index}` }))
-      }
-      yield* Effect.logWarning("w").pipe(Effect.annotateLogs({ feature: "not an identifier" }))
-      return {
-        codes: yield* count({ level: "warn", record: "w", code: "other", area: "none" }),
-        areas: yield* count({ level: "warn", record: "w", code: "none", area: "other" })
-      }
-    }), { records: ["w"] }).pipe(Effect.map(({ value }) => expect(value).toEqual({ codes: 1, areas: 1 }))))
+    counting(
+      Effect.gen(function*() {
+        for (let index = 0; index < LogFailures.maxCodes + 1; index++) {
+          yield* Effect.logWarning("w").pipe(Effect.annotateLogs({ code: `code_${index}` }))
+        }
+        for (let index = 0; index < LogFailures.maxAreas + 1; index++) {
+          yield* Effect.logWarning("w").pipe(Effect.annotateLogs({ feature: `area_${index}` }))
+        }
+        yield* Effect.logWarning("w").pipe(Effect.annotateLogs({ feature: "not an identifier" }))
+        return {
+          codes: yield* count({ level: "warn", record: "w", code: "other", area: "none" }),
+          areas: yield* count({ level: "warn", record: "w", code: "none", area: "other" })
+        }
+      }),
+      { records: ["w"] }
+    ).pipe(Effect.map(({ value }) => expect(value).toEqual({ codes: 1, areas: 1 }))))
 
   it.effect("keeps the latest lines, oldest first, with their span", () =>
     counting(

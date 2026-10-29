@@ -525,7 +525,9 @@ export const updateBranch = (
       }
     }, { schema: UpdateBranchAnswer })
     const pullRequest = answer.data?.updatePullRequestBranch?.pullRequest
-    if ((answer.errors !== undefined && answer.errors.length > 0) || pullRequest === undefined || pullRequest === null) {
+    if (
+      (answer.errors !== undefined && answer.errors.length > 0) || pullRequest === undefined || pullRequest === null
+    ) {
       const type = answer.errors?.[0]?.type
       return yield* Effect.fail(
         new IntegrationError("delivery-failed", "GitHub refused to update the pull request's branch.", {

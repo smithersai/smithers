@@ -43,7 +43,8 @@ const agentSteps = new Map<string, { readonly seat: string; readonly prompt: (pa
 const AgentAction = {
   make: (tag: unknown, options: any) => {
     if (
-      typeof options !== "object" || options === null || Object.keys(options).some((key) => !AGENT_OPTIONS.includes(key)) ||
+      typeof options !== "object" || options === null ||
+      Object.keys(options).some((key) => !AGENT_OPTIONS.includes(key)) ||
       typeof options.seat !== "string" || options.seat.trim() === "" || typeof options.prompt !== "function"
     ) throw new Error("invalid_agent_step")
     const declaration = actions.make(tag, { payload: options.payload, success: options.output, error: Schema.Never })
