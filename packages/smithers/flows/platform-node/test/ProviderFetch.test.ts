@@ -16,6 +16,7 @@ import { createSecureServer, type Http2SecureServer, type ServerHttp2Stream } fr
 import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import * as EgressHttpClient from "../src/EgressHttpClient.ts"
 
@@ -321,19 +322,24 @@ describe("EgressHttpClient.providerFetch (needs openssl)", () => {
       await new Promise<void>((resolve) => server.close(() => resolve()))
     }
   })
-  it("repairs fatal TLS record corruption that permanently poisons Node's HTTP/2 session", () => {
-    const fixture = new URL("./fixtures/provider-fatal-tls.mjs", import.meta.url)
-    const run = (mode: string) =>
-      JSON.parse(execFileSync(process.execPath, [fixture.pathname, mode], {
-        encoding: "utf8",
-        timeout: 20_000
-      })) as { undici: string; codes: string[] }
-    const native = run("native")
-    expect(native.codes[0]).toBe("ok")
-    if (["8.7.0", "8.10.2"].includes(native.undici)) {
-      expect(native.codes[1]).toBe("ERR_SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC")
-      expect(native.codes.slice(2)).toEqual(Array(4).fill("ERR_HTTP2_INVALID_SESSION"))
+  it.each(["./fixtures/provider-fatal-tls.mjs", "./fixtures/%70rovider-fatal-tls.mjs"])(
+    "repairs fatal TLS record corruption that permanently poisons Node's HTTP/2 session (%s)",
+    (relative) => {
+      // Both valid URL spellings name the real fixture; native Windows also
+      // requires converting the URL's /D:/ prefix into a filesystem drive path.
+      const fixture = new URL(relative, import.meta.url)
+      const run = (mode: string) =>
+        JSON.parse(execFileSync(process.execPath, [fileURLToPath(fixture), mode], {
+          encoding: "utf8",
+          timeout: 20_000
+        })) as { undici: string; codes: string[] }
+      const native = run("native")
+      expect(native.codes[0]).toBe("ok")
+      if (["8.7.0", "8.10.2"].includes(native.undici)) {
+        expect(native.codes[1]).toBe("ERR_SSL_DECRYPTION_FAILED_OR_BAD_RECORD_MAC")
+        expect(native.codes.slice(2)).toEqual(Array(4).fill("ERR_HTTP2_INVALID_SESSION"))
+      }
+      expect(run("provider").codes).toEqual(Array(6).fill("ok"))
     }
-    expect(run("provider").codes).toEqual(Array(6).fill("ok"))
-  })
+  )
 })
