@@ -21,7 +21,7 @@ import * as Discovery from "@smthrs/registry/Discovery"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, Layer, Schema, Stream } from "effect"
-import { execFileSync } from "node:child_process"
+import { spawnSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
@@ -415,16 +415,18 @@ it("typechecks the generated flow and rejects wrong imported prompt props with i
   const root = directory()
   const result = Init.scaffold(root, "review", {})
   symlinkSync(fileURLToPath(new URL("../node_modules", import.meta.url)), join(root, "node_modules"), "dir")
-  const tsc = createRequire(import.meta.url).resolve("typescript/bin/tsc")
+  const compiler = join(dirname(createRequire(import.meta.url).resolve("vibelang/package.json")), "bin/vibelang")
   const config = join(root, ".smithers/flows/review/tsconfig.json")
-  expect(() => execFileSync(process.execPath, [tsc, "-p", config], { cwd: root, encoding: "utf8" })).not.toThrow()
+  const check = () => spawnSync(process.execPath, [compiler, "-p", config], { cwd: root, encoding: "utf8" })
+  const compiled = check()
+  expect(
+    { status: compiled.status, signal: compiled.signal, error: compiled.error?.message },
+    [compiled.stdout, compiled.stderr].filter(Boolean).join("\n")
+  ).toEqual({ status: 0, signal: null, error: undefined })
   writeFileSync(result.flowFile, "import Instructions from \"./prompt.mdx\"; Instructions({ args: 42 });")
-  let diagnostics = ""
-  try {
-    execFileSync(process.execPath, [tsc, "-p", config], { cwd: root, encoding: "utf8" })
-  } catch (error) {
-    diagnostics = (error as { stdout: string }).stdout
-  }
+  const rejected = check()
+  const diagnostics = [rejected.stdout, rejected.stderr].filter(Boolean).join("\n")
+  expect(rejected.status, diagnostics).toBe(2)
   expect(diagnostics).toContain("not assignable to type 'string'")
   expect(diagnostics).not.toContain("Cannot find module './prompt.mdx'")
 })
