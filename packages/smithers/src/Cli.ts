@@ -244,7 +244,7 @@ export const makeCli = (
           const documents: Array<unknown> = []
           const presentation = Presentation.current()?.policy ?? Presentation.policy(c, config)
           const json = presentation.structured
-          const outcome = await Effect.runPromise(
+          const outcome = await Bridge.run(
             Suggest.run({
               root,
               seat: c.options.seat,
@@ -266,7 +266,7 @@ export const makeCli = (
               Effect.provide(RedactedLogger.layer()),
               Effect.provideService(Logger.LogToStderr, true)
             ),
-            { signal: config.signal }
+            config
           )
           config.exit?.(Suggest.exitStatus(outcome))
           return json ? { ...outcome, documents } : undefined
@@ -639,14 +639,15 @@ export const makeCli = (
       }
     })
     if (!refused || parsed.json || parsed.format !== undefined || config.presentation?.structured) return
-    const suggestion = await Effect.runPromise(
+    const suggestion = await Bridge.run(
       DidYouMean.didYouMean(
         typed,
         parsed.rest.slice(offset + 1),
         DidYouMean.commands(documentation.humanHelp ? humanDiscovery : discovery)
       ).pipe(
         Effect.provide(evaluator(config.environment ?? process.env))
-      )
+      ),
+      config
     )
     if (suggestion !== undefined) write(`${suggestion}\n`)
   }

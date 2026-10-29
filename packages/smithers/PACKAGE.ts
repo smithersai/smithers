@@ -14,6 +14,19 @@ const importRules = ImportRules({
   rules: [
     {
       kind: "forbidCalls",
+      files: ["src/Cli.ts"],
+      callees: ["Effect.runPromise", "Effect.runPromiseExit"],
+      because: "Command Effects use ControlBridge.run so host services and cancellation cross the command boundary."
+    },
+    {
+      kind: "forbid",
+      files: ["src/internal/ClaudeCode.ts"],
+      modules: ["@anthropic-ai/claude-agent-sdk"],
+      allowTypeOnly: true,
+      because: "Provider SDKs load through the injected ProviderModules Effect only when their provider is selected."
+    },
+    {
+      kind: "forbidCalls",
       files: [
         "test/ConfigurationRace.test.ts",
         "test/CloudSandboxLease.test.ts",

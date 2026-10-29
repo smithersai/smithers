@@ -24,7 +24,7 @@ import type * as Checkpoints from "@smthrs/std/Checkpoints"
 import * as Container from "@smthrs/std/Container"
 import * as TestRun from "@smthrs/std/TestRun"
 import * as TestRunner from "@smthrs/std/TestRunner"
-import { Clock, Context, Effect, FileSystem, Layer, Path, Redacted } from "effect"
+import { Clock, Context, Effect, FileSystem, Layer, Path, Redacted, Semaphore } from "effect"
 import type { Result, Scope } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as HttpClient from "effect/http/HttpClient"
@@ -272,6 +272,9 @@ type Credential =
 
 const refused = (refusal: (seat: string) => string): Credential => ({ _tag: "Refused", refusal })
 
+/** A selected provider's module could not load, rather than a remote judge failing to answer. */
+class ProviderModuleUnavailable extends Seat.SeatUnresolved {}
+
 /** This machine, as the seat scan reads it. */
 const hostOf = (environment: Readonly<Record<string, string | undefined>>): Providers.Host => ({
   environment,
@@ -393,15 +396,22 @@ const providerSeats = (
   // One Claude Code model per model and executable: an agent step resolves its
   // seat on every frame, and each model holds its own pool of sessions.
   const claudeModels = new Map<string, ReturnType<typeof ClaudeCode.make>>()
-  const claudeModel = (options: Parameters<typeof ClaudeCode.make>[0]) => {
-    const key = `${options.model}\0${options.executable}\0${options.hijackable === true}`
-    const cached = claudeModels.get(key)
-    if (cached !== undefined) return cached
-    const made = ClaudeCode.make(options)
-    claudeModels.set(key, made)
-    retain(made.close)
-    return made
-  }
+  const claudeGate = Semaphore.makeUnsafe(1)
+  const claudeModel = (options: Parameters<typeof ClaudeCode.make>[0]) =>
+    claudeGate.withPermits(1)(
+      Effect.suspend(() => {
+        const key = `${options.model}\0${options.executable}\0${options.hijackable === true}`
+        const cached = claudeModels.get(key)
+        if (cached !== undefined) return Effect.succeed(cached)
+        return ClaudeCode.load(options).pipe(
+          Effect.map((made) => {
+            claudeModels.set(key, made)
+            retain(made.close)
+            return made
+          })
+        )
+      })
+    )
   return SeatResolver.make({
     resolve: (seat) =>
       Effect.gen(function*() {
@@ -488,13 +498,13 @@ const providerSeats = (
             )
           case "ClaudeCode": {
             const model = Providers.claudeCodeModel(modelId)
-            const claude = claudeModel({
+            const claude = yield* claudeModel({
               model,
               executable: signed.executable,
               environment,
               // A host whose runs a person can take over keeps each session for `claude --resume`.
               hijackable: environment["SMITHERS_HIJACKABLE"] === "1"
-            })
+            }).pipe(Effect.mapError((error) => new ProviderModuleUnavailable({ seat, message: error.message })))
             return Seat.make({
               id: seat,
               modelId: model,
@@ -789,8 +799,10 @@ export const layerSeatEvaluator = (
           Effect.flatMap((seat) =>
             seat !== undefined
               ? resolver.resolve(seat).pipe(
-                Effect.mapError(() =>
-                  new Evaluator.EvaluatorError({ code: "unreachable", message: Evaluator.unreachableMessage })
+                Effect.mapError((error) =>
+                  error instanceof ProviderModuleUnavailable
+                    ? new Evaluator.EvaluatorError({ code: "unconfigured", message: error.message })
+                    : new Evaluator.EvaluatorError({ code: "unreachable", message: Evaluator.unreachableMessage })
                 )
               )
               : Effect.fail(

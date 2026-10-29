@@ -12,13 +12,14 @@ import { Seat } from "@smthrs/agent"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as ModelError from "@smthrs/model/ModelError"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
-import { Effect, Stream } from "effect"
+import { Deferred, Effect, Fiber, Stream } from "effect"
 import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { TestClock } from "effect/testing"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
+import { ModuleLoader } from "../src/internal/ProviderModules.ts"
 import * as NodeControl from "../src/NodeControl.ts"
 import * as Providers from "../src/Providers.ts"
 
@@ -179,9 +180,9 @@ describe("NodeControl.seatResolver credentials", () => {
   it("routes an explicitly configured OpenAI-compatible owner provider", async () => {
     const resolved = await Effect.runPromise(resolve({
       OPENAI_API_KEY: "owner-key",
-      SMITHERS_OPENAI_COMPATIBLE_BASE_URL: "http://provider.internal:8080"
+      SMITHERS_OPENAI_COMPATIBLE_BASE_URL: "https://provider.example.test"
     }, "openai:scripted"))
-    expect((await prepared(resolved, resolved.modelId)).url).toBe("http://provider.internal:8080/v1/chat/completions")
+    expect((await prepared(resolved, resolved.modelId)).url).toBe("https://provider.example.test/v1/chat/completions")
   })
 
   it("refuses a keyed provider when the environment record is empty", async () => {
@@ -364,6 +365,79 @@ describe("NodeControl.seatResolver Claude subscriptions", () => {
   const signedIn = { loggedIn: true, authMethod: "claude.ai", subscriptionType: "max" }
   let cleanup = () => {}
   afterEach(() => cleanup())
+
+  it("refuses the selected provider on SDK load failure, then recovers after install repair", async () => {
+    const claude = claudeOnPath(signedIn)
+    cleanup = claude.cleanup
+    const resolver = NodeControl.seatResolver({ PATH: claude.PATH }, executor)
+    const requested: Array<string> = []
+    const error = await Effect.runPromise(
+      Effect.flip(resolver.resolve("claude-code:opus")).pipe(
+        Effect.provideService(ModuleLoader, {
+          load: (name) =>
+            Effect.suspend(() => {
+              requested.push(name)
+              return Effect.fail(new Error("module cannot be resolved: private-detail"))
+            })
+        })
+      )
+    )
+    expect(error).toMatchObject({
+      _tag: "@smthrs/agent/Seat/SeatUnresolved",
+      seat: "claude-code:opus",
+      message:
+        "Claude Code needs @anthropic-ai/claude-agent-sdk, but the package could not be loaded. Repair the CLI installation."
+    })
+    expect(requested).toEqual(["@anthropic-ai/claude-agent-sdk"])
+    const recovered = await Effect.runPromise(resolver.resolve("claude-code:opus"))
+    expect(recovered.id).toBe("claude-code:opus")
+  })
+
+  it("shares one loaded provider and shutdown handle across concurrent seat resolutions", async () => {
+    const claude = claudeOnPath(signedIn)
+    cleanup = claude.cleanup
+    const retained: Array<() => void> = []
+    const resolver = NodeControl.seatResolver({ PATH: claude.PATH }, executor, (close) => retained.push(close))
+    const requested: Array<string> = []
+    const seats = await Effect.runPromise(Effect.gen(function*() {
+      const real = yield* ModuleLoader
+      return yield* Effect.all(Array.from({ length: 3 }, () => resolver.resolve("claude-code:opus")), {
+        concurrency: "unbounded"
+      }).pipe(Effect.provideService(ModuleLoader, {
+        load: (name) =>
+          Effect.suspend(() => {
+            requested.push(name)
+            return real.load(name)
+          })
+      }))
+    }))
+    expect(requested).toEqual(["@anthropic-ai/claude-agent-sdk"])
+    expect(retained).toHaveLength(1)
+    expect(seats[0]!.model).toBe(seats[1]!.model)
+    expect(seats[1]!.model).toBe(seats[2]!.model)
+    retained[0]!()
+  })
+
+  it("releases provider initialization on cancellation so the next resolve can load it", async () => {
+    const claude = claudeOnPath(signedIn)
+    cleanup = claude.cleanup
+    const resolver = NodeControl.seatResolver({ PATH: claude.PATH }, executor)
+    const recovered = await Effect.runPromise(Effect.gen(function*() {
+      const entered = yield* Deferred.make<void>()
+      const loading = yield* resolver.resolve("claude-code:opus").pipe(
+        Effect.provideService(ModuleLoader, {
+          load: () => Effect.andThen(Deferred.succeed(entered, undefined), Effect.never)
+        }),
+        Effect.forkChild
+      )
+      yield* Deferred.await(entered)
+      yield* Fiber.interrupt(loading)
+      const interrupted = yield* Fiber.await(loading)
+      expect(interrupted._tag).toBe("Failure")
+      return yield* resolver.resolve("claude-code:opus")
+    }))
+    expect(recovered.id).toBe("claude-code:opus")
+  })
 
   it("shares one in-flight status probe across two concurrent seat resolves", async () => {
     const directory = mkdtempSync(join(tmpdir(), "claude-code-seat-"))

@@ -58,6 +58,13 @@ Effect services only after parsing. Use `.serve(argv)` to run the tree in a
 Node host. See the [CLI reference](./reference/cli/README.md) for command
 groups, machine output, and local-only features.
 
+`@smthrs/cli/cli/Entry` exports `main(host): Promise<void>` for process hosts
+and `mainEffect(host): Effect<void>` for embedded Effect hosts. `mainEffect`
+preserves injected services through shared command and suggestion runtimes,
+and interruption waits for command cleanup. `ControlBridge.run(effect, runtime)`
+is their shared Promise boundary. `ControlBridge.Runtime.effectContext` carries
+the trusted host's services across it; CLI flags never supply that context.
+
 ## Audience
 
 `Audience` is also available from `@smthrs/cli/Audience`. It re-exports the

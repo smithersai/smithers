@@ -132,7 +132,7 @@ const model = (start: ClaudeCode.Start, hijackable?: boolean, interruptMillis?: 
   return {
     ...seat,
     stream: (input: ModelRequest.ModelRequest) =>
-      seat.stream(input).pipe(Stream.provideService(ClaudeCode.QueryTransport, start))
+      seat.stream(input).pipe(Stream.provideService(ClaudeCode.QueryTransport, Effect.succeed(start)))
   }
 }
 

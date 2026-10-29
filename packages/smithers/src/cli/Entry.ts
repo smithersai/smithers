@@ -7,6 +7,7 @@ import * as Audience from "@smthrs/build-cli/Audience"
 import type { Host as BuildHost } from "@smthrs/build-cli/Entry"
 import * as Environment from "@smthrs/build-cli/Environment"
 import * as Redaction from "@smthrs/journal/Redaction"
+import { type Context, Effect } from "effect"
 import { makeCli } from "../Cli.ts"
 import * as Failure from "../internal/Failure.ts"
 import { normalizeArguments } from "./Arguments.ts"
@@ -27,7 +28,11 @@ export interface Host extends BuildHost {
  * @category constructors
  * @since 1.0.0
  */
-export const main = async (host: Host): Promise<void> => {
+const runMain = async (
+  host: Host,
+  effectContext: Context.Context<never>,
+  signal: AbortSignal
+): Promise<void> => {
   Environment.anchorSearchPath(host.env, host.cwd ?? process.cwd())
   const cacheUrl = host.env["SMITHERS_CACHE_URL"]
   const cacheToken = host.env["SMITHERS_CACHE_TOKEN"]
@@ -64,8 +69,15 @@ export const main = async (host: Host): Promise<void> => {
     interrupt("SIGINT", onSigint)
   }
   const onSigterm = () => interrupt("SIGTERM", onSigterm)
+  const onAbort = () => {
+    interrupted ??= 130
+    host.setExitCode(interrupted)
+    controller.abort(signal.reason)
+  }
   host.on("SIGINT", onSigint)
   host.on("SIGTERM", onSigterm)
+  signal.addEventListener("abort", onAbort, { once: true })
+  if (signal.aborted) onAbort()
   try {
     const presentation = Audience.fromArguments(host.argv, {
       env: host.env,
@@ -74,6 +86,7 @@ export const main = async (host: Host): Promise<void> => {
       mcp
     })
     const cli = makeCli({
+      effectContext,
       cacheUrl,
       cacheToken,
       signal: controller.signal,
@@ -117,6 +130,32 @@ export const main = async (host: Host): Promise<void> => {
   } finally {
     host.removeListener("SIGINT", onSigint)
     host.removeListener("SIGTERM", onSigterm)
+    signal.removeEventListener("abort", onAbort)
     host.setExitCode(interrupted ?? status)
   }
 }
+
+/**
+ * Runs an embedded invocation with its host's Effect services available to
+ * shared command and suggestion runtimes, including module-loading services.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const mainEffect = (host: Host): Effect.Effect<void> =>
+  Effect.gen(function*() {
+    const context = yield* Effect.context<never>()
+    yield* Effect.callback<void>((resume, signal) => {
+      const running = runMain(host, context, signal)
+      void running.then(() => resume(Effect.void), (error) => resume(Effect.die(error)))
+      // Cancellation aborts runMain's controller and waits for command cleanup
+      // before the embedding host can close the services it supplied.
+      return Effect.promise(() => running.catch(() => {}))
+    })
+  })
+
+/**
+ * The process boundary for one invocation. Embedded Effect hosts use mainEffect.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const main = (host: Host): Promise<void> => Effect.runPromise(mainEffect(host))

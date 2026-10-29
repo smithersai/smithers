@@ -173,24 +173,24 @@ it("judges through the metered model proxy a self-hosted Flow host is given", as
   // never a gateway key; the public gateway answers that credential 401.
   const proxied = judge({
     AI_GATEWAY_API_KEY: "smithers-binding-credential",
-    SMITHERS_MODEL_PROXY_URL: "http://backend.internal:4000/model-proxy",
+    SMITHERS_MODEL_PROXY_URL: "https://backend.example.test/model-proxy",
     SMITHERS_MODEL_PROXY_PROVIDERS: "cerebras,vercel"
   }, "answers")
   await Effect.runPromise(proxied.run)
-  expect(proxied.sent).toEqual(["http://backend.internal:4000/model-proxy/vercel/v4/ai/evaluation-model"])
+  expect(proxied.sent).toEqual(["https://backend.example.test/model-proxy/vercel/v4/ai/evaluation-model"])
 
   const explicit = judge({
     AI_GATEWAY_API_KEY: "smithers-binding-credential",
-    SMITHERS_EVALUATOR_BASE_URL: "http://backend.internal:4000/model-proxy/vercel/v4/ai/evaluation-model"
+    SMITHERS_EVALUATOR_BASE_URL: "https://backend.example.test/model-proxy/vercel/v4/ai/evaluation-model"
   }, "answers")
   await Effect.runPromise(explicit.run)
-  expect(explicit.sent).toEqual(["http://backend.internal:4000/model-proxy/vercel/v4/ai/evaluation-model"])
+  expect(explicit.sent).toEqual(["https://backend.example.test/model-proxy/vercel/v4/ai/evaluation-model"])
 })
 
 it("keeps Jev on the public gateway when the proxy does not serve vercel", async () => {
   const { run, sent } = judge({
     AI_GATEWAY_API_KEY: "vck_test",
-    SMITHERS_MODEL_PROXY_URL: "http://backend.internal:4000/model-proxy",
+    SMITHERS_MODEL_PROXY_URL: "https://backend.example.test/model-proxy",
     SMITHERS_MODEL_PROXY_PROVIDERS: "cerebras"
   }, "answers")
   await Effect.runPromise(run)
@@ -280,7 +280,7 @@ it("judges on the gateway's second-vendor model when Jev cannot answer and no Lu
   // An install's Flow host: its Gateway credential reaches Jev and the
   // Gateway's chat route through the backend's model proxy, and nothing signs
   // Luna. The real-GitHub walk logged 11 unjudged completions this way.
-  const proxy = "http://backend.internal:4000/model-proxy"
+  const proxy = "https://backend.example.test/model-proxy"
   const jevCalls: string[] = []
   const jevHttp = HttpClient.make((request) => {
     jevCalls.push(request.url)

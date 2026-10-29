@@ -41,6 +41,18 @@ workspace and run its local copy, as
 
 ## Verify the install
 
+Provider SDKs load when their provider is selected. Version, help and unrelated
+commands remain usable if the Claude Agent SDK cannot load; Claude Code refuses
+the seat with an error naming `@anthropic-ai/claude-agent-sdk`. Repair the CLI
+installation before retrying that provider.
+
+SDK loads emit the `cli.provider.sdk.load` span, debug records and the
+`smithers.cli.provider_sdk.resolved` / `smithers.cli.provider_sdk.failed` counters.
+Counters measure resolution results, including Node's module-cache hits.
+Failures warn with a safe loader-error code or error category. Raw loader
+messages and causes are discarded. A judge whose provider SDK cannot load is
+`unconfigured`, with the required package in its typed error.
+
 ```bash
 smthrs doctor
 ```

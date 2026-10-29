@@ -35,17 +35,19 @@
  * @private
  */
 
-import * as Sdk from "@anthropic-ai/claude-agent-sdk"
+import type * as Sdk from "@anthropic-ai/claude-agent-sdk"
 import type * as FlowEngineLike from "@smthrs/agent/FlowEngineLike"
 import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import * as Model from "@smthrs/model/Model"
 import { ModelError, type ModelErrorCode } from "@smthrs/model/ModelError"
 import { ModelEvent, type Usage } from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
-import { Context, Effect, Schema, Semaphore, Stream } from "effect"
+import { Context, Effect, Metric, Schema, Semaphore, Stream } from "effect"
 import { tmpdir } from "node:os"
 import { codexEnvironment } from "../Agents.ts"
+import { errorCode } from "./ErrorCode.ts"
 import * as Failure from "./Failure.ts"
+import { ModuleLoader } from "./ProviderModules.ts"
 import * as Telemetry from "./Telemetry.ts"
 
 /**
@@ -70,14 +72,60 @@ export type Start = (input: {
   readonly options: Sdk.Options
 }) => Query
 
+const sdkUnavailable =
+  "Claude Code needs @anthropic-ai/claude-agent-sdk, but the package could not be loaded. Repair the CLI installation."
+const moduleCodes = new Set([
+  "ERR_MODULE_NOT_FOUND",
+  "MODULE_NOT_FOUND",
+  "ERR_PACKAGE_PATH_NOT_EXPORTED",
+  "ERR_PACKAGE_IMPORT_NOT_DEFINED",
+  "ERR_DLOPEN_FAILED",
+  "ENOENT",
+  "EACCES"
+])
+const moduleFailure = (cause: unknown): string => {
+  try {
+    const code = errorCode(cause)
+    if (code !== undefined && moduleCodes.has(code)) return code
+    if (cause instanceof SyntaxError) return "syntax_error"
+    if (cause instanceof TypeError) return "type_error"
+  } catch { /* Diagnostics must not replace the typed provider failure. */ }
+  return "module_error"
+}
+
 /**
  * The SDK transport, injectable as an Effect service for transport faults.
  *
  * @since 1.0.0
  * @private
  */
-export const QueryTransport = Context.Reference<Start>("/cli/ClaudeCode/QueryTransport", {
-  defaultValue: () => ({ options, prompt }) => Sdk.query({ prompt, options })
+export const QueryTransport = Context.Reference<Effect.Effect<Start, ModelError>>("/cli/ClaudeCode/QueryTransport", {
+  defaultValue: () =>
+    Effect.gen(function*() {
+      const loader = yield* ModuleLoader
+      const sdk = yield* loader.load("@anthropic-ai/claude-agent-sdk").pipe(
+        Effect.tap(() => Metric.update(Metric.counter("smithers.cli.provider_sdk.resolved"), 1)),
+        Effect.tapError(() => Metric.update(Metric.counter("smithers.cli.provider_sdk.failed"), 1)),
+        Effect.tap(() => Effect.logDebug("Provider SDK resolved", { provider: "claude-code" })),
+        Effect.tapError((cause) =>
+          Effect.logWarning(sdkUnavailable, {
+            provider: "claude-code",
+            package: "@anthropic-ai/claude-agent-sdk",
+            reason: moduleFailure(cause)
+          })
+        ),
+        Effect.mapError(() =>
+          new ModelError({
+            code: "no_route",
+            message: sdkUnavailable
+          })
+        ),
+        Effect.withSpan("cli.provider.sdk.load", {
+          attributes: { provider: "claude-code", package: "@anthropic-ai/claude-agent-sdk" }
+        })
+      )
+      return ({ options, prompt }) => sdk.query({ prompt, options })
+    })
 })
 
 /**
@@ -482,7 +530,10 @@ export const make = (options: Options): Model.Model & { readonly close: () => vo
             // Claude Code is this seat's transport: the process's start-up ends at its first turn.
             Effect.andThen(
               Telemetry.startUp.firstRequest,
-              Effect.flatMap(QueryTransport, (start) => answer(request, options.start ?? start))
+              Effect.flatMap(
+                options.start === undefined ? Effect.flatten(QueryTransport) : Effect.succeed(options.start),
+                (start) => answer(request, start)
+              )
             ),
             Stream.fromIterable
           )
@@ -495,6 +546,18 @@ export const make = (options: Options): Model.Model & { readonly close: () => vo
     }
   )
 }
+
+/**
+ * Builds the provider only after its SDK transport has loaded successfully.
+ * An explicit host transport does not need the SDK.
+ * @since 1.0.0
+ * @private
+ */
+export const load = (options: Options): Effect.Effect<ReturnType<typeof make>, ModelError> =>
+  Effect.map(
+    options.start === undefined ? Effect.flatten(QueryTransport) : Effect.succeed(options.start),
+    (start) => make({ ...options, start })
+  )
 
 /**
  * The claude-code seat's sealed-step view of a request: the request itself,

@@ -12,7 +12,7 @@ import * as RedactedLogger from "@smthrs/journal/RedactedLogger"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import type * as Otlp from "@smthrs/observability/Otlp"
 import type * as Registry from "@smthrs/registry/Registry"
-import { Cause, Console, Effect, Exit, Layer, Logger, References, Stream } from "effect"
+import { Cause, Console, Context, Effect, Exit, Layer, Logger, References, Stream } from "effect"
 import { Command } from "effect/cli"
 import { z } from "incur"
 import { randomBytes } from "node:crypto"
@@ -62,6 +62,8 @@ export type ConnectionOptions = z.output<typeof connectionOptions>
  * @since 1.0.0
  */
 export interface Runtime extends RuntimeConfig {
+  /** Services captured by an embedded Effect host, retained at each command boundary. */
+  readonly effectContext?: Context.Context<never> | undefined
   /** Explicit judge for an embedded or offline CLI host; otherwise select the gateway. */
   readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
   /** Host-owned delegation for local commands and the served gateway, never a request argument. */
@@ -215,10 +217,22 @@ export const failureOf = (cause: Cause.Cause<unknown>, signal: AbortSignal | und
 }
 
 const settle = async <A, E>(operation: Effect.Effect<A, E>, runtime: Runtime): Promise<A> => {
-  const result = await Effect.runPromiseExit(operation, { signal: runtime.signal })
+  const result = await Effect.runPromiseExit(
+    operation.pipe(Effect.provide(runtime.effectContext ?? Context.empty())),
+    { signal: runtime.signal }
+  )
   if (Exit.isFailure(result)) throw failureOf(result.cause, runtime.signal)
   return result.value
 }
+
+/**
+ * Runs a command Effect with the host's services and cancellation, including
+ * commands that do not compose a control host.
+ * @category execution
+ * @since 1.0.0
+ */
+export const run = <A, E>(operation: Effect.Effect<A, E>, runtime: Runtime = {}): Promise<A> =>
+  settle(operation, runtime)
 
 /**
  * Reuses the tested flow control handlers without starting a second process.
@@ -467,7 +481,10 @@ export const events = (
       ),
       Stream.concat(Stream.unwrap(Effect.sync(() => watch(false))))
     )
-  })).pipe(Stream.provide(NodeControl.layerObserve(configuration(options, runtime))))
+  })).pipe(
+    Stream.provide(NodeControl.layerObserve(configuration(options, runtime))),
+    Stream.provide(runtime.effectContext ?? Context.empty())
+  )
   const signal = runtime.signal
   if (signal === undefined) return Stream.toAsyncIterable(stream)
   const interrupted = Effect.callback<void>((resume) => {
