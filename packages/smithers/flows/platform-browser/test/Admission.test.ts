@@ -3,15 +3,12 @@
  * leader cut off with many runs in flight, then a reload whose tab starts the
  * run its screen waits on.
  *
- * The budgets come from this suite's own measurements over the in-memory
- * OPFS (`test/fixtures/MemoryOpfs.ts`): a three-step run alone settles in
- * about 110 ms. With 60 runs resumed together, the newly started run reached
- * its first step after 477 ms and settled after 3,091 ms, and the engine's
- * own sweep later drove 48 of the released runs at once; resumed two at a
- * time, after 60 ms and 133 ms.
+ * Background steps wait on a completion barrier. Foreground completion must
+ * not depend on that barrier, even when more runs await resumption than the
+ * background concurrency limit. Latency measurements belong to `pnpm bench`.
  */
 import { describe, expect, it } from "@effect/vitest"
-import * as Clock from "effect/Clock"
+import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import { afterEach, beforeEach } from "vitest"
@@ -25,15 +22,6 @@ import * as MemorySqlite from "./fixtures/MemorySqlite.ts"
 /** How many background runs the cut-off leader held, as a branch page's summaries were. */
 const cutOffRuns = 60
 
-/** A background step's own work after the reload, as a provider call is. */
-const work = "20 millis"
-
-/** From the tab's start to the run's first step. */
-const firstStepBudgetMs = 250
-
-/** From the tab's start to the run's settlement. */
-const settleBudgetMs = 500
-
 let remove: () => void = () => undefined
 beforeEach(() => {
   remove = MemoryOpfs.install()
@@ -43,7 +31,7 @@ afterEach(() => remove())
 /**
  * A leader over OPFS cut off with `cut` runs inside their second step, then
  * the next leader, whose steps record when each label ran and how many `bg-`
- * steps ran at once at most; `bg-` steps take {@link work}.
+ * steps ran at once at most; `bg-` steps wait for the foreground run.
  */
 const reload = (cut: ReadonlyArray<string>) =>
   Effect.gen(function*() {
@@ -61,23 +49,22 @@ const reload = (cut: ReadonlyArray<string>) =>
     yield* Engines.close(cutOff)
 
     const ran: Array<string> = []
-    const reached = new Map<string, number>()
+    const release = yield* Deferred.make<void>()
     const background = { running: 0, most: 0 }
     const step = (label: string) =>
       Effect.gen(function*() {
         ran.push(label)
-        reached.set(label, yield* Clock.currentTimeMillis)
         if (!label.startsWith("bg-")) return label
         background.running++
         background.most = Math.max(background.most, background.running)
-        yield* Effect.sleep(work)
+        yield* Deferred.await(release)
         background.running--
         return label
       })
     yield* Engines.leader(name, host(step))
     // Once the leader answers a request it has listed and begun what it resumes.
     yield* engine.list({ limit: 1 })
-    return { engine, ran, reached, background }
+    return { engine, ran, background, release: Deferred.succeed(release, undefined) }
   })
 
 const backgroundIds = Array.from({ length: cutOffRuns }, (_, index) => `bg-${index}`)
@@ -106,13 +93,12 @@ describe("BrowserRuntime admission", () => {
   it.live("a run a tab starts after a reload goes ahead of the runs the reload resumed", () =>
     Effect.gen(function*() {
       const reloaded = yield* reload(backgroundIds)
-      const { engine, reached } = reloaded
-      const startedAt = yield* Clock.currentTimeMillis
+      const { engine, background } = reloaded
       yield* engine.start(Steps, { executionId: "fg", payload: { prefix: "fg" } })
       expect(yield* engine.result(Steps, "fg")).toEqual(Exit.succeed("fg:three"))
-      const settledMs = (yield* Clock.currentTimeMillis) - startedAt
-      expect(reached.get("fg:one")! - startedAt).toBeLessThan(firstStepBudgetMs)
-      expect(settledMs).toBeLessThan(settleBudgetMs)
+      expect(background.running).toBe(resumeConcurrency)
+      expect(reloaded.ran.filter((label) => label.startsWith("bg-"))).toHaveLength(resumeConcurrency)
+      yield* reloaded.release
       yield* completedOnce(reloaded, backgroundIds)
     }).pipe(Effect.scoped), { timeout: 120_000 })
 
@@ -121,13 +107,13 @@ describe("BrowserRuntime admission", () => {
     () =>
       Effect.gen(function*() {
         const reloaded = yield* reload([...backgroundIds, "fg"])
-        const { engine, reached } = reloaded
-        const startedAt = yield* Clock.currentTimeMillis
+        const { engine, background } = reloaded
         // Starting a run the store holds is a no-op for its payload; it drives the run now.
         yield* engine.start(Steps, { executionId: "fg", payload: { prefix: "fg" } })
         expect(yield* engine.result(Steps, "fg")).toEqual(Exit.succeed("fg:three"))
-        expect((yield* Clock.currentTimeMillis) - startedAt).toBeLessThan(settleBudgetMs)
-        expect(reached.get("fg:two")! - startedAt).toBeLessThan(firstStepBudgetMs)
+        expect(background.running).toBe(resumeConcurrency)
+        expect(reloaded.ran.filter((label) => label.startsWith("bg-"))).toHaveLength(resumeConcurrency)
+        yield* reloaded.release
         yield* completedOnce(reloaded, [...backgroundIds, "fg"])
       }).pipe(Effect.scoped),
     { timeout: 120_000 }
