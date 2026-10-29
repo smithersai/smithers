@@ -29,6 +29,18 @@ The default globs name VibeLang `.vibe` files beside `.ts` ones, `src/**/*.{ts,v
 
 `pnpm --filter @smthrs/repo-targets test` enforces 100% V8 coverage across `src/**`. Both required CI package selections reach its declared Vitest target, `//packages/repo-targets:test`. The suite checks the actual CLI discovery result and the target's runner configuration, so a declared test script alone cannot satisfy that contract.
 
+The repository contracts also check runtime dependency declarations, both lockfiles,
+reviewed public export additions and the test-pin register. Decision-queue source
+snapshots are displayed data; their imports do not become maintainer-site runtime
+dependencies. The private repository-view and terminal-frame packages retain their
+Bun coverage gates and source exports. Published workspace references resolve to
+their sibling's exact version before release packing stages a package outside the
+workspace.
+
+Presentation installation runs in freezable V8 realms with the real guarded React
+renderer. Subprocess coverage maps the emitted realm modules back to their source;
+installation, renderer refusals and reload deadlines remain subject to the 100% gate.
+
 ## Circular imports
 
 `CircularImports({ cwd, sources })` declares the `test`-kind `NodeTest` target that `BuildAndCheckTypeScriptPackage` emits as `circular`; a package that declares its targets by hand calls it directly. Every package runs the one guard, `scripts/circular.mjs` in this package, and its `circular` package script runs the same file, for example `node ../repo-targets/scripts/circular.mjs` from `packages/errors`.
