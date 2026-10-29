@@ -300,7 +300,8 @@ describe.skipIf(process.platform === "win32")("BunHost.layerContained", () => {
           "--version",
           "status --color=never --config snapshot.max-new-file-size=0 --config signing.behavior=drop " +
           "--config signing.backends.gpg.program=/dev/null --config signing.backends.gpgsm.program=/dev/null " +
-          "--config signing.backends.ssh.program=/dev/null --config fsmonitor.backend=none"
+          "--config signing.backends.ssh.program=/dev/null --config fsmonitor.backend=none " +
+          "--config snapshot.auto-update-stale=false"
         ])
         expect(recorded).toEqual([binary, binary])
         // The invocation finished, so the record was retired with it.
