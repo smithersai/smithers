@@ -239,6 +239,10 @@ port. A host without one refuses both with `InvalidInput` whose issue is
 
 ### Receipts
 
+An observed approval wait retains its native wake address and answer target
+when legacy journal history names the same request. Only a verified current
+grant fact may replace that target; matching decisions still close the wait.
+
 `Receipt` is the union every mutation answers:
 
 | Member           | Fields                                                              |
