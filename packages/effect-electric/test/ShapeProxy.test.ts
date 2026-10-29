@@ -26,7 +26,7 @@ const electricUp = await fetch(`${ELECTRIC_URL}/v1/health`, { signal: AbortSigna
     return true
   },
   (error: unknown) => {
-    if (!unreachable(error)) throw error
+    if (process.env.SMITHERS_ELECTRIC_TEST_REQUIRED === "1" || !unreachable(error)) throw error
     console.warn(`Electric-backed proxy tests skipped: nothing answers at ELECTRIC_URL=${ELECTRIC_URL}.`)
     return false
   }
@@ -41,7 +41,9 @@ const postgresUp = electricUp &&
       Effect.as(true),
       Effect.catchCause((cause) => {
         const error = (cause.reasons[0] as { error?: { cause?: unknown } } | undefined)?.error
-        if (!unreachable(error?.cause ?? error)) return Effect.failCause(cause)
+        if (process.env.SMITHERS_ELECTRIC_TEST_REQUIRED === "1" || !unreachable(error?.cause ?? error)) {
+          return Effect.failCause(cause)
+        }
         console.warn(`The real-table tests are skipped: no Postgres at DATABASE_URL=${DATABASE_URL}.`)
         return Effect.succeed(false)
       })

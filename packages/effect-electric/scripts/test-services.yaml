@@ -1,0 +1,28 @@
+services:
+  postgres:
+    image: postgres:17.11-alpine
+    environment:
+      POSTGRES_USER: smithers
+      POSTGRES_PASSWORD: smithers
+      POSTGRES_DB: smithers
+    command: ["postgres", "-c", "wal_level=logical"]
+    ports: ["127.0.0.1::5432"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "smithers", "-d", "smithers"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+  electric:
+    image: electricsql/electric:1.8.1
+    environment:
+      DATABASE_URL: postgresql://smithers:smithers@postgres:5432/smithers?sslmode=disable
+      ELECTRIC_INSECURE: "true"
+    ports: ["127.0.0.1::3000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:3000/v1/health"]
+      interval: 1s
+      timeout: 3s
+      retries: 30

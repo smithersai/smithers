@@ -71,6 +71,15 @@ writes the row and waits for its transaction, and runs with
 `node examples/collection.ts` against a Postgres and Electric.
 [`examples/proxy.ts`](examples/proxy.ts) mounts the shape proxy.
 
+## Testing
+
+`pnpm exec smthrs test '//packages/effect-electric:test'` starts isolated
+Postgres and Electric containers with Docker Compose when the default local stack
+is absent, runs the complete coverage suite, then removes its containers and
+volumes. To supply other services, run `node scripts/test-services.mjs` with both
+`DATABASE_URL` and `ELECTRIC_URL`. Required services failing to start or answer
+fail the target; its integration cases never silently skip.
+
 ## Learn more
 
 - [Overview](docs/README.md): what the package guarantees.

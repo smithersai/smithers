@@ -26,6 +26,7 @@ export const electricUp: boolean = await fetch(`${ELECTRIC_URL}/v1/health`, { si
     if (!response.ok) throw new Error(`Electric at ${ELECTRIC_URL} answered ${response.status} to /v1/health`)
     return true
   }, (error: unknown) => {
+    if (process.env.SMITHERS_ELECTRIC_TEST_REQUIRED === "1") throw error
     const code = (error as { cause?: { code?: string } }).cause?.code
     if (code !== "ECONNREFUSED" && (error as Error).name !== "TimeoutError") throw error
     console.warn(`Electric suites skipped: nothing answers at ELECTRIC_URL=${ELECTRIC_URL}.`)

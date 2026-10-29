@@ -9,6 +9,8 @@ const cwd = "packages/effect-electric"
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [tanstackDb.lib],
   sources: Input.glob("{src,examples}/**/*.ts"),
+  testProgram: Smithers.file("//packages/effect-electric/scripts/test-services.mjs"),
+  testData: ["scripts/test-services.yaml"],
   cwd
 })
 
