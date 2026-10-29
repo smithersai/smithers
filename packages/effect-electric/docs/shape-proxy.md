@@ -217,3 +217,9 @@ The response's `x-request-id` matches `correlationId` in that record. Preserve
 it even when reading the response body fails; aggregate invocation success
 cannot prove that a particular response reached the client. No protocol values
 or row contents enter these records.
+
+## Upstream correlation
+
+The proxy sends its generated span id as `x-request-id` to its upstream, matching the response header and `correlationId` in its content-free request record. A private gateway can retain this id with its own status and outcome to distinguish a gateway refusal from Electric's answer. Browser-supplied request ids are never forwarded. The id is not added to the canonical URL or metric labels.
+
+Bodyless upstream answers retain their status and headers and record a complete response with zero bytes. A bodyless 503 remains a retryable HTTP refusal; a stream that breaks while reading still records a failure.

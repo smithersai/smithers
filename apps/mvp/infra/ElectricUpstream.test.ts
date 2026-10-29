@@ -6,6 +6,7 @@ import { Arbitrary, Effect, Logger, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpEffect } from "effect/http"
 import { describe, expect, test } from "vitest"
 import { GATEWAY_BINDING, GATEWAY_URL, upstream } from "./ElectricUpstream.ts"
+import { serve } from "./ElectricCache.ts"
 
 /** A service binding's `fetch` that records each URL it was asked for and answers an empty shape log. */
 const binding = () => {
@@ -34,6 +35,30 @@ const route = (env: Record<string, unknown>, global: typeof globalThis.fetch, op
   )
 
 describe("upstream", () => {
+  test("an overloaded gateway's record joins the SDK's 503 response through the private binding", async () => {
+    const log: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+    const logger = Logger.make((options) => void log.push(Logger.formatStructured.log(options)))
+    const gateway = HttpEffect.toWebHandler(serve(() => Effect.fail({ overloaded: true })).pipe(
+      Effect.provide(Logger.layer([logger])),
+    ))
+    const global = binding()
+    const response = await route({ [GATEWAY_BINDING]: {
+      fetch: (input: RequestInfo | URL, init?: RequestInit) => gateway(new Request(input, init)),
+    } }, global.fetch)(new Request("http://app.test/api/shapes/items?offset=-1", {
+      headers: { "x-request-id": "browser-private-value" },
+    }))
+    expect(response.status).toBe(503)
+    await response.arrayBuffer()
+    const correlationId = response.headers.get("x-request-id")
+    expect(correlationId).toMatch(/^[a-f0-9]{16}$/)
+    expect(log).toMatchObject([{
+      message: "electric.gateway.request",
+      annotations: { correlationId, status: 503, outcome: "overloaded" },
+    }])
+    expect(JSON.stringify(log)).not.toContain("browser-private-value")
+    expect(global.urls).toEqual([])
+  })
+
   test("with the gateway's binding, Electric is called through it and never through the global fetch", async () => {
     const gateway = binding()
     const global = binding()

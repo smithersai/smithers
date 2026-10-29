@@ -426,7 +426,9 @@ export const make = <R = never>(
       ...(options.sourceId === undefined ? [] : [["source_id", options.sourceId] as const])
     )
     parameters.sort(([a], [b]) => (a < b ? -1 : 1))
-    let upstream = HttpClientRequest.get(shapeUrl)
+    // Keep the gateway's record joinable to this proxy's response, including a gateway refusal before Electric runs.
+    // Generated here, never copied from a browser header or added to a cache-key URL.
+    let upstream = HttpClientRequest.get(shapeUrl).pipe(HttpClientRequest.setHeader("x-request-id", correlationId))
     for (const [key, value] of parameters) upstream = HttpClientRequest.appendUrlParam(upstream, key, value)
     // The client span records an `authorization` header redacted.
     if (options.secret !== undefined && options.secretAs === "bearer") {
@@ -446,10 +448,33 @@ export const make = <R = never>(
     }
     const { status, headers, stream } = response.value
     yield* answered(status, "electric")
+    const responseHeaders = {
+      ...Object.fromEntries(
+        Object.entries(headers).filter(([key]) => !dropped(key) && (keeps || !caching.has(key)))
+      ),
+      ...ownHeaders
+    }
+    // These statuses cannot carry a response body, including an empty ReadableStream.
+    if ([204, 205, 304].includes(status)) {
+      yield* record({
+        status,
+        live,
+        phase,
+        startedAt,
+        bytes: 0,
+        outcome: "complete",
+        correlationId,
+        upstream: "electric"
+      })
+      return HttpServerResponse.empty({ status, headers: responseHeaders })
+    }
     // The body streams after this handler and its span end, outside its services, so the record runs with them.
     const context = yield* Effect.context<never>()
     let bytes = 0
     const body = stream.pipe(
+      // Fetch represents a bodyless answer as null; Effect's stream adapter reports EmptyBodyError for it.
+      // Preserve that valid empty answer (notably a gateway's 503), while retaining real mid-body failures.
+      Stream.catch((error) => error.reason._tag === "EmptyBodyError" ? Stream.empty : Stream.fail(error)),
       Stream.tap((chunk) => Effect.sync(() => (bytes += chunk.byteLength))),
       Stream.onExit((exit) =>
         record({
@@ -466,12 +491,7 @@ export const make = <R = never>(
     )
     return HttpServerResponse.stream(body, {
       status,
-      headers: {
-        ...Object.fromEntries(
-          Object.entries(headers).filter(([key]) => !dropped(key) && (keeps || !caching.has(key)))
-        ),
-        ...ownHeaders
-      }
+      headers: responseHeaders
     })
   }).pipe(Effect.withSpan(name, { kind: "server" }))
 }

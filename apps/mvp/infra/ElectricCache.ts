@@ -58,6 +58,6 @@ export const serve = <E, R>(
   Effect.gen(function* () {
     const admission = admit(yield* HttpServerRequest.HttpServerRequest)
     if (admission._tag === "Refused") return HttpServerResponse.empty({ status: admission.status, headers: { "cache-control": NO_STORE } })
-    const response = yield* relay(fetch(admission.request), isLive(admission.request.url))
+    const response = yield* relay(fetch(admission.request), isLive(admission.request.url), admission.request.headers["x-request-id"])
     return cachePolicy(response, enabledFor(admission.request.url))
   })

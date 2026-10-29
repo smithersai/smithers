@@ -49,6 +49,7 @@ const postgresUp = electricUp &&
 
 type Fault =
   | { readonly _tag: "down" }
+  | { readonly _tag: "empty"; readonly status: number }
   | { readonly _tag: "answer"; readonly headers: Record<string, string> }
   | { readonly _tag: "hold" }
   | { readonly _tag: "breakBody" }
@@ -69,6 +70,8 @@ const harness = (options: Partial<ShapeProxy.Options<HttpServerRequest.HttpServe
     upstream.push(url)
     upstreamHeaders.push(new Headers(input instanceof Request ? input.headers : init?.headers))
     switch (fault?._tag) {
+      case "empty":
+        return new Response(null, { status: fault.status, headers: { "retry-after": "5" } })
       case "down":
         throw new TypeError("fetch failed")
       case "hold":
@@ -151,6 +154,38 @@ const harness = (options: Partial<ShapeProxy.Options<HttpServerRequest.HttpServe
 const until = (assertion: () => void) => vi.waitFor(assertion, { timeout: 5_000, interval: 10 })
 
 describe("refusals: no Electric needed", () => {
+  test("a bodyless upstream answer preserves its status and completes once with zero bytes", async () => {
+    for (const status of [200, 204, 205, 304, 503]) {
+      const h = harness()
+      h.fault({ _tag: "empty", status })
+      const response = await h.request("?offset=-1")
+      expect(response.status).toBe(status)
+      expect(response.headers.get("retry-after")).toBe("5")
+      expect(response.headers.get("cache-control")).toBe("private, no-store")
+      expect((await response.arrayBuffer()).byteLength).toBe(0)
+      await until(() => expect(h.logs).toHaveLength(1))
+      expect(h.line()?.annotations).toMatchObject({ status, bytes: 0, outcome: "complete" })
+      expect(h.count(ShapeProxy.defaultMetric, { status: String(status), live: "false" })).toBe(1)
+    }
+  })
+
+  test("upstream failures carry the proxy's own correlation, never a browser-supplied request id", async () => {
+    const h = harness()
+    h.fault({ _tag: "down" })
+    const ids: Array<string | null> = []
+    for (let index = 0; index < 2; index++) {
+      const response = await h.request("?offset=-1", { headers: { "x-request-id": "browser-private-value" } })
+      expect(response.status).toBe(502)
+      const id = response.headers.get("x-request-id")
+      expect(id).toMatch(/^[a-f0-9]{16}$/)
+      expect(h.upstreamHeaders[index]!.get("x-request-id")).toBe(id)
+      expect(h.line()?.annotations.correlationId).toBe(id)
+      ids.push(id)
+    }
+    expect(new Set(ids).size).toBe(2)
+    expect(JSON.stringify(h.logs)).not.toContain("browser-private-value")
+  })
+
   test("catch-up records its phase separately from first and live without logging protocol values", async () => {
     const h = harness()
     const response = await h.request("?offset=42_0&handle=private-handle", { method: "POST" })

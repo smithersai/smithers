@@ -19,22 +19,25 @@ export const isOverloaded = (error: unknown): boolean =>
 /**
  * Calls the object, recording one log line `electric.gateway.request`: whether the request is live, the status the
  * gateway answers, its `outcome` (`answered`, `overloaded` or `failed`), `durationMs`, and for a refusal or failure the
- * error's tag; never a URL, a parameter, a header or a body. Its duration minus the object's own
+ * error's tag. `correlationId` is the proxy's generated span id, or `unavailable` for an absent or invalid id;
+ * never a URL, a parameter, arbitrary header content or a body. Its duration minus the object's own
  * (`electric.object.request`) is how long the request waited to reach the object. An overloaded object is answered
  * `503` with `retry-after` and `cache-control: no-store`; any other failure fails as it did, which the Worker answers 500.
  */
 export const relay = <E, R>(
   call: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>,
   live: boolean,
+  requestId?: string,
 ): Effect.Effect<HttpServerResponse.HttpServerResponse, E, R> =>
   Effect.gen(function* () {
+    const correlationId = requestId !== undefined && /^[a-f0-9]{16}$/.test(requestId) ? requestId : "unavailable"
     const startedAt = yield* Clock.currentTimeMillis
     const since = Effect.map(Clock.currentTimeMillis, (now) => now - startedAt)
     return yield* call.pipe(
       Effect.tap((response) =>
         Effect.flatMap(since, (durationMs) =>
           Effect.logInfo("electric.gateway.request").pipe(
-            Effect.annotateLogs({ live, status: response.status, outcome: "answered", durationMs }),
+            Effect.annotateLogs({ correlationId, live, status: response.status, outcome: "answered", durationMs }),
           )
         )
       ),
@@ -44,12 +47,12 @@ export const relay = <E, R>(
           const durationMs = yield* since
           if (!isOverloaded(error)) {
             yield* Effect.logError("electric.gateway.request").pipe(
-              Effect.annotateLogs({ live, status: 500, outcome: "failed", durationMs, errorTag: tagOf(error) }),
+              Effect.annotateLogs({ correlationId, live, status: 500, outcome: "failed", durationMs, errorTag: tagOf(error) }),
             )
             return yield* Effect.failCause(cause)
           }
           yield* Effect.logWarning("electric.gateway.request").pipe(
-            Effect.annotateLogs({ live, status: 503, outcome: "overloaded", durationMs, errorTag: tagOf(error) }),
+            Effect.annotateLogs({ correlationId, live, status: 503, outcome: "overloaded", durationMs, errorTag: tagOf(error) }),
           )
           return HttpServerResponse.empty({
             status: 503,

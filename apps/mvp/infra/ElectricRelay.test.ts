@@ -26,6 +26,25 @@ const overloaded = () =>
 const dying = (ms: number, defect: unknown) => Effect.andThen(TestClock.adjust(`${ms} millis`), Effect.die(defect))
 
 describe("relay", () => {
+  test("every transport outcome carries a validated proxy correlation without request content", async () => {
+    const correlationId = "0123456789abcdef"
+    for (const call of [
+      Effect.succeed(HttpServerResponse.empty({ status: 503 })),
+      dying(1, overloaded()),
+      dying(1, new TypeError("private-detail")),
+    ]) {
+      const { log } = await run(relay(call, false, correlationId))
+      expect(log).toHaveLength(1)
+      expect(log[0]!.annotations.correlationId).toBe(correlationId)
+      expect(JSON.stringify(log)).not.toContain("private-detail")
+    }
+    for (const invalid of [undefined, "private-customer-content", "0123456789abcdef-private", "0123456789ABCDEF"]) {
+      const { log } = await run(relay(Effect.succeed(HttpServerResponse.empty()), false, invalid))
+      expect(log[0]!.annotations.correlationId).toBe("unavailable")
+      expect(JSON.stringify(log)).not.toContain("private-customer-content")
+    }
+  })
+
   test("the object's answer is the gateway's, recorded with its status, liveness and duration", async () => {
     const answer = HttpServerResponse.text("[]", { status: 200 })
     const { exit, log } = await run(relay(Effect.andThen(TestClock.adjust("20000 millis"), Effect.succeed(answer)), true))

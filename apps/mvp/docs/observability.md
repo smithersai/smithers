@@ -1012,6 +1012,10 @@ The 2026-10-25 browser transport reproduction received ten successful, fully con
 
 ## Electric gateway cache
 
+ShapeProxy sends its generated `correlationId` as `x-request-id` on the upstream request. A gateway cache miss records the same id in `electric.gateway.request`; only a 16-character lowercase hexadecimal id is accepted, otherwise `unavailable` is recorded. Join a proxy 503 to that record to distinguish `outcome=overloaded` (Cloudflare refused the object call) from `outcome=answered,status=503` (the object returned 503). The id is never a URL parameter, cache-key component or metric label. Cache hits and sampled or inaccessible gateway logs provide no gateway receipt; an unjoined proxy record with `upstream=electric` alone cannot identify Electric, Neon or an object overload as its cause.
+
+Regression proof: `infra/ElectricCache.test.ts`, `infra/ElectricRelay.test.ts` and the SDK's `test/ShapeProxy.test.ts` cover propagation, all transport outcomes, invalid ids and browser-supplied content exclusion.
+
 Workers Cache may answer before ElectricGateway runs. `electric.gateway.request`
 therefore counts only invocations relayed to the object, not every authorized
 ChatApi request. It records `live`, `status`, `outcome` (answered, overloaded,

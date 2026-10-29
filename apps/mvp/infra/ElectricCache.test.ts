@@ -109,10 +109,16 @@ test("the entrypoint refuses non-shapes before transport and keeps admitted bodi
 })
 
 test("an injected overloaded transport produces a noncacheable retryable refusal", async () => {
-  const handler = HttpEffect.toWebHandler(serve(() => Effect.fail({ overloaded: true })).pipe(Effect.provide(Logger.layer([]))))
-  const response = await handler(new Request("http://gateway/v1/shape?live=true"))
+  const log: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+  const logger = Logger.make((options) => void log.push(Logger.formatStructured.log(options)))
+  const handler = HttpEffect.toWebHandler(serve(() => Effect.fail({ overloaded: true })).pipe(Effect.provide(Logger.layer([logger]))))
+  const response = await handler(new Request("http://gateway/v1/shape?live=true", { headers: { "x-request-id": "0123456789abcdef" } }))
   expect(response.status).toBe(503)
   expect(response.headers.get("retry-after")).toBe("5")
   expect(response.headers.get("cache-control")).toBe(NO_STORE)
+  expect(log).toMatchObject([{
+    message: "electric.gateway.request",
+    annotations: { correlationId: "0123456789abcdef", status: 503, outcome: "overloaded" },
+  }])
   await response.text()
 })
