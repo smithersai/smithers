@@ -24,6 +24,7 @@ import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import * as NodeSocket from "@effect/platform-node/NodeSocket"
 import { describe, expect, it } from "@effect/vitest"
+import { ControlRpcs } from "@smthrs/control"
 import * as ApprovalAuthority from "@smthrs/control/ApprovalAuthority"
 import { Control } from "@smthrs/control/Control"
 import type { Service as ControlService } from "@smthrs/control/Control"
@@ -1762,8 +1763,8 @@ describe("the assembled gateway over a real loopback bind", () => {
       // the decode path `flow-durations` takes on a box that predates it, and
       // the answer is not a `GatewayError`: the request decoder dies before a
       // procedure runs, so the frame carries a `Die` and no code at all. A
-      // client that branches on `error.code` to learn whether the box knows a
-      // selector reads nothing here, and has to read the defect instead.
+      // client cannot distinguish unknown selectors through a typed code.
+      // Like handler defects, decode failures carry only the safe sentence.
       const response = yield* Effect.promise(() =>
         fetch(`${url}/projections`, {
           method: "POST",
@@ -1787,7 +1788,8 @@ describe("the assembled gateway over a real loopback bind", () => {
       expect(response.status).toBe(200)
       expect(frame.exit._tag).toBe("Failure")
       expect(frame.exit.cause.map((reason) => reason._tag)).toEqual(["Die"])
-      expect(frame.exit.cause[0]?.defect).toContain("[\"selector\"]")
+      expect(frame.exit.cause[0]?.defect).toEqual({ name: "Error", message: ControlRpcs.defectMessage })
+      expect(text).not.toContain("flow-durationz")
       expect(frame.exit.cause[0]?.code).toBeUndefined()
     }).pipe(Effect.provide(served())))
 
