@@ -9,11 +9,14 @@ import {
   symlinkSync,
   writeFileSync
 } from "node:fs"
+import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { expect, it } from "vitest"
 
 const cwd = join(import.meta.dirname, "..")
+const vitest = join(dirname(createRequire(import.meta.url).resolve("vitest/package.json")), "vitest.mjs")
+const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
 const list = (args: Array<string>): Array<string> => {
   // `vitest list --filesOnly` omits sharding. Use the runner's discovery and
   // configured sequencer, exactly as its execution pool selects files.
@@ -95,6 +98,10 @@ it(${JSON.stringify(phase)}, async () => {
           )
           return `pnpm exec vitest run --config vitest.config.mjs --reporter=blob --outputFile=$blobs/${phase}.json ${phase}.test.mjs `
         })
+        // pnpm's relative bin shims resolve from the temporary symlink on a
+        // clean CI install. Run the same installed Vitest through its real
+        // entrypoint so the fixture tests lane scheduling across installs.
+        .replaceAll("pnpm exec vitest", `${quote(process.execPath)} ${quote(vitest)}`)
       const scratch = join(root, "tmp")
       mkdirSync(scratch)
       execFileSync("sh", ["-c", shell], {
