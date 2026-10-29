@@ -64,6 +64,7 @@ import { Package as migratePackage } from "../../packages/smithers/migrate/PACKA
 import { Package as notificationsPackage } from "../../packages/smithers/notifications/PACKAGE.ts"
 import { Package as cliPackage } from "../../packages/smithers/PACKAGE.ts"
 import { Package as testingPackage } from "../../packages/testing/PACKAGE.ts"
+import { Package as mvpPackage } from "../mvp/PACKAGE.ts"
 
 const cwd = "apps/site"
 
@@ -217,7 +218,11 @@ const cliReference = Smithers.Generate({
 /** The CLI reference generator: fixture help and manifest in, Markdown sections out, plus write, check and drift. */
 const cliReferenceTest = Smithers.Shell.Test({
   shell: "node --test apps/site/scripts/gen-cli-reference.test.mjs",
-  data: [Smithers.file("scripts/gen-cli-reference.mjs"), Smithers.file("scripts/gen-cli-reference.test.mjs"), ...cliReferenceInputs]
+  data: [
+    Smithers.file("scripts/gen-cli-reference.mjs"),
+    Smithers.file("scripts/gen-cli-reference.test.mjs"),
+    ...cliReferenceInputs
+  ]
 })
 
 /** Real docs projections and installed npm consumer regressions. */
@@ -545,6 +550,7 @@ const docsRuntimeTests = Smithers.Shell.Test({
     Smithers.file("//apps/bug-worker/alchemy.run.ts"),
     Smithers.file("//apps/bug-worker/README.md"),
     Smithers.file("//apps/bug-worker/package.json"),
+    mvpPackage.deploymentSources,
     cliPackage.docsSources,
     flowPackage.docsSources,
     enginePackage.docsSources,

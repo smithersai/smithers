@@ -42965,6 +42965,26 @@
     }
   },
   {
+    "label": "//apps/mvp:deploymentSources",
+    "package": "apps/mvp",
+    "name": "deploymentSources",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "apps/mvp/**/*.{ts,tsx,vibe}",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "apps/mvp/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//apps/mvp:failureLintTests",
     "package": "apps/mvp",
     "name": "failureLintTests",
@@ -45266,6 +45286,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//apps/mvp:deploymentSources",
       "//packages/smithers/agent:lib",
       "//packages/smithers/build/targets:lib",
       "//packages/smithers/flows/engine:docsSources",

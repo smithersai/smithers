@@ -19,6 +19,12 @@ import { Smithers } from "@smthrs/targets"
 
 const cwd = "apps/mvp"
 
+/** The deployment entrypoint and its relative source import graph, read by the docs routing gate. */
+const deploymentSources = Smithers.Filegroup({
+  srcs: [Smithers.glob("**/*.{ts,tsx,vibe}")],
+  cwd
+})
+
 /**
  * Server code: every Worker source at any depth (worker/github, worker/branch, worker/flows), tests and test support
  * (worker/test/ and a folder's own test/) left out. `!(*.test)` and `!(test)` each match one path segment, so the
@@ -742,6 +748,7 @@ const failureLintTests = Smithers.NodeTest({
 
 export const Package = Smithers.Package({
   targets: {
+    deploymentSources,
     workerIoLintTests,
     failureLintTests,
     importRules: importRulesTarget,
