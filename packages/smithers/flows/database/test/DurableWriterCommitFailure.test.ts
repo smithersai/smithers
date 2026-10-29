@@ -154,6 +154,39 @@ describe("DurableWriter COMMIT failures", () => {
       yield* writer.write(Effect.void)
     }).pipe(Effect.provide(NodeDatabase.layer({ filename: ":memory:" }))))
 
+  it.effect("returns a typed storage error when BEGIN fails before entering the body", () =>
+    Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      const writer = DurableWriter.make(sql)
+      const failure = new SqlError.SqlError({
+        reason: SqlError.classifySqliteError(Object.assign(new Error("BEGIN unavailable"), { code: "SQLITE_IOERR" }))
+      })
+      let refused = true
+      yield* Effect.scoped(Effect.map(sql.reserve, (conn) => {
+        const execute = conn.executeUnprepared.bind(conn)
+        Object.assign(conn, {
+          executeUnprepared: (...args: Parameters<typeof execute>) =>
+            args[0].startsWith("BEGIN") && refused
+              ? Effect.fail(failure)
+              : execute(...args)
+        })
+      }))
+      let entered = false
+      const failed = yield* Effect.exit(writer.write(Effect.sync(() => {
+        entered = true
+      })))
+      expect(entered).toBe(false)
+      expect(Exit.isFailure(failed)).toBe(true)
+      if (!Exit.isFailure(failed)) return
+      expect(Result.isFailure(Cause.findDefect(failed.cause))).toBe(true)
+      expect(Result.getOrUndefined(Cause.findError(failed.cause))).toMatchObject({ code: "io", cause: failure })
+      refused = false
+      // A refused BEGIN releases the real connection for the next transaction.
+      yield* writer.write(sql`CREATE TABLE usable_after_begin_failure (id INTEGER)`)
+      yield* writer.write(sql`INSERT INTO usable_after_begin_failure VALUES (1)`)
+      expect(yield* sql`SELECT * FROM usable_after_begin_failure`).toEqual([{ id: 1 }])
+    }).pipe(Effect.provide(NodeDatabase.layer({ filename: ":memory:" }))))
+
   it.effect("preserves intentional SqlError defects in the write body", () =>
     Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient

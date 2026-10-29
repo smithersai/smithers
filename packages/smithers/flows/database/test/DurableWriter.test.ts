@@ -765,7 +765,7 @@ describe("DurableWriter", () => {
       expect(attempts).toBe(3)
     }))
 
-  it.effect("keeps an exhausted retryable driver failure on the defect channel", () =>
+  it.effect("classifies an exhausted acquisition failure before the body as a typed storage error", () =>
     Effect.gen(function*() {
       let attempts = 0
       const defect = rollbackDefect()
@@ -791,8 +791,8 @@ describe("DurableWriter", () => {
       const exit = yield* program
       expect(Exit.isFailure(exit)).toBe(true)
       if (!Exit.isFailure(exit)) return
-      expect(Result.getOrUndefined(Cause.findDefect(exit.cause))).toBe(defect)
-      expect(Result.isFailure(Cause.findError(exit.cause))).toBe(true)
+      expect(Result.isFailure(Cause.findDefect(exit.cause))).toBe(true)
+      expect(Result.getOrUndefined(Cause.findError(exit.cause))).toMatchObject({ code: "busy", cause: defect })
       expect(attempts).toBe(3)
     }))
 

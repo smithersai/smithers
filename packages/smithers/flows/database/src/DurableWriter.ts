@@ -289,11 +289,13 @@ export const make = (sql: SqlClient.SqlClient, options?: WriteRetryOptions | und
         const attempt = Effect.suspend(() => {
           const effects: Array<Effect.Effect<void>> = []
           let scope: CommitScope.CommitScope | undefined
+          let bodyStarted = false
           let bodySucceeded = false
           // The driver reads this write's partition when it opens the
           // transaction or savepoint; the body asks for its own.
           return sql.withTransaction(
             Effect.flatMap(Effect.serviceOption(sql.transactionService), (transaction) => {
+              bodyStarted = true
               scope = managed && Option.isSome(transaction)
                 ? { key: sql.transactionService, transaction: transaction.value, effects, open: true }
                 : undefined
@@ -311,12 +313,12 @@ export const make = (sql: SqlClient.SqlClient, options?: WriteRetryOptions | und
             // Effect SQL fails a rejected COMMIT with a typed `SqlError`, and
             // with defects when the rollback that follows it fails too. Both
             // are this write's SQL failure, so the defects return to the typed
-            // channel. Only a successful outer body can reach COMMIT;
-            // intentional body defects and nested savepoint failures keep
-            // their original channels.
+            // channel. A rejected BEGIN has not entered the supplied body,
+            // so its SQL defects are infrastructure failures too. Intentional
+            // body defects and nested savepoint failures keep their channels.
             Effect.catchCause((cause) =>
               Effect.failCause(
-                !nested && bodySucceeded
+                !bodyStarted || (!nested && bodySucceeded)
                   ? Cause.fromReasons(cause.reasons.map((reason) =>
                     Cause.isDieReason(reason) && SqlError.isSqlError(reason.defect)
                       ? Cause.makeFailReason(reason.defect)
