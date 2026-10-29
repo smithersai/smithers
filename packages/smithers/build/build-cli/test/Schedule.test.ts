@@ -389,3 +389,115 @@ describe("schedule", () => {
     await expect(done).rejects.toThrow("sync fault")
   })
 })
+
+describe("scheduleEffect stop", () => {
+  /** Workers that run until the test settles them, recording starts, completions and interruptions. */
+  const workers = () => {
+    const gates = new Map<string, ReturnType<typeof Promise.withResolvers<void>>>()
+    const gate = (label: string) => {
+      if (!gates.has(label)) gates.set(label, Promise.withResolvers<void>())
+      return gates.get(label)!
+    }
+    const started: Array<string> = []
+    const finished: Array<string> = []
+    const interrupted: Array<string> = []
+    const runOne = (label: string) =>
+      Effect.sync(() => started.push(label)).pipe(
+        Effect.andThen(Effect.promise(() => gate(label).promise)),
+        Effect.tap(() => Effect.sync(() => finished.push(label))),
+        Effect.onInterrupt(() => Effect.sync(() => interrupted.push(label)))
+      )
+    return { started, finished, interrupted, runOne, settle: (label: string) => gate(label).resolve() }
+  }
+
+  it("stops dispatching and interrupts running targets once stop holds", async () => {
+    const work = workers()
+    let stopped = false
+    const done = Effect.runPromise(scheduleEffect(
+      [target("//:a"), target("//:b"), target("//:c"), target("//:d", "//:a")],
+      2,
+      work.runOne,
+      undefined,
+      { stop: () => stopped }
+    ))
+    await tick()
+    expect(work.started).toEqual(["//:a", "//:b"])
+    stopped = true
+    work.settle("//:a")
+    await done
+    expect(work.finished).toEqual(["//:a"])
+    expect(work.interrupted).toEqual(["//:b"])
+    expect(work.started).toEqual(["//:a", "//:b"])
+  })
+
+  it("awaits an interrupted target's finalizer before resolving", async () => {
+    const released = Promise.withResolvers<void>()
+    let finalized = false
+    let stopped = false
+    const work = workers()
+    const done = Effect.runPromise(scheduleEffect(
+      [target("//:a"), target("//:b")],
+      2,
+      (label) =>
+        label === "//:b"
+          ? Effect.never.pipe(Effect.ensuring(
+            Effect.promise(() => released.promise).pipe(
+              Effect.tap(() => Effect.sync(() => (finalized = true)))
+            )
+          ))
+          : work.runOne(label),
+      undefined,
+      { stop: () => stopped }
+    ))
+    let resolved = false
+    void done.then(() => (resolved = true))
+    await tick()
+    stopped = true
+    work.settle("//:a")
+    await tick()
+    expect(resolved).toBe(false)
+    released.resolve()
+    await done
+    expect(finalized).toBe(true)
+  })
+
+  it("runs every target while stop stays false", async () => {
+    const work = workers()
+    const done = Effect.runPromise(scheduleEffect(
+      [target("//:a"), target("//:b", "//:a")],
+      1,
+      work.runOne,
+      undefined,
+      { stop: () => false }
+    ))
+    await tick()
+    work.settle("//:a")
+    await tick()
+    work.settle("//:b")
+    await done
+    expect(work.finished).toEqual(["//:a", "//:b"])
+    expect(work.interrupted).toEqual([])
+  })
+
+  it("leaves an internal fault to the drain path instead of stopping", async () => {
+    let consulted = false
+    const work = workers()
+    const done = Effect.runPromise(scheduleEffect(
+      [target("//:a"), target("//:b")],
+      2,
+      (label) => label === "//:a" ? Effect.fail(new Error("fault")) : work.runOne(label),
+      undefined,
+      {
+        stop: () => {
+          consulted = true
+          return true
+        }
+      }
+    ))
+    await tick()
+    work.settle("//:b")
+    await expect(done).rejects.toThrow("fault")
+    expect(work.finished).toEqual(["//:b"])
+    expect(consulted).toBe(false)
+  })
+})

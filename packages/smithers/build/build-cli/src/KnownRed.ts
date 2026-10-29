@@ -114,6 +114,12 @@ export class KnownRedError extends Data.TaggedError("smithers-build/KnownRedErro
 const temporaryPath =
   /(?:\/(?:private\/)?tmp\/|\/(?:private\/)?var\/folders\/[^/\s]+\/[^/\s]+\/T\/|[A-Za-z]:[\\/]Users[\\/][^\\/\s]+[\\/]AppData[\\/]Local[\\/]Temp[\\/])((?:smthrs|flows)-[\w-]+-)[A-Za-z0-9]{6}(?=[\\/\s"')]|$)/g
 
+// A path under the system temporary root, and the decimal suffix Go's
+// os.MkdirTemp and t.TempDir append to each name they create beneath it.
+const goTemporaryPath =
+  /((?:<tmp>\/|\/(?:private\/)?tmp\/|\/(?:private\/)?var\/folders\/[^/\s]+\/[^/\s]+\/T\/|[A-Za-z]:[\\/]Users[\\/][^\\/\s]+[\\/]AppData[\\/]Local[\\/]Temp[\\/]))[^\s"')]+/g
+const goRandomName = /(^|[\\/])([A-Za-z_.][\w.-]*?)\d{6,10}(?=[\\/]|$)/g
+
 const normalizeDiagnostic = (error: string): string =>
   stripVTControlCharacters(error).replace(/\r\n/g, "\n")
     .replace(/^\[?\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\]?(?=\s)/gm, "<timestamp>")
@@ -129,14 +135,20 @@ const normalizeDiagnostic = (error: string): string =>
       "$1<duration>$2"
     )
     .replace(/^( +at least ~)\d+(?:\.\d+)?m?s( faster with isolate: false .*)$/gm, "$1<duration>$2")
+    .replace(/^([ \t]*--- (?:FAIL|PASS|SKIP): \S+) \(\d+(?:\.\d+)?s\)[ \t]*$/gm, "$1 (<duration>)")
+    .replace(/^((?:FAIL|ok)[ \t]+\S+[ \t]+)\d+(?:\.\d+)?s[ \t]*$/gm, "$1<duration>")
     .replace(temporaryPath, "<tmp>/$1<id>")
-    .replace(/<tmp>\/[^\s"')]+/g, (path) => path.replaceAll("\\", "/"))
+    .replace(goTemporaryPath, (path, root: string) =>
+      `${root}${path.slice(root.length).replace(goRandomName, "$1$2<id>")}`)
+    .replace(/<tmp>\/[^\s"')]+/g, (path) =>
+      path.replaceAll("\\", "/"))
 
 /**
  * SHA-256 of the complete reviewed failure diagnostic (normalization v1).
  *
- * Normalizes CRLF, ANSI controls, leading UTC ISO log timestamps, and
- * Smithers mkdtemp roots. JSON string values are normalized independently;
+ * Normalizes CRLF, ANSI controls, leading UTC ISO log timestamps, Vitest and
+ * Go test timings, Smithers mkdtemp roots, and the random decimal suffix of
+ * Go temporary directories. JSON string values are normalized independently;
  * keys, array order, exit codes, filenames and other numbers remain intact.
  * Failed rows never match by substring, regular-expression or target alone.
  * Listed skipped dependents retain label-based excusal; they have no diagnostic.
@@ -253,11 +265,54 @@ export const read = async (directory: string, path: string): Promise<{
 }
 
 /**
+ * The context a list is applied in.
+ *
+ * `today` is a `YYYY-MM-DD` UTC date. `advisory` names targets whose failures
+ * never block, such as non-blocking artifact tests.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Context {
+  readonly platform: string
+  readonly today: string
+  readonly advisory?: ReadonlySet<string> | undefined
+}
+
+/**
+ * Whether one target's outcome turns the verdict red under the list.
+ *
+ * A failure blocks unless it is advisory or a live entry names its label and
+ * failure digest. A target skipped for a red dependency blocks unless it is
+ * advisory or a live entry names its label. Every other outcome never blocks.
+ * {@link judge} and fail-fast execution apply this same rule.
+ *
+ * @category judging
+ * @since 1.0.0
+ */
+export const blocks = (
+  list: { readonly entries: ReadonlyArray<Entry> },
+  context: Context
+): (row: Executor.TargetReport) => boolean => {
+  const active = list.entries.filter((entry) =>
+    (entry.platforms === undefined || entry.platforms.includes(context.platform)) && entry.expires >= context.today
+  )
+  const live = new Set(active.map((entry) => entry.label))
+  const identities = new Set(active.map((entry) => `${entry.label} ${entry.failureDigest}`))
+  return (row) => {
+    if (context.advisory?.has(row.label)) return false
+    if (row.status === "failed") {
+      return row.error === undefined || row.error.trim() === "" ||
+        !identities.has(`${row.label} ${fingerprint(row.error)}`)
+    }
+    return row.status === "skipped" && row.blockedBy !== undefined && !live.has(row.label)
+  }
+}
+
+/**
  * Judges one execution against the list.
  *
- * `today` is a `YYYY-MM-DD` UTC date. The summary's `ok` is true when every
- * failure is named by a live entry for `platform` and no unlisted target was
- * skipped for a red dependency.
+ * The summary's `ok` is true when no target {@link blocks}.
  *
  * @category judging
  * @since 1.0.0
@@ -265,15 +320,14 @@ export const read = async (directory: string, path: string): Promise<{
 export const judge = (
   summary: Executor.Summary,
   list: { readonly source: string; readonly entries: ReadonlyArray<Entry> },
-  context: { readonly platform: string; readonly today: string; readonly advisory?: ReadonlySet<string> }
+  context: Context
 ): JudgedSummary => {
   const here = list.entries.filter((entry) =>
     entry.platforms === undefined || entry.platforms.includes(context.platform)
   )
-  const active = here.filter((entry) => entry.expires >= context.today)
-  const live = new Set(active.map((entry) => entry.label))
-  const identities = new Set(active.map((entry) => `${entry.label} ${entry.failureDigest}`))
+  const live = new Set(here.filter((entry) => entry.expires >= context.today).map((entry) => entry.label))
   const expired = here.filter((entry) => entry.expires < context.today).map((entry) => entry.label)
+  const blocking = blocks(list, context)
   const failed = summary.results.filter((row) => row.status === "failed")
   const green = new Set(
     summary.results.filter((row) => row.status === "ran" || row.status === "hit").map((row) => row.label)
@@ -282,19 +336,14 @@ export const judge = (
   const newlyRed: Array<string> = []
   const observed: Array<{ label: string; failureDigest: string }> = []
   for (const row of failed) {
-    const failureDigest = row.error !== undefined && row.error.trim() !== "" ? fingerprint(row.error) : undefined
-    if (failureDigest !== undefined) observed.push({ label: row.label, failureDigest })
-    const matches = failureDigest !== undefined && identities.has(`${row.label} ${failureDigest}`)
+    if (row.error !== undefined && row.error.trim() !== "") {
+      observed.push({ label: row.label, failureDigest: fingerprint(row.error) })
+    }
     if (context.advisory?.has(row.label)) continue
-    if (matches) known.push(row.label)
-    else newlyRed.push(row.label)
+    if (blocking(row)) newlyRed.push(row.label)
+    else known.push(row.label)
   }
-  const unrun = summary.results
-    .filter((row) =>
-      row.status === "skipped" && row.blockedBy !== undefined && !live.has(row.label) &&
-      !context.advisory?.has(row.label)
-    )
-    .map((row) => row.label)
+  const unrun = summary.results.filter((row) => row.status === "skipped" && blocking(row)).map((row) => row.label)
   return {
     ...summary,
     results: summary.results.map((row) =>
@@ -306,7 +355,8 @@ export const judge = (
         }
         : row
     ),
-    ok: newlyRed.length === 0 && unrun.length === 0,
+    ok: newlyRed.length === 0 && unrun.length === 0 &&
+      !summary.results.some((row) => row.status === "cancelled"),
     knownRed: {
       source: list.source,
       ...(context.advisory === undefined

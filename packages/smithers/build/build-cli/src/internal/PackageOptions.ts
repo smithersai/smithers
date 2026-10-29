@@ -6,6 +6,7 @@
 
 import type * as Compose from "@smthrs/targets/Compose"
 import type * as Target from "@smthrs/targets/Target"
+import type * as Executor from "../Executor.ts"
 import type * as PackageIndexModule from "../PackageIndex.ts"
 import type * as Reporter from "../Reporter.ts"
 import type * as Workspace from "../Workspace.ts"
@@ -135,6 +136,12 @@ export interface RunOptions {
   readonly jobs?: number | undefined
   readonly readCache?: boolean | undefined
   readonly signal?: AbortSignal | undefined
+  /**
+   * Fail-fast execution: the first settled target this returns true for stops
+   * the run. Nothing new starts, running targets are interrupted, and both are
+   * reported `cancelled`. Omitted, the run keeps going past every failure.
+   */
+  readonly failFast?: ((report: Executor.TargetReport) => boolean) | undefined
   readonly log?: ((line: string) => void) | undefined
   /** Receives every execution event; without one, `log` receives the plain status lines. */
   readonly reporter?: Reporter.Reporter | undefined

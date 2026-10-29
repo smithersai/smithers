@@ -81,6 +81,7 @@ policy in `.smithers/factory.json`.
 | `--include-exclusive`    |       | boolean    | `false`          | Include exclusive targets in wildcard `ci` and `test` selections.    |
 | `--cache` / `--no-cache` |       | boolean    | `true`           | Consult the cache before running. `--no-cache` still publishes.      |
 | `--known-red`            |       | path       | none             | JSON list of reviewed failures; unmatched failures fail.             |
+| `--fail-fast`            |       | boolean    | `false`          | Stop at the first failure that fails the run; cancel the rest.       |
 | `--results-file`         |       | path       | none             | Also write the summary, one status per label, as JSON to a new file. |
 
 Exclusive targets run alone after ready ordinary work drains, regardless of
@@ -104,7 +105,8 @@ Generated CI passes it on every step when `GithubCiGen` sets `results: true`,
 and each job uploads the files as the artifact
 `smthrs-results-<job>-<index>-<attempt>`. A check receipt reads a label's
 status from that artifact, never from the log (`.specs/engineering/checks/README.md`).
-`hit` appears only for cached green results.
+`hit` appears only for cached green results, and `cancelled` only under
+`--fail-fast`.
 
 ### Known-red targets
 
@@ -146,12 +148,16 @@ they have no failure diagnostic of their own.
 Normalization v1 strips ANSI controls, converts CRLF to LF, and replaces UTC
 ISO timestamps at the start of log lines with `<timestamp>`. It also normalizes
 Effect log timestamps and Vitest's `Start at`, `Duration`, per-result durations,
-and worker timing hints. Test names, statuses, counts and all stdout/stderr
+and worker timing hints, and Go's `--- FAIL|PASS|SKIP: Name (1.23s)` and
+`FAIL|ok <package> 1.23s` durations. Test names, statuses, counts and all stdout/stderr
 failure content remain significant. It replaces
 Smithers temporary roots (`smthrs-` or `flows-` names ending in six random
 alphanumeric characters under `/tmp`, macOS `/var/folders/.../T`, or Windows
 `Users/.../AppData/Local/Temp`) with `<tmp>/<name>-<id>`, preserving the remaining
-path with `/` separators. JSON string values are normalized independently.
+path with `/` separators. Under a temporary root, a path segment ending in the
+6 to 10 random digits Go's `os.MkdirTemp` and `t.TempDir` append keeps its
+name and loses the digits, so `/tmp/scope-3317712936/` matches
+`/tmp/scope-639925459/`. JSON string values are normalized independently.
 Other paths, dates, diagnostic timings, exit codes, filenames, assertions and additional
 errors remain significant. Matching is exact, never a substring or pattern.
 
@@ -168,6 +174,27 @@ lines, count as newly red until reviewed.
 prints one line to standard error: `known red`, `newly red`, `not run`,
 `observed failure` (for known and new failures), `expired entry`, or `green again, remove from`. Delete an entry in the change that fixes its
 target.
+
+### Fail-fast
+
+By default a run keeps going: a failure skips only the targets that depend on
+it, and every other target still runs. `--fail-fast` stops at the first target
+whose outcome would fail the command, as Bazel does without `--keep_going`.
+Nothing new starts, running targets are interrupted and their process groups
+killed, and the command reports the failure and exits 1. A typical use is a
+merge-queue gate, where a red batch only needs to be known red before the
+queue can bisect it.
+
+Every target that did not finish is reported with the status `cancelled`:
+`cancelled: --fail-fast stopped the run after <label> failed` for an
+interrupted target, and `not started: ...` for one never dispatched. The
+results file lists them too, and its `counts` gains `cancelled`. A run with a
+cancelled target never passes.
+
+A failure that `--known-red` or a non-blocking artifact lifecycle excuses does
+not stop the run, and neither does a skip that the list excuses; the stop
+applies the same rule as the final verdict. A target skipped for a red
+dependency that the list does not name stops it.
 
 ## Global options
 

@@ -272,6 +272,33 @@ describe("KnownRed.fingerprint", () => {
       .not.toBe(KnownRed.fingerprint("failed at /tmp/random-fixture-DEF456/file.ts"))
   })
 
+  it("normalizes Go test durations and os.MkdirTemp suffixes, keeping test names and outcomes", () => {
+    const run = (scope: string, inner: string, durations: readonly [string, string, string]) =>
+      `--- FAIL: TestD268ImpureImportRuntime (${durations[0]}s)\n` +
+      `    d268_test.go:107: exit status 1: file:///tmp/vibelang-mapper-scope-${scope}/node_modules/x/regions.js:230\n` +
+      `            at scenario$body (file:///tmp/vibelang-mapper-scope-${scope}/d268-${inner}/consumer.mjs:12:59)\n` +
+      `    --- FAIL: TestMapperFollowupRuntimeCases/plain-imports (${durations[1]}s)\n` +
+      `FAIL\n` +
+      `FAIL\tgithub.com/smithersai/vibelang/internal/vibelangmapper\t${durations[2]}s\n` +
+      `ok  \tgithub.com/smithersai/vibelang/internal/format\t${durations[2]}s`
+    expect(KnownRed.fingerprint(run("3317712936", "3691691321", ["0.65", "0.64", "334.412"])))
+      .toBe(KnownRed.fingerprint(run("639925459", "641104867", ["0.66", "0.71", "74.4"])))
+    expect(KnownRed.fingerprint(run("3317712936", "3691691321", ["0.65", "0.64", "334.412"])))
+      .not.toBe(
+        KnownRed.fingerprint(
+          run("3317712936", "3691691321", ["0.65", "0.64", "334.412"]).replace("plain-imports", "module-cycle")
+        )
+      )
+    expect(KnownRed.fingerprint("--- FAIL: TestA (0.10s)")).not.toBe(KnownRed.fingerprint("--- PASS: TestA (0.10s)"))
+    expect(KnownRed.fingerprint("C:\\Users\\w\\AppData\\Local\\Temp\\TestA123456789\\001"))
+      .toBe(KnownRed.fingerprint("C:\\Users\\w\\AppData\\Local\\Temp\\TestA987654321\\001"))
+    expect(KnownRed.fingerprint("/tmp/smthrs-run-ABC123/scope-1234567/out"))
+      .toBe(KnownRed.fingerprint("/tmp/smthrs-run-DEF456/scope-7654321/out"))
+    expect(KnownRed.fingerprint("failed at /repo/build-1234567/out"))
+      .not.toBe(KnownRed.fingerprint("failed at /repo/build-7654321/out"))
+    expect(KnownRed.fingerprint("/tmp/scope-12345/out")).not.toBe(KnownRed.fingerprint("/tmp/scope-54321/out"))
+  })
+
   it("preserves error details and does not normalize arbitrary paths or embedded timestamps", () => {
     const base = "Error: expected 1, got 2 at /repo/file.ts; 2026-09-26T12:34:56Z"
     for (
@@ -430,6 +457,73 @@ describe("KnownRed.judge", () => {
 const temporaryDirectories: Array<string> = []
 afterAll(async () => {
   await Promise.all(temporaryDirectories.map((directory) => Fs.rm(directory, { recursive: true, force: true })))
+})
+
+describe("KnownRed.blocks", () => {
+  const context = { platform: "linux", today: "2026-10-01" }
+  const row = (
+    label: string,
+    status: Executor.TargetReport["status"],
+    extra: Partial<Executor.TargetReport> = {}
+  ): Executor.TargetReport => ({ label, target: label, status, durationMs: 1, key: label, ...extra })
+
+  it("blocks a failure no live entry names by label and digest", () => {
+    const blocks = KnownRed.blocks({ entries: [entry("//a:test")] }, context)
+    expect(blocks(row("//a:test", "failed", { error: reviewedFailure }))).toBe(false)
+    expect(blocks(row("//a:test", "failed", { error: "a different failure" }))).toBe(true)
+    expect(blocks(row("//b:test", "failed", { error: reviewedFailure }))).toBe(true)
+  })
+
+  it("blocks a failure without a diagnostic, since nothing can match it", () => {
+    const blocks = KnownRed.blocks({ entries: [entry("//a:test")] }, context)
+    expect(blocks(row("//a:test", "failed"))).toBe(true)
+    expect(blocks(row("//a:test", "failed", { error: "  " }))).toBe(true)
+  })
+
+  it("stops excusing an entry after its expiry or on another platform", () => {
+    expect(
+      KnownRed.blocks({ entries: [entry("//a:test")] }, { ...context, today: "2026-10-10" })(
+        row("//a:test", "failed", { error: reviewedFailure })
+      )
+    ).toBe(true)
+    expect(
+      KnownRed.blocks({ entries: [entry("//a:test", { platforms: ["win32"] })] }, context)(
+        row("//a:test", "failed", { error: reviewedFailure })
+      )
+    ).toBe(true)
+  })
+
+  it("blocks a target skipped for a red dependency unless a live entry names it", () => {
+    const blocks = KnownRed.blocks({ entries: [entry("//listed:test")] }, context)
+    expect(blocks(row("//consumer:test", "skipped", { blockedBy: "//a:test" }))).toBe(true)
+    expect(blocks(row("//listed:test", "skipped", { blockedBy: "//a:test" }))).toBe(false)
+    expect(blocks(row("//engine:review", "skipped", { error: "the codex CLI is not installed" }))).toBe(false)
+  })
+
+  it("never blocks an advisory target, a green target or a cancelled one", () => {
+    const blocks = KnownRed.blocks({ entries: [] }, { ...context, advisory: new Set(["//art:test"]) })
+    expect(blocks(row("//art:test", "failed", { error: "boom" }))).toBe(false)
+    expect(blocks(row("//art:test", "skipped", { blockedBy: "//a:test" }))).toBe(false)
+    expect(blocks(row("//a:test", "ran"))).toBe(false)
+    expect(blocks(row("//a:test", "hit"))).toBe(false)
+    expect(blocks(row("//a:test", "cancelled", { error: "cancelled" }))).toBe(false)
+  })
+
+  it("judges a run with a cancelled target red even when every failure is known", () => {
+    const judged = KnownRed.judge(
+      {
+        ...summary([["//a:test", "failed"]]),
+        results: [
+          ...summary([["//a:test", "failed"]]).results,
+          row("//b:test", "cancelled", { error: "cancelled" })
+        ]
+      },
+      { source: "list.json", entries: [entry("//a:test")] },
+      context
+    )
+    expect(judged.knownRed.known).toEqual(["//a:test"])
+    expect(judged.ok).toBe(false)
+  })
 })
 
 describe("KnownRed.read", () => {

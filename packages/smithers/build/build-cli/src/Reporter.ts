@@ -196,7 +196,9 @@ export const plainLine = (report: TargetReport): string => {
  */
 export const plainSummary = (summary: Summary): string =>
   `${summary.results.length} targets: ${summary.counts.hit} hit, ${summary.counts.ran} ran, ` +
-  `${summary.counts.failed} failed, ${summary.counts.skipped} skipped (${formatDuration(summary.durationMs)})`
+  `${summary.counts.failed} failed, ${summary.counts.skipped} skipped` +
+  (summary.counts.cancelled === undefined ? "" : `, ${summary.counts.cancelled} cancelled`) +
+  ` (${formatDuration(summary.durationMs)})`
 
 const noop = (): void => {}
 
@@ -304,12 +306,13 @@ const humanPlain = (terminal: Terminal): Reporter => {
   }
 }
 
-const glyph: Record<TargetReport["status"], string> = { ran: "✓", hit: "○", failed: "✗", skipped: "↷" }
+const glyph: Record<TargetReport["status"], string> = { ran: "✓", hit: "○", failed: "✗", skipped: "↷", cancelled: "⊘" }
 const statusWord: Record<TargetReport["status"], string> = {
   ran: "",
   hit: "cached",
   failed: "failed",
-  skipped: "skipped"
+  skipped: "skipped",
+  cancelled: "cancelled"
 }
 const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 const defaultInterval = 80
@@ -407,6 +410,8 @@ const pretty = (options: MakeOptions, live: boolean): Reporter => {
           return `${c.red(glyph.failed)} ${c.red(c.bold(label))}  ${c.red(word)}  ${c.dim(duration)}`
         case "skipped":
           return `${c.yellow(glyph.skipped)} ${c.dim(label)}  ${c.yellow(word)}  ${c.dim(duration)}`
+        case "cancelled":
+          return `${c.yellow(glyph.cancelled)} ${c.dim(label)}  ${c.yellow(word)}  ${c.dim(duration)}`
       }
     })()
     if (report.error === undefined) return [head]
@@ -447,6 +452,7 @@ const pretty = (options: MakeOptions, live: boolean): Reporter => {
     if (counts.hit > 0) segments.push(`${counts.hit} cached`)
     if (counts.failed > 0) segments.push(c.red(`${counts.failed} failed`))
     if (counts.skipped > 0) segments.push(c.yellow(`${counts.skipped} skipped`))
+    if ((counts.cancelled ?? 0) > 0) segments.push(c.yellow(`${counts.cancelled} cancelled`))
     segments.push(`${summary.results.length} total`)
     const fullCache = summary.results.length > 0 && counts.hit === summary.results.length
     const time = `${c.bold("Time:")} ${formatDuration(summary.durationMs)}`

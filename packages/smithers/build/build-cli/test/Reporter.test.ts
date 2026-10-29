@@ -582,3 +582,35 @@ describe("renderer edges", () => {
     expect(piped.columns).toBeUndefined()
   })
 })
+
+describe("cancelled targets", () => {
+  const cancelled = report(
+    "//:epsilon",
+    "cancelled",
+    1_500,
+    "cancelled: --fail-fast stopped the run after //:gamma failed"
+  )
+  const stopped: Executor.Summary = {
+    ...summary,
+    counts: { ...summary.counts, cancelled: 1 },
+    results: [...results, cancelled]
+  }
+
+  it("renders a cancelled row and count in the stream renderer", () => {
+    const term = terminal(true)
+    const reporter = Reporter.make({ renderer: "stream", terminal: term, env: {} })
+    reporter.begin(run)
+    reporter.targetFinished(cancelled)
+    reporter.summary(stopped)
+    reporter.close()
+    const lines = term.text().split("\n").map(collapse)
+    expect(lines).toContain("⊘ //:epsilon cancelled 1.5s")
+    expect(lines).toContain("cancelled: --fail-fast stopped the run after //:gamma failed")
+    expect(lines).toContain("Tasks: 1 ran, 1 cached, 1 failed, 1 skipped, 1 cancelled, 5 total · Time: 23.0s")
+  })
+
+  it("adds the cancelled count to the plain summary only when present", () => {
+    expect(Reporter.plainSummary(stopped)).toBe("5 targets: 1 hit, 1 ran, 1 failed, 1 skipped, 1 cancelled (23.0s)")
+    expect(Reporter.plainSummary(summary)).toBe("4 targets: 1 hit, 1 ran, 1 failed, 1 skipped (23.0s)")
+  })
+})

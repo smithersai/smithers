@@ -472,10 +472,22 @@ export const executeEffect = (
     const notGreen = new Set<string>()
     const byLabel = new Map(planned.workList.map((node) => [node.label, node]))
 
+    /** The first target whose report stopped a fail-fast run. */
+    let stoppedBy: string | undefined
     const report = (entry: Executor.TargetReport): void => {
       reports.set(entry.label, entry)
       reporter.targetFinished(entry)
+      if (stoppedBy === undefined && options.failFast?.(entry) === true) stoppedBy = entry.label
     }
+    const cancel = (node: PackageNode, durationMs: number, why: string): void =>
+      report({
+        label: node.label,
+        target: node.rule,
+        status: "cancelled",
+        durationMs,
+        key: keyFor(node),
+        error: `${why}: --fail-fast stopped the run after ${stoppedBy} failed`
+      })
 
     /** Bundler resolve label → the graph settled (ran or hit) in this invocation. */
     const resolveResults = new Map<string, BundlerTarget.ResolveResult>()
@@ -3289,7 +3301,13 @@ export const executeEffect = (
         const node = byLabel.get(label)!
         const started = performance.now()
         if (!node.dependencies.some((dependency) => notGreen.has(dependency))) reporter.targetStarted(label)
-        const outcome = yield* treeGate(takesExclusiveTreePermit(node), settle(node))
+        const outcome = yield* treeGate(takesExclusiveTreePermit(node), settle(node)).pipe(
+          Effect.onInterrupt(() =>
+            Effect.sync(() => {
+              if (stoppedBy !== undefined) cancel(node, performance.now() - started, "cancelled")
+            })
+          )
+        )
         if (outcome.status === "failed" || outcome.status === "skipped") notGreen.add(label)
         report({
           label,
@@ -3301,7 +3319,12 @@ export const executeEffect = (
           ...(outcome.blockedBy === undefined ? {} : { blockedBy: outcome.blockedBy })
         })
       })
-    yield* Executor.scheduleEffect(planned.workList, jobs, runOne, options.signal)
+    yield* Executor.scheduleEffect(planned.workList, jobs, runOne, options.signal, {
+      stop: () => stoppedBy !== undefined
+    })
+    for (const node of planned.workList) {
+      if (stoppedBy !== undefined && !reports.has(node.label)) cancel(node, 0, "not started")
+    }
 
     const results = planned.workList
       .map((node) => reports.get(node.label))
@@ -3310,7 +3333,10 @@ export const executeEffect = (
       hit: results.filter((entry) => entry.status === "hit").length,
       ran: results.filter((entry) => entry.status === "ran").length,
       failed: results.filter((entry) => entry.status === "failed").length,
-      skipped: results.filter((entry) => entry.status === "skipped").length
+      skipped: results.filter((entry) => entry.status === "skipped").length,
+      ...(stoppedBy === undefined
+        ? {}
+        : { cancelled: results.filter((entry) => entry.status === "cancelled").length })
     }
     const durationMs = performance.now() - startedAt
     const summary: Executor.Summary = {
@@ -3319,7 +3345,7 @@ export const executeEffect = (
       jobs,
       durationMs,
       counts,
-      ok: counts.failed === 0,
+      ok: counts.failed === 0 && stoppedBy === undefined,
       results
     }
     reporter.summary(summary)

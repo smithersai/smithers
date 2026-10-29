@@ -1,15 +1,16 @@
 /**
  * Bounded-parallel execution of planned targets.
  *
- * Targets execute in dependency order with keep-going semantics: a failure
- * fails the run but skips only its dependent cone, every other target still
- * runs, and every result is collected. Each target's Flow runs through the
- * same in-memory flows runtime the install command uses, with the shared exec
- * action implemented by `ExecLive`, the generated-file actions implemented by
- * `WriteFileLive` and `CheckFileLive`, the documentation-parity action
- * implemented by `CheckDocsLive`, the file-group expansion implemented by
- * `ExpandFilegroupLive`, and cacheable green results stored in the
- * workspace cache.
+ * Targets execute in dependency order with keep-going semantics by default: a
+ * failure fails the run but skips only its dependent cone, every other target
+ * still runs, and every result is collected. Fail-fast execution instead stops
+ * at the first blocking failure and cancels the targets still running. Each
+ * target's Flow runs through the same in-memory flows runtime the install
+ * command uses, with the shared exec action implemented by `ExecLive`, the
+ * generated-file actions implemented by `WriteFileLive` and `CheckFileLive`,
+ * the documentation-parity action implemented by `CheckDocsLive`, the
+ * file-group expansion implemented by `ExpandFilegroupLive`, and cacheable
+ * green results stored in the workspace cache.
  *
  * @since 0.1.0
  */
@@ -18,6 +19,7 @@ import * as Target from "@smthrs/targets/Target"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
+import * as Fiber from "effect/Fiber"
 import * as Queue from "effect/Queue"
 import * as SchemaIssue from "effect/SchemaIssue"
 import type * as Scope from "effect/Scope"
@@ -32,7 +34,9 @@ import type * as Planner from "./Planner.ts"
  * One target's reported execution outcome.
  *
  * `hit` answered from the cache, `ran` executed green, `failed` executed and
- * failed, and `skipped` never ran because a dependency did not succeed.
+ * failed, `skipped` never ran because a dependency did not succeed, and
+ * `cancelled` was interrupted or never started because a fail-fast run had
+ * already stopped.
  *
  * @category models
  * @since 0.1.0
@@ -44,7 +48,7 @@ export interface TargetReport {
   readonly failureDigest?: string | undefined
   readonly label: string
   readonly target: string
-  readonly status: "hit" | "ran" | "failed" | "skipped"
+  readonly status: "hit" | "ran" | "failed" | "skipped" | "cancelled"
   readonly durationMs: number
   readonly key: string
   readonly error?: string | undefined
@@ -55,6 +59,8 @@ export interface TargetReport {
 /**
  * Per-status result counts for one execution.
  *
+ * `cancelled` is present only when a fail-fast run cancelled a target.
+ *
  * @category models
  * @since 0.1.0
  * @slop
@@ -64,6 +70,7 @@ export interface StatusCounts {
   readonly ran: number
   readonly failed: number
   readonly skipped: number
+  readonly cancelled?: number | undefined
 }
 
 /**
@@ -274,6 +281,21 @@ const validateWorkList = (targets: ReadonlyArray<Planner.PlannedTarget>): string
 }
 
 /**
+ * Options accepted by {@link scheduleEffect}.
+ *
+ * `stop` is read after each target settles. Once it returns true, nothing
+ * new is dispatched, every target still running is interrupted and awaited,
+ * and the schedule resolves with the rest never started: Bazel's behavior
+ * without `--keep_going`.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface ScheduleOptions {
+  readonly stop?: (() => boolean) | undefined
+}
+
+/**
  * Runs a dependency frontier with scoped workers. Each worker releases its
  * resources before its completion can make a dependent ready.
  * @category execution
@@ -283,7 +305,8 @@ export const scheduleEffect = <E, R>(
   targets: ReadonlyArray<Planner.PlannedTarget>,
   jobs: number,
   runOne: (label: string) => Effect.Effect<void, E, R>,
-  signal?: AbortSignal | undefined
+  signal?: AbortSignal | undefined,
+  options?: ScheduleOptions | undefined
 ): Effect.Effect<void, Error, Exclude<R, Scope.Scope>> =>
   Effect.scoped(Effect.gen(function*() {
     if (!Number.isInteger(jobs) || jobs < 1) {
@@ -313,6 +336,7 @@ export const scheduleEffect = <E, R>(
     const completed = yield* Queue.make<{ readonly label: string; readonly exit: Exit.Exit<void, E> }>({
       capacity: jobs
     })
+    const running = new Map<string, Fiber.Fiber<unknown, unknown>>()
     let active = 0
     let exclusiveActive = false
     let dispatched = 0
@@ -326,11 +350,12 @@ export const scheduleEffect = <E, R>(
         exclusiveActive = exclusiveLabels.has(label)
         active += 1
         dispatched += 1
-        yield* Effect.scoped(Effect.suspend(() => runOne(label))).pipe(
+        const fiber = yield* Effect.scoped(Effect.suspend(() => runOne(label))).pipe(
           Effect.exit,
           Effect.flatMap((exit) => Queue.offer(completed, { label, exit })),
           Effect.forkScoped({ startImmediately: true })
         )
+        running.set(label, fiber)
         if (signal?.aborted) failure ??= Diagnostic.error(signal.reason, "execution aborted")
       }
       if (active === 0) {
@@ -344,6 +369,7 @@ export const scheduleEffect = <E, R>(
       }
       const { label, exit } = yield* Queue.take(completed)
       if (signal?.aborted) failure ??= Diagnostic.error(signal.reason, "execution aborted")
+      running.delete(label)
       active -= 1
       if (exclusiveLabels.has(label)) exclusiveActive = false
       if (Exit.isFailure(exit)) {
@@ -353,6 +379,12 @@ export const scheduleEffect = <E, R>(
           const left = (remaining.get(dependent) ?? 1) - 1
           remaining.set(dependent, left)
           if (left === 0) ready.push(dependent)
+        }
+        if (failure === undefined && options?.stop?.() === true) {
+          // Interrupting a target releases its scope, which kills its process
+          // groups; awaiting the fibers keeps that cleanup ahead of the return.
+          yield* Fiber.interruptAll([...running.values()])
+          return
         }
       }
     }

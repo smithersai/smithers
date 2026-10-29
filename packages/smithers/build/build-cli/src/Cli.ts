@@ -67,6 +67,9 @@ const executionOptions = workspaceOption.extend({
   knownRed: z.string().optional().describe(
     "JSON list of targets already red, with owner and expiry; their failures are reported but fail only when newly red"
   ),
+  failFast: z.boolean().default(false).describe(
+    "Stop at the first failure that fails the run: start nothing new, cancel running targets, report, exit 1"
+  ),
   resultsFile: z.string().optional().describe(
     "Also write the run's summary, one status per label, as JSON to this new file; human output is unchanged"
   )
@@ -135,6 +138,8 @@ export interface ExecutionFlags extends WorkspaceFlags {
   readonly lifecycle?: "evergreen" | "artifact" | "all" | undefined
   readonly includeExclusive?: boolean | undefined
   readonly cache: boolean
+  readonly failFast?: boolean | undefined
+  readonly knownRed?: string | undefined
 }
 
 /**
@@ -587,6 +592,30 @@ const parseInputs = (entries: ReadonlyArray<string> | undefined): Readonly<Recor
   return values
 }
 
+/** Every artifact-lifecycle target in the workspace. */
+const artifactLabels = (index: PackageIndex.PackageIndex): ReadonlySet<string> =>
+  new Set(
+    index.resolve("//...").filter((row) => Target.metadata(row.target).lifecycle === "artifact").map((row) => row.label)
+  )
+
+/** Targets whose failures never block: artifact tests under a non-blocking lifecycle policy. */
+const advisoryLabels = (index: PackageIndex.PackageIndex): ReadonlySet<string> =>
+  index.factory?.factory.lifecycle?.tests.artifact.blocking === false ? artifactLabels(index) : new Set()
+
+/**
+ * With `--fail-fast`, the rule that stops the run: the first report that
+ * would turn the verdict red. A failure the known-red list or an advisory
+ * lifecycle excuses keeps the run going, exactly as the verdict ignores it.
+ */
+const failFastOf = async (
+  index: PackageIndex.PackageIndex,
+  flags: ExecutionFlags
+): Promise<((report: Executor.TargetReport) => boolean) | undefined> => {
+  if (flags.failFast !== true) return undefined
+  const list = flags.knownRed === undefined ? { entries: [] } : await KnownRed.read(flags.workspace, flags.knownRed)
+  return KnownRed.blocks(list, { platform: process.platform, today: KnownRed.today(), advisory: advisoryLabels(index) })
+}
+
 /**
  * Runs one execution verb through the build executor.
  * @category execution
@@ -625,6 +654,7 @@ export const runPackageVerb = async (
       jobs: flags.jobs,
       readCache: flags.cache,
       signal: config.signal,
+      failFast: await failFastOf(index, flags),
       reporter,
       message: flags.message,
       sweep: flags.sweep,
@@ -819,6 +849,7 @@ const runCi = async (
           jobs: flags.jobs,
           readCache: flags.cache,
           signal: config.signal,
+          failFast: await failFastOf(index, flags),
           reporter,
           environment: config.environment
         }
@@ -1002,14 +1033,8 @@ const executeWithResults = async <A extends Outcome>(
   try {
     const index = executionIndexes.get(outcome) ??
       await openPackageIndex({ workspace: options?.workspace ?? process.cwd() }, config)
-    const artifacts = new Set(
-      index.resolve("//...").filter((row) => Target.metadata(row.target).lifecycle === "artifact").map((row) =>
-        row.label
-      )
-    )
-    const advisory = index.factory?.factory.lifecycle?.tests.artifact.blocking === false
-      ? artifacts :
-      new Set<string>()
+    const artifacts = artifactLabels(index)
+    const advisory = advisoryLabels(index)
     const list = options?.knownRed === undefined ?
       { source: "", entries: [] } :
       await KnownRed.read(options.workspace ?? process.cwd(), options.knownRed)
@@ -1087,6 +1112,7 @@ const runSelected = async (
     jobs: flags.jobs,
     readCache: flags.cache,
     signal: config.signal,
+    failFast: await failFastOf(index, flags),
     reporter,
     environment: config.environment,
     plan: flags.plan,
