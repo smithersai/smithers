@@ -174,6 +174,33 @@ only.
 | `smithers/agent`              | `runs the real OpenAI stack (requires SMITHERS_LIVE_EXAMPLES=1 and OPENAI_API_KEY)`                | `it.effect.skipIf(!liveEnabled \|\| !hasKey)`                |
 | `smithers/agent`              | `decodes each local agent answer (requires SMITHERS_LIVE_EXAMPLES=1 and Ollama qwen2.5:7b)`         | `it.skipIf(!liveEnabled)`                                   |
 | `smithers/agent`              | `isolates the deterministic suite from every ambient provider key`                                 | `it.skipIf(SMITHERS_LIVE_EXAMPLES === "1")`                 |
+| `smithers` | `preserves an external writer's update after source validation` | `it.fails` |
+| `smithers` | `a fresh clone of this repository (needs tracked-source inventory from jj/Git or SMITHERS_TEST_TRACKED_SOURCE_FILE)` | `it.skipIf` without checkout metadata or supplied inventory |
+| `smithers/agent/model-host` | `known broken: a completed selection replays after the answer fails` | `test.fails` |
+| `smithers/flows/platform-cloudflare` | `the command latency benchmark` | `describe.runIf` with `COMMAND_LATENCY_BENCH` and direct Postgres |
+| `smithers/flows/sandbox` | `a job runs a ${LONG_SECONDS}-second command past SandboxTools' 600 s to its result (SANDBOX_LONG_COMMAND_SECONDS)` | `it.runIf(LONG_SECONDS > 0)` |
+
+**Configuration ownership and callback replay:** `16d282b8981a` retained the
+configuration writer race as known broken: another writer can replace the file
+after validation because this filesystem path has no portable compare-and-swap.
+Avoid concurrent external configuration writers. `b2ebc9fba284` retained the
+model host's completed-selection replay defect: its legacy callback host has no
+persistent replay port, so a failed answer can cause selection to run again.
+Use the durable agent host for recovery. Both tests remain executable expected
+failures; these rows record existing defects rather than introducing pins.
+
+**Source inventory:** `49b08081d1cc` made the fresh-clone test require real
+checkout metadata or `SMITHERS_TEST_TRACKED_SOURCE_FILE` in a source mirror.
+Supply that inventory when testing a mirror; an ordinary checkout runs the test.
+Without it the test cannot verify which source files a clone contains.
+
+**Command duration measurements:** `38558f6db1e2` added the opt-in command
+latency benchmark. Run the platform-cloudflare suite with direct Postgres and
+`COMMAND_LATENCY_BENCH=1`; its ordinary timing regression cases remain enabled.
+`52f15934` added the sandbox's long-command container proof; run its container
+suite with `SANDBOX_LONG_COMMAND_SECONDS=660` and a reachable container host.
+The default suite covers short commands; these explicit measurements establish
+latency and completion beyond the 600-second tool budget when requested.
 
 **`agent`: the live examples.** `test/examples/12-agent-live-smoke.test.ts`
 calls OpenAI and `13-agent-live-smoke-local.test.ts` calls a local Ollama
