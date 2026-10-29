@@ -211,8 +211,10 @@ Cache Storage and checks an entry survives the browser being killed.
 `pnpm bench` times what one run costs the engine from admission to settlement
 over the in-memory OPFS, one run at a time and ten at once
 (`test/Settle.bench.ts`, `vitest.bench.config.ts`). It prints its numbers and
-asserts nothing; the admission suite, `test/Admission.test.ts`, holds the
-budgets a tab's run must meet while a reload's runs resume.
+asserts nothing. The admission suite, `test/Admission.test.ts`, blocks resumed
+steps on a completion barrier and requires a foreground run to finish before
+releasing them. It verifies the resumption limit and exactly-once replay
+independently of the CI runner's wall-clock speed.
 
 ## Test the immutable cache
 
@@ -236,3 +238,8 @@ those is testing this package rather than your program.
   degrades when one omits an optional member.
 - [Troubleshooting](./troubleshooting.md): the failures a stub can reproduce,
   with the cause and the fix for each.
+
+Bun has no Web Locks. Its host suite supplies Chromium's real LockManager
+through `test/fixtures/BrowserLocks.ts`; the flow engine, channels and SQLite
+still run in Bun. Install Chromium with the pinned workspace Playwright CLI
+before this suite. The browser target also needs WebKit for its asset test.

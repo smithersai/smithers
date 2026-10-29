@@ -13,6 +13,7 @@ export default defineConfig({
     ],
     include: [...configDefaults.include, "**/*.{test,spec}.vibe"],
     environment: "node",
+    setupFiles: ["test/fixtures/BrowserLocks.ts"],
     // The real-browser suites run under vitest.browser.config.ts.
     exclude: ["**/node_modules/**", "test/browser/**"],
     // The BrowserHost contract runs jj over the real flows_jj.wasm; the first
