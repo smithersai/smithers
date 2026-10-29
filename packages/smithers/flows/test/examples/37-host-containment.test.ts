@@ -172,11 +172,11 @@ it("reaps the process group a killed host left running", async () => {
 
   // The killed host really did leave a live process group behind: without that
   // the reaping below would be a statement about nothing.
-  // Node 22 reports its SQLite runtime status on stderr even when this host
-  // starts successfully. Permit only that exact warning; every other byte
+  // Node reports experimental SQLite and unavailable localStorage on stderr
+  // even when this host starts successfully. Permit only those warnings; every other byte
   // remains a failed diagnostic assertion.
   expect(summary.hostStderr.replace(
-    /^\(node:\d+\) ExperimentalWarning: SQLite is an experimental feature and might change at any time\r?\n\(Use \x60node --trace-warnings \.\.\.\x60 to show where the warning was created\)\r?\n$/,
+    /^\(node:\d+\) ExperimentalWarning: (?:SQLite is an experimental feature and might change at any time|localStorage is not available because --localstorage-file was not provided\.)\r?\n\(Use \x60node --trace-warnings \.\.\.\x60 to show where the warning was created\)\r?\n/gm,
     ""
   )).toBe("")
   expect(summary.orphaned).toBe(true)
