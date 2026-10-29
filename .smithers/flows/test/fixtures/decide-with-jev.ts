@@ -1,6 +1,5 @@
 import { Action } from "@smthrs/flow"
-import * as Classifier from "@smthrs/model/Classifier"
-import * as Evaluator from "@smthrs/model/Evaluator"
+import { Classifier, Evaluator } from "@smthrs/model"
 import { Effect, Layer, Option, Schema } from "effect"
 
 const Items = Schema.Struct({ task: Schema.String, items: Schema.Array(Schema.String) })
