@@ -43,6 +43,8 @@ and `featured`, not an attr. It never enters the cache key. Omission and
 require a non-empty one-line summary describing the captured behavior:
 
 ```ts
+import { Smithers as S } from "@smthrs/targets"
+
 const captured = S.Shell.Test({
   shell: "false",
   lifecycle: "artifact",
@@ -53,6 +55,8 @@ const captured = S.Shell.Test({
 A repository must choose policy explicitly in `.smithers/FACTORY.ts`:
 
 ```ts
+import { Smithers as S } from "@smthrs/targets"
+
 export const factory = S.Factory({
   summary: "Repository checks",
   lifecycle: S.Lifecycle.Policy({

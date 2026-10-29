@@ -1450,11 +1450,24 @@ A refused run settles failed with the error as its defect. `Flow.Result` stores 
 The code of the interpreter refusal a run ended with, if it ended with one. It reads a live `InterpreterError` defect or failure, and one decoded from a stored result. A result stored before results kept the code answers `plan_changed` when it carries that refusal's message, and nothing for any other refusal.
 
 ```ts
-const settle = Effect.gen(function*() {
-  const exit = yield* engine.result(Answer, answerId)
+import { Flow, Interpreter } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { Effect, Exit, Option, Schema } from "effect"
+
+const Answer = Flow.make("answer", {
+  payload: { text: Schema.String },
+  success: Schema.String,
+  body: ({ text }) => Node.succeed(text)
+})
+
+export const settle = (answerId: string, close: Effect.Effect<void>) => Effect.gen(function*() {
+  const result = yield* Answer.poll(answerId)
+  if (Option.isNone(result) || result.value._tag !== "Complete") return
+  const exit = result.value.exit
   const code = Exit.isFailure(exit) ? Interpreter.refusalCode(exit.cause) : Option.none()
   if (Option.contains(code, "plan_changed") || Option.contains(code, "payload_changed")) {
     // Parked under one build and refused under the next: close what the run was feeding.
+    yield* close
   }
 })
 ```
