@@ -27,7 +27,8 @@ describe("tagged failures read as one plain sentence", () => {
       const presented = Failures.present("retry", failure)
       expect(presented.fault).toBe(fault)
       expect(presented.sentence).toBe("That command could not run.")
-      expect(presented.detail).toContain(RAW)
+      // 063ecbb10fe8 redacts exception detail at every presentation boundary.
+      expect(presented.detail).toBe("[REDACTED]")
       expect(Failures.line("retry", failure)).not.toContain(RAW)
       expect(Failures.line("retry", failure).includes("Details: /conversation")).toBe(fault !== "user")
     }
