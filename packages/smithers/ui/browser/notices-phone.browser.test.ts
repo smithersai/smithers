@@ -87,10 +87,12 @@ describe("notices-phone browser probes", () => {
       const page = await open();
       const bell = '[data-slot="notification-bell"]';
       const words = await insets(page, bell, `${bell} .sui-notification-needs`);
-      const icon = await insets(page, bell, `${bell} svg`);
-      // ◆ Needs you starts as far from the pill's left edge as the bell ends from its right.
+      const count = await insets(page, bell, `${bell} .sui-notification-count`);
+      // a3ad64309497 puts the unread count in the phone's tap target, after the bell.
       expect(words.left).toBeGreaterThan(4);
-      expect(Math.abs(words.left - icon.right)).toBeLessThanOrEqual(1);
+      expect(Math.abs(words.left - count.right)).toBeLessThanOrEqual(1);
+      const icon = await insets(page, bell, `${bell} svg`);
+      expect(icon.right).toBeGreaterThan(count.right);
       expect(Math.abs(words.top - words.bottom)).toBeLessThanOrEqual(1);
       const { right } = await page.$eval(bell, (element) => element.getBoundingClientRect().toJSON() as DOMRect);
       expect(right).toBeLessThanOrEqual(PHONE.width);
