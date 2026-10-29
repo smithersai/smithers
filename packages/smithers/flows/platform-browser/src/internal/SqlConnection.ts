@@ -330,23 +330,28 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
     /** Runs `sql` and moves ownership after each statement. Under `statement`. */
     const execute = (owner: string, sql: string, params: ReadonlyArray<unknown>, request?: Request) =>
       Effect.tryPromise({
-        try: () =>
-          Statements.runAll(database, sql, params, "object", {
-            before: async ({ last, rows }) => {
-              if (guard === undefined || request === undefined) return
-              guard.last = last
-              // The statement that commits is the request's last: what the earlier ones returned is its reply.
-              if (last && guard.ends && rows.length > 0 && holder?.receipted === true) {
-                await writeReply(owner, request, rows)
-              }
-            },
-            after: () => track(owner, request)
-          }),
+        try: async () => {
+          try {
+            return await Statements.runAll(database, sql, params, "object", {
+              before: async ({ last, rows }) => {
+                if (guard === undefined || request === undefined) return
+                guard.last = last
+                // The statement that commits is the request's last: what the earlier ones returned is its reply.
+                if (last && guard.ends && rows.length > 0 && holder?.receipted === true) {
+                  await writeReply(owner, request, rows)
+                }
+              },
+              after: () => track(owner, request)
+            })
+          } finally {
+            // A failed statement can change transaction ownership. Reconciliation
+            // can itself refuse a missing receipt and belongs in the typed channel.
+            await track(owner, undefined)
+          }
+        },
         catch: (cause) =>
           cause instanceof ReceiptFailed ? cause : Statements.failed(cause, "Failed to execute statement", "execute")
       }).pipe(
-        // A statement that fails can still end a transaction, or leave one open.
-        Effect.ensuring(Effect.promise(() => track(owner, undefined))),
         Effect.map(({ rows }): Result => ({ rows, open: holder?.owner === owner }))
       )
 
