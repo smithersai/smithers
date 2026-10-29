@@ -813,18 +813,25 @@ describe("the smithers-0x-hello fixture", () => {
     // fixtures directory un-ignores it the way packages/smithers/migrate's does. Without
     // that negation the pack exists on the author's disk and nowhere else, and
     // every test here passes while a fresh clone has no fixture at all.
-    // A non-colocated jj workspace has no Git checkout metadata. Inspect its
-    // committed parent, not the auto-snapshotted working copy, so an uncommitted
-    // local fixture cannot satisfy this assertion there either.
-    const jjWorkspace = existsSync(join(repoRoot, ".jj")) && !existsSync(join(repoRoot, ".git"))
-    const tracked = spawnSync(jjWorkspace ? "jj" : "git", jjWorkspace
-      ? ["file", "list", "-r", "@-", "--", `.smithers/flows/${FIXTURE}`]
-      : ["ls-files", "--", `.smithers/flows/${FIXTURE}`], {
-      cwd: repoRoot,
-      encoding: "utf8",
-    })
-    assert.equal(tracked.status, 0, tracked.stderr)
-    const files = tracked.stdout.split("\n").filter((line) => line !== "")
+    // Inspect the committed parent, not the auto-snapshotted working copy.
+    // Latitude mirrors carry the source checkout's inventory separately from
+    // its excluded VCS metadata. The runner copies that receipt under TMPDIR
+    // when a target's sanitized environment omits its original variable.
+    const mirrorInventory = join(tmpdir(), "smithers-tracked-source.txt")
+    const inventory = process.env.SMITHERS_TEST_TRACKED_SOURCE_FILE ??
+      (existsSync(mirrorInventory) ? mirrorInventory : undefined)
+    let files
+    if (inventory !== undefined) {
+      files = readFileSync(inventory, "utf8").split("\n")
+    } else {
+      const tracked = spawnSync("jj", ["file", "list", "-r", "@-", "--", `.smithers/flows/${FIXTURE}`], {
+        cwd: repoRoot,
+        encoding: "utf8",
+      })
+      assert.equal(tracked.status, 0, tracked.stderr)
+      files = tracked.stdout.split("\n")
+    }
+    files = files.filter((file) => file.startsWith(`.smithers/flows/${FIXTURE}/`))
     for (const file of [
       ".smithers/workflows/hello.tsx",
       ".smithers/agents/index.ts",
