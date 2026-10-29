@@ -1122,17 +1122,21 @@ describe("journal admission is visible at the authoring boundary", () => {
   it.effect("surfaces a typed queue overflow and leaves the execution failed", () =>
     Effect.gen(function*() {
       const writeGate = Deferred.makeUnsafe<void>()
+      const writerBlocked = Deferred.makeUnsafe<void>()
       const overflowSeen = Deferred.makeUnsafe<JournalPackage.Journal.JournalError>()
       let blockWrites = false
       const gatedWriter = Layer.effect(
         DurableWriter.DurableWriter,
         Effect.gen(function*() {
           const writer = yield* DurableWriter.DurableWriter
-          const write: DurableWriter.Service["write"] = (effect) =>
+          const write: DurableWriter.Service["write"] = (effect, options) =>
             Effect.suspend(() =>
               blockWrites
-                ? Deferred.await(writeGate).pipe(Effect.andThen(writer.write(effect)))
-                : writer.write(effect)
+                ? Deferred.succeed(writerBlocked, undefined).pipe(
+                  Effect.andThen(Deferred.await(writeGate)),
+                  Effect.andThen(writer.write(effect, options))
+                )
+                : writer.write(effect, options)
             )
           return DurableWriter.DurableWriter.of({ write })
         })
@@ -1176,9 +1180,9 @@ describe("journal admission is visible at the authoring boundary", () => {
               payload: { index }
             }, { disableChecks: true })
           yield* journal.emitLossy(event(0))
-          // Let the writer take the first entry and block on persistence; the
-          // next admission then occupies the queue's sole remaining slot.
-          yield* Effect.yieldNow
+          // Wait for persistence to take the first entry before filling its
+          // one remaining slot. A scheduler yield does not prove that happened.
+          yield* Deferred.await(writerBlocked)
           yield* journal.emitLossy(event(1))
           const overflow = yield* Effect.flip(journal.emitLossy(event(2))).pipe(Effect.orDie)
           yield* Deferred.succeed(overflowSeen, overflow)
