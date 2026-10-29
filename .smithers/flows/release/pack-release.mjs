@@ -242,8 +242,26 @@ export const publicationManifest = (manifest) => {
     throw new TypeError(`${String(manifest.name ?? "package")} must declare publishConfig.exports`)
   }
   const { exports, ...publishedConfig } = publishConfig
+  // Packing stages each package outside the workspace. Resolve SDK-6's exact
+  // workspace references here, before pnpm loses access to the sibling manifests.
+  // Do not infer a sibling's version from the package being packed.
+  let workspaceVersions
+  const dependencies = {}
+  for (const field of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
+    if (manifest[field] === undefined) continue
+    dependencies[field] = Object.fromEntries(Object.entries(manifest[field]).map(([name, range]) => {
+      if (typeof range !== "string" || !range.startsWith("workspace:")) return [name, range]
+      workspaceVersions ??= new Map(libraryPackages().map(({ manifest }) => [manifest.name, manifest.version]))
+      const version = workspaceVersions.get(name)
+      if (typeof version !== "string" || (range !== "workspace:*" && range !== `workspace:${version}`)) {
+        throw new TypeError(`${String(manifest.name)} has no exact workspace dependency ${name}@${range}`)
+      }
+      return [name, version]
+    }))
+  }
   return {
     ...manifest,
+    ...dependencies,
     exports,
     publishConfig: {
       ...publishedConfig,

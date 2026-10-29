@@ -20,6 +20,7 @@ import {
   SUPPORTED_EFFECT_RANGE as effectRange
 } from "./check-single-effect-version.mjs"
 import { retarget } from "../../../.smithers/flows/release/set-release-version.mjs"
+import { publicationManifest } from "../../../.smithers/flows/release/pack-release.mjs"
 import { libraryPackages } from "../scripts/workspace-packages.mjs"
 import { repoRoot as root } from "../scripts/workspace-packages.mjs"
 
@@ -81,6 +82,11 @@ const manifests = libraryPackages(root).map((entry) => ({
 }))
 
 const publishable = manifests.filter((entry) => entry.manifest.private !== true)
+
+// SDK-6: pnpm rewrites exact workspace references when packing a package.
+// Existing release-version pins remain valid; floating published ranges do not.
+const exactWorkspaceDependency = (range, version) =>
+  range === version || range === "workspace:*" || range === `workspace:${version}`
 
 describe("the workspace package contract", () => {
   it("has packages to check", () => {
@@ -199,13 +205,43 @@ describe("the workspace package contract", () => {
           )
           continue
         }
-        assert.equal(
-          range,
-          target.version,
-          `packages/${entry.directory} is published and pins ${name}@${range} rather than the workspace version `
-            + `${target.version}; a published \`workspace:\` range is an unresolvable dependency for a consumer`
+        assert.ok(
+          exactWorkspaceDependency(range, target.version),
+          `packages/${entry.directory} must pin ${name} to ${target.version} or its exact workspace reference; got ${range}`
         )
       }
+    }
+  })
+
+  it("accepts packable exact workspace dependencies and rejects mismatched or floating versions", () => {
+    for (const range of [releaseVersion, "workspace:*", `workspace:${releaseVersion}`]) {
+      assert.equal(exactWorkspaceDependency(range, releaseVersion), true, range)
+    }
+    for (const range of ["workspace:^", "workspace:~", "workspace:0.0.0", "0.0.0", `^${releaseVersion}`, "*"]) {
+      assert.equal(exactWorkspaceDependency(range, releaseVersion), false, range)
+    }
+  })
+
+  it("resolves workspace protocols before release packing leaves the workspace", () => {
+    const target = publishable.find(({ manifest }) => manifest.name === "@smthrs/crypto").manifest
+    for (const range of ["workspace:*", `workspace:${target.version}`]) {
+      const manifest = {
+        name: "@smthrs/packing-contract", version: "0.0.0",
+        exports: { ".": "./src/index.ts" },
+        publishConfig: { exports: { ".": "./dist/index.js" } },
+        ...Object.fromEntries(["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]
+          .map((field) => [field, { [target.name]: range, external: "1.2.3" }]))
+      }
+      const published = publicationManifest(manifest)
+      for (const field of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
+        assert.deepEqual(published[field], { [target.name]: target.version, external: "1.2.3" })
+        assert.equal(manifest[field][target.name], range, "publication must not mutate the workspace manifest")
+      }
+    }
+    for (const [name, range] of [[target.name, "workspace:^"], [target.name, "workspace:0.0.0"], ["@smthrs/absent", "workspace:*"]]) {
+      assert.throws(() => publicationManifest({
+        name: "@smthrs/packing-contract", publishConfig: { exports: {} }, dependencies: { [name]: range }
+      }), /no exact workspace dependency/)
     }
   })
 
@@ -223,13 +259,14 @@ describe("the workspace package contract", () => {
     }
   })
 
-  it("keeps overrides out of published packages and limits workspace overrides to the Effect train", () => {
+  it("keeps overrides out of published packages and pins only the Effect train and Bun types", () => {
     const rootManifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"))
     for (const [where, manifest] of manifests.map((entry) => [entry.path, entry.manifest])) {
       assert.equal(manifest.overrides, undefined, `${where} must not use npm overrides`)
       assert.equal(manifest.pnpm?.overrides, undefined, `${where} must not use pnpm overrides`)
     }
-    const expected = Object.fromEntries([
+    // 6c82383c pinned Bun types as well as the Effect family, in both planners.
+    const expected = { "@types/bun": "1.4.4", ...Object.fromEntries([
       "effect",
       "@effect/opentelemetry",
       "@effect/platform-bun",
@@ -240,7 +277,7 @@ describe("the workspace package contract", () => {
       "@effect/sql-sqlite-do",
       "@effect/sql-sqlite-node",
       "@effect/vitest"
-    ].map((name) => [name, effectVersion]))
+    ].map((name) => [name, effectVersion])) }
     assert.deepEqual(rootManifest.overrides, expected)
     assert.equal(rootManifest.pnpm?.overrides, undefined)
     // Workspace locking also covers private tooling. Consumer certification
@@ -296,7 +333,11 @@ describe("the workspace package contract", () => {
 
   it("keeps Effect external and platform adapters private", () => {
     const owners = publishable.filter(({ manifest }) => manifest.smthrs?.privateEffectAdapters)
-    assert.equal(owners.length, 7)
+    // 8c69f33c moved host runtimes out of the platform-neutral flows barrel.
+    assert.deepEqual(owners.map(({ manifest }) => manifest.name).sort(), [
+      "@smthrs/build-cli", "@smthrs/cli", "@smthrs/gateway", "@smthrs/migrate",
+      "@smthrs/platform-bun", "@smthrs/platform-node"
+    ])
     for (const { manifest } of owners) {
       // An executable requires the exact peer its adapters are built from. A
       // library builds them from the release it develops against, and its
