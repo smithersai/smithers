@@ -34,7 +34,7 @@ import { performance } from "node:perf_hooks"
 import * as AgentFake from "../AgentFake.ts"
 import * as AgentSession from "../AgentSession.ts"
 import * as AnvilExec from "../AnvilExec.ts"
-import { openCache } from "../Cache.ts"
+import { ensureCacheDirectory, openCache } from "../Cache.ts"
 import * as Diagnostic from "../Diagnostic.ts"
 import * as DockerExec from "../DockerExec.ts"
 import { declaredToolchain, runInstall } from "../engine.ts"
@@ -1555,6 +1555,9 @@ export const executeEffect = (
             joined(() => PackageTree.scratchCopy(root, cacheDirectory, skip, hostTrees)),
             (scratch) => joined(() => Fs.rm(scratch, { recursive: true, force: true })).pipe(Effect.orDie)
           )
+          // The copy omits host cache state. Its empty result cache still
+          // needs a real directory for the sandbox's read-only mount.
+          yield* joined(() => ensureCacheDirectory(scratch, cacheDirectory))
           const exit = yield* Effect.exit(restore(Effect.suspend(() => body(scratch))))
           const escaped = yield* joined(() => PackageTree.revertChangedPortals(portals))
           if (Exit.isFailure(exit)) return yield* Effect.failCause(exit.cause)

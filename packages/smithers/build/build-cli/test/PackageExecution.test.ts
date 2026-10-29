@@ -169,7 +169,7 @@ writeFileSync(join(here, "out.txt"), readFileSync(join(here, "source.txt"), "utf
       root,
       "PACKAGE.ts",
       `import { Smithers as S } from "@smthrs/targets"
-const fmt = S.Shell.Diff({ shell: "printf b > out.txt", changes: ["out.txt"] })
+const fmt = S.Shell.Diff({ shell: "test -d .flows/cache && if touch .flows/cache/untrusted 2>/dev/null; then exit 9; fi; printf b > out.txt", changes: ["out.txt"] })
 export const Package = S.Package({ targets: { fmt } })
 `
     )
