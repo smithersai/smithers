@@ -42,7 +42,7 @@ A registry entry with a `slash` door is a command ([the registry](flows.md#the-r
 | `/todo.issue` | `todo/issue` | member | `repo`, `issue`: a private draft from issue `#<issue>`, linked to it ([TODOs](todos.md#from-an-issue)) |
 | `/todo.drop` | `todo/drop` | member | `repo`, `number`: drops TODO `T<number>` |
 | `/branch.new` | `branch/create` | member | `repo`, `branch`: a new branch at the default branch's head, tracked as the person's ([new branch](branch-workspace.md#new-branch)) |
-| `/new` | `conversation/new` | member | required `repo`, then optional `branch`: a fresh conversation in the named repository, opened in the tab ([conversations](conversations.md#new)) |
+| `/new` | `conversation/new` | guest | required `repo`, then optional `branch`: a fresh conversation in the named repository, opened in the tab ([conversations](conversations.md#new)) |
 | `/repo` | `ui/repo` | member | `repo` (`owner/name`): the repository's own view in the conversation the tab shows ([views](views.md#a-repository-and-its-issues)) |
 | `/issues` | `ui/issues` | member | `repo`: the repository's issues view in the conversation the tab shows |
 | `/copy` | `chat/copy` | anyone | none: copies Smithers' latest finished answer; `messageId` is hidden ([chat](chat.md#message-controls)) |
