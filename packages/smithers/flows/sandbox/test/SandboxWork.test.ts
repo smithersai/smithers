@@ -75,6 +75,17 @@ class BodyFailed extends Data.TaggedError("BodyFailed")<{ readonly reason: strin
 const captureLine = "spawn:set -e"
 
 describe("Sandbox.run", slow, () => {
+  it.effect("captures a native host checkout through the guest shell's physical root", () =>
+    Effect.gen(function*() {
+      const repo = hostRepository(`${fresh()} native root %`, { "a.txt": "seed\n" })
+      const provider = seeded(yield* directory(`${machines}/native root %`), gitClone(repo.path))
+      const { work } = yield* Sandbox.run(provider, { session: "native-path" }, shell("printf 'guest\\n' >> a.txt"))
+      expect(work).toBeInstanceOf(Sandbox.Changed)
+      expect(work.base).toBe(repo.main)
+      expect((work as Sandbox.Changed).patch).toContain("+guest")
+      expect(fileAt(repo.path, repo.main, "a.txt")).toBe("seed\n")
+    }))
+
   it.effect("measures a jj-refreshed guest from the host-known commit and lands committed and uncommitted edits", () =>
     Effect.gen(function*() {
       const repo = hostRepository(fresh(), { "README.md": "seed\n" })

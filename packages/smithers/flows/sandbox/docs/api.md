@@ -232,6 +232,10 @@ const { result, work } = yield * Sandbox.run(provider, { session: "issue:42" }, 
 
 The base is resolved after the provider hands over the session, so a provider that refreshes its checkout during acquisition is measured from the commit it refreshed to. In a jj-colocated checkout `HEAD` is the parent of the working-copy change, never a change made in the guest. The capture runs inside the scope that holds the machine, before teardown.
 
+The checkout and Git's work-tree root are compared as physical paths through the
+guest shell, including Git for Windows drive paths under Git Bash. A subdirectory
+of a repository still fails with `not_a_repository`.
+
 `Work` is `Changed { session, base, patch }` or `Unchanged { session, base }`, both `Schema.TaggedClass`. `base` is a full commit id. `patch` is `git diff --cached --binary --full-index --find-renames` from `base` to the checkout's final tree, computed through a private copy of the index: committed and uncommitted edits, untracked files, deletions, renames, mode changes, and binary contents are all included, and `.gitignore`d files are not. The checkout's index and history are not changed. The guest needs `git`.
 
 `Sandboxed(resultSchema)` is `Schema.Struct({ result: resultSchema, work: Work })`. Use it as an action's success so the journal records the work with the result.

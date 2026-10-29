@@ -97,7 +97,10 @@ const notARepository = 3
 const unresolved = 4
 
 // The checkout must be the top of a work tree: patch paths are relative to it.
+// Git for Windows returns C:/..., while Git Bash's pwd returns /c/....
+// Resolve both through the same shell before comparing their physical paths.
 const repositoryGuard = `top=$(git rev-parse --show-toplevel 2>/dev/null) || exit ${notARepository}
+top=$(CDPATH= cd -P -- "$top" && pwd -P) || exit ${notARepository}
 [ "$top" = "$(pwd -P)" ] || exit ${notARepository}
 `
 
