@@ -443,6 +443,7 @@ const ci = Smithers.GithubCiGen({
         foundry,
         postgres,
         docker: dockerImageStore,
+        playwright: ["chromium", "webkit"],
         workflowLint: Smithers.CiToolchain.Actionlint({
           release: "1.7.11",
           workflows: [
@@ -776,7 +777,8 @@ const ci = Smithers.GithubCiGen({
         go,
         foundry,
         postgres,
-        docker: dockerImageStore
+        docker: dockerImageStore,
+        playwright: ["chromium", "webkit"]
       }),
       // Match the workspace gate's bound: each suite also runs Vitest workers,
       // so host-sized package concurrency multiplies process and memory load.

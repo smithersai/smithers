@@ -1951,6 +1951,21 @@ describe("system packages", () => {
     expect(() => CiToolchain.Apt({ packages: ["bubble wrap"] })).toThrow()
     expect(() => CiToolchain.Apt({ packages: [] })).toThrow()
   })
+
+  it("installs the declared Playwright browsers after workspace dependencies", () => {
+    const job = {
+      ...goldenAttrs.jobs[0]!,
+      toolchain: CiToolchain.Needs({ playwright: ["chromium", "webkit"] })
+    }
+    const steps = toolchainSteps(goldenAttrs, job)
+    const browsers = steps.find((step) => step.name === "Install Playwright browsers")!
+    expect(() => CiToolchain.Needs({ playwright: [] })).toThrow()
+    expect(browsers.run).toBe("pnpm exec playwright install --with-deps chromium webkit")
+    expect(steps.indexOf(browsers)).toBeGreaterThan(
+      steps.findIndex((step) => step.run?.includes("install --frozen-lockfile"))
+    )
+    expect(toolchainSteps(goldenAttrs, goldenAttrs.jobs[0]!).some((step) => step.name === browsers.name)).toBe(false)
+  })
 })
 
 describe("main-pinned Ubuntu setup", () => {

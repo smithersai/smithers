@@ -94,7 +94,6 @@ jobs:
           fi
         shell: "bash"
       - name: "Install PostgreSQL"
-        id: setup
         run: |
           case "$(uname -s)" in
             Linux)
@@ -123,6 +122,9 @@ jobs:
           echo "$version"
           printf '%s\n' "$path_entry" >> "$GITHUB_PATH"
         shell: "bash"
+      - name: "Install Playwright browsers"
+        id: setup
+        run: "pnpm exec playwright install --with-deps chromium webkit"
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs ci '//packages/...' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -1155,7 +1157,6 @@ jobs:
           fi
         shell: "bash"
       - name: "Install PostgreSQL"
-        id: setup
         run: |
           case "$(uname -s)" in
             Linux)
@@ -1184,6 +1185,9 @@ jobs:
           echo "$version"
           printf '%s\n' "$path_entry" >> "$GITHUB_PATH"
         shell: "bash"
+      - name: "Install Playwright browsers"
+        id: setup
+        run: "pnpm exec playwright install --with-deps chromium webkit"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/...' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"

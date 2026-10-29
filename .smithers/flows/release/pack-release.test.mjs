@@ -367,7 +367,7 @@ test("every toolchain step in ci.yml's required test job also runs in release.ym
   const publishSteps = parse(releaseSource).jobs.publish.steps
   assert.deepEqual(
     publishSteps.filter((step) => step.if?.startsWith(laneCondition)).map((step) => step.name),
-    ["Validate GitHub Actions workflows", "Install PostgreSQL"]
+    ["Validate GitHub Actions workflows", "Install PostgreSQL", "Install Playwright browsers"]
   )
   const releaseSteps = jobSteps(releaseSource, "publish", (step) =>
     step.if?.startsWith(laneCondition) ? Object.fromEntries(Object.entries(step).filter(([key]) => key !== "if")) : step)

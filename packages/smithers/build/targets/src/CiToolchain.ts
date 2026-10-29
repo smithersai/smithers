@@ -1016,6 +1016,8 @@ export const Toolchain = Schema.Struct({
   /** Install Nix and run every step inside the declared environment. */
   nix: Schema.optional(NixSetup),
   browser: Schema.optional(SystemBrowser),
+  /** Install the workspace Playwright release's browsers and native dependencies. */
+  playwright: Schema.optional(Schema.Array(Schema.Literals(["chromium", "webkit", "firefox"])).check(Schema.isMinLength(1))),
   workflowLint: Schema.optional(WorkflowLint),
   artifacts: Schema.optional(ArtifactUpload)
 })
@@ -1071,6 +1073,7 @@ export const Needs = (options: {
   readonly docker?: DockerSetup | undefined
   readonly nix?: NixSetup | undefined
   readonly browser?: SystemBrowser | undefined
+  readonly playwright?: ReadonlyArray<"chromium" | "webkit" | "firefox"> | undefined
   readonly workflowLint?: WorkflowLint | undefined
   readonly artifacts?: ArtifactUpload | undefined
 } = {}): Toolchain => {
@@ -1078,7 +1081,7 @@ export const Needs = (options: {
     // The environment supplies every interpreter and language toolchain, so a
     // job that also installs one on the runner would run two copies and the
     // generated PATH would decide which. Refuse the mix rather than pick.
-    const mixed = (["runtimes", "rust", "cargoBinaries", "jj", "ripgrep", "uv", "go", "foundry", "postgres"] as const)
+    const mixed = (["runtimes", "rust", "cargoBinaries", "jj", "ripgrep", "uv", "go", "foundry", "postgres", "playwright"] as const)
       .filter(
         (name) => {
           const value = options[name]
@@ -1116,6 +1119,7 @@ export const Needs = (options: {
     ...(options.docker === undefined ? {} : { docker: options.docker }),
     ...(options.nix === undefined ? {} : { nix: options.nix }),
     ...(options.browser === undefined ? {} : { browser: options.browser }),
+    ...(options.playwright === undefined ? {} : { playwright: options.playwright }),
     ...(options.workflowLint === undefined ? {} : { workflowLint: options.workflowLint }),
     ...(options.artifacts === undefined ? {} : { artifacts: options.artifacts })
   })

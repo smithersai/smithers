@@ -275,6 +275,7 @@ test("only the re-run guard, the lanes, candidate preparation and publication se
     "Refuse a re-run attempt",
     "Validate GitHub Actions workflows",
     "Install PostgreSQL",
+    "Install Playwright browsers",
     "Start the gates lane time budget",
     "Release changelog section",
     "Distribution release contracts",

@@ -19,6 +19,11 @@ The guarded filesystem's `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` path is part of
 the build runner's inherited tool environment; other variables must be
 declared by their consuming targets.
 
+Browser suites declare `CiToolchain.Needs({ playwright: ["chromium", "webkit"] })`.
+After installing the workspace, the generator runs its pinned Playwright CLI
+with `install --with-deps` for exactly those browsers. A dependency install
+with scripts disabled does not provide browser executables.
+
 The declaration accepts either the complete Node.js trio (`runtime`,
 `packageManager`, and `nodeModules`) or a non-empty `toolchains` list. A
 repository that builds more than one language declares both. Omitting only part

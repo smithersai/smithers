@@ -1143,6 +1143,13 @@ export const toolchainSteps = (attrs: Attrs, job: Job): ReadonlyArray<RenderedSt
       ].join("\n")
     })
   }
+  if (needs.playwright !== undefined) {
+    steps.push({
+      name: "Install Playwright browsers",
+      run: PackageManager.exec(attrs.packageManager, ["playwright", "install", "--with-deps", ...needs.playwright])
+        .join(" ")
+    })
+  }
   return steps
 }
 
