@@ -239,7 +239,6 @@ const build = (
  */
 export const make = (options: InstallOptions): Installed => build(options).installed
 
-/* v8 ignore start -- publishing freezes the global it runs in, so it runs only inside a presentation realm, where PresentationRealm's tests drive it */
 /**
  * Publishes {@link guardHost} at `globalThis.__smithersHostGuard` and checks
  * that the renderer calls it: an element built by hand as `<script>` must be
@@ -277,4 +276,3 @@ export const install = (options: InstallOptions): Installed => {
   harden([globalThis, ...reachable])
   return installed
 }
-/* v8 ignore stop */

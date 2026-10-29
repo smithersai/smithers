@@ -1,6 +1,6 @@
 import singlefile from "@jitl/quickjs-singlefile-browser-release-sync"
 import { QuickJSLifecycle, QuickJSVariant } from "@smthrs/harness"
-import { Effect, Layer, Metric, Redacted } from "effect"
+import { Clock, Effect, Layer, Metric, Redacted } from "effect"
 import type { QuickJSSyncVariant } from "quickjs-emscripten-core"
 import { newVariant } from "quickjs-emscripten-core"
 import { describe, expect, it } from "vitest"
@@ -622,6 +622,48 @@ describe("PresentationRealm loads its bundle", () => {
       )
     )
     expect(error).toMatchObject({ reason: "limit_exceeded", limit: "time" })
+  })
+
+  it("propagates a later load timeout and recovers on the following render", async () => {
+    const source = await bundle()
+    let now = 0
+    let expires = false
+    const clock: Clock.Clock = {
+      currentTimeMillisUnsafe: () => {
+        const current = now
+        if (expires) now += 31
+        return current
+      },
+      currentTimeMillis: Effect.sync(() => now),
+      currentTimeNanosUnsafe: () => BigInt(now) * 1_000_000n,
+      currentTimeNanos: Effect.sync(() => BigInt(now) * 1_000_000n),
+      monotonicTimeNanosUnsafe: () => BigInt(now) * 1_000_000n,
+      monotonicTimeNanos: Effect.sync(() => BigInt(now) * 1_000_000n),
+      sleep: (duration) => Clock.Clock.defaultValue().sleep(duration)
+    }
+    const input = { module: checked(comparison), props: { rows: [] }, state: null }
+    const [before, error, after] = await Effect.gen(function*() {
+      const realm = yield* PresentationRealm.make({ bundle: source, limits: { loadMs: 30 } })
+      const before = yield* realm.render(input)
+      expires = true
+      const error = yield* failure(realm.render(input))
+      expires = false
+      const after = yield* realm.render(input)
+      return [before, error, after] as const
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(layerSingleFile),
+      Effect.provideService(Clock.Clock, clock),
+      Effect.runPromise
+    )
+    expect(before).toContain("<table>")
+    expect(described(error)).toMatchObject({
+      reason: "limit_exceeded",
+      limit: "time",
+      message: "The view crossed its time limit",
+      detail: "The view ran past its time limit"
+    })
+    expect(after).toBe(before)
   })
 
   it("fails when QuickJS cannot be compiled", async () => {

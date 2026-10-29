@@ -394,7 +394,6 @@ export const make = (
         loaded = undefined
         if (realm === undefined) {
           const fresh = load()
-          /* v8 ignore next -- the same bundle under the same bounds loaded when the realm was made, so only the host running out of memory fails here */
           if (!fresh.ok) return Effect.fail(fresh.error)
           realm = fresh.value
         }

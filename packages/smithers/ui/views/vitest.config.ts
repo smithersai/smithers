@@ -9,6 +9,7 @@ export default defineConfig({
   test: {
     globalSetup: [
       fileURLToPath(new URL("../../../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)),
+      fileURLToPath(new URL("./test/fixtures/presentation-coverage.ts", import.meta.url)),
       fileURLToPath(new URL("../../../repo-targets/test-utils/test-process-environment.mjs", import.meta.url))
     ],
     include: [...configDefaults.include, "**/*.{test,spec}.vibe"],
@@ -19,9 +20,12 @@ export default defineConfig({
     coverage: {
       enabled: true,
       provider: "v8",
+      autoAttachSubprocess: true,
       // One report directory per process, so concurrent runs never destroy each other's coverage scratch.
       reportsDirectory: join(tmpdir(), `flows-views-coverage-${process.pid}`),
-      include: ["src/**/*.{ts,vibe}"],
+      // Include emitted realm scripts so V8 remaps their execution to src/.
+      include: ["src/**/*.{ts,vibe}", "test-bundles/**/*.js"],
+      excludeAfterRemap: true,
       thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }
     }
   }

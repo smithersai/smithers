@@ -8,7 +8,7 @@
 import * as React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import * as jsxRuntime from "react/jsx-runtime"
-import { Presentation } from "../../src/index.ts"
+import { install } from "../../src/Presentation.ts"
 
 const join = (...names: ReadonlyArray<unknown>) => names.filter((name) => typeof name === "string" && name).join(" ")
 
@@ -44,4 +44,17 @@ const Button = (
 const Badge = ({ children }: { readonly children?: React.ReactNode }) =>
   jsxRuntime.jsx("span", { "data-slot": "badge", className: "sui-badge", children })
 
-Presentation.install({ react: React, jsxRuntime, renderToStaticMarkup, components: { Badge, Button, Card } })
+// Fault injection through InstallOptions' renderer dependency, kept inside the
+// realm so no host object crosses its boundary. Happy paths use React's renderer.
+declare const __RENDERER_FAILURE__: "none" | "value" | "message"
+const render = __RENDERER_FAILURE__ === "value"
+  ? () => {
+    throw "renderer failed"
+  }
+  : __RENDERER_FAILURE__ === "message"
+  ? () => {
+    throw new Error("renderer failed")
+  }
+  : renderToStaticMarkup
+
+install({ react: React, jsxRuntime, renderToStaticMarkup: render, components: { Badge, Button, Card } })
