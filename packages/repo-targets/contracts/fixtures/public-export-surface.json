@@ -1745,6 +1745,237 @@
       "development": null,
       "published": null,
       "reason": "Closes the SandboxCommand directory's deep paths, as every other directory in this package does, so ./SandboxCommand is its only entrypoint."
+    },
+    {
+      "name": "@smthrs/plugin",
+      "subpath": "./Bind",
+      "development": "./src/Bind.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/Bind.d.ts",
+          "default": "./dist/esm/Bind.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Bind.d.ts",
+          "default": "./dist/cjs/Bind.js"
+        }
+      },
+      "reason": "Deliberate public entrypoint in 6f12723f; retain the matching development and published contract."
+    },
+    {
+      "name": "@smthrs/plugin",
+      "subpath": "./Contribution",
+      "development": "./src/Contribution.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/Contribution.d.ts",
+          "default": "./dist/esm/Contribution.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Contribution.d.ts",
+          "default": "./dist/cjs/Contribution.js"
+        }
+      },
+      "reason": "Deliberate public entrypoint in 6f12723f; retain the matching development and published contract."
+    },
+    {
+      "name": "@smthrs/plugin",
+      "subpath": "./Host",
+      "development": "./src/Host.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/Host.d.ts",
+          "default": "./dist/esm/Host.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Host.d.ts",
+          "default": "./dist/cjs/Host.js"
+        }
+      },
+      "reason": "Deliberate public entrypoint in 6f12723f; retain the matching development and published contract."
+    },
+    {
+      "name": "@smthrs/plugin",
+      "subpath": "./JsonSchema",
+      "development": "./src/JsonSchema.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/JsonSchema.d.ts",
+          "default": "./dist/esm/JsonSchema.js"
+        },
+        "require": {
+          "types": "./dist/cjs/JsonSchema.d.ts",
+          "default": "./dist/cjs/JsonSchema.js"
+        }
+      },
+      "reason": "Deliberate public entrypoint in 6f12723f; retain the matching development and published contract."
+    },
+    {
+      "name": "@smthrs/plugin",
+      "subpath": "./Keys",
+      "development": "./src/Keys.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/Keys.d.ts",
+          "default": "./dist/esm/Keys.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Keys.d.ts",
+          "default": "./dist/cjs/Keys.js"
+        }
+      },
+      "reason": "Deliberate public entrypoint in 6f12723f; retain the matching development and published contract."
+    },
+    {
+      "name": "@smthrs/plugin",
+      "subpath": "./Load",
+      "development": "./src/Load.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/Load.d.ts",
+          "default": "./dist/esm/Load.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Load.d.ts",
+          "default": "./dist/cjs/Load.js"
+        }
+      },
+      "reason": "Deliberate public entrypoint in 6f12723f; retain the matching development and published contract."
+    },
+    {
+      "name": "@smthrs/plugin",
+      "subpath": "./Manifest",
+      "development": "./src/Manifest.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/Manifest.d.ts",
+          "default": "./dist/esm/Manifest.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Manifest.d.ts",
+          "default": "./dist/cjs/Manifest.js"
+        }
+      },
+      "reason": "Deliberate public entrypoint in 6f12723f; retain the matching development and published contract."
+    },
+    {
+      "name": "@smthrs/plugin",
+      "subpath": "./When",
+      "development": "./src/When.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/When.d.ts",
+          "default": "./dist/esm/When.js"
+        },
+        "require": {
+          "types": "./dist/cjs/When.d.ts",
+          "default": "./dist/cjs/When.js"
+        }
+      },
+      "reason": "Deliberate public entrypoint in 6f12723f; retain the matching development and published contract."
+    },
+    {
+      "name": "@smthrs/database",
+      "subpath": "./test/SlowNetwork",
+      "development": "./src/test/SlowNetwork.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/test/SlowNetwork.d.ts",
+          "default": "./dist/esm/test/SlowNetwork.js"
+        },
+        "require": {
+          "types": "./dist/cjs/test/SlowNetwork.d.ts",
+          "default": "./dist/cjs/test/SlowNetwork.js"
+        }
+      },
+      "reason": "Deliberate public entrypoint in f37a6ffe0e79; retain the matching development and published contract."
+    },
+    {
+      "name": "@smthrs/engine-store",
+      "subpath": "./StepLogs",
+      "development": "./src/StepLogs.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/StepLogs.d.ts",
+          "default": "./dist/esm/StepLogs.js"
+        },
+        "require": {
+          "types": "./dist/cjs/StepLogs.d.ts",
+          "default": "./dist/cjs/StepLogs.js"
+        }
+      },
+      "reason": "Deliberate public entrypoint in 725922c48633; retain the matching development and published contract."
+    },
+    {
+      "name": "@smthrs/journal",
+      "subpath": "./TelemetryLog",
+      "development": "./src/TelemetryLog.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/TelemetryLog.d.ts",
+          "default": "./dist/esm/TelemetryLog.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TelemetryLog.d.ts",
+          "default": "./dist/cjs/TelemetryLog.js"
+        }
+      },
+      "reason": "Deliberate public entrypoint in 725922c48633; retain the matching development and published contract."
+    },
+    {
+      "name": "@smthrs/observability",
+      "subpath": "./FetchFailures",
+      "development": "./src/FetchFailures.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/FetchFailures.d.ts",
+          "default": "./dist/esm/FetchFailures.js"
+        },
+        "require": {
+          "types": "./dist/cjs/FetchFailures.d.ts",
+          "default": "./dist/cjs/FetchFailures.js"
+        }
+      },
+      "reason": "Deliberate public entrypoint in 718a04bd6e7d; retain the matching development and published contract."
+    },
+    {
+      "name": "@smthrs/observability",
+      "subpath": "./LogFailures",
+      "development": "./src/LogFailures.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/LogFailures.d.ts",
+          "default": "./dist/esm/LogFailures.js"
+        },
+        "require": {
+          "types": "./dist/cjs/LogFailures.d.ts",
+          "default": "./dist/cjs/LogFailures.js"
+        }
+      },
+      "reason": "Deliberate public entrypoint in 718a04bd6e7d; retain the matching development and published contract."
+    },
+    {
+      "name": "@smthrs/sandbox",
+      "subpath": "./CiJob",
+      "development": "./src/CiJob/index.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/CiJob/index.d.ts",
+          "default": "./dist/esm/CiJob/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CiJob/index.d.ts",
+          "default": "./dist/cjs/CiJob/index.js"
+        }
+      },
+      "reason": "Deliberate public entrypoint in c0b1b3651d05; retain the matching development and published contract."
+    },
+    {
+      "name": "@smthrs/sandbox",
+      "subpath": "./CiJob/*",
+      "development": null,
+      "published": null,
+      "reason": "Closed implementation paths for the public entrypoint added in c0b1b3651d05."
     }
   ],
   "removed": [
