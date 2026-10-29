@@ -483,24 +483,23 @@ const flowsPages = () => {
     .map((page) => [page, readFileSync(join(directory, page), "utf8")])
 }
 
-test("the Flows quickstart imports only the packages its one install line names", () => {
+test("the published rc.16 quickstart installs its pinned runtime and every package it imports", () => {
   const quickstart = readQuickstart()
-  // `effect` carries no version: the line installs the release the registry
-  // calls latest, which the supported range has to admit (#3839).
-  assert.deepEqual(quickstart.packages, ["@smthrs/platform-node@next", "@smthrs/flows@next", "effect"])
-  // pnpm 11 holds `@next` back for a day after a release, so pnpm gets the
-  // versions the bump writes (.smithers/flows/release/set-release-version.mjs).
-  const { version } = JSON.parse(readFileSync(join(repoRoot, "packages/smithers/flows/package.json"), "utf8"))
-  const node = JSON.parse(readFileSync(join(repoRoot, "packages/smithers/flows/platform-node/package.json"), "utf8"))
-  assert.deepEqual(quickstart.pnpmPackages, ["@smthrs/platform-node@" + node.version, "@smthrs/flows@" + version, "effect"])
-  assert.deepEqual(importedPackages(quickstart.program), ["@smthrs/flows", "@smthrs/platform-node", "effect"])
+  // 96628360 pins the guide to the published API, whose NodeRuntime is under
+  // @smthrs/flows. The checkout's relocated host API is a different contract.
+  const packages = ["@smthrs/platform-node@1.0.0-rc.16", "@smthrs/flows@1.0.0-rc.16", "effect@4.0.5"]
+  assert.deepEqual(quickstart.packages, packages)
+  assert.deepEqual(quickstart.pnpmPackages, packages)
+  assert.deepEqual(importedPackages(quickstart.program), ["@smthrs/flows", "effect"])
+  assert.ok(quickstart.program.includes('from "@smthrs/flows/NodeRuntime"'))
   assert.deepEqual(quickstart.run, ["node", "quickstart.ts"])
   assert.equal(quickstart.printed, "the note")
   // pnpm 11 ends `pnpm add` with ERR_PNPM_IGNORED_BUILDS for esbuild's install script.
   assert.deepEqual(quickstart.approveBuilds, ["esbuild"])
   const pages = new Map(flowsPages())
   for (const page of ["README.md", "docs/README.md", "docs/installation.md"]) {
-    assert.ok(pages.get(page).split("\n").includes(quickstart.install), page + " must give the quickstart's install line")
+    assert.ok(pages.get(page).split("\n").includes("npm install @smthrs/platform-node@next @smthrs/flows@next effect"),
+      page + " must install the current runtime and its dependencies")
   }
 })
 
