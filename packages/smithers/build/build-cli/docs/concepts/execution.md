@@ -218,6 +218,13 @@ plus the paths a rule discovers for itself:
   filesystem root, the home directory, and its ancestors are refused even when
   listed. Any other local url refuses the target.
 
+The workspace's `nodeModules` declaration admits the exact installed dependency
+trees above the target's working and package directories, including their real
+locations when linked. Planning records those locations; a replaced installation
+cannot grant a different host directory during execution. Scratch checks and overlays retain those same reads.
+This grants no authority to other source symlinks or to siblings of an installed
+tree. Without a dependency declaration, linked installations remain refused.
+
 The write set is the declared outputs, the declared `changes`, the clean
 targets, and what a tool writes on its own account: a cargo crate's `target`
 directory, a `Foundry.Build` or `Foundry.Test` rule's `out` and `cache_path`

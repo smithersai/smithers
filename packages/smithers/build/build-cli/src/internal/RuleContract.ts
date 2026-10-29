@@ -223,6 +223,8 @@ export interface SharedFields extends Planner.PlannedTarget {
    * today; the confinement binds each read-only.
    */
   readonly externalReads: ReadonlyArray<string>
+  /** Canonical dependency installations admitted when this node was planned. */
+  readonly dependencyInstallations?: ReadonlyArray<string>
   readonly outDirs: ReadonlyArray<string>
   readonly outFiles: ReadonlyArray<string>
   /** Consumer-scoped source substitutions applied only in a scratch workspace. */

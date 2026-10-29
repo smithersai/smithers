@@ -13,6 +13,8 @@ import * as NodeHttp from "node:http"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
+import { openPackageIndex } from "../src/Cli.ts"
+import * as PackageExec from "../src/PackageExec.ts"
 import { dockerAvailable } from "./helpers/DockerProbe.ts"
 import { serve } from "./helpers/ServeCli.ts"
 import { write } from "./helpers/WriteFile.ts"
@@ -124,6 +126,102 @@ export const Package = S.Package({ targets: { check, tamper } })
     expect(refused.exitCode).toBe(1)
     expect(refused.logs).toMatch(/Operation not permitted|Read-only file system/)
     expect(await Fs.readFile(NodePath.join(root, ".flows/cache/canary"), "utf8")).toBe("real cached result")
+    expect(await Fs.readFile(NodePath.join(root, "out.txt"), "utf8")).toBe("unchanged")
+  })
+
+  it.each(["real", "scratch"])("admits only the declared dependency installation in the %s tree", async (tree) => {
+    const root = await temporaryWorkspace()
+    const installation = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-installed-"))
+    temporaryDirectories.push(installation)
+    await write(installation, "node_modules/fixture.txt", "dependency\n")
+    await write(installation, "private.txt", "private sibling")
+    await Fs.symlink(NodePath.join(installation, "node_modules"), NodePath.join(root, "node_modules"), "dir")
+    await Fs.symlink(installation, NodePath.join(root, "leak"), "dir")
+    await write(root, "WORKSPACE.ts", workspaceModule())
+    await write(root, "out.txt", "unchanged")
+    await write(
+      root,
+      "PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+const read = S.Shell.${tree === "scratch" ? "Diff" : "Run"}({
+  shell: "grep -qx dependency node_modules/fixture.txt",
+  ${tree === "scratch" ? "changes: [\"out.txt\"]," : ""}
+})
+const leak = S.Shell.Run({ shell: "cat leak/private.txt", data: [S.file("leak/private.txt")] })
+export const Package = S.Package({ targets: { read, leak } })
+`
+    )
+    commitAll(root)
+    const admitted = await serve(root, ["//:read"])
+    expect(admitted.exitCode, admitted.logs).toBe(0)
+    const refused = await serve(root, ["//:leak"])
+    expect(refused.exitCode).toBe(1)
+    expect(refused.output + refused.logs).toMatch(/outside|symlink/)
+    expect(refused.output + refused.logs).not.toContain("private sibling")
+    expect(await Fs.readFile(NodePath.join(root, "out.txt"), "utf8")).toBe("unchanged")
+  })
+
+  it("does not admit a linked installation without a dependency declaration", async () => {
+    const root = await temporaryWorkspace()
+    const installation = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-undeclared-install-"))
+    temporaryDirectories.push(installation)
+    await write(installation, "fixture.txt", "dependency\n")
+    await Fs.symlink(installation, NodePath.join(root, "node_modules"), "dir")
+    await write(
+      root,
+      "WORKSPACE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+export const Workspace = S.Workspace("no-node-dependencies", {
+  repository: "git+https://example.invalid/fixture.git",
+  cache: S.Cache({ directory: ".flows" }),
+  toolchains: [S.Rust.Toolchain({
+    workspace: S.file("//Cargo.toml"), toolchain: S.file("//rust-toolchain.toml"), lockfile: S.file("//Cargo.lock")
+  })]
+})
+`
+    )
+    await write(root, "Cargo.toml", "[workspace]\nmembers = []\nresolver = \"3\"\n")
+    await write(root, "Cargo.lock", "version = 4\n")
+    await write(root, "rust-toolchain.toml", "[toolchain]\nchannel = \"1.98.0\"\n")
+    await write(
+      root,
+      "PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: { read: S.Shell.Run({ shell: "cat node_modules/fixture.txt" }) } })
+`
+    )
+    commitAll(root)
+    const refused = await serve(root, ["//:read"])
+    expect(refused.exitCode).toBe(1)
+    expect(refused.logs).toContain("resolves outside")
+  })
+
+  it.each(["Run", "Diff"])("refuses a dependency installation replaced after planning a %s", async (rule) => {
+    const root = await temporaryWorkspace()
+    const external = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-replaced-install-"))
+    temporaryDirectories.push(external)
+    await write(root, "node_modules/fixture.txt", "approved")
+    await write(external, "fixture.txt", "unapproved host data")
+    await write(root, "WORKSPACE.ts", workspaceModule())
+    await write(root, "out.txt", "unchanged")
+    await write(
+      root,
+      "PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: { read: S.Shell.${rule}({
+  shell: "cat node_modules/fixture.txt", ${rule === "Diff" ? "changes: [\"out.txt\"]" : ""}
+}) } })
+`
+    )
+    commitAll(root)
+    const index = await openPackageIndex({ workspace: root })
+    const options = { index, cacheDirectory: ".flows", verb: "auto" as const, patterns: ["//:read"], readCache: false }
+    const planned = await PackageExec.plan(options)
+    await Fs.rename(NodePath.join(root, "node_modules"), NodePath.join(root, "previous-installation"))
+    await Fs.symlink(external, NodePath.join(root, "node_modules"), "dir")
+    const summary = await PackageExec.execute(planned, options)
+    expect(summary.ok).toBe(false)
+    expect(summary.results.find((entry) => entry.label === "//:read")?.error).toContain("resolves outside")
     expect(await Fs.readFile(NodePath.join(root, "out.txt"), "utf8")).toBe("unchanged")
   })
 

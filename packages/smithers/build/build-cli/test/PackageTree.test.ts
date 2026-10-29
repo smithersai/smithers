@@ -200,6 +200,21 @@ describe("captureOutDir heals a tampered CAS blob", () => {
 })
 
 describe("scratchCopy keeps installed dependencies as host state", () => {
+  it("links directly to an installation that was already linked in the real tree", async () => {
+    const installation = NodePath.join(outside, "node_modules")
+    await Fs.mkdir(installation)
+    await Fs.writeFile(NodePath.join(installation, "fixture.txt"), "installed")
+    await Fs.symlink(installation, NodePath.join(root, "node_modules"), "dir")
+    const scratch = await PackageTree.scratchCopy(root, ".flows")
+    try {
+      expect(await Fs.readlink(NodePath.join(scratch, "node_modules"))).toBe(await Fs.realpath(installation))
+      expect(await Fs.readFile(NodePath.join(scratch, "node_modules/fixture.txt"), "utf8")).toBe("installed")
+      expect(await Fs.readlink(NodePath.join(root, "node_modules"))).toBe(installation)
+    } finally {
+      await Fs.rm(scratch, { recursive: true, force: true })
+    }
+  })
+
   it("refuses a scratch cache whose parent symlink leaves the scratch tree", async () => {
     await Fs.symlink(outside, NodePath.join(root, "state"), "dir")
     await expect(PackageTree.scratchCopy(root, "state/build")).rejects.toThrow(/cache directory leaves the workspace/)

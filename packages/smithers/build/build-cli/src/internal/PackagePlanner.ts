@@ -2980,6 +2980,14 @@ const visit = async (
     }
   }
 
+  const dependencyInstallations = new Set<string>()
+  if (context.index.workspace.nodeModules !== undefined) {
+    for (const directory of nodeModulesDirectories([cwd, packagePath])) {
+      const absolute = NodePath.join(context.root, ...directory.split("/"))
+      if (NodeFs.existsSync(absolute)) dependencyInstallations.add(NodeFs.realpathSync(absolute))
+    }
+  }
+
   const keyMaterial: Planner.KeyMaterial = {
     body: {
       flow: target._tag,
@@ -3100,6 +3108,7 @@ const visit = async (
     writeSet,
     readSet,
     externalReads,
+    ...(dependencyInstallations.size === 0 ? {} : { dependencyInstallations: [...dependencyInstallations] }),
     outDirs,
     outFiles,
     overlays,
@@ -3497,6 +3506,22 @@ export const managerFilesOf = (workspace: PackageIndexModule.PackageIndex["works
     if (typeof path === "string" && path !== "") paths.push(Input.resolvePath("", path))
   }
   return paths
+}
+
+/**
+ * Installed dependency directories above a node's working and package directories.
+ * @category internal
+ * @since 1.0.0
+ */
+export const nodeModulesDirectories = (directories: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const paths = new Set(["node_modules"])
+  for (const directory of directories) {
+    const segments = directory.split("/").filter((segment) => segment !== "" && segment !== ".")
+    for (let index = 1; index <= segments.length; index += 1) {
+      paths.add([...segments.slice(0, index), "node_modules"].join("/"))
+    }
+  }
+  return [...paths]
 }
 
 const managerBinaryOf = (workspace: PackageIndexModule.PackageIndex["workspace"]): string | undefined => {

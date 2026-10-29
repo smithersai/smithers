@@ -65,6 +65,7 @@ import {
   decodeStoredResolve,
   keyMaterialWithGraph,
   managerFilesOf,
+  nodeModulesDirectories,
   plan,
   staticPrefixOf,
   takesExclusiveTreePermit,
@@ -199,6 +200,7 @@ export const sandboxRequest = (
   candidateReads: ReadonlyArray<string> = []
 ): ExecSandbox.Request => {
   const reads = new Set<string>()
+  const externalReads = new Set(node.externalReads)
   for (const path of managerFilesOf(workspace)) reads.add(path)
   // A gate judging an agent candidate reads what the candidate may have
   // changed: the consumer's write-set and the overlay's own paths. Those files
@@ -235,15 +237,14 @@ export const sandboxRequest = (
     }
     stack.push(...dependency.dependencies)
   }
-  const above = (directory: string): void => {
-    reads.add("node_modules")
-    const segments = directory.split("/").filter((segment) => segment !== "" && segment !== ".")
-    for (let index = 1; index <= segments.length; index += 1) {
-      reads.add([...segments.slice(0, index), "node_modules"].join("/"))
+  for (const directory of nodeModulesDirectories([node.cwd, node.packagePath])) reads.add(directory)
+  for (const installation of node.dependencyInstallations ?? []) {
+    // A replaced installation cannot grant a different host directory. Keep
+    // the planned canonical path; never follow a new alias for authority.
+    if (NodeFs.existsSync(installation) && NodeFs.realpathSync(installation) === installation) {
+      externalReads.add(installation)
     }
   }
-  above(node.cwd)
-  above(node.packagePath)
   reads.add(`${cacheDirectory}/tmp`)
   reads.add(`${cacheDirectory}/store`)
   // The two write channels are the node's own distinction, not a guess about
@@ -283,7 +284,7 @@ export const sandboxRequest = (
     writes: [...writes],
     writeFiles: [...writeFiles],
     readOnly: [`${cacheDirectory}/cache`],
-    externalReads: node.externalReads
+    externalReads: [...externalReads]
   }
 }
 

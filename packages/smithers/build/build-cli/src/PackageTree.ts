@@ -1572,7 +1572,7 @@ export const scratchCopy = async (
       if (!(await Fs.lstat(source).then(() => true, () => false))) continue
       const target = NodePath.join(destination, NodePath.relative(root, source))
       await Fs.mkdir(NodePath.dirname(target), { recursive: true })
-      await Fs.symlink(source, target, "dir")
+      await Fs.symlink(await Fs.realpath(source), target, "dir")
     }
     // Cache contents stay out of scratch. The empty result-cache directory
     // must exist so confinement can re-close it beneath the writable cache.
