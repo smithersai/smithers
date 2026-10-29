@@ -124,7 +124,10 @@ jobs:
         shell: "bash"
       - name: "Install Playwright browsers"
         id: setup
-        run: "pnpm exec playwright install --with-deps chromium webkit"
+        run: |
+          cd 'packages/smithers/ui'
+          pnpm exec playwright install --with-deps 'chromium'
+        shell: "bash"
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs ci '//packages/...' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -828,7 +831,7 @@ jobs:
         id: setup
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'tmux'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -1187,7 +1190,10 @@ jobs:
         shell: "bash"
       - name: "Install Playwright browsers"
         id: setup
-        run: "pnpm exec playwright install --with-deps chromium webkit"
+        run: |
+          cd 'packages/smithers/ui'
+          pnpm exec playwright install --with-deps 'chromium'
+        shell: "bash"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/...' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"

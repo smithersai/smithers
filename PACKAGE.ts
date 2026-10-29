@@ -424,11 +424,11 @@ const ci = Smithers.GithubCiGen({
         jj,
         ripgrep,
         apt: bubblewrap,
+        playwright: Smithers.CiToolchain.Playwright({ cwd: "packages/smithers/ui", browsers: ["chromium", "webkit"] }),
         go,
         foundry,
         postgres,
         docker: dockerImageStore,
-        playwright: ["chromium", "webkit"],
         workflowLint: Smithers.CiToolchain.Actionlint({
           release: "1.7.11",
           workflows: [
@@ -634,7 +634,7 @@ const ci = Smithers.GithubCiGen({
         runtimes: [node, bun],
         jj,
         ripgrep,
-        apt: bubblewrap,
+        apt: Smithers.CiToolchain.Apt({ packages: ["bubblewrap", "tmux"] }),
         artifacts: Smithers.CiToolchain.Artifacts({
           artifact: "apps-e2e-artifacts",
           sources: [
@@ -756,11 +756,11 @@ const ci = Smithers.GithubCiGen({
         jj,
         ripgrep,
         apt: packageSystemTools,
+        playwright: Smithers.CiToolchain.Playwright({ cwd: "packages/smithers/ui", browsers: ["chromium", "webkit"] }),
         go,
         foundry,
         postgres,
-        docker: dockerImageStore,
-        playwright: ["chromium", "webkit"]
+        docker: dockerImageStore
       }),
       // Match the workspace gate's bound: each suite also runs Vitest workers,
       // so host-sized package concurrency multiplies process and memory load.

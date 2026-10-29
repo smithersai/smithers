@@ -357,11 +357,10 @@ test("every toolchain step in ci.yml's required test job also runs in release.ym
   const ciSteps = jobSteps(workflow("ci.yml"), "test")
   const releaseSource = workflow("release.yml")
   // A prerelease runs the publish job as a candidate lane and a gates lane
-  // (the comment on release.yml's publish job). Two copied steps therefore
-  // carry one extra key that keeps them out of the candidate lane: the
-  // workflow validation, which is a gate, and the setup step every gate
-  // follows. The key is dropped before the comparison and its carriers are
-  // pinned after it, so the copies stay the same bytes otherwise and a third
+  // (the comment on release.yml's publish job). Three copied steps therefore
+  // carry one extra key that keeps workflow validation and database/browser
+  // setup out of the candidate lane. The key is dropped before the comparison and its carriers are
+  // pinned after it, so the copies stay the same bytes otherwise and another
   // step cannot leave the candidate lane unnoticed.
   const laneCondition = "matrix.lane != 'candidate'"
   const publishSteps = parse(releaseSource).jobs.publish.steps

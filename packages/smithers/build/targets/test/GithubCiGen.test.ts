@@ -1159,6 +1159,30 @@ describe("render", () => {
     }
   })
 
+  it("installs the owning package's pinned Playwright browser before test targets", () => {
+    const rendered = render(attrsOf({
+      ...goldenAttrs,
+      gates: [],
+      jobs: [{
+        id: "probes",
+        runsOn: "ubuntu-latest",
+        toolchain: CiToolchain.Needs({
+          runtimes: [node],
+          playwright: CiToolchain.Playwright({ cwd: "packages/smithers/ui", browsers: ["chromium"] })
+        }),
+        steps: [{ verb: Verb.Test, pattern: "//packages/smithers/ui:browserProbes" }]
+      }]
+    }))
+    expect(rendered).toContain(
+      "cd 'packages/smithers/ui'\n          pnpm exec playwright install --with-deps 'chromium'"
+    )
+    expect(rendered.indexOf("exec playwright install")).toBeLessThan(rendered.indexOf("pnpm exec smthrs test"))
+    for (const cwd of ["../outside", "/outside", ""]) {
+      expect(() => CiToolchain.Playwright({ cwd, browsers: ["chromium"] })).toThrow()
+    }
+    expect(() => CiToolchain.Playwright({ cwd: "packages/smithers/ui", browsers: [] as never })).toThrow()
+  })
+
   it("derives the browser assertion and the artifact upload from declarations", () => {
     const rendered = render(attrsOf({
       ...goldenAttrs,
@@ -1953,12 +1977,12 @@ describe("system packages", () => {
   it("installs the declared Playwright browsers after workspace dependencies", () => {
     const job = {
       ...goldenAttrs.jobs[0]!,
-      toolchain: CiToolchain.Needs({ playwright: ["chromium", "webkit"] })
+      toolchain: CiToolchain.Needs({ playwright: CiToolchain.Playwright({ cwd: "packages/smithers/ui", browsers: ["chromium", "webkit"] }) })
     }
     const steps = toolchainSteps(goldenAttrs, job)
     const browsers = steps.find((step) => step.name === "Install Playwright browsers")!
-    expect(() => CiToolchain.Needs({ playwright: [] })).toThrow()
-    expect(browsers.run).toBe("pnpm exec playwright install --with-deps chromium webkit")
+    expect(() => CiToolchain.Playwright({ cwd: "packages/smithers/ui", browsers: [] })).toThrow()
+    expect(browsers.run).toBe("cd 'packages/smithers/ui'\npnpm exec playwright install --with-deps 'chromium' 'webkit'")
     expect(steps.indexOf(browsers)).toBeGreaterThan(
       steps.findIndex((step) => step.run?.includes("install --frozen-lockfile"))
     )

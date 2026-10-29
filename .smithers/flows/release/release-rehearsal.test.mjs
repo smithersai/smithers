@@ -352,6 +352,7 @@ test("a prerelease runs the candidate and gates as separate lanes, and only the 
   const reportOnly = [
     "Validate GitHub Actions workflows",
     "Install PostgreSQL",
+    "Install Playwright browsers",
     ...otherGates,
     ...gates,
     "Collect ci-test-tier-evidence",
@@ -598,7 +599,7 @@ test("the toolchain the gates need is installed before the first gate", () => {
   const names = release.jobs.publish.steps.map((candidate) => candidate.name ?? candidate.uses)
   const firstGate = names.indexOf("Workspace targets")
   assert.notEqual(firstGate, -1, "release.yml no longer runs the workspace target graph")
-  for (const name of ["Install Go", "Install Foundry", "Install ripgrep", "Install system packages", "Install PostgreSQL"]) {
+  for (const name of ["Install Go", "Install Foundry", "Install ripgrep", "Install system packages", "Install PostgreSQL", "Install Playwright browsers"]) {
     const index = names.indexOf(name)
     assert.notEqual(index, -1, `release.yml does not install ${name.replace("Install ", "")}`)
     assert.ok(index < firstGate, `${name} must run before the first gate`)

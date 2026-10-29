@@ -24,6 +24,20 @@ const browserProbes = new Map([
   ["//packages/smithers/ui/terminal-frame:browserProbes", "terminal-frame.browser.test.ts"]
 ])
 
+test("jobs selecting UI browser probes install the packages' pinned Chromium", () => {
+  const jobs = { ...workflowJobs(".github/workflows/ci.yml"), release: workflowJobs(".github/workflows/release.yml").publish }
+  for (const job of ["test", "packages", "release"]) {
+    const steps = jobs[job].steps
+    const install = steps.findIndex((step) => step.name === "Install Playwright browsers")
+    assert.ok(install >= 0, `${job}: install Playwright's browser before running probes`)
+    assert.match(steps[install].run, /cd 'packages\/smithers\/ui'\npnpm exec playwright install --with-deps 'chromium'/)
+    assert.ok(install < steps.findIndex((step) => targetInvocation(step.run)))
+  }
+  const version = (cwd) => JSON.parse(readFileSync(join(root, cwd, "package.json"), "utf8")).devDependencies.playwright
+  assert.equal(version("packages/smithers/ui"), version("packages/smithers/ui/terminal-frame"))
+  assert.match(jobs["apps-e2e"].steps.find((step) => step.name === "Install system packages").run, /'tmux'/)
+})
+
 const assertE2eRunner = (row) => {
   const { label } = row
   const name = label.split(":").at(-1)

@@ -305,8 +305,7 @@ jobs:
             fi
           fi
         shell: bash
-      # Every gate below runs only after this step succeeds. The candidate
-      # lane skips it, and with it every gate.
+      # The candidate lane skips database/browser setup, and with it every gate.
       - name: Install PostgreSQL
         if: matrix.lane != 'candidate'
         run: |
@@ -336,6 +335,13 @@ jobs:
           fi
           echo "$version"
           printf '%s\n' "$path_entry" >> "$GITHUB_PATH"
+        shell: bash
+      - name: Install Playwright browsers
+        id: setup
+        if: matrix.lane != 'candidate'
+        run: |
+          cd 'packages/smithers/ui'
+          pnpm exec playwright install --with-deps 'chromium'
         shell: bash
       # The gate roster below is the required CI `test` job, copied verbatim
       # from the generated .github/workflows/ci.yml, plus the fault matrix from

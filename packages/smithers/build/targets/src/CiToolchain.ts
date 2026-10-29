@@ -835,6 +835,27 @@ export const Browser = (options: {
     reason: options.reason
   })
 
+/** The owning package supplies Playwright's version and browser revision.
+ * @category schemas
+ * @since 1.0.0
+ */
+export const PlaywrightSetup = Schema.Struct({
+  cwd: Schema.NonEmptyString.check(Schema.isPattern(/^(?!.*\.\.)[A-Za-z0-9_.][A-Za-z0-9_./-]*$/)),
+  browsers: Schema.NonEmptyArray(Schema.Literals(["chromium", "firefox", "webkit"]))
+})
+
+/** A pinned Playwright browser installation.
+ * @category models
+ * @since 1.0.0
+ */
+export type PlaywrightSetup = typeof PlaywrightSetup.Type
+
+/** Install browsers and their system dependencies through the package's pinned CLI.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const Playwright = (options: PlaywrightSetup): PlaywrightSetup => PlaywrightSetup.make(options)
+
 /**
  * Schema for one source an artifact upload collects.
  *
@@ -1016,8 +1037,7 @@ export const Toolchain = Schema.Struct({
   /** Install Nix and run every step inside the declared environment. */
   nix: Schema.optional(NixSetup),
   browser: Schema.optional(SystemBrowser),
-  /** Install the workspace Playwright release's browsers and native dependencies. */
-  playwright: Schema.optional(Schema.Array(Schema.Literals(["chromium", "webkit", "firefox"])).check(Schema.isMinLength(1))),
+  playwright: Schema.optional(PlaywrightSetup),
   workflowLint: Schema.optional(WorkflowLint),
   artifacts: Schema.optional(ArtifactUpload)
 })
@@ -1073,7 +1093,7 @@ export const Needs = (options: {
   readonly docker?: DockerSetup | undefined
   readonly nix?: NixSetup | undefined
   readonly browser?: SystemBrowser | undefined
-  readonly playwright?: ReadonlyArray<"chromium" | "webkit" | "firefox"> | undefined
+  readonly playwright?: PlaywrightSetup | undefined
   readonly workflowLint?: WorkflowLint | undefined
   readonly artifacts?: ArtifactUpload | undefined
 } = {}): Toolchain => {

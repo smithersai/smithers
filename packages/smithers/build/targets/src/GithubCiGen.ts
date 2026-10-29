@@ -1086,6 +1086,15 @@ export const toolchainSteps = (attrs: Attrs, job: Job): ReadonlyArray<RenderedSt
       ].join("\n")
     })
   }
+  if (needs.playwright !== undefined) {
+    steps.push({
+      name: "Install Playwright browsers",
+      shell: "bash",
+      run: `cd ${shellWord(needs.playwright.cwd)}\n${
+        PackageManager.exec(attrs.packageManager, ["playwright", "install", "--with-deps"]).join(" ")
+      } ${needs.playwright.browsers.map(shellWord).join(" ")}`
+    })
+  }
   if (needs.browser !== undefined) {
     const executable = needs.browser.executable
     steps.push({
@@ -1098,13 +1107,6 @@ export const toolchainSteps = (attrs: Attrs, job: Job): ReadonlyArray<RenderedSt
         "fi",
         `${shellWord(executable)} --version`
       ].join("\n")
-    })
-  }
-  if (needs.playwright !== undefined) {
-    steps.push({
-      name: "Install Playwright browsers",
-      run: PackageManager.exec(attrs.packageManager, ["playwright", "install", "--with-deps", ...needs.playwright])
-        .join(" ")
     })
   }
   return steps
