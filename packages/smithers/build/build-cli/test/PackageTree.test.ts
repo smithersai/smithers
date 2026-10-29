@@ -200,6 +200,28 @@ describe("captureOutDir heals a tampered CAS blob", () => {
 })
 
 describe("scratchCopy keeps installed dependencies as host state", () => {
+  it("refuses a scratch cache whose parent symlink leaves the scratch tree", async () => {
+    await Fs.symlink(outside, NodePath.join(root, "state"), "dir")
+    await expect(PackageTree.scratchCopy(root, "state/build")).rejects.toThrow(/cache directory leaves the workspace/)
+    expect(await Fs.readdir(outside)).toEqual([])
+  })
+
+  it.each([".flows", "state/build"])("creates an empty sealed result cache at %s", async (cacheDirectory) => {
+    const originalCache = NodePath.join(root, cacheDirectory, "cache")
+    await Fs.mkdir(originalCache, { recursive: true })
+    await Fs.writeFile(NodePath.join(originalCache, "result.json"), "private cached result")
+    const scratch = await PackageTree.scratchCopy(root, cacheDirectory)
+    try {
+      const scratchCache = NodePath.join(scratch, cacheDirectory, "cache")
+      expect((await Fs.lstat(scratchCache)).isDirectory()).toBe(true)
+      expect(await Fs.readdir(scratchCache)).toEqual([])
+      await Fs.writeFile(NodePath.join(scratchCache, "scratch-only"), "scratch")
+      expect(await Fs.readdir(originalCache)).toEqual(["result.json"])
+    } finally {
+      await Fs.rm(scratch, { recursive: true, force: true })
+    }
+  })
+
   it.skipIf(process.platform === "win32")("removes the scratch tree when copying fails", async () => {
     const temporary = NodePath.join(outside, "tmp")
     await Fs.mkdir(temporary)

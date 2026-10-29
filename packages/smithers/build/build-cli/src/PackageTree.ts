@@ -19,6 +19,7 @@ import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
+import { ensureCacheDirectory } from "./Cache.ts"
 import * as Environment from "./Environment.ts"
 import * as Path from "./internal/Path.ts"
 import { byCodeUnit, posix } from "./internal/Text.ts"
@@ -1573,6 +1574,9 @@ export const scratchCopy = async (
       await Fs.mkdir(NodePath.dirname(target), { recursive: true })
       await Fs.symlink(source, target, "dir")
     }
+    // Cache contents stay out of scratch. The empty result-cache directory
+    // must exist so confinement can re-close it beneath the writable cache.
+    await ensureCacheDirectory(destination, cacheDirectory)
     return destination
   } catch (error) {
     // Neither copying nor linking dependencies can leave a half-built tree

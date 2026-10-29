@@ -103,6 +103,30 @@ export const Package = S.Package({ targets: { undeclared, declared } })
     expect(admitted.exitCode, admitted.logs).toBe(0)
   })
 
+  it("seals an empty scratch result cache without exposing or changing real cached results", async () => {
+    const root = await temporaryWorkspace()
+    await write(root, "WORKSPACE.ts", workspaceModule())
+    await write(root, "out.txt", "unchanged")
+    await write(
+      root,
+      "PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+const check = S.Shell.Diff({ shell: "test -d .flows/cache && test ! -e .flows/cache/canary", changes: ["out.txt"] })
+const tamper = S.Shell.Diff({ shell: "printf tampered > .flows/cache/canary", changes: ["out.txt"] })
+export const Package = S.Package({ targets: { check, tamper } })
+`
+    )
+    commitAll(root)
+    await write(root, ".flows/cache/canary", "real cached result")
+    const checked = await serve(root, ["//:check"])
+    expect(checked.exitCode, checked.logs).toBe(0)
+    const refused = await serve(root, ["//:tamper"])
+    expect(refused.exitCode).toBe(1)
+    expect(refused.logs).toMatch(/Operation not permitted|Read-only file system/)
+    expect(await Fs.readFile(NodePath.join(root, ".flows/cache/canary"), "utf8")).toBe("real cached result")
+    expect(await Fs.readFile(NodePath.join(root, "out.txt"), "utf8")).toBe("unchanged")
+  })
+
   it("denies an undeclared write and admits a declared output directory", async () => {
     const root = await temporaryWorkspace()
     await write(root, "WORKSPACE.ts", workspaceModule())

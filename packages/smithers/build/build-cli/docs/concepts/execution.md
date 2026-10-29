@@ -55,6 +55,11 @@ directories for both forms. A refused parent leaves external files and
 missing external directories untouched. Text outputs also refuse a symlink at
 the destination; remove that link before changing an emitted link to text.
 
+Check-mode generators and Diff targets run in a scratch copy with an empty
+`<cache directory>/cache` directory sealed read-only. Cached results are never
+copied or linked from the real tree; the directory lets Linux confinement seal
+the result cache while the rest of the scratch cache remains writable.
+
 ## Write-set confinement
 
 A target that mutates the tree declares what it may write. Every such run is
