@@ -315,7 +315,8 @@ for (const endpoint of endpoints) {
         const closed = new URL(url)
         closed.port = "1"
         const refused = new URL(url)
-        refused.password = "not-the-password"
+        // A missing role is refused even when local connections use trust authentication.
+        refused.username = `missing_${schema()}`
         const failures = Metric.value(DatabaseMetrics.loginFailures)
         for (const target of [closed, refused]) {
           const before = (yield* failures).count
