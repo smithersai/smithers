@@ -26,7 +26,6 @@ import * as Option from "effect/Option"
 import * as PersistedQueue from "effect/persistence/PersistedQueue"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
-import { TestClock } from "effect/testing"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -71,8 +70,8 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true })
 })
 
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope | TestClock.TestClock | Crypto.Crypto>) =>
-  Effect.runPromise(withCrypto(Effect.scoped(effect).pipe(Effect.provide(TestClock.layer()))))
+const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope | Crypto.Crypto>) =>
+  Effect.runPromise(withCrypto(Effect.scoped(effect)))
 
 const Queue = DurableQueue.make({
   name: "Crash",
@@ -170,27 +169,16 @@ const worker = (
     { startImmediately: true }
   )
 
-/** Waits, advancing the test clock, until the caller settles; answers its result. */
+/** Waits on the live clock: the SQL queue measures retry visibility with database time. */
 const settled = (context: Context.Context<never>, executionId: string) =>
   Effect.gen(function*() {
     const runtime = Context.get(context as Context.Context<FlowRuntime.FlowRuntime>, FlowRuntime.FlowRuntime)
     let result = yield* runtime.poll(Caller, executionId)
-    for (let turn = 0; turn < 400 && (Option.isNone(result) || result.value._tag !== "Complete"); turn++) {
-      yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 2)))
-      yield* TestClock.adjust("250 millis")
+    while (Option.isNone(result) || result.value._tag !== "Complete") {
+      yield* Effect.sleep("10 millis")
       result = yield* runtime.poll(Caller, executionId)
     }
     return Option.flatMap(result, (value) => value._tag === "Complete" ? Option.some(value.exit) : Option.none())
-  })
-
-/** Waits, advancing the test clock, until `done` holds. */
-const until = (done: () => boolean) =>
-  Effect.gen(function*() {
-    for (let turn = 0; turn < 400 && !done(); turn++) {
-      yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 2)))
-      yield* TestClock.adjust("250 millis")
-    }
-    expect(done()).toBe(true)
   })
 
 describe("DurableQueue on the durable engine", () => {
@@ -219,7 +207,7 @@ describe("DurableQueue on the durable engine", () => {
       const runtime = Context.get(dying as Context.Context<FlowRuntime.FlowRuntime>, FlowRuntime.FlowRuntime)
       const dead = yield* worker(dying, first, observed)
       yield* runtime.execute(Caller, { executionId: "recorded", payload: { id: "recorded", value: 41 }, discard: true })
-      yield* until(() => Deferred.isDoneUnsafe(parked))
+      yield* Deferred.await(parked)
       // The first worker dies while recording the completion, after the handler's exit was recorded.
       yield* Fiber.interrupt(dead)
 
@@ -243,7 +231,7 @@ describe("DurableQueue on the durable engine", () => {
         () => Effect.andThen(Deferred.succeed(entered, undefined), Effect.never)
       )
       yield* runtime.execute(Caller, { executionId: "died", payload: { id: "died", value: 41 }, discard: true })
-      yield* until(() => Deferred.isDoneUnsafe(entered))
+      yield* Deferred.await(entered)
       yield* Fiber.interrupt(dead)
 
       const next = yield* incarnation(second, observed)
