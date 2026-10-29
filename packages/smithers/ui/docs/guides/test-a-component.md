@@ -168,6 +168,15 @@ own tree: pin the scanner against an input it must catch as well as one it must
 ignore, because a scanner that silently matches nothing looks exactly like a
 clean tree.
 
+## Browser probes
+
+Browser probes group their setup under the probe's name, so a bundling or
+Chromium launch failure names the suite and retains the original cause. The
+diagnostics regression launches a child suite with an empty browser cache and
+checks the real missing-executable failure. Install the package's pinned
+browser with `pnpm exec playwright install --with-deps chromium` before running
+`bun test browser`.
+
 ## Related
 
 - [The adapters boundary](../concepts/adapters.md): what the bundle test
