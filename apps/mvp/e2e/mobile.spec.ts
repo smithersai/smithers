@@ -75,8 +75,10 @@ const test = base.extend<{ recording: void; issueLayout: IssueLayoutSync; mobile
       if (response === null) return
       const url = new URL(response.url())
       if (url.pathname === `/api/repos/${issueLayout.repository}/role` && response.status() === 200) {
-        const { role } = await response.json() as { role: Role | null }
-        issueLayout.authority(role)
+        const answer = await response.json().catch(() => undefined) as { role: Role | null } | undefined
+        // Navigation can discard a completed response's body. Missing authority
+        // never certifies Issues readiness; the strict request watcher is unchanged.
+        if (answer !== undefined) issueLayout.authority(answer.role)
       }
       if (url.pathname.startsWith("/api/shapes/") && url.searchParams.get("live") !== "true") {
         const body = await response.json().catch(() => undefined) as Array<{ headers?: { operation?: string; control?: string } }> | undefined
