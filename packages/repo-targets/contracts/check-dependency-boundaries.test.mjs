@@ -8,6 +8,7 @@ import test from "node:test"
 import {
   bannedImportMessage,
   bannedRuntimeForSpecifier,
+  collectSourceFiles,
   dependencySets,
   durableFlowRule,
   packageNameForSpecifier,
@@ -16,6 +17,32 @@ import {
   scanSource,
 } from "./check-dependency-boundaries.mjs"
 import { repoRoot } from "../scripts/workspace-packages.mjs"
+
+test("decision-queue excerpts are data while executable neighbors remain checked", () => {
+  const parent = join(repoRoot, "apps/maintainer-site")
+  for (const dataRoot of ["queue/before", "test/fixtures"]) {
+    mkdirSync(join(parent, dataRoot), { recursive: true })
+    const directory = mkdtempSync(join(parent, dataRoot, "boundary-contract-"))
+    try {
+      writeFileSync(join(directory, "old.ts"), 'import "archived-dependency"\n')
+      writeFileSync(join(directory, "old.vibe"), 'import "archived-dependency"\n')
+      const files = []
+      collectSourceFiles(directory.slice(repoRoot.length + 1), files)
+      assert.deepEqual(files, [])
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  }
+  const directory = mkdtempSync(join(parent, "boundary-contract-"))
+  try {
+    writeFileSync(join(directory, "live.ts"), 'import "runtime-dependency"\n')
+    const files = []
+    collectSourceFiles(directory.slice(repoRoot.length + 1), files)
+    assert.deepEqual(files, [join(directory.slice(repoRoot.length + 1), "live.ts")])
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
 
 test("a relative specifier into another workspace package's src/ names that package", () => {
   const dirs = ["packages/smithers", "packages/smithers/flows/plan", "packages/smithers/build/targets", "flows"]

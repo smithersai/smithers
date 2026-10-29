@@ -40,6 +40,13 @@ import { privateEffectAdapters } from "../scripts/private-effect-adapters.mjs"
 // private, never published, and import the source of the package they measure
 // directly, as they did when they lived under `evals/` (#4090).
 const scannedRoots = ["packages/", "apps/"]
+// These are source excerpts displayed by the decision queue, not modules the
+// maintainer app loads (e1efaba2 and 0c455cbe). Keep the exception at its exact
+// data roots: executable app code and other packages' fixtures remain checked.
+const reviewSnapshotRoots = [
+  "apps/maintainer-site/queue/before/",
+  "apps/maintainer-site/test/fixtures/"
+]
 const evalSuites = [
   "packages/smithers/agent/regression",
   "packages/smithers/agent/harness/benchmarks/"
@@ -201,6 +208,7 @@ function findWorkspacePackages() {
 
 /** @param {string} dir @param {string[]} out @param {string[]} [nestedPackageDirs] */
 export function collectSourceFiles(dir, out, nestedPackageDirs) {
+  if (reviewSnapshotRoots.some((root) => `${dir.split(sep).join("/")}/`.startsWith(root))) return
   const absDir = join(repoRoot, dir)
   if (!isDirectory(absDir)) return
   for (const entry of readdirSync(absDir)) {
