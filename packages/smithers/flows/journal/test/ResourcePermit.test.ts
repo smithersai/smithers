@@ -103,7 +103,7 @@ for (const [name, layer] of [["local", Consensus.layerLocal], ["SQL", sql]] as c
         )
       }).pipe(Effect.provide(layer)))
 
-    it.effect("renews through long work and interrupts it when the resource fence is lost", () =>
+    it.live("renews through long work and interrupts it when the resource fence is lost", () =>
       Effect.gen(function*() {
         const service = yield* Consensus.Consensus
         const entered = yield* Deferred.make<void>()
@@ -114,7 +114,7 @@ for (const [name, layer] of [["local", Consensus.layerLocal], ["SQL", sql]] as c
           Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never))
         ).pipe(Effect.forkChild)
         yield* Deferred.await(entered)
-        yield* TestClock.adjust("35 seconds")
+        yield* Effect.sleep("35 seconds")
         // Healthy heartbeats kept the original owner in place across expiry.
         const now = yield* Clock.currentTimeMillis
         expect(
@@ -125,7 +125,7 @@ for (const [name, layer] of [["local", Consensus.layerLocal], ["SQL", sql]] as c
           })
         ).toMatchObject({ _tag: "Rejected" })
         yield* service.release("resource", owner)
-        yield* TestClock.adjust("1 second")
+        yield* Effect.sleep("1 second")
         const result = yield* Fiber.await(work)
         expect(Exit.isFailure(result)).toBe(true)
         expect(yield* service.withPermit("resource", other, alive, Effect.succeed("successor"))).toBe("successor")

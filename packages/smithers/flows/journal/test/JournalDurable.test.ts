@@ -96,7 +96,7 @@ describe("SqlJournal durable emission", () => {
       }).pipe(Effect.provide(migratedDatabase))
     ))
 
-  effect("a live follower observes a commit made by another journal instance", () =>
+  it.live("a live follower observes a commit made by another journal instance", () =>
     Effect.scoped(
       Effect.gen(function*() {
         const shared = yield* sharedContext
@@ -113,7 +113,6 @@ describe("SqlJournal durable emission", () => {
         )
         yield* Effect.yieldNow
         yield* writer.emitDurableUnfenced(input(run, sourceId("peer"), "committed-elsewhere", 1))
-        yield* TestClock.adjust("1 second")
         const entry = Option.getOrThrow(yield* Fiber.join(next))
         expect(entry.eventType).toBe("committed-elsewhere")
       }).pipe(Effect.provide(migratedDatabase))
