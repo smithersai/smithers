@@ -68,43 +68,48 @@ const addedRules = [
   ".sui-codeblock-action { min-height:var(--ctl-h, 32px); min-width:32px; }"
 ]
 
-export const desktopBaseline = async (page: Page, info: TestInfo, name: string) => {
-  // Hydration is established before this comparison. Each full-page PNG may be large; compare once within the spec deadline.
-  const content = await page.locator("body").innerText()
-  const dimensions = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight }))
-  const current = await page.screenshot({ path: info.outputPath(`${name}.png`), fullPage: true, animations: "disabled" })
-  expect({ width: current.readUInt32BE(16), height: current.readUInt32BE(20) }, "the PNG covers the entire document").toEqual(dimensions)
-  const removed = await page.evaluate((rules) => {
-    const key = (rule: CSSStyleRule) => rule.cssText
-    const added = new Set(rules.map((css) => {
-      const sheet = new CSSStyleSheet()
-      sheet.replaceSync(css)
-      return key(sheet.cssRules[0] as CSSStyleRule)
-    }))
-    const undo: Array<() => void> = []
-    const visit = (parent: CSSStyleSheet | CSSGroupingRule) => {
-      for (let i = parent.cssRules.length - 1; i >= 0; i--) {
-        const rule = parent.cssRules[i]!
-        if (rule instanceof CSSStyleRule && added.has(key(rule))) {
-          const css = rule.cssText
-          parent.deleteRule(i)
-          undo.unshift(() => parent.insertRule(css, i))
-        } else if (rule instanceof CSSGroupingRule) {
-          visit(rule)
+export const desktopBaseline = async (page: Page, info: TestInfo, name: string, snapshotReady = false) => {
+  // Only applied Issues snapshots establish readiness before this comparison.
+  // Other pages retain their bounded stable-window retry while late content settles.
+  const compare = async () => {
+    const content = await page.locator("body").innerText()
+    const dimensions = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight }))
+    const current = await page.screenshot({ path: info.outputPath(`${name}.png`), fullPage: true, animations: "disabled" })
+    expect({ width: current.readUInt32BE(16), height: current.readUInt32BE(20) }, "the PNG covers the entire document").toEqual(dimensions)
+    const removed = await page.evaluate((rules) => {
+      const key = (rule: CSSStyleRule) => rule.cssText
+      const added = new Set(rules.map((css) => {
+        const sheet = new CSSStyleSheet()
+        sheet.replaceSync(css)
+        return key(sheet.cssRules[0] as CSSStyleRule)
+      }))
+      const undo: Array<() => void> = []
+      const visit = (parent: CSSStyleSheet | CSSGroupingRule) => {
+        for (let i = parent.cssRules.length - 1; i >= 0; i--) {
+          const rule = parent.cssRules[i]!
+          if (rule instanceof CSSStyleRule && added.has(key(rule))) {
+            const css = rule.cssText
+            parent.deleteRule(i)
+            undo.unshift(() => parent.insertRule(css, i))
+          } else if (rule instanceof CSSGroupingRule) {
+            visit(rule)
+          }
         }
       }
+      for (const sheet of document.styleSheets) visit(sheet)
+      ;(window as unknown as { restoreMobileStyles: () => void }).restoreMobileStyles = () => undo.forEach((restore) => restore())
+      return undo.length
+    }, [...addedRules])
+    try {
+      expect(removed, "baseline must remove the sweep's actual CSS rules").toBeGreaterThan(0)
+      const baseline = await page.screenshot({ path: info.outputPath(`${name}-baseline.png`), fullPage: true, animations: "disabled" })
+      expect({ width: baseline.readUInt32BE(16), height: baseline.readUInt32BE(20) }, "the baseline PNG covers the entire document").toEqual(dimensions)
+      expect(current.equals(baseline), "mobile CSS must not change any desktop pixels, including repaired pages").toBe(true)
+    } finally {
+      await page.evaluate(() => (window as unknown as { restoreMobileStyles: () => void }).restoreMobileStyles())
     }
-    for (const sheet of document.styleSheets) visit(sheet)
-    ;(window as unknown as { restoreMobileStyles: () => void }).restoreMobileStyles = () => undo.forEach((restore) => restore())
-    return undo.length
-  }, [...addedRules])
-  try {
-    expect(removed, "baseline must remove the sweep's actual CSS rules").toBeGreaterThan(0)
-    const baseline = await page.screenshot({ path: info.outputPath(`${name}-baseline.png`), fullPage: true, animations: "disabled" })
-    expect({ width: baseline.readUInt32BE(16), height: baseline.readUInt32BE(20) }, "the baseline PNG covers the entire document").toEqual(dimensions)
-    expect(current.equals(baseline), "mobile CSS must not change any desktop pixels, including repaired pages").toBe(true)
-  } finally {
-    await page.evaluate(() => (window as unknown as { restoreMobileStyles: () => void }).restoreMobileStyles())
+    expect(await page.locator("body").innerText(), "content must remain stable across the CSS comparison").toBe(content)
   }
-  expect(await page.locator("body").innerText(), "content must remain stable across the CSS comparison").toBe(content)
+  if (snapshotReady) await compare()
+  else await expect(compare).toPass({ timeout: 10_000 })
 }

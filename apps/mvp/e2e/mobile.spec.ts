@@ -128,7 +128,7 @@ const test = base.extend<{ recording: void; issueLayout: IssueLayoutSync; mobile
 })
 test.use({ video: "on", screenshot: "only-on-failure", colorScheme: "light" })
 
-const audit = async (page: Page, info: TestInfo, name = "screen", scope?: Locator) => {
+const audit = async (page: Page, info: TestInfo, name = "screen", scope?: Locator, snapshotReady = false) => {
   await page.evaluate(() => document.fonts.ready)
   const findings: Finding[] = []
   const overflow = await page.evaluate(() => ({ width: innerWidth, scroll: document.documentElement.scrollWidth }))
@@ -183,7 +183,7 @@ const audit = async (page: Page, info: TestInfo, name = "screen", scope?: Locato
   const receipt = info.outputPath(`${name}.json`)
   await writeFile(receipt, JSON.stringify({ route: page.url(), viewport: page.viewportSize(), controls: { selected: controls.selected, checked: controls.checked }, auditMs: Date.now() - startedAt, findings }, null, 2))
   await info.attach(`layout-audit-${name}`, { path: receipt, contentType: "application/json" })
-  if (page.viewportSize()?.width === 1280) await desktopBaseline(page, info, name)
+  if (page.viewportSize()?.width === 1280) await desktopBaseline(page, info, name, snapshotReady)
   else await page.screenshot({ path: info.outputPath(`${name}.png`), fullPage: true, animations: "disabled" })
   expect.soft(findings, `${page.url()} at ${JSON.stringify(page.viewportSize())}`).toEqual([])
 }
@@ -345,6 +345,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
               expect(bounds.x).toBeGreaterThanOrEqual(0)
               expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width)
             }
+            let snapshotReady = false
             // Without a configured GitHub App, local lists deliberately link to GitHub instead of rendering Sort.
             if ((target === "deployment" || meets("githubApp")) && (screen.name === "issues" || screen.name === "pulls")) {
               const sort = page.getByRole("combobox", { name: "Sort", exact: true })
@@ -356,12 +357,13 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
                 await expect.poll(() => issueLayout.behind(), { timeout: 60_000, message: "every initial source of Issues controls must finish" }).toEqual([])
                 // Applied receipts precede the live-query render; commit it before measuring controls.
                 await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+                snapshotReady = true
               }
               const bounds = (await sort.boundingBox())!
               expect(bounds.height, "Sort uses the house control height on every engine").toBeGreaterThanOrEqual(32)
               expect(bounds.width).toBeGreaterThanOrEqual(32)
             }
-            await audit(page, info)
+            await audit(page, info, "screen", undefined, snapshotReady)
           })
         }
         if (signedIn) test("view: a persisted page and its back link fit", async ({ page }, info) => {
