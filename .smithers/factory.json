@@ -1622,7 +1622,7 @@
         "proc:spawn:git *",
         "proc:spawn:sleep *",
         "net:get:registry.npmjs.org/**",
-        "net:put:registry.npmjs.org/**"
+        "net:post:registry.npmjs.org/**"
       ],
       "model": null,
       "modelInvocable": false,

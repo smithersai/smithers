@@ -72,7 +72,7 @@ export default Flow.make("release/publish", {
     "proc:spawn:git *",
     "proc:spawn:sleep *",
     "net:get:registry.npmjs.org/**",
-    "net:put:registry.npmjs.org/**"
+    "net:post:registry.npmjs.org/**"
   ],
   effects: { reads: ["**"], writes: ["**"], mode: "expected", onConflict: "serialize", tier: "irreversible" },
   modelInvocable: false,
