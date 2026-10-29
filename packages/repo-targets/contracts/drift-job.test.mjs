@@ -27,6 +27,15 @@ const gateCommands = [
   "pnpm exec smthrs lint '//:ci' --known-red '.github/ci-known-red.json' --verbose",
 ]
 
+test('retired Plue main mirror has no workflow, lint input or credential reference', async () => {
+  const directory = new URL('../../../.github/workflows/', import.meta.url)
+  assert.ok(!(await readdir(directory)).includes('mirror-sync.yml'), 'SCOPE-3 retired the Plue deployment')
+  for (const file of ['ci.yml', 'release.yml']) {
+    assert.doesNotMatch(await readFile(new URL(file, directory), 'utf8'), /mirror-sync\.yml|SMITHERS_CLOUD_MIRROR_TOKEN/)
+  }
+  assert.doesNotMatch(await readFile(rootPackagePath, 'utf8'), /mirror-sync\.yml|SMITHERS_CLOUD_MIRROR_TOKEN/)
+})
+
 test('drift job concurrency group includes github.sha and runs only drift gates', async () => {
   const { default: YAML } = await import('yaml')
   const { default: ts } = await import('typescript')

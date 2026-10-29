@@ -40,7 +40,7 @@ Status: **exists**; **small** (small addition, built now); **build** (missing, b
 
 | # | GitHub feature | Used by | Smithers equivalent | Status | Work note |
 |---|---|---|---|---|---|
-| 1 | `push` to branches | S ci, distribution, drift, mirror-sync, native-windows, reference-host, trusted-setup-validation; T ci, prerelease, release, wasm-size-check; E check, release, snapshot, release-queue | the route records a push (`Api.ts:323-405`, `Notifications.ts:268-282`) and starts nothing | build | `ci-parity-triggers` |
+| 1 | `push` to branches | S ci, distribution, drift, native-windows, reference-host, trusted-setup-validation; T ci, prerelease, release, wasm-size-check; E check, release, snapshot, release-queue | the route records a push (`Api.ts:323-405`, `Notifications.ts:268-282`) and starts nothing | build | `ci-parity-triggers` |
 | 2 | `pull_request` | S ci, distribution, drift, native-windows; T ci, parity-suites, review, wasm-size-check, claude-code-review; E check, snapshot | reaches `github/Apply` (`Apply.ts:52`); `checks/Run` starts only from a TODO publish (`Todo.ts:514`) | build | `ci-parity-triggers` |
 | 3 | Tag pushes and release events | S release, apps-deploy (`v*`) | not decoded | build | `ci-parity-triggers` |
 | 4 | `issues`, `issue_comment`, labels, reviews, `pull_request_target` | T claude, factory-intake, factory-issue; E release-queue, effect-bot | ingested for sync and triage (`Api.ts:259`, `:377`); no repository flow starts | build | `ci-parity-triggers` |
@@ -73,10 +73,10 @@ Status: **exists**; **small** (small addition, built now); **build** (missing, b
 | 31 | Agents in CI (claude-code-action, Claude Code CLI, Codex) | T claude, claude-code-review, claude-auto-update, factory-issue, review | the Smithers agent: `checks/Review`, the `todo` run behind `TODO_RUNS` (`Todo.ts:44-47`), triage | exists | `ci-parity-triggers` (mention trigger) |
 | 32 | npm and JSR publishing with tokens; dist-tags | S release, npm-dist-tag, release-auth; T prerelease, release, snapshot, jsr-publish; E release, npm-promote | the egress puts `NPM_TOKEN` or `JSR_TOKEN` into the request header | small | `ci-parity-publish` |
 | 33 | npm trusted publishing and provenance; JSR OIDC; keyless cosign; cloud federation | S release; T prerelease, jsr-publish; E release, npm-promote | npm accepts only GitHub Actions, GitLab.com and CircleCI cloud; provenance only the first two ([npm](https://docs.npmjs.com/trusted-publishers)); JSR only GitHub Actions ([JSR](https://jsr.io/docs/publishing-packages)) | ticket | `ci-parity-oidc-provenance` |
-| 34 | Deploys, pushes to other remotes, outgoing webhooks | S apps-deploy, mirror-sync; E npm-promote, effect-bot, V3 release | the egress with a bound header | small | `ci-parity-job-secrets` |
+| 34 | Deploys, pushes to other remotes, outgoing webhooks | S apps-deploy; E npm-promote, effect-bot, V3 release | the egress with a bound header | small | `ci-parity-job-secrets` |
 | 35 | `concurrency` groups, `cancel-in-progress` | S 13 files, T 7, E 8 | execution identity dedupes; cron overlap `supersede`; nothing for events | small | `ci-parity-concurrency` |
 | 36 | `timeout-minutes` | all | `deadline`, `attemptTimeoutMs`, `heartbeatTimeoutMs`; commands past 600 s need long commands | exists | `ci-parity-long-commands` |
-| 37 | Retries | S mirror-sync (shell loop), release (publish retries) | `RetryPolicy` | exists | none |
+| 37 | Retries | S release (publish retries) | `RetryPolicy` | exists | none |
 | 38 | Watching a run live, logs, a repository's runs list | all | device engine only ([runs](../features/runs.md) lines 14-17) | build | `ci-parity-run-view` |
 | 39 | Cancelling and re-running a whole run | all | `run/cancel` and `run/retry` on device runs ([runs](../features/runs.md) lines 43-44) | small | `ci-parity-run-view` |
 | 40 | Re-running failed jobs | all | "No step retry is offered" ([runs](../features/runs.md) line 83) | small | `ci-parity-rerun-failed` |
@@ -210,7 +210,6 @@ Smithers paths are under this repository's `.github/workflows/` and Tevm's under
 | `canary.yml` | crons `0 * * * *` (43) and `15,30,45 * * * *` (46); dispatch `metered`, `force_failure` (49-56) | `probe` (67-233), 15 min | `CANARY_SESSION_COOKIE`; vars | `canary`, no cancel (62-64) | opens, comments on and closes "Canary: smithers.sh is failing" (184-212) |
 | `distribution.yml` | PR, push `main` (4-6) | `image`: Postgres 18 by script (26-27), Go backup and restore tests | none | per ref (11-14) | pass or fail |
 | `drift.yml` | push `main`, PR (3-5) | calls `trusted-drift.yml@7df5f685…` (12-13), then a gate job (14-22) | none | per SHA (6-8) | pass or fail |
-| `mirror-sync.yml` | push `main` (33-35) | `git push` to `api.jjhub.tech` (56, 68) with a shell retry loop (67-82) | `SMITHERS_CLOUD_MIRROR_TOKEN` (55) | `mirror-sync` (40-42) | an external push |
 | `native-windows.yml` | push `main` and PR with path filters (3-23); dispatch `portablePackages` (24-29) | `kernel`, `filesystem` on `windows-latest` (37, 50) | none | per ref (32-34) | coverage artifacts |
 | `npm-dist-tag.yml` | dispatch `package`, `version`, `tag`, `replaceZeroLatest` (29-48) | `npm dist-tag add` (110-114) | `NPM_TOKEN`; environment `npm-publish` (62) | per package (53-55) | a moved dist-tag |
 | `reference-host.yml` | push `main`, dispatch (34-36) | `[self-hosted, reference-host]`, a Mac mini (53) | none | `reference-host` (40-42) | pass or fail |
@@ -360,7 +359,6 @@ Each job runs all of its gates as steps; the sketch shows one. Gates that need D
 | `canary.yml` | `ops/canary` | `cron` `0 * * * *` and `15,30,45 * * * *`; `manual` `{ metered, forceFailure }` | SB: the probe and the browser canary → DO: open, comment on or close the issue (`github/Write`, exists) | none |
 | `distribution.yml` | `ci/distribution` | push `main`; PR | SB: Postgres 18 from the image, `go test …`, `node --test …` | none |
 | `drift.yml`, `trusted-drift.yml` | `ci/drift` | push `main`; PR | SB: 12 `smthrs lint` drift gates; the image replaces the trusted setup action | none |
-| `mirror-sync.yml` | `ops/mirror` | push `main`; `concurrency: { group: "mirror" }` | SB: `git push` to `api.jjhub.tech` with `SMITHERS_CLOUD_MIRROR_TOKEN` in a header through the egress; `RetryPolicy` replaces the shell loop | none |
 | `native-windows.yml` | `ci/windows` | push `main`, PR, `paths` | SB on Windows | `ci-parity-advanced-runners` |
 | `npm-dist-tag.yml` | `release/dist-tag` | `manual` `{ package, version, tag, replaceZeroLatest }`; `concurrency: { group: "package" }` | DO: `environment: "npm-publish"` → SB: guards, `npm dist-tag add`, read back | none |
 | `reference-host.yml` | `ci/reference-host` | push `main`; `manual` | a self-hosted Mac | `ci-parity-advanced-runners` |

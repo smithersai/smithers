@@ -454,7 +454,6 @@ const ci = Smithers.GithubCiGen({
             ".github/workflows/distribution.yml",
             ".github/workflows/reliability.yml",
             ".github/workflows/native-windows.yml",
-            ".github/workflows/mirror-sync.yml",
             ".github/workflows/drift.yml",
             ".github/workflows/trusted-drift.yml",
             ".github/workflows/trusted-setup-validation.yml"
@@ -943,9 +942,9 @@ const securityReview = Smithers.SecurityReview({
       id: "gha-untrusted-trigger-secrets",
       title: "Jobs a fork pull request or a comment can start hold no write credential",
       threat:
-        "An outside contributor opens a pull request or comments on an issue and runs code that steals the cache write token, npm token, Cloudflare token, mirror token, or an OIDC review identity.",
+        "An outside contributor opens a pull request or comments on an issue and runs code that steals the cache write token, npm token, Cloudflare token, or an OIDC review identity.",
       lookFor: [
-        "SMITHERS_CACHE_WRITE_TOKEN, NPM_TOKEN, CLOUDFLARE_API_TOKEN, IDENTITY_SERVICE_TOKEN, SMITHERS_CLOUD_MIRROR_TOKEN, or CANARY_SESSION_COOKIE referenced by a job that a pull_request or issue_comment event can reach, or by a job without an `environment:` gate.",
+        "SMITHERS_CACHE_WRITE_TOKEN, NPM_TOKEN, CLOUDFLARE_API_TOKEN, IDENTITY_SERVICE_TOKEN, or CANARY_SESSION_COOKIE referenced by a job that a pull_request or issue_comment event can reach, or by a job without an `environment:` gate.",
         "A pull_request_target or workflow_run trigger that checks out or executes the pull request head.",
         "The `ci` declaration in PACKAGE.ts that generates ci.yml putting a write secret or `cache-publish` step on a job whose `if:` admits pull_request."
       ],

@@ -185,7 +185,7 @@ jobs:
         if: matrix.lane != 'candidate'
         uses: docker://rhysd/actionlint@sha256:6f03470d0152251d7f07f7c4dc019dbe7024c72cd952f839544c7798843efa8f
         with:
-          args: ".github/workflows/ci.yml .github/workflows/release.yml .github/workflows/release-auth.yml .github/workflows/npm-dist-tag.yml .github/workflows/distribution.yml .github/workflows/reliability.yml .github/workflows/native-windows.yml .github/workflows/mirror-sync.yml .github/workflows/drift.yml .github/workflows/trusted-drift.yml .github/workflows/trusted-setup-validation.yml"
+          args: ".github/workflows/ci.yml .github/workflows/release.yml .github/workflows/release-auth.yml .github/workflows/npm-dist-tag.yml .github/workflows/distribution.yml .github/workflows/reliability.yml .github/workflows/native-windows.yml .github/workflows/drift.yml .github/workflows/trusted-drift.yml .github/workflows/trusted-setup-validation.yml"
       - name: Install pinned Rust toolchain
         run: rustup toolchain install
       - name: Install Go
