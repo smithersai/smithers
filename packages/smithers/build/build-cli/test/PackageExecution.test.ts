@@ -187,6 +187,27 @@ export const Package = S.Package({ targets: { fmt } })
     expect(recheck.exitCode).toBe(0)
   })
 
+  it("refuses a scratch dependency link that would expose the original workspace root", async () => {
+    const root = await temporaryWorkspace()
+    await write(root, "WORKSPACE.ts", workspaceModule())
+    await write(
+      root,
+      "PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: {
+  fmt: S.Shell.Diff({ shell: "printf changed > out.txt", changes: ["out.txt"] })
+} })
+`
+    )
+    await write(root, "out.txt", "original")
+    await Fs.symlink(root, NodePath.join(root, "node_modules"), process.platform === "win32" ? "junction" : "dir")
+    commitAll(root)
+    const result = await serve(root, ["//:fmt"])
+    expect(result.exitCode, result.logs).toBe(1)
+    expect(result.logs).toContain("sandbox:")
+    expect(await Fs.readFile(NodePath.join(root, "out.txt"), "utf8")).toBe("original")
+  })
+
   it("keeps check and write modes on distinct cache keys", async () => {
     const root = await temporaryWorkspace()
     await write(root, "WORKSPACE.ts", workspaceModule())
