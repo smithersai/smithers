@@ -810,6 +810,12 @@ export const layer: Layer.Layer<
     ): Effect.Effect<Receipt, RunNotFound | ClaimLost | CodeDrift | InvalidInput | PersistenceError> =>
       Effect.gen(function*() {
         const input = yield* snapshotResume(submitted)
+        const progress = (stage: string) =>
+          Effect.annotateLogs(
+            Effect.logDebug("control.resume.progress"),
+            { runId: input.runId, stage }
+          )
+        yield* progress("requested")
         // Terminality is read BEFORE the idempotency replay, as `cancel` reads
         // it. A recorded receipt is the proof a restart was made once; it is
         // not an answer about the run, and the run settles afterwards. The
@@ -817,6 +823,7 @@ export const layer: Layer.Layer<
         // `AlreadyApplied`, which describes the earlier call and says nothing
         // about the run the operator named (spec item 3).
         const settled = yield* getRun(input.runId)
+        yield* progress("observed")
         if (terminal(settled.status)) {
           return { _tag: "Terminal", runId: settled.runId, status: settled.status }
         }
@@ -827,13 +834,16 @@ export const layer: Layer.Layer<
           principal,
           fingerprint("resume", principal, input),
           Effect.gen(function*() {
+            yield* progress("mutation-entered")
             const current = yield* getRun(input.runId)
+            yield* progress("current-read")
             if (terminal(current.status)) {
               return { _tag: "Terminal", runId: current.runId, status: current.status }
             }
             // Every claim re-enters the flow's current code, so a changed flow
             // is refused before the claim and the run stays where it was.
             if (input.allowCodeDrift !== true) yield* refuseCodeDrift(input.runId)
+            yield* progress("code-verified")
             let handedTo: RunHost | undefined
             const claimed = yield* (input.allowCodeDrift === true
               ? runtime.resumeAdopting(input.runId, { scope: "launched" })
@@ -855,6 +865,7 @@ export const layer: Layer.Layer<
                   ))
                 })
               )
+            yield* progress("claimed")
             // The same attribution `cancel` writes, for the same reason: the
             // contract records `reason` on the journal entry the mutation
             // writes and `principal` as stamped by the runtime, and a resume
@@ -872,6 +883,7 @@ export const layer: Layer.Layer<
                 ...(handedTo === undefined ? {} : { handedTo })
               })
             )
+            yield* progress("recorded")
             if (handedTo !== undefined) {
               yield* runtime.requestResume(input.runId, { consent: sequence })
               const handedOff: Receipt = {
@@ -886,7 +898,7 @@ export const layer: Layer.Layer<
               ? accepted(input.idempotencyKey, input.runId)
               : terminalOrAccepted(input.idempotencyKey, claimed)
           })
-        )
+        ).pipe(Effect.tap(() => progress("completed")))
       })
 
     /**

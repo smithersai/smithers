@@ -13,7 +13,7 @@ import * as Journal from "@smthrs/journal/Journal"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
 import { Migrations as RunStoreMigrations, Ownership, RunStore } from "@smthrs/run-store"
-import { Context, type Crypto, Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect"
+import { Context, type Crypto, Deferred, Effect, Exit, Fiber, Layer, Logger, References, Stream } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as Statement from "effect/sql/Statement"
 import { mkdtempSync, rmSync } from "node:fs"
@@ -752,11 +752,13 @@ describe("SqlControlRuntime", () => {
   })
 
   it("refuses a stale process's fenced write after a peer claims the run", async () => {
+    const progress: Array<Readonly<Record<string, unknown>>> = []
     const observed = await twoOwners((first, second, control) =>
       Effect.gen(function*() {
         const { runId } = yield* started
         const staleFence = yield* first.claimFence(runId)
         yield* park(first, runId)
+        progress.length = 0
         // The peer takes ownership. The first runtime still holds the fence it
         // had before the park, and that fence is now spent.
         const claimed = yield* second.resume(runId)
@@ -765,13 +767,28 @@ describe("SqlControlRuntime", () => {
         const owned = yield* second.writeStatus(runId, peerFence, "running")
         const evicted = yield* first.claimFence(runId).pipe(Effect.flip)
         return { claimed, stale, owned, evicted }
-      })
+      }).pipe(
+        Effect.provide(Logger.layer([Logger.map(Logger.formatStructured, (entry) => {
+          if (JSON.stringify(entry.message).includes("control.resume.storage")) progress.push(entry.annotations)
+        })], { mergeWithExisting: false })),
+        Effect.provideService(References.MinimumLogLevel, "Debug")
+      )
     )
 
     expect(observed.claimed.status).toBe("accepted")
     expect(observed.stale).toBeInstanceOf(ClaimLost)
     expect(observed.owned.status).toBe("running")
     expect(observed.evicted).toBeInstanceOf(ClaimLost)
+    expect(progress.map((entry) => entry.stage)).toEqual([
+      "state-requested",
+      "state-read",
+      "summary-read",
+      "claim-started",
+      "claim-answered",
+      "claim-written"
+    ])
+    expect(progress.every((entry) => entry.runId === observed.claimed.runId)).toBe(true)
+    expect(progress.every((entry) => Object.keys(entry).sort().join(",") === "runId,stage")).toBe(true)
   })
 
   it.each(

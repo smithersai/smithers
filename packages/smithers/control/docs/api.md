@@ -425,6 +425,14 @@ A running engine-created run outside the launch index also fails with
 `ClaimLost` when its owner is dead; its persisted execution state is preserved.
 Node-approval decisions use the durable resume delegation instead.
 
+Debug records named `control.resume.progress` carry only `runId` and `stage`.
+They distinguish reading the run, entering its mutation, verifying its code,
+claiming it, recording the request and committing the receipt. A stalled resume's
+last stage identifies the boundary still waiting; inputs and credentials are
+never included.
+`control.resume.storage` uses the same fields for state, launch-index and
+ownership-claim boundaries inside the SQL runtime.
+
 `registerApproval` is idempotent and returns the token with its current
 tagged decision. `Pending` parks, `Approved` opens a gate, and `Denied` fails it.
 Use `requireApproved` to enforce this distinction. A registration that disagrees

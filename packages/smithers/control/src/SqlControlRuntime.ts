@@ -1200,6 +1200,10 @@ const makeRuntime = (
         }
       })
 
+    /** Correlates storage boundaries without recording state or parameters. */
+    const resumeProgress = (runId: RunId, stage: string) =>
+      Effect.annotateLogs(Effect.logDebug("control.resume.storage"), { runId, stage })
+
     /**
      * Takes ownership of a suspended or pending run under a fresh nonce, or
      * of a running one whose owner `evidence` says is gone.
@@ -1211,19 +1215,23 @@ const makeRuntime = (
       adopted?: Pick<RunSummary, "executionDigest" | "engineVersion"> | undefined
     ): Effect.Effect<RunSummary, RunNotFound | ClaimLost | PersistenceError> =>
       Effect.gen(function*() {
+        yield* resumeProgress(runId, "claim-started")
         const timestamp = evidence?.checkedAtMs ?? (yield* now)
         const claimant: Ownership.OwnerId = { ...owner, nonce: randomId() }
         const outcome = yield* runStore.claimAndOwn(runId, snapshotOf(row), claimant, timestamp, evidence).pipe(
           Effect.mapError(persistence("claim a run"))
         )
+        yield* resumeProgress(runId, "claim-answered")
         if (outcome._tag === "NotFound") return yield* Effect.fail(new RunNotFound({ runId }))
         if (outcome._tag !== "Activated") return yield* Effect.fail(new ClaimLost({ runId }))
         const summary = yield* summaryOf(row)
-        return yield* transition(runId, claimant, {
+        const claimed = yield* transition(runId, claimant, {
           ...summary,
           ...adopted,
           ownerId: JSON.stringify(claimant)
         }, "accepted")
+        yield* resumeProgress(runId, "claim-written")
+        return claimed
       })
 
     /**
@@ -1285,8 +1293,11 @@ const makeRuntime = (
         | undefined
     ): Effect.Effect<RunSummary, RunNotFound | ClaimLost | PersistenceError | E> =>
       Effect.gen(function*() {
+        yield* resumeProgress(runId, "state-requested")
         const row = yield* requireRow(runId)
+        yield* resumeProgress(runId, "state-read")
         const summary = yield* summaryOf(row)
+        yield* resumeProgress(runId, "summary-read")
         if (terminal(summary.status)) return summary
         // Start-or-join: owning the run already means resume is a no-op.
         if (ownedByUs(row)) return summary
@@ -1297,6 +1308,7 @@ const makeRuntime = (
         // to it instead (#3342). Trusted host claims remain able to reclaim
         // their engine's execution.
         if (scope === "launched" && row.status === "suspended" && summary.parkedBy !== undefined) {
+          yield* resumeProgress(runId, "park-owner-check")
           const parkedOwner = yield* decodeStoredJson("parked host", Ownership.OwnerId, summary.parkedBy)
           if (!sameProcess(parkedOwner, owner)) {
             const alive = isAlive === undefined || !Ownership.sameHostIncarnation(parkedOwner, owner)
@@ -1316,10 +1328,12 @@ const makeRuntime = (
         // claims are a trusted low-level capability for hosts that can drive
         // the execution; node approval delegates through requestResume instead.
         if (scope === "launched") {
+          yield* resumeProgress(runId, "launch-index-requested")
           const indexed = yield* sql`SELECT run_id FROM control_runs WHERE run_id = ${runId}`.pipe(
             Effect.mapError(persistence("read the launch index"))
           )
           if (indexed.length === 0) return yield* new ClaimLost({ runId })
+          yield* resumeProgress(runId, "launch-index-read")
         }
         // A run owned by a live peer is theirs to drive. A run whose owner is
         // gone is taken over, with the evidence the run store checks.

@@ -9,7 +9,7 @@ import { CodeDrift } from "@smthrs/control/ControlError"
 import type { RunId } from "@smthrs/control/ControlSchema"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Registry from "@smthrs/registry/Registry"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, References } from "effect"
 import {
   chmodSync,
   mkdirSync,
@@ -229,19 +229,28 @@ const moduleLayer = (root: string) => {
 const launchParked = (idempotencyKey = "start") =>
   Effect.gen(function*() {
     const control = yield* Control.Control
-    const card = yield* control.plan({ flowId: "native", input: {} })
-    yield* control.approve(card.approval)
+    yield* Effect.logInfo("code-drift.plan.requested")
+    const card = yield* control.plan({ flowId: "native", input: {} }).pipe(
+      Effect.tap(() => Effect.logInfo("code-drift.plan.completed"))
+    )
+    yield* control.approve(card.approval).pipe(
+      Effect.tap(() => Effect.logInfo("code-drift.approval.completed"))
+    )
     const launched = yield* control.run({
       _tag: "Plan",
       planId: card.planId,
       digest: card.digest,
       envelope: card.envelope,
       idempotencyKey
-    })
+    }).pipe(Effect.tap(() => Effect.logInfo("code-drift.launch.completed")))
     if (launched._tag !== "Accepted" || launched.runId === undefined) {
       return yield* Effect.die(`expected an accepted run, got ${launched._tag}`)
     }
-    return { card, runId: launched.runId, parked: yield* settled(launched.runId) }
+    return {
+      card,
+      runId: launched.runId,
+      parked: yield* settled(launched.runId).pipe(Effect.tap(() => Effect.logInfo("code-drift.launch.parked")))
+    }
   })
 
 /**
@@ -442,7 +451,10 @@ it("keeps adopted and newly planned modules replayable after the host restarts",
           expect((yield* settled(run.runId, run.updatedAt)).status).toBe("parked")
           yield* Effect.logInfo("code-drift.restart.replayed-parked")
         }
-      }).pipe(Effect.provide(moduleLayer(root)))
+      }).pipe(
+        Effect.provide(moduleLayer(root)),
+        Effect.provideService(References.MinimumLogLevel, "Debug")
+      )
     ))
     expect(readFileSync(join(root, "completed-steps.txt"), "utf8")).toBe("first\nfirst\n")
   } finally {

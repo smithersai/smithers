@@ -4,7 +4,7 @@
  */
 import { ExecutionFact, Journal, JournalEvent } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
-import { Effect, Layer, Schema, Stream } from "effect"
+import { Effect, Layer, Logger, References, Schema, Stream } from "effect"
 import { readFileSync } from "fs"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
@@ -107,6 +107,7 @@ describe("ControlLive", () => {
     "respects stored ownership when native reads overlay accepted ($stored/$native)",
     async ({ stored, native, accepted }) => {
       const runId = "retained-fork"
+      const progress: Array<Readonly<Record<string, unknown>>> = []
       const runtime = Layer.effect(
         ControlRuntime,
         Effect.map(ControlRuntime, (base) => ({
@@ -148,7 +149,30 @@ describe("ControlLive", () => {
           const events = yield* journal.entries({ runId: JournalEvent.RunId.make(runId), limit: 100 })
           expect(events.entries.some((entry) => entry.eventType === "control.run.resume")).toBe(accepted)
           expect((yield* (yield* ControlRuntime).getRun(runId)).status).toBe(stored)
-        }).pipe(Effect.provide(live({ runtime, executor })), Effect.scoped, Effect.orDie)
+        }).pipe(
+          Effect.provide(live({ runtime, executor })),
+          Effect.provide(Logger.layer([Logger.map(Logger.formatStructured, (entry) => {
+            if (JSON.stringify(entry.message).includes("control.resume.progress")) progress.push(entry.annotations)
+          })], { mergeWithExisting: false })),
+          Effect.provideService(References.MinimumLogLevel, "Debug"),
+          Effect.scoped,
+          Effect.orDie
+        )
+      )
+      expect(progress.every((entry) => entry.runId === runId)).toBe(true)
+      expect(progress.map((entry) => entry.stage)).toEqual(
+        accepted
+          ? [
+            "requested",
+            "observed",
+            "mutation-entered",
+            "current-read",
+            "code-verified",
+            "claimed",
+            "recorded",
+            "completed"
+          ]
+          : ["requested", "observed", "mutation-entered", "current-read", "code-verified"]
       )
     }
   )
