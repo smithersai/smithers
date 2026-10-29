@@ -535,7 +535,7 @@ export const stagePackage = async (packageRoot, stagedPackage, manifest, nativeH
   await writeFile(join(stagedPackage, "package.json"), `${JSON.stringify(publicationManifest(manifest), null, 2)}\n`)
 }
 
-const run = (command, args, options = {}) =>
+export const runPackCommand = (command, args, options = {}) =>
   new Promise((resolveRun, reject) => {
     const child = spawn(command, args, {
       cwd: repoRoot,
@@ -552,7 +552,7 @@ const run = (command, args, options = {}) =>
       if (code === 0) {
         resolveRun(stdout)
       } else {
-        reject(new Error(`${command} exited with ${code ?? signal ?? "unknown status"}`))
+        reject(new Error(`${command} exited with ${code ?? signal ?? "unknown status"}${stdout.trim() === "" ? "" : `:\n${stdout.trim()}`}`))
       }
     })
   })
@@ -568,7 +568,7 @@ const packWorkspace = async (directory, outputDirectory, stagingRoot) => {
   const stagedPackage = join(stagingRoot, packageKey({ dir: directory }))
   await stagePackage(packageRoot, stagedPackage, manifest)
 
-  const output = await run(
+  const output = await runPackCommand(
     "pnpm",
     [
       "--dir",

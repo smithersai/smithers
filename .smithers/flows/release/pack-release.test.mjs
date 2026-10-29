@@ -30,6 +30,7 @@ import {
   publishedPackages,
   readWorkspaceManifests,
   releaseGroups,
+  runPackCommand,
   sourceChanges,
   sourceRevision,
   workspaceDependencies,
@@ -43,6 +44,11 @@ import { verifyPackagedNativeHelpers } from "./release-native-helpers.mjs"
 const packedWorkspaces = workspaces()
 const releaseVersion = JSON.parse(readFileSync(join(repoRoot, "packages/smithers/package.json"), "utf8")).version
 
+test("a failed packing command retains the package manager's stdout diagnostic", async () => {
+  await assert.rejects(runPackCommand(process.execPath, ["-e", 'process.stdout.write("ERR_PNPM_FIXTURE: workspace link is unresolved\\n"); process.exit(7)']),
+    /exited with 7:\nERR_PNPM_FIXTURE: workspace link is unresolved/)
+  assert.equal(await runPackCommand(process.execPath, ["-e", 'process.stdout.write("packed\\n")']), "packed\n")
+})
 const workflow = (name) => readFileSync(join(repoRoot, ".github", "workflows", name), "utf8")
 
 /**
