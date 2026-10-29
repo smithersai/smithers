@@ -71,7 +71,7 @@ import * as PlatformError from "effect/PlatformError"
 import * as TestClock from "effect/testing/TestClock"
 import { describe, expect, it, vi } from "vitest"
 import * as Agent from "../src/Agent.ts"
-import type * as Budget from "../src/Budget.ts"
+import * as Budget from "../src/Budget.ts"
 import * as Checkpointed from "../src/Checkpointed.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as MemoryMine from "../src/MemoryMine.ts"
@@ -301,6 +301,14 @@ const drive = <A, E>(
 
 const flows = [descriptor("fs/list", { tier: "sealed" }), descriptor("fs/write", { tier: "irreversible" })]
 
+/** Removes ambient policy entries after the host has captured its defaults. */
+const withoutRunPolicies = <A, E, R>(body: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.updateContext(
+    body,
+    (context: Context.Context<R>) =>
+      Context.omit(Budget.Budget, QuotaPolicy.QuotaClassifier)(context) as Context.Context<R>
+  )
+
 const collect = (options: {
   readonly session?: string | undefined
   readonly maxFrames?: number | undefined
@@ -328,6 +336,7 @@ const collect = (options: {
   readonly instructions?: Agent.Options["instructions"]
   readonly pinnedSources?: Agent.Options["pinnedSources"]
   readonly capabilityEnvelope?: Agent.Options["capabilityEnvelope"]
+  readonly withoutRunPolicies?: boolean
 }) =>
   Effect.gen(function*() {
     const agent = yield* Agent.Agent
@@ -366,6 +375,10 @@ const collect = (options: {
           options.sink?.push(event)
         }).pipe(Effect.andThen(options.observe?.(event) ?? Effect.void))
       ),
+      (effect) =>
+        options.withoutRunPolicies === true
+          ? withoutRunPolicies(effect)
+          : effect,
       Effect.provide(Layer.merge(Agent.layerDefaults, options.evaluator ?? scriptedCompletionJudge)),
       (effect) =>
         options.checkpoints === undefined
@@ -380,6 +393,114 @@ const collect = (options: {
   }).pipe(Effect.provide(Agent.layer), Effect.provide(Safety.layer))
 
 describe("capacity seat chain", () => {
+  it("uses the host's captured policies when a run supplies no policy overrides", async () => {
+    const events: AgentEvent.AgentEvent[] = []
+    const model = recordedCells([], ["ctx.done('captured host policies')"])
+    const outcome = await drive(collect({
+      model,
+      registry: registryOf([]),
+      withoutRunPolicies: true,
+      sink: events
+    }))
+    expect(outcome._tag).toBe("completed")
+    expect(events.some((event) => event._tag === "model-requested")).toBe(true)
+    expect(events.some((event) => event._tag === "model-parked")).toBe(false)
+  })
+
+  it("offers no route metadata when the primary has no credit and its backup is cooling", async () => {
+    let captured: EngineLike.EngineLike | undefined
+    let request: ModelRequest.ModelRequest | undefined
+    let calls = 0
+    const model = Model.make({
+      stream: () => {
+        calls++
+        return Stream.fail(new ModelError({ code: "out_of_credit", message: "no credit", httpStatus: 402 }))
+      }
+    })
+    const backup = Model.make({
+      stream: () => {
+        calls++
+        return Stream.fail(
+          new ModelError({
+            code: "rate_limited",
+            message: "retry later",
+            httpStatus: 429,
+            retryAfterMillis: 60_000
+          })
+        )
+      }
+    })
+    const outcome = await drive(collect({
+      model,
+      registry: registryOf([]),
+      capacity: { park: false },
+      fallbackSeats: [Seat.make({
+        id: "backup",
+        modelId: "backup",
+        model: backup,
+        route: { prepare: () => Effect.succeed({ ...prepared, routeId: "route-b" }) },
+        contextWindowTokens: 0
+      })],
+      plugins: [makePlugin<FlowsHooks>({
+        name: "flows-plugin-route-observer",
+        hooks: {
+          cellModelRequest: (value) =>
+            Effect.gen(function*() {
+              captured = Option.getOrUndefined(yield* Effect.serviceOption(EngineLike.EngineLike))
+              request = value
+              return value
+            })
+        }
+      })]
+    }))
+    expect(outcome._tag).toBe("failed")
+    expect(calls).toBe(2)
+    expect(captured).toBeDefined()
+    expect(request).toBeDefined()
+    expect(await Effect.runPromise(EngineLike.resolve(captured!, request!))).toEqual(Option.none())
+    expect(calls).toBe(2)
+  })
+
+  it("keeps the primary cooldown when its fallback cannot refresh", async () => {
+    const events: AgentEvent.AgentEvent[] = []
+    let calls = 0
+    let refreshes = 0
+    const model = Model.make({
+      stream: () => {
+        calls++
+        return Stream.fail(
+          new ModelError({ code: "rate_limited", message: "wait", retryAfterMillis: 1_000, httpStatus: 429 })
+        )
+      }
+    })
+    const fallback = Seat.make({
+      id: "unavailable",
+      modelId: "unavailable",
+      model,
+      route,
+      contextWindowTokens: 0,
+      refresh: () => {
+        refreshes++
+        return Effect.fail(new Seat.SeatUnresolved({ seat: "unavailable", message: "refresh refused" }))
+      }
+    })
+    const outcome = await drive(
+      collect({
+        model,
+        registry: registryOf([]),
+        fallbackSeats: [fallback],
+        capacity: { park: true, maxParkMillis: 5_000 },
+        sink: events
+      }).pipe(Effect.provide(TestClock.layer()))
+    )
+    expect(outcome._tag).toBe("suspended")
+    expect(calls).toBe(1)
+    expect(refreshes).toBe(1)
+    expect(events.filter((event) => event._tag === "model-parked")).toEqual([
+      expect.objectContaining({ seat: "anthropic:test-model", code: "unknown", source: "retry-after", wakeAt: 1_000 })
+    ])
+  })
+
   it("tries a fallback when the primary seat refresh fails", async () => {
     const model = recordedCells([], ["ctx.done('done')"])
     const primary = Seat.make({
@@ -1773,6 +1894,36 @@ describe("capacity seat chain", () => {
     const parks = events.filter((event) => event._tag === "model-parked")
     expect(parks).toHaveLength(2)
     expect(parks[1]!.wakeAt - parks[0]!.wakeAt).toBeGreaterThan(60_000)
+  })
+
+  it("refuses a repeated immediate refusal when its backoff exceeds the caller's ceiling", async () => {
+    const events: AgentEvent.AgentEvent[] = []
+    let calls = 0
+    const model = Model.make({
+      stream: () => {
+        calls++
+        return Stream.fail(
+          new ModelError({
+            code: "rate_limited",
+            message: "window reopened but still limited",
+            resetAtEpochMillis: 0,
+            httpStatus: 429
+          })
+        )
+      }
+    })
+    const outcome = await drive(collect({
+      model,
+      registry: registryOf([]),
+      capacity: { park: true, maxParkMillis: 1_000 },
+      sink: events
+    }))
+    expect(outcome._tag).toBe("failed")
+    expect(calls).toBe(2)
+    expect(events.map((event) => event._tag).filter((tag) => tag === "model-parked" || tag === "model-unparked"))
+      .toEqual(["model-parked", "model-unparked"])
+    expect(Option.getOrUndefined(QuotaPolicy.modelErrorOf(outcome._tag === "failed" ? outcome.error : undefined)))
+      .toMatchObject({ code: "rate_limited" })
   })
 
   it("waits twice when two parks use the same wake time", async () => {

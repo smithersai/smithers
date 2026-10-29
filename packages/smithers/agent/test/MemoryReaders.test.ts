@@ -6,6 +6,8 @@ import type * as Scope from "effect/Scope"
 import { describe, expect, it } from "vitest"
 import * as Repo from "../src/internal/memory/repo.ts"
 import * as Wiki from "../src/internal/memory/wiki.ts"
+import * as Memory from "../src/Memory.ts"
+import * as MemoryCalibration from "../src/MemoryCalibration.ts"
 
 const run = <A, E>(body: Effect.Effect<A, E, Scope.Scope | FileSystem.FileSystem | Path.Path | ChildProcessSpawner>) =>
   Effect.runPromise(body.pipe(Effect.scoped, Effect.provide(NodeServices.layer)))
@@ -33,6 +35,88 @@ const catalog = (pages: ReadonlyArray<unknown>) => JSON.stringify({ pages })
 const page = { id: "guide", document: "docs/guide.md" }
 
 describe("memory reader regressions", () => {
+  it("returns no tree or head when the repository disappears during resolution", () =>
+    run(Effect.gen(function*() {
+      const root = yield* fixture({ "local.ts": "local" })
+      const fs = yield* FileSystem.FileSystem
+      const missing = FileSystem.make({
+        ...fs,
+        realPath: (file) =>
+          file === root
+            ? Effect.fail(PlatformError.systemError({ _tag: "NotFound", module: "FileSystem", method: "realPath" }))
+            : fs.realPath(file)
+      })
+      const tree = yield* Repo.tree(root).pipe(
+        Effect.provideService(FileSystem.FileSystem, missing),
+        Effect.provideService(ChildProcessSpawner, makeSpawner(() => Effect.fail(commandFailure)))
+      )
+      expect([...tree]).toEqual([["", { dirs: [], files: [] }]])
+      expect(
+        yield* Repo.head(root, "local.ts", 100).pipe(
+          Effect.provideService(FileSystem.FileSystem, missing)
+        )
+      ).toBeUndefined()
+    })))
+
+  it("uses initial thresholds when the resolved thresholds file disappears before reading", () =>
+    run(Effect.gen(function*() {
+      const root = yield* fixture({ [MemoryCalibration.file]: JSON.stringify(MemoryCalibration.initial) })
+      const fs = yield* FileSystem.FileSystem
+      let reads = 0
+      const missing = FileSystem.make({
+        ...fs,
+        readFile: () =>
+          Effect.suspend(() => {
+            reads++
+            return Effect.fail(PlatformError.systemError({
+              _tag: "NotFound",
+              module: "FileSystem",
+              method: "readFile"
+            }))
+          })
+      })
+      expect(
+        yield* Memory.thresholds(root).pipe(
+          Effect.provideService(FileSystem.FileSystem, missing)
+        )
+      ).toEqual(MemoryCalibration.initial)
+      expect(reads).toBe(1)
+    })))
+
+  it("keeps threshold containment failures distinct from filesystem read failures", () =>
+    run(Effect.gen(function*() {
+      const root = yield* fixture({ [MemoryCalibration.file]: JSON.stringify(MemoryCalibration.initial) })
+      const outside = yield* fixture({ "thresholds.json": JSON.stringify(MemoryCalibration.initial) })
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const file = path.join(root, MemoryCalibration.file)
+      yield* fs.remove(file)
+      yield* fs.symlink(path.join(outside, "thresholds.json"), file)
+      const escaped = yield* Effect.flip(Memory.thresholds(root))
+      expect(escaped.code).toBe("thresholds_invalid")
+      expect(escaped.message).toContain("outside the repository root")
+      yield* fs.remove(file)
+      yield* fs.writeFileString(file, JSON.stringify(MemoryCalibration.initial))
+      const denied = FileSystem.make({
+        ...fs,
+        realPath: (file) =>
+          file === root
+            ? Effect.fail(PlatformError.systemError({
+              _tag: "PermissionDenied",
+              module: "FileSystem",
+              method: "realPath"
+            }))
+            : fs.realPath(file)
+      })
+      const failed = yield* Effect.flip(
+        Memory.thresholds(root).pipe(
+          Effect.provideService(FileSystem.FileSystem, denied)
+        )
+      )
+      expect(failed.code).toBe("read_failed")
+      expect(failed.message).toContain("PermissionDenied")
+    })))
+
   it("flushes incomplete command bytes and isolates the next command's UTF-8 state", () =>
     run(Effect.gen(function*() {
       const root = yield* fixture({})

@@ -746,20 +746,63 @@ describe("EngineChildren.spawn", () => {
 })
 
 describe("EngineChildren.await", () => {
+  it("refuses corrupt child state as a typed error before polling the engine", () =>
+    run(Effect.gen(function*() {
+      const runtime = yield* engine("corrupt-child")
+      const store = yield* RunStore.RunStore
+      yield* store.create("corrupt-child", JSON.stringify({ private: "unreadable state content" }))
+      let polled = false
+      const port = yield* children().pipe(Effect.provideService(FlowRuntime.FlowRuntime, {
+        ...runtime,
+        poll: () =>
+          Effect.sync(() => {
+            polled = true
+            return Option.none()
+          })
+      }))
+      const failure = yield* Effect.flip(port.await({ child: "corrupt-child" }))
+      expect(failure).toMatchObject({ code: "failed", message: "The child run corrupt-child has unreadable state." })
+      expect(polled).toBe(false)
+    })))
+
   it("regression: runtime polling errors remain catchable ChildError failures", () =>
     run(Effect.gen(function*() {
       const runtime = yield* engine("poll-error")
       const store = yield* RunStore.RunStore
-      yield* store.create("poll-missing", JSON.stringify({ flowName: Worker._tag }))
+      yield* store.create(
+        "poll-missing",
+        JSON.stringify({
+          version: 1,
+          flowName: Worker._tag,
+          payload: {},
+          capabilityCeilings: [[]]
+        })
+      )
+      let polled = false
+      const logs: Array<string> = []
       const port = yield* children().pipe(Effect.provideService(FlowRuntime.FlowRuntime, {
         ...runtime,
-        poll: () => Effect.fail(new FlowRuntime.FlowExecutionNotFound({ executionId: "poll-missing" }))
+        poll: () =>
+          Effect.suspend(() => {
+            polled = true
+            return Effect.fail(
+              new FlowRuntime.FlowExecutionNotFound({
+                executionId: "poll-missing sk-abcdefghijklmnopqrstuvwxyz1234567890"
+              })
+            )
+          })
       }))
       const result = yield* Effect.exit(
         port.await({ child: "poll-missing" }).pipe(
-          Effect.catch((error) => Effect.succeed(error.code))
+          Effect.catch((error) => Effect.succeed(error.code)),
+          Effect.provide(Logger.layer([Logger.make((entry) => logs.push(JSON.stringify(entry.message)))], {
+            mergeWithExisting: false
+          }))
         )
       )
+      expect(polled).toBe(true)
+      expect(logs.join(" ")).toContain("child polling failed")
+      expect(logs.join(" ")).not.toContain("sk-abcdefghijklmnopqrstuvwxyz1234567890")
       expect(result).toEqual(Exit.succeed("failed"))
     })))
 
@@ -812,40 +855,44 @@ describe("EngineChildren.await", () => {
       }).pipe(Effect.provide(TestClock.layer()))
     ))
 
-  it("keeps an await deadline across a suspended parent's re-drive", () =>
-    run(
-      Effect.gen(function*() {
-        const runtime = yield* engine("await-deadline-replay")
-        const store = yield* RunStore.RunStore
-        const parent = "await-deadline-parent"
-        const child = EngineChildren.childExecutionId(parent, "worker")
-        yield* store.create(
-          child,
-          JSON.stringify({ version: 1, flowName: Worker._tag, payload: {}, capabilityCeilings: [[]] }),
-          { lineageId: child, roundOrdinal: 0 }
-        )
-        yield* runtime.register(Worker, () => Effect.succeed("finished"))
-        const port = yield* children({ pollInterval: "1 second", awaitTimeout: "2 seconds" }).pipe(
-          Effect.provideService(FlowRuntime.FlowRuntime, runtime)
-        )
-        yield* runtime.register(Parent, () =>
-          port.await({ child }).pipe(
-            Effect.map((value) => value.output),
-            Effect.catch((error) => Effect.succeed(error.code))
-          ))
-        yield* runtime.execute(Parent, { executionId: parent, payload: {}, discard: true })
-        yield* store.get(parent).pipe(Effect.repeat({ while: (row) => row.status !== "suspended" }))
-        // No clock worker is needed: re-drive explicitly after the original
-        // deadline. A fresh timeout on that drive would park the parent again.
-        yield* TestClock.adjust("3 seconds")
-        yield* runtime.resume(Parent, parent)
-        const result = yield* runtime.poll(Parent, parent)
-        expect(result).toMatchObject({
-          _tag: "Some",
-          value: { _tag: "Complete", exit: { _tag: "Success", value: "still_running" } }
-        })
-      }).pipe(Effect.provide(TestClock.layer()))
-    ))
+  it.each([undefined, "parent-dispatch"])(
+    "keeps an await deadline across a suspended parent's re-drive (dispatch=%s)",
+    (dispatch) =>
+      run(
+        Effect.gen(function*() {
+          const runtime = yield* engine("await-deadline-replay")
+          const store = yield* RunStore.RunStore
+          const parent = "await-deadline-parent"
+          const child = EngineChildren.childExecutionId(parent, "worker")
+          yield* store.create(
+            child,
+            JSON.stringify({ version: 1, flowName: Worker._tag, payload: {}, capabilityCeilings: [[]] }),
+            { lineageId: child, roundOrdinal: 0 }
+          )
+          yield* runtime.register(Worker, () => Effect.succeed("finished"))
+          const port = yield* children({ pollInterval: "1 second", awaitTimeout: "2 seconds" }).pipe(
+            Effect.provideService(FlowRuntime.FlowRuntime, runtime)
+          )
+          yield* runtime.register(Parent, () =>
+            port.await({ child }).pipe(
+              Effect.provideService(Action.CurrentInvocationKey, dispatch),
+              Effect.map((value) => value.output),
+              Effect.catch((error) => Effect.succeed(error.code))
+            ))
+          yield* runtime.execute(Parent, { executionId: parent, payload: {}, discard: true })
+          yield* store.get(parent).pipe(Effect.repeat({ while: (row) => row.status !== "suspended" }))
+          // No clock worker is needed: re-drive explicitly after the original
+          // deadline. A fresh timeout on that drive would park the parent again.
+          yield* TestClock.adjust("3 seconds")
+          yield* runtime.resume(Parent, parent)
+          const result = yield* runtime.poll(Parent, parent)
+          expect(result).toMatchObject({
+            _tag: "Some",
+            value: { _tag: "Complete", exit: { _tag: "Success", value: "still_running" } }
+          })
+        }).pipe(Effect.provide(TestClock.layer()))
+      )
+  )
 
   it("returns the child's output to a second engine over the same database file", () =>
     withTempFile(async (filename) => {
