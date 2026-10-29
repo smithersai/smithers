@@ -24,13 +24,13 @@ The composer is available to Members and above. Minimum roles below describe eac
 | `/theme` | `light` or `dark` | Anyone | Set this device's theme. |
 | `/navigate` | app path | Anyone | Open a page in this tab. |
 | `/copy` | none | Anyone | Copy the latest finished answer. |
-| `/new` | `repo [branch]` | Member | Start a conversation. |
+| `/new` | `repo [branch]` | Guest | Start a conversation. |
 | `/web` | `url [embed\|tab]` | Member | Open a web page. |
 | `/docs` | `repo query` | Member | Find repository documentation. |
 | `/repo` | `repo` | Member | Open the repository view. |
 | `/issues` | `repo` | Member | Show the repository's issues. |
 | `/edit` | none | Member | Return the latest unsent question to the composer. |
-| `/clone` | `repo` | Member | Clone a repository. |
+| `/clone` | `repo` | Guest | Clone a repository. |
 | `/flow.new` | `name request` | Member | Draft or edit a personal flow. |
 | `/flow.run` | `name [input]` | Member | Run the latest saved revision. |
 | `/branch.new` | `repo branch` | Member | Create and track a branch. |
