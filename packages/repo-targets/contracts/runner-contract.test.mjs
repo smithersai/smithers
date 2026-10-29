@@ -33,7 +33,9 @@ export const Workspace = S.Workspace("runner-contract", {
   runtime: S.Runtime.Node({ version: ">=26.4.0" }),
   packageManager: S.PackageManager.Pnpm({ version: "11.25.0", runtime: S.Runtime.Node({ version: ">=26.4.0" }) }),
   nodeModules: S.Npm.NodeModules({ packageJson: S.file("//package.json") }),
-  ${modules === "node_modules" ? "" : "sandboxes: S.Sandboxes({ default: S.Sandbox.None() })"}
+  // These runner fixtures deliberately link tools outside the workspace.
+  // They test execution and cache invalidation; containment has its own suite.
+  sandboxes: S.Sandboxes({ default: S.Sandbox.None() })
 })
 `)
   return directory
@@ -98,7 +100,8 @@ test("warmed build-result cache invalidates helper, config and declared property
     write(directory, "config.json", '{"allowed":true}\n')
     write(directory, "fixture.json", '{"expected":4}\n')
     declare("7")
-    assert.equal(run(directory, "cache-cold").status, 0)
+    const cold = run(directory, "cache-cold")
+    assert.equal(cold.status, 0, cold.text)
     const warm = run(directory, "cache-warm")
     assert.equal(warm.status, 0, warm.text)
     assert.match(warm.text, /"hit":\s*1/, "must prove a real cache hit, not merely two successful runs")
