@@ -296,6 +296,9 @@ export const fold = (
           submitted.target.requestId !== requestId)
       ) continue
       const identity = key(runId, requestId)
+      // A legacy display row cannot replace the current wait and its exact
+      // wake payload, even when its request name matches.
+      if (!versioned && requests.has(identity)) continue
       if (journalRequests.has(identity)) continue
       journalRequests.add(identity)
       const decision = decisions.get(identity)

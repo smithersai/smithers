@@ -129,6 +129,20 @@ describe("control lifecycle producer coverage", () => {
 })
 
 describe("approval fact identities", () => {
+  it("retains a current wait over legacy history with a different target", () => {
+    const observed: Facts.Approval = {
+      runId: run.runId,
+      requestId: "one",
+      waitRunId: "native",
+      title: "Current wait",
+      request: {},
+      requestedAt: 2,
+      status: "pending",
+      payload: { target: { ...target("one"), digest: "current", envelope }, scope: "once", idempotencyKey: "current" }
+    }
+    const result = Facts.fold([request("one", false), decision("one")], undefined, [observed])
+    expect(result.approvals).toEqual([observed])
+  })
   it("admits a real versioned request", () => {
     expect(Facts.fold([request("one")]).approvals.map((row) => row.requestId)).toEqual(["one"])
   })
