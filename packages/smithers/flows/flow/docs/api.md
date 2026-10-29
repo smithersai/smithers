@@ -569,3 +569,7 @@ avoid starting a second worker. Older low-level refusals may report
 `Interpreter.layer(flow, { onHeartbeat })` and `Interpreter.layerWithImplementations(flow, implementations, { onHeartbeat })` accept an optional `(executionId: string) => Effect<void>` host callback. It wraps the whole interpretation, so it is installed again on every resume before sealed steps replay, and removed when the interpretation ends. It is not inherited by reachable child-flow registrations. Capture required host services while constructing the registration; the callback runs with its current `FlowRuntime.FlowInstance` identity.
 
 The durable process driver dispatches the callback only after a confirmed ownership heartbeat. One callback per run may be pending, it is bounded by the ownership write tolerance, and its lifetime is the current driven round. A failed or blocked external receipt cannot delay the local lease writer. Receipts are ephemeral, idempotent liveness evidence, never durable business actions. An in-memory engine and a hosted engine without periodic ownership pulses do not manufacture receipts. No callback runs while a round is parked.
+
+The runtime’s optional `recordNode(record, { flush: true })` commits a progress
+record before returning. Burndown uses it for per-item landing and release so
+a slow neighboring item cannot keep completed progress buffered.

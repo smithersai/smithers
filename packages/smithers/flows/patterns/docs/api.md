@@ -535,3 +535,7 @@ modules with their specifiers.
 [Flows, actions, and plans](/docs/concepts/flows-actions-plans/) for what a built
 graph means, and [`@smthrs/plan`](/api/plan) for the persisted form a graph
 compiles into.
+
+The runtime’s optional `recordNode(record, { flush: true })` commits a progress
+record before returning. Burndown uses it for per-item landing and release so
+a slow neighboring item cannot keep completed progress buffered.

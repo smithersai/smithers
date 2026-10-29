@@ -1827,3 +1827,7 @@ values remain in their existing protected rows; the journal carries digests.
 Use `checkpointState` when compacting: a compacted run without its fold checkpoint
 fails with `checkpoint_missing`. `capture` and `rebuild` read the existing
 migrated database and journal; neither creates another store or executes a flow.
+
+The runtime’s optional `recordNode(record, { flush: true })` commits a progress
+record before returning. Burndown uses it for per-item landing and release so
+a slow neighboring item cannot keep completed progress buffered.
