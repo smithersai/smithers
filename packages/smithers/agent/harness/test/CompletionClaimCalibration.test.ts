@@ -109,19 +109,31 @@ const gateway = async (
 const run = async (at: Gateway, argv: ReadonlyArray<string> = []) => {
   let stdout = ""
   let stderr = ""
-  const code = await Calibration.main(argv, {
-    AI_GATEWAY_API_KEY: "test-gateway-key",
-    SMITHERS_EVALUATOR_BASE_URL: at.url,
-    GITHUB_SHA: "0123456789abcdef0123456789abcdef01234567"
-  }, {
-    stdout: (text) => {
-      stdout += text
-    },
-    stderr: (text) => {
-      stderr += text
+  const dir = scratch()
+  try {
+    const source = join(dir, "corpus.json")
+    writeFileSync(source, corpusText)
+    const jj = (...args: Array<string>) =>
+      execFileSync("jj", args, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+    jj("git", "init", "--no-colocate")
+    jj("commit", "-m", "calibration integration source")
+    const env = {
+      AI_GATEWAY_API_KEY: "test-gateway-key",
+      SMITHERS_EVALUATOR_BASE_URL: at.url,
+      GITHUB_SHA: "0123456789abcdef0123456789abcdef01234567"
     }
-  })
-  return { code, stdout, stderr, report: stdout === "" ? undefined : (JSON.parse(stdout) as Calibration.Report) }
+    const code = await Calibration.main(argv, env, {
+      stdout: (text) => {
+        stdout += text
+      },
+      stderr: (text) => {
+        stderr += text
+      }
+    }, () => sourceIdentity(env, dir, [source]))
+    return { code, stdout, stderr, report: stdout === "" ? undefined : (JSON.parse(stdout) as Calibration.Report) }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 }
 
 const scratch = () => mkdtempSync(join(tmpdir(), "completion-claim-calibration-"))

@@ -283,7 +283,9 @@ const processIo: Io = {
 export const main = async (
   argv: ReadonlyArray<string>,
   env: Readonly<Record<string, string | undefined>>,
-  io: Io = processIo
+  io: Io = processIo,
+  readSource: () => ReturnType<typeof sourceIdentity> = () =>
+    sourceIdentity(env, fileURLToPath(new URL("../../../../../../", import.meta.url)), sources)
 ): Promise<number> => {
   const key = env["AI_GATEWAY_API_KEY"]?.trim()
   if (key === undefined || key === "") {
@@ -308,7 +310,7 @@ export const main = async (
   )
   const report = await Effect.runPromise(
     calibrate(corpus, {
-      ...sourceIdentity(env, fileURLToPath(new URL("../../../../../../", import.meta.url)), sources),
+      ...readSource(),
       sha256: createHash("sha256").update(text).digest("hex"),
       model: Evaluator.defaultModel,
       baseUrl
