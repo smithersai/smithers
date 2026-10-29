@@ -119,9 +119,15 @@ const durable = <A, E>(body: Effect.Effect<A, E, any>): Promise<A> =>
   )
 
 /** Waits, on the real clock, until `ready` holds for the journal's steps. */
-const awaitSteps = (runId: string, ready: (steps: ReadonlyArray<Step>) => boolean) =>
+const awaitSteps = (
+  runId: string,
+  ready: (steps: ReadonlyArray<Step>) => boolean,
+  running: Fiber.Fiber<unknown, unknown>
+) =>
   Effect.gen(function*() {
     for (let attempt = 0; attempt < 500; attempt++) {
+      const exit = running.pollUnsafe()
+      if (exit !== undefined && Exit.isFailure(exit)) return yield* Effect.failCause(exit.cause)
       const found = yield* steps(runId)
       if (ready(found)) return found
       yield* Effect.sleep("10 millis")
@@ -272,7 +278,8 @@ describe("Burndown journal", () => {
       )
       const whileWorking = yield* awaitSteps(
         "journal-run",
-        (found) => found.some((step) => isSettled(step, "sweep/a/release"))
+        (found) => found.some((step) => isSettled(step, "sweep/a/release")),
+        running
       )
       yield* Deferred.succeed(slow, undefined)
       const result = yield* Fiber.join(running)
@@ -330,12 +337,13 @@ describe("Burndown journal", () => {
       const first = yield* Scope.make()
       incarnations = 1
       const before = yield* incarnation(first, dispatch)
-      yield* Effect.forkChild(
-        Round.execute({}, { executionId: "crash-run" }).pipe(Effect.provideContext(before), Effect.exit)
+      const running = yield* Effect.forkChild(
+        Round.execute({}, { executionId: "crash-run" }).pipe(Effect.provideContext(before))
       )
       const recorded = yield* awaitSteps(
         "crash-run",
-        (found) => found.some((step) => isSettled(step, "sweep/a/release"))
+        (found) => found.some((step) => isSettled(step, "sweep/a/release")),
+        running
       )
       // The process dies after `a` landed and was released, before the round was recorded.
       yield* Scope.close(first, Exit.void)

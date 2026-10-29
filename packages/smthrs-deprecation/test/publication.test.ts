@@ -34,7 +34,7 @@ describe("the published manifest", () => {
     const result = spawnSync(process.execPath, [fileURLToPath(url("../bin/smthrs.mjs")), "--version"], {
       encoding: "utf8"
     })
-    expect(result.status).toBe(0)
+    expect(result.status, result.stderr).toBe(0)
     expect(result.stdout).toContain(manifest.version)
   })
 

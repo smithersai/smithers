@@ -212,7 +212,8 @@ describe("a connection lost while a step's outcome is recorded", () => {
       try {
         // The lost connection is not the step's outcome: the run did not
         // settle, and its owner released it for the next drive, due at once.
-        expect((await drive(first)).driven).toEqual({ _tag: "Unfinished" })
+        const interrupted = await drive(first)
+        expect(interrupted.driven, JSON.stringify(interrupted.answer)).toEqual({ _tag: "Unfinished" })
         await cut
 
         const recovered = await drive(second)

@@ -237,7 +237,7 @@ it("keeps registered agent shell confined and refuses a named Docker transport",
         call({ mode: "unhermetic", command: "printf escaped > ../agent-escape", cwd: workspace })
       )
       expect(result.outcome).toBe("success")
-      expect((result.value as { exitCode: number }).exitCode).not.toBe(0)
+      expect((result.value as { exitCode: number }).exitCode, JSON.stringify(result)).not.toBe(0)
       expect(existsSync(join(base, "agent-escape"))).toBe(false)
       const database = new DatabaseSync(NodeControl.executionDatabasePath(workspace), { readOnly: true })
       const spawned = () =>

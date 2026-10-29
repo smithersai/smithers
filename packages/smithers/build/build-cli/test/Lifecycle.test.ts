@@ -199,7 +199,7 @@ it("warns through the real doctor command when artifacts lack a policy", async (
   ], { encoding: "utf8", timeout: 60_000, env: { ...process.env, HOME: root, SMITHERS_REMOTE: undefined } })
   expect(served.error).toBeUndefined()
   const stdout = served.stdout
-  expect(stdout).toContain("artifact targets declared without a lifecycle policy")
+  expect(stdout, served.stderr).toContain("artifact targets declared without a lifecycle policy")
   expect(stdout).toContain("\"warn\"")
 })
 

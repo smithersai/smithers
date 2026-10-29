@@ -410,12 +410,19 @@ it("keeps adopted and newly planned modules replayable after the host restarts",
     const runs = await Effect.runPromise(Effect.scoped(
       Effect.gen(function*() {
         const control = yield* Control.Control
-        const first = yield* launchParked()
+        yield* Effect.logInfo("code-drift.restart.host-ready")
+        const first = yield* launchParked().pipe(Effect.tap(() => Effect.logInfo("code-drift.restart.initial-parked")))
         writeFileSync(join(root, ".smithers", "flows", "native", "flow.ts"), `${moduleSource(root)}// adopted\n`)
-        yield* control.resume({ runId: first.runId, idempotencyKey: "adopt", allowCodeDrift: true })
-        const adopted = yield* settled(first.runId, first.parked.updatedAt)
+        yield* control.resume({ runId: first.runId, idempotencyKey: "adopt", allowCodeDrift: true }).pipe(
+          Effect.tap(() => Effect.logInfo("code-drift.restart.adoption-requested"))
+        )
+        const adopted = yield* settled(first.runId, first.parked.updatedAt).pipe(
+          Effect.tap(() => Effect.logInfo("code-drift.restart.adopted-parked"))
+        )
         expect(adopted.status).toBe("parked")
-        const second = yield* launchParked("second")
+        const second = yield* launchParked("second").pipe(
+          Effect.tap(() => Effect.logInfo("code-drift.restart.second-parked"))
+        )
         expect(second.parked.status).toBe("parked")
         expect(second.card.executionDigest).toBe(adopted.executionDigest)
         expect(second.card.executionDigest).not.toBe(first.card.executionDigest)
@@ -426,10 +433,14 @@ it("keeps adopted and newly planned modules replayable after the host restarts",
     await Effect.runPromise(Effect.scoped(
       Effect.gen(function*() {
         const control = yield* Control.Control
+        yield* Effect.logInfo("code-drift.restart.host-ready")
         for (const run of runs) {
-          const resumed = yield* control.resume({ runId: run.runId, idempotencyKey: `restart-${run.runId}` })
+          const resumed = yield* control.resume({ runId: run.runId, idempotencyKey: `restart-${run.runId}` }).pipe(
+            Effect.tap(() => Effect.logInfo("code-drift.restart.resume-requested"))
+          )
           expect(resumed._tag).toBe("Accepted")
           expect((yield* settled(run.runId, run.updatedAt)).status).toBe("parked")
+          yield* Effect.logInfo("code-drift.restart.replayed-parked")
         }
       }).pipe(Effect.provide(moduleLayer(root)))
     ))
