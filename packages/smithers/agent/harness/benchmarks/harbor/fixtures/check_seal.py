@@ -66,6 +66,11 @@ def check_verdict() -> None:
     assert proof["reachable"] is True, proof
     json.dumps(proof)
 
+    # libcurl versions report a rejected CONNECT as either 7 or 56. The
+    # proxy's 403 and the absence of a target response are the same proof.
+    refused_connect = seal.verdict(SEALED.replace("github.com/ 56 000 403", "github.com/ 7 000 403"))
+    assert refused_connect["sealed"] is True, refused_connect
+
     unsealed = {
         "the agent's route reached github": swap(SEALED, "denied https://github.com/", "seal-probe denied https://github.com/ 0 200 200"),
         "a direct connection by name": swap(SEALED, "denied-direct https://github.com/", "seal-probe denied-direct https://github.com/ 0 200 000"),
@@ -199,7 +204,8 @@ def check_real_probe() -> str:
         proof = seal.verdict(transcript, refused)
         assert proof["sealed"] is True, (proof, transcript)
         by_kind = {attempt["kind"]: attempt for attempt in proof["attempts"]}
-        assert (by_kind["denied"]["curl"], by_kind["denied"]["proxy"]) == (56, 403), proof
+        assert by_kind["denied"]["curl"] in (7, 56), proof
+        assert (by_kind["denied"]["http"], by_kind["denied"]["proxy"]) == (0, 403), proof
         assert by_kind["denied-direct"]["curl"] == 7, proof
         assert proof["reachable"] is True, proof
         connects = [line for line in proxy.requests if line.startswith("CONNECT ")]
