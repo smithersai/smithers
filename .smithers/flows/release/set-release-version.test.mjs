@@ -35,7 +35,7 @@ test("retarget moves the version and the exact workspace ranges together", () =>
       effect: "4.0.5"
     },
     devDependencies: {
-      "@smthrs/kernel": "0.1.0-next.0",
+      "@smthrs/kernel": "workspace:*",
       effect: "4.0.5",
       vitest: "5.0.0"
     }
@@ -83,12 +83,29 @@ test("mismatches names the version and every stale internal range", () => {
 
   assert.deepEqual(mismatches(entries, "0.1.0-next.0"), [
     "packages/smithers/flows/package.json: version is 0.1.0, expected 0.1.0-next.0",
-    "packages/smithers/flows/package.json: dependencies.@smthrs/kernel is 0.1.0, expected 0.1.0-next.0",
-    "packages/smithers/flows/package.json: devDependencies.@smthrs/kernel is workspace:*, expected 0.1.0-next.0"
+    "packages/smithers/flows/package.json: dependencies.@smthrs/kernel is 0.1.0, expected 0.1.0-next.0"
   ])
   assert.deepEqual(mismatches(entries.slice(1), "0.1.0-next.0"), [])
   assert.deepEqual(mismatches([{ ...entries[0], directory: "packages/smithers/flows/package.json" }, entries[1]], "0.1.0-next.0"),
     mismatches(entries, "0.1.0-next.0"), "a manifest path is not given a second package.json suffix")
+})
+
+test("release bumps preserve local workspace links and retarget explicit workspace versions", () => {
+  for (const field of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
+    for (const [range, expected] of [
+      ["workspace:*", "workspace:*"], ["workspace:^", "workspace:^"], ["workspace:~", "workspace:~"],
+      ["workspace:0.1.0", "workspace:1.0.0"], ["workspace:^0.1.0", "workspace:^1.0.0"],
+      ["workspace:~0.1.0", "workspace:~1.0.0"]
+    ]) {
+      const manifest = { name: "@smthrs/flows", version: "1.0.0", [field]: { "@smthrs/kernel": range } }
+      const kernel = { directory: "kernel", manifest: { name: "@smthrs/kernel", version: "1.0.0" } }
+      const updated = retarget(manifest, "1.0.0", workspaceNames)
+      assert.equal(updated[field]["@smthrs/kernel"], expected)
+      assert.deepEqual(mismatches([{ directory: "flows", manifest: updated }, kernel], "1.0.0"), [])
+      assert.equal(mismatches([{ directory: "flows", manifest }, kernel], "1.0.0").length, range === expected ? 0 : 1)
+      assert.equal(retarget(manifest, "1.0.0", workspaceNames, { registryDependencies: true })[field]["@smthrs/kernel"], "1.0.0")
+    }
+  }
 })
 
 test("this workspace is internally coherent at its current version", () => {

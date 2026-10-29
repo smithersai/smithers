@@ -328,9 +328,9 @@ export const readVersionedManifests = (root = repoRoot) => [
 /**
  * Retargets one manifest at `version`.
  *
- * Published manifests always receive a concrete sibling version: package
- * managers rewrite `workspace:` during packing, but the checked-in release
- * contract must already describe what a registry consumer can resolve.
+ * Workspace protocols stay local (SDK-6); pnpm resolves them when packing.
+ * Explicit workspace versions move with the train, while shorthand ranges
+ * keep following the local package. Shipped templates require registry pins.
  * Private manifests retain workspace/catalog protocols and only have concrete
  * sibling versions retargeted.
  */
@@ -341,7 +341,12 @@ export const retarget = (manifest, version, workspaceNames, { registryDependenci
     updated[field] = Object.fromEntries(
       Object.entries(manifest[field]).map(([name, range]) => {
         if (!workspaceNames.has(name)) return [name, range]
-        if (registryDependencies || manifest.private !== true || !range.includes(":")) return [name, version]
+        if (registryDependencies) return [name, version]
+        if (range.startsWith("workspace:")) {
+          const local = range.slice("workspace:".length)
+          return [name, ["*", "^", "~"].includes(local) ? range : `workspace:${/^[\^~]/.exec(local)?.[0] ?? ""}${version}`]
+        }
+        if (manifest.private !== true || !range.includes(":")) return [name, version]
         return [name, range]
       })
     )
@@ -358,15 +363,15 @@ export const mismatches = (entries, version) => {
   const workspaceNames = new Set(entries.map(({ manifest }) => manifest.name))
   const found = []
   for (const { directory, manifest, registryDependencies = false } of entries) {
+    const expected = retarget(manifest, version, workspaceNames, { registryDependencies })
     const manifestPath = directory.endsWith("package.json") ? directory : `${directory}/package.json`
     if (manifest.private !== true && manifest.version !== version) {
       found.push(`${manifestPath}: version is ${manifest.version}, expected ${version}`)
     }
     for (const field of dependencyFields) {
       for (const [name, range] of Object.entries(manifest[field] ?? {})) {
-        if (!workspaceNames.has(name) || range === version) continue
-        if (!registryDependencies && manifest.private === true && range.includes(":")) continue
-        found.push(`${manifestPath}: ${field}.${name} is ${range}, expected ${version}`)
+        if (!workspaceNames.has(name) || range === expected[field][name]) continue
+        found.push(`${manifestPath}: ${field}.${name} is ${range}, expected ${expected[field][name]}`)
       }
     }
   }
