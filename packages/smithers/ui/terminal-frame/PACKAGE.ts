@@ -56,7 +56,7 @@ const check = Smithers.Typecheck({
  */
 const unitTests = Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
-  runner: Smithers.testSuite(["test"], { isolate: true }),
+  runner: Smithers.testSuite(["./test"], { isolate: true }),
   srcs: [
     ...sources,
     Smithers.file("bunfig.toml"),

@@ -24,6 +24,14 @@ const browserProbes = new Map([
   ["//packages/smithers/ui/terminal-frame:browserProbes", "terminal-frame.browser.test.ts"]
 ])
 
+test("terminal unit tests select their directory rather than matching browser test filenames", async () => {
+  const index = await packageIndex()
+  const declaration = index.targets().find((target) => target.label === "//packages/smithers/ui/terminal-frame:unitTests")
+  assert.ok(declaration)
+  assert.deepEqual(runnerFor(Target.metadata(declaration.target), index.workspace, "test"),
+    ["bun", "test", "--isolate", "./test"])
+})
+
 test("jobs selecting UI browser probes install the packages' pinned Chromium", () => {
   const jobs = { ...workflowJobs(".github/workflows/ci.yml"), release: workflowJobs(".github/workflows/release.yml").publish }
   for (const job of ["test", "packages", "release"]) {

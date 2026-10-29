@@ -32,7 +32,7 @@
   ],
   "scripts": {
     "check": "vibelang -p tsconfig.json --noEmit",
-    "test": "bun test --isolate test",
+    "test": "bun test --isolate ./test",
     "generate": "node scripts/build-runtime.mjs"
   },
   "dependencies": {
