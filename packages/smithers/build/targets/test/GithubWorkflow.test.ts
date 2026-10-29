@@ -658,16 +658,11 @@ describe("parseWorkflow", () => {
       "scripts",
       "docs",
       "apps-e2e",
-      "apps-browser-1",
-      "apps-browser-2",
-      "apps-browser-3",
       "rust",
       "rust-ffi",
       "wasm-repro",
       "browser",
-      "packages",
-      "go-backend",
-      "go-backend-access"
+      "packages"
     ])
     // The platform matrix parses as ONE job whose runner is the matrix
     // expression, not as three copy-pasted jobs.
