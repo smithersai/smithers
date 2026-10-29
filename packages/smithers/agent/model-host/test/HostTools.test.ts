@@ -263,7 +263,6 @@ const FILES_LINES = [
 const HOST_COMMANDS = [
   "agent",
   "agent.edit",
-  "agents",
   "background.dismiss",
   "background.retry",
   "branch",
@@ -1847,6 +1846,7 @@ describe("an install's host runs the catalog commands its grant allows, as the t
   test("a command the host does not run, or whose rule is never, runs nothing and answers unknown-command", async () => {
     for (
       const name of [
+        "agents",
         "approval.approve",
         "members.remove",
         "todo.erase",
