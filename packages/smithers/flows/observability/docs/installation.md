@@ -27,7 +27,8 @@ satisfying a requirement. Install one `effect` at exactly `4.0.5`.
 dependency, the required `@opentelemetry/api@1.9.1` peer, and the logs and
 metrics dependencies support the root `Otel` and `Resource` modules. They
 install with ordinary peer-aware package managers. `@effect/opentelemetry`
-4.0.5 accepts any `effect` in `4.0.5`. The default install includes no HTTP exporters or trace SDK.
+4.0.5 accepts any `effect` in `4.0.5`. The API peer stays below 1.10 to match
+the SDK dependencies. The default install includes no HTTP exporters or trace SDK.
 
 `NodeOtel` selects the optional Node trace SDK and three HTTP exporters:
 

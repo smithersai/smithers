@@ -1,6 +1,15 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import test from "node:test"
+import { satisfies } from "semver"
 import { peerRangesOf } from "./release-peer-ranges.mjs"
+
+test("observability's API peer excludes versions its OpenTelemetry SDK dependencies refuse", () => {
+  const manifest = JSON.parse(readFileSync(new URL("../../../packages/smithers/flows/observability/package.json", import.meta.url), "utf8"))
+  const range = peerRangesOf([manifest]).get("@opentelemetry/api")
+  assert.equal(satisfies("1.9.1", range), true)
+  for (const version of ["1.9.0", "1.10.0", "1.11.0", "2.0.0"]) assert.equal(satisfies(version, range), false, version)
+})
 
 test("release consumers satisfy all peer contracts, including union ranges", () => {
   const peers = peerRangesOf([
