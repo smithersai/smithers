@@ -1311,3 +1311,8 @@ and `unixSockets`. Native agent confinement uses a strict process and IPC
 policy and closes Unix sockets; build tools retain their declared policy. Build
 output files may open a parent directory; agent permission profiles never use
 that build-specific option.
+
+A launcher mounts its named package root so scripts can load sibling modules.
+Module-format-only manifests under `bin/` do not narrow that root. Custom host
+probes can implement `Host.packageDirectory`; omitted, manifest existence is
+used. The search stays bounded and never grants the host home or filesystem root.

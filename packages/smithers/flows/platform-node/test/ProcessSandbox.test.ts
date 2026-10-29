@@ -1600,6 +1600,40 @@ describe("bubblewrap launcher (#3140)", () => {
     expect(tail(wrapped.argv)).toEqual([real, "--version"])
   })
 
+  it.each(["{\"type\":\"module\"}", "{\"name\":\"\"}", "{\"name\":7}", "null", "{"])(
+    "finds the named tool package beyond module metadata %s",
+    (metadata) => {
+      const { base, workspaceRoot, outside } = writeFixture()
+      try {
+        const pkg = NodePath.join(outside, "tool")
+        const program = NodePath.join(pkg, "bin/tool.cjs")
+        NodeFs.mkdirSync(NodePath.dirname(program), { recursive: true })
+        NodeFs.writeFileSync(NodePath.join(pkg, "package.json"), "{\"name\":\"tool\"}")
+        NodeFs.writeFileSync(NodePath.join(pkg, "bin/package.json"), metadata)
+        NodeFs.writeFileSync(program, "#!/usr/bin/env node\n", { mode: 0o755 })
+        const facts = ProcessSandbox.host()
+        expect(ProcessSandbox.launcher(program, undefined, [], workspaceRoot, facts)).toEqual({
+          program,
+          reads: [pkg]
+        })
+        // A declared executable or its bin directory does not cover sibling modules.
+        for (const granted of [[program], [NodePath.dirname(program)]]) {
+          expect(ProcessSandbox.launcher(program, undefined, granted, workspaceRoot, facts)).toEqual({
+            program,
+            reads: [pkg]
+          })
+        }
+        expect(ProcessSandbox.launcher(program, undefined, [pkg], workspaceRoot, facts)).toEqual({
+          program,
+          reads: []
+        })
+        expect(facts.packageDirectory!(NodePath.join(outside, "absent"))).toBe(false)
+      } finally {
+        NodeFs.rmSync(base, { recursive: true, force: true })
+      }
+    }
+  )
+
   const bwrap = process.platform === "linux" ? ProcessSandbox.host().executable("bwrap") : undefined
   // Linux only: bubblewrap exists nowhere else, so macOS and Windows skip this and ubuntu CI is its evidence.
   it.skipIf(bwrap === undefined)("runs a confined package-manager script that lives outside every grant", () => {
@@ -1610,6 +1644,7 @@ describe("bubblewrap launcher (#3140)", () => {
       NodeFs.mkdirSync(NodePath.join(pkg, "bin"), { recursive: true })
       NodeFs.mkdirSync(bin, { recursive: true })
       NodeFs.writeFileSync(NodePath.join(pkg, "package.json"), "{\"name\":\"fake-pm\"}")
+      NodeFs.writeFileSync(NodePath.join(pkg, "bin/package.json"), "{\"type\":\"module\"}")
       NodeFs.writeFileSync(NodePath.join(pkg, "lib.cjs"), "module.exports = \"fake-pm-ok\"\n")
       NodeFs.writeFileSync(
         NodePath.join(pkg, "bin/fake-pm.cjs"),

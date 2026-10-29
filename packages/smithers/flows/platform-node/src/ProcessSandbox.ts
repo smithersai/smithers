@@ -118,6 +118,8 @@ export interface Host {
   readonly executable: (name: string) => string | undefined
   /** Whether a host path exists. */
   readonly exists: (path: string) => boolean
+  /** Distinguishes a named package root from a nested module-format scope. */
+  readonly packageDirectory?: ((directory: string) => boolean) | undefined
   /** Whether a host path is a directory. */
   readonly isDirectory: (path: string) => boolean
   /** Tests the entry itself, including dangling links; defaults to the real host. */
@@ -284,6 +286,16 @@ export const host = (env: Readonly<Record<string, string | undefined>> = ambient
       return undefined
     },
     exists: (path) => NodeFs.existsSync(path),
+    packageDirectory: (directory) => {
+      try {
+        const manifest = JSON.parse(NodeFs.readFileSync(NodePath.join(directory, "package.json"), "utf8")) as
+          | { readonly name?: unknown }
+          | null
+        return typeof manifest?.name === "string" && manifest.name.length > 0
+      } catch {
+        return false
+      }
+    },
     isSymbolicLink,
     isDirectory: (path) => {
       try {
@@ -799,8 +811,9 @@ const credentialPaths = (hostFacts: Host): ReadonlyArray<string> => {
  * so a multi-call binary keeps the name it dispatches on, and so is one inside
  * the workspace, whose reads only the declaration may open. Otherwise the run
  * execs the program's real file, and the nearest package directory holding it
- * (its `package.json`, at most three levels up, never the home or the root)
+ * (a named `package.json`, at most three levels up, never the home or the root)
  * is bound read-only, because a script like `pnpm.cjs` loads its siblings.
+ * Module-format-only manifests inside `bin/` do not stop that search.
  * With no package directory only the real file is bound. A name that resolves
  * nowhere is left for `execvp` to report.
  *
@@ -830,23 +843,26 @@ export const launcher = (
     : searchPath.split(":").filter((entry) => pathApi(entry).isAbsolute(entry))
       .map((entry) => hostFacts.executable(pathApi(entry).join(entry, program)))
       .find((candidate) => candidate !== undefined)
-  if (found === undefined || granted.some((parent) => insideRoot(parent, found))) return unchanged
+  if (found === undefined) return unchanged
   const resolved = hostFacts.realpath?.(found) ?? found
   const named = hostFacts.shimTarget?.(resolved)
   const real = named === undefined || hostFacts.executable(named) === undefined
     ? resolved
     : hostFacts.realpath?.(named) ?? named
   if ([found, resolved, real].some((path) => insideRoot(workspaceRoot, path))) return unchanged
-  if (granted.some((parent) => insideRoot(parent, real))) return { program: real, reads: [] }
+  const covered = (path: string) => granted.some((parent) => insideRoot(parent, path))
+  const withinGrant = covered(found) ? unchanged : { program: real, reads: [] }
   let directory = pathApi(real).dirname(real)
   for (let level = 0; level < 3; level++) {
     if (directory === pathApi(directory).dirname(directory) || directory === hostFacts.home) break
-    if (hostFacts.exists(pathApi(directory).join(directory, "package.json"))) {
-      return { program: real, reads: [directory] }
+    if (
+      hostFacts.packageDirectory?.(directory) ?? hostFacts.exists(pathApi(directory).join(directory, "package.json"))
+    ) {
+      return covered(directory) ? withinGrant : { program: real, reads: [directory] }
     }
     directory = pathApi(directory).dirname(directory)
   }
-  return { program: real, reads: [real] }
+  return covered(real) ? withinGrant : { program: real, reads: [real] }
 }
 
 /**
