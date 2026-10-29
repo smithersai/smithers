@@ -11,5 +11,8 @@
     "test:queue": "node test/queue.e2e.mjs",
     "test:code": "node test/code-tools.e2e.mjs",
     "screenshots": "node screenshots.mjs"
+  },
+  "dependencies": {
+    "typescript": "5.9.3"
   }
 }

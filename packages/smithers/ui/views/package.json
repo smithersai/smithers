@@ -76,7 +76,8 @@
     "@smthrs/crypto": "1.0.0-rc.16",
     "@smthrs/flow": "1.0.0-rc.16",
     "@smthrs/harness": "1.0.0-rc.16",
-    "sucrase": "3.35.1"
+    "sucrase": "3.35.1",
+    "quickjs-emscripten-core": "0.32.0"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -98,7 +99,6 @@
     "fast-check": "4.9.0",
     "madge": "8.0.0",
     "miniflare": "5.20261019.0-beta",
-    "quickjs-emscripten-core": "0.32.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "typescript": "5.9.3",

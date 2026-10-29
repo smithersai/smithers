@@ -158,7 +158,9 @@
     "@smthrs/plan": "1.0.0-rc.16",
     "@smthrs/run-store": "1.0.0-rc.16",
     "@smthrs/sandbox": "1.0.0-rc.16",
-    "@smthrs/std": "1.0.0-rc.16"
+    "@smthrs/std": "1.0.0-rc.16",
+    "@smthrs/database": "1.0.0-rc.16",
+    "typescript": "5.9.3"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -175,7 +177,6 @@
     "eslint-plugin-jsdoc": "64.3.4",
     "eslint-plugin-unicorn": "65.0.0",
     "madge": "8.0.0",
-    "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
     "vibelang": "0.0.8",
     "vibelang-vite": "0.0.8",
@@ -185,7 +186,6 @@
     "@smthrs/model": "1.0.0-rc.16",
     "@smthrs/registry": "1.0.0-rc.16",
     "playwright": "1.62.1",
-    "@smthrs/database": "1.0.0-rc.16",
     "@smthrs/observability": "1.0.0-rc.16",
     "@tanstack/browser-db-sqlite-persistence": "0.2.36",
     "@tanstack/db": "0.15.1",

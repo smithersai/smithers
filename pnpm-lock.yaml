@@ -394,7 +394,11 @@ importers:
         specifier: 0.0.8
         version: 0.0.8(patch_hash=48de99cc88ba9dadd2cf1f668553618cafb63a4a362ddf53e26db06ba294b688)
 
-  apps/maintainer-site: {}
+  apps/maintainer-site:
+    dependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
 
   apps/mvp:
     dependencies:
@@ -4802,6 +4806,9 @@ importers:
       '@smthrs/crypto':
         specifier: 1.0.0-rc.16
         version: link:../crypto
+      '@smthrs/database':
+        specifier: 1.0.0-rc.16
+        version: link:../database
       '@smthrs/engine-store':
         specifier: 1.0.0-rc.16
         version: link:../engine-store
@@ -4832,6 +4839,9 @@ importers:
       '@smthrs/std':
         specifier: 1.0.0-rc.16
         version: link:../../agent/std
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
     devDependencies:
       '@effect/language-service':
         specifier: 0.87.2
@@ -4848,9 +4858,6 @@ importers:
       '@smthrs/agent':
         specifier: 1.0.0-rc.16
         version: link:../../agent
-      '@smthrs/database':
-        specifier: 1.0.0-rc.16
-        version: link:../database
       '@smthrs/model':
         specifier: 1.0.0-rc.16
         version: link:../../agent/model
@@ -4905,9 +4912,6 @@ importers:
       playwright:
         specifier: 1.62.1
         version: 1.62.1
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
       typescript-eslint:
         specifier: 8.69.0
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
@@ -6394,6 +6398,9 @@ importers:
       '@smthrs/harness':
         specifier: 1.0.0-rc.16
         version: link:../../agent/harness
+      quickjs-emscripten-core:
+        specifier: 0.32.0
+        version: 0.32.0
       sucrase:
         specifier: 3.35.1
         version: 3.35.1
@@ -6455,9 +6462,6 @@ importers:
       miniflare:
         specifier: 5.20261019.0-beta
         version: 5.20261019.0-beta(@types/node@26.4.1)
-      quickjs-emscripten-core:
-        specifier: 0.32.0
-        version: 0.32.0
       react:
         specifier: 19.2.8
         version: 19.2.8
