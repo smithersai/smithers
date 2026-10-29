@@ -29,7 +29,7 @@ npm install @smthrs/views@next effect@4.0.5
 ```
 
 It imports no Node built-in, so it runs in a browser, a Cloudflare Worker,
-Node and Bun. The realm compiles the QuickJS build the host names through
+Node 22.19 or later and Bun. The realm compiles the QuickJS build the host names through
 `QuickJSVariant` from `@smthrs/harness`.
 
 ## Quickstart

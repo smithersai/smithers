@@ -22,14 +22,19 @@ test("the complete CLI dependency closure declares the supported Node range", ()
   visit("smthrs")
   assert.ok(seen.has("@smthrs/cli"))
   const outside = [...byName.values()].filter(manifest => !seen.has(manifest.name))
-  assert.deepEqual(outside.map(manifest => manifest.name).sort(), ["@smthrs/platform-browser", "@smthrs/testing"])
+  assert.deepEqual(outside.map(manifest => manifest.name).sort(), ["@smthrs/platform-browser", "@smthrs/platform-cloudflare", "@smthrs/testing"])
   for (const manifest of outside) assert.equal(manifest.engines.node, ">=26.4.0", manifest.name)
 })
 
-test("the cell compiler's parser accepts the supported Node floor", () => {
-  const harnessRequire = createRequire(new URL("../../../packages/smithers/agent/harness/package.json", import.meta.url))
-  for (const dependency of ["@babel/parser", "@babel/types"]) {
-    const range = harnessRequire(`${dependency}/package.json`).engines.node
-    assert.ok(satisfies("22.19.0", range), `${dependency} requires node ${range}; recheck the public support range`)
+test("the cell and view compilers' parsers accept the supported Node floor", () => {
+  for (const [path, dependencies] of [
+    ["../../../packages/smithers/agent/harness/package.json", ["@babel/parser", "@babel/types"]],
+    ["../../../packages/smithers/ui/views/package.json", ["@babel/parser", "sucrase"]]
+  ]) {
+    const require = createRequire(new URL(path, import.meta.url))
+    for (const dependency of dependencies) {
+      const range = require(`${dependency}/package.json`).engines.node
+      assert.ok(satisfies("22.19.0", range), `${dependency} requires node ${range}; recheck the public support range`)
+    }
   }
 })
