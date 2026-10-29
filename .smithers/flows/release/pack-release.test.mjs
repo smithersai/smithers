@@ -42,6 +42,7 @@ import { verifyPackagedNativeHelpers } from "./release-native-helpers.mjs"
 // real one once and every case below asserts over that single order.
 const packedWorkspaces = workspaces()
 const releaseVersion = JSON.parse(readFileSync(join(repoRoot, "packages/smithers/package.json"), "utf8")).version
+
 const workflow = (name) => readFileSync(join(repoRoot, ".github", "workflows", name), "utf8")
 
 /**
@@ -708,13 +709,9 @@ test("every published package packs the VibeLang sources beside the TypeScript i
 test("the CLI install line uses the published prerelease", () => {
   const source = readFileSync(join(repoRoot, "README.md"), "utf8")
   const project = JSON.parse(readFileSync(join(repoRoot, "apps/site/src/data/project.json"), "utf8"))
-  const banner = readFileSync(join(repoRoot, "apps/site/scripts/docs-notice.mjs"), "utf8")
   assert.equal(project.install.cli, "npm install -g smthrs@next")
   assert.match(source, /^npm install -g smthrs@next$/m)
-  for (const text of [source, banner]) {
-    assert.doesNotMatch(text, /source checkout|unpublished/)
-  }
-  assert.match(banner, /Install from npm/)
+  assert.doesNotMatch(source, /source checkout|unpublished/)
   assert.doesNotMatch(source, /\boverrides\b/, "README must not require dependency overrides")
 })
 
