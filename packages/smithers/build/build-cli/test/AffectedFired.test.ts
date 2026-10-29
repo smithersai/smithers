@@ -140,7 +140,7 @@ export const Package = S.Package({ targets: { test: S.Vitest({
 })
 
 /** A known-path diff selects part of a wildcard and reaches an exclusive test. */
-const partialExclusiveWorkspace = async () => {
+const partialExclusiveWorkspace = async (modules = false) => {
   const root = await workspace("export const Package = S.Package({ targets: {} })")
   await write(root, ".gitignore", "node_modules/\n.flows/\n")
   await write(root, "pnpm-workspace.yaml", "packages:\n  - packages/dependency\nverifyDepsBeforeRun: false\n")
@@ -186,6 +186,7 @@ export const Package = S.Package({ targets: {
   )
   await write(root, "packages/affected/src/a.txt", "before\n")
   await write(root, "packages/unaffected/src/a.txt", "unchanged\n")
+  if (modules) await installTestModules(root)
   const git = (...args: ReadonlyArray<string>) => ChildProcess.execFileSync("git", ["-C", root, ...args])
   git("init", "-q")
   git("add", "-A")
@@ -194,28 +195,21 @@ export const Package = S.Package({ targets: {
   return root
 }
 
-const linkTestModules = async (root: string) => {
-  // The runner lives in the package tree; its pnpm dependency links reach the root store.
-  await Fs.symlink(
-    Path.resolve(import.meta.dirname, "../../../../../node_modules"),
-    Path.join(root, "node_modules"),
-    "dir"
+const installTestModules = async (root: string) => {
+  // Use a real install inside the fixture. A link to this repository's store
+  // would ask a confined target to read outside its declared workspace.
+  const vitest = JSON.parse(await Fs.readFile(new URL("../node_modules/vitest/package.json", import.meta.url), "utf8"))
+  const manifest = JSON.parse(await Fs.readFile(Path.join(root, "package.json"), "utf8"))
+  await write(root, "package.json", JSON.stringify({ ...manifest, devDependencies: { vitest: vitest.version } }))
+  const installed = ChildProcess.spawnSync(
+    "pnpm",
+    ["install", "--prefer-offline", "--ignore-scripts", "--no-frozen-lockfile"],
+    {
+      cwd: root,
+      encoding: "utf8"
+    }
   )
-  // The fixture package needs only a `vitest` bin. pnpm's shim reaches its
-  // target by a path relative to the shim's own directory, and the fixture
-  // package sits two levels shallower than this one, so this package's shim,
-  // linked in, climbs out of the workspace (`/node_modules/.pnpm/...`). The
-  // fixture's bin runs the shim's recorded target resolved into the root
-  // store, which the linked root `node_modules` already exposes. pnpm records
-  // the target through this package's own `node_modules/vitest` link, a
-  // directory the fixture's sandboxed run cannot read, so resolve it first.
-  const shim = await Fs.readFile(Path.resolve(import.meta.dirname, "../node_modules/.bin/vitest"), "utf8")
-  const recorded = /^# cmd-shim-target=(.+)$/m.exec(shim)?.[1]
-  expect(recorded, "pnpm's vitest shim records its target").toBeDefined()
-  const target = await Fs.realpath(recorded!)
-  const bin = Path.join(root, "packages/dependency/node_modules/.bin/vitest")
-  await Fs.mkdir(Path.dirname(bin), { recursive: true })
-  await Fs.writeFile(bin, `#!/bin/sh\nexec node ${JSON.stringify(target)} "$@"\n`, { mode: 0o755 })
+  expect(installed.status, installed.stdout + installed.stderr).toBe(0)
 }
 
 it.each(["test", "ci"])("affected %s preserves a partial wildcard's exclusive dependency refusal", async (verb) => {
@@ -297,9 +291,8 @@ it("affected keeps named-root authorization scoped to the patterns that selected
 })
 
 it("affected does not report an exclusive dependency that ran through a named root as omitted", async () => {
-  const root = await partialExclusiveWorkspace()
+  const root = await partialExclusiveWorkspace(true)
   try {
-    await linkTestModules(root)
     const result = await serve(root, [
       "affected",
       "test",
@@ -321,9 +314,8 @@ it("affected does not report an exclusive dependency that ran through a named ro
 })
 
 it.each(["failed", "skipped"])("affected reports an exclusive dependency's %s execution accurately", async (status) => {
-  const root = await partialExclusiveWorkspace()
+  const root = await partialExclusiveWorkspace(true)
   try {
-    await linkTestModules(root)
     if (status === "failed") {
       await write(
         root,
