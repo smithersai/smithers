@@ -112,7 +112,7 @@ export const home = S.Factory.Home({
   blocks: [
     S.Home.Prompt({ title: "Ask about Smithers", placeholder: "Ask Smithers…" }),
     S.Home.Links({ links: [
-      { label: "Install Smithers", url: "https://smithers.sh/" },
+      { label: "Install Smithers", url: "https://smithers.sh/docs/installation/" },
       { label: "Docs", url: "https://smithers.sh/docs/" },
       { label: "Report a bug", url: "https://smithers.sh/bug" }
     ] }),
