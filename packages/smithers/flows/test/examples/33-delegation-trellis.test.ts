@@ -28,9 +28,10 @@ it.effect("runs the authored plan durably, one trampoline round per plan", () =>
     // Round two's graph came from the plan round one authored.
     expect(summary.leafNodes).toBe(3)
     expect(summary.authored).toBe(1)
-    // Every leaf dispatched exactly once, carrying its own plan path.
-    expect(summary.dispatched).toEqual([
-      "outline@root.sequence[0]",
+    // The sequence starts with the outline. Its two parallel leaves may
+    // dispatch in either order, each exactly once with its own plan path.
+    expect(summary.dispatched[0]).toBe("outline@root.sequence[0]")
+    expect(summary.dispatched.slice(1).sort()).toEqual([
       "draft@root.sequence[1].parallel[0]",
       "review@root.sequence[1].parallel[1]"
     ])
