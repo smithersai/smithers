@@ -101,7 +101,7 @@
     "docs/"
   ],
   "scripts": {
-    "lint": "eslint src examples --max-warnings=0 && dprint check",
+    "lint": "vibelang -p tsconfig.test.json --noEmit && eslint \"src/**/*.ts\" \"examples/**/*.ts\" --no-error-on-unmatched-pattern --max-warnings=0 && dprint check",
     "format": "dprint fmt",
     "build": "node scripts/build.mjs",
     "check": "vibelang -p tsconfig.json --noEmit && vibelang -p tsconfig.test.json --noEmit",
