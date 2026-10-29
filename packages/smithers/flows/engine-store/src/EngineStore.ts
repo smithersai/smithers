@@ -1039,7 +1039,7 @@ const persistAction = (
  * a writer that lost the run self-interrupts rather than narrating a
  * walk it no longer owns.
  */
-const recordNode = (store: Store, input: FlowRuntime.NodeRecord) => {
+const recordNode = (store: Store, input: FlowRuntime.NodeRecord, flush: boolean) => {
   const record = observation(store, input)
   return Effect.flatMap(FlowRuntime.FlowInstance, (parent) => {
     if (
@@ -1057,7 +1057,7 @@ const recordNode = (store: Store, input: FlowRuntime.NodeRecord) => {
           ? guardRetryPlan(store, parent, record, nodeEntry(store, parent, record, provenance).payload)
           : Effect.void
       ),
-      Effect.flatMap((provenance) => emitNode(store, parent, record, provenance))
+      Effect.flatMap((provenance) => emitNode(store, parent, record, provenance, flush))
     )
   })
 }
@@ -1072,14 +1072,19 @@ const nodeEntry = (store: Store, parent: Instance, record: FlowRuntime.NodeRecor
   }, record)
 
 /** Writes one node record, remembering a plan it records and resolving a plan its slot refuses. */
-const emitNode = (store: Store, parent: Instance, record: FlowRuntime.NodeRecord, provenance: PlanProvenance) => {
+const emitNode = (
+  store: Store,
+  parent: Instance,
+  record: FlowRuntime.NodeRecord,
+  provenance: PlanProvenance,
+  flush: boolean
+) => {
   const entry = nodeEntry(store, parent, record, provenance)
   // Every node record is built as an object, so its payload is one.
   const payload = entry.payload as Readonly<Record<string, unknown>>
-  // A node's scheduling and settlement commit with the run's next write
-  // (`Journal.emitDeferred`): every attempt opens in a write of its run and
-  // every drive ends in one, so they are durable before anything acts on
-  // them, and a drive writes a handful of transactions, not one per record.
+  // Interpreter records commit with the run's next write. A caller reporting
+  // progress from inside a long-running action can explicitly flush now;
+  // its enclosing action may leave no later write to publish that progress.
   // A plan's pages commit at once: `findRecordedPlan` reads them back, and
   // a conflicting plan is rebuilt below.
   //
@@ -1088,7 +1093,7 @@ const emitNode = (store: Store, parent: Instance, record: FlowRuntime.NodeRecord
   // the journal holds byte for byte is not re-emitted. It narrates nothing
   // new, so it needs no fenced write; the walk's next step that runs is
   // fenced as ever.
-  const deferred = record._tag === "NodeScheduled" || record._tag === "NodeSettled"
+  const deferred = !flush && (record._tag === "NodeScheduled" || record._tag === "NodeSettled")
     ? store.journal.emitDeferred
     : undefined
   const write = deferred === undefined
@@ -1315,7 +1320,7 @@ const adapter = (store: Store): FlowEngine.Encoded => ({
           }, record))
     )
   },
-  recordNode: (input) => recordNode(store, input),
+  recordNode: (input, options) => recordNode(store, input, options?.flush === true),
   actionReplayKey: (derive, legacy) => actionReplayKey(store, derive, legacy),
   // The durable schedule-to-close origin (issue #45): the first
   // attempt's persisted `startedAtMs` for the action key. It lives in

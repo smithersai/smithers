@@ -121,3 +121,9 @@ attributed by outcome, so a test can assert that a dispatch settled as a
   composition these layers substitute into.
 
 Test filesystem classification with `StepBoundary.layer` over an in-memory `FileSystem` and `ArtifactStore`. `layerTest` returns supplied settlement evidence or failure verbatim; it does not classify changed paths, missing outputs, or surviving removals.
+
+`recordNode(record, { flush: true })` persists explicit progress before
+returning, even while its parent step keeps running. Ordinary interpreter
+records still batch with the run's next write.
+`patterns/test/BurndownJournal.test.ts` holds a sibling open and reads a completed
+item's landing and release from the real journal before ending the round.

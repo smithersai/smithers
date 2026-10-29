@@ -346,9 +346,16 @@ export class FlowRuntime extends Context.Service<
      * `digest`, never by its declaration sites or page layout: a plan with the
      * same digest keeps the recorded pages, and a different digest fails with
      * `plan_changed`.
+     *
+     * `flush` makes a progress record durable before returning. Use it when
+     * an enclosing action may keep running without another durable write.
+     * Ordinary interpreter records may batch with the run's next write.
      */
     readonly recordNode?:
-      | ((record: NodeRecord.NodeRecord) => Effect.Effect<void, InterpreterError, FlowInstance>)
+      | ((
+        record: NodeRecord.NodeRecord,
+        options?: { readonly flush?: boolean }
+      ) => Effect.Effect<void, InterpreterError, FlowInstance>)
       | undefined
 
     /**

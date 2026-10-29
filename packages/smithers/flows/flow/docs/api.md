@@ -488,6 +488,12 @@ A failed span exports its failure's tag and, for a tagged failure, a lowercase t
 
 ## `FlowRuntime`
 
+A host that reports progress from a long-running action calls
+`runtime.recordNode(record, { flush: true })` so observers can read that record
+before the action returns. Ordinary interpreter records can batch with the
+run's next durable write. The option changes publication timing, never record
+identity or ownership fencing.
+
 `FlowRuntime` is the service tag the authoring APIs are written against: registration, execution, polling, safe and unsafe interruption, resume, action execution, deferred lookup and completion, and clock scheduling. This package declares the port and depends on nothing that implements it, so the dependency direction is `@smthrs/flow` then `@smthrs/engine` then the durable stores, with no cycle and no type-only escape hatch back.
 
 | Export                  | Purpose                                                                                                                                                                                                     |

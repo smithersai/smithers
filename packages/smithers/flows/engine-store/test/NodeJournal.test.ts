@@ -259,7 +259,7 @@ const scheduled: FlowRuntimeTypes.NodeRecord = {
  * run's next write, or, from a journal without that channel (`deferred`
  * false), at once.
  */
-const recordAgainst = (failure: Journal.JournalError, deferred = true) =>
+const recordAgainst = (failure: Journal.JournalError, deferred = true, flush = false) =>
   runPromise(
     Effect.scoped(Effect.gen(function*() {
       const real = yield* Journal.Journal
@@ -277,7 +277,7 @@ const recordAgainst = (failure: Journal.JournalError, deferred = true) =>
         isAlive: () => Effect.succeed(false)
       }).pipe(Effect.provideService(Journal.Journal, journal))
       return yield* Effect.exit(
-        engine.recordNode!(scheduled).pipe(
+        engine.recordNode!(scheduled, { flush }).pipe(
           Effect.provideService(
             FlowRuntime.FlowInstance,
             FlowEngine.makeInstance(Empty as unknown as Flow.Any, "refusal-run")
@@ -372,6 +372,15 @@ describe("a node record the journal refuses", () => {
     const lost = await recordAgainst(new Journal.JournalError({ code: "fence_lost", message: "fence lost" }), false)
     expect(Exit.isFailure(lost) && Cause.hasInterruptsOnly(lost.cause)).toBe(true)
     const failed = await recordAgainst(new Journal.JournalError({ code: "read_failed", message: "unavailable" }), false)
+    expect(Exit.isFailure(failed) && Cause.hasDies(failed.cause)).toBe(true)
+  })
+
+  it("propagates an immediate progress write's failure instead of deferring it", async () => {
+    const failed = await recordAgainst(
+      new Journal.JournalError({ code: "read_failed", message: "unavailable" }),
+      true,
+      true
+    )
     expect(Exit.isFailure(failed) && Cause.hasDies(failed.cause)).toBe(true)
   })
 })

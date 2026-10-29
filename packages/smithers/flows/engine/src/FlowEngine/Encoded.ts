@@ -24,7 +24,7 @@
  * @since 0.1.0
  */
 
-import type { Action, DurableClock, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import type { Action, DurableClock, DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
 import type * as Crypto from "effect/Crypto"
 import type * as Effect from "effect/Effect"
 import type * as Exit from "effect/Exit"
@@ -350,11 +350,9 @@ export interface Encoded {
    * the record by the `sourceId` the record carries rather than minting its
    * own: a resumed walk re-derives the same ids, and that is what makes the
    * journal hold one row per node across a resume instead of one per
-   * observation.
+   * observation. The typed port's optional flush setting is forwarded too.
    */
-  readonly recordNode?:
-    | ((record: FlowRuntime.NodeRecord) => Effect.Effect<void, Interpreter.InterpreterError, FlowRuntime.FlowInstance>)
-    | undefined
+  readonly recordNode?: FlowRuntime.FlowRuntime["Service"]["recordNode"]
   /** Deterministic UTF-8 upper bound including the store's journal envelope. */
   readonly nodeRecordBytes?:
     | ((record: FlowRuntime.NodeRecord) => Effect.Effect<number, never, FlowRuntime.FlowInstance>)

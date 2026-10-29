@@ -130,6 +130,49 @@ const nodeRows = (runId: string) =>
       }))
   })
 
+it("flushes explicit progress while its action runs and batches ordinary node records", async () => {
+  const Probe = Action.make("node-journal/progress", { payload: {}, success: Schema.Array(Schema.String) })
+  const Progress = Flow.make("node-journal/progress-flow", {
+    payload: {},
+    success: Schema.Array(Schema.String),
+    body: () => Probe.call({})
+  })
+  const observed = await runPromise(
+    Effect.scoped(Effect.gen(function*() {
+      const engine = yield* EngineStore.make({ owner: { hostId: "progress" }, journalSource: "progress" })
+      const implementation = Probe.toLayer(() =>
+        Effect.gen(function*() {
+          const runtime = yield* FlowRuntime.FlowRuntime
+          const record = (nodeId: string): FlowRuntime.NodeRecord => ({
+            _tag: "NodeScheduled",
+            sourceId: `manual/${nodeId}`,
+            nodeId,
+            kind: "ActionCall",
+            attempt: 1
+          })
+          yield* runtime.recordNode!(record("visible"), { flush: true })
+          yield* runtime.recordNode!(record("buffered"))
+          return (yield* nodeRows("progress-run")).map((row) => String(row.payload["nodeId"]))
+        }).pipe(Effect.orDie)
+      )
+      const layer = Layer.mergeAll(implementation, Interpreter.layer(Progress)).pipe(
+        Layer.provideMerge(Action.layerImplementations),
+        Layer.provideMerge(Layer.succeed(FlowRuntime.FlowRuntime, engine))
+      )
+      const during = yield* Progress.execute({}, { executionId: "progress-run" }).pipe(Effect.provide(layer))
+      return { during, after: yield* nodeRows("progress-run") }
+    })).pipe(
+      Effect.provide(jj),
+      Effect.provide(StepBoundary.layerTest()),
+      Effect.provide(TestStores.layerAt(":memory:"))
+    )
+  )
+  expect(observed.during).toContain("visible")
+  expect(observed.during).not.toContain("buffered")
+  expect(observed.after.filter((row) => row.payload["nodeId"] === "visible")).toHaveLength(1)
+  expect(observed.after.filter((row) => row.payload["nodeId"] === "buffered")).toHaveLength(1)
+})
+
 it("journals the graph and one scheduled/settled pair per node of a real run", async () => {
   const chainRoot = await mkdtemp(join(tmpdir(), "smithers-node-journal-chain-"))
   try {

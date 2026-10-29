@@ -100,9 +100,10 @@ describe("FlowEngine.Encoded seam", () => {
     // leave the property ABSENT rather than present and inert.
     const silent = scriptedEngine({})
     expect("recordNode" in silent).toBe(false)
-    const recorded: Array<string> = []
+    const recorded: Array<{ readonly sourceId: string; readonly flush: boolean | undefined }> = []
     const recording = scriptedEngine({
-      recordNode: (record) => Effect.sync(() => recorded.push(record.sourceId))
+      recordNode: (record, options) =>
+        Effect.sync(() => recorded.push({ sourceId: record.sourceId, flush: options?.flush }))
     })
     Effect.runSync(
       recording.recordNode!({
@@ -113,6 +114,18 @@ describe("FlowEngine.Encoded seam", () => {
         attempt: 1
       }) as Effect.Effect<void>
     )
-    expect(recorded).toEqual(["node/read/1"])
+    Effect.runSync(
+      recording.recordNode!({
+        _tag: "NodeScheduled",
+        sourceId: "node/progress/1",
+        nodeId: "progress",
+        kind: "ActionCall",
+        attempt: 1
+      }, { flush: true }) as Effect.Effect<void>
+    )
+    expect(recorded).toEqual([
+      { sourceId: "node/read/1", flush: undefined },
+      { sourceId: "node/progress/1", flush: true }
+    ])
   })
 })

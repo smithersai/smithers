@@ -833,7 +833,11 @@ const journaled = <R>(
   const record = (make: () => FlowRuntime.NodeRecord) =>
     engine.runtime.recordNode === undefined
       ? Effect.void
-      : Effect.provideService(engine.runtime.recordNode(make()), FlowRuntime.FlowInstance, engine.instance).pipe(
+      : Effect.provideService(
+        engine.runtime.recordNode(make(), { flush: true }),
+        FlowRuntime.FlowInstance,
+        engine.instance
+      ).pipe(
         // A runtime that refuses the record (a changed recorded plan, #3906) stops the round.
         Effect.mapError((error) => new Stop({ message: detailOf(error) }))
       )
