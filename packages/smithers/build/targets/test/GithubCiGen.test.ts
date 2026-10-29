@@ -1971,7 +1971,7 @@ describe("system packages", () => {
 describe("main-pinned Ubuntu setup", () => {
   const revision = "0123456789abcdef0123456789abcdef01234567"
   it("dispatches the fixed action before checkout and every branch dependency", () => {
-    const job = { ...goldenAttrs.jobs[0]!, runsOn: "ubuntu-latest", matrix: undefined, trustedSetupRevision: revision }
+    const job = { ...goldenAttrs.jobs[0]!, runsOn: "ubuntu-24.04", matrix: undefined, trustedSetupRevision: revision }
     const steps = toolchainSteps(goldenAttrs, job)
     expect(steps[0]).toEqual({
       name: "Trusted Ubuntu setup",
@@ -1984,10 +1984,10 @@ describe("main-pinned Ubuntu setup", () => {
   it("refuses moving refs, injected argv and unsupported runner images", () => {
     for (const pin of ["main", "", "a".repeat(39), `${revision}; sudo true`, "A".repeat(40)]) {
       expect(() =>
-        toolchainSteps(goldenAttrs, { ...goldenAttrs.jobs[0]!, runsOn: "ubuntu-latest", trustedSetupRevision: pin })
+        toolchainSteps(goldenAttrs, { ...goldenAttrs.jobs[0]!, runsOn: "ubuntu-24.04", trustedSetupRevision: pin })
       ).toThrow(/trusted setup/)
     }
-    for (const runner of ["self-hosted", "macos-latest", "ubuntu-22.04"]) {
+    for (const runner of ["self-hosted", "macos-latest", "ubuntu-22.04", "ubuntu-latest", "ubuntu-26.04"]) {
       expect(() =>
         toolchainSteps(goldenAttrs, { ...goldenAttrs.jobs[0]!, runsOn: runner, trustedSetupRevision: revision })
       ).toThrow(/trusted setup/)
@@ -1995,8 +1995,8 @@ describe("main-pinned Ubuntu setup", () => {
     expect(() =>
       toolchainSteps(goldenAttrs, {
         ...goldenAttrs.jobs[0]!,
-        runsOn: "ubuntu-latest",
-        matrix: [{ os: "ubuntu-latest", advisory: false }],
+        runsOn: "ubuntu-24.04",
+        matrix: [{ os: "ubuntu-24.04", advisory: false }],
         trustedSetupRevision: revision
       })
     ).toThrow(/trusted setup/)
@@ -2007,7 +2007,7 @@ describe("trusted reusable drift boundary", () => {
   const revision = "0123456789abcdef0123456789abcdef01234567"
   const drift: Job = {
     id: "drift",
-    runsOn: "ubuntu-latest",
+    runsOn: "ubuntu-24.04",
     toolchain: CiToolchain.Needs({ install: true }),
     steps: [{ verb: Verb.Lint, pattern: "//:targetIndex" }]
   }

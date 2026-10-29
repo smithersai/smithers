@@ -9,7 +9,7 @@ permissions:
 jobs:
   "drift":
     name: "Per-commit drift"
-    runs-on: "ubuntu-latest"
+    runs-on: "ubuntu-24.04"
     timeout-minutes: 20
     steps:
       - name: "Trusted Ubuntu setup"

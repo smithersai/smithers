@@ -19,7 +19,7 @@ jobs:
   setup:
     name: Root setup input validation
     if: ${{ github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Main-pinned setup campaign

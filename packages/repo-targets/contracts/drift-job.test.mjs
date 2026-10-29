@@ -27,6 +27,14 @@ const gateCommands = [
   "pnpm exec smthrs lint '//:ci' --known-red '.github/ci-known-red.json' --verbose",
 ]
 
+test('trusted setup workflows select the approved Ubuntu image explicitly', async () => {
+  const { default: YAML } = await import('yaml')
+  for (const [file, job] of [['trusted-drift.yml', 'drift'], ['trusted-setup-validation.yml', 'setup']]) {
+    const workflow = YAML.parse(await readFile(new URL(`../../../.github/workflows/${file}`, import.meta.url), 'utf8'))
+    assert.equal(workflow.jobs[job]['runs-on'], 'ubuntu-24.04', `${file} must not follow ubuntu-latest to Ubuntu 26`)
+  }
+})
+
 test('retired Plue main mirror has no workflow, lint input or credential reference', async () => {
   const directory = new URL('../../../.github/workflows/', import.meta.url)
   assert.ok(!(await readdir(directory)).includes('mirror-sync.yml'), 'SCOPE-3 retired the Plue deployment')
@@ -661,7 +669,7 @@ test('trusted drift and disposable setup campaign are main-pinned before branch 
   assert.deepEqual(trusted.on, { workflow_call: null })
   assert.equal(trusted.concurrency['cancel-in-progress'], false)
   assert.equal(trusted.concurrency.group, 'trusted-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ github.sha }}')
-  assert.equal(trusted.jobs.drift['runs-on'], 'ubuntu-latest')
+  assert.equal(trusted.jobs.drift['runs-on'], 'ubuntu-24.04')
   assert.equal(trusted.jobs.drift.steps[0].uses, 'smithersai/smithers/.github/actions/trusted-ci-setup@c4ece3f812c7720ac622c11582d5ef2c085d6a2c')
   assert.equal(trusted.jobs.drift.steps[1].uses, 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262')
   assert.deepEqual(trusted.jobs.drift.steps[1].with, { ref: '${{ github.event.pull_request.head.sha || github.sha }}', 'persist-credentials': 'false' })
@@ -680,7 +688,7 @@ test('trusted drift and disposable setup campaign are main-pinned before branch 
   })
   assert.deepEqual(campaign.permissions, { contents: 'read' })
   assert.equal(campaign.jobs.setup.if, "${{ github.ref == 'refs/heads/main' }}")
-  assert.equal(campaign.jobs.setup['runs-on'], 'ubuntu-latest')
+  assert.equal(campaign.jobs.setup['runs-on'], 'ubuntu-24.04')
   assert.equal(campaign.jobs.setup.steps[0].uses, 'smithersai/smithers/.github/actions/trusted-ci-setup-campaign@82d38ca5be0fddd2fcce837b903b1a2cd26de2a5')
   assert.equal(campaign.jobs.setup.steps.length, 2, 'campaign runs before checkout or dependency actions')
   assert.equal(campaign.jobs.setup.steps[1].uses, 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02')

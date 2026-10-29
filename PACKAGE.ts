@@ -348,8 +348,10 @@ const nativeFilesystem = [{
 const driftJob = {
   id: "drift",
   name: "Per-commit drift",
-  runsOn: ubuntu,
-  // A clean run takes 7-10 minutes on ubuntu-latest; a 10-minute cap
+  // The trusted action verifies Ubuntu 24 executable inventories and keyring
+  // bytes. ubuntu-latest served Ubuntu 26 in run 40929999249.
+  runsOn: "ubuntu-24.04",
+  // A clean run takes 7-10 minutes; a 10-minute cap
   // cancelled runs before //:driftCi and //:ci, leaving a SHA with no verdict.
   timeoutMinutes: 20,
   toolchain: Smithers.CiToolchain.Needs({ runtimes: [node, bun] }),

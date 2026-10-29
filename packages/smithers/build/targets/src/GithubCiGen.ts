@@ -888,11 +888,11 @@ export const toolchainSteps = (attrs: Attrs, job: Job): ReadonlyArray<RenderedSt
   const steps: Array<RenderedStep> = []
   if (job.trustedSetupRevision !== undefined) {
     if (
-      !/^[a-f0-9]{40}$/.test(job.trustedSetupRevision) || job.runsOn !== "ubuntu-latest" || job.matrix !== undefined
+      !/^[a-f0-9]{40}$/.test(job.trustedSetupRevision) || job.runsOn !== "ubuntu-24.04" || job.matrix !== undefined
     ) {
       throw new TrustedSetupRefused({
         code: "setup_unpinned",
-        message: "GithubCiGen: trusted setup requires a main commit SHA and ubuntu-latest"
+        message: "GithubCiGen: trusted setup requires a main commit SHA and ubuntu-24.04"
       })
     }
     steps.push({

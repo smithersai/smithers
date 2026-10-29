@@ -591,6 +591,12 @@ The last setup step renders `id: setup`, and every target step renders
 does not skip the independent gates after it, a failed setup step skips them
 all, and the job still fails.
 
+Trusted setup requires a full main commit SHA, a call-only workflow and the
+explicit `ubuntu-24.04` runner. A moving `ubuntu-latest` label is refused: the
+action verifies Ubuntu 24's root-owned executable inventories and archive
+keyring bytes before privilege dispatch. Image selection does not activate
+the separate security-receipt gate.
+
 `Smithers.CiToolchain.Artifacts({ artifact, sources })` collects and uploads
 files after a generated job's targets run, including after failure. Each source
 has `from`, optional `as` (the destination within the artifact), and optional
