@@ -205,3 +205,7 @@ Everything here bundles for workerd: no module imports a `node:` built-in or a
 Cloudflare module, and the tests run under Node with in-memory stand-ins for
 Durable Object storage, a container and a WebSocket. The terminal's suite also
 runs a real container through Miniflare and Docker when Docker is present.
+The suite provisions its digest-pinned egress sidecar before startup; workerd
+requires that image locally and never pulls it. Startup diagnostics retain
+native lifecycle errors and report the failed stage, running state and error
+type without command arguments, output or the forge credential.

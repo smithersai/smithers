@@ -47,6 +47,7 @@ interface RawFetcher {
 interface RawContainer {
   readonly running: boolean
   readonly images: Record<string, string>
+  monitor(): Promise<void>
   start(options: { readonly image: string; readonly enableInternet: boolean }): void
   exec(cmd: Array<string>, options?: Record<string, unknown>): Promise<RawProcess>
   setInactivityTimeout(durationMs: number): Promise<void>
@@ -160,6 +161,7 @@ export class Sandbox {
   readonly state: State
   readonly env: Env
   readonly reports: Array<ContainerTerminal.Report> = []
+  startupFailed = false
   waiters: Array<() => void> = []
 
   constructor(state: State, env: Env) {
@@ -179,6 +181,10 @@ export class Sandbox {
             intercepts: [{ host: "forge.smithers.internal", fetcher }]
           })
         )
+        this.startupFailed = false
+        void this.state.container.monitor().catch(() => {
+          this.startupFailed = true
+        })
         return Exit.isSuccess(exit)
           ? Response.json({ outcome: exit.value })
           : Response.json({ error: String(exit.cause) }, { status: 500 })
@@ -219,13 +225,27 @@ export class Sandbox {
       }
       case "/exec": {
         const { argv, user } = (await request.json()) as { readonly argv: Array<string>; readonly user: string }
-        const process = await this.state.container.exec(argv, { user })
-        const output = await process.output()
-        return Response.json({
-          exitCode: output.exitCode,
-          stdout: decoder.decode(output.stdout),
-          stderr: decoder.decode(output.stderr)
-        })
+        let stage = "spawn"
+        try {
+          const process = await this.state.container.exec(argv, { user })
+          stage = "output"
+          const output = await process.output()
+          return Response.json({
+            exitCode: output.exitCode,
+            stdout: decoder.decode(output.stdout),
+            stderr: decoder.decode(output.stderr)
+          })
+        } catch (error) {
+          const diagnostic = {
+            stage,
+            startupFailed: this.startupFailed,
+            imageAvailable: this.state.container.images.sandbox !== undefined,
+            running: this.state.container.running,
+            errorType: error instanceof Error ? error.name : typeof error
+          }
+          console.error("container.exec.failed", diagnostic)
+          return Response.json(diagnostic, { status: 500 })
+        }
       }
       default: {
         const count = Number(param("count"))

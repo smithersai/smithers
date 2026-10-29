@@ -17,7 +17,7 @@
  */
 import { TerminalProtocol } from "@smthrs/sandbox"
 import { build } from "esbuild"
-import { Miniflare, type WebSocket } from "miniflare"
+import { Log, LogLevel, Miniflare, type WebSocket } from "miniflare"
 import { execFileSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { fileURLToPath } from "node:url"
@@ -27,6 +27,9 @@ import type { ContainerTerminal } from "../src/index.ts"
 const entry = fileURLToPath(new URL("./workerd/terminal-worker.ts", import.meta.url))
 const context = fileURLToPath(new URL("../../../../../apps/mvp/infra/sandbox", import.meta.url))
 const image = "smithers-branch-sandbox:test"
+/** The egress image pinned by Miniflare 5.20261019.0-beta; workerd never pulls it. */
+const egressImage =
+  "cloudflare/proxy-everything:3cb1195@sha256:0ef6716c52430096900b150d84a3302057d6cd2319dae7987128c85d0733e3c8"
 const worker = `terminal-test-${process.pid}`
 /** The forge credential: it lives in the Worker and the intercept's props, never in the box. */
 const token = `SENTINEL-forge-${randomUUID()}`
@@ -58,8 +61,9 @@ const call = async (path: string, init?: RequestInit) => {
 
 const exec = async (argv: ReadonlyArray<string>, user = "1000:2000") => {
   const response = await call("/exec", { method: "POST", body: JSON.stringify({ argv, user }) })
-  expect(response.status).toBe(200)
-  return (await response.json()) as { readonly exitCode: number; readonly stdout: string; readonly stderr: string }
+  const output = await response.json()
+  expect(response.status, response.status === 200 ? undefined : JSON.stringify(output)).toBe(200)
+  return output as { readonly exitCode: number; readonly stdout: string; readonly stderr: string }
 }
 
 /** One viewer's socket and everything it has received. */
@@ -173,6 +177,11 @@ describe.skipIf(!("socketPath" in docker))(`ContainerTerminal in workerd with a 
   const receipts: Record<string, number> = {}
 
   beforeAll(async () => {
+    try {
+      execFileSync("docker", ["image", "inspect", egressImage], { stdio: "ignore" })
+    } catch {
+      execFileSync("docker", ["pull", egressImage], { stdio: "ignore" })
+    }
     const before = (() => {
       try {
         return execFileSync("docker", ["image", "inspect", "--format", "{{.Id}}", image], { encoding: "utf8" }).trim()
@@ -202,8 +211,20 @@ describe.skipIf(!("socketPath" in docker))(`ContainerTerminal in workerd with a 
       external: ["node:*", "cloudflare:*"],
       logLevel: "silent"
     })
+    class StartupLog extends Log {
+      override log(message: string) {
+        super.log(message.replaceAll(token, "[redacted]"))
+      }
+    }
     mf = new Miniflare({
-      containerEngine: { localDocker: { socketPath: (docker as { readonly socketPath: string }).socketPath } },
+      log: new StartupLog(LogLevel.WARN),
+      verbose: true,
+      containerEngine: {
+        localDocker: {
+          socketPath: (docker as { readonly socketPath: string }).socketPath,
+          containerEgressInterceptorImage: egressImage
+        }
+      },
       workers: [{
         config: {
           name: worker,
