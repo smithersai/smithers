@@ -119,6 +119,20 @@ describe("native ProcessConfinement", () => {
     expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
   })
 
+  it("refuses a confinement mechanism that disappears while preparing the command", async () => {
+    const f = fixture()
+    let probes = 0
+    const service = ProcessConfinement.make({
+      ...f,
+      host: { ...f.host, executable: (name) => ++probes === 1 ? f.host.executable(name) : undefined }
+    })
+    const failure = await run(
+      Effect.flip(service.confine(ChildProcess.make("fixture", [], { cwd: f.workspaceRoot }), f.profile))
+    )
+    expect(failure).toMatchObject({ reason: { _tag: "PermissionDenied" } })
+    expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
+  })
+
   it.each([true, "/bin/bash", false, undefined] as const)("confines shell=%s inside the mechanism", async (shell) => {
     const f = fixture()
     const command = ChildProcess.make("printf", ["hello", ">", "out.txt"], { cwd: f.workspaceRoot, shell })

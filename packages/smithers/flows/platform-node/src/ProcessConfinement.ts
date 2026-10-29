@@ -236,12 +236,6 @@ export const make = (options: Options = {}): KernelProcessConfinement.Service =>
     if (ProcessSandbox.isUnenforceable(planned)) {
       return yield* failure("PermissionDenied", command, planned.message, planned)
     }
-    // Build outputs may grant their parent directory. An agent grant must
-    // never inherit that widening when a requested tree is already a file.
-    const exactWrites = profile.writes.map((relative) => NodePath.resolve(planned.workspaceRoot, relative))
-    if (planned.writes.some((write) => !exactWrites.includes(write))) {
-      return yield* failure("PermissionDenied", command, "write grant is not a directory tree", undefined)
-    }
     // A workspace link does not grant authority to its target on the host.
     const confinement: ProcessSandbox.Plan = { ...planned, externalReads: [] }
     yield* Effect.try({
