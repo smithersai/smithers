@@ -11,7 +11,7 @@ import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
  */
 import { describe, expect, it } from "@effect/vitest"
 import { FlowEngine } from "@smthrs/engine"
-import { Action, DurableDeferred, Flow, type FlowRuntime, RetryPolicy, RunMetrics } from "@smthrs/flow"
+import { Action, DurableDeferred, Flow, FlowRuntime, RetryPolicy, RunMetrics } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import { RunStore } from "@smthrs/run-store"
 import type * as Crypto from "effect/Crypto"
@@ -116,10 +116,14 @@ const counts = (snapshot: Snapshot, id: string): ReadonlyArray<Readonly<Record<s
     .map((entry) => ({ ...entry.attributes, count: (entry.state as { readonly count: number }).count }))
 
 /** Waits, on the real clock, until `condition` holds: the engine's retry timers and wakes run on it. */
-const until = <E, R>(condition: Effect.Effect<boolean, E, R>) =>
+const until = <E, R>(condition: Effect.Effect<boolean, E, R>, stage = "condition") =>
   Effect.gen(function*() {
     while (!(yield* condition)) yield* Effect.sleep("5 millis")
-  }).pipe(Effect.timeout("20 seconds"), Effect.orDie)
+  }).pipe(
+    Effect.timeout("20 seconds"),
+    Effect.mapError((cause) => new Error(`usage metrics did not reach ${stage}`, { cause })),
+    Effect.orDie
+  )
 
 const untilStatus = (executionId: string, statuses: ReadonlyArray<RunStore.RunStatus>) =>
   Effect.flatMap(RunStore.RunStore, (store) =>
@@ -127,7 +131,8 @@ const untilStatus = (executionId: string, statuses: ReadonlyArray<RunStore.RunSt
       store.get(executionId).pipe(
         Effect.map((row) => statuses.includes(row.status)),
         Effect.catch(() => Effect.succeed(false))
-      )
+      ),
+      `${executionId}: ${statuses.join(" or ")}`
     ))
 
 describe("usage metrics", () => {
@@ -144,6 +149,7 @@ describe("usage metrics", () => {
         retryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 3 }),
         execute: Effect.suspend(() => ++flakyRuns === 1 ? Effect.fail(`boom ${SENTINEL}`) : Effect.succeed("ok"))
       })
+      const childReady = DurableDeferred.make("usage-child-ready", { success: Schema.String })
       const childStep = Action.make({
         name: "usage-child-step",
         success: Schema.String,
@@ -158,7 +164,13 @@ describe("usage metrics", () => {
 
       const { value, snapshot, lines } = yield* withEngine((engine) =>
         Effect.gen(function*() {
-          yield* engine.register(Child, () => childStep)
+          yield* engine.register(Child, () =>
+            Effect.gen(function*() {
+              const instance = yield* FlowRuntime.FlowInstance
+              // Only the first child parks; the legacy run below remains an ordinary completed step.
+              if (instance.executionId === "usage-child") yield* DurableDeferred.await(childReady)
+              return yield* childStep
+            }))
           yield* engine.register(Gated, () =>
             Effect.gen(function*() {
               yield* flaky
@@ -174,8 +186,30 @@ describe("usage metrics", () => {
             RunMetrics.withOrigin({ door: "button", actor: "person" }),
             Effect.forkChild({ startImmediately: true })
           )
-          yield* until(Effect.sync(() => flakyRuns >= 2))
+          yield* until(Effect.sync(() => flakyRuns >= 2), "the successful flaky retry")
+          // Hold the child until its parent has durably parked on the join.
+          yield* until(
+            Metric.snapshot.pipe(Effect.map((snapshot) =>
+              counts(snapshot, "flows_waits").some((series) => series.flow === "Usage/Gated" && series.count === 1)
+            )),
+            "the parent child-join wait"
+          )
+          yield* engine.deferredDone(childReady, {
+            flowName: Child._tag,
+            executionId: "usage-child",
+            deferredName: childReady.name,
+            exit: Exit.succeed("ready")
+          })
           yield* untilStatus("usage-child", ["completed"])
+          // A second park is the gate, after the child join has ended.
+          yield* until(
+            Metric.snapshot.pipe(Effect.map((snapshot) =>
+              counts(snapshot, "flows_waits").some((series) =>
+                series.flow === "Usage/Gated" && series.count === 2
+              )
+            )),
+            "the parent gate wait"
+          )
           yield* untilStatus("usage-gated", ["suspended"])
           yield* engine.deferredDone(gate, {
             flowName: Gated._tag,
@@ -198,7 +232,9 @@ describe("usage metrics", () => {
           // The row is visible before the driver's park receipt finishes.
           // Cancel only after the wait this test measures was recorded.
           yield* until(Metric.snapshot.pipe(Effect.map((snapshot) =>
-            counts(snapshot, "flows_waits").some((series) => series.flow === "Usage/Waits")
+            counts(snapshot, "flows_waits").some((series) =>
+              series.flow === "Usage/Waits"
+            )
           )))
           yield* engine.interrupt(Waits, "usage-waits")
           yield* untilStatus("usage-waits", ["cancelled"])
@@ -318,13 +354,13 @@ describe("usage metrics", () => {
           ["WARN", "Usage/Fails", "Usage/Boom", 1]
         ]))
       expect(stepFailures.every((line) => typeof line.annotations.runId === "string")).toBe(true)
-      // The gate is a signal wait, parked once and ended once; the cancelled run parked and never resumed.
+      // Child join and gate are two durable signal waits; the cancelled wait never resumes.
       expect(counts(snapshot, "flows_waits")).toEqual(expect.arrayContaining([
-        { flow: "Usage/Gated", kind: "signal", count: 1 },
+        { flow: "Usage/Gated", kind: "signal", count: 2 },
         { flow: "Usage/Waits", kind: "signal", count: 1 }
       ]))
       expect(counts(snapshot, "flows_wait_ms")).toEqual(expect.arrayContaining([
-        { flow: "Usage/Gated", kind: "signal", count: 1 }
+        { flow: "Usage/Gated", kind: "signal", count: 2 }
       ]))
       expect(counts(snapshot, "flows_wait_ms").filter((series) => series.flow === "Usage/Waits")).toEqual([])
 
