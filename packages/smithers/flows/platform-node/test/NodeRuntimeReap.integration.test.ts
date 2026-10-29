@@ -74,8 +74,9 @@ const killHost = (filename: string, hostId: string, frozen = false): Promise<num
     child.stderr.setEncoding("utf8")
     child.stdout.on("data", (chunk: string) => {
       announced += chunk
-      if (pgid === undefined && announced.includes("\n")) {
-        pgid = Number(announced.split("\n")[0])
+      const receipt = /^SPAWNED=([1-9][0-9]*)\r?$/m.exec(announced)
+      if (pgid === undefined && receipt !== null) {
+        pgid = Number(receipt[1])
         if (frozen) process.kill(-pgid, "SIGSTOP")
         // No handler runs for this. Whatever the host had open stays open.
         child.kill("SIGKILL")

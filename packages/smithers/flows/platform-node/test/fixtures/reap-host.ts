@@ -38,7 +38,7 @@ const Spawn = Action.make({
     const handle = yield* Effect.orDie(spawner.spawn(ChildProcess.make("sh", ["-c", "sleep 300 & sleep 300"])))
     // Printed only after the spawn returned, which is after the ledger wrote
     // the record: the test may kill this process the moment it reads the line.
-    process.stdout.write(`${handle.pid as number}\n`)
+    process.stdout.write(`SPAWNED=${handle.pid as number}\n`)
     yield* Effect.orDie(handle.exitCode)
     return "woke"
   })

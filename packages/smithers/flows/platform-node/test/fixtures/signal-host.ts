@@ -77,7 +77,7 @@ const program = Effect.gen(function*() {
     row = yield* runs.get(executionId)
   }
   yield* Effect.sync(() => {
-    process.stdout.write(`${row.status}\n`)
+    process.stdout.write(`STATUS=${row.status}\n`)
   })
   yield* Effect.exit(Fiber.join(running))
 }).pipe(

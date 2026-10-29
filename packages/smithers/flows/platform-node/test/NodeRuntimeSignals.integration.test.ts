@@ -55,7 +55,7 @@ const shutdown = (
     child.stderr.setEncoding("utf8")
     child.stdout.on("data", (chunk: string) => {
       announced += chunk
-      if (!signalled && announced.includes("\n")) {
+      if (!signalled && /^STATUS=running\r?$/m.test(announced)) {
         signalled = true
         for (let sent = 0; sent < (options?.signals ?? 1); sent++) {
           // The second signal has to arrive after the first was handled, or
@@ -70,7 +70,12 @@ const shutdown = (
     child.on("error", reject)
     child.on("exit", (code, exitSignal) => {
       clearTimeout(timer)
-      resolve({ announced: announced.trim(), code, signal: exitSignal, stderr })
+      resolve({
+        announced: /^STATUS=(.*)\r?$/m.exec(announced)?.[1] ?? announced.trim(),
+        code,
+        signal: exitSignal,
+        stderr
+      })
     })
   })
 
