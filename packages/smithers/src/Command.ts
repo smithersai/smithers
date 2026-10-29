@@ -14,7 +14,7 @@ import { Control as ControlService } from "@smthrs/control"
 import * as MigrateCommand from "@smthrs/migrate/flow/Command"
 import { BudgetOnExceeded } from "@smthrs/registry/Descriptor"
 import { Clock, Console, Effect, Option, Stream } from "effect"
-import { Argument, CliError as ParserError, Command, Flag, Prompt } from "effect/cli"
+import { Argument, CliError as ParserError, Command, Flag } from "effect/cli"
 import * as CliError from "./CliError.ts"
 import * as BugCmd from "./commands/Bug.ts"
 import { cancelAll } from "./commands/CancelAll.ts"
@@ -96,7 +96,7 @@ const data = Flag.String("data").pipe(
   Flag.withDescription("Flow input as JSON, @file, or - for stdin; object members override key=value entries")
 )
 /** Required values are collected before the command opens durable services. */
-const inputPrompt = (name: string, pickFlow = false) =>
+const requiredInput = (name: string, pickFlow = false) =>
   Effect.gen(function*() {
     const ui = yield* Ui.prompting
     const missing = new CliError.UsageError({
@@ -109,14 +109,17 @@ const inputPrompt = (name: string, pickFlow = false) =>
     }
     // Discovery needs the command's Control layer. An empty value reaches
     // only the terminal handler, which replaces it with a catalog selection.
-    if (pickFlow) return Prompt.succeed("")
+    if (pickFlow) return ""
     const value = yield* ui.text(`Enter ${name}`)
     if (Option.isNone(value)) return yield* Effect.interrupt
-    return Prompt.succeed(value.value)
+    return value.value
   })
 
 const requiredArgument = (name: string, pickFlow = false) =>
-  Argument.String(name).pipe(Argument.withFallbackPrompt(inputPrompt(name, pickFlow)))
+  Argument.String(name).pipe(
+    Argument.optional,
+    Argument.mapEffect((value) => Option.isSome(value) ? Effect.succeed(value.value) : requiredInput(name, pickFlow))
+  )
 
 const globalsOf = Effect.map(rootCommand, (root): Globals.Options => ({
   backend: Option.getOrUndefined(root.backend),
@@ -348,7 +351,8 @@ const steer = Command.make("steer", {
   runId: requiredArgument("run-id"),
   message: Flag.String("message").pipe(
     Flag.withDescription("Text to deliver as an attributed steering message to the run"),
-    Flag.withFallbackPrompt(inputPrompt("--message"))
+    Flag.optional,
+    Flag.mapEffect((value) => Option.isSome(value) ? Effect.succeed(value.value) : requiredInput("--message"))
   ),
   takeover: Removed.flag("steer", "takeover")
 }, (config) =>
