@@ -88,22 +88,32 @@ const turn = async (role: "coordinator" | "worker") => {
 }
 
 describe("Host.run required asks", () => {
-  test("explicit cancellation at a final-frame suspension retains the cancelled outcome", async () => {
+  test("explicit cancellation while a final-frame question awaits its answer retains the cancelled outcome", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "tui-host-final-cancel-"))
     roots.push(cwd)
     const host = Host.make({ cwd, environment: {}, judge: ScriptedJudge.layer })
     const cells = Array.from({ length: 7 }, (_, index) => `console.log(${index})`)
     cells.push("ctx.park(\"waiting-input\", \"Required final question?\")")
+    const waiting = Promise.withResolvers<void>()
+    const queue = Steering.make({
+      ask: (_question, signal) => {
+        waiting.resolve()
+        return new Promise<string>((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(new Error("Cancelled")), { once: true })
+        })
+      }
+    })
     try {
       const running = host.run({
         prompt: "Ask before finishing",
         role: "coordinator",
+        steering: queue.source,
         seat: `replay:${doneReplay(cwd, cells[0], ...cells.slice(1))}`,
         history: [],
-        onEvent: (event) => {
-          if (event._tag === "suspended") running.cancel()
-        }
+        onEvent: () => {}
       })
+      await waiting.promise
+      running.cancel()
       expect(await running.done).toEqual({ _tag: "cancelled" })
     } finally {
       await host.dispose()
@@ -125,7 +135,8 @@ describe("Host.run required asks", () => {
         history: [],
         onEvent: (event) => events.push(event)
       }).done
-      expect(outcome).toMatchObject({ _tag: "failed", message: "Required final question?" })
+      // 7cbd2154c4af lets the last frame ask too; the host owns an absent answer channel.
+      expect(outcome).toMatchObject({ _tag: "failed", message: "No one answered: Required final question?" })
       expect(events.filter((event) => event._tag === "model-requested")).toHaveLength(8)
       expect(events.some((event) => event._tag === "resolved")).toBe(false)
       expect(events.findLast((event) => event._tag === "transition-applied")).toMatchObject({
@@ -136,7 +147,7 @@ describe("Host.run required asks", () => {
     }
   })
 
-  test("the coordinator's final-frame ask fails explicitly and retains pending steering with a channel", async () => {
+  test("the coordinator's final-frame ask delivers its answer and pending steering to one extra frame", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "tui-host-final-answer-"))
     roots.push(cwd)
     const host = Host.make({ cwd, environment: {}, judge: ScriptedJudge.layer })
@@ -145,11 +156,15 @@ describe("Host.run required asks", () => {
     const queue = Steering.make({
       ask: async (question) => {
         asked.push(question)
+        // Queue the follow-up while the boundary is actually awaiting its answer.
+        // Event observers run asynchronously and can see the park after its drain.
+        queue.steer("pending follow-up")
         return "confirmed"
       }
     })
     const cells = Array.from({ length: 7 }, (_, index) => `console.log(${index})`)
     cells.push("ctx.park(\"waiting-input\", \"Required final question?\")")
+    cells.push("ctx.done(\"confirmed\")")
     try {
       const outcome = await host.run({
         prompt: "Ask before finishing",
@@ -157,23 +172,17 @@ describe("Host.run required asks", () => {
         steering: queue.source,
         seat: `replay:${doneReplay(cwd, cells[0], ...cells.slice(1))}`,
         history: [],
-        onEvent: (event) => {
-          events.push(event)
-          // After the cell's pre-tool probe, so the final frame's park, not the
-          // outside-change hold, decides what the pending steer does.
-          if (event._tag === "transition-applied" && event.transition._tag === "park") {
-            queue.steer("pending follow-up")
-          }
-        }
+        onEvent: (event) => events.push(event)
       }).done
-      expect(outcome).toMatchObject({ _tag: "failed", message: "Required final question?" })
-      expect(events.some((event) => event._tag === "resolved")).toBe(false)
-      expect(events.find((event) => event._tag === "suspended")).toMatchObject({
-        reason: { code: "waiting-input", message: "Required final question?" }
-      })
-      expect(asked).toEqual([])
-      expect(queue.take()).toEqual(["pending follow-up"])
-      expect(events.filter((event) => event._tag === "model-requested")).toHaveLength(8)
+      expect(outcome).toEqual({ _tag: "done", answer: "confirmed" })
+      expect(asked).toEqual(["Required final question?"])
+      expect(queue.take()).toEqual([])
+      const messages = events.flatMap((event) => event._tag === "steering-drained" ? event.messages : [])
+      expect(messages).toMatchObject([
+        { role: "user", content: [{ type: "text", text: "pending follow-up" }] },
+        { role: "user", content: [{ type: "text", text: "confirmed" }] }
+      ])
+      expect(events.filter((event) => event._tag === "model-requested")).toHaveLength(9)
     } finally {
       await host.dispose()
     }

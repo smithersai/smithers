@@ -37,6 +37,8 @@ sessions.
 The remote-failure fixture runs a real action through the engine, control watch,
 and tmux. Its action codec revives an Error that the containing flow's JSON-only
 error channel cannot encode, exercising the actual `UnencodableResult` fallback.
+Required-answer tests cover cancellation while awaiting the answer and delivery
+of a final-frame answer and concurrent steering to the extra frame.
 
 ## Coverage
 
