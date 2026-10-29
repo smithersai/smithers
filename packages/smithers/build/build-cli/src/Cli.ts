@@ -1040,7 +1040,8 @@ const executeWithResults = async <A extends Outcome>(
       await KnownRed.read(options.workspace ?? process.cwd(), options.knownRed)
     for (const entry of list.entries) {
       if (artifacts.has(entry.label)) {
-        throw new Error(
+        throw new KnownRed.KnownRedError(
+          "invalid",
           `${entry.label}: artifact tests never block, so they need no known-red entry; remove it from ${list.source}`
         )
       }
