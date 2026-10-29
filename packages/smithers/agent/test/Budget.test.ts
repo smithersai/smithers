@@ -1183,26 +1183,30 @@ const onTestClock = <A, E>(body: Effect.Effect<A, E, Crypto.Crypto | Scope.Scope
 /** Advances the test clock until one forked run settles, then joins it. */
 const settle = <A, E>(fiber: Fiber.Fiber<A, E>): Effect.Effect<A, E> =>
   Effect.gen(function*() {
-    for (let step = 0; step < 60 && fiber.pollUnsafe() === undefined; step++) {
+    for (let step = 0; step < 500; step++) {
+      if (fiber.pollUnsafe() !== undefined) return yield* Fiber.join(fiber)
+      yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 10)))
       yield* TestClock.adjust("1 second")
     }
-    return yield* Fiber.join(fiber)
+    return yield* Effect.die(new Error("the resumed run did not settle after its recorded wake"))
   })
 
 /**
  * The timer waits, once the run has parked between its two steps.
  *
- * Yields rather than sleeps: parking costs the run fiber turns, not time, and
- * advancing the clock here would wake the run this case means to kill.
+ * Real I/O turns let the database commit without advancing the clock and waking
+ * the run this case means to kill.
  */
-const waitForTimer = (state: DurableEngineState.Service) =>
+const waitForTimer = (state: DurableEngineState.Service, running: Fiber.Fiber<unknown, unknown>) =>
   Effect.gen(function*() {
-    for (let attempt = 0; attempt < 400; attempt++) {
+    for (let attempt = 0; attempt < 500; attempt++) {
+      const exit = running.pollUnsafe()
+      if (exit !== undefined && Exit.isFailure(exit)) return yield* Effect.failCause(exit.cause)
       const rows = yield* state.waitingRuns({ reason: "timer" })
       if (rows.length > 0) return rows
-      yield* Effect.yieldNow
+      yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 10)))
     }
-    return yield* state.waitingRuns({ reason: "timer" })
+    return yield* Effect.die(new Error("the run never persisted its timer park"))
   })
 
 /**
@@ -1282,7 +1286,7 @@ describe("a budget refusing a resumed run", () => {
               const running = yield* ParkedSteps.execute({ diff: "-  old\n+  new" }, {
                 executionId: "budget-refusal"
               }).pipe(Effect.provide(wiring), Effect.forkChild({ startImmediately: true }))
-              yield* waitForTimer(state)
+              yield* waitForTimer(state, running)
               // Killed while parked: the first step's node is settled and the
               // second step has never asked the budget anything.
               yield* Fiber.interrupt(running)

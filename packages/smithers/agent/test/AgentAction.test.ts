@@ -34,6 +34,7 @@ import {
   Cause,
   Deferred,
   Effect,
+  Exit,
   Fiber,
   Layer,
   ManagedRuntime,
@@ -2050,10 +2051,12 @@ describe("AgentAction seat auto", () => {
     const settle = <A, E>(running: Fiber.Fiber<A, E>) =>
       Effect.gen(function*() {
         if (mode === "memory") return yield* Fiber.join(running)
-        for (let step = 0; step < 60 && running.pollUnsafe() === undefined; step++) {
+        for (let step = 0; step < 500; step++) {
+          if (running.pollUnsafe() !== undefined) return yield* Fiber.join(running)
+          yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 10)))
           yield* TestClock.adjust("1 second")
         }
-        return yield* Fiber.join(running)
+        return yield* Effect.die(new Error("the routed run did not settle after its recorded wake"))
       })
     const observed = await Effect.runPromise(Effect.scoped(
       Effect.gen(function*() {
@@ -2066,7 +2069,7 @@ describe("AgentAction seat auto", () => {
             Effect.forkChild({ startImmediately: true })
           )
           let parked = false
-          for (let step = 0; step < 400 && !parked; step++) {
+          for (let step = 0; step < 500 && !parked; step++) {
             if (mode === "memory") {
               const result = yield* RoutedFlow.poll(executionId).pipe(Effect.provideContext(context))
               parked = Option.isSome(result) && result.value._tag === "Suspended"
@@ -2074,7 +2077,10 @@ describe("AgentAction seat auto", () => {
               const waiting = yield* state.waitingRuns({ reason: "quota" })
               parked = waiting.some((row) => row.runId === executionId && row.reason === "quota")
             }
-            yield* Effect.yieldNow
+            const exit = running.pollUnsafe()
+            if (exit !== undefined && Exit.isFailure(exit)) return yield* Effect.failCause(exit.cause)
+            if (mode === "memory") yield* Effect.yieldNow
+            else yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 10)))
           }
           expect(parked).toBe(true)
           expect(calls).toEqual(["sonnet"])

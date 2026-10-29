@@ -233,10 +233,12 @@ const durable = <A, E>(body: Effect.Effect<A, E, Crypto.Crypto | Scope.Scope>): 
  */
 const settle = <A, E>(fiber: Fiber.Fiber<A, E>): Effect.Effect<A, E> =>
   Effect.gen(function*() {
-    for (let step = 0; step < 60 && fiber.pollUnsafe() === undefined; step++) {
+    for (let step = 0; step < 500; step++) {
+      if (fiber.pollUnsafe() !== undefined) return yield* Fiber.join(fiber)
+      yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 10)))
       yield* TestClock.adjust("1 second")
     }
-    return yield* Fiber.join(fiber)
+    return yield* Effect.die(new Error("the quota run did not settle after its recorded wake"))
   })
 
 /** One engine incarnation and the composition under one declared step. */
@@ -288,16 +290,17 @@ const memory = (model: Model.Model, classifier: Layer.Layer<QuotaPolicy.QuotaCla
  * Bounded: it gives up well before the park's own deadline, so a run that
  * never parks fails the assertion instead of hanging the suite.
  */
-const waitForPark = (state: DurableEngineState.Service) =>
+const waitForPark = (state: DurableEngineState.Service, running: Fiber.Fiber<unknown, unknown>) =>
   Effect.gen(function*() {
-    // Yields rather than sleeps: parking costs the run fiber turns, not time,
-    // and advancing the clock here would move the deadline the case asserts.
-    for (let attempt = 0; attempt < 400; attempt++) {
+    // Let real journal I/O commit while keeping the model's deadline fixed.
+    for (let attempt = 0; attempt < 500; attempt++) {
+      const exit = running.pollUnsafe()
+      if (exit !== undefined && Exit.isFailure(exit)) return yield* Effect.failCause(exit.cause)
       const rows = yield* state.waitingRuns({ reason: "quota" })
       if (rows.length > 0) return rows
-      yield* Effect.yieldNow
+      yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 10)))
     }
-    return yield* state.waitingRuns({ reason: "quota" })
+    return yield* Effect.die(new Error("the run never persisted its quota park"))
   })
 
 const parks = (entries: ReadonlyArray<{ readonly eventType: string; readonly payload: unknown }>) =>
@@ -641,9 +644,8 @@ describe("a quota refusal at a model-backed step", () => {
         const running = yield* ReviewFlow.execute({ diff: "-  old\n+  new" }, {
           executionId: "quota-park"
         }).pipe(Effect.provide(wiring), Effect.forkChild({ startImmediately: true }))
-        // Parking costs fiber turns, not time, so the waiting row appears
-        // without the clock moving and the deadline below is exact.
-        const waiting = yield* waitForPark(state)
+        // Wait for the committed park without moving its recorded deadline.
+        const waiting = yield* waitForPark(state, running)
         const value = yield* settle(running)
         const journal = yield* Journal.Journal
         yield* journal.flush
@@ -698,7 +700,7 @@ describe("a quota refusal at a model-backed step", () => {
         const running = yield* ReviewFlow.execute({ diff: "-  old\n+  new" }, {
           executionId: "quota-record"
         }).pipe(Effect.provide(wiring), Effect.forkChild({ startImmediately: true }))
-        yield* waitForPark(state)
+        yield* waitForPark(state, running)
         return yield* settle(running)
       }).pipe(Effect.provide(stores))
     )
@@ -731,7 +733,7 @@ describe("a quota refusal at a model-backed step", () => {
         const running = yield* ReviewFlow.execute({ diff: "-  old\n+  new" }, {
           executionId: "quota-replay"
         }).pipe(Effect.provide(wiring), Effect.forkChild({ startImmediately: true }))
-        const waiting = yield* waitForPark(state)
+        const waiting = yield* waitForPark(state, running)
         const value = yield* settle(running)
         return { value, waiting, startedAt, unconsumed: yield* replay.controller.unconsumed() }
       }).pipe(Effect.provide(stores))
@@ -779,7 +781,7 @@ describe("a quota refusal at a model-backed step", () => {
             const running = yield* ReviewFlow.execute({ diff: "-  old\n+  new" }, {
               executionId: "quota-boundary"
             }).pipe(Effect.provide(wiring), Effect.forkChild({ startImmediately: true }))
-            const rows = yield* waitForPark(state)
+            const rows = yield* waitForPark(state, running)
             // The kill is explicit: the fiber holding the parked run is gone
             // before the engine scope closes, so nothing from the first
             // incarnation can finish the run behind the second one's back.

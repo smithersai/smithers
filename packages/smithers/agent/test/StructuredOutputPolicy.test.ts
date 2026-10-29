@@ -500,25 +500,29 @@ const onTestClock = <A, E>(body: Effect.Effect<A, E, Crypto.Crypto | Scope.Scope
  * The quota waiting rows, once the run has parked.
  *
  * Bounded, so a run that never parks fails an assertion instead of hanging.
- * It yields rather than sleeps: parking costs the run fiber turns, not time.
+ * Real I/O turns allow the database to commit without advancing the virtual clock.
  */
-const waitForPark = (state: DurableEngineState.Service) =>
+const waitForPark = (state: DurableEngineState.Service, running: Fiber.Fiber<unknown, unknown>) =>
   Effect.gen(function*() {
-    for (let poll = 0; poll < 400; poll++) {
+    for (let poll = 0; poll < 500; poll++) {
+      const exit = running.pollUnsafe()
+      if (exit !== undefined && Exit.isFailure(exit)) return yield* Effect.failCause(exit.cause)
       const rows = yield* state.waitingRuns({ reason: "quota" })
       if (rows.length > 0) return rows
-      yield* Effect.yieldNow
+      yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 10)))
     }
-    return yield* state.waitingRuns({ reason: "quota" })
+    return yield* Effect.die(new Error("the run never persisted its quota park"))
   })
 
 /** Advances the test clock until one forked run settles, then joins it. */
 const settle = <A, E>(fiber: Fiber.Fiber<A, E>): Effect.Effect<A, E> =>
   Effect.gen(function*() {
-    for (let step = 0; step < 60 && fiber.pollUnsafe() === undefined; step++) {
+    for (let step = 0; step < 500; step++) {
+      if (fiber.pollUnsafe() !== undefined) return yield* Fiber.join(fiber)
+      yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 10)))
       yield* TestClock.adjust("1 second")
     }
-    return yield* Fiber.join(fiber)
+    return yield* Effect.die(new Error("the resumed run did not settle after its recorded wake"))
   })
 
 const rejections = (entries: ReadonlyArray<{ readonly eventType: string; readonly payload: unknown }>) =>
@@ -797,7 +801,7 @@ describe("a correction ladder interrupted mid-flight", () => {
             }).pipe(Effect.provide(wiring), Effect.forkChild({ startImmediately: true }))
             // The run is durably SUSPENDED here: the ask is a settled sealed
             // step and the correction is the call that was refused.
-            yield* waitForPark(state)
+            yield* waitForPark(state, running)
             yield* Fiber.interrupt(running)
           })
         )
