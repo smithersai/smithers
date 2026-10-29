@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Option } from "effect"
-import { readdirSync, readFileSync, statSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { dirname, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as Capability from "../src/Capability.ts"
@@ -76,6 +77,7 @@ const roots = [
 
 const readable = new Set([
   ".ts",
+  ".vibe",
   ".tsx",
   ".mts",
   ".mjs",
@@ -96,7 +98,9 @@ const filesUnder = (directory: string): ReadonlyArray<string> => {
       if (entry.name === "node_modules" || entry.name === "dist" || entry.name.startsWith(".git")) continue
       const path = join(current, entry.name)
       if (entry.isDirectory()) walk(path)
-      else if (readable.has(path.slice(path.lastIndexOf(".")))) found.push(path)
+      else if (readable.has(path.slice(path.lastIndexOf("."))) && !/\.(?:test|spec)\.[^.]+$/.test(entry.name)) {
+        found.push(path)
+      }
     }
   }
   walk(directory)
@@ -288,6 +292,28 @@ describe("HARDEN-2: the sweep sees each staged form and judges it", () => {
   const found = (source: string, namespaces?: ReadonlyArray<string>): ReadonlyArray<string> =>
     (namespaces === undefined ? literalsIn("fixture.ts", source) : literalsIn("fixture.ts", source, namespaces))
       .map((literal) => literal.text)
+
+  it("walks authoring sources and docs without treating test parser fixtures as grants", () => {
+    const directory = mkdtempSync(join(tmpdir(), "capability-inventory-"))
+    try {
+      for (const name of ["flow.ts", "flow.vibe", "README.md", "pack.test.mjs", "flow.spec.ts", "flow.test.vibe"]) {
+        writeFileSync(join(directory, name), "const grant = \"proc:spawn:\"")
+      }
+      for (const name of ["suite.test.ts", "suite.spec.ts"]) {
+        mkdirSync(join(directory, name))
+        writeFileSync(join(directory, name, "flow.ts"), "const grant = \"proc:spawn:\"")
+      }
+      expect(filesUnder(directory).map((path) => relative(directory, path).replaceAll("\\", "/")).sort())
+        .toEqual(["README.md", "flow.ts", "flow.vibe", "suite.spec.ts/flow.ts", "suite.test.ts/flow.ts"])
+      // Malformed grants in authoring files are still extracted and refused.
+      for (const path of filesUnder(directory)) {
+        expect(found(readFileSync(path, "utf8"))).toEqual(["proc:spawn:"])
+        expect(refusalReason(found(readFileSync(path, "utf8"))[0]!)).toContain("permits no non-empty resource")
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
 
   it("reads the whole-form vocabulary off the kernel's own selectors", () => {
     expect(namespacesOf(selectors)).toEqual(["*", "fs", "jj", "memory", "model", "net", "proc"])

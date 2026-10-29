@@ -35,8 +35,8 @@ capabilities the permission kernel grants. `create-flow` is the entry the app's
 its stages.
 
 Capability literals are load-bearing. `proc:spawn:*` grants a command;
-`proc:spawn: *`, with a leading space, grants only a command that starts with a
-space, and the kernel refuses everything a real body asks for. `pack.test.mjs`
+a resource written as ` *`, with a leading space, grants only a command that
+starts with a space, and the kernel refuses everything a real body asks for. `pack.test.mjs`
 parses every declared literal through the real `Capability.parse` and asserts a
 real command line matches.
 
