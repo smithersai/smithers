@@ -20,7 +20,7 @@ export default defineConfig({
       enabled: true,
       provider: "v8",
       // One report directory per process, so concurrent runs never destroy each other's coverage scratch.
-      reportsDirectory: join(tmpdir(), `effect-code-storage-coverage-${process.pid}`),
+      reportsDirectory: join(tmpdir(), `flows-effect-code-storage-coverage-${process.pid}`),
       include: ["src/**/*.{ts,vibe}"],
       thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }
     }

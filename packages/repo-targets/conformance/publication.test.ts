@@ -155,7 +155,7 @@ describe("publication conformance", () => {
         "--access",
         "public",
         "--tag",
-        "latest",
+        "staging",
         "--no-git-checks"
       ]],
       ["pnpm", [
@@ -165,7 +165,7 @@ describe("publication conformance", () => {
         "--access",
         "public",
         "--tag",
-        "next",
+        "staging",
         "--no-git-checks"
       ]]
     ])

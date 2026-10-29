@@ -27,15 +27,18 @@ export const readWorkspaceInventory = (root = resolve(import.meta.dirname, "../.
     }
     return { name, path, manifest }
   })
-  // One carve-out, named rather than derived: the two private UI kits use
-  // `bun test tests` and have no vitest config or publication exports. They
+  // One carve-out, named rather than derived: the private UI kits use
+  // Bun tests and have no Vitest config or publication exports. They
   // remain unpublished, so no public surface escapes the gate.
   //
   // This is a smaller universe, not a smaller assertion: every other package
   // under `packages/` is still derived, so a new config-less package is still
   // visible to every assertion below.
-  const zeroXUiKits = new Set(["smithers/ui", "smithers/ui/ui-styleguide"])
-  // A third carve-out, for the one nested member that is not a library:
+  // 04f89c41 split the heavy code views and terminal frame from the Bun UI kit.
+  const zeroXUiKits = new Set([
+    "smithers/ui", "smithers/ui/ui-styleguide", "smithers/ui/repo-view", "smithers/ui/terminal-frame"
+  ])
+  // A carve-out for nested members that are not libraries:
   // `packages/smithers/build/infra` is the hosted cache Cloudflare Worker that ships
   // inside `smithers-build`. It is private, unpublished, and has no
   // publication exports for these cells to describe; it is a workspace member

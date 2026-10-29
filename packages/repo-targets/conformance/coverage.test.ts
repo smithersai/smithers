@@ -566,7 +566,6 @@ describe("coverage conformance", () => {
       // FileBoundary rejects upward and absolute removal declarations before
       // they reach the sandbox.
       "smithers/flows/engine-store/src/WorkspaceSandbox.ts": 1,
-      "smithers/flows/engine-store/src/internal/RunCoordinator.ts": 1,
       // The inert-JSON reducer that admits an action's persisted value asks
       // the language for guarantees the language already makes: a non-proxy
       // array's `length` is a mandatory own data property holding a uint32,
@@ -577,11 +576,7 @@ describe("coverage conformance", () => {
       "smithers/flows/engine-store/src/internal/ActionPersistence.ts": 3,
       // The guest runner is resolved beside this module, and only a built
       // `dist` copy answers to the `.js` extension the arm covers.
-      "smithers/flows/src/SandboxedFlow.ts": 1,
-      // WebCrypto's digest refuses an unknown algorithm NAME, and the guest
-      // names none outside `DigestAlgorithm`, so the rejection translation is
-      // unreachable from the engine.
-      "smithers/flows/src/internal/SandboxedFlowGuest.ts": 1,
+      "smithers/flows/platform-node/src/SandboxedFlow.ts": 1,
       // Projection rows, selectors, cursors, and tags are decoded before the
       // internal frame and snapshot objects are assembled. Re-decoding those
       // same admitted fields cannot fail; the catches remain fail-closed if a
@@ -599,7 +594,9 @@ describe("coverage conformance", () => {
       // alternation or quantifier), so they participate in every match; the
       // fallbacks only discharge the optional type on
       // `RegExpMatchArray.groups`.
-      "smithers/agent/harness/src/Cell.ts": 2,
+      "smithers/agent/harness/src/internal/fence.ts": 2,
+      // Admitted Values have a defined JSON representation (5c90b4d4).
+      "smithers/ui/views/src/Bridge.ts": 1,
       // The lexer's alternation binds exactly one of its two groups on every
       // match, so the fallback only discharges the optional type on a
       // capture.

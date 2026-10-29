@@ -175,6 +175,7 @@ describe("child-process containment conformance", () => {
     ],
     ...[
       "GoExec.ts",
+      "Mount.ts",
       "NixExec.ts",
       "PackageTree.ts",
       "RepoResolution.ts"
