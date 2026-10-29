@@ -39,8 +39,8 @@ packages were visible; a saved partial-train attempt still installed CLI rc.9.
   targeted workspace repairs have clean Mac mini receipts on the revisions
   named in the issue. They do not establish full CI green on this cut.
   Backend Docker/PostgreSQL jobs (#3775), platform suites and Windows remain
-  unverified. Drift still refuses trusted setup pending T-SEC-01 receipts
-  and security campaign acceptance; that boundary has not been bypassed.
+  unverified. Decision 0127 deleted Drift's dormant root setup; its gates
+  run unprivileged and have no hosted green run yet.
 - **Unverified — release gates:** #3765 script/API gates and #3967 target
   index remain open. The Release workflow reports non-build/install/start
   failures; it must not treat them as publication blockers.

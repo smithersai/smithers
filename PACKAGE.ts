@@ -345,12 +345,11 @@ const nativeFilesystem = [{
 }] as const
 
 // Cheap drift checks retain a verdict for every commit independently of full CI.
+// The gates run here as the runner user, like the CI job's own (decision 0127).
 const driftJob = {
   id: "drift",
   name: "Per-commit drift",
-  // The trusted action verifies Ubuntu 24 executable inventories and keyring
-  // bytes. ubuntu-latest served Ubuntu 26 in run 40929999249.
-  runsOn: "ubuntu-24.04",
+  runsOn: ubuntu,
   // A clean run takes 7-10 minutes; a 10-minute cap
   // cancelled runs before //:driftCi and //:ci, leaving a SHA with no verdict.
   timeoutMinutes: 20,
@@ -369,29 +368,13 @@ const driftJob = {
   ]
 } as const
 
-const trustedDriftCi = Smithers.GithubCiGen({
-  workflowName: "Trusted drift",
-  output: ".github/workflows/trusted-drift.yml",
-  pushBranches: [],
-  pullRequest: false,
-  workflowDispatch: false,
-  workflowCall: true,
-  concurrency: "commit",
-  knownRed: ".github/ci-known-red.json",
-  mode: "check",
-  requiredJobs: ["drift"],
-  jobs: [{ ...driftJob, trustedSetupRevision: "c4ece3f812c7720ac622c11582d5ef2c085d6a2c" }]
-})
-
 const driftCi = Smithers.GithubCiGen({
   workflowName: "Drift",
   output: ".github/workflows/drift.yml",
   concurrency: "commit",
-  trustedWorkflowRevision: "7df5f685fc8495bd32c05b192e10f1b8270f016a",
   workflowDispatch: false,
   knownRed: ".github/ci-known-red.json",
   mode: "check",
-  deps: [trustedDriftCi],
   requiredJobs: ["drift"],
   jobs: [driftJob]
 })
@@ -456,9 +439,7 @@ const ci = Smithers.GithubCiGen({
             ".github/workflows/distribution.yml",
             ".github/workflows/reliability.yml",
             ".github/workflows/native-windows.yml",
-            ".github/workflows/drift.yml",
-            ".github/workflows/trusted-drift.yml",
-            ".github/workflows/trusted-setup-validation.yml"
+            ".github/workflows/drift.yml"
           ]
         })
       }),
@@ -1094,7 +1075,6 @@ export const Package = Smithers.Package({
     changelog,
     ci,
     driftCi,
-    trustedDriftCi,
     environmentToolchain,
     factoryProjection,
     reviewDocsAgainstCode,

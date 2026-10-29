@@ -36,28 +36,6 @@ import * as Target from "./Target.ts"
 import * as Verb from "./Verb.ts"
 
 /**
- * A trusted CI setup declaration violates the root-setup provenance rules:
- * setup must be pinned to a main commit, run call-only before branch
- * checkout, and carry no credentials. Raised while generating workflows.
- *
- * @category errors
- * @since 0.1.0
- */
-export class TrustedSetupRefused extends Schema.TaggedError<TrustedSetupRefused>()(
-  "smithers-build/TrustedSetupRefused",
-  {
-    code: Schema.Literals([
-      "setup_unpinned",
-      "root_not_call_only",
-      "privileged_after_checkout",
-      "reusable_not_call_only",
-      "drift_caller_unpinned"
-    ]),
-    message: Schema.NonEmptyString
-  }
-) {}
-
-/**
  * How a CI workflow target treats its output file.
  *
  * - `check` — byte-compare the checked-in workflow against the rendered form,
@@ -281,8 +259,6 @@ export const Job = Schema.Struct({
    * untrusted, writers are post-merge trunk jobs only. Absent means false.
    */
   publishesToCache: Schema.optional(Schema.Boolean),
-  /** Main commit containing the reviewed, fixed Ubuntu setup action. */
-  trustedSetupRevision: Schema.optional(Schema.String.check(Schema.isPattern(/^[a-f0-9]{40}$/))),
   /** What the runner must provide before the first target runs. */
   toolchain: CiToolchain.Toolchain,
   steps: Schema.Array(TargetStep)
@@ -319,10 +295,6 @@ export const Attrs = Schema.Struct({
   workflowDispatch: Schema.Boolean.pipe(
     Schema.withConstructorDefault(Effect.succeed(true))
   ),
-  /** Call-only workflow whose complete job bytes are pinned by its caller. */
-  workflowCall: Schema.optional(Schema.Boolean),
-  /** Main commit of the fixed engineering drift workflow, never a branch ref. */
-  trustedWorkflowRevision: Schema.optional(Schema.String.check(Schema.isPattern(/^[a-f0-9]{40}$/))),
   /** Additional graph checks required before the generated caller is valid. */
   deps: Schema.optional(Schema.Array(Target.Dependency)),
   /**
@@ -880,26 +852,11 @@ export const toolchainSteps = (attrs: Attrs, job: Job): ReadonlyArray<RenderedSt
   // `.git/config`, where every target the job runs could read it; no
   // generated step uses git credentials after the checkout, so none is kept.
   const checkoutWith: Record<string, string> = {
-    ...(attrs.workflowCall ? { ref: "${{ github.event.pull_request.head.sha || github.sha }}" } : {}),
     ...(needs.submodules ? { submodules: "recursive" } : {}),
     ...(needs.fetchDepth === undefined ? {} : { "fetch-depth": String(needs.fetchDepth) }),
     "persist-credentials": "false"
   }
   const steps: Array<RenderedStep> = []
-  if (job.trustedSetupRevision !== undefined) {
-    if (
-      !/^[a-f0-9]{40}$/.test(job.trustedSetupRevision) || job.runsOn !== "ubuntu-24.04" || job.matrix !== undefined
-    ) {
-      throw new TrustedSetupRefused({
-        code: "setup_unpinned",
-        message: "GithubCiGen: trusted setup requires a main commit SHA and ubuntu-24.04"
-      })
-    }
-    steps.push({
-      name: "Trusted Ubuntu setup",
-      uses: `smithersai/smithers/.github/actions/trusted-ci-setup@${job.trustedSetupRevision}`
-    })
-  }
   steps.push({ uses: actions.checkout, with: checkoutWith })
   if (needs.workflowLint !== undefined) {
     steps.push({
@@ -1396,24 +1353,6 @@ const validateJobs = (attrs: Attrs): void => {
   const required = new Set(attrs.requiredJobs)
   validatePublishing(attrs)
   for (const job of attrs.jobs) {
-    if (job.trustedSetupRevision !== undefined) {
-      if (!attrs.workflowCall) {
-        throw new TrustedSetupRefused({
-          code: "root_not_call_only",
-          message: "GithubCiGen: trusted root setup requires a main-pinned call-only workflow"
-        })
-      }
-      if (
-        [job.toolchain.apt, job.toolchain.docker, job.toolchain.postgres, job.toolchain.nix].some((value) =>
-          value !== undefined
-        )
-      ) {
-        throw new TrustedSetupRefused({
-          code: "privileged_after_checkout",
-          message: "GithubCiGen: trusted setup forbids privileged setup after branch checkout"
-        })
-      }
-    }
     validateJobRunners(job)
     // A lane named in `requiredJobs` is a lane the pipeline promises to run.
     // One that is advisory everywhere fails nothing, so naming it required
@@ -1601,7 +1540,7 @@ export const render = (attrs: Attrs): string => {
   if (attrs.jobs.length === 0) {
     throw new Error("GithubCiGen: write mode needs at least one declared job")
   }
-  if (attrs.pushBranches.length === 0 && !attrs.pullRequest && !attrs.workflowDispatch && !attrs.workflowCall) {
+  if (attrs.pushBranches.length === 0 && !attrs.pullRequest && !attrs.workflowDispatch) {
     throw new Error("GithubCiGen: write mode needs at least one workflow trigger")
   }
   if (attrs.concurrency !== undefined && attrs.concurrency !== "ref" && attrs.concurrency !== "commit") {
@@ -1622,18 +1561,6 @@ export const render = (attrs: Attrs): string => {
   }
   if (attrs.pullRequest) triggers.push("  pull_request:")
   if (attrs.workflowDispatch) triggers.push("  workflow_dispatch:")
-  if (attrs.workflowCall) {
-    if (
-      attrs.pushBranches.length > 0 || attrs.pullRequest || attrs.workflowDispatch ||
-      attrs.trustedWorkflowRevision !== undefined
-    ) {
-      throw new TrustedSetupRefused({
-        code: "reusable_not_call_only",
-        message: "GithubCiGen: trusted reusable workflow must be call-only"
-      })
-    }
-    triggers.push("  workflow_call:")
-  }
   const lines: Array<string> = [
     `name: ${scalar(attrs.workflowName)}`,
     "on:",
@@ -1647,8 +1574,7 @@ export const render = (attrs: Attrs): string => {
     // main run completed for hours (#2085). Superseded PR runs are cancelled;
     // a branch's in-progress run always finishes.
     attrs.concurrency === "commit"
-      ? "  group: " + (attrs.workflowCall ? "trusted-" : "") +
-        "${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ github.sha }}"
+      ? "  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ github.sha }}"
       : "  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}",
     `  cancel-in-progress: ${
       attrs.concurrency !== "commit" && attrs.cancelInProgress ? "${{ github.event_name == 'pull_request' }}" : "false"
@@ -1660,34 +1586,6 @@ export const render = (attrs: Attrs): string => {
     "  contents: read",
     "jobs:"
   ]
-  if (attrs.trustedWorkflowRevision !== undefined) {
-    if (
-      !/^[a-f0-9]{40}$/.test(attrs.trustedWorkflowRevision) || attrs.jobs.length !== 1 ||
-      attrs.jobs[0]?.id !== "drift" ||
-      attrs.jobs[0]?.publishesToCache || attrs.jobs[0]?.trustedSetupRevision !== undefined ||
-      Object.keys(cacheEnvironment(attrs)).length > 0 || attrs.results
-    ) {
-      throw new TrustedSetupRefused({
-        code: "drift_caller_unpinned",
-        message: "GithubCiGen: trusted drift caller requires a main SHA, one drift job and no credentials"
-      })
-    }
-    lines.push(
-      "  trusted-drift:",
-      `    uses: "smithersai/smithers/.github/workflows/trusted-drift.yml@${attrs.trustedWorkflowRevision}"`,
-      "  drift:",
-      "    name: \"Per-commit drift\"",
-      "    needs: trusted-drift",
-      "    if: ${{ always() }}",
-      "    runs-on: \"ubuntu-latest\"",
-      "    timeout-minutes: 5",
-      "    steps:",
-      "      - name: \"Trusted drift result\"",
-      `        run: "test '\${{ needs.trusted-drift.result }}' = 'success'"`,
-      "        shell: \"bash\""
-    )
-    return `${lines.join("\n")}\n`
-  }
   const cacheEnv = cacheEnvironment(attrs)
   const writeEnv = writeCacheEnvironment(attrs)
   for (const job of attrs.jobs) {

@@ -70,6 +70,13 @@ of it.
   so a hand-built `GithubPolicy` value must add the field; policies made with
   `Github.Policy(...)` and `FACTORY.ts` declarations need no change.
 
+### Removed
+
+- `GithubCiGen` no longer accepts `workflowCall`, `trustedWorkflowRevision` or
+  a job's `trustedSetupRevision`, and `TrustedSetupRefused` is gone. They
+  rendered a drift caller that only awaited a main-pinned callee whose root
+  setup refused by design, so its gates never ran (decision 0127).
+
 ### Fixed
 
 - A bubblewrap-confined target that execs a package manager installed outside

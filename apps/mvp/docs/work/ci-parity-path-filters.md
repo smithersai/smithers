@@ -13,7 +13,7 @@ links: [../proposals/ci-cd-parity.md, ci-parity-triggers.md]
 
 ## Why
 
-Smithers' `native-windows.yml` and `trusted-setup-validation.yml` start only when certain files change.
+Smithers' `native-windows.yml` starts only when certain files change.
 
 ## Repositories
 

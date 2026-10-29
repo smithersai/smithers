@@ -451,8 +451,7 @@ describe("the declaration surface", () => {
         "runsOn",
         "steps",
         "timeoutMinutes",
-        "toolchain",
-        "trustedSetupRevision"
+        "toolchain"
       ])
   })
 
@@ -1804,8 +1803,7 @@ describe("a platform matrix", () => {
         "runsOn",
         "steps",
         "timeoutMinutes",
-        "toolchain",
-        "trustedSetupRevision"
+        "toolchain"
       ])
     expect(Object.keys(MatrixRow.fields).sort()).toEqual(["advisory", "os"])
   })
@@ -1968,130 +1966,64 @@ describe("system packages", () => {
   })
 })
 
-describe("main-pinned Ubuntu setup", () => {
-  const revision = "0123456789abcdef0123456789abcdef01234567"
-  it("dispatches the fixed action before checkout and every branch dependency", () => {
-    const job = { ...goldenAttrs.jobs[0]!, runsOn: "ubuntu-24.04", matrix: undefined, trustedSetupRevision: revision }
-    const steps = toolchainSteps(goldenAttrs, job)
-    expect(steps[0]).toEqual({
-      name: "Trusted Ubuntu setup",
-      uses: "smithersai/smithers/.github/actions/trusted-ci-setup@0123456789abcdef0123456789abcdef01234567"
-    })
-    expect(steps[1]?.uses).toBe("actions/checkout@11d5960a326750d5838078e36cf38b85af677262")
-    expect(steps[0]).not.toHaveProperty("with")
-    expect(steps[0]).not.toHaveProperty("env")
-  })
-  it("refuses moving refs, injected argv and unsupported runner images", () => {
-    for (const pin of ["main", "", "a".repeat(39), `${revision}; sudo true`, "A".repeat(40)]) {
-      expect(() =>
-        toolchainSteps(goldenAttrs, { ...goldenAttrs.jobs[0]!, runsOn: "ubuntu-24.04", trustedSetupRevision: pin })
-      ).toThrow(/trusted setup/)
-    }
-    for (const runner of ["self-hosted", "macos-latest", "ubuntu-22.04", "ubuntu-latest", "ubuntu-26.04"]) {
-      expect(() =>
-        toolchainSteps(goldenAttrs, { ...goldenAttrs.jobs[0]!, runsOn: runner, trustedSetupRevision: revision })
-      ).toThrow(/trusted setup/)
-    }
-    expect(() =>
-      toolchainSteps(goldenAttrs, {
-        ...goldenAttrs.jobs[0]!,
-        runsOn: "ubuntu-24.04",
-        matrix: [{ os: "ubuntu-24.04", advisory: false }],
-        trustedSetupRevision: revision
-      })
-    ).toThrow(/trusted setup/)
-  })
-})
-
-describe("trusted reusable drift boundary", () => {
-  const revision = "0123456789abcdef0123456789abcdef01234567"
+// Decision 0127: Drift's gates never ran on main because the reporting job only
+// awaited a main-pinned callee whose root setup refused by design. The job that
+// carries the verdict now runs every gate itself, as the runner user.
+describe("per-commit drift workflow", () => {
   const drift: Job = {
     id: "drift",
-    runsOn: "ubuntu-24.04",
+    name: "Per-commit drift",
+    runsOn: "ubuntu-latest",
     toolchain: CiToolchain.Needs({ install: true }),
-    steps: [{ verb: Verb.Lint, pattern: "//:targetIndex" }]
+    steps: [
+      { name: "Target index drift", verb: Verb.Lint, pattern: "//:targetIndex" },
+      { name: "Generated CI workflow", verb: Verb.Lint, pattern: "//:ci" }
+    ]
   }
-  it("keeps the root job in an immutable callee with no caller environment or inputs", () => {
-    const attrs: Attrs = attrsOf({
-      ...goldenAttrs,
-      jobs: [drift],
-      gates: [],
-      requiredJobs: ["drift"],
-      trustedWorkflowRevision: revision
-    })
-    const workflow = Yaml.parse(render(attrs))
-    expect(workflow.jobs["trusted-drift"]).toEqual({
-      uses: "smithersai/smithers/.github/workflows/trusted-drift.yml@0123456789abcdef0123456789abcdef01234567"
-    })
-    expect(workflow.jobs.drift.name).toBe("Per-commit drift")
-    expect(workflow.jobs.drift.needs).toBe("trusted-drift")
-    expect(workflow.jobs.drift.if).toBe("${{ always() }}")
-    expect(workflow.jobs.drift.steps).toEqual([{
-      name: "Trusted drift result",
-      run: "test '${{ needs.trusted-drift.result }}' = 'success'",
-      shell: "bash"
-    }])
+  const attrs: Attrs = attrsOf({
+    ...goldenAttrs,
+    workflowName: "Drift",
+    workflowDispatch: false,
+    concurrency: "commit",
+    knownRed: ".github/ci-known-red.json",
+    jobs: [drift],
+    gates: [],
+    requiredJobs: ["drift"]
   })
-  it("checks out the caller revision only after trusted setup, with separate non-cancelling concurrency", () => {
-    const attrs: Attrs = attrsOf({
-      ...goldenAttrs,
-      pushBranches: [],
-      pullRequest: false,
-      workflowDispatch: false,
-      workflowCall: true,
-      concurrency: "commit",
-      jobs: [{ ...drift, trustedSetupRevision: revision }],
-      gates: [],
-      requiredJobs: ["drift"]
-    })
+  it("runs every gate in the job that reports the verdict, after checkout", () => {
     const workflow = Yaml.parse(render(attrs))
-    expect(workflow.on).toEqual({ workflow_call: null })
+    expect(Object.keys(workflow.jobs)).toEqual(["drift"])
+    const job = workflow.jobs.drift
+    expect(job.name).toBe("Per-commit drift")
+    expect(job).not.toHaveProperty("needs")
+    expect(job).not.toHaveProperty("uses")
+    expect(job.steps[0]).toEqual({
+      uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+      with: { "persist-credentials": "false" }
+    })
+    const runs: Array<string> = job.steps.flatMap((step: { run?: string }) => step.run ?? [])
+    expect(runs.filter((run) => run.startsWith("pnpm exec smthrs "))).toEqual([
+      "pnpm exec smthrs lint '//:targetIndex' --known-red '.github/ci-known-red.json' --verbose",
+      "pnpm exec smthrs lint '//:ci' --known-red '.github/ci-known-red.json' --verbose"
+    ])
+    const actions: Array<string> = job.steps.flatMap((step: { uses?: string }) => step.uses ?? [])
+    // Only third-party actions pinned by full SHA; never this repository's own.
+    expect(actions.length).toBeGreaterThan(1)
+    for (const uses of actions) expect(uses).toMatch(/^(?!\.|smithersai\/)[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/)
+    expect(job).not.toHaveProperty("permissions")
+    expect(JSON.stringify(job)).not.toMatch(/sudo|secrets\.|continue-on-error/)
+  })
+  it("keeps one non-cancelling group per commit on push and pull_request", () => {
+    const workflow = Yaml.parse(render(attrs))
+    expect(workflow.on).toEqual({ push: { branches: ["main"] }, pull_request: null })
+    expect(workflow.permissions).toEqual({ contents: "read" })
     expect(workflow.concurrency).toEqual({
-      group: "trusted-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ github.sha }}",
+      group: "${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ github.sha }}",
       "cancel-in-progress": false
     })
-    expect(workflow.jobs.drift.steps[0].uses).toBe(
-      "smithersai/smithers/.github/actions/trusted-ci-setup@0123456789abcdef0123456789abcdef01234567"
-    )
-    expect(workflow.jobs.drift.steps[1].with).toEqual({
-      ref: "${{ github.event.pull_request.head.sha || github.sha }}",
-      "persist-credentials": "false"
-    })
-    expect(() => render({ ...attrs, workflowDispatch: true })).toThrow(/call-only/)
-    expect(() => render({ ...attrs, workflowCall: false, workflowDispatch: true })).toThrow(/main-pinned call-only/)
   })
-  it("refuses legacy privileged setup after branch checkout", () => {
-    const attrs: Attrs = attrsOf({
-      ...goldenAttrs,
-      pushBranches: [],
-      pullRequest: false,
-      workflowDispatch: false,
-      workflowCall: true,
-      concurrency: "commit",
-      jobs: [{ ...drift, trustedSetupRevision: revision }],
-      gates: [],
-      requiredJobs: ["drift"]
-    })
-    for (const key of ["apt", "docker", "postgres", "nix"] as const) {
-      const job = { ...drift, trustedSetupRevision: revision, toolchain: { ...drift.toolchain, [key]: {} } }
-      expect(() => render({ ...attrs, jobs: [job] } as Attrs)).toThrow(/privileged setup after branch checkout/)
-    }
-  })
-  it("refuses branch refs, credentials, extra jobs, and nested setup in the caller", () => {
-    const attrs: Attrs = attrsOf({
-      ...goldenAttrs,
-      jobs: [drift],
-      gates: [],
-      requiredJobs: ["drift"],
-      trustedWorkflowRevision: revision
-    })
-    for (const pin of ["main", "", "A".repeat(40), "a".repeat(39)]) {
-      expect(() => render({ ...attrs, trustedWorkflowRevision: pin })).toThrow(/trusted drift caller/)
-    }
-    expect(() => render({ ...attrs, results: true })).toThrow(/trusted drift caller/)
-    expect(() => render({ ...attrs, jobs: [drift, { ...drift, id: "other" }] })).toThrow(/trusted drift caller/)
-    expect(() => render({ ...attrs, jobs: [{ ...drift, trustedSetupRevision: revision }] })).toThrow(
-      /main-pinned call-only/
-    )
+  it("admits no reusable-workflow verdict or pre-checkout setup declaration", () => {
+    for (const key of ["workflowCall", "trustedWorkflowRevision"]) expect(Object.keys(Attrs.fields)).not.toContain(key)
+    expect(Object.keys(Job.fields)).not.toContain("trustedSetupRevision")
   })
 })

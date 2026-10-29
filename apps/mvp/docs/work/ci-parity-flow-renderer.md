@@ -13,7 +13,7 @@ Write `.smithers/flows/<name>/flow.ts` from the same declarations that render Gi
 
 ## Why
 
-Smithers renders `ci.yml`, `drift.yml` and `trusted-drift.yml` from `Smithers.GithubCiGen` (`PACKAGE.ts:553-660`), and Tevm renders ten workflows from `S.Github.Workflow` (`tevm-monorepo/.github/PACKAGE.ts:1-202`). A flow renderer would keep one declaration during migration. Hand-written flows reach parity without it.
+Smithers renders `ci.yml` and `drift.yml` from `Smithers.GithubCiGen` (`PACKAGE.ts:553-660`), and Tevm renders ten workflows from `S.Github.Workflow` (`tevm-monorepo/.github/PACKAGE.ts:1-202`). A flow renderer would keep one declaration during migration. Hand-written flows reach parity without it.
 
 ## Repositories
 

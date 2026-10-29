@@ -60,3 +60,7 @@ The complete sandbox suite passes: 61 files, 870 tests, 31 existing skips, and 1
 branches, functions and lines. All 15 SandboxWork tests pass, including the new real checkout
 case. These are Linux receipts; the fresh privileged campaign and native Windows receipts remain
 outstanding. The brief's Sol-review condition (all owned targets passing) has not been met.
+
+Superseded on 2026-10-29 by decision 0127 (builder/ci-drift): Drift now runs its gates in
+one unprivileged job, and the trusted setup, campaign, callee and validation workflow are
+deleted. The trustedWorkflowRevision refresh and the ACTIVATED gate above no longer exist.

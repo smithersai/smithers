@@ -8,8 +8,7 @@ const root = fileURLToPath(new URL("../../../", import.meta.url))
 const shell = readFileSync(new URL("cloud.sh", import.meta.url), "utf8")
 const github = readFileSync(new URL("../../../.github/workflows/ci.yml", import.meta.url), "utf8")
 // The per-commit drift workflow GitHub keeps beside ci.yml (#2484).
-// drift.yml calls the pinned trusted-drift.yml, which holds the drift steps.
-const drift = readFileSync(new URL("../../../.github/workflows/trusted-drift.yml", import.meta.url), "utf8")
+const drift = readFileSync(new URL("../../../.github/workflows/drift.yml", import.meta.url), "utf8")
 const runs = (yaml: string): string[] => Object.values(Yaml.parse(yaml).jobs as Record<string, { steps?: Array<{ run?: string }> }>).
   flatMap(({ steps }) => (steps ?? []).flatMap(({ run }) => run?.startsWith("pnpm exec ") ? [run.replace(/ --results-file "[^"]+"/g, "")] : []))
 const nodeVersion = readFileSync(new URL("../../../.node-version", import.meta.url), "utf8")

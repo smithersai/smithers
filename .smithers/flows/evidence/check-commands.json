@@ -645,7 +645,7 @@
     },
     "C-PRC-01": {
       "status": "pending-owner",
-      "reason": "Automation present (.smithers/flows/land/commit.test.mjs, packages/repo-targets/contracts/drift-job.test.mjs and packages/smithers/build/build-cli/test/TargetIndexExecution.test.ts); ubuntu-latest root setup, clean per-SHA drift, required-status verification and owner mapping approval remain outstanding",
+      "reason": "Automation present (.smithers/flows/land/commit.test.mjs, packages/repo-targets/contracts/drift-job.test.mjs and packages/smithers/build/build-cli/test/TargetIndexExecution.test.ts); a clean hosted per-SHA drift run, required-status verification and owner mapping approval remain outstanding; decision 0127 removed the root setup",
       "ticket": "T-PRC-01"
     },
     "C-PRC-02": {

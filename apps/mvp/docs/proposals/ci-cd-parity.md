@@ -40,20 +40,20 @@ Status: **exists**; **small** (small addition, built now); **build** (missing, b
 
 | # | GitHub feature | Used by | Smithers equivalent | Status | Work note |
 |---|---|---|---|---|---|
-| 1 | `push` to branches | S ci, distribution, drift, native-windows, reference-host, trusted-setup-validation; T ci, prerelease, release, wasm-size-check; E check, release, snapshot, release-queue | the route records a push (`Api.ts:323-405`, `Notifications.ts:268-282`) and starts nothing | build | `ci-parity-triggers` |
+| 1 | `push` to branches | S ci, distribution, drift, native-windows, reference-host; T ci, prerelease, release, wasm-size-check; E check, release, snapshot, release-queue | the route records a push (`Api.ts:323-405`, `Notifications.ts:268-282`) and starts nothing | build | `ci-parity-triggers` |
 | 2 | `pull_request` | S ci, distribution, drift, native-windows; T ci, parity-suites, review, wasm-size-check, claude-code-review; E check, snapshot | reaches `github/Apply` (`Apply.ts:52`); `checks/Run` starts only from a TODO publish (`Todo.ts:514`) | build | `ci-parity-triggers` |
 | 3 | Tag pushes and release events | S release, apps-deploy (`v*`) | not decoded | build | `ci-parity-triggers` |
 | 4 | `issues`, `issue_comment`, labels, reviews, `pull_request_target` | T claude, factory-intake, factory-issue; E release-queue, effect-bot | ingested for sync and triage (`Api.ts:259`, `:377`); no repository flow starts | build | `ci-parity-triggers` |
 | 5 | Every repository on one deployment | all | one synced repository (`github/Config.ts:1-5`) | build | `ci-parity-triggers` |
-| 6 | Fork pull requests without secrets; base-trusted runs | E snapshot (fork gate), release-queue; S trusted-drift | none | build | `ci-parity-triggers` |
+| 6 | Fork pull requests without secrets; base-trusted runs | E snapshot (fork gate), release-queue | none | build | `ci-parity-triggers` |
 | 7 | `schedule` crons | S canary, reliability; T cron-nightlyConformance, claude-auto-update; E npm-promote, ai-codegen | `@smthrs/triggers`, not wired (`Reconcile.ts:19`) | build | `ci-parity-cron` |
 | 8 | `workflow_dispatch` with typed inputs | S 9 files, T 12, E 8 | the payload schema is the input; personal flows take one string ([flows](../features/flows.md) line 192) | small | `ci-parity-manual-run` |
-| 9 | `paths` filters | S native-windows, trusted-setup-validation | none; the compare route exists (`worker/github/Compare.ts`) | small | `ci-parity-path-filters` |
+| 9 | `paths` filters | S native-windows | none; the compare route exists (`worker/github/Compare.ts`) | small | `ci-parity-path-filters` |
 | 10 | Workflows defined in the repository | all | not built ([flows](../features/flows.md) line 202; 0017 slice 5) | build | `ci-parity-repo-flows` |
 | 11 | `needs` job graph | S release, apps-deploy, drift; T factory-issue; E snapshot | `Node.andThen`, `Node.bindPlanned` | exists | none |
 | 12 | Static matrix, `include`, `fail-fast`, `continue-on-error` | S ci, release, reliability, apps-deploy; E check, V3 check | `Node.all` keyed by row; `Node.catch` | exists | none |
 | 13 | Dynamic matrix (`fromJSON`) | S release (145-149), reliability (248) | a trampoline round sized from a step's result | exists | none |
-| 14 | Reusable workflows, composite actions | S drift calls trusted-drift; T and E setup actions | `.call()`, `.child()`, plain TypeScript functions | exists | none |
+| 14 | Reusable workflows, composite actions | T and E setup actions | `.call()`, `.child()`, plain TypeScript functions | exists | none |
 | 15 | `workflow_run` | E npm-promote, bundle-comment | a later step of the same flow; run-event triggers are 0017 slice 2 | exists | none |
 | 16 | A Linux machine per job | every job | `SandboxObject` per id; git, tmux and bash only; no internet | build | `ci-parity-job-sandbox` |
 | 17 | Toolchains: Node, pnpm, bun, Deno, Rust, Go, Foundry, Zig, jj | all | none in the image | build | `ci-parity-job-sandbox` |
@@ -117,7 +117,7 @@ The first six are the spine: nothing runs or shows without them, so they come fi
 | 14 | `ci-parity-cron` | M | 6 | A `triggers/Tick` lineage on `FlowExecution`: one step calls `Scheduler.make(...).runOnce` over `SqlTriggerStore` with a runner that starts flows through `FlowStarter`, then a durable one-minute sleep and a hand-off. |
 | 15 | `ci-parity-rerun-failed` | S | all | Each `ci/job` result is sealed under `(repo, sha, job, inputs digest)` with `Action.withCache`, so Retry failed starts a new run that replays passed jobs and reruns the failed ones. |
 | 16 | `ci-parity-machine-sizes` | S | E check, snapshot, cluster, ai-codegen | Two more container classes (`standard-2`, `standard-4`) and `machine` on `ci/job`; an unknown size is refused before anything runs. |
-| 17 | `ci-parity-path-filters` | S | S native-windows, trusted-setup-validation | `paths` and `pathsIgnore` on a trigger, matched against the push's commits or the compare API; when the diff can't be read, the flow runs. |
+| 17 | `ci-parity-path-filters` | S | S native-windows | `paths` and `pathsIgnore` on a trigger, matched against the push's commits or the compare API; when the diff can't be read, the flow runs. |
 | 18 | `ci-parity-required-checks` | S | E main, `v4/next-*`, V3 | A repository setting lists required flows per branch; `pr/Merge` refuses until each has passed on the head SHA (0017 `merge/rules`). |
 
 ## Ticket-only gaps
@@ -173,7 +173,7 @@ runs rows + journal ──▶ /$owner/$repo/actions, the run page, the PR Checks
 | JSR | Token publishing is a small addition; provenance is a ticket | Ticket | Opus. JSR's docs: "Tokenless OIDC publishing is only available from GitHub Actions, but token-based publishing works everywhere." |
 | Postgres | Part of the job image | Its own build-now note | Opus. None of the repositories uses a Postgres service container; Smithers installs Postgres 18 by script (`distribution.yml:26-27`, `ci.yml:96-125`). |
 | Deployments and mirror pushes | Part of the egress | Their own build-now note | Opus. wrangler, Alchemy, `git push` with an extra header and the website dispatch all carry their credential in a request header, which the egress already substitutes. |
-| Trusted reuse of setup | Not a gap | Build now | Opus. Composite actions become TypeScript functions, and Alchemy pins the CI image by digest (`infra/BranchSandbox.ts:1-5`). `trusted-ci-setup` verifies a GitHub runner's integrity, which has no meaning off GitHub. |
+| Trusted reuse of setup | Not a gap | Build now | Opus. Composite actions become TypeScript functions, and Alchemy pins the CI image by digest (`infra/BranchSandbox.ts:1-5`). Decision 0127 deleted Smithers' `trusted-ci-setup`. |
 | Re-run failed jobs | Sealed results replayed by cache | A new linked execution of the failed child | Opus. `Action.withCache` with a shared scope exists and needs no new linkage; irreversible steps are never sealed, so a publish is never replayed. |
 | Retry from here | Folded into re-run | Ticket, through `TimeTravel` | Sol. `TimeTravel.fork` and `rewind` exist but need jj on the host (`docs/libraries.md:230`) and invalidation rules. |
 | Cache and artifacts | One note | Two notes | Sol. They share a bucket but have different keys, lifetimes and readers. |
@@ -209,16 +209,14 @@ Smithers paths are under this repository's `.github/workflows/` and Tevm's under
 | `apps-deploy.yml` | tags `v*`; dispatch `ref` (6-18) | `gate` matrix of 3 shards (46-49), then `deploy` (155-232) | cache tokens, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`; environment `production` (159) | `apps-deploy`, no cancel (25-27) | wrangler deploy of `apps/server`; a deploy receipt |
 | `canary.yml` | crons `0 * * * *` (43) and `15,30,45 * * * *` (46); dispatch `metered`, `force_failure` (49-56) | `probe` (67-233), 15 min | `CANARY_SESSION_COOKIE`; vars | `canary`, no cancel (62-64) | opens, comments on and closes "Canary: smithers.sh is failing" (184-212) |
 | `distribution.yml` | PR, push `main` (4-6) | `image`: Postgres 18 by script (26-27), Go backup and restore tests | none | per ref (11-14) | pass or fail |
-| `drift.yml` | push `main`, PR (3-5) | calls `trusted-drift.yml@7df5f685…` (12-13), then a gate job (14-22) | none | per SHA (6-8) | pass or fail |
+| `drift.yml` | push `main`, PR | one job: checkout, install, then nine drift gates | none | per SHA | pass or fail |
 | `native-windows.yml` | push `main` and PR with path filters (3-23); dispatch `portablePackages` (24-29) | `kernel`, `filesystem` on `windows-latest` (37, 50) | none | per ref (32-34) | coverage artifacts |
 | `npm-dist-tag.yml` | dispatch `package`, `version`, `tag`, `replaceZeroLatest` (29-48) | `npm dist-tag add` (110-114) | `NPM_TOKEN`; environment `npm-publish` (62) | per package (53-55) | a moved dist-tag |
 | `reference-host.yml` | push `main`, dispatch (34-36) | `[self-hosted, reference-host]`, a Mac mini (53) | none | `reference-host` (40-42) | pass or fail |
 | `release-auth.yml` | dispatch (3-4) | `npm whoami`, token list (10-75) | `NPM_TOKEN`; environment `npm-publish` (13) | none | log only |
 | `reliability.yml` | cron `23 3 * * *` (3-4); dispatch `campaign`, `seed` (7-17) | 6 jobs; Node matrix (55-58); `e2e-faults` host × tier with a self-hosted macOS ARM64 leg (248-253), KVM and Microsandbox (336-353), up to 360 min (259) | none | per ref and campaign (20-22) | 30-day artifacts |
-| `trusted-drift.yml` | `workflow_call` (2-3) | `trusted-ci-setup@c4ece3f8…` before checkout (15-16), then 12 drift lints | none | per SHA (4-6) | pass or fail |
-| `trusted-setup-validation.yml` | push `main` with path filters (3-11); dispatch | `trusted-ci-setup-campaign@82d38ca5…` (25-26) | none | per run (15-17) | a receipt artifact |
 
-`main`'s ruleset holds deletion, non-fast-forward and linear history, and no required checks. `ci.yml`, `drift.yml` and `trusted-drift.yml` are rendered from `Smithers.GithubCiGen` (`PACKAGE.ts:553-660`).
+`main`'s ruleset holds deletion, non-fast-forward and linear history, and no required checks. `ci.yml` and `drift.yml` are rendered from `Smithers.GithubCiGen` (`PACKAGE.ts:553-660`).
 
 ### A.2 Tevm (16 files; repository `evmts/tevm`)
 
@@ -358,13 +356,12 @@ Each job runs all of its gates as steps; the sketch shows one. Gates that need D
 | `apps-deploy.yml` | `apps/deploy` | tags `v*`; `manual` `{ ref }`; `concurrency: { group: "deploy" }` | SB: 3 gate shards (`Node.all`) → DO: `environment: "production"` → SB: `pnpm run deploy --yes` for `apps/mvp` with `CLOUDFLARE_API_TOKEN` through the egress → SB: smoke both hosts | none |
 | `canary.yml` | `ops/canary` | `cron` `0 * * * *` and `15,30,45 * * * *`; `manual` `{ metered, forceFailure }` | SB: the probe and the browser canary → DO: open, comment on or close the issue (`github/Write`, exists) | none |
 | `distribution.yml` | `ci/distribution` | push `main`; PR | SB: Postgres 18 from the image, `go test …`, `node --test …` | none |
-| `drift.yml`, `trusted-drift.yml` | `ci/drift` | push `main`; PR | SB: 12 `smthrs lint` drift gates; the image replaces the trusted setup action | none |
+| `drift.yml` | `ci/drift` | push `main`; PR | SB: nine `smthrs` drift gates | none |
 | `native-windows.yml` | `ci/windows` | push `main`, PR, `paths` | SB on Windows | `ci-parity-advanced-runners` |
 | `npm-dist-tag.yml` | `release/dist-tag` | `manual` `{ package, version, tag, replaceZeroLatest }`; `concurrency: { group: "package" }` | DO: `environment: "npm-publish"` → SB: guards, `npm dist-tag add`, read back | none |
 | `reference-host.yml` | `ci/reference-host` | push `main`; `manual` | a self-hosted Mac | `ci-parity-advanced-runners` |
 | `release-auth.yml` | `release/auth` | `manual` | SB: `npm whoami`, token list | none |
 | `reliability.yml` | `ci/reliability` | `cron` `23 3 * * *`; `manual` `{ campaign, seed }` | SB: 5 Linux jobs (`Node.all`), a soak matrix over two Node versions, the Linux fault leg | KVM (`ci-parity-privileged-linux`), the reference leg (`ci-parity-advanced-runners`) |
-| `trusted-setup-validation.yml` | none | none | checks a GitHub runner's integrity, which has no meaning off GitHub | not ported |
 
 ### B.2 Tevm
 

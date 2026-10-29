@@ -1292,7 +1292,7 @@ triggers: {
 | `packages` (1392) | Linux legs in `packages`; macOS and Windows legs ticketed, shown as unsupported, never green |
 | `go-backend` (1529), `go-backend-access` (1654) | partition `backend`, 190-minute bound; old-stack regression only, no new product work |
 
-No `affected` on pull requests, deliberately. Today's pull request CI runs every target; with a shared cache an unchanged target is a hit that still reports its verdict, so the required check stays complete. **Deleted at the end:** `ci.yml`, `drift.yml`, `trusted-drift.yml`, the `GithubCiGen` declarations and the five renderer modules. Publishing stays on GitHub as one hand-written workflow (GH-9).
+No `affected` on pull requests, deliberately. Today's pull request CI runs every target; with a shared cache an unchanged target is a hit that still reports its verdict, so the required check stays complete. **Deleted at the end:** `ci.yml`, `drift.yml`, the `GithubCiGen` declarations and the five renderer modules. Publishing stays on GitHub as one hand-written workflow (GH-9).
 
 ### 8.4 Tevm drops Nx (OTHER-5)
 
@@ -1661,7 +1661,7 @@ No codemod touches the shape of `PACKAGE.ts` files (question 2).
 | 6 | `B/Executor.ts`'s scheduler (of 857), `B/TargetExecution.ts` 126, `B/Cache.ts` 1,492 | ~2,200 |
 | 7 | `T/Flow.ts` 154, `T/FlowCatalog.ts` 203, `T/Home.ts` 600, the `S.Factory` half of `T/Factory.ts` (1,117); the hand-merged list in `apps/mvp/worker/ExecutionHost.ts:44-164` | ~1,500 |
 | 8 | `T/CronTarget.ts` 43; `smthrs triggers register`; `T/SecretProxy.ts` 957 | ~1,000 |
-| 9 | `T/GithubCiGen.ts` 1,827, `T/GithubWorkflow.ts` 1,165, `T/GithubTarget.ts` 522, `T/CiToolchain.ts` 1,122, `B/GithubRender.ts` 1,084; `ci.yml` (1,773 lines), `drift.yml`, `trusted-drift.yml`, `canary.yml`, and each other non-publishing workflow once a flow replaces it | 5,720 + YAML |
+| 9 | `T/GithubCiGen.ts` 1,827, `T/GithubWorkflow.ts` 1,165, `T/GithubTarget.ts` 522, `T/CiToolchain.ts` 1,122, `B/GithubRender.ts` 1,084; `ci.yml` (1,773 lines), `drift.yml`, `canary.yml`, and each other non-publishing workflow once a flow replaces it | 5,720 + YAML |
 | 10 | Tevm: `nx.json`, 17 `nx` scripts, the `nx` dependency, the aggregate targets | other repositories |
 
 About 12,800 lines of Smithers library source (estimates marked ~) and 1,773 lines of generated YAML go, against the net surface in 5.0. The publishing workflows stay (GH-9).
