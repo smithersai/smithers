@@ -13,7 +13,7 @@ import * as Journal from "@smthrs/journal/Journal"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
 import { Migrations as RunStoreMigrations, Ownership, RunStore } from "@smthrs/run-store"
-import { Context, type Crypto, Deferred, Effect, Exit, Fiber, Layer, Logger, References, Stream } from "effect"
+import { ConfigProvider, Context, type Crypto, Deferred, Effect, Exit, Fiber, Layer, Logger, References, Stream } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as Statement from "effect/sql/Statement"
 import { mkdtempSync, rmSync } from "node:fs"
@@ -1491,6 +1491,12 @@ describe("global watch bounds SQL inventory", () => {
         const events = yield* control.watch({ follow }).pipe(
           follow ? Stream.take(partitions.length) : (stream) => stream,
           Stream.runCollect,
+          // This assertion measures one snapshot walk. Periodic tail
+          // reconciliation (367a9d91) legitimately performs later walks.
+          Effect.provideService(
+            ConfigProvider.ConfigProvider,
+            ConfigProvider.fromUnknown({ SMITHERS_CONTROL_WATCH_INTERVAL: "1 hour" })
+          ),
           Effect.provideService(Statement.CurrentTransformer, inventoryReads(reads, admitBeforeRunPage))
         )
         return { partitions, events }
