@@ -34,14 +34,15 @@ const resolved = Smithers.NodeTest({ ...actual.attrs, runtime: Smithers.Runtime.
 const [call] = plannedCalls(resolved)
 assert.equal(call.action, "smithers-build/exec")
 const environment = Exec.toolEnvironment(call.payload.env, [])
-assert.equal(environment.SMITHERS_TEST_PG_URL, process.env.SMITHERS_TEST_PG_URL)
+const names = ["SMITHERS_TEST_PG_URL", "SMITHERS_TEST_COMPOSE_PG_URL", "SMITHERS_TEST_PGBOUNCER_URL"]
+for (const name of names) assert.equal(environment[name], process.env[name])
 assert.equal(environment.MATRIX_UNRELATED_CREDENTIAL, undefined)
 for (const name of ["PGPASSWORD", "PGPASSFILE", "PGSERVICE", "PGSERVICEFILE"]) assert.equal(environment[name], undefined)
-assert.deepEqual(Object.keys(call.payload.env), process.env.SMITHERS_TEST_PG_URL === undefined ? [] : ["SMITHERS_TEST_PG_URL"])
+assert.deepEqual(Object.keys(call.payload.env), names.filter((name) => process.env[name] !== undefined))
 console.log("matrix environment qualified")
 `
 
-const check = (url?: string) =>
+const check = (url?: string, name = "SMITHERS_TEST_PG_URL") =>
   spawnSync(process.execPath, ["--input-type=module", "-e", probe], {
     cwd: root,
     encoding: "utf8",
@@ -54,7 +55,7 @@ const check = (url?: string) =>
       PGPASSFILE: "private-fixture-marker",
       PGSERVICE: "private-fixture-marker",
       PGSERVICEFILE: "private-fixture-marker",
-      ...(url === undefined ? {} : { SMITHERS_TEST_PG_URL: url })
+      ...(url === undefined ? {} : { [name]: url })
     }
   })
 
@@ -74,6 +75,19 @@ describe("canonical PostgreSQL matrix configuration", () => {
     expect(result.status).toBe(0)
     expect(result.stdout).toBe("matrix environment qualified\n")
   })
+
+  it.each(["SMITHERS_TEST_COMPOSE_PG_URL", "SMITHERS_TEST_PGBOUNCER_URL"])(
+    "declares %s and refuses credentials without exposing them",
+    (name) => {
+      const allowed = check("postgres://owner@localhost:55493/postgres", name)
+      expect(allowed.status).toBe(0)
+      expect(allowed.stdout).toBe("matrix environment qualified\n")
+      const refused = check("postgres://owner:private-fixture-marker@localhost/postgres", name)
+      expect(refused.status).not.toBe(0)
+      expect(refused.stderr).toContain(`${name} requires a credential-free PostgreSQL URL`)
+      expect(refused.stderr).not.toContain("private-fixture-marker")
+    }
+  )
 
   it.each([
     "",

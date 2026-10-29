@@ -127,3 +127,9 @@ returning, even while its parent step keeps running. Ordinary interpreter
 records still batch with the run's next write.
 `patterns/test/BurndownJournal.test.ts` holds a sibling open and reads a completed
 item's landing and release from the real journal before ending the round.
+
+The connection-loss integration cases accept `SMITHERS_TEST_COMPOSE_PG_URL`
+for their persistent Postgres endpoint and `SMITHERS_TEST_PGBOUNCER_URL` for
+its transaction pooler. Without overrides they use the app's compose ports.
+The storage matrix's `SMITHERS_TEST_PG_URL` still selects its disposable server
+for the direct Postgres case; the pooler must point at the persistent endpoint.

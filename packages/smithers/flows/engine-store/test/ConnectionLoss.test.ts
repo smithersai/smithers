@@ -37,10 +37,12 @@ import * as StepBoundary from "../src/StepBoundary.ts"
 import { withCrypto } from "./Sha256.ts"
 
 /** The compose Postgres (`apps/mvp/docker-compose.yml`), which the compose PgBouncer fronts. */
-const composePostgresUrl = "postgresql://smithers:smithers@127.0.0.1:54321/smithers"
+const composePostgresUrl = process.env.SMITHERS_TEST_COMPOSE_PG_URL ??
+  "postgresql://smithers:smithers@127.0.0.1:54321/smithers"
 /** The server the storage matrix provides, else the compose Postgres. */
 const postgresUrl = process.env.SMITHERS_TEST_PG_URL ?? composePostgresUrl
-const pgbouncerUrl = "postgresql://smithers:smithers@127.0.0.1:54322/smithers"
+const pgbouncerUrl = process.env.SMITHERS_TEST_PGBOUNCER_URL ??
+  "postgresql://smithers:smithers@127.0.0.1:54322/smithers"
 
 /** Only a refused connection means the service is absent; any other error fails the suite. */
 const listening = (url: string): Promise<boolean> => {

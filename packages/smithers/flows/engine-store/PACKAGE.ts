@@ -22,8 +22,14 @@ const { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeSc
 // Declared env appears in plans, so an external connection must carry no
 // password or libpq credential/config-file indirection. The stock matrix's
 // private disposable-server password stays inside its existing runner.
-const postgresUrl = process.env["SMITHERS_TEST_PG_URL"]
-if (postgresUrl !== undefined) {
+const postgresEnvironment: Record<string, string> = {}
+const postgresUrls = {
+  SMITHERS_TEST_PG_URL: process.env["SMITHERS_TEST_PG_URL"],
+  SMITHERS_TEST_COMPOSE_PG_URL: process.env["SMITHERS_TEST_COMPOSE_PG_URL"],
+  SMITHERS_TEST_PGBOUNCER_URL: process.env["SMITHERS_TEST_PGBOUNCER_URL"]
+}
+for (const [name, postgresUrl] of Object.entries(postgresUrls)) {
+  if (postgresUrl === undefined) continue
   let usable = false
   try {
     const url = new URL(postgresUrl)
@@ -38,7 +44,8 @@ if (postgresUrl !== undefined) {
           name === "connect_timeout" && /^[1-9][0-9]?$/.test(value)
       )
   } catch { /* Refuse unusable configuration without echoing the URL. */ }
-  if (!usable) throw new Error("SMITHERS_TEST_PG_URL requires a credential-free PostgreSQL URL")
+  if (!usable) throw new Error(`${name} requires a credential-free PostgreSQL URL`)
+  postgresEnvironment[name] = postgresUrl
 }
 
 /** The same SQLite/PostgreSQL matrix, optionally using a declared external server. */
@@ -57,7 +64,17 @@ const test = Smithers.NodeTest({
     Smithers.file("//packages/repo-targets/test-utils/effect-property.d.mts")
   ],
   deps: [lib],
-  env: { ...(postgresUrl === undefined ? {} : { SMITHERS_TEST_PG_URL: postgresUrl }) },
+  env: {
+    ...(postgresEnvironment["SMITHERS_TEST_PG_URL"] === undefined
+      ? {}
+      : { SMITHERS_TEST_PG_URL: postgresEnvironment["SMITHERS_TEST_PG_URL"] }),
+    ...(postgresEnvironment["SMITHERS_TEST_COMPOSE_PG_URL"] === undefined
+      ? {}
+      : { SMITHERS_TEST_COMPOSE_PG_URL: postgresEnvironment["SMITHERS_TEST_COMPOSE_PG_URL"] }),
+    ...(postgresEnvironment["SMITHERS_TEST_PGBOUNCER_URL"] === undefined
+      ? {}
+      : { SMITHERS_TEST_PGBOUNCER_URL: postgresEnvironment["SMITHERS_TEST_PGBOUNCER_URL"] })
+  },
   timeout: "1200000ms",
   cwd: "packages/smithers/flows/engine-store"
 })
