@@ -8,6 +8,7 @@ import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
+import * as PackageRunner from "../src/internal/PackageRunner.ts"
 import * as PackageDiscovery from "../src/PackageDiscovery.ts"
 import * as PackageExec from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
@@ -649,5 +650,66 @@ exec '${tools}/'\${RUSTUP_TOOLCHAIN:-stable}/cargo "$@"
       await Fs.symlink("rustup", Path.join(tools, "cargo"))
     }
     await assertReplacement(root, tools, () => write(tools, `alternate/${executable}`, compiler(tools, "second")))
+  })
+})
+
+describe("executable revalidation across targets", () => {
+  const settled = () => Date.now() + 60_000
+
+  it("reuses a settled tool's digest while its stat identity is unchanged", async () => {
+    const root = await directory()
+    await write(root, "tool", "#!/bin/sh\necho first\n")
+    const tool = Path.join(root, "tool")
+    const memo = new Map<string, { readonly identity: string; readonly digest: string }>()
+    const digest = await PackageRunner.currentExecutableDigest(memo, tool, settled)
+    expect(digest).toBe(await PackageTree.digestFileBytes(tool))
+    // A remembered digest answers without reading the bytes again.
+    memo.set(tool, { identity: memo.get(tool)!.identity, digest: "remembered" })
+    expect(await PackageRunner.currentExecutableDigest(memo, tool, settled)).toBe("remembered")
+  })
+
+  it("reads the bytes again after a same-size rewrite in place", async () => {
+    const root = await directory()
+    await write(root, "tool", "#!/bin/sh\necho first\n")
+    const tool = Path.join(root, "tool")
+    const memo = new Map<string, { readonly identity: string; readonly digest: string }>()
+    const first = await PackageRunner.currentExecutableDigest(memo, tool, settled)
+    const handle = await Fs.open(tool, "r+")
+    await handle.write("#!/bin/sh\necho other\n", 0)
+    await handle.close()
+    const second = await PackageRunner.currentExecutableDigest(memo, tool, settled)
+    expect(second).not.toBe(first)
+    expect(second).toBe(await PackageTree.digestFileBytes(tool))
+  })
+
+  it("never remembers a tool that changed within the coarse-clock margin", async () => {
+    const root = await directory()
+    await write(root, "tool", "#!/bin/sh\necho first\n")
+    const tool = Path.join(root, "tool")
+    const memo = new Map<string, { readonly identity: string; readonly digest: string }>()
+    expect(await PackageRunner.currentExecutableDigest(memo, tool)).toBe(await PackageTree.digestFileBytes(tool))
+    expect(memo.size).toBe(0)
+  })
+
+  it("hashes bytes and discards the recorded digest when stat is unreadable", async () => {
+    const root = await directory()
+    await write(root, "tool", "#!/bin/sh\necho first\n")
+    const tool = Path.join(root, "tool")
+    const memo = new Map<string, { readonly identity: string; readonly digest: string }>()
+    await PackageRunner.currentExecutableDigest(memo, tool, settled)
+    expect(memo.size).toBe(1)
+    memo.set(tool, { identity: memo.get(tool)!.identity, digest: "stale" })
+    const unreadableStat = async (): Promise<never> => {
+      throw new Error("stat unavailable")
+    }
+    expect(await PackageRunner.currentExecutableDigest(memo, tool, settled, unreadableStat))
+      .toBe(await PackageTree.digestFileBytes(tool))
+    expect(memo.size).toBe(0)
+  })
+
+  it("answers undefined for a missing tool", async () => {
+    const root = await directory()
+    const memo = new Map<string, { readonly identity: string; readonly digest: string }>()
+    expect(await PackageRunner.currentExecutableDigest(memo, Path.join(root, "absent"), settled)).toBeUndefined()
   })
 })

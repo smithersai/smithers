@@ -83,6 +83,58 @@ const joined = <A>(run: (signal: AbortSignal) => Promise<A>): Effect.Effect<A, u
     return Effect.promise(() => pending.then(() => undefined, () => undefined))
   })
 
+/**
+ * How long before a digest read a file must have last changed for the digest
+ * to be reused. Kernels stamp mtime and ctime from a coarse clock (a Linux tick
+ * is up to 10 ms), so a same-size rewrite in the tick of the last change can
+ * leave every stat field equal. Git's index has the same race and refuses to
+ * trust entries modified around the time it records them.
+ */
+const racyIdentityMarginMs = 1_000
+
+const statIdentity = (stat: NodeFs.BigIntStats): string =>
+  [stat.dev, stat.ino, stat.size, stat.mode, stat.mtimeNs, stat.ctimeNs].join(":")
+
+/**
+ * The sha256 of an executable's bytes, read again only when its stat identity
+ * changed since this run last read them.
+ *
+ * Every target re-identifies the tools it runs before it runs, and a run of
+ * 800 targets over one 150 MB Node binary spent most of its time hashing that
+ * binary again. Replacing a file's bytes changes its ctime, which no
+ * unprivileged process can set, so an unchanged device, inode, size, mode,
+ * mtime and ctime means unchanged bytes. A digest is remembered only for a file
+ * whose last change is older than the coarse-clock margin, and only when the
+ * identity is the same after the read as before it.
+ *
+ * @category internal
+ * @since 1.0.0
+ */
+export const currentExecutableDigest = async (
+  memo: Map<string, { readonly identity: string; readonly digest: string }>,
+  path: string,
+  now: () => number = Date.now,
+  stat: (path: string) => Promise<NodeFs.BigIntStats> = (path) => Fs.stat(path, { bigint: true })
+): Promise<string | undefined> => {
+  const before = await stat(path).catch(() => undefined)
+  if (before === undefined) {
+    memo.delete(path)
+    return PackageTree.digestFileBytes(path).catch(() => undefined)
+  }
+  const identity = statIdentity(before)
+  const known = memo.get(path)
+  if (known !== undefined && known.identity === identity) return known.digest
+  memo.delete(path)
+  const started = now()
+  const digest = await PackageTree.digestFileBytes(path).catch(() => undefined)
+  if (digest === undefined) return undefined
+  const after = await stat(path).catch(() => undefined)
+  const settled = Number(before.ctimeNs / 1_000_000n) < started - racyIdentityMarginMs &&
+    Number(before.mtimeNs / 1_000_000n) < started - racyIdentityMarginMs
+  if (after !== undefined && statIdentity(after) === identity && settled) memo.set(path, { identity, digest })
+  return digest
+}
+
 /** Wall-clock cap on one `smithers memory` backend invocation. */
 const memoryBackendTimeoutMs = 60_000
 
@@ -431,6 +483,7 @@ export const executeEffect = (
     const effectiveKeys = new Map<string, string>()
     const keyFor = (node: PackageNode): string => effectiveKeys.get(node.label) ?? node.keyPreview
     const executablePath = (path: string): string => NodePath.normalize(path.replace(workspaceRootToken, root))
+    const executableDigests = new Map<string, { readonly identity: string; readonly digest: string }>()
     const verifyExecutables = (node: PackageNode): Effect.Effect<void, unknown> =>
       Effect.gen(function*() {
         const identities: Array<Record<string, unknown>> = []
@@ -442,11 +495,12 @@ export const executeEffect = (
           const key = JSON.stringify([source, expected, identity["digest"]])
           if (checked.has(key)) continue
           checked.add(key)
-          // Re-read bytes, not stat metadata or the plan's memo: a tool can be
-          // overwritten in place or a symlink retargeted while dependencies run.
+          // Re-resolve the path and re-identify the bytes, never the plan's
+          // memo: a tool can be overwritten in place or a symlink retargeted
+          // while dependencies run.
           const resolved = yield* joined(() => Fs.realpath(source).catch(() => undefined))
           const digest = resolved === expected
-            ? (yield* joined(() => PackageTree.digestFileBytes(expected).catch(() => undefined)))
+            ? (yield* joined(() => currentExecutableDigest(executableDigests, expected)))
             : undefined
           if (digest !== identity["digest"]) {
             throw new Error(`executable changed since planning: ${source}; run the command again`)

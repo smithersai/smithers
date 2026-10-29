@@ -71,7 +71,13 @@ maintaining them by hand, is an open design question.
 
 `PACKAGE.ts` execution keys the selected executable's resolved path and content
 SHA-256, as well as each declared tool reference's resolution and executable
-bytes. Changing the bytes behind a fixed version string causes a miss.
+bytes. Changing the bytes behind a fixed version string causes a miss. Before a
+target runs, the executor resolves each tool again and compares its bytes with
+the planned digest. Within one run it re-reads a file only when its device,
+inode, size, mode, mtime or ctime changed, or when its last change is less
+than a second older than the previous read, so many targets over one large
+binary hash it once. Nanosecond timestamps are compared; an unreadable stat
+always falls back to hashing the bytes and discards the remembered digest.
 Workspace-local executable paths stay relative; host installations retain their
 absolute paths.
 
