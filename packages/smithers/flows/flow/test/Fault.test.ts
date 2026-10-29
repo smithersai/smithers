@@ -176,3 +176,10 @@ describe("respond", () => {
     expect(Fault.respond(fault("bug"), generous)).toBe("stop")
   })
 })
+
+it("classifies a refused retry as a request the person can correct", () => {
+  expect(Fault.of({ _tag: "@smthrs/flow/FlowRuntime/RetryFromRefused", code: "not_settled" })).toEqual({
+    class: "user",
+    tag: "@smthrs/flow/FlowRuntime/RetryFromRefused/not_settled"
+  })
+})

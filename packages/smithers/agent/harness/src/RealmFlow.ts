@@ -6,6 +6,7 @@
 
 import { BoundedJson } from "@smthrs/canonical"
 import { digestSync } from "@smthrs/crypto"
+import { Fault } from "@smthrs/flow"
 import { Clock, Effect, Schema } from "effect"
 import { getVersion, transform } from "sucrase"
 import { source as bundle } from "./internal/RealmFlowBundle.ts"
@@ -98,6 +99,18 @@ export class RealmFlowError extends Schema.TaggedError<RealmFlowError>()("RealmF
     "action_not_allowed"
   ])
 }) {}
+
+Fault.register(
+  "RealmFlowError",
+  {
+    invalid_source: "factory",
+    execution_failed: "factory",
+    limit_exceeded: "policy",
+    runtime_failed: "infra",
+    forbidden_import: "factory",
+    action_not_allowed: "factory"
+  } satisfies Fault.Rows<RealmFlowError["code"]>
+)
 
 /** The closed codes the realm's trusted code records with `__refuse`. */
 type Refusal = "forbidden_import" | "action_not_allowed"

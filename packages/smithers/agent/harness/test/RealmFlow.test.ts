@@ -1,4 +1,5 @@
 import { expect, it } from "@effect/vitest"
+import { Fault } from "@smthrs/flow"
 import { Effect, Schema } from "effect"
 import { RealmFlow } from "../src/index.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
@@ -320,3 +321,19 @@ export default Flow.make('go', { payload: {}, success: Schema.String,
     )
       .toEqual({ _tag: "Complete", value: "refused: NavigationRefused" })
   }))
+
+it.each(
+  [
+    ["invalid_source", "factory"],
+    ["execution_failed", "factory"],
+    ["limit_exceeded", "policy"],
+    ["runtime_failed", "infra"],
+    ["forbidden_import", "factory"],
+    ["action_not_allowed", "factory"]
+  ] as const
+)("classifies flow realm %s as %s", (code, classification) => {
+  expect(Fault.of(new RealmFlow.RealmFlowError({ code }))).toEqual({
+    class: classification,
+    tag: `RealmFlowError/${code}`
+  })
+})

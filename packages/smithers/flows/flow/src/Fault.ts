@@ -227,6 +227,7 @@ export const respond = (fault: Fault, state: State): Response =>
     bug: "stop"
   } as const satisfies Record<Class, Response>)[fault.class]
 
+register("@smthrs/flow/FlowRuntime/RetryFromRefused", "user")
 register("@smthrs/engine/ExecutionIdentityConflict", "bug")
 register("@smthrs/flow/InfraInterrupt", "infra")
 register("@smthrs/flow/InfraInterruptRetriesExhausted", "infra")

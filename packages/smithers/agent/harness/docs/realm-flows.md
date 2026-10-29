@@ -123,3 +123,7 @@ esbuild. `node realm/build.mjs --check` rebuilds and verifies the committed byte
 QuickJS tests execute the generated SDK bundle; V8 coverage cannot instrument
 code executed by the WASM interpreter, so its behavioral evidence is the realm
 suite rather than V8 statement counts inside that bundle.
+
+Realm refusals classify invalid or forbidden code as `factory`, exhausted realm
+limits as `policy`, and unavailable native runtimes as `infra`. Retry-from-step
+refusals classify as `user`, so the request can be corrected.
