@@ -22,3 +22,26 @@ TODO snapshots and their applied receipts (decoding and persistence), before
 rendering is measured. A passing empty loading shell cannot prove list layout.
 
 Catalog: ui, flow, effect-tanstack-db. No new dependency or public SDK interface.
+
+The Chromium desktop CSS comparison uses bounded 8,192px PNG clips, with a
+coordinate manifest covering the entire document at its full width. WebKit retains its strict
+full-document capture. The two passes share the same applied snapshot barrier
+and original scroll position; scrolling each clip would repeat fixed overlays
+and conceal document pixels at clip boundaries. Every PNG byte, document
+dimension and text check remains strict, and CSS and scroll restore on failure.
+No masks, pixel tolerance or deadline changes. The existing 10-second stable
+window bounds each capture and paint wait, stops work at expiry and awaits
+restoration before returning; a real stalled-font regression checks that no
+capture resumes after the failed comparison has returned. Expiry preserves
+the last substantive pixel or content failure.
+
+A 1280×254435 Chromium full-document capture omitted rectangular raster patches
+at rows 103633–104141. A repeated production comparison reproduced those exact
+rows while all 32 nearby rows retained identical markup, attributes, bounds and
+computed styles before and after each capture. Fonts were ready before both
+captures. This is capture evidence; no product settling behavior changes. A
+static replay with a slightly different document height did not reproduce it.
+The bounded Chromium clips are checked scanline by scanline at the failing
+height, with stripe/last-row text compared against visible element captures.
+Regressions still reject a CSS change concealed by a fixed header, changing
+content, changing document dimensions and missing comparison rules.

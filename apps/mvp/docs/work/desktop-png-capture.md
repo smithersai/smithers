@@ -1,0 +1,16 @@
+---
+title: Stable desktop PNG captures
+status: done
+area: frontend
+owner: codex-w20-png
+updated: 2026-10-28
+links: [./mobile-responsiveness-sweep.md]
+---
+
+The failing production stripe reproduced with identical markup, attributes, bounds and computed styles on all 32 nearby rows. Fonts were ready before both captures. The 1280×254435 PNG omitted rectangular raster patches at y=103633–104141. One of three instrumented repetitions failed at exactly the original rows; the other two passed. A subsequent unchanged-CSS pair and three static replays passed; the replay height was 254232, so they do not reproduce the original capture.
+
+The Chromium comparison now captures bounded 8,192px clips in two passes at the same scroll position and records every document coordinate. WebKit retains its original exact full-document comparison. Exact PNG equality, dimensions, text, snapshot readiness and deadlines remain strict. CSS and the original scroll position restore on failure. One CSS removal/restoration per pass avoids repeatedly recalculating the large Issues sheet. Scrolling clips would repeat fixed overlays; a regression rejects a defect hidden at a clip boundary. Exploratory viewport and 4,096px WebKit capture runs were too slow under the existing deadline and are retained; no deadline changed.
+
+Existing library catalog entry: @smthrs/ui. This repairs test capture infrastructure; no new library, product feature, schema, plugin interface or public API. The browser-side CSSOM and paint operations have independent DOM-host unit tests; real Chromium exercises every retained scanline and text in the original stripe and last row. The full-document policy also has a pure unit test; real Chromium and WebKit run locally and against production on macOS. Validation: Latitude's typecheck, import rules and lint pass. All 18 focused tests pass with 100% statements, branches, functions and lines on both implementation files. The original capture fails the tall-document regression. Astra's deadline finding has a second red receipt: a real stalled font lets four PNGs appear after the old comparison returns. The corrected deadline stops work and awaits cleanup; that regression passes.
+
+The focused signed-in Issues journey passes in Chromium and WebKit locally and read-only against production. Production Chromium checks 4,099 controls with zero findings and 32 equal-byte clips covering 1280×254435. WebKit checks 4,100 controls with zero findings and an equal-byte 1280×254501 full PNG. Snapshot readiness, error watchers, pixel equality and deadlines were not relaxed. Astra's final follow-up has no findings. Fable's expiry and horizontal-overflow findings are fixed and covered; its timing concern adds capture duration and completed comparison counts to the receipt. Two final production repetitions of each engine pass, with Chromium at 1.7 minutes per case under the unchanged 180-second deadline. The 8,192px bound retains every pixel while reducing the capture count from 126 to 64. A typed-timeout regression fails before the final diagnostic fix; both guard expiry and a subsequent in-flight Playwright timeout retain the earlier real pixel mismatch. The real font-server regression covers the complete mismatch-then-timeout sequence. No push or deployment.
