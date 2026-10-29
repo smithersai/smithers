@@ -1074,7 +1074,7 @@ const securityReview = Smithers.SecurityReview({
  */
 const docsDrift = Smithers.Shell.Diff({
   shell:
-    "pnpm run docs:check && cd apps/site && node scripts/sync-support-docs.mjs --check && node scripts/gen-cli-data.mjs --check && node scripts/sync-api-docs.mjs --check && node scripts/ingest-reference.mjs --check && node scripts/generate-llms.mjs --check",
+    "pnpm run docs:check && cd apps/site && node scripts/sync-app-docs.mjs --check && node scripts/sync-support-docs.mjs --check && node scripts/gen-cli-data.mjs --check && node scripts/gen-cli-reference.mjs --check && node scripts/sync-api-docs.mjs --check && node scripts/ingest-reference.mjs --check && node scripts/generate-llms.mjs --check",
   changes: [],
   // The full durable docs flow plus projection checks measured 859s on a 48-core host.
   // Retain the guarded filesystem and tarball checks; allow startup and host-load headroom.
