@@ -929,9 +929,8 @@ describe("capacity seat chain", () => {
         expect((yield* Deferred.await(settled))._tag).toBe("suspended")
         yield* awaitParked(engine, driveFlow)
         expect(calls).toBe(1)
-        settled = Deferred.makeUnsafe<Outcome>()
         yield* TestClock.adjust(waitMillis)
-        return yield* Deferred.await(settled)
+        return classify(yield* Effect.exit(engine.execute(driveFlow, { executionId: "exec-1", payload: {} })))
       }).pipe(
         Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
         Effect.provide(TestClock.layer()),
@@ -939,7 +938,16 @@ describe("capacity seat chain", () => {
         Effect.scoped,
         Effect.runPromise
       )
-      expect(outcome._tag).toBe("completed")
+      expect(
+        outcome._tag,
+        JSON.stringify(events.flatMap((event): Array<{ event: string; at: number }> =>
+          event._tag === "model-parked" ?
+            [{ event: event._tag, at: event.wakeAt }]
+            : event._tag === "model-unparked"
+            ? [{ event: event._tag, at: event.at }]
+            : []
+        ))
+      ).toBe("completed")
       expect(calls).toBe(2)
       expect(events.filter((event) => event._tag === "model-parked")).toHaveLength(1)
       expect(events.filter((event) => event._tag === "model-unparked")).toHaveLength(1)
@@ -1049,9 +1057,8 @@ describe("capacity seat chain", () => {
       yield* engine.execute(driveFlow, { executionId: "exec-1", payload: {}, discard: true })
       expect((yield* Deferred.await(settled))._tag).toBe("suspended")
       yield* awaitParked(engine, driveFlow)
-      settled = Deferred.makeUnsafe<Outcome>()
       yield* TestClock.adjust("5 seconds")
-      return yield* Deferred.await(settled)
+      return classify(yield* Effect.exit(engine.execute(driveFlow, { executionId: "exec-1", payload: {} })))
     }).pipe(
       Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
       Effect.provide(TestClock.layer()),
@@ -1411,9 +1418,8 @@ describe("capacity seat chain", () => {
       expect((yield* Deferred.await(settled))._tag).toBe("suspended")
       yield* awaitParked(engine, driveFlow)
       expect(contacted).toEqual(["first", "second"])
-      settled = Deferred.makeUnsafe<Outcome>()
       yield* TestClock.adjust("3 seconds")
-      return yield* Deferred.await(settled)
+      return classify(yield* Effect.exit(engine.execute(driveFlow, { executionId: "exec-1", payload: {} })))
     }).pipe(
       Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
       Effect.provide(TestClock.layer()),
@@ -1482,9 +1488,8 @@ describe("capacity seat chain", () => {
       yield* engine.execute(driveFlow, { executionId: "exec-1", payload: {}, discard: true })
       expect((yield* Deferred.await(settled))._tag).toBe("suspended")
       yield* awaitParked(engine, driveFlow)
-      settled = Deferred.makeUnsafe<Outcome>()
       yield* TestClock.adjust("5 seconds")
-      return yield* Deferred.await(settled)
+      return classify(yield* Effect.exit(engine.execute(driveFlow, { executionId: "exec-1", payload: {} })))
     }).pipe(
       Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
       Effect.provide(TestClock.layer()),
@@ -1523,9 +1528,8 @@ describe("capacity seat chain", () => {
       yield* engine.execute(driveFlow, { executionId: "exec-1", payload: {}, discard: true })
       expect((yield* Deferred.await(settled))._tag).toBe("suspended")
       yield* awaitParked(engine, driveFlow)
-      settled = Deferred.makeUnsafe<Outcome>()
       yield* TestClock.adjust("5 seconds")
-      return yield* Deferred.await(settled)
+      return classify(yield* Effect.exit(engine.execute(driveFlow, { executionId: "exec-1", payload: {} })))
     }).pipe(
       Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
       Effect.provide(TestClock.layer()),
@@ -1621,9 +1625,8 @@ describe("capacity seat chain", () => {
         expect(calls).toBe(1)
         expect(events.filter((event) => event._tag === "model-parked")).toHaveLength(1)
       }
-      settled = Deferred.makeUnsafe<Outcome>()
       yield* TestClock.adjust(waitMillis / 2)
-      return yield* Deferred.await(settled)
+      return classify(yield* Effect.exit(engine.execute(driveFlow, { executionId: "exec-1", payload: {} })))
     }).pipe(
       Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
       Effect.provide(TestClock.layer()),
