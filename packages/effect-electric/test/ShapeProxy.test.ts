@@ -454,7 +454,7 @@ describe.skipIf(!electricUp)("through Electric", () => {
       sourceId: "source-1",
       shape: { table: "items", where: "\"position\" > $1", params: { "1": "0" }, columns: ["id", "position"] }
     })
-    await h.request(
+    const response = await h.request(
       "?table=users&offset=-1&where=true&handle=h-1&offset=0_0&live=false&cursor=7&live_sse=false" +
         "&experimental_live_sse=false&expired_handle=h-0&log=full&cache-buster=b&columns=text&replica=full" +
         "&params%5B1%5D=x&secret=stolen&source_id=mine&subset__where_expr=%7B%7D&subset__order_by_expr=%5B%5D"
@@ -477,7 +477,9 @@ describe.skipIf(!electricUp)("through Electric", () => {
       ["where", "\"position\" > $1"]
     ])
     expect(`${h.upstream[0]!.origin}${h.upstream[0]!.pathname}`).toBe(`${ELECTRIC_URL}/v1/shape`)
+    const received = await response.arrayBuffer()
     await until(() => expect(h.logs).toHaveLength(1))
+    expect(h.line()?.annotations.bytes).toBe(received.byteLength)
     expect(JSON.stringify(h.logs)).not.toContain(secret)
     for (const span of h.spans) expect(JSON.stringify([...span.attributes])).not.toContain(secret)
     expect(h.spans.find(({ kind }) => kind === "client")?.attributes.get("url.full")).toContain("secret=REDACTED")
