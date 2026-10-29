@@ -8,6 +8,7 @@ import { CAPACITY_COPY, FAILURE_COPY, MEMBERS_CLONE, SIGN_IN_TO_CLONE } from "./
 import { cloneClicks, clones, opens } from "./metrics"
 import { NotCopied } from "./repo"
 import { VIEW } from "./rows"
+import { put } from "./actions"
 import { firstSyncOf, RepoStore } from "./store"
 import { headerOf } from "./view"
 
@@ -72,6 +73,56 @@ const header = (tab: Tab) => {
 }
 
 describe("cloning when RepoApi doesn't take it", () => {
+  test.each([null, "guest"] as const)("a known %s repository role refuses Clone and Try again before dispatch", async (role) => {
+    const client = cloning(() => Effect.die("a known forbidden clone must never reach the client"))
+    const tab = await open(client.layer)
+    const store = await tab.runtime.runPromise(Effect.service(RepoStore))
+    await tab.runtime.runPromise(put(store.roles, "github/octocat/spoon-knife", { id: "github/octocat/spoon-knife", role, workspaceRole: "admin", own: false }))
+    expect(tab.repo.actions.clone("octocat", "Spoon-Knife")).toBe(false)
+    expect(tab.repo.actions.retryClone("octocat", "Spoon-Knife")).toBe(false)
+    expect(client.calls).toEqual([])
+    expect(client.launches).toEqual([])
+    expect(tab.count(cloneClicks, { kind: "clone" })).toBe(1)
+    expect(tab.count(cloneClicks, { kind: "retry" })).toBe(1)
+    expect(tab.lines("repo.clone.admission").map(line => line.annotations)).toEqual([
+      expect.objectContaining({ outcome: "forbidden", role: role ?? "none", feature: "repo" }),
+      expect.objectContaining({ outcome: "forbidden", role: role ?? "none", feature: "repo" }),
+    ])
+  })
+
+  test.each([false, true])("failed authority preserves the clone state, then permits recovery (prior failure: %s)", async (priorFailure) => {
+    const client = cloning(() => Effect.fail(new RepoRefused({ status: 403, code: "forbidden" })))
+    const tab = await open(client.layer)
+    const store = await tab.runtime.runPromise(Effect.service(RepoStore))
+    const id = "github/octocat/spoon-knife"
+    if (priorFailure) await tab.runtime.runPromise(put(store.clones, id, { id, owner: "octocat", name: "Spoon-Knife", status: "failed" as const }))
+    await tab.runtime.runPromise(put(store.roles, id, { id, role: null, own: false, failure: "unavailable" }))
+    expect(tab.repo.actions.clone("octocat", "Spoon-Knife")).toBe(false)
+    expect(tab.repo.actions.retryClone("octocat", "Spoon-Knife")).toBe(false)
+    const held = await tab.runtime.runPromise(store.clones.get(id))
+    expect(Option.isSome(held) ? held.value.status : undefined).toBe(priorFailure ? "failed" : undefined)
+    expect(client.calls).toEqual([])
+    expect(tab.lines("repo.clone.admission").map(line => line.annotations)).toEqual([
+      expect.objectContaining({ outcome: "unavailable", role: "unknown" }),
+      expect.objectContaining({ outcome: "unavailable", role: "unknown" }),
+    ])
+    await tab.runtime.runPromise(put(store.roles, id, { id, role: "member", own: false, failure: undefined }))
+    expect(tab.repo.actions.retryClone("octocat", "Spoon-Knife")).toBe(true)
+    await waitFor(() => expect(client.calls).toEqual(["octocat/Spoon-Knife"]))
+    await waitFor(() => expect(tab.lines("repo.clone")[0]?.annotations.outcome).toBe("forbidden"))
+  })
+
+  test.each(["member", "maintainer", "admin"] as const)("a known %s repository role still dispatches and accepts a later server refusal", async (role) => {
+    const client = cloning(() => Effect.fail(new RepoRefused({ status: 403, code: "forbidden" })))
+    const tab = await open(client.layer)
+    const store = await tab.runtime.runPromise(Effect.service(RepoStore))
+    await tab.runtime.runPromise(put(store.roles, "github/octocat/spoon-knife", { id: "github/octocat/spoon-knife", role, workspaceRole: "admin", own: false }))
+    expect(tab.repo.actions.clone("octocat", "Spoon-Knife")).toBe(true)
+    await waitFor(() => expect(client.calls).toEqual(["octocat/Spoon-Knife"]))
+    await waitFor(() => expect(tab.lines("repo.clone")[0]?.annotations.outcome).toBe("forbidden"))
+    expect(tab.lines("repo.clone.admission")).toEqual([])
+  })
+
   test("a name that isn't a GitHub repository asks nothing", async () => {
     const client = cloning(() => Effect.die(new Error("not sent")))
     const tab = await open(client.layer)

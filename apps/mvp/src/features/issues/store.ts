@@ -1,3 +1,4 @@
+import { observeInitialApplied } from "../../shapeApplied"
 import { admissionReceipt } from "../../writeAdmission"
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
@@ -175,6 +176,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     syncMode: "eager",
     persist: { schemaVersion: 2 },
   }).pipe(Effect.provideService(ShapeSource.ShapeSource, signedInShapeSource(source, auth)))
+  yield* observeInitialApplied(writes, "github-writes", "*").pipe(Effect.forkIn(scope, { startImmediately: true }))
   const drafts = yield* Collection.persisted<Draft, string>({
     id: "issue-drafts",
     schema: Draft,
@@ -371,6 +373,9 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
         }))),
         Effect.forkIn(scope, { startImmediately: true }),
       )
+      for (const [shape, source] of [[items, "item-summaries"], [sync, "github-sync"], [triageSettings, "triage-settings"]] as const) {
+        yield* observeInitialApplied(shape, source, id.slice("github/".length)).pipe(Effect.forkIn(scope, { startImmediately: true }))
+      }
       // Availability follows the shape the page reads. A summary receipt never certifies a missing detail body.
       yield* followAvailability(items, access, id)
       yield* observeIssueShape(details.sync).pipe(Effect.annotateLogs({ projection: "detail" }), Effect.forkIn(scope, { startImmediately: true }))

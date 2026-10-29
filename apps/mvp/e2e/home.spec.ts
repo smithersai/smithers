@@ -1,4 +1,5 @@
 import { expect, step, test } from "./fixtures"
+import { trackCloneOffers } from "./clone-offers"
 import { requires, target } from "./target"
 
 // A repository's own home (docs/features/home.md, decision 0014 §4, F5), against the real app, Worker, Postgres,
@@ -21,14 +22,29 @@ test("declared: a repository's own home draws its blocks, Code opens its tree, a
   const home = page.getByRole("region", { name: "Home", exact: true })
   const tabs = page.getByRole("navigation", { name: "Repository pages" })
   const composer = page.getByRole("textbox", { name: "Message Smithers" })
+  let clonePosts = 0
+  let mayClone = false
+  page.on("request", request => {
+    if (request.method() === "POST" && new URL(request.url()).pathname === "/api/repos") clonePosts++
+  })
+  const cloneOffers = await trackCloneOffers(page)
 
   await step("Open smithersai/home-fixture: it opens on its own home", async () => {
+    const authority = page.waitForResponse(response => new URL(response.url()).pathname === `/api/repos${REPO}/role`)
     await page.goto(REPO)
+    const response = await authority
+    expect(response.ok()).toBe(true)
+    const { role } = await response.json() as { role: string | null }
+    mayClone = role !== null && ["member", "maintainer", "admin"].includes(role)
     await expect(header).toContainText("smithersai / home-fixture", { timeout: 30_000 })
     // Clone shows only for a repository Smithers hasn't got.
     const clone = header.getByRole("button", { name: "Clone" })
     await expect(home.or(clone).first()).toBeVisible({ timeout: 60_000 })
-    if (await clone.isVisible()) await clone.click()
+    if (!mayClone) {
+      await expect(clone).toHaveCount(0)
+      expect(cloneOffers(), "a reader is never offered Clone, including before sync").toBe(0)
+    }
+    else if (await clone.isVisible()) await clone.click()
     await expect(home.getByText("A fixture repository that declares its own home.")).toBeVisible({ timeout: 120_000 })
   })
 
@@ -74,6 +90,11 @@ test("declared: a repository's own home draws its blocks, Code opens its tree, a
     await expect(page).toHaveURL(new RegExp(`${REPO}$`))
     await expect(home.getByRole("heading", { name: "Welcome home" })).toBeVisible({ timeout: 30_000 })
   })
+
+  if (!mayClone) {
+    expect(clonePosts, "a reader's home never requests a clone").toBe(0)
+    expect(cloneOffers(), "a reader is never offered Clone across reload and navigation").toBe(0)
+  }
 
   if (target === "deployment") return
 

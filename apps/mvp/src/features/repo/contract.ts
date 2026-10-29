@@ -342,6 +342,7 @@ export const READING_PAUSED = "Reading paused"
 export const REPO_TELEMETRY = {
   records: [
     "repo.clone",
+    "repo.clone.admission",
     "repo.open",
     "repo.alias.check",
     "repo.tree.load",

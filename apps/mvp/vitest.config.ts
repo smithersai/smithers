@@ -225,6 +225,7 @@ export default defineConfig({
         "e2e/cancellations.ts",
         "e2e/browserProfile.ts",
         "e2e/sync.ts",
+        "e2e/layout-sync.ts",
         // The dev server over HTTPS and HTTP/2, as production serves the app (docs/infrastructure.md#https-and-http2).
         "dev/https.ts"
       ],

@@ -1,6 +1,7 @@
 import type { Collection } from "@smthrs/effect-tanstack-db"
 import { Clock, Effect, FiberHandle, Metric, Option, Stream } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
+import { mayAsk } from "../auth/contract"
 import { nearestManifest } from "../generated/detect"
 import { RepoClient, type RepoRefused } from "./api"
 import type { ReadFailure } from "./flows"
@@ -96,7 +97,7 @@ const send = (row: CloneRow) =>
 /**
  * Clone pressed (`kind` `clone`), or Try again (`retry`): shows `cloning` at once and runs `repo/clone`, once at a time
  * per repository. RepoApi starts a new attempt for a failed or refused clone and nothing for one running or done. Answers
- * whether it asked: `false` for a name that isn't a GitHub repository.
+ * whether it asked: `false` for an invalid name or insufficient/unavailable repository authority.
  */
 export const clone = (owner: string, name: string, kind: "clone" | "retry" = "clone") =>
   Effect.gen(function* () {
@@ -104,6 +105,18 @@ export const clone = (owner: string, name: string, kind: "clone" | "retry" = "cl
     const store = yield* RepoStore
     const id = repoId(owner, name)
     yield* Metric.update(Metric.withAttributes(cloneClicks, { kind }), 1)
+    const authority = yield* store.roles.get(id)
+    const refusal = Option.isNone(authority) ? undefined
+      : authority.value.failure !== undefined ? "unavailable"
+      : mayAsk(authority.value.role) ? undefined : "forbidden"
+    if (refusal !== undefined) {
+      if (refusal === "forbidden") yield* put<CloneRow>(store.clones, id, { id, owner, name, status: "forbidden" })
+      yield* Effect.logInfo("repo.clone.admission").pipe(
+        Effect.annotateLogs({ outcome: refusal, role: refusal === "unavailable" ? "unknown" : Option.getOrThrow(authority).role ?? "none", feature: "repo" }),
+        Effect.withSpan("repo.clone.admission"),
+      )
+      return false
+    }
     const pending = yield* store.clones.get(id)
     if (Option.isSome(pending) && pending.value.status === "requesting") return true
     const row: CloneRow = { id, owner, name, status: "requesting" }

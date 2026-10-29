@@ -13,6 +13,7 @@ import { STACK } from "../../todos/contract"
 import type { Minimized } from "../../views/minimize"
 import { BackToChat } from "../../views/components/BackToChat"
 import { CLONE, TRY_AGAIN } from "../contract"
+import { cloneHeaderOf } from "../cloneHeader"
 import { minimizedOf } from "../embedView"
 import { aboutOf, headerOf } from "../view"
 import { useRepo, useRepoAnswer } from "./RepoContext"
@@ -22,7 +23,7 @@ import { useRepo, useRepoAnswer } from "./RepoContext"
 // for a Maintainer or Admin, its Settings (decision 0039), each by the person's role on this repository where it
 // serves (decision 0079), then what can be done about it: Clone; nothing while it
 // clones (the files' place says Cloning, RepoPage); the sign-in link in Clone's place for a signed-out person; or why a
-// clone failed or was refused, Members can clone. below Member there included (ruling AUTH-8), with Try again. The person's bell is its last slot, so it never sits on
+// clone failed or was refused, with Try again only once this repository's role permits it (ruling AUTH-8). Readers see Members can clone. The person's bell is its last slot, so it never sits on
 // an action: the screens that render this header don't float it (attention/contract.ts `BELL_ROUTES`).
 export function RepoHeader({ backTarget }: { readonly backTarget?: Minimized } = {}) {
   const { queries, actions } = useRepo()
@@ -33,7 +34,7 @@ export function RepoHeader({ backTarget }: { readonly backTarget?: Minimized } =
   const answer = useRepoAnswer(data?.view.owner ?? "", data?.view.name ?? "")
   if (data === undefined || data.view.repoId === null) return null
   const { view, repository, clone, about } = data
-  const header = headerOf(repository, clone, view.signedIn, view.answered, about)
+  const header = cloneHeaderOf(headerOf(repository, clone, view.signedIn, view.answered, about), view.signedIn, answer)
   const defaultBranch = repository?.defaultBranch ?? aboutOf(about)?.defaultBranch ?? null
   return (
     <header className="repo-header" aria-label="Repository">
@@ -80,7 +81,7 @@ export function RepoHeader({ backTarget }: { readonly backTarget?: Minimized } =
         ? (
           <>
             <span role="status">{header.text}</span>
-            <Button variant="outline" onClick={() => actions.retryClone(view.owner, view.name)}>{TRY_AGAIN}</Button>
+            {header.retry === false ? null : <Button variant="outline" onClick={() => actions.retryClone(view.owner, view.name)}>{TRY_AGAIN}</Button>}
           </>
         )
         : null}

@@ -1,3 +1,4 @@
+import { observeInitialApplied } from "../../shapeApplied"
 import { admissionReceipt } from "../../writeAdmission"
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Persistence } from "@smthrs/effect-tanstack-db"
@@ -151,6 +152,7 @@ const make = Effect.fnUntraced(function* (config: TodosConfig) {
         // 4: a failure may be `base_closed` (stacked TODOs).
         persist: { schemaVersion: 4 },
       }).pipe(Effect.provideService(ShapeSource.ShapeSource, guarded))
+      yield* observeInitialApplied(todos, "todos", id.slice("github/".length)).pipe(Effect.forkIn(scope, { startImmediately: true }))
       const requests = yield* ElectricCollection.make<TodoRequest>({
         id: `todo-requests:${id}`,
         schema: TodoRequest,

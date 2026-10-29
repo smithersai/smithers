@@ -53,7 +53,7 @@ export interface RepoActions {
   /** GitHub's canonical owner/name after the public metadata read settles. */
   readonly canonicalName: (owner: string, name: string) => Promise<string | undefined>
 
-  /** Clone pressed; `false` when `owner/name` isn't a GitHub repository. */
+  /** Clone pressed; `false` for an invalid name or insufficient/unavailable repository authority. */
   readonly clone: (owner: string, name: string) => boolean
   /** Try again on a failed or refused clone. */
   readonly retryClone: (owner: string, name: string) => boolean

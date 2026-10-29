@@ -533,6 +533,7 @@ The browser (`src/features/repo/`), the tab's and the engine worker's, relayed t
 |---|---|---|
 | `repo.open` | log and span | `kind` (`tree`, `blob`); the span's `smithers.repo.kind` |
 | `repo.clone` | log and span, `repo/clone`'s step; Info `started` and `existing`, Warn otherwise | `outcome` (`started`, `existing`, `sign_in`, `forbidden`, `limit`, `invalid`, `not_configured`, `unavailable`), `status` (RepoApi's, for a refusal), `durationMs` |
+| `repo.clone.admission` | log and span, Info: repository authority refused the browser action before dispatch | `outcome` (`forbidden` or `unavailable`), `role` (`guest`, `none` or `unknown`); the click remains counted by `smithers_web_repo_clone_clicks` |
 | `repo.clone.launch` | log and span, `repo/clone`'s second step; Info `launched` and `settled`, Warn otherwise | `outcome` (`launched`, `settled`, `sign_in`, `forbidden`, `limit`, `invalid`, `not_configured`, `unavailable`), `status` (RepoApi's, for a refusal) |
 | `repo.clone.unconfirmed` | log, Warn: a person's clone RepoApi took whose row Electric didn't deliver in time | |
 | `repo.copy` | log and span, `repo/copy`'s step; Info `copied`, Warn `refused`, Error otherwise | `what` (`permalink`, `path`, `contents`, `clone-url`), `door` (the dispatch's, `agent`, or `unknown` when the tab that asked is gone), `outcome` (`copied`, `failed`, `refused`, `unavailable`, `gone`), `executionId`, `durationMs`; the span's `smithers.repo.copy` |
@@ -1060,3 +1061,12 @@ The receipt effect inherits command, flow and stage annotations, correlating its
 
 
 Clone caps (decision 0122): `repo_capacity` counts `person_repositories` and `deployment_repositories`; `repo_clone_requests` counts `repository_limit`. `repo.clone.request` records `scope`, `used` and `limit`. Machine routes record `members_only` refusals. No person id, key or user content is recorded.
+
+
+Initial Issues layout: `shape.initial.apply` waits for the collection's `preload`
+and `currentApplied` barriers. Only then does `shape.initial.applied` record
+`source` and repository scope, and `smithers_shape_initial_applied` count the
+source. This covers summaries, sync metadata, triage, pending writes and TODOs;
+no issue text or credentials enter a receipt. Failed or cancelled loads never
+emit an applied receipt. The mobile audit retains both network and applied
+receipts, then measures the rendered controls.

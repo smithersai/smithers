@@ -1,13 +1,15 @@
 import { createElement } from "react"
 import { FlowsUi } from "../src/features/flows-ui/flowsUi"
 import { HomePage } from "../src/features/home/components/HomePage"
+import { RepoHeader } from "../src/features/repo/components/RepoHeader"
 import { createMemoryHistory, createRootRoute, createRoute, createRouter } from "@tanstack/react-router"
-import { Context, Effect, Layer, Scope, Exit } from "effect"
+import { Context, Effect, Layer, Scope, Exit, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import { expect, test, vi } from "vitest"
 import { renderRepositoryPages } from "./fixtures/repository-pages"
 import { openTestApp, TestChatApi } from "../src/test/chatApi"
 import { put } from "../src/features/repo/actions"
+import { FAILURE_COPY } from "../src/features/repo/contract"
 import { RepoStore } from "../src/features/repo/store"
 import { HomeStore } from "../src/features/home/store"
 import { AuthStore } from "../src/features/auth/store"
@@ -104,7 +106,48 @@ test("direct feature pages keep navigation, fence the deployment's own repositor
       expect(html).not.toContain("Ask about this repository")
       expect(html).not.toContain('>Secrets</a>')
       expect(html).not.toContain('>Settings</a>')
+      expect(html).not.toContain('>Clone</button>')
       expect(html).not.toContain('aria-label="Commitment"')
+      })
+    }
+    // Settle the initial real read before installing the pending-metadata fixture for header admission.
+    await vi.waitFor(async () => {
+      const about = await app.runPromise(repo.abouts.get("github/smithersai/vibelang"))
+      expect(Option.isSome(about)).toBe(true)
+      if (Option.isSome(about)) expect(about.value.state).not.toBe("loading")
+    }, { timeout: 10_000 })
+    // Clone admission follows this repository's role, even when the session is an Admin elsewhere.
+    await app.runPromise(repo.view.update("view", row => { row.answered = true; row.signedIn = true }))
+    await app.runPromise(put(repo.abouts, "github/smithersai/vibelang", { key: "github/smithersai/vibelang", state: "loading", about: null, message: null }))
+    const homeRoot = createRootRoute()
+    const homeRoute = createRoute({ getParentRoute: () => homeRoot, path: "/$owner/$repo", component: RepoHeader })
+    const homeRouter = createRouter({ routeTree: homeRoot.addChildren([homeRoute]), history: createMemoryHistory({ initialEntries: ["/smithersai/vibelang"] }) })
+    await homeRouter.load()
+    if (Option.isSome(await app.runPromise(repo.roles.get("github/smithersai/vibelang")))) await app.runPromise(repo.roles.delete("github/smithersai/vibelang"))
+    await vi.waitFor(() => {
+      const html = renderRepositoryPages(homeRouter, services)
+      expect(html).not.toContain(">Clone</button>")
+      expect(html).not.toContain(">Try again</button>")
+      expect(html).not.toContain("Members can clone.")
+    })
+    await app.runPromise(put(repo.roles, "github/smithersai/vibelang", { id: "github/smithersai/vibelang", role: null, own: false, failure: "unavailable" }))
+    await app.runPromise(put(repo.clones, "github/smithersai/vibelang", { id: "github/smithersai/vibelang", owner: "smithersai", name: "vibelang", status: "failed" as const }))
+    await vi.waitFor(() => {
+      const html = renderRepositoryPages(homeRouter, services)
+      expect(html).toContain(FAILURE_COPY.unavailable.replaceAll("'", "&#x27;"))
+      expect(html).not.toContain(">Clone</button>")
+      expect(html).not.toContain(">Try again</button>")
+    })
+    await app.runPromise(repo.clones.delete("github/smithersai/vibelang"))
+    for (const role of [null, "guest", "member", "maintainer", "admin"] as const) {
+      await app.runPromise(put(repo.roles, "github/smithersai/vibelang", { id: "github/smithersai/vibelang", role, own: false, failure: undefined }))
+      await vi.waitFor(() => {
+        const html = renderRepositoryPages(homeRouter, services)
+        if (role === null || role === "guest") {
+          expect(html).toContain("Members can clone.")
+          expect(html).not.toContain(">Clone</button>")
+          expect(html).not.toContain(">Try again</button>")
+        } else expect(html).toContain(">Clone</button>")
       })
     }
     // Visitors can sign in directly from every gated settings page.

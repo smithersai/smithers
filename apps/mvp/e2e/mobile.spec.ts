@@ -3,8 +3,12 @@ import { expectServerError, strictTest as base } from "./watch"
 import { writeFile } from "node:fs/promises"
 import { digestSync } from "@smthrs/crypto"
 import { renderSource, SOURCE_PATH } from "../src/features/flows-ui/source"
+import { wholeText } from "./console"
 import { recordActions, writeManifest } from "./fixtures"
 import { desktopBaseline } from "./mobile-baseline"
+import { auditControls, CONTROL_SELECTOR, type Finding } from "./control-audit"
+import { appliedRecord, IssueLayoutSync } from "./layout-sync"
+import type { Role } from "../src/features/auth/contract"
 import { openComposer } from "./composer"
 import { serveFramedPage } from "./framed-page"
 import { shapeRows } from "./shape"
@@ -17,7 +21,7 @@ const hasDeviceStorage = (page: Page) => page.evaluate(() => navigator.storage.g
 
 // Real pages and services. Persist a structured audit even when several checks fail,
 // so the first run is the red receipt for each subsequent layout change.
-const test = base.extend<{ recording: void; mobileViewport: { width: number; height: number }; todos: Array<{ repository: string; title: string }> }>({
+const test = base.extend<{ recording: void; issueLayout: IssueLayoutSync; mobileViewport: { width: number; height: number }; todos: Array<{ repository: string; title: string }> }>({
   todos: [async ({ request }, use) => {
     const todos: Array<{ repository: string; title: string }> = []
     try {
@@ -50,16 +54,18 @@ const test = base.extend<{ recording: void; mobileViewport: { width: number; hei
       }
     }
   }, { timeout: 100_000 }],
+  issueLayout: async ({}, use) => use(new IssueLayoutSync("smithersai/smithers")),
   mobileViewport: [{ width: 1280, height: 800 }, { option: true }],
   viewport: async ({ mobileViewport }, use) => use(mobileViewport),
   contextOptions: async ({ mobileViewport }, use, info) => {
     await use({ recordVideo: { dir: info.outputPath("videos"), size: mobileViewport } })
   },
-  recording: [async ({ page }, use, info) => {
+  recording: [async ({ page, issueLayout }, use, info) => {
     const startedAt = Date.now()
     const errors: string[] = []
     const docsReads: Array<{ status: number; code?: string; reason?: string }> = []
     const reads: Array<Promise<void>> = []
+    const appliedShapes: Array<{ source: string; repository: string }> = []
     const shapes: Array<{ shape: string; status: number; rows?: number; complete?: boolean }> = []
     // A response event only means headers arrived. Electric may still be streaming
     // its body when navigation abandons the page; reading it here can pin teardown.
@@ -68,8 +74,14 @@ const test = base.extend<{ recording: void; mobileViewport: { width: number; hei
       const response = await request.response()
       if (response === null) return
       const url = new URL(response.url())
+      if (url.pathname === `/api/repos/${issueLayout.repository}/role` && response.status() === 200) {
+        const { role } = await response.json() as { role: Role | null }
+        issueLayout.authority(role)
+      }
       if (url.pathname.startsWith("/api/shapes/") && url.searchParams.get("live") !== "true") {
         const body = await response.json().catch(() => undefined) as Array<{ headers?: { operation?: string; control?: string } }> | undefined
+        issueLayout.answered(url.pathname, url.searchParams.get("repo"), response.status(),
+          Array.isArray(body) && body.some(message => message.headers?.control === "up-to-date"))
         shapes.push({ shape: url.pathname, status: response.status(), ...(Array.isArray(body) ? {
           rows: body.filter((message) => message.headers?.operation !== undefined).length,
           complete: body.some((message) => message.headers?.control === "up-to-date"),
@@ -87,11 +99,23 @@ const test = base.extend<{ recording: void; mobileViewport: { width: number; hei
     const onFinished = (request: Request) => { reads.push(recordResponse(request)) }
     page.on("requestfinished", onFinished)
     page.on("pageerror", (error) => errors.push(error.message))
+    page.on("console", message => {
+      if (!message.text().includes("shape.initial.applied")) return
+      reads.push(wholeText(message).then(text => {
+        const applied = appliedRecord(text)
+        if (applied !== undefined) {
+          appliedShapes.push(applied)
+          issueLayout.applied(applied.source, applied.repository)
+        }
+      }))
+    })
     await recordActions(page, info)
     await use()
     page.off("requestfinished", onFinished)
     if (info.status === "skipped") return
     await Promise.all(reads)
+    await writeFile(info.outputPath("shape-applied.json"), JSON.stringify(appliedShapes, null, 2))
+    await info.attach("shape-applied", { path: info.outputPath("shape-applied.json"), contentType: "application/json" })
     await writeFile(info.outputPath("shape-reads.json"), JSON.stringify(shapes, null, 2))
     await info.attach("shape-reads", { path: info.outputPath("shape-reads.json"), contentType: "application/json" })
     await writeFile(info.outputPath("docs-reads.json"), JSON.stringify(docsReads, null, 2))
@@ -104,67 +128,15 @@ const test = base.extend<{ recording: void; mobileViewport: { width: number; hei
 })
 test.use({ video: "on", screenshot: "only-on-failure", colorScheme: "light" })
 
-type Finding = { element: string; problem: string }
 const audit = async (page: Page, info: TestInfo, name = "screen", scope?: Locator) => {
   await page.evaluate(() => document.fonts.ready)
   const findings: Finding[] = []
   const overflow = await page.evaluate(() => ({ width: innerWidth, scroll: document.documentElement.scrollWidth }))
   if (overflow.scroll > overflow.width) findings.push({ element: "document", problem: `horizontal scroll ${overflow.scroll} > ${overflow.width}` })
-  const controls = (scope ?? page).locator('a[href], button, input:not([type="hidden"]), textarea, select, summary, [role="button"], [role="tab"], [contenteditable="true"]')
-  for (const control of await controls.all()) {
-    if (!await control.isVisible()) continue
-    // Keyboard-only links are audited in their focused, visible state, including hit targets and overlap.
-    const keyboardOnly = await control.evaluate(element => getComputedStyle(element).clipPath === "inset(50%)")
-    if (keyboardOnly) await control.focus()
-    // Long pages and scrollable panels are legitimate. Bring each target into view,
-    // then verify it is reachable, rather than requiring the whole page above the fold.
-    const issues = await control.evaluate((element) => {
-      // Scroll and measure in one browser turn: a live list may replace this
-      // control between separate scroll and measurement calls.
-      element.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" })
-      // Scrolling to the latest message legitimately hides its jump button.
-      if (!element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return []
-      const rect = element.getBoundingClientRect()
-      const name = `${element.tagName.toLowerCase()}.${element.className} ${element.getAttribute("aria-label") ?? element.textContent?.trim().slice(0, 80) ?? ""}`
-      const errors: Finding[] = []
-      if (innerWidth <= 960 && (rect.width < 32 || rect.height < 32)) errors.push({ element: name, problem: `tap target ${rect.width.toFixed(1)}×${rect.height.toFixed(1)}` })
-      if (rect.left < 0 || rect.right > innerWidth || rect.top < 0 || rect.bottom > innerHeight) errors.push({ element: name, problem: `outside viewport ${JSON.stringify(rect.toJSON())}` })
-      // An inline link can wrap: its bounding-box center may be empty space
-      // between fragments. Check every actual fragment, not that empty space.
-      for (const fragment of element.getClientRects()) {
-        const insetX = Math.min(4, fragment.width / 4)
-        const insetY = Math.min(4, fragment.height / 4)
-        const points = [
-          [fragment.x + fragment.width / 2, fragment.y + fragment.height / 2],
-          [fragment.left + insetX, fragment.top + fragment.height / 2],
-          [fragment.right - insetX, fragment.top + fragment.height / 2],
-          [fragment.left + fragment.width / 2, fragment.top + insetY],
-          [fragment.left + fragment.width / 2, fragment.bottom - insetY],
-        ]
-        for (const [x, y] of points) {
-          const top = document.elementFromPoint(x!, y!)
-          if (top !== element && !element.contains(top)) {
-            errors.push({ element: name, problem: `covered by ${top?.tagName}.${top?.className}` })
-            break
-          }
-        }
-        for (let parent = element.parentElement; parent; parent = parent.parentElement) {
-          const style = getComputedStyle(parent)
-          const box = parent.getBoundingClientRect()
-          const left = box.left + parent.clientLeft
-          const top = box.top + parent.clientTop
-          const clips = (overflow: string) => ["hidden", "clip", "auto", "scroll"].includes(overflow)
-          if ((clips(style.overflowX) && (fragment.left < left - 1 || fragment.right > left + parent.clientWidth + 1)) ||
-              (clips(style.overflowY) && (fragment.top < top - 1 || fragment.bottom > top + parent.clientHeight + 1))) {
-            errors.push({ element: name, problem: `clipped by ${parent.tagName}.${parent.className}` })
-          }
-        }
-      }
-      return errors
-    })
-    findings.push(...issues)
-    if (keyboardOnly) await control.evaluate(element => (element as HTMLElement).blur())
-  }
+  const startedAt = Date.now()
+  const controls = await auditControls((scope ?? page).locator(CONTROL_SELECTOR))
+  if (scope === undefined) expect(controls.checked, "the screen audit must measure its real controls").toBeGreaterThan(0)
+  findings.push(...controls.findings)
   findings.push(...await page.evaluate(() => {
     const errors: Finding[] = []
     for (const element of document.querySelectorAll<HTMLElement>("body *")) {
@@ -209,7 +181,7 @@ const audit = async (page: Page, info: TestInfo, name = "screen", scope?: Locato
   }))
   await page.evaluate(() => window.scrollTo(0, 0))
   const receipt = info.outputPath(`${name}.json`)
-  await writeFile(receipt, JSON.stringify({ route: page.url(), viewport: page.viewportSize(), findings }, null, 2))
+  await writeFile(receipt, JSON.stringify({ route: page.url(), viewport: page.viewportSize(), controls: { selected: controls.selected, checked: controls.checked }, auditMs: Date.now() - startedAt, findings }, null, 2))
   await info.attach(`layout-audit-${name}`, { path: receipt, contentType: "application/json" })
   if (page.viewportSize()?.width === 1280) await desktopBaseline(page, info, name)
   else await page.screenshot({ path: info.outputPath(`${name}.png`), fullPage: true, animations: "disabled" })
@@ -274,7 +246,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           }, { timeout: 30_000 }).toMatchObject({ status: 200, signedIn })
         })
         for (const screen of screens) {
-          test(`${screen.name}: controls and text fit`, async ({ page, request }, info) => {
+          test(`${screen.name}: controls and text fit`, async ({ page, request, issueLayout }, info) => {
             const files = screen.name === "files" || screen.name === "file-tabs"
             if (files) requires("codeStorage", "member")
             // A run that doesn't exist, or a member's page opened signed out: the server refuses it, and Chrome logs that.
@@ -377,6 +349,14 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
             if ((target === "deployment" || meets("githubApp")) && (screen.name === "issues" || screen.name === "pulls")) {
               const sort = page.getByRole("combobox", { name: "Sort", exact: true })
               await expect(sort).toBeVisible()
+              if (screen.name === "issues" && signedIn) {
+                // Counts appear only once the real initial list is ready; an empty loading shell proves no layout.
+                await expect(page.locator(".sui-issues-counts")).toBeVisible({ timeout: 60_000 })
+                await expect(page.locator("[data-list-sync]")).toHaveCount(0, { timeout: 60_000 })
+                await expect.poll(() => issueLayout.behind(), { timeout: 60_000, message: "every initial source of Issues controls must finish" }).toEqual([])
+                // Applied receipts precede the live-query render; commit it before measuring controls.
+                await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+              }
               const bounds = (await sort.boundingBox())!
               expect(bounds.height, "Sort uses the house control height on every engine").toBeGreaterThanOrEqual(32)
               expect(bounds.width).toBeGreaterThanOrEqual(32)

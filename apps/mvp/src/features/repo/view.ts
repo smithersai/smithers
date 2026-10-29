@@ -104,14 +104,14 @@ export const fileProps = (row: BlobRow | undefined): FileProps => {
  * What the repository's header shows besides its name:
  * - `clone`: the Clone button; `sign_in`: the sign-in link in its place;
  * - `cloning`: nothing, from Clone pressed until the clone settles: the person's feed follows it;
- * - `refused`: why the clone failed or was refused, and Try again;
+ * - `refused`: why the clone failed or was refused; Try again unless `retry` is false;
  * - `ready`: nothing.
  */
 export type Header =
   | { readonly kind: "unknown" | "cloning" | "ready" | "missing" | "unavailable" }
   | { readonly kind: "clone"; readonly status?: string }
   | { readonly kind: "sign_in"; readonly text: string; readonly status?: string }
-  | { readonly kind: "refused"; readonly text: string }
+  | { readonly kind: "refused"; readonly text: string; readonly retry?: boolean }
 
 export { formatBytes } from "./contract"
 
