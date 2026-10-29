@@ -12,12 +12,16 @@ const A = Action.make("restart/A", { payload: {}, success: Schema.String })
 class Recoverable extends Schema.TaggedError<Recoverable>()("Recoverable", { message: Schema.String }) {}
 const B = Action.make("restart/B", { payload: { value: Schema.String }, success: Schema.String, error: Recoverable })
 const next = variant === "edited-continuation"
-  ? (value: Planned.Planned<string>) => B.call({ value /* edited continuation, identical topology */ })
+  ? (_value: Planned.Planned<string>) => B.call({ value: "changed" })
+  : variant === "commented-continuation"
+  ? (value: Planned.Planned<string>) => B.call({ value /* same continuation */ })
   : (value: Planned.Planned<string>) => B.call({ value })
 const body = variant === "single"
   ? () => B.call({ value: "single" })
   : variant === "edited-body"
-  ? () => A.call({}).pipe(Node.bindPlanned((value) => B.call({ value /* edited source, identical topology */ })))
+  ? () => A.call({}).pipe(Node.bindPlanned((_value) => B.call({ value: "changed" })))
+  : variant === "commented-body"
+  ? () => A.call({}).pipe(Node.bindPlanned((value) => B.call({ value /* same body */ })))
   : variant === "captured"
   ? Node.capture({}, () => A.call({}).pipe(Node.bindPlanned(Node.capture({}, (value) => B.call({ value })))))
   : variant === "typed-catch"
@@ -26,7 +30,7 @@ const body = variant === "single"
       Node.bindPlanned((value) => B.call({ value })),
       Node.catch({ error: Recoverable, onFailure: () => Node.succeed("recovered") })
     )
-  : variant === "continuation" || variant === "edited-continuation"
+  : variant === "continuation" || variant === "edited-continuation" || variant === "commented-continuation"
   ? Node.capture({}, () => A.call({}).pipe(Node.bindPlanned(next)))
   : () => A.call({}).pipe(Node.bindPlanned((value) => B.call({ value })))
 const flow = Flow.make("restart/F", { payload: {}, success: Schema.String, error: Recoverable, body })

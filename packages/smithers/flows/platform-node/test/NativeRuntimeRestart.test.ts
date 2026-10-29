@@ -40,10 +40,12 @@ it.each(
     ["plain", "SIGKILL", "plain", false],
     ["plain", "SIGTERM", "plain", false],
     ["plain", "SIGKILL", "edited-body", true],
+    ["plain", "SIGKILL", "commented-body", false],
     ["captured", "SIGKILL", "captured", false],
     ["typed-catch", "SIGKILL", "typed-catch", false],
     ["continuation", "SIGKILL", "continuation", false],
-    ["continuation", "SIGKILL", "edited-continuation", true]
+    ["continuation", "SIGKILL", "edited-continuation", true],
+    ["continuation", "SIGKILL", "commented-continuation", false]
   ] as const
 )("resumes %s after %s with %s (changed=%s)", async (variant, signal, resumedVariant, changed) => {
   const directory = mkdtempSync(join(tmpdir(), "flows-restart-"))
