@@ -76,7 +76,13 @@ const killHost = (filename: string, hostId: string, frozen = false): Promise<num
       announced += chunk
       const receipt = /^SPAWNED=([1-9][0-9]*)\r?$/m.exec(announced)
       if (pgid === undefined && receipt !== null) {
-        pgid = Number(receipt[1])
+        const reported = Number(receipt[1])
+        if (!Number.isSafeInteger(reported) || reported <= 1) {
+          child.kill("SIGKILL")
+          reject(new Error("the host reported an invalid process group"))
+          return
+        }
+        pgid = reported
         if (frozen) process.kill(-pgid, "SIGSTOP")
         // No handler runs for this. Whatever the host had open stays open.
         child.kill("SIGKILL")
