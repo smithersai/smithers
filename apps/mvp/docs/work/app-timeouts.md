@@ -138,3 +138,12 @@ and its public join failed after 30 seconds, despite its outbox write succeeding
 Both opened-issue helpers now await the real confirmed-session signal before
 returning a ready device. Explicit cold-start fixtures opt out and exercise the
 same signal helper directly. No security guard or credential cache is changed.
+
+The next sweep passed 6,077 cases and all four coverage gates but exposed a
+cross-device pin assertion. Its readiness check compared two live arrays and
+could accept two empty projections before the second device's message arrived.
+The regression now installs that waiter before producing a pin, then checks it
+is still pending after a real server round trip. The former equality condition
+failed this assertion in 1.06 seconds. Readiness now requires the expected pin
+text on the second device; the stale-callback assertion also waits for that
+real projection, without increasing a budget or retrying an action.

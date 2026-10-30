@@ -92,13 +92,18 @@ test("a queued question pins immediately and follows the person once the questio
   const api = await root.runPromise(Effect.service(TestChatApi))
   const a = await open(api, nodeDevice({ agent: api }))
   const b = await open(api, nodeDevice({ agent: api }))
+  // Install the cross-device waiter before producing the pin. Two empty projections are not delivery.
+  const followed = b.runtime.runFork(Effect.tryPromise(() => until(() => expect(b.pin()).toEqual(["Pin my queued question"]))))
+  // A real server round trip lets the readiness check settle while no pin exists on either device.
+  await root.runPromise(api.branches.run(Effect.flatMap(SqlClient.SqlClient, sql => sql`SELECT 1`)))
+  expect(followed.pollUnsafe()).toBeUndefined()
   const asked = (await a.actions.ask("Pin my queued question"))
   if (!asked.asked) throw new Error(asked.reason)
   // The queued message control captures local=true before admission removes its asking row.
   const stalePin = () => a.actions.pin(asked.questionId, true)
   a.actions.pin(asked.questionId)
   await until(() => expect(a.pin()).toEqual(["Pin my queued question"]))
-  await until(() => expect(b.pin()).toEqual(a.pin()))
+  await b.runtime.runPromise(Fiber.join(followed))
   await until(async () => expect(await a.runtime.runPromise(a.store.pinState.pending.toArray)).toEqual([]))
   await until(async () => {
     expect(await a.runtime.runPromise(a.store.asking.toArray)).toEqual([])
@@ -108,7 +113,7 @@ test("a queued question pins immediately and follows the person once the questio
   expect(stalePin()).toBeUndefined()
   expect(await a.runtime.runPromise(a.store.pinState.pending.toArray)).toEqual([])
   expect(a.pin()).toEqual(["Pin my queued question"])
-  expect(b.pin()).toEqual(a.pin())
+  await until(() => expect(b.pin()).toEqual(["Pin my queued question"]))
   a.actions.unpin()
   await until(() => expect(b.pin()).toEqual([]))
 })
