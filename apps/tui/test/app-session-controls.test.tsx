@@ -383,8 +383,11 @@ test("eleven restored batches fold, keyboard activation expands, and immediate f
   await type("Eleven batches")
   await key("RETURN")
   await waitFor(() => frame().includes("Batch 10"))
-  await key("TAB")
-  await key("TAB")
+  await act(async () => {
+    setup!.mockInput.pressKey("TAB")
+    setup!.mockInput.pressKey("TAB")
+  })
+  await render()
   expect(frame()).toContain("1 earlier subagent batch")
   expect(frame()).not.toContain("✓ Batch 0 ·")
   await act(async () => {

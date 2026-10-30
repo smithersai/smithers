@@ -74,8 +74,8 @@ for (const control of ["ten", "keyboard", "mouse"] as const) {
           25_000,
           "restored latest batch"
         )
-        await tui.press(key.tab)
-        await tui.press(key.tab)
+        // Focus the newest card and advance to the oldest in one PTY write.
+        await tui.press(key.tab + key.tab)
         const prompt = `chat after ${control}`
         if (control === "ten") {
           await tui.until((screen) => screen.includes("Batch 0"), 5_000, "oldest of ten remains a card")

@@ -2176,8 +2176,8 @@ export function App(props: AppProps) {
     ) {
       if (
         Dispatch.cardKey(key, {
-          move: moveCard,
-          leave: () => setCardFocus(undefined),
+          move: (direction) => flushSync(() => moveCard(direction)),
+          leave: () => flushSync(() => setCardFocus(undefined)),
           open: () => {
             if (focusedCard.startsWith("subagents:earlier")) return openEarlier()
             if (focusedWorker !== undefined) return clickTab(`tab:${focusedWorker.id}`)
@@ -2203,7 +2203,7 @@ export function App(props: AppProps) {
     ) {
       key.preventDefault()
       const last = cardKeys.at(-1)!
-      setCardFocus(last)
+      flushSync(() => setCardFocus(last))
       return reveal(last)
     }
     if (key.ctrl && key.name === "c") {
