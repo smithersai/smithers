@@ -216,7 +216,12 @@ const laneThree = [
 ]
 
 /** The remaining files join bounded groups automatically, including newly added files. */
-const remainder = [...laneOne, ...laneTwo, ...laneThree].map((file) => `--exclude ${file}`).join(" ")
+// CLI --exclude replaces Vitest's configured excludes. Preserve the existing
+// exclusive fault tier when adding the process-heavy file exclusions.
+const remainder = [
+  "--exclude=test/faults/**",
+  ...[...laneOne, ...laneTwo, ...laneThree].map((file) => `--exclude ${file}`)
+].join(" ")
 const remainderShards = ["one", "two", "three", "four", "five", "six", "seven", "eight"]
 
 const test = Smithers.Shell.Test({

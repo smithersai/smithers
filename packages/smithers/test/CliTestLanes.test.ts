@@ -45,16 +45,21 @@ const declaredShell = () =>
     "import { Package } from \"./PACKAGE.ts\"; import { metadata } from \"@smthrs/targets/Target\"; console.log(JSON.stringify(metadata(Package.test).attrs.shell))"
   ], { cwd, encoding: "utf8", timeout: 15_000 })) as string
 
-it("schedules every CLI test file once without leaving the remainder on one worker", () => {
+it("schedules every default CLI test file once without leaving the remainder on one worker", () => {
   // Read the declared target, then ask the real runner what each invocation selects.
   const shell = declaredShell()
   const commands = [...shell.matchAll(/pnpm exec vitest run ([^;"&}]+)/g)]
     .map((match) => match[1]!.trim().split(/\s+/))
     .filter((args) => !args.some((arg) => arg.startsWith("--merge-reports=")))
     .map((args) => args.filter((arg) => !/^--(?:outputFile|reporter|coverage\.)/.test(arg)))
-  // A CLI `--exclude` replaces the config's exclude list, as it does for the
-  // remainder shards, so the full selection is taken the same way.
-  const all = list(["--exclude", "**/node_modules/**"])
+  const all = list([])
+  const faults = list(["--config", "vitest.faults.config.ts"])
+  const bothTiers = list(["--exclude", "**/node_modules/**"])
+  // Every file stays in its declared tier: the normal coverage runner and
+  // the serial process-killing runner are a complete, disjoint inventory.
+  expect(faults.length).toBeGreaterThan(0)
+  expect(all.filter((file) => faults.includes(file))).toEqual([])
+  expect([...all, ...faults].sort()).toEqual(bothTiers.sort())
   const selections = commands.map(list)
   const shards = commands.filter((args) => args.some((arg) => arg.startsWith("--shard=")))
   const workers = Number(/xargs -P (\d+)/.exec(shell)![1])
