@@ -100,6 +100,13 @@ The mini farm sets `TEST_ELECTRIC_PORT` together with `ELECTRIC_URL` when a comb
 
 Every fixture schema uses `<prefix>_<epoch-seconds>_<32 hex>` (at most 63 bytes) from the shared test-schema helper. Once at Vitest startup, the local-fixture-only reaper drops at most 16 matching schemas older than two hours (three times the farm’s 40-minute run cap), skipping schemas with relation locks, including unnamed flow connections. Concurrent reapers use a nonblocking advisory lock; drops use a 100 ms lock timeout, statements 400 ms, and the sweep eight seconds. Cleanup failures log and never fail the run; legacy names, `public`, `smithers_flows` and younger schemas are untouched. Clean scope exits still drop their own schemas.
 
+Use `bash db/test-stack.sh -- pnpm vitest run` for a full run. It starts the same real Compose dependencies on
+assigned loopback ports with a fresh, run-owned volume, then removes only that project on success, failure or
+cancellation. The fixture keeps the farm's 100 PostgreSQL connections and four-connection transaction pool.
+`pnpm test:stack` verifies isolated listeners, an empty catalog and cleanup after a failing child command.
+Reusing a fixture for days grows its system catalogs; resetting rows alone cannot bound engine migration and
+schema teardown costs. The existing dev stack remains available separately.
+
 ChatApi's tests (`worker/`, `db/`) use the compose Postgres and Electric and nothing else (`db/TestDatabase.ts`):
 
 - They refuse a `DATABASE_URL` that names another host or port, before connecting to it. Unset it to run them.
