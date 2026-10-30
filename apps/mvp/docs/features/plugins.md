@@ -117,6 +117,10 @@ The second plugin (`plugins/bugs/`, [bugs.md](bugs.md)): `/bug` and the header's
 
 The core queries `core/feeds` (a repository's index) and `core/feed` (one on-demand document) serve what an outside collector pushed to a repository ([feeds.md](feeds.md#plugins)). Both take `params`: `query("core/feeds", { repo: "owner/name" })`, `query("core/feed", { repo, name })`; a missing or malformed one is refused `invalid_fields`. The strip selects a row of `core/feeds` when the `ItemRef` names the same `params`; a `core/feed` document is only shown.
 
+## The factory
+
+The third plugin (`plugins/factory/`, [factory.md](factory.md)): a repository's factory, ten `repository` views over the core's feeds (`core/feeds`, `core/feed`), a `repo.tabs` entry, and `/factory`, `/lanes` and `/decide`.
+
 ## Observability
 
 `plugin.load` (a span and log line per plugin: id, version, tier, outcome, reason), `smithers_plugin_loads`, `smithers_plugin_contributions` by point, `plugin.press` and `smithers_plugin_presses` (plugin, event, door, outcome: `done`, `failed`, `invalid`, `stale`), `plugin.key` and `smithers_plugin_keys`, and `flow.dispatch` with door `key`. None carries a manifest's text, an item or a note ([observability](../observability.md)).

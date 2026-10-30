@@ -289,6 +289,10 @@ const needs = {
     met: (run) => run.target === "deployment" && set(run, "E2E_FACTORY_REPOSITORY") && !/^smithersai\//i.test(run.env.E2E_FACTORY_REPOSITORY!),
     reason: "it runs TODOs to pull requests: run against a live instance whose GITHUB_REPOSITORY is a scratch repository, named in E2E_FACTORY_REPOSITORY, never a smithersai one",
   },
+  feedKey: {
+    met: (run) => set(run, "E2E_FEED_KEY") && /^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_FEED_REPOSITORY ?? ""),
+    reason: "it pushes a repository's feed documents as its collector does (decision 0126): set E2E_FEED_REPOSITORY to a repository the app can open and E2E_FEED_KEY to the key whose SHA-256 the server's FEED_KEYS lists for it",
+  },
   githubScratch: {
     met: scratchSet,
     reason: "it writes issues to GitHub as a real person: run against a deployment with E2E_ISSUES_REPOSITORY set to a scratch repository; this permits writes but does not promise synced shapes, never a smithersai one",

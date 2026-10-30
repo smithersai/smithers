@@ -1,0 +1,12 @@
+// The factory's components, by the names its manifest's `component` renders name.
+export { Agents } from "./Agents"
+export { Commits } from "./Commits"
+export { Docs } from "./Docs"
+export { Failures } from "./Failures"
+export { ForYou } from "./ForYou"
+export { Implementation } from "./Implementation"
+export { Media } from "./Media"
+export { Now } from "./Now"
+export { Queue } from "./Queue"
+export { RepoTab } from "./RepoTab"
+export { Reviews } from "./Reviews"

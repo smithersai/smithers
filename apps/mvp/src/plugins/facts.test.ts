@@ -5,6 +5,7 @@
 import { Load } from "@smthrs/plugin"
 import { Effect } from "effect"
 import { describe, expect, test } from "vitest"
+import factory from "../../plugins/factory/plugin.json" with { type: "json" }
 import queue from "../../plugins/queue/plugin.json" with { type: "json" }
 import { registry } from "../flows/registry"
 import { POINTS } from "./contract"
@@ -60,6 +61,17 @@ describe("the host's facts", () => {
 
   test("the queue loads with nothing refused", () => {
     expect(load({ tier: "built-in", manifest: queue }).refused).toEqual([])
+  })
+
+  test("the factory loads with nothing refused: its views, its repository tab and its commands", () => {
+    const loaded = load({ tier: "built-in", manifest: factory })
+    expect(loaded.refused).toEqual([])
+    expect(loaded.contributions.views.map((view) => view.path)).toEqual([
+      "", "for-you", "failures", "reviews", "implementation", "commits", "agents", "media", "docs", "queue",
+    ])
+    expect(loaded.contributions.views.every((view) => view.scope === "repository")).toBe(true)
+    expect(loaded.contributions.slots.map((slot) => slot.slot)).toEqual(["repo.tabs"])
+    expect(loaded.contributions.commands.map((command) => command.slash?.name)).toEqual(["factory", "lanes", "decide"])
   })
 })
 

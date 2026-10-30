@@ -1,0 +1,680 @@
+{
+ "at": 1793343638,
+ "commits": [
+  {
+   "id": "e130b5d26d02",
+   "author": "Smithers e2e lane",
+   "at": 1793335437,
+   "title": "fix(eslint): discover VIP-30 project configs for typed lint",
+   "lane": ""
+  },
+  {
+   "id": "78f5f76a5003",
+   "author": "Smithers e2e lane",
+   "at": 1793334872,
+   "title": "test(vibelang): debug-stack expects Effect 4.1's thunk frame name",
+   "lane": ""
+  },
+  {
+   "id": "73af887f577f",
+   "author": "William Cory",
+   "at": 1793337771,
+   "title": "test(fuzz): a fork's operand is evaluated at the fork, in the parent",
+   "lane": ""
+  }
+ ],
+ "impl_grades": {
+  "r2": {
+   "run": "D",
+   "func": "D",
+   "fail": "D",
+   "data": "D",
+   "svc": "F"
+  },
+  "r3": {
+   "run": "D",
+   "func": "D",
+   "fail": "D",
+   "data": "F",
+   "svc": "D"
+  },
+  "r4": {
+   "run": "F",
+   "func": "D",
+   "fail": "D",
+   "data": "F",
+   "svc": "D"
+  }
+ },
+ "a_streak": 0,
+ "failures": [
+  {
+   "at": "2026-10-30T07:00:01Z",
+   "kind": "agent",
+   "what": "smithers-factory",
+   "why": "exited with code -15",
+   "next": "See the transcript.",
+   "resolved": false
+  },
+  {
+   "at": "2026-10-30T06:59:20Z",
+   "kind": "agent",
+   "what": "ifix-svc-r6",
+   "why": "codex-rr: every account failed or is cooling (tried none) / codex-rr: every account failed or is cooling (tried none)",
+   "next": "See the transcript.",
+   "resolved": false
+  },
+  {
+   "at": "2026-10-30T06:49:53Z",
+   "kind": "agent",
+   "what": "ifix-data-r6",
+   "why": "Codex was at capacity and cut the run off.",
+   "next": "See the transcript.",
+   "resolved": true
+  }
+ ],
+ "media": [
+  {
+   "file": "spec-walkthrough.mp4",
+   "title": "Spec walk-through (draft 1)",
+   "kind": "video",
+   "description": "The VIP specification in the order its ideas build, with callbacks to the A!E!R slots each part fills. Narration is a placeholder for Will's rewrite; every code block is in the VIP language as of VIP-39.",
+   "updated": "2026-10-29T23:07:40+00:00"
+  },
+  {
+   "file": "spec-deep-01-000-intro.mp4",
+   "title": "Spec deep dive 1 of 15: The specification",
+   "kind": "video",
+   "description": "Principles, the language at a glance, how to read the spec, and its chapters. Narration is a placeholder for Will's rewrite. Code is the spec's own, from main after round 9.",
+   "updated": "2026-10-30T00:07:49+00:00"
+  },
+  {
+   "file": "spec-deep-02-001-functions.mp4",
+   "title": "Spec deep dive 2 of 15: Functions and Effect types",
+   "kind": "video",
+   "description": "VIP-1, VIP-3, VIP-26 and VIP-27: effect functions and their lowering, A!E!R, the top level, and declaration output. Narration is a placeholder for Will's rewrite. Code is the spec's own, from main after round 9.",
+   "updated": "2026-10-30T00:09:41+00:00",
+   "size": 120000000
+  }
+ ],
+ "agents": [
+  {
+   "name": "ifix-data-r6",
+   "kind": "lane",
+   "title": "ifix-data-r6: fix the implementation bugs round 6's reviewer found in spec chapters 4 and 6 (match, exhaustiveness, fixed checks, data, schema)",
+   "state": "running",
+   "rc": null,
+   "started": 1793343629,
+   "ended": null,
+   "account": "every",
+   "model": "Codex",
+   "machine": "nyc-02",
+   "phase": "ops"
+  },
+  {
+   "name": "spec-artifacts",
+   "kind": "lane",
+   "title": "spec-artifacts: generate the two normative artifacts the spec still lacks",
+   "state": "running",
+   "rc": null,
+   "started": 1793343616,
+   "ended": null,
+   "account": "codex-5",
+   "model": "Codex",
+   "machine": "nyc-01",
+   "phase": "spec: integrate"
+  },
+  {
+   "name": "impl-hunt-svc",
+   "kind": "lane",
+   "title": "impl-hunt-svc: continuously find and fix where the compiler disagrees with spec chapters 5 and 7 (services, provide, globals, platform, config, diagnostics, lint)",
+   "state": "running",
+   "rc": null,
+   "started": 1793343613,
+   "ended": null,
+   "account": "codex-5",
+   "model": "Codex",
+   "machine": "nyc-01",
+   "phase": "implementation"
+  },
+  {
+   "name": "diffcheck-r20",
+   "kind": "lane",
+   "title": "diffcheck-r20: catch the errors round 20's edits introduced, before the panel reviews",
+   "state": "running",
+   "rc": null,
+   "started": 1793343518,
+   "ended": null,
+   "account": "claude-7",
+   "model": "Claude Opus",
+   "machine": "nyc-01",
+   "phase": "migrations"
+  },
+  {
+   "name": "smithers-factory",
+   "kind": "lane",
+   "title": "smithers-factory: rebuild the VibeLang factory on Smithers, at factory.smithers.sh",
+   "state": "failed",
+   "rc": "-15",
+   "started": 1793343490,
+   "ended": 1793343601,
+   "account": "claude-7",
+   "model": "Claude Opus",
+   "machine": "nyc-01",
+   "phase": "ops"
+  },
+  {
+   "name": "bugs-impl-hunt-svc-45",
+   "kind": "lane",
+   "title": "bugs-impl-hunt-svc-45: fix the bugs routed to impl-hunt-svc's area",
+   "state": "done",
+   "rc": "0",
+   "started": 1793342776,
+   "ended": 1793343026,
+   "account": "codex-5",
+   "model": "Codex",
+   "machine": "nyc-01",
+   "phase": "ops"
+  },
+  {
+   "name": "v18-opus",
+   "kind": "lane",
+   "title": "v18-opus: review round 18",
+   "state": "running",
+   "rc": null,
+   "started": 1793343000,
+   "ended": null,
+   "account": "claude-2",
+   "model": "Opus",
+   "machine": "mac",
+   "phase": "spec: panel review"
+  }
+ ],
+ "daemons": [
+  {
+   "name": "merge-queue resolver (relands rejected stacks, fixes RED main)",
+   "running": true
+  },
+  {
+   "name": "spec round orchestrator (chapters, integrator, panel)",
+   "running": true
+  },
+  {
+   "name": "Telegram watcher",
+   "running": true
+  }
+ ],
+ "grades": {
+  "v1": {
+   "fable": {
+    "line": "**Grade: C+.** The chapter skeleton, the construct inventory and almost every Effect API name are right for effect 4.1.0, but the text contradicts three dated VIP amendments (VIP-1's removal of `effect f()`, VIP-16's `let` binding, VIP-32's 4.1.0 pin), omits VIP-33's amendment while three examples violate it, writes an Effect TypeScript column that does not type-check as written (`Effect<A, E, R>`",
+    "mtime": 1793296629
+   },
+   "opus": {
+    "line": "**Grade: C.** The structure is the best this language has had: 10 short chapters, one VIP per section, a mapping beside every construct. But it reinstates a syntax VIP-1 removed, in 27 of its examples. Its throw-tracking rule, read literally, makes almost every Effect call in its own examples a compile error. And four of its Effect TS mappings give a different `Exit` from the VibeLang they claim t",
+    "mtime": 1793296035
+   },
+   "sol": {
+    "line": "C — The core is substantially simpler and most Effect mappings are valid, but missed accepted amendments and incomplete lowering rules prevent this from being an implementation-agreement specification.",
+    "mtime": 1793295678
+   },
+   "astra": {
+    "line": "D — The specification captures the new language’s simpler structure, but misses accepted amendments and does not yet define an unambiguous, compositional Effect 4.1.0 translation.",
+    "mtime": 1793295831
+   }
+  },
+  "v10": {
+   "fable": {
+    "line": "**Grade: A-.** All seven round-9 findings and the three nits are fixed in the graded tree, the 38 VIPs are byte-identical to round 9 so the spec has no new source to track, every Effect TypeScript mapping checks out against effect 4.1.0 (29 APIs present, the eleven-name clash list exact, the readonly/mutable schema types and the computed-key decoder behave as written), and the grammar now writes e",
+    "mtime": 1793318432
+   },
+   "opus": {
+    "line": "**Grade: A-.** All 10 of my round-9 findings are fixed, and every Effect TS mapping I probed gives the stated `Exit` on effect 4.1.0. Two majors remain: the `provide` keyword trigger has two readings, and so does the scope of the `Function` ban.",
+    "mtime": 1793318007
+   },
+   "sol": {
+    "line": "A — The specification faithfully states the settled VIP language, and this fresh review found no concrete specification defect outside the expressly excluded pending decisions.",
+    "mtime": 1793317639
+   },
+   "astra": {
+    "line": "A — The specification faithfully states the settled VIP language, fixes both of my round-9 findings, and has one minor catch-chain wording issue with no identified incorrect settled Effect lowering.",
+    "mtime": 1793317900
+   }
+  },
+  "v11": {
+   "fable": {
+    "line": "**Grade: A-.** All five round-10 minors and all four nits are fixed in the graded tree, the 38 VIPs are byte-identical to round 10, every Effect TypeScript mapping checks out against effect 4.1.0 (this round's probes add interruption past a `using`, `raceAll` failure order, empty race operands, type-literal computed keys, `Data.TaggedEnum<{}>`, `Context.Service.Shape` and the `Context.Reference` c",
+    "mtime": 1793320014
+   },
+   "opus": {
+    "line": "**Grade: A-.** All six of my round-10 findings are fixed and every probed Effect TS mapping gives the stated `Exit` on effect 4.1.0, but two majors sit in the `!` type shorthand: an optional trailing `R` after `A!!` that swallows the next line or a function body, and a `!=`/`!==` split that breaks valid TypeScript after `as`.",
+    "mtime": 1793319449
+   },
+   "sol": {
+    "line": "A — The specification accurately states the accepted VIP language, with no concrete defect found outside the expressly excluded pending decisions.",
+    "mtime": 1793319207
+   },
+   "astra": {
+    "line": "A — The specification faithfully states the settled VIP decisions, fixes my sole round-10 finding, and has no new graded defects identified in this review.",
+    "mtime": 1793319213
+   }
+  }
+ },
+ "impl": {
+  "fable": {
+   "line": "# Grade: C. The runtime semantics that are implemented are largely right, but the call rule of 2026-10-27/28 (D421, D445, D480, D483, D490, D495, EK4613, EK4410) is not implemented, the plain form is absent from declarations so a library consumer silently gets unrun Effects, and the release notes list neither gap.",
+   "mtime": 1793181946
+  },
+  "opus": {
+   "line": "Grade: D. The compiler is careful wherever it implements the older call model (evaluation order, regions, hygiene, fibers, iterators, cleanup), but it silently drops Effects in ordinary code, grows exponentially on unannotated call chains until it runs out of memory, emits invalid declarations, and leaves most of D480-D497 and twelve registry diagnostics unimplemented and unlisted.",
+   "mtime": 1793182435
+  },
+  "sol": {
+   "line": "D — Substantial working compiler and runtime machinery is present, but five newly demonstrated major defects prevent release against the normative specification.",
+   "mtime": 1793180973
+  }
+ },
+ "origins": {
+  "v2": [
+   {
+    "title": "'A function that returns an Effect can't throw' contradicts body inference for a plain .vibe function that returns an Effect",
+    "severity": "major",
+    "reviewers": [
+     "opus"
+    ],
+    "ids": [
+     "opus M1"
+    ],
+    "origin": "regression",
+    "origin_evidence": "003:40 bullet '- A function that returns an Effect can't throw: an `effect` function, … or a `.ts` function whose return type is `Effect`. A call of it is never throw-tracked' is a '+' line in `diff -u v1/opus/spec v2/opus/spec` (003-failures.md hunk @@ -24,19 +24,23 @@); v1 had only 'A `.vibe` function's thrown type is inferred from its body'. v1/FIXED.md: 'opus | B2 | a/c | Fixed: effectful func",
+    "lego": true,
+    "lego_vips": [
+     "VIP-4 amendment (Effect-returning functions never throw-tracked)",
+     "VIP-4 body inference for plain .vibe functions",
+     "VIP-1 plain functions"
+    ],
+    "circles": true,
+    "circles_refs": [
+     "v1 opus B2"
+    ],
+    "circles_why": "B2's fix keyed 'effectful' on the return type instead of the function kind, so a plain .vibe function that builds an Effect falls under both bullets."
+   },
+   {
+    "title": "Completion records send an unlabeled break to the innermost loop; JS sends it to a switch (and labeled break to a labeled block)",
+    "severity": "major",
+    "reviewers": [
+     "opus",
+     "astra"
+    ],
+    "ids": [
+     "opus M2",
+     "astra M1"
+    ],
+    "origin": "regression",
+    "origin_evidence": "002:512 '- The records are `Normal`, … An unlabeled `break` or `continue` targets the innermost enclosing loop, as in JavaScript, and the record names that loop.' is a '+' line in `diff -u v1/opus/spec v2/opus/spec` (new section '### Leaving a block'). v1 had no lowering for jumps. v1/FIXED.md: 'opus | M6 | Fixed: completion-record translation for block jumps (spec-fix)', same fix for sol M3, astr",
+    "lego": false,
+    "lego_vips": [],
+    "circles": true,
+    "circles_refs": [
+     "v1 opus M6",
+     "v1 sol M3",
+     "v1 astra B1",
+     "v1 fable M5"
+    ],
+    "circles_why": "The fix copied the jump-target rule by hand and wrote 'loop' where JavaScript says 'iteration or switch statement' (and any labeled statement for labeled break)."
+   },
+   {
+    "title": "Fixed checks for Option/Exit/Result patterns have no inventory, no Effect TS, no resolution rule (and Option.Some is undefined in 4.1.0)",
+    "severity": "major",
+    "reviewers": [
+     "opus",
+     "sol"
+    ],
+    "ids": [
+     "opus M3",
+     "sol m1"
+    ],
+    "origin": "late-found",
+    "origin_evidence": "v1/opus/spec/004-match.md already says 'the compiler tests those types with fixed checks: `when Option.Some(let v):` compiles to a test of the value's tag' ('-' line at diff 004 hunk @@ -37,7 +54,7 @@); v2 only appended 'and binds its `value` field to `v`'. Earliest: v1. No v1 graded finding covers it; sol v1 mentioned the missing mapping only in its ungraded mapping table (v1/sol/REPORT.md:177).",
+    "lego": false,
+    "lego_vips": [],
+    "circles": false,
+    "circles_refs": [],
+    "circles_why": ""
+   }
+  ],
+  "v9": [
+   {
+    "title": "provide's 'providers and { on one line' is prose, not [no LineTerminator here]; a provider list or provider value that spans lines has two readings",
+    "severity": "major",
+    "reviewers": [
+     "opus",
+     "fable"
+    ],
+    "ids": [
+     "opus M3",
+     "fable M1"
+    ],
+    "origin": "late-found",
+    "origin_evidence": "Unchanged by diff v8→v9 (no hunk touches 005:112 or 900:258). 005 'Its providers and the block's `{` are on one line' is in v1–v9 (grep 'providers and the block'); the 900 production comment `(providers and \"{\" on one line)` is in v5–v9. v8 fable REPORT:139 and :148 restated the rule and its cost as ungraded design notes, not a finding.",
+    "lego": false,
+    "lego_vips": [],
+    "circles": true,
+    "circles_refs": [
+     "v1 sol M6",
+     "v1 astra M6"
+    ],
+    "circles_why": "v2 fixed the provider grammar's delimitation (ConditionalExpression providers, separator commas) but left the line restriction as a comment; v9 turned every other prose line rule into [no LineTerminator here] (fable: 15→1) and skipped provide.",
+    "fuzzable": true,
+    "caught_by": "none",
+    "gap": "v9-1"
+   },
+   {
+    "title": "A field ends at any line break (900:404), but 'as between interface members' (900:339, 006:9) is TypeScript's greedy type-member rule; a Prettier-wrapped multi-line union or function type is a syntax error under one and a field under the other",
+    "severity": "major",
+    "reviewers": [
+     "opus"
+    ],
+    "ids": [
+     "opus M1"
+    ],
+    "origin": "late-found",
+    "origin_evidence": "Neither sentence changed v8→v9 (900 'Fields.' paragraph hunk at diff line 827 is context only). 'A field ends at `;`, `,`, a line break or `}`' and 'type-member separators' first appear in v4 (grep); 'as between interface members' in v2.",
+    "lego": false,
+    "lego_vips": [],
+    "circles": true,
+    "circles_refs": [
+     "v3 opus m13",
+     "v2 opus m8",
+     "v1 opus m6"
+    ],
+    "circles_why": "v4's fix for v3 opus m13 unified Field/Separator by adding LineTerminator as a separator, without saying the type is parsed greedily first, so it fixed one-line fields and broke multi-line types.",
+    "fuzzable": true,
+    "caught_by": "none",
+    "gap": "v9-2"
+   },
+   {
+    "title": "The spec recommends `a catch ((e) => b) catch ((e) => c)` to chain, but its own rule says the outer catch needs an Effect operand, so the documented chain is a type error",
+    "severity": "major",
+    "reviewers": [
+     "opus"
+    ],
+    "ids": [
+     "opus M2"
+    ],
+    "origin": "late-found",
+    "origin_evidence": "v8 002 already had both sentences: 'Parenthesize the arrow to chain: `a catch ((e) => b) catch c`' and 'In `(a catch b) catch c`, the outer `catch` runs the value … must itself be an Effect' (diff lines 170, 172). v9 only rewrote the handlers to function literals (decided detail 31a, diff lines 173, 176). Both sentences are in v2/opus/spec/002-running.md:81 and :83.",
+    "lego": true,
+    "lego_vips": [
+     "VIP-5 left-associative catch (amended) × VIP-5 catch runs its operand (yield* Effect.catch)",
+     "× VIP-5 31a function-literal handlers"
+    ],
+    "circles": true,
+    "circles_refs": [
+     "v2 sol M1",
+     "v5 astra N1",
+     "v6 opus m1"
+    ],
+    "circles_why": "Each round fixed how the chain parses (parenthesized arrow, CatchHead trees, plain-arrow body) and never checked that the recommended chain type-checks against the 'must itself be an Effect' rule beside it; v1 sol and astra and v2–v5 opus flagged the typing cost only as ungraded notes.",
+    "fuzzable": true,
+    "caught_by": "none",
+    "gap": "v9-3"
+   }
+  ],
+  "v18": [
+   {
+    "title": "002's array-default recipe `try { … } finally { if (!$done) $it.return?.() }` is not ECMAScript IteratorClose: a throwing `return()` replaces a pending throw (Die(\"close\") vs native Die(\"body\")), and a primitive `return()` result is ignored (Success(7) vs native Die(TypeError))",
+    "severity": "major",
+    "reviewers": [
+     "sol",
+     "astra"
+    ],
+    "ids": [
+     "sol M1",
+     "astra M1"
+    ],
+    "origin": "regression",
+    "origin_evidence": "first.sh '$it.return?.()' => v18 only. v17/FIXED.md 'Integrator fixes beyond the lanes': '002: detail 68a stated once against ECMAScript's BindingInitialization, IteratorBindingInitialization and DestructuringAssignmentEvaluation: … IteratorClose in a `finally`', added after probe P5 ('array default with an abrupt completion: native calls `return()`; without `finally` the lowering skips it'). That",
+    "lego": false,
+    "lego_vips": [],
+    "circles": true,
+    "circles_refs": [
+     "v17 sol M1",
+     "v17 astra M1",
+     "v17 fable M3",
+     "v4 opus m3",
+     "v1 fable m11"
+    ],
+    "circles_why": "Every round re-lowers do/match in destructuring defaults by hand (IIFE in v17, statements plus finally in v18) instead of citing the ECMAScript algorithm; each hand recipe was probed only on the case that broke last time.",
+    "fuzzable": true,
+    "caught_by": "none"
+   },
+   {
+    "title": "The normative thrown-signature inventory `docs/design/inventory/throws.json` decides which calls compile but does not exist; 003 says it 'awaits its generator'",
+    "severity": "major",
+    "reviewers": [
+     "sol",
+     "astra"
+    ],
+    "ids": [
+     "sol M2",
+     "astra m1"
+    ],
+    "origin": "late-found",
+    "origin_evidence": "The defect predates v18: v17/ORIGINS.json row 'The generated Appendix E inventory … is still not published' labels it late-found v12 (Appendix E 'it, not this table, decides which calls compile'). The quoted 003 sentence is new (first.sh 'That artifact awaits its generator' and 'docs/design/inventory/throws.json' => v18 only), added by the round-17 sol M2 fix (v17/FIXED.md: 'name the normative `do",
+    "lego": false,
+    "lego_vips": [],
+    "circles": true,
+    "circles_refs": [
+     "v17 sol M2",
+     "v17 astra m1",
+     "v15 opus M4"
+    ],
+    "circles_why": "The round-17 fix gave the artifact a path and a schema but no contents, and v17/FIXED.md 'Integrator fixes' says it was written 'by path, not a link to a missing file (the docs link gate would fail)', so the gate that would have caught it was deliberately avoided.",
+    "fuzzable": true,
+    "caught_by": "none"
+   },
+   {
+    "title": "004 Exhaustiveness: Subjects turns EK4701 off for any object type, but the Coverage parenthetical '(or an object member whose literal `_tag` is \"V\")' and the example `match (d) { when { _tag: \"Sent\", let tracking }: 1; } // EK4701` (d a plain object union) assume it runs",
+    "severity": "major",
+    "reviewers": [
+     "opus"
+    ],
+    "ids": [
+     "opus M1"
+    ],
+    "origin": "late-found",
+    "origin_evidence": "first.sh 'turns the check off for that', 'or an object member whose literal', 'Waiting not covered' => v17 v18; none appears in v16. All three entered v17 with detail 78 (decided-details.md:414, 'NW 42 and 46; … r16-004') and are unchanged in the r17→r18 diff. No round-17 reviewer reported it.",
+    "lego": false,
+    "lego_vips": [],
+    "circles": true,
+    "circles_refs": [
+     "v15 opus M2"
+    ],
+    "circles_why": "v15 opus M2 ('the trigger for EK4701, \"a finite union\", is undefined') was settled by detail 78, whose own example list kept an object-union subject the new Subjects rule excludes.",
+    "fuzzable": true,
+    "caught_by": "none"
+   }
+  ]
+ },
+ "events": [
+  "21:31 tg: Spec round 18 started 21:31 (round 17: B B B+ B+ ): 10 chapter lanes, then the integrator, then the panel.",
+  "21:38 tg: Spec round 18: chapters done 21:38; integrator running.",
+  "21:56 tg: Spec round 18: diff check done 21:56: 0 errors from this round's edits fixed before the panel."
+ ],
+ "queue": [
+  {
+   "at": "2026-10-30T04:52:34Z",
+   "state": "superseded",
+   "lane": "d-handlers",
+   "rev": "90788bdd16f9",
+   "commits": "1",
+   "reason": "Same editor removal rebased onto main 909dbaad; refreshed generated docs; TextMate 12/12 and tree-sitter regressions pass.",
+   "landed_as": ""
+  },
+  {
+   "at": "2026-10-30T04:53:07Z",
+   "state": "superseded",
+   "lane": "d-handlers",
+   "rev": "a7041c55c63b",
+   "commits": "1",
+   "reason": "Replacement saved with fresh native case and approval-example proof; retiring the stale submission until its forms snapshots are finalized and requeued after shared build admission.",
+   "landed_as": ""
+  },
+  {
+   "at": "2026-10-30T04:53:12Z",
+   "state": "superseded",
+   "lane": "d-handlers",
+   "rev": "803eabc1015d",
+   "commits": "2",
+   "reason": "Replacement includes the proven release-packaging fix and prototype/mapper cleanup. Retire the old submission which still required the deleted kernel; fresh per-slice verification and requeue await shared build admission.",
+   "landed_as": ""
+  },
+  {
+   "at": "2026-10-30T05:40:00Z",
+   "state": "landed",
+   "lane": "vip-types",
+   "rev": "aa11bb22cc33dd44",
+   "commits": "2",
+   "reason": "",
+   "landed_as": "909dbaadafe0123456"
+  }
+ ],
+ "runner": [
+  "05:19:02 deferred w2-throw: conflicts with an earlier batch entry",
+  "05:20:40 deferred bugs-d-tooling-1: conflicts with an earlier batch entry",
+  "05:38:20 batch ['r17-integrate', 'core-land', 'fz-speed', 'vip-types'] on main@github 909dbaadafe0"
+ ],
+ "postmerge": [
+  "2026-10-30T01:50:22Z 84f966a6d03c GREEN",
+  "2026-10-30T02:07:06Z 84f966a6d03c RED graph 1 failing: //:go-vibelang; evidence //:go-vibelang --- FAIL: TestRegistryMatchesSpec (0.00s);evidence //:go-vibelang FAIL;evidence //:go-vibelang FAIL\tgithub.com/microsoft/TypeScript/tsc/internal/vibelang\t377.467s; verified go-shard recheck logs <path>",
+  "2026-10-30T02:16:15Z 4e33096aa082 RED graph 1 failed 2 hit 884 ran 23 failing: //:go-vibelangfuzz //:go-vibelang; evidence //:go-vibelangfuzz no test failure lines captured; inspect graph log;evidence //:go-vibelang --- FAIL: TestRegistryMatchesSpec (0.00s);evidence //:go-vibelang FAIL;evidence //:go-vibelang FAIL\tgithub.com/microsoft/TypeScript/tsc/internal/vibelang\t541.390s; logs <path>",
+  "2026-10-30T03:00:00Z 9a1b2c3d4e5f GREEN"
+ ],
+ "migrations": {
+  "opencode": {
+   "pass": 21,
+   "fail": 4,
+   "updated": 1793343056,
+   "failures": [
+    "conversion: --fix leaves Effect.fn generators at EK1002 and reports type/contract failures; large projects also hit the 180-second limit; VibeLang --fix needs semantics-preserving Effect.fn/Effect.gen and callback conversion; evidence /home"
+   ]
+  },
+  "t3code": {
+   "pass": 56,
+   "fail": 59,
+   "updated": 1793341152,
+   "failures": [
+    "Knip production: Oxc's syntax-only VibeLang projection rejects valid project-checked array/schema code; upstream hook needs project type information (repros/projector/repro.sh); <path>"
+   ]
+  },
+  "alchemy": {
+   "pass": 31,
+   "fail": 18,
+   "updated": 1793341539,
+   "failures": []
+  }
+ },
+ "hosts": {
+  "nyc-01": " 07:00:37 up 24 days,  3:25, 62 users,  load average: 96.03, 127.14, 123.36\n/dev/md0        1.8T  1.7T   25G  99% /\n",
+  "nyc-02": " 07:00:38 up 24 days,  2:04,  0 user,  load average: 135.26, 138.85, 142.68\n/dev/md0        1.8T  1.6T   44G  98% /\n"
+ },
+ "vip": {
+  "pending": 24,
+  "total": 41,
+  "per_vip": {
+   "VIP-1": 1,
+   "VIP-10": 1,
+   "VIP-12": 1,
+   "VIP-14": 1,
+   "VIP-15": 1,
+   "VIP-17": 5,
+   "VIP-18": 4,
+   "VIP-20": 1,
+   "VIP-23": 1,
+   "VIP-26": 1,
+   "VIP-33": 1,
+   "VIP-5": 2,
+   "VIP-6": 2,
+   "VIP-9": 2
+  }
+ },
+ "resolver": [
+  "12:19:19 launched fix-vip-remove3 for e4a31105b6ad (2026-10-29T12:49:00Z): 'conflicts with main in llquwwzl lyplzyrt qwzlnxpl: ript/tsc/internal/vibelangfuzz/testdata/pending/rules.txt (AssertionE'",
+  "14:55:40 launched fix-fuzz-plain for 21148b30d60c (2026-10-29T20:32:46Z): 'gate failed (graph 1 failed 1 hit 2 ran 14 failing: //:docs-tools); logs <path>'",
+  "16:24:23 launched fix-f3-mainred for 8123520192c0 (2026-10-29T23:20:45Z): 'conflicts with main in tonxwqzk: tonxwqzk STOP: non-generated conflicts need a hand: examples/foldkit-app/bunfig.toml ex'"
+ ],
+ "for_will": [
+  {
+   "id": "revisit-r8",
+   "kind": "explain",
+   "title": "Round 8's 4 real circles: one area, no decision needed from you",
+   "due": "Explanation only. The fix is in round 9",
+   "body": "All four repeats are the same area: VibeLang's declaration keywords `error`, `schema`, `service` and `data`. Elsewhere in TypeScript these words are ordinary names, as in `const data = …` or `service as {…}`. Each round patched one keyword's line-break rule:\n\n```vibe\nservice as { a: string };   // TypeScript expression, or a service named `as`?\nschema User\n  = { id: string }          // is the lin",
+   "decided": "Explanation only: round 9 applies the TypeScript `type` rule to all four keywords."
+  },
+  {
+   "id": "catch-always-function",
+   "kind": "decide",
+   "title": "catch: is the handler always a function? (your question)",
+   "due": "You accepted 2B; this is your follow-up idea",
+   "body": "Your idea: the handler is always a function literal, and its syntax says what it does.\n\n```vibe\nx catch (e) => fallback(e)        // plain function: its result is the value\nx catch effect (e) => retry(e)    // effect function: runs, may fail again\nx catch () => guest               // replaces 2B's value form `x catch guest`\nx catch (e) => f(e)               // a named function is wrapped, so synta",
+   "decided": "Your decision: the handler is always a function literal. `catch (e) => v` gives a value, `catch effect (e) => …` runs an Effect, and the value form is gone. Applied to the spec, VIP-5 and the compiler."
+  },
+  {
+   "kind": "review",
+   "title": "Spec round 3 findings, as code",
+   "due": "Already fixed in rounds 4–6; kept for reference",
+   "body": "Each finding as VibeLang code, its Effect TS, the problem and the fix.",
+   "id": "round3-page",
+   "links": [
+    {
+     "label": "Read round 3 findings",
+     "url": "https://factory.vibelang.sh/pages/review-round-3.html"
+    }
+   ]
+  },
+  {
+   "kind": "review",
+   "title": "Read the spec and the VIPs",
+   "due": "The site updates as each round lands",
+   "body": "The current spec (round 6 under review now) and every VIP record with its amendments.",
+   "id": "live-spec",
+   "links": [
+    {
+     "label": "Spec",
+     "url": "https://vibelang.sh/spec"
+    },
+    {
+     "label": "VIPs",
+     "url": "https://vibelang.sh/vips"
+    }
+   ]
+  }
+ ],
+ "answered": {
+  "live-spec": {
+   "choice": "accept",
+   "text": "ship it",
+   "at": 1793343000000
+  }
+ },
+ "telegram": [
+  {
+   "date": 1793339691,
+   "bot": true,
+   "text": "Spec round 19: diff check done."
+  },
+  {
+   "date": 1793339700,
+   "bot": false,
+   "text": "thanks"
+  }
+ ],
+ "accounts": {
+  "codex-rr": [
+   "codex-1 ready",
+   "codex-2 cooling 30m"
+  ]
+ }
+}

@@ -1,0 +1,87 @@
+{
+  "apiVersion": 1,
+  "id": "factory",
+  "version": "0.1.0",
+  "title": "Factory",
+  "description": "A repository's factory: lanes, decisions, failures, reviews, commits and the merge queue, from its feeds.",
+  "requires": { "api": "^1.0.0" },
+  "capabilities": [],
+  "uses": ["app/navigate"],
+  "$defs": {
+    "Go": {
+      "type": "object",
+      "properties": { "to": { "type": "string", "maxLength": 512 } },
+      "required": ["to"],
+      "additionalProperties": false
+    }
+  },
+  "contributes": {
+    "views": [
+      {
+        "id": "factory/now", "title": "Factory", "scope": "repository", "path": "", "sizes": ["full"], "minimum": "anyone",
+        "reads": ["core/feeds"], "render": { "kind": "component", "export": "Now" }
+      },
+      {
+        "id": "factory/for-you", "title": "For you", "scope": "repository", "path": "for-you", "sizes": ["full"],
+        "minimum": "anyone", "reads": ["core/feeds", "core/feed"],
+        "render": { "kind": "component", "export": "ForYou" }
+      },
+      {
+        "id": "factory/failures", "title": "Failures", "scope": "repository", "path": "failures", "sizes": ["full"],
+        "minimum": "anyone", "reads": ["core/feeds"], "render": { "kind": "component", "export": "Failures" }
+      },
+      {
+        "id": "factory/reviews", "title": "Spec reviews", "scope": "repository", "path": "reviews", "sizes": ["full"],
+        "minimum": "anyone", "reads": ["core/feeds", "core/feed"], "render": { "kind": "component", "export": "Reviews" }
+      },
+      {
+        "id": "factory/implementation", "title": "Implementation", "scope": "repository", "path": "implementation",
+        "sizes": ["full"], "minimum": "anyone", "reads": ["core/feeds", "core/feed"],
+        "render": { "kind": "component", "export": "Implementation" }
+      },
+      {
+        "id": "factory/commits", "title": "Commits", "scope": "repository", "path": "commits", "sizes": ["full"],
+        "minimum": "anyone", "reads": ["core/feeds", "core/feed"], "render": { "kind": "component", "export": "Commits" }
+      },
+      {
+        "id": "factory/agents", "title": "Agents", "scope": "repository", "path": "agents", "sizes": ["full"],
+        "minimum": "anyone", "reads": ["core/feeds", "core/feed"], "render": { "kind": "component", "export": "Agents" }
+      },
+      {
+        "id": "factory/media", "title": "Media", "scope": "repository", "path": "media", "sizes": ["full"],
+        "minimum": "anyone", "reads": ["core/feeds"], "render": { "kind": "component", "export": "Media" }
+      },
+      {
+        "id": "factory/docs", "title": "Docs", "scope": "repository", "path": "docs", "sizes": ["full"],
+        "minimum": "anyone", "reads": ["core/feeds"], "render": { "kind": "component", "export": "Docs" },
+        "events": [{ "name": "go", "payload": { "$ref": "#/$defs/Go" }, "flow": "app/navigate", "args": { "to": "$event.to" } }]
+      },
+      {
+        "id": "factory/queue", "title": "Queue", "scope": "repository", "path": "queue", "sizes": ["full"],
+        "minimum": "anyone", "reads": ["core/feeds"], "render": { "kind": "component", "export": "Queue" }
+      }
+    ],
+    "slots": [{
+      "slot": "repo.tabs",
+      "id": "factory/tab",
+      "order": 10,
+      "minimum": "anyone",
+      "reads": ["core/feeds"],
+      "render": { "kind": "component", "export": "RepoTab" }
+    }],
+    "commands": [
+      {
+        "id": "factory/open", "flow": "app/navigate", "args": { "to": "/smithersai/vibelang/-/factory" },
+        "title": "Factory", "minimum": "anyone", "slash": { "name": "factory" }, "palette": true
+      },
+      {
+        "id": "factory/lanes", "flow": "app/navigate", "args": { "to": "/smithersai/vibelang/-/factory/agents" },
+        "title": "Factory lanes", "minimum": "anyone", "slash": { "name": "lanes" }, "palette": true
+      },
+      {
+        "id": "factory/decide", "flow": "app/navigate", "args": { "to": "/smithersai/vibelang/-/factory/for-you" },
+        "title": "Factory decisions", "minimum": "anyone", "slash": { "name": "decide" }, "palette": true
+      }
+    ]
+  }
+}
