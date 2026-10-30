@@ -13,7 +13,6 @@ import { EvalError } from "@smthrs/evals/EvalError"
 import { Action, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import * as RedactedLogger from "@smthrs/journal/RedactedLogger"
 import { Node } from "@smthrs/plan"
-import { NodeRuntime } from "@smthrs/platform-node"
 import { Sampling } from "@smthrs/scorers"
 import type { ScorerError } from "@smthrs/scorers/ScorerError"
 import * as ScoreStore from "@smthrs/scorers/ScoreStore"
@@ -33,6 +32,9 @@ import type * as Environment from "../Environment.ts"
 import * as DatabaseLocation from "../internal/DatabaseLocation.ts"
 import { executionDatabasePath } from "../internal/ExecutionDatabasePath.ts"
 import * as Project from "../Project.ts"
+import * as EvaluationHost from "./EvaluationHost.ts"
+
+export { Host } from "./EvaluationHost.ts"
 
 /**
  * Executable suite modules export this value as default, or export its two fields.
@@ -427,6 +429,8 @@ export const execute = async (
     readonly root?: string
   },
   runtime: RuntimeConfig & {
+    /** The embedding host's runtime identity, scoped to this invocation. */
+    readonly host?: Layer.Layer<never>
     /** A host-supplied durable engine, used by embedded callers and store-failure tests. */
     readonly store?: Layer.Layer<
       EngineStore.Driver | FlowRuntime.FlowRuntime | SqlClient.SqlClient | DurableWriter.DurableWriter,
@@ -492,7 +496,10 @@ export const execute = async (
       Layer.provide(batchScoring),
       Layer.provide(SqlScoreStore.layer)
     )
-  const hostRuntime = "Bun" in globalThis ? (await import("@smthrs/platform-bun")).BunRuntime : NodeRuntime
+  const hostRuntime = await Effect.runPromise(
+    EvaluationHost.runtime.pipe(Effect.provide(runtime.host ?? Layer.empty)),
+    { signal: runtime.signal }
+  )
   const registration = Interpreter.layerWithImplementations(EvaluationFlow, implementation)
   const host = runtime.store === undefined ?
     hostRuntime.layerHost({

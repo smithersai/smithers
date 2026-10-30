@@ -112,6 +112,14 @@ describe("evaluation scoring over the project's engine store", () => {
     await writeSuite(root)
     const loaded = await Evaluation.load(root, "exact")
     let refused = 0
+    let selected = 0
+    const host = Layer.effect(
+      Evaluation.Host,
+      Effect.sync(() => {
+        selected++
+        return { bun: true }
+      })
+    )
     const storage = NodeRuntime.storage(engineDatabase(root), root).pipe(
       Layer.provideMerge(NodeHost.layerAt(root)),
       Layer.provideMerge(NodeCrypto.layer)
@@ -139,11 +147,13 @@ describe("evaluation scoring over the project's engine store", () => {
       sweep: { host: "evaluation" }
     }).pipe(Layer.provideMerge(faultyStorage), Layer.provide(StepBoundary.layerUnsupported))
     const options = { root, runId: "unsettled", at: first }
-    await expect(Evaluation.execute(loaded.suite, loaded.executor, options, { store: engine })).rejects.toMatchObject({
-      code: "executor",
-      message: "Evaluation has not settled; resume its run identity"
-    })
+    await expect(Evaluation.execute(loaded.suite, loaded.executor, options, { store: engine, host })).rejects
+      .toMatchObject({
+        code: "executor",
+        message: "Evaluation has not settled; resume its run identity"
+      })
     expect(refused).toBeGreaterThan(0)
+    expect(selected).toBe(1)
     await expect(Evaluation.readRun(root, options.runId)).rejects.toMatchObject({ code: "eval_run_not_found" })
     const resumed = await Evaluation.execute(loaded.suite, loaded.executor, options)
     expect(resumed.observations).toMatchObject([{ kind: "score", score: 0.75 }])

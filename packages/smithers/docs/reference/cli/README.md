@@ -468,6 +468,9 @@ suite effects, cases, and scorers, waits for their finalizers, and prevents
 publication of unfinished results. Embedded invocations pass `RuntimeConfig.signal`
 and `RuntimeConfig.environment` to `createEvalCli`.
 Embedded `Evaluation.execute` callers can supply a scoped `runtime.store` layer.
+Host selection uses an invocation-local Effect service and loads the matching
+Node or Bun adapter; importing the Bun adapter leaves its SQLite driver lazy.
+Supply `Evaluation.Host` through `runtime.host` to select an embedded invocation's host.
 An unsettled run publishes no artifact and keeps its identity for recovery.
 
 Evaluation, history, and operator commands share local project resolution.
