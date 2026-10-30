@@ -81,7 +81,7 @@ describe("environment CLI process boundary", () => {
   })
 
   it("passes the complete raw exec tail and propagates the child's failure", async () => {
-    const { root, cli } = await fixture()
+    const { root, env, cli } = await fixture()
     expect(cli(["environment", "add", "dev", "--local", "--directory", root]).status).toBe(0)
     const output = join(root, "args.json")
     const args = [
@@ -111,7 +111,7 @@ describe("environment CLI process boundary", () => {
     expect(JSON.parse(await readFile(output, "utf8"))).toEqual({
       args,
       tmp: tmpdir(),
-      compile: process.env.NODE_COMPILE_CACHE
+      compile: env.NODE_COMPILE_CACHE
     })
     await expect(readFile(join(root, "injected"))).rejects.toThrow()
   })
