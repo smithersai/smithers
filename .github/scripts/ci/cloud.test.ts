@@ -225,9 +225,15 @@ describe("Local CI gate runner", () => {
     })
 
     test("picks the arm64 tarball on arm64 runners", () => {
-      const result = run({ node: "v18.19.0", machine: "aarch64" })
-      expect(result.stdout).toContain(`node-v${pinned}-linux-arm64.tar.gz`)
-      expect(result.stdout).not.toContain("linux-x64")
+      const result = run({
+        node: "v18.19.0",
+        machine: "aarch64",
+        extra: ['export PATH="$PATH:/opt/tool-linux-x64/bin"']
+      })
+      const artifacts = result.stdout.split("\n").filter((line) => /^(DOWNLOAD|TAR) /.test(line)).join("\n")
+      expect(artifacts).toContain(`node-v${pinned}-linux-arm64.tar.gz`)
+      expect(artifacts).not.toContain("linux-x64")
+      expect(result.stdout).toContain("/opt/tool-linux-x64/bin")
     })
 
     test("installs nothing when the pinned Node meets the supported floor", () => {

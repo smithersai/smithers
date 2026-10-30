@@ -1468,16 +1468,17 @@ const Answer = Flow.make("answer", {
   body: ({ text }) => Node.succeed(text)
 })
 
-export const settle = (answerId: string, close: Effect.Effect<void>) => Effect.gen(function*() {
-  const result = yield* Answer.poll(answerId)
-  if (Option.isNone(result) || result.value._tag !== "Complete") return
-  const exit = result.value.exit
-  const code = Exit.isFailure(exit) ? Interpreter.refusalCode(exit.cause) : Option.none()
-  if (Option.contains(code, "plan_changed") || Option.contains(code, "payload_changed")) {
-    // Parked under one build and refused under the next: close what the run was feeding.
-    yield* close
-  }
-})
+export const settle = (answerId: string, close: Effect.Effect<void>) =>
+  Effect.gen(function*() {
+    const result = yield* Answer.poll(answerId)
+    if (Option.isNone(result) || result.value._tag !== "Complete") return
+    const exit = result.value.exit
+    const code = Exit.isFailure(exit) ? Interpreter.refusalCode(exit.cause) : Option.none()
+    if (Option.contains(code, "plan_changed") || Option.contains(code, "payload_changed")) {
+      // Parked under one build and refused under the next: close what the run was feeding.
+      yield* close
+    }
+  })
 ```
 
 ### `Interpreter.Interpretation`

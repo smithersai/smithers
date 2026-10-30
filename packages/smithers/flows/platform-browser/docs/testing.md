@@ -247,4 +247,3 @@ those is testing this package rather than your program.
   degrades when one omits an optional member.
 - [Troubleshooting](./troubleshooting.md): the failures a stub can reproduce,
   with the cause and the fix for each.
-
