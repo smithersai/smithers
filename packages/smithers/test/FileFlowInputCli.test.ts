@@ -17,7 +17,7 @@ const modules = fileURLToPath(new URL("../node_modules", import.meta.url))
 describe("file-flow payload admission", () => {
   let root: string
   let started: number
-  let stages: Array<{ command: string; elapsedMs: number; state: string }>
+  let stages: Array<{ command: string; elapsedMs: number; state: string; lifetime?: unknown }>
   beforeEach(async () => {
     started = Date.now()
     stages = []
@@ -48,12 +48,18 @@ export default Flow.make("echo", {
     )
   }, 30_000)
   afterEach(async () => {
+    if (process.env.SMITHERS_TEST_INPUT_PROGRESS === "1") {
+      console.error("File input CLI progress", JSON.stringify(stages))
+    }
     await rm(root, { recursive: true, force: true })
   })
 
   const command = async (args: ReadonlyArray<string>) => {
+    const project = root
+    const progress = stages
+    const origin = started
     const verb = args[0] === "flow" ? "flow start" : args[0]!
-    stages.push({ command: verb, elapsedMs: Date.now() - started, state: "started" })
+    progress.push({ command: verb, elapsedMs: Date.now() - origin, state: "started" })
     const result = await execute(process.execPath, [
       "--no-warnings",
       "--import",
@@ -61,15 +67,15 @@ export default Flow.make("echo", {
       bin,
       ...args,
       "--root",
-      root,
+      project,
       "--json"
     ], {
-      cwd: root,
+      cwd: project,
       env: {
         PATH: process.env["PATH"],
         ...temporaryEnvironment(),
-        HOME: join(root, "home"),
-        XDG_CONFIG_HOME: join(root, "config"),
+        HOME: join(project, "home"),
+        XDG_CONFIG_HOME: join(project, "config"),
         SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: process.env["SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"],
         SMITHERS_FFI_LIBRARY_PATH: process.env["SMITHERS_FFI_LIBRARY_PATH"],
         SMITHERS_BACKEND: "sqlite"
@@ -79,7 +85,7 @@ export default Flow.make("echo", {
       (result) => ({ ...result, code: 0 }),
       (error) => ({ stdout: error.stdout, stderr: error.stderr, code: error.code })
     )
-    stages.push({ command: verb, elapsedMs: Date.now() - started, state: "settled" })
+    progress.push({ command: verb, elapsedMs: Date.now() - origin, state: "settled", lifetime: lifetime(project) })
     return { ...result, json: result.stdout.trim() === "" ? undefined : JSON.parse(result.stdout) }
   }
   it("lists the input schema without evaluating the module", async () => {
@@ -160,14 +166,33 @@ export default Flow.make("echo", {
   }, 60_000)
 
   const expectNoAdmission = async () => {
-    const listed = await command(["ps"])
-    expect(listed.json.items).toEqual([])
-    const db = new DatabaseSync(join(root, ".flows", "control.db"), { readOnly: true })
-    try {
-      expect(db.prepare("SELECT COUNT(*) AS count FROM control_plans").get()).toEqual({ count: 0 })
-    } finally {
-      db.close()
+    // Both refusals already cross the CLI boundary. Inspect their durable
+    // effects directly instead of booting a third host to list no executions.
+    for (
+      const [name, query] of [
+        ["control.db", "SELECT COUNT(*) AS count FROM control_plans"],
+        [
+          "engine.db",
+          "SELECT COUNT(*) AS count FROM flows_runs " +
+          "WHERE json_extract(state_json, '$.flowName') IS NOT 'smithers/health/Discovery'"
+        ]
+      ] as const
+    ) {
+      const filename = join(root, ".flows", name)
+      try {
+        await access(filename)
+      } catch (error) {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") continue
+        throw error
+      }
+      const db = new DatabaseSync(filename, { readOnly: true })
+      try {
+        expect(db.prepare(query).get()).toEqual({ count: 0 })
+      } finally {
+        db.close()
+      }
     }
+    await expect(access(join(root, "executed.txt"))).rejects.toThrow()
   }
 
   it("plans and executes valid input through the CLI", async () => {
@@ -188,3 +213,20 @@ export default Flow.make("echo", {
     expect(await readFile(join(root, "executed.txt"), "utf8")).toBe("valid")
   }, 120_000)
 })
+
+/** Fixed startup stages only; never flow inputs or command output. */
+const lifetime = (root: string): unknown => {
+  let db: DatabaseSync | undefined
+  try {
+    db = new DatabaseSync(join(root, ".flows", "control.db"), { readOnly: true })
+    return db.prepare(`
+      SELECT json_extract(payload_json, '$.pid') AS pid,
+             json_extract(payload_json, '$.stages') AS stages
+      FROM flows_journal_events WHERE event_type = 'flows.host.lifetime.v1' LIMIT 8
+    `).all()
+  } catch (error) {
+    return { unavailable: error instanceof Error && "code" in error ? error.code : "diagnostic_failed" }
+  } finally {
+    db?.close()
+  }
+}
