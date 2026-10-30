@@ -6,8 +6,9 @@ import { createConnection, createServer, type Socket } from "node:net"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
-import { expect, it } from "vitest"
+import { expect, it, onTestFailed } from "vitest"
 import { withTemporaryDirectory } from "./helpers/TemporaryDirectory.ts"
+import { childEnvironment } from "./support/node-child.ts"
 
 const run = promisify(execFile)
 const bin = fileURLToPath(new URL("../src/bin.ts", import.meta.url))
@@ -17,7 +18,41 @@ it.each(["normal", "ssh", "socket"])(
   "plans and launches the linked guide examples after init hello (startup: %s)",
   async (startup) =>
     withTemporaryDirectory("smithers-guide-cli-", async (root) => {
-      const env: NodeJS.ProcessEnv = {
+      const stages: Array<
+        { operation: string; state: string; startedAtMs: number; elapsedMs?: number; code?: unknown; signal?: unknown }
+      > = []
+      onTestFailed(() =>
+        console.error(
+          "Quickstart CLI stages",
+          JSON.stringify({
+            startup,
+            stages: stages.map((record) => ({
+              ...record,
+              elapsedMs: record.elapsedMs ?? Date.now() - record.startedAtMs
+            }))
+          })
+        )
+      )
+      const stage = async <A>(operation: string, body: () => Promise<A>): Promise<A> => {
+        const started = Date.now()
+        const record = { operation, state: "started", startedAtMs: started }
+        stages.push(record)
+        try {
+          const value = await body()
+          Object.assign(record, { state: "completed", elapsedMs: Date.now() - started })
+          return value
+        } catch (cause) {
+          const failure = cause as { code?: number | string; signal?: string }
+          Object.assign(record, {
+            state: "failed",
+            elapsedMs: Date.now() - started,
+            code: failure.code,
+            signal: failure.signal
+          })
+          throw cause
+        }
+      }
+      const env = childEnvironment({
         PATH: process.env.PATH,
         TMPDIR: process.env.TMPDIR,
         HOME: root,
@@ -27,7 +62,7 @@ it.each(["normal", "ssh", "socket"])(
         OPENAI_API_KEY: "fixture-never-sent",
         SMITHERS_BACKEND: "sqlite",
         NODE_OPTIONS: `--import=${preload}`
-      }
+      })
       if (startup !== "normal") {
         if (startup === "ssh") env.SSH_CLIENT = "1"
         delete env.SHLVL
@@ -48,74 +83,82 @@ it.each(["normal", "ssh", "socket"])(
         await once(socket, "connect")
       }
       const cli = async (...args: Array<string>) =>
-        JSON.parse(
-          (await run(process.execPath, ["--no-warnings", "--import", preload, bin, ...args, "--json"], {
-            cwd: root,
-            env,
-            timeout: 60_000,
-            maxBuffer: 4 * 1024 * 1024
-          })).stdout
-        )
+        stage(`cli:${args.slice(0, 2).join(":")}`, async () =>
+          JSON.parse(
+            (await run(process.execPath, ["--no-warnings", "--import", preload, bin, ...args, "--json"], {
+              cwd: root,
+              env,
+              timeout: 60_000,
+              maxBuffer: 4 * 1024 * 1024
+            })).stdout
+          ))
       const example = async (name: string) => {
         const doc = await readFile(new URL(`../docs/guides/${name}.md`, import.meta.url), "utf8")
         const command = /```bash\n([\s\S]*?)\n```/.exec(doc)![1]
         await writeFile(join(root, "guide-stdout"), "")
         const execute = (clean: boolean, helper = env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY) =>
-          new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-            const child = spawn("/bin/bash", [
-              ...(clean ? ["--norc", "--noprofile"] : []),
-              "-eu",
-              "-o",
-              "pipefail",
-              "-c",
-              [
-                "set -o errtrace",
-                `trap 'printf "Guide command failed at line %s: %s\\n" "$LINENO" "$BASH_COMMAND" >&2; cat "$GUIDE_STDOUT" >&2' ERR`,
-                "smthrs() { XDG_CONFIG_HOME=\"$HOME/config\" XDG_DATA_HOME=\"$HOME/data\" OPENAI_API_KEY=fixture-never-sent SMITHERS_BACKEND=sqlite NODE_OPTIONS=\"--import=$GUIDE_PRELOAD\" \"$GUIDE_NODE\" --no-warnings --import \"$GUIDE_PRELOAD\" \"$GUIDE_BIN\" \"$@\" | tee \"$GUIDE_STDOUT\"; }",
-                command,
-                name === "script-the-cli" ? "printf \"%s\" \"$approval\"" : ""
-              ].join("\n")
-            ], {
-              cwd: root,
-              env: {
-                ...(!clean ? env : {}),
-                PATH: env.PATH,
-                HOME: env.HOME,
-                ...(clean ? { SHLVL: "1" } : {}),
-                GUIDE_NODE: process.execPath,
-                GUIDE_PRELOAD: preload,
-                GUIDE_BIN: bin,
-                SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: helper,
-                GUIDE_STDOUT: join(root, "guide-stdout")
-              },
-              stdio: [clean ? "ignore" : socket ?? "pipe", "pipe", "pipe"],
-              timeout: 60_000
-            })
-            let stdout = ""
-            let stderr = ""
-            child.stdout!.on("data", (data) => {
-              stdout += data
-            })
-            child.stderr!.on("data", (data) => {
-              stderr += data
-            })
-            child.on("error", reject)
-            child.on("close", (code) => {
-              if (code === 0) resolve({ stdout, stderr })
-              else {reject(
-                  new Error(
-                    `Guide ${name}: bash exited ${code}\nstdout:\n${stdout}\nstderr:\n${stderr}\nNative helper: install @smthrs/platform-node with its helper, or run cargo build --locked --release -p smithers-ffi --bin smithers-jj-export and set SMITHERS_WORKSPACE_JJ_EXPORT_BINARY to its absolute path.`
-                  )
-                )}
-            })
-          })
+          stage(`guide:${name}:${clean ? "clean" : "startup"}`, () =>
+            new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+              const child = spawn("/bin/bash", [
+                ...(clean ? ["--norc", "--noprofile"] : []),
+                "-eu",
+                "-o",
+                "pipefail",
+                "-c",
+                [
+                  "set -o errtrace",
+                  `trap 'printf "Guide command failed at line %s: %s\\n" "$LINENO" "$BASH_COMMAND" >&2; cat "$GUIDE_STDOUT" >&2' ERR`,
+                  "smthrs() { XDG_CONFIG_HOME=\"$HOME/config\" XDG_DATA_HOME=\"$HOME/data\" OPENAI_API_KEY=fixture-never-sent SMITHERS_BACKEND=sqlite NODE_OPTIONS=\"--import=$GUIDE_PRELOAD\" \"$GUIDE_NODE\" --no-warnings --import \"$GUIDE_PRELOAD\" \"$GUIDE_BIN\" \"$@\" | tee \"$GUIDE_STDOUT\"; }",
+                  command,
+                  name === "script-the-cli" ? "printf \"%s\" \"$approval\"" : ""
+                ].join("\n")
+              ], {
+                cwd: root,
+                env: childEnvironment({
+                  ...(!clean ? env : {}),
+                  PATH: env.PATH,
+                  HOME: env.HOME,
+                  ...(clean ? { SHLVL: "1" } : {}),
+                  GUIDE_NODE: process.execPath,
+                  GUIDE_PRELOAD: preload,
+                  GUIDE_BIN: bin,
+                  SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: helper,
+                  GUIDE_STDOUT: join(root, "guide-stdout")
+                }),
+                stdio: [clean ? "ignore" : socket ?? "pipe", "pipe", "pipe"],
+                timeout: 60_000
+              })
+              let stdout = ""
+              let stderr = ""
+              child.stdout!.on("data", (data) => {
+                stdout += data
+              })
+              child.stderr!.on("data", (data) => {
+                stderr += data
+              })
+              child.on("error", reject)
+              child.on("close", (code, signal) => {
+                if (code === 0) {
+                  resolve({ stdout, stderr })
+                } else {reject(
+                    Object.assign(
+                      new Error(
+                        `Guide ${name}: bash exited ${code}\nstdout:\n${stdout}\nstderr:\n${stderr}\nNative helper: install @smthrs/platform-node with its helper, or run cargo build --locked --release -p smithers-ffi --bin smithers-jj-export and set SMITHERS_WORKSPACE_JJ_EXPORT_BINARY to its absolute path.`
+                      ),
+                      { code, signal }
+                    )
+                  )}
+              })
+            }))
         // The old spawn leaks a startup error; macOS bash may continue after it.
         if (startup !== "normal") {
           const old = await execute(false).catch((error: unknown) => ({ stderr: String(error) }))
           expect(old.stderr).toContain("unbound variable")
         }
         if (startup === "normal" && name === "script-the-cli") {
-          const failure = await execute(true, join(root, "missing-helper")).catch((error: unknown) => error)
+          const failure = await execute(true, join(root, "missing-helper")).catch((error: unknown) =>
+            error
+          )
           expect(failure).toBeInstanceOf(Error)
           const message = String(failure)
           for (

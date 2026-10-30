@@ -18,6 +18,7 @@ import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { expect, it } from "vitest"
+import { childEnvironment } from "./support/node-child.ts"
 
 const execute = promisify(execFile)
 const source = `
@@ -64,13 +65,13 @@ it("resumes the retained module snapshot, replays carried steps and settles only
     ], {
       cwd: root,
       timeout: 60_000,
-      env: {
+      env: childEnvironment({
         PATH: process.env.PATH,
         HOME: join(root, "home"),
         XDG_CONFIG_HOME: join(root, "config"),
         SMITHERS_DISABLE_SYSTEM_KEYRING: "1",
         SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: helper
-      }
+      })
     }).catch((cause: unknown) => {
       const error = cause as { stdout?: string; stderr?: string }
       throw new Error(JSON.stringify({ args, stdout: error.stdout, stderr: error.stderr, cause: String(cause) }))
@@ -92,7 +93,7 @@ it("resumes the retained module snapshot, replays carried steps and settles only
       fileURLToPath(new URL("./fixtures/scripted-native-host.ts", import.meta.url)),
       fileURLToPath(new URL("./fixtures/history-fork-start.ts", import.meta.url)),
       root
-    ], { cwd: root, env: process.env, timeout: 60_000 })
+    ], { cwd: root, env: childEnvironment(), timeout: 60_000 })
     const { runId } = JSON.parse(
       initial.stdout.split("\n").find((line) => line.startsWith("{\"marker\":\"fork-started\""))!
     )
