@@ -1,11 +1,19 @@
 ---
 title: Deterministic app suite timeouts
-status: in-progress
+status: done
 area: testing
 owner: Codex app-timeouts
 updated: 2026-10-30
 links: [../../worker/test/harness.ts, ../../db/TestDatabase.ts, ../../e2e/offlineTransport.test.ts]
 ---
+
+Completed on `deb0d003`: two consecutive full runs passed 468 active files and
+6,081 cases each, with zero failures and all four coverage measures at 100%.
+The runs used four workers and Node 26.5, taking 713.28 and 716.15 seconds.
+The three existing expected failures and 12 skipped cases are unchanged.
+Typecheck, import rules and the real stack lifecycle regressions pass.
+One read-only Sol review found no actionable defects. No push or deployment
+was performed.
 
 Trace slow awaits and shared dependency waits without increasing deadlines,
 retrying or skipping tests. Retain red-first regression evidence and two
@@ -180,4 +188,4 @@ Typecheck and import rules pass. All 51 conversation cases pass, including the
 whole-second UI case in 2.6 seconds; the changed store reaches all four 100%
 coverage measures. The real stack's coexistence, failure cleanup and SIGTERM
 regressions pass; cancellation removes every owned resource in 1.5 seconds.
-The two consecutive final-source full runs remain the completion gate.
+The two consecutive final-source full runs completed the validation gate.
