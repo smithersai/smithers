@@ -14,6 +14,9 @@ export default defineConfig({
     include: ["test/**/*.test.{ts,vibe}"],
     exclude: [...configDefaults.exclude, "test/faults/**"],
     environment: "node",
+    // Each file opens real SQLite engines. Bound coverage workers so replay,
+    // migrations and filesystem work do not exhaust another file's case budget.
+    maxWorkers: 2,
     // FlowStore exercises the real descriptor-relative host, including in a clean checkout.
     globalSetup: [
       fileURLToPath(new URL("../../repo-targets/test-utils/test-schemas.ts", import.meta.url)),

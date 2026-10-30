@@ -1,5 +1,6 @@
 import { afterAll, afterEach, expect, it } from "@effect/vitest"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
+import { FlowRuntime } from "@smthrs/flow"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
@@ -38,17 +39,33 @@ const noAgents: Kit.Script = () => undefined
 const advanceTimers = (executionId: string, record: () => void) =>
   Layer.effectDiscard(Effect.forkScoped(Effect.gen(function*() {
     const state = yield* DurableEngineState.DurableEngineState
+    const runtime = yield* FlowRuntime.FlowRuntime
     let lastWakeAt: number | null | undefined
-    while (true) {
-      const row = yield* state.waiting(executionId)
-      if (Option.isSome(row) && row.value.reason === "timer" && row.value.wakeAt !== lastWakeAt) {
-        lastWakeAt = row.value.wakeAt
-        record()
-        const now = yield* Clock.currentTimeMillis
-        yield* TestClock.adjust((row.value.wakeAt ?? now) - now)
+    let advances = 0
+    yield* Effect.gen(function*() {
+      while (true) {
+        const row = yield* state.waiting(executionId)
+        if (Option.isSome(row) && row.value.reason === "timer" && row.value.wakeAt !== lastWakeAt) {
+          lastWakeAt = row.value.wakeAt
+          advances++
+          record()
+          const now = yield* Clock.currentTimeMillis
+          yield* TestClock.adjust((row.value.wakeAt ?? now) - now)
+        }
+        yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 1)))
       }
-      yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 1)))
-    }
+    }).pipe(Effect.ensuring(Effect.gen(function*() {
+      const result = yield* runtime.poll(TweetThread, executionId).pipe(Effect.orElseSucceed(() => Option.none()))
+      if (Option.isSome(result)) return
+      const waiting = yield* state.waiting(executionId)
+      console.info("Unfinished tweet timer", {
+        executionId,
+        advances,
+        lastWakeAt,
+        now: yield* Clock.currentTimeMillis,
+        waiting: Option.isSome(waiting) ? waiting.value.reason : "none"
+      })
+    })))
   })))
 
 /**
