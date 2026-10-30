@@ -15,6 +15,8 @@ import metadata from "@smthrs/build-cli/package.json" with { type: "json" }
 import * as Config from "@smthrs/targets/Config"
 import * as Input from "@smthrs/targets/Input"
 import * as Target from "@smthrs/targets/Target"
+import { Context, Effect, Layer } from "effect"
+import { identity } from "effect/Function"
 import { Cli, z } from "incur"
 import type { FileHandle } from "node:fs/promises"
 import * as NodeFs from "node:fs/promises"
@@ -29,6 +31,7 @@ import * as Executor from "./Executor.ts"
 import * as GitHooks from "./GitHooks.ts"
 import * as GraphOutput from "./GraphOutput.ts"
 import * as ApprovalBridge from "./internal/ApprovalBridge.ts"
+import { requireRecorded } from "./internal/UnrecordedGates.ts"
 import * as KnownRed from "./KnownRed.ts"
 import * as Label from "./Label.ts"
 import * as Mount from "./Mount.ts"
@@ -157,6 +160,8 @@ export interface ExecutionFlags extends WorkspaceFlags {
  * @slop
  */
 export interface RuntimeConfig {
+  /** Scoped discovery and receipt I/O; omitted, the CLI uses its real host. */
+  readonly services?: Layer.Layer<never> | undefined
   readonly cliName?: string | undefined
   readonly cliVersion?: string | undefined
   readonly cliDescription?: string | undefined
@@ -181,13 +186,48 @@ export interface RuntimeConfig {
   readonly approvals?: PackageExec.TargetApprovals | undefined
 }
 
+/** Promise-only host I/O settles before its Effect releases ownership. */
+const hostIo = <A>(run: () => Promise<A>): Effect.Effect<A, unknown> =>
+  Effect.uninterruptible(Effect.tryPromise({ try: run, catch: identity }))
+
+/**
+ * Host operations used by discovery and execution receipts.
+ * @category models
+ * @since 1.0.0
+ */
+export interface CliServices {
+  readonly findWorkspaceRoot: (directory: string) => Effect.Effect<string | undefined, unknown>
+  readonly workspaceFileOf: (root: string) => Effect.Effect<string | undefined, unknown>
+  readonly writeFile: (file: FileHandle, source: string) => Effect.Effect<void, unknown>
+}
+
+/**
+ * Real discovery and native descriptor writes; fault layers retain these defaults.
+ * @category services
+ * @since 1.0.0
+ */
+export const cliServicesLive: CliServices = {
+  findWorkspaceRoot: (directory) => hostIo(() => PackageDiscovery.findWorkspaceRoot(directory)),
+  workspaceFileOf: (root) => hostIo(() => PackageDiscovery.workspaceFileOf(root)),
+  writeFile: (file, source) => hostIo(() => file.writeFile(source))
+}
+
+/**
+ * Supplying a layer affects one invocation without changing module state.
+ * @category services
+ * @since 1.0.0
+ */
+export const CliServices = Context.Reference<CliServices>("@smthrs/build-cli/CliServices", {
+  defaultValue: () => cliServicesLive
+})
+
 /** The slice of an incur command context the presentation helpers read. */
 interface Presentation {
   readonly agent: boolean
   readonly formatExplicit: boolean
   readonly options?: { readonly workspace?: string | undefined; readonly verbose?: boolean | undefined } | undefined
   readonly globals: {
-    readonly ui?: Reporter.UiMode | undefined
+    readonly ui: Reporter.UiMode
     readonly audience?: "auto" | "human" | "agent" | undefined
     readonly silent?: boolean | undefined
   }
@@ -238,7 +278,7 @@ const terminalsOf = (
 const policyFor = (context: Presentation, config: RuntimeConfig): Audience.Policy => {
   const base = config.presentation
   const { stdout, stderr } = terminalsOf(config)
-  const protocol = context.agent && context.formatExplicit && Object.keys(context.globals ?? {}).length === 0
+  const protocol = context.agent && context.formatExplicit && Object.keys(context.globals).length === 0
   const override = context.globals.audience === "human" || context.globals.audience === "agent"
     ? context.globals.audience
     : undefined
@@ -269,7 +309,7 @@ const rendererFor = (context: Presentation, config: RuntimeConfig, bound: "stdou
   const streams = bound === "stderr"
     ? { stdout: stdout.isTTY, stderr: stderr.isTTY }
     : { stdout: stdout.isTTY, stderr: stdout.isTTY }
-  return Reporter.resolveRenderer(context.globals.ui ?? "auto", environmentOf(config), streams)
+  return Reporter.resolveRenderer(context.globals.ui, environmentOf(config), streams)
 }
 
 /** Human result ownership is audience policy, never Incur's TTY-only agent heuristic. */
@@ -352,13 +392,6 @@ const remoteCacheAccess = (
         writeToken: tokenAt(credentials.writeTokenEnv),
         publishNamespace
       }
-    case "anonymous": {
-      // Discovered from the Smithers Cloud remote with nothing committed: reads go out
-      // bare (a public repository answers them), and a credential in the
-      // environment, when one is there, serves both directions.
-      const token = tokenAt(credentials.writeTokenEnv)
-      return { ...remoteCache, readToken: token, writeToken: token, publishNamespace }
-    }
   }
 }
 
@@ -376,33 +409,48 @@ export const openPackageIndex = async (
   runtime.signal?.throwIfAborted()
   // An overlay repository plans against its materialized mount, never itself.
   const stderr = runtime.stderr ?? Reporter.terminalOf(process.stderr)
-  const { workspace: invocation } = await Mount.resolveWorkspace(flags.workspace, {
-    environment: runtime.environment ?? process.env,
-    report: (line) => stderr.write(`${line}\n`),
-    signal: runtime.signal
-  })
-  const root = await PackageDiscovery.findWorkspaceRoot(invocation)
-  if (root === undefined) {
-    throw new Error("not a workspace; create .smithers/WORKSPACE.ts")
+  const opening = Effect.gen(function*() {
+    const services = yield* CliServices
+    const { workspace: invocation } = yield* hostIo(() =>
+      Mount.resolveWorkspace(flags.workspace, {
+        environment: runtime.environment ?? process.env,
+        report: (line) => stderr.write(`${line}\n`),
+        signal: runtime.signal
+      })
+    )
+    const root = yield* services.findWorkspaceRoot(invocation)
+    if (root === undefined) {
+      return yield* Effect.fail(new Error("not a workspace; create .smithers/WORKSPACE.ts"))
+    }
+    // Evaluate the one root declaration before walking: its cache, its opaque
+    // child repositories, and its `discovery.prune` paths are discovery
+    // boundaries. The full graph load
+    // imports the same module instance together with the admitted Packages.
+    const workspaceFile = yield* services.workspaceFileOf(root)
+    if (workspaceFile === undefined) {
+      return yield* Effect.fail(new Error("not a workspace; create .smithers/WORKSPACE.ts"))
+    }
+    const workspace = yield* hostIo(() => PackageLoader.loadWorkspaceDeclaration(root, workspaceFile))
+    const cacheDirectory = flags.cacheDir === undefined
+      ? workspace.cache.directory
+      : Config.normalizeCacheDirectory(flags.cacheDir)
+    const discovery = yield* hostIo(() =>
+      PackageDiscovery.discover(root, {
+        cacheDirectory,
+        repositories: workspace.repos,
+        prune: workspace.discovery?.prune,
+        signal: runtime.signal
+      })
+    )
+    const loaded = yield* hostIo(() => PackageLoader.load(discovery))
+    return PackageIndex.PackageIndex.make(loaded, invocation)
+  }).pipe(Effect.provide(runtime.services ?? Layer.empty))
+  try {
+    return await Effect.runPromise(opening, { signal: runtime.signal })
+  } catch (cause) {
+    runtime.signal?.throwIfAborted()
+    throw cause
   }
-  // Evaluate the one root declaration before walking: its cache, its opaque
-  // child repositories, and its `discovery.prune` paths are discovery
-  // boundaries. The full graph load
-  // imports the same module instance together with the admitted Packages.
-  const workspaceFile = await PackageDiscovery.workspaceFileOf(root)
-  if (workspaceFile === undefined) throw new Error("not a workspace; create .smithers/WORKSPACE.ts")
-  const workspace = await PackageLoader.loadWorkspaceDeclaration(root, workspaceFile)
-  const cacheDirectory = flags.cacheDir === undefined
-    ? workspace.cache.directory
-    : Config.normalizeCacheDirectory(flags.cacheDir)
-  const discovery = await PackageDiscovery.discover(root, {
-    cacheDirectory,
-    repositories: workspace.repos,
-    prune: workspace.discovery?.prune,
-    signal: runtime.signal
-  })
-  const loaded = await PackageLoader.load(discovery)
-  return PackageIndex.PackageIndex.make(loaded, invocation)
 }
 
 /** Evaluates a query against the target index. */
@@ -813,10 +861,9 @@ const runCi = async (
     }
     const unsupported = patterns.find((pattern) => !accepted.has(pattern))
     if (unsupported !== undefined) {
-      throw refusals.find((refusal) => refusal.pattern === unsupported) ??
-        new Error(`no targets selected by ${unsupported}`)
+      // Only a recorded unsupported-verb refusal removes an input from every plan.
+      throw refusals.find((refusal) => refusal.pattern === unsupported)!
     }
-    if (packagePlans.length === 0) throw refusals[0] ?? new Error(`no targets selected by ${pattern}`)
     const merged = Executor.mergePlans(packagePlans.map(({ kind, plan }) => ({
       verb: kind,
       pattern,
@@ -897,7 +944,7 @@ const failureMessage = (summary: Executor.Summary): string =>
  * An inert plan is always data.
  */
 const settle = <A extends Outcome>(
-  context: Presentation & { readonly error: ErrorResult; readonly ok: SuccessResult },
+  context: Presentation & { readonly options: ReceiptOptions; readonly error: ErrorResult; readonly ok: SuccessResult },
   config: RuntimeConfig,
   outcome: A
 ): A | undefined => {
@@ -905,10 +952,8 @@ const settle = <A extends Outcome>(
   const people = forPeople(context, config) && policy.progress !== "silent"
   const failed = isSummary(outcome) ? outcome.results.filter((row) => row.status === "failed") : []
   const firstLabel = failed[0]?.label ?? (isSummary(outcome) ? outcome.results[0]?.label : undefined)
-  const workspace = context.options?.workspace
-  const commandOptions: Record<string, string> = workspace === undefined
-    ? {}
-    : { workspace: `'${workspace.replaceAll("'", "'\\''")}'` }
+  const workspace = context.options.workspace
+  const commandOptions: Record<string, string> = { workspace: `'${workspace.replaceAll("'", "'\\''")}'` }
   const commands: Array<NextCommand> = [
     ...(firstLabel === undefined
       ? []
@@ -944,7 +989,18 @@ const settle = <A extends Outcome>(
  * a result's error carries raw child output, and CI publishes this file as an
  * artifact. The file is opened `wx` before any target runs.
  */
-const writeResults = async (file: FileHandle, summary: Executor.Summary): Promise<string | undefined> => {
+const writeReceipt = (file: FileHandle, source: string, config: RuntimeConfig): Promise<void> =>
+  Effect.runPromise(
+    Effect.flatMap(CliServices, (services) => services.writeFile(file, source)).pipe(
+      Effect.provide(config.services ?? Layer.empty)
+    )
+  )
+
+const writeResults = async (
+  file: FileHandle,
+  summary: Executor.Summary,
+  config: RuntimeConfig
+): Promise<string | undefined> => {
   const results = summary.results.map(({ durationMs, key, label, status, blocking, failureDigest }) => ({
     label,
     status,
@@ -954,36 +1010,53 @@ const writeResults = async (file: FileHandle, summary: Executor.Summary): Promis
     ...(failureDigest === undefined ? {} : { failureDigest })
   }))
   try {
-    await file.writeFile(`${JSON.stringify({ ok: summary.ok, counts: summary.counts, results, version: 1 })}\n`)
+    await writeReceipt(
+      file,
+      `${JSON.stringify({ ok: summary.ok, counts: summary.counts, results, version: 1 })}\n`,
+      config
+    )
     return undefined
   } catch (cause) {
-    return `results file: ${cause instanceof Error ? cause.message : String(cause)}`
+    return `results file: ${Diagnostic.describe(cause)}`
   }
 }
 
 /** The results path, resolved like `--known-red` against the workspace. */
-const resultsPath = (
-  options: { readonly workspace?: string; readonly resultsFile?: string } | undefined
-): string | undefined =>
-  options?.resultsFile === undefined
-    ? undefined
-    : NodePath.resolve(options.workspace ?? process.cwd(), options.resultsFile)
+interface ReceiptOptions {
+  readonly workspace: string
+  readonly knownRed?: string | undefined
+  readonly resultsFile?: string | undefined
+}
+
+const resultsPath = (options: ReceiptOptions): string | undefined =>
+  options.resultsFile === undefined ? undefined : NodePath.resolve(options.workspace, options.resultsFile)
+
+/** Completes a readable empty receipt when possible and always closes its descriptor. */
+const closeReceipt = async (file: FileHandle | undefined, config: RuntimeConfig): Promise<string | undefined> => {
+  if (file === undefined) return undefined
+  try {
+    if ((await file.stat()).size === 0) {
+      await writeReceipt(file, `${JSON.stringify({ results: [], version: 1 })}\n`, config)
+    }
+    return undefined
+  } catch (cause) {
+    return Diagnostic.describe(cause)
+  } finally {
+    await file.close()
+  }
+}
 
 /**
  * Runs one execution command under a reporter that is closed however the
  * run ends, so a live renderer always hands the terminal back.
  */
 const executeCommand = async <A extends Outcome>(
-  context: Presentation & { readonly error: ErrorResult; readonly ok: SuccessResult },
+  context: Presentation & { readonly options: ReceiptOptions; readonly error: ErrorResult; readonly ok: SuccessResult },
   config: RuntimeConfig,
   code: string,
   body: (reporter: Reporter.Reporter) => Promise<A>
 ): Promise<A | undefined> => {
-  const options = context.options as {
-    readonly workspace?: string
-    readonly knownRed?: string
-    readonly resultsFile?: string
-  } | undefined
+  const options = context.options
   const resultsFile = resultsPath(options)
   // Open (create) the results file before any target runs, so an existing one refuses up front.
   let results: FileHandle | undefined
@@ -995,28 +1068,29 @@ const executeCommand = async <A extends Outcome>(
       return context.error({
         code,
         exitCode: 1,
-        message: `results file ${resultsFile}: ${cause instanceof Error ? cause.message : String(cause)}`
+        message: `results file ${resultsFile}: ${Diagnostic.describe(cause)}`
       })
     }
   }
+  let value: A | undefined
+  let receiptFailure: string | undefined
   try {
-    return await executeWithResults(context, config, code, body, options, results)
+    value = await executeWithResults(context, config, code, body, options, results)
   } finally {
-    // A step that failed before summarizing still leaves a readable record with no rows,
-    // so it reads as "these labels did not run", never as an unreadable run.
-    if (results !== undefined && (await results.stat()).size === 0) {
-      await results.writeFile(`${JSON.stringify({ results: [], version: 1 })}\n`)
-    }
-    await results?.close()
+    receiptFailure = await closeReceipt(results, config)
   }
+  if (receiptFailure !== undefined) {
+    return context.error({ code, exitCode: 1, message: `results file ${resultsFile}: ${receiptFailure}` })
+  }
+  return value
 }
 
 const executeWithResults = async <A extends Outcome>(
-  context: Presentation & { readonly error: ErrorResult; readonly ok: SuccessResult },
+  context: Presentation & { readonly options: ReceiptOptions; readonly error: ErrorResult; readonly ok: SuccessResult },
   config: RuntimeConfig,
   code: string,
   body: (reporter: Reporter.Reporter) => Promise<A>,
-  options: { readonly workspace?: string; readonly knownRed?: string } | undefined,
+  options: ReceiptOptions,
   results: FileHandle | undefined
 ): Promise<A | undefined> => {
   const reporter = reporterFor(context, config)
@@ -1031,13 +1105,13 @@ const executeWithResults = async <A extends Outcome>(
   if (!isSummary(outcome)) return settle(context, config, outcome)
   let judged: Executor.Summary = outcome
   try {
-    const index = executionIndexes.get(outcome) ??
-      await openPackageIndex({ workspace: options?.workspace ?? process.cwd() }, config)
+    // Every summary is registered by rememberExecution with its actual declaration snapshot.
+    const index = executionIndexes.get(outcome)!
     const artifacts = artifactLabels(index)
     const advisory = advisoryLabels(index)
-    const list = options?.knownRed === undefined ?
+    const list = options.knownRed === undefined ?
       { source: "", entries: [] } :
-      await KnownRed.read(options.workspace ?? process.cwd(), options.knownRed)
+      await KnownRed.read(options.workspace, options.knownRed)
     for (const entry of list.entries) {
       if (artifacts.has(entry.label)) {
         throw new KnownRed.KnownRedError(
@@ -1046,7 +1120,7 @@ const executeWithResults = async <A extends Outcome>(
         )
       }
     }
-    if (options?.knownRed !== undefined || advisory.size > 0) {
+    if (options.knownRed !== undefined || advisory.size > 0) {
       judged = KnownRed.judge(outcome, list, { platform: process.platform, today: KnownRed.today(), advisory })
     }
   } catch (cause) {
@@ -1055,7 +1129,7 @@ const executeWithResults = async <A extends Outcome>(
   const lines = "knownRed" in judged ? KnownRed.describe((judged as KnownRed.JudgedSummary).knownRed) : []
   if (lines.length > 0) terminalsOf(config).stderr.write(`${lines.join("\n")}\n`)
   if (results !== undefined) {
-    const failed = await writeResults(results, judged)
+    const failed = await writeResults(results, judged, config)
     if (failed !== undefined) return context.error({ code, exitCode: 1, message: failed })
   }
   return settle(context, config, judged as unknown as A)
@@ -1192,8 +1266,7 @@ const runSelected = async (
   }
   const summary = await rememberExecution(index, PackageExec.execute(combined, { ...options, verb, patterns }))
   // A planned target the executor holds no record of never ran; that is red.
-  const missing = Affected.unrecorded(combined.workList.map((node) => node.label), summary)
-  if (missing.length > 0) throw new Error(`Planned targets have no execution record: ${missing.join(", ")}`)
+  requireRecorded(combined.workList.map((node) => node.label), summary, "Planned targets have no execution record")
   return summary
 }
 
@@ -1496,9 +1569,10 @@ const makeCommands = (config: RuntimeConfig) =>
                 if (result.status !== "skipped") notRun.delete(result.label)
               }
               // Every selected gate the planner was left to plan must have run or been recorded.
-              const unplanned = Affected.unrecorded(labels, outcome)
-              if (unplanned.length > 0) throw new Error(`Affected gates were never planned: ${unplanned.join(", ")}`)
-              return Affected.unskipped(labels, outcome)
+              requireRecorded(labels, outcome)
+              const judged = Affected.unskipped(labels, outcome)
+              executionIndexes.set(judged, index)
+              return judged
             })
           } finally {
             if (notRun.size > 0) {

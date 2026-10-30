@@ -47,7 +47,7 @@ export * as TargetIndex from "./TargetIndex.ts"
 /** @category namespace exports @since 0.1.0 */
 export * as Workspace from "./Workspace.ts"
 /** @category constructors @since 0.1.0 */
-export { cli, makeCli } from "./Cli.ts"
+export { cli, CliServices, cliServicesLive, makeCli } from "./Cli.ts"
 /**
  * The process-scoped configuration {@link makeCli} takes.
  *

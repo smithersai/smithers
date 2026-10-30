@@ -1,6 +1,6 @@
 ---
 title: Package bug bash round 4 CLI fixes
-status: blocked
+status: done
 area: sdk
 owner: bb6-cov4
 updated: 2026-10-30
@@ -8,7 +8,7 @@ links: []
 ---
 
 Confirmed findings: memory-eval 1, 2, 4, 5, 9; mcp 2, 4, 5, 6; local-cli 4, 9, 11.
-Catalog entries: @smthrs/cli, @smthrs/memory, @smthrs/evals, @smthrs/build-cli.
+Catalog entries: @smthrs/cli, @smthrs/memory, @smthrs/evals, @smthrs/build-cli, @smthrs/platform-node and @smthrs/platform-bun.
 Reproduce on Latitude before fixing; one commit per finding, with the three memory help omissions grouped.
 W13 bb3-cli and W14 bb5-cli-docs reports contain no fixes for these findings. The concurrent reference and scaffold workstreams own other CLI docs and generators.
 Filegroup remains cacheable as specified by the existing caching contract; execution must read and store its successful result.
@@ -123,9 +123,10 @@ CI-rendered files always live under workflow or setup directories, so its
 root-directory fallback was dead. Declared output helpers now require their
 already-validated output contract explicitly.
 
-The CLI package declares Node/V8 Vitest runs, with no package Bun coverage
-suite. Its Bun-only host-selection arm is retained and reported separately;
-no platform is simulated and no coverage exclusion is added.
+The CLI has no Bun coverage run. Evaluation now selects its real Node or Bun
+adapter through an invocation-local host service. A Node test supplies the Bun
+identity without changing globals; the persistence-failure regression also
+uses that identity before resuming with the normal Node host.
 
 Two more dead fallbacks are removed: owner-file plans always carry their emit
 entries, and a vacuous lint report always carries the agent runtime's note.
@@ -138,24 +139,12 @@ previous generator guards produced negative V8 branch counts despite executed
 success paths. The planner-cache fault now reaches a consumer's closure lookup
 and verifies its quiet approval recheck.
 
-Build-cli's pre-review full-package receipt measures PackageRunner and Owners at
-100% statements, branches, functions and lines. Check, lint and import rules
-pass. The suite has 2,830 passing tests, six existing skips, and three failures:
-two Docker host session-keyring refusals and the unchanged Cli.ts raw-error
-count (19 sites on both the stack parent and base main revision 1e55f8b9,
-against the test's 18).
+Earlier full-package gates exposed the host's exhausted session-key quota
+and a new raw-error site introduced by this stack. The host leak was repaired
+externally; the new affected-gate refusal is now a tagged error. The reviewed
+raw-error limit falls as unreachable sites are removed.
 
-The pre-review CLI full-package run has 5,716 passing tests, seven failed tests,
-38 existing skips and three expected failures. Six failures hit existing
-time limits; the remaining failure and a suite-setup failure cannot create a
-Docker session keyring. Disk and inode capacity remained available. Check,
-lint and CLI/agent import rules pass. Cli, ControlBridge, McpStdio, HostService,
-Memory and Triggers measure 100% throughout. Evaluation measures
-100/99.04/100/100; its only missing branch is the real Bun host selection.
-The full gates remain blocked; the source coverage work does not establish
-the cause of the CLI timeouts.
-
-The requested Sol review found three issues: runtime installation-link grants,
+The earlier Sol review found three issues: runtime installation-link grants,
 dirty submodule restoration, and candidate composition hoisting checks before
 the candidate existed. Their regressions failed before the fixes. Planning now
 binds installation roots, checkout preflight preserves local changes, and
@@ -200,33 +189,82 @@ A relative SDK-root guard is retained: Go permits relative GOROOT values.
 Its real-tool regression supplies a relative path resolving to the installed
 SDK and verifies that it adds no relative external-read authority.
 
-Final build validation includes the retained relative-SDK guard: Runner has
-1,893/1,893 statements, 1,117/1,117 branches, 447/447 functions and
-1,538/1,538 lines. Planner has 1,622/1,622 statements, 1,297/1,297
-branches, 142/142 functions and 1,425/1,425 lines. Owners is also 100%
-in every metric. Check, lint and import rules pass. The full suite has
-3,002 passes, six existing skips and three failures: two Docker session-key
-creation failures and the unchanged build CLI raw-error count of 19 versus
-18. The Docker account's kernel key quota is exhausted; disk and inode
-capacity stayed available. The final CLI receipt follows.
+Before this continuation, full-package coverage measured Runner at
+1,893 statements, 1,117 branches, 447 functions and 1,538 lines; Planner at
+1,622 statements, 1,297 branches, 142 functions and 1,425 lines. Every one
+executed. Owners also measured 100% in each metric. The continuation repeats
+these checks alongside the newly changed command surface.
 
-Final CLI validation: check, lint and CLI/agent import rules pass. The full
-suite has 5,717 passes, six failed tests, three expected failures and 38
-existing skips, plus one failed-suite setup. Cli, ControlBridge, McpStdio,
-HostService, Memory and Triggers are 100% in all four coverage metrics.
-Evaluation is 176/176 statements, 104/105 branches, 35/35 functions and
-162/162 lines; its sole missing branch is Bun host selection. This package
-has runtime compatibility tests but no Bun coverage run. The branch remains.
+The continuation adds invocation-local Effect discovery and receipt services.
+Receipt-write faults retain their diagnostics and close native descriptors,
+including failure while finalizing an otherwise successful MCP plan. Real
+public-command cases cover cache retirement and malformed entries, watch
+forwarding, Nix environment metadata, repository refusals, install refusal,
+terminal rendering, lifecycle selection, and overlapping CI plans.
 
-The two Docker failures are session-key creation failures. Four other cases
-time out: follow-logs, PostgreSQL history verification, SSH quickstart, and
-Node TUI approval modes. Parked-exit returns 1 after approval instead of 0.
-Those five CLI causes are not established by this coverage work. No coverage
-threshold, exclusion or skip was changed. No run-owned process survived the
-final CLI scope, and sampled disk/inode capacity stayed available.
+Further dead paths removed: no anonymous credential reaches the command's
+remote-cache resolver; CI selectors cannot be empty at the public schema;
+removing an unsupported selector always retains its typed refusal. Execution
+summaries retain the declaration snapshot used to run them. Command
+options and global UI defaults come from their validated command schemas.
+The current-package fallback is retained for symlinked workspace invocations.
 
-One requested read-only Sol review found three issues, all fixed with
-red-before-fix regressions and subsequent full-package coverage receipts:
-plan-bound installation authority, preservation of dirty submodule paths,
-and candidate checks composed through aliases and suites. The coverage work
-is complete with the documented Bun-only exception; full gates remain red.
+The full continuation run measures all six changed build-cli source files at
+100% statements, branches, functions and lines. The full CLI run also measures
+all eight changed CLI source files at 100%, including both Evaluation modules.
+Both packages' typechecks, lints and import rules pass. The package suites
+still expose timing failures; identical-source-hash comparisons with unchanged
+main distinguish baseline failures from candidate regressions.
+
+The continuation's single read-only Sol review found that affected skip
+conversion creates a new summary without retaining its declaration index.
+The correction preserves that index on the converted summary; its public-command
+regression checks the gate diagnostic, failed status and populated receipt.
+The regression fails on the pre-fix command with `affected_failed` instead
+of `targets_failed`. The corrected public invocation uses `--verbose` to
+request the gate diagnostic that agent mode otherwise suppresses, and checks
+the failed result in the populated receipt. It passes individually and in
+the final full build run.
+
+The full CLI suite runs 5,704 passing tests, 20 failures, three expected
+failures and 38 existing skips. Its measured aggregate S/B/F/L is
+96.82/92.80/96.75/97.56. All eight changed CLI source files measure 100% in
+every metric. No threshold, exclusion or test deadline is relaxed.
+
+Identical-host source swaps against unchanged main `1e55f8b9` execute all
+20 failing CLI cases. Eight pass on both revisions; nine reproduce the same
+failure on both; three pass on the candidate while main fails. The generated
+starter completes in 100 seconds on main, 93 seconds on the candidate, then
+main exceeds its unchanged 120-second deadline on the repeat. Command-stage
+diagnostics retain the timing evidence without recording input content.
+
+The original four timeout cases remain baseline failures: PostgreSQL history
+verification, SSH quickstart, Node TUI approval and terminal-log following.
+The parked-exit assertion passes on both revisions. The build catalog's
+30-second subprocess timeout also passes on both isolated revisions. Further
+baseline CLI failures are code-drift recovery, silent SSH exit status,
+generated-flow typechecking, native control-plan timeout, product API
+compilation and the live run's child-progress deadline. Their behavior is
+left unchanged; the private handoff retains individual comparison receipts.
+
+The final full build suite passes 3,050 tests with six existing skips across
+158 files. Aggregate S/B/F/L is 95.88/91.30/96.99/97.17. All six changed
+build-cli source files measure 100% in every metric, including the command
+surface, root entry, typed gate error, Owners, Planner and Runner. The
+final source hashes match the full-suite receipt; Evaluation's production
+hashes also match its full CLI coverage receipt. Both packages' compiler,
+lint and import checks pass.
+
+The earlier catalog timeout and process-inspection failure in the unchanged
+service-containment fixture both pass in the final full build run. The slower
+host skipped ten Docker cases and therefore did not cover two Planner service
+branches; the final run uses the host with those real dependencies and executes
+them. Earlier receipts remain distinct from this final successful gate.
+No production source, threshold, coverage exclusion or test deadline is hidden
+to obtain the result.
+
+The final source-swap check runs the whole declaration-runtime file (17 tests)
+and service-containment file (five tests) on both unchanged main and the
+candidate. All 44 executions pass, and the candidate source is restored and
+verified after each comparison. The builder is ready for the lead; no push
+or deployment is performed.

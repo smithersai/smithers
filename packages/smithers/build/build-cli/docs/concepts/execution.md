@@ -11,6 +11,16 @@ allowed to touch, and puts the tree back when it oversteps.
 The [rule contract architecture](./rule-contracts.md) maps the shared services
 and the family planners and executors that use them.
 
+An affected gate missing from its execution receipt fails with the typed
+`smithers-build/UnrecordedGates` refusal, retaining every missing label.
+
+Embedded CLI callers can supply a `RuntimeConfig.services` layer for the public
+`CliServices` discovery and receipt operations. Defaults use the real host;
+fault layers affect their invocation. Cancellation preserves the caller's reason
+and waits for pending host I/O. Receipt failures close their descriptor, including
+when an empty fallback receipt cannot be written.
+`CliServices` and `cliServicesLive` are exported from `@smthrs/build-cli`.
+
 ## Docker pushes
 
 `Docker.Push` requires at least one tag. Literal tags are checked when planning;
