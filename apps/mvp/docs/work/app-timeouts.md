@@ -36,4 +36,9 @@ and pool size four. Its real startup/cleanup regression failed with the old
 fixed-port Compose configuration, then passed with the isolated configuration.
 On a fresh stack all 75 triage cases and the five reset/relay cases passed;
 the stack was removed after success and after an intentionally failing child.
-Two consecutive full coverage runs remain the completion gate.
+The first fresh full run completed every case without failures: 6,072 passed,
+three expected failures and 12 existing skips. Its coverage gate exposed one
+unexercised triage/pause registration callback (99.99% lines/statements,
+99.98% functions, 100% branches). A new real public-flow/outbox test exercises
+Pause and replays the same execution, verifying one server write. Thresholds
+remain unchanged. Two consecutive full coverage runs remain the completion gate.

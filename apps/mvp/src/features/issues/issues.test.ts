@@ -1025,6 +1025,24 @@ describe("triage", () => {
     }))
   }, WITHIN)
 
+  test("triage/pause through the public durable flow queues one write and replays its receipt", async () => {
+    const sam: Actor = { ...maya, subject: { kind: "person", id: "person-sam" }, role: "maintainer", login: "sam" }
+    const tab = await open({}, sam)
+    await tab.actions.open(OWNER, NAME)
+    const flows = await tab.runtime.runPromise(Effect.service(FlowDispatch))
+    const executionId = crypto.randomUUID()
+    const pause = () => tab.runtime.runPromise(flows.dispatch("triage/pause", { repo: TEST_REPOSITORY }, { door: "button", executionId }))
+    const first = await pause()
+    expect(first).toMatchObject({ _tag: "Done", value: { writeId: expect.any(String), status: "requested" } })
+    expect(await pause()).toEqual(first)
+    if (first._tag !== "Done") throw new Error("Pause was not requested")
+    const { writeId } = first.value
+    await until(async () => expect(await server(tab.api).write(writeId)).toMatchObject({
+      _tag: "Some", value: { op: "triage/pause", payload: { op: "triage/pause" } },
+    }))
+    expect((await server(tab.api).writes()).filter(row => row.id === writeId)).toHaveLength(1)
+  }, WITHIN)
+
   test("a Maintainer's Enable and Pause go to the outbox; a Member's are refused and stay Not sent", async () => {
     const sam: Actor = { ...maya, subject: { kind: "person", id: "person-sam" }, role: "maintainer", login: "sam" }
     const tab = await open({}, sam)
