@@ -18,6 +18,10 @@ bash "$app_directory/db/test-stack.sh" -- bash -c '
   '\''
   count=$(docker compose -p "$MVP_TEST_STACK_PROJECT" exec -T postgres psql -XAt -U smithers -d smithers -c "SELECT count(*) FROM pg_namespace WHERE nspname NOT LIKE '\''pg_%'\'' AND nspname NOT IN ('\''public'\'', '\''information_schema'\'')")
   test "$count" = 0
+  # Shared disk flush stalls must not consume engine leases or test deadlines. Durability settings stay on.
+  container=$(docker compose -p "$MVP_TEST_STACK_PROJECT" ps -q postgres)
+  test "$(docker inspect --format '\''{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Type}}{{end}}{{end}}'\'' "$container")" = tmpfs
+  test "$(docker compose -p "$MVP_TEST_STACK_PROJECT" exec -T postgres psql -XAt -U smithers -d smithers -c "SHOW fsync; SHOW synchronous_commit")" = "$(printf '\''on\non'\'')"
   export MVP_STACK_OUTER_PROJECT="$MVP_TEST_STACK_PROJECT"
   export MVP_STACK_OUTER_DATABASE_PORT="$TEST_DATABASE_PORT"
   export MVP_STACK_OUTER_ELECTRIC_PORT="$TEST_ELECTRIC_PORT"

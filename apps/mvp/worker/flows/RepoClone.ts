@@ -373,8 +373,11 @@ export const steps = <E, R>(services: Services<E, R>) => {
       const files = yield* services.index(payload.owner, payload.name, head.sha).pipe(
         Effect.catch(() => Effect.succeed(null)),
       )
-      const installed = yield* services.installed(payload.owner, payload.name)
-      yield* record("index", { id: payload.id, files: files ?? -1, installed })
+      // Optional metadata must not hold a ready clone through the step's retry policy. Unknown is never reclaimable.
+      const installed = yield* services.installed(payload.owner, payload.name).pipe(
+        Effect.catch(() => Effect.succeed(null)),
+      )
+      yield* record("index", { id: payload.id, files: files ?? -1, installed: installed ?? "unknown" })
       return { files, installed } satisfies Indexed
     }).pipe(Effect.withSpan("repo.clone.index", { attributes: { "smithers.repo.id": payload.id } }))
 

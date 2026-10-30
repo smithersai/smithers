@@ -3,7 +3,7 @@
 set -euo pipefail
 app_directory=$(cd "$(dirname "$0")/.." && pwd)
 fixture_project="mvp-test-$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"
-compose=(docker compose -p "$fixture_project" -f "$app_directory/docker-compose.yml")
+compose=(docker compose -p "$fixture_project" -f "$app_directory/docker-compose.yml" -f "$app_directory/docker-compose.test.yml")
 export MVP_TEST_POSTGRES_BIND=127.0.0.1: MVP_TEST_ELECTRIC_BIND=127.0.0.1: MVP_TEST_POOL_BIND=127.0.0.1:
 export MVP_TEST_MAX_CONNECTIONS=100 MVP_TEST_POOL_MAX_CLIENTS=64 MVP_TEST_POOL_MAX_DATABASE_CONNECTIONS=8
 cleanup() { "${compose[@]}" down --volumes --remove-orphans >/dev/null; }

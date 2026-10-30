@@ -182,7 +182,7 @@ describe("repo/Clone on the Node host", () => {
     const ran = await clone(provider, payload, { installed: "failing" })
     expect(ran.exit).toEqual(Exit.succeed({ status: "ready", settled: true }))
     expect(await repositoryRow(runtime, payload.id)).toMatchObject({ status: "ready", reclaimable: false })
-  }, 180_000)
+  })
 
   test("a failed clone's entry says why, and Try again's new attempt raises it again", async () => {
     const provider = scripted()
@@ -502,11 +502,12 @@ describe("the steps alone", () => {
       files: null,
       installed: false,
     })
-    // GitHub not answering about the App is retried by the step's policy.
+    // Optional App metadata must not hold a synced clone through the two-minute retry policy.
     const noApp = await stepsOf(provider, { installed: "failing" })
-    expect(failureOf(await Effect.runPromiseExit(noApp.index({ ...target, synced: { status: "ready", head } })))).toBeInstanceOf(
-      RepoClone.CloneUnavailable,
-    )
+    expect(await Effect.runPromise(noApp.index({ ...target, synced: { status: "ready", head } }))).toEqual({
+      files: Object.keys(fixture().files).length,
+      installed: null,
+    })
     // A stale attempt doesn't own the row: it indexes nothing.
     expect(
       await Effect.runPromise(steps.index({ ...target, cloneId: crypto.randomUUID(), synced: { status: "ready", head } })),

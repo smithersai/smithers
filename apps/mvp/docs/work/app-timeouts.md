@@ -26,7 +26,8 @@ The relay independently waited on an unassigned loopback address at its default
 HTTPS port on macOS. Its real dependency now selects an owned local port, with
 an omitted-port forwarding regression that failed on the old helper. The
 original timeout reproduced on macOS, then all three relay tests passed in
-67 ms. No test deadline, retry policy, coverage threshold or skip was changed.
+67 ms. No test deadline was increased; no retries, reduced coverage thresholds
+or skips were added.
 
 A shared-fixture full run then hit the same catalog cost while a triage test
 built and dropped three independent engine schemas. A row reset cannot bound
@@ -68,3 +69,25 @@ with no Chat service or telemetry exporter. Existing browser cases retain
 their real devices, persistence, outbox, engine and live Electric streams.
 The resulting four-file check passed 146 cases plus two existing expected
 failures. The reload case that timed out at 30 seconds completed in 1.7 seconds.
+
+A full four-worker run then reproduced disk-backed PostgreSQL WAL stalls even
+with a fresh catalog: the clone lost its run lease after 19 seconds without
+confirmation; a separate alarm stalled before engine readiness. Active server
+records showed WalSync and WALWrite, available connections and no lock blockers.
+The command-owned test fixture now uses a bounded 4 GiB tmpfs for PostgreSQL
+data and WAL, retaining fsync, synchronous commits and real logical replication.
+Engine/process restarts still retain their journal. The dev stack keeps its
+disk-backed data; removing a command-owned fixture discards only its own data.
+PostgreSQL I/O and WAL timings are enabled for future diagnosis.
+
+The clone's optional App lookup also consumed its two-minute Index retry policy.
+Its direct-step regression failed immediately on the previous implementation;
+Index now returns an unknown installation on that lookup's typed failure and
+settles the synced clone ready, still not reclaimable. Database failures keep
+their existing durable retry policy. The full-flow regression now uses the
+default test deadline instead of a three-minute exception.
+
+A separate short assertion failure was PostgreSQL microsecond expiry precision
+against the request clock's milliseconds. A 100-case diagnostic reproduced
+26 refusals after the fixture set the expiry to `now()`. The fixture now sets
+an actually elapsed expiry; it adds no sleep, retry or request polling.

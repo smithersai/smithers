@@ -104,6 +104,9 @@ Use `bash db/test-stack.sh -- pnpm vitest run` for a full run. It starts the sam
 assigned loopback ports with a fresh, run-owned volume, then removes only that project on success, failure or
 cancellation. The fixture keeps the farm's 100 PostgreSQL connections and four-connection transaction pool.
 `pnpm test:stack` verifies isolated listeners, an empty catalog and cleanup after a failing child command.
+The test-only Compose overlay keeps PostgreSQL data and WAL on a 4 GiB tmpfs, with fsync and synchronous commits
+enabled. Engine/process restarts retain the journal; removing the fixture removes its data. This isolates a suite's
+WAL flushes from other suites' disk traffic. The regression checks the mount and durability settings.
 Reusing a fixture for days grows its system catalogs; resetting rows alone cannot bound engine migration and
 schema teardown costs. The existing dev stack remains available separately.
 Simulated browser devices keep their durable engine in real local SQLite through `NodeRuntime.storage` from

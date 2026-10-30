@@ -108,7 +108,7 @@ The toast reads `◌ Clone · octocat/Spoon-Knife · Fetching 640.0 KB`, then `�
 
 ### Reclaiming
 
-A cloned copy of a repository the Smithers GitHub App isn't installed on is reclaimable: Index asks GitHub as the App, and Settle writes `reclaimable` only for a confirmed absent installation. If the lookup remains unavailable after Index retries, the clone still becomes ready but is not reclaimable. Rows ready before migration 0028 are reclaimable unless their installation was known (`github_repositories`). The page shows the quiet note under the about panel, "Until the Smithers app is installed, this copy may be reclaimed for space.", with Install, which opens `https://github.com/apps/<GITHUB_APP_SLUG>/installations/new`.
+A cloned copy of a repository the Smithers GitHub App isn't installed on is reclaimable: Index asks GitHub as the App, and Settle writes `reclaimable` only for a confirmed absent installation. If the optional lookup is unavailable, Index records `installed: unknown` and the clone becomes ready immediately but is not reclaimable. A database failure still follows Index's retry policy. Rows ready before migration 0028 are reclaimable unless their installation was known (`github_repositories`). The page shows the quiet note under the about panel, "Until the Smithers app is installed, this copy may be reclaimed for space.", with Install, which opens `https://github.com/apps/<GITHUB_APP_SLUG>/installations/new`.
 
 Nothing deletes a copy yet. Reclaiming waits for a durable flow that frees storage when the budgets need room, and for clearing the mark when the App is installed later; both are in [not built yet](#not-built-yet).
 

@@ -1,0 +1,19 @@
+# Command-owned test data: isolate PostgreSQL's WAL flushes from other suites' disk I/O.
+# PostgreSQL still fsyncs and synchronously commits; files survive engine/process restarts within this fixture.
+services:
+  postgres:
+    volumes:
+      - type: tmpfs
+        target: /var/lib/postgresql/data
+        tmpfs:
+          size: 4294967296
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_connections=100
+      - -c
+      - track_io_timing=on
+      - -c
+      - track_wal_io_timing=on
