@@ -65,8 +65,8 @@ Compiled UI plugin chunks run with the app's full power: the import rules are hy
 
 | Member | What it does here |
 |---|---|
-| `query(name)` | The rows of a declared query, live: `core/waits` is the viewer's open waits, oldest first (from the synced `runs`, [agent status](agent-status.md)). |
-| `select(item)` | The row the person is looking at; the strip under every view of the plugin that reads its query acts on it. A key that isn't a row is refused `not_in_reads`. |
+| `query(name, params?)` | The rows of a declared query, live: `core/waits` is the viewer's open waits, oldest first (from the synced `runs`, [agent status](agent-status.md)); `core/feeds` and `core/feed` take `params` ([below](#repository-feeds)). |
+| `select(item)` | The row the person is looking at, in its query as asked with `item.params`; the strip under every view of the plugin that reads its query acts on it. A key that isn't a row is refused `not_in_reads`. |
 | `propose(event, fields)` | Prefills the strip's note from a strip event's text field. Nothing runs until the person presses. |
 | `dispatch(event, fields)` | Runs an event whose flow isn't person-only, door `view`. Answers the run's id and `settled`, which waits for its end: `Done`, or `Failed` with the failure's stable code (a refusal's `code`, else its kind, dispatch's refusal, `interrupted`), never a message. |
 | `open(view)` | Navigates to one of the plugin's views (`app/navigate`). |
@@ -95,6 +95,10 @@ The first plugin (`plugins/queue/`): everything that waits on you, one item at a
 ## Bug reports
 
 The second plugin (`plugins/bugs/`, [bugs.md](bugs.md)): `/bug` and the header's Report a bug open its form, whose Send runs its `send` event, bound to the core's `app/bug/report`; `/bugs` and a report's bell entry open its inbox, which reads the core's `core/bug-reports`. The flows are the core's: a plugin can't own an `app/` flow, and the UI host runs no owned flows yet.
+
+## Repository feeds
+
+The core queries `core/feeds` (a repository's index) and `core/feed` (one on-demand document) serve what an outside collector pushed to a repository ([feeds.md](feeds.md#plugins)). Both take `params`: `query("core/feeds", { repo: "owner/name" })`, `query("core/feed", { repo, name })`; a missing or malformed one is refused `invalid_fields`. The strip selects a row of `core/feeds` when the `ItemRef` names the same `params`; a `core/feed` document is only shown.
 
 ## Observability
 

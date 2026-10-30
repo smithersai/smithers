@@ -793,6 +793,22 @@ A person's bug report, its intake and the Admins' notice ([bugs.md](features/bug
 
 A bug report also carries the tab's latest 30 error records (`TabErrors`, `src/flows/errors.ts`): a logger and a tracer beside the tab's OTLP exporter keep each error- or warning-level log of a relayed record, by name and stable code, each failed `/api/` request by method, path and status, and each uncaught error or rejection by the error's name, with trace ids and times. They add no record of their own and never keep a message, an argument or a query.
 
+### Repository feeds
+
+An outside collector's documents, a Maintainer's answers and who reads them ([feeds.md](features/feeds.md)). Counts, codes, the repository (`repoId`, `owner/name` lowercased) and an answer's random id only: never a body, a document's name, an answer's words, a login or a key.
+
+| Record | Kind | Where | Fields |
+|---|---|---|---|
+| `feed.ingest` | log (Info 200, Warn 4xx, Error 5xx), span | ChatApi, `POST /api/repos/<owner>/<name>/feeds` | `op` (`ingest`), `repoId`, `outcome` (`ingested`, or the refusal's `code`), `status`, `durationMs`, `bytes`, `documents`, `written`, `unchanged`, `deleted`; `code`, `errorCode` |
+| `feed.answers` | log, span | ChatApi, `GET .../feeds/answers` | `op` (`answers`), `repoId`, `outcome` (`listed`, or the refusal's `code`), `status`, `durationMs`, `count`; `code`, `errorCode` |
+| `feed.answer` | log, span | ChatApi, `POST .../feeds/answers` | `op` (`answer`), `repoId`, `outcome` (`recorded`, or the refusal's `code`), `status`, `durationMs`, `bytes`, `answerId`, `roleCode` (why the role couldn't be read); `code`, `errorCode` |
+| `smithers_feed_requests` | counter | the same three | `op`, `outcome` |
+| `feed.shape`, `smithers_feed_shape_requests` | log, counter | ChatApi, `GET /api/shapes/feeds` (`ShapeProxy`) | `status`, `live` |
+| `smithers_feed_shape_audiences` | counter, span attributes `feed.audience`, `feed.single` | the same | `audience` (`public`, `maintainers`), `single` (whether it named one document) |
+| `feed.answer`, `smithers_web_feed_answers` | browser | the tab's engine, `feed/answer/request` | `outcome` (`sent`, `refused`, `unsent`), `status`, `code` |
+| `feed.answer.send` | browser span | `FeedsClient` | `http.response.status_code` |
+| `smithers_web_feed_documents` | browser counter | `FeedsStore` | `outcome` (`opened` on an on-demand document's first listener, `closed` after its last) |
+
 ### Secrets
 
 An Admin's writes of repository secrets, their shape, and a box's requests through the egress ([secrets.md](features/secrets.md#observability)). No record carries a value, a ciphertext, a header, a path or a body; records name secrets by name only, and no metric label carries a name or an id.

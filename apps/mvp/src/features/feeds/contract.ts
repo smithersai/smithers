@@ -123,3 +123,12 @@ export const FEED_ROW = {
   required: ["id", "repo", "name", "visibility", "body", "updatedAt"],
   additionalProperties: false,
 } as const
+
+/**
+ * What repository feeds record in the browser, by name, and the fields they carry (docs/observability.md#repository-feeds).
+ * None carries a document's name or body, an answer's words, a login or a key.
+ */
+export const FEEDS_TELEMETRY = {
+  records: ["feed.answer", "smithers_web_feed_answers", "feed.answer.send", "smithers_web_feed_documents"],
+  fields: ["outcome", "status", "code"],
+} as const
