@@ -99,12 +99,12 @@ export const versionedSources = [
   // pnpm 11 installs only versions at least 24 hours old, so `@smthrs/flows@next`
   // can resolve to a candidate more than one release back. The Flows pages give
   // pnpm the exact versions of the Node runtime and the engine instead, and the
-  // bump keeps both current.
+  // bump keeps both current. The quickstart stays on its published rc.16 API
+  // (96628360), so its npm and pnpm pins must not follow an unpublished cut.
   ...[
     "packages/smithers/flows/README.md",
     "packages/smithers/flows/docs/README.md",
-    "packages/smithers/flows/docs/installation.md",
-    "packages/smithers/flows/docs/quickstart.md"
+    "packages/smithers/flows/docs/installation.md"
   ].flatMap((path) => [
     {
       path,

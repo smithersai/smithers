@@ -72,3 +72,8 @@ libraries keep the neutral build; a real browser bundle checks that no Node
 imports are introduced there. Native metadata resolution and strict module
 semantics cover paths with spaces through both module conditions, even when the
 compiler does not emit a strict directive.
+
+The published quickstart's fixed contract (`96628360`) stays outside automatic
+version retargeting. A real version bump in an isolated workspace advances the
+release and its following documentation, verifies coherence at the new version,
+and preserves the published guide byte for byte.

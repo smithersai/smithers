@@ -1,6 +1,8 @@
 import assert from "node:assert/strict"
-import { readdirSync, readFileSync } from "node:fs"
-import { join } from "node:path"
+import { execFileSync } from "node:child_process"
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { dirname, join, relative } from "node:path"
 import test from "node:test"
 import { changelogMismatches, mismatches, readManifests, readVersionedManifests, releaseChangelog, retarget, retargetSource, sourceMismatches, versionedChangelogs, versionedSources, versionedTemplates } from "./set-release-version.mjs"
 import { repoRoot } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
@@ -226,17 +228,21 @@ test("the storage docs quote the release through versioned sources, on the packa
   assert.equal(rewritten, text.replaceAll("1.0.0-rc.0", "1.0.0-rc.10"))
 })
 
-test("every Flows page that gives the pnpm install line names the version the bump writes", () => {
+test("every Flows page that follows the release names the version the bump writes", () => {
   // pnpm 11 installs only versions at least 24 hours old, so `@next` can lag
   // more than one release; the pages pin the version, and a pin the bump does
-  // not know would go stale silently.
+  // not know would go stale silently. The published quickstart's immutable
+  // contract is covered by the real version-bump regression below.
   const rows = versionedSources.filter(({ declaration }) => declaration === "the pnpm install line")
   const directory = join(repoRoot, "packages/smithers/flows")
   const pages = ["README.md", ...readdirSync(join(directory, "docs"), { recursive: true }).map((entry) => join("docs", String(entry)))]
     .filter((page) => page.endsWith(".md"))
     .map((page) => join("packages/smithers/flows", page))
   const line = /pnpm add\s+@smthrs\/platform-node@\S+\s+@smthrs\/flows@/g
-  const giving = pages.filter((page) => line.test(readFileSync(join(repoRoot, page), "utf8")))
+  const giving = pages.filter((page) => {
+    const text = readFileSync(join(repoRoot, page), "utf8")
+    return /npm install\s+@smthrs\/platform-node@next\s+@smthrs\/flows@next\b/.test(text) && text.match(line) !== null
+  })
   assert.deepEqual(rows.map(({ path }) => path).sort(), giving.sort())
   const pins = versionedSources.filter(({ declaration }) => declaration === "the platform-node pin on the pnpm install line")
   assert.deepEqual(pins.map(({ path }) => path).sort(), giving.sort())
@@ -250,6 +256,34 @@ test("every Flows page that gives the pnpm install line names the version the bu
     retargetSource(retargetSource(given, "1.0.0-rc.7", pins[0]), "1.0.0-rc.7", rows[0]),
     "run `pnpm add @smthrs/platform-node@1.0.0-rc.7 @smthrs/flows@1.0.0-rc.7 effect` instead"
   )
+})
+
+test("a real release bump preserves the published quickstart's complete pinned contract", () => {
+  const root = mkdtempSync(join(tmpdir(), "smithers-version-guide-"))
+  const guide = "packages/smithers/flows/docs/quickstart.md"
+  const writer = ".smithers/flows/release/set-release-version.mjs"
+  try {
+    const inputs = new Set([
+      "package.json", "pnpm-workspace.yaml", guide, writer,
+      "packages/repo-targets/scripts/workspace-packages.mjs",
+      ...readVersionedManifests().map(({ path }) => relative(repoRoot, path)),
+      ...versionedSources.map(({ path }) => path),
+      ...versionedChangelogs
+    ])
+    for (const path of inputs) {
+      mkdirSync(dirname(join(root, path)), { recursive: true })
+      cpSync(join(repoRoot, path), join(root, path))
+    }
+    symlinkSync(join(repoRoot, "node_modules"), join(root, "node_modules"), "dir")
+    const original = readFileSync(join(root, guide), "utf8")
+    execFileSync(process.execPath, [join(root, writer), "1.0.0-rc.99"], { cwd: root, encoding: "utf8", timeout: 30_000 })
+    execFileSync(process.execPath, [join(root, writer), "--check", "1.0.0-rc.99"], { cwd: root, encoding: "utf8", timeout: 30_000 })
+    assert.equal(JSON.parse(readFileSync(join(root, "packages/smithers/flows/package.json"), "utf8")).version, "1.0.0-rc.99")
+    assert.match(readFileSync(join(root, "packages/smithers/flows/README.md"), "utf8"), /pnpm add @smthrs\/platform-node@1\.0\.0-rc\.99 @smthrs\/flows@1\.0\.0-rc\.99/)
+    assert.equal(readFileSync(join(root, guide), "utf8"), original)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test("every Bun host page that gives the bun install line names the version the bump writes", () => {
