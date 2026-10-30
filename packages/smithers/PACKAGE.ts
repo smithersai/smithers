@@ -190,7 +190,10 @@ const test = Smithers.Shell.Test({
   shell: [
     "cd packages/smithers && work=$(mktemp -d /tmp/smt.XXXXXXXX) && trap 'rm -rf \"$work\"' 0 && " +
     "mkdir -p \"$work/tmp\" && " +
-    "export TMPDIR=\"$work/tmp\" TEMP=\"$work/tmp\" TMP=\"$work/tmp\" NODE_COMPILE_CACHE=\"$work/cache\" VIBELANG_CACHE_DIR=\"$work/vibelang-cache\" && " +
+    "export TMPDIR=\"$work/tmp\" TEMP=\"$work/tmp\" TMP=\"$work/tmp\" NODE_COMPILE_CACHE=\"$work/cache\" " +
+    "SMITHERS_CLI_NODE_COMPILE_CACHE=\"$work/cache\" " +
+    "SMITHERS_CLI_DISABLE_COMPILE_CACHE=\"${SMITHERS_CLI_DISABLE_COMPILE_CACHE-${NODE_DISABLE_COMPILE_CACHE-}}\" " +
+    "VIBELANG_CACHE_DIR=\"$work/vibelang-cache\" && " +
     `${vitest} --fileParallelism --maxWorkers=4 --coverage.enabled=true --reporter=github-actions --reporter=default`
   ].join(" "),
   data: [

@@ -84,7 +84,10 @@ it.skipIf(process.platform === "win32")(
         join(root, "vitest.config.mjs"),
         `import { BaseSequencer } from "vitest/node";
 export default { test: {
-  include: ["*.test.mjs"], testTimeout: 12000, coverage: { enabled: false },
+  include: ["*.test.mjs"], testTimeout: 12000,
+  coverage: { enabled: true, provider: "v8", include: ["measured.mjs"],
+    reporter: ["json-summary"], reportsDirectory: "coverage",
+    thresholds: { lines: 100, branches: 100, functions: 100, statements: 100 } },
   sequence: { sequencer: class extends BaseSequencer {
     sort(files) { return files.sort((a, b) => a.moduleId.localeCompare(b.moduleId)); }
   } },
@@ -95,21 +98,29 @@ export default { test: {
         }]
 } };`
       )
+      writeFileSync(join(root, "measured.mjs"), "export const classify = value => value ? 'left' : 'right';\n")
       for (const phase of phases) {
         writeFileSync(
           join(root, `0${phase}.test.mjs`),
           `import { it, expect } from "vitest";
 import { existsSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { getCompileCacheDir } from "node:module";
 import { dirname, join } from "node:path";
+import { classify } from "./measured.mjs";
 import { temporaryEnvironment } from ${JSON.stringify(new URL("./temporaryEnvironment.ts", import.meta.url).href)};
 it(${JSON.stringify(phase)}, async () => {
   expect(process.env.VIBELANG_CACHE_DIR).toEqual(expect.any(String));
-  expect(process.env.NODE_COMPILE_CACHE).toBe(join(dirname(process.env.VIBELANG_CACHE_DIR), "cache"));
-  const isolatedCache = JSON.parse(execFileSync(process.execPath, ["-e", "process.stdout.write(JSON.stringify({ vibe: process.env.VIBELANG_CACHE_DIR, node: process.env.NODE_COMPILE_CACHE }))"], {
+  expect(process.env.NODE_COMPILE_CACHE).toBeUndefined();
+  expect(process.env.NODE_DISABLE_COMPILE_CACHE).toBe("1");
+  expect(getCompileCacheDir()).toBeUndefined();
+  expect(classify(true)).toBe("left");
+  expect(classify(false)).toBe("right");
+  const nodeCache = join(dirname(process.env.VIBELANG_CACHE_DIR), "cache");
+  const isolatedCache = JSON.parse(execFileSync(process.execPath, ["-e", "process.stdout.write(JSON.stringify({ vibe: process.env.VIBELANG_CACHE_DIR, node: process.env.NODE_COMPILE_CACHE, enabled: Boolean(require('node:module').getCompileCacheDir()) }))"], {
     env: temporaryEnvironment(), encoding: "utf8"
   }));
-  expect(isolatedCache).toEqual({ vibe: process.env.VIBELANG_CACHE_DIR, node: process.env.NODE_COMPILE_CACHE });
+  expect(isolatedCache).toEqual({ vibe: process.env.VIBELANG_CACHE_DIR, node: nodeCache, enabled: true });
   writeFileSync(${JSON.stringify(join(root, phase))}, JSON.stringify({ ...isolatedCache, pid: process.pid }));
   if (${Number(phase) < 3}) {
     const deadline = Date.now() + 8000;
@@ -128,7 +139,6 @@ it(${JSON.stringify(phase)}, async () => {
         .replace("cd packages/smithers && ", "")
         .replace("&& trap", "&& printf '%s' \"$work\" > \"$SMITHERS_LANES_SCRATCH_RECEIPT\" && trap")
         .replaceAll("vitest.config.ts", "vitest.config.mjs")
-        .replaceAll("--coverage.enabled=true", "--coverage.enabled=false")
         // Use the installed entrypoint when pnpm shims point outside this temporary symlink.
         .replaceAll("pnpm exec vitest", `${quote(process.execPath)} ${quote(vitest)}`)
       const scratch = join(root, "tmp")
@@ -143,6 +153,7 @@ it(${JSON.stringify(phase)}, async () => {
             TMP: scratch,
             TEMP: scratch,
             SMITHERS_LANES_SCRATCH_RECEIPT: join(root, "owned-work"),
+            SMITHERS_CLI_DISABLE_COMPILE_CACHE: "",
             SMITHERS_LANES_FAIL_LAST: failure ? "1" : "0"
           },
           encoding: "utf8",
@@ -153,12 +164,18 @@ it(${JSON.stringify(phase)}, async () => {
           expect(completed.status).not.toBe(0)
           expect(completed.stdout + completed.stderr).toContain("retained-late-failure")
         } else expect(completed.status, completed.stdout + completed.stderr).toBe(0)
+        if (!failure) {
+          const summary = JSON.parse(readFileSync(join(root, "coverage/coverage-summary.json"), "utf8"))
+          for (const metric of ["lines", "branches", "functions", "statements"]) {
+            expect(summary.total[metric].pct).toBe(100)
+          }
+        }
         const owned = readFileSync(join(root, "owned-work"), "utf8")
         const workers: Array<number> = []
         for (const phase of phases) {
           const { pid, ...cache } = JSON.parse(readFileSync(join(root, phase), "utf8"))
           workers.push(pid)
-          expect(cache).toEqual({ vibe: join(owned, "vibelang-cache"), node: join(owned, "cache") })
+          expect(cache).toEqual({ vibe: join(owned, "vibelang-cache"), node: join(owned, "cache"), enabled: true })
         }
         expect(new Set(workers.slice(0, 3)).size).toBe(3)
         expect(workers.slice(0, 3)).not.toContain(workers[3])

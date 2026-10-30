@@ -5,33 +5,54 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
-import { expect, it } from "vitest"
+import { expect, it, onTestFailed } from "vitest"
+import { temporaryEnvironment } from "./temporaryEnvironment.ts"
 
 const run = promisify(execFile)
 const bin = fileURLToPath(new URL("../src/bin.ts", import.meta.url))
 const preload = fileURLToPath(new URL("./fixtures/init-native-host.ts", import.meta.url))
 it("drains completed run logs and exits even when the cursor is past the terminal event", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-follow-logs-")))
+  const origin = Date.now()
+  const stages: Array<Record<string, unknown>> = []
+  onTestFailed(() => console.error("FollowLogs CLI stages", JSON.stringify(stages)))
   const cli = async (...args: string[]) => {
+    const command = args[0] === "runs" ? `runs ${args[1]}` : args[0] === "flow" ? "flow start" : "init"
+    const environment: Record<string, string | undefined> = {
+      PATH: process.env.PATH,
+      ...temporaryEnvironment(),
+      HOME: root,
+      XDG_CONFIG_HOME: join(root, "config"),
+      XDG_DATA_HOME: join(root, "data"),
+      SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY,
+      OPENAI_API_KEY: "fixture-never-sent",
+      SMITHERS_BACKEND: "sqlite"
+    }
+    stages.push({
+      command,
+      state: "started",
+      elapsedMs: Date.now() - origin,
+      nodeCache: environment.NODE_COMPILE_CACHE !== undefined,
+      vibeCache: environment.VIBELANG_CACHE_DIR !== undefined
+    })
     try {
-      return {
+      const result = {
         ...await run(process.execPath, ["--no-warnings", "--import", preload, bin, ...args, "--json"], {
           cwd: root,
-          env: {
-            PATH: process.env.PATH,
-            TMPDIR: process.env.TMPDIR,
-            HOME: root,
-            XDG_CONFIG_HOME: join(root, "config"),
-            XDG_DATA_HOME: join(root, "data"),
-            SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY,
-            OPENAI_API_KEY: "fixture-never-sent",
-            SMITHERS_BACKEND: "sqlite"
-          },
+          env: environment,
           timeout: 60_000
         }),
         code: 0
       }
+      stages.push({ command, state: "settled", code: result.code, elapsedMs: Date.now() - origin })
+      return result
     } catch (error) {
+      stages.push({
+        command,
+        state: "failed",
+        code: error !== null && typeof error === "object" && "code" in error ? error.code : "unknown",
+        elapsedMs: Date.now() - origin
+      })
       return error as { code: number; stdout: string; stderr: string }
     }
   }
@@ -71,6 +92,7 @@ it("drains completed run logs and exits even when the cursor is past the termina
       if (entered) break
       await new Promise((resolve) => setTimeout(resolve, 100))
     }
+    stages.push({ state: "detached action", entered, elapsedMs: Date.now() - origin })
     expect(entered, "detached action entered its real native body").toBe(true)
     let settled = false
     const live = cli("runs", "logs", activeId, "--follow").then((result) => {
@@ -86,6 +108,9 @@ it("drains completed run logs and exits even when the cursor is past the termina
     expect(drained.stdout, drained.stdout + drained.stderr).toContain("control.run.cancelled")
   } finally {
     await cli("runs", "cancel-all")
+    if (process.env.SMITHERS_TEST_FOLLOW_PROGRESS === "1") {
+      console.error("FollowLogs CLI stages", JSON.stringify(stages))
+    }
     await rm(root, { recursive: true, force: true })
   }
 }, 180_000)
