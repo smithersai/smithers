@@ -9,6 +9,7 @@ import assert from "node:assert/strict"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import * as NativeControl from "../../src/internal/NativeControl.ts"
 
 const runtime = process.argv[2]
 const driftRescan = process.argv[3] === "drift-rescan"
@@ -24,9 +25,31 @@ const bounded = <A, E, R>(label: string, effect: Effect.Effect<A, E, R>) =>
       orElse: () => Effect.die(new Error(`Timed out waiting for ${label}`))
     })
   )
-const host = runtime === "bun"
-  ? (await import("../../src/internal/BunControl.ts")).native
-  : (await import("../../src/internal/NodeControlHost.ts")).native
+const platform = runtime === "bun"
+  ? (await import("../../src/internal/BunControl.ts")).platform
+  : (await import("../../src/internal/NodeControlHost.ts")).platform
+let admissionObserved: (runId: string, allowed: boolean) => Effect.Effect<void> = () => Effect.void
+// Observe the real admission answers. A fixed sleep can inspect a run while
+// recovery still owns it, before the unkeyed child has been refused.
+const host = NativeControl.make({
+  ...platform,
+  runtime: (options, boundary, sandbox, registrations, ...registry) =>
+    platform.runtime(
+      {
+        ...options,
+        canExecute: options.canExecute === undefined ?
+          undefined :
+          (row) => Effect.tap(options.canExecute!(row), (allowed) => admissionObserved(row.runId, allowed)),
+        canActivate: options.canActivate === undefined ?
+          undefined :
+          (row) => Effect.tap(options.canActivate!(row), (allowed) => admissionObserved(row.runId, allowed))
+      },
+      boundary,
+      sandbox,
+      registrations,
+      ...registry
+    )
+})
 trace("platform imported")
 const root = await mkdtemp(join(tmpdir(), `smithers-native-${runtime}-`))
 try {
@@ -212,6 +235,17 @@ export default ({  name: "native", description: "Portable native delegate", inpu
         db.close()
       }
     }
+    const nativeDb = new Database(join(root, ".flows", "engine.db"))
+    const nativeId = (() => {
+      try {
+        return (nativeDb.prepare(
+          "SELECT run_id FROM flows_runs WHERE json_extract(state_json, '$.flowName') = 'native'"
+        ).get() as { run_id: string } | undefined)?.run_id
+      } finally {
+        nativeDb.close()
+      }
+    })()
+    assert(nativeId, "the interrupted native child must have a durable identity")
     assert.equal(read().status, "suspended")
     if (drift) {
       await writeFile(
@@ -240,7 +274,13 @@ export default ({  description: "Changed after approval", input: Schema.Struct({
           assert.deepEqual(calls, [])
           return
         }
-        yield* Effect.sleep("2 seconds")
+        const refused = Deferred.makeUnsafe<void>()
+        admissionObserved = (id, allowed) =>
+          id === runId && !allowed
+            ? Effect.asVoid(Deferred.succeed(refused, undefined)) :
+            Effect.void
+        yield* bounded("ordinary catalog admission refusal", Deferred.await(refused))
+        trace("ordinary catalog admission refused")
         assert.equal(read().status, "suspended", "ordinary executor must leave a configured module parked")
         assert.deepEqual(calls, [])
       }).pipe(Effect.provide(host.layerHost({ root, evaluator: ScriptedJudge.layer })))
@@ -259,8 +299,24 @@ export default ({  description: "Changed after approval", input: Schema.Struct({
           trace("recovery host opened")
           // This probe was interrupted in an unkeyed action. Reopening the
           // configured catalog restores its code, not consent to repeat it.
+          const refused = Deferred.makeUnsafe<void>()
+          admissionObserved = (id, allowed) =>
+            id === nativeId && !allowed
+              ? Effect.asVoid(Deferred.succeed(refused, undefined)) :
+              Effect.void
           yield* control.list({ _tag: "runs", filters: { runId } })
-          yield* Effect.sleep("2 seconds")
+          yield* bounded("unkeyed native admission refusal", Deferred.await(refused))
+          trace("unkeyed native admission refused")
+          const parked: Effect.Effect<void> = Effect.suspend(() => {
+            const status = read().status
+            assert.deepEqual(calls, [], "recovery must not repeat the unkeyed action before consent")
+            assert(
+              status === "running" || status === "suspended",
+              `unexpected recovery status before consent: ${status}`
+            )
+            return status === "suspended" ? Effect.void : Effect.sleep("50 millis").pipe(Effect.andThen(parked))
+          })
+          yield* bounded("recovery refusal settlement", parked)
           assert.equal(read().status, "suspended", "configured host must wait for explicit unkeyed retry consent")
           assert.deepEqual(calls, [])
           const resumed = yield* control.resume({ runId: runId!, idempotencyKey: "portable-resume" })
