@@ -1,5 +1,6 @@
 import { once } from "node:events"
 import { PassThrough, Writable } from "node:stream"
+import { setImmediate, setTimeout } from "node:timers/promises"
 import { expect, it } from "vitest"
 import * as McpStdio from "../src/cli/McpStdio.ts"
 
@@ -54,4 +55,53 @@ it("waits for parse-error output backpressure and propagates output failures", a
   const failed = once(failing, "error")
   failing.write("bad\n")
   expect((await failed)[0].code).toBe("ERR_STREAM_WRITE_AFTER_END")
+})
+
+it("abandons a backpressured parse-error reply when the session is cancelled", async () => {
+  const written: Array<string> = []
+  let release: (() => void) | undefined
+  const output = new Writable({
+    highWaterMark: 1,
+    write(bytes, _encoding, done) {
+      written.push(String(bytes))
+      release = () => done()
+    }
+  })
+  const input = McpStdio.input(output)
+  const errors: Array<Error> = []
+  input.on("error", (error) => errors.push(error))
+  input.write("bad\nbad\n")
+  await setImmediate()
+  expect(written).toHaveLength(1)
+  const closed = once(input, "close")
+  input.destroy()
+  await closed
+  expect(output.listenerCount("drain")).toBe(0)
+  expect(output.listenerCount("close")).toBe(0)
+  release!()
+  await setImmediate()
+  expect(written).toHaveLength(1)
+  expect(errors).toEqual([])
+})
+
+it.each(["while waiting", "before writing"])("fails instead of waiting when output closes %s", async (when) => {
+  const output = new Writable({
+    highWaterMark: 1,
+    write() {}
+  })
+  if (when === "before writing") {
+    output.destroy()
+    await once(output, "close")
+  }
+  const input = McpStdio.input(output)
+  const failed = once(input, "error")
+  input.write("bad\n")
+  if (when === "while waiting") {
+    await setImmediate()
+    output.destroy()
+  }
+  const outcome = await Promise.race([failed, setTimeout(2_000, "still waiting")])
+  expect(outcome).toMatchObject([{ code: "ERR_STREAM_PREMATURE_CLOSE" }])
+  expect(output.listenerCount("drain")).toBe(0)
+  expect(output.listenerCount("close")).toBe(0)
 })

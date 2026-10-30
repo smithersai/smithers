@@ -5,6 +5,7 @@
 import { Context } from "effect"
 import { once } from "node:events"
 import { type Readable, Transform, type Writable } from "node:stream"
+import { finished } from "node:stream/promises"
 import * as CliError from "../CliError.ts"
 
 /** Host-owned MCP streams, independent of command arguments.
@@ -29,7 +30,27 @@ export class Stdio extends Context.Service<Stdio, Service>()("/cli/McpStdio") {}
  */
 export const input = (output: Writable, maxBytes = 10 * 1024 * 1024): Transform => {
   let pending = Buffer.alloc(0)
+  // Cancelled when this input is destroyed, so a stalled reply never outlives its session.
+  let waiting: AbortController | undefined
+  const drained = async () => {
+    waiting = new AbortController()
+    const { signal } = waiting
+    try {
+      // An ended, closed or failed output never drains; finished reports why.
+      await Promise.race([
+        once(output, "drain", { signal }),
+        finished(output, { cleanup: true, readable: false, signal })
+      ])
+    } finally {
+      waiting.abort()
+      waiting = undefined
+    }
+  }
   return new Transform({
+    destroy(error, callback) {
+      waiting?.abort()
+      callback(error)
+    },
     transform(chunk: Buffer, _encoding, done) {
       const consume = async () => {
         if (pending.length + chunk.length > maxBytes) {
@@ -54,7 +75,7 @@ export const input = (output: Writable, maxBytes = 10 * 1024 * 1024): Transform 
                 "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32700,\"message\":\"Parse error\"}}\n"
               )
             ) {
-              await once(output, "drain")
+              await drained()
             }
             continue
           }
