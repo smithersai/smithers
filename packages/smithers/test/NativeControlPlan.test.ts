@@ -15,13 +15,15 @@ import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import * as ProcessReaper from "@smthrs/platform-node/ProcessReaper"
 import * as Executable from "@smthrs/registry/Executable"
-import { Effect, Layer, Logger, PlatformError, Schema, Stream } from "effect"
+import { Context, Effect, Layer, Logger, PlatformError, Schema, Stream } from "effect"
 import { execFileSync } from "node:child_process"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { performance } from "node:perf_hooks"
 import { DatabaseSync } from "node:sqlite"
-import { describe, expect, it, vi } from "vitest"
+import { getHeapStatistics } from "node:v8"
+import { describe, expect, it, onTestFailed, vi } from "vitest"
 
 import { settledKind } from "../src/internal/EngineJournalSupervisor.ts"
 import * as Failure from "../src/internal/Failure.ts"
@@ -236,16 +238,48 @@ const planOn = async (
 
 describe("planning a discovered flow on the native host", () => {
   it.each([true, false])("retries a timed-out module before planning valid input: %s", async (valid) => {
+    const started = Date.now()
+    const cpuStarted = process.cpuUsage()
+    const loopStarted = performance.eventLoopUtilization()
+    const resources = () => ({
+      cpuMicros: process.cpuUsage(cpuStarted),
+      memoryBytes: process.memoryUsage(),
+      heapLimitBytes: getHeapStatistics().heap_size_limit,
+      eventLoop: performance.eventLoopUtilization(loopStarted)
+    })
+    const stages: Array<{ stage: string; elapsedMs: number }> = []
+    const mark = (stage: string) => stages.push({ stage, elapsedMs: Date.now() - started })
+    let catalogLoads = 0
+    let retryLoads = 0
+    let catalogReady = false
+    const controller = new AbortController()
+    onTestFailed(() => {
+      console.error(
+        "Native planning retry progress",
+        JSON.stringify({ valid, catalogLoads, retryLoads, stages, resources: resources() })
+      )
+      controller.abort()
+    })
+    mark("create project")
     const root = await project()
-    let loads = 0
+    mark("project created")
     try {
       const modules = Executable.layer({
         delegates: [Planned],
         loadTimeoutMs: 1_000,
         load: () =>
           Effect.suspend(() => {
-            loads++
-            return loads === 1 ? Effect.never : Effect.succeed({
+            // The catalog deadline also covers source verification. Under load
+            // it can expire before calling the loader, so invocation count does
+            // not identify the retry. Inject the hang only during catalog build.
+            if (!catalogReady) {
+              catalogLoads++
+              mark("catalog module load")
+              return Effect.never
+            }
+            retryLoads++
+            mark("retry module load")
+            return Effect.succeed({
               default: Flow.make("native", {
                 payload: { value: Schema.String },
                 success: Schema.String,
@@ -258,13 +292,26 @@ describe("planning a discovered flow on the native host", () => {
         Layer.provideMerge(
           Layer.mergeAll(Interpreter.layer(Planned), Probe.toLayer(({ value }) => Effect.succeed(value)))
         ),
-        Layer.orDie
+        Layer.orDie,
+        Layer.tap((services) =>
+          Effect.sync(() => {
+            const catalog = Context.get(services, Executable.Catalog)
+            expect(catalog.executables).toEqual([])
+            expect(catalog.refused).toEqual([expect.objectContaining({ code: "load_timeout", flow: "native" })])
+            catalogReady = true
+            mark("catalog refused")
+          })
+        )
       )
       const outcome = await Effect.runPromise(
         Effect.gen(function*() {
           const control = yield* Control.Control
+          mark("control ready")
           return yield* Effect.result(control.plan({ flowId: "native", input: { value: valid ? "planned" : 42 } }))
-            .pipe(Effect.tap(() => Effect.logInfo("planning retry: result obtained")))
+            .pipe(Effect.tap(() => {
+              mark("plan settled")
+              return Effect.logInfo("planning retry: result obtained")
+            }))
         }).pipe(
           Effect.provide(
             NodeControl.layerControl(
@@ -275,10 +322,20 @@ describe("planning a discovered flow on the native host", () => {
             )
           ),
           Effect.scoped,
-          Effect.tap(() => Effect.logInfo("planning retry: host scope closed"))
-        )
+          Effect.tap(() => {
+            mark("host closed")
+            return Effect.logInfo("planning retry: host scope closed")
+          })
+        ),
+        { signal: controller.signal }
       )
-      expect(loads).toBe(2)
+      if (process.env.SMITHERS_TEST_PLAN_PROGRESS === "1") {
+        console.error(
+          "Native planning retry progress",
+          JSON.stringify({ valid, catalogLoads, retryLoads, stages, resources: resources() })
+        )
+      }
+      expect(retryLoads).toBe(1)
       expect(outcome._tag).toBe(valid ? "Success" : "Failure")
       if (outcome._tag === "Failure") expect(outcome.failure).toMatchObject({ _tag: "/control/InvalidInput" })
       if (outcome._tag === "Success") expect(outcome.success.nodes.length).toBeGreaterThan(0)
@@ -486,25 +543,34 @@ ${source}`
 
   it("names what a timed-out module's retry threw, without its stack", async () => {
     const root = await project()
-    let loads = 0
+    let retryLoads = 0
+    let catalogReady = false
     try {
       const modules = Executable.layer({
         delegates: [Planned],
         loadTimeoutMs: 1_000,
         load: () =>
-          Effect.suspend(() =>
-            ++loads === 1
-              ? Effect.never
-              : Effect.fail(new Error("retry cannot import\n    at secretFrame (flow.ts:1:1)"))
-          )
+          Effect.suspend(() => {
+            if (!catalogReady) return Effect.never
+            retryLoads++
+            return Effect.fail(new Error("retry cannot import\n    at secretFrame (flow.ts:1:1)"))
+          })
       }).pipe(
         Layer.provideMerge(
           Layer.mergeAll(Interpreter.layer(Planned), Probe.toLayer(({ value }) => Effect.succeed(value)))
         ),
-        Layer.orDie
+        Layer.orDie,
+        Layer.tap((services) =>
+          Effect.sync(() => {
+            const catalog = Context.get(services, Executable.Catalog)
+            expect(catalog.executables).toEqual([])
+            expect(catalog.refused).toEqual([expect.objectContaining({ code: "load_timeout", flow: "native" })])
+            catalogReady = true
+          })
+        )
       )
       const failure = await refusedPlan(root, modules)
-      expect(loads).toBe(2)
+      expect(retryLoads).toBe(1)
       expect(failure).toMatchObject({ _tag: "/control/InvalidInput" })
       const issue = (failure as { readonly issue: string }).issue
       expect(issue).toMatch(/^Cannot load flow native: Error: retry cannot import; the body of flow "native"/)
