@@ -23,10 +23,16 @@ const cli = resolve(app, "../../packages/smithers")
 
 for (const runtime of ["node", "compiled"] as const) {
   it(`runs packaged ${runtime}: draw, external editor, chat, leaf and composed flows`, async () => {
+    const started = Date.now()
+    const timings: Record<string, number> = {}
+    const mark = (stage: string) => {
+      timings[stage] = Date.now() - started
+    }
     const built = runtime === "node"
       ? spawnSync("node", [join(cli, "scripts/build-tui.mjs")], { encoding: "utf8" })
       : spawnSync("bun", [join(cli, "scripts/build-tui-binaries.mjs"), "--single"], { encoding: "utf8" })
     expect(built.status, built.stderr).toBe(0)
+    mark("built")
     const root = mkdtempSync(join(tmpdir(), `tui-${runtime}-`))
     const installation = join(root, "installation")
     const installedCli = join(installation, "node_modules/@smthrs/cli")
@@ -99,6 +105,7 @@ for (const runtime of ["node", "compiled"] as const) {
         }
       })
       await tui.until(drawn, 20_000, `${runtime} first draw`)
+      mark("drawn")
       await tui.press("\x07")
       if (interactiveEditor) {
         await tui.until(
@@ -121,6 +128,7 @@ for (const runtime of ["node", "compiled"] as const) {
         await tui.until((screen) => drawn(screen.split("\n")[19] ?? ""), 5_000, `${runtime} editor resize`)
         await tui.resize(110, 40)
       }
+      mark("editor")
       await tui.press(key.enter)
       await tui.until(
         // The answer on its own row; the composer's model line also names pong.jsonl.
@@ -128,9 +136,14 @@ for (const runtime of ["node", "compiled"] as const) {
         30_000,
         `${runtime} chat`
       )
+      mark("chat")
       await tui.type(`/flow echo text="${runtime} dynamic flow result"`)
       await tui.press(key.enter)
+      mark("leaf-requested")
+      // A closed child pipe must leave Node's terminal and flow controls usable.
+      if (runtime === "node") process.kill(tui.pid, "SIGPIPE")
       await tui.until((screen) => screen.includes("✓ echo"), 30_000, "dynamic flow completed")
+      mark("leaf-completed")
       // A flow ends in a chat card (d6300e6f9b): a click focuses it, enter opens its run.
       await tui.click("✓ echo")
       await tui.press(key.enter)
@@ -139,6 +152,7 @@ for (const runtime of ["node", "compiled"] as const) {
         5_000,
         "persisted flow result"
       )
+      mark("leaf-details")
       expect(result).not.toContain("does not drive")
       expect(result).not.toContain("r Resume")
       expect(result).not.toContain("x Stop")
@@ -151,18 +165,35 @@ for (const runtime of ["node", "compiled"] as const) {
       await tui.click("composed ·")
       await tui.press(key.enter)
       const composed = await tui.until((screen) => /▸ [✓✗] composed/.test(screen), 5_000, "composed flow run")
+      mark("composed")
       expect(composed).toContain("composed action callback output")
       expect(composed).toContain("▸ ✓ composed")
       expect(composed).not.toContain("does not drive")
       expect(composed).not.toContain("✗ composed")
     } catch (error) {
+      mark("failed")
       const log = join(root, "sessions/tui.log")
+      const artifact = join(app, "test-results", `packaged-${runtime}`)
+      rmSync(artifact, { recursive: true, force: true })
+      mkdirSync(artifact, { recursive: true })
+      writeFileSync(join(artifact, "timings.json"), JSON.stringify(timings))
+      for (const relative of ["project/.flows", "sessions", "terminal.log"]) {
+        const source = join(root, relative)
+        if (existsSync(source)) cpSync(source, join(artifact, relative), { recursive: true })
+      }
+      const processState = tui === undefined ? "No terminal process" : spawnSync(
+        "ps",
+        ["-p", String(tui.pid), "-o", "pid=,stat=,%cpu=,etime=,wchan="],
+        { encoding: "utf8" }
+      ).stdout
       const output = existsSync(terminalOutput) ? stripVTControlCharacters(readFileSync(terminalOutput, "utf8")) : ""
       const causes = [...output.matchAll(/(?:Error|Assertion|fatal|signal)[^\r\n]{0,1000}/gi)]
         .slice(-8).map((match) => match[0]).join("\n")
       throw new Error(
         [
           String(error),
+          processState,
+          `failure artifacts: ${artifact}`,
           existsSync(log) ? readFileSync(log, "utf8") : "No diagnostic log",
           causes,
           "terminal output:",
@@ -174,6 +205,8 @@ for (const runtime of ["node", "compiled"] as const) {
       )
     } finally {
       await tui?.stop()
+      mark("stopped")
+      console.info(`${runtime} stages: ${JSON.stringify(timings)}`)
       rmSync(root, { recursive: true, force: true })
     }
   }, 90_000)
