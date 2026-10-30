@@ -149,10 +149,18 @@ export const job = <Payload = unknown>(provider: Provider, options: JobOptions<P
           const parent = full.slice(0, full.lastIndexOf("/"))
           return `mkdir -p ${q(parent)} && printf %s ${q(encodeBase64(bytes))} | base64 -d >${q(full)} || exit 125`
         }).join("\n")
-        // The worker publishes its own process-group identity before any work.
+        // Fence transport redelivery inside the detached worker, before opening
+        // output files or publishing a pid. The admission mkdir alone cannot
+        // prevent a transport from executing that launch more than once.
+        // PID-only launch receipts distinguish redelivery from a new start.
         // Cancellation tombstones stay outside the checkout, including on local
         // directory teardown, so a delayed launcher cannot start work afterward.
-        const worker = `echo $$ >${q(`${directory}/pid.tmp`)} && mv ${q(`${directory}/pid.tmp`)} ${
+        const worker = `printf '%s\n' "$$" >>${q(`${directory}/launches`)} || exit 125
+if mkdir ${q(`${directory}/worker`)} 2>/dev/null; then :; elif test -d ${
+          q(`${directory}/worker`)
+        }; then exit 0; else exit 125; fi
+exec >${q(`${directory}/out`)} 2>${q(`${directory}/err`)} || exit 125
+echo $$ >${q(`${directory}/pid.tmp`)} && mv ${q(`${directory}/pid.tmp`)} ${
           q(`${directory}/pid`)
         } || exit 125\nif test -e ${
           q(`${directory}/cancelled`)
@@ -165,8 +173,8 @@ export const job = <Payload = unknown>(provider: Provider, options: JobOptions<P
           q(`${options.capture?.base ?? "HEAD"}^{commit}`)
         } >${q(`${directory}/base`)} || exit 125\n${writes}\nif test ! -e ${
           q(`${directory}/cancelled`)
-        }; then\nsetsid /bin/sh -c ${q(worker)} </dev/null >${q(`${directory}/out`)} 2>${
-          q(`${directory}/err`)
+        }; then\nsetsid /bin/sh -c ${q(worker)} </dev/null >/dev/null 2>>${
+          q(`${directory}/launch.err`)
         } &\ni=0; while test ! -f ${
           q(`${directory}/pid`)
         }; do i=$((i+1)); test "$i" -lt 200 || exit 125; sleep 0.01; done\nfi\nelse\ntest -d ${

@@ -37,6 +37,10 @@ location. An overlap with the captured checkout is refused.
 An atomic directory creation fences the launch by the durable job key.
 A duplicate start returns the same handle. The worker records its process-group
 identity before running the command and atomically publishes its exit status.
+The detached worker also claims a `worker` directory before opening output files,
+so redelivery cannot overwrite output or race on the PID publication. Its
+`launches` file contains one PID per launch attempt, with no command or payload.
+Startup stderr appends to `launch.err`, separately from the command's `err`.
 Status returns `Running`, `Exited`, or `Lost`. A failed transport stays a typed
 provider failure; it is not evidence that the worker is gone.
 

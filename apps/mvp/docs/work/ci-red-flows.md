@@ -2,10 +2,40 @@
 title: Restore flow engine and host CI targets
 status: done
 area: sdk
-owner: codex-ci-flows
-updated: 2026-10-29
-links: []
+owner: codex-ci-flows2
+updated: 2026-10-30
+links:
+  - https://github.com/smithersai/smithers/actions/runs/41088937554
 ---
+
+Follow-up: inspect W25 GitHub run 41088937554 read-only and reproduce the
+Cloudflare, engine, sandbox Bun and sync failures under hosted-runner assumptions.
+Keep the prior Latitude receipts below distinct from this hosted verification.
+
+The follow-up's four test targets and all four package checks pass. The sandbox
+Node suite also passes at its coverage threshold. Fresh Docker daemons began
+with zero images and containers, using Node 26.5.0 and Bun 1.4.1. The sandbox
+suites run as the ordinary runner user; namespace root bypasses their real
+permission-denial tests and is not valid evidence for them.
+
+Cloudflare's hosted failure was the elapsed-time ratio, while its container
+cases passed. The replacement holds eight real PostgreSQL writer locks at a
+barrier and retains each alarm's fourteen-transaction, 38-event and zero-wide-lock
+bounds. Engine's private annotation guard no longer rebuilds the SDK type graph
+inside a coverage worker; the package check still compiles it. Sync retains the
+hosted `<0>` seed counterexample and chooses insertion markers absent from the
+seed.
+
+The sandbox's duplicate detached-launch regression reproduces the hosted
+`pid.tmp` corruption with real processes. A worker-side claim now precedes PID
+publication and output opening; PID-only launch receipts and separate startup
+stderr expose redelivery. The original hosted duplicating caller is not
+identifiable from the old records. These local receipts do not claim that a new
+hosted run passed. The final read-only Sol review found no issues. Forcing the
+writer locks to serialize makes the barrier fail at its existing 30-second
+deadline; the original ratio still passes locally, despite failing twice hosted.
+
+Earlier W25 validation:
 
 Reproduce the assigned engine and host targets using the CI target runner on
 Latitude; fix each root cause with a failing regression. Browser durability is

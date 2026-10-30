@@ -22,7 +22,7 @@ import * as CommandLine from "@smthrs/kernel/CommandLine"
 import { Fiber, FileSystem, Layer, Stream } from "effect"
 import * as KeyValueStore from "effect/persistence/KeyValueStore"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, watch, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll } from "vitest"
@@ -34,7 +34,7 @@ const roots: string[] = []
 afterAll(() => {
   for (const root of roots) rmSync(root, { recursive: true, force: true })
 })
-const fixture = () =>
+const fixture = (replayLaunch = false) =>
   Effect.gen(function*() {
     const root = mkdtempSync(join(tmpdir(), "sandbox-job-test-"))
     roots.push(root)
@@ -55,7 +55,28 @@ const fixture = () =>
     // macOS has no util-linux setsid. This executable performs the actual POSIX
     // syscall and execs the exact argv, rather than simulating process liveness.
     const launcher = join(root, "setsid")
-    writeFileSync(launcher, "#!/usr/bin/env python3\nimport os,sys\nos.setsid()\nos.execvp(sys.argv[1],sys.argv[1:])\n")
+    const replayed = join(root, "replayed")
+    // A faulty transport can redeliver a detached launch after admission.
+    // Both children are real sessions; wait for both before reading output.
+    writeFileSync(
+      launcher,
+      replayLaunch
+        ? `#!/usr/bin/env python3
+import os,sys
+os.setsid()
+children=[]
+for _ in range(2):
+    child=os.fork()
+    if child == 0:
+        os.setsid()
+        os.execvp(sys.argv[1],sys.argv[1:])
+    children.append(child)
+for child in children:
+    os.waitpid(child, 0)
+open(${JSON.stringify(replayed)}, "w").write("done")
+`
+        : "#!/usr/bin/env python3\nimport os,sys\nos.setsid()\nos.execvp(sys.argv[1],sys.argv[1:])\n"
+    )
     chmodSync(launcher, 0o755)
     const command =
       `printf worker >>starts; printf changed > new.txt; printf stdout; printf stderr >&2; sleep 0.2; exit 7`
@@ -76,7 +97,7 @@ const fixture = () =>
           }))
         )
     }
-    return { root, provider: wrapped, key, options, checkout }
+    return { root, provider: wrapped, key, options, checkout, replayed }
   })
 const withPlatform = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.provide(platform), Effect.provide(KeyValueStore.layerMemory))
@@ -95,6 +116,34 @@ const exited = (job: ReturnType<typeof Sandbox.job>, handle: Sandbox.JobHandle, 
   })
 
 describe("retained directory process conformance", () => {
+  it.live("a redelivered detached launch runs once and preserves its output", () =>
+    withPlatform(Effect.gen(function*() {
+      const f = yield* fixture(true)
+      const job = Sandbox.job(f.provider, f.options)
+      const handle = yield* job.start(undefined, f.key)
+      yield* Effect.callback<void>((resume) => {
+        const ready = () => {
+          if (existsSync(f.replayed)) resume(Effect.void)
+        }
+        const watcher = watch(f.root, ready)
+        watcher.once("error", (error) => resume(Effect.die(error)))
+        ready()
+        return Effect.sync(() => watcher.close())
+      })
+      const end = yield* exited(job, handle, f.key)
+      expect(readFileSync(join(f.checkout, "starts"), "utf8")).toBe("worker")
+      const launches = readFileSync(join(handle.directory, "launches"), "utf8").trim().split("\n")
+      expect(launches).toHaveLength(2)
+      expect(new Set(launches).size).toBe(2)
+      for (const pid of launches) expect(pid).toMatch(/^\d+$/)
+      expect(readFileSync(join(handle.directory, "launch.err"), "utf8")).toBe("")
+      expect(yield* job.collect(handle, f.key, end)).toMatchObject({
+        stdout: "stdout",
+        stderr: "stderr",
+        exitCode: 7,
+        work: { _tag: "Changed" }
+      })
+    })))
   it.live("concurrent starts launch once, survive their scopes, and replay collected work after destruction", () =>
     withPlatform(Effect.gen(function*() {
       const f = yield* fixture()
