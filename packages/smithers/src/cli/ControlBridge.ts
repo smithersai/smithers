@@ -117,12 +117,14 @@ const hostConnection = (options: ConnectionOptions): ConnectionOptions => {
   return options
 }
 
+// makeConfig always resolves both roots, from --root or the working directory
+// (Project.root and Project.legacyRoot); its public type keeps them optional.
 const resolved = (options: ConnectionOptions, runtime: Runtime) =>
   NodeControl.makeConfig(
     connectionArguments(hostConnection(options)),
     runtime.environment ?? process.env,
     process.cwd()
-  )
+  ) as ReturnType<typeof NodeControl.makeConfig> & { readonly root: string; readonly migrationRoot: string }
 
 /**
  * Resolves transport and execution roots for an adapted command.
@@ -131,7 +133,7 @@ const resolved = (options: ConnectionOptions, runtime: Runtime) =>
  */
 export const configuration = (options: ConnectionOptions, runtime: Runtime) => {
   const config = resolved(options, runtime)
-  if (config.remote === undefined) Project.assertRoot(config.root ?? process.cwd())
+  if (config.remote === undefined) Project.assertRoot(config.root)
   return {
     ...config,
     ...(runtime.evaluator === undefined ? {} : { evaluator: runtime.evaluator }),
@@ -159,7 +161,7 @@ export const isRemote = (options: ConnectionOptions, runtime: Runtime): boolean 
 export const hasRecords = (options: ConnectionOptions, runtime: Runtime): boolean => {
   const config = configuration(options, runtime)
   return config.remote !== undefined ||
-    DatabaseLocation.exists(NodeControl.databasePath(config.root ?? process.cwd()))
+    DatabaseLocation.exists(NodeControl.databasePath(config.root))
 }
 
 /** The display policy one invocation renders progress and prompts under. */
@@ -402,12 +404,12 @@ export const project = async <A, E>(
   runtime: Runtime = {}
 ): Promise<A> => {
   const config = configuration(options, runtime)
-  const root = config.root ?? process.cwd()
+  const root = config.root
   return settle(
     provideServices(
       operation.pipe(
         Effect.provide([
-          Project.layer(root, config.migrationRoot ?? Project.legacyRoot(undefined, root)),
+          Project.layer(root, config.migrationRoot),
           NodeServices.layer
         ])
       ),
@@ -431,7 +433,7 @@ export const local = <A, E>(
   runtime: Runtime = {}
 ): Promise<A> =>
   project(
-    operation.pipe(Effect.provide(NodeControl.layerRegistry(configuration(options, runtime).root ?? process.cwd()))),
+    operation.pipe(Effect.provide(NodeControl.layerRegistry(configuration(options, runtime).root))),
     options,
     runtime
   )

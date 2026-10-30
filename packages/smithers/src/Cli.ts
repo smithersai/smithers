@@ -69,11 +69,6 @@ const evaluator = (environment: Record<string, string | undefined>): Layer.Layer
     Layer.provide(NodeControl.layerRebuildableRequestExecutor(NodeControl.environmentDispatcher(environment)))
   )
 
-/** The shared guard's inputs, read from the typed connection options. */
-const globalsOf = (connection: Bridge.ConnectionOptions, config: Bridge.Runtime): Globals.Options => ({
-  environment: config.environment ?? process.env
-})
-
 /**
  * Construct the public command tree without opening stores or evaluating declarations.
  * @category constructors
@@ -83,6 +78,10 @@ export const makeCli = (
   config: Bridge.Runtime = {},
   documentation: { humanHelp?: boolean } = {}
 ): ReturnType<typeof makeBuildCli> => {
+  // The host's environment, or the process's when the host supplies none.
+  const environment = config.environment ?? process.env
+  /** The shared guard's inputs. */
+  const globalsOf = (): Globals.Options => ({ environment })
   const mcpGlobals = z.object({
     audience: z.enum(["auto", "human", "agent"]).default("auto"),
     silent: z.boolean().default(false),
@@ -111,7 +110,6 @@ export const makeCli = (
               message: `Unknown agent ${requested}. Known agents: ${Agents.agents.map((agent) => agent.id).join(", ")}`
             })
           }
-          const environment = config.environment ?? process.env
           const wired = targets.map((agent) => Agents.addMcp(agent, environment["HOME"], environment))
           if (wired.every((entry) => entry.status === "failed")) {
             const stderr = config.stderr ?? process.stderr
@@ -164,7 +162,7 @@ export const makeCli = (
         Presentation.guard(c, () => {
           if (c.options.global) throw Unsupported.flagError(Unsupported.findFlag("init", "global"))
           const root = resolve(c.options.root ?? process.cwd())
-          return initialize(root, c.args.name ?? Init.defaultName(root), config.environment ?? process.env)
+          return initialize(root, c.args.name ?? Init.defaultName(root), environment)
         }, { next: Generate.scaffolded })
     })
     .command("doctor", {
@@ -173,7 +171,7 @@ export const makeCli = (
       options,
       run: (c) =>
         Presentation.guard(c, async () => {
-          const globals = globalsOf(c.options, config)
+          const globals = globalsOf()
           // Local diagnostics read the discovery snapshot without opening
           // execution databases; a remote host answers with its own catalog.
           const report = !Bridge.isRemote(c.options, config)
@@ -206,7 +204,7 @@ export const makeCli = (
                 port: c.options.port,
                 listen: c.options.listen,
                 operatorTokenFile: c.options.operatorTokenFile,
-                credential: (config.environment ?? process.env)["SMITHERS_TOKEN"]
+                credential: environment["SMITHERS_TOKEN"]
               },
               c.options,
               config
@@ -222,7 +220,7 @@ export const makeCli = (
         Presentation.guard(c, async () => {
           localRoot(c.options)
           const swept = await Bridge.local(
-            GcCmd.sweep({ olderThan: c.options.olderThan, dryRun: c.options.dryRun }, globalsOf(c.options, config)),
+            GcCmd.sweep({ olderThan: c.options.olderThan, dryRun: c.options.dryRun }, globalsOf()),
             c.options,
             config
           )
@@ -243,7 +241,7 @@ export const makeCli = (
             throw new CliError.UsageError({ message: `The path must be a directory: ${root}` })
           }
           const documents: Array<unknown> = []
-          const presentation = Presentation.current()?.policy ?? Presentation.policy(c, config)
+          const presentation = Presentation.current()!.policy
           const json = presentation.structured
           const outcome = await Bridge.run(
             Suggest.run({
@@ -251,7 +249,7 @@ export const makeCli = (
               seat: c.options.seat,
               list: c.options.list,
               json,
-              environment: config.environment ?? process.env,
+              environment,
               emit: (line) => {
                 documents.push(JSON.parse(line))
               }
@@ -259,7 +257,7 @@ export const makeCli = (
               Effect.provideService(
                 Ui.Ui,
                 Ui.make({
-                  output: Presentation.current()?.stderr ?? process.stderr,
+                  output: Presentation.current()!.stderr,
                   input: process.stdin,
                   interactive: presentation.interactive
                 })
@@ -280,7 +278,7 @@ export const makeCli = (
       run: (c) =>
         Presentation.guard(
           c,
-          () => OpenCmd.open(OpenCmd.processHost(config.environment ?? process.env), c.args.directory)
+          () => OpenCmd.open(OpenCmd.processHost(environment), c.args.directory)
         )
     })
     .command("tui", {
@@ -308,7 +306,7 @@ export const makeCli = (
           config.exit?.(
             await TuiCmd.run(
               { ...c.options, directory: c.args.directory },
-              config.environment ?? process.env,
+              environment,
               undefined,
               undefined,
               config.signal
@@ -361,7 +359,7 @@ export const makeCli = (
                 verifyFormat: c.options.verifyFormat,
                 verifyTypecheck: c.options.verifyTypecheck,
                 verifyTest: c.options.verifyTest
-              }, globalsOf(c.options, config))
+              }, globalsOf())
             }),
             c.options,
             config
@@ -382,8 +380,7 @@ export const makeCli = (
       run: (c) =>
         Presentation.guard(
           c,
-          async () =>
-            Update.render(await Bridge.local(UpdateCmd.check(globalsOf(c.options, config)), c.options, config))
+          async () => Update.render(await Bridge.local(UpdateCmd.check(globalsOf()), c.options, config))
         )
     })
     .command("bug", {
@@ -408,10 +405,10 @@ export const makeCli = (
               // everything a subsequent POST will send.
               preview: (line) =>
                 Effect.sync(() => {
-                  const stderr = Presentation.current()?.stderr ?? process.stderr
+                  const stderr = Presentation.current()!.stderr
                   stderr.write(`${line}\n`)
                 })
-            }, globalsOf(c.options, config)),
+            }, globalsOf()),
             c.options,
             config
           ))
@@ -689,7 +686,7 @@ export const makeCli = (
         parsed.rest.slice(offset + 1),
         DidYouMean.commands(documentation.humanHelp ? humanDiscovery : discovery)
       ).pipe(
-        Effect.provide(evaluator(config.environment ?? process.env))
+        Effect.provide(evaluator(environment))
       ),
       config
     )
