@@ -1,4 +1,5 @@
 /** An approved, self-contained module executes its measured closure in a real CLI host. */
+import { Redaction } from "@smthrs/journal"
 import { execFile, spawn } from "node:child_process"
 import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -11,34 +12,133 @@ import { describe, expect, it } from "vitest"
 const run = promisify(execFile)
 const bin = fileURLToPath(new URL("../src/bin.ts", import.meta.url))
 const preload = fileURLToPath(new URL("./fixtures/scripted-native-host.ts", import.meta.url))
+const exitObserver = fileURLToPath(new URL("./fixtures/cli-exit-observer.ts", import.meta.url))
 const fixture = fileURLToPath(new URL("./fixtures/module-snapshot/flows", import.meta.url))
 const nodeModules = fileURLToPath(new URL("../node_modules", import.meta.url))
 
-type Result = { readonly stdout: string; readonly stderr: string; readonly code: number }
+type Result = {
+  readonly stdout: string
+  readonly stderr: string
+  readonly code: number
+  readonly elapsedMs?: number
+  readonly killed?: boolean | undefined
+  readonly signal?: string | null | undefined
+  readonly exit?: ReadonlyArray<unknown>
+}
 type Command = (args: ReadonlyArray<string>) => Promise<Result>
+const document = (result: Result): { code?: string } => {
+  try {
+    return JSON.parse(result.stdout)
+  } catch (cause) {
+    throw new Error(
+      `CLI response was not JSON: ${
+        JSON.stringify({
+          code: result.code,
+          elapsedMs: result.elapsedMs,
+          killed: result.killed,
+          signal: result.signal,
+          exit: result.exit,
+          stdout: Redaction.redactDiagnostic(result.stdout),
+          stderr: Redaction.redactDiagnostic(result.stderr)
+        })
+      }`,
+      { cause }
+    )
+  }
+}
 const withHost = async (test: (root: string, command: Command) => Promise<void>) => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-cli-module-snapshot-")))
   try {
     await cp(fixture, join(root, ".smithers", "flows"), { recursive: true })
     await mkdir(join(root, ".flows"))
     await symlink(nodeModules, join(root, "node_modules"), "dir")
-    const command: Command = (args) =>
-      run(process.execPath, ["--no-warnings", "--import", preload, bin, ...args], {
+    const command: Command = async (args) => {
+      const exitDirectory = join(root, ".flows", "test-cli-exit")
+      const started = Date.now()
+      const running = run(process.execPath, [
+        "--no-warnings",
+        ...(process.env.SMITHERS_TEST_CLI_EXIT_TRACE === "1" ? ["--trace-exit"] : []),
+        "--import",
+        exitObserver,
+        "--import",
+        preload,
+        bin,
+        ...args
+      ], {
         cwd: root,
         env: {
           ...process.env,
           XDG_CONFIG_HOME: join(root, "config"),
           AI_GATEWAY_API_KEY: "",
           SMITHERS_REMOTE: "",
-          NODE_OPTIONS: ""
+          NODE_OPTIONS: "",
+          SMITHERS_TEST_CLI_EXIT_DIR: exitDirectory,
+          ...(process.env.SMITHERS_TEST_CLI_EXIT_TRACE === "1" ? { VIBELANG_REGISTER_DEBUG: "1" } : {})
         },
         timeout: 120_000,
         maxBuffer: 4 * 1024 * 1024
-      }).then(({ stdout, stderr }) => ({ stdout, stderr, code: 0 })).catch((cause: unknown) => {
-        const failure = cause as { code?: unknown; stdout?: string; stderr?: string }
-        if (typeof failure.code !== "number") throw cause
-        return { stdout: failure.stdout ?? "", stderr: failure.stderr ?? "", code: failure.code }
       })
+      const result = await running.then(({ stdout, stderr }) => ({ stdout, stderr, code: 0 })).catch(
+        (cause: unknown) => {
+          const failure = cause as {
+            code?: unknown
+            stdout?: string
+            stderr?: string
+            killed?: boolean
+            signal?: string | null
+          }
+          if (typeof failure.code !== "number") throw cause
+          return {
+            stdout: failure.stdout ?? "",
+            stderr: failure.stderr ?? "",
+            code: failure.code,
+            killed: failure.killed,
+            signal: failure.signal,
+            elapsedMs: Date.now() - started
+          }
+        }
+      )
+      if (result.code === 0 || result.stdout !== "") {
+        if (process.env.SMITHERS_TEST_CLI_EXIT_TRACE === "1") {
+          const stages = await readFile(join(exitDirectory, `${running.child.pid}.jsonl`), "utf8")
+            .then(
+              (text) =>
+                text.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line)).filter((row) =>
+                  "elapsedMs" in row
+                ),
+              () => []
+            )
+          console.error(
+            "Snapshot CLI command progress",
+            JSON.stringify({ command: args.slice(0, 2), code: result.code, elapsedMs: Date.now() - started, stages })
+          )
+        }
+        return result
+      }
+      const exit = await readFile(join(exitDirectory, `${running.child.pid}.jsonl`), "utf8")
+        .then((text) => text.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line)), () => [])
+      const pending = new Map<string, { stage: string; elapsedMs: number; threadId: number }>()
+      const slow: Array<{ stage: string; durationMs: number; threadId: number }> = []
+      for (const event of exit) {
+        if (typeof event.spanId !== "string") continue
+        if (event.stage.endsWith(".entered")) pending.set(event.spanId, event)
+        else {
+          const began = pending.get(event.spanId)
+          if (began !== undefined && event.elapsedMs - began.elapsedMs >= 10_000) {
+            slow.push({ stage: began.stage, durationMs: event.elapsedMs - began.elapsedMs, threadId: began.threadId })
+          }
+          pending.delete(event.spanId)
+        }
+      }
+      return {
+        ...result,
+        exit: [...exit.filter((event) => event.spanId === undefined), {
+          stage: "span summary",
+          pending: [...pending.values()],
+          slow
+        }]
+      }
+    }
     await test(root, command)
   } finally {
     await rm(root, { recursive: true, force: true })
@@ -416,14 +516,14 @@ export function helper(marker: string) { appendFileSync(marker, "${version}\\n")
         const adoptionArguments = ["runs", "resume", "run-1", "--allow-code-drift", "--json"]
         const adoptionDeadline = Date.now() + 60_000
         let refused = await command(adoptionArguments)
-        while (refused.code === 1 && JSON.parse(refused.stdout).code === "ClaimLost" && Date.now() < adoptionDeadline) {
+        while (refused.code === 1 && document(refused).code === "ClaimLost" && Date.now() < adoptionDeadline) {
           expect(children[1]!.child.exitCode).toBeNull()
           await expect(readFile(join(root, "observed-2"))).rejects.toMatchObject({ code: "ENOENT" })
           await new Promise((resolve) => setTimeout(resolve, 1_000))
           refused = await command(adoptionArguments)
         }
         expect(refused.code, JSON.stringify(refused)).toBe(1)
-        expect(JSON.parse(refused.stdout)).toMatchObject({ code: "CodeDrift" })
+        expect(document(refused)).toMatchObject({ code: "CodeDrift" })
         expect(children[1]!.child.exitCode).toBeNull()
         await expect(readFile(join(root, "observed-2"))).rejects.toMatchObject({ code: "ENOENT" })
         children[1]!.child.kill("SIGKILL")
@@ -431,7 +531,7 @@ export function helper(marker: string) { appendFileSync(marker, "${version}\\n")
         await rm(join(root, "pause"))
         const deadline = Date.now() + 60_000
         let resumed = await command(["runs", "resume", "run-2", "--json"])
-        while (resumed.code === 1 && JSON.parse(resumed.stdout).code === "ClaimLost" && Date.now() < deadline) {
+        while (resumed.code === 1 && document(resumed).code === "ClaimLost" && Date.now() < deadline) {
           await new Promise((resolve) => setTimeout(resolve, 1_000))
           resumed = await command(["runs", "resume", "run-2", "--json"])
         }

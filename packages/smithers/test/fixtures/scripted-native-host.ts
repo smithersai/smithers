@@ -25,3 +25,50 @@ const preload = `--import=${import.meta.url}`
 if (!process.env.NODE_OPTIONS?.includes(preload)) {
   process.env.NODE_OPTIONS = `${process.env.NODE_OPTIONS ?? ""} ${preload}`.trim()
 }
+
+// One process fixture opts in to payload-free lifecycle receipts. Observe the
+// existing startup clock after Effect resolution, without changing its timing.
+if (
+  process.env.SMITHERS_TEST_CLI_EXIT_DIR !== undefined &&
+  !Reflect.get(globalThis, Symbol.for("smithers/test/cli-phase-observer"))
+) {
+  Reflect.set(globalThis, Symbol.for("smithers/test/cli-phase-observer"), true)
+  const [{ Effect, Tracer }, { startUp }, { recordStage }] = await Promise.all([
+    import("effect"),
+    import("../../src/internal/Telemetry.ts"),
+    import("./cli-exit-observer.ts")
+  ])
+  const nativeSpan = Tracer.nativeTracer.span.bind(Tracer.nativeTracer)
+  Object.assign(Tracer.nativeTracer, {
+    span(options: Parameters<typeof nativeSpan>[0]) {
+      const span = nativeSpan(options)
+      // Only fixed SDK operation names; never attributes, arguments or errors.
+      if (
+        /^(SqlControlRuntime|Registry|AgentSession|Control|RunStore|DurableWriter|ExecutionSnapshot)\.[A-Za-z]+$/.test(
+          options.name
+        )
+      ) {
+        recordStage(`${options.name}.entered`, span.spanId)
+        const end = span.end.bind(span)
+        span.end = (time, exit) => {
+          recordStage(`${options.name}.${exit._tag}`, span.spanId)
+          end(time, exit)
+        }
+      }
+      return span
+    }
+  })
+  const mark = startUp.mark
+  const ended = startUp.ended
+  Object.assign(startUp, {
+    mark: (stage: Parameters<typeof mark>[0]) =>
+      mark(stage).pipe(Effect.tap(() => Effect.sync(() => recordStage(stage)))),
+    ended: (...args: Parameters<typeof ended>) =>
+      Effect.gen(function*() {
+        recordStage("close.entered")
+        yield* ended(...args)
+        recordStage("close.finished")
+      })
+  })
+  recordStage("fixture ready")
+}
