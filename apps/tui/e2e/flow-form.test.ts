@@ -55,6 +55,7 @@ for (const [cols, rows, burst] of [[60, 20, false], [40, 12, false], [40, 12, tr
           expect(status(tui.screen())).toBe(true)
           if (index < 12) await tui.press("\t")
         }}
+      await tui.until((screen) => screen.includes("v12") && status(screen), 5_000, "last field drawn")
       // Every field is reachable: shown at once when they fit, else through the counter.
       expect(/12\/12/.test(tui.screen()) || tui.screen().includes("Field1 ")).toBe(true)
       expect(tui.screen()).toContain("v12")

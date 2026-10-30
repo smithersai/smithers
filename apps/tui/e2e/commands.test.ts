@@ -190,7 +190,7 @@ it("enforces the requested token ceiling before the next cell and leaves chat us
     detail: expect.stringContaining("600 of its 1000 approved tokens")
   })
   await tui!.press("still usable")
-  expect(tui!.screen()).toContain("still usable")
+  await tui!.until((screen) => screen.includes("still usable"), 5_000, "chat after token ceiling")
   await tui!.stop()
   await start(project, "-c --budget-tokens 1000")
   const restored = await tui!.until(
