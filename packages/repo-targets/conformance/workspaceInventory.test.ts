@@ -50,13 +50,14 @@ for (const name of ["repo-view", "terminal-frame"]) {
     assert.deepEqual(manifest.exports["."], {
       types: "./src/index.ts", import: "./src/index.ts", default: "./src/index.ts"
     })
-    assert.equal(manifest.scripts.test, "bun test --isolate test")
+    const unitDirectory = name === "terminal-frame" ? "./test" : "test"
+    assert.equal(manifest.scripts.test, `bun test --isolate ${unitDirectory}`)
     const config = readFileSync(join(directory, "bunfig.toml"), "utf8")
     assert.match(config, /^coverage = true$/m)
     assert.match(config, /^coverageThreshold = \{ lines = 1\.0, functions = 1\.0 \}$/m)
     const declaration = readFileSync(join(directory, "PACKAGE.ts"), "utf8")
     assert.match(declaration, /const unitTests = Smithers\.NodeTest\(\{\s*runtime: Smithers\.Runtime\.Bun\(/)
-    assert.match(declaration, /runner: Smithers\.testSuite\(\["test"\], \{ isolate: true \}\)/)
+    assert.ok(declaration.includes(`runner: Smithers.testSuite([${JSON.stringify(unitDirectory)}], { isolate: true })`))
     assert.match(declaration, /targets: \{[\s\S]*?\bunitTests\b/)
   })
 }
