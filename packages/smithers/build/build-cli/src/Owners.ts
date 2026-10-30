@@ -31,6 +31,7 @@ import * as Input from "@smthrs/targets/Input"
 import type * as Owners from "@smthrs/targets/Owners"
 import * as Target from "@smthrs/targets/Target"
 import { minimatch } from "minimatch"
+import * as NodeFs from "node:fs"
 import * as NodePath from "node:path"
 import * as Ansi from "./Ansi.ts"
 import { byCodeUnit } from "./internal/Text.ts"
@@ -96,14 +97,39 @@ export interface Resolution {
 
 const packageLabel = (packagePath: string): string => packagePath === "" ? "//" : `//${packagePath}`
 
+const escapes = (relative: string): boolean =>
+  relative === ".." || relative.startsWith("../") || NodePath.isAbsolute(relative)
+
+const canonical = (path: string): string | undefined => {
+  try {
+    return NodeFs.realpathSync(path)
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The path relative to the ancestor that is the canonical root under another
+ * name, such as a workspace opened as `/tmp/project` that discovery reports as
+ * `/private/tmp/project`. Only ancestors are resolved, so a deleted path still
+ * maps and a symlinked leaf keeps the place it was spelled at.
+ */
+const aliasRelative = (root: string, path: string): string | undefined => {
+  for (let directory = path;; directory = NodePath.dirname(directory)) {
+    if (canonical(directory) === root) return NodePath.relative(directory, path).replaceAll("\\", "/")
+    if (NodePath.dirname(directory) === directory) return undefined
+  }
+}
+
 const normalizePath = (path: string, root: string): string => {
   // Drop empty and `.` segments so every spelling of a path lands on the
   // package that owns it; a path that reached the wrong package would need
   // the wrong approvers.
   const spelling = path.replaceAll("\\", "/")
   const absolute = NodePath.isAbsolute(spelling)
-  const relative = absolute ? NodePath.relative(root, spelling).replaceAll("\\", "/") : spelling
-  const outside = (absolute && (relative === ".." || relative.startsWith("../") || NodePath.isAbsolute(relative))) ||
+  const lexical = absolute ? NodePath.relative(root, spelling).replaceAll("\\", "/") : spelling
+  const relative = absolute && escapes(lexical) ? aliasRelative(root, spelling) ?? lexical : lexical
+  const outside = (absolute && escapes(relative)) ||
     (NodePath.win32.isAbsolute(spelling) && !absolute)
   const segments = relative.split("/").filter((segment) => segment !== "" && segment !== ".")
   if (outside || segments.length === 0 || segments.includes("..")) {

@@ -30,6 +30,26 @@ it("maps an absolute workspace path to its owners and rejects absolute paths out
   }
 })
 
+it("maps absolute paths spelled through a symlinked workspace alias, including deleted files", async () => {
+  const root = await fixture()
+  const aliases = await Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-owners-alias-")))
+  temporaryDirectories.push(aliases)
+  const alias = NodePath.join(aliases, "workspace")
+  await Fs.symlink(root, alias, "dir")
+  expect(
+    await ownersJson(alias, [
+      NodePath.join(alias, "lib/query.sql"),
+      NodePath.join(alias, "lib/deleted.sql"),
+      NodePath.join(alias, "lib/gone/deleted.sql")
+    ])
+  ).toEqual(await ownersJson(root, ["lib/query.sql", "lib/deleted.sql", "lib/gone/deleted.sql"]))
+  for (const path of [alias, NodePath.join(aliases, "outside.sql")]) {
+    const result = await serve(alias, ["owners", path, "--format", "json"])
+    expect(result.exitCode, path).toBe(1)
+    expect(JSON.parse(result.output).message).toContain(path === alias ? "workspace-relative" : "outside the workspace")
+  }
+})
+
 it("refuses empty and parent-relative owners paths through the command", async () => {
   const root = await fixture()
   for (const path of [".", "./", "lib/../query.sql", "../query.sql", root]) {
