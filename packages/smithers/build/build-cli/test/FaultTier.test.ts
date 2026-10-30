@@ -81,6 +81,14 @@ const cliPlan = async (verb: string, pattern: string, ...flags: ReadonlyArray<st
 }
 
 describe("fault tier", () => {
+  it.each(["ci", "test"])("%s keeps a nonrecursive package wildcard on the ordinary tier", async (verb) => {
+    expect((await cliPlan(verb, "//packages/a:*")).roots).toEqual(["//packages/a:unit"])
+    expect((await cliPlan(verb, "//packages/a:*", "--include-exclusive")).roots).toEqual([
+      "//packages/a:chaos",
+      "//packages/a:faults",
+      "//packages/a:unit"
+    ])
+  })
   it.each(["ci", "test"])("%s excludes exclusive targets from both wildcard forms", async (verb) => {
     for (const pattern of ["//...", "//packages/..."]) {
       expect((await cliPlan(verb, pattern)).roots).toEqual(["//packages/a:unit", "//packages/b:unit"])

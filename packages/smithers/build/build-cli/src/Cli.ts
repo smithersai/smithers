@@ -1209,7 +1209,7 @@ const runSelected = async (
   })))
   const bare = (pattern: string) => {
     const parsed = Label.parse(pattern, index.currentPackage ?? "")
-    return parsed._tag === "Subtree" && parsed.target === undefined
+    return Label.isWildcard(parsed)
   }
   for (const kind of verb === "ci" ? ciKinds : [verb]) {
     const selectedPatterns: Array<string> = []
@@ -1497,7 +1497,7 @@ const makeCommands = (config: RuntimeConfig) =>
           // ci), and said so; a pattern that names it keeps it.
           const bare = (pattern: string) => {
             const parsed = Label.parse(pattern, index.currentPackage ?? "")
-            return parsed._tag === "Subtree" && parsed.target === undefined
+            return Label.isWildcard(parsed)
           }
           // A child repository that could not be read has no kinds; one that would
           // run is refused, not passed over, through any alias that wraps it.

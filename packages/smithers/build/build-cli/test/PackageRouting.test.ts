@@ -247,6 +247,15 @@ describe("force-spec routing", () => {
     await expect(async () => index.resolve("//data")).rejects.toThrow(/no_default_target/)
   })
 
+  it("selects every public target in one package without selecting descendants or requiring a default", async () => {
+    const index = await openIndex(forceSpec)
+    const selected = index.resolve("//src:*")
+    expect(selected.length).toBeGreaterThan(1)
+    expect(selected).toEqual(index.resolve("//src/...").filter((row) => row.packagePath === "src"))
+    expect(index.resolve("//data:*")).toEqual(index.resolve("//data/...").filter((row) => row.packagePath === "data"))
+    expect(await errorCode(async () => index.resolve("//absent:*"))).toBe("unknown_label")
+  })
+
   it("binds git hooks to the indexed root targets", async () => {
     const discovery = await PackageDiscovery.discover(forceSpec)
     const loaded = await PackageLoader.load(discovery)

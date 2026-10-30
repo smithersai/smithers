@@ -91,6 +91,9 @@ policy in `.smithers/factory.json`.
 Exclusive targets run alone after ready ordinary work drains, regardless of
 `--jobs`. Dependencies keep their ordering. Explicit labels, including
 `//packages/...:faults`, select exclusive targets without an opt-in flag.
+The nonrecursive `//package:*` wildcard selects that package's public targets
+with the same manual, exclusive and host policy as `//package/...`. It does
+not select child packages; `//package` still names its declared `default`.
 Wildcards also omit targets whose `hosts` excludes the host; naming one
 there refuses the plan.
 `--plan` applies the same selection rules and skips target bodies. It still

@@ -83,6 +83,10 @@ describe("manual targets", () => {
   it("are selected by label", async () => {
     expect(await roots("//packages/a:securityAudit")).toEqual(["//packages/a:securityAudit"])
   })
+
+  it("are omitted by a nonrecursive package wildcard", async () => {
+    expect(await roots("//packages/a:*")).toEqual(["//packages/a:security"])
+  })
 })
 
 describe("manual Shell.Run selection", () => {
@@ -93,5 +97,8 @@ describe("manual Shell.Run selection", () => {
   })
   it("selects a manual run by its explicit label", async () => {
     expect(await runRoots("//packages/a:manualRun")).toEqual(["//packages/a:manualRun"])
+  })
+  it("omits manual runs from a nonrecursive package wildcard", async () => {
+    expect(await runRoots("//packages/a:*")).toEqual(["//packages/a:ordinaryRun"])
   })
 })

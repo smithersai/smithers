@@ -7,6 +7,15 @@ import * as NodePath from "node:path"
 import { describe, expect, it } from "vitest"
 import * as Label from "../src/Label.ts"
 
+describe("nonrecursive package wildcards", () => {
+  it.each(["//pkg:*", "//:*", "//pkg/...", "//..."])("recognizes %s as an automatic selection", (pattern) => {
+    expect(Label.isWildcard(Label.parse(pattern, ""))).toBe(true)
+  })
+  it.each(["//pkg", "//pkg:test", "//pkg/...:test", "//...:test"])("keeps %s an explicit selection", (pattern) => {
+    expect(Label.isWildcard(Label.parse(pattern, ""))).toBe(false)
+  })
+})
+
 describe("Label.parse", () => {
   it("resolves a :name label against the normalized current package", () => {
     expect(Label.parse(":lint", "apps/web")).toEqual({ _tag: "Exact", packagePath: "apps/web", target: "lint" })

@@ -35,6 +35,61 @@ export const Workspace = S.Workspace("fixture", {
 
 const elsewhere = process.platform === "win32" ? "linux" : "win32"
 
+it.each(
+  ["test", "ci", "run"].flatMap((verb) =>
+    ["list", "run"].flatMap((mode) =>
+      (verb === "run" ? [false] : [false, true]).map((includeExclusive) => ({
+        verb,
+        mode,
+        includeExclusive
+      }))
+    )
+  )
+)(
+  "affected $verb $mode applies package wildcard policy (exclusive=$includeExclusive)",
+  async ({ verb, mode, includeExclusive }) => {
+    const rule = verb === "run" ? "Run" : "Test"
+    const root = await workspace(`export const Package = S.Package({ targets: {
+  ordinary: S.Shell.${rule}({ shell: "true", sandbox: "none", data: [S.file("src/a.txt")] }),
+  manual: S.Shell.Run({ shell: "true", sandbox: "none", manual: true, data: [S.file("src/a.txt")] }),
+  exclusive: S.Shell.Test({ shell: "true", sandbox: "none", exclusive: true, data: [S.file("src/a.txt")] }),
+  there: S.Shell.${rule}({ shell: "true", sandbox: "none", hosts: [${
+      JSON.stringify(elsewhere)
+    }], data: [S.file("src/a.txt")] })
+} })`)
+    try {
+      const exclusive = includeExclusive && verb !== "run"
+      await write(root, "src/a.txt", "changed\n")
+      const result = await serve(root, [
+        "affected",
+        verb,
+        "//:*",
+        "--files",
+        "src/a.txt",
+        "--json",
+        ...(includeExclusive ? ["--include-exclusive"] : []),
+        ...(mode === "list" ? ["--list"] : ["--no-cache", "--jobs", "1"])
+      ])
+      expect(result.exitCode, result.output + result.logs).toBe(0)
+      if (mode === "list") {
+        const listed = JSON.parse(result.output)
+        expect(listed.targets.map((target: { label: string }) => target.label).sort())
+          .toEqual(exclusive ? ["//:exclusive", "//:ordinary"] : ["//:ordinary"])
+        expect(listed.omitted.sort()).toEqual(
+          verb === "run" ? ["//:manual", "//:there"] : exclusive ? ["//:there"] : ["//:exclusive", "//:there"]
+        )
+      } else {
+        expect(result.logs).toContain("//:ordinary  ran")
+        expect(result.output + result.logs).not.toContain("Affected gates were never planned")
+        expect(result.logs.includes("//:exclusive  ran")).toBe(exclusive)
+        for (const label of ["manual", "there"]) expect(result.logs).not.toContain(`//:${label}  ran`)
+      }
+    } finally {
+      await Fs.rm(root, { recursive: true, force: true })
+    }
+  }
+)
+
 it("affected list explains an unrelated catalog test's incomplete input contract", async () => {
   const root = await workspace("export const Package = S.Package({ targets: {} })")
   try {

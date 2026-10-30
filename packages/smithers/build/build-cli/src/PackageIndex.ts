@@ -466,6 +466,12 @@ export class PackageIndex {
       }
       return named
     }
+    if (pattern.target === "*") {
+      if (!this.packagePaths.has(pattern.packagePath)) {
+        throw new PackageError("unknown_label", `no package at //${pattern.packagePath}`, { label: patternText })
+      }
+      return this.rows.filter((row) => row.packagePath === pattern.packagePath)
+    }
     if (pattern.target === undefined) {
       if (!this.packagePaths.has(pattern.packagePath)) {
         throw new PackageError("unknown_label", `no package at //${pattern.packagePath}`, { label: patternText })

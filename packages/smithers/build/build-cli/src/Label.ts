@@ -34,6 +34,16 @@ export type Pattern =
     readonly target: string | undefined
   }
 
+/**
+ * A whole subtree or the nonrecursive `//package:*` selection. A bare
+ * `//package` still names its default target.
+ *
+ * @category predicates
+ * @since 1.0.0
+ */
+export const isWildcard = (pattern: Pattern): boolean =>
+  pattern._tag === "Subtree" ? pattern.target === undefined : pattern.target === "*"
+
 const normalizePackage = (value: string): string => {
   const normalized = value.replaceAll("\\", "/").replace(/^\/+|\/+$/g, "")
   if (normalized === "" || normalized === ".") return ""

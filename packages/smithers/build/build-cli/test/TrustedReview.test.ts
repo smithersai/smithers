@@ -427,6 +427,29 @@ describe("TrustedReview Git boundary", () => {
     expect(trusted).not.toBe(approved)
   })
 
+  it("selects nonrecursive package wildcards without adding child policies or manual audits", async () => {
+    const { root } = await fixture()
+    await write(
+      root,
+      ".smithers/target-index.json",
+      JSON.stringify([
+        row("//:security", policy("root policy")),
+        row("//pkg:security", policy("package policy")),
+        row("//pkg/child:security", policy("child policy")),
+        row("//pkg:securityAudit", policy("manual policy", true))
+      ])
+    )
+    git(root, "add", ".smithers/target-index.json")
+    git(root, "commit", "-qm", "approve package policies")
+    const approved = git(root, "rev-parse", "HEAD")
+    const selected = await prepare({ ...options(root, approved), patterns: ["//pkg:*"] })
+    expect(selected.policies.map(({ label }) => label)).toEqual(["//pkg:security"])
+    const named = await prepare({ ...options(root, approved), patterns: ["//pkg:*", "//pkg:securityAudit"] })
+    expect(named.policies.map(({ label }) => label)).toEqual(["//pkg:security", "//pkg:securityAudit"])
+    await expect(prepare({ ...options(root, approved), patterns: ["//pkg/...:*"] }))
+      .rejects.toThrow("No trusted review policies match the requested labels")
+  })
+
   it("serves review --plan from the CLI without executing candidate declarations", async () => {
     const { root, trusted } = await fixture()
     const marker = NodePath.join(root, "cli-candidate-executed")

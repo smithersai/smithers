@@ -58,6 +58,10 @@ const plan = (pattern: string, platform: NodeJS.Platform): Promise<PackageExec.P
   PackageExec.plan({ index, cacheDirectory: ".flows", verb: "test", patterns: [pattern], plan: true, platform })
 
 describe("declared platforms", () => {
+  it("applies host filtering to nonrecursive package wildcards", async () => {
+    expect((await plan("//packages/a:*", "linux")).roots).toContain("//packages/a:linuxOnly")
+    expect((await plan("//packages/a:*", "darwin")).roots).toEqual(["//packages/a:unit"])
+  })
   it("records the constraint in the index, not the host's answer", async () => {
     const listing = await TargetIndex.build(index, "//...", {})
     expect(listing.targets.find((row) => row.label === "//packages/a:linuxOnly")?.hosts).toEqual(["linux"])

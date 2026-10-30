@@ -282,7 +282,7 @@ export const prepareSource = async (source: ReviewSource, options: Selection) =>
         row.package === pattern.packagePath :
         pattern.packagePath === "" || row.package === pattern.packagePath ||
         row.package.startsWith(`${pattern.packagePath}/`)) &&
-      (pattern.target === undefined || row.name === pattern.target)
+      (pattern.target === undefined || Label.isWildcard(pattern) || row.name === pattern.target)
     )
   const named = (row: TargetIndex.Row, attrs: LlmLint.Attrs) =>
     !attrs.manual || patterns.some((pattern) => pattern.target === row.name)

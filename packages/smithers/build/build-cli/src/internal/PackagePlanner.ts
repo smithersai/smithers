@@ -3628,7 +3628,7 @@ const planWithServices = async (options: RunOptions, services: PlanningServices)
   const platform = options.platform ?? process.platform
   for (const pattern of options.patterns) {
     const parsedPattern = Label.parse(pattern, index.currentPackage ?? "")
-    const wildcard = parsedPattern._tag === "Subtree" && parsedPattern.target === undefined
+    const wildcard = Label.isWildcard(parsedPattern)
     const omitExclusive = (verb === "test" || options.unattended === true) && wildcard &&
       options.includeExclusive !== true
     // A wildcard omits exclusive, other-host and manual targets; a pattern that
@@ -3662,8 +3662,8 @@ const planWithServices = async (options: RunOptions, services: PlanningServices)
       : eligible
     // A named pattern — `//pkg:name` or `//pkg/...:name` — resolved to at least
     // one row, so an empty selection means those rows do not participate in the
-    // verb. A bare subtree is the only pattern allowed to select nothing.
-    const namedPattern = parsedPattern._tag === "Exact" || parsedPattern.target !== undefined
+    // verb. A bare wildcard may legitimately select nothing.
+    const namedPattern = !wildcard
     if (verb !== "auto" && namedPattern && selected.length === 0 && lifecycleRows.length > 0) {
       throw new Planner.UnsupportedVerbError(pattern, verb)
     }
