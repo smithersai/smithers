@@ -87,6 +87,8 @@ cache stores, and the artifact tier over one file.
   dead owner's runs are reclaimed under a liveness check you choose.
 - **Waits that outlive the process.** A parked run holds a durable deferred or
   clock row, so a timer set by a process that has since died still fires.
+  A timer computes its remaining wait when its fiber starts, against that
+  persisted deadline; time spent queued never restarts its duration.
 - **Declared file boundaries.** The engine measures the tree a step actually
   touched against what it declared, refuses a step that wrote outside it, and
   admits only whole-tree evidence into the cache other runs read.

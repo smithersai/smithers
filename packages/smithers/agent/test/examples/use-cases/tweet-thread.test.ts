@@ -11,7 +11,7 @@ import * as TestClock from "effect/testing/TestClock"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { vi } from "vitest"
+import { onTestFailed, vi } from "vitest"
 import * as Kit from "../../../examples/use-cases/kit.ts"
 import {
   delayMillis,
@@ -36,21 +36,42 @@ afterEach(() => {
 const noAgents: Kit.Script = () => undefined
 
 /** Observe the real durable waits, then advance the virtual clock once per deadline. */
-const advanceTimers = (executionId: string, record: () => void) =>
-  Layer.effectDiscard(Effect.forkScoped(Effect.gen(function*() {
+const advanceTimers = (executionId: string, record: () => void) => {
+  const started = Date.now()
+  const progress = {
+    executionId,
+    polls: 0,
+    advances: 0,
+    wakeAt: null as number | null,
+    clock: 0,
+    adjusting: false,
+    waiting: "none"
+  }
+  onTestFailed(() =>
+    console.error("Tweet timer progress", JSON.stringify({ ...progress, elapsedMs: Date.now() - started }))
+  )
+  return Layer.effectDiscard(Effect.forkScoped(Effect.gen(function*() {
     const state = yield* DurableEngineState.DurableEngineState
     const runtime = yield* FlowRuntime.FlowRuntime
+    const virtual = yield* Clock.Clock
     let lastWakeAt: number | null | undefined
     let advances = 0
     yield* Effect.gen(function*() {
       while (true) {
         const row = yield* state.waiting(executionId)
+        progress.polls++
+        progress.waiting = Option.isSome(row) ? row.value.reason : "none"
+        progress.wakeAt = Option.isSome(row) ? row.value.wakeAt ?? null : null
+        progress.clock = virtual.currentTimeMillisUnsafe()
         if (Option.isSome(row) && row.value.reason === "timer" && row.value.wakeAt !== lastWakeAt) {
           lastWakeAt = row.value.wakeAt
           advances++
           record()
+          progress.advances = advances
           const now = yield* Clock.currentTimeMillis
+          progress.adjusting = true
           yield* TestClock.adjust((row.value.wakeAt ?? now) - now)
+          progress.adjusting = false
         }
         yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 1)))
       }
@@ -67,6 +88,7 @@ const advanceTimers = (executionId: string, record: () => void) =>
       })
     })))
   })))
+}
 
 /**
  * A timer that records each wait instead of sleeping, and an X stand-in that

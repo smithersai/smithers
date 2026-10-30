@@ -310,19 +310,21 @@ export const make = (
         )
 
     const armTimer = (row: DurableEngineState.ClockRow): Effect.Effect<void> =>
-      Clock.currentTimeMillis.pipe(Effect.map(Math.floor)).pipe(
-        Effect.flatMap((nowMs) =>
-          fireClock(row).pipe(
-            // A failed fire (journal emit/flush defect included) must not kill
-            // the one-shot timer fiber: expose the full cause and redispatch
-            // with backoff until the fire is durably acked.
-            Effect.sandbox,
-            Effect.retry(fireRetryPolicy),
-            Effect.orDie,
-            Effect.delay(Duration.millis(Math.max(0, row.dueAtMs - nowMs))),
-            FiberMap.run(timers, clockKey(row), { onlyIfMissing: true })
-          )
-        ),
+      Effect.gen(function*() {
+        // A timer may start after its registering fiber has yielded. Resolve
+        // the remaining delay in that timer, against the persisted deadline.
+        const nowMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
+        yield* fireClock(row).pipe(
+          // A failed fire (journal emit/flush defect included) must not kill
+          // the one-shot timer fiber: expose the full cause and redispatch
+          // with backoff until the fire is durably acked.
+          Effect.sandbox,
+          Effect.retry(fireRetryPolicy),
+          Effect.orDie,
+          Effect.delay(Duration.millis(Math.max(0, row.dueAtMs - nowMs)))
+        )
+      }).pipe(
+        FiberMap.run(timers, clockKey(row), { onlyIfMissing: true }),
         Effect.asVoid
       )
 

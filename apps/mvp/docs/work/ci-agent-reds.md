@@ -13,7 +13,7 @@ Fix each root cause with regression evidence; retain the existing coverage and
 timeout gates. Deliver separate commits by root cause for the CI repair batch.
 
 Libraries: the CLI, agent, model-host, control, gateway, and effect-electric
-entries in `docs/libraries.md`, plus flow, harness, journal, run-store and engine-store;
+entries in `docs/libraries.md`, plus flow, harness, database, journal, run-store and engine-store;
 existing services remain their public seams.
 
 The shared test setup preserves the CLI target's explicit Node compile-cache
@@ -61,7 +61,12 @@ SQLite timer driven during a held probe finalizer rejects the old implementation
 with that exact warning; all nine health cases pass with the correction, including
 bounded admission and reopening the same discovery lineage. The nineteen
 environment and peer-recovery cases, the real canonical-refusal warning case
-and the CLI typecheck also pass. The full CLI coverage gate remains pending.
+and the CLI typecheck also pass. The next full CLI run reached its unchanged deadline with the binary suite
+still launching processes. Those launchers bypassed the verified child cache
+handoff, inheriting Vitest's disabled worker caches. Their real Node adapter
+now applies that handoff to ordinary and deliberately narrow environments;
+the V8 worker regression uses the same adapter, checks environment isolation,
+and retains precise measured-source coverage. Full CLI validation is pending.
 Native recovery probes wait for actual admission refusals before asserting a
 park, retaining the explicit-consent and exactly-once execution checks.
 
@@ -115,3 +120,13 @@ acquisition orders and standalone materialization pass with the existing fix.
 Payload refusals retain both real CLI entrypoints. Their durable checks read
 plans and executions directly and reject an action output, avoiding another
 host startup. Bounded process and startup-stage receipts survive fixture cleanup.
+
+The fresh agent gate completed 165 files with one signed-thread timeout.
+Failure receipts now retain timer polling, virtual time, the persisted wake
+and the clock-advance stage. Four loaded repeats did not reproduce it.
+A real SQLite counterexample forces the caller to advance after reading the
+clock: the old armer sleeps until 6000 ms against a persisted 3000 ms deadline.
+The timer now samples time in its own fiber. Its committed completion is at
+3000 ms, the focused clock suites pass, and all twenty loaded example cases
+pass. Full SDK and agent gates remain pending; the original loaded example
+repeats did not reproduce the timeout.
