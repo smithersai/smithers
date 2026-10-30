@@ -639,7 +639,8 @@ const ci = Smithers.GithubCiGen({
           artifact: "apps-e2e-artifacts",
           sources: [
             { from: "/tmp/smithers-*.png" },
-            { from: "apps/reports", as: "reports" }
+            { from: "apps/reports", as: "reports" },
+            { from: "apps/tui/test-results", as: "tui" }
           ]
         })
       }),

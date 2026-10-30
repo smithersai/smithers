@@ -1,8 +1,8 @@
 import assert from "node:assert/strict"
-import { spawn } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
 import { once } from "node:events"
 import { createPlanner, requestPlan } from "./ci-planner.mjs"
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { basename, dirname, join } from "node:path"
 import { test } from "node:test"
@@ -44,6 +44,43 @@ test("jobs selecting UI browser probes install the packages' pinned Chromium", (
   const version = (cwd) => JSON.parse(readFileSync(join(root, cwd, "package.json"), "utf8")).devDependencies.playwright
   assert.equal(version("packages/smithers/ui"), version("packages/smithers/ui/terminal-frame"))
   assert.match(jobs["apps-e2e"].steps.find((step) => step.name === "Install system packages").run, /'tmux'/)
+})
+
+test("CI collects packaged terminal failure artifacts even when a test fails", () => {
+  const steps = workflowJobs(".github/workflows/ci.yml")["apps-e2e"].steps
+  const collect = steps.find((step) => step.name === "Collect apps-e2e-artifacts")
+  const upload = steps.find((step) => step.name === "Upload apps-e2e-artifacts")
+  assert.equal(collect?.if, "always()")
+  assert.equal(upload?.if, "always()")
+  assert.equal(upload.with.path, "${{ runner.temp }}/apps-e2e-artifacts")
+  const lines = collect.run.split("\n")
+  const copy = lines.find((line) => line.includes("'apps/tui/test-results'"))
+  assert.ok(copy, "collect the packaged runtime's failure directory")
+  const directory = mkdtempSync(join(tmpdir(), "ci-tui-artifacts-"))
+  const destination = join(directory, "collected")
+  const files = new Map([
+    ["terminal.log", Buffer.from("retained PTY diagnostic")],
+    ["timings.json", Buffer.from('{"drawn":17}')],
+    ["project/.flows/engine.db", Buffer.from([0, 1, 2, 255])]
+  ])
+  try {
+    for (const [file, content] of files) {
+      const source = join(directory, "apps/tui/test-results/packaged-node", file)
+      mkdirSync(dirname(source), { recursive: true })
+      writeFileSync(source, content)
+    }
+    // Other sources can belong to concurrent runs; execute this private source's emitted clause.
+    const result = spawnSync("/bin/sh", ["-eu", "-c", [lines.find((line) => line.startsWith("mkdir -p")), copy].join("\n")], {
+      cwd: directory,
+      env: { PATH: process.env.PATH ?? "/usr/bin:/bin", RUNNER_TEMP: destination },
+      encoding: "utf8"
+    })
+    assert.equal(result.status, 0, result.stderr)
+    for (const [file, content] of files)
+      assert.deepEqual(readFileSync(join(destination, "apps-e2e-artifacts/tui/packaged-node", file)), content)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
 })
 
 const assertE2eRunner = (row) => {

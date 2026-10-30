@@ -40,6 +40,8 @@ distinguishing an idle Node event loop from an explicit shutdown.
 The packaged Node case delivers `SIGPIPE` during its first flow, then exercises
 the run details and another flow. The renderer leaves Node's ignored disposition
 intact so a closed child pipe cannot destroy it.
+CI retains packaged-runtime failure evidence from `apps/tui/test-results` in the
+`tui` folder of its `apps-e2e-artifacts` upload.
 
 The remote-failure fixture runs a real action through the engine, control watch,
 and tmux. Its action codec revives an Error that the containing flow's JSON-only

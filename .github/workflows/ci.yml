@@ -857,6 +857,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/apps-e2e-artifacts"
           for f in '/tmp/smithers-'*'.png'; do if [ -e "$f" ]; then cp -R -- "$f" "$RUNNER_TEMP/apps-e2e-artifacts"; fi; done
           if [ -e 'apps/reports' ]; then cp -R -- 'apps/reports' "$RUNNER_TEMP/apps-e2e-artifacts/reports"; fi
+          if [ -e 'apps/tui/test-results' ]; then cp -R -- 'apps/tui/test-results' "$RUNNER_TEMP/apps-e2e-artifacts/tui"; fi
       - name: "Upload apps-e2e-artifacts"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
