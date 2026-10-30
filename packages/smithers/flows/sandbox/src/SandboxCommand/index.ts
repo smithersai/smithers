@@ -174,7 +174,7 @@ export const make = <
     )
   }
   return ExternalJob.make(tag, {
-    payload: { target: options.target, call: Run(maxTimeoutSeconds) },
+    payload: Schema.Struct({ target: options.target, call: Run(maxTimeoutSeconds) }),
     handle: Schema.Struct({ target: options.target, ...SandboxTools.Started.fields }),
     success: SandboxTools.RunResult,
     error: Schema.Union([

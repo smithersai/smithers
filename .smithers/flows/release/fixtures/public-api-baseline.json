@@ -9421,7 +9421,7 @@
         "Sandbox/job.d.ts": "68706960eeaef9780efb2f8d06fc0371a4f78307b727259d874a9d682ddaf3e1",
         "Sandbox/layerHost.d.ts": "aa4993e17b73162250d2b9442c1417c793916db319f659b003355276488b3104",
         "Sandbox/run.d.ts": "25dbcd4f061bcf8ff340c0b36600c173f0228811dedc502cb5f305f16b65f239",
-        "SandboxCommand/index.d.ts": "69468c5631c0ef43a14f1111b37c00f1caf589308bc766b411ee4d8e160d1f4d",
+        "SandboxCommand/index.d.ts": "5431eedf72fdb6965bf274a2466b2d0c9de1c9f36abbf3e79f539f86ae5bb8fa",
         "SandboxConformance/check.d.ts": "eeb7e1c5bf6d8922ec3bf71892cbbaaaaee03192efd68eeafdc3017f646776a9",
         "SandboxConformance/index.d.ts": "352d27dbbc975fe5d506404447b60504239433224e0c2e3dc068c5a3ab9c9747",
         "SandboxConformance/posixCommands.d.ts": "4203df265811c0c6bf30f75edbf39167b30a84d6bd0a2f8f397acd0cbd7c1bff",
