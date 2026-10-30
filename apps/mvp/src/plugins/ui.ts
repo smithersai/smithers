@@ -5,7 +5,7 @@ import { codeOf } from "../errorCode"
 import { FlowDispatch } from "../flows/dispatch"
 import { rankOf, type Viewer } from "../features/commands/catalog"
 import type { Minimum } from "../flows/registry"
-import { hostFor, pathOf, Plugins, press, setDraft, show, viewAt } from "./plugins"
+import { hostFor, pathOf, Plugins, press, readable, setDraft, show, viewAt } from "./plugins"
 import { type Button, type Strip, stripOf } from "./strip"
 
 // The plugin host as a frontend sees it (decision 0017): the folded contributions, the host's own state, and plain
@@ -35,8 +35,14 @@ export interface PluginsView {
     /** Presses `button` on view `id`'s strip, drawn for the item `drawn`: nothing runs if that item moved on. */
     readonly press: (id: string, button: Button, drawn?: Readonly<Record<string, unknown>>) => void
     readonly setDraft: (id: string, text: string) => void
-    /** Core query `name` as the host reads it for its strip: its rows, and the field a row is keyed by. */
-    readonly core: (name: string) => Plugins["Service"]["core"] extends ReadonlyMap<string, infer Q> ? Q | undefined : never
+    /**
+     * Core query `name`, asked with `params` when it takes them, as the host reads it for its strip: its rows, and the
+     * field a row is keyed by.
+     */
+    readonly core: (
+      name: string,
+      params?: Readonly<Record<string, string>> | null,
+    ) => Plugins["Service"]["core"] extends ReadonlyMap<string, infer Q> ? Q | undefined : never
     /** Plugin `plugin`'s tab, built once on first use. */
     readonly tab: (plugin: string) => Promise<unknown>
     /** Plugin `plugin`'s components, loaded on first use. */
@@ -85,7 +91,7 @@ export class PluginsUi extends Context.Service<PluginsUi, PluginsView>()("@smthr
           strip: (view, item) => stripOf(view, plugins.contributions.keybindings, item),
           press: (id, button, drawn) => run(press(id, button, "button", drawn)),
           setDraft: (id, text) => run(setDraft(id, text)),
-          core: (name) => plugins.core.get(name),
+          core: (name, params) => readable(plugins, name, params ?? null),
           tab: (plugin) => {
             // expected: a tab that can't be built rejects to its Boundary, which records it once (`failed`)
             const built = tabs.get(plugin) ?? runPromise(Effect.catchDefect(buildTab(plugin), Effect.fail))

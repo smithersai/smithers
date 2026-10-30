@@ -67,7 +67,19 @@ export interface Live<R> {
 }
 
 /**
- * A row of a query a view reads, by its key.
+ * What a query is asked for: named string values, such as the repository a
+ * view is scoped to (`{ repo: "owner/name" }`). A query that takes none
+ * ignores them; the host refuses `invalid_fields` when one it needs is
+ * missing or malformed.
+ *
+ * @category models
+ * @since 1.2.0
+ */
+export type QueryParams = Readonly<Record<string, string>>
+
+/**
+ * A row of a query a view reads, by its key, and the `params` the query was
+ * asked with, when it takes any.
  *
  * @category models
  * @since 1.1.0
@@ -75,6 +87,8 @@ export interface Live<R> {
 export interface ItemRef {
   readonly query: string
   readonly key: string
+  /** @since 1.2.0 */
+  readonly params?: QueryParams
 }
 
 /**
@@ -140,8 +154,12 @@ export interface Delivered {
  * @since 1.1.0
  */
 export interface PluginHost {
-  /** Rows of a query the contribution declared in `reads`, scoped by the host to the viewer and the plugin. */
-  readonly query: <R>(name: string) => Effect.Effect<Live<R>, PluginRefused>
+  /**
+   * Rows of a query the contribution declared in `reads`, scoped by the host
+   * to the viewer and the plugin. `params` name what a query that takes them
+   * is asked for (since 1.2.0).
+   */
+  readonly query: <R>(name: string, params?: QueryParams) => Effect.Effect<Live<R>, PluginRefused>
   /** The item the person is looking at: the host's action strip acts on it. Must be a row of the view's `reads`. */
   readonly select: (item: ItemRef) => Effect.Effect<void, PluginRefused>
   /** Prefill an event's fields in the action strip. Nothing runs until the person presses. */

@@ -11,12 +11,14 @@ export const Shown = Schema.Struct({ id: Schema.Literal(SHOWN), view: Schema.Nul
 export type Shown = typeof Shown.Type
 
 /**
- * One view's strip, keyed by the view's id: the item the view selected (its query and key), whether a press is on its
- * way (`sending`), and whether the last one failed (`failed`, cleared by the next press or another item).
+ * One view's strip, keyed by the view's id: the item the view selected (its query, the `params` the query was asked
+ * with, and its key), whether a press is on its way (`sending`), and whether the last one failed (`failed`, cleared by
+ * the next press or another item).
  */
 export const ViewState = Schema.Struct({
   id: Schema.String,
   query: Schema.NullOr(Schema.String),
+  params: Schema.NullOr(Schema.Record(Schema.String, Schema.String)),
   item: Schema.NullOr(Schema.String),
   sending: Schema.Boolean,
   failed: Schema.Boolean,
@@ -27,6 +29,7 @@ export type ViewState = typeof ViewState.Type
 export const fresh = (id: string): ViewState => ({
   id,
   query: null,
+  params: null,
   item: null,
   sending: false,
   failed: false,

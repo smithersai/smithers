@@ -91,6 +91,7 @@ import { Plugins } from "./plugins/plugins"
 import { PluginsUi, type PluginsView } from "./plugins/ui"
 import { SpendStore } from "./features/spend/store"
 import { BugsStore } from "./features/bugs/store"
+import { FeedsStore } from "./features/feeds/store"
 import { tabBugContext } from "./features/bugs/tab"
 import { Domains, type DomainsView } from "./features/domains/domains"
 import { PersonalModelClient } from "./features/personal-model/api"
@@ -321,6 +322,8 @@ export const appLayer = <S = never>(
       Plugins.layer().pipe(
         // The bug reports the viewer may see, which the host serves as `core/bug-reports` (docs/features/bugs.md).
         Layer.provideMerge(BugsStore.layer({ origin })),
+        // Every repository's feeds, which the host serves as `core/feeds` and `core/feed` (docs/features/feeds.md).
+        Layer.provideMerge(FeedsStore.layer({ origin })),
         Layer.provideMerge(
           AttentionStore.layer({ origin }).pipe(
             Layer.provide(RunSteers.layer),

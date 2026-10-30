@@ -14,13 +14,15 @@ export function ActionStrip({ view }: { readonly view: View }) {
   const { queries } = usePlugins()
   const { data: rows } = useLiveQuery(queries.views)
   const state = rows.find((row) => row.id === view.id) ?? fresh(view.id)
-  return state.query === null ? null : <Strip key={state.query} view={view} state={state} />
+  return state.query === null
+    ? null
+    : <Strip key={JSON.stringify([state.query, state.params])} view={view} state={state} />
 }
 
 /** The strip over the query the view selected from. */
 function Strip({ view, state }: { readonly view: View; readonly state: ReturnType<typeof fresh> }) {
   const { queries, actions } = usePlugins()
-  const core = actions.core(state.query!)!
+  const core = actions.core(state.query!, state.params)!
   const { data: items } = useLiveQuery(core.rows)
   const { data: notes } = useLiveQuery(queries.notes)
   const item = (items as ReadonlyArray<Readonly<Record<string, unknown>>>).find((row) => row[core.key] === state.item)

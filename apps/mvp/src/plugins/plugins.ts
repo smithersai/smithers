@@ -1,9 +1,11 @@
 import { Bind, type Contribution, Host, JsonSchema, Load } from "@smthrs/plugin"
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
-import { Cause, Context, Deferred, Effect, Exit, Layer, Metric, Option, PubSub, Result, type Scope, Stream } from "effect"
+import { Cause, Context, Deferred, Effect, Exit, Layer, Metric, Option, PubSub, Result, Scope, Stream } from "effect"
 import { codeOf } from "../errorCode"
 import { issueUrl } from "../features/bugs/github"
 import { BugsStore } from "../features/bugs/store"
+import { isFeedName, parseFeedRepo } from "../features/feeds/contract"
+import { FeedsStore } from "../features/feeds/store"
 import { StatusStore } from "../features/status/store"
 import { FlowDispatch } from "../flows/dispatch"
 import { codeOfFailure } from "../flows/history"
@@ -79,6 +81,14 @@ interface CoreQuery {
   readonly rows: StatusStore["Service"]["waits"]["tanstack"]
 }
 
+/** The core queries a plugin asks with `params`: a repository's feed index, and one of its documents. */
+const FEED_INDEX = "core/feeds"
+const FEED_DOCUMENT = "core/feed"
+
+/** `params` in a stable order, to tell whether two selections asked a query the same way. */
+const paramsKey = (params: Host.QueryParams | null) =>
+  JSON.stringify(Object.entries(params ?? {}).sort(([a], [b]) => a.localeCompare(b)))
+
 /** A local event the keymap delivered to a view. */
 interface Delivered {
   readonly view: string
@@ -94,6 +104,10 @@ export class Plugins extends Context.Service<
     readonly facts: Load.HostFacts
     readonly built: ReadonlyMap<string, BuiltIn>
     readonly core: ReadonlyMap<string, CoreQuery>
+    /** `core/feeds` of each repository asked for so far, by its `owner/name` lowercased, for the strip to read. */
+    readonly opened: Map<string, CoreQuery>
+    /** Every repository's feeds, which `core/feeds` and `core/feed` read. */
+    readonly feeds: FeedsStore["Service"]
     readonly shown: Collection.Collection<Shown, string>
     readonly views: Collection.Collection<ViewState, string>
     /** The strip's notes, by view and item, kept on the device. */
@@ -126,6 +140,7 @@ export class Plugins extends Context.Service<
         )
         const status = yield* StatusStore
         const bugs = yield* BugsStore
+        const feeds = yield* FeedsStore
         const core = new Map<string, CoreQuery>([
           ["core/waits", {
             key: "runId",
@@ -168,6 +183,8 @@ export class Plugins extends Context.Service<
           facts,
           built,
           core,
+          opened: new Map(),
+          feeds,
           shown,
           views,
           drafts,
@@ -232,6 +249,49 @@ const touch = (id: string, change: (row: ViewState) => Partial<ViewState>) =>
     yield* views.update(id, (draft) => void Object.assign(draft, change(current.value)))
   }).pipe(Effect.orDie)
 
+/**
+ * Core query `name` as the strip reads it: a fixed one, or one a plugin asked with `params` (`core/feeds`); `undefined`
+ * for any other, `core/feed` included, whose rows a view only shows.
+ */
+export const readable = (
+  plugins: Plugins["Service"],
+  name: string,
+  params: Host.QueryParams | null,
+): CoreQuery | undefined =>
+  plugins.core.get(name) ??
+    (name === FEED_INDEX ? plugins.opened.get(parseFeedRepo(params?.repo ?? "") ?? "") : undefined)
+
+/**
+ * Query `name` for a plugin, asked with `params`: a fixed core query's rows; `core/feeds`, the index of the repository
+ * `params.repo` names (`owner/name`), opened once and kept for the strip; `core/feed`, its document `params.name`, synced
+ * only while the view listens. Fails with what is wrong: `query` for one the host doesn't serve, else the parameter it
+ * needs that is missing or malformed.
+ */
+export const queryOf = (name: string, params: Host.QueryParams | undefined) =>
+  Effect.gen(function* () {
+    const plugins = yield* Plugins
+    const fixed = plugins.core.get(name)
+    if (fixed !== undefined) return fixed.live
+    if (name !== FEED_INDEX && name !== FEED_DOCUMENT) return yield* Effect.fail("query" as const)
+    const { repo: asked = "", name: document = "" } = params ?? {}
+    const repo = parseFeedRepo(asked)
+    if (repo === undefined) return yield* Effect.fail("repo" as const)
+    if (name === FEED_DOCUMENT) {
+      if (!isFeedName(document)) return yield* Effect.fail("name" as const)
+      return plugins.feeds.document(repo, document) as unknown as CoreQuery["live"]
+    }
+    const known = plugins.opened.get(repo)
+    if (known !== undefined) return known.live
+    const index = yield* plugins.feeds.index(repo)
+    const query: CoreQuery = {
+      key: "id",
+      live: (yield* liveOf(index.byName.rows).pipe(Scope.provide(plugins.scope))) as CoreQuery["live"],
+      rows: index.byName.tanstack as unknown as CoreQuery["rows"],
+    }
+    plugins.opened.set(repo, query)
+    return query.live
+  })
+
 /** View `id`'s strip state now. */
 export const stateOf = (id: string) =>
   Effect.gen(function* () {
@@ -242,9 +302,9 @@ export const stateOf = (id: string) =>
 /** The row view `id` selected, as its query has it now, if it is still there. */
 export const selectedOf = (id: string) =>
   Effect.gen(function* () {
-    const { core } = yield* Plugins
+    const plugins = yield* Plugins
     const state = yield* stateOf(id)
-    const query = state.query === null ? undefined : core.get(state.query)
+    const query = state.query === null ? undefined : readable(plugins, state.query, state.params)
     return query?.live.current().find((row) => row[query.key] === state.item)
   })
 
@@ -421,19 +481,29 @@ export const hostFor = (plugin: string) =>
       return event === undefined ? refuse(plugin, "undeclared_event", ref.name) : Effect.succeed({ view: view!, event })
     }
     return {
-      query: <R>(name: string) =>
-        reads.has(name) && plugins.core.has(name)
-          ? Effect.succeed(plugins.core.get(name)!.live as unknown as Host.Live<R>)
-          : refuse(plugin, "undeclared_query", name),
+      query: <R>(name: string, params?: Host.QueryParams) =>
+        Effect.gen(function* () {
+          if (!reads.has(name)) return yield* refuse(plugin, "undeclared_query", name)
+          // A declared query is one the host serves (`Load` checks `reads` against its facts): only a parameter fails.
+          const live = yield* provide(queryOf(name, params)).pipe(
+            Effect.catch((param) => refuse(plugin, "invalid_fields", `${name} needs ${param}`)),
+          )
+          return live as unknown as Host.Live<R>
+        }),
       select: (item: Host.ItemRef) =>
         Effect.gen(function* () {
           // Every view of this plugin that reads the item's query acts on it: the strip under it shows its actions.
           const targets = plugins.contributions.views.filter((view) => view.plugin === plugin && (view.reads ?? []).includes(item.query))
-          const query = plugins.core.get(item.query)
+          const params = item.params ?? null
+          const query = readable(plugins, item.query, params)
           if (targets.length === 0 || query === undefined) return yield* refuse(plugin, "not_in_reads", item.query)
           if (!query.live.current().some((row) => row[query.key] === item.key)) return yield* refuse(plugin, "not_in_reads", "no such row")
           for (const view of targets) {
-            yield* provide(touch(view.id, (row) => (row.item === item.key ? {} : { query: item.query, item: item.key, failed: false })))
+            yield* provide(touch(view.id, (row) =>
+              row.item === item.key && row.query === item.query && paramsKey(row.params) === paramsKey(params)
+                ? {}
+                : { query: item.query, params, item: item.key, failed: false }
+            ))
           }
         }),
       propose: (ref: Host.EventRef, fields: unknown) =>

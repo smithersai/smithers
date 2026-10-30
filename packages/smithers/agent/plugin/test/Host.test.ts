@@ -46,3 +46,22 @@ describe("Settled", () => {
     expect(() => decode({ _tag: "Running" })).toThrow()
   })
 })
+
+describe("query parameters", () => {
+  it("reach the host's query, and an item names the ones its query was asked with", async () => {
+    const asked: Array<[string, Host.QueryParams | undefined]> = []
+    const rows = [{ id: "acme/widgets:lanes" }]
+    const host: Pick<Host.PluginHost, "query"> = {
+      query: <R>(name: string, params?: Host.QueryParams) =>
+        Effect.sync(() => {
+          asked.push([name, params])
+          return { current: () => rows as unknown as ReadonlyArray<R>, subscribe: () => () => {} }
+        })
+    }
+    const live = await Effect.runPromise(host.query<{ readonly id: string }>("core/feeds", { repo: "acme/widgets" }))
+    await Effect.runPromise(host.query("core/waits"))
+    const item: Host.ItemRef = { query: "core/feeds", key: live.current()[0]!.id, params: { repo: "acme/widgets" } }
+    expect(asked).toEqual([["core/feeds", { repo: "acme/widgets" }], ["core/waits", undefined]])
+    expect(item).toEqual({ query: "core/feeds", key: "acme/widgets:lanes", params: { repo: "acme/widgets" } })
+  })
+})

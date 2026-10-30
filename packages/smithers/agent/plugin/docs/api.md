@@ -618,13 +618,14 @@ like a secret (`secret`, `password`, `token`, `credential`) refuses
 | `PluginHost`                                     | The interface and its `Context.Service` key `"@smthrs/plugin/PluginHost"`.    |
 | `PluginRefused`, `RefusedReason`                 | `Schema.TaggedError` `"plugin/PluginRefused"`: `{ plugin, reason, detail }`.  |
 | `Live<R>`                                        | `{ current, subscribe }`, a framework-free live source.                       |
-| `ItemRef`, `EventRef`, `Dispatched`, `Delivered` | `{ query, key }`, `{ view, name }`, `{ runId, settled }`, `{ name, fields }`. |
+| `ItemRef`, `EventRef`, `Dispatched`, `Delivered` | `{ query, key, params? }`, `{ view, name }`, `{ runId, settled }`, `{ name, fields }`. |
+| `QueryParams` | `Readonly<Record<string, string>>`: what a query that takes parameters is asked for. |
 | `Settled`                                        | Schema: `{ _tag: "Done" }` or `{ _tag: "Failed", code }`, how a run ended.    |
 | `PluginTab<Q, A>`                                | `{ queries, actions }`, what a tab layer gives its components.                |
 
 ```ts
 export interface PluginHost {
-  readonly query: <R>(name: string) => Effect.Effect<Live<R>, PluginRefused>
+  readonly query: <R>(name: string, params?: QueryParams) => Effect.Effect<Live<R>, PluginRefused>
   readonly select: (item: ItemRef) => Effect.Effect<void, PluginRefused>
   readonly propose: (event: EventRef, fields: unknown) => Effect.Effect<void, PluginRefused>
   readonly dispatch: (event: EventRef, fields: unknown) => Effect.Effect<Dispatched, PluginRefused>
@@ -632,6 +633,13 @@ export interface PluginHost {
   readonly events: (view: string) => Stream.Stream<Delivered>
 }
 ```
+
+`query` answers a declared query's rows. A query that takes parameters, such
+as the documents of the repository a view is scoped to, reads them from
+`params` (`{ repo: "owner/name" }`); one that takes none ignores them. A
+parameter it needs that is missing or malformed is refused `invalid_fields`.
+`select` names the same `params` in its `ItemRef`, so the host's action strip
+finds the row in the query as the view asked for it.
 
 `events` is the declared local events of a view the host's keymap delivered, in
 order; person-only events are never delivered. `dispatch` of a person-only

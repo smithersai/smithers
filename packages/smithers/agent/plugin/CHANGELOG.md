@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- `PluginHost.query(name, params?)` takes `QueryParams`, named string values
+  such as the repository a view is scoped to, and `ItemRef` carries the
+  `params` its query was asked with, so a view selects a row of a query that
+  takes them.
+
 ## [1.0.0-rc.0] - 2026-09-01
 
 ### Added

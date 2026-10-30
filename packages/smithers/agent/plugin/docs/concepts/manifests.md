@@ -121,7 +121,8 @@ an id, so they are safe to log and show.
 ## The host contract
 
 A plugin's UI reads and acts through `PluginHost`, which the app implements:
-`query` returns a `Live` source of a declared query's rows, `select` and
+`query` returns a `Live` source of a declared query's rows (asked with
+`params` when the query takes them, such as a repository), `select` and
 `propose` drive the host's action strip, `dispatch` runs an event whose flow is
 not person-only, `open` opens a declared view, and `events` streams the local
 events the keymap delivered to a view. An event whose flow is person-only is
