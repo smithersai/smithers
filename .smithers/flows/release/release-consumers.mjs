@@ -282,14 +282,14 @@ export const physicalPackages = (consumer) => {
  * adapter accepts. This is what an application on any supported release must
  * get, so it is all the quickstart and an `effect@latest` profile can assert.
  */
-export const assertSupportedEffect = (consumer, label) => {
+export const assertSupportedEffect = (consumer, label, range = SUPPORTED_EFFECT_RANGE) => {
   const copies = physicalPackages(consumer).filter(({ manifest }) => manifest.name === "effect")
   assert.equal(copies.length, 1, label + ": expected exactly one physical Effect copy")
   const version = copies[0].manifest.version
   assert.equal(
-    satisfies(version, SUPPORTED_EFFECT_RANGE),
+    satisfies(version, range),
     true,
-    label + ": installed effect@" + version + " is outside the supported range " + SUPPORTED_EFFECT_RANGE
+    label + ": installed effect@" + version + " is outside the supported range " + range
   )
   return { version, copies, family: assertEffectFamilyAccepts(consumer, version) }
 }
@@ -614,14 +614,15 @@ export const pathWithoutJj = (path = "") =>
  * The install line plus the pasted quickstart, from an empty directory (#3838).
  * Nothing is preinstalled: the project declares exactly what the install line
  * names, so a package the program reaches only through an optional peer fails
- * here the way it fails for a stranger. The line names `effect` without a
- * version, so the install reads fresh registry metadata and gets the Effect a
- * stranger gets today, `effect@latest` (#3839); the project must then hold one
- * physical Effect inside the supported range. The second run proves the replay the
+ * here the way it fails for a stranger. A pinned published guide runs against
+ * its registry packages and Effect version, independently of the current
+ * candidate. An unpinned Effect still follows today's registry metadata
+ * (#3839). The project must hold one physical Effect all its adapters accept.
+ * The second run proves the replay the
  * page promises by changing the file the first run read. `env` is the smoke's
  * CLI environment: a final pack runs on its own packaged native helper, and a
  * pre-helper rehearsal on the configured source helper. `latestEffect`, when
- * given, is the release npm calls latest: an npm install must get exactly it.
+ * given, is the release npm calls latest: an unpinned npm install must get it.
  * pnpm 11 holds a release younger than its `minimumReleaseAge`, so a pnpm
  * install is held to the range only and reports what it got. The program runs
  * with jj removed from `PATH` and no `SMITHERS_JJ_PATH`.
@@ -634,7 +635,9 @@ export const runQuickstartConsumer = async (
   assert.ok(manager === "npm" || manager === "pnpm", "Unsupported release package manager: " + manager)
   const consumer = await mkdtemp(join(tmpdir(), "smthrs-release-quickstart-" + manager + "-"))
   try {
-    await writeFile(join(consumer, ".npmrc"), "@smthrs:registry=" + registryUrl + "\n")
+    // Undefined uses the package manager's normal registry. A published guide
+    // must not resolve its fixed version to an unshipped candidate of that name.
+    if (registryUrl !== undefined) await writeFile(join(consumer, ".npmrc"), "@smthrs:registry=" + registryUrl + "\n")
     const managerVersion = (await successful(manager, ["--version"], consumer)).output.trim()
     // The page gives pnpm its own `pnpm add` line: pnpm 11 holds a tag's newest
     // release back for 24 hours, so the line names the exact version.
@@ -677,8 +680,10 @@ export const runQuickstartConsumer = async (
     const declared = Object.keys(JSON.parse(await readFile(join(consumer, "package.json"), "utf8")).dependencies).sort()
     const named = packages.map(specName).sort()
     assert.deepEqual(declared, named, "the project declares exactly the packages on the install line")
-    const { version: effectVersion } = assertSupportedEffect(consumer, manager + " quickstart")
-    if (manager === "npm" && latestEffect !== undefined) {
+    const effectSpec = packages.find((spec) => specName(spec) === "effect")
+    const pinnedEffect = valid(effectSpec?.slice("effect@".length))
+    const { version: effectVersion } = assertSupportedEffect(consumer, manager + " quickstart", pinnedEffect ?? SUPPORTED_EFFECT_RANGE)
+    if (manager === "npm" && latestEffect !== undefined && pinnedEffect === null) {
       assert.equal(effectVersion, latestEffect, "npm quickstart installed effect@" + effectVersion + ", not latest " + latestEffect)
     }
     await writeFile(join(consumer, "quickstart.ts"), quickstart.program)
@@ -745,7 +750,7 @@ export const runConsumerMatrix = async (directory, entries, {
   profiles = minimalProfiles(entries),
   managers = ["npm", "pnpm"],
   runtime = false,
-  // The published quickstart runs wherever the candidate's code does.
+  // The published quickstart has its own fixed package/API contract (96628360).
   quickstart = runtime,
   env = process.env
 } = {}) => {
@@ -778,7 +783,7 @@ export const runConsumerMatrix = async (directory, entries, {
       }
       if (quickstart) {
         try {
-          results.push({ quickstart: await runQuickstartConsumer(manager, registry.url, { env, latestEffect }) })
+          results.push({ quickstart: await runQuickstartConsumer(manager, undefined, { env, latestEffect }) })
         } catch (cause) {
           const error = new Error(manager + " quickstart: " + cause.message, { cause })
           failures.push(error)

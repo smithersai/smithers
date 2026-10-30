@@ -1,6 +1,6 @@
 ---
 title: Restore release and documentation CI gates
-status: in-progress
+status: blocked
 area: maintenance
 owner: Codex ci-release
 updated: 2026-10-29
@@ -81,3 +81,23 @@ and preserves the published guide byte for byte.
 Consumer profiles selecting the Node host now require its runtime and SQLite
 driver, relocated together in `8c69f33c`. This includes Bun's shared native
 lifecycle and migration apply; migration scan still excludes both dependencies.
+
+The quickstart consumer follows the published contract (`96628360`) through the
+normal registry instead of substituting same-version candidate tarballs. Its
+explicit Effect pin remains exact, while unpinned guide fixtures still verify
+today's latest version. Both cases retain physical-copy, adapter peer and replay
+checks.
+
+Thirteen owned gates pass on Latitude. Full smoke builds and checks all 51
+libraries, packs successfully and reaches its real npm/pnpm consumer matrix.
+The six stale host/guide failures then pass in a focused rerun, including both
+published quickstart replays. The remaining latest-Effect profiles install
+4.1.0, which the workspace's exact 4.0.5 peers refuse. Their gate is retained;
+completion depends on the separately owned `builder/effect-upgrade` cohort.
+The required Sol review awaits the brief's all-gates-green precondition.
+
+Touched SDK suites pass: repo-targets 195, views 243 (also on Node 22.19),
+observability 239 and sandbox 877, at their configured 100% source coverage.
+Sandbox's 23 existing skips and the published declaration TODO remain distinct
+from that executed evidence. App typecheck, import rules, module lint and the
+generated target index pass. No known-red entry, timeout or threshold changed.

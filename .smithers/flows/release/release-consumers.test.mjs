@@ -679,6 +679,22 @@ test("the quickstart consumer passes only when the install line brings what the 
           const held = runQuickstartConsumer(manager, registry.url, { quickstart, latestEffect: "4.9.9" })
           if (manager === "npm") await assert.rejects(held, /npm quickstart installed effect@\S+, not latest 4\.9\.9/)
           else assert.equal((await held).effect, EXPECTED_EFFECT_VERSION)
+          // A published guide selects its pinned version from the normal
+          // registry, even when a different candidate/latest exists.
+          const pinned = (packages) => packages.map((spec) => spec === "effect" ? "effect@" + EXPECTED_EFFECT_VERSION : spec)
+          const pinnedInstall = "npm install " + pinned(quickstart.packages).join(" ")
+          const published = await runQuickstartConsumer(manager, undefined, {
+            quickstart: {
+              ...quickstart,
+              install: pinnedInstall,
+              commands: quickstart.commands.map((command) => command === quickstart.install ? pinnedInstall : command),
+              packages: pinned(quickstart.packages),
+              pnpmPackages: pinned(quickstart.pnpmPackages)
+            },
+            latestEffect: "4.9.9"
+          })
+          assert.equal(published.effect, EXPECTED_EFFECT_VERSION)
+          assert.deepEqual(published.runs, ["the note", "the note"])
           assert.deepEqual(result.runs, ["the note", "the note"], manager + " " + name)
           assert.equal(result.install.startsWith(manager === "npm" ? "npm install " : "pnpm add "), true)
         } else {
