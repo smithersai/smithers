@@ -3,7 +3,7 @@
 // round, the person's answers, saving a ready draft, writing code, reading a revision, deleting, and the shapes that
 // sync only the person's own rows.
 import { digestSync } from "@smthrs/crypto"
-import { Deferred, Effect, Layer, Stream } from "effect"
+import { Deferred, Effect, Fiber, Layer, Stream } from "effect"
 import { SqlClient, Statement } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
@@ -364,8 +364,31 @@ describe("POST /api/flows/save", () => {
     const h = await open()
     const draftId = crypto.randomUUID()
     expect((await writeRound(h, draftId, round("notes"))).status).toBe(200)
-    const answers = await Promise.all([1, 2].map(() => send(h, "POST", "/api/flows/save", saving(draftId, "notes")).then(json)))
+    const locked = Deferred.makeUnsafe<void>()
+    const release = Deferred.makeUnsafe<void>()
+    const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+    const blocker = runtime.runFork(Effect.flatMap(SqlClient.SqlClient, sql => sql.withTransaction(Effect.gen(function* () {
+      yield* sql`SELECT id FROM flow_drafts WHERE id = ${draftId} FOR UPDATE`
+      yield* Deferred.succeed(locked, undefined)
+      yield* Deferred.await(release)
+    }))))
+    await runtime.runPromise(Deferred.await(locked))
+    const savingBoth = Promise.all([1, 2].map(() => send(h, "POST", "/api/flows/save", saving(draftId, "notes")).then(json)))
+    try {
+      // Both routes have read the ready draft before either transaction can mark it saved.
+      await eventually(async () => {
+        const [row] = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => sql<{ n: number }>`
+          SELECT count(*)::int AS n FROM pg_stat_activity
+          WHERE application_name = ${scratch.name} AND wait_event_type = 'Lock' AND query LIKE '%FOR UPDATE%'`))
+        return row!.n === 2
+      }, 10_000)
+    } finally {
+      await runtime.runPromise(Deferred.succeed(release, undefined))
+      await runtime.runPromise(Fiber.join(blocker))
+    }
+    const answers = await savingBoth
     expect(answers.map(([status]) => status)).toEqual([200, 200])
+    expect(answers.filter(([, body]) => (body as { txid: number | null }).txid === null)).toHaveLength(1)
     const [first, second] = answers.map(([, body]) => body as { flowId: string; revision: number })
     expect(second).toMatchObject({ flowId: first!.flowId, revision: 1 })
     const [count] = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>

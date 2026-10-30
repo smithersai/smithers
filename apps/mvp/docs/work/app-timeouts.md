@@ -147,3 +147,11 @@ is still pending after a real server round trip. The former equality condition
 failed this assertion in 1.06 seconds. Readiness now requires the expected pin
 text on the second device; the stale-callback assertion also waits for that
 real projection, without increasing a budget or retrying an action.
+
+The following sweep passed all 6,078 cases, but its coverage gate exposed a
+concurrent-save test that did not guarantee overlap: its second request could
+read an already saved draft instead of reaching the locked-row replay branch.
+The test now holds the real draft row lock until both requests are observed
+waiting in PostgreSQL, then releases it and verifies one new revision and one
+existing response. All 40 personal-flow cases pass at all four 100% measures.
+The product's locking and replay behavior are unchanged.
