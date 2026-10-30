@@ -23,7 +23,7 @@ import {
   type NodeDevice,
   openFaultyApp,
   openTab,
-  openTestApp,
+  openTestApi,
   TestChatApi,
 } from "../../test/chatApi"
 import { EngineFaults } from "../../test/faults"
@@ -119,7 +119,7 @@ const open = async (
   } = {},
 ) => {
   const api = options.api ?? await (async () => {
-    const app = openTestApp({ answers: false }, {
+    const app = openTestApi({
       actor: options.actor === undefined ? member : options.actor,
       ...(options.provider === undefined ? {} : { provider: options.provider }),
     })

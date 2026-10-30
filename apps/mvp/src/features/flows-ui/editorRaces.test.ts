@@ -3,7 +3,7 @@
 import { Deferred, Effect, Layer, ManagedRuntime } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
 import { DispatchFailed, FlowDispatch } from "../../flows/dispatch"
-import { nodeDevice, openTab, openTestApp, TestChatApi } from "../../test/chatApi"
+import { nodeDevice, openTab, openTestApi, TestChatApi } from "../../test/chatApi"
 import { RunsNavigation } from "../runs/actions"
 import { answer, deleteDraft, editCode, openCode, openDraft, openNew, save, saveCode, startDraft } from "./actions"
 import { FlowsUiStore, SHOWN } from "./store"
@@ -14,7 +14,7 @@ afterEach(async () => {
 })
 
 const open = async () => {
-  const app = openTestApp()
+  const app = openTestApi()
   runtimes.push(app)
   const api = await app.runPromise(Effect.service(TestChatApi))
   const host = nodeDevice({ agent: api })

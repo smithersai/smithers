@@ -219,17 +219,26 @@ describe("/web <url>", () => {
 })
 
 describe("a view's sizes", () => {
-  test("the full-screen route shows a webpage view, never a card", async () => {
+  test.each([false, true])("the full-screen route shows a webpage view, never a card (page first: %s)", async (pageFirst) => {
     const tab = await open({ answers: true })
-    send(tab, "/web https://example.com/ tab")
-    send(tab, "/web https://example.com/docs")
+    // Prove both receipt orders; independent commands need not finish in the order they were pressed.
+    const cardCommand = "/web https://example.com/ tab"
+    const pageCommand = "/web https://example.com/docs"
+    send(tab, pageFirst ? pageCommand : cardCommand)
+    await until(() => expect(tab.viewIds()).toHaveLength(1))
+    send(tab, pageFirst ? cardCommand : pageCommand)
     await until(() => expect(tab.viewIds()).toHaveLength(2))
-    const [card, page] = tab.viewIds() as [string, string]
+    await until(() => expect(tab.viewIds().map(id => pageIn(tab.views, id).url).sort()).toEqual([
+      "https://example.com/", "https://example.com/docs",
+    ]))
+    const card = tab.viewIds().find(id => pageIn(tab.views, id).url === "https://example.com/")!
+    const page = tab.viewIds().find(id => pageIn(tab.views, id).url === "https://example.com/docs")!
     expect(viewPath(page)).toBe(`/app/views/${page}`)
 
     tab.views.actions.show(page)
     await until(() =>
-      expect(tab.views.queries.shown.toArray).toEqual([expect.objectContaining({ id: page, props: expect.objectContaining({ url: "https://example.com/docs" }) })])
+      expect(tab.views.queries.shown.toArray).toEqual([expect.objectContaining({ id: page, props: expect.objectContaining({ url: "https://example.com/docs" }) })]),
+      5_000,
     )
     tab.views.actions.show(card)
     await until(() => expect(tab.views.queries.shown.toArray).toEqual([]))

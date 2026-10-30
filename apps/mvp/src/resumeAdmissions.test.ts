@@ -5,7 +5,7 @@ import { PendingSnapshot } from "@smthrs/platform-browser"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Deferred, Effect, Fiber, Option, Scope } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
-import { nodeDevice, openTab, openTestApp, TEST_REPOSITORY, TestChatApi } from "./test/chatApi"
+import { nodeDevice, openTab, openTestApi, TEST_REPOSITORY, TestChatApi } from "./test/chatApi"
 import { Issues } from "./features/issues/issues"
 import { IssuesStore } from "./features/issues/store"
 import { TodosStore } from "./features/todos/store"
@@ -19,7 +19,7 @@ afterEach(async () => { for (const app of closing.splice(0).reverse()) await app
 const [owner, name] = TEST_REPOSITORY.split("/") as [string, string]
 const repoId = `github/${TEST_REPOSITORY}`
 const opening = async (offline = false) => {
-  const server = openTestApp({ answers: false })
+  const server = openTestApi()
   closing.push(server)
   const api = await server.runPromise(Effect.service(TestChatApi))
   const data = new Map<string, string>()

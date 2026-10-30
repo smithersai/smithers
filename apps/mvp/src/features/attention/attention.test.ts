@@ -10,7 +10,7 @@ import { FetchHttpClient } from "effect/http"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
 import { DispatchFailed, FlowDispatch, dispatches } from "../../flows/dispatch"
-import { asPerson, nodeDevice, type NodeDevice, openFaultyTab, openTab, openTestApp, tabLayer, TestChatApi } from "../../test/chatApi"
+import { asPerson, nodeDevice, type NodeDevice, openFaultyTab, openTab, openTestApi, tabLayer, TestChatApi } from "../../test/chatApi"
 import { EngineFaults } from "../../test/faults"
 import { SESSION } from "../auth/store"
 import { AuthStore } from "../auth/store"
@@ -38,9 +38,9 @@ afterEach(async () => {
 const until = (assertion: () => void | Promise<void>, timeout = 60_000) =>
   vi.waitFor(assertion, { timeout, interval: 20 })
 
-/** ChatApi, from a first tab whose engine never leads; Ben may sign in to it too. */
+/** A real ChatApi without an unused browser tab; Ben may sign in to it too. */
 const openApi = async () => {
-  const runtime = openTestApp({ answers: false }, { people: { ben } })
+  const runtime = openTestApi({ people: { ben } })
   runtimes.push(runtime)
   return runtime.runPromise(Effect.service(TestChatApi))
 }

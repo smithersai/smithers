@@ -116,6 +116,10 @@ the server's connection pool and WAL. Slow engine builds record their stage and 
 `MVP_TEST_ENGINE_TRACE=1` also records successful build timings, without SQL text, file paths or user content.
 Backend-only chat scenarios build `TestChatApi.layer` directly, so they do not leave an unused browser engine,
 exporter and shape subscriptions running beside their explicitly created devices.
+`openTestApi` is the shared backend fixture for cases that create their own tabs. A tab's optional `clock` service
+controls display timestamps for transient UI assertions; tests keep sleep and monotonic deadlines live, and the
+server and durable engine retain their own clocks. Assertions wait on real collection signals before advancing
+display time, so dependency latency cannot consume the toast window under test.
 
 ChatApi's tests (`worker/`, `db/`) use the compose Postgres and Electric and nothing else (`db/TestDatabase.ts`):
 

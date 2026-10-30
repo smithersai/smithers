@@ -98,3 +98,23 @@ the assertion polled for a successful dispatch for 40 seconds. The faulty app
 now receives this file's signed-in issue-writing actor, like the happy-path
 fixtures. An authority assertion reproduces the old setup failure in one
 second before any success polling.
+
+The completed sweep then found three further fixture assumptions. A transient
+Done toast was inspected only after real cleanup waits had consumed its
+four-second window. A tab can now inject an Effect clock for display timestamps;
+the regression holds wall time while real SQL, Electric and SQLite finish, then
+advances it to verify the toast expires. Sleep and monotonic deadlines stay real;
+the server and engine retain their own clocks. The arbitrary 250 ms delay is gone.
+
+Backend-only holders also existed outside chat. They now use one `openTestApi`
+fixture, with no unused browser engine, exporter or shape subscriptions. Actual
+test devices still run the full browser layer. The service-graph regression and
+clock regression both failed in about one second with the prior fixture behavior.
+
+The fullscreen-view case assigned card/page ids by completion order. Its new
+page-first parameter reproduced that error deterministically in five seconds;
+it now identifies the real views by URL after their rows arrive. The device bug
+report case now asserts the browser/SQLite behavior for NUL: API refusal `invalid`,
+with `BugRefused` in the report's typed history, rather than PostgreSQL's earlier
+journal encoding refusal. The completed diagnostic had 464 passing files and
+these three failing files; the final two clean full coverage runs remain required.

@@ -772,8 +772,8 @@ test.each(["deleted", "unreadable"])("More discards a reply after the page becom
 })
 
 test("a followed remote run is ignored while another run is open", async () => {
-  const { nodeDevice, openTab, openTestApp, TestChatApi } = await import("../../test/chatApi")
-  const app = openTestApp({})
+  const { nodeDevice, openTab, openTestApi, TestChatApi } = await import("../../test/chatApi")
+  const app = openTestApi()
   let tab: ReturnType<typeof openTab> | undefined
   try {
     const api = await app.runPromise(Effect.service(TestChatApi))

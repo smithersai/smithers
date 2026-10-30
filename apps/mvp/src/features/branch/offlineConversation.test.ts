@@ -2,7 +2,7 @@ import { ShapeSource } from "@smthrs/effect-electric"
 import { Deferred, Effect } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
 import { shaOf } from "../../../worker/test/branch"
-import { nodeDevice, openFaultyApp, openFaultyTab, openTestApp, TestChatApi } from "../../test/chatApi"
+import { nodeDevice, openFaultyApp, openFaultyTab, openTestApi, TestChatApi } from "../../test/chatApi"
 import { EngineFaults, QuestionFaults } from "../../test/faults"
 import { retry, wentOffline } from "../chat/actions"
 import { Chat } from "../chat/chat"
@@ -18,7 +18,7 @@ afterEach(async () => {
 
 // Real ChatApi, SQLite device persistence and durable outbox. Only the unreachable services are faulted.
 test.each(["browser", "sync"])("reopening a verified branch with %s offline restores its conversation and queued count without granting workspace access", async (outage) => {
-  const server = openTestApp()
+  const server = openTestApi()
   disposals.push(() => server.dispose())
   const api = await server.runPromise(Effect.service(TestChatApi))
   api.branches.github.publish("octo", "hello", { defaultBranch: "main", branches: { main: shaOf("main"), work: shaOf("work") } })

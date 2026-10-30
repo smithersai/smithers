@@ -2,7 +2,7 @@ import { SyncPolicy } from "@smthrs/effect-electric"
 import { Effect } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
 import { OPENAI_ORIGIN } from "../../../worker/personal/test/provider.ts"
-import { member, nodeDevice, openTab, openTestApp, TestChatApi } from "../../test/chatApi"
+import { member, nodeDevice, openTab, openTestApi, TestChatApi } from "../../test/chatApi"
 import { Chat } from "../chat/chat"
 import { ChatStore } from "../chat/store"
 import { PersonalModel } from "../personal-model/personalModel"
@@ -26,7 +26,7 @@ const isSummary = (call: { readonly body: Record<string, unknown> } | undefined)
 
 test("an idle page and a page receiving N messages cause at most one summary call per message in total, across two tabs", async () => {
   let api: TestChatApi["Service"] | undefined
-  const root = openTestApp({ answers: false }, {
+  const root = openTestApi({
     actor: member,
     provider: (index) => isSummary(api?.providerCalls[index]) ? { text: SUMMARY } : { text: CELL },
   })

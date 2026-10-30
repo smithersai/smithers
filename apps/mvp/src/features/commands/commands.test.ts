@@ -9,7 +9,7 @@ import { NavigationRefused } from "../navigation/flows"
 import { choose as chooseCommand, submit as submitCommand, type as typeCommand } from "./actions"
 import { entryOf, names } from "../../flows/registry"
 import type { Actor } from "../../../worker/Actor.ts"
-import { nodeDevice, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
+import { nodeDevice, openTestApi, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
 import { AuthStore, SESSION } from "../auth/store"
 import { Chat } from "../chat/chat"
 import { PLACE, Place } from "../chat/schema"
@@ -573,7 +573,7 @@ describe("submitting", () => {
   })
 
   test("a navigation the router refuses stays in chat with a reason", async () => {
-    const server = openTestApp({ answers: false })
+    const server = openTestApi()
     runtimes.push(server)
     const api = await server.runPromise(Effect.service(TestChatApi))
     const host = nodeDevice({ agent: api })

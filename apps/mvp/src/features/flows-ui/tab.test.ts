@@ -6,7 +6,7 @@ import { PendingSnapshot } from "@smthrs/platform-browser"
 // each model call waits for the test's answer.
 import { Deferred, Effect, Layer, ManagedRuntime } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { nodeDevice, openTab, openTestApp, TestChatApi } from "../../test/chatApi"
+import { nodeDevice, openTab, openTestApi, TestChatApi } from "../../test/chatApi"
 import { Chat } from "../chat/chat"
 import { RunsNavigation } from "../runs/actions"
 import { RUNS_PATH } from "../runs/contract"
@@ -47,7 +47,7 @@ const drafted = (overrides: Record<string, unknown> = {}) => ({
 
 /** ChatApi, and a tab on a device whose engine leads, with your flows and runs started as React starts them. */
 const open = async () => {
-  const app = openTestApp()
+  const app = openTestApi()
   runtimes.push(app)
   const api = await app.runPromise(Effect.service(TestChatApi))
   const host = nodeDevice({ agent: api })

@@ -12,7 +12,7 @@ import {
   type NodeDevice,
   openFaultyApp,
   openTab,
-  openTestApp,
+  openTestApi,
   TEST_REPOSITORY,
   TestChatApi,
 } from "../../test/chatApi"
@@ -45,7 +45,7 @@ const until = (assertion: () => void | Promise<void>, timeout = 60_000) =>
  * `clipboard` replaces the device's own.
  */
 const openSettings = async (actor: Actor, clipboard?: NodeDevice["clipboard"]) => {
-  const app = openTestApp({ answers: false }, { actor })
+  const app = openTestApi({ actor })
   runtimes.push(app)
   const api = await app.runPromise(Effect.service(TestChatApi))
   const own = nodeDevice({ agent: api })

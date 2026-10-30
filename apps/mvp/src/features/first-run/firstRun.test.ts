@@ -9,7 +9,7 @@ import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
 import { OPENAI_ORIGIN } from "../../../worker/personal/test/provider.ts"
-import { member, nodeDevice, openTab, openTestApp, TestChatApi } from "../../test/chatApi"
+import { member, nodeDevice, openTab, openTestApi, TestChatApi } from "../../test/chatApi"
 import { read } from "../../test/otlp"
 import { AuthStore, SESSION } from "../auth/store"
 import { Chat } from "../chat/chat"
@@ -30,9 +30,9 @@ const WITHIN = 120_000
 
 const guest: Actor = { subject: { kind: "person", id: "person-guest" }, role: "guest" }
 
-/** ChatApi as `actor` (a Member unless set, nobody with `null`), from a first tab whose engine never leads. */
+/** A real ChatApi as `actor` (a Member unless set, nobody with `null`), without an unused browser tab. */
 const openApi = async (actor?: Actor | null) => {
-  const app = openTestApp({ answers: false }, actor === undefined ? {} : { actor })
+  const app = openTestApi(actor === undefined ? {} : { actor })
   runtimes.push(app)
   return { api: await app.runPromise(Effect.service(TestChatApi)), app }
 }

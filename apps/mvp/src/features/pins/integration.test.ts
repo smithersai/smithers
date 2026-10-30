@@ -2,7 +2,7 @@ import { SqlClient } from "effect/sql"
 import { SyncPolicy } from "@smthrs/effect-electric"
 import { Deferred, Effect, Fiber } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
-import { asPerson, member, nodeDevice, openTab, openTestApp, TestChatApi, type NodeDevice } from "../../test/chatApi"
+import { asPerson, member, nodeDevice, openTab, openTestApi, TestChatApi, type NodeDevice } from "../../test/chatApi"
 import { Chat } from "../chat/chat"
 import { ChatStore } from "../chat/store"
 import { FlowDispatch } from "../../flows/dispatch"
@@ -22,7 +22,7 @@ const open = async (api: TestChatApi["Service"], device: NodeDevice) => {
 test("Retry preserves a refused local pin's identity and saved text after its original is discarded", async () => {
   const { openFaultyTab } = await import("../../test/chatApi")
   const { EngineFaults, QuestionFaults } = await import("../../test/faults")
-  const root = openTestApp({ answers: false })
+  const root = openTestApi()
   opened.push(root)
   const api = await root.runPromise(Effect.service(TestChatApi))
   const device = nodeDevice({ agent: api })
@@ -53,7 +53,7 @@ test("Retry preserves a refused local pin's identity and saved text after its or
 test("a first unsent question can be pinned, restored and unpinned before Postgres admits any message", async () => {
   const { openFaultyTab } = await import("../../test/chatApi")
   const { QuestionFaults } = await import("../../test/faults")
-  const root = openTestApp({ answers: false })
+  const root = openTestApi()
   opened.push(root)
   const api = await root.runPromise(Effect.service(TestChatApi))
   const device = nodeDevice({ agent: api })
@@ -87,7 +87,7 @@ test("a first unsent question can be pinned, restored and unpinned before Postgr
 })
 
 test("a queued question pins immediately and follows the person once the question is admitted", async () => {
-  const root = openTestApp({ answers: false })
+  const root = openTestApi()
   opened.push(root)
   const api = await root.runPromise(Effect.service(TestChatApi))
   const a = await open(api, nodeDevice({ agent: api }))
@@ -114,7 +114,7 @@ test("a queued question pins immediately and follows the person once the questio
 })
 
 test("the person's durable pin follows two devices, stays outside the window, and replaces and unpins", async () => {
-  const root = openTestApp({ answers: false }, { people: { other: { subject: { kind: "person", id: "other" }, role: "member" } } })
+  const root = openTestApi({ people: { other: { subject: { kind: "person", id: "other" }, role: "member" } } })
   opened.push(root)
   const api = await root.runPromise(Effect.service(TestChatApi))
   const device = nodeDevice({ agent: api })
@@ -191,7 +191,7 @@ test("the person's durable pin follows two devices, stays outside the window, an
 test("an unfinished personal pin resumes after the tab closes before its engine records the launch", async () => {
   const { openFaultyTab } = await import("../../test/chatApi")
   const { EngineFaults } = await import("../../test/faults")
-  const root = openTestApp({ answers: false })
+  const root = openTestApi()
   opened.push(root)
   const api = await root.runPromise(Effect.service(TestChatApi))
   const device = nodeDevice({ agent: api })
@@ -216,7 +216,7 @@ test("an unfinished personal pin resumes after the tab closes before its engine 
 test("a late refused pin cannot fail a newer unpin, and a refused unpin remains retryable", async () => {
   const { openFaultyTab } = await import("../../test/chatApi")
   const { EngineFaults } = await import("../../test/faults")
-  const root = openTestApp({ answers: false })
+  const root = openTestApi()
   opened.push(root)
   const api = await root.runPromise(Effect.service(TestChatApi))
   const b = await open(api, nodeDevice({ agent: api }))
@@ -281,7 +281,7 @@ test("a late refused pin cannot fail a newer unpin, and a refused unpin remains 
 test("a refused launch rolls the pin back, keeps a retryable intent, and chat stays usable during an unresolved launch", async () => {
   const { openFaultyTab } = await import("../../test/chatApi")
   const { EngineFaults } = await import("../../test/faults")
-  const root = openTestApp({ answers: false })
+  const root = openTestApi()
   opened.push(root)
   const api = await root.runPromise(Effect.service(TestChatApi))
   const device = nodeDevice({ agent: api })

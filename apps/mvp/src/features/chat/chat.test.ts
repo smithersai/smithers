@@ -24,6 +24,7 @@ import {
   openFaultyTab,
   openTab,
   openTestApp,
+  openTestApi,
   type TabOptions,
   TestChatApi,
 } from "../../test/chatApi"
@@ -48,7 +49,6 @@ import { ChatStore } from "./store"
 import { PLACE } from "./schema"
 import { SharedPrompt } from "./sharedPrompt"
 import { ask as askAction } from "./actions"
-import * as TestDatabase from "../../../db/TestDatabase.ts"
 
 // Chat's state machine, driven as React drives it: through the chat layer's plain actions, reading its live queries,
 // with no React. It runs on the browser's own layer (`appLayer`) over a Node device (src/test/chatApi.ts
@@ -99,10 +99,7 @@ const openChat = async (options: TabOptions = {}, chatApi: ChatApiOptions = {}) 
 
 /** A backend fixture must not leave an unused browser app syncing beside the actual test devices. */
 const openApi = async () => {
-  const runtime = ManagedRuntime.make(TestChatApi.layer.pipe(
-    Layer.provideMerge(TestDatabase.layer("chat_backend")),
-    Layer.provideMerge(Layer.succeed(Metric.MetricRegistry, new Map())),
-  ))
+  const runtime = openTestApi()
   runtimes.push(runtime)
   const api = await runtime.runPromise(Effect.service(TestChatApi))
   return { runtime, api, onApi: <A>(effect: Effect.Effect<A>) => runtime.runPromise(effect) }

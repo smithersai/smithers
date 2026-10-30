@@ -9,7 +9,7 @@ import type { BugsTab, Report } from "../../../plugins/bugs/src/tab"
 import type * as Actor from "../../../worker/Actor.ts"
 import { FlowDispatch } from "../../flows/dispatch"
 import { PluginsUi } from "../../plugins/ui"
-import { asPerson, type DeviceOptions, nodeDevice, openTab, openTestApp, TestChatApi } from "../../test/chatApi"
+import { asPerson, type DeviceOptions, nodeDevice, openTab, openTestApi, TestChatApi } from "../../test/chatApi"
 import { bugAlertId } from "./contract"
 import { BugRefused } from "./flows"
 
@@ -63,7 +63,7 @@ const openDevice = async (api: TestChatApi["Service"], options: DeviceOptions = 
 
 describe("a bug report on a real device", { timeout: 120_000 }, () => {
   test("a Member's Send files it with the page before the form and comes back Sent; only an Admin reads every report", async () => {
-    const root = openTestApp({ answers: false }, { people: { admin } })
+    const root = openTestApi({ people: { admin } })
     runtimes.push(root)
     const api = await root.runPromise(Effect.service(TestChatApi))
     const pages = router("/octocat/Spoon-Knife/issues")
@@ -87,12 +87,11 @@ describe("a bug report on a real device", { timeout: 120_000 }, () => {
     expect(api.bugs.starts).toEqual([])
 
     // A report refused for good is Not sent, says why and keeps its words; it never stays Sending, and nothing is filed.
-    // A NUL is refused wherever it lands: this Node device's engine journals into Postgres, which can't hold one, so
-    // the run is refused at its start; a browser's journal takes it and ChatApi answers 400 invalid
-    // (worker/bugs/Api.test.ts).
+    // Like the browser's journal, the real local SQLite engine records the input; ChatApi refuses NUL with 400 invalid
+    // (worker/bugs/Api.test.ts). A server-side journal's encoding failure must not substitute for that validation.
     member.tab.actions.send("The page went blank\u0000")
     await until(() =>
-      expect(member.sending()).toMatchObject({ status: "failed", code: "refused", what: "The page went blank\u0000" })
+      expect(member.sending()).toMatchObject({ status: "failed", code: "invalid", what: "The page went blank\u0000" })
     )
     expect(api.bugs.starts).toEqual([])
 
@@ -113,10 +112,10 @@ describe("a bug report on a real device", { timeout: 120_000 }, () => {
     })
     // The tab's latest runs: at least the form's own navigation, with its trace.
     expect(sent.report.runs.length).toBeGreaterThan(0)
-    // And what went wrong in the tab, from its own observability (src/flows/errors.ts): the refused report's dispatch,
-    // by its record's name and code, never its words.
+    expect(sent.report.failures).toContainEqual({ flow: "app/bug/report", code: "BugRefused" })
+    // The tab retains the failed dispatch; its worker's HTTP span is not part of the tab's error ring.
     expect(sent.report.errors).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: "log", name: "flow.dispatch", code: "refused" }),
+      expect.objectContaining({ kind: "log", name: "flow.dispatch", code: null }),
     ]))
     expect(JSON.stringify(sent.report.errors)).not.toContain("The page went blank")
     const github = new URL(sent.report.github)

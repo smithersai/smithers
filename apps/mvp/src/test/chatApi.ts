@@ -16,6 +16,7 @@ import { BrowserCollectionCoordinator, createBrowserWASQLitePersistence } from "
 import { startOfflineExecutor } from "@tanstack/offline-transactions"
 import {
   Cause,
+  Clock,
   ConfigProvider,
   Context,
   Deferred,
@@ -1491,6 +1492,8 @@ const sqliteFile = (path: string, turn: ReturnType<typeof deviceTurn>) => {
  * engine never leads, so a question it sends waits for a run to be recorded and nothing after it is sent.
  */
 export type TabOptions = Partial<Omit<AppOptions, "origin" | "reload" | "fetch">> & {
+  /** A display-time service for transient UI assertions; engines and the server retain their own clocks. */
+  readonly clock?: Clock.Clock
   readonly shapeFailures?: number
   readonly answers?: boolean
   /** View-only fixtures start sign-in here; boot-program fixtures bind it on their actual event target instead. */
@@ -1530,6 +1533,7 @@ const app = (
     webSocket: _webSocket,
     sessionLifecycle: _sessionLifecycle,
     shapeFailures: _shapeFailures,
+    clock: _clock,
     ...options
   }: TabOptions
 ): AppOptions => ({
@@ -1556,8 +1560,8 @@ export const tabLayer = (api: TestChatApi["Service"], options: TabOptions = {}) 
     ? layer
     : Layer.effectDiscard(bindSessionConnectivity(new EventTarget())).pipe(Layer.provideMerge(layer))
   return options.webSocket === undefined
-    ? started
-    : started.pipe(Layer.provide(Layer.succeed(Socket.WebSocketConstructor, options.webSocket)))
+    ? withTabClock(started, options.clock)
+    : withTabClock(started.pipe(Layer.provide(Layer.succeed(Socket.WebSocketConstructor, options.webSocket))), options.clock)
 }
 
 /** The browser app on `api` with the faulty services and their switches (src/test/faults.ts). */
@@ -1568,9 +1572,12 @@ export const faultyTabLayer = (api: TestChatApi["Service"], options: TabOptions 
     ? layer
     : Layer.effectDiscard(bindSessionConnectivity(new EventTarget())).pipe(Layer.provideMerge(layer))
   return options.webSocket === undefined
-    ? started
-    : started.pipe(Layer.provide(Layer.succeed(Socket.WebSocketConstructor, options.webSocket)))
+    ? withTabClock(started, options.clock)
+    : withTabClock(started.pipe(Layer.provide(Layer.succeed(Socket.WebSocketConstructor, options.webSocket))), options.clock)
 }
+
+const withTabClock = <A, E, R>(layer: Layer.Layer<A, E, R>, clock?: Clock.Clock) =>
+  clock === undefined ? layer : layer.pipe(Layer.provideMerge(Layer.succeed(Clock.Clock, clock)))
 
 const withChatApi = <A, E>(tab: (api: TestChatApi["Service"]) => Layer.Layer<A, E>, chatApi: ChatApiOptions) =>
   Layer.unwrap(Effect.map(TestChatApi, tab)).pipe(
@@ -1585,6 +1592,10 @@ const withChatApi = <A, E>(tab: (api: TestChatApi["Service"]) => Layer.Layer<A, 
  */
 export const openTestApp = (options: TabOptions = {}, chatApi: ChatApiOptions = {}) =>
   ManagedRuntime.make(withChatApi((api) => tabLayer(api, options), chatApi))
+
+/** A real server fixture without an unused browser app, exporter or shape subscriptions. */
+export const openTestApi = (chatApi: ChatApiOptions = {}) =>
+  ManagedRuntime.make(withChatApi(() => Layer.empty, chatApi))
 
 /** The same with the faulty services, for a test of an unhappy path. */
 export const openFaultyApp = (options: TabOptions = {}, start?: StartFaults, chatApi: ChatApiOptions = {}) =>

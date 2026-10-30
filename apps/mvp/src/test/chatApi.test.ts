@@ -1,11 +1,50 @@
 import { ShapeSource } from "@smthrs/effect-electric"
 import { DatabaseSync } from "node:sqlite"
-import { Effect, Layer, ManagedRuntime } from "effect"
+import { Clock, Context, Effect, Layer, ManagedRuntime, Option } from "effect"
 import { expect, test, vi } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase"
 import { Chat } from "../features/chat/chat"
-import { asPerson, member, nodeDevice, openTab, TestChatApi } from "./chatApi"
+import { asPerson, member, nodeDevice, openTab, openTestApi, TestChatApi } from "./chatApi"
 import { FlowDispatch } from "../flows/dispatch"
+
+test("a server fixture opens no unused browser app", async () => {
+  const server = openTestApi()
+  try {
+    const context = await server.runPromise(Effect.context())
+    expect(Option.isNone(Context.getOption(context, Chat))).toBe(true)
+    const api = await server.runPromise(Effect.service(TestChatApi))
+    expect((await api.fetch(`${api.origin}/api/auth/session`)).status).toBe(200)
+    expect(api.telemetry).toEqual([])
+  } finally { await server.dispose() }
+})
+
+test("a tab's injected display clock leaves its real server available", async () => {
+  const server = openTestApi()
+  let tab: ReturnType<typeof openTab> | undefined
+  try {
+    const api = await server.runPromise(Effect.service(TestChatApi))
+    const live = await server.runPromise(Clock.clockWith(Effect.succeed))
+    let now = 1_000
+    const clock: Clock.Clock = {
+      ...live,
+      monotonicTimeNanosUnsafe: () => live.monotonicTimeNanosUnsafe(),
+      sleep: duration => live.sleep(duration),
+      currentTimeMillisUnsafe: () => now,
+      currentTimeMillis: Effect.sync(() => now),
+      currentTimeNanosUnsafe: () => BigInt(now) * 1_000_000n,
+      currentTimeNanos: Effect.sync(() => BigInt(now) * 1_000_000n),
+    }
+    tab = openTab(api, { answers: false, clock })
+    expect(await tab.runPromise(Clock.currentTimeMillis)).toBe(1_000)
+    now = 5_001
+    expect(await tab.runPromise(Clock.currentTimeMillis)).toBe(5_001)
+    await tab.runPromise(Effect.sleep("1 millis"))
+    expect((await api.fetch(`${api.origin}/api/auth/session`)).status).toBe(200)
+  } finally {
+    await tab?.dispose()
+    await server.dispose()
+  }
+})
 
 test("a device keeps its durable engine in real local SQLite and replays after a tab reload", async () => {
   const server = ManagedRuntime.make(TestChatApi.layer.pipe(Layer.provideMerge(TestDatabase.layer("local_engine"))))

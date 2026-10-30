@@ -16,7 +16,7 @@ import { read as telemetry } from "../../test/otlp"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type * as Actor from "../../../worker/Actor.ts"
-import { asPerson, nodeDevice, openFaultyTab, openTab, openTestApp, CHATAPI_ORIGIN, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
+import { asPerson, nodeDevice, openFaultyTab, openTab, openTestApi, CHATAPI_ORIGIN, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
 import { ACTIONS_SHAPE_ROUTE, actionRunPath } from "../actions/contract"
 import { detailsOf } from "./details"
 import { actsOf, hostOf, listRows, missingOf, repoRunRows, repoRunsLoaded, steerOpen, steersOf } from "./page"
@@ -45,7 +45,7 @@ const guest: Actor.Actor = { subject: { kind: "person", id: "person-guest" }, ro
  * `engine`, the device's engine runs the tab's flows, as a steer needs.
  */
 const open = async (person?: string, engine = false) => {
-  const app = openTestApp({}, { people: { gus: guest } })
+  const app = openTestApi({ people: { gus: guest } })
   runtimes.push(app)
   const api = await app.runPromise(Effect.service(TestChatApi))
   const as = person === undefined ? api : asPerson(api, person)
@@ -296,7 +296,7 @@ describe("a repository's run on Cloudflare", () => {
   test("the list says a repository has no runs only once they have loaded, never while its shape is slow", async () => {
     // Production on 2026-10-25: the actions shape took longer than the page waited, and the list said "No runs yet"
     // for a repository whose run Electric already held.
-    const app = openTestApp()
+    const app = openTestApi()
     runtimes.push(app)
     const api = await app.runPromise(Effect.service(TestChatApi))
     const tab = openFaultyTab(api)

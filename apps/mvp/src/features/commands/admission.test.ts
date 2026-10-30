@@ -2,7 +2,7 @@ import { PendingSnapshot } from "@smthrs/platform-browser"
 import { WriteIntents } from "../../writeAdmission"
 import { Effect, Option } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
-import { nodeDevice, openTab, openTestApp, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
+import { nodeDevice, openTab, openTestApi, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
 import { SqlClient } from "effect/sql"
 import { FlowDispatch } from "../../flows/dispatch"
 import { type FlowName } from "../../flows/registry"
@@ -20,7 +20,7 @@ const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => { for (const runtime of runtimes.splice(0).reverse()) await runtime.dispose() })
 const until = (assertion: () => void | Promise<void>) => vi.waitFor(assertion, { timeout: 30_000, interval: 25 })
 const open = async (refusing = false, engine = false) => {
-  const app = openTestApp({ answers: false }, { actor: {
+  const app = openTestApi({ actor: {
     subject: { kind: "person", id: "person-member" }, role: "admin", session: crypto.randomUUID(),
   } })
   runtimes.push(app)
