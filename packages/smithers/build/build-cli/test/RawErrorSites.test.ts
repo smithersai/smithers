@@ -9,7 +9,7 @@
  * and this package has no bare string handed to `Effect.fail` or `Effect.die` and
  * no thrown string, which would print as an unknown failure.
  *
- * The counts below are the reviewed sites per file (262 in all). A new
+ * The counts below are the reviewed sites per file. A new
  * failure is a tagged error (`Schema.TaggedError` or `Data.TaggedError`), so a
  * count may only fall: a file that gains a site fails, and one that drops a
  * site fails until its count is lowered.
@@ -56,7 +56,7 @@ const reviewed: ReadonlyArray<readonly [file: string, count: number]> = [
   ["src/WorkspaceToolchain.ts", 5],
   ["src/engine.ts", 1],
   ["src/internal/DeclarationDependencies.ts", 2],
-  ["src/internal/PackagePlanner.ts", 17],
+  ["src/internal/PackagePlanner.ts", 14],
   ["src/internal/PackageRunner.ts", 6],
   ["src/internal/ParseModule.ts", 1],
   ["src/internal/rules/DocsCheckRule.ts", 4],

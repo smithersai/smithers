@@ -1,9 +1,17 @@
+import * as Exec from "@smthrs/targets/Exec"
+import { Effect } from "effect"
 import * as NodeChildProcess from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { submoduleSourcesVariable } from "../src/GitSubmoduleExec.ts"
+import { executeEffect, ExecutionServices, executionServicesLive } from "../src/internal/PackageRunner.ts"
+import * as PackageDiscovery from "../src/PackageDiscovery.ts"
+import * as PackageExec from "../src/PackageExec.ts"
+import { PackageIndex } from "../src/PackageIndex.ts"
+import * as PackageLoader from "../src/PackageLoader.ts"
+import * as PackageTree from "../src/PackageTree.ts"
 import { serve } from "./helpers/ServeCli.ts"
 import { write } from "./helpers/WriteFile.ts"
 
@@ -140,4 +148,167 @@ describe("Git submodule package execution", () => {
     expect(direct.exitCode, direct.output).toBe(0)
     expect(direct.output).toContain("vendor/one")
   })
+})
+
+const executionPlan = async (root: string) => {
+  const index = PackageIndex.make(await PackageLoader.load(await PackageDiscovery.discover(root)), root)
+  const options = { index, cacheDirectory: ".flows", verb: "auto" as const, patterns: ["//contracts:libs"] }
+  const plan = await PackageExec.plan(options)
+  return { options, plan, node: plan.nodes.get("//contracts:libs")! }
+}
+
+describe("submodule materialization boundaries", () => {
+  it("refuses an unreadable checkout parent without treating it as missing", async () => {
+    const { root } = await fixture()
+    const { plan, options } = await executionPlan(root)
+    const parent = NodePath.join(root, "vendor")
+    await Fs.chmod(parent, 0)
+    try {
+      const result = await PackageExec.execute(plan, options)
+      expect(result.ok).toBe(false)
+      expect(result.results[0]?.error).toContain("EACCES")
+    } finally {
+      await Fs.chmod(parent, 0o755)
+    }
+    expect(await Fs.readFile(NodePath.join(parent, "one/value.txt"), "utf8")).toBe("first")
+  })
+
+  it.each([true, false].flatMap((warm) => ["tracked", "untracked"].map((edit) => ({ warm, edit }))))(
+    "preserves $edit edits after planning (warm=$warm)",
+    async ({ warm, edit }) => {
+      const { root } = await fixture()
+      const checkout = NodePath.join(root, "vendor/one")
+      const firstPlan = await executionPlan(root)
+      if (warm) expect((await PackageExec.execute(firstPlan.plan, firstPlan.options)).ok).toBe(true)
+      const { plan, options } = await executionPlan(root)
+      if (edit === "tracked") await Fs.writeFile(NodePath.join(checkout, "value.txt"), "local tracked edit")
+      else await Fs.writeFile(NodePath.join(checkout, "untracked.txt"), "local untracked edit")
+      const result = await PackageExec.execute(plan, options)
+      expect(result.ok, JSON.stringify(result)).toBe(false)
+      expect(result.results[0]?.error).toContain("local changes")
+      expect(await Fs.readFile(NodePath.join(checkout, "value.txt"), "utf8")).toBe(
+        edit === "tracked" ? "local tracked edit" : "first"
+      )
+      if (edit === "untracked") {
+        expect(await Fs.readFile(NodePath.join(checkout, "untracked.txt"), "utf8")).toBe(
+          "local untracked edit"
+        )
+      }
+    }
+  )
+
+  it.each(["directory", "file", "link"] as const)(
+    "preserves an unrelated %s introduced after planning",
+    async (kind) => {
+      const { root } = await fixture()
+      const { plan, options } = await executionPlan(root)
+      const checkout = NodePath.join(root, "vendor/one")
+      const outside = NodePath.join(root, "outside")
+      await Fs.mkdir(outside)
+      await Fs.writeFile(NodePath.join(outside, "keep.txt"), "preserve")
+      await Fs.rm(checkout, { recursive: true })
+      if (kind === "file") await Fs.writeFile(checkout, "preserve")
+      else if (kind === "link") await Fs.symlink(outside, checkout)
+      else {
+        await Fs.mkdir(checkout)
+        await Fs.writeFile(NodePath.join(checkout, "keep.txt"), "preserve")
+      }
+      const result = await PackageExec.execute(plan, options)
+      expect(result.ok).toBe(false)
+      expect(result.results[0]?.error).toContain(kind === "directory" ? "local changes" : "not a directory")
+      expect(await Fs.readFile(NodePath.join(outside, "keep.txt"), "utf8")).toBe("preserve")
+      if (kind === "file") expect(await Fs.readFile(checkout, "utf8")).toBe("preserve")
+      else expect(await Fs.readFile(NodePath.join(checkout, "keep.txt"), "utf8")).toBe("preserve")
+    }
+  )
+
+  it("captures an already matching checkout without spawning another checkout", async () => {
+    const { root, first } = await fixture()
+    const { options, plan } = await executionPlan(root)
+    let spawns = 0
+    const result = await Effect.runPromise(
+      executeEffect(plan, options).pipe(Effect.provideService(ExecutionServices, {
+        ...executionServicesLive,
+        exec: (settings, payload) => {
+          spawns++
+          return executionServicesLive.exec(settings, payload)
+        }
+      }))
+    )
+    expect(result.ok, JSON.stringify(result)).toBe(true)
+    expect(spawns).toBe(0)
+    expect(git(NodePath.join(root, "vendor/one"), ["rev-parse", "HEAD"])).toBe(first)
+    expect((await PackageExec.execute(plan, options)).results[0]?.status).toBe("hit")
+  })
+
+  it.each(["host failure", "wrong revision"] as const)("refuses a submodule after %s", async (fault) => {
+    const { root, second } = await fixture()
+    const checkout = NodePath.join(root, "vendor/one")
+    await Fs.rm(checkout, { recursive: true })
+    await Fs.mkdir(checkout)
+    const { options, plan } = await executionPlan(root)
+    const result = await Effect.runPromise(
+      executeEffect(plan, options).pipe(Effect.provideService(ExecutionServices, {
+        ...executionServicesLive,
+        exec: (settings, payload) =>
+          fault === "host failure"
+            ? Effect.fail(
+              Exec.ExecError.make({
+                _tag: "smithers-build/ExecError",
+                argv: payload.argv,
+                cwd: payload.cwd,
+                code: "exit_status",
+                exitCode: 71,
+                stdout: "",
+                stderr: "checkout host failed"
+              })
+            )
+            : executionServicesLive.exec(settings, payload).pipe(Effect.tap(() =>
+              Effect.sync(() => {
+                git(checkout, ["fetch", "-q", "origin"])
+                git(checkout, ["checkout", "-q", second])
+              })
+            ))
+      }))
+    )
+    expect(result.ok).toBe(false)
+    expect(result.results[0]?.error).toContain(
+      fault === "host failure" ? "checkout host failed" : "did not materialize pinned gitlink"
+    )
+  })
+
+  it.each([false, true])(
+    "rematerializes a cached tree that no longer verifies (invalid manifest=%s)",
+    async (invalidManifest) => {
+      const { root, first, second } = await fixture()
+      const checkout = NodePath.join(root, "vendor/one")
+      const { options, plan, node } = await executionPlan(root)
+      expect((await PackageExec.execute(plan, options)).ok).toBe(true)
+      git(checkout, ["fetch", "-q", "origin"])
+      git(checkout, ["checkout", "-q", second])
+      const manifest = await PackageTree.captureOutDir(root, ".flows", "vendor/one")
+      const cache = await Effect.runPromise(
+        executionServicesLive.cache({ workspaceRoot: root, cacheDirectory: ".flows" })
+      )
+      try {
+        const entry = await cache.get(node.keyPreview)
+        expect(entry).not.toBeNull()
+        await Fs.writeFile(
+          NodePath.join(root, ".flows/cache", node.keyPreview.slice(0, 2), `${node.keyPreview}.json`),
+          JSON.stringify({
+            ...entry,
+            output: invalidManifest ? { kind: "invalid" } : { kind: "build", manifests: [manifest], files: [] }
+          })
+        )
+      } finally {
+        await cache.close()
+      }
+      const result = await PackageExec.execute(plan, options)
+      expect(result.ok, JSON.stringify(result)).toBe(true)
+      expect(result.results[0]?.status).toBe("ran")
+      expect(git(checkout, ["rev-parse", "HEAD"])).toBe(first)
+      expect(await Fs.readFile(NodePath.join(checkout, "value.txt"), "utf8")).toBe("first")
+      expect((await PackageExec.execute(plan, options)).results[0]?.status).toBe("hit")
+    }
+  )
 })

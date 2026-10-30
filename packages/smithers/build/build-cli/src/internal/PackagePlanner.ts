@@ -26,6 +26,7 @@ import * as Shell from "@smthrs/targets/Shell"
 import * as Target from "@smthrs/targets/Target"
 import * as WorkspaceDeclaration from "@smthrs/targets/WorkspaceDeclaration"
 import * as Cause from "effect/Cause"
+import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Schema from "effect/Schema"
@@ -268,6 +269,7 @@ interface PlanContext {
   readonly index: PackageIndexModule.PackageIndex
   readonly signal: AbortSignal | undefined
   readonly log: (line: string) => void
+  readonly services: PlanningServices
   readonly flags: Readonly<Record<string, string>>
   readonly managerBinary: string | undefined
   /**
@@ -289,7 +291,7 @@ interface PlanContext {
   readonly privateLabels: WeakMap<Target.AnyTarget, string>
   privateCounter: number
   readonly visiting: Set<Target.AnyTarget>
-  readonly ambient: unknown
+  readonly ambient: { readonly platform: NodeJS.Platform; readonly [key: string]: unknown }
   /**
    * The mode each selected root is planned under, by label. `mode` is genuine
    * key material and each mode is a distinct view, but the scheduler, the
@@ -333,6 +335,31 @@ interface PlanContext {
   /** The durable approvals a `required` target is checked against; absent refuses it. */
   readonly approvals: TargetApprovals | undefined
 }
+
+/** Plan-time manifest reads use the same host operation under scoped fault layers.
+ * @category services
+ * @since 1.0.0
+ */
+export interface PlanningServices {
+  readonly readCrateManifest: (path: string) => Effect.Effect<string, unknown>
+}
+/** Real plan-time host operations.
+ * @category services
+ * @since 1.0.0
+ */
+export const planningServicesLive: PlanningServices = {
+  readCrateManifest: (path) => Effect.promise(() => Fs.readFile(path, "utf8"))
+}
+/** Invocation-local planning host services.
+ * @category services
+ * @since 1.0.0
+ */
+export const PlanningServices = Context.Reference<PlanningServices>(
+  "@smthrs/build-cli/PackagePlanner/PlanningServices",
+  {
+    defaultValue: () => planningServicesLive
+  }
+)
 
 /** Opens (once) the cache store the planner uses for closure rows and graph digests. */
 const planStore = async (context: PlanContext): Promise<CacheStore | undefined> => {
@@ -386,16 +413,10 @@ const contextOf = (metadata: Target.Metadata): Target.ImplementationContext => (
 const closureResultOf = async (
   context: PlanContext,
   label: string,
-  closureTarget: Target.AnyTarget
+  entries: ReadonlyArray<Compose.AnchoredSource>
 ): Promise<Compose.ClosureResult> => {
   const known = context.closureResults.get(label)
   if (known !== undefined) return known
-  const metadata = Target.metadata(closureTarget)
-  const entries = Compose.closureEntrySources(
-    (metadata.attrs as { readonly entries: never }).entries,
-    contextOf(metadata)
-  )
-  if (typeof entries === "string") throw new Error(`ImportClosure: ${entries}`)
   const store = await planStore(context)
   const result = await Resolver.closureOfEntries(
     {
@@ -467,11 +488,8 @@ const graphDigestOf = async (
 ): Promise<string | undefined> => {
   const known = context.graphDigests.get(resolveNode.label)
   if (known !== undefined) return known
-  if (resolveNode.lane?.kind !== "bundler-resolve") {
-    throw new Error(`the graph of a bundler build must be a Bundler.Rspack.resolve target: ${resolveNode.label}`)
-  }
   const store = await planStore(context)
-  const cached = store === undefined ? null : await store.get(resolveNode.keyPreview).catch(() => null)
+  const cached = store === undefined ? null : await store.get(resolveNode.keyPreview)
   if (cached !== null && cached.exitOk) {
     const result = decodeStoredResolve(cached.output)
     if (result !== undefined) {
@@ -498,7 +516,7 @@ const probeOnce = async (
   const names = new Set<string>(RuntimeService.lookupEnvironmentNames)
   const environment = Object.fromEntries(
     Object.entries(context.environment).filter(([name, value]) =>
-      typeof value === "string" && names.has(process.platform === "win32" ? name.toUpperCase() : name)
+      typeof value === "string" && names.has(context.ambient.platform === "win32" ? name.toUpperCase() : name)
     )
   )
   const probe = await PackageTree.probeVersion(path, { cwd: context.root, args, environment })
@@ -681,7 +699,9 @@ const appSetCrates = async (
   for (const manifest of [...paths].sort()) {
     let text: string
     try {
-      text = await Fs.readFile(NodePath.join(context.root, ...manifest.split("/")), "utf8")
+      text = await Effect.runPromise(
+        context.services.readCrateManifest(NodePath.join(context.root, ...manifest.split("/")))
+      )
     } catch {
       continue
     }
@@ -1126,7 +1146,7 @@ const resolveBun = async (context: PlanContext): Promise<ToolOutcome> => {
   const key = "{bun}"
   const known = context.tools.get(key)
   if (known !== undefined) return known
-  const path = PackageTree.findOnPath("bun")
+  const path = PackageTree.findOnPath("bun", context.environment)
   let outcome: ToolOutcome
   if (path === undefined) {
     outcome = {
@@ -1218,7 +1238,11 @@ interface DiffEntry {
   readonly path: string
 }
 
-const parseNameStatusZ = (raw: string): Array<DiffEntry> => {
+/** Decodes Git's NUL-delimited diff rows, ignoring incomplete records.
+ * @category internal
+ * @since 1.0.0
+ */
+export const parseNameStatusZ = (raw: string): Array<DiffEntry> => {
   const parts = raw.split("\0")
   const entries: Array<DiffEntry> = []
   for (let index = 0; index < parts.length; index += 1) {
@@ -1379,7 +1403,11 @@ const visit = async (
     // file inside the closure re-keys the consumer, editing an unrelated file
     // does not. The closure itself carries no such key (it is not cacheable).
     if (depRule === "ImportClosure" && rule !== "Clean" && planned.refusal === undefined) {
-      const result = await closureResultOf(context, planned.label, dependency)
+      const result = await closureResultOf(
+        context,
+        planned.label,
+        (planned.lane as Extract<NonNullable<PackageNode["lane"]>, { readonly kind: "closure" }>).entries
+      )
       depKey = `import-closure:${closureResultDigest(result)}`
     }
     // A bundler build keys on the RESOLVED graph digest of its resolve target.
@@ -1432,8 +1460,8 @@ const visit = async (
   const toolchain: Array<unknown> = []
   const targetExecutablePaths: Array<string> = []
   let refusal: string | undefined
-  const noteRefusal = (message: string): void => {
-    refusal ??= message
+  const noteRefusal = (message: string | undefined): void => {
+    if (message !== undefined) refusal ??= message
   }
   // These catalog rules execute through TargetExecution, not a native argv.
   // Use its tool selection (including Vitest's Bun override) so a manager or
@@ -1534,18 +1562,16 @@ const visit = async (
   const hoistedDeps: Array<string> = []
   for (const service of services) {
     if (!RulePolicy.of(Target.metadata(service).target).service) {
-      noteRefusal(`services entries must be service targets; ${depLabels.get(service) ?? "a member"} is not`)
+      noteRefusal(`services entries must be service targets; ${labelOf(context, service)} is not`)
       continue
     }
-    const serviceLabel = depLabels.get(service) ?? labelOf(context, service)
-    const serviceNode = context.nodes.get(serviceLabel)
-    if (serviceNode !== undefined) {
-      if (serviceNode.refusal !== undefined) noteRefusal(`service ${serviceLabel}: ${serviceNode.refusal}`)
-      for (const nested of serviceNode.serviceDeps) {
-        if (!serviceDeps.includes(nested)) serviceDeps.push(nested)
-      }
-      hoistedDeps.push(...serviceNode.dependencies)
+    const serviceLabel = labelOf(context, service)
+    const serviceNode = context.nodes.get(serviceLabel)!
+    if (serviceNode.refusal !== undefined) noteRefusal(`service ${serviceLabel}: ${serviceNode.refusal}`)
+    for (const nested of serviceNode.serviceDeps) {
+      if (!serviceDeps.includes(nested)) serviceDeps.push(nested)
     }
+    hoistedDeps.push(...serviceNode.dependencies)
     if (!serviceDeps.includes(serviceLabel)) serviceDeps.push(serviceLabel)
   }
 
@@ -1556,10 +1582,6 @@ const visit = async (
       toolchain.push(outcome.tool.identity)
       if (outcome._tag === "refused") {
         noteRefusal(outcome.tool.refusal)
-        return entry
-      }
-      if (outcome.tool.args !== undefined) {
-        noteRefusal("Runtime.npx references must be used as bin, not as a path argument")
         return entry
       }
       return outcome.tool.path
@@ -1605,7 +1627,7 @@ const visit = async (
   ): Promise<Array<string>> => {
     const resolved: Array<string> = []
     for (const [index, entry] of entries.entries()) {
-      if (index === 0 && process.platform === "win32" && (entry === "/bin/sh" || entry === "/bin/bash")) {
+      if (index === 0 && context.ambient.platform === "win32" && (entry === "/bin/sh" || entry === "/bin/bash")) {
         resolved.push(await resolveToken(Shell.toolToken({ _tag: "HostBin", name: entry.slice(5) } as never)))
         continue
       }
@@ -1614,11 +1636,16 @@ const visit = async (
         if (reference["_tag"] === "GoRun" || reference["_tag"] === "RuntimeNpx") {
           const outcome = await resolveTool(toolContext, reference)
           toolchain.push(outcome.tool.identity)
-          if (outcome._tag === "refused") noteRefusal(outcome.tool.refusal)
-          else if (reference["_tag"] === "GoRun") resolved.push(outcome.tool.path, "run", String(reference["spec"]))
+          if (outcome._tag === "refused") {
+            noteRefusal(outcome.tool.refusal)
+            resolved.push(entry)
+          } else if (reference["_tag"] === "GoRun") resolved.push(outcome.tool.path, "run", String(reference["spec"]))
           else if (index === 0) resolved.push(outcome.tool.path, ...outcome.tool.args!)
           else if (runtimeArguments > 0 && index === runtimeArguments + 1) resolved.push(...outcome.tool.args!)
-          else noteRefusal("Runtime.npx references must be used as bin, not as a path argument")
+          else {
+            noteRefusal("Runtime.npx references must be used as bin, not as a path argument")
+            resolved.push(entry)
+          }
           continue
         }
       }
@@ -1683,7 +1710,7 @@ const visit = async (
     root: context.root,
     consumer: target,
     packagePathOf: (candidate) => packagePathOf(context, candidate),
-    labelOf: (candidate) => depLabels.get(candidate) ?? labelOf(context, candidate)
+    labelOf: (candidate) => labelOf(context, candidate)
   })
   const overlays = overlayResolution.replacements
   if (overlayResolution.refusal !== undefined) noteRefusal(overlayResolution.refusal)
@@ -2141,15 +2168,15 @@ const visit = async (
   }
 
   if (rule === "Suite") {
-    for (const member of attrTargets(attrs, "tests")) members.push(depLabels.get(member) ?? labelOf(context, member))
+    for (const member of attrTargets(attrs, "tests")) members.push(labelOf(context, member))
   }
   if (rule === "Alias") {
     const aliased = attrTargets(attrs, "target")[0]
-    if (aliased !== undefined) aliasOf = depLabels.get(aliased) ?? labelOf(context, aliased)
+    if (aliased !== undefined) aliasOf = labelOf(context, aliased)
   }
   if (rule === "Materialize") {
     const inner = attrTargets(attrs, "target")[0]
-    if (inner !== undefined) materializeOf = depLabels.get(inner) ?? labelOf(context, inner)
+    if (inner !== undefined) materializeOf = labelOf(context, inner)
   }
   if (rule === "Clean") {
     for (const cleaned of attrTargets(attrs, "targets")) {
@@ -2180,7 +2207,7 @@ const visit = async (
   // declarations. A reduction that cannot settle is a typed refusal on the
   // node, never a partial payload.
   const implementationContext = contextOf(metadata)
-  const labelFor = (member: Target.AnyTarget): string => depLabels.get(member) ?? labelOf(context, member)
+  const labelFor = (member: Target.AnyTarget): string => labelOf(context, member)
   const testOperandPlan = (operand: Compose.FileSet): TestOperandPlan | string => {
     const operandTarget = Target.isTarget(operand) ? operand : operand.target
     if (Target.metadata(operandTarget).target === "Bundler.Rspack.resolve") {
@@ -2441,7 +2468,7 @@ const visit = async (
             rule,
             attrs: attrs as (typeof GitTarget.SubmoduleAttrs)["Type"]
           })
-        if (submodulePlan.refusal !== undefined) noteRefusal(submodulePlan.refusal)
+        noteRefusal(submodulePlan.refusal)
         argv = [
           git,
           "submodule",
@@ -2654,12 +2681,8 @@ const visit = async (
       AgentSession.decodePayloadValues(lane.payload.payloadSpec, context.inputs)
     )
     if (Exit.isFailure(decoded)) {
-      const value: unknown = Cause.squash(decoded.cause)
-      noteRefusal(
-        value instanceof AgentTarget.AgentNeedsInput
-          ? `needs input: ${value.message} (expected: ${value.expected}); pass --input ${value.field}=<value>`
-          : `needs input: ${Diagnostic.describe(value)}`
-      )
+      const value = Cause.squash(decoded.cause) as AgentTarget.AgentNeedsInput
+      noteRefusal(`needs input: ${value.message} (expected: ${value.expected}); pass --input ${value.field}=<value>`)
     }
   }
   if (lane?.kind === "outward") {
@@ -2734,7 +2757,7 @@ const visit = async (
         const pin = (text: string) => StampExec.substitute(text, values)
         argv = argv?.map(pin)
         env = Object.fromEntries(Object.entries(env).map(([name, value]) => [name, pin(value)]))
-        if (selection !== undefined && lane?.kind === "docker-push") {
+        if (lane?.kind === "docker-push") {
           selection = {
             ...selection,
             lane: { kind: "docker-push", commands: lane.commands.map((command) => command.map(pin)) }
@@ -2788,7 +2811,7 @@ const visit = async (
     const gateRule = Target.metadata(gate).target
     if ((RulePolicy.of(gateRule).outward === true)) {
       noteRefusal(
-        `gates must be check/test-capable targets; ${depLabels.get(gate) ?? labelOf(context, gate)} is ${gateRule}, ` +
+        `gates must be check/test-capable targets; ${labelOf(context, gate)} is ${gateRule}, ` +
           "an outward/Run target, and cannot gate"
       )
     }
@@ -2841,7 +2864,7 @@ const visit = async (
     writeSetState = states
   }
 
-  const declaredGates = attrTargets(attrs, "gates").map((gate) => depLabels.get(gate) ?? labelOf(context, gate))
+  const declaredGates = attrTargets(attrs, "gates").map((gate) => labelOf(context, gate))
   // An Agent.Diff or Agent.Pr runs its gates inside the candidate/gate loop,
   // against each candidate, so they are not pre-act gates of the node: a gate
   // that is red on the pre-candidate tree (the test the fix must make pass)
@@ -2866,9 +2889,19 @@ const visit = async (
   } else {
     const serviceSet = new Set(serviceDeps)
     const loopGateSet = new Set(loopGated ? declaredGates : [])
-    const loopGateNeeds = loopGated
-      ? declaredGates.flatMap((gateLabel) => context.nodes.get(gateLabel)?.dependencies ?? [])
-      : []
+    const loopGateNeeds: Array<string> = []
+    const pendingGates = loopGated ? [...declaredGates] : []
+    const visitedGates = new Set<string>()
+    while (pendingGates.length > 0) {
+      const gateLabel = pendingGates.pop()!
+      if (visitedGates.has(gateLabel)) continue
+      visitedGates.add(gateLabel)
+      const gate = context.nodes.get(gateLabel)!
+      // Alias and Suite edges name checks, not products. Judge those checks
+      // inside the candidate tree; only leaf checks' real prerequisites hoist.
+      if (gate.rule === "Alias" || gate.rule === "Suite") pendingGates.push(...gate.dependencies)
+      else loopGateNeeds.push(...gate.dependencies)
+    }
     executionDeps = [
       ...new Set([
         ...dependencyRows.map((row) => row.label).filter((depLabel) =>
@@ -2941,6 +2974,19 @@ const visit = async (
   // Admit both the launcher and its real installation, including shebang
   // interpreters. Docker gets its toolchain from the image instead.
   if (context.index.workspace.sandboxes?.sandboxes["default"]?._tag !== "SandboxDocker") {
+    if (context.index.workspace.nodeModules !== undefined) {
+      const installations = new Set<string>(["node_modules"])
+      for (const directory of [cwd, packagePath]) {
+        const segments = directory.split("/").filter((segment) => segment !== "" && segment !== ".")
+        for (let index = 1; index <= segments.length; index++) {
+          installations.add([...segments.slice(0, index), "node_modules"].join("/"))
+        }
+      }
+      for (const installation of installations) {
+        const root = await Fs.realpath(NodePath.join(context.root, installation)).catch(() => undefined)
+        if (root !== undefined && NodePath.basename(root) === "node_modules") externalReads.push(root)
+      }
+    }
     const temporaryRoots = new Set(["/tmp", "/private/tmp", "/var/tmp", "/private/var/tmp", NodeOs.tmpdir()])
     for (const root of [...temporaryRoots]) {
       if (NodeFs.existsSync(root)) temporaryRoots.add(NodeFs.realpathSync(root))
@@ -3060,7 +3106,7 @@ const visit = async (
     family: "refused",
     rule,
     lane: undefined,
-    refusal: refusal ?? `${rule} planned no executable`
+    refusal: refusal!
   }
   const node: PackageNode = {
     label,
@@ -3154,8 +3200,7 @@ const docsCheckFiles = (
   const walk = (label: string): void => {
     if (visited.has(label)) return
     visited.add(label)
-    const dependency = context.nodes.get(label)
-    if (dependency === undefined) return
+    const dependency = context.nodes.get(label)!
     for (const input of dependency.declaredInputs) {
       if (input.declaration._tag === "GitDiff") continue
       for (const file of input.files) rows.set(file.path, file)
@@ -3166,32 +3211,29 @@ const docsCheckFiles = (
   for (const member of attrs.inputs.flatMap((entry) => Array.isArray(entry) ? entry : [entry])) {
     if (Target.isTarget(member)) {
       const memberRule = Target.metadata(member).target
-      const label = depLabels.get(member)
-      if (label === undefined) return "Docs.Check inputs name a target that was not planned"
+      const label = depLabels.get(member)!
       if (memberRule !== "Filegroup") {
         return `Docs.Check inputs must be files, globs, or Filegroup targets; ${label} is a ${memberRule}`
       }
       walk(label)
       continue
     }
-    const input = expanded.get(member)
-    if (input === undefined) return `Docs.Check input was not expanded by the planner: ${JSON.stringify(member)}`
+    const input = expanded.get(member)!
     for (const file of input.files) rows.set(file.path, file)
   }
-  return [...rows.values()].sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0)
+  return [...rows.values()].sort((left, right) => left.path < right.path ? -1 : 1)
 }
 
 /** The planned labels of a lane's `data` members that are targets; declared inputs live on the node itself. */
 const dataLabelsOf = (
-  data: ReadonlyArray<unknown> | undefined,
+  data: ReadonlyArray<unknown>,
   depLabels: ReadonlyMap<Target.AnyTarget, string>
 ): ReadonlyArray<string> => {
   const labels: Array<string> = []
-  for (const member of data ?? []) {
+  for (const member of data) {
     for (const entry of Array.isArray(member) ? member : [member]) {
       if (!Target.isTarget(entry)) continue
-      const label = depLabels.get(entry)
-      if (label !== undefined) labels.push(label)
+      labels.push(depLabels.get(entry)!)
     }
   }
   return labels
@@ -3527,11 +3569,9 @@ export const nodeModulesDirectories = (directories: ReadonlyArray<string>): Read
 const managerBinaryOf = (workspace: PackageIndexModule.PackageIndex["workspace"]): string | undefined => {
   if (workspace.packageManager === undefined) return undefined
   const manager = workspace.packageManager as { readonly _tag?: unknown; readonly name?: unknown }
-  if (manager === undefined) return undefined
   if (manager._tag === "YarnPackageManager") return "yarn"
   if (manager._tag === "PnpmPackageManager") return "pnpm"
-  if (typeof manager.name === "string") return manager.name
-  return "pnpm"
+  return (manager as { readonly name: string }).name
 }
 
 /**
@@ -3579,7 +3619,7 @@ export const attended = (target: Target.AnyTarget): boolean =>
  * @category planning
  * @since 0.1.0
  */
-export const plan = async (options: RunOptions): Promise<PackagePlan> => {
+const planWithServices = async (options: RunOptions, services: PlanningServices): Promise<PackagePlan> => {
   const index = options.index
   const reporter = Reporter.of(options)
   const log = reporter.note
@@ -3688,7 +3728,8 @@ export const plan = async (options: RunOptions): Promise<PackagePlan> => {
     index,
     signal: options.signal,
     log,
-    flags: workspace.flags?.flags ?? {},
+    services,
+    flags: workspace.flags === undefined ? {} : workspace.flags.flags,
     managerBinary: managerBinaryOf(workspace),
     workspaceToolchain,
     tools: new Map(),
@@ -3738,7 +3779,7 @@ export const plan = async (options: RunOptions): Promise<PackagePlan> => {
     }
   } finally {
     // The plan-time store is scoped to planning; execution opens its own.
-    if (context.store !== undefined) await context.store.close().catch(() => undefined)
+    if (context.store !== undefined) await context.store.close()
   }
   // The work list is the closure of the roots over execution edges only;
   // key-only dependencies (a Clean's targets, a refused rule's attrs) stay
@@ -3750,8 +3791,7 @@ export const plan = async (options: RunOptions): Promise<PackagePlan> => {
       const label = queue.pop()!
       if (labels.has(label)) continue
       labels.add(label)
-      const node = context.nodes.get(label)
-      if (node === undefined) throw new Error(`planned execution edge names an unplanned node: ${label}`)
+      const node = context.nodes.get(label)!
       for (const dependency of node.dependencies) queue.push(dependency)
       // A refused consumer never acts, so its gates are not scheduled: running
       // them would be work in the name of a check nothing will consume.
@@ -3774,3 +3814,20 @@ export const plan = async (options: RunOptions): Promise<PackagePlan> => {
   const workList = [...workLabels].map((label) => context.nodes.get(label)!)
   return { roots, workList, nodes: context.nodes, closures: context.closureResults }
 }
+
+/** Plans with invocation-local Effect host services.
+ * @category planning
+ * @since 1.0.0
+ */
+export const planEffect = (options: RunOptions): Effect.Effect<PackagePlan, unknown> =>
+  Effect.flatMap(PlanningServices, (services) =>
+    Effect.tryPromise({
+      try: () => planWithServices(options, services),
+      catch: (cause) => cause
+    }))
+
+/** Plans at the Promise-based CLI boundary using the real host.
+ * @category planning
+ * @since 1.0.0
+ */
+export const plan = (options: RunOptions): Promise<PackagePlan> => planWithServices(options, planningServicesLive)

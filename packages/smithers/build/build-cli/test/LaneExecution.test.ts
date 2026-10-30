@@ -30,7 +30,12 @@ import * as NodePath from "node:path"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import * as AgentFake from "../src/AgentFake.ts"
 import type * as AgentSession from "../src/AgentSession.ts"
+import { executeEffect, ExecutionServices, executionServicesLive } from "../src/internal/PackageRunner.ts"
+import * as PackageDiscovery from "../src/PackageDiscovery.ts"
+import * as PackageExec from "../src/PackageExec.ts"
 import { graphKeySentinel, keyMaterialWithGraph } from "../src/PackageExec.ts"
+import { PackageIndex } from "../src/PackageIndex.ts"
+import * as PackageLoader from "../src/PackageLoader.ts"
 import * as PackageTree from "../src/PackageTree.ts"
 import { serve } from "./helpers/ServeCli.ts"
 import { write } from "./helpers/WriteFile.ts"
@@ -708,21 +713,16 @@ describe("agent MCP session forwarding", () => {
     if (address === null || typeof address === "string") throw new Error("no port assigned")
     const mcp = [Reference.Mcp.Http("issues", `http://127.0.0.1:${address.port}/mcp`)]
     const opened: Array<ReadonlyArray<Reference.McpHttp> | undefined> = []
-    let runs = 0
+    const scripted = AgentFake.makeScriptedSessionFactory({
+      identity: "recording",
+      responses: [{ findings: [], edits: [] }]
+    })
     const factory: AgentSession.SessionFactory = {
-      open: (_ref, declared) => {
+      open: (ref, declared) => {
         opened.push(declared)
-        return Effect.succeed({
-          identity: "recording",
-          run: () =>
-            Effect.sync(() => {
-              runs += 1
-              return { findings: [], edits: [], note: undefined }
-            })
-        })
+        return scripted.open(ref, declared)
       }
     }
-    const selection = vi.spyOn(AgentFake, "sessionFactoryFromEnvironment").mockReturnValue(factory)
     try {
       await write(root, "WORKSPACE.ts", workspaceModule())
       await write(root, "prompt.md", "Inspect the declared issues server.\n")
@@ -738,17 +738,26 @@ export const Package = S.Package({ targets: { agent } })
 `
       )
       commitAll(root)
-      const result = await serve(root, ["//:agent"])
-      expect(opened, result.output + result.logs).toEqual([mcp])
-      expect(runs).toBe(1)
-      if (flavor === "Diff") expect(result.exitCode).toBe(0)
+      const options = {
+        index: PackageIndex.make(await PackageLoader.load(await PackageDiscovery.discover(root)), root),
+        cacheDirectory: ".flows",
+        verb: "auto" as const,
+        patterns: ["//:agent"]
+      }
+      const planned = await PackageExec.plan(options)
+      const result = await Effect.runPromise(
+        executeEffect(planned, options).pipe(
+          Effect.provideService(ExecutionServices, { ...executionServicesLive, sessions: () => factory })
+        )
+      )
+      expect(opened).toEqual([mcp])
+      expect(scripted.spawns()).toBe(1)
+      if (flavor === "Diff") expect(result.ok).toBe(true)
       else {
-        // PR publication is unavailable in this binding, after the session runs.
-        expect(result.exitCode).toBe(1)
-        expect(result.logs).toContain("PR settle refused")
+        expect(result.ok).toBe(false)
+        expect(result.results[0]?.error).toContain("PR settle refused")
       }
     } finally {
-      selection.mockRestore()
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
     }
   })
@@ -760,4 +769,65 @@ describe("process probes", () => {
       /could not inspect processes/
     )
   })
+})
+
+describe("settled dependency keys", () => {
+  it.each([false, true])(
+    "keys a real bundler consumer on settled products and its supplied toolchain environment (template=%s)",
+    async (template) => {
+      const root = await temporaryWorkspace()
+      await Fs.cp(rsbuildFixture, root, { recursive: true })
+      await Fs.symlink(modulesSource, NodePath.join(root, "node_modules"), "dir")
+      await write(root, ".gitignore", "node_modules\ndist\n.flows\n")
+      await write(root, "WORKSPACE.ts", workspaceModule())
+      await write(
+        root,
+        "PACKAGE.ts",
+        `import { Smithers as S } from "@smthrs/targets"
+const srcs = S.Filegroup({ srcs: S.glob(["src/**"]) })
+const rspack = S.Bundler.Rspack({ config: S.file("//rsbuild.config.mjs") })
+const graph = rspack.resolve({ entries: ["main.ts"], universe: [srcs] })
+const build = rspack.build({ environment: "web", mode: "development", graph, outDirs: ["dist"] })
+const verify = S.Shell.Test({ shell: ${
+          JSON.stringify(
+            "test \"$TOOL_CONTEXT\" = provided && test \"$WORKSPACE_MARKER\" = \"$PWD/dist\" && grep -q rsbuild-mini dist/static/js/index.js"
+          )
+        }, data: [build], sandbox: "none" })
+export const Package = S.Package({ targets: { srcs, graph, build, verify } })`
+      )
+      commitAll(root)
+      const options = {
+        index: PackageIndex.make(await PackageLoader.load(await PackageDiscovery.discover(root)), root),
+        cacheDirectory: ".flows",
+        verb: "auto" as const,
+        patterns: ["//:verify"]
+      }
+      const planned = await PackageExec.plan(options)
+      const original = planned.nodes.get("//:verify")!
+      // Older admitted plans can omit targetExecutablePaths. They still need the
+      // producer's settled key even when the consumer has no generated executable.
+      const consumer = {
+        ...original,
+        keyTemplate: template ? original.keyMaterial : undefined,
+        targetExecutablePaths: undefined,
+        env: { ...original.env, WORKSPACE_MARKER: "dist" },
+        absoluteEnv: [...original.absoluteEnv, "WORKSPACE_MARKER", "MISSING_ROOT_HINT"],
+        nixEnvironment: {
+          path: [NodePath.dirname(process.execPath), "/usr/bin", "/bin"],
+          variables: { TOOL_CONTEXT: "provided" }
+        }
+      } as unknown as PackageExec.PackageNode
+      const plan = {
+        ...planned,
+        nodes: new Map([...planned.nodes, [consumer.label, consumer]]),
+        workList: planned.workList.map((node) => node.label === consumer.label ? consumer : node)
+      }
+      const first = await PackageExec.execute(plan, options)
+      expect(first.ok, JSON.stringify(first)).toBe(true)
+      expect(first.results.find((entry) => entry.label === "//:verify")?.key).not.toBe(original.keyPreview)
+      const second = await PackageExec.execute(plan, options)
+      expect(second.ok, JSON.stringify(second)).toBe(true)
+      expect(second.results.find((entry) => entry.label === "//:verify")?.status).toBe("hit")
+    }
+  )
 })

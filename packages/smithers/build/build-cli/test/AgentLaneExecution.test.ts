@@ -23,12 +23,21 @@
  * - Github.Pr: the refusal gate, and NotImplemented past it.
  * - Memory.Retain: the typed unavailable notices, and the real backend call.
  */
+import * as AgentTarget from "@smthrs/targets/AgentTarget"
+import * as Exec from "@smthrs/targets/Exec"
+import { Effect } from "effect"
 import * as NodeChildProcess from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as NodeNet from "node:net"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
+import * as AgentFake from "../src/AgentFake.ts"
+import { executeEffect, ExecutionServices, executionServicesLive } from "../src/internal/PackageRunner.ts"
+import * as PackageDiscovery from "../src/PackageDiscovery.ts"
+import * as PackageExec from "../src/PackageExec.ts"
+import { PackageIndex } from "../src/PackageIndex.ts"
+import * as PackageLoader from "../src/PackageLoader.ts"
 import * as PackageTree from "../src/PackageTree.ts"
 import { writeExecutable } from "./helpers/Executable.ts"
 import { serve as serveCli, type ServeOptions } from "./helpers/ServeCli.ts"
@@ -796,4 +805,244 @@ export const Package = S.Package({ targets: { retain } })
     expect(refused.logs).toContain(`smithers memory set repo commit:${sha}`)
     expect(refused.logs).toContain("exited 3: bank not found")
   }, 120_000)
+})
+
+describe("candidate gate composition", () => {
+  it("runs aliases and suites against each candidate and retains the final accepted bytes", async () => {
+    const root = await temporaryWorkspace()
+    await write(root, "WORKSPACE.ts", workspaceModule())
+    await write(root, "prompt.md", "Produce accepted candidate bytes.\n")
+    await write(
+      root,
+      "PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+const check = S.Shell.Test({ shell: "grep -q '^accepted$' out/value.txt" })
+const alias = S.Alias(check)
+const suite = S.Suite({ tests: [alias, check] })
+const change = S.Agent.Diff({ prompt: S.file("//prompt.md"), data: [], changes: ["out/**"], gates: [suite], maxRounds: 2 })
+export const Package = S.Package({ targets: { check, alias, suite, change } })
+`
+    )
+    initRepo(root)
+    commitAll(root)
+    const logPath = await script(root, [
+      { edits: [{ path: "out/value.txt", contents: "rejected\n" }] },
+      { edits: [{ path: "out/value.txt", contents: "accepted\n" }] }
+    ])
+    const index = PackageIndex.make(await PackageLoader.load(await PackageDiscovery.discover(root)), root)
+    const options = {
+      index,
+      cacheDirectory: ".flows",
+      verb: "auto" as const,
+      patterns: ["//:change"],
+      environment: { ...process.env, SMTHRS_AGENT_FAKE: "fake.json" }
+    }
+    const plan = await PackageExec.plan(options)
+    const notes: Array<string> = []
+    const result = await PackageExec.execute(plan, {
+      ...options,
+      log: (message) => notes.push(message)
+    })
+    expect(result.ok, notes.join("\n")).toBe(true)
+    expect(notes.join("\n")).toContain("round 1: gate //:suite red")
+    expect(notes.join("\n")).toContain("round 2: gate //:suite green")
+    expect(await Fs.readFile(NodePath.join(root, "out/value.txt"), "utf8")).toBe("accepted\n")
+    expect(await spawns(logPath)).toBe(2)
+  })
+})
+
+describe("candidate gate plan boundaries", () => {
+  it.each(
+    [
+      ["absent", "gate was not planned"],
+      ["refused", "gate declaration unavailable"],
+      ["outward", "outward/Run target and cannot gate a candidate"],
+      ["alias missing target", "alias names no target"],
+      ["alias absent target", "gate was not planned"],
+      ["suite absent member", "suite is red; members:"],
+      ["unsupported", "cannot be executed against a candidate tree"],
+      ["missing cargo commands", "cargo gate planned no commands"],
+      ["cargo host failure", "gate host unavailable"],
+      ["cargo host success", undefined],
+      ["missing service", "service //:absent was not planned"],
+      ["filegroup", undefined],
+      ["closure", undefined],
+      ["empty suite", undefined],
+      ["Cargo.Test", undefined],
+      ["Cargo.Nextest", undefined],
+      ["Cargo.Clippy", undefined],
+      ["Cargo.Deny", undefined],
+      ["Cargo.Fmt", undefined]
+    ] as const
+  )("judges %s before publishing a candidate", async (kind, detail) => {
+    const root = await temporaryWorkspace()
+    await write(root, "WORKSPACE.ts", workspaceModule())
+    await write(root, "prompt.md", "Produce one candidate.\n")
+    await write(
+      root,
+      "PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+const gate = S.Shell.Test({ shell: "true" })
+const change = S.Agent.Diff({ prompt: S.file("//prompt.md"), data: [], changes: ["out/**"], gates: [gate], maxRounds: 1 })
+export const Package = S.Package({ targets: { gate, change } })`
+    )
+    await write(root, ".gitignore", ".flows\nfake.json*\n")
+    initRepo(root)
+    commitAll(root)
+    await script(root, [{ edits: [{ path: "out/value.txt", contents: "accepted candidate\n" }] }])
+    const options = {
+      index: PackageIndex.make(await PackageLoader.load(await PackageDiscovery.discover(root)), root),
+      cacheDirectory: ".flows",
+      verb: "auto" as const,
+      patterns: ["//:change"],
+      environment: { ...process.env, SMTHRS_AGENT_FAKE: "fake.json" }
+    }
+    const planned = await PackageExec.plan(options)
+    const nodes = new Map(planned.nodes)
+    const gate = nodes.get("//:gate")!
+    const consumer = nodes.get("//:change")!
+    expect(consumer.dependencies).not.toContain(gate.label)
+    let replacement: Record<string, unknown> = { ...gate }
+    if (kind === "absent") nodes.delete(gate.label)
+    else {
+      if (kind === "refused") replacement["refusal"] = "gate declaration unavailable"
+      else if (kind === "outward") replacement["rule"] = "Shell.Run"
+      else if (kind.startsWith("alias")) {
+        replacement = {
+          ...replacement,
+          rule: "Alias",
+          aliasOf: kind === "alias absent target" ? "//:absent" : undefined
+        }
+      } else if (kind === "suite absent member" || kind === "empty suite") {
+        replacement = { ...replacement, rule: "Suite", members: kind === "empty suite" ? [] : ["//:absent"] }
+      } else if (kind === "unsupported") replacement["rule"] = "Npm.Pack"
+      else if (kind === "missing cargo commands") replacement = { ...replacement, rule: "Cargo.Test", lane: undefined }
+      else if (kind === "missing service") replacement["serviceDeps"] = ["//:absent"]
+      else if (kind === "filegroup") replacement["rule"] = "Filegroup"
+      else if (kind === "closure") replacement["rule"] = "ImportClosure"
+      else {replacement = {
+          ...replacement,
+          rule: kind.startsWith("cargo host") ? "Cargo.Test" : kind,
+          lane: {
+            kind: "cargo",
+            commands: kind === "cargo host failure" ?
+              [["cargo", "test", "--offline"]] :
+              kind === "cargo host success"
+              ? [["/bin/sh", "-c", "true"]]
+              : [],
+            outFiles: [],
+            crates: [],
+            binaries: []
+          }
+        }}
+      nodes.set(gate.label, replacement as unknown as PackageExec.PackageNode)
+    }
+    const result = await Effect.runPromise(
+      executeEffect({ ...planned, nodes, workList: [consumer] }, options).pipe(
+        Effect.provideService(ExecutionServices, {
+          ...executionServicesLive,
+          exec: (config, payload) =>
+            payload.argv[0] === "cargo"
+              ? Effect.fail(
+                Exec.ExecError.make({
+                  _tag: "smithers-build/ExecError",
+                  argv: payload.argv,
+                  cwd: payload.cwd,
+                  code: "exit_status",
+                  exitCode: 77,
+                  stdout: "",
+                  stderr: "gate host unavailable"
+                })
+              )
+              : executionServicesLive.exec(config, payload)
+        })
+      )
+    )
+    if (detail === undefined) {
+      expect(result.ok, JSON.stringify(result.results)).toBe(true)
+      expect(await Fs.readFile(NodePath.join(root, "out/value.txt"), "utf8")).toBe("accepted candidate\n")
+    } else {
+      expect(result.ok).toBe(false)
+      expect(result.results[0]?.error).toContain(detail)
+      await expect(Fs.stat(NodePath.join(root, "out/value.txt"))).rejects.toMatchObject({ code: "ENOENT" })
+      expect(result.results[0]?.error).toContain("candidate preserved")
+    }
+  })
+})
+
+describe("commit gate and composer fault boundaries", () => {
+  it.each(["missing gate", "gate adapter", "portal", "composer", "empty message"] as const)(
+    "preserves HEAD and owned edits after %s failure",
+    async (fault) => {
+      const root = await temporaryWorkspace()
+      const external = await temporaryWorkspace()
+      await write(root, "WORKSPACE.ts", workspaceModule())
+      await write(root, ".gitignore", ".flows\n")
+      await write(root, "owned.txt", "original")
+      await write(external, "value.txt", "original portal")
+      await Fs.symlink(external, NodePath.join(root, "portal"))
+      await write(
+        root,
+        "PACKAGE.ts",
+        `import { Smithers as S } from "@smthrs/targets"
+const gate = S.Shell.Test({ shell: "true" })
+const command = S.Git.Commit({ gates: [gate], changes: [${
+          JSON.stringify(fault === "portal" ? "**" : "owned.txt")
+        }], message: ${
+          fault === "composer" || fault === "empty message" ? "S.Agents.luna" : JSON.stringify("chore: never")
+        } })
+export const Package = S.Package({ targets: { gate, command } })`
+      )
+      initRepo(root)
+      commitAll(root)
+      const head = git(root, "rev-parse", "HEAD")
+      await write(root, "owned.txt", "owned edit")
+      const options = {
+        index: PackageIndex.make(await PackageLoader.load(await PackageDiscovery.discover(root)), root),
+        cacheDirectory: ".flows",
+        verb: "auto" as const,
+        patterns: ["//:command"]
+      }
+      const planned = await PackageExec.plan(options)
+      const nodes = new Map(planned.nodes)
+      if (fault === "missing gate") nodes.delete("//:gate")
+      const scripted = AgentFake.makeScriptedSessionFactory({ responses: [{ findings: [], edits: [] }] })
+      const result = await Effect.runPromise(
+        executeEffect({ ...planned, nodes }, options).pipe(Effect.provideService(ExecutionServices, {
+          ...executionServicesLive,
+          sessions: () =>
+            fault === "composer"
+              ? {
+                open: () =>
+                  Effect.fail(new AgentTarget.AgentSessionError({ phase: "spawn", message: "composer unavailable" }))
+              }
+              : scripted,
+          exec: (settings, payload) => {
+            if (fault === "gate adapter") throw new Error("gate adapter unavailable")
+            return executionServicesLive.exec(settings, payload).pipe(Effect.tap(() =>
+              fault === "portal"
+                ? Effect.promise(() => Fs.writeFile(NodePath.join(external, "value.txt"), "escaped"))
+                : Effect.void
+            ))
+          }
+        }))
+      )
+      expect(result.ok, JSON.stringify(result)).toBe(false)
+      const error = result.results.find((entry) => entry.label === "//:command")?.error
+      expect(error).toContain(
+        fault === "missing gate"
+          ? "gate was not planned"
+          : fault === "gate adapter"
+          ? "commit gates could not run"
+          : fault === "portal"
+          ? "gate touched the real tree through a symlink"
+          : fault === "composer"
+          ? "composer unavailable"
+          : "message"
+      )
+      expect(git(root, "rev-parse", "HEAD")).toBe(head)
+      expect(await Fs.readFile(NodePath.join(root, "owned.txt"), "utf8")).toBe("owned edit")
+      expect(await Fs.readFile(NodePath.join(external, "value.txt"), "utf8")).toBe("original portal")
+    }
+  )
 })

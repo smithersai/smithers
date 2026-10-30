@@ -45,6 +45,14 @@ plans it again and refuses when the revision changed or the grant is gone.
 `smthrs watch` cycles and `Repo.Target` child builds ask the approval store of
 the command that started them.
 
+## Scratch trees
+
+Check-mode generators and candidate gates use a separate tree with an empty,
+read-only result-cache mount. Declared linked installations named `node_modules` keep
+an explicit read grant to their real dependency directory, bound during planning;
+introducing or retargeting a link afterward grants no new authority. Links to other
+host directories require the plan's own external-read grant.
+
 ## Generated outputs
 
 `S.Generate({ emit: ... })` checks output parents before writing or checking.
@@ -355,3 +363,8 @@ directory manifests are misses.
 This is the build-4 decision: validate products, without syscall provenance or
 wider sandbox grants. Targets must write a file into each declared output
 directory, or declare the files they actually produce.
+
+Submodule cache hits revalidate the checkout. A dirty checkout, an unrelated
+path, or a failed status read is refused before any cached tree is restored.
+Candidate gates composed through aliases and suites run after the candidate
+is written; only their data prerequisites run before it.

@@ -366,3 +366,21 @@ export const Package = S.Package({ targets: { childDeploy: S.Repo.Target("child"
     // Two cold child CLIs per run (query, then execution).
   }, 240_000)
 })
+
+describe("explicit child CLI sandbox policy", () => {
+  it("executes an explicitly unconfined child while the child enforces its own sandbox", async () => {
+    const root = await workspace()
+    const file = NodePath.join(root, "PACKAGE.ts")
+    await Fs.writeFile(
+      file,
+      (await Fs.readFile(file, "utf8")).replace(
+        "S.Repo.Target(\"child\", \"//:test\")",
+        "S.Repo.Target(\"child\", \"//:test\", { sandbox: \"none\" })"
+      )
+    )
+    const result = await serveCli(root, ["//:childTest"])
+    expect(result.exitCode, result.stdout + result.stderr).toBe(0)
+    expect(result.stderr).toContain("child repository echo")
+    expect(result.stderr).not.toContain("outer child CLI runs unconfined")
+  })
+})

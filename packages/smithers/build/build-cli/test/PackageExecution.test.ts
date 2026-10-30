@@ -2308,3 +2308,65 @@ export const Package = S.Package({ targets: {
     }
   )
 })
+
+describe("scratch portal publication", () => {
+  it("reverts an unsandboxed check's portal write even when its declared outputs have no drift", async () => {
+    const root = await temporaryWorkspace()
+    const external = await tracked(Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-check-portal-"))))
+    await write(root, "WORKSPACE.ts", workspaceModule())
+    await write(root, "out.txt", "original")
+    await write(external, "value.txt", "private original")
+    await Fs.symlink(external, NodePath.join(root, "portal"))
+    await write(
+      root,
+      "PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: { check: S.Shell.Diff({
+  shell: "printf changed > portal/value.txt", changes: ["out.txt"], sandbox: "none"
+}) } })`
+    )
+    commitAll(root)
+    const result = await serve(root, ["//:check"])
+    expect(result.exitCode, result.output + result.logs).toBe(1)
+    expect(result.logs).toContain("check touched the real tree through a symlink (reverted)")
+    expect(await Fs.readFile(NodePath.join(external, "value.txt"), "utf8")).toBe("private original")
+    expect(await Fs.readFile(NodePath.join(root, "out.txt"), "utf8")).toBe("original")
+  })
+
+  it("does not publish or cache an overlay build whose command escaped through a portal", async () => {
+    const root = await temporaryWorkspace()
+    const external = await tracked(Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-overlay-portal-"))))
+    await write(root, "WORKSPACE.ts", workspaceModule())
+    await write(root, "src/input.txt", "original source")
+    await write(root, "replacement.txt", "overlay source")
+    await write(external, "value.txt", "private original")
+    await Fs.symlink(external, NodePath.join(root, "portal"))
+    await write(root, ".gitignore", ".flows\n")
+    await write(
+      root,
+      "PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+const base = S.Filegroup({ srcs: [S.file("//src/input.txt")] })
+const overlay = S.Overlay({ base, replace: { "src/input.txt": S.file("//replacement.txt") } })
+const build = S.Shell.Build({
+  shell: "mkdir -p dist; cp src/input.txt dist/output.txt; printf changed > portal/value.txt",
+  data: [overlay], outDirs: ["dist"], sandbox: "none"
+})
+export const Package = S.Package({ targets: { base, overlay, build } })`
+    )
+    commitAll(root)
+    const first = await serve(root, ["//:build"])
+    const firstPublished = await Fs.access(NodePath.join(root, "dist/output.txt")).then(() => true, () => false)
+    const second = await serve(root, ["//:build"])
+    expect(first.exitCode, first.output + first.logs).toBe(1)
+    expect(second.exitCode, second.output + second.logs).toBe(1)
+    expect(first.logs, first.output + first.logs).toContain(
+      "overlay consumer touched the real tree through a symlink (reverted)"
+    )
+    expect(second.logs).toContain("overlay consumer touched the real tree through a symlink (reverted)")
+    expect(firstPublished).toBe(false)
+    await expect(Fs.stat(NodePath.join(root, "dist/output.txt"))).rejects.toMatchObject({ code: "ENOENT" })
+    expect(await Fs.readFile(NodePath.join(external, "value.txt"), "utf8")).toBe("private original")
+    expect(await Fs.readFile(NodePath.join(root, "src/input.txt"), "utf8")).toBe("original source")
+  })
+})

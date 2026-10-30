@@ -3,7 +3,9 @@
  *
  * @since 0.1.0
  */
+import { Context, Effect, Layer } from "effect"
 import * as ChildProcess from "node:child_process"
+import type { BigIntStats } from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
@@ -711,5 +713,78 @@ describe("executable revalidation across targets", () => {
     const root = await directory()
     const memo = new Map<string, { readonly identity: string; readonly digest: string }>()
     expect(await PackageRunner.currentExecutableDigest(memo, Path.join(root, "absent"), settled)).toBeUndefined()
+  })
+})
+
+describe("executable digest I/O boundaries", () => {
+  it("refuses to remember a directory presented as an executable file", async () => {
+    const root = await directory()
+    const memo = new Map<string, { readonly identity: string; readonly digest: string }>()
+    expect(await PackageRunner.currentExecutableDigest(memo, root)).toBeUndefined()
+    expect(memo.size).toBe(0)
+  })
+
+  it("does not remember bytes whose path disappears before the final identity check", async () => {
+    const root = await directory()
+    const tool = Path.join(root, "tool")
+    await write(root, "tool", "#!/bin/sh\nprintf identity\n")
+    const memo = new Map<string, { readonly identity: string; readonly digest: string }>()
+    let observations = 0
+    class ExecutableFileSystem extends Context.Service<ExecutableFileSystem, {
+      readonly stat: (path: string) => Effect.Effect<BigIntStats, unknown>
+    }>()("test/ExecutableFileSystem") {}
+    const failingFileSystem = Layer.succeed(ExecutableFileSystem, {
+      stat: (path) =>
+        Effect.tryPromise(async () => {
+          observations++
+          if (observations === 2) await Fs.unlink(path)
+          return Fs.stat(path, { bigint: true })
+        })
+    })
+    const digest = await Effect.runPromise(
+      Effect.gen(function*() {
+        const fs = yield* ExecutableFileSystem
+        return yield* Effect.promise(() =>
+          PackageRunner.currentExecutableDigest(
+            memo,
+            tool,
+            () => Date.now() + 60_000,
+            (path) => Effect.runPromise(fs.stat(path))
+          )
+        )
+      }).pipe(Effect.provide(failingFileSystem))
+    )
+    expect(digest).toBeDefined()
+    expect(memo.size).toBe(0)
+    await expect(Fs.stat(tool)).rejects.toMatchObject({ code: "ENOENT" })
+  })
+})
+
+describe("planned executable disappearance", () => {
+  it("refuses a tool removed by a host service after planning", async () => {
+    const { root, tools } = await fixture("S.Shell.Run({ bin: S.Host.bin(\"identity-compiler\"), sandbox: \"none\" })")
+    const tool = Path.join(tools, "identity-compiler")
+    await write(tools, "identity-compiler", compiler(tools, "never executed"))
+    const options = {
+      index: PackageIndex.make(await PackageLoader.load(await PackageDiscovery.discover(root)), root),
+      cacheDirectory: ".flows",
+      verb: "auto" as const,
+      patterns: ["//:dist"]
+    }
+    const plan = await PackageExec.plan(options)
+    const result = await Effect.runPromise(
+      PackageRunner.executeEffect(plan, options).pipe(
+        Effect.provideService(PackageRunner.ExecutionServices, {
+          ...PackageRunner.executionServicesLive,
+          cache: (settings) =>
+            PackageRunner.executionServicesLive.cache(settings).pipe(
+              Effect.tap(() => Effect.promise(() => Fs.unlink(tool)))
+            )
+        })
+      )
+    )
+    expect(result.ok).toBe(false)
+    expect(result.results[0]?.error).toContain("executable changed since planning")
+    await expect(Fs.stat(Path.join(tools, "dispatches"))).rejects.toMatchObject({ code: "ENOENT" })
   })
 })

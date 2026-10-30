@@ -22,6 +22,7 @@ import * as Target from "@smthrs/targets/Target"
 import { verifyOutputs } from "@smthrs/targets/ToolBuild"
 import * as WorkspaceDeclaration from "@smthrs/targets/WorkspaceDeclaration"
 import * as Cause from "effect/Cause"
+import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import { minimatch } from "minimatch"
@@ -83,6 +84,56 @@ const joined = <A>(run: (signal: AbortSignal) => Promise<A>): Effect.Effect<A, u
     pending.then((value) => resume(Effect.succeed(value)), (cause) => resume(Effect.fail(cause)))
     return Effect.promise(() => pending.then(() => undefined, () => undefined))
   })
+
+/**
+ * Host operations used by one invocation; faults are supplied through Effect services.
+ * @category models
+ * @since 1.0.0
+ */
+export interface ExecutionServices {
+  readonly exec: typeof Exec.run
+  readonly target: typeof runTarget
+  readonly resolveGraph: typeof RspackRunner.resolveGraph
+  readonly build: typeof RspackRunner.runBuild
+  readonly sessions: typeof AgentFake.sessionFactoryFromEnvironment
+  readonly retain: typeof MemoryBackend.retain
+  readonly commit: typeof GitCommit.commit
+  readonly dockerService: typeof DockerExec.serviceSpec
+  readonly anvilService: typeof AnvilExec.serviceSpec
+  readonly cache: (
+    options: Parameters<typeof openCache>[0]
+  ) => Effect.Effect<Awaited<ReturnType<typeof openCache>>, unknown>
+}
+
+/**
+ * The real host adapter, shared by the default and fault-injection layers.
+ * @category services
+ * @since 1.0.0
+ */
+export const executionServicesLive: ExecutionServices = {
+  exec: Exec.run,
+  target: runTarget,
+  resolveGraph: RspackRunner.resolveGraph,
+  build: RspackRunner.runBuild,
+  sessions: AgentFake.sessionFactoryFromEnvironment,
+  retain: MemoryBackend.retain,
+  commit: GitCommit.commit,
+  dockerService: DockerExec.serviceSpec,
+  anvilService: AnvilExec.serviceSpec,
+  cache: (options) => joined(() => openCache(options))
+}
+
+/**
+ * Invocation-local host operations; supplying a layer never patches another invocation.
+ * @category services
+ * @since 1.0.0
+ */
+export const ExecutionServices = Context.Reference<ExecutionServices>(
+  "@smthrs/build-cli/PackageRunner/ExecutionServices",
+  {
+    defaultValue: () => executionServicesLive
+  }
+)
 
 /**
  * How long before a digest read a file must have last changed for the digest
@@ -170,9 +221,10 @@ const declaredSourceFiles = (
 const laneDataFiles = (
   node: PackageNode,
   nodes: ReadonlyMap<string, PackageNode>,
-  promptPath: string
+  promptPath: string,
+  dataLabels: ReadonlyArray<string>
 ): ReadonlyArray<string> =>
-  declaredSourceFiles(node, nodes, node.lane?.kind === "agent" ? node.lane.dataLabels : [])
+  declaredSourceFiles(node, nodes, dataLabels)
     .filter((path) => path !== promptPath)
 
 /**
@@ -416,10 +468,14 @@ const execErrorText = (error: Exec.ExecError): string => {
   return `command failed (exit ${error.exitCode}): ${error.argv.join(" ")}${detail === "" ? "" : `\n${detail}`}`
 }
 
-interface ExecOutcome {
-  readonly ok: boolean
-  readonly error?: string | undefined
-  readonly result?: Exec.Result | undefined
+type ExecOutcome =
+  | { readonly ok: true; readonly error?: undefined; readonly result?: Exec.Result | undefined }
+  | { readonly ok: false; readonly error: string; readonly result?: undefined }
+
+/** A successful process always supplies the result returned by Exec.run. */
+type SpawnOutcome = Extract<ExecOutcome, { readonly ok: false }> | {
+  readonly ok: true
+  readonly result: Exec.Result
 }
 
 /**
@@ -433,6 +489,7 @@ export const executeEffect = (
   options: ExecuteOptions
 ): Effect.Effect<Executor.Summary, unknown> =>
   Effect.scoped(Effect.gen(function*() {
+    const services = yield* ExecutionServices
     const index = options.index
     const root = index.root
     const cacheDirectory = options.cacheDirectory
@@ -445,17 +502,15 @@ export const executeEffect = (
     // including concurrent commands embedded in the same Node process.
     const serviceInvocationId = randomUUID()
     const store = yield* Effect.acquireRelease(
-      joined(() =>
-        openCache({
-          workspaceRoot: root,
-          cacheDirectory,
-          endpoint: options.remoteCache?.endpoint,
-          readToken: options.remoteCache?.readToken,
-          writeToken: options.remoteCache?.writeToken,
-          publishNamespace: options.remoteCache?.publishNamespace,
-          warn: reporter.warn
-        })
-      ),
+      services.cache({
+        workspaceRoot: root,
+        cacheDirectory,
+        endpoint: options.remoteCache?.endpoint,
+        readToken: options.remoteCache?.readToken,
+        writeToken: options.remoteCache?.writeToken,
+        publishNamespace: options.remoteCache?.publishNamespace,
+        warn: reporter.warn
+      }),
       (store) => Effect.promise(() => store.close().catch(() => undefined))
     )
     // The environment names that carry this workspace's remote-cache tokens.
@@ -584,16 +639,33 @@ export const executeEffect = (
         return { argv: argv as [string, ...Array<string>], env: spawnEnv, secrets: node.secrets }
       })
 
+    /** Prepares the cache seal and explicit dependency read grants for any tool-running rule. */
+    const sandboxFor = (
+      node: PackageNode,
+      workspaceRoot: string,
+      candidateReads: ReadonlyArray<string> = []
+    ): Effect.Effect<ExecSandbox.Request, unknown> =>
+      Effect.gen(function*() {
+        // A scratch tree deliberately omits the result cache. Create its empty
+        // mount before asking bubblewrap to seal it beneath the writable cache root.
+        yield* joined(() => Fs.mkdir(NodePath.join(workspaceRoot, cacheDirectory, "cache"), { recursive: true }))
+        const sandbox = sandboxRequest(node, planned.nodes, index.workspace, cacheDirectory, candidateReads)
+        // Dependency grants are bound by the planner. Resolving a new link here
+        // would let post-plan filesystem changes create new host authority.
+        return sandbox
+      })
+
     const spawnNode = (
       node: PackageNode,
       workspaceRoot: string,
       override?: ReadonlyArray<string>,
       candidateReads: ReadonlyArray<string> = [],
       archive = false
-    ): Effect.Effect<ExecOutcome, unknown> =>
+    ): Effect.Effect<SpawnOutcome, unknown> =>
       Effect.gen(function*() {
         const resolved = yield* resolveSpawn(node, override, archive)
-        if ("error" in resolved) return { ok: false, error: resolved.error }
+        if ("error" in resolved) return { ok: false as const, error: resolved.error }
+        const sandbox = yield* sandboxFor(node, workspaceRoot, candidateReads)
         const payload: Exec.Payload = {
           cwd: node.cwd,
           argv: resolved.argv,
@@ -615,13 +687,13 @@ export const executeEffect = (
           environment: { ...ambient, ...resolved.env },
           sensitiveNames: credentialNames
         })
-        const exit = yield* Effect.exit(Exec.run({
+        const exit = yield* Effect.exit(services.exec({
           workspaceRoot,
           cacheDirectory,
           sensitiveEnv: credentialNames,
           // The exec boundary enforces the confinement or fails the run closed;
           // nothing here can weaken it into a warning.
-          sandbox: sandboxRequest(node, planned.nodes, index.workspace, cacheDirectory, candidateReads),
+          sandbox,
           ...(node.nixEnvironment === undefined ? {} : {
             environment: {
               path: node.nixEnvironment.path.join(NodePath.delimiter),
@@ -656,7 +728,10 @@ export const executeEffect = (
             ) missing.push(path)
           }
           if (missing.length > 0) {
-            return { ok: false, error: `${node.label} did not produce declared outputs: ${missing.join(", ")}` }
+            return {
+              ok: false as const,
+              error: `${node.label} did not produce declared outputs: ${missing.join(", ")}`
+            }
           }
           return { ok: true, result: exit.value }
         }
@@ -666,9 +741,9 @@ export const executeEffect = (
           typeof value === "object" && value !== null &&
           (value as { readonly _tag?: unknown })._tag === "smithers-build/ExecError"
         ) {
-          return { ok: false, error: execErrorText(value as Exec.ExecError) }
+          return { ok: false as const, error: execErrorText(value as Exec.ExecError) }
         }
-        return { ok: false, error: Diagnostic.describe(value, "tool run failed") }
+        return { ok: false as const, error: Diagnostic.describe(value, "tool run failed") }
       })
 
     interface BuildOutput {
@@ -846,10 +921,8 @@ export const executeEffect = (
       })
 
     /** A declared-outputs target's workspace-relative output paths. */
-    const declaredOutputPaths = (node: PackageNode): ReadonlyArray<string> => {
-      const declared = node.declaredOutputs
-      return declared === undefined ? [] : declared.paths.map((path) => Input.resolvePath(declared.cwd, path))
-    }
+    const declaredOutputPaths = (declared: Target.DeclaredOutputs): ReadonlyArray<string> =>
+      declared.paths.map((path) => Input.resolvePath(declared.cwd, path))
 
     /**
      * The cache record of a target with declared outputs: its success envelope
@@ -868,12 +941,16 @@ export const executeEffect = (
      * keeps the plain success envelope, which still answers a hit only while
      * the outputs on disk measure correctly.
      */
-    const captureTargetOutputs = (node: PackageNode, result: unknown): Effect.Effect<unknown, unknown> =>
+    const captureTargetOutputs = (
+      node: PackageNode,
+      result: unknown,
+      declared: Target.DeclaredOutputs
+    ): Effect.Effect<unknown, unknown> =>
       Effect.gen(function*() {
         const captured = yield* Effect.exit(Effect.gen(function*() {
           const manifests: Array<PackageTree.OutDirManifest> = []
           const files: Array<PackageTree.FileManifest> = []
-          for (const path of declaredOutputPaths(node)) {
+          for (const path of declaredOutputPaths(declared)) {
             const stats = yield* joined(() => Fs.lstat(NodePath.join(root, ...path.split("/"))))
             if (stats.isDirectory()) {
               manifests.push(yield* joined(() => PackageTree.captureOutDir(root, cacheDirectory, path)))
@@ -916,13 +993,15 @@ export const executeEffect = (
           Effect.try(() => Target.metadata(node.declaration).decodeSuccess(decoded.value))
         )
         if (Exit.isFailure(validated)) return false
+        const declared = node.declaredOutputs
+        if (declared === undefined) return true
         const measured = () =>
           verifyTargetOutputs(node, validated.value).pipe(
             Effect.matchCause({ onFailure: () => false, onSuccess: (problem) => problem === undefined })
           )
         if (yield* measured()) return true
         if (stored === undefined) return false
-        const paths = declaredOutputPaths(node)
+        const paths = declaredOutputPaths(declared)
         const directories = paths.filter((path) => stored.manifests.some((manifest) => manifest.outDir === path))
         const files = paths.filter((path) => stored.files.some((file) => file.path === path))
         if (
@@ -940,7 +1019,8 @@ export const executeEffect = (
     const captureBuild = (
       node: PackageNode,
       key: string,
-      sourceRoot: string = root
+      sourceRoot: string = root,
+      publish = true
     ): Effect.Effect<BuildOutput, unknown> =>
       Effect.gen(function*() {
         const manifests = yield* Effect.forEach(
@@ -951,7 +1031,7 @@ export const executeEffect = (
           node.outFiles,
           (file) => joined(() => PackageTree.captureFile(sourceRoot, cacheDirectory, file, root))
         )
-        yield* cachePut(node, { kind: "build", manifests, files }, key)
+        if (publish) yield* cachePut(node, { kind: "build", manifests, files }, key)
         return { manifests, files }
       })
 
@@ -972,7 +1052,7 @@ export const executeEffect = (
             root,
             [tar, "-cf", absoluteArchive, "-C", NodePath.join(root, ...node.outDirs[0]!.split("/")), "."]
           )
-          if (!created.ok) return created.error ?? "tar archive creation failed"
+          if (!created.ok) return created.error
           const manifest = yield* joined(() => PackageTree.captureFile(root, cacheDirectory, archive))
           yield* cachePut(node, { kind: "directory-archive", outDir: node.outDirs[0], digest: manifest.digest })
           return undefined
@@ -1051,7 +1131,7 @@ export const executeEffect = (
           const key = treeRoot === root ? label : `${label} @ ${treeRoot}`
           const attrs = serveNode.lane.attrs
           return yield* joined(() =>
-            DockerExec.serviceSpec({
+            services.dockerService({
               invocationId: serviceInvocationId,
               label: key,
               cwd: Exec.resolveWorkspacePath(treeRoot, serveNode.cwd),
@@ -1067,7 +1147,7 @@ export const executeEffect = (
           const key = treeRoot === root ? label : `${label} @ ${treeRoot}`
           const attrs = serveNode.lane.attrs
           return yield* joined(() =>
-            AnvilExec.serviceSpec({
+            services.anvilService({
               label: key,
               cwd: Exec.resolveWorkspacePath(treeRoot, serveNode.cwd),
               attrs
@@ -1143,9 +1223,6 @@ export const executeEffect = (
       if (isServiceError(value)) return serviceErrorText(value)
       return Diagnostic.describe(value, `${what} failed`)
     }
-
-    const outcomeOfExit = (exit: Exit.Exit<Outcome, unknown>, what: string): Outcome =>
-      Exit.isSuccess(exit) ? exit.value : fail(causeText(exit.cause, what))
 
     /**
      * Runs `body` under the named services rooted at `treeRoot`: every service
@@ -1335,7 +1412,7 @@ export const executeEffect = (
           const exit = yield* Effect.exit(restore(body))
           const ran: ExecOutcome = Exit.isSuccess(exit) ?
             exit.value
-            : { ok: false, error: causeText(exit.cause, "write") }
+            : { ok: false as const, error: causeText(exit.cause, "write") }
           const changed = PackageTree.judgedChanges(
             root,
             yield* joined(() => PackageTree.changedSinceSnapshot(snapshot, cacheDirectory)),
@@ -1367,10 +1444,10 @@ export const executeEffect = (
               if (!(yield* joined(() => PackageTree.revertIgnored(ignored, path, quarantine)))) unrestored.push(path)
             }
             if (unrestored.length === 0) {
-              return quarantine.held.length === 0 ? ran : { ok: false, error: `${ran.error}${kept()}` }
+              return quarantine.held.length === 0 ? ran : { ok: false as const, error: `${ran.error}${kept()}` }
             }
             return {
-              ok: false,
+              ok: false as const,
               error: `${ran.error}; gitignored paths not restored: ${unrestored.join(", ")}${kept()}`
             }
           }
@@ -1392,14 +1469,17 @@ export const executeEffect = (
           if (offenders.length > 0) {
             if (unrestored.length === 0) {
               return {
-                ok: false,
+                ok: false as const,
                 error: `wrote outside its declared write-set (reverted): ${offenders.join(", ")}${kept()}`
               }
             }
             const described = offenders.map((path) =>
               unrestored.includes(path) ? `${path} (not restored)` : `${path} (reverted)`
             )
-            return { ok: false, error: `wrote outside its declared write-set: ${described.join(", ")}${kept()}` }
+            return {
+              ok: false as const,
+              error: `wrote outside its declared write-set: ${described.join(", ")}${kept()}`
+            }
           }
           return ran
         })
@@ -1426,12 +1506,12 @@ export const executeEffect = (
         request,
         { workspaceRoot, cwd: workspaceRoot, tmp: NodePath.join(workspaceRoot, cacheDirectory, "sandbox") },
         host
-      )
-      if (plan === undefined || ExecSandbox.isUnenforceable(plan)) return undefined
+      )!
+      if (ExecSandbox.isUnenforceable(plan)) return undefined
       const admitted: Array<string> = []
       for (const write of plan.writes) {
         const relative = NodePath.relative(plan.workspaceRoot, write)
-        if (relative.startsWith("..") || NodePath.isAbsolute(relative)) continue
+        // The sandbox planner anchors every returned write beneath its canonical root.
         admitted.push(relative.split(NodePath.sep).join("/"))
       }
       if (node.stdoutPath !== undefined) {
@@ -1521,14 +1601,14 @@ export const executeEffect = (
             }
             if (drift.length > 0) {
               return {
-                ok: false,
+                ok: false as const,
                 error: `drift in declared write-set (run with --write to apply): ${drift.join(", ")}`
               }
             }
-            return { ok: true }
+            return { ok: true as const }
           }))
         return !outcome.ok ? outcome : escaped.length === 0 ? outcome : {
-          ok: false,
+          ok: false as const,
           error: `check touched the real tree through a symlink (reverted): ${escaped.join(", ")}`
         }
       })
@@ -1547,7 +1627,7 @@ export const executeEffect = (
             return yield* body(scratch)
           }))
         return escaped.length === 0 ? outcome : {
-          ok: false,
+          ok: false as const,
           error: `overlay consumer touched the real tree through a symlink (reverted): ${escaped.join(", ")}`
         }
       })
@@ -1559,13 +1639,14 @@ export const executeEffect = (
         if (cached !== undefined && (yield* restoreBuild(node, cached.output))) return green("hit")
         if (node.overlays.length === 0) {
           const spawned = yield* spawnNode(node, root)
-          if (!spawned.ok) return fail(spawned.error ?? "tool run failed")
+          if (!spawned.ok) return fail(spawned.error)
           yield* captureBuild(node, node.keyPreview)
           return green("ran")
         }
         // The build's own declared outputs are cleared before it runs, so a stale
         // previous emit — viem's `src/_cjs` is hundreds of megabytes — is never
         // copied into the scratch tree in the first place.
+        let output: BuildOutput = { manifests: [], files: [] }
         const ran = yield* runWithOverlays(node, (scratch) =>
           Effect.gen(function*() {
             for (const outDir of node.outDirs) {
@@ -1576,16 +1657,20 @@ export const executeEffect = (
             }
             const spawned = yield* spawnNode(node, scratch)
             if (!spawned.ok) return spawned
-            const output = yield* captureBuild(node, node.keyPreview, scratch)
-            for (const manifest of output.manifests) {
-              yield* joined(() => PackageTree.materializeManifest(root, cacheDirectory, manifest))
-            }
-            for (const file of output.files) {
-              yield* joined(() => PackageTree.materializeFile(root, cacheDirectory, file))
-            }
-            return { ok: true }
+            output = yield* captureBuild(node, node.keyPreview, scratch, false)
+            return { ok: true as const }
           }), [...node.outDirs, ...node.outFiles])
-        return ran.ok ? green("ran") : fail(ran.error ?? "overlay build failed")
+        if (!ran.ok) return fail(ran.error)
+        // Portal validation must settle before any product or success becomes
+        // visible in the real tree or result cache.
+        for (const manifest of output.manifests) {
+          yield* joined(() => PackageTree.materializeManifest(root, cacheDirectory, manifest))
+        }
+        for (const file of output.files) {
+          yield* joined(() => PackageTree.materializeFile(root, cacheDirectory, file))
+        }
+        yield* cachePut(node, { kind: "build", ...output })
+        return green("ran")
       })
 
     /** Spawns a non-build consumer in its overlay scratch tree when required. */
@@ -1594,9 +1679,11 @@ export const executeEffect = (
       argv?: ReadonlyArray<string> | undefined
     ): Effect.Effect<ExecOutcome, unknown> => runWithOverlays(node, (treeRoot) => spawnNode(node, treeRoot, argv))
 
-    const runEmit = (node: PackageNode): Effect.Effect<ExecOutcome, unknown> =>
+    const runEmit = (
+      node: PackageNode,
+      entries: NonNullable<PackageNode["emit"]>
+    ): Effect.Effect<ExecOutcome, unknown> =>
       Effect.gen(function*() {
-        const entries = node.emit ?? []
         if (node.mode === "write") {
           for (const entry of entries) {
             if (entry.value.kind === "link") {
@@ -1605,7 +1692,7 @@ export const executeEffect = (
               yield* GeneratedFile.writeGeneratedFile(root, { path: entry.path, contents: entry.value.text })
             }
           }
-          return { ok: true }
+          return { ok: true as const }
         }
         const wrong: Array<string> = []
         for (const entry of entries) {
@@ -1619,9 +1706,12 @@ export const executeEffect = (
           }))
         }
         if (wrong.length > 0) {
-          return { ok: false, error: `drift in declared emit outputs (run with --write to apply): ${wrong.join(", ")}` }
+          return {
+            ok: false as const,
+            error: `drift in declared emit outputs (run with --write to apply): ${wrong.join(", ")}`
+          }
         }
-        return { ok: true }
+        return { ok: true as const }
       })
 
     // ---------------------------------------------------------------------------
@@ -1639,7 +1729,7 @@ export const executeEffect = (
      */
     let baseSessions: AgentSession.SessionFactory | undefined
     const sessionsOf = (): AgentSession.SessionFactory => {
-      baseSessions ??= AgentFake.sessionFactoryFromEnvironment(
+      baseSessions ??= services.sessions(
         { workspaceRoot: root, agents: index.workspace.agents, sensitiveEnv: credentialNames },
         environment
       )
@@ -1744,16 +1834,20 @@ export const executeEffect = (
               Effect.gen(function*() {
                 // Publication must settle before the guard measures or restores the tree.
                 written = yield* Effect.uninterruptible(local.commit(overlay))
-                return { ok: true }
+                return { ok: true as const }
               })
             )
-            if (!outcome.ok) throw new Error(outcome.error ?? "candidate apply failed")
+            if (!outcome.ok) throw new Error(outcome.error)
             return written
           }).pipe(
             Effect.catchCause((cause) => Effect.fail(agentSessionError("apply", Cause.squash(cause))))
           )
       }
     }
+
+    type JudgedGate =
+      | { readonly gate: string; readonly status: "green" }
+      | { readonly gate: string; readonly status: "red"; readonly detail: string }
 
     const boundedDetail = (text: string): string =>
       text.length <= AgentTarget.maximumGateDetail ? text : `${text.slice(0, AgentTarget.maximumGateDetail - 3)}...`
@@ -1770,9 +1864,9 @@ export const executeEffect = (
       label: string,
       treeRoot: string,
       candidateReads: ReadonlyArray<string>
-    ): Effect.Effect<AgentTarget.GateReportEntry, unknown> =>
+    ): Effect.Effect<JudgedGate, unknown> =>
       Effect.gen(function*() {
-        const red = (detail: string): AgentTarget.GateReportEntry => ({
+        const red = (detail: string): JudgedGate => ({
           gate: label,
           status: "red",
           detail: boundedDetail(detail)
@@ -1803,9 +1897,9 @@ export const executeEffect = (
       label: string,
       treeRoot: string,
       candidateReads: ReadonlyArray<string>
-    ): Effect.Effect<AgentTarget.GateReportEntry, unknown> =>
+    ): Effect.Effect<JudgedGate, unknown> =>
       Effect.gen(function*() {
-        const red = (detail: string): AgentTarget.GateReportEntry => ({
+        const red = (detail: string): JudgedGate => ({
           gate: label,
           status: "red",
           detail: boundedDetail(detail)
@@ -1818,20 +1912,20 @@ export const executeEffect = (
             if (gateNode.aliasOf === undefined) return red("alias names no target")
             return { ...(yield* gateAgainstTree(gateNode.aliasOf, treeRoot, candidateReads)), gate: label }
           case "Suite": {
-            const members: Array<AgentTarget.GateReportEntry> = []
+            const members: Array<JudgedGate> = []
             for (const member of gateNode.members) {
               members.push(yield* gateAgainstTree(member, treeRoot, candidateReads))
             }
             const failed = members.filter((entry) => entry.status === "red")
             if (failed.length === 0) return { gate: label, status: "green" }
             return red(
-              `suite is red; members: ${failed.map((entry) => `${entry.gate}: ${entry.detail ?? "red"}`).join("; ")}`
+              `suite is red; members: ${failed.map((entry) => `${entry.gate}: ${entry.detail}`).join("; ")}`
             )
           }
           case "Shell.Test":
           case "Shell.Build": {
             const spawned = yield* spawnNode(gateNode, treeRoot, undefined, candidateReads)
-            return spawned.ok ? { gate: label, status: "green" } : red(spawned.error ?? "tool run failed")
+            return spawned.ok ? { gate: label, status: "green" } : red(spawned.error)
           }
           case "Cargo.Test":
           case "Cargo.Nextest":
@@ -1841,7 +1935,7 @@ export const executeEffect = (
             if (gateNode.lane?.kind !== "cargo") return red("cargo gate planned no commands")
             for (const command of gateNode.lane.commands) {
               const spawned = yield* spawnNode(gateNode, treeRoot, command, candidateReads)
-              if (!spawned.ok) return red(spawned.error ?? "cargo run failed")
+              if (!spawned.ok) return red(spawned.error)
             }
             return { gate: label, status: "green" }
           }
@@ -1862,7 +1956,7 @@ export const executeEffect = (
       node: PackageNode,
       labelByKey: ReadonlyMap<string, string>
     ): AgentSession.GateRunner => ({
-      reportIdentity: (identity) => labelByKey.get(identity) ?? identity,
+      reportIdentity: (identity) => labelByKey.get(identity)!,
       run: (gateIdentities, overlay, round) =>
         Effect.gen(function*() {
           if (gateIdentities.length === 0) return []
@@ -1886,11 +1980,8 @@ export const executeEffect = (
               }
               const entries: Array<AgentTarget.GateReportEntry> = []
               for (const identity of gateIdentities) {
-                const label = labelByKey.get(identity)
-                if (label === undefined) {
-                  entries.push({ gate: identity, status: "red", detail: "gate identity was not planned" })
-                  continue
-                }
+                // This runner receives the same closed identity list used to build the map.
+                const label = labelByKey.get(identity)!
                 const entry = yield* gateAgainstTree(label, scratch, [...candidateReads])
                 log(`${node.label}  round ${round}: gate ${label} ${entry.status}`)
                 entries.push(entry)
@@ -1934,7 +2025,7 @@ export const executeEffect = (
               }
               const entry = yield* gateAgainstTree(label, scratch, [...candidateReads])
               log(`${node.label}  gate ${label} ${entry.status} against tree ${candidate.tree.slice(0, 12)}`)
-              if (entry.status === "red") failures.push({ target: label, message: entry.detail ?? "red" })
+              if (entry.status === "red") failures.push({ target: label, message: entry.detail })
             }
             return failures
           }))
@@ -2069,7 +2160,8 @@ export const executeEffect = (
       node: PackageNode,
       flavor: "diff" | "pr",
       base: AgentTarget.DiffPayload,
-      gateLabels: ReadonlyArray<readonly [string, string]>
+      gateLabels: ReadonlyArray<readonly [string, string]>,
+      dataLabels: ReadonlyArray<string>
     ): Effect.Effect<Outcome, unknown> =>
       Effect.gen(function*() {
         const labelByKey = new Map<string, string>()
@@ -2090,7 +2182,12 @@ export const executeEffect = (
           gates: loopGateRunner(node, labelByKey),
           verdicts: verdictStoreFor(node),
           payloadValues: options.inputs ?? {},
-          dataFiles: laneDataFiles(node, planned.nodes, Input.resolvePath(node.packagePath, payload.promptPath))
+          dataFiles: laneDataFiles(
+            node,
+            planned.nodes,
+            Input.resolvePath(node.packagePath, payload.promptPath),
+            dataLabels
+          )
         }
         const exit = yield* Effect.exit(
           flavor === "diff" ? AgentSession.runAgentDiff(runtime, payload) : AgentSession.runAgentPr(runtime, payload)
@@ -2101,25 +2198,22 @@ export const executeEffect = (
           log(`${node.label}  vacuous: declared diff slice is empty, agent not invoked`)
           return green("ran")
         }
-        if (flavor === "diff") {
-          // The accepted candidate is applied to the tree under the declared
-          // write-set: the loop admitted it against the exact candidate, and
-          // applying it is what running a Diff target means.
-          const applied = yield* Effect.exit(
-            writeSets.apply(result.edits, payload.changes, undefined).pipe(
-              Effect.flatMap((overlay) => writeSets.commit(overlay))
-            )
+        // This host has no PR opener. A non-vacuous PR was refused by
+        // runAgentPr above; only an accepted Diff reaches publication here.
+        // The accepted candidate is applied to the tree under the declared
+        // write-set: the loop admitted it against the exact candidate, and
+        // applying it is what running a Diff target means.
+        const applied = yield* Effect.exit(
+          writeSets.apply(result.edits, payload.changes, undefined).pipe(
+            Effect.flatMap((overlay) => writeSets.commit(overlay))
           )
-          if (Exit.isFailure(applied)) return fail(yield* agentFailureText(node, applied.cause))
-          log(
-            `${node.label}  candidate accepted after ${result.rounds} round(s)` +
-              `${counted.runs() === 0 ? " (cached verdict)" : ""}; applied ${applied.value.length} file(s)` +
-              `${result.gateReport.length === 0 ? "" : `; gates: ${renderGateReport(result.gateReport)}`}`
-          )
-        } else {
-          const pr = (result as AgentTarget.PrResult).pr
-          log(`${node.label}  candidate accepted after ${result.rounds} round(s); pull request: ${pr ?? "none"}`)
-        }
+        )
+        if (Exit.isFailure(applied)) return fail(yield* agentFailureText(node, applied.cause))
+        log(
+          `${node.label}  candidate accepted after ${result.rounds} round(s)` +
+            `${counted.runs() === 0 ? " (cached verdict)" : ""}; applied ${applied.value.length} file(s)` +
+            `${result.gateReport.length === 0 ? "" : `; gates: ${renderGateReport(result.gateReport)}`}`
+        )
         return green(counted.runs() === 0 ? "hit" : "ran")
       })
 
@@ -2245,7 +2339,7 @@ export const executeEffect = (
                     spawnNode(node, root, command)
                   ))
                   : (yield* spawnNode(node, root, command))
-                if (!spawned.ok) return fail(spawned.error ?? "cargo run failed")
+                if (!spawned.ok) return fail(spawned.error)
               }
               // A fetch resource that did not deliver what it declared is a
               // failure, not a green run: every offline dependent reads exactly
@@ -2412,7 +2506,7 @@ export const executeEffect = (
                   if (cached !== undefined) continue
                   allHit = false
                   const spawned = yield* spawnConsumer(shardNode)
-                  if (!spawned.ok) return fail(spawned.error ?? `shard ${suffix} failed`)
+                  if (!spawned.ok) return fail(spawned.error)
                   yield* cachePut(shardNode, { kind: "shell-test-shard", shard, total: node.shards })
                 }
                 return green(allHit ? "hit" : "ran")
@@ -2420,13 +2514,13 @@ export const executeEffect = (
               const cached = yield* cacheGet(node)
               if (cached !== undefined) return green("hit")
               const spawned = yield* spawnConsumer(node)
-              if (!spawned.ok) return fail(spawned.error ?? "tool run failed")
+              if (!spawned.ok) return fail(spawned.error)
               yield* cachePut(node, { kind: "shell-test" })
               return green("ran")
             }
             case "Shell.Run": {
               const spawned = yield* spawnConsumer(node)
-              if (!spawned.ok) return fail(spawned.error ?? "tool run failed")
+              if (!spawned.ok) return fail(spawned.error)
               return green("ran")
             }
             case "Npm.Pack": {
@@ -2434,7 +2528,7 @@ export const executeEffect = (
                 node,
                 Effect.gen(function*() {
                   const spawned = yield* spawnNode(node, root)
-                  if (!spawned.ok) return fail(spawned.error ?? "pnpm pack failed")
+                  if (!spawned.ok) return fail(spawned.error)
                   return green("ran")
                 })
               )
@@ -2443,9 +2537,30 @@ export const executeEffect = (
             case "Git.Submodule": {
               if (node.lane?.kind !== "submodules") return fail(`${node.rule} planned no gitlinks`)
               const lane = node.lane
+              for (const link of lane.plan.gitlinks) {
+                const checkout = NodePath.join(root, link.path)
+                const problem = yield* joined(async () => {
+                  const stats = await Fs.lstat(checkout).catch((cause: NodeJS.ErrnoException) => {
+                    if (cause.code === "ENOENT") return undefined
+                    throw cause
+                  })
+                  if (stats === undefined) return undefined
+                  if (
+                    !stats.isDirectory()
+                  ) return `Git submodule ${link.path} is not a directory; refusing to replace it`
+                  const entries = await Fs.readdir(checkout)
+                  if (entries.length === 0) return undefined
+                  const status = await PackageTree.runGit(checkout, ["status", "--porcelain", "--untracked-files=all"])
+                    .catch(() => undefined)
+                  return status === undefined || status.trim() !== ""
+                    ? `Git submodule ${link.path} has local changes; refusing to replace its checkout`
+                    : undefined
+                })
+                if (problem !== undefined) return fail(problem)
+              }
               const cached = yield* cacheGet(node)
               if (cached !== undefined) {
-                if (GitSubmoduleExec.isMaterialized(lane.plan)) return green("hit")
+                if ((yield* joined(() => GitSubmoduleExec.verify(root, lane.plan))) === undefined) return green("hit")
                 if ((yield* restoreBuild(node, cached.output))) {
                   const problem = yield* joined(() => GitSubmoduleExec.verify(root, lane.plan))
                   if (problem === undefined) return green("hit")
@@ -2456,12 +2571,12 @@ export const executeEffect = (
                   }
                 }
               }
-              if (GitSubmoduleExec.isMaterialized(lane.plan)) {
+              if ((yield* joined(() => GitSubmoduleExec.verify(root, lane.plan))) === undefined) {
                 yield* captureBuild(node, node.keyPreview)
                 return green("ran")
               }
               const spawned = yield* spawnNode(node, root)
-              if (!spawned.ok) return fail(spawned.error ?? "git submodule update failed")
+              if (!spawned.ok) return fail(spawned.error)
               const problem = yield* joined(() => GitSubmoduleExec.verify(root, lane.plan))
               if (problem !== undefined) return fail(problem)
               yield* captureBuild(node, node.keyPreview)
@@ -2471,7 +2586,7 @@ export const executeEffect = (
               const outcome = node.mode === "write"
                 ? (yield* runWriteEnforced(node))
                 : (yield* runCheckViaScratch(node))
-              if (!outcome.ok) return fail(outcome.error ?? "changesets version failed")
+              if (!outcome.ok) return fail(outcome.error)
               if (node.mode === "check") yield* cachePut(node, { kind: "changesets-version" })
               return green("ran")
             }
@@ -2479,7 +2594,7 @@ export const executeEffect = (
               const cached = yield* cacheGet(node)
               if (cached !== undefined) return green("hit")
               const spawned = yield* spawnNode(node, root)
-              if (!spawned.ok) return fail(spawned.error ?? "size budgets failed")
+              if (!spawned.ok) return fail(spawned.error)
               yield* cachePut(node, { kind: "size-budgets" })
               return green("ran")
             }
@@ -2544,7 +2659,7 @@ export const executeEffect = (
                 }
                 if (files.length > 0) {
                   const checked = yield* spawnNode(node, root, [...(node.argv ?? []), ...files])
-                  if (!checked.ok) return fail(checked.error ?? "Markdown code-block parse failed")
+                  if (!checked.ok) return fail(checked.error)
                 }
                 log(
                   `${node.label}  checked ${extracted.blocks} fenced code block(s): ${extracted.standalone} standalone, ` +
@@ -2568,7 +2683,7 @@ export const executeEffect = (
                     )
                   }
                   const spawned = yield* spawnNode(node, root)
-                  if (!spawned.ok) return fail(spawned.error ?? "published package fetch failed")
+                  if (!spawned.ok) return fail(spawned.error)
                   return green("ran")
                 })
               )
@@ -2662,21 +2777,25 @@ export const executeEffect = (
                 if ("error" in spec) return yield* Effect.fail(spec.error)
                 const handle = yield* supervisor.acquire(spec)
                 log(`${node.label}  ready (pid ${handle.pid}); serving until interrupted`)
-                yield* handle.whileHealthy(Effect.never)
-                return green("ran")
+                return yield* handle.whileHealthy(Effect.never)
               }))
-              const exit = yield* Effect.exit(
-                program.pipe(Effect.onInterrupt(() => Effect.sync(() => log(`${node.label}  stopped`))))
+              return yield* program.pipe(
+                Effect.onInterrupt(() => Effect.sync(() => log(`${node.label}  stopped`))),
+                Effect.catchCause((cause) => Effect.succeed(fail(causeText(cause, "serve"))))
               )
-              return outcomeOfExit(exit, "serve")
             }
-            case "Shell.Diff": {
-              const outcome = node.mode === "write"
-                ? (yield* runWriteEnforced(node))
-                : (yield* runCheckViaScratch(node))
-              if (!outcome.ok) return fail(outcome.error ?? "diff run failed")
-              return green("ran")
-            }
+            case "Shell.Diff":
+            case "Go.Lint":
+            case "Go.Generate":
+              return yield* (node.mode === "write" ? runWriteEnforced(node) : runCheckViaScratch(node)).pipe(
+                Effect.flatMap((outcome) => {
+                  if (!outcome.ok) return Effect.succeed(fail(outcome.error))
+                  const success = green("ran")
+                  return node.rule === "Shell.Diff" || node.mode !== "check"
+                    ? Effect.succeed(success)
+                    : cachePut(node, { kind: "go-check" }).pipe(Effect.as(success))
+                })
+              )
             case "Go.Packages":
               return green("ran")
             case "Go.Binary": {
@@ -2684,7 +2803,7 @@ export const executeEffect = (
                 node,
                 Effect.gen(function*() {
                   const spawned = yield* spawnNode(node, root)
-                  if (!spawned.ok) return fail(spawned.error ?? "Go build failed")
+                  if (!spawned.ok) return fail(spawned.error)
                   return green("ran")
                 })
               )
@@ -2696,7 +2815,7 @@ export const executeEffect = (
                 yield* joined(() => Fs.mkdir(NodePath.join(root, ...outDir.split("/")), { recursive: true }))
               }
               const spawned = yield* spawnNode(node, root)
-              if (!spawned.ok) return fail(spawned.error ?? "Go module download failed")
+              if (!spawned.ok) return fail(spawned.error)
               const problem = yield* captureDirectoryArchive(node)
               return problem === undefined ? green("ran") : fail(problem)
             }
@@ -2705,17 +2824,8 @@ export const executeEffect = (
               const cached = yield* cacheGet(node)
               if (cached !== undefined) return green("hit")
               const spawned = yield* spawnNode(node, root)
-              if (!spawned.ok) return fail(spawned.error ?? "Go test failed")
+              if (!spawned.ok) return fail(spawned.error)
               yield* cachePut(node, { kind: "go-test" })
-              return green("ran")
-            }
-            case "Go.Lint":
-            case "Go.Generate": {
-              const outcome = node.mode === "write"
-                ? (yield* runWriteEnforced(node))
-                : (yield* runCheckViaScratch(node))
-              if (!outcome.ok) return fail(outcome.error ?? "Go write-set check failed")
-              if (node.mode === "check") yield* cachePut(node, { kind: "go-check" })
               return green("ran")
             }
             case "Foundry.Fmt": {
@@ -2723,12 +2833,12 @@ export const executeEffect = (
                 const cached = yield* cacheGet(node)
                 if (cached !== undefined) return green("hit")
                 const spawned = yield* spawnNode(node, root)
-                if (!spawned.ok) return fail(spawned.error ?? "forge fmt --check failed")
+                if (!spawned.ok) return fail(spawned.error)
                 yield* cachePut(node, { kind: "foundry-fmt" })
                 return green("ran")
               }
               const outcome = yield* runWriteEnforced(node)
-              return outcome.ok ? green("ran") : fail(outcome.error ?? "forge fmt failed")
+              return outcome.ok ? green("ran") : fail(outcome.error)
             }
             case "Docker.Build":
             case "Docker.Bake": {
@@ -2737,7 +2847,7 @@ export const executeEffect = (
                 Effect.gen(function*() {
                   yield* joined(() => DockerExec.prepareOutputs(root, node.outDirs))
                   const spawned = yield* spawnNode(node, root)
-                  if (!spawned.ok) return fail(spawned.error ?? "docker build failed")
+                  if (!spawned.ok) return fail(spawned.error)
                   return green("ran")
                 })
               )
@@ -2772,10 +2882,10 @@ export const executeEffect = (
                 }),
                 image.loadable ? Effect.void : Effect.promise(() => Fs.rm(loadable, { force: true }))
               )
-              if (!loaded.ok) return fail(loaded.error ?? "docker load failed")
+              if (!loaded.ok) return fail(loaded.error)
               // The classic image store names an image by its config digest,
               // the containerd store by its manifest digest.
-              const id = DockerExec.loadedImageIds(loaded.result?.stdout ?? "").find((loadedId) =>
+              const id = DockerExec.loadedImageIds(loaded.result.stdout).find((loadedId) =>
                 loadedId === image.config || loadedId === image.manifest
               )
               if (id === undefined) return fail(`docker load did not load ${image.config} from ${outDir}/image.tar`)
@@ -2784,10 +2894,10 @@ export const executeEffect = (
               for (const command of node.lane.commands) {
                 const reference = command.at(-1)!
                 const tagged = yield* spawnNode(node, root, [...docker, "tag", id, reference])
-                if (!tagged.ok) return fail(tagged.error ?? "docker tag failed")
+                if (!tagged.ok) return fail(tagged.error)
                 const spawned = yield* spawnNode(node, root, command)
-                if (!spawned.ok) return fail(spawned.error ?? "docker push failed")
-                const digest = DockerExec.pushedDigest(spawned.result?.stdout ?? "")
+                if (!spawned.ok) return fail(spawned.error)
+                const digest = DockerExec.pushedDigest(spawned.result.stdout)
                 if (digest === undefined) return fail(`docker push reported no digest for ${reference}`)
                 const inspected = yield* spawnNode(
                   node,
@@ -2796,8 +2906,8 @@ export const executeEffect = (
                   [],
                   true
                 )
-                if (!inspected.ok) return fail(inspected.error ?? "docker buildx imagetools inspect failed")
-                const pushedConfig = DockerExec.manifestConfig(inspected.result?.stdout ?? "")
+                if (!inspected.ok) return fail(inspected.error)
+                const pushedConfig = DockerExec.manifestConfig(inspected.result.stdout)
                 if (pushedConfig !== image.config) {
                   return fail(
                     `${repository}@${digest} holds config ${pushedConfig ?? "(none)"}, not the built ${image.config}`
@@ -2890,7 +3000,7 @@ export const executeEffect = (
                   return green("hit")
                 }
               }
-              const exit = yield* Effect.exit(RspackRunner.resolveGraph(runnerOptions, node.lane.payload))
+              const exit = yield* Effect.exit(services.resolveGraph(runnerOptions, node.lane.payload))
               if (Exit.isFailure(exit)) {
                 const value: unknown = Cause.squash(exit.cause)
                 return fail(
@@ -2920,7 +3030,7 @@ export const executeEffect = (
               effectiveKeys.set(node.label, key)
               const cached = yield* cacheGet(node, key)
               if (cached !== undefined && (yield* restoreBuild(node, cached.output))) return green("hit")
-              const exit = yield* Effect.exit(RspackRunner.runBuild(runnerOptions, node.lane.payload))
+              const exit = yield* Effect.exit(services.build(runnerOptions, node.lane.payload))
               if (Exit.isFailure(exit)) {
                 const value: unknown = Cause.squash(exit.cause)
                 return fail(
@@ -2935,26 +3045,26 @@ export const executeEffect = (
             }
             case "Owners.Codeowners":
             case "Owners.Tree": {
-              const outcome = yield* runEmit(node)
-              if (!outcome.ok) return fail(outcome.error ?? "owners generate failed")
+              const outcome = yield* runEmit(node, node.emit!)
+              if (!outcome.ok) return fail(outcome.error)
               return green("ran")
             }
             case "Generate": {
               if (node.emit !== undefined) {
-                const outcome = yield* runEmit(node)
-                if (!outcome.ok) return fail(outcome.error ?? "generate failed")
+                const outcome = yield* runEmit(node, node.emit)
+                if (!outcome.ok) return fail(outcome.error)
                 return green("ran")
               }
               if (node.mode === "check") {
                 const cached = yield* cacheGet(node)
                 if (cached !== undefined) return green("hit")
                 const outcome = yield* runCheckViaScratch(node)
-                if (!outcome.ok) return fail(outcome.error ?? "generate check failed")
+                if (!outcome.ok) return fail(outcome.error)
                 yield* cachePut(node, { kind: "generate-check" })
                 return green("ran")
               }
               const outcome = yield* runWriteEnforced(node)
-              if (!outcome.ok) return fail(outcome.error ?? "generate failed")
+              if (!outcome.ok) return fail(outcome.error)
               return green("ran")
             }
             case "Agent.Lint": {
@@ -2975,13 +3085,18 @@ export const executeEffect = (
                 gates: AgentSession.unavailableGateRunner,
                 verdicts: verdictStoreFor(node),
                 payloadValues: options.inputs ?? {},
-                dataFiles: laneDataFiles(node, planned.nodes, Input.resolvePath(node.packagePath, payload.promptPath))
+                dataFiles: laneDataFiles(
+                  node,
+                  planned.nodes,
+                  Input.resolvePath(node.packagePath, payload.promptPath),
+                  node.lane.dataLabels
+                )
               }
               const exit = yield* Effect.exit(AgentSession.runAgentLint(runtime, payload))
               if (Exit.isFailure(exit)) return fail(yield* agentFailureText(node, exit.cause))
               const report = exit.value
               if (report.vacuous) {
-                log(`${node.label}  ${report.note ?? "vacuous: agent not invoked"}`)
+                log(`${node.label}  ${report.note}`)
                 return green("ran")
               }
               log(
@@ -3006,13 +3121,14 @@ export const executeEffect = (
                 node,
                 node.lane.flavor,
                 node.lane.payload,
-                node.lane.gateLabels
+                node.lane.gateLabels,
+                node.lane.dataLabels
               )
             }
             case "Git.Commit": {
               return yield* Effect.gen(function*() {
                 const result = yield* joined((signal) =>
-                  GitCommit.commit({
+                  services.commit({
                     root,
                     signal,
                     environment,
@@ -3033,7 +3149,7 @@ export const executeEffect = (
                   reporter.warn(`${node.label}  staged the whole working tree: --sweep, and no declared path scope`)
                 }
                 log(
-                  `${node.label}  committed ${result.sha.slice(0, 12)}: ${result.message.split("\n")[0] ?? ""}; ` +
+                  `${node.label}  committed ${result.sha.slice(0, 12)}: ${result.message.split("\n")[0]}; ` +
                     `${result.staged.length} file(s)`
                 )
                 return green("ran")
@@ -3063,7 +3179,7 @@ export const executeEffect = (
                   const directory = NodePath.posix.dirname(
                     NodePath.posix.join(rendered.packageDir, file.path)
                   )
-                  return directory === "." ? "" : directory
+                  return directory
                 })
                 const outcome = yield* enforceWriteSet(
                   node.label,
@@ -3071,15 +3187,17 @@ export const executeEffect = (
                   [...literalAdmitted(renderedDirectories), ...node.writeSet.map(writeSetDirectory)],
                   Effect.gen(function*() {
                     report = yield* joined(() => GithubRender.write(root, rendered))
-                    return { ok: true }
+                    return { ok: true as const }
                   })
                 )
-                if (!outcome.ok || report === undefined) return fail(outcome.error ?? "CI generation failed")
+                if (!outcome.ok) return fail(outcome.error)
+                // A successful guarded body has completed the renderer above.
+                const written = report!
                 log(
-                  `${node.label}  wrote ${report.wrote.length}, unchanged ${report.unchanged.length}, ` +
-                    `removed ${report.removed.length}, preserved ${report.preserved.length}` +
-                    `${report.wrote.length === 0 ? "" : `; wrote: ${report.wrote.join(", ")}`}` +
-                    `${report.removed.length === 0 ? "" : `; removed: ${report.removed.join(", ")}`}`
+                  `${node.label}  wrote ${written.wrote.length}, unchanged ${written.unchanged.length}, ` +
+                    `removed ${written.removed.length}, preserved ${written.preserved.length}` +
+                    `${written.wrote.length === 0 ? "" : `; wrote: ${written.wrote.join(", ")}`}` +
+                    `${written.removed.length === 0 ? "" : `; removed: ${written.removed.join(", ")}`}`
                 )
                 return green("ran")
               }
@@ -3121,7 +3239,7 @@ export const executeEffect = (
             case "Memory.Retain": {
               return yield* Effect.gen(function*() {
                 const result = yield* joined((signal) =>
-                  MemoryBackend.retain({
+                  services.retain({
                     root,
                     signal,
                     timeoutMs: memoryBackendTimeoutMs,
@@ -3173,7 +3291,7 @@ export const executeEffect = (
                 environment: { ...(options.environment ?? process.env), ...node.env },
                 sensitiveNames: credentialNames
               })
-              const exit = yield* Effect.exit(runTarget(
+              const exit = yield* Effect.exit(services.target(
                 root,
                 cacheDirectory,
                 node.declaration,
@@ -3182,7 +3300,7 @@ export const executeEffect = (
                 credentialNames,
                 options.packageName,
                 node.nixEnvironment,
-                sandboxRequest(node, planned.nodes, index.workspace, cacheDirectory),
+                yield* sandboxFor(node, root),
                 output
               )).pipe(Effect.ensuring(Effect.sync(output.close)))
               if (Exit.isFailure(exit)) return outcomeOfTargetFailure(node.label, exit.cause)
@@ -3207,7 +3325,7 @@ export const executeEffect = (
                       node,
                       node.declaredOutputs === undefined
                         ? encoded.output
-                        : yield* captureTargetOutputs(node, encoded.output)
+                        : yield* captureTargetOutputs(node, encoded.output, node.declaredOutputs)
                     )
                   } else log(`smthrs: skipped the cache store for ${node.label}: ${encoded.reason}`)
                   return green("ran")

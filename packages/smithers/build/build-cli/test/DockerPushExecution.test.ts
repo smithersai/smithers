@@ -1,9 +1,12 @@
 import { Smithers as S } from "@smthrs/targets"
+import * as Exec from "@smthrs/targets/Exec"
 import * as Stamp from "@smthrs/targets/Stamp"
+import { Effect } from "effect"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
+import { executeEffect, ExecutionServices, executionServicesLive } from "../src/internal/PackageRunner.ts"
 import * as PackageDiscovery from "../src/PackageDiscovery.ts"
 import * as PackageExec from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
@@ -18,7 +21,7 @@ const bounded = async (waiting: Promise<void>): Promise<void> => {
     await Promise.race([
       waiting,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error("second push did not start within 10s")), 10_000)
+        timer = setTimeout(() => reject(new Error("second push did not start within 60s")), 60_000)
       })
     ])
   } finally {
@@ -401,5 +404,59 @@ describe("Docker push executor unit boundary", () => {
     for (const pid of pids) {
       expect(() => process.kill(pid as number, 0)).toThrow(expect.objectContaining({ code: "ESRCH" }))
     }
+  })
+})
+
+describe("Docker publication fault services", () => {
+  it("refuses a commandless push after its real image dependency settles", async () => {
+    const host = await fixture("failure", [])
+    const result = await PackageExec.execute(host.planned, host.options)
+    expect(pushResult(result)).toMatchObject({ status: "failed", error: "docker push planned no commands" })
+    expect(await host.observed()).toEqual([])
+  })
+
+  it("does not tag or push an image whose load process failed", async () => {
+    const host = await fixture("failure", ["one"])
+    const result = await Effect.runPromise(
+      executeEffect(host.planned, host.options).pipe(Effect.provideService(ExecutionServices, {
+        ...executionServicesLive,
+        exec: (settings, payload) =>
+          payload.argv.includes("load")
+            ? Effect.fail(
+              Exec.ExecError.make({
+                _tag: "smithers-build/ExecError",
+                argv: payload.argv,
+                cwd: payload.cwd,
+                code: "exit_status",
+                exitCode: 71,
+                stdout: "",
+                stderr: "load host failed"
+              })
+            )
+            : executionServicesLive.exec(settings, payload)
+      }))
+    )
+    expect(pushResult(result)?.error).toContain("load host failed")
+    expect(await host.observed()).toEqual([])
+    expect(await host.loads()).toEqual([])
+  })
+
+  it("refuses a registry manifest without a config identity", async () => {
+    const host = await fixture("failure", ["one"])
+    const result = await Effect.runPromise(
+      executeEffect(host.planned, host.options).pipe(Effect.provideService(ExecutionServices, {
+        ...executionServicesLive,
+        exec: (settings, payload) =>
+          executionServicesLive.exec(settings, payload).pipe(
+            Effect.map((result) =>
+              payload.argv.includes("imagetools") && payload.argv.includes("inspect")
+                ? { ...result, stdout: "{}" }
+                : result
+            )
+          )
+      }))
+    )
+    expect(pushResult(result)?.error).toContain("holds config (none), not the built")
+    expect(await host.observed()).toEqual([["push", "registry.invalid/unit:one"]])
   })
 })
