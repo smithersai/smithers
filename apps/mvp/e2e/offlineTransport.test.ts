@@ -38,15 +38,15 @@ test("the relay forwards real bytes, cuts established connections and refuses ne
 })
 
 test("a refused upstream and a non-CONNECT request close without inventing a response", async () => {
-  const relay = await offlineTransport()
-  const address = new URL(relay.proxy.server)
   const unused = createServer()
   unused.listen(0, "127.0.0.1")
   await once(unused, "listening")
   const port = (unused.address() as AddressInfo).port
   await new Promise<void>(resolve => unused.close(() => resolve()))
+  const relay = await offlineTransport({ defaultPort: port })
+  const address = new URL(relay.proxy.server)
   try {
-    for (const destination of [`127.0.0.1:${port}`, "127.0.0.2"]) {
+    for (const destination of [`127.0.0.1:${port}`, "127.0.0.1"]) {
       const client = connect(Number(address.port), address.hostname)
       await once(client, "connect")
       client.write(`CONNECT ${destination} HTTP/1.1\r\nHost: localhost\r\n\r\n`)
@@ -56,4 +56,29 @@ test("a refused upstream and a non-CONNECT request close without inventing a res
     const error = await new Promise<Error>(resolve => get(relay.proxy.server, response => response.destroy()).on("error", resolve))
     expect(error.message).toContain("socket hang up")
   } finally { await relay.close() }
+})
+
+test("a CONNECT without a port reaches the configured real upstream", async () => {
+  const echo = createServer(socket => socket.pipe(socket))
+  echo.listen(0, "127.0.0.1")
+  await once(echo, "listening")
+  const relay = await offlineTransport({ defaultPort: (echo.address() as AddressInfo).port })
+  const address = new URL(relay.proxy.server)
+  const client = connect(Number(address.port), address.hostname)
+  try {
+    await once(client, "connect")
+    const response = new Promise<string>((resolve, reject) => {
+      let received = ""
+      client.on("data", chunk => { received += chunk; if (received.includes("real upstream")) resolve(received) })
+      client.once("close", () => reject(new Error("relay closed before forwarding")))
+      client.once("error", reject)
+    })
+    client.write("CONNECT 127.0.0.1 HTTP/1.1\r\nHost: localhost\r\n\r\nreal upstream")
+    expect(await response).toBe("HTTP/1.1 200 Connection Established\r\n\r\nreal upstream")
+    expect(relay.forwarded()).toBe(1)
+  } finally {
+    client.destroy()
+    await relay.close()
+    await new Promise<void>(resolve => echo.close(() => resolve()))
+  }
 })

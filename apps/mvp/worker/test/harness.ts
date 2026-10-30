@@ -63,9 +63,30 @@ export const branchRoles = (database: Layer.Layer<SqlClient.SqlClient, unknown>,
 
 export const testFile = (prefix: string) => {
   const runtime = ManagedRuntime.make(TestDatabase.layer(prefix))
-  beforeAll(() => runtime.runPromise(Effect.void))
-  beforeEach(() => runtime.runPromise(reset))
-  afterAll(() => runtime.dispose())
+  // Name the slow await and its server-side wait without logging SQL text, bind values or connection URLs.
+  const measured = async <A>(stage: string, action: () => Promise<A>) => {
+    const start = performance.now()
+    const timer = setTimeout(() => {
+      console.error("app.test.await", { prefix, stage, elapsedMs: Math.round(performance.now() - start) })
+      void runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        SELECT pid, application_name, state, wait_event_type, wait_event,
+          pg_blocking_pids(pid) AS blockers,
+          extract(epoch from clock_timestamp() - query_start)::int AS seconds,
+          substring(upper(ltrim(query)) from '^(SELECT|INSERT|UPDATE|DELETE|TRUNCATE|CREATE|ALTER|DROP|BEGIN|COMMIT|ROLLBACK)( |$)') AS command
+        FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()
+          AND state <> 'idle'
+      `)).then(rows => console.error("app.test.database.waits", rows), () => undefined)
+    }, 2_000)
+    try { return await action() } finally {
+      clearTimeout(timer)
+      if (performance.now() - start > 2_000) console.error("app.test.settled", { prefix, stage, elapsedMs: Math.round(performance.now() - start) })
+    }
+  }
+  beforeAll(() => measured("schema", () => runtime.runPromise(Effect.void)))
+  beforeEach(() =>
+    measured("reset", () => runtime.runPromise(reset))
+  )
+  afterAll(() => measured("dispose", () => runtime.dispose()))
   return runtime
 }
 

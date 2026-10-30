@@ -3,8 +3,9 @@ import { connect, type Socket } from "node:net"
 
 /** A real HTTPS CONNECT relay. Cutting its TCP sockets loses the network without WebKit's offline emulation,
  * which also blocks service-worker navigation responses. TLS stays end to end; the relay never reads content.
+ * Tests can select an owned local port for CONNECT authorities that omit theirs.
  */
-export const offlineTransport = async () => {
+export const offlineTransport = async ({ defaultPort = 443 }: { readonly defaultPort?: number } = {}) => {
   const sockets = new Set<Socket>()
   let cut = false
   let forwarded = 0
@@ -18,8 +19,8 @@ export const offlineTransport = async () => {
   server.on("connection", keep)
   server.on("connect", (request, client, head) => {
     if (cut) { client.destroy(); return }
-    const destination = new URL(`https://${request.url}`)
-    const upstream = keep(connect(Number(destination.port || 443), destination.hostname))
+    const destination = new URL(`tcp://${request.url}`)
+    const upstream = keep(connect(Number(destination.port || defaultPort), destination.hostname))
     client.on("close", () => upstream.destroy())
     upstream.on("close", () => client.destroy())
     upstream.on("connect", () => {
