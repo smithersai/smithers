@@ -19,6 +19,7 @@ import { FeedAnswers, Ingested } from "../../src/features/feeds/schema.ts"
 import * as Actor from "../Actor.ts"
 import { recorded, testFile } from "../test/harness.ts"
 import * as FeedsApi from "./Api.ts"
+import { DEV_FEED_KEY } from "./dev.ts"
 import {
   admin,
   agent,
@@ -101,6 +102,22 @@ describe("FEED_KEYS", () => {
     }
     // The harness's own list names `SmithersAI/VibeLang`.
     expect((await ingest(await open(), { set: {} })).status).toBe(200)
+  })
+
+  test("alchemy dev's development key opens every repository while FEED_KEYS is unset, and never once it is set", async () => {
+    const dev = await open({ config: {}, api: { developmentKey: DEV_FEED_KEY } })
+    expect(await json(await ingest(dev, { set: {} }, DEV_FEED_KEY))).toEqual([200, { written: 0, unchanged: 0, deleted: 0 }])
+    expect((await ingest(dev, { set: {} }, DEV_FEED_KEY, { owner: "acme", name: "other" })).status).toBe(200)
+    expect((await answers(dev, "", DEV_FEED_KEY)).status).toBe(200)
+    expect((await ingest(dev, { set: {} }, KEY)).status).toBe(401)
+    expect((await ingest(dev, { set: {} }, null)).status).toBe(401)
+    // FEED_KEYS set: its keys only.
+    const listed = await open({ api: { developmentKey: DEV_FEED_KEY } })
+    expect((await ingest(listed, { set: {} }, DEV_FEED_KEY)).status).toBe(401)
+    expect((await ingest(listed, { set: {} })).status).toBe(200)
+    // Built without one, as production's ChatApi is, the routes stay off.
+    expect(await json(await ingest(await open({ config: {} }), { set: {} }, DEV_FEED_KEY))).toEqual([503, { code: "off" }])
+    expect(recorded(dev).includes(DEV_FEED_KEY)).toBe(false)
   })
 
   test("a malformed list fails the deployment's config, never a request", async () => {

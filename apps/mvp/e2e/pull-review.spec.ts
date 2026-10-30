@@ -1,7 +1,7 @@
 import { expect, step, test } from "./fixtures"
 import type { Page } from "@playwright/test"
 import { requires } from "./target"
-import { as, ownView, REPO, requiresMaintainer } from "./vibelang"
+import { as, REPO, requiresContributor, requiresMaintainer } from "./vibelang"
 
 // Review on request (decision 0126, docs/features/pulls.md#review-on-request): a Maintainer of smithersai/vibelang opens
 // one of its open pull requests, someone else's, and presses Review; the page says Review requested (or that the head's
@@ -52,7 +52,7 @@ test.describe("Review on request", () => {
     async ({ page }) => {
       requires("githubApp")
       await as(page, "contributor")
-      test.skip((await ownView(page, "contributor")) !== "contributor", "the test account is a Maintainer on smithersai/vibelang")
+      await requiresContributor(page)
       await openPull(page)
       await expect(page.getByRole("button", { name: "Squash and merge" })).toHaveCount(0)
       await expect(page.getByRole("button", { name: "Review", exact: true })).toHaveCount(0)

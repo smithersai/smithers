@@ -193,17 +193,32 @@ const noStore = { "cache-control": "no-store" }
 
 type Fields = Record<string, string | number | boolean>
 
+/** How the feeds' routes are built beyond the deployment's configuration. */
+export interface Options {
+  /**
+   * A key accepted for every repository while `FEED_KEYS` is unset: only `alchemy dev` passes one (worker/feeds/dev.ts,
+   * docs/features/feeds.md#development). `FEED_KEYS`, once set, is the only list.
+   */
+  readonly developmentKey?: string
+}
+
 /**
  * The feeds' routes over `database`. Who is asking comes from `Sessions`, their role on the repository from `roles`,
- * and the collector's keys from `FEED_KEYS`, read here, while the program is built.
+ * and the collector's keys from `FEED_KEYS`, read here, while the program is built, else `options.developmentKey`.
  */
 export const make = <E, R, X>(
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
   roles: RepoRoles.RepoRoles<X>,
+  options: Options = {},
 ) =>
   Effect.gen(function* () {
     const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
-    const keys = yield* feedKeys
+    const listed = yield* feedKeys
+    const development = options.developmentKey === undefined ? undefined : digestSync(options.developmentKey)
+    /** Repository `repo`'s key's digest, `undefined` when it has none; `None` when the collector's routes are off. */
+    const keys = Option.isSome(listed) || development === undefined
+      ? Option.map(listed, (map) => (repo: string) => map.get(repo))
+      : Option.some((_repo: string) => development)
 
     /** Whether `actor` is a Maintainer or Admin of `repo` in person; any role `roles` can't give now is no. */
     const maintains = (actor: Actor, repo: string) =>
@@ -257,7 +272,7 @@ export const make = <E, R, X>(
       /** Whether the request carries `repo`'s feed key: `undefined` when the collector's routes are off. */
       const keyed = () => {
         if (Option.isNone(keys)) return undefined
-        const digest = keys.value.get(repo)
+        const digest = keys.value(repo)
         const header = request.headers["authorization"]
         const presented = header?.startsWith("Bearer ") === true ? header.slice("Bearer ".length).trim() : ""
         return digest !== undefined && presented !== "" && keyMatches(presented, digest)

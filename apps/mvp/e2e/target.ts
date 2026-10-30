@@ -188,6 +188,10 @@ const needs = {
     reason: "it needs the test account to be a Maintainer or Admin on smithersai/vibelang (maintain or admin there on GitHub); the deployment says it is less",
     blocked: true,
   },
+  vibelangContributor: {
+    met: (run) => run.target === "local",
+    reason: "it needs the test account below Maintainer on smithersai/vibelang, to see what a contributor sees there; the deployment says it is a Maintainer or Admin",
+  },
   devSignIn: {
     met: (run) => run.target === "local" && !githubAppLocally(run),
     reason: "it signs out and in as local development's person, who exists only without GitHub sign-in; in a deployment that would end the run's shared session",
@@ -290,8 +294,12 @@ const needs = {
     reason: "it runs TODOs to pull requests: run against a live instance whose GITHUB_REPOSITORY is a scratch repository, named in E2E_FACTORY_REPOSITORY, never a smithersai one",
   },
   feedKey: {
-    met: (run) => set(run, "E2E_FEED_KEY") && /^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_FEED_REPOSITORY ?? ""),
-    reason: "it pushes a repository's feed documents as its collector does (decision 0126): set E2E_FEED_REPOSITORY to a repository the app can open and E2E_FEED_KEY to the key whose SHA-256 the server's FEED_KEYS lists for it",
+    // Locally, `alchemy dev` accepts its development feed key (worker/feeds/dev.ts) unless FEED_KEYS is set.
+    met: (run) =>
+      run.target === "local"
+        ? !set(run, "FEED_KEYS") || set(run, "E2E_FEED_KEY")
+        : set(run, "E2E_FEED_KEY") && /^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_FEED_REPOSITORY ?? ""),
+    reason: "it pushes a repository's feed documents as its collector does (decision 0126): on a deployment, set E2E_FEED_REPOSITORY to a repository the app can open and E2E_FEED_KEY to the key whose SHA-256 the server's FEED_KEYS lists for it; a local dev server started with FEED_KEYS needs E2E_FEED_KEY too",
   },
   githubScratch: {
     met: scratchSet,

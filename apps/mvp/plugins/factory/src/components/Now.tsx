@@ -56,7 +56,7 @@ export function Now({ tab, repository }: ViewProps) {
               {now.main.migrations.map((migration) => (
                 <div key={migration.repo} className="factory-migration">
                   <span>{migration.repo} {migration.pass}/{migration.total}</span>
-                  <Progress value={migration.percent} aria-label={migration.repo} />
+                  <Progress role="meter" value={migration.percent} aria-label={migration.repo} />
                 </div>
               ))}
             </Section>

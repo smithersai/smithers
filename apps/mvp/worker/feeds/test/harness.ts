@@ -71,6 +71,8 @@ export interface Options {
   readonly database?: Layer.Layer<SqlClient.SqlClient, unknown>
   /** The deployment's configuration beside Electric's URL: `FEED_KEYS` unless set. */
   readonly config?: Record<string, string>
+  /** The routes' own options: a development key, as `alchemy dev` passes one. */
+  readonly api?: FeedsApi.Options
 }
 
 /** The feeds' routes on the file's schema, recording every log line, span, metric and Electric request. */
@@ -111,7 +113,7 @@ export const feedsHarness = async (runtime: Runtime, options: Options = {}) => {
     (options.actor === undefined || options.actor === null ? signedOut : signedIn(options.actor))
   const database = options.database ?? scratch.database
   const roles = options.roles ?? await runtime.runPromise(localRoles(scratch.database))
-  const api = await runtime.runPromise(observed(FeedsApi.make(database, roles)))
+  const api = await runtime.runPromise(observed(FeedsApi.make(database, roles, options.api)))
   const handler = HttpEffect.toWebHandler(
     observed(
       api.fetch.pipe(

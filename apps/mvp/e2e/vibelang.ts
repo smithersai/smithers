@@ -63,6 +63,16 @@ export const requiresMaintainer = async (page: Page) => {
   test.skip((await deploymentView(page)) !== "maintainer", describeNeed("vibelangMaintainer"))
 }
 
+/**
+ * Declares, in a test's body, that it needs someone below Maintainer on smithersai/vibelang: local development's
+ * teammate, or against a deployment the test account when the deployment opens VibeLang for it on the contributor's
+ * view; otherwise the test skips with that need.
+ */
+export const requiresContributor = async (page: Page) => {
+  if (target === "local") return requires("vibelangContributor")
+  test.skip((await deploymentView(page)) !== "contributor", describeNeed("vibelangContributor"))
+}
+
 export const homeOf = (page: Page) => page.getByRole("region", { name: "Home", exact: true })
 export const tabsOf = (page: Page) => page.getByRole("navigation", { name: "Repository pages" })
 export const viewsOf = (page: Page) => page.getByRole("radiogroup", { name: "View as" })

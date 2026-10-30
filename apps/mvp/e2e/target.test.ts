@@ -106,6 +106,15 @@ describe("needs", () => {
     expect(NEEDS.modelQuotaRefusal.met({ ...local, env: { E2E_MODEL_QUOTA_REFUSED: "0" } })).toBe(false)
   })
 
+  it("a feed key: alchemy dev's own locally unless FEED_KEYS replaced it, a named repository and key on a deployment", () => {
+    expect(NEEDS.feedKey.met(local)).toBe(true)
+    expect(NEEDS.feedKey.met({ ...local, env: { FEED_KEYS: "a/b=" } })).toBe(false)
+    expect(NEEDS.feedKey.met({ ...local, env: { FEED_KEYS: "a/b=", E2E_FEED_KEY: "k" } })).toBe(true)
+    expect(NEEDS.feedKey.met(deployedAs("member", {}))).toBe(false)
+    expect(NEEDS.feedKey.met(deployedAs("member", { E2E_FEED_KEY: "k", E2E_FEED_REPOSITORY: "a/b/c" }))).toBe(false)
+    expect(NEEDS.feedKey.met(deployedAs("member", { E2E_FEED_KEY: "k", E2E_FEED_REPOSITORY: "smithersai/vibelang" }))).toBe(true)
+  })
+
   it("uses a declared writable scratch stack in a deployment, and Spoon-Knife locally", () => {
     expect(NEEDS.writableStack.met(local)).toBe(true)
     expect(stackRepository(local)).toBe("octocat/Spoon-Knife")

@@ -85,7 +85,8 @@ const ChatDatabase = Effect.gen(function* () {
  * which only `alchemy dev` sets, to `true`, is `HOSTED_MODEL_ENABLED`'s default: a deploy answers only with people's
  * own models unless its environment or an Admin turns the deployment's model on (decision 0099). `localRoles`, which only
  * `alchemy dev` sets, are its people's roles on other repositories while the App isn't configured
- * (`RepoRoles.LocalRoles`).
+ * (`RepoRoles.LocalRoles`). `feedKey`, which only `alchemy dev` sets, is a feed key accepted for every repository while
+ * `FEED_KEYS` is unset (worker/feeds/dev.ts, docs/features/feeds.md#development).
  */
 export interface ProgramOptions {
   readonly fallback?: SignIn.Signed
@@ -96,6 +97,7 @@ export interface ProgramOptions {
   readonly spendAlerts?: boolean
   readonly dev?: boolean
   readonly hostedModel?: boolean
+  readonly feedKey?: string
 }
 
 export const program = (options: ProgramOptions = {}) =>
@@ -177,7 +179,11 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     })
     // Repository feeds (docs/features/feeds.md): an outside collector's documents under `FEED_KEYS`, the Maintainers'
     // answers, and the feeds' shape, by each person's role on the repository.
-    const feedsApi = yield* FeedsApi.make(database, roles)
+    const feedsApi = yield* FeedsApi.make(
+      database,
+      roles,
+      options.feedKey === undefined ? {} : { developmentKey: options.feedKey },
+    )
     // The git loop (docs/features/issues.md): GitHub's webhook, the writes route and the issues' shapes, for every
     // repository the deployment acts on (decision 0079, slice 1b).
     const github = yield* GitHubApi.make(database, { repository, app, roles, repoFlows, allowed })

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
+import { DEV_FEED_KEY } from "./feeds/dev.ts"
 import { bundle, type Output } from "./test/startup/bundle.ts"
 
 const EVALUATE = fileURLToPath(new URL("./test/startup/evaluate.mjs", import.meta.url))
@@ -44,5 +45,14 @@ describe("ChatApi's startup", () => {
     const ran = spawnSync(process.execPath, ["--no-warnings", EVALUATE, join(dir, "ChatApi.js")], { encoding: "utf8" })
     expect(ran.status, ran.stderr).toBe(0)
     expect(JSON.parse(ran.stdout.trim().split("\n").at(-1)!)).toMatchObject({ evaluationMs: expect.any(Number) })
+  })
+
+  test("never holds alchemy dev's development feed key: a deploy accepts only FEED_KEYS (docs/features/feeds.md#development)", () => {
+    const text = output.map((file) => file.type === "chunk" ? file.code! : String(file.source ?? "")).join("\n")
+    // The bundle is the real one: it holds the feeds' routes, just not the key.
+    expect(text).toContain("FEED_KEYS")
+    expect(text).not.toContain(DEV_FEED_KEY)
+    expect(output.some((file) => Object.keys(file.modules ?? {}).some((module) => /worker\/(DevChatApi|feeds\/dev)\.ts$/.test(module))))
+      .toBe(false)
   })
 })

@@ -1,6 +1,7 @@
 import * as Cloudflare from "alchemy/Cloudflare"
 import type * as Actor from "./Actor.ts"
 import { program, props } from "./ChatApi.ts"
+import { DEV_FEED_KEY } from "./feeds/dev.ts"
 import { repositoryOf } from "./github/Config.ts"
 import type * as RepoRoles from "./github/RepoRoles.ts"
 import type { Signed } from "./SignIn.ts"
@@ -13,7 +14,9 @@ import type { Signed } from "./SignIn.ts"
 // on; docs/features/spend-alerts.md), and lets an alert provider pointed at a local fake (`ALERT_EMAIL_API_URL`,
 // `ALERT_TELEGRAM_API_URL`) send without its key (docs/features/spend-alerts.md#channels). The deployment's own model
 // answers here unless `HOSTED_MODEL_ENABLED=false` (decision 0099), so a laptop and the scripted end-to-end tests
-// answer without a key of their own. Production bundles worker/ChatApi.ts, which never imports this file.
+// answer without a key of their own. While `FEED_KEYS` is unset it accepts the development feed key for every
+// repository (worker/feeds/dev.ts), so a local collector and the end-to-end tests push feeds. Production bundles
+// worker/ChatApi.ts, which never imports this file.
 
 /** The local developer: a person with the Admin role. */
 export const localDeveloper: Actor.Actor = {
@@ -104,5 +107,6 @@ export default class DevChatApi extends Cloudflare.Worker<DevChatApi>()(
     spendAlerts: false,
     dev: true,
     hostedModel: true,
+    feedKey: DEV_FEED_KEY,
   }),
 ) {}
