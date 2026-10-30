@@ -3,6 +3,7 @@ import { createHash } from "node:crypto"
 import {
   chmodSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -11,9 +12,10 @@ import {
   symlinkSync,
   writeFileSync
 } from "node:fs"
-import { createServer } from "node:http"
+import { createServer, type RequestListener } from "node:http"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import * as Host from "../src/internal/backend/HostService.ts"
 
@@ -530,5 +532,400 @@ describe("install telemetry over HTTP", () => {
     expect(await Host.installTelemetry()).toBeUndefined()
     vi.mocked(fetch).mockRejectedValue(new Error("offline"))
     expect(await Host.installTelemetry()).toBeUndefined()
+  })
+})
+
+/** Rewrites the fixture manifest to describe the bundle's current bytes and modes. */
+const reseal = (f: ReturnType<typeof fixture>, paths: ReadonlyArray<string>) =>
+  writeFileSync(
+    join(f.bundle, "manifest.json"),
+    JSON.stringify({
+      version: 1,
+      platform: "darwin-arm64",
+      revision: "b".repeat(40),
+      files: paths.map((path) => {
+        const file = join(f.bundle, path), info = lstatSync(file)
+        return {
+          path,
+          sha256: createHash("sha256").update(info.isFile() ? readFileSync(file) : "").digest("hex"),
+          stage: "fixture",
+          mode: info.mode & 0o777
+        }
+      })
+    })
+  )
+const executables = ["bin/smithers-server", "bin/smithers-backend", "bin/msb"]
+
+/** One loopback HTTP server for the duration of `use`. */
+const serving = async <A>(listener: RequestListener, use: (origin: string) => Promise<A>): Promise<A> => {
+  const server = createServer(listener)
+  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done))
+  try {
+    return await use(`http://127.0.0.1:${(server.address() as { port: number }).port}`)
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>((done) => server.close(() => done()))
+  }
+}
+const json = (status: number, body: unknown): RequestListener => (_req, res) => {
+  res.writeHead(status, { "Content-Type": "application/json" })
+  res.end(JSON.stringify(body))
+}
+
+describe("host service seams", () => {
+  it("roots state under the given home, or the current user's", () => {
+    expect(Host.stateDirectory("/owner")).toBe("/owner/Library/Application Support/Smithers")
+    expect(Host.stateDirectory()).toBe(join(homedir(), "Library/Application Support/Smithers"))
+  })
+
+  it.each([["linux", 501], ["darwin", 0]] as const)(
+    "refuses %s uid %s before running launchctl",
+    (platform, uid) => {
+      const run = vi.fn() as unknown as typeof spawnSync
+      expect(() => Host.launchd(platform, uid, "/owner", run)).toThrow(
+        expect.objectContaining({ code: "host_platform" })
+      )
+      expect(run).not.toHaveBeenCalled()
+    }
+  )
+
+  it("drives the login session's launchctl and reports its spawn failure text", () => {
+    const answers = [
+      { status: 0, stdout: "pid = 7", stderr: "" },
+      { status: null, stdout: null, stderr: null, error: new Error("spawn /bin/launchctl ENOENT") },
+      { status: null, stdout: null, stderr: null }
+    ]
+    const calls: Array<ReadonlyArray<string>> = []
+    const run = ((file: string, args: ReadonlyArray<string>) => {
+      calls.push([file, ...args])
+      return answers.shift()
+    }) as unknown as typeof spawnSync
+    const system = Host.launchd("darwin", 501, "/owner", run)
+    expect(system.agentsDir).toBe("/owner/Library/LaunchAgents")
+    expect(system.domain).toBe("gui/501")
+    expect(system.launchctl(["print", "gui/501/sh.smithers.host"])).toEqual({
+      status: 0,
+      stdout: "pid = 7",
+      stderr: ""
+    })
+    expect(system.launchctl(["bootout", "gui/501/sh.smithers.host"])).toEqual({
+      status: null,
+      stdout: "",
+      stderr: "spawn /bin/launchctl ENOENT"
+    })
+    expect(system.launchctl(["print", "gui/501/sh.smithers.host"])).toEqual({ status: null, stdout: "", stderr: "" })
+    expect(calls[0]).toEqual(["/bin/launchctl", "print", "gui/501/sh.smithers.host"])
+  })
+
+  it("refuses a service operation while another holds the installation lock, then proceeds", async () => {
+    const f = fixture()
+    mkdirSync(f.system.agentsDir, { recursive: true })
+    const holder = new DatabaseSync(`${Host.plistFile(f.system)}.lock.sqlite`)
+    holder.exec("BEGIN EXCLUSIVE")
+    try {
+      await expect(Host.install(f.options, f.system)).rejects.toMatchObject({ code: "host_service_busy" })
+      await expect(Host.stop(f.system)).rejects.toMatchObject({ code: "host_service_busy" })
+      expect(() => Host.maintenance("restore", f.root, f.system, spawnSync)).toThrow(
+        expect.objectContaining({ code: "host_service_busy" })
+      )
+      expect(f.calls).toEqual([])
+    } finally {
+      holder.close()
+    }
+    expect(await Host.install(f.options, f.system)).toBe("installed")
+  })
+
+  it("surfaces a corrupt installation lock instead of reporting it busy", async () => {
+    const f = fixture()
+    mkdirSync(f.system.agentsDir, { recursive: true })
+    writeFileSync(`${Host.plistFile(f.system)}.lock.sqlite`, "x".repeat(4096))
+    await expect(Host.install(f.options, f.system)).rejects.toThrow("file is not a database")
+    expect(f.calls).toEqual([])
+  })
+
+  it("refuses a bundle whose required executable is undeclared or not executable", () => {
+    const undeclared = fixture()
+    rmSync(join(undeclared.bundle, "bin/msb"))
+    reseal(undeclared, executables.slice(0, 2))
+    expect(() => Host.verifyBundle(undeclared.bundle)).toThrow("Bundle executable missing: bin/msb")
+    const inert = fixture()
+    chmodSync(join(inert.bundle, "bin/msb"), 0o644)
+    reseal(inert, executables)
+    expect(() => Host.verifyBundle(inert.bundle)).toThrow("Bundle executable missing: bin/msb")
+    reseal(inert, [...executables, "bin"])
+    expect(() => Host.verifyBundle(inert.bundle)).toThrow("Bundle metadata differs: bin")
+  })
+
+  it("reads a stopped install's bundle and refuses a plist without a program", async () => {
+    const f = fixture()
+    await Host.install(f.options, f.system)
+    await Host.stop(f.system)
+    expect(Host.installedBundle(f.system)).toBe(f.bundle)
+    writeFileSync(Host.plistFile(f.system), Host.plist({ Label: Host.label }))
+    expect(() => Host.installedBundle(f.system)).toThrow("Installed host bundle path unavailable")
+  })
+
+  it("resolves the keg bundle only when its manifest exists", () => {
+    const f = fixture()
+    expect(Host.resolveBundle(undefined, f.bundle)).toBe(f.bundle)
+    expect(() => Host.resolveBundle(undefined, f.root)).toThrow(`install the bundle at ${f.root}`)
+  })
+
+  it("refuses restore while loaded or without a directory before running the backend", async () => {
+    const f = fixture()
+    const run = vi.fn() as unknown as typeof spawnSync
+    await Host.install(f.options, f.system)
+    expect(() => Host.maintenance("restore", f.root, f.system, run)).toThrow(
+      expect.objectContaining({ code: "install_running" })
+    )
+    await Host.stop(f.system)
+    expect(() => Host.maintenance("restore", "  ", f.system, run)).toThrow(
+      expect.objectContaining({ code: "invalid_backup" })
+    )
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it.skipIf(existsSync("/opt/homebrew/opt/smithers/libexec/manifest.json"))(
+    "refuses maintenance of an absent install without the Homebrew bundle",
+    () => {
+      const f = fixture()
+      const run = vi.fn() as unknown as typeof spawnSync
+      expect(() => Host.maintenance("backup", undefined, f.system, run)).toThrow(
+        expect.objectContaining({ code: "bundle_missing" })
+      )
+      expect(run).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each([
+    [{ status: 1, stdout: "", stderr: "host_snapshot_missing: no snapshot here\n" }, "host_snapshot_missing"],
+    [{ status: 1, stdout: "", stderr: "" }, "host_maintenance_failed"],
+    [{ status: null, stdout: "", stderr: null }, "host_maintenance_failed"]
+  ])("classifies a failed backend answer %j", (answer, code) => {
+    const f = fixture()
+    mkdirSync(f.system.agentsDir, { recursive: true })
+    writeFileSync(Host.plistFile(f.system), Host.hostPlist(f.options))
+    const run = (() => answer) as unknown as typeof spawnSync
+    expect(() => Host.maintenance("backup", undefined, f.system, run)).toThrow(
+      expect.objectContaining({
+        code,
+        message: answer.stderr?.trim() || "Host maintenance backend did not answer"
+      })
+    )
+  })
+
+  it.each(
+    [
+      ["ready", json(200, {}), true],
+      ["starting", json(503, { status: "starting", phase: "migrate", applied: 3, total: 9 }), "[\"migrate\",3,9]"],
+      ["unavailable", json(503, { status: "draining" }), false],
+      ["failing", json(500, {}), false],
+      [
+        "redirecting",
+        ((_req, res) => {
+          res.writeHead(302, { Location: "http://127.0.0.1:1/readyz" })
+          res.end()
+        }) as RequestListener,
+        false
+      ]
+    ] as const
+  )("reads a %s readiness answer", async (_name, listener, expected) => {
+    await serving(listener, async (origin) => expect(await Host.ready(origin)).toBe(expected))
+  })
+
+  it("reports an unreachable host as not ready", async () => {
+    const origin = await serving(json(200, {}), async (origin) => origin)
+    expect(await Host.ready(origin)).toBe(false)
+  })
+})
+
+describe("host start and status", () => {
+  const handoff = async () => ({ code: "setup_ready", setup_urls: ["http://lan-a:4000/setup?token=x"], exitCode: 0 })
+
+  it("starts the given bundle and warns only when a LAN bind names no origin", async () => {
+    const f = fixture()
+    await expect(
+      Host.start(f.bundle, { bind: "0.0.0.0" }, () => f.system, f.options.stateDir, async () => true, handoff)
+    ).resolves.toEqual({ ...(await handoff()), warning: "LAN browsers need --origin" })
+    expect(readFileSync(Host.plistFile(f.system), "utf8")).toContain(`<string>${homedir()}</string>`)
+    await expect(
+      Host.start(
+        f.bundle,
+        { bind: "0.0.0.0", origins: ["http://lan-a:4000"] },
+        () => f.system,
+        f.options.stateDir,
+        async () => true,
+        handoff
+      )
+    ).resolves.toEqual(await handoff())
+  })
+
+  it("validates serving flags before touching launchd", async () => {
+    const host = vi.fn()
+    await expect(Host.start(undefined, { bind: "invalid" }, host)).rejects.toThrow("Invalid bind address")
+    expect(host).not.toHaveBeenCalled()
+  })
+
+  it("stops and refuses when the backend records a refusal as the job loads", async () => {
+    const f = fixture(), launch = f.system.launchctl
+    f.system.launchctl = (args) => {
+      const result = launch(args)
+      if (args[0] === "bootstrap") {
+        writeFileSync(
+          join(f.options.stateDir, "start-refusal.json"),
+          JSON.stringify({ code: "host_capacity_zero", message: "memory: needs 14 GiB" })
+        )
+      }
+      return result
+    }
+    const probe = vi.fn(async () => true)
+    await expect(Host.startInstalled(f.options, f.system, probe, handoff)).rejects.toThrow(
+      "host_capacity_zero: memory: needs 14 GiB"
+    )
+    expect(probe).not.toHaveBeenCalled()
+    expect(Host.loaded(f.system)).toBe(false)
+  })
+
+  it("ignores a refusal file the backend did not write as a capacity refusal", () => {
+    const f = fixture()
+    mkdirSync(f.options.stateDir, { recursive: true })
+    writeFileSync(join(f.options.stateDir, "start-refusal.json"), JSON.stringify({ code: "other", message: "x" }))
+    expect(Host.startRefusal(f.options.stateDir)).toBeUndefined()
+    writeFileSync(join(f.options.stateDir, "start-refusal.json"), JSON.stringify({ code: "host_capacity_zero" }))
+    expect(Host.startRefusal(f.options.stateDir)).toBeUndefined()
+  })
+
+  it.each([
+    [null, ""],
+    [{ message: "Already set up." }, "Already set up."],
+    [{ setup_urls: ["http://a/setup?token=1"] }, "http://a/setup?token=1"],
+    [
+      { setup_urls: ["http://a/setup?token=1"], warning: "LAN browsers need --origin" },
+      "http://a/setup?token=1\nLAN browsers need --origin"
+    ]
+  ])("renders start result %j", (value, text) => {
+    expect(Host.startText(value)).toBe(text)
+  })
+
+  /** A fixture whose bundled backend is a real program that checks the doctor's arguments and state root. */
+  const doctorBundle = (f: ReturnType<typeof fixture>) => {
+    writeFileSync(
+      join(f.bundle, "bin/smithers-backend"),
+      `#!/bin/sh\n[ "$1 $2" = "microvm doctor" ] && [ "$SMITHERS_DATA_ROOT" = ${
+        JSON.stringify(f.options.stateDir)
+      } ]\n`,
+      { mode: 0o755 }
+    )
+    reseal(f, executables)
+  }
+
+  it.each(
+    [
+      [200, { capacity: 2 }, { install: { capacity: 2 } }],
+      [404, {}, {}]
+    ] as const
+  )("reports a loaded, ready, diagnosed host with install telemetry %s", async (code, body, extra) => {
+    const f = fixture()
+    doctorBundle(f)
+    await Host.install(f.options, f.system)
+    await serving((req, res) => {
+      if (req.url === "/readyz") return json(200, {})(req, res)
+      expect(req.headers.authorization).toBe("Bearer fixture-person")
+      return json(code, body)(req, res)
+    }, async (origin) => {
+      expect(await Host.status(f.system, f.options.stateDir, origin, "fixture-person")).toEqual({
+        state: "ready",
+        bundle: f.bundle,
+        version: "b".repeat(40),
+        launchd: "running",
+        readiness: "ready",
+        doctor: "ready",
+        ...extra
+      })
+    })
+  })
+
+  it("reports an unready or unloaded host unhealthy", async () => {
+    const f = fixture()
+    doctorBundle(f)
+    await Host.install(f.options, f.system)
+    await serving(json(500, {}), async (origin) => {
+      await expect(Host.status(f.system, f.options.stateDir, origin)).rejects.toMatchObject({ code: "host_unhealthy" })
+      await Host.stop(f.system)
+      await expect(Host.status(f.system, f.options.stateDir, origin)).rejects.toMatchObject({ code: "host_unhealthy" })
+    })
+  })
+
+  it("refuses more than ten public origins", () => {
+    const origins = Array.from({ length: 11 }, (_, index) => `http://lan-${index}:4000`)
+    expect(() => Host.validateAddress({ origins })).toThrow("Invalid public origins")
+    expect(() => Host.validateAddress({ origins: origins.slice(0, 10) })).not.toThrow()
+  })
+})
+
+describe("private setup handoff failures", () => {
+  const socketServer = async (f: ReturnType<typeof fixture>, listener: RequestListener) => {
+    mkdirSync(join(f.root, "run"))
+    const socket = join(f.root, "run/host.sock")
+    const server = createServer(listener)
+    await new Promise<void>((done) => server.listen(socket, done))
+    chmodSync(socket, 0o600)
+    return {
+      close: () => {
+        server.closeAllConnections()
+        return new Promise<void>((done) => server.close(() => done()))
+      }
+    }
+  }
+
+  it.each(
+    [
+      [
+        "an oversized body",
+        ((_req, res) => {
+          res.writeHead(200)
+          res.end(JSON.stringify({ setup_urls: ["x".repeat(70_000)] }))
+        }) as RequestListener,
+        "invalid_setup_response"
+      ],
+      ["a non-string setup URL", json(200, { setup_urls: [7] }), "invalid_setup_response"],
+      ["a dropped connection", ((req) => req.socket.destroy()) as RequestListener, "setup_socket_unavailable"],
+      ["no answer", (() => {}) as RequestListener, "setup_socket_timeout"]
+    ] as const
+  )("refuses %s", async (_name, listener, code) => {
+    const f = fixture()
+    const server = await socketServer(f, listener)
+    try {
+      await expect(Host.setupURLs(f.root, 200)).rejects.toMatchObject({ code })
+    } finally {
+      await server.close()
+    }
+  })
+})
+
+describe("install telemetry filtering", () => {
+  it.each(
+    [
+      ["a null body", null, undefined],
+      ["an array body", [{ capacity: 2 }], undefined],
+      [
+        "no usable field",
+        { capacity: -1, this_mac: { memory_gb: "32" }, github_app: { configured: "yes" } },
+        undefined
+      ],
+      ["a non-finite capacity beside usable fields", {
+        capacity: "2",
+        this_mac: { memory_gb: -4, capacity: 0, limit: { term: "memory", fix: "  " } },
+        github_app: { installed: true }
+      }, { this_mac: { capacity: 0 }, github_app: { installed: true } }],
+      ["an unknown limit term", { this_mac: { capacity: 0, limit: { term: "network", fix: "x" } } }, {
+        this_mac: { capacity: 0 }
+      }]
+    ] as const
+  )("keeps only typed public fields from %s", async (_name, body, expected) => {
+    await serving(
+      json(200, body),
+      async (origin) => expect(await Host.installTelemetry(`${origin}/api/install`)).toEqual(expected)
+    )
   })
 })

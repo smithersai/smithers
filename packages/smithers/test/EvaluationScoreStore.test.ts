@@ -2,7 +2,7 @@ import { NodeCrypto, NodeServices } from "@effect/platform-node"
 import * as Dialect from "@smthrs/database/Dialect"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
-import { CaseExecutor } from "@smthrs/evals"
+import { CaseExecutor, Runner } from "@smthrs/evals"
 import { RetryPolicy } from "@smthrs/flow"
 import { Journal } from "@smthrs/journal"
 import { NodeRuntime } from "@smthrs/platform-node"
@@ -350,6 +350,100 @@ describe("evaluation scoring over the project's engine store", () => {
     expect(result.code).toBe(5)
     expect(result.output).toContain("eval_run_failed")
     expect(await readdir(join(root, ".flows"))).toEqual(["engine.db"])
+  })
+
+  it("scores a direct batch through the project's store-backed runner, or inline without a store", async () => {
+    const root = await fixture()
+    await withEngineStore(root)
+    const batch = (layerRoot: string) =>
+      Effect.runPromise(
+        Effect.flatMap(Effect.service(Runner.Runner), (runner) =>
+          runner.runBatch([{
+            identity: Scoring.jobIdentity(["evaluation-batch", layerRoot]),
+            observation: { targetStepKey: stepKey, scorerKey: "evaluation-batch/exact" },
+            at: Date.parse(first),
+            score: Effect.succeed({ score: 0.5 })
+          }], { concurrency: 1 })).pipe(Effect.provide(Evaluation.scoring(layerRoot)))
+      )
+    expect(await batch(root)).toMatchObject([{ kind: "score", score: 0.5 }])
+    expect(await stored(root)).toMatchObject([{ kind: "score", score: 0.5, scorerKey: "evaluation-batch/exact" }])
+    const inline = await fixture()
+    expect(await batch(inline)).toMatchObject([{ kind: "score", score: 0.5 }])
+    expect(await readdir(inline)).toEqual([])
+  })
+
+  it("persists binding ground truth and context with the durable request", async () => {
+    const root = await fixture()
+    const target = { name: "evaluation-truth-target" }
+    const scorer = Scorer.make({
+      id: "evaluation-truth",
+      version: "1",
+      score: ({ output, groundTruth, context }) =>
+        Effect.succeed({ score: output === groundTruth ? (context as { readonly weight: number }).weight : 0 })
+    })
+    const suite = {
+      name: "truth",
+      concurrency: 1,
+      cases: [{ name: "seven", input: 7 }],
+      bindings: [Binding.make({ scorer, appliesTo: target, groundTruth: 7, context: { weight: 0.25 } })]
+    }
+    const executor = CaseExecutor.make((entry) =>
+      Effect.succeed({ output: entry.input, stepKey, latencyMs: 0, target })
+    )
+    const result = await Evaluation.execute(suite, executor, { root, runId: "truth", at: first })
+    expect(result.observations).toMatchObject([{ kind: "score", score: 0.25 }])
+  })
+
+  it("refuses a request whose binding sampling cannot be recorded durably", async () => {
+    const root = await fixture()
+    await writeSuite(root)
+    const loaded = await Evaluation.load(root, "exact")
+    const suite = {
+      ...loaded.suite,
+      bindings: loaded.suite.bindings.map((binding) => ({ ...binding, sampling: { ratio: 5, seed: "" } as never }))
+    }
+    await expect(Evaluation.execute(suite, loaded.executor, { root, runId: "sampling", at: first })).rejects
+      .toMatchObject({ code: "invalid_suite", message: "The recorded evaluation request is invalid" })
+  })
+
+  it("refuses to resume an admitted run whose scorer the suite no longer provides", async () => {
+    const root = await fixture()
+    await writeSuite(root)
+    const loaded = await Evaluation.load(root, "exact")
+    const started = Deferred.makeUnsafe<void>()
+    const held = {
+      ...loaded.suite,
+      bindings: loaded.suite.bindings.map((binding) => ({
+        ...binding,
+        scorer: {
+          ...binding.scorer,
+          score: () => Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never))
+        }
+      }))
+    }
+    const options = { root, runId: "replaced", at: first }
+    const controller = new AbortController()
+    const initial = Evaluation.execute(held, loaded.executor, options, { signal: controller.signal })
+      .then(() => new Error("Evaluation ended before interruption"), (error: unknown) => error)
+    await Effect.runPromise(Deferred.await(started).pipe(Effect.timeout("5 seconds")))
+    controller.abort()
+    expect(await initial).toBeDefined()
+    const replaced = {
+      ...loaded.suite,
+      bindings: [Binding.make({
+        scorer: Scorer.make({
+          id: "evaluation-score-store/other",
+          version: "1",
+          score: () => Effect.succeed({ score: 1 })
+        }),
+        appliesTo: loaded.suite.bindings[0]!.appliesTo
+      })]
+    }
+    const refusal = { code: "invalid_suite", message: expect.stringContaining("scorer is no longer available") }
+    await expect(Evaluation.execute(replaced, loaded.executor, options)).rejects.toMatchObject(refusal)
+    // The refusal is the run's durable outcome, not a transient one.
+    await expect(Evaluation.execute(loaded.suite, loaded.executor, options)).rejects.toMatchObject(refusal)
+    expect(await stored(root)).toHaveLength(0)
   })
 
   it("exposes the scoring composition from the public evaluation entry", async () => {

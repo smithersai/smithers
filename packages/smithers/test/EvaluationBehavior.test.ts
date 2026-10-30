@@ -1,6 +1,6 @@
 import type { RuntimeConfig } from "@smthrs/build-cli/Cli"
 import { Cli, Mcp } from "incur"
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises"
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join, relative } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -145,6 +145,27 @@ describe("evaluation suite discovery and execution", () => {
     expect(remote.code).toBe(1)
     expect(remote.output).toContain("--remote is not supported")
     expect(await readdir(root)).toEqual(["evals"])
+  })
+
+  it.skipIf(process.getuid?.() === 0)("refuses a suite subdirectory the owner cannot read", async () => {
+    const root = await fixture()
+    const locked = join(root, "evals", "locked")
+    await mkdir(locked, { recursive: true })
+    await chmod(locked, 0)
+    try {
+      await expect(Evaluation.list(root)).rejects.toMatchObject({
+        code: "eval_directory_unreadable",
+        message: `Cannot read ${locked} as a directory`
+      })
+    } finally {
+      await chmod(locked, 0o700)
+    }
+  })
+
+  it("surfaces a filesystem failure that is not an unreadable directory", async () => {
+    const root = await fixture()
+    await symlink(join(root, "evals"), join(root, "evals"))
+    await expect(Evaluation.list(root)).rejects.toMatchObject({ code: "ELOOP" })
   })
 
   it("uses the supplied environment and rejects an explicitly empty remote option", async () => {
@@ -376,6 +397,27 @@ describe("evaluation artifact selection and verdicts", () => {
     expect(Evaluation.defaultBaselinePath(root, "../nested/exact")).toBe(
       join(root, "evals", "..%2Fnested%2Fexact.baseline.json")
     )
+  })
+
+  it("reads and round-trips a run saved before trial summaries", async () => {
+    const root = await fixture()
+    const { trials: _trials, k: _k, ...current } = await successful(root)
+    const legacy = { ...current, cases: current.cases.map(({ trials: _caseTrials, ...entry }) => entry) }
+    await persist(root, legacy)
+    const read = await Evaluation.readRun(root, legacy.runId)
+    expect(read).toEqual(legacy)
+    const run = Evaluation.runOf(read)
+    expect(run.trials).toBeUndefined()
+    expect(run.cases[0]!.trials).toBeUndefined()
+    expect(Evaluation.artifactOf(run)).toEqual(legacy)
+    expect((await Evaluation.compare(read, await Evaluation.baseline(read))).verdict).toMatchObject({ _tag: "Passed" })
+  })
+
+  it("surfaces read failures other than a missing run or baseline", async () => {
+    const root = await fixture()
+    await mkdir(join(root, "folder.json"))
+    await expect(Evaluation.readRun(root, join(root, "folder.json"))).rejects.toMatchObject({ code: "EISDIR" })
+    await expect(Evaluation.readBaseline(join(root, "folder.json"))).rejects.toMatchObject({ code: "EISDIR" })
   })
 
   it("requires force for baseline replacement and preserves complete canonical output", async () => {
