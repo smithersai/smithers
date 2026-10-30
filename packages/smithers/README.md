@@ -237,6 +237,8 @@ VibeLang compile caches are shared with CLI children and removed with the
 target's scratch directory.
 Shared test setup preserves an explicit Node cache and removes only the cache
 it creates when none was supplied.
+The offline native-host preload follows child CLI processes and stays out of
+compiler worker threads. Per-file results remain visible before suite completion.
 The coverage target follows `vitest.config.ts`. Process-killing cases stay in
 the serial `:faults` target, using `vitest.faults.config.ts`.
 

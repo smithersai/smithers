@@ -28,6 +28,11 @@ The real discovery fixture retains every default file exactly once, keeps the
 fault tier separate and preserves the configured coverage thresholds. Real
 worker fixtures check queued progress, late failure propagation, both compiler
 caches and cleanup.
+The source-host startup profile exposed the offline preload entering esbuild's
+worker through `NODE_OPTIONS`, despite the worker's empty `execArgv`. The preload
+now applies to main threads only; the real-process regression retains inheritance
+by child CLIs and exercises esbuild's synchronous transform. Per-file results
+remain visible if a target ends before Vitest can print its final summary.
 Native recovery probes wait for actual admission refusals before asserting a
 park, retaining the explicit-consent and exactly-once execution checks.
 
