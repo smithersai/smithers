@@ -535,6 +535,7 @@
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "0.3.283",
         "@clack/prompts": "1.7.0",
+        "@effect/sql-pg": "4.0.5",
         "@effect/sql-sqlite-node": "4.0.5",
         "@opentui/core": "0.5.11",
         "@opentui/react": "0.5.11",
@@ -591,7 +592,6 @@
         "@effect/platform-bun": "4.0.5",
         "@effect/platform-node": "4.0.5",
         "@effect/platform-node-shared": "4.0.5",
-        "@effect/sql-pg": "4.0.5",
         "@effect/sql-sqlite-node": "4.0.5",
         "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
@@ -623,7 +623,6 @@
         "effect": "4.0.5",
       },
       "optionalPeers": [
-        "@effect/sql-pg",
         "@smthrs/platform-bun",
       ],
     },
@@ -2008,7 +2007,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "@opentelemetry/api": ">=1.9.1 <2.0.0",
+        "@opentelemetry/api": ">=1.9.1 <1.10.0",
         "@opentelemetry/exporter-logs-otlp-http": ">=0.222.0 <0.300.0",
         "@opentelemetry/exporter-metrics-otlp-http": ">=0.222.0 <0.300.0",
         "@opentelemetry/exporter-trace-otlp-http": ">=0.222.0 <0.300.0",
