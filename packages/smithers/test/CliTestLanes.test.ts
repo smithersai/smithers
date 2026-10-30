@@ -72,12 +72,26 @@ it("schedules every default CLI file once in one bounded pool with the configure
       /[/\\]Bin(?:Startup|Routing|Runtime|Migration|Launch|Scaffold)?\.test\.ts$/.test(file)
     )
   ).toHaveLength(7)
-  // Cold public discovery has no timing/stat cache. It must retain source-cost
-  // ordering after the explicit process priorities, rather than queueing the
-  // remaining integration suites alphabetically.
-  const remainingSizes = actual.files.slice(8).map((file) => statSync(file).size)
-  for (let index = 1; index < remainingSizes.length; index++) {
-    expect(remainingSizes[index - 1]).toBeGreaterThanOrEqual(remainingSizes[index]!)
+  // These small files spent minutes launching source processes in the timed-out
+  // run. Cold public discovery must dispatch them before large unit tables.
+  const position = (name: string) =>
+    actual.files.findIndex((file) => file.replaceAll("\\", "/").endsWith(`/${name}.test.ts`))
+  for (const name of ["NativeControlPortable", "TuiRuntimes", "BackendLocal"]) {
+    expect(position(name)).toBeGreaterThan(7)
+    expect(position(name)).toBeLessThan(position("RunTiming"))
+  }
+  const startsProcess = (file: string) => {
+    const source = readFileSync(file, "utf8")
+    return source.includes("node:child_process") || source.includes("support/node-child")
+  }
+  const remaining = actual.files.slice(8)
+  const processFiles = remaining.filter(startsProcess)
+  expect(remaining.slice(0, processFiles.length)).toEqual(processFiles)
+  for (const group of [processFiles, remaining.filter((file) => !startsProcess(file))]) {
+    const sizes = group.map((file) => statSync(file).size)
+    for (let index = 1; index < sizes.length; index++) {
+      expect(sizes[index - 1]).toBeGreaterThanOrEqual(sizes[index]!)
+    }
   }
   expect(
     actual.files.filter((file) =>
