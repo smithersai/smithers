@@ -133,6 +133,9 @@ export const PullsView = Schema.Struct({
   merging: Schema.Boolean,
   mergeWriteId: Schema.NullOr(Schema.String),
   mergeRefused: Schema.NullOr(Schema.String),
+  /** This person's review request for the routed pull request: in flight, and what its answer said (`reviewNotice`). */
+  reviewing: Schema.Boolean,
+  reviewNotice: Schema.NullOr(Schema.String),
   /** True after the first complete pull shape is installed, not just its first 2xx. */
   installed: Schema.Boolean,
   /** Transient, per-route GitHub absence evidence, never inferred from an empty projection. */

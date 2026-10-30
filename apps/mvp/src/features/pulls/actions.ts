@@ -1,5 +1,6 @@
 import { Effect, Metric, Stream } from "effect"
 import { codeOf } from "../../errorCode"
+import { FlowDispatch } from "../../flows/dispatch"
 import { open as openIssues, reconnectShapes as reconnectIssueShapes } from "../issues/actions"
 import { recordShapeRetry } from "../issues/shapeSync"
 import { repoId } from "../repo/contract"
@@ -8,6 +9,7 @@ import { readComparison } from "./comparison"
 import { DEFAULT_MERGE_METHOD, type PullTab, SHA } from "./contract"
 import { VIEW } from "./schema"
 import { PullsStore } from "./store"
+import { reviewAnswered } from "./view"
 
 // What a person does on the pull request pages, as Effects that finish synchronously. Opening a page sets what the
 // route shows and starts the issues' sync, which holds every pull request's title and conversation; the Files tab reads
@@ -54,6 +56,8 @@ export const open = (owner: string, name: string, number?: number, tab: PullTab 
         row.merging = false
         row.mergeWriteId = null
         row.mergeRefused = null
+        row.reviewing = false
+        row.reviewNotice = null
       }
     })
     // Sync status is shared with issues and must follow this route's repository too.
@@ -126,6 +130,32 @@ export const merge = (headSha: string, baseSha: string, number: number) =>
         )
       }),
       Effect.ensuring(Effect.ignore(store.view.update(VIEW, (row) => void (row.merging = false)))),
+      Effect.forkIn(store.scope),
+    )
+    return true
+  }).pipe(Effect.orDie)
+
+/**
+ * Review on the routed pull request (decision 0126): `pull/review`, the person's own press, door `button`, bound to the
+ * head this page shows. It returns at once; the page says Review requested, or why not (`reviewNoticeOf`), until the
+ * route shows another pull request.
+ */
+export const review = (headSha: string, number: number) =>
+  Effect.gen(function* () {
+    const store = yield* PullsStore
+    const view = (yield* store.view.toArray)[0]!
+    if (view.reviewing) return false
+    const flows = yield* FlowDispatch
+    yield* store.view.update(VIEW, (row) => {
+      row.reviewing = true
+      row.reviewNotice = null
+    })
+    yield* flows.dispatch("pull/review", { repo: `${view.owner}/${view.name}`, number, headSha }, { door: "button" }).pipe(
+      Effect.exit,
+      Effect.flatMap((exit) =>
+        store.view.update(VIEW, (row) => reviewAnswered(row, { owner: view.owner, name: view.name, number }, exit))
+      ),
+      Effect.orDie,
       Effect.forkIn(store.scope),
     )
     return true

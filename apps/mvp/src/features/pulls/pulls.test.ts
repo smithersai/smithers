@@ -33,7 +33,7 @@ import { startedOnRead } from "../../test/liveQueries"
 import { Pulls } from "./pulls"
 import { pullShapeTransitions } from "./shapeSync"
 import { PullsStore } from "./store"
-import { listPageOf, pullAccessOf } from "./view"
+import { listPageOf, pullAccessOf, REVIEW_REQUESTED } from "./view"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -81,6 +81,7 @@ const faultyClient = () => {
             const next = state.compare.shift()
             return next === undefined ? real.compare(owner, name, base, head) : fail(next)
           }),
+        review: real.review,
       })),
   ).pipe(Layer.provide(PullsClient.layer({ origin: CHATAPI_ORIGIN, within: "10 seconds" })))
   return { layer, state }
@@ -636,6 +637,42 @@ describe("Merge", () => {
     expect(refusals(offline)[0]).toEqual(
       expect.objectContaining({ severity: "Warn", outcome: "unavailable", errorCode: "PullsRequestFailed" }),
     )
+  }, WITHIN)
+})
+
+describe("Review (decision 0126)", () => {
+  test("a Maintainer's press asks Smithers to review the head shown, once at a time; the page says it was requested", async () => {
+    const tab = await open()
+    await server(tab.api).pull(pullOf(2))
+    await tab.actions.open(OWNER, NAME, 2)
+    await until(() => expect(tab.pull()?.headSha).toBe(SHA_HEAD))
+    expect(tab.actions.review(SHA_HEAD, 2)).toBe(true)
+    // A second press while the first is on its way asks nothing.
+    expect(tab.actions.review(SHA_HEAD, 2)).toBe(false)
+    expect(tab.view()).toMatchObject({ reviewing: true, reviewNotice: null })
+    await until(() => expect(tab.view()).toMatchObject({ reviewing: false, reviewNotice: REVIEW_REQUESTED }))
+    expect(tab.api.github.starts.filter(({ flow }) => flow === "pull/Review")).toEqual([
+      expect.objectContaining({ payload: expect.objectContaining({ sha: SHA_HEAD, prNumber: 2, ownerId: sam.subject.id }) }),
+    ])
+    // Another pull request starts clean.
+    await tab.actions.open(OWNER, NAME, 3)
+    expect(tab.view()).toMatchObject({ reviewing: false, reviewNotice: null })
+  }, WITHIN)
+
+  test("refused by the route: a Member is not allowed, and a page whose head moved says so", async () => {
+    const member = await open({}, person("member"))
+    await server(member.api).pull(pullOf(2))
+    await member.actions.open(OWNER, NAME, 2)
+    member.actions.review(SHA_HEAD, 2)
+    await until(() => expect(member.view()).toMatchObject({ reviewing: false, reviewNotice: "Not allowed" }))
+
+    const tab = await open()
+    await server(tab.api).pull(pullOf(2))
+    await tab.actions.open(OWNER, NAME, 2)
+    tab.actions.review(SHA_OLD, 2)
+    await until(() => expect(tab.view()).toMatchObject({ reviewing: false, reviewNotice: "New commits" }))
+    expect(tab.api.github.starts.filter(({ flow }) => flow === "pull/Review")).toEqual([])
+    // A late answer for a pull request the route left says nothing on the next one: `reviewAnswered` (view.test.ts).
   }, WITHIN)
 })
 

@@ -39,6 +39,7 @@ export const SYSTEM_FLOWS: ReadonlyArray<Flow.Any> = [
   SpendAlert.SpendAlert,
   DatabaseLoad.DatabaseLoad,
   Checks.ChecksRun,
+  Checks.ReviewRun,
   Dispatch.Dispatch,
 ]
 

@@ -44,6 +44,7 @@ import { AnswerRun, Ask, Deliver } from "../features/status/flows"
 import { Ack, WatchSet } from "../features/attention/flows"
 import { AlertChannelSet, SandboxLimitsSet } from "../features/spend/flows"
 import { DomainAdd, DomainRemove } from "../features/domains/flows"
+import { PullReview } from "../features/pulls/flows"
 import { ModelRemove, ModelTest } from "../features/personal-model/flows"
 import { SetTheme } from "../features/theme/flows"
 import { TodoCommit, TodoDraft, TodoDrop, TodoInspect, TodoIssue, TodoRetry } from "../features/todos/flows"
@@ -338,6 +339,19 @@ export const registry = {
     flow: TriagePause,
     userOnlyReason: "A Maintainer pauses the triage flow; the agent never does.",
     slash: { command: "triage.pause", description: "Pause automatic triage", minimum: "maintainer" },
+  },
+  // Review on request (decision 0126, docs/features/pulls.md#review-on-request): a Maintainer of the pull request's
+  // repository asks Smithers to review its head; `/review owner/repo <n>` does too. The page pins the head it showed.
+  "pull/review": {
+    flow: PullReview,
+    userOnlyReason: "Asking for a review spends a model on a Maintainer's behalf; only the Maintainer asks, in person.",
+    slash: {
+      command: "review",
+      description: "Review a pull request",
+      minimum: "maintainer",
+      fields: ["repo", "number"],
+      hints: { fields: { headSha: { hidden: true } } },
+    },
   },
   // TODOs and the stack (decision 0016 §3): the agent drafts a TODO, privately, on the person's device; only the person
   // commits it and drops it. `/todo.new owner/repo <prompt>` drafts one; the prompt takes the rest of the line.

@@ -117,6 +117,8 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
       merging: false,
       mergeWriteId: null,
       mergeRefused: null,
+      reviewing: false,
+      reviewNotice: null,
       installed: false,
       pullStatus: "unknown",
     }],

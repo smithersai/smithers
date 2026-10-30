@@ -8,6 +8,7 @@ import { describe, expect, test } from "vitest"
 import { secretRoute } from "../src/features/secrets/contract.ts"
 import { stackRoute } from "../src/features/todos/contract.ts"
 import { writesRoute } from "../src/features/issues/contract.ts"
+import { reviewRoute } from "../src/features/pulls/contract.ts"
 import { type Act, type Actor, PERSON_ONLY_FLOWS, type PersonOnlyAct, personOnlyRefusals, PROTECTED_ACTS } from "./Actor.ts"
 import { REPOSITORY } from "./github/test/fixtures.ts"
 import { githubHarness } from "./github/test/harness.ts"
@@ -61,6 +62,13 @@ const gitWrite = (body: Record<string, unknown>): Case => async (actor, act) => 
     writesRoute(REPOSITORY.owner, REPOSITORY.name),
     json({ writeId: crypto.randomUUID(), ...body }),
   )
+  return { status, counted: h.count(personOnlyRefusals, { act, by: actor.act!.kind }) }
+}
+
+/** A review asked for on the GitHub routes, with a valid body. */
+const reviewAsk = (): Case => async (actor, act) => {
+  const h = await githubHarness(runtime, { actor })
+  const { status } = await h.fetch(reviewRoute(REPOSITORY.owner, REPOSITORY.name, 1), json({}))
   return { status, counted: h.count(personOnlyRefusals, { act, by: actor.act!.kind }) }
 }
 
@@ -125,6 +133,7 @@ const flows: Routed = {
   "triage/run": gitWrite({ op: "triage/run", number: 1 }),
   "triage/enable": gitWrite({ op: "triage/enable" }),
   "triage/pause": gitWrite({ op: "triage/pause" }),
+  "pull/review": reviewAsk(),
   "todo/commit": stackChange({ op: "commit", title: "Fix the crash", prompt: "Fix it" }),
   "todo/drop": stackChange({ op: "drop", number: 1 }),
   "alert/channel": chat((h) => h.fetch("/api/alert-channels", json({ channel: "email", destinations: [] }))),

@@ -1,3 +1,5 @@
+import { Exit } from "effect"
+import type { Dispatched } from "../../flows/dispatch"
 import type { RepoAnswer } from "../auth/viewer"
 import { NOT_SENT_COPY, type NotSentReason } from "../issues/contract"
 import { pageOf, refusedOf } from "../issues/view"
@@ -14,6 +16,7 @@ import {
   PULL_STATE_WORDS,
   pullPath,
   pullStateOf,
+  REVIEW_REFUSAL_COPY,
 } from "./contract"
 import type { ChangedFile } from "./schema"
 
@@ -303,4 +306,51 @@ export const mergeBoxOf = (
   const merge = session !== undefined && mayMerge(session, answer, pull) && notice !== "Merging"
   const intoDefault = pull.defaultBranch !== "" && pull.baseRef === pull.defaultBranch
   return { notice, merge, warning: merge && intoDefault ? deployWarningOf(pull.baseRef) : undefined }
+}
+
+/** What the page says once ChatApi took a review request: the review shows on the Checks tab as it runs. */
+export const REVIEW_REQUESTED = "Review requested"
+
+/** What the page says when a review request ended without one, and the route's refusal names nothing shorter. */
+export const REVIEW_FAILED = "Couldn't review"
+
+/** What `pull/review`'s dispatch ended with, as the page says it: requested, the route's refusal in a few words, or failed. */
+export const reviewNoticeOf = (
+  exit: Exit.Exit<Dispatched<"pull/review">, unknown>,
+): string => {
+  if (Exit.isFailure(exit)) return REVIEW_FAILED
+  if (exit.value._tag === "Done") return REVIEW_REQUESTED
+  const error = exit.value.error
+  const code = error._tag === "@smthrs/mvp/pulls/ReviewRefused" ? error.code : undefined
+  return (code === undefined ? undefined : REVIEW_REFUSAL_COPY[code]) ?? REVIEW_FAILED
+}
+
+/**
+ * Puts `pull/review`'s answer for pull request `asked` on the page's `row`: Review no longer busy, and what it ended
+ * with. A late answer for a pull request the route left says nothing on the next one.
+ */
+export const reviewAnswered = (
+  row: { owner: string; name: string; number: number | null; reviewing: boolean; reviewNotice: string | null },
+  asked: { readonly owner: string; readonly name: string; readonly number: number },
+  exit: Exit.Exit<Dispatched<"pull/review">, unknown>,
+): void => {
+  if (row.owner !== asked.owner || row.name !== asked.name || row.number !== asked.number) return
+  row.reviewing = false
+  row.reviewNotice = reviewNoticeOf(exit)
+}
+
+/**
+ * The review box: whether Review shows, for a Maintainer or Admin of the routed repository, wherever the deployment acts
+ * on it (decision 0126), on an open pull request whose head the device has; and what it says.
+ */
+export const reviewBoxOf = (
+  session: { readonly status: string } | undefined,
+  answer: RepoAnswer | undefined,
+  pull: Pull,
+  view: { readonly reviewing: boolean; readonly reviewNotice: string | null } | undefined,
+): { readonly review: boolean; readonly busy: boolean; readonly notice: string | undefined } => {
+  const role = session?.status === "signed_in" ? answer?.role : undefined
+  const review = (role === "admin" || role === "maintainer") && pull.state === "open" && !pull.merged &&
+    pull.synced > 0 && pull.headSha !== ""
+  return { review, busy: view?.reviewing === true, notice: view?.reviewNotice ?? undefined }
 }

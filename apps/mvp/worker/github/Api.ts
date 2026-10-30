@@ -94,6 +94,7 @@ import * as PullRefresh from "./PullRefresh.ts"
 import * as ReadToken from "./ReadToken.ts"
 import * as Visibility from "./Visibility.ts"
 import * as RepoRoles from "./RepoRoles.ts"
+import * as Review from "./Review.ts"
 import * as Store from "./Store.ts"
 import { TriageRun } from "./Triage.ts"
 import * as TriageStore from "./TriageStore.ts"
@@ -318,7 +319,7 @@ const SHAPES: ReadonlySet<string> = new Set([
 /** Whether ChatApi routes `path` here. */
 export const handles = (path: string): boolean =>
   path === GITHUB_WEBHOOK_ROUTE || SHAPES.has(path) || parseWritesPath(path) !== undefined ||
-  Compare.parseComparePath(path) !== undefined
+  Compare.parseComparePath(path) !== undefined || Review.parseReviewPath(path) !== undefined
 
 /**
  * How long a stale read of the issues waits for `github/Reconcile`'s start to be admitted: one idempotent Durable Object
@@ -401,6 +402,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
     const metadataHttp = options.http ?? (yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer)))
     const visibility = Visibility.make(metadataApiUrl, readToken, metadataHttp)
     // A pull request's files (worker/github/Compare.ts), read with the App's token: none without the App.
+    // Review on request (worker/github/Review.ts): any pull request of a repository the deployment acts on.
+    const review = Review.make(database, { repository, app: options.app, roles: options.roles, mayAct })
     const compare = Option.isSome(options.app)
       ? Option.some(yield* Compare.make(options.app.value, Option.fromUndefinedOr(options.http)))
       : Option.none()
@@ -927,6 +930,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           Effect.catchCause(() => Effect.succeed(refuse(503, "unavailable"))),
         )
       }
+      const reviewed = Review.parseReviewPath(path)
+      if (reviewed !== undefined) return yield* review(reviewed)
       const target = parseWritesPath(path)
       if (target !== undefined) return yield* writes(target)
       return HttpServerResponse.empty({ status: 404 })

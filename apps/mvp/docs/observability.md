@@ -254,6 +254,7 @@ What each feature lost when something failed, logged once with its code (the 202
 | `runs.repo_runs.load`, `repo.repositories.load`, `views.home.load`, `todos.issue.load` | Warn | `outcome: failed`, `errorCode` | a list's first sync failed: a repository's runs, the repositories, the home's views, the issues while drafting from one |
 | `pulls.files.load` | Warn | `outcome: failed`, `errorCode`, `status` | a pull request's comparison couldn't be read; the Files tab shows it failed |
 | `pulls.merge` | Warn | `outcome` (`forbidden`, `sign_in`, `unavailable`), `errorCode`, `status` | a merge press was refused or unreachable |
+| `pull.review.request` | Info when `sent`, else Warn | `outcome` (`sent`, `refused`, `unsent`), `status`, `code` | a review asked for on a pull request; ChatApi's own line of the same name has `repoId`, `number`, `sha`, `outcome`, `status`, `durationMs`, `errorCode` ([review on request](features/pulls.md#review-on-request)) |
 | `repo.clone.unconfirmed` | Warn | `outcome: unconfirmed`, `reason: not_delivered` | Electric didn't deliver a clone's row in time |
 | `terminal.show` | Warn with `errorCode` when `failed`, else Info | as before | the terminals' rows couldn't load |
 | `terminal.show.failed` | Error | `errorCode` | a background show or its callback failed |
@@ -609,6 +610,7 @@ The git loop's routes, flows and tokens, triage, and the browser's issue writes,
 | `pulls.shape.sync`, `smithers_pull_shape_transitions` | browser log, span, counter | the tab; the same finite progress for the pull metadata shape, without repository or pull content |
 | `item.shape.retry`, `smithers_item_shape_retries{item}` | browser log, span, counter | a person's Try again on an unavailable issue or pull; `item` is `issue` or `pull` |
 | `pulls.merge.post`, `pulls.compare.get`, `smithers_web_pull_merges` | browser | the tab ([pull requests](features/pulls.md#observability)) |
+| `pulls.review.post`, `pull.review.request`, `smithers_web_pull_reviews` | browser | the tab: a review asked for ([review on request](features/pulls.md#review-on-request)) |
 
 ### Agent status
 

@@ -46,7 +46,7 @@ test("withTodos registers the todo run and a head's checks, and the object runs 
     machines,
     TodoAgent.registration(seat, services.database, Agent.layerSandbox),
   )
-  expect(flows.flows.slice(-4)).toEqual([Todo.Todo, TodoDrop.Drop, TodoBaseClosed.Invalidate, Checks.ChecksRun])
+  expect(flows.flows.slice(-5)).toEqual([Todo.Todo, TodoDrop.Drop, TodoBaseClosed.Invalidate, Checks.ChecksRun, Checks.ReviewRun])
   expect(flows.flows.some((flow) => flow._tag === "issue/Prototype")).toBe(false)
   const values = new Map<string, unknown>()
   const storage: ExecutionHost.Storage = {

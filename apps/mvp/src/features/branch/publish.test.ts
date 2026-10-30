@@ -55,6 +55,7 @@ const faultyPulls = () => {
     Effect.map(PullsClient, (real) =>
       PullsClient.of({
         merge: real.merge,
+        review: real.review,
         compare: (owner, name, base, head) =>
           Effect.suspend(() => {
             const next = compare.shift()

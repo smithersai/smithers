@@ -1,7 +1,8 @@
 import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary"
 import { IssuesStore } from "../issues/store"
-import { closeFiles, loadFiles, merge, open, retry, warm } from "./actions"
+import type { FlowDispatch } from "../../flows/dispatch"
+import { closeFiles, loadFiles, merge, open, retry, review, warm } from "./actions"
 import { PullsClient } from "./api"
 import type { PullTab } from "./contract"
 import { PullsStore, type RepoPulls } from "./store"
@@ -37,6 +38,8 @@ export interface PullsActions {
   readonly loadFiles: (owner: string, name: string, base: string, head: string) => void
   /** Merge, bound to the head and base the page shows: whether it was sent. */
   readonly merge: (headSha: string, baseSha: string, number: number) => boolean
+  /** Review (`pull/review`), bound to the head the page shows: whether it was asked. */
+  readonly review: (headSha: string, number: number) => boolean
 }
 
 export class Pulls extends Context.Service<Pulls, { readonly queries: PullsQueries; readonly actions: PullsActions }>()(
@@ -47,7 +50,7 @@ export class Pulls extends Context.Service<Pulls, { readonly queries: PullsQueri
     Pulls,
     Effect.gen(function* () {
       const store = yield* PullsStore
-      const { runSync: run, runPromise: promise } = runners(yield* Effect.context<PullsStore | PullsClient | IssuesStore>(), "pulls")
+      const { runSync: run, runPromise: promise } = runners(yield* Effect.context<PullsStore | PullsClient | IssuesStore | FlowDispatch>(), "pulls")
       return Pulls.of({
         queries: {
           view: store.viewState.tanstack,
@@ -66,6 +69,7 @@ export class Pulls extends Context.Service<Pulls, { readonly queries: PullsQueri
           retry: () => run(retry),
           loadFiles: (owner, name, base, head) => run(loadFiles(owner, name, base, head)),
           merge: (headSha, baseSha, number) => run(merge(headSha, baseSha, number)),
+          review: (headSha, number) => run(review(headSha, number)),
         },
       })
     }),

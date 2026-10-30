@@ -144,7 +144,7 @@ export const withTodos = <ROut, E, R, SE, SR, DE, DR, ME, MR, IE, IR>(
   commandSeconds?: number,
   stepWaitSeconds?: number,
 ) => ({
-  flows: [...flows.flows, Todo.Todo, TodoDrop.Drop, TodoBaseClosed.Invalidate, Checks.ChecksRun],
+  flows: [...flows.flows, Todo.Todo, TodoDrop.Drop, TodoBaseClosed.Invalidate, Checks.ChecksRun, Checks.ReviewRun],
   registration: Layer.mergeAll(
     flows.registration,
     Layer.unwrap(Effect.map(services, (built) =>

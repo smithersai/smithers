@@ -138,6 +138,28 @@ export const ChecksRun = Flow.make("checks/Run", {
     )),
 })
 
+/**
+ * `pull/Review`: the review a Maintainer asked for on a pull request's head (decision 0126), any pull request of a
+ * repository the deployment acts on, not only one a TODO opened. The head's `checks/Review` for the person who asked,
+ * then `checks/Report`, so the head's `smithers/review` status says how it ended. No scripts and no machine: the review
+ * reads the diff from GitHub. `POST /api/repos/<owner>/<name>/pulls/<n>/review` starts it (worker/github/Review.ts).
+ */
+export const ReviewRun = Flow.make("pull/Review", {
+  description: "Review a pull request's head on request: the judge reads the diff, the App posts its findings as one " +
+    "comment review, and the head's smithers/review status says how it ended.",
+  capabilities: ["db:write:runs", "db:write:reviews"],
+  modelInvocable: false,
+  payload: ChecksRequest,
+  success: Reported,
+  error: ChecksUnavailable,
+  body: Node.capture({ review: Review.name, report: Report.name }, (request) =>
+    Review.call({ request }).pipe(
+      Node.catch({ onFailure: Node.capture({ none: "none" }, () => Node.succeed({ checks: [] })) }),
+      Node.andThen(Report.call({ request, after: "review" })),
+      Node.catch({ onFailure: Node.capture({ none: "none" }, () => Node.succeed({ statuses: [] })) }),
+    )),
+})
+
 /** Checks that ran, by `check` (`script` or `review`) and `outcome` (`done`, `failed`). */
 export const checks = Metric.counter("smithers_checks", {
   description: "Pull request checks run as Smithers runs, by check kind and outcome",
@@ -194,7 +216,7 @@ export const jobMachineOf = (request: ChecksRequest): { readonly branch: Sandbox
 export const CHECKOUT_CHECK = "checkout"
 
 /** Check `name`'s run id on `request`'s head: the version 5 UUID of its execution and name. */
-export const checkRunIdOf = (request: ChecksRequest, name: string) =>
+export const checkRunIdOf = (request: Pick<ChecksRequest, "repoId" | "sha">, name: string) =>
   Uuid.v5(CHECK_RUN_NAMESPACE, `${checkExecutionId(request.repoId, request.sha, "all")}:${name}`).pipe(
     Effect.provide(WebCrypto.layer),
   )
@@ -490,8 +512,9 @@ export const steps = <E, R>(
 }
 
 /**
- * Registers `checks/Run` with its steps over `services` and the host's `Machines`, each check script running for up to
- * `commandSeconds` (`COMMAND_LIMIT_SECONDS` unless given), its step waiting on it for up to `stepWaitSeconds`.
+ * Registers `checks/Run` and `pull/Review` with their steps over `services` and the host's `Machines`, each check script
+ * running for up to `commandSeconds` (`COMMAND_LIMIT_SECONDS` unless given), its step waiting on it for up to
+ * `stepWaitSeconds`.
  */
 export const registration = <E, R>(
   services: Services<E, R>,
@@ -499,12 +522,13 @@ export const registration = <E, R>(
   stepWaitSeconds: number = COMMAND_LIMIT_SECONDS,
 ) => {
   const implementation = steps(services, commandSeconds, stepWaitSeconds)
-  return Interpreter.layerWithImplementations(
-    ChecksRun,
-    Layer.mergeAll(
-      Scripts.toLayer(implementation.scripts),
-      Review.toLayer(implementation.review),
-      Report.toLayer(implementation.report),
+  const review = Review.toLayer(implementation.review)
+  const report = Report.toLayer(implementation.report)
+  return Layer.mergeAll(
+    Interpreter.layerWithImplementations(
+      ChecksRun,
+      Layer.mergeAll(Scripts.toLayer(implementation.scripts), review, report),
     ),
+    Interpreter.layerWithImplementations(ReviewRun, Layer.mergeAll(review, report)),
   ).pipe(Layer.provideMerge(Action.layerImplementations))
 }

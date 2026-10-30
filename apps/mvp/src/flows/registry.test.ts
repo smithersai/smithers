@@ -160,7 +160,7 @@ describe("names and placement", () => {
   test("each entry is registered under its own flow's tag, in a namespace only the app claims", () => {
     for (const name of names) {
       expect(registry[name].flow._tag).toBe(name)
-      expect(name).toMatch(/^(app|auth|chat|repo|ui|view|flow|run|branch|conversation|terminal|issue|triage|todo|watch|notification|alert|domain|model|sandbox|timeline|file)\//)
+      expect(name).toMatch(/^(app|auth|chat|repo|ui|view|flow|run|branch|conversation|terminal|issue|triage|pull|todo|watch|notification|alert|domain|model|sandbox|timeline|file)\//)
     }
   })
 
@@ -254,6 +254,7 @@ describe("names and placement", () => {
       "triage/run",
       "triage/enable",
       "triage/pause",
+      "pull/review",
       "todo/draft",
       "todo/issue",
       "todo/inspect",

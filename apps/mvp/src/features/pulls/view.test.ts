@@ -1,5 +1,8 @@
+import { Exit } from "effect"
 import { describe, expect, test } from "vitest"
+import { DispatchFailed } from "../../flows/dispatch"
 import { pageOf } from "../issues/view"
+import { ReviewRefused, ReviewUnsent } from "./flows"
 import {
   checkRows,
   checksSummaryOf,
@@ -13,6 +16,11 @@ import {
   mergeNoticeOf,
   pullAccessOf,
   pullPageOf,
+  REVIEW_FAILED,
+  REVIEW_REQUESTED,
+  reviewAnswered,
+  reviewBoxOf,
+  reviewNoticeOf,
   type MergeView,
   type Pull,
   runStateOf,
@@ -303,4 +311,55 @@ test("an applied empty pull list is known without a repository sync marker", () 
   expect(listPageOf([], repo, undefined, { status: "allowed", installed: true }, true).unknown).toBe(false)
   expect(listPageOf([], repo, undefined, { status: "allowed", installed: true }, false).unknown).toBe(true)
   expect(listPageOf([], repo, undefined, { status: "allowed", installed: false }, true).unknown).toBe(true)
+})
+
+describe("review on request (decision 0126)", () => {
+  const idle = { reviewing: false, reviewNotice: null }
+
+  test("Review shows for a Maintainer or Admin of the repository on an open pull request the device has read", () => {
+    expect(reviewBoxOf(signedIn, maintainer, pull(), idle)).toEqual({ review: true, busy: false, notice: undefined })
+    expect(reviewBoxOf(signedIn, { role: "admin", own: false }, pull(), undefined).review).toBe(true)
+    expect(reviewBoxOf(signedIn, maintainer, pull(), { reviewing: true, reviewNotice: null }).busy).toBe(true)
+    expect(reviewBoxOf(signedIn, maintainer, pull(), { reviewing: false, reviewNotice: REVIEW_REQUESTED }).notice)
+      .toBe(REVIEW_REQUESTED)
+  })
+
+  test("never for a Member, signed out, or a pull request that is closed, merged or not read yet", () => {
+    const cases: ReadonlyArray<Parameters<typeof reviewBoxOf>> = [
+      [signedIn, { role: "member", own: true }, pull(), idle],
+      [{ status: "signed_out" }, maintainer, pull(), idle],
+      [undefined, maintainer, pull(), idle],
+      [signedIn, undefined, pull(), idle],
+      [signedIn, maintainer, pull({ state: "closed" }), idle],
+      [signedIn, maintainer, pull({ merged: true }), idle],
+      [signedIn, maintainer, pull({ synced: 0 }), idle],
+      [signedIn, maintainer, pull({ headSha: "" }), idle],
+    ]
+    for (const args of cases) expect(reviewBoxOf(...args).review).toBe(false)
+  })
+
+  test("what the page says once the request ended: requested, the refusal in a few words, or couldn't", () => {
+    const failed = (error: ReviewRefused | ReviewUnsent) => Exit.succeed({ _tag: "Failed" as const, error })
+    expect(reviewNoticeOf(Exit.succeed({ _tag: "Done", value: { sha: "a".repeat(40), started: true } }))).toBe(REVIEW_REQUESTED)
+    expect(reviewNoticeOf(failed(new ReviewRefused({ status: 403, code: "forbidden" })))).toBe("Not allowed")
+    expect(reviewNoticeOf(failed(new ReviewRefused({ status: 409, code: "head_moved" })))).toBe("New commits")
+    expect(reviewNoticeOf(failed(new ReviewRefused({ status: 409, code: "checks_running" })))).toBe("Checks running")
+    expect(reviewNoticeOf(failed(new ReviewRefused({ status: 404, code: "not_found" })))).toBe(REVIEW_FAILED)
+    expect(reviewNoticeOf(failed(new ReviewRefused({ status: 418 })))).toBe(REVIEW_FAILED)
+    expect(reviewNoticeOf(failed(new ReviewUnsent()))).toBe(REVIEW_FAILED)
+    expect(reviewNoticeOf(Exit.fail(new DispatchFailed({ flow: "pull/review", reason: "unavailable" })))).toBe(REVIEW_FAILED)
+  })
+
+  test("an answer lands on its own pull request's page only: a late one says nothing on the next", () => {
+    const done = Exit.succeed({ _tag: "Done" as const, value: { sha: "a".repeat(40), started: true } })
+    const asked = { owner: "o", name: "n", number: 2 }
+    const page = (number: number, owner = "o", name = "n") => ({ owner, name, number, reviewing: true, reviewNotice: null })
+    const same = page(2)
+    reviewAnswered(same, asked, done)
+    expect(same).toMatchObject({ reviewing: false, reviewNotice: REVIEW_REQUESTED })
+    for (const other of [page(3), page(2, "x"), page(2, "o", "x")]) {
+      reviewAnswered(other, asked, done)
+      expect(other).toMatchObject({ reviewing: true, reviewNotice: null })
+    }
+  })
 })

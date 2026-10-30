@@ -47,6 +47,7 @@ export const PERSON_ONLY_FLOWS = {
   "triage/run": { route: "POST /api/repos/<owner>/<name>/writes" },
   "triage/enable": { route: "POST /api/repos/<owner>/<name>/writes" },
   "triage/pause": { route: "POST /api/repos/<owner>/<name>/writes" },
+  "pull/review": { route: "POST /api/repos/<owner>/<name>/pulls/<number>/review" },
   "todo/commit": { route: "POST /api/repos/<owner>/<name>/stack" },
   "todo/drop": { route: "POST /api/repos/<owner>/<name>/stack" },
   "notification/ack": { route: "POST /api/notifications/ack" },

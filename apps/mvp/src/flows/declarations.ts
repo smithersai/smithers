@@ -44,6 +44,7 @@ import { ConversationArchive, ConversationNew } from "../features/conversations/
 import { AlertChannelSet, SandboxLimitsSet } from "../features/spend/flows"
 import { DomainAdd, DomainRemove } from "../features/domains/flows"
 import { FeedAnswer } from "../features/feeds/flows"
+import { PullReview } from "../features/pulls/flows"
 import { ModelRemove, ModelTest } from "../features/personal-model/flows"
 import { SetTheme } from "../features/theme/flows"
 import { TodoCommit, TodoDraft, TodoDrop, TodoInspect, TodoIssue, TodoRetry } from "../features/todos/flows"
@@ -126,6 +127,7 @@ export const declarations = {
   "triage/run": TriageRunAgain,
   "triage/enable": TriageEnable,
   "triage/pause": TriagePause,
+  "pull/review": PullReview,
   "todo/draft": TodoDraft,
   "todo/issue": TodoIssue,
   "todo/inspect": TodoInspect,

@@ -10,7 +10,7 @@ import { usePulls } from "../../features/pulls/components/PullsContext"
 import { githubPullUrl, type PullTab, pullTabPath } from "../../features/pulls/contract"
 import { ChangedFiles } from "../../features/pulls/components/ChangedFiles"
 import { CommitList } from "../../features/pulls/components/CommitList"
-import { checkRows, checksSummaryOf, conversationProps, mergeBoxOf, pullAccessOf, pullPageOf } from "../../features/pulls/view"
+import { checkRows, checksSummaryOf, conversationProps, mergeBoxOf, pullAccessOf, pullPageOf, reviewBoxOf } from "../../features/pulls/view"
 import "./pulls-screen.css"
 import { useRepoAnswer } from "../../features/repo/components/RepoContext"
 
@@ -18,7 +18,8 @@ import { useRepoAnswer } from "../../features/repo/components/RepoContext"
 // review check's findings among them), with Merge for a Maintainer on an open pull request; Commits its commits; Checks
 // the Smithers runs on its head; Files the files its base and head differ by. Merge is the person's own press, bound to
 // the head and base this page shows; the page says Merging, then Merged, or why not. Beside Merge into the default
-// branch, the page says merging deploys it (ruling GH-9).
+// branch, the page says merging deploys it (ruling GH-9). Review, for a Maintainer of the repository, asks Smithers to
+// review the head this page shows (decision 0126); the review runs on the Checks tab and posts one comment review.
 export function PullScreen({ tab }: { readonly tab: PullTab }) {
   const { owner, repo, number } = useParams({ strict: false }) as { owner: string; repo: string; number: number }
   const { queries, actions } = usePulls()
@@ -62,6 +63,7 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
     { tab: "files", label: `Files ${pull.changedFiles}` },
   ]
   const box = mergeBoxOf(session, answer, pull, view)
+  const reviewBox = reviewBoxOf(session, answer, pull, view)
   const header = (
     <div className="pull-merge">
       {pull.baseRef === "" ? null : (
@@ -74,6 +76,14 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
         ? null
         : <Badge variant={box.notice === "Merged" ? "success" : "outline"}>{box.notice}</Badge>}
       {box.warning === undefined ? null : <Badge variant="warning" role="note">{box.warning}</Badge>}
+      {reviewBox.notice === undefined ? null : <Badge variant="outline" role="status">{reviewBox.notice}</Badge>}
+      {reviewBox.review
+        ? (
+          <Button variant="outline" disabled={reviewBox.busy} onClick={() => void actions.review(pull.headSha, pull.number)}>
+            Review
+          </Button>
+        )
+        : null}
       {box.merge
         ? <Button onClick={() => void actions.merge(pull.headSha, pull.baseSha, pull.number)}>Squash and merge</Button>
         : null}

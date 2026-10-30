@@ -391,7 +391,8 @@ describe("the pull request shapes", () => {
     await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       const view = yield* Collection.local({ id: "pull-refresh-test", schema: PullsView, getKey: (row) => row.id,
         initialData: [{ id: VIEW, owner: "acme", name: "widgets", repoId: REPOSITORY.id, number: 42, tab: "conversation" as const,
-          merging: false, mergeWriteId: null, mergeRefused: null, installed: true, pullStatus: "allowed" as const }],
+          merging: false, mergeWriteId: null, mergeRefused: null, reviewing: false, reviewNotice: null, installed: true,
+          pullStatus: "allowed" as const }],
       })
       const source: ShapeSource.Source = { request: (url, init) => Effect.tryPromise({
         try: () => h.fetch(url, init), catch: () => new ShapeSource.RequestFailed({}),

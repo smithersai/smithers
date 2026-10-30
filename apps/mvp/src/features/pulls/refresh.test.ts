@@ -10,7 +10,7 @@ import { PullsView, VIEW } from "./schema"
 test("a bad or late per-PR receipt cannot change the routed absence state", () => Effect.runPromise(Effect.scoped(Effect.gen(function* () {
   const view = yield* Collection.local({ id: "pull-receipt-faults", schema: PullsView, getKey: (row) => row.id,
     initialData: [{ id: VIEW, owner: "acme", name: "widgets", repoId: "repo", number: 42, tab: "conversation" as const,
-      merging: false, mergeWriteId: null, mergeRefused: null, installed: true, pullStatus: "allowed" as const }],
+      merging: false, mergeWriteId: null, mergeRefused: null, reviewing: false, reviewNotice: null, installed: true, pullStatus: "allowed" as const }],
   })
   const value = JSON.stringify({ number: 42, checkedAt: 100, missing: true })
   for (const [status, header, move] of [

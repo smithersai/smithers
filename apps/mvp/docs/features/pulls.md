@@ -21,6 +21,8 @@ GitHub ── pull_request, pull_request_review ─▶ POST /api/github/webhook 
 Merge (a Maintainer's own press) ─▶ POST /api/repos/<o>/<n>/writes { op: "pr/merge" } ─▶ pr/Merge
                                      Action.once: merged with our key? ─▶ else recheck head, draft, the base branch's head
                                      ─▶ PUT /pulls/<n>/merge { sha: head, commit_message: Smithers-Write: <key> } with their token
+Review (a Maintainer's own press, or /review) ─▶ POST /api/repos/<o>/<n>/pulls/<n>/review ─▶ pull/Review on the head
+                                     checks/Review (one comment review, as the App) ─▶ checks/Report (smithers/review)
 the todo run publishes ─▶ checks/Run on the head ─▶ runs rows with the head's SHA (the Checks tab)
                                      each .smithers/checks/<name>.sh on the branch's machine · the review: one comment
                                      each check's result ─▶ POST /statuses/<head> smithers/<name>, as the App (GH-10)
@@ -40,6 +42,7 @@ GET /api/repos/<o>/<n>/compare/<base>...<head> ─▶ the files two commits diff
 | Read pull requests, their commits, reviews and checks; compare two commits | as issues: a role on the repository, or anyone once GitHub said it is public | the App's, for the compare route |
 | Merge | a Maintainer or Admin, in person (`repo:merge`); never the agent | the person's own |
 | The review's comment | the `review` check, for the person who committed the TODO | the App's (`smithers[bot]`), "Reviewed by Smithers for @maya" |
+| Ask for a review ([review on request](#review-on-request)) | a Maintainer or Admin of the pull request's repository, in person; never the agent | the App's, for the review |
 | A check's commit status | `checks/Run`, never a person or the agent | the App's, minted with only `statuses: write` |
 
 ## Routes
@@ -49,6 +52,7 @@ GET /api/repos/<o>/<n>/compare/<base>...<head> ─▶ the files two commits diff
 | Route | Answers |
 |---|---|
 | `POST /api/repos/<owner>/<name>/writes` `{ writeId, op: "pr/merge", number, headSha, baseSha, method? }` | `202 { txid, writeId }` and `pr/Merge` started (`pr-merge:<writeId>`); refusals as issues' writes: `403 forbidden` for a Member, a Guest or anyone acting for the person, `401 authentication` without a session |
+| `POST /api/repos/<owner>/<name>/pulls/<number>/review` `{ headSha? }` | `202 { sha, started }` and `pull/Review` started, or the head's review already Running or Passed (`started: false`); refusals in [review on request](#review-on-request) |
 | `GET /api/repos/<owner>/<name>/compare/<base>...<head>` | `200 { files, truncated, commits, commitsTruncated }`, `Cache-Control: private, max-age=31536000, immutable`, on any repository the person may read as the shapes allow (a published branch's lives on its own); `404 not_found` (no such commits), `401`/`403` as the shapes, `503 not_configured` (no App) or `unavailable` |
 | `GET /api/shapes/pulls`, `/api/shapes/pull-commits`, `/api/shapes/reviews` | the repository's rows, `PULL_COLUMNS`, `PULL_COMMIT_COLUMNS`, `REVIEW_COLUMNS` |
 | `GET /api/shapes/checks` | the repository's `runs` with a commit (`CHECK_COLUMNS`): never who launched them |
@@ -61,9 +65,10 @@ GET /api/repos/<o>/<n>/compare/<base>...<head> ─▶ the files two commits diff
 |---|---|
 | `store.ts` | per repository (`forRepo(id)`, with that repository's issues; decision 0079 slice 1b), Electric collections `pull-rows:<repo id>`, `pull-commits:<repo id>`, `pull-reviews:<repo id>`, `pull-checks:<repo id>`, each shape naming its repository with `?repo=`, kept on the device (`src/device/registry.ts`, families); `pull-files` (the comparisons this tab read) and `pull-view` (the route, this person's merge, and what the routed repository's shape last said of access), in memory. The facade's queries are the routed repository's. Commits, reviews and checks request their shapes only while the route shows a pull request ([0112](../decisions/0112-shape-demand.md)) |
 | `queries.ts` | the list (newest first), the pull request, its comments, reviews, commits and checks (the runs on its head), the files, the view joined to the merge's write |
-| `actions.ts`, `pulls.ts` | `open` (the routes; the Files tab follows the current base/head pair while open, reading each immutable comparison once; leaving Files ends that subscription through the route exit hook), `warm` (a link's hover), `loadFiles` (once per two SHAs; a failed read is read again), `merge` (a person's press, sent at once in their session, never queued) |
-| `api.ts` | `PullsClient`: the merge write and the compare route, one deadline each |
-| `view.ts` | the props of `IssuesView`, `ItemConversation` and `RunList`; `listPageOf`: the list, unknown or refused; `mergeBoxOf`: the notice (Merging, Merged, or why not), whether Merge shows, and the deploy warning |
+| `actions.ts`, `pulls.ts` | `open` (the routes; the Files tab follows the current base/head pair while open, reading each immutable comparison once; leaving Files ends that subscription through the route exit hook), `warm` (a link's hover), `loadFiles` (once per two SHAs; a failed read is read again), `merge` (a person's press, sent at once in their session, never queued), `review` (dispatches `pull/review` bound to the head shown) |
+| `api.ts` | `PullsClient`: the merge write, the compare route and the review route, one deadline each |
+| `flows.ts`, `steps.ts` | `pull/review` and its one step `pull/review/request` ([review on request](#review-on-request)) |
+| `view.ts` | the props of `IssuesView`, `ItemConversation` and `RunList`; `listPageOf`: the list, unknown or refused; `mergeBoxOf`: the notice (Merging, Merged, or why not), whether Merge shows, and the deploy warning; `reviewBoxOf`: whether Review shows and what it says |
 
 Screens (`src/screens/pulls/`), at GitHub's paths:
 
@@ -76,6 +81,7 @@ Screens (`src/screens/pulls/`), at GitHub's paths:
 ```
 
 - **Merge** shows only to a Maintainer or Admin, on an open pull request that isn't a draft, once the device has its head. It sends `pr/merge` at the head and base the page shows; the page says Merging, then Merged, or why not (`New commits`, `<base> moved`, `Can't merge`, `Not allowed`, `Sign in`).
+- **Review** shows only to a Maintainer or Admin of the repository, on an open pull request once the device has its head. It dispatches `pull/review` at the head the page shows; the page says Review requested, or why not (`New commits`, `Checks running`, `Closed`, `Not allowed`, `Sign in`, `Couldn't review`). The review itself shows on the Checks tab.
 - **The deploy warning** shows beside Merge, and only there, when the base is the repository's default branch. `pulls.default_branch` is the base repository's default branch as GitHub's last read named it; until a read names it, no warning shows.
 - The list also waits for its device query to become ready: a completed GitHub walk cannot declare an empty list while the shared items shape is still hydrating.
 - A direct pull-list visit updates the repository used by the shared issues sync-status query. An empty completed and hydrated list shows confirmed counts; navigating to another repository cannot reuse the previous repository's completion.
@@ -90,6 +96,22 @@ Screens (`src/screens/pulls/`), at GitHub's paths:
 - **The base the person saw.** GitHub's `base.sha` is the commit the base branch pointed at when the pull request opened or changed base, and GitHub never moves it ("If the branch is updated in the future, GitHub does not update the base branch's commit", [GitHub docs](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/changing-the-base-branch-of-a-pull-request)). So `pulls.base_sha` is the base branch's head when the pull request was last read (`GitHub.Refs.getBranch`; GitHub's `base.sha` when the branch is gone or its name can't be read), and the step rechecks the branch's own head just before the merge, never falling back to the snapshot. A head other than the page's, or one it can't read, is `base_moved`: nothing merges, and every open pull request into that branch still showing the page's base takes the head read, so the page shows it and a second press binds it. After a merge, every other open pull request into the branch still showing the base the merge checked takes the merge as its base's head, so merging a stack one after another needs one press each; a settlement that lands late never moves a pull request back over a newer base.
 - **The window GitHub can't close.** GitHub's merge takes no base precondition (`sha` fences only the head), so a push between the step's check and GitHub's merge, one round trip, lands under the merge. The step compares a squash with the base it checked: one commit ahead is `base="seen"`, anything else `base="moved"` (a Warn), and a merge commit or a rebase is `unchecked`. Branch protection ("require branches to be up to date", or a merge queue) is the only full fence.
 - **A projection that fails after the merge** (the read-back, or the other pull requests' bases) is logged and skipped in a savepoint, so the write still settles `done`; the next webhook read fixes the rows.
+
+## Review on request
+
+Decision [0126](../decisions/0126-review-on-request.md). A Maintainer asks Smithers to review any open pull request of a repository the deployment acts on, whoever opened it: Review on the page, or `/review <owner/name> <number>`.
+
+```
+pull/review (device, person-only) ─▶ pull/review/request ─▶ POST .../pulls/<n>/review { headSha? }
+  route: session ─▶ person-only ─▶ mayAct ─▶ RepoRoles: Maintainer or Admin ─▶ the projected pull request
+         one transaction: claim the head's checks/review run row for the requester ─▶ start pull/Review ─▶ 202
+pull/Review (server): checks/Review (judge with the requester's reviewer, one COMMENT review as the App) ─▶ checks/Report
+```
+
+- **One review per head.** The claim is the head's `checks/review` run row, the id `checks/Run` uses. Running or Passed: `202 { started: false }`, nothing started. Failed: claimed again for the new requester, a new execution id `review:<repoId>:<sha>:<claimedAtMs>`. Two presses at once start one. A start the host couldn't record rolls the claim back (`503 unavailable`).
+- **Refusals.** `401 authentication`; `403 forbidden` (below Maintainer there), `403 person_only` (the agent, a flow, a frame or a sandbox); `404 not_found` (not a repository the deployment acts on, or a pull request Smithers hasn't projected), `404 app_not_installed`; `409 head_moved` (the page's head isn't the pull request's), `409 closed` (merged or closed), `409 checks_running` (another check of the head runs: `checks/Run` reviews it after its scripts); `400 invalid`; `429 rate_limited`; `503 not_configured` (no App), `github_unavailable`, `unavailable`.
+- **The device step** (`pull/review/request`) tries again for ten minutes on a `429`, a `5xx` other than `not_configured`, or no answer; any other refusal is final.
+- **Never an approval.** The review is a `COMMENT` review, "Reviewed by Smithers for @<login>"; agents never approve or merge.
 
 ## Where checks run
 
@@ -144,6 +166,8 @@ Migrations `0031_pulls`, `0033_pull_writes` and `0037_pull_default_branch`.
 | `checks.status`, `checks.report`; `smithers_check_statuses{state,outcome}` | log, span, counter | `repoId`, `sha`, `check`, `state` (`pending`, `success`, `failure`), `outcome` (`sent`, `refused`, `dropped`), `errorCode` |
 | `github.apply` | log, span | as issues' (`event` `pull_request` or `pull_request_review`) |
 | `pulls.merge.post`, `pulls.compare.get`; `smithers_web_pull_merges{outcome}` | browser spans, counter | `outcome`: `sent`, the route's status, or `unreachable` |
+| `pull.review.request`; `smithers_pull_review_requests{outcome}` | server log, span, counter | `repoId`, `number`, `sha`, `outcome` (`started`, `existing`, `method` or the refusal's code), `status`, `durationMs`, `errorCode` |
+| `pulls.review.post`, `pull.review.request`; `smithers_web_pull_reviews{outcome}` | browser span, log, counter | `outcome` (`sent`, `refused`, `unsent`), `status`, `code` |
 
 No record carries a title, a body, a diff, a finding, a command's output or a login.
 
@@ -155,10 +179,13 @@ No record carries a title, a body, a diff, a finding, a command's output or a lo
 | `packages/smithers/agent/integrations/test/Once.test.ts` | `GitHub.Once.merge` against a fake GitHub on a real socket: the trailer written and found by its key alone, never a merge someone else made at the same head, the head fence, a rebase never claimed |
 | `worker/github/Merge.test.ts` | `pr/Merge` on the Node host against the scripted GitHub: as the person, with the key in the commit message; each refusal, the base branch moved since the page read it included; a lost answer found by its key; someone else's merge at the same head refused `merged`; a base branch it can't read refused; a moved base moving every open pull request's base and a second press merging; a late settlement never moving a base back; a push landing during the merge counted `moved`; a failing projection settling `done`; a run again; give-up |
 | `worker/github/PullsApi.test.ts` | the merge write's admission (a Maintainer only; never the agent or a flow), the pull request webhooks and Apply's projection, the compare route, the shapes |
+| `worker/github/Review.test.ts` | review on request through the GitHub routes' real handler on compose Postgres and the scripted GitHub: a Maintainer of a second repository reviews an outsider's pull request, run once as theirs, the comment review and `smithers/review` posted; a failed review asked again by another Maintainer; two presses at once start one; every refusal; a start that failed rolled back; sign-in and Postgres down |
+| `worker/PersonOnly.test.ts` | `pull/review` refused `403 person_only` for every run credential, and counted |
+| `src/features/pulls/steps.test.ts` | `pull/review/request` through the real `PullsClient` against a local server: the body, what is final and what is tried again |
 | `worker/flows/Checks.test.ts` | script checks pass and fail, the review's one comment as the App, a lost review adopted, a failing judge, no App; each check's status pending then its result on the head, as the App with only `statuses: write`; no permission or an unknown commit refused once and the results kept; a 502 and a lost answer sent again; each head's statuses its own; the scripts on the head's own job machine, put to sleep after, and one that never answers runs no script |
 | `worker/branch/RegistryEgress.test.ts` | a box reaches each registry host, counted; every other host refused before anything is sent; no secret in its policy or vault; a job's box never gets the secrets egress |
 | `packages/smithers/agent/integrations/test/Statuses.test.ts` | `GitHub.Statuses.create` against a fake GitHub on a real socket: per-commit statuses, a lost answer retryable, refusals unretried, every invalid input refused before a request, 100% |
-| `src/features/pulls/pulls.test.ts` | the browser's layer on a Node device against ChatApi's real routes and Electric: the list, a pull request's tabs, the checks on its head only, the files through the compare route on the scripted GitHub, a Maintainer's merge followed to its write's refusal, a Member's, a signed-out person's and an unreachable ChatApi's |
+| `src/features/pulls/pulls.test.ts` | the browser's layer on a Node device against ChatApi's real routes and Electric: the list, a pull request's tabs, the checks on its head only, the files through the compare route on the scripted GitHub, a Maintainer's merge followed to its write's refusal, a Member's, a signed-out person's and an unreachable ChatApi's; a Maintainer's Review starting `pull/Review`, a Member's refused, a moved head |
 | `src/features/pulls/view.test.ts`, `contract.test.ts`, `api.test.ts` | the pages' words and the merge box, the deploy warning (into the default branch only, never without Merge), the paths, and the client against a local server |
 
 ## Not built yet

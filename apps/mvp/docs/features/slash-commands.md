@@ -37,6 +37,7 @@ A registry entry with a `slash` door is a command ([the registry](flows.md#the-r
 | `/triage.run` | `triage/run` | member | `repo`, `number`: Run triage again |
 | `/triage.enable` | `triage/enable` | maintainer | `repo`, then an optional daily budget in tokens |
 | `/triage.pause` | `triage/pause` | maintainer | `repo` |
+| `/review` | `pull/review` | maintainer | `repo`, `number`: asks Smithers to review the pull request's current head; `headSha` is hidden ([review on request](pulls.md#review-on-request)) |
 | `/todo.new` | `todo/draft` | member | `repo`, then the prompt as the rest of the line: a private draft on the stack page, to edit and commit ([TODOs](todos.md)) |
 | `/todo.issue` | `todo/issue` | member | `repo`, `issue`: a private draft from issue `#<issue>`, linked to it ([TODOs](todos.md#from-an-issue)) |
 | `/todo.drop` | `todo/drop` | member | `repo`, `number`: drops TODO `T<number>` |

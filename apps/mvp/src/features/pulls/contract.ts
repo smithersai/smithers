@@ -172,6 +172,50 @@ export const todoExecutionId = (attemptId: string): string => `todo:${attemptId}
 /** A person's merge's execution id: one per write (`pr/Merge`). */
 export const mergeExecutionId = (writeId: string): string => `pr-merge:${writeId}`
 
+/**
+ * A review a Maintainer asked for (`pull/Review`, decision 0126): one per repository, head and claim of the head's
+ * review run, so asking again while it runs or after it passed starts nothing, and asking after it failed starts a new
+ * one. `claimedAtMs` is when the route claimed the head's `checks/review` run row.
+ */
+export const reviewExecutionId = (repoId: string, sha: string, claimedAtMs: number): string =>
+  `review:${repoId}:${sha}:${claimedAtMs}`
+
+/** `POST /api/repos/<owner>/<name>/pulls/<number>/review`: ask Smithers to review a pull request's head. */
+export const PULLS_SEGMENT = "pulls"
+export const REVIEW_SEGMENT = "review"
+export const reviewRoute = (owner: string, name: string, number: number): string =>
+  `${REPOS_ROUTE}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${PULLS_SEGMENT}/${number}/${REVIEW_SEGMENT}`
+
+/**
+ * Why the review route refused (docs/features/pulls.md#review-on-request): `head_moved` (the page's head is no longer
+ * the pull request's), `closed` (merged or closed), `checks_running` (the head's checks run, the review among them).
+ */
+export const REVIEW_REFUSALS = [
+  "authentication",
+  "forbidden",
+  "person_only",
+  "not_found",
+  "invalid",
+  "head_moved",
+  "closed",
+  "checks_running",
+  "not_configured",
+  "unavailable",
+  "rate_limited",
+  "github_unavailable",
+  "app_not_installed",
+] as const
+export type ReviewRefusal = (typeof REVIEW_REFUSALS)[number]
+
+/** What the page says when the review route refused, by its code; a refusal without one is `Couldn't review`. */
+export const REVIEW_REFUSAL_COPY: Readonly<Partial<Record<ReviewRefusal, string>>> = {
+  authentication: "Sign in",
+  forbidden: "Not allowed",
+  head_moved: "New commits",
+  closed: "Closed",
+  checks_running: "Checks running",
+}
+
 /** A check's execution id: one per repository, commit and check, so a commit's check runs once. */
 export const checkExecutionId = (repoId: string, sha: string, name: string): string => `check:${repoId}:${sha}:${name}`
 
@@ -191,9 +235,12 @@ export const PULLS_TELEMETRY = {
     "pulls.files.load",
     "pulls.merge",
     "smithers_web_pull_merges",
+    "pulls.review.post",
+    "pull.review.request",
+    "smithers_web_pull_reviews",
     "smithers_pull_shape_transitions",
   ],
-  fields: ["outcome", "phase", "status", "durationMs", "errorCode"],
+  fields: ["outcome", "phase", "status", "durationMs", "errorCode", "code"],
 } as const
 
 /** The longest diff patch one file shows, in characters; GitHub leaves larger ones out. */
