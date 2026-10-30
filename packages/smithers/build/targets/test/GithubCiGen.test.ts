@@ -713,6 +713,30 @@ describe("render", () => {
     expect(steps.some((step) => step.run === "jj git init --colocate")).toBe(false)
   })
 
+  it("shares one declared Rust cache with the native helper build", () => {
+    const job = {
+      ...goldenAttrs.jobs[0]!,
+      toolchain: CiToolchain.Needs({
+        rust,
+        cargoBinaries: [{
+          package: "native-package",
+          binary: "native-helper",
+          toolchain: "1.98.0",
+          environment: "NATIVE_HELPER",
+          platforms: ["linux"]
+        }]
+      })
+    }
+    const steps = toolchainSteps(goldenAttrs, job)
+    const caches = steps.filter((step) => step.uses === actions.rustCache)
+    expect(caches).toHaveLength(1)
+    const helper = steps.find((step) => step.name === "Install native native-helper")!
+    expect(steps.indexOf(caches[0]!)).toBeLessThan(steps.indexOf(helper))
+    expect(helper.shell).toBe("bash")
+    expect(helper.run).toContain("cargo +1.98.0 build --locked")
+    expect(helper.run).toContain("'NATIVE_HELPER'")
+  })
+
   it("refuses a job that runs targets without installing the workspace", () => {
     expect(() =>
       render(attrsOf({
@@ -1700,6 +1724,17 @@ describe("a platform matrix", () => {
     expect(rendered.split("smthrs test '//packages/...'").length - 1).toBe(1)
     // The rule the whole module rests on survives the new key.
     expect(rendered).not.toMatch(otherCondition)
+  })
+
+  it("keeps result artifacts distinct across platform legs and rerun attempts", () => {
+    const rendered = render(attrsOf({ ...goldenAttrs, results: true, gates: [], jobs: [matrixJob] }))
+    expect(rendered).toContain("smthrs-results-packages-${{ strategy.job-index }}-${{ github.run_attempt }}")
+    const job = parseWorkflow(rendered).jobs[0]!
+    const upload = job.steps.at(-1)!
+    expect(upload.name).toBe("Upload smthrs results")
+    expect(upload.condition).toBe("always()")
+    expect(upload.uses).toBe(actions.uploadArtifact)
+    expect(job.steps[0]!.name).toBe("Start smthrs results")
   })
 
   it("renders deterministically and reads back as one job", () => {

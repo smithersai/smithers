@@ -214,6 +214,15 @@ describe("GithubCiGen with a Nix environment", () => {
     expect(rendered).not.toContain("extra-conf")
   })
 
+  it("installs Cachix without adding cache configuration when no cache is declared", () => {
+    const rendered = renderWorkflow(attrs(CiToolchain.Nix({ environment, installer: "cachix" })))
+    expect(rendered).toContain(`uses: "${actions.nixInstallerCachix}"`)
+    expect(rendered).not.toContain("extra_nix_config")
+    expect(rendered).not.toContain("secrets.")
+    expect(rendered).toContain("nix develop .#ci --command pnpm install --frozen-lockfile --ignore-scripts")
+    expect(rendered).toContain("nix develop .#ci --command pnpm exec smthrs ci '//packages/...' --jobs 2")
+  })
+
   it("trusts a declared binary cache only through secrets expressions", () => {
     const rendered = renderWorkflow(attrs(CiToolchain.Nix({
       environment,
