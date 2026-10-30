@@ -7,15 +7,47 @@ import {
 /** Standard package targets plus package-owned documentation generation. */
 import { Smithers } from "@smthrs/targets"
 
-const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
+const { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({
   deps: [],
   cwd: "packages/smithers/agent",
-  testData: ["docs/quickstart.md"],
-  tests: Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] }),
   // examples/ is type-checked and formatted with the tests, and run by
   // test/examples/; each example is documentation users copy, so it is not
   // held to the library lint rules.
   testSources: Smithers.glob("{test,examples}/**/*.ts")
+})
+
+/** ModelStep's durable and process-boundary cases require an authenticated PostgreSQL server. */
+const modelStepPostgres = Smithers.Docker.Service({
+  image: "postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+  env: { POSTGRES_USER: "smithers", POSTGRES_PASSWORD: "smithers", POSTGRES_DB: "smithers" },
+  ports: { "5432": 55439 },
+  readiness: {
+    exec: ["pg_isready", "-h", "127.0.0.1", "-U", "smithers", "-d", "smithers"],
+    timeout: "120s"
+  },
+  stop: { signal: "SIGTERM", grace: "10s" }
+})
+
+const test = Smithers.Vitest({
+  cwd: "packages/smithers/agent",
+  tests: [Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] })],
+  sources: [
+    Smithers.glob("src/**/*.{ts,vibe}"),
+    Smithers.glob("{test,examples}/**/*.ts"),
+    Smithers.file("docs/quickstart.md"),
+    Smithers.file("//packages/repo-targets/test-utils/effect-property.mjs"),
+    Smithers.file("//packages/repo-targets/test-utils/coverage-teardown.mjs"),
+    Smithers.file("//packages/repo-targets/test-utils/test-process-environment.mjs"),
+    Smithers.file("//packages/repo-targets/test-utils/vitest-root-temp.mjs"),
+    Smithers.file("//packages/repo-targets/test-utils/effect-property.d.mts")
+  ],
+  deps: [lib],
+  config: Smithers.file("vitest.config.ts"),
+  environment: "node",
+  passWithNoTests: false,
+  env: { SMITHERS_MODEL_STEP_TEST_PG_PORT: "55439" },
+  services: [modelStepPostgres],
+  sandbox: { network: "loopback" }
 })
 
 /** Memory and promotion stay portable; their regression tests never wait on wall time. */

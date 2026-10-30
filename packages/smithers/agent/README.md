@@ -742,3 +742,7 @@ The coverage suite uses at most two workers. Each file opens real engines;
 parallel replay, migrations and filesystem work can exhaust a case's budget.
 Timer cases report their last durable wait and virtual-clock progress if they
 are interrupted before completion; deadlines and coverage thresholds stay fixed.
+
+The declared test target provisions PostgreSQL for ModelStep's durable and
+process-boundary cases. Those cases require an authenticated server on the
+fixture's dedicated endpoint; a TCP listener alone does not satisfy them.

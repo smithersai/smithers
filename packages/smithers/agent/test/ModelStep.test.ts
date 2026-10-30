@@ -36,7 +36,6 @@ import { once } from "node:events"
 import { mkdtempSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import * as http from "node:http"
-import { connect } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -59,24 +58,13 @@ import {
   through
 } from "./fixtures/model-step-stack.ts"
 
-const reachable = await new Promise<boolean>((resolve) => {
-  const socket = connect(postgres.port, postgres.host)
-  socket.once("connect", () => {
-    socket.destroy()
-    resolve(true)
-  })
-  socket.once("error", () => resolve(false))
-})
-if (!reachable) {
-  console.warn(
-    `ModelStep engine cases skipped: nothing listens on ${postgres.host}:${postgres.port}. ` +
-      "Start the Postgres in apps/mvp/docker-compose.yml."
-  )
-}
-const withPostgres = describe.skipIf(!reachable)
-
 const fixture = fileURLToPath(new URL("./fixtures/model-step-child.ts", import.meta.url))
-const childEnv = { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, LANG: "C.UTF-8" }
+const childEnv = {
+  PATH: process.env.PATH,
+  TMPDIR: process.env.TMPDIR,
+  LANG: "C.UTF-8",
+  SMITHERS_MODEL_STEP_TEST_PG_PORT: String(postgres.port)
+}
 
 const step = "agent/test/model-step/answer"
 
@@ -380,7 +368,7 @@ describe("ModelStep bounds by reasoning effort", () => {
   })
 })
 
-withPostgres("ModelStep on the durable engine", () => {
+describe("ModelStep on the durable engine", () => {
   it("answers a request it has sealed from the record, and keys it on what the provider is sent", async () => {
     const model = scripted(() => Stream.fromIterable(reply("Paris")))
     const replays: Array<boolean> = []
@@ -1127,7 +1115,7 @@ const resume = async (place: { readonly schema: string; readonly root: string },
   return JSON.parse(stdout.split("\n").find((line) => line.startsWith("{\"status\":\"done\""))!)
 }
 
-withPostgres("ModelStep across a killed process", () => {
+describe("ModelStep across a killed process", () => {
   it("makes one provider call when the host dies after the seal and before the next step", async () => {
     const place = scratch()
     const killed = startChild(["seal", place.schema, place.root, "after-seal"], "next-entered")
@@ -1167,7 +1155,7 @@ withPostgres("ModelStep across a killed process", () => {
 /** One SSE frame of the Chat Completions stream. */
 const frame = (fields: object): string => `data: ${JSON.stringify({ id: "chatcmpl_1", ...fields })}\n\n`
 
-withPostgres("ModelStep over a provider's wire", () => {
+describe("ModelStep over a provider's wire", () => {
   it("resends byte-identical bodies on the engine's retry, the bytes its key digests", async () => {
     const bodies: Array<Buffer> = []
     const server = http.createServer((request, response) => {
@@ -1309,7 +1297,7 @@ const spanText = (span: Tracer.Span, exit: Exit.Exit<unknown, unknown>): string 
   return JSON.stringify({ name: span.name, attributes: [...span.attributes], failures })
 }
 
-withPostgres("ModelStep telemetry", () => {
+describe("ModelStep telemetry", () => {
   it("logs, traces and counts each call without prompt, provider text or credential", async () => {
     const sentinel = "SENTINEL-7f3a"
     const spans: Array<string> = []

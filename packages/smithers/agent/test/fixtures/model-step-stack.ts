@@ -27,11 +27,16 @@ import * as FlowEngineLike from "../../src/FlowEngineLike.ts"
 import * as ModelStep from "../../src/ModelStep.ts"
 
 /**
- * The compose Postgres from `apps/mvp/docker-compose.yml`, and nothing else:
- * these cases create and drop schemas, so they never read a destination from
- * the environment.
+ * A dedicated loopback PostgreSQL endpoint. The target supplies its isolated
+ * service's port; direct Vitest runs retain the local compose port. Only a
+ * port is configurable: these cases create and drop schemas and never accept
+ * an arbitrary database destination from the environment.
  */
-export const postgres = { host: "localhost", port: 54321, url: "postgres://smithers:smithers@localhost:54321/smithers" }
+const port = Number(process.env.SMITHERS_MODEL_STEP_TEST_PG_PORT ?? "54321")
+if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
+  throw new Error("SMITHERS_MODEL_STEP_TEST_PG_PORT must be an integer from 1 to 65535")
+}
+export const postgres = { host: "127.0.0.1", port, url: `postgres://smithers:smithers@127.0.0.1:${port}/smithers` }
 
 /** A schema name no other case uses. */
 export const scratchSchema = (): string => TestSchemas.schemaName("model_step")
