@@ -20,7 +20,23 @@ export const copyInputDeclarations = (source, destination) => {
   }
 }
 
-/** Each runtime branch needs declarations with the corresponding module kind. */
+// A nested package boundary does not inherit the root's imports map. External
+// targets stay external; source targets must address this branch's emitted files.
+const commonJsImports = (target, types = false) => {
+  if (typeof target === "string") {
+    if (!target.startsWith("./")) return target
+    const prefix = ["./src/", "./dist/cjs/"].find((prefix) => target.startsWith(prefix))
+    if (prefix === undefined) throw new Error(`CommonJS import target ${JSON.stringify(target)} must name a compiled ./src/ or ./dist/cjs/ file`)
+    return `./${target.slice(prefix.length)}`.replace(/(?<!\.d)\.(?:ts|vibe)$/, types ? ".d.ts" : ".js")
+  }
+  if (target === null) return null
+  if (Array.isArray(target)) return target.map((entry) => commonJsImports(entry, types))
+  return Object.fromEntries(Object.entries(target).map(([condition, entry]) =>
+    [condition, commonJsImports(entry, types || condition === "types")]
+  ))
+}
+
+/** Each runtime branch needs declarations, module kind and its package imports. */
 export const copyCommonJsDeclarations = (packageRoot) => {
   const esm = join(packageRoot, "dist/esm")
   const cjs = join(packageRoot, "dist/cjs")
@@ -30,7 +46,10 @@ export const copyCommonJsDeclarations = (packageRoot) => {
     cpSync(source, target)
   }
   mkdirSync(cjs, { recursive: true })
-  writeFileSync(join(cjs, "package.json"), "{\"type\":\"commonjs\"}\n")
+  const manifestPath = join(packageRoot, "package.json")
+  const { imports } = existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, "utf8")) : {}
+  const marker = { type: "commonjs", ...(imports === undefined ? {} : { imports: commonJsImports(imports) }) }
+  writeFileSync(join(cjs, "package.json"), `${JSON.stringify(marker)}\n`)
 }
 
 /** Whether a source tree holds a VibeLang module. Installs and build output are not sources. */

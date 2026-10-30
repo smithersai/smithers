@@ -51,3 +51,9 @@ package a second time. Standalone packing still rebuilds cleanly and refuses
 stale outputs when that build fails. A real build-counter regression proves the
 duplicate-build defect; evaluated graph assertions retain every library and API
 baseline dependency. No timeout or coverage threshold was widened.
+
+Installed-package smoke exposed a second build defect: the CommonJS package
+boundary hid the root's package import map. The shared library builder preserves
+external imports and rebases source targets to emitted JavaScript and
+declarations. Real CommonJS resolution regressions fail on the old builder;
+unsupported relative targets fail the build instead of shipping broken links.

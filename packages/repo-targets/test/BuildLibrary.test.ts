@@ -55,6 +55,61 @@ it("mirrors ESM declarations and maps into the CommonJS branch and marks it Comm
   expect(JSON.parse(read(join(root, "dist/cjs/package.json")))).toEqual({ type: "commonjs" })
 })
 
+it("keeps package imports resolvable inside the CommonJS package boundary", () => {
+  const root = scratch()
+  mkdirSync(join(root, "node_modules"))
+  symlinkSync(
+    dirname(createRequire(import.meta.url).resolve("typescript/package.json")),
+    join(root, "node_modules/typescript"),
+    "dir"
+  )
+  write(
+    join(root, "package.json"),
+    JSON.stringify({
+      type: "module",
+      imports: {
+        "#external": { types: "./src/compiler.d.ts", default: "typescript" },
+        "#local": { types: "./src/local.ts", default: "./src/local.ts" },
+        "#compiled": "./dist/cjs/local.js",
+        "#deep/*": "./src/deep/*.ts",
+        "#fallback": [null, "typescript"],
+        "#blocked": null
+      }
+    })
+  )
+  write(join(root, "dist/esm/compiler.d.ts"), "export declare const version: string\n")
+  write(join(root, "dist/esm/local.d.ts"), "export declare const value: 42\n")
+  write(join(root, "dist/cjs/local.js"), "exports.value = 42\n")
+  write(join(root, "dist/cjs/deep/value.js"), "exports.value = 43\n")
+  write(join(root, "dist/cjs/index.js"), "exports.value = require(\"#external\").version\n")
+  copyCommonJsDeclarations(root)
+  const require = createRequire(join(root, "dist/cjs/index.js"))
+  expect(require("./index.js").value).toMatch(/^\d+\.\d+\.\d+/)
+  expect(require("#local").value).toBe(42)
+  expect(require("#compiled").value).toBe(42)
+  expect(require("#deep/value").value).toBe(43)
+  expect(() => require("#blocked")).toThrow(/not defined/)
+  expect(JSON.parse(read(join(root, "dist/cjs/package.json")))).toEqual({
+    type: "commonjs",
+    imports: {
+      "#external": { types: "./compiler.d.ts", default: "typescript" },
+      "#local": { types: "./local.d.ts", default: "./local.js" },
+      "#compiled": "./local.js",
+      "#deep/*": "./deep/*.js",
+      "#fallback": [null, "typescript"],
+      "#blocked": null
+    }
+  })
+  expect(read(join(root, "dist/cjs/compiler.d.ts"))).toContain("version")
+})
+
+it("refuses import-map targets the CommonJS branch cannot preserve", () => {
+  const root = scratch()
+  write(join(root, "package.json"), JSON.stringify({ imports: { "#asset": "./assets/value.js" } }))
+  write(join(root, "dist/esm/index.d.ts"), "export {}\n")
+  expect(() => copyCommonJsDeclarations(root)).toThrow(/CommonJS import target.*assets\/value\.js/)
+})
+
 // The fixture links the workspace's own esbuild and typescript into its
 // node_modules, because buildLibrary resolves both from the package it builds.
 const fixture = () => {

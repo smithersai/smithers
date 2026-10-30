@@ -41,6 +41,13 @@ Presentation installation runs in freezable V8 realms with the real guarded Reac
 renderer. Subprocess coverage maps the emitted realm modules back to their source;
 installation, renderer refusals and reload deadlines remain subject to the 100% gate.
 
+## Library distributions
+
+The shared library builder retains package `imports` in the CommonJS boundary.
+External targets stay unchanged; `./src/` and `./dist/cjs/` targets address emitted
+files in that branch, including its declarations. Other relative targets fail
+the build because the nested boundary cannot resolve files outside its package.
+
 ## Circular imports
 
 `CircularImports({ cwd, sources })` declares the `test`-kind `NodeTest` target that `BuildAndCheckTypeScriptPackage` emits as `circular`; a package that declares its targets by hand calls it directly. Every package runs the one guard, `scripts/circular.mjs` in this package, and its `circular` package script runs the same file, for example `node ../repo-targets/scripts/circular.mjs` from `packages/errors`.
