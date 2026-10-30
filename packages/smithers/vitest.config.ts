@@ -3,6 +3,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import vibelang from "vibelang-vite"
 import { configDefaults, defineConfig } from "vitest/config"
+import CliSequencer from "./test/support/cli-sequencer.ts"
 
 export default defineConfig({
   // Tests start Node on source that reaches VibeLang packages; register: true loads .vibe in those processes.
@@ -25,6 +26,7 @@ export default defineConfig({
     // Bound that fanout so the default coverage gate does not multiply host
     // startup contention by the machine's core count.
     fileParallelism: false,
+    sequence: { sequencer: CliSequencer },
     // House convention (see packages/smithers/flows/journal/vitest.config.ts): a finite 30 s
     // wall-clock budget so correct suites survive coverage-instrumented load
     // while a genuine hang still fails the run.

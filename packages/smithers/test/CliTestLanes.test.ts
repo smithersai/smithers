@@ -32,10 +32,10 @@ const discover = (args: Array<string>): Discovery => {
     `import { createVitest, parseCLI } from "vitest/node";
 const { filter, options } = parseCLI(["vitest", ...JSON.parse(process.argv[1])]);
 const { registerRootCleanup } = await import("../repo-targets/test-utils/vitest-root-temp.mjs");
-const ctx = await createVitest("test", { ...options, run: true, coverage: { ...options.coverage, enabled: false } });
+const ctx = await createVitest("test", { ...options, cache: false, run: true, coverage: { ...options.coverage, enabled: false } });
 try {
   registerRootCleanup(ctx);
-  const files = await ctx.globTestSpecifications(filter);
+  const files = await new ctx.config.sequence.sequencer(ctx).sort(await ctx.globTestSpecifications(filter));
   console.log(JSON.stringify({ files: files.map((file) => file.moduleId),
     maxWorkers: ctx.config.maxWorkers, fileParallelism: ctx.config.fileParallelism,
     coverageRequested: options.coverage?.enabled, thresholds: ctx.config.coverage.thresholds }));
@@ -65,6 +65,7 @@ it("schedules every default CLI file once in one bounded pool with the configure
   expect(actual.fileParallelism).toBe(true)
   expect(actual.coverageRequested).toBe(true)
   expect(actual.thresholds).toEqual(standard.thresholds)
+  expect(actual.files[0]).toMatch(/[/\\]NativeControlExternalPeerRecovery\.test\.ts$/)
   expect(actual.files.sort()).toEqual(standard.files.sort())
   expect(faults.length).toBeGreaterThan(0)
   expect(actual.files.filter((file) => faults.includes(file))).toEqual([])

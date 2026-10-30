@@ -199,6 +199,7 @@ const test = Smithers.Shell.Test({
     Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] }),
     Smithers.file("vitest.config.ts"),
     Smithers.file("test/support/configuration-race.mjs"),
+    Smithers.file("test/support/cli-sequencer.ts"),
     Smithers.file("test/temporaryEnvironment.ts"),
     Smithers.file("test/fixtures/cli-exit-observer.ts"),
     Smithers.file("//packages/repo-targets/test-utils/coverage-teardown.mjs"),

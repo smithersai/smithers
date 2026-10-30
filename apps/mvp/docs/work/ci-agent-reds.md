@@ -33,6 +33,11 @@ worker through `NODE_OPTIONS`, despite the worker's empty `execArgv`. The preloa
 now applies to main threads only; the real-process regression retains inheritance
 by child CLIs and exercises esbuild's synchronous transform. Per-file results
 remain visible if a target ends before Vitest can print its final summary.
+Native peer recovery retains its former early group priority through Vitest's
+public sequencer. The previous size ordering started its first scenario 38
+minutes into the 40-minute run, after the other 323 files had produced coverage.
+Cold actual discovery rejects that ordering and verifies the recovery file is
+first, retaining the same inventory, configured gate and four-worker pool.
 Native recovery probes wait for actual admission refusals before asserting a
 park, retaining the explicit-consent and exactly-once execution checks.
 
