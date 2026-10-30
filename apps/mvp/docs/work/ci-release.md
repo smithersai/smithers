@@ -35,3 +35,19 @@ tracks Guest access for `/new` and `/clone`.
 
 The published rc.16 CLI declaration defect remains recorded by the existing
 broken test and `bugbash4-cli-types.md`; no skip or checker workaround was added.
+
+The CLI's views dependency supports Node 22.19 like the CLI itself; its parser
+dependencies support that floor, and its full suite passes on that exact Node
+release. Observability's API peer range stays below 1.10, matching the installed
+SDKs' peer contracts and the strict all-adapter consumer installation.
+
+Fixture inventory comes from jj in a checkout or the real tracked-source receipt
+in a source mirror, filtered to the fixture directory. Mirror tests use isolated
+temporary projects so unrelated global configuration cannot change discovery.
+
+The release graph already builds every public library. Packing now validates
+those completed ESM, declaration and CommonJS outputs without rebuilding each
+package a second time. Standalone packing still rebuilds cleanly and refuses
+stale outputs when that build fails. A real build-counter regression proves the
+duplicate-build defect; evaluated graph assertions retain every library and API
+baseline dependency. No timeout or coverage threshold was widened.
