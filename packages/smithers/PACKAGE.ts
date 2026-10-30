@@ -191,36 +191,50 @@ const lane = `${vitest} --reporter=blob --coverage.reporter=json` +
   " --coverage.thresholds.lines=0 --coverage.thresholds.functions=0" +
   " --coverage.thresholds.branches=0 --coverage.thresholds.statements=0"
 
-/** The longest file: 964 s (real lease expiries). */
+/** The longest file includes real lease expiries. */
 const laneOne = ["test/Bin.test.ts"]
 
-/** The 402 s recovery file plus the shorter end of the measured 46–265 s group. */
+/** Keep process-heavy groups small enough to release workers to the remainder. */
 const laneTwo = [
   "test/NativeControlExternalPeerRecovery.test.ts",
   "test/NativeControlPortable.test.ts",
-  "test/UnifiedCli.test.ts",
-  "test/HistoryVerify.test.ts",
-  "test/ObserveMode.test.ts",
-  "test/TuiRuntimes.test.ts",
-  "test/McpModeCli.test.ts",
-  "test/ModuleHumanWaitBudget.test.ts"
+  "test/UnifiedCli.test.ts"
 ]
 
 const laneThree = [
   "test/ModuleSourceSnapshotCli.test.ts",
+  "test/FileFlowInputCli.test.ts"
+]
+
+const laneFour = [
   "test/EndToEnd.test.ts",
-  "test/NativeCancellationCli.test.ts",
-  "test/FileFlowInputCli.test.ts",
+  "test/NativeCancellationCli.test.ts"
+]
+
+const laneFive = [
+  "test/HistoryVerify.test.ts",
+  "test/ObserveMode.test.ts",
+  "test/McpModeCli.test.ts"
+]
+
+const laneSix = [
+  "test/TuiRuntimes.test.ts",
+  "test/ModuleHumanWaitBudget.test.ts",
   "test/CloudSandbox.test.ts",
   "test/DetachedHostResume.test.ts"
 ]
+
+const fixedLanes = [laneOne, laneTwo, laneThree, laneFour, laneFive, laneSix].map((files, index) => ({
+  name: ["one-fixed", "two-fixed", "three-fixed", "four-fixed", "five-fixed", "six-fixed"][index]!,
+  files
+}))
 
 /** The remaining files join bounded groups automatically, including newly added files. */
 // CLI --exclude replaces Vitest's configured excludes. Preserve the existing
 // exclusive fault tier when adding the process-heavy file exclusions.
 const remainder = [
   "--exclude=test/faults/**",
-  ...[...laneOne, ...laneTwo, ...laneThree].map((file) => `--exclude ${file}`)
+  ...fixedLanes.flatMap(({ files }) => files).map((file) => `--exclude ${file}`)
 ].join(" ")
 const remainderShards = ["one", "two", "three", "four", "five", "six", "seven", "eight"]
 
@@ -241,15 +255,13 @@ const test = Smithers.Shell.Test({
     // Its content-validated cache is shared only within this owned suite run.
     "export TMPDIR=\"$work/tmp\" TEMP=\"$work/tmp\" TMP=\"$work/tmp\" NODE_COMPILE_CACHE=\"$work/cache\" VIBELANG_CACHE_DIR=\"$work/vibelang-cache\" && {",
     "printf '%s\\n'",
-    `"${lane} --outputFile=$blobs/one-fixed.json ${laneOne.join(" ")}"`,
-    `"${lane} --outputFile=$blobs/two-fixed.json ${laneTwo.join(" ")}"`,
-    `"${lane} --outputFile=$blobs/three-fixed.json ${laneThree.join(" ")}"`,
+    ...fixedLanes.map(({ name, files }) => `"${lane} --outputFile=$blobs/${name}.json ${files.join(" ")}"`),
     ...remainderShards.map((name, index) =>
       `"${lane} --outputFile=$blobs/${name}.json ${remainder} --shard=${index + 1}/${remainderShards.length}"`
     ),
     "| xargs -P 4 -I '{}' sh -c '{}';",
     `if ${
-      ["one-fixed", "two-fixed", "three-fixed", ...remainderShards].map((name) => `test -f $blobs/${name}.json`).join(
+      [...fixedLanes.map(({ name }) => name), ...remainderShards].map((name) => `test -f $blobs/${name}.json`).join(
         " && "
       )
     };`,

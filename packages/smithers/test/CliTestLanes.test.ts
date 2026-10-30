@@ -63,8 +63,12 @@ it("schedules every default CLI test file once without leaving the remainder on 
   expect([...all, ...faults].sort()).toEqual(bothTiers.sort())
   const selections = commands.map(list)
   const shards = commands.filter((args) => args.some((arg) => arg.startsWith("--shard=")))
+  const fixed = selections.filter((_, index) => !commands[index]!.some((arg) => arg.startsWith("--shard=")))
   const workers = Number(/xargs -P (\d+)/.exec(shell)![1])
   expect(shards.length).toBeGreaterThan(workers)
+  // Six process-heavy files on one worker consumed almost the entire suite
+  // deadline. Their groups must release workers to queued remainder shards.
+  expect(Math.max(...fixed.map((files) => files.length))).toBeLessThanOrEqual(4)
   expect(selections.flat().sort()).toEqual(all.sort())
   expect(Math.max(...selections.map((files) => files.length))).toBeLessThanOrEqual(
     Math.ceil(all.length / shards.length)
@@ -89,7 +93,9 @@ it.skipIf(process.platform === "win32")(
         }]
         } }`
       )
-      const shell = declaredShell()
+      const declared = declaredShell()
+      const phases = [...declared.matchAll(/--outputFile=\$blobs\/([a-z-]+)\.json/g)].map((match) => match[1]!)
+      const shell = declared
         .replace("cd packages/smithers && ", "")
         .replace("&& trap", "&& printf '%s' \"$work\" > \"$SMITHERS_LANES_SCRATCH_RECEIPT\" && trap")
         .replaceAll("vitest.config.ts", "vitest.config.mjs")
@@ -114,7 +120,7 @@ it(${JSON.stringify(phase)}, async () => {
   }));
   expect(isolatedCache).toEqual({ vibe: process.env.VIBELANG_CACHE_DIR, node: process.env.NODE_COMPILE_CACHE });
   writeFileSync(${JSON.stringify(join(root, phase))}, JSON.stringify(isolatedCache));
-  if (${phase.endsWith("-fixed")}) {
+  if (${["one-fixed", "two-fixed", "three-fixed"].includes(phase)}) {
     const deadline = Date.now() + 8000;
     while (!existsSync(${JSON.stringify(join(root, "two"))}) && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 20));
@@ -144,21 +150,7 @@ it(${JSON.stringify(phase)}, async () => {
         timeout: 25_000
       })
       const owned = readFileSync(join(root, "owned-work"), "utf8")
-      for (
-        const phase of [
-          "one-fixed",
-          "two-fixed",
-          "three-fixed",
-          "one",
-          "two",
-          "three",
-          "four",
-          "five",
-          "six",
-          "seven",
-          "eight"
-        ]
-      ) {
+      for (const phase of phases) {
         expect(JSON.parse(readFileSync(join(root, phase), "utf8"))).toEqual({
           vibe: join(owned, "vibelang-cache"),
           node: join(owned, "cache")
