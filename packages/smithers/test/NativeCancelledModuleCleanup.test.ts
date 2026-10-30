@@ -9,7 +9,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
-import { expect, it } from "vitest"
+import { expect, it, onTestFailed } from "vitest"
 import * as NodeControl from "../src/NodeControl.ts"
 import { commitCancelBeforeCleanup } from "./fixtures/cancel-before-cleanup.ts"
 import { settleNativeCancellation } from "./fixtures/settle-native-cancellation.ts"
@@ -59,6 +59,10 @@ it.each(["new request", "committed request before native cleanup", "cancel with 
   "#3412 metadata-only cancel settles native module executions: %s",
   async (mode) => {
     const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-cancelled-module-")))
+    const started = Date.now()
+    const progress: Array<{ stage: string; elapsedMs: number; executions: ReturnType<typeof rows> }> = []
+    const record = (stage: string) => progress.push({ stage, elapsedMs: Date.now() - started, executions: rows(root) })
+    onTestFailed(() => console.error("Metadata cancellation progress", JSON.stringify(progress)))
     try {
       await mkdir(join(root, ".smithers", "flows", "cleanup"), { recursive: true })
       await symlink(modules, join(root, "node_modules"), "dir")
@@ -83,13 +87,14 @@ it.each(["new request", "committed request before native cleanup", "cancel with 
         }).pipe(Effect.provide(NodeControl.layerControl({ root, evaluator: ScriptedJudge.layer })), Effect.scoped)
       )
       const before = rows(root)
+      record("original host closed")
       expect(before.length).toBeGreaterThanOrEqual(2)
       expect(before.some((row) => row.status === "suspended")).toBe(true)
       expect(before.every((row) => row.cancel_requested_at_ms === null)).toBe(true)
       if (mode !== "new request") {
         await commitCancelBeforeCleanup(root, runId)
         const requested = rows(root).find((row) => row.run_id === runId)!
-        expect(requested.status).toBe("suspended")
+        expect(["suspended", "cancelled"]).toContain(requested.status)
         expect(requested.cancel_requested_at_ms).not.toBeNull()
       }
       const importMarker = join(root, "late-import")
@@ -120,7 +125,15 @@ it.each(["new request", "committed request before native cleanup", "cancel with 
       const receipt = await Effect.runPromise(
         Effect.gen(function*() {
           const control = yield* Control.Control
-          return yield* control.cancel({ runId, idempotencyKey: "3412-cancel" })
+          const receipt = yield* control.cancel({ runId, idempotencyKey: "3412-cancel" })
+          record("cancel recorded")
+          // 88f998de permits fenced cancellation from metadata in any host,
+          // without loading the run's module. Keep this host open across its
+          // cleanup tick instead of racing that tick with a suspended snapshot.
+          yield* until(() => rows(root).every((row) => row.status === "cancelled"), "metadata cancellation").pipe(
+            Effect.ensuring(Effect.sync(() => record("native cleanup observed")))
+          )
+          return receipt
         }).pipe(
           Effect.provide(
             NodeControl.layerControl(
@@ -135,9 +148,10 @@ it.each(["new request", "committed request before native cleanup", "cancel with 
       )
       expect(existsSync(importMarker)).toBe(false)
       expect(receipt).toMatchObject({ _tag: "Terminal", status: "cancelled" })
-      // ba5cfef17811 makes observing hosts record intent without driving cleanup.
+      // ba5cfef17811 prevents execution-body cleanup through the observing port;
+      // it does not disable the engine's metadata-only cancellation guard.
       expect(rows(root).find((row) => row.run_id === runId)?.cancel_requested_at_ms).toEqual(expect.any(Number))
-      expect(rows(root).map((row) => row.status)).toEqual(before.map(() => "suspended"))
+      expect(rows(root).map((row) => row.status)).toEqual(before.map(() => "cancelled"))
       await settleNativeCancellation(root, () => rows(root).every((row) => row.status === "cancelled"))
       expect(existsSync(importMarker)).toBe(false)
       expect(rows(root).map((row) => ({ runId: row.run_id, status: row.status }))).toEqual(
