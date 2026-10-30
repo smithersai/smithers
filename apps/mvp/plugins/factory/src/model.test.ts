@@ -3,7 +3,6 @@
 // collector pushes it (decision 0126 §5). Each view's rows are checked against what the old factory showed.
 import { describe, expect, test } from "vitest"
 import {
-  ageOf,
   commitDiffOf,
   decisionsOf,
   duration,
@@ -162,14 +161,10 @@ describe("the Agents view", () => {
     expect(lanes[5]).toMatchObject({ name: "bugs-impl-hunt-svc-45", tone: "ok", label: "done", duration: "4m" })
   })
 
-  test("durations, ages and tones", () => {
+  test("durations and tones", () => {
     expect(duration(null, null, now)).toBe("")
     expect(duration(now - 3_900, null, now)).toBe("1h05")
     expect(duration(now + 60, null, now)).toBe("0m")
-    expect(ageOf(null, now)).toBe("")
-    expect(ageOf(now - 12, now)).toBe("12s")
-    expect(ageOf(now - 240, now)).toBe("4m")
-    expect(ageOf(now - 7_200, now)).toBe("2h")
     expect(["landed", "queued", "rejected", "superseded", "mystery"].map(toneOf)).toEqual(["ok", "run", "bad", "muted", "muted"])
     expect(["A", "B+", "C", ""].map(gradeTone)).toEqual(["ok", "warn", "bad", "muted"])
     expect(gradeOf("**Grade: C+.** The chapter skeleton")).toBe("C+")

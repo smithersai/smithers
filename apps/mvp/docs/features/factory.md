@@ -1,6 +1,6 @@
 # Factory
 
-A repository's factory, the VibeLang factory (factory.vibelang.sh) rebuilt on Smithers: the lanes an orchestrator runs, the decisions that wait on a maintainer, failures, spec and implementation reviews, commits, media and the merge queue ([decision 0126](../decisions/0126-repository-feeds.md) §9). It is the first-party plugin `plugins/factory/` over the core's repository feeds ([feeds.md](feeds.md)): a collector pushes the status, the factory draws it. Libraries: `@smthrs/plugin` (manifest, `PluginHost`) and `@smthrs/ui` (`Table`, `Badge`, `Markdown`, `DiffHunks`, `parseUnifiedFile`, `LinkTabs`), per [docs/libraries.md](../../../../docs/libraries.md).
+A repository's factory, the VibeLang factory (factory.vibelang.sh) rebuilt on Smithers: the lanes an orchestrator runs, the decisions that wait on a maintainer, failures, spec and implementation reviews, commits, media and the merge queue ([decision 0126](../decisions/0126-repository-feeds.md) §9). It is the first-party plugin `plugins/factory/` over the core's repository feeds ([feeds.md](feeds.md)): a collector pushes the status, the factory draws it. Libraries: `@smthrs/plugin` (manifest, `PluginHost`) and `@smthrs/ui` (`Table`, `Badge`, `Markdown`, `DiffHunks`, `parseUnifiedFile`, `LinkTabs`, `RelativeTime`), per [docs/libraries.md](../../../../docs/libraries.md).
 
 ## Where it shows
 
@@ -11,7 +11,7 @@ A repository's factory, the VibeLang factory (factory.vibelang.sh) rebuilt on Sm
             .../agents    .../media    .../docs            .../queue
 ```
 
-Every view is a `scope: "repository"` view ([plugins.md](plugins.md#repository-views)) under the repository's header. The header's `repo.tabs` slot shows **Factory** only on a repository whose feed has documents. Every view's first row is the factory's tabs and the status's age. A narrow screen gets one column and hides the long text columns.
+Every view is a `scope: "repository"` view ([plugins.md](plugins.md#repository-views)) under the repository's header. The header's `repo.tabs` slot shows **Factory** only on a repository whose feed has documents. Every view's first row is the factory's tabs and the status's age (`RelativeTime`, ticking). Durations count to the status's own time, so a view shows the factory as of its last push; the tab keeps no timer (rule `durable.no-hand-rolled-durability`). A narrow screen gets one column and hides the long text columns.
 
 | View | What it draws, from which documents |
 |---|---|
@@ -44,7 +44,7 @@ An opened document (a transcript, a diff, a report) shows in a panel over the vi
 plugins/factory/
   plugin.json             10 repository views, the repo.tabs slot, 3 commands
   src/feeds.ts            the one seam to the core's feed queries
-  src/tab.ts              per repository: its status, live; the opened document; a 15 s clock
+  src/tab.ts              per repository: its status, live; the opened document
   src/model.ts            pure view-models: documents → each view's rows
   src/components/*.tsx    React over the tab; no Effect
 ```

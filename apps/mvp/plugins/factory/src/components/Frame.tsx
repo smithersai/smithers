@@ -1,12 +1,13 @@
-import { EmptyState, LinkTabs } from "@smthrs/ui"
+import { EmptyState, LinkTabs, RelativeTime } from "@smthrs/ui"
 import type { ReactNode } from "react"
-import { ageOf, type Status, VIEWS, type ViewId } from "../model"
+import { type Status, VIEWS, type ViewId } from "../model"
 import { OpenedPanel } from "./Opened"
 import { useWatched, ViewLink, type ViewProps } from "./parts"
 import "./factory.css"
 
 // Every factory view's frame: the tabs, how old the status is, the view's own content once the feed is there, and the
-// document the person opened beside it (a lane's transcript, a commit's diff, a review).
+// document the person opened beside it (a lane's transcript, a commit's diff, a review). Durations count to the
+// status's own time (`at`, seconds), so a view shows the factory as of its last push.
 
 /** The frame of view `view`; `children` draws the repository's status once it arrived. */
 export function Frame(
@@ -20,7 +21,6 @@ function Framed(
   { tab, repository, view, children }: Required<ViewProps> & { readonly view: ViewId; readonly children: (status: Status, now: number) => ReactNode },
 ) {
   const feed = useWatched(tab.queries.feed(repository))
-  const now = useWatched(tab.queries.now)
   return (
     <div className="factory" data-view={view}>
       <div className="factory-bar">
@@ -32,14 +32,14 @@ function Framed(
           ))}
         </LinkTabs>
         {feed._tag === "Ready" && feed.status.at !== null
-          ? <span className="factory-age" aria-label="Updated">{ageOf(feed.status.at, now)} ago</span>
+          ? <RelativeTime className="factory-age" aria-label="Updated" ts={feed.status.at * 1000} />
           : null}
       </div>
       {feed._tag === "Loading"
         ? null
         : feed._tag === "Refused" || feed.documents === 0
         ? <EmptyState title="No feed yet" />
-        : <div className="factory-grid">{children(feed.status, now)}</div>}
+        : <div className="factory-grid">{children(feed.status, feed.status.at ?? 0)}</div>}
       <OpenedPanel tab={tab} />
     </div>
   )

@@ -417,13 +417,6 @@ export const nowOf = (status: Status, now: Seconds): Now => {
   }
 }
 
-/** How old the status is: `12s`, `4m`, `2h`; "" before the first push. */
-export const ageOf = (at: Seconds | null, now: Seconds): string => {
-  if (at === null) return ""
-  const gone = Math.max(0, Math.round(now - at))
-  return gone < 60 ? `${gone}s` : gone < 3600 ? `${Math.round(gone / 60)}m` : `${Math.round(gone / 3600)}h`
-}
-
 /** The Failures view: open and resolved counts, by kind, and every failure newest first. */
 export const failuresOf = (status: Status) => {
   const open = status.failures.filter((failure) => !failure.resolved).length

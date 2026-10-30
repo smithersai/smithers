@@ -194,7 +194,6 @@ describe("moving around", () => {
       built.actions.open("factory/agents", vibelang)
       built.actions.go("factory/docs", "/smithersai/vibelang/docs")
       expect(built.actions.href("factory/agents", vibelang)).toBe("/smithersai/vibelang/-/factory/agents")
-      expect(built.queries.now.current()).toBeCloseTo(Date.now() / 1000, -1)
       await vi.waitFor(() =>
         expect(host.asked).toEqual([
           { open: "factory/agents", repository: vibelang },

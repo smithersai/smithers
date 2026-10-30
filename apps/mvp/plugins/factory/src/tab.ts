@@ -1,11 +1,12 @@
 import { Host } from "@smthrs/plugin"
-import { Effect, Exit, Schedule, Scope } from "effect"
+import { Effect, Exit, Scope } from "effect"
 import { type AskRow, type FeedDocument, type Feeds, feedsOf, repoOf } from "./feeds"
 import { statusOf, type Status, VIEWS, type ViewId } from "./model"
 
 // The factory's tab (decision 0126 §9): one per app, built by the host on first use. It reads a repository's feed
 // documents through `Feeds` (./feeds.ts), the one seam to the core's queries, and gives the views each repository's
-// status, the document the person opened (a lane's transcript, a commit's diff, a review), and a clock for durations.
+// status and the document the person opened (a lane's transcript, a commit's diff, a review). It keeps no clock: a
+// view counts durations to the status's own time, and the status's age ticks on @smthrs/ui's shared `RelativeTime`.
 // It never answers an ask: `feed/answer` is person-only, and the host's strip sends it for the ask the person selects.
 
 /** One value, live: what it is now, and a way to hear it changed. */
@@ -59,8 +60,6 @@ export interface FactoryTab {
     readonly selected: Watched<string | null>
     /** The document opened beside the view, if any. */
     readonly opened: Watched<Opened | null>
-    /** Seconds since the epoch, every 15 seconds: what durations and ages count from. */
-    readonly now: Watched<number>
   }
   readonly actions: {
     /** Where one of the factory's views shows on `repository`, for its link. */
@@ -78,12 +77,6 @@ export interface FactoryTab {
   }
 }
 
-/** How often the clock ticks. */
-export const TICK = "15 seconds"
-
-/** Seconds since the epoch. */
-const seconds = () => Math.floor(Date.now() / 1000)
-
 /** Where view `id` shows on `repository`. */
 export const hrefOf = (id: ViewId, repository: Host.Repository): string =>
   Host.pathOf({ plugin: "factory", scope: "repository", path: VIEWS.find((view) => view.id === id)!.path }, repository)!
@@ -96,8 +89,6 @@ export const make = (host: Host.PluginHost, feeds: Feeds) =>
   Effect.gen(function* () {
     const scope = yield* Effect.scope
     const run = Effect.runForkWith(yield* Effect.context<never>())
-    const now = cell(seconds())
-    yield* Effect.sync(() => now.set(seconds())).pipe(Effect.repeat(Schedule.spaced(TICK)), Effect.forkIn(scope))
 
     /** A live value per repository, built once, in the tab's scope. */
     const perRepository = <A>(
@@ -177,7 +168,7 @@ export const make = (host: Host.PluginHost, feeds: Feeds) =>
     yield* Effect.addFinalizer(() => Effect.sync(close))
 
     return {
-      queries: { feed, asks, selected, opened, now },
+      queries: { feed, asks, selected, opened },
       actions: {
         href: (view, repository) => hrefOf(view, repository),
         open: (view, repository) => void run(host.open(view, repository)),
