@@ -126,6 +126,10 @@ ownership unchanged.
 
 ## Public API
 
+The root entry typechecks without Node ambient declarations. The existing
+`Ownership.sameHostPidProbe` host access remains listed in the library catalog;
+only `ESRCH` proves a same-host process has exited.
+
 The root exports each module as a namespace, and each is also importable from
 the matching `@smthrs/run-store/*` subpath. The
 [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/docs/api.md) lists every export.

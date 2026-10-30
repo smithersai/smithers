@@ -222,7 +222,10 @@ export const sameHostPidProbe: LivenessCheck = (expectedOwner, context) =>
     if (!sameHostIncarnation(expectedOwner, context.claimant)) return false
     if (!Number.isSafeInteger(expectedOwner.pid) || expectedOwner.pid <= 0) return true
     try {
-      process.kill(expectedOwner.pid, 0)
+      // This known host adapter must not require Node's ambient declarations
+      // merely to typecheck a portable consumer of the root entry.
+      const hostProcess: { readonly kill: (pid: number, signal: 0) => boolean } = Reflect.get(globalThis, "process")
+      hostProcess.kill(expectedOwner.pid, 0)
       return true
     } catch (error) {
       return (error as { readonly code?: string | undefined } | null)?.code !== "ESRCH"

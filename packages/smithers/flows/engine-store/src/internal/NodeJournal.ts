@@ -92,14 +92,17 @@ const asJson = (value: unknown): typeof Schema.Json.Type => JSON.parse(JSON.stri
  * name its own working directory records no declaration path at all rather
  * than one a reader would have to guess the meaning of. `host` is the global
  * object by default and is named here so both answers are reachable without
- * taking the real one away from the runtime.
+ * taking the real one away from the runtime. Its optional shape requires no
+ * Node ambient type declarations.
  *
  * @since 0.1.0
  * @category accessors
  */
 export const hostRoot = (
   explicit: string | undefined,
-  host: { readonly process?: { readonly cwd?: () => string } | undefined } = globalThis
+  host: { readonly process?: { readonly cwd?: () => string } | undefined } = globalThis as typeof globalThis & {
+    readonly process?: { readonly cwd?: () => string } | undefined
+  }
 ): string | undefined => {
   if (explicit !== undefined) return explicit
   return typeof host.process?.cwd === "function" ? host.process.cwd() : undefined
