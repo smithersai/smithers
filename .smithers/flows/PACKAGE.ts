@@ -940,10 +940,11 @@ const apiBaseline = Smithers.NodeBinary({
  */
 const releasePack = Smithers.NodeBinary({
   entry: Smithers.file("//.smithers/flows/release/pack-release.mjs"),
-  args: [packDirectory],
+  args: [packDirectory, "--built"],
   srcs: releaseSources,
   // Most packages use workspace default-target synthesis and therefore have
-  // no PACKAGE.ts export this file can import. The selector is still a real
+  // no PACKAGE.ts export this file can import. --built reuses these completed
+  // graph builds; standalone packing still rebuilds. The selector is a real
   // graph edge: every package `lib` settles before packing, including future
   // packages admitted under `packages/`. `lib` is the whole distribution,
   // `dist/esm` and `dist/cjs`, which is what `assertBuilt` in the packing

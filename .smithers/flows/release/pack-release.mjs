@@ -478,11 +478,12 @@ export const defaultBindings = (source) => {
   return sites.sort((a, b) => a.line - b.line)
 }
 
-/** Rebuild before packing: existing export targets do not prove source freshness. */
-export const assertBuilt = async (packageRoot, manifest) => {
-  // Use the release builder's clean, fail-closed invocation of the package's
-  // own build program. This also covers packing outside the release workflow.
-  buildRelease(packageRoot, new Map([[".", manifest]]))
+/** Standalone packing rebuilds; the graph may validate outputs after its library dependencies settle. */
+export const assertBuilt = async (packageRoot, manifest, { rebuild = true } = {}) => {
+  // The graph has already established freshness through its lib dependencies.
+  // Other callers use the package's clean build, so old files alone never
+  // establish freshness for standalone packing.
+  if (rebuild) buildRelease(packageRoot, new Map([[".", manifest]]))
   const sourceRoot = join(packageRoot, "src")
   const esmOnly = esmOnlyModules(manifest)
   for (const source of await sourceFiles(sourceRoot)) {
@@ -557,11 +558,11 @@ export const runPackCommand = (command, args, options = {}) =>
     })
   })
 
-const packWorkspace = async (directory, outputDirectory, stagingRoot) => {
+const packWorkspace = async (directory, outputDirectory, stagingRoot, options) => {
   const packageRoot = join(repoRoot, directory)
   const manifestPath = join(packageRoot, "package.json")
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"))
-  await assertBuilt(packageRoot, manifest)
+  await assertBuilt(packageRoot, manifest, options)
 
   // The staging directory is flat: a tarball is named from the manifest, so a
   // nested package stages beside its siblings under its own basename.
@@ -588,12 +589,23 @@ const packWorkspace = async (directory, outputDirectory, stagingRoot) => {
 
 }
 
+/** Parse the packing mode without touching source or artifact directories. */
+export const packArguments = (args) => {
+  const [directory, mode] = args
+  if (directory === undefined || directory === "" || directory.startsWith("--") ||
+    args.length > 2 || (args.length === 2 && mode !== "--built")) {
+    throw new Error("usage: node .smithers/flows/release/pack-release.mjs <output-directory> [--built]")
+  }
+  return { directory, rebuild: mode !== "--built" }
+}
+
 export const main = async (args) => {
   const destination = args[0]
   if (destination === "--help") {
     console.log(
       [
-        "usage: node .smithers/flows/release/pack-release.mjs <output-directory>",
+        "usage: node .smithers/flows/release/pack-release.mjs <output-directory> [--built]",
+        "       --built validates outputs after the releasePack target's library dependencies have built them",
         "       node .smithers/flows/release/pack-release.mjs --list    workspace directories, in publication order",
         "       node .smithers/flows/release/pack-release.mjs --names   package names, in publication order"
       ].join("\n")
@@ -609,10 +621,8 @@ export const main = async (args) => {
     console.log(dependencyOrder(workspaceDependencies(manifests)).map((directory) => manifests.get(directory).name).join("\n"))
     return
   }
-  if (destination === undefined) {
-    throw new Error("usage: node .smithers/flows/release/pack-release.mjs <output-directory> (or --list or --names)")
-  }
-  const outputDirectory = resolve(repoRoot, destination)
+  const { directory, ...options } = packArguments(args)
+  const outputDirectory = resolve(repoRoot, directory)
   await mkdir(outputDirectory, { recursive: true })
   // A pack directory is the whole release artifact, not an accumulator.
   // Leaving an earlier version's tarballs beside this one makes the directory
@@ -628,7 +638,7 @@ export const main = async (args) => {
   try {
     const packed = []
     for (const directory of workspaces()) {
-      packed.push(await packWorkspace(directory, outputDirectory, stagingRoot))
+      packed.push(await packWorkspace(directory, outputDirectory, stagingRoot, options))
     }
     await writeFile(
       join(outputDirectory, "manifest.json"),

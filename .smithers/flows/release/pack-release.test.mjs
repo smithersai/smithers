@@ -24,6 +24,7 @@ import {
   defaultBindings,
   dependencyOrder,
   esmOnlyModules,
+  packArguments,
   packResultFilename,
   publicationManifest,
   stagePackage,
@@ -1099,6 +1100,14 @@ const staleBuildFixture = async (body) => {
   }
 }
 
+test("packing refuses unrecognized modes before writing any artifacts", () => {
+  for (const args of [[], [""], ["--built"], ["unused", "--unknown"], ["unused", "--built", "extra"]]) {
+    assert.throws(() => packArguments(args), /usage: node/)
+  }
+  assert.deepEqual(packArguments(["packs"]), { directory: "packs", rebuild: true })
+  assert.deepEqual(packArguments(["packs", "--built"]), { directory: "packs", rebuild: false })
+})
+
 test("pack boundary refuses complete stale artifacts when rebuilding fails", () => staleBuildFixture(async (directory, manifest) => {
   await writeFile(join(directory, "build.mjs"), "process.exit(23)")
   await assert.rejects(assertBuilt(directory, manifest), /build failed \(exit 23\)/)
@@ -1117,6 +1126,22 @@ test("pack boundary rebuilds complete stale artifacts from current source", () =
   for (const file of ["esm/index.js", "esm/index.d.ts", "cjs/index.js"]) {
     assert.equal(readFileSync(join(directory, "dist", file), "utf8"), readFileSync(join(directory, "src/index.ts"), "utf8"))
   }
+}))
+
+test("graph packing validates complete outputs without rebuilding them a second time", () => staleBuildFixture(async (directory, manifest) => {
+  await writeFile(join(directory, "build.mjs"), [
+    'import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"',
+    'appendFileSync("build-count", "built\\n")',
+    'mkdirSync("dist/esm", { recursive: true })',
+    'mkdirSync("dist/cjs", { recursive: true })',
+    'for (const file of ["esm/index.js", "esm/index.d.ts", "cjs/index.js"]) writeFileSync("dist/" + file, readFileSync("src/index.ts"))'
+  ].join("\n"))
+  await assertBuilt(directory, manifest)
+  await assertBuilt(directory, manifest, { rebuild: false })
+  assert.equal(readFileSync(join(directory, "build-count"), "utf8"), "built\n")
+  assert.equal(readFileSync(join(directory, "dist/esm/index.js"), "utf8"), readFileSync(join(directory, "src/index.ts"), "utf8"))
+  await rm(join(directory, "dist/cjs/index.js"))
+  await assert.rejects(assertBuilt(directory, manifest, { rebuild: false }), { code: "ENOENT" })
 }))
 
 test("pack boundary requires the ESM, declarations and CommonJS of every VibeLang module", () => staleBuildFixture(async (directory, manifest) => {

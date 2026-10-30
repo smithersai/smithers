@@ -74,6 +74,12 @@ node --test .smithers/flows/pack.test.mjs      # registry, capabilities, detecto
 smithers-build test //.smithers/flows/...      # the same suite as a build target
 ```
 
-`packages/smithers/dist` must not exist while these run: `packages/smithers/bin/smithers.mjs`
-prefers a build over `src/`, and the real-CLI checks here assert what the source
-does.
+Source checkouts run `packages/smithers/src/bin.ts` even beside `dist`.
+Installed packages run their compiled entry point.
+
+## Release packing
+
+`smthrs build //.smithers/flows:releasePack` builds every library dependency and
+validates its ESM, declarations and CommonJS before packing, without rebuilding
+the same package inside the pack step. Standalone `release/pack` rebuilds from
+source. The graph's `--built` mode requires those library dependency edges.

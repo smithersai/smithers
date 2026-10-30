@@ -3,6 +3,23 @@ import { execFileSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
+import { Smithers } from "@smthrs/targets"
+import { readWorkspaceManifests } from "./pack-release.mjs"
+
+test("packing reuses graph builds only after every published library has settled", async () => {
+  const { Package } = await import("../PACKAGE.ts")
+  assert.deepEqual(Smithers.Target.metadata(Package.releasePack).attrs.args, ["dist/release-packs", "--built"])
+  const plan = JSON.parse(execFileSync(process.execPath, [
+    "packages/smithers/build/build-cli/src/main.js",
+    "build", "//.smithers/flows:releasePack", "--plan", "--json"
+  ], { cwd: new URL("../../..", import.meta.url), encoding: "utf8", timeout: 300_000, maxBuffer: 16 * 1024 * 1024 }))
+  const pack = plan.targets.find((target) => target.label === "//.smithers/flows:releasePack")
+  assert.ok(pack, "the release pack must be selected")
+  for (const directory of readWorkspaceManifests().keys()) {
+    assert.ok(pack.dependencies.includes(`//${directory}:lib`), `${directory} must build before packing`)
+  }
+  assert.ok(pack.dependencies.includes("//.smithers/flows:apiBaseline"))
+})
 
 test("the shipping-links gate depends on the site build even when selected alone", () => {
   // Query the evaluated declarations: an earlier workflow step cannot supply
