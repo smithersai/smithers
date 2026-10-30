@@ -376,14 +376,21 @@ if (
         }
         if (mode === "stall" || mode === "detached-stall") {
           enter("lease reconfirmation receipts")
-          const recorded = decisions(root)
+          // The observer's own discovery flow is released when its scope closes.
+          // Check every execution in the scenario's tree, as the row assertions
+          // above do, without treating that unrelated release as lost work.
+          const executions = rows(root)
+          const executionIds = new Set(executions.map((row) => row.run_id))
+          assert.equal(executionIds.has(runId), true)
+          assert.equal(executionIds.has(workerId), true)
+          const recorded = decisions(root).filter((entry) => executionIds.has(entry.runId))
           assert.equal(
             recorded.some((entry) => entry.decision === "interrupt-released"),
             false,
             JSON.stringify(recorded)
           )
           const expected = mode === "stall"
-            ? rows(root).filter((row) => row.status === "running").map((row) => row.run_id)
+            ? executions.filter((row) => row.status === "running").map((row) => row.run_id)
             : [workerId]
           for (const id of expected) {
             const reconfirmed = recorded.filter((entry) => entry.runId === id && entry.decision === "lease-reconfirmed")
