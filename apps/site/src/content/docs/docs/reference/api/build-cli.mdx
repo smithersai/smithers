@@ -108,6 +108,7 @@ interface RuntimeConfig {
   readonly presentation?: Audience.Policy | undefined
   readonly exit?: ((code: number) => void) | undefined
   readonly approvals?: PackageExec.TargetApprovals | undefined
+  readonly services?: Layer.Layer<never> | undefined
 }
 ```
 
@@ -129,6 +130,7 @@ This block is the one copy; the other pages link here.
 | `stdout`         | `process.stdout` as a `Reporter.Terminal`.                                                                                    |
 | `stderr`         | `process.stderr` as a `Reporter.Terminal`.                                                                                    |
 | `presentation`   | The ambient audience facts detection would read. `Audience.resolve` seeds from this policy; explicit flags still override it. |
+| `services`       | An invocation-local Effect layer for discovery and receipt I/O, retaining real defaults.                                      |
 | `exit`           | The exit-code setter. Omit it and a failure returns the structured error.                                                     |
 
 `approvals` supplies the durable approval store for targets declaring
