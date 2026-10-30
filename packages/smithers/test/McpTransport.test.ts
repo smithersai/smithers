@@ -1,5 +1,7 @@
 import { getEventListeners } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
+import { createServer } from "node:http"
+import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { PassThrough } from "node:stream"
@@ -16,10 +18,33 @@ it("leaves the default process input untouched when MCP starts already interrupt
   expect(process.stdin.listeners("error")).toEqual(errors)
 })
 
+/** The remote install only; MCP dispatch and its middleware run in process. */
+const fixtureInstall = async () => {
+  const seen: Array<string> = []
+  const server = createServer((request, response) => {
+    seen.push(`${request.method} ${request.url}`)
+    response.setHeader("content-type", "application/json")
+    if (request.url === "/api/flows/broken") {
+      response.statusCode = 503
+      response.end(JSON.stringify({ error: { code: "unavailable", message: "Flow store unavailable" } }))
+    } else response.end(JSON.stringify({ items: [{ name: "fixture" }] }))
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  return {
+    seen,
+    origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+    close: async () => {
+      server.closeAllConnections()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  }
+}
+
 it.each(["eof", "abort", "pre-aborted", "input-error", "no-signal"])(
   "cleans up the MCP transport service on %s",
   async (mode) => {
     const root = await mkdtemp(join(tmpdir(), "smthrs-mcp-transport-"))
+    const install = await fixtureInstall()
     const input = new PassThrough()
     const output = new PassThrough()
     const controller = new AbortController()
@@ -45,7 +70,14 @@ it.each(["eof", "abort", "pre-aborted", "input-error", "no-signal"])(
       if (mode === "pre-aborted") controller.abort()
       await makeCli({
         mcpStdio: { input, output },
-        environment: { HOME: root, XDG_CONFIG_HOME: root },
+        environment: {
+          HOME: root,
+          XDG_CONFIG_HOME: root,
+          SMITHERS_AUTH_FILE: join(root, "auth.json"),
+          SMITHERS_DISABLE_SYSTEM_KEYRING: "1",
+          SMITHERS_API_ORIGIN: install.origin,
+          SMITHERS_TOKEN: "transport-synthetic-credential"
+        },
         signal: mode === "no-signal" ? undefined : controller.signal
       }).serve([
         "--mcp",
@@ -66,24 +98,26 @@ it.each(["eof", "abort", "pre-aborted", "input-error", "no-signal"])(
         expect((await reply(2)).result).toEqual({})
         expect(replies.find((value) => value.id === null)?.error).toEqual({ code: -32700, message: "Parse error" })
         if (mode === "eof") {
-          input.write(
-            JSON.stringify({
-              jsonrpc: "2.0",
-              id: 3,
-              method: "tools/call",
-              params: { name: "call_read_tool", arguments: { name: "host_status", arguments: {} } }
-            }) + "\n"
-          )
-          expect((await reply(3)).result).toMatchObject({ isError: true })
-          expect((await reply(3)).result).toMatchObject({
-            content: [{
-              type: "text",
-              text: process.platform === "darwin" && process.getuid?.() !== 0
-                ? "Host is not installed"
-                : "Host service requires an unprivileged macOS login session"
-            }]
-          })
-          expect(JSON.stringify((await reply(3)).result)).not.toContain(root)
+          // A local install fixture keeps the tool call independent of this machine's host.
+          const call = async (id: number, name: string, args: Record<string, unknown>) => {
+            input.write(
+              JSON.stringify({
+                jsonrpc: "2.0",
+                id,
+                method: "tools/call",
+                params: { name: "call_read_tool", arguments: { name, arguments: args } }
+              }) + "\n"
+            )
+            return (await reply(id)).result as { isError?: boolean; content: Array<{ text: string }> }
+          }
+          const listed = await call(3, "flows", {})
+          expect(listed.isError, JSON.stringify(listed)).not.toBe(true)
+          expect(listed.content[0]?.text).toContain("fixture")
+          const refused = await call(4, "flow_show", { flow: "broken" })
+          expect(refused.isError, JSON.stringify(refused)).toBe(true)
+          expect(JSON.stringify(refused)).not.toContain(root)
+          expect(JSON.stringify([listed, refused])).not.toContain("transport-synthetic-credential")
+          expect(install.seen).toEqual(["GET /api/flows", "GET /api/flows/broken"])
         }
         expect(input.listenerCount("data")).toBe(1)
         expect(input.listenerCount("error")).toBe(1)
@@ -105,6 +139,7 @@ it.each(["eof", "abort", "pre-aborted", "input-error", "no-signal"])(
       controller.abort()
       input.destroy()
       output.destroy()
+      await install.close()
       await rm(root, { recursive: true, force: true })
     }
   }
