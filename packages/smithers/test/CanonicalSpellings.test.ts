@@ -9,20 +9,26 @@
  * spelling against the canonical Incur manifest.
  */
 import { Cli as Incur } from "incur"
-import { readdirSync, readFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { join, relative } from "node:path"
 import ts from "typescript"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, onTestFailed } from "vitest"
 import { makeCli } from "../src/Cli.ts"
 import { cli } from "../src/Command.ts"
 import * as Unsupported from "../src/Unsupported.ts"
 
 const packageRoot = join(import.meta.dirname, "..")
 
-const capture = async (args: ReadonlyArray<string>, published = false): Promise<string> => {
+const capture = async (
+  args: ReadonlyArray<string>,
+  published = false,
+  progress?: (stage: string) => void
+): Promise<string> => {
   const environment = { ...process.env, NO_COLOR: "1" } as Record<string, string>
   let output = ""
   const cli = makeCli({ environment })
+  progress?.("constructed")
   const tree = published ? Incur.create("smthrs") : cli
   if (published) {
     const commands = Incur.toCommands.get(tree as never)!
@@ -35,6 +41,7 @@ const capture = async (args: ReadonlyArray<string>, published = false): Promise<
     },
     exit: () => {}
   })
+  progress?.("served")
   return output
 }
 
@@ -48,7 +55,7 @@ interface Manifest {
 
 const kebab = (name: string): string => name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)
 
-const sources = (): ReadonlyArray<string> => {
+const sources = (root = packageRoot): ReadonlyArray<string> => {
   const files: Array<string> = []
   const walk = (directory: string, inSource: boolean): void => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -57,13 +64,14 @@ const sources = (): ReadonlyArray<string> => {
         if (["node_modules", "dist", "test", "fixtures"].includes(entry.name)) continue
         walk(path, inSource || entry.name === "src")
       } else if (
-        inSource && /\.tsx?$/.test(entry.name) && !entry.name.endsWith(".d.ts") && !entry.name.includes(".test.")
+        inSource && /\.(?:tsx?|vibe)$/.test(entry.name) && !entry.name.endsWith(".d.ts") &&
+        !entry.name.includes(".test.")
       ) {
         files.push(path)
       }
     }
   }
-  walk(packageRoot, false)
+  walk(root, false)
   return files
 }
 
@@ -78,32 +86,54 @@ const decodeEscapes = (text: string): string =>
       String.fromCodePoint(Number.parseInt(braced ?? unicode ?? hex ?? "0", 16))
   )
 
-const printedTexts = (file: string): ReadonlyArray<{ readonly line: number; readonly text: string }> => {
+interface ScanProgress {
+  files: number
+  parsed: number
+  nodes: number
+  locations: number
+  texts: number
+}
+const printedTexts = (
+  file: string,
+  progress?: ScanProgress
+): ReadonlyArray<{ readonly line: number; readonly text: string }> => {
+  if (progress) progress.files++
   const contents = readFileSync(file, "utf8")
-  // Every finding needs a literal spelling `smthrs`, so a file that never
-  // spells it has nothing to read. Parsing only the files that do keeps the
-  // scan of ~2,000 sources inside the test budget on a loaded runner.
-  // A literal can spell it through an escape (`sm\u0074hrs`), which the
-  // compiler decodes, so the check reads the text with escapes decoded.
-  if (!decodeEscapes(contents).includes("smthrs")) return []
-  const source = ts.createSourceFile(file, contents, ts.ScriptTarget.Latest, true)
+  // Package imports such as @smthrs/flow are not printed CLI commands. They
+  // occur in most SDK sources, so parsing them traversed 1.8 million nodes.
+  // Keep standalone spellings (including shellCommand's first argument),
+  // escaped spellings and the separate migration-instruction check.
+  // Escapes can also join a keyword across source lines or create a boundary
+  // before it ("\\nsmthrs"). Let the compiler read every escaped source rather
+  // than duplicating its complete string-literal decoder in this prefilter.
+  if (!/(?<![\w@/.-])smthrs\b|smithers-migrate/.test(decodeEscapes(contents)) && !contents.includes("\\")) return []
+  if (progress) progress.parsed++
+  const source = ts.createSourceFile(file, contents, ts.ScriptTarget.Latest, false)
   const texts: Array<{ line: number; text: string }> = []
   const literal = (node: ts.Node): string | undefined =>
     ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) ? node.text : undefined
+  const record = (node: ts.Node, text: string) => {
+    // Compiler-decoded text decides relevance. Escaped sources still get a
+    // complete parse, without locating every import, key and unrelated string.
+    if (!/(?<![\w@/.-])smthrs\b|smithers-migrate/.test(text)) return
+    if (progress) progress.locations++
+    texts.push({ line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1, text })
+  }
   const visit = (node: ts.Node): void => {
-    const line = source.getLineAndCharacterOfPosition(node.getStart()).line + 1
+    if (progress) progress.nodes++
     const text = literal(node)
-    if (text !== undefined) texts.push({ line, text })
+    if (text !== undefined) record(node, text)
     else if (ts.isTemplateExpression(node)) {
-      texts.push({ line, text: [node.head.text, ...node.templateSpans.map((span) => span.literal.text)].join(hole) })
+      record(node, [node.head.text, ...node.templateSpans.map((span) => span.literal.text)].join(hole))
     } else if (ts.isCallExpression(node) && node.arguments.length > 0 && literal(node.arguments[0]!) === "smthrs") {
       // `shellCommand("smthrs", "runs", "logs", runId)` prints a command
       // no single literal spells.
-      texts.push({ line, text: node.arguments.map((argument) => literal(argument) ?? hole).join(" ") })
+      record(node, node.arguments.map((argument) => literal(argument) ?? hole).join(" "))
     }
     ts.forEachChild(node, visit)
   }
   visit(source)
+  if (progress) progress.texts += texts.length
   return texts
 }
 
@@ -112,6 +142,52 @@ describe("the spelling prefilter", () => {
     expect(decodeEscapes("\"sm\\u0074hrs status\"")).toContain("smthrs status")
     expect(decodeEscapes("\"\\x73mthrs\"")).toContain("smthrs")
     expect(decodeEscapes("\"\\u{73}mthrs\"")).toContain("smthrs")
+  })
+
+  it("parses escaped commands, templates, shell arguments and migration warnings with their source lines", () => {
+    const root = mkdtempSync(join(tmpdir(), "smithers-spellings-"))
+    const directory = join(root, "src")
+    const file = join(directory, "commands.vibe")
+    try {
+      mkdirSync(directory)
+      writeFileSync(
+        file,
+        [
+          "import { Flow } from \"@smthrs/flow\"",
+          "const escaped = \"sm\\u0074hrs status\"",
+          "const template = `smthrs runs view ${runId}`",
+          "const shell = shellCommand(\"smthrs\", \"runs\", \"view\", runId)",
+          "const migration = 'run \"smithers-migrate\"'"
+        ].join("\n")
+      )
+      expect(sources(root)).toEqual([file])
+      const progress: ScanProgress = { files: 0, parsed: 0, nodes: 0, locations: 0, texts: 0 }
+      const texts = printedTexts(file, progress)
+      expect(texts).toEqual(expect.arrayContaining([
+        { line: 2, text: "smthrs status" },
+        { line: 3, text: `smthrs runs view ${hole}` },
+        { line: 4, text: `smthrs runs view ${hole}` },
+        { line: 5, text: "run \"smithers-migrate\"" }
+      ]))
+      expect(texts.map(({ text }) => text)).not.toContain("@smthrs/flow")
+      expect(texts.map(({ text }) => text)).not.toContain("runs")
+      expect(texts.map(({ text }) => text)).not.toContain("view")
+      expect(progress.locations).toBe(texts.length)
+      expect(progress.nodes).toBeGreaterThan(progress.locations)
+      // A forbidden migration spelling must still be read without a valid
+      // command elsewhere in the file.
+      writeFileSync(file, "const migration = 'run \"smithers-migrate\"'")
+      expect(printedTexts(file)).toEqual([{ line: 1, text: "run \"smithers-migrate\"" }])
+      // Import-only SDK files have no printable commands to parse.
+      writeFileSync(file, "import { Flow } from \"@smthrs/flow\"\nconst name = \"asmthrs command\"")
+      const imports: ScanProgress = { files: 0, parsed: 0, nodes: 0, locations: 0, texts: 0 }
+      expect(printedTexts(file, imports)).toEqual([])
+      expect(imports).toEqual({ files: 1, parsed: 0, nodes: 0, locations: 0, texts: 0 })
+      writeFileSync(file, `const command = ${JSON.stringify("Try:\nsmthrs status")}`)
+      expect(printedTexts(file)).toEqual([{ line: 1, text: "Try:\nsmthrs status" }])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })
 
@@ -137,10 +213,22 @@ const documentedDoors: ReadonlyArray<string> = ["migrate"]
 
 describe("printed command spellings", () => {
   it("name only canonical, non-hidden commands and their declared options", async () => {
-    const manifest = JSON.parse(await capture(["--llms-full", "--format", "json"])) as Manifest
+    const started = Date.now()
+    const stages: Array<{ stage: string; elapsedMs: number }> = []
+    const progress: ScanProgress = { files: 0, parsed: 0, nodes: 0, locations: 0, texts: 0 }
+    const mark = (stage: string) => stages.push({ stage, elapsedMs: Date.now() - started })
+    const diagnostic = () => console.error("Canonical scan progress", JSON.stringify({ stages, progress }))
+    onTestFailed(diagnostic)
+    mark("manifest")
+    const manifest = JSON.parse(
+      await capture(["--llms-full", "--format", "json"], false, (stage) => mark(`manifest ${stage}`))
+    ) as Manifest
     // Install discovery hides published library children. Their printed flags
     // still resolve against their own schema, never the catalog parent schema.
-    const published = JSON.parse(await capture(["--llms-full", "--format", "json"], true)) as Manifest
+    mark("published manifest")
+    const published = JSON.parse(
+      await capture(["--llms-full", "--format", "json"], true, (stage) => mark(`published ${stage}`))
+    ) as Manifest
     const canonical = new Map(published.commands.map((command) => [command.name, command]))
     const paths = new Set(
       published.commands.flatMap((command) => {
@@ -161,16 +249,20 @@ describe("printed command spellings", () => {
         ...Unsupported.removedVerbs.map((verb) => verb.name)
       ].filter((name) => !topLevel.has(name) && !canonical.has(name) && !documentedDoors.includes(name))
     )
+    mark("help")
     const sharedFlags = new Set(
-      [...(await capture(["--help"])).matchAll(/--([a-z][a-z0-9-]*)/g)].map((match) => match[1]!)
+      [...(await capture(["--help"], false, (stage) => mark(`help ${stage}`))).matchAll(/--([a-z][a-z0-9-]*)/g)].map((
+        match
+      ) => match[1]!)
     )
     for (const name of Object.keys(manifest.globals?.properties ?? {})) sharedFlags.add(kebab(name))
 
     const findings: Array<string> = []
     // Sentences that tell the reader which command migrates a project.
     const migrateInstructions: Array<string> = []
+    mark("source scan")
     for (const file of sources()) {
-      for (const { line, text } of printedTexts(file)) {
+      for (const { line, text } of printedTexts(file, progress)) {
         if (/\brun "(?:smthrs migrate|smithers-migrate)"|`(?:smthrs migrate|smithers-migrate)` replaces/.test(text)) {
           migrateInstructions.push(text)
         }
@@ -205,6 +297,8 @@ describe("printed command spellings", () => {
         }
       }
     }
+    mark("assertions")
+    if (process.env.SMITHERS_TEST_SCAN_PROGRESS === "1") diagnostic()
     expect(hidden.size).toBeGreaterThan(0)
     expect(findings).toEqual([])
     // The 0.x notice and the `upgrade` refusal both name the migration
