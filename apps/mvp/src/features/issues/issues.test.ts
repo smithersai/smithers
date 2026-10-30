@@ -1041,7 +1041,7 @@ describe("triage", () => {
       _tag: "Some", value: { op: "triage/pause", payload: { op: "triage/pause" } },
     }))
     expect((await server(tab.api).writes()).filter(row => row.id === writeId)).toHaveLength(1)
-  }, WITHIN)
+  })
 
   test("a Maintainer's Enable and Pause go to the outbox; a Member's are refused and stay Not sent", async () => {
     const sam: Actor = { ...maya, subject: { kind: "person", id: "person-sam" }, role: "maintainer", login: "sam" }

@@ -4,7 +4,7 @@ import { outboxPrincipal } from "../../device/identity"
 import { ShapeSource, SyncPolicy } from "@smthrs/effect-electric"
 import { Outbox } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine, WebLock } from "@smthrs/platform-browser"
-import { Deferred, Effect, Exit, Fiber, ManagedRuntime, Metric, Option, Ref, Scope, Stream } from "effect"
+import { Context, Deferred, Effect, Exit, Fiber, Layer, ManagedRuntime, Metric, Option, Ref, Scope, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { AnswerReference } from "../agent/reference"
@@ -48,6 +48,7 @@ import { ChatStore } from "./store"
 import { PLACE } from "./schema"
 import { SharedPrompt } from "./sharedPrompt"
 import { ask as askAction } from "./actions"
+import * as TestDatabase from "../../../db/TestDatabase.ts"
 
 // Chat's state machine, driven as React drives it: through the chat layer's plain actions, reading its live queries,
 // with no React. It runs on the browser's own layer (`appLayer`) over a Node device (src/test/chatApi.ts
@@ -95,6 +96,25 @@ const openChat = async (options: TabOptions = {}, chatApi: ChatApiOptions = {}) 
   const api = await runtime.runPromise(Effect.service(TestChatApi))
   return { ...tab, api, onApi: <A>(effect: Effect.Effect<A>) => runtime.runPromise(effect) }
 }
+
+/** A backend fixture must not leave an unused browser app syncing beside the actual test devices. */
+const openApi = async () => {
+  const runtime = ManagedRuntime.make(TestChatApi.layer.pipe(
+    Layer.provideMerge(TestDatabase.layer("chat_backend")),
+    Layer.provideMerge(Layer.succeed(Metric.MetricRegistry, new Map())),
+  ))
+  runtimes.push(runtime)
+  const api = await runtime.runPromise(Effect.service(TestChatApi))
+  return { runtime, api, onApi: <A>(effect: Effect.Effect<A>) => runtime.runPromise(effect) }
+}
+
+test("a backend-only fixture opens no browser app or telemetry exporter", async () => {
+  const { runtime, api } = await openApi()
+  const context = await runtime.runPromise(Effect.context())
+  expect(Option.isNone(Context.getOption(context, Chat))).toBe(true)
+  expect((await api.fetch(`${api.origin}/api/auth/session`)).status).toBe(200)
+  expect(api.telemetry).toEqual([])
+})
 
 /** The faulty ChatApi client and shape source's switches on a tab's runtime. */
 const switches = async <R, E>(
@@ -329,7 +349,7 @@ describe("the agent", () => {
   })
 
   test("a tab closed after ChatApi took its question, before its engine recorded the run: the next tab sends it again, and its agent answers", async () => {
-    const { api, onApi } = await openChat()
+    const { api, onApi } = await openApi()
     const device = nodeDevice({ agent: api })
     // The first page's engine never leads, as a worker still loading: the answer's start waits for a leader.
     const first = await tabOn(openTab(api, { ...quick, host: { ...device, engineWorker: idleWorker } }))
@@ -351,7 +371,7 @@ describe("the agent", () => {
   })
 
   test("a tab whose engine failed keeps its question in the outbox: the next page's agent answers it", async () => {
-    const { api, onApi } = await openChat()
+    const { api, onApi } = await openApi()
     const device = nodeDevice({ agent: api })
     const first = await tabOn(openTab(api, { ...quick, host: { ...device, engineWorker: failingWorker } }))
     await until(() => expect(first.connection()).toMatchObject({ status: "stopped" }))
@@ -423,7 +443,7 @@ describe("the agent", () => {
   }, 120_000)
 
   test("a reloaded tab settles a stopped persisted answer without its original launch observer", async () => {
-    const { api, onApi } = await openChat({ answers: false })
+    const { api, onApi } = await openApi()
     const device = nodeDevice({ agent: api })
     const first = await tabOn(openTab(api, { ...quick, host: device }))
     const { answerId } = asked((await first.actions.ask("Use the sandbox tools on this branch after reload")))
@@ -585,7 +605,7 @@ describe("sending", () => {
   test("a device store in memory whose shape never answers still sends the question again in time", async () => {
     // The device store couldn't open, so the conversation restores from the network, which never answers: the wait for
     // the question counts from the restore, and waits for it as long at most.
-    const { api } = await openChat()
+    const { api } = await openApi()
     const device = nodeDevice({ agent: api })
     const memory = { ...device, persistence: { ...device.persistence, open: () => Promise.reject(new Error("no OPFS")) } }
     const tab = await tabOn(
@@ -750,7 +770,7 @@ describe("the device store", () => {
     Option.getOrThrow(await tab.runtime.runPromise(Stream.runHead(tab.store.outbox.status))).leader
 
   test("a memory-only activation sends its newly queued question", async () => {
-    const { api, onApi } = await openChat()
+    const { api, onApi } = await openApi()
     const device = nodeDevice({ agent: api })
     const host = { ...device, outbox: { ...device.outbox, principal: outboxPrincipal(() => undefined, () => false) } }
     const tab = await tabOn(openTab(api, { ...quick, host }))
@@ -761,7 +781,7 @@ describe("the device store", () => {
   test("a question queued as one person is never shown or sent as the next person on the device; the outbox keeps it", async () => {
     // The browser evicted the device store, but not the outbox: Ann's queued question is still in it when Ben's
     // session opens the device. It is sent only as Ann (main.tsx's `principal`, Outbox.Principal).
-    const { api, onApi } = await openChat()
+    const { api, onApi } = await openApi()
     const outboxEntries = new Map<string, string>()
     const device = nodeDevice({ agent: api, outboxEntries })
     const as = (person: string): NodeDevice => ({
@@ -789,7 +809,7 @@ describe("the device store", () => {
   })
 
   test("a question asked in a tab that doesn't lead is sent from it at once: it takes the lead, with the other tab open", async () => {
-    const { api, onApi } = await openChat()
+    const { api, onApi } = await openApi()
     const device = nodeDevice({ agent: api })
     const first = await faultyTabOn(api, { ...quick, host: device })
     const second = await tabOn(openTab(api, { ...quick, host: device }))
@@ -815,7 +835,7 @@ describe("the device store", () => {
     // A fresh device's two tabs each start their shape afresh. The second is busy: what it commits reaches the device
     // store 1.5 s late. Its snapshot, taken before the question, used to land after the first tab stored the question:
     // it emptied the device of it, and the reload that followed took it from both tabs (docs/work/local-first-conflicts.md).
-    const { api, onApi } = await openChat({ answers: false })
+    const { api, onApi } = await openApi()
     for (let seed = 0; seed < 80; seed++) await onApi(api.askElsewhere(`seed ${seed}`))
     const device = nodeDevice()
     const busy: Busy = { ms: 0, inFlight: 0 }
@@ -849,7 +869,7 @@ describe("the device store", () => {
   }, 90_000)
 
   test("the tab that gets focus leads the outbox at once, and the one that led leads again once that tab closes", async () => {
-    const { api, onApi } = await openChat()
+    const { api, onApi } = await openApi()
     const device = nodeDevice({ agent: api })
     const first = await tabOn(openTab(api, { ...quick, host: device }))
     const second = await tabOn(openTab(api, { ...quick, host: device }))
@@ -875,7 +895,7 @@ describe("the device store", () => {
   })
 
   test("a reload restores the conversation from the device before Electric answers", async () => {
-    const { api } = await openChat()
+    const { api } = await openApi()
     const device = nodeDevice({ agent: api })
     const first = await tabOn(openTab(api, { ...quick, host: device }))
     const { answerId } = asked((await first.actions.ask("hello")))
@@ -890,7 +910,7 @@ describe("the device store", () => {
   })
 
   test("a question queued on one tab is restored by the next and sent once", async () => {
-    const { api, onApi } = await openChat()
+    const { api, onApi } = await openApi()
     const device = nodeDevice({ agent: api })
     const first = await faultyTabOn(api, { ...quick, host: device })
     first.failNext("unreachable")
@@ -903,7 +923,7 @@ describe("the device store", () => {
   })
 
   test("an unsent question survives a reload", async () => {
-    const { api } = await openChat()
+    const { api } = await openApi()
     const device = nodeDevice()
     const first = await faultyTabOn(api, { ...quick, host: device })
     first.failNext("bad_request")
@@ -916,7 +936,7 @@ describe("the device store", () => {
   })
 
   test("an unsent question Edit took back stays gone after a reload", async () => {
-    const { api } = await openChat()
+    const { api } = await openApi()
     const device = nodeDevice({ agent: api })
     const first = await faultyTabOn(api, { ...quick, host: device })
     first.failNext("conflict")

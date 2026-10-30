@@ -1,9 +1,41 @@
 import { ShapeSource } from "@smthrs/effect-electric"
+import { DatabaseSync } from "node:sqlite"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import { expect, test, vi } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase"
 import { Chat } from "../features/chat/chat"
-import { asPerson, member, openTab, TestChatApi } from "./chatApi"
+import { asPerson, member, nodeDevice, openTab, TestChatApi } from "./chatApi"
+import { FlowDispatch } from "../flows/dispatch"
+
+test("a device keeps its durable engine in real local SQLite and replays after a tab reload", async () => {
+  const server = ManagedRuntime.make(TestChatApi.layer.pipe(Layer.provideMerge(TestDatabase.layer("local_engine"))))
+  let tab: ReturnType<typeof openTab> | undefined
+  try {
+    const api = await server.runPromise(Effect.service(TestChatApi))
+    const store = api.engineStore()
+    const host = nodeDevice({ agent: { ...api, engineStore: () => store } })
+    const executionId = crypto.randomUUID()
+    const execute = () => tab!.runPromise(Effect.flatMap(FlowDispatch, flows =>
+      flows.dispatch("app/theme/set", { mode: "dark" }, { executionId, door: "button" })))
+    tab = openTab(api, { host })
+    const first = await execute()
+    expect(first._tag).toBe("Done")
+    expect(typeof store.filename).toBe("string")
+    await tab.dispose()
+    tab = openTab(api, { host })
+    expect(await execute()).toEqual(first)
+    const database = new DatabaseSync(store.filename, { readOnly: true })
+    try {
+      expect(database.prepare("SELECT status FROM flows_runs WHERE run_id = ?").all(executionId))
+        .toEqual([{ status: "completed" }])
+      const journal = database.prepare("SELECT count(*) AS n FROM flows_journal_events WHERE run_id = ?").get(executionId) as { n: number }
+      expect(journal.n).toBeGreaterThan(0)
+    } finally { database.close() }
+  } finally {
+    await tab?.dispose()
+    await server.dispose()
+  }
+})
 
 // A scratch database is a separate deployment, including Electric's URL-keyed replay state. Simulated tabs also need separate cache keys because real
 // tabs have separate JavaScript realms; no fixture or tab may inherit another realm's cursor or handle.

@@ -106,6 +106,13 @@ cancellation. The fixture keeps the farm's 100 PostgreSQL connections and four-c
 `pnpm test:stack` verifies isolated listeners, an empty catalog and cleanup after a failing child command.
 Reusing a fixture for days grows its system catalogs; resetting rows alone cannot bound engine migration and
 schema teardown costs. The existing dev stack remains available separately.
+Simulated browser devices keep their durable engine in real local SQLite through `NodeRuntime.storage` from
+`@smthrs/platform-node`, injected into the same `BrowserRuntime` used by the browser. Only the server's data and
+remote-flow fixtures use PostgreSQL. A local-file/reload regression prevents moving the device engine back onto
+the server's connection pool and WAL. Slow engine builds record their stage and safe database wait records;
+`MVP_TEST_ENGINE_TRACE=1` also records successful build timings, without SQL text, file paths or user content.
+Backend-only chat scenarios build `TestChatApi.layer` directly, so they do not leave an unused browser engine,
+exporter and shape subscriptions running beside their explicitly created devices.
 
 ChatApi's tests (`worker/`, `db/`) use the compose Postgres and Electric and nothing else (`db/TestDatabase.ts`):
 

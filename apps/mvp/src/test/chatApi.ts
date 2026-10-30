@@ -10,6 +10,7 @@ import { FlowRuntime } from "@smthrs/flow"
 import { Journal as FlowJournal } from "@smthrs/flows"
 import { Model, ModelError, type ModelEvent, type ModelRequest } from "@smthrs/model"
 import { HostModel } from "@smthrs/model-host"
+import { NodeHost, NodeRuntime } from "@smthrs/platform-node"
 import { BrowserEngine, BrowserRuntime, StoragePersistence, TabChannel, WebLock } from "@smthrs/platform-browser"
 import { BrowserCollectionCoordinator, createBrowserWASQLitePersistence } from "@tanstack/browser-db-sqlite-persistence"
 import { startOfflineExecutor } from "@tanstack/offline-transactions"
@@ -19,6 +20,7 @@ import {
   Context,
   Deferred,
   Effect,
+  Exit,
   Fiber,
   Layer,
   Logger,
@@ -38,7 +40,7 @@ import { Node } from "@smthrs/plan"
 import { FetchHttpClient, type HttpClient, HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as Socket from "effect/socket/Socket"
 import { SqlClient } from "effect/sql"
-import { rmSync } from "node:fs"
+import { existsSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { DatabaseSync, type SQLInputValue } from "node:sqlite"
 import * as TestDatabase from "../../db/TestDatabase.ts"
@@ -282,10 +284,10 @@ export const TEST_FEED_KEY = "test-feed-key"
 /** SECRETS_KEY in a test ChatApi: secrets are on. */
 export const TEST_SECRETS_KEY = Redacted.make("0123456789abcdef".repeat(4))
 
-/** A Postgres schema for one device's engine store, and where the device keeps the engine's leaders. */
+/** A real local SQLite store for one device's engine, and its owned leaders. */
 export interface EngineStore {
-  readonly url: string
-  readonly schema: string
+  readonly filename: string
+  readonly id: string
   /** Keeps a leader so it is interrupted, at the latest, when the ChatApi closes. */
   readonly keep: (leader: Fiber.Fiber<never, unknown>) => void
 }
@@ -346,8 +348,8 @@ export class TestChatApi extends Context.Service<
     /** The reason of each reload the app asked for, in order. */
     readonly reloadReasons: () => ReadonlyArray<string | undefined>
     /**
-     * A fresh schema on the compose Postgres for a device's engine store (in place of SQLite on OPFS). Each one, and
-     * every leader kept on it, goes when this ChatApi closes.
+     * A local SQLite file for a device's engine (in place of OPFS). Leaders stop with this ChatApi; the test file
+     * owns and removes the temporary files after every device closes.
      */
     readonly engineStore: () => EngineStore
     /** Bug reports' routes (worker/bugs/Api.ts): every `ops/BugReport` they started, recorded and never run. */
@@ -429,10 +431,10 @@ export class TestChatApi extends Context.Service<
             })
           ).pipe(Layer.provideMerge(credentials))
 
-        // Device engine stores: dropped when this ChatApi closes, after their leaders stop and every connection a
-        // leader left open (named for its store) is ended, so the drop never waits on a write.
+        // Remote engine schemas go after device leaders stop. Local engine files belong to the test file's temp scope.
         const server = (yield* Effect.orDie(TestDatabase.serverUrl)).toString()
         const stores: Array<string> = []
+        const engineFiles: Array<string> = []
         const leaders: Array<Fiber.Fiber<never, unknown>> = []
         yield* Effect.addFinalizer(() =>
           Fiber.interruptAll(leaders).pipe(
@@ -976,6 +978,20 @@ export class TestChatApi extends Context.Service<
                 WHERE run_id = ${answerId} GROUP BY event_type ORDER BY event_type`
                 engines.push({ status: run.status, attempts, records })
               }
+              yield* Effect.sync(() => {
+                for (const filename of engineFiles) {
+                  if (!existsSync(filename)) continue
+                  const database = new DatabaseSync(filename, { readOnly: true })
+                  try {
+                    if (database.prepare("SELECT name FROM sqlite_master WHERE name = 'flows_runs'").get() === undefined) continue
+                    const run = database.prepare("SELECT status FROM flows_runs WHERE run_id = ?").get(answerId) as { status: string } | undefined
+                    if (run === undefined) continue
+                    const attempts = database.prepare("SELECT state, count(*) AS count FROM flows_attempts WHERE run_id = ? GROUP BY state ORDER BY state").all(answerId) as Array<{ state: string; count: number }>
+                    const records = database.prepare("SELECT event_type AS type, count(*) AS count FROM flows_journal_events WHERE run_id = ? GROUP BY event_type ORDER BY event_type").all(answerId) as Array<{ type: string; count: number }>
+                    engines.push({ status: run.status, attempts, records })
+                  } finally { database.close() }
+                }
+              })
               return { answer: answer ?? null, report: report ?? null, engines }
             }).pipe(Effect.orDie),
           questionStatuses: () => [...statuses],
@@ -1001,9 +1017,10 @@ export class TestChatApi extends Context.Service<
           reloads: () => reloads,
           reloadReasons: () => reloadReasons,
           engineStore: () => {
-            const store = TestSchemas.schemaName("flows")
-            stores.push(store)
-            return { url: server, schema: store, keep: (leader) => void leaders.push(leader) }
+            const id = `engine-${crypto.randomUUID()}`
+            const filename = join(tempDirectory("mvp-engine-"), "engine.sqlite")
+            engineFiles.push(filename)
+            return { filename, id, keep: (leader) => void leaders.push(leader) }
           },
           bugs: { starts: bugStarts },
           github: {
@@ -1230,11 +1247,21 @@ export const idleWorker = (): BrowserEngine.WorkerLike & Endpoint => ({
 
 /**
  * Starts a tab's engine worker in Node, as src/flows/engine.worker.ts does in a browser: `BrowserRuntime.serve` over
- * every client flow, leading once it holds the engine's Web Lock, its store on the device's Postgres schema in place
- * of SQLite on OPFS, and its HTTP through ChatApi's `fetch`. The worker is a `MessageChannel`: the leader reaches its
+ * every client flow, leading once it holds the engine's Web Lock, its store in SDK-backed local SQLite in place
+ * of OPFS, and its HTTP through ChatApi's `fetch`. The worker is a `MessageChannel`: the leader reaches its
  * tab through one port (`TabPort`), and the tab answers on the other. Terminating it stops its leader.
  */
 const leaderWorker = (api: TestChatApi["Service"], name: string, store: EngineStore) => () => {
+  const started = performance.now()
+  const waiting = setTimeout(() => {
+    console.error("app.test.engine.await", { engine: store.id, backend: "sqlite", stage: "build", elapsedMs: Math.round(performance.now() - started) })
+    void Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, sql => sql`
+      SELECT application_name, state, wait_event_type, wait_event, pg_blocking_pids(pid) AS blockers,
+        extract(epoch from clock_timestamp() - query_start)::int AS seconds,
+        count(*) OVER () AS connections, current_setting('max_connections') AS maximum
+      FROM pg_stat_activity WHERE datname = current_database()
+    `))).then(rows => console.error("app.test.server.database", rows), () => console.error("app.test.server.database", { unavailable: true }))
+  }, 5_000)
   const channel = new MessageChannel()
   channel.port1.start()
   channel.port2.start()
@@ -1245,17 +1272,26 @@ const leaderWorker = (api: TestChatApi["Service"], name: string, store: EngineSt
     workerRegistrations(channel.port1, { origin: api.origin, name, partsEvery: "20 millis" }).pipe(Layer.provide(http))
   ).pipe(
     Layer.provide(
-      PostgresDatabase.layer({
-        url: store.url,
-        driver: Pg,
-        schema: store.schema,
-        postgres: { applicationName: store.schema }
-      })
+      NodeRuntime.storage(store.filename).pipe(Layer.provide(Layer.merge(NodeHost.layer, NodeHost.NodeCrypto.layer)))
     )
   )
+  const observedEngine = Layer.effectDiscard(Effect.sync(() => {
+    clearTimeout(waiting)
+    if (process.env.MVP_TEST_ENGINE_TRACE === "1" || performance.now() - started > 2_000) console.error("app.test.engine.built", { engine: store.id, elapsedMs: Math.round(performance.now() - started) })
+  })).pipe(Layer.provideMerge(engine))
   const leader = Effect.runFork(
-    BrowserRuntime.serve({ name, flows: clientFlows }, engine).pipe(
+    BrowserRuntime.serve({ name, flows: clientFlows }, observedEngine).pipe(
       Effect.provide(Layer.mergeAll(WebLock.layer, TabChannel.layer)),
+      Effect.onExit(exit => Effect.sync(() => {
+        clearTimeout(waiting)
+        if (Exit.isFailure(exit)) {
+          const failure = Option.getOrUndefined(Cause.findErrorOption(exit.cause)) as { _tag?: string; reason?: { _tag?: string; cause?: { code?: string } } } | undefined
+          if (failure !== undefined) console.error("app.test.engine.failed", {
+            engine: store.id, tag: failure._tag, reason: failure.reason?._tag,
+            sqlState: /^[0-9A-Z]{5}$/.test(failure.reason?.cause?.code ?? "") ? failure.reason!.cause!.code : undefined,
+          })
+        }
+      })),
       // The engine's own log lines stay out of the test's output.
       Effect.provideService(Logger.CurrentLoggers, new Set())
     )
@@ -1301,6 +1337,7 @@ export const nodeDevice = ({ agent, file, outboxEntries, ...overrides }: DeviceO
   const copied: Array<string> = []
   const navigated: Array<string> = []
   const engineName = `${device}-engine`
+  const engineStore = agent?.engineStore()
   const editorTabId = crypto.randomUUID()
   const turn = deviceTurn()
   const host: Omit<NodeDevice, "busyTab"> = {
@@ -1337,12 +1374,13 @@ export const nodeDevice = ({ agent, file, outboxEntries, ...overrides }: DeviceO
     reopenRoute: () => {},
     // No person's click or key reaches a test device, so no tab opens from one; a test of the gesture gives its own.
     web: { policy: { localHttp: false, appOrigin: CHATAPI_ORIGIN }, openTab: () => false },
-    engineWorker: agent === undefined ? idleWorker : leaderWorker(agent, engineName, agent.engineStore()),
+    engineWorker: agent === undefined ? idleWorker : leaderWorker(agent, engineName, engineStore!),
     engineName,
     // Sign-out's wipe: the device's SQLite file goes, and its outbox empties. The browser's reloads and deletes its
     // databases at the next boot; a tab here keeps any connection it holds open, so `stored` reads the new, empty file.
     wipe: async () => {
       for (const suffix of ["", "-wal", "-shm", "-journal"]) rmSync(`${path}${suffix}`, { force: true })
+      if (engineStore !== undefined) for (const suffix of ["", "-wal", "-shm", "-journal"]) rmSync(`${engineStore.filename}${suffix}`, { force: true })
       entries.clear()
     },
     ...overrides,

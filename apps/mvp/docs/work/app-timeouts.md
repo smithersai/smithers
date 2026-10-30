@@ -42,3 +42,29 @@ unexercised triage/pause registration callback (99.99% lines/statements,
 99.98% functions, 100% branches). A new real public-flow/outbox test exercises
 Pause and replays the same execution, verifying one server write. Thresholds
 remain unchanged. Two consecutive full coverage runs remain the completion gate.
+
+After the pause test, a full run passed all four coverage gates at 100% with
+6,073 passing cases. Its consecutive run exposed an engine-admission stall in
+chat's first-text case: no model request arrived before the helper's budget.
+The simulated worker previously muted its engine diagnostics. Build timing,
+safe database wait records and typed failure tags now make that stage visible;
+`MVP_TEST_ENGINE_TRACE=1` also records successful engine builds during diagnosis.
+
+The diagnostic reproduced a 7.4-second device-engine build in PostgreSQL
+WalSync with 35/100 connections, no blockers. Devices were opening and migrating
+server schemas even though the browser's real engine uses local SQLite.
+They now inject the SDK's `NodeRuntime.storage` into the same `BrowserRuntime`;
+the server and remote-flow fixtures remain on real PostgreSQL/Electric.
+The local journal/reload regression failed on the previous PostgreSQL fixture
+and passed with SQLite. The existing first-text regression passed on SQLite.
+The fixture regression also now checks two live stacks coexist and inner cleanup
+leaves the outer database available, without assuming a particular assigned port.
+
+A remaining chat reload case opened a full unused browser app just to obtain
+the server API, leaving another engine, exporter and shape subscriptions alive.
+Those backend-only scenarios now build the real server layer directly. A
+service-graph regression first failed with the unused app present, then passed
+with no Chat service or telemetry exporter. Existing browser cases retain
+their real devices, persistence, outbox, engine and live Electric streams.
+The resulting four-file check passed 146 cases plus two existing expected
+failures. The reload case that timed out at 30 seconds completed in 1.7 seconds.
