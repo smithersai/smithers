@@ -30,7 +30,8 @@ import { CHATAPI_ORIGIN, failingWorker, nodeDevice, openFaultyApp, openTab, open
 import { EngineFaults, persistenceFailingOnce } from "../../test/faults"
 import { startedOnRead } from "../../test/liveQueries"
 import { read } from "../../test/otlp"
-import { AuthStore, SESSION } from "../auth/store"
+import { anonymousRun, AuthStore, SESSION } from "../auth/store"
+import { Auth } from "../auth/auth"
 import { Chat } from "../chat/chat"
 import { ChatStore } from "../chat/store"
 import { Commands } from "../commands/commands"
@@ -123,7 +124,7 @@ const faultyClient = () => {
   }
 }
 
-type App = ManagedRuntime.ManagedRuntime<WriteIntents | TodosStore | RunSteers | SteerWrites | FlowDispatch | Issues | IssuesStore | ChatStore | Chat | Commands | AuthStore | RepoStore | RepoClient, unknown>
+type App = ManagedRuntime.ManagedRuntime<WriteIntents | TodosStore | RunSteers | SteerWrites | FlowDispatch | Issues | IssuesStore | ChatStore | Chat | Commands | Auth | AuthStore | RepoStore | RepoClient, unknown>
 
 /** A tab on `runtime`, with the issues layer's queries started as React starts them, on read. */
 const tabOf = async (runtime: App) => {
@@ -152,7 +153,7 @@ const tabOf = async (runtime: App) => {
 /** The app on a fresh ChatApi as `actor` (Maya unless set), its device's engine leading. */
 const open = async (options: TabOptions = {}, actor: Actor | null = maya) => {
   const runtime: ManagedRuntime.ManagedRuntime<
-    WriteIntents | TodosStore | RunSteers | SteerWrites | FlowDispatch | Issues | IssuesStore | ChatStore | Chat | Commands | AuthStore | RepoStore | RepoClient | TestChatApi,
+    WriteIntents | TodosStore | RunSteers | SteerWrites | FlowDispatch | Issues | IssuesStore | ChatStore | Chat | Commands | Auth | AuthStore | RepoStore | RepoClient | TestChatApi,
     unknown
   > = openTestApp(options, { actor })
   runtimes.push(runtime)
@@ -1027,19 +1028,40 @@ describe("triage", () => {
 
   test("triage/pause through the public durable flow queues one write and replays its receipt", async () => {
     const sam: Actor = { ...maya, subject: { kind: "person", id: "person-sam" }, role: "maintainer", login: "sam" }
-    const tab = await open({}, sam)
+    // A cold tab makes the authority boundary deterministic, rather than racing the automatic startup read.
+    const tab = await open({ sessionLifecycle: false }, sam)
+    const auth = await tab.runtime.runPromise(Effect.service(Auth))
+    const { session } = await tab.runtime.runPromise(Effect.service(AuthStore))
+    const executionId = crypto.randomUUID()
+    const measured = async <A>(stage: string, action: () => Promise<A>) => {
+      const start = performance.now()
+      // An observer of the live await, interrupted with it; it never delays the action.
+      const observer = tab.runtime.runFork(Effect.gen(function* () {
+        yield* Effect.sleep("2 seconds")
+        yield* Effect.sync(() => console.error("app.test.pause.await", { stage, executionId, elapsedMs: Math.round(performance.now() - start), session: session.tanstack.get(SESSION)?.status }))
+        yield* tab.api.answerDiagnostics(executionId).pipe(
+          Effect.tap(diagnostic => Effect.sync(() => console.error("app.test.pause.engine", { stage, executionId, engines: diagnostic.engines }))),
+          Effect.catchCause(() => Effect.sync(() => console.error("app.test.pause.engine", { stage, executionId, unavailable: true }))),
+        )
+      }))
+      try { return await action() } finally { await tab.runtime.runPromise(Fiber.interrupt(observer)) }
+    }
+    auth.actions.reload()
+    await measured("session-ready", () => until(() => expect(session.tanstack.get(SESSION)).toMatchObject({
+      status: "signed_in", login: "sam", role: "maintainer",
+    }), 5_000))
+    expect(tab.runtime.runSync(anonymousRun)).toBe(false)
     await tab.actions.open(OWNER, NAME)
     const flows = await tab.runtime.runPromise(Effect.service(FlowDispatch))
-    const executionId = crypto.randomUUID()
     const pause = () => tab.runtime.runPromise(flows.dispatch("triage/pause", { repo: TEST_REPOSITORY }, { door: "button", executionId }))
-    const first = await pause()
+    const first = await measured("dispatch", pause)
     expect(first).toMatchObject({ _tag: "Done", value: { writeId: expect.any(String), status: "requested" } })
-    expect(await pause()).toEqual(first)
+    expect(await measured("replay", pause)).toEqual(first)
     if (first._tag !== "Done") throw new Error("Pause was not requested")
     const { writeId } = first.value
-    await until(async () => expect(await server(tab.api).write(writeId)).toMatchObject({
+    await measured("server-write", () => until(async () => expect(await server(tab.api).write(writeId)).toMatchObject({
       _tag: "Some", value: { op: "triage/pause", payload: { op: "triage/pause" } },
-    }))
+    })))
     expect((await server(tab.api).writes()).filter(row => row.id === writeId)).toHaveLength(1)
   })
 

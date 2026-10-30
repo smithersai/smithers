@@ -118,3 +118,16 @@ report case now asserts the browser/SQLite behavior for NUL: API refusal `invali
 with `BugRefused` in the report's typed history, rather than PostgreSQL's earlier
 journal encoding refusal. The completed diagnostic had 464 passing files and
 these three failing files; the final two clean full coverage runs remain required.
+
+After those corrections, one full run passed 6,078 cases and all four 100%
+coverage gates in 759 seconds. The next run exposed the new raw pause test's
+startup race: it admitted the run in 92 ms before the session was confirmed.
+The security guard intentionally treats an unconfirmed session as anonymous;
+that decision is cached for the run, so its write waited out the existing
+30-second queue retry policy. The guard remains unchanged. The fixture now
+starts a cold tab, explicitly requests its real session and waits for the
+confirmed signed-in row before dispatch. The immediate authority assertion
+failed in 523 ms without that wait. Safe per-await diagnostics distinguish
+session readiness, dispatch, replay and server-write waits by stage and engine
+state without recording payloads or credentials. Two final consecutive passes
+are still the completion gate.
