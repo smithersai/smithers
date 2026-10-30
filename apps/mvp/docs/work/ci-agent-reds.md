@@ -66,7 +66,7 @@ still launching processes. Those launchers bypassed the verified child cache
 handoff, inheriting Vitest's disabled worker caches. Their real Node adapter
 now applies that handoff to ordinary and deliberately narrow environments;
 the V8 worker regression uses the same adapter, checks environment isolation,
-and retains precise measured-source coverage. Full CLI validation is pending.
+and retains precise measured-source coverage. The next full CLI run again reached its original deadline with 325 files recorded and the binary suite still spawning. A live child had the native cache reference, caches enabled, and no external coverage. The binary contracts now occupy seven files in the same four-worker pool, sharing the existing fixtures; their cases, process deadlines and assertions are unchanged. Public discovery checks the distributed inventory, and verbose case timings survive an interrupted run. Final validation is pending.
 Native recovery probes wait for actual admission refusals before asserting a
 park, retaining the explicit-consent and exactly-once execution checks.
 
@@ -128,5 +128,4 @@ A real SQLite counterexample forces the caller to advance after reading the
 clock: the old armer sleeps until 6000 ms against a persisted 3000 ms deadline.
 The timer now samples time in its own fiber. Its committed completion is at
 3000 ms, the focused clock suites pass, and all twenty loaded example cases
-pass. Full SDK and agent gates remain pending; the original loaded example
-repeats did not reproduce the timeout.
+pass. The full SQLite/PostgreSQL engine-store matrix and the agent target now pass their original coverage gates, as do refreshed control, gateway and model-host targets. The original loaded example repeats did not reproduce the timeout.

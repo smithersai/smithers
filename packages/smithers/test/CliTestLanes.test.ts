@@ -66,6 +66,11 @@ it("schedules every default CLI file once in one bounded pool with the configure
   expect(actual.coverageRequested).toBe(true)
   expect(actual.thresholds).toEqual(standard.thresholds)
   expect(actual.files[0]).toMatch(/[/\\]NativeControlExternalPeerRecovery\.test\.ts$/)
+  expect(
+    actual.files.filter((file) =>
+      /[/\\]Bin(?:Startup|Routing|Runtime|Migration|Launch|Scaffold)?\.test\.ts$/.test(file)
+    )
+  ).toHaveLength(7)
   expect(actual.files.sort()).toEqual(standard.files.sort())
   expect(faults.length).toBeGreaterThan(0)
   expect(actual.files.filter((file) => faults.includes(file))).toEqual([])

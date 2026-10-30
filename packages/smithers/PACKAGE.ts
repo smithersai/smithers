@@ -194,7 +194,7 @@ const test = Smithers.Shell.Test({
     "SMITHERS_CLI_NODE_COMPILE_CACHE=\"$work/cache\" " +
     "SMITHERS_CLI_DISABLE_COMPILE_CACHE=\"${SMITHERS_CLI_DISABLE_COMPILE_CACHE-${NODE_DISABLE_COMPILE_CACHE-}}\" " +
     "VIBELANG_CACHE_DIR=\"$work/vibelang-cache\" && " +
-    `${vitest} --fileParallelism --maxWorkers=4 --coverage.enabled=true --reporter=github-actions --reporter=default`
+    `${vitest} --fileParallelism --maxWorkers=4 --coverage.enabled=true --reporter=github-actions --reporter=verbose`
   ].join(" "),
   data: [
     lib,
@@ -204,6 +204,7 @@ const test = Smithers.Shell.Test({
     Smithers.file("test/support/configuration-race.mjs"),
     Smithers.file("test/support/cli-sequencer.ts"),
     Smithers.file("test/support/node-child.ts"),
+    Smithers.file("test/support/bin.ts"),
     Smithers.file("test/temporaryEnvironment.ts"),
     Smithers.file("test/fixtures/cli-exit-observer.ts"),
     Smithers.file("//packages/repo-targets/test-utils/coverage-teardown.mjs"),
