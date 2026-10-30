@@ -1,24 +1,28 @@
-import { fileURLToPath } from "node:url"
+import { readFileSync } from "node:fs"
 import * as ts from "typescript"
 import { expect, it } from "vitest"
 
 it("dispatch preserves the driver's declared cycle failure in its Effect type", () => {
-  const configPath = fileURLToPath(new URL("../tsconfig.json", import.meta.url))
-  const config = ts.readConfigFile(configPath, ts.sys.readFile)
-  const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, fileURLToPath(new URL("..", import.meta.url)))
-  const path = fileURLToPath(new URL("../src/FlowEngine/Trampoline.ts", import.meta.url))
-  const program = ts.createProgram([path], parsed.options)
-  const checker = program.getTypeChecker()
-  const source = program.getSourceFile(path)!
+  // The package check compiles this signature and its implementation. This
+  // regression guards the private annotation without loading the whole SDK's
+  // type graph into a coverage worker a second time.
+  const path = new URL("../src/FlowEngine/Trampoline.ts", import.meta.url)
+  const source = ts.createSourceFile(path.pathname, readFileSync(path, "utf8"), ts.ScriptTarget.Latest, true)
   let dispatch: ts.VariableDeclaration | undefined
+  let contract: ts.TypeAliasDeclaration | undefined
   const visit = (node: ts.Node): void => {
     if (ts.isVariableDeclaration(node) && node.name.getText(source) === "dispatch") dispatch = node
+    if (ts.isTypeAliasDeclaration(node) && node.name.text === "Dispatch") contract = node
     ts.forEachChild(node, visit)
   }
   visit(source)
   expect(dispatch).toBeDefined()
-  const signature = checker.getSignaturesOfType(checker.getTypeAtLocation(dispatch!), ts.SignatureKind.Call)[0]!
-  const result = checker.getReturnTypeOfSignature(signature) as ts.TypeReference
-  const error = checker.getTypeArguments(result)[1]!
-  expect(checker.typeToString(error)).toBe("FlowCycleDetected")
+  expect(contract).toBeDefined()
+  const implementation = dispatch!.initializer!
+  expect(ts.isArrowFunction(implementation)).toBe(true)
+  expect((implementation as ts.ArrowFunction).type?.getText(source)).toBe("Dispatch")
+  expect(ts.isTypeReferenceNode(contract!.type)).toBe(true)
+  const result = contract!.type as ts.TypeReferenceNode
+  expect(result.typeName.getText(source)).toBe("Effect.Effect")
+  expect(result.typeArguments?.[1]?.getText(source)).toBe("FlowRuntime.FlowCycleDetected")
 })
