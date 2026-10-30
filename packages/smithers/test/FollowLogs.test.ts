@@ -36,7 +36,8 @@ it("drains completed run logs and exits even when the cursor is past the termina
     }
   }
   try {
-    expect((await cli("init", "hello")).code).toBe(0)
+    const initialized = await cli("init", "hello")
+    expect(initialized.code, initialized.stdout + initialized.stderr).toBe(0)
     const started = await cli("flow", "start", "hello")
     expect(started.code, started.stdout + started.stderr).toBe(0)
     const { runId } = JSON.parse(started.stdout)
@@ -82,7 +83,7 @@ it("drains completed run logs and exits even when the cursor is past the termina
     expect(cancelled.code, cancelled.stdout + cancelled.stderr).toBe(0)
     const drained = await live
     expect(drained.code, drained.stdout + drained.stderr).toBe(0)
-    expect(drained.stdout).toContain("control.run.cancelled")
+    expect(drained.stdout, drained.stdout + drained.stderr).toContain("control.run.cancelled")
   } finally {
     await cli("runs", "cancel-all")
     await rm(root, { recursive: true, force: true })

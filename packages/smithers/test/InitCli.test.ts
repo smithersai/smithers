@@ -27,13 +27,20 @@ describe("init through the public CLI", () => {
         OPENAI_API_KEY: "fixture-never-sent",
         SMITHERS_BACKEND: "sqlite"
       }
-      const command = (args: ReadonlyArray<string>) =>
-        run(process.execPath, ["--no-warnings", "--import", preload, bin, ...args, "--json"], {
-          cwd: root,
-          env,
-          timeout: 60_000,
-          maxBuffer: 4 * 1024 * 1024
-        })
+      const command = async (args: ReadonlyArray<string>) => {
+        const started = performance.now()
+        const stage = [args[0], ...(["flow", "runs"].includes(args[0]!) ? [args[1]] : [])].join(" ")
+        try {
+          return await run(process.execPath, ["--no-warnings", "--import", preload, bin, ...args, "--json"], {
+            cwd: root,
+            env,
+            timeout: 60_000,
+            maxBuffer: 4 * 1024 * 1024
+          })
+        } finally {
+          console.info("cli.stage", { stage, durationMs: Math.round(performance.now() - started) })
+        }
+      }
       const initialized = JSON.parse((await command(["init", "review_2-final"])).stdout)
       expect(initialized.flow).toMatchObject({
         name: "review_2-final",

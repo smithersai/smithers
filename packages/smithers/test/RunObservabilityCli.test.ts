@@ -55,14 +55,14 @@ const command = (root: string, args: ReadonlyArray<string>, format: ReadonlyArra
       env: { ...process.env, SMITHERS_REMOTE: "", SMITHERS_BACKEND: "sqlite", XDG_CONFIG_HOME: join(root, "config") }
     }
   )
+  let stdout = "", stderr = ""
   const finished = new Promise<Result>((resolve, reject) => {
-    let stdout = "", stderr = ""
     child.stdout.on("data", (chunk) => stdout += chunk)
     child.stderr.on("data", (chunk) => stderr += chunk)
     child.once("error", reject)
     child.once("close", (code) => resolve({ code, stdout, stderr }))
   })
-  return { child, finished }
+  return { child, finished, output: () => ({ stdout, stderr, exitCode: child.exitCode }) }
 }
 const controlRun = (root: string) => {
   if (!existsSync(join(root, ".flows", "control.db"))) return undefined
@@ -73,13 +73,13 @@ const controlRun = (root: string) => {
     db.close()
   }
 }
-const until = async <A>(read: () => A | undefined): Promise<A> => {
+const until = async <A>(read: () => A | undefined, diagnostic: () => string = () => ""): Promise<A> => {
   for (let attempt = 0; attempt < 800; attempt++) {
     const result = read()
     if (result !== undefined) return result
     await new Promise((resolve) => setTimeout(resolve, 25))
   }
-  throw new Error("The run did not reach its child")
+  throw new Error(`The run did not reach its child: ${diagnostic()}`)
 }
 /** `runs logs` as a person at a terminal reads it, through the command's own entry. */
 const humanLogs = async (root: string, runId: string) => {
@@ -134,7 +134,7 @@ describe("runs show and runs logs on a live parent run", { timeout: 180_000 }, (
       const marker = join(root, "holding")
       runner = command(root, ["flow", "start", "parent", "--data", JSON.stringify({ marker }), "--wait"])
       const runId = await Promise.race([
-        until(() => existsSync(marker) ? controlRun(root)?.run_id : undefined),
+        until(() => existsSync(marker) ? controlRun(root)?.run_id : undefined, () => JSON.stringify(runner!.output())),
         runner.finished.then((result) => {
           throw new Error(`Flow start exited ${result.code} before its child: ${result.stdout}${result.stderr}`)
         })
