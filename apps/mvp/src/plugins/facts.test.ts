@@ -44,7 +44,7 @@ describe("the host's facts", () => {
       expect(facts.tierCap[tier]("net:get")).toBe(true)
       expect(facts.tierCap[tier]("secret:read")).toBe(false)
     }
-    expect([...facts.queries.keys()]).toEqual(["core/waits", "core/bug-reports", "core/feeds", "core/feed"])
+    expect([...facts.queries.keys()]).toEqual(["core/waits", "core/bug-reports", "core/feeds", "core/feed", "core/feed-items"])
   })
 
   test("a flow whose payload isn't a struct has no payload facts", () => {
@@ -63,7 +63,7 @@ describe("the host's facts", () => {
     expect(load({ tier: "built-in", manifest: queue }).refused).toEqual([])
   })
 
-  test("the factory loads with nothing refused: its views, its repository tab and its commands", () => {
+  test("the factory loads with nothing refused: its views, its repository tab, its commands and For you's answers", () => {
     const loaded = load({ tier: "built-in", manifest: factory })
     expect(loaded.refused).toEqual([])
     expect(loaded.contributions.views.map((view) => view.path)).toEqual([
@@ -72,6 +72,11 @@ describe("the host's facts", () => {
     expect(loaded.contributions.views.every((view) => view.scope === "repository")).toBe(true)
     expect(loaded.contributions.slots.map((slot) => slot.slot)).toEqual(["repo.tabs"])
     expect(loaded.contributions.commands.map((command) => command.slash?.name)).toEqual(["factory", "lanes", "decide"])
+    // For you answers through the person-only `feed/answer`, so only a maintainer sees it, and only the strip sends it.
+    const forYou = loaded.contributions.views.find((view) => view.id === "factory/for-you")!
+    expect(forYou.minimum).toBe("maintainer")
+    expect(forYou.events.map((event) => [event.name, "flow" in event && event.personOnly])).toEqual([["option", true], ["accept", true], ["change", true]])
+    expect(loaded.contributions.keybindings.map((binding) => binding.key)).toEqual(["digit", "a", "c"])
   })
 })
 

@@ -4,7 +4,9 @@ import { Cause, Context, Deferred, Effect, Exit, Layer, Metric, Option, PubSub, 
 import { codeOf } from "../errorCode"
 import { issueUrl } from "../features/bugs/github"
 import { BugsStore } from "../features/bugs/store"
-import { isFeedName, parseFeedRepo } from "../features/feeds/contract"
+import { isFeedName, isIndexName, parseFeedRepo } from "../features/feeds/contract"
+import { itemsOf } from "../features/feeds/items"
+import { FeedItem } from "../features/feeds/schema"
 import { FeedsStore } from "../features/feeds/store"
 import { StatusStore } from "../features/status/store"
 import { FlowDispatch } from "../flows/dispatch"
@@ -81,9 +83,16 @@ interface CoreQuery {
   readonly rows: StatusStore["Service"]["waits"]["tanstack"]
 }
 
-/** The core queries a plugin asks with `params`: a repository's feed index, and one of its documents. */
+/**
+ * The core queries a plugin asks with `params`: a repository's feed index, one of its documents, and the items of one
+ * of its index documents.
+ */
 const FEED_INDEX = "core/feeds"
 const FEED_DOCUMENT = "core/feed"
+const FEED_ITEMS = "core/feed-items"
+
+/** Where `core/feed-items` keeps a document's items: `<repo>:<document>`. */
+const itemsKey = (repo: string, document: string) => `${repo}:${document}`
 
 /** `params` in a stable order, to tell whether two selections asked a query the same way. */
 const paramsKey = (params: Host.QueryParams | null) =>
@@ -106,6 +115,10 @@ export class Plugins extends Context.Service<
     readonly core: ReadonlyMap<string, CoreQuery>
     /** `core/feeds` of each repository asked for so far, by its `owner/name` lowercased, for the strip to read. */
     readonly opened: Map<string, CoreQuery>
+    /** `core/feed-items` of each document asked for so far, by `<repo>:<document>`, opened once, for the strip to read. */
+    readonly items: Map<string, Effect.Effect<CoreQuery>>
+    /** The same, once open: what the strip reads. */
+    readonly itemsOpen: Map<string, CoreQuery>
     /** Every repository's feeds, which `core/feeds` and `core/feed` read. */
     readonly feeds: FeedsStore["Service"]
     readonly shown: Collection.Collection<Shown, string>
@@ -184,6 +197,8 @@ export class Plugins extends Context.Service<
           built,
           core,
           opened: new Map(),
+          items: new Map(),
+          itemsOpen: new Map(),
           feeds,
           shown,
           views,
@@ -264,9 +279,72 @@ export const readable = (
   plugins: Plugins["Service"],
   name: string,
   params: Host.QueryParams | null,
-): CoreQuery | undefined =>
-  plugins.core.get(name) ??
-    (name === FEED_INDEX ? plugins.opened.get(parseFeedRepo(params?.repo ?? "") ?? "") : undefined)
+): CoreQuery | undefined => {
+  const fixed = plugins.core.get(name)
+  if (fixed !== undefined) return fixed
+  const repo = parseFeedRepo(params?.repo ?? "") ?? ""
+  if (name === FEED_INDEX) return plugins.opened.get(repo)
+  return name === FEED_ITEMS ? plugins.itemsOpen.get(itemsKey(repo, params?.name ?? "")) : undefined
+}
+
+/** Repository `repo`'s index, opened once and kept while the host lives. */
+const indexOf = (plugins: Plugins["Service"], repo: string) =>
+  Effect.gen(function* () {
+    const known = plugins.opened.get(repo)
+    if (known !== undefined) return known
+    const index = yield* plugins.feeds.index(repo)
+    const query: CoreQuery = {
+      key: "id",
+      live: (yield* liveOf(index.byName.rows).pipe(Scope.provide(plugins.scope))) as CoreQuery["live"],
+      rows: index.byName.tanstack as unknown as CoreQuery["rows"],
+    }
+    plugins.opened.set(repo, query)
+    return query
+  })
+
+/**
+ * The items of index document `document` of `repo` (`itemsOf`), kept in a collection on the tab, never the device, so
+ * the strip reads them as it reads any core query: in document order, each change of the document applied as
+ * inserts, updates and deletes by key. Opened once per document, while the host lives.
+ */
+const openItems = (plugins: Plugins["Service"], repo: string, document: string) =>
+  Effect.gen(function* () {
+    const index = yield* plugins.feeds.index(repo)
+    const collection = yield* Collection.local<FeedItem, string>({
+      id: `plugin-feed-items:${itemsKey(repo, document)}`,
+      schema: FeedItem,
+      getKey: (row) => row.key,
+    })
+    const ordered = yield* LiveQuery.make((q) => q.from({ item: collection.tanstack }).orderBy(({ item }) => item.index, "asc"))
+    const apply = (next: ReadonlyArray<FeedItem>) =>
+      Effect.gen(function* () {
+        const current = new Map((yield* collection.toArray).map((row) => [row.key, row]))
+        const kept = new Set(next.map((row) => row.key))
+        const gone = [...current.keys()].filter((key) => !kept.has(key))
+        if (gone.length > 0) yield* collection.delete(gone)
+        const added = next.filter((row) => !current.has(row.key))
+        if (added.length > 0) yield* collection.insert(added)
+        for (const row of next) {
+          const before = current.get(row.key)
+          if (before !== undefined && seen(before) !== seen(row)) {
+            yield* collection.update(row.key, (draft) => void Object.assign(draft, row))
+          }
+        }
+      }).pipe(Effect.orDie)
+    yield* index.byName.rows.pipe(
+      Stream.map((rows) => rows.find((row) => row.name === document)?.body),
+      Stream.mapEffect((body) => itemsOf(repo, document, body)),
+      Stream.runForEach(apply),
+      Effect.forkScoped({ startImmediately: true }),
+    )
+    const query: CoreQuery = {
+      key: "key",
+      live: (yield* liveOf(ordered.rows)) as CoreQuery["live"],
+      rows: ordered.tanstack as unknown as CoreQuery["rows"],
+    }
+    plugins.itemsOpen.set(itemsKey(repo, document), query)
+    return query
+  }).pipe(Scope.provide(plugins.scope), Effect.orDie)
 
 /**
  * Query `name` for a plugin, asked with `params`: a fixed core query's rows; `core/feeds`, the index of the repository
@@ -279,24 +357,20 @@ export const queryOf = (name: string, params: Host.QueryParams | undefined) =>
     const plugins = yield* Plugins
     const fixed = plugins.core.get(name)
     if (fixed !== undefined) return fixed.live
-    if (name !== FEED_INDEX && name !== FEED_DOCUMENT) return yield* Effect.fail("query" as const)
+    if (name !== FEED_INDEX && name !== FEED_DOCUMENT && name !== FEED_ITEMS) return yield* Effect.fail("query" as const)
     const { repo: asked = "", name: document = "" } = params ?? {}
     const repo = parseFeedRepo(asked)
     if (repo === undefined) return yield* Effect.fail("repo" as const)
-    if (name === FEED_DOCUMENT) {
-      if (!isFeedName(document)) return yield* Effect.fail("name" as const)
-      return plugins.feeds.document(repo, document) as unknown as CoreQuery["live"]
-    }
-    const known = plugins.opened.get(repo)
-    if (known !== undefined) return known.live
-    const index = yield* plugins.feeds.index(repo)
-    const query: CoreQuery = {
-      key: "id",
-      live: (yield* liveOf(index.byName.rows).pipe(Scope.provide(plugins.scope))) as CoreQuery["live"],
-      rows: index.byName.tanstack as unknown as CoreQuery["rows"],
-    }
-    plugins.opened.set(repo, query)
-    return query.live
+    if (name === FEED_INDEX) return (yield* indexOf(plugins, repo)).live
+    if (!isFeedName(document)) return yield* Effect.fail("name" as const)
+    if (name === FEED_DOCUMENT) return plugins.feeds.document(repo, document) as unknown as CoreQuery["live"]
+    // Items come from an index document only: the strip reads them while the view is gone, and only the index stays.
+    if (!isIndexName(document)) return yield* Effect.fail("name" as const)
+    const key = itemsKey(repo, document)
+    // Asked twice at once, a document's items open once: the first ask keeps the opening for every later one.
+    const opening = plugins.items.get(key) ?? (yield* Effect.cached(openItems(plugins, repo, document)))
+    plugins.items.set(key, opening)
+    return (yield* opening).live
   })
 
 /** View `id`'s strip state now. */

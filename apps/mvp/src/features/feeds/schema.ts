@@ -79,3 +79,19 @@ export const FeedAnswerPayload = Schema.Struct({
   text: AnswerRequest.fields.text,
 })
 export type FeedAnswerPayload = typeof FeedAnswerPayload.Type
+
+/** One row of `core/feed-items` (`FEED_ITEM_ROW` in ./contract.ts): an element of an index document's body array. */
+export const FeedItem = Schema.Struct({
+  key: Schema.String,
+  repo: Schema.String,
+  owner: Schema.String,
+  name: Schema.String,
+  document: Schema.String,
+  index: Schema.Int,
+  item: Schema.String,
+  options: Schema.Array(Schema.String),
+  chooses: Schema.Boolean,
+  body: Schema.Unknown,
+  answer: Schema.String,
+})
+export type FeedItem = typeof FeedItem.Type

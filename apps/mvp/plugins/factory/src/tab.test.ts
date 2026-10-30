@@ -1,7 +1,7 @@
 // The factory's tab (plugins/factory/src/tab.ts) over an injected host (TEST-7) whose feed queries answer the rows a
 // test pushes, kept to the `params` asked as the core keeps them (src/plugins/plugins.ts, `queryOf`): each
 // repository's status from its own documents only, an on-demand document followed while it shows, the ask the strip
-// answers, and the views it opens.
+// answers (a `core/feed-items` row of `for_will` that the status says waits), and the views it opens.
 import { Host } from "@smthrs/plugin"
 import { Deferred, Effect, Layer, Stream } from "effect"
 import { describe, expect, test, vi } from "vitest"
@@ -20,7 +20,17 @@ const doc = (repo: string, name: string, body: unknown): FeedDocument => ({
   updatedAt: "2026-10-30T07:00:00Z",
 })
 
-const ask = (item: string, repo = "smithersai/vibelang"): AskRow => ({ key: `${repo}:${item}`, repo, item, options: ["accept", "change"] })
+const ask = (item: string, repo = "smithersai/vibelang"): AskRow => {
+  const [owner = "", name = ""] = repo.split("/")
+  return { key: `${repo}:for_will:${item}`, repo, owner, name, document: "for_will", item, options: ["accept", "change"], answer: `answer-${item}` }
+}
+
+/** `for_will` of `repo`, with these decisions waiting and `decided` decided by the agent. */
+const decisions = (repo: string, waiting: ReadonlyArray<string>, decided: ReadonlyArray<string> = []) =>
+  doc(repo, "for_will", [
+    ...waiting.map((id) => ({ id, kind: "decide" })),
+    ...decided.map((id) => ({ id, kind: "decide", decided: "by the agent" })),
+  ])
 
 /**
  * A host whose queries answer `rows[name]` of the repository and document `params` name, refuse the names in
@@ -51,7 +61,12 @@ const hostWith = (refused: ReadonlyArray<string> = [], held: ReadonlyArray<strin
           : Effect.as(held.includes(params?.name ?? "") ? Deferred.await(gate) : Effect.void, {
             current: () =>
               rows.get(name)!.filter((row) => {
-                const { repo, name: document } = row as { readonly repo: string; readonly name?: string }
+                // An item row names its document `document`; its `name` is the repository's.
+                const { repo, name: named, document = named } = row as {
+                  readonly repo: string
+                  readonly name?: string
+                  readonly document?: string
+                }
                 return repo === params?.repo && (params.name === undefined || document === params.name)
               }) as ReadonlyArray<R>,
             subscribe: (listener: () => void) => {
@@ -162,27 +177,46 @@ describe("an opened document", () => {
 describe("the asks the strip answers", () => {
   test("the first open ask is selected; the person's pick holds; an answered one gives way to the next", async () => {
     const host = hostWith()
+    const key = (item: string) => `smithersai/vibelang:for_will:${item}`
+    const params = { repo: "smithersai/vibelang", name: "for_will" }
     await withTab(host, async (built) => {
       const asks = built.queries.asks(vibelang)
       expect(built.queries.asks(vibelang)).toBe(asks)
       await vi.waitFor(() => expect(asks.current()).toEqual([]))
       expect(built.queries.selected.current()).toBeNull()
-      host.push(ASKS, ask("a"), ask("b"), ask("x", "octo/hello"))
+      // Only what the status says waits: `d` the agent decided.
+      host.push(INDEX, decisions("smithersai/vibelang", ["a", "b", "c"], ["d"]))
+      host.push(ASKS, ask("a"), ask("b"), ask("d"), ask("x", "octo/hello"))
       await vi.waitFor(() => expect(asks.current().map((row) => row.item)).toEqual(["a", "b"]))
-      await vi.waitFor(() => expect(built.queries.selected.current()).toBe("smithersai/vibelang:a"))
+      await vi.waitFor(() => expect(built.queries.selected.current()).toBe(key("a")))
       built.actions.select(ask("b"))
-      expect(built.queries.selected.current()).toBe("smithersai/vibelang:b")
+      expect(built.queries.selected.current()).toBe(key("b"))
       host.push(ASKS, ask("c"))
-      expect(built.queries.selected.current()).toBe("smithersai/vibelang:b")
-      host.drop(ASKS, (row: AskRow) => row.item !== "b")
-      expect(built.queries.selected.current()).toBe("smithersai/vibelang:a")
+      expect(built.queries.selected.current()).toBe(key("b"))
+      // Answered: the collector reports it, and the strip moves to the first one waiting.
+      host.push(INDEX, doc("smithersai/vibelang", "answered", { b: { choice: "accept", text: "", at: 1 } }))
+      expect(asks.current().map((row) => row.item)).toEqual(["a", "c"])
+      expect(built.queries.selected.current()).toBe(key("a"))
+      host.drop(ASKS, (row: AskRow) => row.item !== "a")
+      expect(built.queries.selected.current()).toBe(key("c"))
       await vi.waitFor(() =>
         expect(host.asked.filter((entry) => "select" in (entry as object))).toEqual([
-          { select: { query: ASKS, key: "smithersai/vibelang:a", params: { repo: "smithersai/vibelang" } } },
-          { select: { query: ASKS, key: "smithersai/vibelang:b", params: { repo: "smithersai/vibelang" } } },
-          { select: { query: ASKS, key: "smithersai/vibelang:a", params: { repo: "smithersai/vibelang" } } },
+          { select: { query: ASKS, key: key("a"), params } },
+          { select: { query: ASKS, key: key("b"), params } },
+          { select: { query: ASKS, key: key("a"), params } },
+          { select: { query: ASKS, key: key("c"), params } },
         ])
       )
+    })
+  })
+
+  test("asks wait for the status: none while the feed is loading or refused", async () => {
+    const host = hostWith([INDEX])
+    await withTab(host, async (built) => {
+      host.push(ASKS, ask("a"))
+      await vi.waitFor(() => expect(built.queries.feed(vibelang).current()).toMatchObject({ _tag: "Refused" }))
+      expect(built.queries.asks(vibelang).current()).toEqual([])
+      expect(built.queries.selected.current()).toBeNull()
     })
   })
 })

@@ -11,7 +11,7 @@ import { hostFor, Plugins, queryOf, readable, selectedOf, stateOf } from "../../
 import { PluginsUi } from "../../plugins/ui"
 import { member, nodeDevice, openTab, openTestApp, TEST_FEED_KEY, TestChatApi } from "../../test/chatApi"
 import { feedAnswersRoute, feedsRoute } from "./contract"
-import type { FeedDocument } from "./schema"
+import type { FeedDocument, FeedItem } from "./schema"
 import { documents } from "./store"
 
 const WITHIN = 60_000
@@ -42,7 +42,7 @@ const probe: BuiltIn = {
         path: "",
         sizes: ["full"],
         minimum: "anyone",
-        reads: ["core/feeds", "core/feed"],
+        reads: ["core/feeds", "core/feed", "core/feed-items"],
         render: { kind: "component", export: "Feeds" },
         events: [],
       }],
@@ -150,6 +150,78 @@ describe("repository feeds on a tab", { timeout: WITHIN * 2 }, () => {
     // The app's host has opened no index of its own.
     const ui = await tab.runPromise(Effect.service(PluginsUi))
     expect(ui.actions.core("core/feeds", ASKED)).toBeUndefined()
+  })
+
+  test("a plugin reads an index document's items, which follow the collector's pushes; the strip selects one", async () => {
+    const { tab, collector } = await open()
+    const push = async (set: Record<string, unknown>) => {
+      const written = await collector(feedsRoute(REPO.owner, REPO.name), { method: "POST", body: JSON.stringify({ set }) })
+      expect(written.status).toBe(200)
+    }
+    await push({
+      decisions: {
+        visibility: "maintainers",
+        body: [{ id: "d1", options: ["accept", "changes"] }, { title: "no id" }, { id: "d2" }],
+      },
+      "report/r1": { visibility: "public", body: [{ id: "x" }] },
+    })
+
+    await tab.runPromise(Effect.scoped(Effect.gen(function* () {
+      const plugins = yield* Plugins
+      const host = yield* hostFor("probe")
+      const refused = (effect: Effect.Effect<unknown, Host.PluginRefused>) =>
+        Effect.map(Effect.flip(effect), (refusal) => refusal.reason)
+      const asked = { ...ASKED, name: "decisions" }
+
+      // Asked twice at once, the items open once.
+      const [items, same] = yield* Effect.all([
+        host.query<FeedItem>("core/feed-items", asked),
+        host.query<FeedItem>("core/feed-items", { repo: "octo/hello", name: "decisions" }),
+      ], { concurrency: "unbounded" })
+      expect(same).toBe(items)
+      yield* Effect.promise(() => until(() => expect(items.current().map((row) => row.item)).toEqual(["d1", "d2"])))
+      const [d1] = items.current()
+      expect(d1).toMatchObject({
+        key: "octo/hello:decisions:d1",
+        repo: "octo/hello",
+        owner: "octo",
+        name: "hello",
+        document: "decisions",
+        options: ["accept", "changes"],
+        answer: expect.any(String),
+      })
+
+      // The strip reads them as the view asked; it selects one, and the selected row is the item.
+      expect(readable(plugins, "core/feed-items", asked)?.key).toBe("key")
+      expect(readable(plugins, "core/feed-items", { ...ASKED, name: "other" })).toBeUndefined()
+      expect(readable(plugins, "core/feed-items", ASKED)).toBeUndefined()
+      yield* host.select({ query: "core/feed-items", key: d1!.key, params: asked })
+      expect(yield* selectedOf(VIEW)).toMatchObject({ item: "d1", answer: d1!.answer })
+
+      // The collector's next push: a changed item is a new version with a new answer id, a gone one leaves, a new one
+      // joins in its place in the document.
+      yield* Effect.promise(() =>
+        push({ decisions: { visibility: "maintainers", body: [{ id: "d0" }, { id: "d1", options: ["accept"] }] } })
+      )
+      yield* Effect.promise(() => until(() => expect(items.current().map((row) => row.item)).toEqual(["d0", "d1"])))
+      const changed = items.current()[1]!
+      expect(changed.options).toEqual(["accept"])
+      expect(changed.answer).not.toBe(d1!.answer)
+      // The items that didn't change stay as they were.
+      yield* Effect.promise(() =>
+        push({ decisions: { visibility: "maintainers", body: [{ id: "d0" }, { id: "d1", options: ["accept"] }, { id: "d3" }] } })
+      )
+      yield* Effect.promise(() => until(() => expect(items.current().map((row) => row.item)).toEqual(["d0", "d1", "d3"])))
+      expect(items.current()[1]).toEqual(changed)
+      // The document deleted, it has no items.
+      yield* Effect.promise(() => push({ decisions: null }))
+      yield* Effect.promise(() => until(() => expect(items.current()).toEqual([])))
+
+      // Items come from an index document only, named.
+      expect(yield* refused(host.query("core/feed-items", ASKED))).toBe("invalid_fields")
+      expect(yield* refused(host.query("core/feed-items", { ...ASKED, name: "report/r1" }))).toBe("invalid_fields")
+      expect(yield* refused(host.query("core/feed-items", { repo: "octo", name: "decisions" }))).toBe("invalid_fields")
+    }).pipe(Effect.provide(Plugins.layer([probe])))))
   })
 
   test("a Maintainer's answer runs on the device and reaches the collector, once", async () => {

@@ -1,6 +1,6 @@
 import { type Load, Manifest } from "@smthrs/plugin"
 import { BUG_REPORT_ROW } from "../features/bugs/contract"
-import { FEED_ROW } from "../features/feeds/contract"
+import { FEED_ITEM_ROW, FEED_ROW } from "../features/feeds/contract"
 import { WAITS_ROW } from "../features/status/contract"
 import { type Entry, registry } from "../flows/registry"
 import { POINTS } from "./contract"
@@ -48,9 +48,11 @@ export const hostFacts = (catalog: Readonly<Record<string, Entry>> = registry): 
   queries: new Map([
     ["core/waits", WAITS_ROW as never],
     ["core/bug-reports", BUG_REPORT_ROW as never],
-    // A repository's feeds (docs/features/feeds.md#plugins): its index, and one document, asked with `params`.
+    // A repository's feeds (docs/features/feeds.md#plugins): its index, one document, and the items of one index
+    // document, asked with `params`.
     ["core/feeds", FEED_ROW as never],
     ["core/feed", FEED_ROW as never],
+    ["core/feed-items", FEED_ITEM_ROW as never],
   ]),
   // The core's own slash commands: a plugin command never shadows one.
   slash: Object.values(catalog).flatMap((entry) => (entry.slash === undefined ? [] : [entry.slash.command])),

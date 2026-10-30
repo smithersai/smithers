@@ -322,7 +322,8 @@ export const appLayer = <S = never>(
       Plugins.layer().pipe(
         // The bug reports the viewer may see, which the host serves as `core/bug-reports` (docs/features/bugs.md).
         Layer.provideMerge(BugsStore.layer({ origin })),
-        // Every repository's feeds, which the host serves as `core/feeds` and `core/feed` (docs/features/feeds.md).
+        // Every repository's feeds, which the host serves as `core/feeds`, `core/feed` and `core/feed-items`
+        // (docs/features/feeds.md).
         Layer.provideMerge(FeedsStore.layer({ origin })),
         Layer.provideMerge(
           AttentionStore.layer({ origin }).pipe(

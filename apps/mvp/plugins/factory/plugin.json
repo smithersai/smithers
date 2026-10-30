@@ -6,12 +6,23 @@
   "description": "A repository's factory: lanes, decisions, failures, reviews, commits and the merge queue, from its feeds.",
   "requires": { "api": "^1.0.0" },
   "capabilities": [],
-  "uses": ["app/navigate"],
+  "uses": ["app/navigate", "feed/answer"],
   "$defs": {
     "Go": {
       "type": "object",
       "properties": { "to": { "type": "string", "maxLength": 512 } },
       "required": ["to"],
+      "additionalProperties": false
+    },
+    "Option": {
+      "type": "object",
+      "properties": { "index": { "type": "integer", "minimum": 0, "maximum": 8 }, "note": { "type": "string", "maxLength": 8000 } },
+      "required": ["index"],
+      "additionalProperties": false
+    },
+    "Note": {
+      "type": "object",
+      "properties": { "note": { "type": "string", "maxLength": 8000 } },
       "additionalProperties": false
     }
   },
@@ -23,8 +34,31 @@
       },
       {
         "id": "factory/for-you", "title": "For you", "scope": "repository", "path": "for-you", "sizes": ["full"],
-        "minimum": "anyone", "reads": ["core/feeds", "core/feed"],
-        "render": { "kind": "component", "export": "ForYou" }
+        "minimum": "maintainer", "reads": ["core/feeds", "core/feed", "core/feed-items"],
+        "render": { "kind": "component", "export": "ForYou" },
+        "events": [
+          {
+            "name": "option", "payload": { "$ref": "#/$defs/Option" }, "flow": "feed/answer",
+            "args": {
+              "owner": "$item.owner", "name": "$item.name", "id": "$item.answer", "item": "$item.item",
+              "choice": "$item.options[$event.index]", "text": "$event.note"
+            }
+          },
+          {
+            "name": "accept", "payload": { "$ref": "#/$defs/Note" }, "flow": "feed/answer",
+            "args": {
+              "owner": "$item.owner", "name": "$item.name", "id": "$item.answer", "item": "$item.item", "choice": "accept",
+              "text": "$event.note"
+            }
+          },
+          {
+            "name": "change", "payload": { "$ref": "#/$defs/Note" }, "flow": "feed/answer",
+            "args": {
+              "owner": "$item.owner", "name": "$item.name", "id": "$item.answer", "item": "$item.item", "choice": "change",
+              "text": "$event.note"
+            }
+          }
+        ]
       },
       {
         "id": "factory/failures", "title": "Failures", "scope": "repository", "path": "failures", "sizes": ["full"],
@@ -80,8 +114,13 @@
       },
       {
         "id": "factory/decide", "flow": "app/navigate", "args": { "to": "/smithersai/vibelang/-/factory/for-you" },
-        "title": "Factory decisions", "minimum": "anyone", "slash": { "name": "decide" }, "palette": true
+        "title": "Factory decisions", "minimum": "maintainer", "slash": { "name": "decide" }, "palette": true
       }
+    ],
+    "keybindings": [
+      { "key": "digit", "event": "option", "fields": { "index": "$key.index" }, "when": "view == factory/for-you && item.chooses && !focus.input" },
+      { "key": "a", "event": "accept", "when": "view == factory/for-you && !item.chooses && !focus.input" },
+      { "key": "c", "event": "change", "when": "view == factory/for-you && !item.chooses && !focus.input" }
     ]
   }
 }

@@ -5,9 +5,10 @@ import type { FactoryTab } from "../tab"
 import { Frame } from "./Frame"
 import { Pill, Section, useWatched, type ViewProps } from "./parts"
 
-// For you: the decisions and reviews that wait on a maintainer, each with its body and links. The selected one is what
-// the host's strip under the view answers, by option (`1`–`9`) with a note; the factory never answers itself. Then the
-// past decisions with the answer given, and the open spec questions.
+// For you, for a maintainer: the decisions and reviews that wait on one, each with its body and links. The selected one
+// is what the host's strip under the view answers through `feed/answer`, by option (`1`–`9`) with the note, or Answer
+// (`⌘↵`) with the note alone; the factory never answers itself. Then the past decisions with the answer the collector
+// read back, and the open spec questions.
 export function ForYou({ tab, repository }: ViewProps) {
   return (
     <Frame tab={tab} repository={repository} view="factory/for-you">

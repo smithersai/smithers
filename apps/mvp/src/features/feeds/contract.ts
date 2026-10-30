@@ -125,6 +125,34 @@ export const FEED_ROW = {
 } as const
 
 /**
+ * `core/feed-items`' row (src/plugins/facts.ts): one element of an index document's body array that carries a string
+ * `id`, as the strip answers it through `feed/answer`. `key` is `<repo>:<document>:<item>`; `owner` and `name` are the
+ * repository's, as `feed/answer` takes them; `options` are the element's string `options`, empty without, and
+ * `chooses` whether there are any (for a key's `when`); `body` is the element; `answer` is the answer's id, the same for the same element, so pressing twice records one answer.
+ */
+export const FEED_ITEM_ROW = {
+  type: "object",
+  properties: {
+    key: { type: "string" },
+    repo: { type: "string" },
+    owner: { type: "string" },
+    name: { type: "string" },
+    document: { type: "string" },
+    index: { type: "integer" },
+    item: { type: "string" },
+    options: { type: "array", items: { type: "string" } },
+    chooses: { type: "boolean" },
+    body: {},
+    answer: { type: "string" },
+  },
+  required: ["key", "repo", "owner", "name", "document", "index", "item", "options", "chooses", "body", "answer"],
+  additionalProperties: false,
+} as const
+
+/** The namespace of the answer ids `core/feed-items` gives its rows (UUID v5 of the repository, document and element). */
+export const FEED_ANSWER_NAMESPACE = "67639c9a-8d51-432d-b305-1a80fae0a640"
+
+/**
  * What repository feeds record in the browser, by name, and the fields they carry (docs/observability.md#repository-feeds).
  * None carries a document's name or body, an answer's words, a login or a key.
  */

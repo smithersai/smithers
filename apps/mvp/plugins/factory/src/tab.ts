@@ -1,7 +1,7 @@
 import { Host } from "@smthrs/plugin"
 import { Effect, Exit, Scope } from "effect"
 import { type AskRow, type FeedDocument, type Feeds, feedsOf, repoOf } from "./feeds"
-import { statusOf, type Status, VIEWS, type ViewId } from "./model"
+import { decisionsOf, statusOf, type Status, VIEWS, type ViewId } from "./model"
 
 // The factory's tab (decision 0126 §9): one per app, built by the host on first use. It reads a repository's feed
 // documents through `Feeds` (./feeds.ts), the one seam to the core's queries, and gives the views each repository's
@@ -54,7 +54,7 @@ export interface FactoryTab {
   readonly queries: {
     /** A repository's status, live; the same value for the same repository. */
     readonly feed: (repository: Host.Repository) => Watched<Feed>
-    /** A repository's open asks, live. */
+    /** A repository's asks that wait on a maintainer, in the order the collector lists them, live. */
     readonly asks: (repository: Host.Repository) => Watched<ReadonlyArray<AskRow>>
     /** The ask the strip answers: the person's pick, else the first open one. */
     readonly selected: Watched<string | null>
@@ -80,6 +80,13 @@ export interface FactoryTab {
 /** Where view `id` shows on `repository`. */
 export const hrefOf = (id: ViewId, repository: Host.Repository): string =>
   Host.pathOf({ plugin: "factory", scope: "repository", path: VIEWS.find((view) => view.id === id)!.path }, repository)!
+
+/** The asks of `rows` that wait on a maintainer, as `feed` has them: none until the feed is ready. */
+export const waitingOf = (rows: ReadonlyArray<AskRow>, feed: Feed): ReadonlyArray<AskRow> => {
+  if (feed._tag !== "Ready") return []
+  const waiting = new Set(decisionsOf(feed.status).waiting.map((decision) => decision.id))
+  return rows.filter((row) => waiting.has(row.item))
+}
 
 /** The feed a list of documents makes. */
 export const feedOf = (rows: ReadonlyArray<FeedDocument>): Feed => ({ _tag: "Ready", status: statusOf(rows), documents: rows.length })
@@ -134,9 +141,24 @@ export const make = (host: Host.PluginHost, feeds: Feeds) =>
       if (first !== undefined && !rows.some((row) => row.key === selected.current())) select(first)
       return rows
     }
+    // An ask waits until the collector reports it decided or answered: the status says which, so both are followed.
     const asks = perRepository<ReadonlyArray<AskRow>>([], (repository, set) =>
       feeds.asks(repository).pipe(
-        Effect.flatMap((live) => Effect.andThen(Scope.provide(follow(live, set, settle), scope), Effect.void)),
+        Effect.flatMap((live) => {
+          const status = feed(repository)
+          const both: Host.Live<AskRow> = {
+            current: () => waitingOf(live.current(), status.current()),
+            subscribe: (listener) => {
+              const stopRows = live.subscribe(listener)
+              const stopStatus = status.subscribe(listener)
+              return () => {
+                stopRows()
+                stopStatus()
+              }
+            },
+          }
+          return Effect.andThen(Scope.provide(follow(both, set, settle), scope), Effect.void)
+        }),
         Effect.ignore,
       ))
 
