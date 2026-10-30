@@ -8,12 +8,19 @@
  * Installs the remaining ESM identity/bootstrap resolvers and tsx's supported
  * ESM loader once. Explicit declaration imports register a namespaced
  * CommonJS bridge; ordinary CommonJS dependencies use Node resolution.
+ * `deferTypeScript` lets a Node-native executable load its own modules first;
+ * call again without it before running commands. Explicit declaration imports
+ * also complete installation. Deferring never removes an installed loader.
+ * Promotion retains the first resolver's ownership; legacy installations stay intact.
  *
  * @category loading
  * @since 0.1.0
  * @slop
  */
-export declare const installEffectResolution: (packages?: Readonly<Record<string, string>>) => void
+export declare const installEffectResolution: (
+  packages?: Readonly<Record<string, string>>,
+  options?: { readonly deferTypeScript?: boolean }
+) => void
 
 /**
  * Evaluates one declaration module through tsx with the CLI's resolver in

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, onTestFailed } from "vitest"
 import { temporaryEnvironment } from "./temporaryEnvironment.ts"
 
 const roots: string[] = []
@@ -21,9 +21,17 @@ const fixture = async () => {
     SMITHERS_DISABLE_SYSTEM_KEYRING: "1",
     ...temporaryEnvironment()
   }
+  const stages: Array<{ command: string[]; elapsedMs: number; status: number | null; signal: string | null }> = []
+  onTestFailed(() => console.error("Environment CLI stages", JSON.stringify(stages)))
   const cli = (args: string[]) => {
     const started = Date.now()
     const result = spawnSync(process.execPath, [bin, ...args], { cwd: root, env, encoding: "utf8", timeout: 20_000 })
+    stages.push({
+      command: args.slice(0, 2),
+      elapsedMs: Date.now() - started,
+      status: result.status,
+      signal: result.signal
+    })
     if (result.error) {
       console.error(
         "Environment CLI launch",

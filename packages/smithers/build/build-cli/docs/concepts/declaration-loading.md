@@ -51,6 +51,16 @@ CommonJS dependencies resolve from the caller's installed packages. build-cli
 does not replace `Module._resolveFilename` or alias CommonJS dependency lookup.
 NodeNext relative `.js` imports use tsx's TypeScript extension handling.
 
+An executable whose own TypeScript runs natively in Node can call
+`installEffectResolution(packages, { deferTypeScript: true })` before loading
+its modules. Effect identity and VibeLang hooks are active during that bootstrap.
+Call `installEffectResolution()` before handling commands to enable the existing
+TypeScript/CommonJS loader; `importDeclarationModule` also completes installation.
+Repeating the deferred call never removes an enabled loader. The unified CLI
+uses Node's native TypeScript support for its own module graph.
+Promotion retains the first resolver's ownership across physical copies, and
+leaves an older, already installed resolver intact.
+
 ## VibeLang sources
 
 A declaration may import a workspace package whose source is VibeLang

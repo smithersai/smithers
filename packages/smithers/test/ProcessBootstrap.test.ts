@@ -64,7 +64,9 @@ const noInputListeners = () => {
 describe("public executable bootstrap", () => {
   it("installs shared identity resolution before invoking the canonical command entry", async () => {
     main.mockImplementation(async (runtime) => {
-      expect(install).toHaveBeenCalledTimes(1)
+      expect(install).toHaveBeenCalledTimes(2)
+      expect(install).toHaveBeenNthCalledWith(1, expect.any(Object), { deferTypeScript: true })
+      expect(install).toHaveBeenNthCalledWith(2)
       expect(runtime.argv).toEqual(["targets", "--json"])
     })
     await boot(["targets", "--json"])
@@ -82,10 +84,11 @@ describe("public executable bootstrap", () => {
     await boot(["--json", "ps"])
     expect(legacy).toEqual(["--json", "ps"])
     expect(main).not.toHaveBeenCalled()
-    expect(install).toHaveBeenCalledExactlyOnceWith({
+    expect(install).toHaveBeenNthCalledWith(1, {
       "@smthrs/agent": new URL("../src/bin.ts", import.meta.url).href,
       "@smthrs/registry/Prompt/jsx-runtime": new URL("../src/bin.ts", import.meta.url).href
-    })
+    }, { deferTypeScript: true })
+    expect(install).toHaveBeenNthCalledWith(2)
   })
 
   it("maps agent aliases without rewriting the process's original arguments", async () => {

@@ -13,7 +13,7 @@ Fix each root cause with regression evidence; retain the existing coverage and
 timeout gates. Deliver separate commits by root cause for the CI repair batch.
 
 Libraries: the CLI, agent, model-host, control, gateway, and effect-electric
-entries in `docs/libraries.md`, plus flow, harness, database, journal, run-store and engine-store;
+entries in `docs/libraries.md`, plus build-cli, flow, harness, database, journal, run-store and engine-store;
 existing services remain their public seams.
 
 The shared test setup preserves the CLI target's explicit Node compile-cache
@@ -139,4 +139,35 @@ between engine and control terminal commits leaves no future control event.
 The reader now uses the existing same-host PID probe to recognize that orphan,
 drains without writes, and preserves the wait for live or unknown owners. A
 real two-store writer is killed after its engine commits; all terminal outcomes,
-parked ownership and past-terminal cursors are covered. Validation is pending.
+parked ownership and past-terminal cursors are covered. The old reader fails
+that real process-death regression, and all twelve focused follower cases pass.
+
+The post-review full CLI gate completed within its original 40-minute bound
+but exposed two further failures. External cancellation returned the valid
+`Terminal(cancelled)` receipt and exit 130 before the caller resumed; the test
+still selected exit 0 from its scenario name. It now checks the returned receipt
+against the RC4 contract retained by `a17c0ca10679`, including terminal receipts
+for released owners. All four real cancellation modes pass.
+
+The five-process environment lifecycle exceeded its unchanged 30-second budget.
+Profiles show cold source transformation and warm module loading dominate startup.
+A resolver-result cache did not improve it and was discarded. The CLI now loads
+its own erasable TypeScript graph with Node's native support, retaining Effect
+identity and VibeLang hooks, then enables the existing declaration/CommonJS loader
+before handling commands. Legacy routing enables the full loader before loading
+its entry. The build-cli default is unchanged, and explicit declaration imports
+also complete an opted-in bootstrap. Real ESM and emitted CommonJS processes
+check native loading, promotion, schema identity and NodeNext typed bridges; the
+old resolver fails the native-load assertion. All 51 applicable resolution cases
+pass. The environment lifecycle passes in 14.6 seconds with its original budget;
+four concurrent five-process journeys pass in 17.5–18.3 seconds with unchanged
+per-process and lifecycle budgets. All 28 environment/bootstrap cases and both
+CLI/build-cli typechecks pass. Full CLI/build-cli validation is pending.
+
+Bootstrap promotion must retain the first resolver's ownership across physical
+copies and preserve the previous installation protocol. Its pending activation
+now belongs to the original installation; an older, fully installed resolver
+has no pending activation. Real copies of Effect make a resolver replacement
+observable in ESM and emitted CommonJS regression cases. All four cases fail
+against the previous bootstrap and pass with the correction. All 55 applicable
+resolver cases and both CLI/build-cli typechecks pass.

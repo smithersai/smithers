@@ -26,7 +26,7 @@ const start = async (): Promise<void> => {
   installEffectResolution({
     "@smthrs/agent": import.meta.url,
     "@smthrs/registry/Prompt/jsx-runtime": import.meta.url
-  })
+  }, { deferTypeScript: true })
   const original = process.argv.slice(2)
   const parsed = Argv.parse(original)
   let agentAlias = formattedLogArguments(parsed)
@@ -35,10 +35,14 @@ const start = async (): Promise<void> => {
   } catch { /* The selected entrypoint renders invalid presentation configuration. */ }
   const legacy = agentAlias === undefined ? legacyArguments(parsed) : undefined
   if (legacy !== undefined) {
+    installEffectResolution()
     process.argv.splice(2, process.argv.length - 2, ...legacy)
     await import("./cli/LegacyBin.ts")
   } else {
     const { main } = await import("./cli/Entry.ts")
+    // The CLI's own module graph uses Node's TypeScript support. Enable the
+    // declaration/CommonJS loader before any selected command can run.
+    installEffectResolution()
     await main({
       argv: agentAlias ?? original,
       env: process.env,

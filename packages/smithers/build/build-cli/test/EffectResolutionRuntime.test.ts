@@ -41,6 +41,148 @@ afterAll(async () => {
 })
 
 describe.each(["esm", "cjs"])("%s declaration runtime", (runtime) => {
+  it.each(["legacy", "deferred"])(
+    "preserves the first %s resolver when a different copy completes installation",
+    async (installation) => {
+      const project = await Fs.mkdtemp(Path.join(root, "first-owner-"))
+      await Fs.writeFile(Path.join(project, "package.json"), "{\"type\":\"module\"}")
+      const first = Path.join(project, "first")
+      await Fs.mkdir(Path.join(first, "src"), { recursive: true })
+      await Fs.mkdir(Path.join(first, "node_modules"))
+      await Fs.writeFile(
+        Path.join(first, "package.json"),
+        JSON.stringify({ type: runtime === "cjs" ? "commonjs" : "module" })
+      )
+      // A real second Effect installation makes an ownership change observable.
+      await Fs.cp(Path.dirname(findPackageJSON("effect", import.meta.url)!), Path.join(first, "node_modules/effect"), {
+        recursive: true,
+        dereference: true
+      })
+      await Fs.symlink(
+        Path.dirname(findPackageJSON("tsx", import.meta.url)!),
+        Path.join(first, "node_modules/tsx"),
+        "dir"
+      )
+      const resolver = runtime === "cjs"
+        ? Path.join(root, "dist/cjs/effect-resolution.js")
+        : Path.join(root, "src/effect-resolution.js")
+      const firstResolver = Path.join(first, "src/effect-resolution.js")
+      await Fs.copyFile(resolver, firstResolver)
+      for (const name of ["before.mjs", "after.mjs"]) {
+        await Fs.writeFile(
+          Path.join(project, name),
+          "import { Schema } from \"effect\"; export default Schema.String;\n"
+        )
+      }
+      const child = spawnSync(process.execPath, [
+        "--input-type=module",
+        "-e",
+        `
+        import assert from "node:assert/strict";
+        import { createRequire, registerHooks } from "node:module";
+        import { register } from "tsx/esm/api";
+        const resolver = ${
+          runtime === "cjs"
+            ? `createRequire(import.meta.url)(${JSON.stringify(resolver)})`
+            : `await import(${JSON.stringify(pathToFileURL(resolver).href)})`
+        };
+        ${
+          installation === "deferred" ?
+            `
+        const first = ${
+              runtime === "cjs"
+                ? `createRequire(import.meta.url)(${JSON.stringify(firstResolver)})`
+                : `await import(${JSON.stringify(pathToFileURL(firstResolver).href)})`
+            };
+        first.installEffectResolution({}, { deferTypeScript: true });
+        ` :
+            `
+        // The previous installation protocol: real identity hooks and tsx,
+        // with the original completion marker and no deferred activation.
+        const hooks = { resolve(specifier, context, nextResolve) {
+          return nextResolve(specifier, specifier === "effect" || specifier.startsWith("effect/")
+            ? { ...context, parentURL: ${JSON.stringify(pathToFileURL(firstResolver).href)} } : context);
+        }};
+        register({ tsconfig: false });
+        globalThis[Symbol.for("smthrs/effect-resolution-registration")] = registerHooks(hooks);
+        Object.defineProperty(globalThis, Symbol.for("smthrs/effect-resolution-installed"), { value: true });
+        `
+        }
+        const before = await import(${JSON.stringify(pathToFileURL(Path.join(project, "before.mjs")).href)});
+        resolver.installEffectResolution();
+        resolver.installEffectResolution({}, { deferTypeScript: true });
+        resolver.installEffectResolution();
+        const after = await import(${JSON.stringify(pathToFileURL(Path.join(project, "after.mjs")).href)});
+        assert.equal(after.default, before.default, "the first resolver must keep Effect ownership");
+        console.log(JSON.stringify({ same: true }));
+      `
+      ], { encoding: "utf8", cwd: project, env: { ...process.env, NODE_PATH: "" }, timeout: 30_000 })
+      expect(child.status, child.stdout + child.stderr).toBe(0)
+      expect(JSON.parse(child.stdout)).toEqual({ same: true })
+    }
+  )
+
+  it.each(["explicit", "declaration"])(
+    "loads native bootstrap modules before %s loader promotion without changing Effect identity",
+    async (promotion) => {
+      const project = await Fs.mkdtemp(Path.join(root, "native-bootstrap-"))
+      await Fs.writeFile(Path.join(project, "package.json"), "{\"type\":\"module\"}")
+      const entry = Path.join(project, "native.ts")
+      await Fs.writeFile(
+        entry,
+        "import { Schema } from \"effect\"; export const value: number = 42; export const schema = Schema.String;\n"
+      )
+      const declaration = Path.join(project, "PACKAGE.ts")
+      await Fs.writeFile(declaration, "export { Schema } from \"effect\";\n")
+      const bridge = Path.join(project, "bridge")
+      await Fs.mkdir(bridge)
+      await Fs.writeFile(Path.join(bridge, "package.json"), "{\"type\":\"commonjs\"}")
+      await Fs.writeFile(Path.join(bridge, "helper.ts"), "export const answer: number = 43;\n")
+      await Fs.writeFile(Path.join(bridge, "bridge.cjs"), "module.exports = require(\"./helper.js\");\n")
+      const resolver = runtime === "cjs"
+        ? Path.join(root, "dist/cjs/effect-resolution.js")
+        : Path.join(root, "src/effect-resolution.js")
+      const child = spawnSync(process.execPath, [
+        "--input-type=module",
+        "-e",
+        `
+        import assert from "node:assert/strict";
+        import { createRequire, registerHooks } from "node:module";
+        const require = createRequire(${JSON.stringify(resolver)});
+        const resolver = ${
+          runtime === "cjs"
+            ? `require(${JSON.stringify(resolver)})`
+            : `await import(${JSON.stringify(pathToFileURL(resolver).href)})`
+        };
+        resolver.installEffectResolution({}, { deferTypeScript: true });
+        resolver.installEffectResolution({}, { deferTypeScript: true });
+        const Schema = await import("effect/Schema");
+        const entry = ${JSON.stringify(pathToFileURL(entry).href)};
+        let format;
+        const observer = registerHooks({ load(url, context, nextLoad) {
+          const loaded = nextLoad(url, context);
+          if (url === entry) format = loaded.format;
+          return loaded;
+        }});
+        const native = await import(entry);
+        observer.deregister();
+        assert.equal(native.value, 42);
+        assert.equal(native.schema, Schema.String);
+        assert.equal(format, "module-typescript", "bootstrap must use Node's native TypeScript loader");
+        ${promotion === "explicit" ? "resolver.installEffectResolution();" : ""}
+        const declared = await resolver.importDeclarationModule(${JSON.stringify(pathToFileURL(declaration).href)},
+          ${JSON.stringify(pathToFileURL(resolver).href)});
+        assert.equal(declared.Schema.String, Schema.String);
+        resolver.installEffectResolution({}, { deferTypeScript: true });
+        assert.equal(createRequire(${JSON.stringify(Path.join(bridge, "bridge.cjs"))})("./bridge.cjs").answer, 43);
+        console.log(JSON.stringify({ value: native.value, format }));
+      `
+      ], { encoding: "utf8", cwd: project, env: { ...process.env, NODE_PATH: "" }, timeout: 30_000 })
+      expect(child.status, child.stdout + child.stderr).toBe(0)
+      expect(JSON.parse(child.stdout)).toEqual({ value: 42, format: "module-typescript" })
+    }
+  )
+
   it.each(["module", "commonjs", undefined])(
     "keeps schema identity and missing/default payload semantics with project type %s",
     async (type) => {

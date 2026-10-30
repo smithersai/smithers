@@ -69,6 +69,7 @@ import { register as registerCommonJs } from "tsx/cjs/api"
 import { register as registerModule } from "tsx/esm/api"
 
 const installation = Symbol.for("smthrs/effect-resolution-installed")
+const typescriptBootstrap = Symbol.for("smthrs/effect-resolution-typescript-bootstrap")
 const registration = Symbol.for("smthrs/effect-resolution-registration")
 const ownership = Symbol.for("smthrs/effect-resolution-ownership")
 const buildModuleParameter = "smithers-build-module"
@@ -404,7 +405,7 @@ const installVibeLang = () => {
  * Installs the resolvers once per process.
  * @slop
  */
-export const installEffectResolution = (packages = {}) => {
+export const installEffectResolution = (packages = {}, options = {}) => {
   globalThis[ownership] ??= new Map()
   for (const [name, owner] of Object.entries(packages)) {
     const url = new URL(owner)
@@ -412,22 +413,35 @@ export const installEffectResolution = (packages = {}) => {
     url.hash = ""
     globalThis[ownership].set(name, url.href)
   }
-  if (globalThis[installation] === true) return
-  // Oldest first, so VibeLang's hooks sit innermost, the format hook behind
-  // tsx, and the parent hook in front of it. See the hook-order note above.
-  installVibeLang()
-  registerHooks(formatHooks)
-  globalThis[registration] = registerHooks(parentHooks)
-  // The ESM loader supports ordinary typed CommonJS bridges through Node's
-  // public hooks without transpiling native Effect modules during require().
-  registerModule({ tsconfig: false })
-  reassert()
-  Object.defineProperty(globalThis, installation, {
-    configurable: false,
-    enumerable: false,
-    value: true,
-    writable: false
-  })
+  if (globalThis[installation] !== true) {
+    // Oldest first, so VibeLang's hooks sit innermost, the format hook behind
+    // tsx, and the parent hook in front of it. See the hook-order note above.
+    installVibeLang()
+    registerHooks(formatHooks)
+    globalThis[registration] = registerHooks(parentHooks)
+    // Promotion belongs to the first installation, even when a different
+    // physical copy completes it. Older, fully installed resolvers have no
+    // pending promotion and keep their original process-wide ownership.
+    globalThis[typescriptBootstrap] = () => {
+      registerModule({ tsconfig: false })
+      reassert()
+      globalThis[typescriptBootstrap] = undefined
+    }
+    Object.defineProperty(globalThis, installation, {
+      configurable: false,
+      enumerable: false,
+      value: true,
+      writable: false
+    })
+  }
+  // A Node-native executable can load its own erasable TypeScript before
+  // enabling declaration transforms. A later ordinary installation promotes
+  // that bootstrap without replacing its identity hooks or VibeLang runtime.
+  if (!options.deferTypeScript) {
+    // The ESM loader supports ordinary typed CommonJS bridges through Node's
+    // public hooks without transpiling native Effect modules during require().
+    globalThis[typescriptBootstrap]?.()
+  }
 }
 
 /**
