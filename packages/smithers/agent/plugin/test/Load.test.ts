@@ -616,6 +616,11 @@ describe("load refuses a plugin and loads the rest", () => {
     expect(await refusals([builtIn(queueManifest()), builtIn(other)])).toEqual([
       ["queue", "conflict", "contributes.commands[0].slash.name"]
     ])
+    // A name the host's own commands hold is taken too: a plugin never shadows a core command.
+    expect(await refusals([builtIn(queueManifest())], { ...host(), slash: ["queue"] })).toEqual([
+      ["queue", "conflict", "contributes.commands[0].slash.name"]
+    ])
+    expect(await refusals([builtIn(queueManifest())], { ...host(), slash: ["status"] })).toEqual([])
   })
 
   it("refuses a keybinding outside the key or when grammar, or naming nothing declared", async () => {

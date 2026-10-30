@@ -81,6 +81,8 @@ export interface HostFacts {
   readonly queries: ReadonlyMap<string, JsonSchema.Resolved>
   /** Which capabilities each tier may declare. */
   readonly tierCap: Readonly<Record<Tier, (capability: string) => boolean>>
+  /** Slash names the host's own commands hold; a plugin command naming one refuses `conflict`. */
+  readonly slash?: ReadonlyArray<string>
 }
 
 /**
@@ -568,7 +570,7 @@ export const load = (host: HostFacts, candidates: ReadonlyArray<Candidate>): Eff
     }
 
     const state: State = {
-      slash: new Set(),
+      slash: new Set(host.slash),
       owned: new Map(),
       versions: new Map(),
       header: 0,

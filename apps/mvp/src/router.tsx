@@ -54,6 +54,7 @@ import { SecretsScreen } from "./screens/secrets/SecretsScreen"
 import { RepoSettingsScreen } from "./screens/repo-settings/RepoSettingsScreen"
 import { SettingsScreen } from "./screens/settings/SettingsScreen"
 import { PluginScreen } from "./screens/plugin/PluginScreen"
+import { RepoPluginScreen } from "./screens/plugin/RepoPluginScreen"
 import type { PluginsView } from "./plugins/ui"
 import { ViewScreen } from "./screens/view/ViewScreen"
 
@@ -280,6 +281,26 @@ const pluginRoute = (path: (typeof ROUTE_PATHS)["pluginIndex" | "pluginPath"]) =
   })
 const pluginIndexRoute = pluginRoute(ROUTE_PATHS.pluginIndex)
 const pluginPathRoute = pluginRoute(ROUTE_PATHS.pluginPath)
+
+/**
+ * `/$owner/$repo/-/$plugin` and `/$owner/$repo/-/$plugin/<path>`: a plugin's `repository` view (decision 0126 §8), on
+ * the repository's page: the repository opens for its header, then the host shows the view. The `-` segment keeps every
+ * plugin path apart from the core's repository routes; a path no plugin declares is not found.
+ */
+const repoPluginRoute = (path: (typeof ROUTE_PATHS)["repoPluginIndex" | "repoPluginPath"]) =>
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path,
+    component: RepoPluginScreen,
+    beforeLoad: ({ context, params, ...load }) => {
+      const view = context.plugins.actions.viewAt(params.plugin, (params as { readonly _splat?: string })._splat ?? "", "repository")
+      if (view === undefined) throw notFound()
+      return enterRepository(context, params, load, local, () => context.plugins.actions.show(view.id))
+    },
+    onLeave: ({ context }) => context.plugins.actions.show(null),
+  })
+const repoPluginIndexRoute = repoPluginRoute(ROUTE_PATHS.repoPluginIndex)
+const repoPluginPathRoute = repoPluginRoute(ROUTE_PATHS.repoPluginPath)
 
 /** `/app/settings`: the deployment's settings, for an Admin; their rows sync to an Admin's devices. */
 const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: ROUTE_PATHS.settings, component: SettingsScreen })
@@ -715,6 +736,8 @@ export const router = createRouter({
     actionsAliasRoute,
     pluginIndexRoute,
     pluginPathRoute,
+    repoPluginIndexRoute,
+    repoPluginPathRoute,
     repoSettingsRoute,
     repoRoute,
     treeRoute,

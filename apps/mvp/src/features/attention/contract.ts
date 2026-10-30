@@ -68,6 +68,8 @@ export const BELL_ROUTES: ReadonlySet<string> = new Set([
   "/$owner/$repo/pulls",
   "/$owner/$repo/stack",
   "/$owner/$repo/settings/secrets",
+  "/$owner/$repo/-/$plugin",
+  "/$owner/$repo/-/$plugin/$",
 ])
 
 /** Whether the route `routeId` needs the top bar's bell floated at the window's top-right: its header doesn't hold it. */

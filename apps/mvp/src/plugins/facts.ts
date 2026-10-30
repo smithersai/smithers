@@ -52,6 +52,8 @@ export const hostFacts = (catalog: Readonly<Record<string, Entry>> = registry): 
     ["core/feeds", FEED_ROW as never],
     ["core/feed", FEED_ROW as never],
   ]),
+  // The core's own slash commands: a plugin command never shadows one.
+  slash: Object.values(catalog).flatMap((entry) => (entry.slash === undefined ? [] : [entry.slash.command])),
   tierCap: {
     "built-in": (capability) => !ungranted(capability),
     repository: (capability) => !ungranted(capability),

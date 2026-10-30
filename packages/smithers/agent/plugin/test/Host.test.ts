@@ -65,3 +65,19 @@ describe("query parameters", () => {
     expect(item).toEqual({ query: "core/feeds", key: "acme/widgets:lanes", params: { repo: "acme/widgets" } })
   })
 })
+
+describe("pathOf", () => {
+  const view = { plugin: "factory", scope: "repository" as const, path: "" }
+  const repository = { owner: "smithersai", name: "vibelang" }
+
+  it("puts an app view under /app and a repository view under its repository's -", () => {
+    expect(Host.pathOf({ plugin: "queue", scope: "app", path: "" })).toBe("/app/queue")
+    expect(Host.pathOf({ plugin: "bugs", scope: "app", path: "report" }, repository)).toBe("/app/bugs/report")
+    expect(Host.pathOf(view, repository)).toBe("/smithersai/vibelang/-/factory")
+    expect(Host.pathOf({ ...view, path: "agents" }, repository)).toBe("/smithersai/vibelang/-/factory/agents")
+  })
+
+  it("has no path for a repository view without its repository", () => {
+    expect(Host.pathOf(view)).toBeUndefined()
+  })
+})

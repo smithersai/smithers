@@ -147,6 +147,48 @@ export interface Delivered {
 }
 
 /**
+ * A repository a view is scoped to: `owner/name`.
+ *
+ * @category models
+ * @since 1.1.0
+ */
+export interface Repository {
+  readonly owner: string
+  readonly name: string
+}
+
+/**
+ * What a `component` render receives: its plugin's tab, and the repository
+ * the page shows when it is a repository's page (a `repository`-scoped view,
+ * or a `repo.tabs` slot entry).
+ *
+ * @category models
+ * @since 1.1.0
+ */
+export interface Rendered<T> {
+  readonly tab: T
+  readonly repository?: Repository | undefined
+}
+
+/**
+ * Where a view shows: `/app/<plugin>/<path>` for an `app` view, and
+ * `/<owner>/<name>/-/<plugin>/<path>` for a `repository` view, which needs
+ * its repository (`undefined` without one). The `-` segment keeps every
+ * plugin path apart from the host's own repository pages.
+ *
+ * @category constructors
+ * @since 1.1.0
+ */
+export const pathOf = (
+  view: { readonly plugin: string; readonly scope: "app" | "repository"; readonly path: string },
+  repository?: Repository
+): string | undefined => {
+  const rest = `${view.plugin}${view.path === "" ? "" : `/${view.path}`}`
+  if (view.scope === "app") return `/app/${rest}`
+  return repository === undefined ? undefined : `/${repository.owner}/${repository.name}/-/${rest}`
+}
+
+/**
  * The contract a plugin's UI reads and dispatches through. The app implements
  * it, scoped to the viewer and the plugin.
  *
@@ -170,8 +212,8 @@ export interface PluginHost {
    * with its id and `settled`, which waits for its end.
    */
   readonly dispatch: (event: EventRef, fields: unknown) => Effect.Effect<Dispatched, PluginRefused>
-  /** Open a view the manifest declares. */
-  readonly open: (view: string) => Effect.Effect<void>
+  /** Open a view the manifest declares; a `repository` view opens on `repository`, and without one does nothing. */
+  readonly open: (view: string, repository?: Repository) => Effect.Effect<void>
   /**
    * The declared local events of `view` the host's keymap delivered, in order
    * (`j`, `k`). Person-only events are never delivered.

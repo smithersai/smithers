@@ -16,6 +16,8 @@ export const ROUTE_PATHS = {
   settings: "/app/settings",
   run: "/app/runs/$runId",
   repo: "/$owner/$repo",
+  repoPluginPath: "/$owner/$repo/-/$plugin/$",
+  repoPluginIndex: "/$owner/$repo/-/$plugin",
   branches: "/$owner/$repo/branches",
   tree: "/$owner/$repo/tree/$ref/$",
   blob: "/$owner/$repo/blob/$ref/$",

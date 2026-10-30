@@ -161,6 +161,7 @@ describe("floatsBell", () => {
       "/app", "/$owner/$repo", "/$owner/$repo/tree/$ref/$", "/$owner/$repo/blob/$ref/$", "/$owner/$repo/raw/$ref/$", "/$owner/$repo/docs",
       "/$owner/$repo/docs/$", "/$owner/$repo/issues", "/$owner/$repo/issues/new", "/$owner/$repo/runs", "/$owner/$repo/pulls",
       "/$owner/$repo/stack", "/$owner/$repo/settings/secrets", "/$owner/$repo/issues/$number", "/$owner/$repo/pull/$number", "/$owner/$repo/pull/$number/$tab", "/$owner/$repo/branches",
+      "/$owner/$repo/-/$plugin", "/$owner/$repo/-/$plugin/$",
     ]) {
       expect(floatsBell(route)).toBe(false)
     }

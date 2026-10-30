@@ -336,6 +336,8 @@ describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
     expect(viewAt(a.plugins.contributions, "queue", "nope")).toBeUndefined()
     expect(pathOf(view)).toBe("/app/queue")
     expect(pathOf({ ...view, path: "later" })).toBe("/app/queue/later")
+    expect(viewAt(a.plugins.contributions, "queue", "", "repository")).toBeUndefined()
+    expect(a.plugins.actions.pathOf(view)).toBe("/app/queue")
     expect(Exit.isFailure(await a.runtime.runPromiseExit(Effect.promise(() => a.plugins.actions.tab("nope"))))).toBe(true)
     await expect(a.plugins.actions.components("nope")).rejects.toThrow("no active plugin nope")
     expect(Object.keys(await a.plugins.actions.components("queue")).sort()).toEqual(["NavCount", "Queue"])
@@ -364,6 +366,52 @@ describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
       })])
     )
     expect(JSON.stringify(readTelemetry(api.telemetry).log("plugin.failed"))).not.toContain("private words")
+  })
+})
+
+describe("a repository's plugin views (decision 0126 §8)", () => {
+  test("a repository view shows on its repository's page, opens there, and has no page without one", async () => {
+    const api = await openApi()
+    const a = await openDevice(api)
+    const home = {
+      id: "probe/home", title: "Probe", scope: "repository", path: "", sizes: ["full"], minimum: "anyone",
+      render: { kind: "component", export: "Home" },
+    }
+    const probe: BuiltIn = {
+      manifest: {
+        ...queue, id: "probe", uses: ["app/navigate"], $defs: {},
+        contributes: {
+          views: [home, { ...home, id: "probe/lanes", path: "lanes" }],
+          slots: [{ slot: "repo.tabs", id: "probe/tab", minimum: "anyone", render: { kind: "component", export: "Tab" } }],
+        },
+      },
+      tab: () => Promise.reject(new Error("never loaded")),
+      components: () => Promise.reject(new Error("never loaded")),
+    }
+    const repository = { owner: "smithersai", name: "vibelang" }
+    const navigated = Metric.withAttributes(dispatches, { flow: "app/navigate", door: "view", outcome: "done" })
+    const outcome = await a.runtime.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const plugins = yield* Plugins
+          const host = yield* hostFor("probe")
+          // Without its repository, a repository view has no page to open: nothing runs.
+          yield* host.open("probe/lanes")
+          yield* host.open("probe/lanes", repository)
+          yield* Effect.promise(() => until(() => expect(a.count(navigated)).toBe(1)))
+          return plugins
+        }).pipe(Effect.provide(Plugins.layer([probe]))),
+      ),
+    )
+    expect(outcome.refused).toEqual([])
+    expect(outcome.contributions.slots.map((slot) => slot.slot)).toEqual(["repo.tabs"])
+    const lanes = viewAt(outcome.contributions, "probe", "lanes", "repository")!
+    expect(lanes.id).toBe("probe/lanes")
+    // A repository view is never an app page.
+    expect(viewAt(outcome.contributions, "probe", "lanes")).toBeUndefined()
+    expect(pathOf(lanes, repository)).toBe("/smithersai/vibelang/-/probe/lanes")
+    expect(pathOf(lanes)).toBeUndefined()
+    expect(a.count(navigated)).toBe(1)
   })
 })
 

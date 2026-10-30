@@ -7,6 +7,7 @@ import { AttentionProvider } from "../../features/attention/components/Attention
 import { AuthProvider } from "../../features/auth/components/AuthContext"
 import { RepoProvider } from "../../features/repo/components/RepoContext"
 import { ViewsProvider } from "../../features/views/components/ViewsContext"
+import { PluginsProvider } from "../../plugins/components/PluginsContext"
 type Services = {
   spend: ComponentProps<typeof SpendProvider>["value"]
   auth: ComponentProps<typeof AuthProvider>["value"]
@@ -14,13 +15,15 @@ type Services = {
   repo: ComponentProps<typeof RepoProvider>["value"]
   attention: ComponentProps<typeof AttentionProvider>["value"]
   views: ComponentProps<typeof ViewsProvider>["value"]
+  plugins: ComponentProps<typeof PluginsProvider>["value"]
 }
-export const renderConnection = (router: ComponentProps<typeof RouterProvider>["router"], { chat, repo, attention, auth, spend, views }: Services) =>
+export const renderConnection = (router: ComponentProps<typeof RouterProvider>["router"], { chat, repo, attention, auth, spend, views, plugins }: Services) =>
   renderToStaticMarkup(
     createElement(AuthProvider, { value: auth },
       createElement(ChatProvider, { value: chat },
         createElement(RepoProvider, { value: repo },
           createElement(AttentionProvider, { value: attention },
             createElement(SpendProvider, { value: spend },
-              createElement(ViewsProvider, { value: views }, createElement(RouterProvider, { router }))))))),
+              createElement(ViewsProvider, { value: views },
+                createElement(PluginsProvider, { value: plugins }, createElement(RouterProvider, { router })))))))),
   )

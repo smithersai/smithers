@@ -16,6 +16,7 @@ import { CLONE, TRY_AGAIN } from "../contract"
 import { cloneHeaderOf } from "../cloneHeader"
 import { minimizedOf } from "../embedView"
 import { aboutOf, headerOf } from "../view"
+import { Slot } from "../../../plugins/components/Slot"
 import { useRepo, useRepoAnswer } from "./RepoContext"
 
 // Back to chat, which minimizes the repository's page into the chat (ruling FE-9, src/features/views/minimize.ts); the
@@ -56,6 +57,7 @@ export function RepoHeader({ backTarget }: { readonly backTarget?: Minimized } =
         <Link to="/$owner/$repo/stack" params={{ owner: view.owner, repo: view.name }}>{STACK}</Link>
       </Button>
       <SecretsLink owner={view.owner} repo={view.name} />
+      <Slot name="repo.tabs" repository={{ owner: view.owner, name: view.name }} />
       </>}
       {(header.kind === "clone" || header.kind === "sign_in") && header.status !== undefined
         ? <span role="status">{header.status}</span>

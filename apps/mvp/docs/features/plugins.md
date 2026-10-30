@@ -85,7 +85,24 @@ Under a plugin's view, in host UI (`ActionStrip.tsx`, `src/plugins/strip.ts`): o
 ## Views, slots and commands
 
 - **Views** show at `/app/<plugin>/<path>` full size (`PluginScreen.tsx`), with the strip under them. A person below the view's `minimum` sees the page's header alone. Inline views in the conversation come later.
-- **Slots** are named places the shell draws: `shell.nav` holds the queue's count and Report a bug beside Flows, Runs and Settings.
+- **Slots** are named places the shell draws: `shell.nav` holds the queue's count and Report a bug beside Flows, Runs and Settings; `repo.tabs` sits in the repository's header after Stack and Secrets.
+- **Commands** never shadow the core's own slash commands: the host's facts list them (`Load.HostFacts.slash`), and a plugin command naming one (`/status`) is refused `conflict`.
+
+## Repository views
+
+A view with `scope: "repository"` belongs to one repository's page (decision 0126 §8):
+
+```
+/<owner>/<repo>/-/<plugin>/<path>      RepoPluginScreen: the repository's header, the view, the strip
+       │                                the `-` segment keeps plugin paths apart from the core's repository routes
+       ├─ route   enterRepository opens the repository (header, role), then shows the view
+       ├─ header  <Slot name="repo.tabs" repository={owner/name}>: the plugin's tab link
+       └─ view    <Component tab repository={{ owner, name }} />   (Host.Rendered)
+```
+
+- The route `/$owner/$repo/-/$plugin/$` (and its index) finds the view with `viewAt(plugin, path, "repository")`; an `app` view is never a repository page, and a path no plugin declares is not found. `worker/appRoute.ts` serves the document for every built-in's repository paths.
+- A component, view or `repo.tabs` entry, receives the repository it shows on as `repository` beside `tab`. A tab is built once per plugin, so its queries take the repository as an argument.
+- `Host.pathOf(view, repository)` is the one path grammar; `PluginHost.open(view, repository)` navigates there, and does nothing for a repository view without one.
 - **Commands** with a `slash` join the composer's menu, running their flow with the payload the manifest fixes: `/queue` runs `app/navigate` to `/app/queue`.
 
 ## The queue

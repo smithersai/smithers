@@ -564,7 +564,9 @@ declare const load: (host: Load.HostFacts, candidates: ReadonlyArray<Load.Candid
 `HostFacts` is what the host implements and knows: `api`, the `points` it
 folds, its flow `catalog` (`FlowFacts`: `capabilities`, `minimum`,
 `personOnly`, `system`, optional resolved `payload`), core query row schemas in
-`queries`, and `tierCap`, which capabilities each tier may declare. A
+`queries`, `tierCap`, which capabilities each tier may declare, and optional
+`slash`, the slash names its own commands hold: a plugin command naming one
+refuses `conflict`. A
 `Candidate` is a `tier`, an undecoded `manifest`, and the `flows` it owns as
 `OwnedFlow` facts. `Loaded` is `{ contributions, refused }`.
 
@@ -622,6 +624,8 @@ like a secret (`secret`, `password`, `token`, `credential`) refuses
 | `QueryParams` | `Readonly<Record<string, string>>`: what a query that takes parameters is asked for. |
 | `Settled`                                        | Schema: `{ _tag: "Done" }` or `{ _tag: "Failed", code }`, how a run ended.    |
 | `PluginTab<Q, A>`                                | `{ queries, actions }`, what a tab layer gives its components.                |
+| `Repository`, `Rendered<T>`                      | `{ owner, name }`; a component's props: `{ tab, repository? }`.               |
+| `pathOf(view, repository?)`                      | A view's path; none for a `repository` view without one.                      |
 
 ```ts
 export interface PluginHost {
@@ -629,7 +633,7 @@ export interface PluginHost {
   readonly select: (item: ItemRef) => Effect.Effect<void, PluginRefused>
   readonly propose: (event: EventRef, fields: unknown) => Effect.Effect<void, PluginRefused>
   readonly dispatch: (event: EventRef, fields: unknown) => Effect.Effect<Dispatched, PluginRefused>
-  readonly open: (view: string) => Effect.Effect<void>
+  readonly open: (view: string, repository?: Repository) => Effect.Effect<void>
   readonly events: (view: string) => Stream.Stream<Delivered>
 }
 ```
@@ -640,6 +644,11 @@ as the documents of the repository a view is scoped to, reads them from
 parameter it needs that is missing or malformed is refused `invalid_fields`.
 `select` names the same `params` in its `ItemRef`, so the host's action strip
 finds the row in the query as the view asked for it.
+
+A `repository` view shows on one repository's page. The host passes that
+repository to the view's component (`Rendered.repository`) and to a
+`repo.tabs` slot entry, and `open` takes it: without one, opening a
+`repository` view does nothing, as `pathOf` has no path for it.
 
 `events` is the declared local events of a view the host's keymap delivered, in
 order; person-only events are never delivered. `dispatch` of a person-only

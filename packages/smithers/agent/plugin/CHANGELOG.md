@@ -8,6 +8,11 @@
   such as the repository a view is scoped to, and `ItemRef` carries the
   `params` its query was asked with, so a view selects a row of a query that
   takes them.
+- `Host.Repository`, `Host.Rendered` and `Host.pathOf`: a `repository` view's
+  path, `/<owner>/<name>/-/<plugin>/<path>`, and the repository its component
+  receives. `PluginHost.open` takes the repository a `repository` view opens on.
+- `Load.HostFacts.slash`: the host's own slash names; a plugin command naming
+  one refuses `conflict`.
 
 ## [1.0.0-rc.0] - 2026-09-01
 

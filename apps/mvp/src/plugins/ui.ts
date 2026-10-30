@@ -24,10 +24,10 @@ export interface PluginsView {
     readonly notes: Plugins["Service"]["notes"]["tanstack"]
   }
   readonly actions: {
-    /** The view `plugin` declares at `path` under `/app`, if any. */
-    readonly viewAt: (plugin: string, path: string) => View | undefined
-    /** Where a view shows. */
-    readonly pathOf: (view: View) => string
+    /** The view `plugin` declares at `path` in `scope` (`app` unless given), if any. */
+    readonly viewAt: (plugin: string, path: string, scope?: View["scope"]) => View | undefined
+    /** Where a view shows; a `repository` view needs its repository. */
+    readonly pathOf: (view: View, repository?: Host.Repository) => string | undefined
     /** Shows view `id` (`null` for none). */
     readonly show: (id: string | null) => void
     /** The strip for `item` under `view`. */
@@ -85,7 +85,7 @@ export class PluginsUi extends Context.Service<PluginsUi, PluginsView>()("@smthr
         contributions: plugins.contributions,
         queries: { views: plugins.strips.tanstack, notes: plugins.notes.tanstack },
         actions: {
-          viewAt: (plugin, path) => viewAt(plugins.contributions, plugin, path),
+          viewAt: (plugin, path, scope) => viewAt(plugins.contributions, plugin, path, scope),
           pathOf,
           show: (id) => run(show(id)),
           strip: (view, item) => stripOf(view, plugins.contributions.keybindings, item),

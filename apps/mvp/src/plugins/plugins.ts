@@ -223,12 +223,19 @@ const record = (loaded: Load.Loaded) =>
 export const viewById = (contributions: Contribution.Contributions, id: string): View | undefined =>
   contributions.views.find((view) => view.id === id)
 
-/** The view `plugin` declares at `path` in the app scope (`/app/<plugin>/<path>`), if any. */
-export const viewAt = (contributions: Contribution.Contributions, plugin: string, path: string): View | undefined =>
-  contributions.views.find((view) => view.plugin === plugin && view.scope === "app" && view.path === path)
+/**
+ * The view `plugin` declares at `path` in `scope`, if any: an `app` view shows at `/app/<plugin>/<path>`, a `repository`
+ * view at `/<owner>/<repo>/-/<plugin>/<path>`.
+ */
+export const viewAt = (
+  contributions: Contribution.Contributions,
+  plugin: string,
+  path: string,
+  scope: View["scope"] = "app",
+): View | undefined => contributions.views.find((view) => view.plugin === plugin && view.scope === scope && view.path === path)
 
-/** The app path a view shows at. */
-export const pathOf = (view: View): string => `/app/${view.plugin}${view.path === "" ? "" : `/${view.path}`}`
+/** Where a view shows; a `repository` view shows on `repository` and has no path without one. */
+export const pathOf = (view: View, repository?: Host.Repository): string | undefined => Host.pathOf(view, repository)
 
 /** Every query `plugin`'s contributions declare in `reads`. */
 const readsOf = (contributions: Contribution.Contributions, plugin: string): ReadonlySet<string> =>
@@ -538,12 +545,13 @@ export const hostFor = (plugin: string) =>
           )
           return { runId, settled: Deferred.await(settled) }
         }),
-      open: (id: string) =>
+      open: (id: string, repository?: Host.Repository) =>
         Effect.gen(function* () {
           const view = viewById(plugins.contributions, id)
-          if (view?.plugin !== plugin) return
+          const to = view?.plugin === plugin ? pathOf(view, repository) : undefined
+          if (to === undefined) return
           const flows = yield* provide(FlowDispatch)
-          yield* flows.dispatch("app/navigate", { to: pathOf(view) }, { door: "view" }).pipe(Effect.ignore, Effect.forkIn(plugins.scope))
+          yield* flows.dispatch("app/navigate", { to }, { door: "view" }).pipe(Effect.ignore, Effect.forkIn(plugins.scope))
         }),
       events: (id: string) =>
         viewById(plugins.contributions, id)?.plugin === plugin

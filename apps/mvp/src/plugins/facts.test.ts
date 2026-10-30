@@ -78,6 +78,20 @@ describe("trust boundaries", () => {
     }
   })
 
+  test("a plugin's slash command never shadows the core's own: /status is the core's", () => {
+    expect(facts.slash).toContain("status")
+    const command = (name: string) =>
+      reasons(load({
+        tier: "built-in",
+        manifest: manifest((base) => ({
+          ...base,
+          contributes: { commands: [{ id: "probe/open", flow: "app/navigate", args: { to: "/app" }, title: "Probe", minimum: "anyone", slash: { name } }] },
+        })),
+      }))
+    expect(command("status")).toEqual(["conflict"])
+    expect(command("lanes")).toEqual([])
+  })
+
   test("a reserved namespace is refused for a plugin's id", () => {
     for (const id of ["app", "core", "secret", "run", "system"]) {
       expect(reasons(load({ tier: "built-in", manifest: manifest((base) => ({ ...base, id })) })), id).toContain("reserved")
