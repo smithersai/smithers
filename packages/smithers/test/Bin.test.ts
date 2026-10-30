@@ -32,6 +32,7 @@ import { Version } from "../src/index.ts"
 import * as Providers from "../src/Providers.ts"
 import * as Unsupported from "../src/Unsupported.ts"
 import * as Verb from "../src/Verb.ts"
+import { childEnvironment, spawnNodeSync } from "./support/node-child.ts"
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url))
 const scriptedHost = fileURLToPath(new URL("./fixtures/scripted-native-host.ts", import.meta.url))
@@ -69,7 +70,7 @@ const waitOut = (milliseconds: number): void => {
 const run = (args: ReadonlyArray<string>, environment: Readonly<Record<string, string>> = {}) => {
   const cwd = mkdtempSync(temporaryDirectoryPrefix)
   try {
-    return spawnSync(process.execPath, ["--no-warnings", "--import", scriptedHost, executable, ...args], {
+    return spawnNodeSync(["--no-warnings", "--import", scriptedHost, executable, ...args], {
       cwd,
       encoding: "utf8",
       timeout: 180_000,
@@ -85,7 +86,7 @@ const runIn = (
   args: ReadonlyArray<string>,
   environment: Readonly<Record<string, string>> = {}
 ) =>
-  spawnSync(process.execPath, ["--no-warnings", "--import", scriptedHost, executable, ...args], {
+  spawnNodeSync(["--no-warnings", "--import", scriptedHost, executable, ...args], {
     cwd,
     encoding: "utf8",
     timeout: 180_000,
@@ -115,7 +116,7 @@ const inEmptyDirectory = <A>(use: (cwd: string) => A): A => {
  * and `NODE_OPTIONS` is cleared so no ambient preload can put a judge back.
  */
 const keyless = (cwd: string, args: ReadonlyArray<string>) =>
-  spawnSync(process.execPath, ["--no-warnings", executable, ...args], {
+  spawnNodeSync(["--no-warnings", executable, ...args], {
     cwd,
     encoding: "utf8",
     timeout: 180_000,
@@ -145,12 +146,12 @@ describe("keyless host startup", processBudget, () => {
     const cwd = mkdtempSync(temporaryDirectoryPrefix)
     const child = spawn(process.execPath, ["--no-warnings", executable, "serve", "--port", String(port)], {
       cwd,
-      env: {
+      env: childEnvironment({
         HOME: cwd,
         PATH: process.env.PATH,
         CI: "1",
         SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
-      },
+      }),
       stdio: ["ignore", "pipe", "pipe"]
     })
     const closed = new Promise<void>((resolve) => child.once("close", () => resolve()))
@@ -434,7 +435,7 @@ describe("smithers executable", processBudget, () => {
   it("answers --version without discovery or a database, from a directory with no project marker", () => {
     const home = stageHomeProject(24)
     try {
-      const result = spawnSync(process.execPath, ["--no-warnings", "--import", scriptedHost, executable, "--version"], {
+      const result = spawnNodeSync(["--no-warnings", "--import", scriptedHost, executable, "--version"], {
         cwd: join(home, "deep", "nested"),
         encoding: "utf8",
         timeout: 30_000,
@@ -453,7 +454,7 @@ describe("smithers executable", processBudget, () => {
   it("answers --help without discovery or a database, from a directory with no project marker", () => {
     const home = stageHomeProject(24)
     try {
-      const result = spawnSync(process.execPath, ["--no-warnings", "--import", scriptedHost, executable, "--help"], {
+      const result = spawnNodeSync(["--no-warnings", "--import", scriptedHost, executable, "--help"], {
         cwd: join(home, "deep", "nested"),
         encoding: "utf8",
         timeout: 30_000,
@@ -478,7 +479,7 @@ describe("smithers executable", processBudget, () => {
    */
   it("loads the CLI the docs generator imports from the source checkout", () => {
     const generator = fileURLToPath(new URL("../../../apps/site/scripts/gen-cli-data.mjs", import.meta.url))
-    const result = spawnSync(process.execPath, ["--no-warnings", generator, "--check"], {
+    const result = spawnNodeSync(["--no-warnings", generator, "--check"], {
       encoding: "utf8",
       timeout: 180_000,
       env: { ...process.env, NODE_OPTIONS: "" }
@@ -979,7 +980,7 @@ describe("the SQLite-only database contract", processBudget, () => {
       zeroX.exec("CREATE TABLE _smithers_runs (id TEXT PRIMARY KEY)")
       zeroX.close()
 
-      const result = spawnSync(process.execPath, [
+      const result = spawnNodeSync([
         "--no-warnings",
         "--import",
         scriptedHost,
@@ -1026,7 +1027,7 @@ describe("the served gateway", processBudget, () => {
       String(port)
     ], {
       cwd,
-      env: { ...process.env }
+      env: childEnvironment()
     })
     const exited = new Promise((resolve) => child.once("exit", resolve))
     let banner = ""
@@ -1114,7 +1115,7 @@ describe("the --json stdout contract", processBudget, () => {
 describe("flow start outside a repository", processBudget, () => {
   it("names the empty directory instead of silently exiting 130", () =>
     inEmptyDirectory((cwd) => {
-      const result = spawnSync(process.execPath, ["--no-warnings", executable, "flow", "start", "missing"], {
+      const result = spawnNodeSync(["--no-warnings", executable, "flow", "start", "missing"], {
         cwd,
         encoding: "utf8",
         timeout: 10_000,
@@ -1133,7 +1134,7 @@ describe("flow start outside a repository", processBudget, () => {
     inEmptyDirectory((cwd) => {
       mkdirSync(join(cwd, "flows", "missing"), { recursive: true })
       writeFileSync(join(cwd, "flows", "missing", "flow.mdx"), "---\ndescription: Old.\n---\nOld.\n")
-      const result = spawnSync(process.execPath, ["--no-warnings", executable, "flow", "start", "missing"], {
+      const result = spawnNodeSync(["--no-warnings", executable, "flow", "start", "missing"], {
         cwd,
         encoding: "utf8",
         timeout: 10_000,
@@ -1154,6 +1155,7 @@ describe("the signal exit codes", processBudget, () => {
         ["--no-warnings", "--import", scriptedHost, executable, "logs", "--follow"],
         {
           cwd,
+          env: childEnvironment(),
           stdio: ["ignore", "pipe", "pipe"]
         }
       )
@@ -1212,7 +1214,7 @@ describe("the smithers bin shim", processBudget, () => {
       mkdirSync(join(root, "dist", "esm"), { recursive: true })
       writeFileSync(join(root, "dist", "esm", "bin.js"), "process.stdout.write(\"built entry ran\\n\")\n")
 
-      const result = spawnSync(process.execPath, [join(root, "bin", "smithers.mjs"), "--version"], {
+      const result = spawnNodeSync([join(root, "bin", "smithers.mjs"), "--version"], {
         cwd: root,
         encoding: "utf8",
         timeout: 180_000
@@ -1243,7 +1245,7 @@ describe("the smithers bin shim", processBudget, () => {
       symlinkSync(join(packageRoot, "src"), join(root, "src"), "dir")
       expect(existsSync(join(root, "dist"))).toBe(false)
 
-      const result = spawnSync(process.execPath, [join(root, "bin", "smithers.mjs"), "--version"], {
+      const result = spawnNodeSync([join(root, "bin", "smithers.mjs"), "--version"], {
         cwd: root,
         encoding: "utf8",
         timeout: 180_000
@@ -1300,7 +1302,7 @@ const inProject = (
   args: ReadonlyArray<string>,
   environment: Readonly<Record<string, string>> = {}
 ) =>
-  spawnSync(process.execPath, ["--no-warnings", "--import", scriptedHost, executable, ...args], {
+  spawnNodeSync(["--no-warnings", "--import", scriptedHost, executable, ...args], {
     cwd,
     encoding: "utf8",
     timeout: 180_000,
@@ -1776,7 +1778,7 @@ const stageCanonicalUnservableSeat = (): string => {
 }
 
 const launch = (cwd: string, args: ReadonlyArray<string>) =>
-  spawnSync(process.execPath, ["--no-warnings", "--import", scriptedHost, executable, ...args], {
+  spawnNodeSync(["--no-warnings", "--import", scriptedHost, executable, ...args], {
     cwd,
     encoding: "utf8",
     timeout: 180_000,
@@ -1798,7 +1800,7 @@ describe("an attached launch's exit status", processBudget, () => {
     )
     symlinkSync(join(packageRoot, "node_modules"), join(cwd, "node_modules"), "dir")
     const invoke = (...args: Array<string>) =>
-      spawnSync(process.execPath, [
+      spawnNodeSync([
         "--no-warnings",
         "--import",
         scriptedHost,
@@ -2174,7 +2176,7 @@ describe("the smthrs init scaffold, launched as written", processBudget, () => {
     args: ReadonlyArray<string>,
     environment: Record<string, string>
   ) =>
-    spawnSync(process.execPath, ["--no-warnings", "--import", scriptedHost, executable, ...args], {
+    spawnNodeSync(["--no-warnings", "--import", scriptedHost, executable, ...args], {
       cwd,
       encoding: "utf8",
       timeout: 600_000,
@@ -2395,7 +2397,7 @@ describe.skipIf(!chatgptSeat)("the smthrs init scaffold on a funded seat", { tim
     expect(spawnSync("git", ["init", "--quiet"], { cwd, encoding: "utf8" }).status).toBe(0)
     try {
       const environment = { ...process.env } as Record<string, string>
-      const initialized = spawnSync(process.execPath, [
+      const initialized = spawnNodeSync([
         "--no-warnings",
         "--import",
         scriptedHost,
@@ -2412,7 +2414,7 @@ describe.skipIf(!chatgptSeat)("the smthrs init scaffold on a funded seat", { tim
       expect(initialized.status).toBe(0)
       expect((JSON.parse(initialized.stdout) as { readonly seat: string }).seat).toBe("openai:gpt-6-sol")
 
-      const launched = spawnSync(process.execPath, [
+      const launched = spawnNodeSync([
         "--no-warnings",
         "--import",
         scriptedHost,

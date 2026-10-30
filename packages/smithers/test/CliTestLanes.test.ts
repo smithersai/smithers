@@ -104,11 +104,10 @@ export default { test: {
           join(root, `0${phase}.test.mjs`),
           `import { it, expect } from "vitest";
 import { existsSync, writeFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
 import { getCompileCacheDir } from "node:module";
 import { dirname, join } from "node:path";
 import { classify } from "./measured.mjs";
-import { temporaryEnvironment } from ${JSON.stringify(new URL("./temporaryEnvironment.ts", import.meta.url).href)};
+import { spawnNodeSync } from ${JSON.stringify(new URL("./support/node-child.ts", import.meta.url).href)};
 it(${JSON.stringify(phase)}, async () => {
   expect(process.env.VIBELANG_CACHE_DIR).toEqual(expect.any(String));
   expect(process.env.NODE_COMPILE_CACHE).toBeUndefined();
@@ -117,9 +116,16 @@ it(${JSON.stringify(phase)}, async () => {
   expect(classify(true)).toBe("left");
   expect(classify(false)).toBe("right");
   const nodeCache = join(dirname(process.env.VIBELANG_CACHE_DIR), "cache");
-  const isolatedCache = JSON.parse(execFileSync(process.execPath, ["-e", "process.stdout.write(JSON.stringify({ vibe: process.env.VIBELANG_CACHE_DIR, node: process.env.NODE_COMPILE_CACHE, enabled: Boolean(require('node:module').getCompileCacheDir()) }))"], {
-    env: temporaryEnvironment(), encoding: "utf8"
-  }));
+  const probe = "process.stdout.write(JSON.stringify({ vibe: process.env.VIBELANG_CACHE_DIR, node: process.env.NODE_COMPILE_CACHE, enabled: Boolean(require('node:module').getCompileCacheDir()), ambient: process.env.SMITHERS_LANES_AMBIENT_SENTINEL }))";
+  const launched = spawnNodeSync(["-e", probe], { env: process.env, encoding: "utf8" });
+  expect(launched.error).toBeUndefined();
+  expect(launched.status, launched.stderr).toBe(0);
+  const { ambient, ...isolatedCache } = JSON.parse(launched.stdout);
+  expect(ambient).toBe("must-not-be-forwarded");
+  const narrow = spawnNodeSync(["-e", probe], { env: { HOME: dirname(nodeCache) }, encoding: "utf8" });
+  expect(narrow.status, narrow.stderr).toBe(0);
+  expect(JSON.parse(narrow.stdout)).toEqual({ vibe: process.env.VIBELANG_CACHE_DIR, node: nodeCache, enabled: true });
+  expect(getCompileCacheDir()).toBeUndefined();
   expect(isolatedCache).toEqual({ vibe: process.env.VIBELANG_CACHE_DIR, node: nodeCache, enabled: true });
   writeFileSync(${JSON.stringify(join(root, phase))}, JSON.stringify({ ...isolatedCache, pid: process.pid }));
   if (${Number(phase) < 3}) {
@@ -154,6 +160,7 @@ it(${JSON.stringify(phase)}, async () => {
             TEMP: scratch,
             SMITHERS_LANES_SCRATCH_RECEIPT: join(root, "owned-work"),
             SMITHERS_CLI_DISABLE_COMPILE_CACHE: "",
+            SMITHERS_LANES_AMBIENT_SENTINEL: "must-not-be-forwarded",
             SMITHERS_LANES_FAIL_LAST: failure ? "1" : "0"
           },
           encoding: "utf8",

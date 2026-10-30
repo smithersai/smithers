@@ -34,13 +34,14 @@ it.each([
 import { classify } from ${JSON.stringify(pathToFileURL(probe).href)};
 console.log(JSON.stringify({ cached: Boolean(getCompileCacheDir()), counted: Boolean(process.env.NODE_V8_COVERAGE),
   values: [classify(true), classify(false)] }));`
-    const parentCode = `import { execFileSync } from "node:child_process";
-import { getCompileCacheDir } from "node:module";
-import { temporaryEnvironment } from ${JSON.stringify(new URL("./temporaryEnvironment.ts", import.meta.url).href)};
-const child = execFileSync(process.execPath, ["--input-type=module", "-e", ${JSON.stringify(childCode)}], {
-  env: temporaryEnvironment(), encoding: "utf8"
+    const parentCode = `import { getCompileCacheDir } from "node:module";
+import { spawnNodeSync } from ${JSON.stringify(new URL("./support/node-child.ts", import.meta.url).href)};
+const child = spawnNodeSync(["--input-type=module", "-e", ${JSON.stringify(childCode)}], {
+  env: process.env, encoding: "utf8"
 });
-console.log(JSON.stringify({ workerCached: Boolean(getCompileCacheDir()), child: JSON.parse(child) }));`
+if (child.error) throw child.error;
+if (child.status !== 0) throw new Error(child.stderr);
+console.log(JSON.stringify({ workerCached: Boolean(getCompileCacheDir()), child: JSON.parse(child.stdout) }));`
     const result = await execute(process.execPath, ["--input-type=module", "-e", parentCode], {
       env: {
         ...process.env,
