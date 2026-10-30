@@ -142,3 +142,9 @@ approximation (savepoints can acquire additional locks). It is not a single
 blocked-lock duration. Use `maxLockWaitMs`, the maximum acquisition observation, to distinguish
 a long acquisition from many short ones; database lock wait records are still
 needed to distinguish server contention from transport latency.
+
+The `DriveWrites` regression holds eight executions' first PostgreSQL writer
+transactions at a barrier. Every transaction must acquire its real advisory
+lock before any is released; each completed alarm must retain its fourteen
+transactions, 38 journal events and zero schema-wide writes. This checks lock
+independence without a wall-clock speed ratio that varies with runner load.

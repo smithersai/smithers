@@ -8,10 +8,10 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import { DatabaseMetrics } from "@smthrs/database"
-import * as SlowNetwork from "@smthrs/database/test/SlowNetwork"
 import { JournalMetrics } from "@smthrs/journal"
-import * as Duration from "effect/Duration"
+import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
+import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as SqlClient from "effect/sql/SqlClient"
@@ -91,20 +91,49 @@ describe.skipIf(!Postgres.direct.available)(`one alarm's writes over ${Postgres.
     }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(schema))))
   })
 
-  it.live("eight not-found clones' alarms finish within three times one alone", () => {
+  it.live("eight not-found clones acquire independent writer locks before any is released", () => {
     const schema = Postgres.freshSchema()
     return Effect.gen(function*() {
-      // A 10 ms round trip, so the network, not this one process, sets the pace.
-      const slow = yield* SlowNetwork.proxy(Postgres.url, { delayMs: 5 })
-      const database = () => Postgres.database(schema, slow)
-      yield* alarm(yield* started(database()))
-      const alone = yield* started(database())
-      const together = yield* Effect.forEach(Array.from({ length: 8 }), () => started(database()))
-      const [one, single] = yield* Effect.timed(alarm(alone))
-      const [eight, eights] = yield* Effect.timed(Effect.forEach(together, alarm, { concurrency: "unbounded" }))
-      for (const each of [single, ...eights]) expect(each.outcome._tag).toBe("Settled")
-      // Under one schema-wide lock the eight took 4.3 to 4.6 times as long as one.
-      expect(Duration.toMillis(eight)).toBeLessThan(3 * Duration.toMillis(one))
+      yield* alarm(yield* started(Postgres.database(schema)))
+      const release = yield* Deferred.make<void>()
+      const entered = yield* Effect.forEach(Array.from({ length: 8 }), () => Deferred.make<void>())
+      const together = yield* Effect.forEach(
+        entered,
+        (ready) =>
+          started(
+            Layer.effect(
+              SqlClient.SqlClient,
+              Effect.map(Effect.service(SqlClient.SqlClient), (sql) => {
+                const open = sql.withTransaction
+                let first = true
+                return Object.assign(sql, {
+                  withTransaction: <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+                    open(Effect.gen(function*() {
+                      // Postgres acquired the real advisory writer lock before
+                      // entering this body. Hold it until all eight have entered.
+                      if (first) {
+                        first = false
+                        yield* Deferred.succeed(ready, undefined)
+                        yield* Deferred.await(release).pipe(Effect.interruptible)
+                      }
+                      return yield* effect
+                    }))
+                })
+              })
+            ).pipe(Layer.provide(Postgres.database(schema)))
+          )
+      )
+      const running = yield* Effect.forkChild(Effect.forEach(together, alarm, { concurrency: "unbounded" }))
+      yield* Effect.forEach(entered, Deferred.await, { concurrency: "unbounded" }).pipe(
+        Effect.timeout("30 seconds"),
+        Effect.ensuring(Deferred.succeed(release, undefined))
+      )
+      for (const each of yield* Fiber.join(running)) {
+        expect(each.outcome._tag).toBe("Settled")
+        expect(each.events).toBe(38)
+        expect(each.writes.transactions).toBe(14)
+        expect(each.writes.schemaWide).toBe(0)
+      }
     }).pipe(Effect.scoped, Effect.ensuring(Effect.promise(() => Postgres.dropSchema(schema))))
   }, 180_000)
 })
