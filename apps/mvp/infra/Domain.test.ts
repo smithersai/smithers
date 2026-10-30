@@ -2,7 +2,16 @@
 import { ConfigProvider, Effect, Exit, Option } from "effect"
 import { describe, expect, test } from "vitest"
 import { DOCS_SITE } from "../src/pwa.ts"
-import { AppDomain, AppDomainInvalid, AppDomainRedirectInvalid, docsRoutes, workerDomain, WORKERS_DEV } from "./Domain.ts"
+import {
+  aliasesBinding,
+  AppAliasInvalid,
+  AppDomain,
+  AppDomainInvalid,
+  AppDomainRedirectInvalid,
+  docsRoutes,
+  workerDomain,
+  WORKERS_DEV,
+} from "./Domain.ts"
 
 const provided = <A, E>(effect: Effect.Effect<A, E>, env: Record<string, string>) =>
   effect.pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))))
@@ -17,9 +26,9 @@ const refusal = (env: Record<string, string>) => {
 
 describe("APP_DOMAIN", () => {
   test("names the custom domain a production deploy attaches the app to", () => {
-    expect(read({ APP_DOMAIN: "example.com" })).toEqual(Exit.succeed(Option.some({ name: "example.com", redirects: [] })))
+    expect(read({ APP_DOMAIN: "example.com" })).toEqual(Exit.succeed(Option.some({ name: "example.com", redirects: [], aliases: [] })))
     expect(read({ APP_DOMAIN: "app.example.co.uk" })).toEqual(
-      Exit.succeed(Option.some({ name: "app.example.co.uk", redirects: [] })),
+      Exit.succeed(Option.some({ name: "app.example.co.uk", redirects: [], aliases: [] })),
     )
   })
 
@@ -68,10 +77,10 @@ describe("APP_DOMAIN_REDIRECTS", () => {
 
   test("lists the hostnames that answer with a 301 to the domain", () => {
     expect(read({ APP_DOMAIN: "example.com", APP_DOMAIN_REDIRECTS: "www.example.com, old.example.net,," })).toEqual(
-      Exit.succeed(Option.some({ name: "example.com", redirects: ["www.example.com", "old.example.net"] })),
+      Exit.succeed(Option.some({ name: "example.com", redirects: ["www.example.com", "old.example.net"], aliases: [] })),
     )
     expect(read({ APP_DOMAIN: "example.com", APP_DOMAIN_REDIRECTS: "" })).toEqual(
-      Exit.succeed(Option.some({ name: "example.com", redirects: [] })),
+      Exit.succeed(Option.some({ name: "example.com", redirects: [], aliases: [] })),
     )
   })
 
@@ -92,11 +101,60 @@ describe("APP_DOMAIN_REDIRECTS", () => {
   })
 
   test("reach Alchemy as the domain's redirects, and a domain without any as its bare hostname", () => {
-    expect(workerDomain({ name: "example.com", redirects: [] })).toBe("example.com")
-    expect(workerDomain({ name: "example.com", redirects: ["www.example.com"] })).toEqual({
+    expect(workerDomain({ name: "example.com", redirects: [], aliases: [] })).toBe("example.com")
+    expect(workerDomain({ name: "example.com", redirects: ["www.example.com"], aliases: [] })).toEqual({
       name: "example.com",
       redirects: ["www.example.com"],
     })
+  })
+})
+
+describe("APP_ALIASES", () => {
+  const aliasRefusal = (env: Record<string, string>) => {
+    const error = Effect.runSync(provided(Effect.flip(AppDomain), env))
+    if (!(error instanceof AppAliasInvalid)) throw new Error(`${JSON.stringify(env)} failed otherwise`)
+    return error
+  }
+  const factory = { host: "factory.example.com", path: "/acme/widgets/-/factory" }
+
+  test("lists other hostnames that serve the app, each opening one page", () => {
+    expect(read({ APP_DOMAIN: "example.com", APP_ALIASES: "factory.example.com=/acme/widgets/-/factory" })).toEqual(
+      Exit.succeed(Option.some({ name: "example.com", redirects: [], aliases: [factory] })),
+    )
+    expect(read({ APP_DOMAIN: WORKERS_DEV, APP_ALIASES: " " })).toEqual(Exit.succeed(Option.none()))
+  })
+
+  test("refuses an entry that isn't host=path, uses the domain's own hostnames, or has no domain", () => {
+    for (const [env, value] of [
+      [{ APP_DOMAIN: "example.com", APP_ALIASES: "factory.example.com" }, "factory.example.com"],
+      [{ APP_DOMAIN: "example.com", APP_ALIASES: "example.com=/a" }, "example.com=/a"],
+      [
+        { APP_DOMAIN: "example.com", APP_DOMAIN_REDIRECTS: "www.example.com", APP_ALIASES: "www.example.com=/a" },
+        "www.example.com=/a",
+      ],
+      [{ APP_DOMAIN: WORKERS_DEV, APP_ALIASES: "factory.example.com=/a" }, "factory.example.com=/a"],
+      // Read before APP_DOMAIN, so an invalid list is named even when APP_DOMAIN is unset.
+      [{ APP_ALIASES: "factory.example.com=x" }, "factory.example.com=x"],
+    ] as const) {
+      const error = aliasRefusal(env)
+      expect(error.value).toBe(value)
+      expect(error.message).toBe(
+        `APP_ALIASES lists "${value}": each entry must be host=/path, such as factory.example.com=/acme/app, with a ` +
+          "hostname other than APP_DOMAIN and its redirects, and APP_DOMAIN must name a domain, not workers.dev " +
+          "(docs/infrastructure.md#domain).",
+      )
+    }
+  })
+
+  test("reach Alchemy as the domain's aliases, and the site Worker as their text", () => {
+    const host = { name: "example.com", redirects: [], aliases: [factory, { host: "b.example.com", path: "/app" }] }
+    expect(workerDomain(host)).toEqual({ name: "example.com", aliases: ["factory.example.com", "b.example.com"] })
+    expect(workerDomain({ ...host, redirects: ["www.example.com"] })).toEqual({
+      name: "example.com",
+      aliases: ["factory.example.com", "b.example.com"],
+      redirects: ["www.example.com"],
+    })
+    expect(aliasesBinding(host)).toBe("factory.example.com=/acme/widgets/-/factory,b.example.com=/app")
   })
 })
 

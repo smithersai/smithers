@@ -2,12 +2,10 @@
 // identifiers; the public stack names no domain of its own (docs/infrastructure.md#domain).
 import { Config, Data, Effect, Option } from "effect"
 import { DOCS_SITE_PATHS } from "../src/pwa.ts"
+import { type Alias, HOSTNAME, parseAliases } from "../worker/aliases.ts"
 
 /** `APP_DOMAIN`'s value for a deployment served only at its `workers.dev` URL, with no custom domain and no docs site. */
 export const WORKERS_DEV = "workers.dev"
-
-/** A lowercase DNS name with at least two labels, such as `example.com` or `app.example.com`. */
-const HOSTNAME = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/
 
 /**
  * A production deploy without a usable `APP_DOMAIN`. Unset is refused rather than read as "no domain": a deploy that
@@ -31,10 +29,26 @@ export class AppDomainRedirectInvalid extends Data.TaggedError("AppDomainRedirec
   }
 }
 
-/** The app's custom domain: the hostname it serves at, and the hostnames that redirect there. */
+/**
+ * An `APP_ALIASES` entry that isn't `host=/path`, names a hostname twice or one `APP_DOMAIN` or its redirects already
+ * use, or has no domain to sit beside.
+ */
+export class AppAliasInvalid extends Data.TaggedError("AppAliasInvalid")<{ readonly value: string }> {
+  override get message() {
+    return `APP_ALIASES lists "${this.value}": each entry must be host=/path, such as factory.example.com=/acme/app, ` +
+      "with a hostname other than APP_DOMAIN and its redirects, and APP_DOMAIN must name a domain, not " +
+      `${WORKERS_DEV} (docs/infrastructure.md#domain).`
+  }
+}
+
+/**
+ * The app's custom domain: the hostname it serves at, the hostnames that redirect there, and the aliases, other
+ * hostnames that serve the app and open one page of it at `/`.
+ */
 export interface AppHost {
   readonly name: string
   readonly redirects: ReadonlyArray<string>
+  readonly aliases: ReadonlyArray<Alias>
 }
 
 /**
@@ -45,10 +59,12 @@ export interface AppHost {
  */
 export const AppDomain: Effect.Effect<
   Option.Option<AppHost>,
-  AppDomainInvalid | AppDomainRedirectInvalid | Config.ConfigError
+  AppDomainInvalid | AppDomainRedirectInvalid | AppAliasInvalid | Config.ConfigError
 > = Effect.gen(function* () {
   const value = yield* Config.option(Config.String("APP_DOMAIN"))
   const listed = yield* Config.option(Config.String("APP_DOMAIN_REDIRECTS"))
+  const aliases = parseAliases(Option.getOrElse(yield* Config.option(Config.String("APP_ALIASES")), () => ""))
+  if ("invalid" in aliases) return yield* new AppAliasInvalid({ value: aliases.invalid })
   const redirects = Option.match(listed, {
     onNone: () => [],
     onSome: (list) => list.split(",").map((entry) => entry.trim()).filter((entry) => entry !== ""),
@@ -56,20 +72,33 @@ export const AppDomain: Effect.Effect<
   if (Option.isNone(value)) return yield* new AppDomainInvalid({ value: undefined })
   if (value.value === WORKERS_DEV) {
     if (redirects.length > 0) return yield* new AppDomainRedirectInvalid({ value: redirects[0]! })
+    if (aliases.length > 0) return yield* new AppAliasInvalid({ value: `${aliases[0]!.host}=${aliases[0]!.path}` })
     return Option.none()
   }
   if (!HOSTNAME.test(value.value)) return yield* new AppDomainInvalid({ value: value.value })
   const wrong = redirects.find((entry) => !HOSTNAME.test(entry) || entry === value.value)
   if (wrong !== undefined) return yield* new AppDomainRedirectInvalid({ value: wrong })
-  return Option.some({ name: value.value, redirects })
+  const taken = aliases.find((alias) => alias.host === value.value || redirects.some((entry) => entry === alias.host))
+  if (taken !== undefined) return yield* new AppAliasInvalid({ value: `${taken.host}=${taken.path}` })
+  return Option.some({ name: value.value, redirects, aliases })
 })
 
 /**
- * The site Worker's `domain` for Alchemy: the bare hostname without redirects, so a deployment with none never needs
- * the zone's redirect rules, which Alchemy writes for each redirect.
+ * The site Worker's `domain` for Alchemy: the bare hostname without redirects or aliases, so a deployment with no
+ * redirect never needs the zone's redirect rules, which Alchemy writes for each one. Each alias is another custom
+ * domain of the same Worker.
  */
 export const workerDomain = (host: AppHost) =>
-  host.redirects.length === 0 ? host.name : { name: host.name, redirects: [...host.redirects] }
+  host.redirects.length === 0 && host.aliases.length === 0
+    ? host.name
+    : {
+      name: host.name,
+      ...(host.aliases.length === 0 ? {} : { aliases: host.aliases.map((alias) => alias.host) }),
+      ...(host.redirects.length === 0 ? {} : { redirects: [...host.redirects] }),
+    }
+
+/** The site Worker's `APP_ALIASES` binding: the aliases' text, which it reads at run time (worker/aliases.ts). */
+export const aliasesBinding = (host: AppHost) => host.aliases.map((alias) => `${alias.host}=${alias.path}`).join(",")
 
 /**
  * The docs site's zone routes on `domain`, one for each path it serves there (infra/DocsSite.ts). Cloudflare runs a

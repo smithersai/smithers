@@ -17,8 +17,9 @@
  *   the durable flow engine over Postgres (schema smithers_flows) through the same Hyperdrive config
  *   (docs/features/remote-flows.md). Declaring ChatApi declares it.
  * - The site (Vite build + worker/index.ts): serves the app and hands /api/* to ChatApi over a service binding. In
- *   production it answers at the custom domain `APP_DOMAIN` (infra/Domain.ts), unless that is `workers.dev`, and the
- *   hostnames in `APP_DOMAIN_REDIRECTS` answer with a 301 to it.
+ *   production it answers at the custom domain `APP_DOMAIN` (infra/Domain.ts), unless that is `workers.dev`, the
+ *   hostnames in `APP_DOMAIN_REDIRECTS` answer with a 301 to it, and those in `APP_ALIASES` serve it too, each opening
+ *   its own page at `/`.
  * - The docs site (apps/site, infra/DocsSite.ts): beside a custom domain, it serves its own paths there (/docs/**,
  *   /changelogs/**, llms.txt…) by zone routes, which Cloudflare runs before the site's custom domain.
  *
@@ -39,7 +40,7 @@ import type { State } from "alchemy/State"
 import { Effect, Layer, Option } from "effect"
 import { ChatDatabase } from "./infra/ChatDatabase.ts"
 import { DocsSite } from "./infra/DocsSite.ts"
-import { AppDomain, type AppHost, workerDomain } from "./infra/Domain.ts"
+import { aliasesBinding, AppDomain, type AppHost, workerDomain } from "./infra/Domain.ts"
 import * as Electric from "./infra/Electric.ts"
 import ElectricGateway from "./infra/ElectricGateway.ts"
 import { DatabaseUrl as ElectricDatabaseUrl } from "./infra/ElectricRuntime.ts"
@@ -90,7 +91,13 @@ export default Alchemy.Stack(
       compatibility: { date: "2026-10-01", flags: ["enable_request_signal"] },
       // HTML must pass through the site Worker to resolve social image URLs on this request’s origin.
       assets: { notFoundHandling: "single-page-application", runWorkerFirst: true },
-      env: { CHAT_API: chatApi },
+      // The aliases' pages, which `/` on each alias redirects to (worker/aliases.ts).
+      env: {
+        CHAT_API: chatApi,
+        ...(Option.isSome(domain) && domain.value.aliases.length > 0
+          ? { APP_ALIASES: aliasesBinding(domain.value) }
+          : {}),
+      },
       // Production's custom domain and the hostnames that redirect to it, or none at all with APP_DOMAIN=workers.dev;
       // `alchemy dev` leaves it alone.
       ...(Option.isSome(domain)

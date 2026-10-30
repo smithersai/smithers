@@ -34,6 +34,37 @@ test.each([
 })
 
 test.each([
+  ["https://factory.smithers.test/", "https://factory.smithers.test/acme/widgets/-/factory"],
+  ["https://factory.smithers.test/?x=1", "https://factory.smithers.test/acme/widgets/-/factory?x=1"],
+])("an alias's /, %s, goes to its page, %s", async (url, location) => {
+  const seen: Array<string> = []
+  const env = {
+    CHAT_API: binding("CHAT_API", seen),
+    ASSETS: binding("ASSETS", seen),
+    APP_ALIASES: "factory.smithers.test=/acme/widgets/-/factory",
+  }
+  const response = await site.fetch(new Request(url) as Parameters<typeof site.fetch>[0], env)
+  expect(response.status).toBe(302)
+  expect(response.headers.get("location")).toBe(location)
+  expect(seen).toEqual([])
+})
+
+test.each([
+  ["https://factory.smithers.test/app", "ASSETS GET /app"],
+  ["https://factory.smithers.test/api/auth/session", "CHAT_API GET /api/auth/session"],
+  ["https://smithers.test/", "ASSETS GET /"],
+])("every other path on an alias, and / elsewhere, is the app's: %s", async (url, reached) => {
+  const seen: Array<string> = []
+  const env = {
+    CHAT_API: binding("CHAT_API", seen),
+    ASSETS: binding("ASSETS", seen),
+    APP_ALIASES: "factory.smithers.test=/acme/widgets/-/factory",
+  }
+  await site.fetch(new Request(url) as Parameters<typeof site.fetch>[0], env)
+  expect(seen).toEqual([reached])
+})
+
+test.each([
   ["/docs?ref=x", "https://smithers.test/docs/?ref=x"],
   ["/changelogs", "https://smithers.test/changelogs/"],
   ["/privacy?utm_source=a&b=c", "https://smithers.test/privacy/?utm_source=a&b=c"],
