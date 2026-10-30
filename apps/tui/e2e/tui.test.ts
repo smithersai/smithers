@@ -717,8 +717,10 @@ describe("esc", () => {
     "adopts terminal resizing while an external editor owns the foreground",
     async () => {
       const { tui } = await start({ cols: 80, rows: 20, editor: "vim -u NONE -U NONE -i NONE -n" })
+      // A long private temporary path can wrap the basename across terminal rows.
+      const vimReady = (screen: string) => screen.replace(/\s/g, "").includes("prompt.md") && !drawn(screen)
       await tui.press("\x07")
-      await tui.until((screen) => screen.includes("prompt.md") && !drawn(screen), 5_000, "Vim foreground")
+      await tui.until(vimReady, 5_000, "Vim foreground")
       await tui.resize(110, 40)
       await tui.press(":q!" + key.enter)
       await tui.until(
@@ -727,7 +729,7 @@ describe("esc", () => {
         "footer at resized bottom"
       )
       await tui.press("\x07")
-      await tui.until((screen) => screen.includes("prompt.md") && !drawn(screen), 5_000, "Vim reopened")
+      await tui.until(vimReady, 5_000, "Vim reopened")
       await tui.resize(60, 12)
       await tui.press(":q!" + key.enter)
       await tui.until(
