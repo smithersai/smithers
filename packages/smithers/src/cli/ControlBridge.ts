@@ -36,6 +36,7 @@ import * as Argv from "./Argv.ts"
 import type * as McpStdio from "./McpStdio.ts"
 import { writeOperatorTokenFile } from "./OperatorTokenFile.ts"
 import * as Presentation from "./Presentation.ts"
+import * as RunEventStream from "./RunEventStream.ts"
 import * as RunProgress from "./RunProgress.ts"
 
 /**
@@ -452,41 +453,7 @@ export const events = (
   runtime: Runtime = {},
   afterSequence?: number
 ) => {
-  const stream = Stream.unwrap(Effect.gen(function*() {
-    const control = yield* Control.Control
-    let cursor = afterSequence
-    const watch = (live: boolean) =>
-      control.watch({
-        runId,
-        follow: live,
-        ...(cursor === undefined ? {} : { afterSequence: cursor })
-      })
-    if (!follow) return watch(false)
-    const terminal = Effect.gen(function*() {
-      while (true) {
-        const page = yield* control.list({ _tag: "runs", filters: { runId } })
-        if (
-          page._tag === "runs" &&
-          page.items.some((run) =>
-            run.runId === runId && (run.status === "completed" || run.status === "failed" || run.status === "cancelled")
-          )
-        ) return
-        yield* Effect.sleep("250 millis")
-      }
-    })
-    // A terminal run may have no event after the caller's cursor. Observe its
-    // durable status too, then drain once more after the last delivered event
-    // so interrupting the live transport cannot lose its final buffered rows.
-    return watch(true).pipe(
-      Stream.interruptWhen(terminal),
-      Stream.tap((event) =>
-        Effect.sync(() => {
-          cursor = event.sequence
-        })
-      ),
-      Stream.concat(Stream.unwrap(Effect.sync(() => watch(false))))
-    )
-  })).pipe(
+  const stream = RunEventStream.events(runId, follow, afterSequence).pipe(
     Stream.provide(NodeControl.layerObserve(configuration(options, runtime))),
     Stream.provide(runtime.effectContext ?? Context.empty())
   )

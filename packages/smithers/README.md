@@ -237,10 +237,15 @@ VibeLang compile caches are shared with CLI children and removed with the
 target's scratch directory.
 Shared test setup preserves an explicit Node cache and removes only the cache
 it creates when none was supplied.
+V8 workers keep Node's compile cache disabled. A separate run-owned reference
+enables it only in CLI children whose coverage is not being collected. Explicit
+cache opt-outs and external `NODE_V8_COVERAGE` collection remain in force.
 The offline native-host preload follows child CLI processes and stays out of
 compiler worker threads. Per-file results remain visible before suite completion.
 The native peer-recovery file leads cold runs: its eight long process scenarios
 must start before the source-size ordering reaches its small file.
+Run log following drains through the control journal's committed terminal status;
+an earlier engine cancellation observation does not close the stream.
 The coverage target follows `vitest.config.ts`. Process-killing cases stay in
 the serial `:faults` target, using `vitest.faults.config.ts`.
 

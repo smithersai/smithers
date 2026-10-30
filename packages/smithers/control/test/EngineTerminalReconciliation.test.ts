@@ -78,9 +78,18 @@ describe("terminal engine authority and durable control reconciliation", () => {
                   .toEqual({ _tag: "Activated" })
                 expect(yield* engine.transitionOwned(id, owner, status)).toEqual({ _tag: "Transitioned" })
                 expect((yield* runtime.getRun(id)).status).toBe(parked ? "parked" : "accepted")
+                if (!staleFirstRead) {
+                  const before = yield* control.list({ _tag: "runs", filters: { runId: id } })
+                  expect(before._tag === "runs" && before.items[0]).toMatchObject({
+                    status,
+                    recordedStatus: parked ? "parked" : "accepted"
+                  })
+                }
                 expect(yield* control.cancel({ runId: id, idempotencyKey: "cancel-after-engine-settled" }))
                   .toEqual({ _tag: "Terminal", runId: id, status })
                 expect((yield* runtime.getRun(id)).status).toBe(status)
+                const after = yield* control.list({ _tag: "runs", filters: { runId: id } })
+                expect(after._tag === "runs" && after.items[0]).toMatchObject({ status, recordedStatus: status })
                 expect(yield* control.cancel({ runId: id, idempotencyKey: "cancel-after-engine-settled" }))
                   .toEqual({ _tag: "Terminal", runId: id, status })
                 expect(requests).toBe(staleFirstRead ? 1 : 0)

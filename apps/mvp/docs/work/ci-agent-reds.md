@@ -17,9 +17,13 @@ entries in `docs/libraries.md`, plus flow, harness, journal, run-store and engin
 existing services remain their public seams.
 
 The shared test setup preserves the CLI target's explicit Node compile-cache
-path. Actual Vitest workers and their Node children reuse both run-owned
-compiler caches; standalone runs still clean up their default cache. Real loader
-tests cover success and failure with owned and shared caches.
+path. Standalone runs still clean up their default cache. Real loader tests
+cover success and failure with owned and shared caches. The original worker
+probe disabled coverage and missed Vitest stripping the Node cache reference.
+The actual V8 worker fixture now keeps that cache disabled in measured workers,
+passes a separate run-owned reference to unmeasured CLI children, and checks
+100% coverage of both branches of its measured source. Explicit opt-outs and
+external Node coverage retain disabled caches and precise source ranges.
 
 The CLI runner preserves the configured normal/fault split and schedules each
 file in one Vitest pool with four workers. Independent runners repeated compiler
@@ -38,6 +42,14 @@ public sequencer. The previous size ordering started its first scenario 38
 minutes into the 40-minute run, after the other 323 files had produced coverage.
 Cold actual discovery rejects that ordering and verifies the recovery file is
 first, retaining the same inventory, configured gate and four-worker pool.
+The follow-logs assertion reproduced in a later four-copy run. Its follower
+returned engine interruption events without `control.run.cancelled`: the engine
+observation became terminal before the control transaction committed. Observed
+summaries now retain `recordedStatus`, and following uses that committed status
+for its final drain. Real control services exercise the gap for every terminal
+status and both ordinary and past-terminal cursors; SQLite reconciliation checks
+retain current engine truth beside the recorded state. Cache inheritance remains
+a separate verified environment correction.
 Native recovery probes wait for actual admission refusals before asserting a
 park, retaining the explicit-consent and exactly-once execution checks.
 

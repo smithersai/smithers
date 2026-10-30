@@ -85,6 +85,10 @@ Every mutation answers a `ControlSchema.Receipt` rather than throwing on a
 second ask. `Accepted` means this call did the work, `AlreadyApplied` means an
 earlier call under the same idempotency key did, `Conflict` means the key names
 a different intent, `Parked` means the plan is waiting for an approval, and
+An observed run summary keeps the engine's current `status` and the coordination
+journal's `recordedStatus`. Consumers draining control events wait for the latter
+to become terminal, so an early engine observation cannot outrun its final event.
+
 `Terminal` means the run had already settled and reports the status it settled
 with.
 

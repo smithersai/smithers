@@ -558,6 +558,8 @@ export const RunSummary = Schema.Struct({
   executionView: Schema.optional(ExecutionFact.View),
   runId: RunId,
   flowId: FlowId,
+  /** The coordination journal's committed status, before an engine observation overlays `status`. */
+  recordedStatus: Schema.optional(RunStatus),
   status: RunStatus,
   planId: Schema.optional(Schema.String),
   planDigest: Schema.optional(Schema.String),

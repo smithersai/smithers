@@ -374,6 +374,7 @@ export const layer: Layer.Layer<
           ...run,
           executionObservation: "observed" as const,
           executionView: observed.executionView,
+          recordedStatus: run.status,
           status: observed.status,
           waitingReason: observed.waitingReason,
           parentRunId: observed.parentRunId,
