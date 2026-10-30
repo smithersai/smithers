@@ -863,7 +863,14 @@ export const make = (
     Effect.map(
       Effect.andThen(
         Telemetry.startUp.mark("boot"),
-        Layer.build(Layer.mergeAll(engine.runtime, engine.journal, engine.stores))
+        Effect.flatMap(Effect.serviceOption(Layer.CurrentMemoMap), (memo) => {
+          const services = Layer.mergeAll(engine.runtime, engine.journal, engine.stores)
+          // Layer.build forks its map. A sibling built after that fork cannot
+          // reuse its entries, splitting one engine across SQL clients.
+          return Option.isSome(memo)
+            ? Effect.flatMap(Scope.Scope, (scope) => Layer.buildWithMemoMap(services, memo.value, scope))
+            : Layer.build(services)
+        })
       ),
       (services) => ({
         runtime: Layer.succeed(

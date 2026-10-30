@@ -50,6 +50,11 @@ redacted before they cross the protocol boundary. Stored and projected values
 are rendered through `Output.renderValue`, so only a validated control receipt
 can set a nonzero process status.
 
+When embedding, reuse one `engineDurable` value across `layerControl`, its
+runtime and its journal. Materialization shares the caller's layer memo map,
+so nested writes join the same SQL transaction regardless of acquisition order.
+A failed outer transaction rolls back the plan and its journal entry together.
+
 ## Cli
 
 `Cli.makeCli(config?)` builds the unified Incur command tree. Its Zod schemas
