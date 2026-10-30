@@ -549,7 +549,7 @@ export const runPackCommand = (command, args, options = {}) =>
       stdout += chunk
     })
     child.once("error", reject)
-    child.once("exit", (code, signal) => {
+    child.once("close", (code, signal) => {
       if (code === 0) {
         resolveRun(stdout)
       } else {

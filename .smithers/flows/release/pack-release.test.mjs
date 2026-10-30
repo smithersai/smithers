@@ -876,6 +876,34 @@ test("the real staging and tarball retain authored template config and exclude r
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
+test("an isolated publication stage resolves local workspace links before pnpm packs it", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "smithers-pack-workspace-"))
+  try {
+    const source = join(directory, "source")
+    const staged = join(directory, "staged")
+    await mkdir(source)
+    const manifest = {
+      name: "smithers-pack-workspace-fixture", version: releaseVersion,
+      dependencies: { "@smthrs/plan": "workspace:*" },
+      devDependencies: { "@smthrs/engine": "workspace:*" },
+      peerDependencies: { "@smthrs/flow": `workspace:${releaseVersion}` },
+      optionalDependencies: { "@smthrs/crypto": "workspace:*" },
+      publishConfig: { exports: { "./package.json": "./package.json" } }
+    }
+    await writeFile(join(source, "package.json"), JSON.stringify(manifest))
+    await stagePackage(source, staged, manifest)
+    const packed = JSON.parse(execFileSync("pnpm", ["pack", "--json", "--config.ignore-scripts=true", "--pack-destination", directory], { cwd: staged, encoding: "utf8" }))
+    const tarball = join(directory, packResultFilename(Array.isArray(packed) ? packed[0] : packed, manifest.name))
+    const published = JSON.parse(execFileSync("tar", ["-xOf", tarball, "package/package.json"], { encoding: "utf8" }))
+    for (const field of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
+      assert.deepEqual(published[field], Object.fromEntries(Object.keys(manifest[field]).map((name) => [name, releaseVersion])))
+    }
+    assert.deepEqual(JSON.parse(readFileSync(join(source, "package.json"), "utf8")), manifest)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
 for (const overlay of [true, false]) test(`the platform package tarball carries executable native helpers (overlay=${overlay})`, async () => {
   const publishedManifest = JSON.parse(readFileSync(join(repoRoot, "packages/smithers/flows/platform-node/package.json"), "utf8"))
   assert.ok(publishedManifest.files.includes("bin/**"))

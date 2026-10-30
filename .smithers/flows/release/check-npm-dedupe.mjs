@@ -219,9 +219,11 @@ export function resolveConsumerTree({ keepTmp: keep = false } = {}) {
 export async function resolveConsumerProfiles(options = {}) {
   const directory = mkdtempSync(join(tmpdir(), "smithers-k-profile-manifests-"))
   try {
-    const entries = workspacePackages().map(({ manifest }) => {
+    const packages = workspacePackages()
+    const versions = new Map(packages.map((entry) => [entry.name, entry.version]))
+    const entries = packages.map(({ manifest }) => {
       const filename = manifest.name.replace("/", "-") + ".tgz"
-      writeFileSync(join(directory, filename), manifestTarball(manifest))
+      writeFileSync(join(directory, filename), manifestTarball(rewriteWorkspaceProtocol(manifest, versions)))
       return { name: manifest.name, version: manifest.version, filename }
     })
     return await runConsumerMatrix(directory, entries, {
