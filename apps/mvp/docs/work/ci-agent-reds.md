@@ -180,3 +180,31 @@ cost order after those priorities. Cold public discovery rejects the old order
 (633 bytes before 14,270 bytes); the corrected queue, exact inventory, worker
 limit, coverage configuration and real queued-worker checks pass. The environment
 lifecycle also passes its original budget. Full validation remains pending.
+
+The next full CLI gate completed inside its original deadline with three failures:
+retained-fork resume rejected a rebuilt plan, and the SSH/socket guide examples
+exceeded their unchanged lifecycle limit. Native bootstrap must stay limited to
+non-persistent environment CRUD; durable commands retain the established compiler
+before importing SDK callback bodies. The real retained-fork scenario exercises
+that cross-process compatibility boundary. Direct and clean-shell guide launchers
+also need the existing run-owned cache handoff without widening their narrow
+environments. Guide failure receipts retain operation, stage, elapsed time and
+exit status without environment values or command payloads. Validation is pending.
+
+The old bootstrap reproduces `plan_changed` in retained-fork resume; the restricted
+policy passes that same real scenario. All 52 focused bootstrap, child-cache,
+environment and guide cases pass, with 100% coverage of the policy. Guide cases
+complete in 84.1, 92.1 and 96.8 seconds against their unchanged 120-second limits.
+The CLI check passes. The full build-cli gate passes all 148 files at its existing
+coverage floors. A bounded read-only Sol follow-up finds no actionable P0–P2
+correctness findings in the changes since the first review. The full CLI gate is
+running; the other six assigned target receipts remain unchanged and passing.
+
+That full CLI run reached its unchanged 40-minute limit with 301 coverage records
+collected and no reported assertion failure in the retained output. Its tail
+contains small files with long process journeys: portable control, TUI runtimes
+and local CLI operations. These launchers still inherit the measured worker's
+disabled Node cache or discard the cache reference in a narrow environment.
+Complete the existing child-environment handoff at those remaining boundaries
+and schedule process suites before ordinary unit files; retain four workers,
+the full inventory, all assertions and the original gates.
