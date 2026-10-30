@@ -652,11 +652,11 @@ export const makeCli = (
     const literal = literalRest < 0 ? -1 : parsed.restIndices[literalRest]!
     if (literal >= 0 && argv[literal] === "--") argv = argv.slice(0, literal + 1)
     if (parsed.rest[offset] === "mcp" && index !== undefined && !parsed.mcp) {
-      // Integration overview and doctor help belong to Incur, not our add-only tree.
-      // Keep execution unchanged; only dispatch its explicit help to its owner.
+      // Incur owns the integration overview help and `mcp doctor`, which must keep
+      // its `mcp` token. Doctor checks the discovery tree that `--mcp` serves.
+      if (parsed.rest[offset + 1] === "doctor") return discovery.serve(argv, serveOptions)
       if (
-        (parsed.rest[offset + 1] === undefined || parsed.rest[offset + 1]?.startsWith("-") ||
-          parsed.rest[offset + 1] === "doctor") &&
+        (parsed.rest[offset + 1] === undefined || parsed.rest[offset + 1]?.startsWith("-")) &&
         (argv.includes("--help") || argv.includes("-h"))
       ) {
         return invoke(argv, serveOptions)

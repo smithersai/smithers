@@ -47,6 +47,23 @@ describe("the unified MCP docs", () => {
     expect(guide).not.toContain("only subcommand")
   })
 
+  it("runs the documented doctor against the served MCP tools", async () => {
+    let out = "", code: number | undefined
+    await makeCli({ exit: (value) => void (code = value) }).serve(["mcp", "doctor", "--format", "json"], {
+      stdout: (text) => {
+        out += text
+      },
+      exit: (value) => void (code = value)
+    })
+    expect(code, out).toBeUndefined()
+    const report = JSON.parse(out)
+    expect(report).toMatchObject({ ok: true, errors: [] })
+    const served = report.tools.map((tool: { name: string }) => tool.name)
+    expect(report.toolCount).toBe(served.length)
+    expect(served).toContain("flow_show")
+    expect(served.filter((name: string) => excluded.includes(name))).toEqual([])
+  })
+
   it("says the approval-bearing verbs are absent, and they are", () => {
     const sentence = guide.replaceAll(/\s+/g, " ").match(/([^.]*) are absent from both discovery and dispatch/)?.[1]
     const absent = names(sentence ?? "")
