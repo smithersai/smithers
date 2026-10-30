@@ -7,7 +7,7 @@ import { Action, type FlowRuntime, Interpreter, Poll, Sleep } from "@smthrs/flow
 import type { Journal } from "@smthrs/journal"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Node } from "@smthrs/plan"
-import { Cause, type Crypto, Effect, FiberMap, Layer, Metric, Schema, type Scope, Semaphore } from "effect"
+import { Cause, type Crypto, Effect, FiberMap, Layer, Metric, Schema, Scope, Semaphore } from "effect"
 import { randomUUID } from "node:crypto"
 
 const activeSubjects = Metric.gauge("smithers.health.monitored_subjects")
@@ -34,17 +34,18 @@ const Discovery = Poll.make("smithers/health/Discovery", {
  * @since 1.0.0
  * @private
  */
-export const watch = (
+const prepare = (
   registry: Health.Registry
 ): Effect.Effect<
-  never,
+  Effect.Effect<never>,
   never,
   Control.Control | Journal.Journal | Scope.Scope | FlowRuntime.FlowRuntime | Crypto.Crypto
 > =>
   Effect.gen(function*() {
     const control = yield* Control.Control
     const gate = yield* Semaphore.make(registry.limits.maxConcurrentProbes)
-    const active = yield* FiberMap.make<string, Monitor.Report, never>()
+    const probes = yield* Effect.acquireRelease(Scope.make(), (scope, exit) => Scope.close(scope, exit))
+    const active = yield* FiberMap.make<string, Monitor.Report, never>().pipe(Scope.provide(probes))
     const monitorId = `host-${randomUUID()}`
     const scan = Effect.gen(function*() {
       let admitted = 0
@@ -112,9 +113,22 @@ export const watch = (
     )
     // A stable identity resumes the same poll after a host crash. A UUID here
     // would leave another perpetual lineage for every interrupted host.
-    yield* Discovery.execute({}, { executionId: "smithers-health-discovery" }).pipe(Effect.provide(layer))
-    return yield* Effect.never
-  }).pipe(Effect.scoped, Effect.orDie)
+    const services = yield* Layer.build(layer)
+    const context = yield* Effect.context<FlowRuntime.FlowRuntime | Crypto.Crypto>()
+    // Probe teardown can await external resources. Keep the discovery handler
+    // registered until those probes stop, so a due timer cannot become an
+    // unregistered wake during an otherwise ordinary host shutdown.
+    yield* Effect.addFinalizer((exit) => Scope.close(probes, exit))
+    return Discovery.execute({}, { executionId: "smithers-health-discovery" }).pipe(
+      Effect.provide(services),
+      Effect.provide(context),
+      Effect.andThen(Effect.never),
+      Effect.orDie
+    )
+  })
+
+/** Observe with registrations and probes owned by the same host scope. @private */
+export const watch = (registry: Health.Registry) => prepare(registry).pipe(Effect.flatten, Effect.scoped, Effect.orDie)
 
 /** Validate trusted configuration before forking the lifetime-bound observer.
  * @since 1.0.0
@@ -124,5 +138,6 @@ export const start = (config?: Health.HealthConfig) =>
   Effect.gen(function*() {
     const evaluator = yield* Evaluator.Evaluator
     const registry = yield* Effect.sync(() => Health.makeRegistry(config, "run", evaluator))
-    yield* Effect.forkScoped(watch(registry))
+    const observe = yield* prepare(registry)
+    yield* Effect.forkScoped(observe)
   })

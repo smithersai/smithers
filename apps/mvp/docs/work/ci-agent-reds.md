@@ -50,6 +50,18 @@ for its final drain. Real control services exercise the gap for every terminal
 status and both ordinary and past-terminal cursors; SQLite reconciliation checks
 retain current engine truth beside the recorded state. Cache inheritance remains
 a separate verified environment correction.
+The next full CLI run completed within its original deadline (316 files passed,
+three assertions failed). The raw environment execution assertion still expected
+the measured worker's cache instead of the explicit child environment. The
+cross-host takeover fixture started a same-host observer before aging the stopped
+owner's lease; its legitimate live-PID confirmation could renew that lease.
+The takeover now precedes that observer's registration. Health discovery also
+reported an unregistered timer wake during host teardown; its probe scope now closes before discovery registration is released. A real
+SQLite timer driven during a held probe finalizer rejects the old implementation
+with that exact warning; all nine health cases pass with the correction, including
+bounded admission and reopening the same discovery lineage. The nineteen
+environment and peer-recovery cases, the real canonical-refusal warning case
+and the CLI typecheck also pass. The full CLI coverage gate remains pending.
 Native recovery probes wait for actual admission refusals before asserting a
 park, retaining the explicit-consent and exactly-once execution checks.
 

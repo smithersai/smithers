@@ -223,6 +223,10 @@ Reserved `system/*` flows remain unavailable through normal flow discovery and l
 
 ## Resource bounds
 
+Native health observation stops probes before releasing its durable discovery
+registration. Due timers remain registered while probe finalizers finish, and
+the same discovery lineage resumes when the host reopens.
+
 Finite CLI history projections retain at most 50,000 events and 16 MiB, with a 1 MiB per-event cap. Follow mode applies the per-event cap without retaining prior events. Rendered output accepts at most 128 nested levels, 10,000 data members, and 4 MiB of UTF-8 output. Exceeding a bound fails with a typed resource or rendering error instead of truncating or executing caller-owned objects.
 
 `smthrs bug "summary" --run <id> --dry-run` previews the redacted payload and endpoint. Only the named run is included; omitting `--run` includes no runs. Posting requires `--yes` or confirmation on a TTY, after the exact payload is printed.

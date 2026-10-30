@@ -1,18 +1,21 @@
 import { NodeCrypto, NodeFileSystem, NodePath } from "@effect/platform-node"
+import { ScriptedJudge } from "@smthrs/agent"
 import { ArtifactStore } from "@smthrs/artifacts"
 import { Control, ControlExecutor, ControlLive, ControlRuntime, Health, SqlControlRuntime } from "@smthrs/control"
 import type { RunSummary } from "@smthrs/control/ControlSchema"
 import * as TestControl from "@smthrs/control/test/TestControl"
+import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { FlowEngine } from "@smthrs/engine"
 import { EngineStore, StepBoundary } from "@smthrs/engine-store"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
-import { FlowRuntime } from "@smthrs/flow"
+import { Flow, FlowRuntime } from "@smthrs/flow"
 import * as NodeJj from "@smthrs/jj/node/NodeJj"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { NotificationQueue } from "@smthrs/notifications"
+import { Node } from "@smthrs/plan"
 import { Registry } from "@smthrs/registry"
 import { RunStore } from "@smthrs/run-store"
-import { Context, Deferred, Effect, Fiber, Layer, Option, Stream } from "effect"
+import { Context, Deferred, Effect, Exit, Fiber, Layer, Logger, Option, Schema, Scope, Stream } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { mkdtemp, rm } from "node:fs/promises"
@@ -44,6 +47,91 @@ const source = (control: Control.Service): Control.Service => ({
 })
 
 describe("native health producer lifetime", () => {
+  it("keeps discovery registered while slow probes close", async () => {
+    const warnings: unknown[] = []
+    const logger = Logger.make((record) => {
+      if (record.logLevel === "Warn") warnings.push(record.message)
+    })
+    const engine = EngineStore.layer({
+      owner: { hostId: "health-shutdown" },
+      journalSource: "health-shutdown"
+    }).pipe(
+      Layer.provideMerge(TestStores.layerAt(":memory:")),
+      Layer.provide(StepBoundary.layerUnsupported),
+      Layer.provideMerge(NodeCrypto.layer),
+      Layer.provide(NodeJj.layerAt(process.cwd()))
+    )
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const services = yield* Layer.build(engine)
+        const runtime = Context.get(services, FlowRuntime.FlowRuntime)
+        const runs = Context.get(services, RunStore.RunStore)
+        const controlRuntime = yield* ControlRuntime.ControlRuntime
+        const { card } = yield* controlRuntime.plan({ flowId: "system/test", input: {} })
+        const approval = yield* controlRuntime.lookupApproval(card.approval.target)
+        yield* controlRuntime.resolveApproval(approval, "approved", yield* controlRuntime.stampPrincipal())
+        const launched = yield* controlRuntime.launch(card.planId, card.digest, card.envelope)
+        expect(launched._tag).toBe("Started")
+        const began = yield* Deferred.make<void>()
+        const closing = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+        const healthScope = yield* Effect.acquireRelease(Scope.make(), (scope, exit) => Scope.close(scope, exit))
+        yield* Effect.addFinalizer(() => Deferred.succeed(release, undefined))
+        yield* HealthHost.start({
+          limits: { maxSubjects: 1 },
+          checkers: [{
+            id: "closing",
+            probe: () =>
+              Deferred.succeed(began, undefined).pipe(
+                Effect.andThen(Effect.never),
+                Effect.ensuring(Deferred.succeed(closing, undefined).pipe(Effect.andThen(Deferred.await(release))))
+              )
+          }],
+          bindings: { "system/test": { checkerId: "closing" } }
+        }).pipe(
+          Effect.provideService(FlowRuntime.FlowRuntime, runtime),
+          Effect.provide(ScriptedJudge.layer),
+          Scope.provide(healthScope)
+        )
+        yield* TestDatabase.until(
+          Deferred.isDone(began).pipe(
+            Effect.tap((done) => done ? Effect.void : TestClock.adjust(100))
+          )
+        )
+        yield* TestDatabase.until(
+          runs.lineage("smithers-health-discovery").pipe(
+            Effect.map((lineage) => lineage.some((run) => run.status === "suspended"))
+          )
+        )
+        const close = yield* Scope.close(healthScope, Exit.void).pipe(Effect.forkChild)
+        yield* Deferred.await(closing)
+        // A real durable timer becomes due while a probe finalizer is held open.
+        yield* TestClock.adjust(5_000)
+        const discovery = Flow.make("smithers/health/Discovery", {
+          payload: {},
+          success: Schema.Number,
+          body: Node.capture({}, () => Node.succeed(0))
+        })
+        try {
+          yield* Context.get(services, EngineStore.Driver).drive(discovery, {
+            executionId: "smithers-health-discovery",
+            payload: {},
+            holdMs: 0
+          })
+          expect(warnings).toEqual([])
+        } finally {
+          yield* Deferred.succeed(release, undefined)
+          yield* Fiber.join(close)
+        }
+      }).pipe(
+        Effect.provide(testLayer),
+        Effect.provide(Logger.layer([logger])),
+        Effect.provide(TestClock.layer()),
+        Effect.scoped
+      )
+    )
+  })
+
   it("retries discovery after a failed scan and observes newly discovered runs", async () => {
     await Effect.runPromise(
       Effect.gen(function*() {
