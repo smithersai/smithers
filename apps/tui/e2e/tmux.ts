@@ -107,6 +107,8 @@ export class Tui {
     readonly env?: Readonly<Record<string, string>>
     readonly rows?: number
     readonly cols?: number
+    /** Private test artifact; stdout and stderr retain their real PTY. */
+    readonly captureOutput?: string
   }): Promise<Tui> {
     const directory = mkdtempSync(join(tmpdir(), "tui-tmux-"))
     const socket = join(directory, "t.sock")
@@ -153,6 +155,10 @@ export class Tui {
         options.cwd,
         command
       ])
+      if (options.captureOutput !== undefined) {
+        writeFileSync(options.captureOutput, "", { mode: 0o600 })
+        tui.run(["pipe-pane", "-O", `cat >> ${quote(options.captureOutput)}`])
+      }
       return tui
     } catch (error) {
       tui.dispose()
@@ -167,7 +173,11 @@ export class Tui {
 
   /** The pane's exit, once tmux has reaped its process; `undefined` while alive or unreaped. */
   get exited(): Exit | undefined {
-    return exitOf(this.run(["display-message", "-p", "#{pane_dead}:#{pane_dead_status}:#{pane_dead_signal}"]).trim())
+    const format = this.run(["display-message", "-p", "#{pane_dead}:#{pane_dead_status}:#{pane_dead_signal}:#{pid}"])
+      .trim()
+    const exited = exitOf(format)
+    if (exited === undefined && format.startsWith("1:")) nudge(Number(format.split(":")[3]))
+    return exited
   }
 
   /**
@@ -243,14 +253,24 @@ export class Tui {
     return this.run(["capture-pane", "-p", "-N"]).replace(/\n$/, "")
   }
 
-  /** Only the test's explicit session log, whose writer already redacts credentials. */
+  /** Private pane lifecycle and the test's explicit, credential-redacted session log. */
   private diagnostic(): string {
-    if (this.log === undefined) return ""
+    const records: string[] = []
     try {
-      return `\nterminal log:\n${readFileSync(this.log, "utf8").slice(-16_000)}`
-    } catch {
-      return ""
+      records.push(`\nterminal status: ${
+        this.run([
+          "display-message",
+          "-p",
+          "dead=#{pane_dead} status=#{pane_dead_status} signal=#{pane_dead_signal} command=#{pane_current_command}"
+        ]).trim()
+      }`)
+    } catch {}
+    if (this.log !== undefined) {
+      try {
+        records.push(`\nterminal log:\n${readFileSync(this.log, "utf8").slice(-16_000)}`)
+      } catch {}
     }
+    return records.join("")
   }
 
   async until(predicate: (screen: string) => boolean, timeoutMs = 15_000, label = "screen"): Promise<string> {
@@ -271,11 +291,8 @@ export class Tui {
   async waitForExit(timeoutMs = 5_000): Promise<Exit> {
     const deadline = Date.now() + timeoutMs
     while (Date.now() < deadline) {
-      const format = this.run(["display-message", "-p", "#{pane_dead}:#{pane_dead_status}:#{pane_dead_signal}:#{pid}"])
-        .trim()
-      const exited = exitOf(format)
+      const exited = this.exited
       if (exited !== undefined) return exited
-      if (format.startsWith("1:")) nudge(Number(format.split(":")[3]))
       await sleep(50)
     }
     throw new Error(`timed out waiting for process exit; screen:\n${this.screen()}`)

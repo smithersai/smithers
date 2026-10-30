@@ -34,6 +34,10 @@ read the pane's exit status. Cleanup removes the suite's servers and files,
 including leftovers from a killed previous run; it does not use personal tmux
 sessions.
 
+Packaged-runtime failures retain the PTY output and pane exit status. The private
+`tui.log` records `terminal.before-exit` and `terminal.exit` with the exit code,
+distinguishing an idle Node event loop from an explicit shutdown.
+
 The remote-failure fixture runs a real action through the engine, control watch,
 and tmux. Its action codec revives an Error that the containing flow's JSON-only
 error channel cannot encode, exercising the actual `UnencodableResult` fallback.

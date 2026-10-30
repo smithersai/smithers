@@ -15,6 +15,7 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
+import { stripVTControlCharacters } from "node:util"
 import { drawn, key, Tui } from "./tmux.ts"
 
 const app = resolve(import.meta.dir, "..")
@@ -76,15 +77,18 @@ for (const runtime of ["node", "compiled"] as const) {
     symlinkSync(join(app, "node_modules"), join(project, "node_modules"), "dir")
     const interactiveEditor = Bun.which("vim") !== null
     const editor = interactiveEditor ? "vim -u NONE -U NONE -i NONE -n" : `printf ${runtime}-editor-prompt >`
+    const terminalOutput = join(root, "terminal.log")
+    const command = runtime === "node"
+      ? `env -u SMITHERS_WORKSPACE_JJ_EXPORT_BINARY node --experimental-ffi --disable-warning=ExperimentalWarning ${
+        join(installedCli, "dist/tui/main.js")
+      } ${project}`
+      : `env -u SMITHERS_WORKSPACE_JJ_EXPORT_BINARY ${join(installation, "smithers-tui")} ${project}`
     let tui: Tui | undefined
     try {
       tui = await Tui.start({
         cwd: project,
-        command: runtime === "node"
-          ? `env -u SMITHERS_WORKSPACE_JJ_EXPORT_BINARY node --experimental-ffi --disable-warning=ExperimentalWarning ${
-            join(installedCli, "dist/tui/main.js")
-          } ${project}`
-          : `env -u SMITHERS_WORKSPACE_JJ_EXPORT_BINARY ${join(installation, "smithers-tui")} ${project}`,
+        command,
+        captureOutput: terminalOutput,
         env: {
           PATH: process.env.PATH ?? "",
           HOME: process.env.HOME ?? "",
@@ -153,9 +157,21 @@ for (const runtime of ["node", "compiled"] as const) {
       expect(composed).not.toContain("✗ composed")
     } catch (error) {
       const log = join(root, "sessions/tui.log")
-      throw new Error(`${error}\n${existsSync(log) ? readFileSync(log, "utf8") : "No diagnostic log"}`, {
-        cause: error
-      })
+      const output = existsSync(terminalOutput) ? stripVTControlCharacters(readFileSync(terminalOutput, "utf8")) : ""
+      const causes = [...output.matchAll(/(?:Error|Assertion|fatal|signal)[^\r\n]{0,1000}/gi)]
+        .slice(-8).map((match) => match[0]).join("\n")
+      throw new Error(
+        [
+          String(error),
+          existsSync(log) ? readFileSync(log, "utf8") : "No diagnostic log",
+          causes,
+          "terminal output:",
+          output.slice(-4000)
+        ].join("\n"),
+        {
+          cause: error
+        }
+      )
     } finally {
       await tui?.stop()
       rmSync(root, { recursive: true, force: true })

@@ -70,6 +70,8 @@ export const install = (): () => void => {
   }
   const rejection = (error: unknown) => report("unhandled-rejection", error)
   const exception = (error: unknown) => report("uncaught-exception", error)
+  const beforeExit = (code: number) => write("terminal.before-exit", { code })
+  const exit = (code: number) => write("terminal.exit", { code })
   const original = console.error
   const rendererError: typeof console.error = (...values) => {
     write("terminal.error", values.map((value) => describe(value)).join(" "))
@@ -78,9 +80,13 @@ export const install = (): () => void => {
   console.error = rendererError
   process.on("unhandledRejection", rejection)
   process.on("uncaughtExceptionMonitor", exception)
+  process.on("beforeExit", beforeExit)
+  process.on("exit", exit)
   return () => {
     if (console.error === rendererError) console.error = original
     process.off("unhandledRejection", rejection)
     process.off("uncaughtExceptionMonitor", exception)
+    process.off("beforeExit", beforeExit)
+    process.off("exit", exit)
   }
 }

@@ -1,9 +1,32 @@
 import { expect, it } from "bun:test"
 import { spawn } from "node:child_process"
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Tui } from "../e2e/tmux.ts"
+
+it("captures an erased diagnostic while both output streams remain real terminals", async () => {
+  const root = mkdtempSync(join(tmpdir(), "tui-driver-output-"))
+  const output = join(root, "terminal.log")
+  let tui: Tui | undefined
+  try {
+    tui = await Tui.start({
+      cwd: root,
+      captureOutput: output,
+      command:
+        "sh -c 'test -t 1 && test -t 2 || exit 9; stty -echo; printf ready; read value; printf erased-diagnostic; printf \"\\033[2J\\033[Hblank\"; read value'"
+    })
+    await tui.until((screen) => screen.includes("ready"))
+    await tui.press("\r")
+    await tui.until((screen) => screen.includes("blank"))
+    expect(tui.screen()).not.toContain("erased-diagnostic")
+    expect(readFileSync(output, "utf8")).toContain("erased-diagnostic")
+    expect(statSync(output).mode & 0o777).toBe(0o600)
+  } finally {
+    await tui?.stop()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
 
 it("reports an exited terminal's status and private startup diagnostic while awaiting a screen", async () => {
   const root = mkdtempSync(join(tmpdir(), "tui-driver-startup-"))
@@ -15,9 +38,8 @@ it("reports an exited terminal's status and private startup diagnostic while awa
       command: "sh -c 'printf boot-failed; exit 7'",
       env: { SMITHERS_TUI_SESSION_DIR: root }
     })
-    await tui.waitForExit()
-    await expect(tui.until(() => false, 100, "first draw")).rejects.toThrow(
-      /terminal exited \(code 7\).*first draw[\s\S]*native bootstrap probe/
+    await expect(tui.until(() => false, 5_000, "first draw")).rejects.toThrow(
+      /terminal exited \(code 7\).*first draw[\s\S]*terminal status: dead=1 status=7[\s\S]*native bootstrap probe/
     )
   } finally {
     await tui?.stop()

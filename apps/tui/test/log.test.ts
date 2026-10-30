@@ -6,6 +6,45 @@ import { join } from "node:path"
 import { inspect } from "node:util"
 import * as Log from "../src/log.ts"
 
+it("distinguishes an idle Node exit from explicit shutdown and removes lifecycle hooks", () => {
+  const root = mkdtempSync(join(tmpdir(), "tui-log-lifecycle-"))
+  try {
+    for (const mode of ["idle", "explicit", "uninstall"] as const) {
+      const directory = join(root, mode)
+      const child = Bun.spawnSync([
+        "node",
+        "--import",
+        "vibelang/register",
+        "--input-type=module",
+        "-e",
+        `import * as Log from ${JSON.stringify(join(import.meta.dir, "../src/log.ts"))};
+         const uninstall = Log.install();
+         ${mode === "uninstall" ? "uninstall();" : mode === "explicit" ? "process.exit(7);" : ""}`
+      ], {
+        env: { ...process.env, SMITHERS_TUI_SESSION_DIR: directory },
+        stdout: "pipe",
+        stderr: "pipe"
+      })
+      expect(child.exitCode, child.stderr.toString()).toBe(mode === "explicit" ? 7 : 0)
+      const file = join(directory, "tui.log")
+      if (mode === "uninstall") {
+        expect(existsSync(file)).toBe(false)
+      } else {
+        const records = readFileSync(file, "utf8").trim().split("\n").map((line) => JSON.parse(line))
+        expect(records.map((record) => record.tag)).toEqual(
+          mode === "idle"
+            ? ["terminal.before-exit", "terminal.exit"]
+            : ["terminal.exit"]
+        )
+        expect(records.every((record) => JSON.parse(record.detail).code === (mode === "explicit" ? 7 : 0))).toBe(true)
+        expect(statSync(file).mode & 0o777).toBe(0o600)
+      }
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 15_000)
+
 it("appends private redacted diagnostics without losing earlier failures", () => {
   const previous = process.env.SMITHERS_TUI_SESSION_DIR
   const root = mkdtempSync(join(tmpdir(), "tui-log-"))
