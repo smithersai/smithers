@@ -652,6 +652,7 @@ describe("parseWorkflow", () => {
     const source = await readReal()
     const workflow = parseWorkflow(source)
     expect(workflow.name).toBe("CI")
+    // SCOPE-3 (82b5490d) retired the legacy-app and Go jobs.
     expect(workflow.jobs.map((job) => job.id)).toEqual([
       "test",
       "repository",
