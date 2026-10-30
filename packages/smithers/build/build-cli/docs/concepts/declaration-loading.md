@@ -57,7 +57,9 @@ its modules. Effect identity and VibeLang hooks are active during that bootstrap
 Call `installEffectResolution()` before handling commands to enable the existing
 TypeScript/CommonJS loader; `importDeclarationModule` also completes installation.
 Repeating the deferred call never removes an enabled loader. The unified CLI
-uses Node's native TypeScript support for its own module graph.
+uses native bootstrap only for environment add/list/view/remove. Durable commands
+and protocol servers install the declaration compiler before loading their SDK
+graph: changing a callback's compiled source can change its persisted plan identity.
 Promotion retains the first resolver's ownership across physical copies, and
 leaves an older, already installed resolver intact.
 

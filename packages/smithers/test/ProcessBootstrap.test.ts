@@ -65,7 +65,7 @@ describe("public executable bootstrap", () => {
   it("installs shared identity resolution before invoking the canonical command entry", async () => {
     main.mockImplementation(async (runtime) => {
       expect(install).toHaveBeenCalledTimes(2)
-      expect(install).toHaveBeenNthCalledWith(1, expect.any(Object), { deferTypeScript: true })
+      expect(install).toHaveBeenNthCalledWith(1, expect.any(Object), { deferTypeScript: false })
       expect(install).toHaveBeenNthCalledWith(2)
       expect(runtime.argv).toEqual(["targets", "--json"])
     })
@@ -87,7 +87,7 @@ describe("public executable bootstrap", () => {
     expect(install).toHaveBeenNthCalledWith(1, {
       "@smthrs/agent": new URL("../src/bin.ts", import.meta.url).href,
       "@smthrs/registry/Prompt/jsx-runtime": new URL("../src/bin.ts", import.meta.url).href
-    }, { deferTypeScript: true })
+    }, { deferTypeScript: false })
     expect(install).toHaveBeenNthCalledWith(2)
   })
 

@@ -8,6 +8,7 @@ import * as Audience from "@smthrs/build-cli/Audience"
 import * as Redaction from "@smthrs/journal/Redaction"
 import * as Argv from "./cli/Argv.ts"
 import { agentArguments, formattedLogArguments, legacyArguments } from "./cli/Compatibility.ts"
+import { deferTypeScript } from "./internal/Bootstrap.ts"
 import * as Failure from "./internal/Failure.ts"
 import * as NodeVersion from "./internal/NodeVersion.ts"
 
@@ -23,11 +24,11 @@ const start = async (): Promise<void> => {
   // The hook module itself imports registerHooks. Load it only after the
   // version check, so older Node releases get the actionable refusal too.
   const { installEffectResolution } = await import("@smthrs/build-cli/effect-resolution")
+  const original = process.argv.slice(2)
   installEffectResolution({
     "@smthrs/agent": import.meta.url,
     "@smthrs/registry/Prompt/jsx-runtime": import.meta.url
-  }, { deferTypeScript: true })
-  const original = process.argv.slice(2)
+  }, { deferTypeScript: deferTypeScript(original) })
   const parsed = Argv.parse(original)
   let agentAlias = formattedLogArguments(parsed)
   try {
@@ -40,8 +41,8 @@ const start = async (): Promise<void> => {
     await import("./cli/LegacyBin.ts")
   } else {
     const { main } = await import("./cli/Entry.ts")
-    // The CLI's own module graph uses Node's TypeScript support. Enable the
-    // declaration/CommonJS loader before any selected command can run.
+    // Environment CRUD can bootstrap natively. Durable and protocol commands
+    // retain tsx before importing SDK callbacks, whose source shapes persist.
     installEffectResolution()
     await main({
       argv: agentAlias ?? original,
