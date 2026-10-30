@@ -231,9 +231,11 @@ Finite CLI history projections retain at most 50,000 events and 16 MiB, with a 1
 
 ## Integration test inputs
 
-The declared CLI test target shares one content-validated VibeLang compile cache
-across its phases. The target owns and removes the cache with its scratch
+The declared CLI test target shares its Node and content-validated VibeLang
+compile caches across phases. The target owns and removes them with its scratch
 directory; individual Vitest invocations keep their separate temporary files.
+Shared test setup preserves an explicit Node cache and removes only the cache
+it creates when none was supplied.
 The coverage target follows `vitest.config.ts`. Process-killing cases stay in
 the serial `:faults` target, using `vitest.faults.config.ts`.
 

@@ -16,6 +16,11 @@ Libraries: the CLI, agent, model-host, control, gateway, and effect-electric
 entries in `docs/libraries.md`, plus flow, harness, journal, run-store and engine-store;
 existing services remain their public seams.
 
+The shared test setup preserves the CLI target's explicit Node compile-cache
+path. Actual Vitest workers and their Node children reuse both run-owned
+compiler caches; standalone runs still clean up their default cache. Real loader
+tests cover success and failure with owned and shared caches.
+
 The CLI runner preserves the configured normal/fault split. Real discovery
 checks the two tiers are disjoint and together retain every file. Eight small
 remainder groups and six bounded process-heavy groups share the existing four

@@ -12,6 +12,7 @@ import {
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { expect, it } from "vitest"
 
 const cwd = join(import.meta.dirname, "..")
@@ -79,7 +80,14 @@ it.skipIf(process.platform === "win32")(
       writeFileSync(join(root, "package.json"), "{\"type\":\"module\"}")
       writeFileSync(
         join(root, "vitest.config.mjs"),
-        "export default { test: { include: [\"*.test.mjs\"], testTimeout: 12000, coverage: { enabled: false } } }"
+        `export default { test: {
+          include: ["*.test.mjs"], testTimeout: 12000, coverage: { enabled: false },
+          globalSetup: [${
+          JSON.stringify(
+            fileURLToPath(new URL("../../repo-targets/test-utils/test-process-environment.mjs", import.meta.url))
+          )
+        }]
+        } }`
       )
       const shell = declaredShell()
         .replace("cd packages/smithers && ", "")
@@ -96,14 +104,16 @@ it.skipIf(process.platform === "win32")(
 import { it, expect } from "vitest";
 import { existsSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { dirname, join } from "node:path";
 import { temporaryEnvironment } from ${JSON.stringify(new URL("./temporaryEnvironment.ts", import.meta.url).href)};
 it(${JSON.stringify(phase)}, async () => {
   expect(process.env.VIBELANG_CACHE_DIR).toEqual(expect.any(String));
-  const isolatedCache = execFileSync(process.execPath, ["-e", "process.stdout.write(process.env.VIBELANG_CACHE_DIR ?? '')"], {
+  expect(process.env.NODE_COMPILE_CACHE).toBe(join(dirname(process.env.VIBELANG_CACHE_DIR), "cache"));
+  const isolatedCache = JSON.parse(execFileSync(process.execPath, ["-e", "process.stdout.write(JSON.stringify({ vibe: process.env.VIBELANG_CACHE_DIR, node: process.env.NODE_COMPILE_CACHE }))"], {
     env: temporaryEnvironment(), encoding: "utf8"
-  });
-  expect(isolatedCache).toBe(process.env.VIBELANG_CACHE_DIR);
-  writeFileSync(${JSON.stringify(join(root, phase))}, process.env.VIBELANG_CACHE_DIR);
+  }));
+  expect(isolatedCache).toEqual({ vibe: process.env.VIBELANG_CACHE_DIR, node: process.env.NODE_COMPILE_CACHE });
+  writeFileSync(${JSON.stringify(join(root, phase))}, JSON.stringify(isolatedCache));
   if (${phase.endsWith("-fixed")}) {
     const deadline = Date.now() + 8000;
     while (!existsSync(${JSON.stringify(join(root, "two"))}) && Date.now() < deadline) {
@@ -149,7 +159,10 @@ it(${JSON.stringify(phase)}, async () => {
           "eight"
         ]
       ) {
-        expect(readFileSync(join(root, phase), "utf8")).toBe(join(owned, "vibelang-cache"))
+        expect(JSON.parse(readFileSync(join(root, phase), "utf8"))).toEqual({
+          vibe: join(owned, "vibelang-cache"),
+          node: join(owned, "cache")
+        })
       }
       expect(readdirSync(scratch)).toEqual([])
       expect(existsSync(owned)).toBe(false)
