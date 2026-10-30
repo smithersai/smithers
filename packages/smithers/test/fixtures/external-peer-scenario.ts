@@ -250,6 +250,42 @@ if (
       enter("real lease expiry")
       await new Promise((resolve) => setTimeout(resolve, 31_000))
     }
+    if (mode === "stolen") {
+      enter("original stopped until its persisted worker lease is stale")
+      await stopWithoutDatabaseLock(root, original)
+      await new Promise((resolve) => setTimeout(resolve, 31_000))
+      // No same-host observer remains to reconfirm this live PID while stopped.
+      // This is a different host identity with an unreachable-stale probe.
+      // Use the production CAS: RunStore atomically steals and activates
+      // Consensus ownership and mirrors it to the execution row.
+      const peerOwner = { hostId: "external-peer-other-host", pid: process.pid, nonce: "takeover" }
+      const peerStore = Layer.fresh(RunStore.layer).pipe(Layer.provideMerge(
+        DurableWriter.layer().pipe(
+          Layer.provideMerge(NodeDatabase.layer({ filename: join(root, ".flows", "engine.db") }))
+        )
+      ))
+      await Effect.runPromise(
+        Effect.gen(function*() {
+          const store = yield* RunStore.RunStore
+          const writer = yield* DurableWriter.DurableWriter
+          // The registered peer still has background work. Read the lease
+          // and perform its CAS under one real writer transaction.
+          yield* writer.write(Effect.gen(function*() {
+            const row = yield* store.get(workerId)
+            assert.ok(row?.owner)
+            const nowMs = Date.now()
+            const result = yield* store.claimAndOwn(workerId, row!, peerOwner, nowMs, {
+              expectedOwner: row!.owner!,
+              checkedAtMs: nowMs,
+              kind: "cross-host-unreachable-stale"
+            })
+            const admission = { owner: row!.owner, heartbeatAtMs: row!.heartbeatAtMs, nowMs, result }
+            process.stderr.write(`Takeover admission: ${JSON.stringify(admission)}\n`)
+            assert.equal(result._tag, "Activated", JSON.stringify(admission))
+          }))
+        }).pipe(Effect.provide(peerStore), Effect.scoped)
+      )
+    }
     enter("peer host registration")
     await Effect.runPromise(
       Effect.gen(function*() {
@@ -271,37 +307,6 @@ if (
           }, 25_000)
         }
         if (mode === "stolen") {
-          enter("original stopped until its persisted worker lease is stale")
-          yield* Effect.promise(() => stopWithoutDatabaseLock(root, original))
-          yield* Effect.sleep("31 seconds")
-          // This is a different host identity with an unreachable-stale probe.
-          // Use the production CAS: RunStore atomically steals and activates
-          // Consensus ownership and mirrors it to the execution row.
-          const peerOwner = { hostId: "external-peer-other-host", pid: process.pid, nonce: "takeover" }
-          const peerStore = Layer.fresh(RunStore.layer).pipe(Layer.provideMerge(
-            DurableWriter.layer().pipe(
-              Layer.provideMerge(NodeDatabase.layer({ filename: join(root, ".flows", "engine.db") }))
-            )
-          ))
-          yield* Effect.gen(function*() {
-            const store = yield* RunStore.RunStore
-            const writer = yield* DurableWriter.DurableWriter
-            // The registered peer still has background work. Read the lease
-            // and perform its CAS under one real writer transaction.
-            yield* writer.write(Effect.gen(function*() {
-              const row = yield* store.get(workerId)
-              assert.ok(row?.owner)
-              const nowMs = Date.now()
-              const result = yield* store.claimAndOwn(workerId, row!, peerOwner, nowMs, {
-                expectedOwner: row!.owner!,
-                checkedAtMs: nowMs,
-                kind: "cross-host-unreachable-stale"
-              })
-              const admission = { owner: row!.owner, heartbeatAtMs: row!.heartbeatAtMs, nowMs, result }
-              process.stderr.write(`Takeover admission: ${JSON.stringify(admission)}\n`)
-              assert.equal(result._tag, "Activated", JSON.stringify(admission))
-            }))
-          }).pipe(Effect.provide(peerStore), Effect.scoped)
           enter("cross-host takeover committed; original resumed")
           original.kill("SIGCONT")
           yield* Effect.promise(() => poll(() => !alive(first.pid), "displaced owner stops external work"))
