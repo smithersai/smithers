@@ -27,6 +27,23 @@ const gateCommands = [
   "pnpm exec smthrs lint '//:ci' --known-red '.github/ci-known-red.json' --verbose",
 ]
 
+const assertNativeSetup = (steps, ciSteps) => {
+  const helpers = steps.filter((step) => step.name === 'Install native smithers-jj-export')
+  assert.equal(helpers.length, 1, 'drift must install the native filesystem helper exactly once')
+  const helper = helpers[0]
+  const ciHelper = ciSteps.find((step) => step.name === helper.name)
+  assert.ok(ciHelper, 'CI declares the shared native helper install')
+  assert.equal(helper.run, ciHelper.run, 'drift uses the same unprivileged helper command as CI')
+  assert.equal(helper.shell, 'bash')
+  assert.equal(helper.id, 'setup', 'gates wait for the native helper installation to succeed')
+  assert.equal(helper.if, undefined, 'a failed dependency install must prevent helper setup success')
+  const installIndex = steps.findIndex((step) => step.run === 'pnpm install --frozen-lockfile --ignore-scripts')
+  const helperIndex = steps.indexOf(helper)
+  const gateIndex = steps.findIndex((step) => gateCommands.includes(step.run))
+  assert.ok(installIndex >= 0 && installIndex < helperIndex && helperIndex < gateIndex, 'install dependencies and helper before any gate')
+  return helper
+}
+
 test('retired Plue main mirror has no workflow, lint input or credential reference', async () => {
   const directory = new URL('../../../.github/workflows/', import.meta.url)
   assert.ok(!(await readdir(directory)).includes('mirror-sync.yml'), 'SCOPE-3 retired the Plue deployment')
@@ -69,14 +86,15 @@ test('drift job runs every gate itself, unprivileged, with a per-SHA verdict', a
   // Every action is a third-party action pinned by full SHA; none is this
   // repository's own action, which a dormant gate could switch off.
   const actions = steps.filter((step) => step.uses).map((step) => step.uses.split('@')[0])
-  assert.deepEqual(actions, ['actions/checkout', 'pnpm/action-setup', 'actions/setup-node', 'oven-sh/setup-bun'])
+  assert.deepEqual(actions, ['actions/checkout', 'pnpm/action-setup', 'actions/setup-node', 'oven-sh/setup-bun', 'Swatinem/rust-cache'])
   for (const step of steps.filter((step) => step.uses)) assert.match(step.uses, /@[0-9a-f]{40}$/)
   const gateSteps = steps.filter((step) => step.run?.includes('pnpm exec smthrs '))
   assert.deepEqual(gateSteps.map((step) => step.run), gateCommands, 'drift runs exactly the allowed gate argv in order')
   for (const gate of gateSteps) assert.equal(gate.if, "${{ !cancelled() && steps.setup.conclusion == 'success' }}")
   assert.equal(steps.filter((step) => step.id === 'setup').length, 1, 'drift has one install/setup sentinel')
   const setup = steps.find((step) => step.id === 'setup')
-  assert.equal(setup.run, 'pnpm install --frozen-lockfile --ignore-scripts')
+  const helper = assertNativeSetup(steps, main.jobs.test.steps)
+  assert.equal(setup, helper)
   assert.equal(steps[0].with?.['persist-credentials'], 'false', 'gate steps must not read the job token from .git/config')
   assert.equal(steps[0].with?.ref, undefined, 'checkout takes the event revision GitHub selected')
   assert.deepEqual(workflow.permissions, { contents: 'read' })
@@ -88,14 +106,26 @@ test('drift job runs every gate itself, unprivileged, with a per-SHA verdict', a
   }
   assert.ok(!JSON.stringify(workflow).includes('secrets.'), 'drift gates need no secrets')
   assert.ok(steps.every((step) => !/sudo|apt-get|sysctl/.test(step.run ?? '')), 'no drift step asks for root')
-  assert.ok(steps.every((step) => !/cargo|rustup|foundry|docker|postgres|smthrs (test|docs)\b/i.test(`${step.name ?? ''} ${step.run ?? ''} ${step.uses ?? ''}`)), 'drift avoids heavy setup and broad gates')
+  assert.ok(steps.filter((step) => step !== helper).every((step) => !/cargo|rustup|foundry|docker|postgres|smthrs (test|docs)\b/i.test(`${step.name ?? ''} ${step.run ?? ''} ${step.uses ?? ''}`)), 'only the declared native helper may build with Cargo; no broad gates')
   const setupCommands = [
     "pnpm install --frozen-lockfile --ignore-scripts",
     "npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund\ntest \"$(npm --version)\" = '11.16.0'\n",
   ]
   assert.deepEqual(steps.filter((step) => step.run && !gateCommands.includes(step.run)).map((step) => step.run), [
-    setupCommands[1], setupCommands[0],
+    setupCommands[1], setupCommands[0], helper.run,
   ], 'every shell command is an allowed setup command or drift gate')
+})
+
+test('drift setup contract rejects a missing helper or gates preceding its installation', async () => {
+  const { default: YAML } = await import('yaml')
+  const steps = YAML.parse(await readFile(workflowPath, 'utf8')).jobs.drift.steps
+  const ciSteps = YAML.parse(await readFile(ciPath, 'utf8')).jobs.test.steps
+  const helper = assertNativeSetup(steps, ciSteps)
+  assert.throws(() => assertNativeSetup(steps.filter((step) => step !== helper), ciSteps), /must install the native filesystem helper/)
+  assert.throws(() => assertNativeSetup([...steps.filter((step) => step !== helper), helper], ciSteps), /before any gate/)
+  assert.throws(() => assertNativeSetup(steps.map((step) => step === helper ? { ...step, id: undefined } : step), ciSteps), /gates wait for the native helper/)
+  assert.throws(() => assertNativeSetup(steps.map((step) => step === helper ? { ...step, run: 'true' } : step), ciSteps), /same unprivileged helper command/)
+  assert.throws(() => assertNativeSetup(steps.map((step) => step === helper ? { ...step, if: '${{ always() }}' } : step), ciSteps), /failed dependency install/)
 })
 
 test('no workflow references a dormant trusted setup, campaign or callee', async () => {

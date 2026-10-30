@@ -2035,7 +2035,16 @@ describe("per-commit drift workflow", () => {
     id: "drift",
     name: "Per-commit drift",
     runsOn: "ubuntu-latest",
-    toolchain: CiToolchain.Needs({ install: true }),
+    toolchain: CiToolchain.Needs({
+      install: true,
+      cargoBinaries: [{
+        package: "smithers-ffi",
+        binary: "smithers-jj-export",
+        toolchain: "1.98.0",
+        environment: "SMITHERS_WORKSPACE_JJ_EXPORT_BINARY",
+        platforms: ["linux", "darwin", "win32"]
+      }]
+    }),
     steps: [
       { name: "Target index drift", verb: Verb.Lint, pattern: "//:targetIndex" },
       { name: "Generated CI workflow", verb: Verb.Lint, pattern: "//:ci" }
@@ -2082,6 +2091,24 @@ describe("per-commit drift workflow", () => {
       group: "${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ github.sha }}",
       "cancel-in-progress": false
     })
+  })
+  it("waits for the native filesystem helper before running independent gates", () => {
+    const workflow = Yaml.parse(render(attrs))
+    const steps = workflow.jobs.drift.steps
+    const helper = steps.find((step: { name?: string }) => step.name === "Install native smithers-jj-export")
+    expect(helper).toMatchObject({ id: "setup", shell: "bash" })
+    expect(helper).not.toHaveProperty("if")
+    expect(helper.run).toContain("cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'")
+    expect(helper.run).toContain("\"$RUNNER_TEMP/smithers-native/smithers-jj-export$native_suffix\"")
+    expect(helper.run).toContain("'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' \"$native_path\" >> \"$GITHUB_ENV\"")
+    const gates = steps.filter((step: { run?: string }) => step.run?.startsWith("pnpm exec smthrs "))
+    expect(gates).toHaveLength(2)
+    for (const gate of gates) {
+      expect(steps.indexOf(gate)).toBeGreaterThan(steps.indexOf(helper))
+      expect(gate.if).toBe("${{ !cancelled() && steps.setup.conclusion == 'success' }}")
+    }
+    expect(steps.filter((step: { id?: string }) => step.id === "setup")).toEqual([helper])
+    expect(JSON.stringify(workflow)).not.toMatch(/sudo|apt-get|sysctl|secrets\./)
   })
   it("admits no reusable-workflow verdict or pre-checkout setup declaration", () => {
     for (const key of ["workflowCall", "trustedWorkflowRevision"]) expect(Object.keys(Attrs.fields)).not.toContain(key)

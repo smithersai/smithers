@@ -353,7 +353,9 @@ const driftJob = {
   // A clean run takes 7-10 minutes; a 10-minute cap
   // cancelled runs before //:driftCi and //:ci, leaving a SHA with no verdict.
   timeoutMinutes: 20,
-  toolchain: Smithers.CiToolchain.Needs({ runtimes: [node, bun] }),
+  // docs-sync loads a confined flow and needs the same native filesystem helper
+  // as CI. It builds and installs as the runner user (decision 0127).
+  toolchain: Smithers.CiToolchain.Needs({ runtimes: [node, bun], cargoBinaries: nativeFilesystem }),
   steps: [
     { name: "Formatting", verb: Smithers.Verb.Lint, pattern: "//...:fmt" },
     { name: "Target index drift", verb: Smithers.Verb.Lint, pattern: "//:targetIndex" },

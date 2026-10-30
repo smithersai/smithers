@@ -8,11 +8,12 @@ import * as Target from "@smthrs/targets/Target"
 import { repoRoot as root } from "../scripts/workspace-packages.mjs"
 
 const index = await openPackageIndex({ workspace: root })
-const declaration = index.targets().find((row) => row.label === "//:ci")
-if (!declaration) throw new Error("Missing //:ci declaration")
+const label = process.argv[2] ?? "//:ci"
+const declaration = index.targets().find((row) => row.label === label)
+if (!declaration) throw new Error(`Missing ${label} declaration`)
 const metadata = Target.metadata(declaration.target)
 if (metadata.target !== "GithubCiGen") throw new Error("Review generation when the workflow rule changes")
 const attrs = { ...metadata.attrs, packageManager: index.workspace.packageManager, mode: "write" }
 const path = resolveOutputPath(attrs.output)
 await Effect.runPromise(writeGeneratedFile(root, { path, contents: render(attrs) }))
-console.log(`Generated ${path} from //:ci`)
+console.log(`Generated ${path} from ${label}`)

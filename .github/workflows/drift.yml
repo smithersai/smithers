@@ -30,8 +30,23 @@ jobs:
       - uses: "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6"
         with:
           "bun-version": "1.4.1"
-      - id: setup
-        run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+      - name: "Install native smithers-jj-export"
+        id: setup
+        run: |
+          case "$(uname -s)" in Linux|Darwin|MINGW*|MSYS*)
+            native_suffix=''
+            case "$(uname -s)" in MINGW*|MSYS*) native_suffix='.exe';; esac
+            rustup toolchain install '1.98.0' --profile minimal
+            cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+            mkdir -p "$RUNNER_TEMP/smithers-native"
+            native_path="$RUNNER_TEMP/smithers-native/smithers-jj-export$native_suffix"
+            install -m 755 "target/debug/smithers-jj-export$native_suffix" "$native_path"
+            if [ "$native_suffix" = '.exe' ]; then native_path="$(cygpath -w "$native_path")"; fi
+            printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$native_path" >> "$GITHUB_ENV"
+          esac
+        shell: "bash"
       - name: "Formatting"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs lint '//...:fmt' --known-red '.github/ci-known-red.json' --verbose"

@@ -72,10 +72,17 @@ The `codingHostSize` NodeTest explicitly stays uncached so the current host
 bundle is measured on every CI execution; its planner regression pins that policy.
 
 Workflow drift uses `pnpm exec smthrs lint '//:ci'`. Regeneration uses
-`node packages/repo-targets/contracts/generate-ci.mjs`, which calls `GithubCiGen.render` in its declared
+`node --import vibelang/register packages/repo-targets/contracts/generate-ci.mjs`,
+which calls `GithubCiGen.render` in its declared
 `write` mode and the generated-file writer. This legacy rule keeps its explicit
 `mode: "check"` even when the CLI receives `target --write`; that command was
 verified to check drift without applying it. The YAML is never edited by hand.
+For Drift, pass `'//:driftCi'` to that command.
+Its native filesystem helper shares CI's `cargoBinaries` declaration: a locked
+build installs under `RUNNER_TEMP` and exports its path through `GITHUB_ENV`.
+The helper is the final setup sentinel, so a failed install prevents every gate.
+The `driftJob` contract rejects a missing helper, an altered CI command, or a
+gate before helper setup. Decision 0127's no-root and no-secrets checks remain.
 
 The claims this repository makes about itself, checked. Each file here is a
 `node:test` suite that reads the real tree rather than a fixture, because the
