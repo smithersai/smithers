@@ -65,3 +65,10 @@ published declarations require the PostgreSQL driver's types, so the executable
 installs both supported SQL drivers at its tested Effect version. Database
 library drivers remain optional. The installed CLI MCP consumer typechecks remain
 strict for ESM and CommonJS, without `skipLibCheck`.
+
+Native CommonJS builds share the CLI's module metadata shim, so the packaged
+sandbox host retains its module URL and locates the ESM guest runner. Ordinary
+libraries keep the neutral build; a real browser bundle checks that no Node
+imports are introduced there. Native metadata resolution and strict module
+semantics cover paths with spaces through both module conditions, even when the
+compiler does not emit a strict directive.

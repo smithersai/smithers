@@ -168,11 +168,56 @@ it("builds a CommonJS branch whose relative requires load the emitted .js files"
   expect(read(join(root, "dist/esm/types.d.ts"))).toBe("export type Hand = 1\n")
   expect(read(join(root, "dist/cjs/types.d.ts"))).toBe("export type Hand = 1\n")
   expect(existsSync(join(root, "dist/cjs/lib/value.d.ts"))).toBe(true)
+  const browser = await createRequire(import.meta.url)("esbuild").build({
+    entryPoints: [join(root, "dist/cjs/index.js")],
+    bundle: true,
+    platform: "browser",
+    write: false,
+    logLevel: "silent"
+  })
+  expect(browser.errors).toEqual([])
   const loaded = createRequire(join(root, "dist/cjs/index.js"))("./index.js")
   expect(loaded.value).toBe("pkg/value.ts")
   expect((await loaded.later()).value).toBe("pkg/value.ts")
   write(join(root, "outside.mjs"), "export const named = \"esm\"\n")
   expect((await loaded.load(pathToFileURL(join(root, "outside.mjs")).href)).named).toBe("esm")
+})
+
+it("preserves module-relative import.meta values for native CommonJS hosts", async () => {
+  const root = fixture()
+  const config = JSON.parse(read(join(root, "tsconfig.json")))
+  config.compilerOptions.emitDeclarationOnly = false
+  config.compilerOptions.alwaysStrict = false
+  write(join(root, "tsconfig.json"), JSON.stringify(config))
+  mkdirSync(join(root, "node_modules/@types"), { recursive: true })
+  symlinkSync(
+    dirname(createRequire(import.meta.url).resolve("@types/node/package.json")),
+    join(root, "node_modules/@types/node"),
+    "dir"
+  )
+  write(
+    join(root, "src/nested space/location.ts"),
+    [
+      "export const url = import.meta.url",
+      "export const directory = import.meta.dirname",
+      "export const resolved = import.meta.resolve(\"../lib/value.js\")",
+      "export function receiver(this: void) { return this }",
+      ""
+    ].join("\n")
+  )
+  await buildLibrary(root, { esmOnly: ["esm-only.ts"], commonJsPlatform: "node" })
+  const commonjs = createRequire(join(root, "dist/cjs/index.js"))("./nested space/location.js")
+  expect(commonjs.url).toBe(pathToFileURL(join(root, "dist/cjs/nested space/location.js")).href)
+  expect(commonjs.directory).toBe(join(root, "dist/cjs/nested space"))
+  expect(commonjs.resolved).toBe(pathToFileURL(join(root, "dist/cjs/lib/value.js")).href)
+  const commonjsReceiver = commonjs.receiver
+  expect(commonjsReceiver() === undefined).toBe(true)
+  const esm = await import(pathToFileURL(join(root, "dist/esm/nested space/location.js")).href)
+  expect(esm.url).toBe(pathToFileURL(join(root, "dist/esm/nested space/location.js")).href)
+  expect(esm.directory).toBe(join(root, "dist/esm/nested space"))
+  expect(esm.resolved).toBe(pathToFileURL(join(root, "dist/esm/lib/value.js")).href)
+  const esmReceiver = esm.receiver
+  expect(esmReceiver() === undefined).toBe(true)
 })
 
 it("removes a stale dist and reports a failing declaration compile", async () => {

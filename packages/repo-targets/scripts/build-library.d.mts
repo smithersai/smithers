@@ -1,3 +1,10 @@
+/** Shared module metadata for native Node-compatible CommonJS distributions. */
+export declare const nodeCommonJsOptions: {
+  readonly platform: "node"
+  readonly target: "node22.19"
+  readonly define: Readonly<Record<string, string>>
+  readonly banner: { readonly js: string }
+}
 /** Copies every `.d.ts` under `source` to the same relative path under `destination`. */
 export declare const copyInputDeclarations: (source: string, destination: string) => void
 /** Copies declarations to `dist/cjs` and writes its CommonJS boundary with rebased package imports. */
@@ -28,5 +35,9 @@ export declare const compilePackage: (
 /** Builds `dist/esm` with the package compiler and `dist/cjs` with esbuild, from the package's own toolchain. */
 export declare const buildLibrary: (
   packageRoot: string,
-  options?: { readonly esmOnly?: ReadonlyArray<string>; readonly declarationTimeoutMs?: number }
+  options?: {
+    readonly esmOnly?: ReadonlyArray<string>
+    readonly declarationTimeoutMs?: number
+    readonly commonJsPlatform?: "neutral" | "node"
+  }
 ) => Promise<void>

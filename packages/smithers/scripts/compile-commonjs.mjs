@@ -3,7 +3,7 @@ import { build } from "esbuild"
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join, relative } from "node:path"
 import ts from "typescript"
-import { copyCommonJsDeclarations } from "../../repo-targets/scripts/build-library.mjs"
+import { copyCommonJsDeclarations, nodeCommonJsOptions } from "../../repo-targets/scripts/build-library.mjs"
 import { buildPrivateEffectAdapters } from "../../repo-targets/scripts/private-effect-adapters.mjs"
 
 const files = (directory) =>
@@ -44,18 +44,8 @@ export const compileCommonJs = async (src, cjs, esm) => {
     outdir: cjs,
     format: "cjs",
     bundle: false,
-    platform: "node",
-    target: "node22.19",
-    sourcemap: true,
-    define: {
-      "import.meta.url": "__smthrsImportMetaUrl",
-      "import.meta.dirname": "__dirname",
-      "import.meta.resolve": "__smthrsResolve"
-    },
-    banner: {
-      js:
-        "const __smthrsImportMetaUrl = require(\"node:url\").pathToFileURL(__filename).href; const __smthrsResolve = (id) => require(\"node:url\").pathToFileURL(require.resolve(id)).href;"
-    }
+    ...nodeCommonJsOptions,
+    sourcemap: true
   })
   for (const file of files(cjs).filter((file) => file.endsWith(".js"))) {
     writeFileSync(

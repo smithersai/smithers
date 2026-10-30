@@ -5,6 +5,21 @@ import { createRequire } from "node:module"
 import { dirname, join, relative, resolve, sep } from "node:path"
 import { buildPrivateEffectAdapters } from "./private-effect-adapters.mjs"
 
+/** Module metadata for CommonJS code running on a native Node-compatible host. */
+export const nodeCommonJsOptions = {
+  platform: "node",
+  target: "node22.19",
+  define: {
+    "import.meta.url": "__smthrsImportMetaUrl",
+    "import.meta.dirname": "__dirname",
+    "import.meta.resolve": "__smthrsResolve"
+  },
+  banner: {
+    js:
+      "\"use strict\"; const __smthrsImportMetaUrl = require(\"node:url\").pathToFileURL(__filename).href; const __smthrsResolve = (id) => require(\"node:url\").pathToFileURL(require.resolve(id)).href;"
+  }
+}
+
 const files = (directory) =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name)
@@ -147,7 +162,7 @@ export const compilePackage = (packageRoot, { timeoutMs = 90_000 } = {}) => {
   return compiler
 }
 
-export const buildLibrary = async (packageRoot, { esmOnly = [], declarationTimeoutMs = 90_000 } = {}) => {
+export const buildLibrary = async (packageRoot, { esmOnly = [], declarationTimeoutMs = 90_000, commonJsPlatform = "neutral" } = {}) => {
   const require = createRequire(join(packageRoot, "package.json"))
   const { build } = require("esbuild")
   const src = join(packageRoot, "src")
@@ -170,9 +185,10 @@ export const buildLibrary = async (packageRoot, { esmOnly = [], declarationTimeo
     outdir: cjs,
     format: "cjs",
     bundle: false,
-    platform: "neutral",
+    platform: commonJsPlatform,
     target: "es2022",
-    sourcemap: true
+    sourcemap: true,
+    ...(commonJsPlatform === "node" ? nodeCommonJsOptions : {})
   })
   for (const file of files(cjs).filter((file) => file.endsWith(".js"))) {
     const text = readFileSync(file, "utf8")

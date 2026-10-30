@@ -48,6 +48,11 @@ External targets stay unchanged; `./src/` and `./dist/cjs/` targets address emit
 files in that branch, including its declarations. Other relative targets fail
 the build because the nested boundary cannot resolve files outside its package.
 
+Native hosts pass `commonJsPlatform: "node"` to retain `import.meta.url`,
+`dirname` and `resolve` through the shared Node CommonJS metadata shim. The CLI's
+CommonJS compiler uses that same shim. Other libraries keep the neutral build
+and can bundle their CommonJS output for browsers without Node imports.
+
 ## Circular imports
 
 `CircularImports({ cwd, sources })` declares the `test`-kind `NodeTest` target that `BuildAndCheckTypeScriptPackage` emits as `circular`; a package that declares its targets by hand calls it directly. Every package runs the one guard, `scripts/circular.mjs` in this package, and its `circular` package script runs the same file, for example `node ../repo-targets/scripts/circular.mjs` from `packages/errors`.
