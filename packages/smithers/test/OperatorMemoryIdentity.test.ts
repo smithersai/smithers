@@ -2,11 +2,14 @@ import { Cli } from "incur"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { expect, it } from "vitest"
+import { expect, it, vi } from "vitest"
 import { createMemoryCli } from "../src/operator/Memory.ts"
 
 it("reuses an omitted message timestamp across retries and still rejects conflicting content", async () => {
   const root = await mkdtemp(join(tmpdir(), "smthrs-message-identity-"))
+  // The executor's `SMITHERS_MEMORY_DB` outranks `--root`; pin it to the fixture
+  // so an inherited value never points this test at an external store.
+  vi.stubEnv("SMITHERS_MEMORY_DB", join(root, "memory.db"))
   const invoke = async (...args: Array<string>) => {
     let output = ""
     let code = 0
@@ -46,6 +49,7 @@ it("reuses an omitted message timestamp across retries and still rejects conflic
     expect(overlapping.every((result) => result.data.at === overlapping[0]!.data.at)).toBe(true)
     expect((await invoke("messages", "list", "history")).data).toHaveLength(5)
   } finally {
+    vi.unstubAllEnvs()
     await rm(root, { recursive: true, force: true })
   }
 })
