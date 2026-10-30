@@ -442,8 +442,8 @@ smithers-build owners --diff origin/main
 smithers-build owners --diff HEAD --format json
 ```
 
-| Argument | Description                                               |
-| -------- | --------------------------------------------------------- |
+| Argument | Description                                                                                      |
+| -------- | ------------------------------------------------------------------------------------------------ |
 | `paths`  | Zero or more workspace-relative paths or absolute paths inside the workspace; omit with `--diff` |
 
 Absolute paths inside the workspace resolve to their relative spelling.
