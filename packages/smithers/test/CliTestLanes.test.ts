@@ -85,8 +85,15 @@ it.skipIf(process.platform === "win32")(
             `
 import { it, expect } from "vitest";
 import { existsSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { temporaryEnvironment } from ${JSON.stringify(new URL("./temporaryEnvironment.ts", import.meta.url).href)};
 it(${JSON.stringify(phase)}, async () => {
-  writeFileSync(${JSON.stringify(join(root, phase))}, "started");
+  expect(process.env.VIBELANG_CACHE_DIR).toEqual(expect.any(String));
+  const isolatedCache = execFileSync(process.execPath, ["-e", "process.stdout.write(process.env.VIBELANG_CACHE_DIR ?? '')"], {
+    env: temporaryEnvironment(), encoding: "utf8"
+  });
+  expect(isolatedCache).toBe(process.env.VIBELANG_CACHE_DIR);
+  writeFileSync(${JSON.stringify(join(root, phase))}, process.env.VIBELANG_CACHE_DIR);
   if (${phase.endsWith("-fixed")}) {
     const deadline = Date.now() + 8000;
     while (!existsSync(${JSON.stringify(join(root, "two"))}) && Date.now() < deadline) {
@@ -116,8 +123,12 @@ it(${JSON.stringify(phase)}, async () => {
         encoding: "utf8",
         timeout: 25_000
       })
+      const owned = readFileSync(join(root, "owned-work"), "utf8")
+      for (const phase of ["one-fixed", "two-fixed", "three-fixed", "one", "two", "three", "four"]) {
+        expect(readFileSync(join(root, phase), "utf8")).toBe(join(owned, "vibelang-cache"))
+      }
       expect(readdirSync(scratch)).toEqual([])
-      expect(existsSync(readFileSync(join(root, "owned-work"), "utf8"))).toBe(false)
+      expect(existsSync(owned)).toBe(false)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

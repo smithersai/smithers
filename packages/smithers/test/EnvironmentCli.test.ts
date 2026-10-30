@@ -21,8 +21,24 @@ const fixture = async () => {
     SMITHERS_DISABLE_SYSTEM_KEYRING: "1",
     ...temporaryEnvironment()
   }
-  const cli = (args: string[]) =>
-    spawnSync(process.execPath, [bin, ...args], { cwd: root, env, encoding: "utf8", timeout: 20_000 })
+  const cli = (args: string[]) => {
+    const started = Date.now()
+    const result = spawnSync(process.execPath, [bin, ...args], { cwd: root, env, encoding: "utf8", timeout: 20_000 })
+    if (result.error) {
+      console.error(
+        "Environment CLI launch",
+        JSON.stringify({
+          command: args.slice(0, 2),
+          elapsedMs: Date.now() - started,
+          error: (result.error as NodeJS.ErrnoException).code,
+          signal: result.signal,
+          stdoutBytes: Buffer.byteLength(result.stdout ?? ""),
+          stderrBytes: Buffer.byteLength(result.stderr ?? "")
+        })
+      )
+    }
+    return result
+  }
   return { root, env, cli }
 }
 

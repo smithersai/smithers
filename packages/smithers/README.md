@@ -231,6 +231,10 @@ Finite CLI history projections retain at most 50,000 events and 16 MiB, with a 1
 
 ## Integration test inputs
 
+The declared CLI test target shares one content-validated VibeLang compile cache
+across its phases. The target owns and removes the cache with its scratch
+directory; individual Vitest invocations keep their separate temporary files.
+
 History PostgreSQL cases need `SMITHERS_HISTORY_TEST_PG_URL` (or
 `SMITHERS_TEST_DATABASE_URL`) pointing to a reachable disposable test server;
 without a URL, only those cases skip with that reason. Tracked-source cases

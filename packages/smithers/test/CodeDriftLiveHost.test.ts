@@ -23,7 +23,7 @@ import {
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { DatabaseSync } from "node:sqlite"
-import { expect, it } from "vitest"
+import { expect, it, onTestFailed } from "vitest"
 
 import * as NodeControl from "../src/NodeControl.ts"
 
@@ -226,16 +226,19 @@ const moduleLayer = (root: string) => {
 }
 
 /** Launches `native` and waits for it to park on its human task. */
-const launchParked = (idempotencyKey = "start") =>
+const launchParked = (idempotencyKey = "start", observe: (stage: string) => void = () => {}) =>
   Effect.gen(function*() {
     const control = yield* Control.Control
     yield* Effect.logInfo("code-drift.plan.requested")
+    observe("plan native module")
     const card = yield* control.plan({ flowId: "native", input: {} }).pipe(
       Effect.tap(() => Effect.logInfo("code-drift.plan.completed"))
     )
+    observe("approve native plan")
     yield* control.approve(card.approval).pipe(
       Effect.tap(() => Effect.logInfo("code-drift.approval.completed"))
     )
+    observe("launch native module")
     const launched = yield* control.run({
       _tag: "Plan",
       planId: card.planId,
@@ -246,6 +249,7 @@ const launchParked = (idempotencyKey = "start") =>
     if (launched._tag !== "Accepted" || launched.runId === undefined) {
       return yield* Effect.die(`expected an accepted run, got ${launched._tag}`)
     }
+    observe("await first native park")
     return {
       card,
       runId: launched.runId,
@@ -328,17 +332,39 @@ it("resume --allow-code-drift on an edited module flow runs it", async () => {
 })
 
 it("resumes a retained module after source deletion but refuses adopting absent code", async () => {
+  const started = Date.now()
+  const stages: Array<{ stage: string; elapsedMs: number }> = []
+  const mark = (stage: string) => stages.push({ stage, elapsedMs: Date.now() - started })
+  onTestFailed(() => console.error("Retained module progress", { stages, elapsedMs: Date.now() - started }))
+  mark("construct host")
   const observed = await withModuleHost((root) =>
     Effect.gen(function*() {
       const control = yield* Control.Control
       const runtime = yield* ControlRuntime.ControlRuntime
-      const { card, runId, parked } = yield* launchParked()
+      mark("launch and await park")
+      const { card, runId, parked } = yield* launchParked("start", mark)
+      mark("delete source")
       yield* Effect.sync(() => rmSync(join(root, ".smithers", "flows", "native"), { recursive: true }))
+      mark("read drift")
       const drift = yield* runtime.codeDrift(runId)
+      mark("resume retained module")
       const plain = yield* control.resume({ runId, idempotencyKey: "plain" })
+      mark("await resumed park")
       yield* settled(runId, parked.updatedAt)
+      mark("refuse absent code adoption")
       const allowed = yield* Effect.flip(control.resume({ runId, idempotencyKey: "allowed", allowCodeDrift: true }))
-      return { card, runId, drift, plain, allowed, after: yield* settled(runId), reported: yield* status(runId) }
+      mark("read resumed result")
+      const result = {
+        card,
+        runId,
+        drift,
+        plain,
+        allowed,
+        after: yield* settled(runId),
+        reported: yield* status(runId)
+      }
+      mark("close host")
+      return result
     })
   )
   const refusal = new CodeDrift({ runId: observed.runId, flowId: "native", recorded: observed.card.executionDigest })

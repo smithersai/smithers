@@ -10,7 +10,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it, onTestFailed, vi } from "vitest"
 import { createRunsCli } from "../src/cli/ControlCommands.ts"
 
 const bin = fileURLToPath(new URL("../src/bin.ts", import.meta.url))
@@ -46,6 +46,15 @@ export default Flow.make("parent", {
 })`
 
 type Result = { code: number | null; stdout: string; stderr: string }
+type CommandProgress = {
+  verb: string
+  pid: number | undefined
+  exitCode: number | null
+  signalCode: string | null
+  stdoutBytes: number
+  stderrBytes: number
+}
+const activeCommands = new Set<() => CommandProgress>()
 const command = (root: string, args: ReadonlyArray<string>, format: ReadonlyArray<string> = ["--json"]) => {
   const child = spawn(
     process.execPath,
@@ -56,11 +65,23 @@ const command = (root: string, args: ReadonlyArray<string>, format: ReadonlyArra
     }
   )
   let stdout = "", stderr = ""
+  const progress = () => ({
+    verb: args.slice(0, 2).join(" "),
+    pid: child.pid,
+    exitCode: child.exitCode,
+    signalCode: child.signalCode,
+    stdoutBytes: Buffer.byteLength(stdout),
+    stderrBytes: Buffer.byteLength(stderr)
+  })
+  activeCommands.add(progress)
   const finished = new Promise<Result>((resolve, reject) => {
     child.stdout.on("data", (chunk) => stdout += chunk)
     child.stderr.on("data", (chunk) => stderr += chunk)
     child.once("error", reject)
-    child.once("close", (code) => resolve({ code, stdout, stderr }))
+    child.once("close", (code) => {
+      activeCommands.delete(progress)
+      resolve({ code, stdout, stderr })
+    })
   })
   return { child, finished, output: () => ({ stdout, stderr, exitCode: child.exitCode }) }
 }
@@ -124,6 +145,22 @@ const show = async (root: string, runId: string) => {
 
 describe("runs show and runs logs on a live parent run", { timeout: 180_000 }, () => {
   it("names the flow, lists the child, advances updatedAt, and prints recorded steps", async () => {
+    const started = Date.now()
+    const stages: Array<{ stage: string; elapsedMs: number }> = []
+    let cleanup: { commands: Array<CommandProgress>; run: ReturnType<typeof controlRun> } | undefined
+    const mark = (stage: string) => stages.push({ stage, elapsedMs: Date.now() - started })
+    onTestFailed(() =>
+      console.error(
+        "Live run progress",
+        JSON.stringify({
+          stages,
+          elapsedMs: Date.now() - started,
+          cleanup,
+          commands: [...activeCommands].map((progress) => progress())
+        })
+      )
+    )
+    mark("create project")
     const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-run-observability-")))
     let runner: ReturnType<typeof command> | undefined
     try {
@@ -132,7 +169,9 @@ describe("runs show and runs logs on a live parent run", { timeout: 180_000 }, (
       await symlink(nodeModules, join(root, "node_modules"), "dir")
       await writeFile(flow, source)
       const marker = join(root, "holding")
+      mark("launch parent")
       runner = command(root, ["flow", "start", "parent", "--data", JSON.stringify({ marker }), "--wait"])
+      mark("await child")
       const runId = await Promise.race([
         until(() => existsSync(marker) ? controlRun(root)?.run_id : undefined, () => JSON.stringify(runner!.output())),
         runner.finished.then((result) => {
@@ -140,6 +179,7 @@ describe("runs show and runs logs on a live parent run", { timeout: 180_000 }, (
         })
       ])
 
+      mark("show live run")
       const run = await show(root, runId)
       expect(run.status).toBe("running")
       expect(run.executionView.root.flowName).toBe("parent")
@@ -154,6 +194,7 @@ describe("runs show and runs logs on a live parent run", { timeout: 180_000 }, (
       expect(run.diagnosis).not.toHaveProperty("endedAt")
       expect(run).not.toHaveProperty("codeDrift")
 
+      mark("print recorded logs")
       const { code, printed } = await humanLogs(root, runId)
       expect(code, printed).toBe(0)
       expect(printed).toContain("Running parent/Spawn")
@@ -163,6 +204,7 @@ describe("runs show and runs logs on a live parent run", { timeout: 180_000 }, (
       expect(printed).toContain(`smthrs runs logs '${runId}' --follow`)
       expect(printed).not.toContain("Stopped watching before settlement")
 
+      mark("edit source and show drift")
       await writeFile(flow, (await readFile(flow, "utf8")).replace("until cancelled.", "until cancelled!"))
       const changed = (await show(root, runId)).codeDrift
       expect(changed.recorded).toBe(run.executionDigest)
@@ -170,6 +212,7 @@ describe("runs show and runs logs on a live parent run", { timeout: 180_000 }, (
       expect(changed.current).not.toBe(run.executionDigest)
       expect(changed.verdict).toBe("flow changed since the run started; resume needs --allow-code-drift")
 
+      mark("delete source and show drift")
       await unlink(flow)
       const gone = (await show(root, runId)).codeDrift
       expect(gone).toEqual({
@@ -177,15 +220,27 @@ describe("runs show and runs logs on a live parent run", { timeout: 180_000 }, (
         verdict: "flow is no longer on disk; the run cannot resume"
       })
 
+      mark("cancel parent")
       const cancelled = await command(root, ["runs", "cancel", runId]).finished
       expect(cancelled.code, cancelled.stdout + cancelled.stderr).toBe(0)
+      mark("await cancelled row")
       await until(() => controlRun(root)?.status === "cancelled" ? true : undefined)
+      mark("await launcher close")
       await runner.finished
+      mark("show cancelled run")
       const settled = await show(root, runId)
       expect(settled.status).toBe("cancelled")
       expect(settled.diagnosis.endedAt).toEqual(expect.any(Number))
       expect(settled.executions[0]).toMatchObject({ executionId: runId, status: "cancelled", running: null })
     } finally {
+      let run: ReturnType<typeof controlRun>
+      try {
+        run = controlRun(root)
+      } catch {
+        run = undefined
+      }
+      cleanup = { commands: [...activeCommands].map((progress) => progress()), run }
+      mark("cleanup launcher")
       runner?.child.kill("SIGKILL")
       await runner?.finished
       await rm(root, { recursive: true, force: true })

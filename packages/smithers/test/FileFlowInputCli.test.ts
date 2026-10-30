@@ -7,7 +7,7 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, onTestFailed } from "vitest"
 
 const execute = promisify(execFile)
 const bin = fileURLToPath(new URL("../src/bin.ts", import.meta.url))
@@ -16,7 +16,12 @@ const modules = fileURLToPath(new URL("../node_modules", import.meta.url))
 
 describe("file-flow payload admission", () => {
   let root: string
+  let started: number
+  let stages: Array<{ command: string; elapsedMs: number; state: string }>
   beforeEach(async () => {
+    started = Date.now()
+    stages = []
+    onTestFailed(() => console.error("File input CLI progress", JSON.stringify(stages)))
     root = await realpath(await mkdtemp(join(tmpdir(), "smithers-file-input-cli-")))
     await mkdir(join(root, ".smithers", "flows", "echo"), { recursive: true })
     await symlink(modules, join(root, "node_modules"), "dir")
@@ -47,6 +52,8 @@ export default Flow.make("echo", {
   })
 
   const command = async (args: ReadonlyArray<string>) => {
+    const verb = args[0] === "flow" ? "flow start" : args[0]!
+    stages.push({ command: verb, elapsedMs: Date.now() - started, state: "started" })
     const result = await execute(process.execPath, [
       "--no-warnings",
       "--import",
@@ -72,6 +79,7 @@ export default Flow.make("echo", {
       (result) => ({ ...result, code: 0 }),
       (error) => ({ stdout: error.stdout, stderr: error.stderr, code: error.code })
     )
+    stages.push({ command: verb, elapsedMs: Date.now() - started, state: "settled" })
     return { ...result, json: result.stdout.trim() === "" ? undefined : JSON.parse(result.stdout) }
   }
   it("lists the input schema without evaluating the module", async () => {

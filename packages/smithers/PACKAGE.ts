@@ -228,7 +228,10 @@ const test = Smithers.Shell.Test({
   shell: [
     "cd packages/smithers && work=$(mktemp -d /tmp/smt.XXXXXXXX) && trap 'rm -rf \"$work\"' 0 && " +
     "blobs=\"$work/blobs\" && mkdir -p \"$blobs\" \"$work/tmp\" && " +
-    "export TMPDIR=\"$work/tmp\" TEMP=\"$work/tmp\" TMP=\"$work/tmp\" NODE_COMPILE_CACHE=\"$work/cache\" && {",
+    // Vitest gives each invocation its own TMPDIR. VibeLang defaults its cache
+    // there too, so every phase otherwise recompiles the same workspace projects.
+    // Its content-validated cache is shared only within this owned suite run.
+    "export TMPDIR=\"$work/tmp\" TEMP=\"$work/tmp\" TMP=\"$work/tmp\" NODE_COMPILE_CACHE=\"$work/cache\" VIBELANG_CACHE_DIR=\"$work/vibelang-cache\" && {",
     "printf '%s\\n'",
     `"${lane} --outputFile=$blobs/one-fixed.json ${laneOne.join(" ")}"`,
     `"${lane} --outputFile=$blobs/two-fixed.json ${laneTwo.join(" ")}"`,
