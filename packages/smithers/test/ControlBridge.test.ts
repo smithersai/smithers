@@ -809,6 +809,33 @@ describe("control bridge transport scope", () => {
     }
   )
 
+  it.each(["completed", "failed", "cancelled"] as const)(
+    "ends a follow once the run is %s and drains rows after the last delivered event",
+    async (status) => {
+      const pages = [
+        [{ runId: "other", status: "completed" }, { runId: "watched", status: "running" }],
+        [{ runId: "watched", status }]
+      ]
+      const list = vi.fn(() => Effect.succeed({ _tag: "runs", items: pages.shift() ?? [] }))
+      const watch = vi.fn((request: { follow: boolean }) =>
+        request.follow
+          ? Stream.concat(Stream.make({ sequence: 4 }), Stream.never)
+          : Stream.make({ sequence: 5 })
+      )
+      service = { ...service, list, watch } as unknown as Control.Service
+      const events: Array<unknown> = []
+      for await (const event of Bridge.events("watched", true, local, runtime, 3)) events.push(event)
+      expect(events).toEqual([{ sequence: 4 }, { sequence: 5 }])
+      expect(watch.mock.calls).toEqual([
+        [{ runId: "watched", follow: true, afterSequence: 3 }],
+        [{ runId: "watched", follow: false, afterSequence: 4 }]
+      ])
+      expect(list).toHaveBeenCalledTimes(2)
+      expect(list).toHaveBeenCalledWith({ _tag: "runs", filters: { runId: "watched" } })
+      expect(lifecycle).toEqual(["control:open", "control:close"])
+    }
+  )
+
   it("releases the watch service after stream failure", async () => {
     const failure = new Unavailable({ feature: "watch", ticket: "bridge-fixture" })
     service = { ...service, watch: () => Stream.fail(failure) }
@@ -948,6 +975,20 @@ describe("control bridge transport scope", () => {
     expect(ports.serve).toHaveBeenCalledExactlyOnceWith({ ...credentialed, operatorToken: undefined }, local.root)
     expect(stderr).toHaveBeenCalledOnce()
     expect(String(stderr.mock.calls[0]![0])).not.toContain("approval token")
+  })
+
+  it("publishes a carried credential to the token file for a host on the process environment", async () => {
+    vi.stubEnv("SMITHERS_REMOTE", undefined)
+    const operatorTokenFile = join(directory, "carried.token")
+    const credentialed = { ...bind, credential: "host-bearer", operatorTokenFile }
+    try {
+      await Bridge.host(credentialed, { ...local, quiet: true }, { presentation: plain })
+    } finally {
+      vi.unstubAllEnvs()
+    }
+    expect(ports.serve).toHaveBeenCalledExactlyOnceWith({ ...credentialed, operatorToken: undefined }, local.root)
+    expect(readFileSync(operatorTokenFile, "utf8").trim()).toBe("host-bearer")
+    expect(statSync(operatorTokenFile).mode & 0o777).toBe(0o600)
   })
 
   it("does not print a quiet host banner and preserves launch failures after cleanup", async () => {
