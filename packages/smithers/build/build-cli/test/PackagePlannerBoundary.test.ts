@@ -82,6 +82,8 @@ const command = Target.make(${
   }) })(${attrs})
 export const Package = S.Package({ targets: { command } })`
 
+const onPath = (tool: string) => PackageTree.findOnPath(tool, process.env) !== undefined
+
 describe("inert planning values", () => {
   it.each([null, 7, {}, { kind: "bundler-resolve", result: {} }])("rejects malformed cached graph %j", (value) => {
     expect(decodeStoredResolve(value)).toBeUndefined()
@@ -1064,7 +1066,7 @@ export const Package=S.Package({targets:{command}})`
   })
 })
 
-describe("mise executable authority", () => {
+describe.runIf(onPath("mise"))("mise executable authority", () => {
   it("measures the real mise launcher with its declared pin", async () => {
     const { options } = await fixture(
       "export const Package=S.Package({targets:{command:S.Shell.Test({bin:S.Mise.bin('go')})}})",
@@ -1378,7 +1380,7 @@ describe("real Git patch limits", () => {
   })
 })
 
-describe("real Nix environment planning", () => {
+describe.runIf(onPath("nix"))("real Nix environment planning", () => {
   it("binds the actual evaluated environment and runs its selected shell", async () => {
     const { root, options } = await fixture(
       "export const Package=S.Package({targets:{command:S.Shell.Test({bin:S.Host.bin('sh'),args:['-c','test \"$SSL_CERT_FILE\" = /etc/ssl/certs/ca-certificates.crt'],sandbox:'none'})}})",

@@ -19,6 +19,8 @@ import { CliServices, cliServicesLive } from "../src/index.ts"
 import type * as Reporter from "../src/Reporter.ts"
 import { write } from "./helpers/WriteFile.ts"
 
+const hasNix = NodeChildProcess.spawnSync("nix", ["--version"]).error === undefined
+
 const temporaryDirectories: Array<string> = []
 afterAll(async () => {
   await Promise.all(temporaryDirectories.map((directory) => Fs.rm(directory, { recursive: true, force: true })))
@@ -470,7 +472,7 @@ export const Package = S.Package({ targets: { install: S.Install({ lockfilePath:
     expect(`${result.envelope}${result.stderr}`).not.toContain("fixture-default-read-token")
   })
 
-  it("includes the real evaluated Nix environment in a public plan", async () => {
+  it.runIf(hasNix)("includes the real evaluated Nix environment in a public plan", async () => {
     const root = await packageFixture()
     const workspace = await Fs.readFile(NodePath.join(root, "WORKSPACE.ts"), "utf8")
     await write(
