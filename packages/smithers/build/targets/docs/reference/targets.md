@@ -614,3 +614,16 @@ Smithers.CiToolchain.Artifacts({
   ]
 })
 ```
+
+### Measured CI selections
+
+`GithubCiGen.TargetStep.additionalPatterns` adds target patterns to the same
+invocation as `pattern`. Every pattern is validated and shell-quoted; repeated
+selections are rejected. Structural gates recognize every selected pattern.
+`GithubCiGen.balanceShards([{ pattern, durationMs }], count)` partitions unique
+selections by measured duration, longest first, with lexical ties and stable
+shard indices. It rejects invalid patterns, duplicate selections, nonpositive
+or nonfinite durations, and counts that would create empty shards. The caller
+owns the timing evidence and workload bounds. Shared prerequisites may execute
+in multiple jobs even though selection ownership is disjoint.
+Validation failures use `InvalidSelection` with a machine-readable `code`.

@@ -270,7 +270,7 @@ test("exception and exclusion drift checks use literal tokens and reject dynamic
 })
 
 /** Pin every job so a new one forces a release decision. `on.push` is a trigger, not a job. */
-const ciJobs = ["test", "repository", "scripts", "docs", "apps-e2e", "rust", "rust-ffi", "wasm-repro", "browser", "packages"]
+const ciJobs = ["test", ...Array.from({ length: 7 }, (_, index) => `test-${index + 2}`), "repository", "scripts", "docs", "apps-e2e", "rust", "rust-ffi", "wasm-repro", "browser", "packages", ...Array.from({ length: 7 }, (_, index) => `packages-${index + 2}`)]
 
 /** A copy of the release workflow with one more gate step ahead of the build. */
 const withUnlistedStep = (source, name, command) => {
@@ -455,7 +455,7 @@ test("the release proves every CI gate the exclusions do not name, and every exc
   assert.deepEqual(workflowJobs(ci), ciJobs)
   assert.deepEqual(ciGatesMissingFromInventory(releaseGates, ci, releaseGateExclusions), [], "these CI gates run in neither the release nor the exclusions")
   assert.deepEqual(staleExclusions(releaseGates, ci, releaseGateExclusions), [])
-  assert.deepEqual(releaseGateExclusions.map((exclusion) => exclusion.job), ["rust", "packages", "browser"])
+  assert.deepEqual(releaseGateExclusions.map((exclusion) => exclusion.job), ["rust", "packages", ...Array.from({ length: 7 }, (_, index) => `packages-${index + 2}`), "browser"])
   for (const exclusion of releaseGateExclusions) assert.ok(exclusion.reason.length > 40, `${exclusion.job} carries a reason`)
   // Partial exclusions name only what the release omits: the rest of the job is mirrored.
   assert.deepEqual(releaseGateExclusions.find((exclusion) => exclusion.job === "rust").commands, [
@@ -463,7 +463,7 @@ test("the release proves every CI gate the exclusions do not name, and every exc
     "pnpm exec smthrs test '//packages/smithers/flows/jj-wasm:cargoTest' --verbose",
     "pnpm exec smthrs test '//packages/smithers/flows/jj:thirdPartyNotices' --verbose"
   ])
-  for (const job of ["test", "repository", "scripts", "docs", "wasm-repro"]) {
+  for (const job of ["repository", "scripts", "docs", "wasm-repro"]) {
     for (const step of workflowGateSteps(ci, job)) {
       assert.ok(mirrored.some((gate) => gate.name === step.name && releaseGateCommand(gate) === step.command), `${job}: ${step.name} is an inventory gate by name and command`)
     }
@@ -483,8 +483,9 @@ test("a CI gate added outside the exclusions is reported, and an exclusion that 
   // Dropping an inventory gate a mirrored CI job carries is a CI gap too.
   const mutated = releaseGates.filter((gate) => gate.target !== "//packages/smithers/flows/jj-wasm:buildScript")
   assert.deepEqual(ciGatesMissingFromInventory(mutated, ci, releaseGateExclusions).map((step) => step.command), ["pnpm exec smthrs test '//packages/smithers/flows/jj-wasm:buildScript' --verbose"])
-  assert.deepEqual(staleExclusions(releaseGates, ci, [{ job: "test", commands: ["pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose"], reason: "stale" }]), [
-    "test excludes pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose, which the inventory runs"
+  const workspaceCommand = workflowGateSteps(ci, "test")[0].command
+  assert.deepEqual(staleExclusions(releaseGates, ci, [{ job: "test", commands: [workspaceCommand], reason: "stale" }]), [
+    `test excludes ${workspaceCommand}, which the inventory runs`
   ])
   assert.deepEqual(staleExclusions(releaseGates, ci, [{ job: "rust-ffi", reason: "whole job" }]), [
     "rust-ffi excludes pnpm exec smthrs build '//:nativeFfi' --verbose, which the inventory runs"
@@ -514,6 +515,9 @@ test("workflowGateSteps reads names and commands, quoted names included, and ski
   assert.throws(() => workflowGateSteps(source, "missing"), /missing is not a job/)
   assert.deepEqual(parseGateCommand("pnpm exec smthrs build '//evals/authoring:check' --verbose"), { verb: "build", target: "//evals/authoring:check" })
   assert.deepEqual(parseGateCommand("pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose"), { verb: "ci", target: "//packages/...", jobs: 2 })
+  assert.deepEqual(parseGateCommand("pnpm exec smthrs ci '//packages/a' '//packages/b' --jobs 2 --verbose"), {
+    verb: "ci", target: "//packages/a", additionalTargets: ["//packages/b"], jobs: 2
+  })
   assert.equal(parseGateCommand("pnpm exec smthrs ci //packages/... --verbose"), undefined)
   // The known-red list changes which red targets fail a step, not which run.
   assert.deepEqual(
@@ -547,6 +551,10 @@ test("commandCovers matches exact targets, recursive selections and job bounds o
   assert.equal(gateRuns(scripts, "pnpm exec smthrs test '//packages/repo-targets:webBundleContract' --verbose"), false)
   assert.equal(gateRuns(scripts, "pnpm exec smthrs lint '//scripts:lint' --verbose"), false)
   assert.equal(gateRuns(scripts, "not a gate"), false)
+  assert.equal(commandCovers("pnpm exec smthrs test '//other' '//scripts:issueClaim' --verbose", { ...scripts, target: "//scripts:issueClaim" }), true)
+  assert.equal(gateRuns(scripts, "pnpm exec smthrs test '//scripts:a' '//scripts:b' --verbose"), true)
+  assert.equal(gateRuns(scripts, "pnpm exec smthrs test '//scripts:a' '//outside:b' --verbose"), false)
+  assert.equal(gateRuns(scripts, "pnpm exec smthrs test '//scripts:a' '//scripts:b' --jobs 2 --verbose"), false)
 })
 
 test("publish parity detects commands in YAML block scalars and unnamed run steps", () => {

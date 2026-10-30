@@ -5,6 +5,7 @@ import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
 import project from "./apps/site/src/data/project.json" with { type: "json" }
 import { Package as codingFlowsPackage } from "./.smithers/flows/PACKAGE.ts"
+import { packageShards, shardJobId, shardStep } from "./packages/repo-targets/ci/shards.ts"
 
 // Workspace selections cross package boundaries as explicit files. Expansion
 // retains the shared ignore, repository, symlink and host-state rules.
@@ -396,12 +397,14 @@ const ci = Smithers.GithubCiGen({
   results: true,
   mode: "check",
   gates: [
-    { name: "documentation parity", verb: Smithers.Verb.Docs, pattern: "//packages/...", job: "test" },
+    ...packageShards.flatMap((shard, index) => shard.patterns.map((pattern) => ({
+      name: "documentation parity", verb: Smithers.Verb.Docs, pattern, job: shardJobId("test", index)
+    }))),
     { name: "native FFI compiler and tests", verb: Smithers.Verb.Build, pattern: "//:nativeFfi", job: "rust-ffi" },
     { name: "web bundle compatibility", verb: Smithers.Verb.Test, pattern: "//packages/repo-targets:webBundleContract" }
   ],
   requiredJobs: [
-    "test",
+    ...packageShards.map((_, index) => shardJobId("test", index)),
     "repository",
     "scripts",
     "docs",
@@ -409,17 +412,17 @@ const ci = Smithers.GithubCiGen({
     "rust",
     "wasm-repro",
     "browser",
-    "packages",
+    ...packageShards.map((_, index) => shardJobId("packages", index)),
     "rust-ffi"
   ],
   jobs: [
-    {
-      id: "test",
-      name: "workspace graph (coverage gates enforced)",
+    ...packageShards.map((_, index) => ({
+      id: shardJobId("test", index),
+      name: index === 0 ? "workspace graph (coverage gates enforced)" : `workspace graph ${index + 1}/${packageShards.length} (coverage gates enforced)`,
       runsOn: ubuntu,
-      // Run 36319330660 exceeded 120 min before this split; keep the workspace budget.
-      // Remote-cache hits and the remaining workspace budget are tracked in #2254.
-      timeoutMinutes: 180,
+      // Measured shards carry at most 32 target-minutes before two-slot execution.
+      // Leave setup headroom without extending the former 180-minute budget.
+      timeoutMinutes: 40,
       toolchain: Smithers.CiToolchain.Needs({
         cargoBinaries: nativeFilesystem,
         runtimes: [node, bun],
@@ -446,9 +449,9 @@ const ci = Smithers.GithubCiGen({
         })
       }),
       steps: [
-        { name: "Workspace targets", verb: Smithers.Verb.Ci, pattern: "//packages/...", parallelism: 2 }
+        { name: "Workspace targets", verb: Smithers.Verb.Ci, ...shardStep(index) }
       ]
-    },
+    })),
     {
       // Everything the workspace graph used to run after its package step.
       // None of it reads that step's results, so it starts with the other
@@ -714,45 +717,17 @@ const ci = Smithers.GithubCiGen({
       toolchain: Smithers.CiToolchain.Needs({ runtimes: [node] }),
       steps: [{ name: "Web bundle compilation guard", verb: Smithers.Verb.Test, pattern: "//packages/repo-targets:webBundleContract" }]
     },
-    {
-      // One matrix over the three platforms, replacing the two copy-pasted
-      // advisory jobs `node-macos` and `node-windows` and adding a required
-      // ubuntu row. The steps, the toolchain, and the timeout are declared
-      // once, so a platform can never drift into running a different suite
-      // than its neighbours.
-      //
-      // The ubuntu row re-runs package test targets the required `test` job
-      // already covers: that job runs `ci '//packages/...'`, and the `ci` verb
-      // aggregates Build, Test, Lint, and Docs. The two jobs run concurrently,
-      // so the remote cache does not dedupe them, and ubuntu pays the package
-      // suites twice per run. That cost buys a truthful `requiredJobs`: with no
-      // required row, `packages` could be deleted or turned all-advisory and
-      // nothing would fail. Drop the ubuntu row only together with `packages`
-      // in `requiredJobs`.
-      //
-      // The advisory bit is per row, and it is data: `continue-on-error` reads
-      // `matrix.advisory` out of the `include:` rows below, because the
-      // generator's only `if:` is the cache-publish guard (unused here) and a
-      // job-level `continue-on-error: true` would excuse ubuntu along with the
-      // rest. ubuntu is required. macOS and
-      // Windows are advisory ONLY until the matrix proves them green; promoting
-      // one is flipping its boolean to `false`, and `requiredJobs` already
-      // names `packages`, so at least one row must stay required.
-      //
-      // Windows red today (run 33441825323, job 99651619667) was the build tool
-      // itself: `packageManagerEnvironment` held `process.env` to the POSIX
-      // name rule, and `windows-latest` sets `ProgramFiles(x86)`, so every
-      // target died in 13 s with "environment source contains a non-portable
-      // name" before a single suite ran.
-      id: "packages",
-      name: "package suites (${{ matrix.os }})",
+    ...packageShards.map((_, index) => ({
+      // Every shard retains the same required Linux and advisory macOS/Windows
+      // policy. Each job owns disjoint package roots; dependencies may repeat.
+      id: shardJobId("packages", index),
+      name: index === 0 ? "package suites (${{ matrix.os }})" : `package suites ${index + 1}/${packageShards.length} (${'${{ matrix.os }}'})`,
       matrix: [
         { os: ubuntu, advisory: false },
         { os: "macos-latest", advisory: true },
         { os: "windows-latest", advisory: true }
       ],
-      // Windows ran the suites in ~48 min before twelve packages also ran on PostgreSQL (f59d673cd); 60 cut it off.
-      timeoutMinutes: 90,
+      timeoutMinutes: 40,
       toolchain: Smithers.CiToolchain.Needs({
         cargoBinaries: nativeFilesystem,
         runtimes: [node, bun],
@@ -767,8 +742,8 @@ const ci = Smithers.GithubCiGen({
       }),
       // Match the workspace gate's bound: each suite also runs Vitest workers,
       // so host-sized package concurrency multiplies process and memory load.
-      steps: [{ name: "Package test targets", verb: Smithers.Verb.Test, pattern: "//packages/...", parallelism: 2 }]
-    }
+      steps: [{ name: "Package test targets", verb: Smithers.Verb.Test, ...shardStep(index) }]
+    }))
   ]
 })
 

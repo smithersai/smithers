@@ -12,6 +12,7 @@ import * as Target from "@smthrs/targets/Target"
 import * as Exec from "@smthrs/targets/Exec"
 import { parseWorkflow } from "../../../.smithers/flows/release/release-rehearsal.mjs"
 import * as PackageExec from "@smthrs/build-cli/PackageExec"
+import * as RepoResolution from "@smthrs/build-cli/RepoResolution"
 
 // Every case reads the same declarations, so they share one index instead of
 // loading every PACKAGE.ts again per case.
@@ -157,6 +158,9 @@ test("CI command discovery retains diagnostic options and refuses unknown select
   assert.deepEqual(targetInvocation("pnpm exec smthrs ci '//apps/...' --known-red '.github/ci-known-red.json' --verbose"), {
     verb: "ci", pattern: "//apps/...", jobs: undefined, knownRed: ".github/ci-known-red.json", verbose: true
   })
+  assert.deepEqual(targetInvocation("pnpm exec smthrs test '//a' '//b' --jobs 2 --verbose"), {
+    verb: "test", pattern: "//a", additionalPatterns: ["//b"], jobs: 2, verbose: true
+  })
   assert.equal(targetInvocation("node scripts/generate-ci.mjs"), undefined)
   for (const options of ["--include-exclusive", "--jobs", "--jobs 0", "--jobs 2 --jobs 3", "--plan", "--known-red", "--known-red list.json"])
     assert.throws(() => targetInvocation(`pnpm exec smthrs test '//packages/...' ${options}`), /Unrecognized CI target/)
@@ -288,7 +292,28 @@ test("required CI resolves package, app, script and evaluation suites to real ru
   writeFileSync(artifact, `${JSON.stringify(inventory, null, 2)}\n`)
   console.log(`Resolved CI inventory: ${artifact}`)
   assert.deepEqual(inventory.selectionErrors, [], "every required command must successfully plan")
-  const selected = (label, job) => inventory.rows.filter((row) => row.label === label && row.job === job && row.required && row.selectedRoot)
+  // Every emitted command above went through the public CLI. Enumerate the
+  // eligible declarations independently: ownership needs roots, not another
+  // full graph's executable identities and input hashes.
+  const shardIndex = await packageIndex()
+  const resolver = RepoResolution.resolver(shardIndex, process.env)
+  const declarations = await Promise.all(shardIndex.resolve("//packages/...").map(async (row) => ({
+    row, kinds: await RepoResolution.effectiveKinds(resolver, row.target)
+  })))
+  for (const [lane, kinds] of [["test", ["lint", "build", "test", "docs"]], ["packages", ["test"]]]) {
+    const aggregateRoots = declarations.filter(({ row, kinds: declaredKinds }) => kinds.some((verb) =>
+      declaredKinds.includes(verb) && !PackageExec.wildcardOmits(row.target, { verb, unattended: lane === "test",
+        artifactRun: shardIndex.factory?.factory.lifecycle?.tests.artifact.run }))).map(({ row }) => row.label)
+    const owners = new Map()
+    for (const row of inventory.rows.filter((row) => row.required && row.selectedRoot && row.platform === "ubuntu-latest" &&
+      (row.job === lane || row.job.startsWith(`${lane}-`)))) {
+      if (!owners.has(row.label)) owners.set(row.label, new Set())
+      owners.get(row.label).add(row.job)
+    }
+    assert.deepEqual([...owners.keys()].sort(), aggregateRoots.sort(), `${lane} shards must cover every eligible declaration`)
+    for (const [label, jobs] of owners) assert.equal(jobs.size, 1, `${label} is selected by multiple ${lane} shards`)
+  }
+  const selected = (label, job) => inventory.rows.filter((row) => row.label === label && (row.job === job || (["test", "packages"].includes(job) && row.job.startsWith(`${job}-`))) && row.required && row.selectedRoot)
   for (const [label, job] of [
     ["//apps/tui:check", "apps-e2e"], ["//apps/tui:unitTests", "apps-e2e"], ["//apps/tui:e2eTests", "apps-e2e"],
     ["//.smithers/flows/review:unitTests", "repository"], ["//apps/bug-worker:unitTests", "repository"],
@@ -309,7 +334,7 @@ test("required CI resolves package, app, script and evaluation suites to real ru
   const inventoryRunner = selected("//packages/repo-targets:ciInventory", "test")[0].runner
   assert.equal(basename(inventoryRunner[0]), "node")
   assert.deepEqual(inventoryRunner.slice(1), ["--import=vibelang/register", "--test", "packages/repo-targets/contracts/ci-inventory.test.mjs"])
-  const packageTests = inventory.rows.filter((row) => row.job === "packages" && row.required && row.selectedRoot)
+  const packageTests = inventory.rows.filter((row) => (row.job === "packages" || row.job.startsWith("packages-")) && row.required && row.selectedRoot)
   assert.ok(packageTests.length > 100, "the complete package test graph must resolve")
   for (const row of packageTests) assert.ok(selected(row.label, "test").length, `${row.label} must also be selected by ci //packages/...`)
   assert.deepEqual(inventory.rows.filter((row) => row.job === "e2e-faults"), [],
@@ -365,7 +390,7 @@ test("nightly faults resolve through the public CLI to every declared serial run
   const plan = planned(invocation.verb, invocation.pattern)
   assert.ok(plan.roots.length >= 3, "the complete library and production fault matrix must resolve")
   const index = await packageIndex()
-  const native = await PackageExec.plan({ index, verb: invocation.verb, patterns: [invocation.pattern], cacheDirectory: index.workspace.cache.directory })
+  const native = await PackageExec.plan({ index, verb: invocation.verb, patterns: [invocation.pattern, ...(invocation.additionalPatterns ?? [])], cacheDirectory: index.workspace.cache.directory })
   for (const label of plan.roots) {
     const node = native.nodes.get(label)
     assert.equal(node.target, "Vitest", label)

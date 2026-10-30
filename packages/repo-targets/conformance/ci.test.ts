@@ -37,7 +37,7 @@ describe("ci conformance", () => {
   it("workspace, script, docs and repository gates can start independently", () => {
     const ci = readCi()
     const commands = [
-      "pnpm exec smthrs ci '//packages/...'",
+      ci.jobs.test!.steps.find((step) => step.name === "Workspace targets")!.run!,
       "pnpm exec smthrs test '//.smithers/flows:issueClaim'",
       "pnpm exec smthrs test '//.smithers/flows:packageDocs' --known-red '.github/ci-known-red.json' --verbose",
       "pnpm exec smthrs test '//.smithers/flows:pack'"
@@ -68,7 +68,8 @@ describe("ci conformance", () => {
     const ciDeclaration = declaration.slice(declaration.indexOf("const ci = Smithers.GithubCiGen("))
     const required = [...(ciDeclaration.match(/requiredJobs: \[([^\]]+)\]/)?.[1] ?? "").matchAll(/"([^"]+)"/g)]
       .map((match) => match[1])
-    for (const owner of owners) assert.ok(required.includes(owner), `${owner} must remain required`)
+    for (const owner of owners.filter((id) => id !== "test")) assert.ok(required.includes(owner), `${owner} must remain required`)
+    assert.ok(ciDeclaration.includes('...packageShards.map((_, index) => shardJobId("test", index))'))
     const evidence = Object.entries(ci.jobs).filter(([, job]) =>
       job.steps
         .some((step) => step.name === "Upload ci-test-tier-evidence")
@@ -352,14 +353,12 @@ describe("ci conformance", () => {
     assert.ok(steps.some((step) => step.uses === "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"))
     for (const command of [
       "pnpm install --frozen-lockfile --ignore-scripts",
-      "pnpm exec smthrs ci '//packages/...' --jobs 2 --known-red '.github/ci-known-red.json' --verbose",
       "pnpm exec smthrs test '//.smithers/flows:issueClaim' --known-red '.github/ci-known-red.json' --verbose",
       "pnpm exec smthrs test '//packages/repo-targets:webBundleContract' --known-red '.github/ci-known-red.json' --verbose",
-      "pnpm exec smthrs test '//packages/...' --jobs 2 --known-red '.github/ci-known-red.json' --verbose",
       "jj git init --colocate"
     ]) assert.ok(commands.includes(command), command)
     assert.doesNotMatch(JSON.stringify(ci), /\/\/(?:ci\/|e2e:)/)
-    for (const id of ["test", "packages"]) {
+    for (const id of Object.keys(ci.jobs).filter((id) => /^(?:test|packages)(?:-\d+)?$/.test(id))) {
       assert.ok(ci.jobs[id]!.steps.some((step) => step.uses === "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6"))
     }
     // The serial fault matrix runs nightly in reliability.yml, not per push (009101820b, #3459).
@@ -371,10 +370,11 @@ describe("ci conformance", () => {
     assert.ok(steps.some((step) => /^jj-cli@\d+\.\d+\.\d+$/.test(step.with?.tool ?? "")))
   })
 
-  it("runs the package suites on every platform as one matrix, with the advisory bit as data", () => {
+  it("runs every package shard on every platform with the same advisory policy", () => {
     const ci = readCi()
-    const job = ci.jobs.packages!
-    assert.equal(job.name, "package suites (${{ matrix.os }})")
+    const shards = Object.entries(ci.jobs).filter(([id]) => /^packages(?:-\d+)?$/.test(id))
+    assert.equal(shards.length, 8)
+    for (const [, job] of shards) {
     assert.deepEqual(job.strategy, {
       "fail-fast": false,
       matrix: {
@@ -387,15 +387,10 @@ describe("ci conformance", () => {
       }
     })
     assert.equal(job["runs-on"], "${{ matrix.os }}")
-    // The bound is declared once, on the `packages` job in PACKAGE.ts; pin the
-    // rendered job to it so raising the declaration cannot strand this test.
-    const declared = readFileSync(new URL("../../../PACKAGE.ts", import.meta.url), "utf8")
-      .match(/id: "packages",[\s\S]*?timeoutMinutes: (\d+),/)?.[1]
-    assert.notEqual(declared, undefined)
-    assert.equal(job["timeout-minutes"], Number(declared))
+    assert.equal(job["timeout-minutes"], 40)
     assert.equal(job["continue-on-error"], "${{ matrix.advisory }}")
-    assert.equal(Object.values(ci.jobs).flatMap((row) => row.steps)
-      .filter((step) => step.run?.startsWith("pnpm exec smthrs test '//packages/...'")).length, 1)
+    assert.equal(job.steps.filter((step) => step.name === "Package test targets").length, 1)
+    }
     assert.ok(!Object.hasOwn(ci.jobs, "node-macos"))
     assert.ok(!Object.hasOwn(ci.jobs, "node-windows"))
   })
@@ -405,7 +400,7 @@ describe("ci conformance", () => {
       .flatMap((step) => step.run === undefined || step.run.includes("\n") ? [] : [step.run])
     assert.ok(commands.length > 0)
     const derived = [
-      /^pnpm exec smthrs (?:build|test|lint|docs|review|ci) '\/\/[^']*'( --jobs \d+)?( --known-red '\.github\/ci-known-red\.json')? --verbose$/,
+      /^pnpm exec smthrs (?:build|test|lint|docs|review|ci)(?: '\/\/[^']*')+( --jobs \d+)?( --known-red '\.github\/ci-known-red\.json')? --verbose$/,
       /^pnpm install --frozen-lockfile --ignore-scripts$/,
       /^rustup toolchain install$/,
       /^jj git init --colocate$/

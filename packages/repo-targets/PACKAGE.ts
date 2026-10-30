@@ -14,6 +14,7 @@ const testSupportFiles = [
   Smithers.glob("test-utils/**"),
   Smithers.file("//packages/smithers/flows/database/src/TestSchemas.ts"),
   Smithers.glob("scripts/**"),
+  Smithers.glob("ci/**"),
   Smithers.file("PACKAGE.ts")
 ]
 const testSupport = Smithers.Filegroup({

@@ -20,7 +20,7 @@ export default defineConfig({
       enabled: true,
       provider: "v8",
       reportsDirectory: join(tmpdir(), `flows-repo-targets-coverage-${process.pid}`),
-      include: ["src/**"],
+      include: ["src/**", "ci/**/*.ts"],
       thresholds: {
         branches: 100,
         functions: 100,

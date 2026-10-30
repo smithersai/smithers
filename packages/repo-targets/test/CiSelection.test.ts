@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { expect, it } from "vitest"
+import * as Yaml from "yaml"
 import { Package } from "../PACKAGE.ts"
 import { plannedCalls } from "./plan.ts"
 import { packageManager } from "./toolchain.ts"
@@ -12,9 +13,13 @@ const root = resolve(import.meta.dirname, "../../..")
 
 it("CI runs the package pattern that holds the coverage-enabled test target and runner", () => {
   const ci = readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8")
-  // The generator quotes every `run:` scalar, so the gate matches the quoted form.
-  for (const verb of ["ci", "test"]) {
-    expect(ci).toContain(`run: "pnpm exec smthrs ${verb} '//packages/...' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \\\"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\\\" --verbose"`)
+  const jobs = Yaml.parse(ci).jobs as Record<string, { steps: Array<{ run?: string }> }>
+  for (const [id, verb] of [["test", "ci"], ["packages", "test"]]) {
+    const matches = Object.entries(jobs).filter(([name]) => name === id || name.startsWith(`${id}-`))
+      .flatMap(([, job]) => job.steps).filter((step) => step.run?.startsWith(`pnpm exec smthrs ${verb} `))
+      .filter((step) => step.run?.includes("'//packages/repo-targets:*'"))
+    expect(matches).toHaveLength(1)
+    expect(matches[0]!.run).toContain("--jobs 2 --known-red '.github/ci-known-red.json' --results-file")
   }
 
   const attrs = Target.metadata(Package.test).attrs as Vitest.Attrs
@@ -28,7 +33,9 @@ it("CI runs the package pattern that holds the coverage-enabled test target and 
       { _tag: "Glob", pattern: "src/**/*.ts", exclude: [] },
       { _tag: "Glob", pattern: "test/**/*.ts", exclude: [] },
       { _tag: "Glob", pattern: "test-utils/**", exclude: [] },
+      { _tag: "File", path: "//packages/smithers/flows/database/src/TestSchemas.ts" },
       { _tag: "Glob", pattern: "scripts/**", exclude: [] },
+      { _tag: "Glob", pattern: "ci/**", exclude: [] },
       { _tag: "File", path: "PACKAGE.ts" }
     ]
   })

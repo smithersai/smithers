@@ -655,6 +655,7 @@ describe("parseWorkflow", () => {
     // SCOPE-3 (82b5490d) retired the legacy-app and Go jobs.
     expect(workflow.jobs.map((job) => job.id)).toEqual([
       "test",
+      ...Array.from({ length: 7 }, (_, index) => `test-${index + 2}`),
       "repository",
       "scripts",
       "docs",
@@ -663,7 +664,8 @@ describe("parseWorkflow", () => {
       "rust-ffi",
       "wasm-repro",
       "browser",
-      "packages"
+      "packages",
+      ...Array.from({ length: 7 }, (_, index) => `packages-${index + 2}`)
     ])
     // The platform matrix parses as ONE job whose runner is the matrix
     // expression, not as three copy-pasted jobs.
@@ -681,7 +683,20 @@ describe("parseWorkflow", () => {
    */
   it("holds the flows pipeline's required jobs to running unconditionally", async () => {
     const source = await readReal()
-    const required = ["test", "repository", "scripts", "docs", "apps-e2e", "rust", "wasm-repro", "browser", "packages"]
+    const required = [
+      "test",
+      ...Array.from({ length: 7 }, (_, index) => `test-${index + 2}`),
+      "repository",
+      "scripts",
+      "docs",
+      "apps-e2e",
+      "rust",
+      "rust-ffi",
+      "wasm-repro",
+      "browser",
+      "packages",
+      ...Array.from({ length: 7 }, (_, index) => `packages-${index + 2}`)
+    ]
     expect(missingRequiredJobs(parseWorkflow(source), required)).toEqual([])
     const skipped = source.replace(/^ {2}"browser":$/m, "  \"browser\":\n    if: false")
     expect(skipped).not.toBe(source)
@@ -756,7 +771,7 @@ describe("parseWorkflow", () => {
     expect(invokedFiles).toEqual([])
     // The run lines the pipeline DOES carry, so the two empty sets above are
     // read against a workflow that was parsed, not an empty string.
-    expect(commands).toContain("pnpm exec smthrs test '//packages/...'")
+    expect(commands).toContain("pnpm exec smthrs test '//packages/smithers:*'")
     const missing: Array<string> = []
     for (const file of [...new Set(invokedFiles)]) {
       const absolute = NodePath.resolve(realWorkflowPath, "../../..", file)

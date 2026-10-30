@@ -82,7 +82,7 @@ The cost is that one edit lands in several places. If you change:
 | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm-workspace.yaml` package membership      | `packages/smithers/flows/test/vitestCoverageIsolation.test.ts` (the coverage-universe policy pin); lockfile inputs are derived automatically. Nesting a package inside another has its own recipe below                                                    |
 | root `package.json` scripts                   | `packages/smithers/flows/test/vitestCoverageIsolation.test.ts` (the aggregator roster)                                                                                                          |
-| root `PACKAGE.ts` CI jobs, steps, or triggers | the generated `.github/workflows/ci.yml` (`pnpm exec smithers-build build '//:ci'` with `mode: "write"`), `packages/smithers/flows/test/vitestCoverageIsolation.test.ts` (source-text pins), and the hand-written `.github/workflows/release.yml`, which copies the required `test` job's toolchain and gate steps verbatim |
+| root `PACKAGE.ts` CI jobs, steps, or triggers | the generated `.github/workflows/ci.yml` (`pnpm exec smithers-build build '//:ci'` with `mode: "write"`), `packages/smithers/flows/test/vitestCoverageIsolation.test.ts` (source-text pins), and the hand-written `.github/workflows/release.yml`, which retains the workspace aggregate and copies the other required gates |
 | `.github/workflows/release.yml`               | the same suite, plus `.smithers/flows/release/release-rehearsal.test.mjs` and `.smithers/flows/release/pack-release.test.mjs`, which compares the release workflow's steps against the generated `ci.yml`               |
 | any `PACKAGE.ts` target set — adding, renaming or removing a target, or changing its declared inputs or outputs (a new test file reached by a glob counts) | `.smithers/target-index.json`, with `pnpm run target-index`. Nothing about it is hand-written: the script writes it and `smthrs lint '//:targetIndex'` drift-checks it. See “The target index” |
 | `CHANGELOG.md` release sections               | nothing by hand inside a `<!-- commits:… -->` block — `pnpm exec smithers-build run '//:changelog'` writes it and `lint '//:changelog'` drift-checks it. See “Cutting a release”         |
@@ -137,10 +137,13 @@ packages with a different layout carry their own BUILD file.
 
 The CI declaration has several deliberate operational constraints:
 
-- The `test` job aggregates build, test, lint, docs, format, and circular
-  targets in one graph plan. It uses `parallelism: 2` because the heavy Vitest
-  suites have finite 30-second per-test budgets that excessive concurrency on
-  a four-core runner can starve.
+- Eight `test` shards aggregate build, test, lint, docs, format, and circular
+  targets. Eight `packages` matrices repeat test targets across Linux, macOS
+  and Windows. Both use the measured package partition in
+  `packages/repo-targets/ci/shards.ts` and `parallelism: 2`, because extra
+  concurrency can starve the heavy suites' finite per-test budgets. The
+  [shard contract](packages/repo-targets/README.md#hosted-ci-shards) pins coverage,
+  workload balance, platform policy and the limits of the timing evidence.
 - `actionlint` checks every workflow named by the declaration so GitHub-only
   expression-context failures surface in review, not in a scheduled run.
   The script targets include the browser contract and release
@@ -372,8 +375,8 @@ is proved before the push.
 required CI `test` job installs — ripgrep, bubblewrap, Go, Foundry, the
 containerd image store — and then runs that job's `smithers-build` steps plus
 the fault matrix, copied verbatim out of the generated `ci.yml`. It is
-hand-written, so `.smithers/flows/release/pack-release.test.mjs` compares the two files and
-fails when the copy goes stale. Bumping a toolchain pin in the root
+hand-written, so `.smithers/flows/release/pack-release.test.mjs` compares the copied
+gates and requires the full workspace aggregate covering every CI shard. Bumping a toolchain pin in the root
 `PACKAGE.ts` therefore means regenerating `ci.yml` and copying the changed
 step into `release.yml` in the same commit.
 

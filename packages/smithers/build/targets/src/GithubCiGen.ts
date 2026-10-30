@@ -100,6 +100,8 @@ export const TargetStep = Schema.Struct({
    * validated against that grammar before it is rendered.
    */
   pattern: Schema.NonEmptyString,
+  /** Other selections in the same graph plan, each rendered as one shell word. */
+  additionalPatterns: Schema.optional(Schema.Array(Schema.NonEmptyString)),
   /**
    * How many targets this invocation executes at once, rendered as `--jobs`.
    * Omitted leaves the CLI's own default, which sizes itself to the host. A
@@ -118,6 +120,61 @@ export const TargetStep = Schema.Struct({
  * @since 0.1.0
  */
 export type TargetStep = typeof TargetStep.Type
+
+/**
+ * Invalid measured shard data or repeated selections in a graph invocation.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export class InvalidSelection extends Schema.TaggedError<InvalidSelection>()("smithers-build/InvalidCiSelection", {
+  code: Schema.Literals(["shard_count", "shard_selection", "shard_duration", "step_selection"]),
+  message: Schema.NonEmptyString
+}) {}
+
+/**
+ * Partition measured selections with longest-first scheduling. Input order and
+ * locale do not affect membership; ties use the pattern and then shard index.
+ * Dependencies may execute in more than one job; each selection belongs to one.
+ *
+ * @category planning
+ * @since 1.0.0
+ */
+export const balanceShards = (
+  targets: ReadonlyArray<{ readonly pattern: string; readonly durationMs: number }>,
+  count: number
+): ReadonlyArray<{ readonly patterns: ReadonlyArray<string>; readonly durationMs: number }> => {
+  if (!Number.isInteger(count) || count < 1 || count > targets.length) {
+    throw new InvalidSelection({
+      code: "shard_count",
+      message: "GithubCiGen: shard count must be a positive integer no larger than the selection"
+    })
+  }
+  const seen = new Set<string>()
+  for (const target of targets) {
+    if (!targetPattern(target.pattern) || seen.has(target.pattern)) {
+      throw new InvalidSelection({
+        code: "shard_selection",
+        message: `GithubCiGen: invalid or duplicate shard selection ${JSON.stringify(target.pattern)}`
+      })
+    }
+    if (!Number.isFinite(target.durationMs) || target.durationMs <= 0) {
+      throw new InvalidSelection({
+        code: "shard_duration",
+        message: "GithubCiGen: shard durations must be finite and positive"
+      })
+    }
+    seen.add(target.pattern)
+  }
+  const shards = Array.from({ length: count }, () => ({ patterns: [] as Array<string>, durationMs: 0 }))
+  const compare = (a: string, b: string): number => Number(a > b) - Number(a < b)
+  for (const target of [...targets].sort((a, b) => b.durationMs - a.durationMs || compare(a.pattern, b.pattern))) {
+    const shard = shards.reduce((best, next) => next.durationMs < best.durationMs ? next : best)
+    shard.patterns.push(target.pattern)
+    shard.durationMs += target.durationMs
+  }
+  return shards.map((shard) => ({ ...shard, patterns: shard.patterns.sort(compare) }))
+}
 
 /**
  * One target invocation the pipeline must still perform.
@@ -644,10 +701,10 @@ const packagePath = (path: string): boolean => path.split("/").every((part) => p
  * Whether a string is a target pattern the CLI's label grammar accepts.
  *
  * The supported forms are exactly `//...`, `//pkg/...`, `//pkg`, `//pkg:target`,
- * `//:target`, and the two recursive patterns narrowed to one target name,
+ * `//:target`, the nonrecursive `//pkg:*` wildcard, and the recursive patterns narrowed to one target name,
  * `//...:target` and `//pkg/...:target`. Everything else is refused, which is
- * what makes the generated command safe to render: `*` never reaches the shell
- * to be expanded against the checkout, `--help` never turns a step into a usage
+ * what makes the generated command safe to render: each pattern is quoted,
+ * so `*` never expands against the checkout, `--help` never turns a step into a usage
  * message that exits 0, and `//a/../b`, `//a//b`, and `//a:b:c` never become a
  * pattern the CLI would reject at run time instead of at plan time.
  *
@@ -663,6 +720,9 @@ export const targetPattern = (pattern: string): boolean => {
   if (colon !== -1 && body.indexOf(":", colon + 1) !== -1) return false
   const head = colon === -1 ? body : body.slice(0, colon)
   const target = colon === -1 ? undefined : body.slice(colon + 1)
+  // The only glob metacharacter admitted is the literal package wildcard;
+  // stepCommand quotes it so the runner's shell cannot expand it.
+  if (target === "*") return head === "" || packagePath(head)
   if (target !== undefined && !patternComponent.test(target)) return false
   if (head === "...") return true
   if (head.endsWith("/...")) {
@@ -705,7 +765,7 @@ export const stepCommand = (attrs: Attrs, step: TargetStep, nix?: CiToolchain.Ni
   return [
     ...developPrefix(nix),
     ...PackageManager.exec(attrs.packageManager, ["smthrs", Verb.command(step.verb)]),
-    shellArgument(step.pattern),
+    ...[step.pattern, ...(step.additionalPatterns ?? [])].map(shellArgument),
     ...(step.parallelism === undefined ? [] : ["--jobs", String(step.parallelism)]),
     ...(attrs.knownRed === undefined ? [] : ["--known-red", shellArgument(attrs.knownRed)]),
     // GITHUB_ACTION is unique per step within a job, so no two steps share a file.
@@ -1403,12 +1463,21 @@ const validateJobs = (attrs: Attrs): void => {
       )
     }
     for (const step of job.steps) {
-      if (!targetPattern(step.pattern)) {
-        throw new Error(
-          `GithubCiGen: ${
-            JSON.stringify(step.pattern)
-          } is not a target pattern; use //..., //pkg/..., //pkg, //pkg:target, //:target, or a recursive pattern narrowed to one target name such as //pkg/...:target`
-        )
+      const patterns = [step.pattern, ...(step.additionalPatterns ?? [])]
+      if (new Set(patterns).size !== patterns.length) {
+        throw new InvalidSelection({
+          code: "step_selection",
+          message: `GithubCiGen: job ${JSON.stringify(job.id)} repeats a step selection`
+        })
+      }
+      for (const pattern of patterns) {
+        if (!targetPattern(pattern)) {
+          throw new Error(
+            `GithubCiGen: ${
+              JSON.stringify(pattern)
+            } is not a target pattern; use //..., //pkg/..., //pkg, //pkg:target, //:target, or a recursive pattern narrowed to one target name such as //pkg/...:target`
+          )
+        }
       }
       if (!Verb.isPipelineVerb(step.verb)) {
         throw new Error(`GithubCiGen: job ${JSON.stringify(job.id)} declares a step with no CLI verb`)
@@ -1453,7 +1522,7 @@ const validateJobs = (attrs: Attrs): void => {
  * @since 0.1.0
  */
 export const satisfiesGate = (step: TargetStep, gate: Gate): boolean =>
-  step.pattern === gate.pattern &&
+  [step.pattern, ...(step.additionalPatterns ?? [])].includes(gate.pattern) &&
   (step.verb.name === gate.verb.name ||
     (step.verb.name === "ci" && Verb.all.some((verb) => verb.name === gate.verb.name)))
 

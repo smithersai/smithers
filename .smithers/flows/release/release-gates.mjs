@@ -1,4 +1,9 @@
 import { parse } from "yaml"
+import { packageShards, shardJobId } from "../../../packages/repo-targets/ci/shards.ts"
+
+const shardCommands = (verb) => packageShards.map((shard) =>
+  `pnpm exec smthrs ${verb} ${shard.patterns.map((pattern) => `'${pattern}'`).join(" ")} --jobs 2 --verbose`)
+
 
 /**
  * The release-validation inventory: every build-graph gate a release candidate
@@ -59,7 +64,7 @@ import { parse } from "yaml"
  * @type {readonly ReleaseGate[]}
  */
 export const releaseGates = [
-  { name: "Workspace targets", verb: "ci", target: "//packages/...", jobs: 2 },
+  { name: "Workspace targets", verb: "ci", target: "//packages/...", jobs: 2, ciCommands: shardCommands("ci") },
   { name: "Issue claims and check receipts", verb: "test", target: "//.smithers/flows:issueClaim" },
   { name: "Check bindings", verb: "test", target: "//.smithers/flows:evidenceBindings" },
   { name: "Release rehearsal and gate inventory", verb: "test", target: "//.smithers/flows:releaseRehearsal" },
@@ -189,11 +194,11 @@ export const releaseGateExclusions = [
     ],
     reason: "Native Rust lint and tests validate the native crates, which are not published release artifacts. The release verifies the shipped WASM with the pinned Rust toolchain instead. Third-party notices run under ci '//packages/...'."
   },
-  {
-    job: "packages",
-    commands: ["pnpm exec smthrs test '//packages/...' --jobs 2 --verbose"],
-    reason: "test '//packages/...' repeats the Workspace targets gate's test targets on macOS and Windows; one release runner has no OS matrix, and ci '//packages/...' already runs them on Linux."
-  },
+  ...shardCommands("test").map((command, index) => ({
+    job: shardJobId("packages", index),
+    commands: [command],
+    reason: "Package shards repeat the Workspace targets gate's tests across platforms; the release runs their complete union through ci '//packages/...' on Linux."
+  })),
   {
     job: "browser",
     commands: ["pnpm exec smthrs test '//packages/repo-targets:webBundleContract' --verbose"],
@@ -226,13 +231,14 @@ export const releaseGateCommand = (gate) =>
  * fail the step, not which targets run. release.yml carries none.
  *
  * @param {string} command
- * @returns {{ verb: string; target: string; jobs?: number } | undefined}
+ * @returns {{ verb: string; target: string; additionalTargets?: string[]; jobs?: number } | undefined}
  */
 export const parseGateCommand = (command) => {
-  const match = /^pnpm exec smthrs ([a-z]+) '([^']+)'(?: --jobs (\d+))?(?: --known-red '[^']+')? --verbose$/.exec(command)
+  const match = /^pnpm exec smthrs ([a-z]+)((?: '\/\/[^']+')+)(?: --jobs (\d+))?(?: --known-red '[^']+')? --verbose$/.exec(command)
   if (!match) return undefined
-  const [, verb, target, jobs] = match
-  return jobs === undefined ? { verb, target } : { verb, target, jobs: Number(jobs) }
+  const [, verb, selections, jobs] = match
+  const [target, ...additionalTargets] = [...selections.matchAll(/'([^']+)'/g)].map((match) => match[1])
+  return { verb, target, ...(additionalTargets.length ? { additionalTargets } : {}), ...(jobs === undefined ? {} : { jobs: Number(jobs) }) }
 }
 
 /**
@@ -253,13 +259,15 @@ export const parseGateCommand = (command) => {
 export const commandCovers = (command, gate) => {
   const parsed = parseGateCommand(command)
   if (!parsed || parsed.verb !== gate.verb) return false
-  const { target, jobs } = parsed
-  if (gate.jobs !== undefined) return target === gate.target && jobs === gate.jobs
-  if (jobs !== undefined) return false
-  if (target === gate.target) return true
-  if (!target.endsWith("/...")) return false
-  const prefix = target.slice(0, -"/...".length)
-  return gate.target === prefix || gate.target.startsWith(`${prefix}/`) || gate.target.startsWith(`${prefix}:`)
+  const { jobs } = parsed
+  return [parsed.target, ...(parsed.additionalTargets ?? [])].some((target) => {
+    if (gate.jobs !== undefined) return target === gate.target && jobs === gate.jobs
+    if (jobs !== undefined) return false
+    if (target === gate.target) return true
+    if (!target.endsWith("/...")) return false
+    const prefix = target.slice(0, -"/...".length)
+    return gate.target === prefix || gate.target.startsWith(`${prefix}/`) || gate.target.startsWith(`${prefix}:`)
+  })
 }
 
 /**
@@ -272,6 +280,10 @@ export const commandCovers = (command, gate) => {
  */
 export const gateRuns = (gate, command) => {
   const parsed = parseGateCommand(command)
+  if (parsed && (parsed.additionalTargets || gate.ciCommands?.includes(command))) {
+    return parsed.jobs === gate.jobs && [parsed.target, ...(parsed.additionalTargets ?? [])].every((target) =>
+      commandCovers(releaseGateCommand({ ...gate, jobs: undefined }), { verb: parsed.verb, target }))
+  }
   return parsed !== undefined && commandCovers(releaseGateCommand(gate), parsed)
 }
 

@@ -76,10 +76,10 @@ const ciFixture = (overrides = {}) => {
   const api = {
     [`repos/o/r/commits/${L}/check-runs?per_page=100`]: { check_runs: [{ app: { slug: 'github-actions' }, status: 'completed', conclusion: 'success', head_sha: L, details_url: 'https://github.com/o/r/actions/runs/7/job/1', ...overrides.check }] },
     'repos/o/r/actions/runs/7': { id: 7, head_sha: L, event: 'push', head_branch: 'main', path: '.github/workflows/ci.yml', repository: { full_name: 'o/r' }, status: 'completed', run_attempt: 2, html_url: 'https://github.com/o/r/actions/runs/7', ...overrides.run },
-    'repos/o/r/actions/runs/7/attempts/2/jobs?per_page=100': { jobs: [{ id: 1, name: 'workspace graph (coverage gates enforced)', status: 'completed', conclusion: 'success', run_attempt: overrides.testAttempt ?? 2 }, ...(overrides.jobs ?? [])] },
+    'repos/o/r/actions/runs/7/attempts/2/jobs?per_page=100': { jobs: [{ id: 1, name: overrides.jobName ?? 'workspace graph (coverage gates enforced)', status: 'completed', conclusion: 'success', run_attempt: overrides.testAttempt ?? 2 }, ...(overrides.jobs ?? [])] },
     'repos/o/r/actions/runs/7/artifacts?per_page=100': { artifacts: [
-      { id: 10, name: 'smthrs-results-test-0-2', workflow_run: { id: 7 }, expired: false, digest: digest(latest), ...overrides.artifact },
-      { id: 11, name: 'smthrs-results-test-0-1', workflow_run: { id: 7 }, expired: false, digest: digest(earlier) }
+      { id: 10, name: `smthrs-results-${overrides.artifactJob ?? 'test'}-0-2`, workflow_run: { id: 7 }, expired: false, digest: digest(latest), ...overrides.artifact },
+      { id: 11, name: `smthrs-results-${overrides.artifactJob ?? 'test'}-0-1`, workflow_run: { id: 7 }, expired: false, digest: digest(earlier) }
     ] }
   }
   const zips = { 'repos/o/r/actions/artifacts/10/zip': overrides.zip ?? latest, 'repos/o/r/actions/artifacts/11/zip': earlier }
@@ -91,6 +91,19 @@ test('CI receipt passes on the label\'s own status in the latest attempt, when a
   assert.equal(ok.pass, true); assert.equal(ok.reason, 'pass')
   assert.deepEqual(ok.evidence.rows.map(row => [row.artifact, row.status]), [['smthrs-results-test-0-2', 'ran']])
   assert.equal(ciFixture({ status: 'hit' }).pass, true)
+})
+
+test('shard receipts retain label verdicts and reject mismatched job identities', () => {
+  for (let shard = 2; shard <= 8; shard++) {
+    for (const [artifactJob, jobName] of [
+      [`test-${shard}`, `workspace graph ${shard}/8 (coverage gates enforced)`],
+      [`packages-${shard}`, `package suites ${shard}/8 (ubuntu-latest)`]
+    ]) {
+      assert.equal(ciFixture({ artifactJob, jobName }).pass, true)
+      assert.equal(ciFixture({ artifactJob, jobName, status: 'failed' }).pass, false)
+      assert.equal(ciFixture({ artifactJob, jobName: 'unrelated job' }).reason, 'label_job')
+    }
+  }
 })
 
 test('CI receipt refuses forged sha, app, branch, event and workflow path', () => {

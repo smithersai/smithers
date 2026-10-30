@@ -223,3 +223,31 @@ Packages that must NOT declare this, and why:
   `not_installed`.
 - `platform-node`: the Node host contract suite asserts Node-host behavior
   and is not expected to pass on Bun.
+
+## Hosted CI shards
+
+`ci/shards.ts` assigns every package to one of eight jobs in each lane.
+`GithubCiGen.balanceShards` uses longest-first scheduling with lexical ties;
+`additionalPatterns` keeps each shard in one graph plan. Nonrecursive `//package:*` selections
+preserve manual, exclusive and host filtering; prerequisites can run in more
+than one job. Coverage and known-red handling remain the package's own gates.
+
+`ci/timings.json` records the maximum completed per-target duration from run
+40929998769's `smthrs-results-test-0-1/__run_8.json` and run 41088937554's
+Ubuntu/macOS package logs. Download the artifact with `gh run download` and
+read the named jobs' logs with `gh api repos/smithersai/smithers/actions/jobs/<id>/logs`.
+For each label retain the maximum `durationMs`, logged `ran`/`failed` elapsed
+value, or an unfinished target's observed elapsed time at cancellation. The
+`censored` records retain those lower bounds and their timestamps; service
+lifetimes are excluded. Failed targets count. The unmeasured labels are manual Jev gates, excluded by wildcard
+selection. New unmeasured targets fail the contract until evidence is added.
+
+The current bins contain 30.5–30.9 measured target-minutes each before two-slot
+execution. `test/CiShards.test.ts` rejects missing/duplicate package ownership,
+a bin above 32 target-minutes, or a spread above three target-minutes. The
+conservative bound covers every measured kind; test roots also have their own
+32-minute ceiling and four-minute spread (currently 26.3–29.6 target-minutes).
+These are workload bounds, not a hosted wall-time proof: setup, contention, dependency
+repetition and future suite growth still need a hosted run. Jobs have a
+40-minute ceiling, reduced from 90/180 minutes; the intended wall time is about
+35 minutes including setup. Release retains its complete workspace aggregate.

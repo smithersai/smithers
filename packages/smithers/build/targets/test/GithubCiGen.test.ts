@@ -20,14 +20,17 @@ import {
   actions,
   artifactSteps,
   Attrs,
+  balanceShards,
   Gate,
   GithubCiGen,
   independentGate,
+  InvalidSelection,
   Job,
   MatrixRow,
   render,
   renderStep,
   satisfiesGate,
+  stepCommand,
   TargetStep,
   toolchainSteps
 } from "../src/GithubCiGen.ts"
@@ -47,6 +50,52 @@ const parseWorkflow = (source: string): ReturnType<typeof parseStrictWorkflow> =
 const node = CiToolchain.Node({ runtime, release: "26.4.0" })
 const bareNode = CiToolchain.Node({ runtime, release: "26.4.0", cachePackageStore: false })
 const rust = CiToolchain.Rust({ toolchain: RustToolchain.Pinned({}) })
+
+describe("measured CI shards", () => {
+  const targets = [9, 8, 7, 6, 5, 4].map((durationMs, index) => ({ pattern: `//p${index}`, durationMs }))
+
+  it("covers each selection once, balances work and is independent of input order", () => {
+    const shards = balanceShards(targets, 3)
+    expect(shards.map((shard) => shard.durationMs)).toEqual([13, 13, 13])
+    expect(shards.flatMap((shard) => shard.patterns).sort()).toEqual(targets.map((target) => target.pattern))
+    expect(balanceShards([...targets].reverse(), 3)).toEqual(shards)
+    expect(balanceShards([{ pattern: "//b", durationMs: 1 }, { pattern: "//a", durationMs: 1 }], 2))
+      .toEqual([{ patterns: ["//a"], durationMs: 1 }, { patterns: ["//b"], durationMs: 1 }])
+    expect(balanceShards(targets, 1)[0]!.durationMs).toBe(39)
+  })
+
+  it("rejects empty shards, invalid counts, duplicate selections and invalid measurements", () => {
+    expect(() => balanceShards(targets, 0)).toThrow(InvalidSelection)
+    for (const count of [0, -1, 1.5, 7, NaN, Infinity]) {
+      expect(() => balanceShards(targets, count)).toThrow(/shard count/)
+    }
+    expect(() => balanceShards([], 1)).toThrow(/shard count/)
+    expect(() => balanceShards([...targets, targets[0]!], 3)).toThrow(/duplicate shard selection/)
+    expect(() => balanceShards([{ pattern: "shell; command", durationMs: 1 }], 1)).toThrow(/invalid.*selection/)
+    for (const durationMs of [0, -1, NaN, Infinity]) {
+      expect(() => balanceShards([{ pattern: "//p", durationMs }], 1)).toThrow(/finite and positive/)
+    }
+  })
+
+  it("renders a shard as one plan and retains policy, results and structural gates", () => {
+    const step = { verb: Verb.Ci, pattern: "//a", additionalPatterns: ["//b:test", "//c/..."], parallelism: 2 }
+    const attrs = attrsOf({ ...goldenAttrs, knownRed: ".github/ci-known-red.json", results: true })
+    expect(stepCommand(attrs, step)).toBe(
+      `pnpm exec smthrs ci '//a' '//b:test' '//c/...' --jobs 2 --known-red '.github/ci-known-red.json' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose`
+    )
+    expect(satisfiesGate(step, { name: "b", verb: Verb.Test, pattern: "//b:test" })).toBe(true)
+    const withStep = (selection: typeof step) =>
+      attrsOf({
+        ...goldenAttrs,
+        gates: [],
+        jobs: [{ ...goldenAttrs.jobs[0]!, steps: [selection] }]
+      })
+    expect(() => render(withStep(step))).not.toThrow()
+    expect(() => render(withStep({ ...step, additionalPatterns: ["//a"] }))).toThrow(/repeats a step selection/)
+    expect(() => render(withStep({ ...step, additionalPatterns: ["//b; command"] }))).toThrow(/not a target pattern/)
+    expect(() => render(withStep({ ...step, additionalPatterns: [] }))).not.toThrow()
+  })
+})
 
 describe("CI concurrency", () => {
   it("keeps one run in flight per branch, the newest commit next, and cancels superseded PR runs", () => {
@@ -437,7 +486,13 @@ describe("the declaration surface", () => {
     expect(suspects.map(([name, type]) => [name, type._tag])).toEqual([["install", "Boolean"]])
     expect(suspects.filter(([, type]) => holdsString(type)).map(([name]) => name)).toEqual([])
     // The two things a step CAN say, and nothing else.
-    expect(Object.keys(TargetStep.fields).sort()).toEqual(["name", "parallelism", "pattern", "verb"])
+    expect(Object.keys(TargetStep.fields).sort()).toEqual([
+      "additionalPatterns",
+      "name",
+      "parallelism",
+      "pattern",
+      "verb"
+    ])
     // A gate is a target invocation too, not a command to match in the text.
     expect(Object.keys(Gate.fields).sort()).toEqual(["job", "name", "pattern", "verb"])
     // A job says what it requires and what it runs.
@@ -923,6 +978,9 @@ describe("render", () => {
         "//*",
         "//packages/*",
         "//packages/*:build",
+        "//packages/*:*",
+        "//packages/...:*",
+        "//..:*",
         "...",
         "packages/smithers/flows/core",
         "//",
@@ -980,6 +1038,8 @@ describe("render", () => {
         "//packages/smithers/flows/core",
         "//packages/smithers/flows/core:build",
         "//:ci",
+        "//packages/smithers:*",
+        "//:*",
         "//...:bunTest",
         "//packages/...:bunTest",
         // A hidden directory names a package too: a repository's own flows

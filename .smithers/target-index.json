@@ -49378,6 +49378,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/ci/**",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/repo-targets/PACKAGE.ts"
       },
@@ -53119,6 +53124,11 @@
       {
         "kind": "glob",
         "pattern": "packages/repo-targets/scripts/**",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/ci/**",
         "exclude": []
       },
       {

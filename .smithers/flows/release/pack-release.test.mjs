@@ -295,6 +295,7 @@ test("every gate in ci.yml also runs in release.yml", () => {
   const jobs = Object.keys(parse(ci).jobs)
   assert.deepEqual(jobs, [
     "test",
+    ...Array.from({ length: 7 }, (_, index) => `test-${index + 2}`),
     "repository",
     "scripts",
     "docs",
@@ -303,10 +304,11 @@ test("every gate in ci.yml also runs in release.yml", () => {
     "rust-ffi",
     "wasm-repro",
     "browser",
-    "packages"
+    "packages",
+    ...Array.from({ length: 7 }, (_, index) => `packages-${index + 2}`)
   ])
 
-  const mirrored = ["test", "repository", "scripts", "docs", "rust-ffi", "wasm-repro"]
+  const mirrored = ["repository", "scripts", "docs", "rust-ffi", "wasm-repro"]
   const isGate = (step) => graphCommands([step]).length > 0
   // ci.yml passes the known-red list; the release does not, so every target a
   // release mirrors must be green there, including those main tolerates.
@@ -331,7 +333,13 @@ test("every gate in ci.yml also runs in release.yml", () => {
   ]
   const command = (step) => graphCommands([step])[0]
   const gate = (step) => command(step).replace(/ --results-file "\$RUNNER_TEMP\/smthrs-results\/\$GITHUB_ACTION.json"/g, "")
-  const copied = actual.filter((step) => !releaseOnly.includes(gate(step)))
+  const workspace = actual.filter((step) => gate(step) === "pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose")
+  assert.equal(workspace.length, 1, "release retains the complete workspace aggregate, including coverage")
+  const workspaceExpected = jobSteps(ci, "test", (step) => step.name === "Workspace targets"
+    ? { ...step, run: step.run.replace(/^(pnpm exec smthrs ci) .+?( --jobs 2)/, "$1 '//packages/...'$2") }
+    : step).filter(isGate).map((step) => step.replace(/ --known-red '[^']+'/g, ""))
+  assert.deepEqual(workspace, workspaceExpected, "workspace sharding preserves the release gate's environment and enforcement")
+  const copied = actual.filter((step) => !releaseOnly.includes(gate(step)) && !workspace.includes(step))
 
   assert.ok(expected.length > 15, `${expected.length} gates is too few to be the required CI roster`)
   assert.deepEqual(actual.filter((step) => releaseOnly.includes(gate(step))).map(gate), releaseOnly)

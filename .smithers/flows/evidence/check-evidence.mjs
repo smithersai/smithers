@@ -82,7 +82,12 @@ export const HOSTS = {
     'rust-ffi-0': 'native FFI compiler and tests', 'wasm-repro-0': 'wasm reproducibility',
     'browser-0': 'web bundle compatibility',
     'packages-0': 'package suites (ubuntu-latest)', 'packages-1': 'package suites (macos-latest)',
-    'packages-2': 'package suites (windows-latest)'
+    'packages-2': 'package suites (windows-latest)',
+    ...Object.fromEntries(Array.from({ length: 7 }, (_, offset) => offset + 2).flatMap(shard => [
+      [`test-${shard}-0`, `workspace graph ${shard}/8 (coverage gates enforced)`],
+      ...['ubuntu-latest', 'macos-latest', 'windows-latest'].map((os, index) =>
+        [`packages-${shard}-${index}`, `package suites ${shard}/8 (${os})`])
+    ]))
   } },
   'reference-host': { workflow: '.github/workflows/reference-host.yml', events: ['push', 'workflow_dispatch'],
     jobs: { 'macos-release-trust-0': 'macOS release-trust suite' },

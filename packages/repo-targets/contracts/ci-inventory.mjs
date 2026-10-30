@@ -24,6 +24,8 @@ export function targetInvocation(run) {
   if (!match) throw new Error(`Unrecognized CI target invocation: ${run}`)
   const [, verb, pattern, tail] = match
   const options = tail.trim() === "" ? [] : tail.trim().match(/"[^"]*"|'[^']*'|\S+/g) ?? []
+  const additionalPatterns = []
+  while (/^'\/\/[^']+'$/.test(options[0] ?? "")) additionalPatterns.push(options.shift().slice(1, -1))
   let jobs
   let knownRed
   let verbose = false
@@ -39,12 +41,12 @@ export function targetInvocation(run) {
       resultsFile = options[++index].slice(1, -1)
     } else throw new Error(`Unrecognized CI target option in: ${run}`)
   }
-  return { verb, pattern, jobs, ...(knownRed === undefined ? {} : { knownRed }), verbose,
+  return { verb, pattern, ...(additionalPatterns.length ? { additionalPatterns } : {}), jobs, ...(knownRed === undefined ? {} : { knownRed }), verbose,
     ...(resultsFile === undefined ? {} : { resultsFile }) }
 }
 
 export function planned(verb, pattern, workspace = root) {
-  const result = spawnSync(process.execPath, [cli, verb, pattern, "--plan", "--json", "--workspace", workspace], {
+  const result = spawnSync(process.execPath, [cli, verb, ...[pattern].flat(), "--plan", "--json", "--workspace", workspace], {
     cwd: workspace, encoding: "utf8", timeout: 120_000, killSignal: "SIGKILL", maxBuffer: 128 * 1024 * 1024,
     env: { ...process.env, SMITHERS_CACHE_URL: "", SMITHERS_CACHE_TOKEN: "" }
   })
@@ -66,7 +68,7 @@ export async function plannedInProcess(verb, pattern, workspace = root) {
   let stderr = ""
   let status = 0
   await main({
-    argv: [verb, pattern, "--plan", "--json", "--workspace", workspace],
+    argv: [verb, ...[pattern].flat(), "--plan", "--json", "--workspace", workspace],
     env: { ...process.env, SMITHERS_CACHE_URL: "", SMITHERS_CACHE_TOKEN: "" },
     stdout: { write: (text) => { stdout += text } },
     stderr: { write: (text) => { stderr += text } },
@@ -119,8 +121,9 @@ export async function resolveInventory() {
       for (const step of job.steps ?? []) {
         const invocation = targetInvocation(step.run)
         if (!invocation) continue
-        const { verb, pattern } = invocation
-        const identity = `${verb} ${pattern}`
+        const { verb, pattern, additionalPatterns = [] } = invocation
+        const patterns = [pattern, ...additionalPatterns]
+        const identity = `${verb} ${patterns.join(" ")}`
         if (!selections.has(identity)) {
           console.error(`Resolving CI selection: ${identity}`)
           // The CLI's package report deliberately omits declaration attrs, so
@@ -130,12 +133,12 @@ export async function resolveInventory() {
           // carry attrs and never need it.
           const speculation = new AbortController()
           const nativePlan = verb === "ci" ? undefined : PackageExec.plan({
-            index, verb, patterns: [pattern], cacheDirectory: index.workspace.cache.directory, signal: speculation.signal
+            index, verb, patterns, cacheDirectory: index.workspace.cache.directory, signal: speculation.signal
           })
           nativePlan?.catch(() => {})
           try {
             const started = performance.now()
-            const plan = await planner.plan(verb, pattern, root)
+            const plan = await planner.plan(verb, patterns, root)
             const cliDurationMs = performance.now() - started
             // Use the native plan only when earlier selections have not
             // supplied metadata for these exact keys, including anonymous
@@ -143,7 +146,7 @@ export async function resolveInventory() {
             const needsMetadata = plan.targets.some((target) =>
               target.attrs === undefined && !metadata.has(metadataIdentity(target)))
             const native = needsMetadata
-              ? await (nativePlan ?? PackageExec.plan({ index, verb, patterns: [pattern], cacheDirectory: index.workspace.cache.directory }))
+              ? await (nativePlan ?? PackageExec.plan({ index, verb, patterns, cacheDirectory: index.workspace.cache.directory }))
               : undefined
             const targets = plan.targets.map((target) => {
               if (target.attrs !== undefined) return target
@@ -159,6 +162,7 @@ export async function resolveInventory() {
           } catch (error) {
             // Retain the other real selections for diagnosis; neither this CLI
             // nor the repo-contract test can pass with an unresolved command.
+            console.error(JSON.stringify({ ciSelection: identity, status: "failed", error: String(error) }))
             selectionErrors.push({ command: identity, error: String(error) })
             selections.set(identity, { roots: [], targets: [] })
           } finally {
@@ -187,6 +191,7 @@ export async function resolveInventory() {
           const attrs = metadata.attrs
           for (const platform of platforms) rows.push({
             job: jobId, step: step.name, trigger: Object.keys(workflow.on), verb, pattern,
+            ...(additionalPatterns.length ? { additionalPatterns } : {}),
             platform: platform.os, required: ![true, "true"].includes(platform.advisory), runtimes,
             label: selected.label, selectedRoot: plan.roots.includes(selected.label),
             kind: metadata.kinds, rule: metadata.target, runner: selected.argv ?? runnerFor(metadata, index.workspace, verb),
