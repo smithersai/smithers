@@ -23,7 +23,10 @@ export interface ConversationsConfig {
 /** The list this tab shows, the latest opened first. */
 export const listQuery = (list: Collection.Collection<Listed, string>) =>
   LiveQuery.make((q) =>
-    q.from({ row: list.tanstack }).orderBy(({ row }) => row.openedAt, "desc").orderBy(({ row }) => row.conversationId)
+    // Electric's UTC timestamps omit the fraction at whole seconds. Locale collation puts '+' after '.', reversing
+    // a whole second and a later fraction; code-point order preserves their chronological order.
+    q.from({ row: list.tanstack }).orderBy(({ row }) => row.openedAt, { direction: "desc", stringSort: "lexical" })
+      .orderBy(({ row }) => row.conversationId)
   )
 
 /** The list's search on this tab. */

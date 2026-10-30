@@ -155,3 +155,29 @@ The test now holds the real draft row lock until both requests are observed
 waiting in PostgreSQL, then releases it and verifies one new revision and one
 existing response. All 40 personal-flow cases pass at all four 100% measures.
 The product's locking and replay behavior are unchanged.
+
+A later all-100 sweep exposed the conversation list's locale-based timestamp
+ordering. PostgreSQL omits the fractional part at whole seconds; the default
+locale comparator ranks `00+00` after the later `00.267+00`. Repeated timing
+probes did not reproduce it until the real SQL fixture fixed those boundary
+values. Two public-query regressions then failed in 14 ms, and the real
+PostgreSQL/Electric/React case reproduced the wrong order in 6.9 seconds.
+The query now explicitly uses code-point ordering for Electric's UTC timestamps,
+through the catalog's `@smthrs/effect-tanstack-db` query builder. The real
+timestamp regression retains both insertion orders and the conversation-id tie
+break. The UI fixture waits for navigation's actual completion receipt before
+updating its real rows, without prestarting the list query.
+
+Cancelling the diagnostic also exposed an owned-fixture leak: default shutdown
+grace exceeded its caller's termination window, leaving PostgreSQL running.
+A real cancellation regression freezes Electric, sends SIGTERM to the fixture
+process group and checks exit 143 and zero remaining containers, networks and
+volumes within five seconds. It first failed on the previous cleanup. The
+fixture now bounds service shutdown grace to one second; the regression's
+failure path also reclaims only its own fixture.
+
+Typecheck and import rules pass. All 51 conversation cases pass, including the
+whole-second UI case in 2.6 seconds; the changed store reaches all four 100%
+coverage measures. The real stack's coexistence, failure cleanup and SIGTERM
+regressions pass; cancellation removes every owned resource in 1.5 seconds.
+The two consecutive final-source full runs remain the completion gate.

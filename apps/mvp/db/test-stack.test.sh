@@ -45,3 +45,4 @@ test -n "$project"
 test -z "$(docker ps -aq --filter "label=com.docker.compose.project=$project")"
 test -z "$(docker volume ls -q --filter "label=com.docker.compose.project=$project")"
 printf 'Isolated listeners, fresh catalog and failure cleanup passed\n'
+node db/test-stack.cancel.test.mjs

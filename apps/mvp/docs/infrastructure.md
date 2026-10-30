@@ -103,7 +103,9 @@ Every fixture schema uses `<prefix>_<epoch-seconds>_<32 hex>` (at most 63 bytes)
 Use `bash db/test-stack.sh -- pnpm vitest run` for a full run. It starts the same real Compose dependencies on
 assigned loopback ports with a fresh, run-owned volume, then removes only that project on success, failure or
 cancellation. The fixture keeps the farm's 100 PostgreSQL connections and four-connection transaction pool.
-`pnpm test:stack` verifies isolated listeners, an empty catalog and cleanup after a failing child command.
+`pnpm test:stack` verifies isolated listeners, an empty catalog and cleanup after failure and SIGTERM. Service shutdown
+grace is one second so cleanup finishes before a caller escalates termination. The cancellation regression freezes
+the owned Electric process, terminates the fixture's process group and verifies exit 143 with no remaining resources.
 The test-only Compose overlay keeps PostgreSQL data and WAL on a 4 GiB tmpfs, with fsync and synchronous commits
 enabled. Engine/process restarts retain the journal; removing the fixture removes its data. This isolates a suite's
 WAL flushes from other suites' disk traffic. The regression checks the mount and durability settings.

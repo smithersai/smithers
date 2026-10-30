@@ -6,7 +6,8 @@ fixture_project="mvp-test-$(node -e 'process.stdout.write(require("node:crypto")
 compose=(docker compose -p "$fixture_project" -f "$app_directory/docker-compose.yml" -f "$app_directory/docker-compose.test.yml")
 export MVP_TEST_POSTGRES_BIND=127.0.0.1: MVP_TEST_ELECTRIC_BIND=127.0.0.1: MVP_TEST_POOL_BIND=127.0.0.1:
 export MVP_TEST_MAX_CONNECTIONS=100 MVP_TEST_POOL_MAX_CLIENTS=64 MVP_TEST_POOL_MAX_DATABASE_CONNECTIONS=8
-cleanup() { "${compose[@]}" down --volumes --remove-orphans >/dev/null; }
+# Leave time for cleanup before a caller escalates termination of this owned process group.
+cleanup() { "${compose[@]}" down --timeout 1 --volumes --remove-orphans >/dev/null; }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM

@@ -1,6 +1,7 @@
 import { dom } from "./fixtures/dom"
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } from "@tanstack/react-router"
 import { Effect } from "effect"
+import { SqlClient } from "effect/sql"
 import { act, createElement } from "react"
 import { createRoot } from "react-dom/client"
 import { afterAll, expect, test, vi } from "vitest"
@@ -8,8 +9,9 @@ import { AuthStore, SESSION } from "../src/features/auth/store"
 import { Branch } from "../src/features/branch/branch"
 import { BranchProvider } from "../src/features/branch/components/BranchContext"
 import { Commands } from "../src/features/commands/commands"
+import { ConversationsStore } from "../src/features/conversations/store"
 import { ConversationsScreen } from "../src/screens/conversations/ConversationsScreen"
-import { openTab, openTestApp, TestChatApi } from "../src/test/chatApi"
+import { nodeDevice, openTab, openTestApp, TestChatApi } from "../src/test/chatApi"
 import { shaOf } from "../worker/test/branch"
 
 Object.assign(globalThis, { self: dom, scrollTo: dom.scrollTo.bind(dom) })
@@ -23,7 +25,8 @@ test("Conversations renders tracked and Smithers-only branches and archives thro
   api.branches.github.publish("octo", "hello", {
     defaultBranch: "main", branches: { main: shaOf("main"), "feature/one": shaOf("one") },
   })
-  const device = openTab(api)
+  const host = nodeDevice({ agent: api })
+  const device = openTab(api, { host })
   const container = document.createElement("div")
   document.body.append(container)
   const view = createRoot(container)
@@ -37,6 +40,21 @@ test("Conversations renders tracked and Smithers-only branches and archives thro
     commands.actions.type("/new octo/hello topic-two")
     commands.actions.submit("/new octo/hello topic-two")
     await vi.waitFor(() => expect(api.branches.forge.ephemeral.repository("octo", "hello")?.branches["topic-two"]).toBe(shaOf("main")), { timeout: 40_000 })
+    await vi.waitFor(() => expect(host.navigated).toEqual(["/octo/hello/tree/topic-two"]), { timeout: 5_000 })
+    // PostgreSQL omits the decimal point at whole seconds. Locale collation orders that value after its fractions.
+    const whole = Date.UTC(2026, 0, 1)
+    const changed = await server.runPromise(api.branches.run(Effect.flatMap(SqlClient.SqlClient, sql => sql`
+      UPDATE conversation_people SET opened_at = CASE WHEN branch = 'topic-two'
+        THEN ${new Date(whole + 267)}::timestamptz ELSE ${new Date(whole)}::timestamptz END
+      WHERE person_id = 'person-member' AND owner = 'octo' AND repo = 'hello'
+        AND branch IN ('feature/one', 'topic-two') RETURNING conversation_id`)))
+    expect(changed).toHaveLength(2)
+    const store = await device.runPromise(Effect.service(ConversationsStore))
+    await vi.waitFor(async () => {
+      const rows = await device.runPromise(store.mine.toArray)
+      expect(rows.find(row => row.branch === "feature/one")?.openedAt).toBe("2026-01-01 00:00:00+00")
+      expect(rows.find(row => row.branch === "topic-two")?.openedAt).toBe("2026-01-01 00:00:00.267+00")
+    }, { timeout: 5_000 })
     const root = createRootRoute()
     const route = createRoute({ getParentRoute: () => root, path: "/app/conversations", component: ConversationsScreen })
     const router = createRouter({ isServer: false, routeTree: root.addChildren([route]), history: createMemoryHistory({ initialEntries: ["/app/conversations"] }) })
@@ -48,7 +66,7 @@ test("Conversations renders tracked and Smithers-only branches and archives thro
     await vi.waitFor(async () => {
       await act(async () => {})
       expect([...list()!.querySelectorAll("li > a")].map(link => link.textContent)).toEqual(["topic-two octo/hello", "feature/one octo/hello"])
-    }, { timeout: 40_000 })
+    }, { timeout: 5_000 })
     await act(async () => { await branch.conversations.actions.search("missing-bb2") })
     await vi.waitFor(async () => {
       await act(async () => {})
