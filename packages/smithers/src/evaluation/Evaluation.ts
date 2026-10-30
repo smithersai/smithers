@@ -443,13 +443,14 @@ export const execute = async (
   }
   const implementation = Evaluate.toLayer((payload) =>
     Effect.gen(function*() {
+      // decodeData already fails with invalid_suite; only the shape check needs mapping.
       const request = yield* Suite.decodeData(payload.data).pipe(
-        Effect.flatMap(Schema.decodeUnknownEffect(EvaluationInputs)),
-        Effect.mapError((cause) =>
-          cause instanceof EvalError ? cause : new EvalError({
-            code: "invalid_suite",
-            message: "The recorded evaluation request is invalid"
-          })
+        Effect.flatMap((data) =>
+          Schema.decodeUnknownEffect(EvaluationInputs)(data).pipe(
+            Effect.mapError(() =>
+              new EvalError({ code: "invalid_suite", message: "The recorded evaluation request is invalid" })
+            )
+          )
         )
       )
       const bindings: Array<Suite.Binding> = []

@@ -167,8 +167,13 @@ export interface Launchd {
  * @since 1.0.0
  * @private
  */
-export const launchd = (): Launchd => {
-  if (process.platform !== "darwin" || !process.getuid || process.getuid() === 0) {
+export const launchd = (
+  platform: string = process.platform,
+  uid: number | undefined = process.getuid?.(),
+  home = homedir(),
+  run: typeof spawnSync = spawnSync
+): Launchd => {
+  if (platform !== "darwin" || uid === undefined || uid === 0) {
     throw new Refused({
       fault: "policy",
       code: "host_platform",
@@ -176,10 +181,10 @@ export const launchd = (): Launchd => {
     })
   }
   return {
-    agentsDir: join(homedir(), "Library/LaunchAgents"),
-    domain: `gui/${process.getuid()}`,
+    agentsDir: join(home, "Library/LaunchAgents"),
+    domain: `gui/${uid}`,
     launchctl: (args) => {
-      const result = spawnSync("/bin/launchctl", [...args], { encoding: "utf8" })
+      const result = run("/bin/launchctl", [...args], { encoding: "utf8" })
       return {
         status: result.status,
         stdout: result.stdout ?? "",
@@ -332,9 +337,8 @@ export const verifyBundle = (input: string): { bundle: string; version: string }
  * @since 1.0.0
  * @private
  */
-export const resolveBundle = (input?: string): string => {
+export const resolveBundle = (input?: string, keg = "/opt/homebrew/opt/smithers/libexec"): string => {
   if (input) return resolve(input)
-  const keg = "/opt/homebrew/opt/smithers/libexec"
   if (existsSync(join(keg, "manifest.json"))) return keg
   throw new Refused({
     fault: "dependency",
@@ -514,6 +518,8 @@ export const maintenance = (
   if (Exit.isSuccess(result)) return result.value
   throw Cause.squash(result.cause)
 }
+/** The host's fixed loopback control origin. */
+const hostOrigin = "http://127.0.0.1:4000"
 /**
  * true when the host is ready; while it starts, the starting page's step
  * (503 `{"status":"starting","phase","applied","total"}`, the backend's
@@ -522,9 +528,9 @@ export const maintenance = (
  * @since 1.0.0
  * @private
  */
-export const ready = async (): Promise<boolean | string> => {
+export const ready = async (origin = hostOrigin): Promise<boolean | string> => {
   try {
-    const response = await fetch("http://127.0.0.1:4000/readyz", {
+    const response = await fetch(`${origin}/readyz`, {
       signal: AbortSignal.timeout(1000),
       redirect: "error"
     })
@@ -569,7 +575,8 @@ export const waitReady = async (probe: () => Promise<boolean | string> = ready, 
  * @private
  */
 export const setupURLs = (
-  stateDir: string
+  stateDir: string,
+  timeout = 5000
 ): Promise<{ code: string; setup_urls?: Array<string>; message?: string; exitCode: number }> =>
   new Promise((done, reject) => {
     const socketPath = join(stateDir, "run/host.sock")
@@ -584,7 +591,7 @@ export const setupURLs = (
       )
       return
     }
-    const req = request({ socketPath, path: "/setup-urls", method: "GET", timeout: 5000 }, (res) => {
+    const req = request({ socketPath, path: "/setup-urls", method: "GET", timeout }, (res) => {
       let body = ""
       res.setEncoding("utf8")
       res.on("data", (chunk) => {
@@ -666,12 +673,16 @@ export const startRefusal = (stateDir: string): Refused | undefined => {
  */
 export const start = async (
   input?: string,
-  address: { readonly bind?: string; readonly origins?: ReadonlyArray<string> } = {}
+  address: { readonly bind?: string; readonly origins?: ReadonlyArray<string> } = {},
+  host: () => Launchd = launchd,
+  stateDir = stateDirectory(),
+  probe: () => Promise<boolean | string> = ready,
+  handoff: typeof setupURLs = setupURLs
 ) => {
   validateAddress(address)
-  const system = launchd(), stateDir = stateDirectory()
+  const system = host()
   const bundle = realpathSync(resolveBundle(input))
-  return startInstalled({ bundle, stateDir, home: homedir(), ...address }, system)
+  return startInstalled({ bundle, stateDir, home: homedir(), ...address }, system, probe, handoff)
 }
 /**
  * @since 1.0.0
@@ -722,16 +733,21 @@ export const startText = (value: unknown): string => {
  * @since 1.0.0
  * @private
  */
-export const status = async (system: Launchd = launchd(), stateDir = stateDirectory()) => {
+export const status = async (
+  system: Launchd = launchd(),
+  stateDir = stateDirectory(),
+  origin = hostOrigin,
+  credential = process.env.SMITHERS_TOKEN?.trim()
+) => {
   const refusal = startRefusal(stateDir)
   if (refusal) throw refusal
   const bundle = installedBundle(system)
   const verified = verifyBundle(bundle)
-  if (!loaded(system) || await ready() !== true) {
+  if (!loaded(system) || await ready(origin) !== true) {
     throw new Refused({ fault: "infra", code: "host_unhealthy", message: `Host unhealthy: ${bundle}` })
   }
-  doctor(bundle, stateDirectory())
-  const install = await installTelemetry(undefined, process.env.SMITHERS_TOKEN?.trim())
+  doctor(bundle, stateDir)
+  const install = await installTelemetry(`${origin}/api/install`, credential)
   return {
     state: "ready",
     bundle,
