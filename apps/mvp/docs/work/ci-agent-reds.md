@@ -171,3 +171,12 @@ has no pending activation. Real copies of Effect make a resolver replacement
 observable in ESM and emitted CommonJS regression cases. All four cases fail
 against the previous bootstrap and pass with the correction. All 55 applicable
 resolver cases and both CLI/build-cli typechecks pass.
+
+The next full CLI run reached its unchanged deadline during heavy shared-host
+CPU contention. Cold discovery also lacked cached file statistics: the default
+comparator preserved an alphabetical queue after the explicit process priorities.
+The CLI sequencer now reads actual file sizes and applies a deterministic source
+cost order after those priorities. Cold public discovery rejects the old order
+(633 bytes before 14,270 bytes); the corrected queue, exact inventory, worker
+limit, coverage configuration and real queued-worker checks pass. The environment
+lifecycle also passes its original budget. Full validation remains pending.

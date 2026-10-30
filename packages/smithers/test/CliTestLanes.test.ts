@@ -6,6 +6,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync
 } from "node:fs"
@@ -71,6 +72,13 @@ it("schedules every default CLI file once in one bounded pool with the configure
       /[/\\]Bin(?:Startup|Routing|Runtime|Migration|Launch|Scaffold)?\.test\.ts$/.test(file)
     )
   ).toHaveLength(7)
+  // Cold public discovery has no timing/stat cache. It must retain source-cost
+  // ordering after the explicit process priorities, rather than queueing the
+  // remaining integration suites alphabetically.
+  const remainingSizes = actual.files.slice(8).map((file) => statSync(file).size)
+  for (let index = 1; index < remainingSizes.length; index++) {
+    expect(remainingSizes[index - 1]).toBeGreaterThanOrEqual(remainingSizes[index]!)
+  }
   expect(
     actual.files.filter((file) =>
       /[/\\]Bin(?:Startup|Routing|Runtime|Migration|Launch|Scaffold)?\.test\.ts$/.test(file)
