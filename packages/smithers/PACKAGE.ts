@@ -183,91 +183,15 @@ const historyPostgresDatabase = Smithers.Docker.Service({
 
 const vitest = "pnpm exec vitest run --config vitest.config.ts --environment node"
 
-/**
- * One lane of the suite: its results and raw coverage go to a blob, and it
- * prints no coverage report and checks no thresholds of its own.
- */
-const lane = `${vitest} --reporter=blob --coverage.reporter=json` +
-  " --coverage.thresholds.lines=0 --coverage.thresholds.functions=0" +
-  " --coverage.thresholds.branches=0 --coverage.thresholds.statements=0"
-
-/** The longest file includes real lease expiries. */
-const laneOne = ["test/Bin.test.ts"]
-
-/** Keep process-heavy groups small enough to release workers to the remainder. */
-const laneTwo = [
-  "test/NativeControlExternalPeerRecovery.test.ts",
-  "test/NativeControlPortable.test.ts",
-  "test/UnifiedCli.test.ts"
-]
-
-const laneThree = [
-  "test/ModuleSourceSnapshotCli.test.ts",
-  "test/FileFlowInputCli.test.ts"
-]
-
-const laneFour = [
-  "test/EndToEnd.test.ts",
-  "test/NativeCancellationCli.test.ts"
-]
-
-const laneFive = [
-  "test/HistoryVerify.test.ts",
-  "test/ObserveMode.test.ts",
-  "test/McpModeCli.test.ts"
-]
-
-const laneSix = [
-  "test/TuiRuntimes.test.ts",
-  "test/ModuleHumanWaitBudget.test.ts",
-  "test/CloudSandbox.test.ts",
-  "test/DetachedHostResume.test.ts"
-]
-
-const fixedLanes = [laneOne, laneTwo, laneThree, laneFour, laneFive, laneSix].map((files, index) => ({
-  name: ["one-fixed", "two-fixed", "three-fixed", "four-fixed", "five-fixed", "six-fixed"][index]!,
-  files
-}))
-
-/** The remaining files join bounded groups automatically, including newly added files. */
-// CLI --exclude replaces Vitest's configured excludes. Preserve the existing
-// exclusive fault tier when adding the process-heavy file exclusions.
-const remainder = [
-  "--exclude=test/faults/**",
-  ...fixedLanes.flatMap(({ files }) => files).map((file) => `--exclude ${file}`)
-].join(" ")
-const remainderShards = ["one", "two", "three", "four", "five", "six", "seven", "eight"]
-
 const test = Smithers.Shell.Test({
-  // Keep the measured process-heavy groups separate, then share the remainder
-  // across all four workers. Leaving every new file on worker four grew that
-  // worker to 263 files while the other workers ran only 1, 8 and 6 (#4122).
-  // A free worker takes the next group immediately, rather than waiting for
-  // one assigned long group. Smaller remainder groups keep a late shard from
-  // owning more work than the remaining suite budget. Concurrency stays four.
-  // Each invocation records its own blob; the merge
-  // retains every failure and checks the original coverage thresholds.
+  // One compiler coordinator shares transforms across four worker processes.
+  // Static groups repeated that work and left a late group owning the budget.
+  // Vitest schedules individual files and applies the original coverage gate.
   shell: [
     "cd packages/smithers && work=$(mktemp -d /tmp/smt.XXXXXXXX) && trap 'rm -rf \"$work\"' 0 && " +
-    "blobs=\"$work/blobs\" && mkdir -p \"$blobs\" \"$work/tmp\" && " +
-    // Vitest gives each invocation its own TMPDIR. VibeLang defaults its cache
-    // there too, so every phase otherwise recompiles the same workspace projects.
-    // Its content-validated cache is shared only within this owned suite run.
-    "export TMPDIR=\"$work/tmp\" TEMP=\"$work/tmp\" TMP=\"$work/tmp\" NODE_COMPILE_CACHE=\"$work/cache\" VIBELANG_CACHE_DIR=\"$work/vibelang-cache\" && {",
-    "printf '%s\\n'",
-    ...fixedLanes.map(({ name, files }) => `"${lane} --outputFile=$blobs/${name}.json ${files.join(" ")}"`),
-    ...remainderShards.map((name, index) =>
-      `"${lane} --outputFile=$blobs/${name}.json ${remainder} --shard=${index + 1}/${remainderShards.length}"`
-    ),
-    "| xargs -P 4 -I '{}' sh -c '{}';",
-    `if ${
-      [...fixedLanes.map(({ name }) => name), ...remainderShards].map((name) => `test -f $blobs/${name}.json`).join(
-        " && "
-      )
-    };`,
-    `then ${vitest} --merge-reports=$blobs --coverage.reportsDirectory=$work/merged --reporter=github-actions --reporter=dot;`,
-    "else echo \"a lane of the suite ended without its report\" >&2; false; fi; };",
-    "status=$?; exit $status"
+    "mkdir -p \"$work/tmp\" && " +
+    "export TMPDIR=\"$work/tmp\" TEMP=\"$work/tmp\" TMP=\"$work/tmp\" NODE_COMPILE_CACHE=\"$work/cache\" VIBELANG_CACHE_DIR=\"$work/vibelang-cache\" && " +
+    `${vitest} --fileParallelism --maxWorkers=4 --coverage.enabled=true --reporter=github-actions --reporter=dot`
   ].join(" "),
   data: [
     lib,

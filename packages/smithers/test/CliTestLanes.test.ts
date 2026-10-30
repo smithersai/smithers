@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process"
+import { execFileSync, spawnSync } from "node:child_process"
 import {
   existsSync,
   mkdirSync,
@@ -18,25 +18,31 @@ import { expect, it } from "vitest"
 const cwd = join(import.meta.dirname, "..")
 const vitest = join(dirname(createRequire(import.meta.url).resolve("vitest/package.json")), "vitest.mjs")
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
-const list = (args: Array<string>): Array<string> => {
-  // `vitest list --filesOnly` omits sharding. Use the runner's discovery and
-  // configured sequencer, exactly as its execution pool selects files.
+interface Discovery {
+  readonly files: Array<string>
+  readonly maxWorkers: number
+  readonly fileParallelism: boolean
+  readonly coverageRequested?: boolean
+  readonly thresholds: Record<string, unknown>
+}
+const discover = (args: Array<string>): Discovery => {
   const output = execFileSync(process.execPath, [
     "--input-type=module",
     "-e",
     `import { createVitest, parseCLI } from "vitest/node";
 const { filter, options } = parseCLI(["vitest", ...JSON.parse(process.argv[1])]);
 const { registerRootCleanup } = await import("../repo-targets/test-utils/vitest-root-temp.mjs");
-const ctx = await createVitest("test", { ...options, run: true, coverage: { enabled: false } });
+const ctx = await createVitest("test", { ...options, run: true, coverage: { ...options.coverage, enabled: false } });
 try {
   registerRootCleanup(ctx);
   const files = await ctx.globTestSpecifications(filter);
-  const selected = ctx.config.shard ? await new ctx.config.sequence.sequencer(ctx).shard(files) : files;
-  console.log(JSON.stringify(selected.map((file) => file.moduleId)));
+  console.log(JSON.stringify({ files: files.map((file) => file.moduleId),
+    maxWorkers: ctx.config.maxWorkers, fileParallelism: ctx.config.fileParallelism,
+    coverageRequested: options.coverage?.enabled, thresholds: ctx.config.coverage.thresholds }));
 } finally { await ctx.close(); }`,
     JSON.stringify(args)
   ], { cwd, encoding: "utf8", timeout: 15_000 })
-  return JSON.parse(output) as Array<string>
+  return JSON.parse(output) as Discovery
 }
 
 const declaredShell = () =>
@@ -46,68 +52,52 @@ const declaredShell = () =>
     "import { Package } from \"./PACKAGE.ts\"; import { metadata } from \"@smthrs/targets/Target\"; console.log(JSON.stringify(metadata(Package.test).attrs.shell))"
   ], { cwd, encoding: "utf8", timeout: 15_000 })) as string
 
-it("schedules every default CLI test file once without leaving the remainder on one worker", () => {
-  // Read the declared target, then ask the real runner what each invocation selects.
-  const shell = declaredShell()
-  const commands = [...shell.matchAll(/pnpm exec vitest run ([^;"&}]+)/g)]
+it("schedules every default CLI file once in one bounded pool with the configured coverage gate", () => {
+  const commands = [...declaredShell().matchAll(/pnpm exec vitest run ([^;"&}]+)/g)]
     .map((match) => match[1]!.trim().split(/\s+/))
-    .filter((args) => !args.some((arg) => arg.startsWith("--merge-reports=")))
-    .map((args) => args.filter((arg) => !/^--(?:outputFile|reporter|coverage\.)/.test(arg)))
-  const all = list([])
-  const faults = list(["--config", "vitest.faults.config.ts"])
-  const bothTiers = list(["--exclude", "**/node_modules/**"])
-  // Every file stays in its declared tier: the normal coverage runner and
-  // the serial process-killing runner are a complete, disjoint inventory.
+  // Separate runners repeat compiler coordination and strand late static groups.
+  expect(commands).toHaveLength(1)
+  const actual = discover(commands[0]!)
+  const standard = discover([])
+  const faults = discover(["--config", "vitest.faults.config.ts"]).files
+  const bothTiers = discover(["--exclude", "**/node_modules/**"]).files
+  expect(actual.maxWorkers).toBe(4)
+  expect(actual.fileParallelism).toBe(true)
+  expect(actual.coverageRequested).toBe(true)
+  expect(actual.thresholds).toEqual(standard.thresholds)
+  expect(actual.files.sort()).toEqual(standard.files.sort())
   expect(faults.length).toBeGreaterThan(0)
-  expect(all.filter((file) => faults.includes(file))).toEqual([])
-  expect([...all, ...faults].sort()).toEqual(bothTiers.sort())
-  const selections = commands.map(list)
-  const shards = commands.filter((args) => args.some((arg) => arg.startsWith("--shard=")))
-  const fixed = selections.filter((_, index) => !commands[index]!.some((arg) => arg.startsWith("--shard=")))
-  const workers = Number(/xargs -P (\d+)/.exec(shell)![1])
-  expect(shards.length).toBeGreaterThan(workers)
-  // Six process-heavy files on one worker consumed almost the entire suite
-  // deadline. Their groups must release workers to queued remainder shards.
-  expect(Math.max(...fixed.map((files) => files.length))).toBeLessThanOrEqual(4)
-  expect(selections.flat().sort()).toEqual(all.sort())
-  expect(Math.max(...selections.map((files) => files.length))).toBeLessThanOrEqual(
-    Math.ceil(all.length / shards.length)
-  )
+  expect(actual.files.filter((file) => faults.includes(file))).toEqual([])
+  expect([...actual.files, ...faults].sort()).toEqual(bothTiers.sort())
 })
 
 it.skipIf(process.platform === "win32")(
-  "starts another shard while earlier groups are blocked, then merges all results",
+  "starts queued files while earlier files are blocked and retains late failures and cache cleanup",
   () => {
     const root = mkdtempSync(join(tmpdir(), "smithers-cli-lanes-"))
+    const phases = Array.from({ length: 6 }, (_, index) => `${index}`)
     try {
       symlinkSync(join(cwd, "node_modules"), join(root, "node_modules"), "dir")
       writeFileSync(join(root, "package.json"), "{\"type\":\"module\"}")
       writeFileSync(
         join(root, "vitest.config.mjs"),
-        `export default { test: {
-          include: ["*.test.mjs"], testTimeout: 12000, coverage: { enabled: false },
-          globalSetup: [${
+        `import { BaseSequencer } from "vitest/node";
+export default { test: {
+  include: ["*.test.mjs"], testTimeout: 12000, coverage: { enabled: false },
+  sequence: { sequencer: class extends BaseSequencer {
+    sort(files) { return files.sort((a, b) => a.moduleId.localeCompare(b.moduleId)); }
+  } },
+  globalSetup: [${
           JSON.stringify(
             fileURLToPath(new URL("../../repo-targets/test-utils/test-process-environment.mjs", import.meta.url))
           )
         }]
-        } }`
+} };`
       )
-      const declared = declaredShell()
-      const phases = [...declared.matchAll(/--outputFile=\$blobs\/([a-z-]+)\.json/g)].map((match) => match[1]!)
-      const shell = declared
-        .replace("cd packages/smithers && ", "")
-        .replace("&& trap", "&& printf '%s' \"$work\" > \"$SMITHERS_LANES_SCRATCH_RECEIPT\" && trap")
-        .replaceAll("vitest.config.ts", "vitest.config.mjs")
-        .replace(/pnpm exec vitest run ([^;"&}]+)/g, (command, args: string) => {
-          if (args.includes("--merge-reports=")) return command
-          const phase = /--outputFile=\$blobs\/([a-z-]+)\.json/.exec(args)![1]!
-          // Real Vitest processes: the first three wait for the second remainder
-          // shard. A fixed handoff leaves that shard behind a blocked group.
-          writeFileSync(
-            join(root, `${phase}.test.mjs`),
-            `
-import { it, expect } from "vitest";
+      for (const phase of phases) {
+        writeFileSync(
+          join(root, `0${phase}.test.mjs`),
+          `import { it, expect } from "vitest";
 import { existsSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, join } from "node:path";
@@ -119,45 +109,61 @@ it(${JSON.stringify(phase)}, async () => {
     env: temporaryEnvironment(), encoding: "utf8"
   }));
   expect(isolatedCache).toEqual({ vibe: process.env.VIBELANG_CACHE_DIR, node: process.env.NODE_COMPILE_CACHE });
-  writeFileSync(${JSON.stringify(join(root, phase))}, JSON.stringify(isolatedCache));
-  if (${["one-fixed", "two-fixed", "three-fixed"].includes(phase)}) {
+  writeFileSync(${JSON.stringify(join(root, phase))}, JSON.stringify({ ...isolatedCache, pid: process.pid }));
+  if (${Number(phase) < 3}) {
     const deadline = Date.now() + 8000;
-    while (!existsSync(${JSON.stringify(join(root, "two"))}) && Date.now() < deadline) {
+    while (!existsSync(${JSON.stringify(join(root, "4"))}) && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    expect(existsSync(${JSON.stringify(join(root, "two"))})).toBe(true);
+    expect(existsSync(${JSON.stringify(join(root, "4"))})).toBe(true);
+  }
+  if (${phase === "5"} && process.env.SMITHERS_LANES_FAIL_LAST === "1") {
+    throw new Error("retained-late-failure");
   }
 });`
-          )
-          return `pnpm exec vitest run --config vitest.config.mjs --reporter=blob --outputFile=$blobs/${phase}.json ${phase}.test.mjs `
-        })
-        // pnpm's relative bin shims resolve from the temporary symlink on a
-        // clean CI install. Run the same installed Vitest through its real
-        // entrypoint so the fixture tests lane scheduling across installs.
+        )
+      }
+      const shell = declaredShell()
+        .replace("cd packages/smithers && ", "")
+        .replace("&& trap", "&& printf '%s' \"$work\" > \"$SMITHERS_LANES_SCRATCH_RECEIPT\" && trap")
+        .replaceAll("vitest.config.ts", "vitest.config.mjs")
+        .replaceAll("--coverage.enabled=true", "--coverage.enabled=false")
+        // Use the installed entrypoint when pnpm shims point outside this temporary symlink.
         .replaceAll("pnpm exec vitest", `${quote(process.execPath)} ${quote(vitest)}`)
       const scratch = join(root, "tmp")
       mkdirSync(scratch)
-      execFileSync("sh", ["-c", shell], {
-        cwd: root,
-        env: {
-          ...process.env,
-          TMPDIR: scratch,
-          TMP: scratch,
-          TEMP: scratch,
-          SMITHERS_LANES_SCRATCH_RECEIPT: join(root, "owned-work")
-        },
-        encoding: "utf8",
-        timeout: 25_000
-      })
-      const owned = readFileSync(join(root, "owned-work"), "utf8")
-      for (const phase of phases) {
-        expect(JSON.parse(readFileSync(join(root, phase), "utf8"))).toEqual({
-          vibe: join(owned, "vibelang-cache"),
-          node: join(owned, "cache")
+      for (const failure of [false, true]) {
+        for (const phase of phases) rmSync(join(root, phase), { force: true })
+        const completed = spawnSync("sh", ["-c", shell], {
+          cwd: root,
+          env: {
+            ...process.env,
+            TMPDIR: scratch,
+            TMP: scratch,
+            TEMP: scratch,
+            SMITHERS_LANES_SCRATCH_RECEIPT: join(root, "owned-work"),
+            SMITHERS_LANES_FAIL_LAST: failure ? "1" : "0"
+          },
+          encoding: "utf8",
+          timeout: 25_000
         })
+        expect(completed.error, completed.stderr).toBeUndefined()
+        if (failure) {
+          expect(completed.status).not.toBe(0)
+          expect(completed.stdout + completed.stderr).toContain("retained-late-failure")
+        } else expect(completed.status, completed.stdout + completed.stderr).toBe(0)
+        const owned = readFileSync(join(root, "owned-work"), "utf8")
+        const workers: Array<number> = []
+        for (const phase of phases) {
+          const { pid, ...cache } = JSON.parse(readFileSync(join(root, phase), "utf8"))
+          workers.push(pid)
+          expect(cache).toEqual({ vibe: join(owned, "vibelang-cache"), node: join(owned, "cache") })
+        }
+        expect(new Set(workers.slice(0, 3)).size).toBe(3)
+        expect(workers.slice(0, 3)).not.toContain(workers[3])
+        expect(readdirSync(scratch)).toEqual([])
+        expect(existsSync(owned)).toBe(false)
       }
-      expect(readdirSync(scratch)).toEqual([])
-      expect(existsSync(owned)).toBe(false)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

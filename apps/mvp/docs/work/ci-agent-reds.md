@@ -21,13 +21,13 @@ path. Actual Vitest workers and their Node children reuse both run-owned
 compiler caches; standalone runs still clean up their default cache. Real loader
 tests cover success and failure with owned and shared caches.
 
-The CLI runner preserves the configured normal/fault split. Real discovery
-checks the two tiers are disjoint and together retain every file. Eight small
-remainder groups and six bounded process-heavy groups share the existing four
-workers and one run-owned VibeLang compile cache. Every one of the fourteen
-reports is required before the unchanged coverage merge. The real discovery
-regression rejects the former oversized fixed groups and retains each default
-file exactly once, separate from the fault tier.
+The CLI runner preserves the configured normal/fault split and schedules each
+file in one Vitest pool with four workers. Independent runners repeated compiler
+coordination and left a late static group holding the remaining suite budget.
+The real discovery fixture retains every default file exactly once, keeps the
+fault tier separate and preserves the configured coverage thresholds. Real
+worker fixtures check queued progress, late failure propagation, both compiler
+caches and cleanup.
 Native recovery probes wait for actual admission refusals before asserting a
 park, retaining the explicit-consent and exactly-once execution checks.
 
@@ -73,3 +73,11 @@ Safe adoption diagnostics preserve strict response decoding and record bounded
 process and status metadata. The earlier empty-document failure has not recurred
 in the instrumented probes or the latest complete source-snapshot group; the
 diagnostics remain evidence collection, not a claimed correction of its cause.
+
+Native materialization shares the calling layer's memo map. The control-first
+transaction regression fails on the previous graph with Effect 4.0.5; both
+acquisition orders and standalone materialization pass with the existing fix.
+
+Payload refusals retain both real CLI entrypoints. Their durable checks read
+plans and executions directly and reject an action output, avoiding another
+host startup. Bounded process and startup-stage receipts survive fixture cleanup.
