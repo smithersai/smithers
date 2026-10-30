@@ -696,7 +696,7 @@ run_gate() {
       pnpm exec smthrs test '//packages/...' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
       ;;
     cloud-contract)
-      bun test .github/scripts/ci/cloud.test.ts
+      bun test ./.github/scripts/ci/cloud.test.ts
       ;;
     *)
       echo "Unknown Cloud CI gate: $1" >&2

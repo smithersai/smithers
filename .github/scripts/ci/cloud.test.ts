@@ -29,7 +29,7 @@ describe("Local CI gate runner", () => {
       expect(tools.get(name)).toContain("js")
       expect(body).not.toContain("ensure_")
       if (name === "cloud-contract") {
-        expect(body).toContain("bun test .github/scripts/ci/cloud.test.ts")
+        expect(body).toContain("bun test ./.github/scripts/ci/cloud.test.ts")
       } else {
         // target-index carries a second, local-only repair command
         // (6c8abc37, 2026-09-15): it regenerates the index before the drift
