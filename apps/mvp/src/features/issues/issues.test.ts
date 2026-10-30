@@ -150,7 +150,15 @@ const tabOf = async (runtime: App) => {
   }
 }
 
-/** The app on a fresh ChatApi as `actor` (Maya unless set), its device's engine leading. */
+/** The same confirmed-session signal a rendered person control requires, without widening the credential guard. */
+const confirmedSession = async (runtime: App, expected?: "signed_in" | "signed_out") => {
+  const { session } = await runtime.runPromise(Effect.service(AuthStore))
+  await until(() => expect(session.tanstack.get(SESSION)?.status).toEqual(
+    expected ?? expect.stringMatching(/^signed_(?:in|out)$/),
+  ), 5_000)
+}
+
+/** The app on a fresh ChatApi as `actor` (Maya unless set), its device's engine leading and session confirmed. */
 const open = async (options: TabOptions = {}, actor: Actor | null = maya) => {
   const runtime: ManagedRuntime.ManagedRuntime<
     WriteIntents | TodosStore | RunSteers | SteerWrites | FlowDispatch | Issues | IssuesStore | ChatStore | Chat | Commands | Auth | AuthStore | RepoStore | RepoClient | TestChatApi,
@@ -158,6 +166,7 @@ const open = async (options: TabOptions = {}, actor: Actor | null = maya) => {
   > = openTestApp(options, { actor })
   runtimes.push(runtime)
   const api = await runtime.runPromise(Effect.service(TestChatApi))
+  if (options.sessionLifecycle !== false) await confirmedSession(runtime, actor === null ? "signed_out" : "signed_in")
   return { ...(await tabOf(runtime)), api }
 }
 
@@ -165,6 +174,7 @@ const open = async (options: TabOptions = {}, actor: Actor | null = maya) => {
 const another = async (api: TestChatApi["Service"], options: TabOptions = {}) => {
   const runtime: App = openTab(api, options)
   runtimes.push(runtime)
+  if (options.sessionLifecycle !== false) await confirmedSession(runtime)
   return tabOf(runtime)
 }
 
@@ -1047,9 +1057,8 @@ describe("triage", () => {
       try { return await action() } finally { await tab.runtime.runPromise(Fiber.interrupt(observer)) }
     }
     auth.actions.reload()
-    await measured("session-ready", () => until(() => expect(session.tanstack.get(SESSION)).toMatchObject({
-      status: "signed_in", login: "sam", role: "maintainer",
-    }), 5_000))
+    await measured("session-ready", () => confirmedSession(tab.runtime, "signed_in"))
+    expect(session.tanstack.get(SESSION)).toMatchObject({ login: "sam", role: "maintainer" })
     expect(tab.runtime.runSync(anonymousRun)).toBe(false)
     await tab.actions.open(OWNER, NAME)
     const flows = await tab.runtime.runPromise(Effect.service(FlowDispatch))

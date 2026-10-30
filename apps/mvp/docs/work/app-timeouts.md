@@ -131,3 +131,10 @@ failed in 523 ms without that wait. Safe per-await diagnostics distinguish
 session readiness, dispatch, replay and server-write waits by stage and engine
 state without recording payloads or credentials. Two final consecutive passes
 are still the completion gate.
+
+The following full sweep confirmed this was a shared issue-fixture precondition,
+not specific to pause: issue/create was also admitted before session confirmation
+and its public join failed after 30 seconds, despite its outbox write succeeding.
+Both opened-issue helpers now await the real confirmed-session signal before
+returning a ready device. Explicit cold-start fixtures opt out and exercise the
+same signal helper directly. No security guard or credential cache is changed.
