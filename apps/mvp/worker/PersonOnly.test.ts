@@ -17,6 +17,8 @@ import { REPO, secretsHarness } from "./secrets/test/harness.ts"
 import { PERSONAL_MODEL_ROUTE } from "../src/features/personal-model/contract.ts"
 import { personalHarness, SAVE } from "./personal/test/harness.ts"
 import { stackHarness } from "./stack/test/stack.ts"
+import { feedAnswersRoute } from "../src/features/feeds/contract.ts"
+import { feedsHarness, REPO as FEED_REPO } from "./feeds/test/harness.ts"
 import { branchHarness } from "./test/branch.ts"
 import { harness, testFile } from "./test/harness.ts"
 
@@ -76,6 +78,16 @@ const branch = (path: string, body: unknown): Case => async (actor, act) => {
   return { status, counted: h.count(personOnlyRefusals, { act, by: actor.act!.kind }) }
 }
 
+/** A repository feed's answer, by someone who is Admin of every repository in person. */
+const feedAnswer: Case = async (actor, act) => {
+  const h = await feedsHarness(runtime, { actor })
+  const { status } = await h.fetch(
+    feedAnswersRoute(FEED_REPO.owner, FEED_REPO.name),
+    json({ id: crypto.randomUUID(), item: "decision-1", choice: "approve" }),
+  )
+  return { status, counted: h.count(personOnlyRefusals, { act, by: actor.act!.kind }) }
+}
+
 /** A custom-domain route: `init` at `path`, with a provider on and a starter that is never reached. */
 const domain = (path: string, init: RequestInit): Case => async (actor, act) => {
   const h = await domainsHarness(runtime, {
@@ -119,6 +131,7 @@ const flows: Routed = {
   "sandbox/limits": chat((h) => h.fetch("/api/sandbox-limits", json({ awake: 20, perPerson: 2, monthlyAlertUsd: 100 }))),
   "domain/add": domain(domainsRoute(REPO.owner, REPO.name), json({ hostname: "docs.example.com" })),
   "domain/remove": domain(domainRoute(REPO.owner, REPO.name, "docs.example.com"), { method: "DELETE" }),
+  "feed/answer": feedAnswer,
 }
 
 /** How each protected act's route is reached. */

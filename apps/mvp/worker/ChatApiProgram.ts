@@ -23,6 +23,7 @@ import { TerminalSockets } from "./branch/Sandboxes.ts"
 import * as BranchRooms from "./BranchRooms.ts"
 import * as BranchSandboxes from "./BranchSandboxes.ts"
 import * as BugsApi from "./bugs/Api.ts"
+import * as FeedsApi from "./feeds/Api.ts"
 import * as Chat from "./Chat.ts"
 import * as ViewRealm from "./ViewRealm.ts"
 import { codeOf } from "./ErrorCode.ts"
@@ -174,6 +175,9 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       local: options.fallback !== undefined && Option.isNone(app),
       ...(options.localRoles === undefined ? {} : { localRoles: options.localRoles }),
     })
+    // Repository feeds (docs/features/feeds.md): an outside collector's documents under `FEED_KEYS`, the Maintainers'
+    // answers, and the feeds' shape, by each person's role on the repository.
+    const feedsApi = yield* FeedsApi.make(database, roles)
     // The git loop (docs/features/issues.md): GitHub's webhook, the writes route and the issues' shapes, for every
     // repository the deployment acts on (decision 0079, slice 1b).
     const github = yield* GitHubApi.make(database, { repository, app, roles, repoFlows, allowed })
@@ -313,6 +317,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
             Effect.provide(FetchHttpClient.layer),
           )
         }
+        // Before the repository routes: a feed is `/api/repos/<owner>/<name>/feeds`.
+        if (FeedsApi.handles(path)) return yield* feedsApi.fetch.pipe(Effect.provide(signedIn))
         if (DomainsApi.handles(path)) {
           return yield* domainsApi.fetch.pipe(
             Effect.provideService(Flows.FlowStarter, starter),

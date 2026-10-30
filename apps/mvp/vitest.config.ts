@@ -194,6 +194,10 @@ export default defineConfig({
         "worker/bugs/*.ts",
         "db/migrations/0064_bug_reports.ts",
         "db/migrations/0067_bug_report_errors.ts",
+        // Repository feeds: the collector's writes and answers, a Maintainer's answer and the feeds' shape
+        // (docs/features/feeds.md).
+        "worker/feeds/*.ts",
+        "db/migrations/0073_feeds.ts",
         // Co-editing: the texts people edit together (docs/features/coedit.md).
         "db/migrations/0026_text_updates.ts",
         // What the Electric gateway lets through (docs/infrastructure.md).

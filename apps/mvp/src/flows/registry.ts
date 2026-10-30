@@ -51,6 +51,7 @@ import { AskWithForm, RenderView, SetViewState, ShowIssues, ShowRepo } from "../
 import { OpenWebPage } from "../features/web/flows"
 import { SearchDocs } from "../features/docs/flows"
 import { ListBugs, ReportBug } from "../features/bugs/flows"
+import { FeedAnswer } from "../features/feeds/flows"
 
 // The app's flows (docs/features/flows.md#the-registry): every action a person or the agent takes is one `Flow.make`
 // declaration, listed here once. The UI dispatches only a name from this list (`FlowDispatch`), and the agent's catalog
@@ -403,6 +404,13 @@ export const registry = {
     changes: "sends a bug report, with the page and the tab's latest run and trace ids, to the deployment's Admins",
   },
   "app/bug/list": { flow: ListBugs, minimum: "admin" },
+  // Repository feeds (decision 0126, docs/features/feeds.md): a Maintainer answers an item a repository's feed shows,
+  // such as a decision its factory asks for. ChatApi checks the role on that repository.
+  "feed/answer": {
+    flow: FeedAnswer,
+    minimum: "maintainer",
+    userOnlyReason: "Only the person answers what a repository's feed asks its Maintainers; the agent never answers for them.",
+  },
   "model/remove": {
     flow: ModelRemove,
     changes: "removes the person's own model, so the deployment's model answers them",

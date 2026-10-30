@@ -72,6 +72,9 @@ import * as RepoApi from "../../worker/RepoApi.ts"
 import * as RunCredentials from "../../worker/RunCredentials.ts"
 import * as PersonalApi from "../../worker/personal/Api.ts"
 import * as BugsApi from "../../worker/bugs/Api.ts"
+import * as FeedsApi from "../../worker/feeds/Api.ts"
+import { FEED_DOCUMENTS_TABLE } from "../features/feeds/contract"
+import { digestSync } from "@smthrs/crypto"
 import { BUG_REPORTS_TABLE } from "../features/bugs/contract"
 import * as ModelFlows from "../../worker/personal/ModelFlows.ts"
 import { PersonalModels } from "../../worker/personal/Models.ts"
@@ -268,8 +271,12 @@ const SCHEMA_TABLES: ReadonlySet<string> = new Set([
   REVIEWS_TABLE,
   SECRETS_TABLE,
   PERSONAL_MODELS_TABLE,
-  BUG_REPORTS_TABLE
+  BUG_REPORTS_TABLE,
+  FEED_DOCUMENTS_TABLE
 ])
+
+/** The collector's feed key for `TEST_REPOSITORY` in a test ChatApi (`FEED_KEYS`). */
+export const TEST_FEED_KEY = "test-feed-key"
 
 /** SECRETS_KEY in a test ChatApi: secrets are on. */
 export const TEST_SECRETS_KEY = Redacted.make("0123456789abcdef".repeat(4))
@@ -470,6 +477,7 @@ export class TestChatApi extends Context.Service<
           // The deployment's own model answers here, as under `alchemy dev` (decision 0099), so the scripted model does.
           HOSTED_MODEL_ENABLED: "true",
           ALERT_APP_URL: "http://chat.test/app",
+          FEED_KEYS: `${TEST_REPOSITORY}=${digestSync(TEST_FEED_KEY)}`,
           ...(options.forge === "code-storage"
             ? { CODE_STORAGE_ORG: "acme", CODE_STORAGE_KEY: yield* Effect.promise(codeStorageKey) }
             : {})
@@ -523,6 +531,8 @@ export class TestChatApi extends Context.Service<
         )
         // The stack's routes, as ChatApi routes them (worker/ChatApi.ts): no host runs a TODO, so every TODO stays Queued.
         const stack = yield* StackApi.make(database, roles).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
+        // Repository feeds (worker/feeds/Api.ts), as ChatApi routes them, under `TEST_FEED_KEY` for the test repository.
+        const feeds = yield* FeedsApi.make(database, roles).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
         // A repository's home, as ChatApi routes it (worker/ChatApi.ts): the curated homes a test gives, else the real ones.
         const home = HomeApi.make({ roles, mayRead: github.mayRead, maySync: github.maySync, ...(options.homes === undefined ? {} : { files: options.homes }) })
         // A repository's docs, as ChatApi routes them (worker/ChatApi.ts): the index its home names, or the curated home
@@ -775,6 +785,7 @@ export class TestChatApi extends Context.Service<
                 : options.forge === "code-storage" ? Forge.layerConfig : Forge.gitHub)
             )
           }
+          if (FeedsApi.handles(path)) return feeds.fetch
           if (DomainsApi.handles(path)) {
             return domains.fetch.pipe(
               Effect.provideService(Flows.FlowStarter, domainStarter),

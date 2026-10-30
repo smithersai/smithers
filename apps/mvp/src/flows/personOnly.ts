@@ -54,6 +54,7 @@ export const PERSON_ONLY_FLOWS = {
   "domain/remove": { route: "DELETE /api/repos/<owner>/<name>/domains/<hostname>" },
   "alert/channel": { route: "POST /api/alert-channels" },
   "sandbox/limits": { route: "POST /api/sandbox-limits" },
+  "feed/answer": { route: "POST /api/repos/<owner>/<name>/feeds/answers" },
 } as const satisfies { readonly [N in PersonOnlyFlow]: PersonOnlyEnforcement }
 
 /** Whether a credential's run may be minted for `flow` at all: no person-only flow whose route refuses an `act`. */

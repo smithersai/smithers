@@ -1606,3 +1606,25 @@ describe("0072_role_observations", () => {
     expect(await on(through("0072"))).toEqual([])
   }))
 })
+
+describe("0073_feeds", () => {
+  test("keys a document by its repository and name, and an answer by its id, in order", () => emptySchema(async (url) => {
+    const database = Database.layer(Effect.succeed(Redacted.make(url)))
+    const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+    await on(through("0072"))
+    expect((await on(through("0073"))).map(([id, name]) => `${id}_${name}`)).toEqual(["73_feeds"])
+    const refused = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+      on(effect.pipe(Effect.as("taken"), Effect.orElseSucceed(() => "refused")))
+    await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO feed_documents (id, repo, name, visibility, body) VALUES ('a/b:lanes', 'a/b', 'lanes', 'public', '[]')`))
+    expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO feed_documents (id, repo, name, visibility, body) VALUES ('a/b:other', 'a/b', 'lanes', 'public', '[]')`))).toBe("refused")
+    expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO feed_documents (id, repo, name, visibility, body) VALUES ('a/b:x', 'a/b', 'x', 'everyone', '[]')`))).toBe("refused")
+    for (const item of ["first", "second"]) await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO feed_answers (id, repo, item, choice, person_id) VALUES (gen_random_uuid(), 'a/b', ${item}, 'yes', 'p')`))
+    const answers = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ item: string }>`SELECT item FROM feed_answers ORDER BY seq`))
+    expect(answers.map((row) => row.item)).toEqual(["first", "second"])
+    expect(await on(through("0073"))).toEqual([])
+  }))
+})

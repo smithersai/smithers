@@ -27,6 +27,7 @@ import * as SpendSteps from "../features/spend/steps"
 import * as BugSteps from "../features/bugs/steps"
 import { BugTabs } from "../features/bugs/flows"
 import * as DomainSteps from "../features/domains/steps"
+import * as FeedSteps from "../features/feeds/steps"
 import * as PersonalModelSteps from "../features/personal-model/steps"
 import { RunsClient } from "../features/status/api"
 import * as Status from "../features/status/flows"
@@ -147,6 +148,7 @@ export const registrations = (options: HostOptions) =>
     DomainSteps.registrationAt(options.origin),
     PersonalModelSteps.registrationAt(options.origin),
     BugSteps.registrationAt(options.origin),
+    FeedSteps.registrationAt(options.origin),
   ).pipe(Layer.provide(FlowRegistry.layer), Layer.provide(statusReports(options.origin)), Layer.provideMerge(Action.layerImplementations))
 
 /**

@@ -71,6 +71,7 @@ import branchPublish from "./migrations/0068_branch_publish.ts"
 import branchResync from "./migrations/0069_branch_resync.ts"
 import branchWriteNotices from "./migrations/0071_branch_write_notices.ts"
 import roleObservations from "./migrations/0072_role_observations.ts"
+import feeds from "./migrations/0073_feeds.ts"
 import aboutRefusalQuota from "./migrations/0070_about_refusal_quota.ts"
 
 /** The compose Postgres (`docker-compose.yml`): what `DATABASE_URL` defaults to, and the only one tests use. */
@@ -181,6 +182,7 @@ export const migrations = {
   "0070_about_refusal_quota": aboutRefusalQuota,
   "0071_branch_write_notices": branchWriteNotices,
   "0072_role_observations": roleObservations,
+  "0073_feeds": feeds,
 }
 
 /** Applies every migration in `db/migrations` that hasn't run, in order; returns the ones it applied. */
