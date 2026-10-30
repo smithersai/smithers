@@ -2974,19 +2974,6 @@ const visit = async (
   // Admit both the launcher and its real installation, including shebang
   // interpreters. Docker gets its toolchain from the image instead.
   if (context.index.workspace.sandboxes?.sandboxes["default"]?._tag !== "SandboxDocker") {
-    if (context.index.workspace.nodeModules !== undefined) {
-      const installations = new Set<string>(["node_modules"])
-      for (const directory of [cwd, packagePath]) {
-        const segments = directory.split("/").filter((segment) => segment !== "" && segment !== ".")
-        for (let index = 1; index <= segments.length; index++) {
-          installations.add([...segments.slice(0, index), "node_modules"].join("/"))
-        }
-      }
-      for (const installation of installations) {
-        const root = await Fs.realpath(NodePath.join(context.root, installation)).catch(() => undefined)
-        if (root !== undefined && NodePath.basename(root) === "node_modules") externalReads.push(root)
-      }
-    }
     const temporaryRoots = new Set(["/tmp", "/private/tmp", "/var/tmp", "/private/var/tmp", NodeOs.tmpdir()])
     for (const root of [...temporaryRoots]) {
       if (NodeFs.existsSync(root)) temporaryRoots.add(NodeFs.realpathSync(root))
@@ -3030,7 +3017,11 @@ const visit = async (
   if (context.index.workspace.nodeModules !== undefined) {
     for (const directory of nodeModulesDirectories([cwd, packagePath])) {
       const absolute = NodePath.join(context.root, ...directory.split("/"))
-      if (NodeFs.existsSync(absolute)) dependencyInstallations.add(NodeFs.realpathSync(absolute))
+      if (!NodeFs.existsSync(absolute)) continue
+      // Only an installed tree earns a grant. A link to any other host
+      // directory stays closed; the runner rechecks this path before each use.
+      const installation = NodeFs.realpathSync(absolute)
+      if (NodePath.basename(installation) === "node_modules") dependencyInstallations.add(installation)
     }
   }
 
