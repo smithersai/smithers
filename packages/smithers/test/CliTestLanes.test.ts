@@ -56,8 +56,13 @@ it("schedules every CLI test file once without leaving the remainder on one work
   // remainder shards, so the full selection is taken the same way.
   const all = list(["--exclude", "**/node_modules/**"])
   const selections = commands.map(list)
+  const shards = commands.filter((args) => args.some((arg) => arg.startsWith("--shard=")))
+  const workers = Number(/xargs -P (\d+)/.exec(shell)![1])
+  expect(shards.length).toBeGreaterThan(workers)
   expect(selections.flat().sort()).toEqual(all.sort())
-  expect(Math.max(...selections.map((files) => files.length))).toBeLessThanOrEqual(Math.ceil(all.length / 4))
+  expect(Math.max(...selections.map((files) => files.length))).toBeLessThanOrEqual(
+    Math.ceil(all.length / shards.length)
+  )
 })
 
 it.skipIf(process.platform === "win32")(
@@ -124,7 +129,21 @@ it(${JSON.stringify(phase)}, async () => {
         timeout: 25_000
       })
       const owned = readFileSync(join(root, "owned-work"), "utf8")
-      for (const phase of ["one-fixed", "two-fixed", "three-fixed", "one", "two", "three", "four"]) {
+      for (
+        const phase of [
+          "one-fixed",
+          "two-fixed",
+          "three-fixed",
+          "one",
+          "two",
+          "three",
+          "four",
+          "five",
+          "six",
+          "seven",
+          "eight"
+        ]
+      ) {
         expect(readFileSync(join(root, phase), "utf8")).toBe(join(owned, "vibelang-cache"))
       }
       expect(readdirSync(scratch)).toEqual([])
