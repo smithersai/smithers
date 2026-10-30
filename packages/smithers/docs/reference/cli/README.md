@@ -467,6 +467,8 @@ regressions and 5 for inconclusive results. Cancellation interrupts evaluation
 suite effects, cases, and scorers, waits for their finalizers, and prevents
 publication of unfinished results. Embedded invocations pass `RuntimeConfig.signal`
 and `RuntimeConfig.environment` to `createEvalCli`.
+Embedded `Evaluation.execute` callers can supply a scoped `runtime.store` layer.
+An unsettled run publishes no artifact and keeps its identity for recovery.
 
 Evaluation, history, and operator commands share local project resolution.
 Roots must be accessible directories. An empty `SMITHERS_REMOTE` is unset;

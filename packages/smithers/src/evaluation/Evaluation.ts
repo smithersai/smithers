@@ -20,6 +20,8 @@ import * as ScoreStore from "@smthrs/scorers/ScoreStore"
 import * as Scoring from "@smthrs/scorers/Scoring"
 import * as SqlScoreStore from "@smthrs/scorers/SqlScoreStore"
 import { Effect, Layer, Logger, Option, Schema } from "effect"
+import type * as Scope from "effect/Scope"
+import type * as SqlClient from "effect/sql/SqlClient"
 import { z } from "incur"
 import { randomUUID } from "node:crypto"
 import { link, mkdir, open, readdir, readFile, realpath, rename, unlink } from "node:fs/promises"
@@ -424,7 +426,14 @@ export const execute = async (
     readonly k?: number
     readonly root?: string
   },
-  runtime: RuntimeConfig = {}
+  runtime: RuntimeConfig & {
+    /** A host-supplied durable engine, used by embedded callers and store-failure tests. */
+    readonly store?: Layer.Layer<
+      EngineStore.Driver | FlowRuntime.FlowRuntime | SqlClient.SqlClient | DurableWriter.DurableWriter,
+      unknown,
+      Scope.Scope
+    >
+  } = {}
 ): Promise<RunArtifact> => {
   const logging = Presentation.current()?.policy.progress === "silent" ? Logger.layer([]) : RedactedLogger.layer()
   const { root, ...runOptions } = options
@@ -484,12 +493,15 @@ export const execute = async (
       Layer.provide(SqlScoreStore.layer)
     )
   const hostRuntime = "Bun" in globalThis ? (await import("@smthrs/platform-bun")).BunRuntime : NodeRuntime
-  const host = hostRuntime.layerHost({
-    filename: executionDatabasePath(root),
-    workspaceRoot: root,
-    owner: { hostId: "smithers-evaluation" },
-    signals: []
-  }, Interpreter.layerWithImplementations(EvaluationFlow, implementation))
+  const registration = Interpreter.layerWithImplementations(EvaluationFlow, implementation)
+  const host = runtime.store === undefined ?
+    hostRuntime.layerHost({
+      filename: executionDatabasePath(root),
+      workspaceRoot: root,
+      owner: { hostId: "smithers-evaluation" },
+      signals: []
+    }, registration) :
+    registration.pipe(Layer.provideMerge(runtime.store))
   const inputs = {
     run: runOptions,
     suite: {
