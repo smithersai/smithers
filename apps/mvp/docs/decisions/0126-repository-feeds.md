@@ -36,8 +36,10 @@ outside, no way to show it to a plugin, and no plugin view scoped to a repositor
    `feed_answers`, keyed by `id`, so a resend changes nothing. The collector reads them with its key from
    `GET /api/repos/<owner>/<name>/feeds/answers?after=<cursor>`; reading never deletes, so a lost response loses
    nothing.
-7. **Plugins read feeds as core queries.** `core/feeds` (the index rows of the viewed repository) and `core/feed` (one
-   on-demand document) join `core/waits` and `core/bug-reports` in the host's facts.
+7. **Plugins read feeds as core queries.** `core/feeds` (the index rows of the viewed repository), `core/feed` (one
+   on-demand document) and `core/feed-items` (the elements of an index document that carry an id, each with an answer
+   id, so the host's strip answers one through `feed/answer`) join `core/waits` and `core/bug-reports` in the host's
+   facts.
 8. **Plugin views may be scoped to a repository.** The manifest's `scope: "repository"` view, refused by the UI host
    until now, shows at `/<owner>/<repo>/-/<plugin>/<path>`, and `repo.tabs` slots draw in the repository's header.
    The `-` segment keeps every plugin path apart from the core's repository routes.

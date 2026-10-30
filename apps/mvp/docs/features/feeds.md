@@ -46,6 +46,16 @@ $ curl -X POST -H "Authorization: Bearer $KEY" -H 'content-type: application/jso
 {"written":1,"unchanged":0,"deleted":0}
 ```
 
+## Development
+
+`alchemy dev` (worker/DevChatApi.ts) accepts the development feed key `smithers-development-feed-key` (`DEV_FEED_KEY`, worker/feeds/dev.ts) for every repository while `FEED_KEYS` is unset, so a local collector and the end-to-end tests push feeds without a key of their own. It is not a secret: it opens only a laptop's dev server. Once `FEED_KEYS` is set, only its keys count. A deploy can never accept it: production bundles worker/ChatApi.ts, which never imports either file, and `worker/ChatApi.startup.test.ts` searches the real production bundle for the key.
+
+```
+$ curl -k -X POST -H 'Authorization: Bearer smithers-development-feed-key' -H 'content-type: application/json' \
+    -d '{"set":{"lanes":{"visibility":"public","body":[]}}}' \
+    https://localhost:1443/api/repos/smithersai/smithers/feeds
+```
+
 ## Answers
 
 ```
@@ -65,14 +75,45 @@ It runs on the device's engine; the step is sealed, so the journal never shows t
 
 ## Plugins
 
-The host serves two core queries ([plugins.md](plugins.md#the-host-contract)), asked with `params`:
+The host serves three core queries ([plugins.md](plugins.md#the-host-contract)), asked with `params`:
 
 | Query | `params` | Rows |
 |---|---|---|
 | `core/feeds` | `{ repo: "owner/name" }` | the index, by name; the strip can select a row (`ItemRef.params` names the same `repo`) |
 | `core/feed` | `{ repo, name }` | the one document, while the view listens; only shown, never selected |
+| `core/feed-items` | `{ repo, name }`, an index document | the document's items, in order; the strip selects one and answers it through `feed/answer` |
 
-Each row is `{ id, repo, name, visibility, body, updatedAt }` (`FEED_ROW`). A missing or malformed `repo` or `name` is refused `invalid_fields`.
+`core/feeds` and `core/feed` rows are `{ id, repo, name, visibility, body, updatedAt }` (`FEED_ROW`). A missing or malformed `repo` or `name` is refused `invalid_fields`, as is a `core/feed-items` name with a `/`: the strip reads items while no view listens, and only the index stays synced.
+
+### Items
+
+An item is an element of the document's body array that is an object with a non-empty string `id`; the first of an id counts, anything else is skipped (`src/features/feeds/items.ts`). Its row (`FEED_ITEM_ROW`):
+
+| Field | What |
+|---|---|
+| `key` | `<repo>:<document>:<id>`, what the strip selects |
+| `repo`, `owner`, `name` | the repository, and its parts as `feed/answer` takes them |
+| `document`, `index`, `item` | the document's name, the item's place in it, its `id` |
+| `options`, `chooses` | the element's string `options` (empty without), and whether there are any, for a key's `when` |
+| `body` | the element itself |
+| `answer` | the answer's id: UUID v5 of the repository, the document and the element |
+
+The answer id is the same for the same element, so pressing twice, or again after a reply was lost, records one answer: the server keeps the first under that id, and the same person's resend changes nothing. Once the collector changes the element (a new version) it is a new item with a new id. A second Maintainer answering the same version gets `409 conflict` (`Not sent`): one answer per version. The items live in a collection on the tab, never the device, and follow the document as the collector pushes it.
+
+```ts
+const asks = yield* host.query<FeedItem>("core/feed-items", { repo: "smithersai/vibelang", name: "for_will" })
+yield* host.select({ query: "core/feed-items", key: asks.current()[0].key, params: { repo: "smithersai/vibelang", name: "for_will" } })
+```
+
+A view answers through events whose flow is `feed/answer`, drawn and sent only by the host's strip:
+
+```json
+{ "name": "option", "payload": { "$ref": "#/$defs/Option" }, "flow": "feed/answer",
+  "args": { "owner": "$item.owner", "name": "$item.name", "id": "$item.answer", "item": "$item.item",
+            "choice": "$item.options[$event.index]", "text": "$event.note" } }
+```
+
+Past answers stay out of the core queries: only the collector reads them back, with its key. A collector that wants them shown pushes them in a document of its own (the factory's `answered`).
 
 ```ts
 const index = yield* host.query<FeedRow>("core/feeds", { repo: "smithersai/vibelang" })
@@ -89,4 +130,6 @@ yield* host.select({ query: "core/feeds", key: "smithersai/vibelang:lanes", para
 - `worker/feeds/Api.test.ts`: every route and refusal over the compose Postgres, the key compare, the caps, unchanged bodies, the shape's audiences and its fail-closed default to public.
 - `worker/PersonOnly.test.ts`: `feed/answer` refuses anyone acting for the person.
 - `src/features/feeds/api.test.ts`: the device's step, its retries and final refusals.
-- `src/features/feeds/feeds.test.ts`: a collector's write reaches a plugin through `core/feeds` and `core/feed` on a real device; a Maintainer's answer reaches the collector's read, once.
+- `src/features/feeds/feeds.test.ts`: a collector's write reaches a plugin through `core/feeds`, `core/feed` and `core/feed-items` on a real device; a Maintainer's answer reaches the collector's read, once.
+- `src/features/feeds/items.test.ts`: which elements are items, their options, and their answer ids.
+- `worker/feeds/Api.test.ts` and `worker/ChatApi.startup.test.ts`: the development key opens every repository only while `FEED_KEYS` is unset, and the production bundle never holds it.

@@ -65,7 +65,7 @@ Compiled UI plugin chunks run with the app's full power: the import rules are hy
 
 | Member | What it does here |
 |---|---|
-| `query(name, params?)` | The rows of a declared query, live: `core/waits` is the viewer's open waits, oldest first (from the synced `runs`, [agent status](agent-status.md)); `core/feeds` and `core/feed` take `params` ([below](#repository-feeds)). |
+| `query(name, params?)` | The rows of a declared query, live: `core/waits` is the viewer's open waits, oldest first (from the synced `runs`, [agent status](agent-status.md)); `core/feeds`, `core/feed` and `core/feed-items` take `params` ([below](#repository-feeds)). |
 | `select(item)` | The row the person is looking at, in its query as asked with `item.params`; the strip under every view of the plugin that reads its query acts on it. A key that isn't a row is refused `not_in_reads`. |
 | `propose(event, fields)` | Prefills the strip's note from a strip event's text field. Nothing runs until the person presses. |
 | `dispatch(event, fields)` | Runs an event whose flow isn't person-only, door `view`. Answers the run's id and `settled`, which waits for its end: `Done`, or `Failed` with the failure's stable code (a refusal's `code`, else its kind, dispatch's refusal, `interrupted`), never a message. |
@@ -115,11 +115,11 @@ The second plugin (`plugins/bugs/`, [bugs.md](bugs.md)): `/bug` and the header's
 
 ## Repository feeds
 
-The core queries `core/feeds` (a repository's index) and `core/feed` (one on-demand document) serve what an outside collector pushed to a repository ([feeds.md](feeds.md#plugins)). Both take `params`: `query("core/feeds", { repo: "owner/name" })`, `query("core/feed", { repo, name })`; a missing or malformed one is refused `invalid_fields`. The strip selects a row of `core/feeds` when the `ItemRef` names the same `params`; a `core/feed` document is only shown.
+The core queries `core/feeds` (a repository's index), `core/feed` (one on-demand document) and `core/feed-items` (the items of one index document, [feeds.md](feeds.md#items)) serve what an outside collector pushed to a repository ([feeds.md](feeds.md#plugins)). Each takes `params`: `query("core/feeds", { repo: "owner/name" })`, `query("core/feed", { repo, name })`, `query("core/feed-items", { repo, name })`; a missing or malformed one is refused `invalid_fields`. The strip selects a row of `core/feeds` or `core/feed-items` when the `ItemRef` names the same `params`; a `core/feed` document is only shown. An item row carries what the person-only `feed/answer` needs, its answer id included, so the strip answers it.
 
 ## The factory
 
-The third plugin (`plugins/factory/`, [factory.md](factory.md)): a repository's factory, ten `repository` views over the core's feeds (`core/feeds`, `core/feed`), a `repo.tabs` entry, and `/factory`, `/lanes` and `/decide`.
+The third plugin (`plugins/factory/`, [factory.md](factory.md)): a repository's factory, ten `repository` views over the core's feeds (`core/feeds`, `core/feed`, `core/feed-items`), a `repo.tabs` entry, and `/factory`, `/lanes` and `/decide`. For you, for a maintainer, answers a decision through the strip: Accept (`a`) or Change (`c`) with the note, or `1`–`9` for a decision that lists its options.
 
 ## Observability
 
@@ -130,6 +130,7 @@ The third plugin (`plugins/factory/`, [factory.md](factory.md)): a repository's 
 - `@smthrs/plugin`'s suite: the manifest, the checks and every refusal reason, the binding, `when` and key grammars, fuzzed decoding.
 - `src/plugins/*.test.ts`: the app's manifests load with no refusal; the trust boundaries above against the real registry; `PluginHost` scoping and its refusals; the strip and the keymap over a real device (`src/test/chatApi.ts`).
 - `plugins/queue/src/tab.test.ts`: the queue over real waits, answered through the strip, on a real device.
+- `src/plugins/factory.test.ts`: the factory's For you over a collector's decisions, answered through the strip by button and key, on a real device; each answer reaches the collector once.
 - `e2e/queue.spec.ts`: the agent asks three times; `g q`; `2`, `j`, a note and `a`, `1`; every asking run goes on. With a GIF.
 
 Full-size plugin headers show the host connection pill, including Offline, queued writes and Retry, so cached queue contents remain qualified.
