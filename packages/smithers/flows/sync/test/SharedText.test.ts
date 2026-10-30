@@ -82,21 +82,26 @@ describe("SharedText", () => {
         (places, start) =>
           run(replicas(places.length, (texts) =>
             Effect.gen(function*() {
+              // A marker already in the seed is not a duplicate insertion.
+              // There are more candidate characters than seed characters.
+              const delimiter = Array.from({ length: start.length + 1 }, (_, index) => String.fromCharCode(index))
+                .find((candidate) => !start.includes(candidate))!
+              const inserted = places.map((_, index) => `${delimiter}${index}${delimiter}`)
               const base = SharedText.seed(start)
               for (const text of texts) yield* text.apply(base)
               const updates = yield* Effect.forEach(texts, (text, index) => {
                 const at = Math.floor(places[index]! * start.length)
-                return text.edit([{ from: at, to: at, insert: `<${index}>` }])
+                return text.edit([{ from: at, to: at, insert: inserted[index]! }])
               })
               for (const text of texts) for (const update of [...updates].reverse()) yield* text.apply(update!)
               for (const text of texts) {
                 const final = yield* text.text
-                for (const index of texts.keys()) expect(final.split(`<${index}>`)).toHaveLength(2)
-                expect(final.replace(/<\d+>/g, "")).toBe(start)
+                for (const token of inserted) expect(final.split(token)).toHaveLength(2)
+                expect(inserted.reduce((rest, token) => rest.replaceAll(token, ""), final)).toBe(start)
               }
             })))
       ),
-      { numRuns: 150 }
+      { numRuns: 150, examples: [[[0, 0], "<0>"], [[0, 0], "\0"]] }
     )
   })
 
