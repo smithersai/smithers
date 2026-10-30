@@ -1,34 +1,52 @@
 /** Real CLI/TUI validation boundaries; no model, credentials, or terminal needed. */
 import { spawnSync } from "node:child_process"
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { afterEach, expect, it } from "vitest"
 import * as Tui from "../src/commands/Tui.ts"
+import { childEnvironment } from "./support/node-child.ts"
 
 const bin = fileURLToPath(new URL("../bin/smithers.mjs", import.meta.url))
 const roots: Array<string> = []
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
-const run = (args: Array<string>) => {
+const run = (args: Array<string>, observeCache = false) => {
   const root = mkdtempSync(join(tmpdir(), "tui-flags-"))
   roots.push(root)
-  return spawnSync(process.execPath, [bin, "tui", ...args], {
+  const receipt = join(root, "cache.json")
+  const observer = join(root, "observe-cache.mjs")
+  if (observeCache) {
+    writeFileSync(
+      observer,
+      `import { getCompileCacheDir } from "node:module";
+import { writeFileSync } from "node:fs";
+writeFileSync(${
+        JSON.stringify(receipt)
+      }, JSON.stringify({ enabled: Boolean(getCompileCacheDir()), covered: process.env.NODE_V8_COVERAGE !== undefined }));\n`
+    )
+  }
+  const result = spawnSync(process.execPath, [bin, "tui", ...args], {
     encoding: "utf8",
     timeout: 120_000,
     cwd: root,
-    env: {
+    env: childEnvironment({
       PATH: process.env["PATH"],
       HOME: root,
       XDG_DATA_HOME: root,
       // Keep the VibeLang loader but remove the farm's webstorage suppression.
-      NODE_OPTIONS: (process.env["NODE_OPTIONS"] ?? "").replaceAll("--no-experimental-webstorage", ""),
+      NODE_OPTIONS: [
+        (process.env["NODE_OPTIONS"] ?? "").replaceAll("--no-experimental-webstorage", ""),
+        ...(observeCache ? [`--import=${pathToFileURL(observer).href}`] : [])
+      ].filter(Boolean).join(" "),
+      ...(observeCache ? { SMITHERS_CLI_NODE_COMPILE_CACHE: join(root, "compile-cache") } : {}),
       SMITHERS_BUN: "bun",
       SMITHERS_TUI_SESSION_DIR: join(root, "sessions")
-    }
+    })
   })
+  return { ...result, cache: observeCache ? JSON.parse(readFileSync(receipt, "utf8")) : undefined }
 }
 
 it("forwards daily and workspace flags, including explicit cap opt-outs", () => {
@@ -60,10 +78,14 @@ it("the documented workspace flag reaches native workspace validation", () => {
 }, 150_000)
 
 it("help names the real default and both ways to disable the per-turn cap", () => {
-  const result = run(["--help"])
+  const result = run(["--help"], true)
   expect(result.status).toBe(0)
   expect(result.stdout).toMatch(/budget-tokens[^\n]*200M[^\n]*0 or none/)
   expect(result.stdout).not.toContain("unbounded by default")
+  expect(result.cache).toEqual({
+    enabled: !process.env.SMITHERS_CLI_DISABLE_COMPILE_CACHE && process.env.NODE_V8_COVERAGE === undefined,
+    covered: process.env.NODE_V8_COVERAGE !== undefined
+  })
 }, 150_000)
 
 it("Node startup retains the validation diagnostic without probing browser localStorage", () => {

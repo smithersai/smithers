@@ -14,6 +14,7 @@ import { tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, it } from "vitest"
+import { spawnNodeSync } from "./support/node-child.ts"
 
 const bin = fileURLToPath(new URL("../bin/smithers.mjs", import.meta.url))
 const fixture = fileURLToPath(new URL("../../../apps/tui/test/fixtures/pong.jsonl", import.meta.url))
@@ -30,7 +31,7 @@ afterEach(() => {
 const print = (environment: Record<string, string>, args: ReadonlyArray<string> = []) => {
   const root = mkdtempSync(join(tmpdir(), "smithers-tui-e2e-"))
   staged.push(root)
-  return spawnSync(process.execPath, [bin, "tui", root, "-p", "Reply with the single word pong", ...args], {
+  return spawnNodeSync([bin, "tui", root, "-p", "Reply with the single word pong", ...args], {
     encoding: "utf8",
     timeout: 120_000,
     env: {

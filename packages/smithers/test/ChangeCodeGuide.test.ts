@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, it } from "vitest"
+import { childEnvironment } from "./support/node-child.ts"
 
 it.each(["jj", "git"])("executes the coding guide with %s and pushes to origin main", async (vcs) => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-change-guide-")))
@@ -34,7 +35,7 @@ it.each(["jj", "git"])("executes the coding guide with %s and pushes to origin m
       const child = spawn("/bin/bash", ["--norc", "--noprofile", "-euE", "-o", "pipefail", "-c", script], {
         cwd: root,
         stdio: ["ignore", "pipe", "pipe"],
-        env: {
+        env: childEnvironment({
           PATH: process.env.PATH,
           TMPDIR: process.env.TMPDIR,
           HOME: root,
@@ -46,7 +47,7 @@ it.each(["jj", "git"])("executes the coding guide with %s and pushes to origin m
           GUIDE_NODE: process.execPath,
           GUIDE_BIN: fileURLToPath(new URL("../src/bin.ts", import.meta.url)),
           GUIDE_PRELOAD: fileURLToPath(new URL("./fixtures/coding-native-host.ts", import.meta.url))
-        },
+        }),
         timeout: 120_000
       })
       let stdout = ""

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import { describe, expect, it } from "vitest"
+import { childEnvironment } from "./support/node-child.ts"
 
 const run = promisify(execFile)
 
@@ -43,7 +44,7 @@ describe("workspace resource refusal through the public CLI", () => {
         "json"
       ], {
         cwd: process.cwd(),
-        env: {
+        env: childEnvironment({
           ...process.env,
           HOME: home,
           XDG_CONFIG_HOME: home,
@@ -51,7 +52,7 @@ describe("workspace resource refusal through the public CLI", () => {
           SMITHERS_API_ORIGIN: `http://127.0.0.1:${address.port}`,
           SMITHERS_TOKEN: "sizing-test-session",
           SMITHERS_DISABLE_SYSTEM_KEYRING: "1"
-        },
+        }),
         timeout: 90_000
       }).then(() => {
         throw new Error("Expected a CLI refusal")

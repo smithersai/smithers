@@ -6,6 +6,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { describe, expect, it } from "vitest"
+import { childEnvironment } from "./support/node-child.ts"
 
 const run = promisify(execFile)
 const bin = fileURLToPath(new URL("../src/bin.ts", import.meta.url))
@@ -30,14 +31,14 @@ describe("a module's exported implementation layer", () => {
       await mkdir(join(root, ".flows"))
       await symlink(nodeModules, join(root, "node_modules"), "dir")
       const output = join(root, "result.txt")
-      const environment = {
+      const environment = childEnvironment({
         ...process.env,
         XDG_CONFIG_HOME: join(root, "config"),
         AI_GATEWAY_API_KEY: "",
         SMITHERS_REMOTE: "",
         SMITHERS_BACKEND: "sqlite",
         NODE_OPTIONS: ""
-      }
+      })
       const command = (arguments_: ReadonlyArray<string>) =>
         run(process.execPath, ["--no-warnings", "--import", preload, bin, ...arguments_], {
           cwd: root,

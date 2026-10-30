@@ -3,17 +3,18 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { describe, expect, it } from "vitest"
+import { childEnvironment } from "./support/node-child.ts"
 
 const cli = resolve(import.meta.dirname, "../bin/smithers.mjs")
 describe("npm CLI in a real jj checkout", () => {
   it("shares change and bookmark state with jj and preserves uncommitted file diffs", async () => {
     const directory = await mkdtemp(join(tmpdir(), "one-cli-jj-"))
-    const env = {
+    const env = childEnvironment({
       ...process.env,
       JJ_USER: "CLI test",
       JJ_EMAIL: "cli@example.test",
       SMITHERS_DISABLE_SYSTEM_KEYRING: "1"
-    }
+    })
     const run = (command: string, args: string[]) =>
       execFileSync(command, args, { cwd: directory, env, encoding: "utf8", timeout: 30000 })
     const invoke = (args: string[]) => JSON.parse(run(process.execPath, [cli, ...args, "--json"]))

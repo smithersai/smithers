@@ -3,6 +3,7 @@ import { execFile } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { expect, it } from "vitest"
+import { childEnvironment } from "./support/node-child.ts"
 
 const execute = promisify(execFile)
 const fixture = fileURLToPath(new URL("./fixtures/native-control-portable.ts", import.meta.url))
@@ -24,7 +25,11 @@ for (const runtime of ["node", "bun"]) {
         ]
         // Recovery starts three complete host scopes. Give slow loaded builders
         // room to initialize; every execution/observation still has its own bound.
-        const { stdout } = await execute(runtime, args, { timeout: 1_200_000, maxBuffer: 1024 * 1024 })
+        const { stdout } = await execute(runtime, args, {
+          env: childEnvironment(),
+          timeout: 1_200_000,
+          maxBuffer: 1024 * 1024
+        })
         const result = stdout.trim().split("\n").findLast((line) => line.startsWith("{\"runtime\""))
         expect(result).toBeDefined()
         expect(JSON.parse(result!)).toMatchObject({ runtime, recovery, passed: true })
@@ -37,6 +42,7 @@ for (const runtime of ["node", "bun"]) {
 it("regression: Flaky: NativeControlPortable 'bun refuses ordinary adoption' after #1807 drift rescans", async () => {
   for (let attempt = 1; attempt <= 6; attempt++) {
     const { stdout, stderr } = await execute("bun", [fixture, "bun", "drift-rescan"], {
+      env: childEnvironment(),
       timeout: 1_200_000,
       maxBuffer: 1024 * 1024
     })
@@ -54,6 +60,7 @@ it("regression: Flaky: NativeControlPortable 'bun refuses ordinary adoption' aft
 
 it("fails a drifted approved module explicitly instead of parking it on an ordinary host", async () => {
   const { stdout } = await execute("node", ["--experimental-strip-types", fixture, "node", "drift"], {
+    env: childEnvironment(),
     timeout: 1_200_000,
     maxBuffer: 1024 * 1024
   })
@@ -71,7 +78,7 @@ for (const runtime of ["node", "bun"]) {
         fixture,
         runtime,
         "cancel"
-      ], { timeout: 1_200_000, maxBuffer: 1024 * 1024 })
+      ], { env: childEnvironment(), timeout: 1_200_000, maxBuffer: 1024 * 1024 })
       const result = stdout.trim().split("\n").findLast((line) => line.startsWith("{\"runtime\""))
       expect(result).toBeDefined()
       expect(JSON.parse(result!)).toMatchObject({ runtime, cancel: true, passed: true })

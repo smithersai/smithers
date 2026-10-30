@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
 import { afterEach, expect, it } from "vitest"
+import { childEnvironment } from "./support/node-child.ts"
 
 const roots: Array<string> = []
 const processTimeoutMs = 20_000
@@ -19,7 +20,7 @@ const root = () => {
 const fixture = fileURLToPath(new URL("./fixtures/MemoryRestart.ts", import.meta.url))
 const bin = fileURLToPath(new URL("../bin/smithers.mjs", import.meta.url))
 const invoke = (args: ReadonlyArray<string>) => {
-  const env = { ...process.env }
+  const env = childEnvironment()
   delete env.SMITHERS_REMOTE
   delete env.SMITHERS_CREDENTIAL
   return JSON.parse(execFileSync(process.execPath, args, { encoding: "utf8", timeout: processTimeoutMs, env }))
