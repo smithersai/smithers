@@ -234,6 +234,11 @@ approval token, parks the run with an encoded `Permission.PermissionRequired`,
 and is re-decided against the grant store when `Control.approve` and
 `Control.resume` bring the run back.
 
+Approval callbacks, journal notifications and the durable follower share admission
+by run and durable delegation sequence. A consumed or superseded offer records no
+second `control.run.claimed` fact and cannot wake a later unanswered park. Engine
+wakes and explicit operator resumes keep their existing ownership and consent rules.
+
 Both policies are required options, not defaults the session invents.
 `Options.quotaPolicy` is the `QuotaClassifier` layer every model call in the run
 is decided under, and `Options.budget` is a function from the approved

@@ -587,7 +587,7 @@ export const layer: Layer.Layer<
     ): Effect.Effect<void, PersistenceError> =>
       Option.isNone(executor)
         ? Effect.void
-        : executor.value.resumeRun({ runId }).pipe(
+        : executor.value.resumeRun({ runId, delegationSequence: sequence }).pipe(
           Effect.flatMap((uptake) => uptake === "resuming" ? runtime.clearResume(runId, sequence) : Effect.void)
         )
 
@@ -769,7 +769,7 @@ export const layer: Layer.Layer<
             // (triage B-15).
             const runId = input.target.runId
             delegated = yield* runtime.requestResume(runId)
-            yield* emit(runId, "control.run.resumed", { runId })
+            yield* emit(runId, "control.run.resumed", { runId, delegationSequence: delegated })
             return accepted(input.idempotencyKey, runId)
           })
         )
@@ -1026,7 +1026,9 @@ export const layer: Layer.Layer<
               const delegated = yield* runtime.requestResume(run.runId).pipe(
                 Effect.catchTag("/control/InvalidInput", () => Effect.succeed(undefined))
               )
-              if (delegated !== undefined) yield* emit(run.runId, "control.run.resumed", { runId: run.runId })
+              if (delegated !== undefined) {
+                yield* emit(run.runId, "control.run.resumed", { runId: run.runId, delegationSequence: delegated })
+              }
             })
         ),
         Effect.catchTag("/control/RunNotFound", () => Effect.void),

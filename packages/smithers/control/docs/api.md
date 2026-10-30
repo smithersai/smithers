@@ -563,16 +563,23 @@ engine observations. Mutation methods remain refused.
 
 ### Models
 
-| Type                             | Shape                                                                                                                                |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `Launch`                         | `{ plan: StoredPlan; run: RunSummary }`. `run.runId` is the execution id the executor must start.                                    |
-| `Acceptance`                     | `"accepted"` (taken now) or `"pending"` (queued).                                                                                    |
-| `CancelRequest`, `ResumeRequest` | `{ runId: RunId }`                                                                                                                   |
-| `CancelTerminal`                 | `{ _tag: "Terminal"; status: "completed" \| "failed" \| "cancelled" }`. The engine's own status, which the plane cannot read itself. |
-| `CancelRecord`                   | `"recorded" \| "already-requested" \| "unknown" \| CancelTerminal`                                                                   |
-| `ResumeUptake`                   | `"resuming" \| "unknown"`                                                                                                            |
-| `Signal`                         | `{ runId: RunId; signal: SignalPayload }`                                                                                            |
-| `SignalDelivery`                 | `"delivered" \| "no-match" \| "unknown"`                                                                                             |
+| Type             | Shape                                                                                                                                |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `Launch`         | `{ plan: StoredPlan; run: RunSummary }`. `run.runId` is the execution id the executor must start.                                    |
+| `Acceptance`     | `"accepted"` (taken now) or `"pending"` (queued).                                                                                    |
+| `CancelRequest`  | `{ runId: RunId }`                                                                                                                   |
+| `ResumeRequest`  | `{ runId: RunId, delegationSequence?: number }`                                                                                      |
+| `CancelTerminal` | `{ _tag: "Terminal"; status: "completed" \| "failed" \| "cancelled" }`. The engine's own status, which the plane cannot read itself. |
+| `CancelRecord`   | `"recorded" \| "already-requested" \| "unknown" \| CancelTerminal`                                                                   |
+| `ResumeUptake`   | `"resuming" \| "unknown"`                                                                                                            |
+| `Signal`         | `{ runId: RunId; signal: SignalPayload }`                                                                                            |
+| `SignalDelivery` | `"delivered" \| "no-match" \| "unknown"`                                                                                             |
+
+An approval offers `resumeRun` its durable `delegationSequence`. The executor
+checks that sequence again before admission; consumed or superseded offers
+answer `unknown` and cannot start another round. Omitting the sequence preserves
+direct host recovery and engine wake behavior. The `control.run.resumed` journal
+event carries the same sequence, correlating every delivery with one durable request.
 
 `settleCancelledPark` is called after the cancel mutation commits, never inside
 it: driving a run re-enters the engine, whose writes would wait on the writer

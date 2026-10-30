@@ -1998,6 +1998,12 @@ describe("the executor's resume bridge", () => {
             { runId: "run-elsewhere", sequence: 8, requestedAtMs: 1 },
             { runId: "run-hosted", sequence: 7, requestedAtMs: 1 }
           ]),
+          getRun: (runId) =>
+            Effect.succeed({
+              ...launchInput.run,
+              runId,
+              pendingResume: runId === "run-hosted" ? 7 : 8
+            }),
           clearResume: (runId) =>
             Effect.sync(() => {
               cleared.push(runId)
@@ -2050,7 +2056,12 @@ describe("the executor's resume bridge", () => {
         runtime: {
           getRun: (runId) =>
             Effect.succeed(
-              runId === "run-hosted" ? launchInput.run : { ...launchInput.run, parkedBy: "fence-another-host" }
+              {
+                ...launchInput.run,
+                runId,
+                pendingResume: runId === "run-hosted" ? 7 : runId === "run-younger" ? 8 : 9,
+                ...(runId === "run-hosted" ? {} : { parkedBy: "fence-another-host" })
+              }
             ),
           // The hosted sentinel comes last, so the assertion observes a full
           // pass even when a boundary mutation refuses the abandoned park.
@@ -3083,8 +3094,13 @@ describe("consented resume authorization", () => {
           })
       }),
       runtime: {
-        getRun: () => Effect.succeed({ ...launchInput.run, status: entered ? "parked" : "running" }),
-        pendingResumes: Effect.sync(() => entered ? [{ runId, sequence: 7, requestedAtMs: 0, consent: 7 }] : []),
+        getRun: () =>
+          Effect.succeed({
+            ...launchInput.run,
+            status: entered ? "parked" : "running",
+            pendingResume: entered ? 7 : undefined
+          }),
+        pendingResumes: Effect.sync(() => entered ? [{ runId, sequence: 7, requestedAtMs: 0, consent: 41 }] : []),
         clearResume: (id, sequence) =>
           Effect.sync(() => {
             order.push(`clear:${id}:${sequence}`)
@@ -3101,7 +3117,7 @@ describe("consented resume authorization", () => {
         }) as unknown as EngineService
     })
     expect(result).toEqual({ acceptance: "accepted", status: "completed" })
-    expect(order).toEqual([`grant:${runId}:7`, `clear:${runId}:7`, "body"])
+    expect(order).toEqual([`grant:${runId}:41`, `clear:${runId}:7`, "body"])
   })
 
   it("leaves a consented delegation standing when the workspace guard still refuses", async () => {
@@ -3115,6 +3131,7 @@ describe("consented resume authorization", () => {
         canExecute: () => Deferred.succeed(checked, void 0).pipe(Effect.as(false)),
         runtime: {
           pendingResumes: Effect.succeed([{ runId, sequence: 7, requestedAtMs: 0, consent: 7 }]),
+          getRun: () => Effect.succeed({ ...launchInput.run, pendingResume: 7 }),
           clearResume: () =>
             Effect.sync(() => {
               cleared++

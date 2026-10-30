@@ -101,6 +101,8 @@ export type CancelRecord = "recorded" | "already-requested" | "unknown" | Cancel
  */
 export interface ResumeRequest {
   readonly runId: RunId
+  /** The durable delegation being offered; a stale offer must not start another round. */
+  readonly delegationSequence?: number | undefined
 }
 
 /**

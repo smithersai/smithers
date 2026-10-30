@@ -99,9 +99,11 @@ import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
+import * as RcMap from "effect/RcMap"
 import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
+import * as Semaphore from "effect/Semaphore"
 import * as Stream from "effect/Stream"
 import * as Tracer from "effect/Tracer"
 import { Agent, type Options as AgentOptions } from "./Agent.ts"
@@ -762,6 +764,10 @@ type Uptake =
     readonly requestedAtMs?: number | undefined
     readonly consent?: number | undefined
   }
+
+const ResumeDelegation = Schema.Struct({
+  delegationSequence: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1))
+})
 
 /** The journal sequence of the operator's resume an uptake carries, if any. */
 const consentOf = (uptake: Uptake): number | undefined => uptake._tag === "claimed" ? uptake.sequence : uptake.consent
@@ -4558,19 +4564,18 @@ export const make = (
         ),
         Stream.mapEffect(
           (entry) =>
-            takeUpResume(
-              entry.runId,
-              (runId, uptake) => resumeExecution(runId, uptake),
-              // `control.run.resume` is the operator's own claim, already taken
-              // in this process by the call that journaled it; `resumed` is the
-              // approval delegation, which belongs to whoever parked the run. A
-              // steer's wake is delegated intent too: the engine records no wake
-              // for an `event` park, so only a delegated resume enters the body,
-              // and it grants no released child a retry.
-              entry.eventType === "control.run.resume"
-                ? { _tag: "claimed", sequence: entry.seq }
-                : { _tag: "delegated" }
-            ),
+            entry.eventType === "control.run.resumed" && Schema.is(ResumeDelegation)(entry.payload)
+              ? takeUpOfferedResume(entry.runId, entry.payload.delegationSequence)
+              : takeUpResume(
+                entry.runId,
+                (runId, uptake) => resumeExecution(runId, uptake),
+                // Approval notifications above use their durable delegation.
+                // Other wakes keep their ownership rules; only an explicit
+                // operator resume carries consent to retry released children.
+                entry.eventType === "control.run.resume"
+                  ? { _tag: "claimed", sequence: entry.seq }
+                  : { _tag: "delegated" }
+              ),
           { concurrency: 1 }
         ),
         Stream.runDrain
@@ -4610,6 +4615,17 @@ export const make = (
       }).pipe(
         Effect.catchCause((cause) =>
           recoverCause(cause, "The run's approval park could not be read", undefined, { runId })
+        )
+      )
+
+    const takeUpOfferedResume = (runId: string, sequence: number): Effect.Effect<ControlExecutor.ResumeUptake> =>
+      runtime.pendingResumes.pipe(
+        Effect.flatMap((pending) => {
+          const entry = pending.find((entry) => entry.runId === runId && entry.sequence === sequence)
+          return entry === undefined ? Effect.succeed("unknown" as const) : takeUpPendingResume(entry)
+        }),
+        Effect.catchCause((cause) =>
+          recoverCause(cause, "A resume offer could not be read", "unknown" as const, { runId, sequence })
         )
       )
 
@@ -4934,20 +4950,35 @@ export const make = (
      * one has been standing, so it is the only path by which an abandoned
      * park is ever adopted ({@link hostsPark}).
      */
-    const takeUpPendingResume = (entry: PendingResume) =>
-      takeUpResume(
-        entry.runId,
-        (runId, uptake) => Effect.asVoid(Effect.forkIn(resumeExecution(runId, uptake), scope)),
-        { _tag: "delegated", requestedAtMs: entry.requestedAtMs, consent: entry.consent }
-      ).pipe(
-        Effect.flatMap((uptake) =>
-          uptake === "resuming" ? runtime.clearResume(entry.runId, entry.sequence) : Effect.void
-        )
-      )
+    const resumeAdmissions = yield* RcMap.make({ lookup: (_runId: string) => Semaphore.make(1) })
+    const takeUpPendingResume = (entry: PendingResume): Effect.Effect<ControlExecutor.ResumeUptake> =>
+      Effect.scoped(Effect.gen(function*() {
+        const admission = yield* RcMap.get(resumeAdmissions, entry.runId)
+        return yield* admission.withPermit(Effect.gen(function*() {
+          // A callback, journal notification and follower can offer the same
+          // delegation concurrently. Re-read its sequence under the run's
+          // permit, and keep the permit through handoff and acknowledgment.
+          const current = yield* runtime.getRun(entry.runId)
+          if (current.pendingResume !== entry.sequence) {
+            return "unknown" as const
+          }
+          const uptake = yield* takeUpResume(
+            entry.runId,
+            (runId, uptake) => Effect.asVoid(Effect.forkIn(resumeExecution(runId, uptake), scope)),
+            { _tag: "delegated", requestedAtMs: entry.requestedAtMs, consent: entry.consent }
+          )
+          if (uptake === "resuming") yield* runtime.clearResume(entry.runId, entry.sequence)
+          return uptake
+        }))
+      })).pipe(Effect.catchCause((cause) =>
+        recoverCause(cause, "A resume delegation could not be taken up", "unknown" as const, { runId: entry.runId })
+      ))
 
     const takeUpDelegations = (wanted: (entry: PendingResume) => boolean) =>
       runtime.pendingResumes.pipe(
-        Effect.flatMap((pending) => Effect.forEach(pending.filter(wanted), takeUpPendingResume, { discard: true })),
+        Effect.flatMap((pending) =>
+          Effect.forEach(pending.filter(wanted), takeUpPendingResume, { discard: true })
+        ),
         Effect.catchCause((cause) =>
           Effect.annotateLogs(
             Effect.logWarning("A pending resume delegation could not be taken up"),
@@ -5193,12 +5224,8 @@ export const make = (
               payload: marker
             })
           )
-          yield* runtime.requestResume(input.runId)
-          yield* takeUpResume(
-            input.runId,
-            (runId, uptake) => Effect.asVoid(Effect.forkIn(resumeExecution(runId, uptake), scope)),
-            { _tag: "delegated" }
-          )
+          const sequence = yield* runtime.requestResume(input.runId)
+          yield* takeUpOfferedResume(input.runId, sequence)
           return { _tag: "Accepted", receiptId: input.receiptId, runId: input.runId } as const
         }).pipe(Effect.mapError((cause) =>
           new PersistenceError({
@@ -5217,13 +5244,15 @@ export const make = (
         )
       ),
       resumeRun: Effect.fn("AgentSession.resumeRun")((input) =>
-        takeUpResume(
-          input.runId,
-          (runId, uptake) => Effect.asVoid(Effect.forkIn(resumeExecution(runId, uptake), scope)),
-          {
-            _tag: "delegated"
-          }
-        )
+        input.delegationSequence === undefined ?
+          takeUpResume(
+            input.runId,
+            (runId, uptake) => Effect.asVoid(Effect.forkIn(resumeExecution(runId, uptake), scope)),
+            {
+              _tag: "delegated"
+            }
+          ) :
+          takeUpOfferedResume(input.runId, input.delegationSequence)
       ),
       settleCancelledPark: Effect.fn("AgentSession.settleCancelledPark")((input) => settleCancelledPark(input.runId))
     })

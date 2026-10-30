@@ -617,6 +617,9 @@ interface Outcome {
    * incarnations re-entered the agent body after a park.
    */
   readonly claims: number
+  readonly resumeEvents: ReadonlyArray<
+    { readonly eventType: string; readonly sequence: number; readonly sourceId: string }
+  >
 }
 
 /**
@@ -694,7 +697,9 @@ const drive = (
     }
     if (changedOnResume !== undefined) descriptors.set(agentDescriptor.name, changedOnResume)
     yield* decision === "approve" ? control.approve(approval) : control.deny(approval)
-    yield* control.resume({ runId, idempotencyKey: "resume:1" })
+    // The legacy-journal regression measures the approval's own resume. A
+    // second explicit operator request would test a second wake as well.
+    if (!legacy) yield* control.resume({ runId, idempotencyKey: "resume:1" })
     yield* awaitStatus(runtime, runId, legacy || changedOnResume !== undefined ? "failed" : "completed")
     if (legacy || changedOnResume !== undefined) {
       // Status settles before the executor journals the failure. Wait for the
@@ -716,7 +721,11 @@ const drive = (
       agentTrail: page.entries.filter((entry) =>
         entry.eventType.startsWith("control.agent.") || entry.eventType === "control.run.failed"
       ),
-      claims: page.entries.filter((entry) => entry.eventType === "control.run.claimed").length
+      claims: page.entries.filter((entry) => entry.eventType === "control.run.claimed").length,
+      resumeEvents: page.entries.filter((entry) =>
+        entry.eventType.startsWith("control.run.") || entry.eventType.startsWith("control.approval.") ||
+        entry.eventType === "control.steer.woke"
+      ).map((entry) => ({ eventType: entry.eventType, sequence: entry.seq, sourceId: entry.sourceId }))
     }
   })
 
@@ -1057,7 +1066,18 @@ describe("AgentSession", () => {
       Effect.gen(function*() {
         const gate = yield* Deferred.make<void>()
         return yield* drive(gate, "approve", true).pipe(
-          Effect.provide(stack({ resolve: seat(capturing(captured)), notes, gate }))
+          Effect.provide(stack({
+            resolve: seat(capturing(captured)),
+            notes,
+            gate,
+            // Give every notification seam a turn before the control claim
+            // commits, as a real SQL round trip does. This exposes duplicate
+            // admission without depending on machine load or a fixed sleep.
+            wrapRuntime: (runtime) => ({
+              ...runtime,
+              resume: (runId, options) => yieldTimes(1_000).pipe(Effect.andThen(runtime.resume(runId, options)))
+            })
+          }))
         )
       }).pipe(Effect.scoped)
     )
@@ -1076,8 +1096,162 @@ describe("AgentSession", () => {
     // landed. When unrequested heartbeat rounds re-drove the park, this run
     // was claimed four times and whichever claim happened to consume the
     // approval decided whether the run failed or completed.
-    expect(outcome.claims).toBe(1)
+    expect(outcome.claims, JSON.stringify(outcome.resumeEvents)).toBe(1)
   })
+
+  it("does not let a consumed approval delegation resume a later unanswered park", async () => {
+    const captured: Array<Captured> = []
+    let delegationSequence: number | undefined
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const gate = yield* Deferred.make<void>()
+        yield* Effect.gen(function*() {
+          const control = yield* Control.Control
+          const runtime = yield* ControlRuntime.ControlRuntime
+          const executor = yield* ControlExecutor.ControlExecutor
+          const journal = yield* Journal.Journal
+          const card = yield* control.plan({ flowId: "agents/notes", input: {} })
+          yield* control.approve(card.approval)
+          const receipt = yield* control.run({
+            _tag: "Plan",
+            planId: card.planId,
+            digest: card.digest,
+            envelope: card.envelope,
+            idempotencyKey: "run:stale-approval"
+          })
+          if (receipt._tag !== "Accepted" || receipt.runId === undefined) return yield* Effect.die("expected admission")
+          const runId = receipt.runId
+          const questions = () =>
+            control.watch({ runId }).pipe(
+              Stream.filter((event) => event.kind === "control.approval.requested")
+            )
+          const first = yield* questions().pipe(Stream.take(1), Stream.runCollect)
+          yield* awaitStatus(runtime, runId, "waiting-approval")
+          yield* control.approve(
+            Schema.decodeUnknownSync(ControlSchema.ApprovalPayload)(
+              (first[0]!.payload as { payload: unknown }).payload
+            )
+          )
+          yield* questions().pipe(Stream.take(2), Stream.runDrain)
+          yield* awaitStatus(runtime, runId, "waiting-approval")
+          const claims = () =>
+            journal.entries({ runId: JournalEvent.RunId.make(runId), limit: 1_000 }).pipe(
+              Effect.map((page) => page.entries.filter((entry) => entry.eventType === "control.run.claimed").length)
+            )
+          expect(delegationSequence).toBeDefined()
+          expect(yield* claims()).toBe(1)
+          expect(yield* executor.resumeRun({ runId, delegationSequence })).toBe("unknown")
+          expect(yield* claims()).toBe(1)
+          expect((yield* runtime.getRun(runId)).status).toBe("waiting-approval")
+          expect(captured).toHaveLength(2)
+        }).pipe(Effect.provide(stack({
+          gate,
+          notes: [],
+          resolve: seat(scripted(askFrames, captured)),
+          wrapRuntime: (runtime) => ({
+            ...runtime,
+            requestResume: (runId, options) =>
+              runtime.requestResume(runId, options).pipe(
+                Effect.tap((sequence) =>
+                  Effect.sync(() => {
+                    delegationSequence = sequence
+                  })
+                )
+              )
+          })
+        })))
+      }).pipe(Effect.scoped)
+    )
+  })
+
+  it.each(["offers", "revalidation"] as const)("retains resume intent when reading %s fails", async (stage) => {
+    const captured: Array<Captured> = []
+    let fault = false
+    let delegationSequence: number | undefined
+    let underlying: ControlRuntime.Service | undefined
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const gate = yield* Deferred.make<void>()
+        yield* Effect.gen(function*() {
+          const control = yield* Control.Control
+          const runtime = yield* ControlRuntime.ControlRuntime
+          const executor = yield* ControlExecutor.ControlExecutor
+          const journal = yield* Journal.Journal
+          const card = yield* control.plan({ flowId: "agents/notes", input: {} })
+          yield* control.approve(card.approval)
+          const receipt = yield* control.run({
+            _tag: "Plan",
+            planId: card.planId,
+            digest: card.digest,
+            envelope: card.envelope,
+            idempotencyKey: "run:resume-read-fault"
+          })
+          if (receipt._tag !== "Accepted" || receipt.runId === undefined) return yield* Effect.die("expected admission")
+          const runId = receipt.runId
+          const questions = yield* control.watch({ runId }).pipe(
+            Stream.filter((event) => event.kind === "control.approval.requested"),
+            Stream.take(1),
+            Stream.runCollect
+          )
+          yield* awaitStatus(runtime, runId, "waiting-approval")
+          yield* control.approve(
+            Schema.decodeUnknownSync(ControlSchema.ApprovalPayload)(
+              (questions[0]!.payload as { payload: unknown }).payload
+            )
+          )
+          const pending = yield* underlying!.pendingResumes
+          expect(pending).toHaveLength(1)
+          expect(pending[0]?.sequence).toBe(delegationSequence)
+          expect((yield* underlying!.getRun(runId)).status).toBe("waiting-approval")
+          const claims = () =>
+            journal.entries({ runId: JournalEvent.RunId.make(runId), limit: 1_000 }).pipe(
+              Effect.map((page) => page.entries.filter((entry) => entry.eventType === "control.run.claimed").length)
+            )
+          expect(yield* claims()).toBe(0)
+          fault = false
+          expect(yield* executor.resumeRun({ runId: `${runId}-other`, delegationSequence })).toBe("unknown")
+          expect(yield* executor.resumeRun({ runId, delegationSequence: delegationSequence! + 1 })).toBe("unknown")
+          yield* executor.resumeRun({ runId, delegationSequence })
+          yield* awaitStatus(runtime, runId, "completed")
+          expect(yield* claims()).toBe(1)
+          expect(yield* runtime.pendingResumes).toEqual([])
+          expect(captured).toHaveLength(1)
+        }).pipe(Effect.provide(stack({
+          gate,
+          notes: [],
+          resolve: seat(scripted([
+            "const answer = await ctx.call(\"ask\", { question: \"Ship?\" }); ctx.done(String(answer.approved))"
+          ], captured)),
+          wrapRuntime: (runtime) => {
+            underlying = runtime
+            const failure = () =>
+              Effect.fail(
+                new ControlError.PersistenceError({
+                  operation: "resume-read",
+                  message: "resume read failed"
+                })
+              )
+            return {
+              ...runtime,
+              pendingResumes: Effect.suspend(() => fault && stage === "offers" ? failure() : runtime.pendingResumes),
+              getRun: (runId) =>
+                Effect.suspend(() => fault && stage === "revalidation" ? failure() : runtime.getRun(runId)),
+              requestResume: (runId, options) =>
+                runtime.requestResume(runId, options).pipe(
+                  Effect.tap((sequence) =>
+                    Effect.sync(() => {
+                      delegationSequence = sequence
+                      fault = true
+                    })
+                  )
+                )
+            }
+          }
+        })))
+      }).pipe(Effect.scoped)
+    )
+  })
+
   it("resumes a newly forked execution under the child's identity even when the copied parent is terminal", async () => {
     let modelCalls = 0
     const model = Model.make({
