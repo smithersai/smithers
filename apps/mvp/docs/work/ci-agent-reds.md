@@ -129,3 +129,14 @@ clock: the old armer sleeps until 6000 ms against a persisted 3000 ms deadline.
 The timer now samples time in its own fiber. Its committed completion is at
 3000 ms, the focused clock suites pass, and all twenty loaded example cases
 pass. The full SQLite/PostgreSQL engine-store matrix and the agent target now pass their original coverage gates, as do refreshed control, gateway and model-host targets. The original loaded example repeats did not reproduce the timeout.
+
+All seven assigned targets passed on the rebased candidate with their original
+gates: CLI 2155.2 s, agent 1085.4 s, control 130.9 s, gateway 38.9 s, model-host
+25.5 s, Harbor offline 37.4 s and Electric 44.8 s using fresh Compose services.
+The additional engine-store check and full SQLite/PostgreSQL matrix passed.
+The read-only Sol review identified one follow-liveness gap: a writer dying
+between engine and control terminal commits leaves no future control event.
+The reader now uses the existing same-host PID probe to recognize that orphan,
+drains without writes, and preserves the wait for live or unknown owners. A
+real two-store writer is killed after its engine commits; all terminal outcomes,
+parked ownership and past-terminal cursors are covered. Validation is pending.

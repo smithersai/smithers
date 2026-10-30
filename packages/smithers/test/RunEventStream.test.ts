@@ -6,7 +6,7 @@ import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
 import { Deferred, Effect, Fiber, Layer, Stream } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { hostname, tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, it } from "vitest"
 import * as RunEventStream from "../src/cli/RunEventStream.ts"
@@ -93,3 +93,55 @@ for (const status of ["completed", "failed", "cancelled"] as const) {
     }
   )
 }
+
+it.each(
+  [
+    ["absent", undefined],
+    ["legacy", "memory-owner"],
+    ["invalid", "{}"],
+    ["foreign", JSON.stringify({ hostId: "foreign-host", pid: 2_147_483_647, nonce: "foreign" })],
+    ["uninspectable", JSON.stringify({ hostId: hostname(), pid: 0, nonce: "unknown" })]
+  ] as const
+)("keeps following when a terminal engine's owner is %s", async (_, ownerId) => {
+  const executor = ControlExecutor.makeNoop({
+    readExecution: () => Effect.succeed({ _tag: "Observed" as const, status: "completed" as const })
+  })
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const runtime = yield* ControlRuntime.ControlRuntime
+      const real = yield* Control.Control
+      const { card } = yield* runtime.plan({ flowId: "system/test", input: {} })
+      const token = yield* runtime.lookupApproval(card.approval.target)
+      yield* runtime.resolveApproval(token, "approved", yield* runtime.stampPrincipal())
+      const launch = yield* runtime.launch(card.planId, card.digest, card.envelope)
+      if (launch._tag !== "Started") return yield* Effect.die("expected admission")
+      const secondRead = yield* Deferred.make<void>()
+      let reads = 0
+      // Fault injection at the Effect service boundary: an absent, legacy or
+      // foreign identity is not proof that a local writer has died.
+      const uncertain = Control.Control.of({
+        ...real,
+        list: (request) =>
+          real.list(request).pipe(
+            Effect.map((page) =>
+              page._tag === "runs"
+                ? { ...page, items: page.items.map((run) => ({ ...run, ownerId, parkedBy: undefined })) }
+                : page
+            ),
+            Effect.tap(() => {
+              reads++
+              return reads === 2 ? Deferred.succeed(secondRead, undefined) : Effect.void
+            })
+          )
+      })
+      const followed = yield* RunEventStream.events(launch.run.runId, true).pipe(
+        Stream.runCollect,
+        Effect.provideService(Control.Control, uncertain),
+        Effect.forkChild({ startImmediately: true })
+      )
+      yield* Deferred.await(secondRead).pipe(Effect.timeout("2 seconds"))
+      expect((yield* runtime.getRun(launch.run.runId)).status).toBe("accepted")
+      yield* Fiber.interrupt(followed)
+    }).pipe(Effect.provide(stack(executor)), Effect.scoped)
+  )
+})

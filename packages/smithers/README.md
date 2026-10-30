@@ -249,7 +249,10 @@ compiler worker threads. Per-file results remain visible before suite completion
 The native peer-recovery file leads cold runs: its eight long process scenarios
 must start before the source-size ordering reaches its small file.
 Run log following drains through the control journal's committed terminal status;
-an earlier engine cancellation observation does not close the stream.
+an earlier engine cancellation observation does not close the stream. If that
+engine is terminal and the recorded local writer is proven dead by the existing
+PID probe, following drains and exits without changing either store. Foreign,
+missing and unreadable ownership retain the committed-state wait.
 The coverage target follows `vitest.config.ts`. Process-killing cases stay in
 the serial `:faults` target, using `vitest.faults.config.ts`.
 
