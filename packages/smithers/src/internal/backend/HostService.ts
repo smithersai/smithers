@@ -647,9 +647,13 @@ export const setupURLs = (
     )
     req.on(
       "error",
-      () =>
+      (error) =>
         reject(
-          new Refused({ fault: "infra", code: "setup_socket_unavailable", message: "Host setup socket unavailable" })
+          error instanceof Refused ? error : new Refused({
+            fault: "infra",
+            code: "setup_socket_unavailable",
+            message: "Host setup socket unavailable"
+          })
         )
     )
     req.end()
