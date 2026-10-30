@@ -126,7 +126,7 @@ jobs:
         id: setup
         run: |
           cd 'packages/smithers/ui'
-          pnpm exec playwright install --with-deps 'chromium'
+          pnpm exec playwright install --with-deps 'chromium' 'webkit'
         shell: "bash"
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
@@ -1193,7 +1193,7 @@ jobs:
         id: setup
         run: |
           cd 'packages/smithers/ui'
-          pnpm exec playwright install --with-deps 'chromium'
+          pnpm exec playwright install --with-deps 'chromium' 'webkit'
         shell: "bash"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}

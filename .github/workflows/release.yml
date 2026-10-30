@@ -341,7 +341,7 @@ jobs:
         if: matrix.lane != 'candidate'
         run: |
           cd 'packages/smithers/ui'
-          pnpm exec playwright install --with-deps 'chromium'
+          pnpm exec playwright install --with-deps 'chromium' 'webkit'
         shell: bash
       # The gate roster below is the required CI `test` job, copied verbatim
       # from the generated .github/workflows/ci.yml, plus the fault matrix from
@@ -362,10 +362,6 @@ jobs:
       # failed, and the lane finishes by itself as an ordinary red lane. An
       # unsuffixed release has no budget: its gates block, and one that hangs
       # fails the job at the limit.
-      - name: Install Playwright browsers
-        id: setup
-        if: matrix.lane != 'candidate'
-        run: pnpm exec playwright install --with-deps chromium webkit
       - name: Start the gates lane time budget
         if: matrix.lane == 'gates'
         env:

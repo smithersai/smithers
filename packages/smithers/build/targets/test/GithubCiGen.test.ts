@@ -1977,11 +1977,13 @@ describe("system packages", () => {
   it("installs the declared Playwright browsers after workspace dependencies", () => {
     const job = {
       ...goldenAttrs.jobs[0]!,
-      toolchain: CiToolchain.Needs({ playwright: CiToolchain.Playwright({ cwd: "packages/smithers/ui", browsers: ["chromium", "webkit"] }) })
+      toolchain: CiToolchain.Needs({
+        playwright: CiToolchain.Playwright({ cwd: "packages/smithers/ui", browsers: ["chromium", "webkit"] })
+      })
     }
     const steps = toolchainSteps(goldenAttrs, job)
     const browsers = steps.find((step) => step.name === "Install Playwright browsers")!
-    expect(() => CiToolchain.Playwright({ cwd: "packages/smithers/ui", browsers: [] })).toThrow()
+    expect(() => CiToolchain.Playwright({ cwd: "packages/smithers/ui", browsers: [] as never })).toThrow()
     expect(browsers.run).toBe("cd 'packages/smithers/ui'\npnpm exec playwright install --with-deps 'chromium' 'webkit'")
     expect(steps.indexOf(browsers)).toBeGreaterThan(
       steps.findIndex((step) => step.run?.includes("install --frozen-lockfile"))
