@@ -1,5 +1,6 @@
 import { Smithers as S } from "@smthrs/targets"
 import ignore from "ignore"
+import * as NodeChildProcess from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
@@ -262,11 +263,8 @@ describe("owners resolution", () => {
 
   it("resolves the paths a diff touches", async () => {
     const root = await fixture()
-    try {
-      await PackageTree.runGit(root, ["init", "-q"])
-    } catch {
-      return
-    }
+    // runGit refuses a workspace without its own .git, so create the repository directly.
+    NodeChildProcess.execFileSync("git", ["init", "-q", root])
     await PackageTree.runGit(root, ["add", "-A"])
     await PackageTree.runGit(root, [
       "-c",
@@ -402,6 +400,10 @@ describe("ownership renderer projections", () => {
     ["**/migrations/*.sql", "migrations/**"],
     ["**/a/**", "**/b/**"],
     ["?.sql", "a*.sql"],
+    ["a*.sql", "?.sql"],
+    ["*/a.sql", "a.sql"],
+    ["nested/a/*.sql", "*/a.sql"],
+    ["**/**/a.sql", "*.sql"],
     ["*.sql", "*.sql"]
   ])("unions overlapping %s and %s without assigning owners outside their matches", (ancestor, child) => {
     const index = renderingIndex([
@@ -452,6 +454,9 @@ describe("ownership renderer projections", () => {
     for (const path of ["nested/query.sql", "nested/notes.md"]) {
       expect(generatedOwners(rendered, path)).toEqual(Owners.resolve(index, [path]).requiredApprovers)
     }
+    expect(Owners.text(Owners.resolve(index, ["nested/notes.md"]))).toContain(
+      `  ${"workspace-owner".padEnd(24)}  approve  workspace\n`
+    )
   })
 
   it.each(["renderCodeowners", "renderOwnersTree"] as const)(
@@ -490,4 +495,154 @@ describe("ownership renderer projections", () => {
       }
     }
   )
+})
+
+describe("bounded upstream claims", () => {
+  const claimsIndex = () => {
+    const core = S.Filegroup({ srcs: [] })
+    const sub = S.Filegroup({ srcs: [core] })
+    const other = S.Filegroup({ srcs: [] })
+    return renderingIndex([
+      { packagePath: "", value: S.Package({ targets: {} }) },
+      {
+        packagePath: "core",
+        value: S.Package({ owners: { owners: ["core-owner"], perFile: { "*.ts": ["core-owner"] } }, targets: { core } })
+      },
+      { packagePath: "core/sub", value: S.Package({ owners: { owners: ["sub-owner"] }, targets: { sub } }) },
+      { packagePath: "other", value: S.Package({ owners: { owners: ["other-owner"] }, targets: { other } }) },
+      {
+        packagePath: "bounded",
+        value: S.Package({
+          owners: { owners: ["bound-owner"], upstream: { mode: "approve", packages: ["//core/..."] } },
+          // //core is reached twice: directly and through //core/sub.
+          targets: { all: S.Filegroup({ srcs: [core, sub, other] }) }
+        })
+      },
+      {
+        packagePath: "a-review",
+        value: S.Package({
+          owners: { owners: ["shared", "watcher"], upstream: { mode: "review", packages: ["//..."] } },
+          targets: { uses: S.Filegroup({ srcs: [other] }) }
+        })
+      },
+      {
+        packagePath: "b-approve",
+        value: S.Package({
+          owners: { owners: ["shared"], upstream: "approve" },
+          targets: { uses: S.Filegroup({ srcs: [other] }) }
+        })
+      },
+      {
+        packagePath: "silent",
+        value: S.Package({
+          owners: { owners: [], upstream: "review" },
+          targets: { uses: S.Filegroup({ srcs: [other] }) }
+        })
+      }
+    ])
+  }
+
+  it("applies a subtree-bounded claim to the subtree only and lets approve outrank review", () => {
+    const index = claimsIndex()
+    const resolution = Owners.resolve(index, ["other/x.ts", "core/sub/x.ts", "core/x.ts", "core"])
+    const byPath = new Map(resolution.touchedPaths.map((entry) => [entry.path, entry]))
+    expect(byPath.get("other/x.ts")!.owners).toEqual([
+      { owner: "other-owner", role: "approve", reasons: [{ kind: "direct" }] },
+      {
+        owner: "shared",
+        role: "approve",
+        reasons: [{ kind: "upstream-of", label: "//a-review" }, { kind: "upstream-of", label: "//b-approve" }]
+      },
+      { owner: "watcher", role: "review", reasons: [{ kind: "upstream-of", label: "//a-review" }] }
+    ])
+    expect(byPath.get("other/x.ts")!.packages).toEqual(["//a-review", "//b-approve", "//other", "//silent"])
+    expect(byPath.get("core/x.ts")!.owners).toEqual([
+      { owner: "bound-owner", role: "approve", reasons: [{ kind: "upstream-of", label: "//bounded" }] },
+      { owner: "core-owner", role: "approve", reasons: [{ kind: "direct" }, { kind: "per-file", pattern: "*.ts" }] }
+    ])
+    expect(byPath.get("core/sub/x.ts")!.owners.map((entry) => entry.owner)).toEqual([
+      "bound-owner",
+      "core-owner",
+      "sub-owner"
+    ])
+    // The package directory itself belongs to the package but matches no per-file rule.
+    expect(byPath.get("core")!.package).toBe("//core")
+    expect(byPath.get("core")!.owners).toEqual([
+      { owner: "bound-owner", role: "approve", reasons: [{ kind: "upstream-of", label: "//bounded" }] },
+      { owner: "core-owner", role: "approve", reasons: [{ kind: "direct" }] }
+    ])
+    expect(resolution.requiredApprovers).toEqual(["bound-owner", "core-owner", "other-owner", "shared", "sub-owner"])
+    expect(resolution.suggestedReviewers).toEqual(["watcher"])
+  })
+
+  it("keeps a bounded claim out of CODEOWNERS and OWNERS for packages outside its bounds", () => {
+    const index = claimsIndex()
+    const codeowners = Owners.renderCodeowners(index, "acme")
+    expect(codeowners).toContain("/core/ @bound-owner @core-owner\n")
+    expect(codeowners).toContain("/other/ @other-owner @shared\n")
+    const tree = new Map(Owners.renderOwnersTree(index).map((file) => [file.path, file.content]))
+    // An undeclared root takes the workspace declaration, here empty.
+    expect(tree.get("OWNERS")).toBe("# Generated by smithers-build from PACKAGE.ts owners. Do not edit.\n")
+    expect(tree.get("core/OWNERS")).toContain("bound-owner  # upstream-of //bounded")
+    // //silent claims //other but neither it, the root, nor the workspace names an owner.
+    expect(tree.get("other/OWNERS")).toBe(
+      [
+        "# Generated by smithers-build from other/PACKAGE.ts owners. Do not edit.",
+        "other-owner",
+        "reviewers: shared, watcher  # upstream-of //a-review",
+        "shared  # upstream-of //b-approve",
+        ""
+      ].join("\n")
+    )
+  })
+
+  it("renders paths without owners and an empty resolution as text", () => {
+    const index = claimsIndex()
+    expect(Owners.text(Owners.resolve(index, []))).toBe("no paths")
+    expect(Owners.text(Owners.resolve(index, ["other/x.ts"]))).toBe(
+      [
+        "other/x.ts  //other  agents: human-approve",
+        `  ${"other-owner".padEnd(24)}  approve  direct`,
+        `  ${"shared".padEnd(24)}  approve  upstream-of //a-review, upstream-of //b-approve`,
+        `  ${"watcher".padEnd(24)}  review  upstream-of //a-review`,
+        "",
+        "required approvers  other-owner shared",
+        "suggested reviewers watcher"
+      ].join("\n")
+    )
+    expect(Owners.text(Owners.resolve(index, ["silent/x.ts"]))).toBe(
+      [
+        "silent/x.ts  //silent  agents: human-approve",
+        "  no owners",
+        "",
+        "required approvers  none",
+        "suggested reviewers none"
+      ].join("\n")
+    )
+  })
+})
+
+describe("rdeps", () => {
+  it("finds transitive dependents, walks shared dependencies once, and needs one target", () => {
+    const root = S.Filegroup({ srcs: [] })
+    const direct = S.Filegroup({ srcs: [root] })
+    const shared = S.Filegroup({ srcs: [] })
+    const index = renderingIndex([
+      { packagePath: "r", value: S.Package({ targets: { files: root } }) },
+      { packagePath: "b", value: S.Package({ targets: { files: direct } }) },
+      { packagePath: "y", value: S.Package({ targets: { files: S.Filegroup({ srcs: [direct] }) } }) },
+      {
+        packagePath: "x",
+        value: S.Package({
+          targets: {
+            files: S.Filegroup({ srcs: [S.Filegroup({ srcs: [shared] }), S.Filegroup({ srcs: [shared] })] })
+          }
+        })
+      },
+      { packagePath: "d", value: S.Package({ targets: { files: shared } }) }
+    ])
+    expect(Owners.rdeps(index, "//r:files")).toEqual(["//b:files", "//y:files"])
+    expect(Owners.rdeps(index, "//d:files")).toEqual(["//x:files"])
+    expect(() => Owners.rdeps(index, "//...")).toThrow("rdeps() requires one exact or default target")
+  })
 })
