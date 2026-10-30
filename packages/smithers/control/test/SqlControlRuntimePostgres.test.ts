@@ -3,13 +3,13 @@ import { Effect } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import { ControlRuntime, type RunQuery } from "../src/ControlRuntime.ts"
-import { durable, fileBundle } from "./DurableStack.ts"
+import { durable } from "./DurableStack.ts"
 
 const url = process.env.SMITHERS_TEST_PG_URL
 
 // The default unit suite needs no PostgreSQL service.
 describe.skipIf(!url)("run inventory on PostgreSQL (requires SMITHERS_TEST_PG_URL)", () => {
-  it("selects runs by run ids through one JSON parameter, ignoring duplicates and absent ids", async () => {
+  it.each([1, 2])("isolates composition %i while selecting run ids through one JSON parameter", async () => {
     await Effect.runPromise(
       Effect.gen(function*() {
         const runtime = yield* ControlRuntime
@@ -38,7 +38,7 @@ describe.skipIf(!url)("run inventory on PostgreSQL (requires SMITHERS_TEST_PG_UR
           "d"
         ])
       }).pipe(
-        Effect.provide(durable({ database: fileBundle(url!) })),
+        Effect.provide(durable()),
         Effect.scoped,
         Effect.orDie
       )
