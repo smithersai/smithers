@@ -167,3 +167,31 @@ export const Package = S.Package({ targets: {
     expect(await exists(NodePath.join(root, "ran.txt"))).toBe(false)
   })
 })
+
+describe("direct service invocation", () => {
+  it("fails a served target whose process exits before it is ready, naming the service", async () => {
+    const root = await fixture(`import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: {
+  svc: S.Shell.Serve({ shell: "echo booting; exit 4", readiness: { port: 9 }, sandbox: "none" })
+} })
+`)
+    const served = await run(root, "//:svc")
+    expect(served.ok).toBe(false)
+    expect(served.results).toMatchObject([{ label: "//:svc", status: "failed" }])
+    expect(served.results[0]?.error).toContain("service //:svc")
+  })
+})
+
+describe("Markdown.CodeBlocks execution", () => {
+  it("fails a page that holds no block in the declared languages", async () => {
+    const root = await fixture(`import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: {
+  markdown: S.Markdown.CodeBlocks({ file: S.file("//README.md"), lang: ["ts"] })
+} })
+`)
+    await write(root, "README.md", "# Title\n\nProse only.\n\n```sh\necho not typescript\n```\n")
+    const checked = await run(root, "//:markdown")
+    expect(checked.results).toMatchObject([{ label: "//:markdown", status: "failed" }])
+    expect(checked.results[0]?.error).toBe("no ts code blocks found in README.md")
+  })
+})
