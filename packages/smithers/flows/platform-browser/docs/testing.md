@@ -3,10 +3,9 @@ title: "Testing"
 description: "Test code that runs on @smthrs/platform-browser without a browser: satisfy the filesystem slice with node:fs/promises, stub the interpreter with an object literal, pin error tags with a throwing backend, and run the durable engine under Node."
 ---
 
-Both backends are structural slices, so a test satisfies them with ordinary
-objects. Nothing here needs a browser, `@zenfs/core`, or just-bash: the seam
-that keeps this package's dependency list short is the same seam that makes it
-testable.
+The filesystem and child-process backends are structural slices, so their
+adapter tests run under Node without a browser, `@zenfs/core`, or just-bash.
+The seam that keeps their dependency lists short also makes them testable.
 
 ## Satisfy the filesystem slice with node:fs/promises
 
@@ -208,6 +207,11 @@ target. It kills the browser after a step is recorded and checks the run
 resumes at the next one. The same target runs `BrowserCache.layer` over real
 Cache Storage and checks an entry survives the browser being killed.
 
+Bun has no Web Locks. Its host suite supplies Chromium's real LockManager
+through `test/fixtures/BrowserLocks.ts`; the flow engine, channels and SQLite
+still run in Bun. Install Chromium with the pinned workspace Playwright CLI
+before this suite. The browser target also needs WebKit for its asset test.
+
 `pnpm bench` times what one run costs the engine from admission to settlement
 over the in-memory OPFS, one run at a time and ten at once
 (`test/Settle.bench.ts`, `vitest.bench.config.ts`). It prints its numbers and
@@ -215,6 +219,11 @@ asserts nothing. The admission suite, `test/Admission.test.ts`, blocks resumed
 steps on a completion barrier and requires a foreground run to finish before
 releasing them. It verifies the resumption limit and exactly-once replay
 independently of the CI runner's wall-clock speed.
+
+The language-server timeout test waits for a real MessageChannel read receipt,
+then advances `TestClock` through the request deadline. That proves cancellation
+of an unresolved read even when a busy worker takes longer to admit a request.
+Its read-start and interruption barriers have distinct failure diagnostics.
 
 ## Test the immutable cache
 
@@ -239,7 +248,3 @@ those is testing this package rather than your program.
 - [Troubleshooting](./troubleshooting.md): the failures a stub can reproduce,
   with the cause and the fix for each.
 
-Bun has no Web Locks. Its host suite supplies Chromium's real LockManager
-through `test/fixtures/BrowserLocks.ts`; the flow engine, channels and SQLite
-still run in Bun. Install Chromium with the pinned workspace Playwright CLI
-before this suite. The browser target also needs WebKit for its asset test.

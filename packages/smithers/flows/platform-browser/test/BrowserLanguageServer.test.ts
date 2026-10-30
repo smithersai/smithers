@@ -121,7 +121,7 @@ const connect = (
 const at = (path: string, line: number, character: number) => ({ path, line, character })
 
 describe("BrowserLanguageServer", () => {
-  it.live("answers subsequent requests after an unresolved workspace read times out", () =>
+  it.effect("answers subsequent requests after an unresolved workspace read times out", () =>
     Effect.gen(function*() {
       const started = yield* Deferred.make<void>()
       const stopped = yield* Deferred.make<void>()
@@ -153,11 +153,24 @@ describe("BrowserLanguageServer", () => {
         timeout: "1 second"
       })
       const first = yield* Effect.forkChild(Effect.flip(server.hover(at("/a.ts", 0, 0))))
-      yield* Deferred.await(started).pipe(Effect.timeout("5 seconds"))
+      yield* Deferred.await(started).pipe(
+        Effect.timeout("5 seconds"),
+        TestClock.withLive,
+        Effect.mapError(() => new Error("The unresolved workspace read never started")),
+        Effect.orDie
+      )
+      // The request must reach its blocked read before its deadline expires.
+      // A live one-second deadline can cancel a busy worker before admission.
+      yield* TestClock.adjust("1 second")
       expect((yield* Fiber.join(first)).code).toBe("timeout")
       yield* server.sync("/b.ts", "export const b = 1")
       expect(yield* server.workspaceSymbols("b")).toEqual([])
-      yield* Deferred.await(stopped).pipe(Effect.timeout("5 seconds"))
+      yield* Deferred.await(stopped).pipe(
+        Effect.timeout("5 seconds"),
+        TestClock.withLive,
+        Effect.mapError(() => new Error("The timed-out workspace read was not interrupted")),
+        Effect.orDie
+      )
     }).pipe(Effect.scoped))
 
   it.effect("hover answers the signature and documentation as Markdown, with the symbol's range", () =>
