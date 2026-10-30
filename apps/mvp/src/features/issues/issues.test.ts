@@ -1241,8 +1241,12 @@ test("a failed local Create receipt cannot change a later page", async () => {
 }, WITHIN)
 
 test("an old comment admission cannot clear or fail a later page's draft", async () => {
-  const runtime = openFaultyApp()
+  const runtime = openFaultyApp({}, undefined, { actor: maya })
   runtimes.push(runtime)
+  const api = await runtime.runPromise(Effect.service(TestChatApi))
+  expect(await (await api.fetch(`${api.origin}/api/auth/session`)).json()).toMatchObject({
+    signedIn: true, personId: maya.subject.id,
+  })
   const tab = await tabOf(runtime)
   const faults = await runtime.runPromise(Effect.service(EngineFaults))
   await runtime.runPromise(faults.holdStarts)

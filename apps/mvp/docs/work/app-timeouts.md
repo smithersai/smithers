@@ -91,3 +91,10 @@ A separate short assertion failure was PostgreSQL microsecond expiry precision
 against the request clock's milliseconds. A 100-case diagnostic reproduced
 26 refusals after the fixture set the expiry to `now()`. The fixture now sets
 an actually elapsed expiry; it adds no sleep, retry or request polling.
+
+The next full run exposed an issue-comment fixture using the default actor,
+which has no GitHub session. Its real request was refused 401 immediately, then
+the assertion polled for a successful dispatch for 40 seconds. The faulty app
+now receives this file's signed-in issue-writing actor, like the happy-path
+fixtures. An authority assertion reproduces the old setup failure in one
+second before any success polling.
