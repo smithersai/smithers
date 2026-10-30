@@ -1152,11 +1152,12 @@ test("pack boundary requires the ESM, declarations and CommonJS of every VibeLan
     'mkdirSync("dist/cjs", { recursive: true })',
     `for (const file of ${JSON.stringify(outputs)}) writeFileSync("dist/" + file, "")`
   ].join("\n")
-  await writeFile(join(directory, "build.mjs"), build(["esm/index.js", "esm/index.d.ts", "cjs/index.js"]))
-  await assert.rejects(assertBuilt(directory, manifest), /Lookup\.js/)
-  await writeFile(join(directory, "build.mjs"), build(["esm/index.js", "esm/index.d.ts", "cjs/index.js", "esm/Lookup.js", "esm/Lookup.d.ts"]))
-  await assert.rejects(assertBuilt(directory, manifest), /cjs[\\/]Lookup\.js/)
-  await writeFile(join(directory, "build.mjs"), build(["esm/index.js", "esm/index.d.ts", "cjs/index.js", "esm/Lookup.js", "esm/Lookup.d.ts", "cjs/Lookup.js"]))
+  const outputs = ["esm/index.js", "esm/index.d.ts", "cjs/index.js", "esm/Lookup.js", "esm/Lookup.d.ts", "cjs/Lookup.js"]
+  for (const missing of ["esm/Lookup.js", "esm/Lookup.d.ts", "cjs/Lookup.js"]) {
+    await writeFile(join(directory, "build.mjs"), build(outputs.filter((file) => file !== missing)))
+    await assert.rejects(assertBuilt(directory, manifest), { code: "ENOENT", path: join(directory, "dist", missing) })
+  }
+  await writeFile(join(directory, "build.mjs"), build(outputs))
   await assertBuilt(directory, manifest)
 }))
 
