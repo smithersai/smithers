@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import * as NodeControl from "../src/NodeControl.ts"
 import { commitCancelBeforeCleanup } from "./fixtures/cancel-before-cleanup.ts"
 import { settleNativeCancellation } from "./fixtures/settle-native-cancellation.ts"
+import { childEnvironment } from "./support/node-child.ts"
 
 const bin = fileURLToPath(new URL("../src/bin.ts", import.meta.url))
 const preload = fileURLToPath(new URL("./fixtures/scripted-native-host.ts", import.meta.url))
@@ -45,7 +46,12 @@ const command = (root: string, args: ReadonlyArray<string>) => {
     ["--no-warnings", "--import", preload, bin, ...args, "--root", root, "--json"],
     {
       cwd: root,
-      env: { ...environment, SMITHERS_REMOTE: "", SMITHERS_BACKEND: "sqlite", XDG_CONFIG_HOME: join(root, "config") }
+      env: childEnvironment({
+        ...environment,
+        SMITHERS_REMOTE: "",
+        SMITHERS_BACKEND: "sqlite",
+        XDG_CONFIG_HOME: join(root, "config")
+      })
     }
   )
   const finished = new Promise<Result>((resolve, reject) => {
@@ -134,10 +140,14 @@ describe("native CLI cancellation", { timeout: 120_000 }, () => {
           )
         } else {
           const cancelled = await command(root, ["runs", "cancel", runId]).finished
-          // An accepted cancel exits 0 and the attached execution reports the
-          // cancelled settlement below; a cancel whose own receipt is Terminal
-          // (both released modes) reports the interrupt status, 130.
-          expect(cancelled.code, cancelled.stdout + cancelled.stderr).toBe(mode.startsWith("released") ? 130 : 0)
+          // The receipt controls the exit (RC4 #3071, retained by a17c0ca10679).
+          // A live external cancellation can settle before its caller returns,
+          // so it can legitimately answer Terminal rather than Accepted.
+          const receipt = JSON.parse(cancelled.stdout)
+          expect(["Accepted", "Terminal"]).toContain(receipt._tag)
+          expect(cancelled.code, cancelled.stdout + cancelled.stderr).toBe(receipt._tag === "Terminal" ? 130 : 0)
+          if (receipt._tag === "Terminal") expect(receipt.status).toBe("cancelled")
+          if (mode.startsWith("released")) expect(receipt).toMatchObject({ _tag: "Terminal", status: "cancelled" })
           expect(cancelled.stderr).toBe("")
           if (mode === "released") {
             // The exited host's control lease is still fresh, but its pid is
