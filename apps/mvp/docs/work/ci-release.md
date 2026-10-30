@@ -77,3 +77,7 @@ The published quickstart's fixed contract (`96628360`) stays outside automatic
 version retargeting. A real version bump in an isolated workspace advances the
 release and its following documentation, verifies coherence at the new version,
 and preserves the published guide byte for byte.
+
+Consumer profiles selecting the Node host now require its runtime and SQLite
+driver, relocated together in `8c69f33c`. This includes Bun's shared native
+lifecycle and migration apply; migration scan still excludes both dependencies.

@@ -165,7 +165,10 @@ export const adapterProfiles = (entries) => {
         "@effect/platform-node-shared": effect,
         effect
       },
-      absent: [...runners, ...telemetryAdapters, "@effect/sql-sqlite-node", "@smthrs/platform-browser"],
+      // 8c69f33c moved the native lifecycle into the selected Node host.
+      // Its SQLite driver and shared runtime are part of that host's install.
+      required: ["@effect/sql-sqlite-node", "@smthrs/flows"],
+      absent: [...runners, ...telemetryAdapters, "@smthrs/platform-browser"],
       imports: ["@smthrs/platform-bun", "@smthrs/platform-bun/BunFileSystem", "@smthrs/platform-bun/BunHost"]
     },
   ]
@@ -205,8 +208,8 @@ export const migrationProfiles = (entries) => {
         "@effect/platform-node-shared": effect,
         effect
       },
-      required: ["@smthrs/agent", "@smthrs/engine", "@smthrs/harness", "@smthrs/registry", "@smthrs/platform-node"],
-      absent: [...runners, ...telemetryAdapters, ...browserAdapters, "@smthrs/flows", "@effect/sql-sqlite-node"],
+      required: ["@smthrs/agent", "@smthrs/engine", "@smthrs/harness", "@smthrs/registry", "@smthrs/platform-node", "@smthrs/flows", "@effect/sql-sqlite-node"],
+      absent: [...runners, ...telemetryAdapters, ...browserAdapters],
       imports: ["@smthrs/migrate/flow/Command", "@smthrs/migrate/flow/MigrateFlow", "@smthrs/migrate/flow/Layers"]
     }
   ]

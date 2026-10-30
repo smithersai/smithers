@@ -117,6 +117,22 @@ test("the refused Effect is outside the supported range and the tested release i
   assert.equal(satisfies(EXPECTED_EFFECT_VERSION, SUPPORTED_EFFECT_RANGE), true)
 })
 
+test("profiles selecting the native Node host require its relocated runtime and SQLite driver", () => {
+  const entries = [{ version: "1.0.0" }]
+  const profiles = [...adapterProfiles(entries), ...migrationProfiles(entries)]
+  for (const name of ["bun", "migrate-apply"]) {
+    const profile = profiles.find((profile) => profile.name === name)
+    for (const dependency of ["@smthrs/flows", "@effect/sql-sqlite-node"]) {
+      assert.ok(profile.required.includes(dependency), name + ": " + dependency)
+      assert.ok(!profile.absent.includes(dependency), name + ": " + dependency)
+    }
+  }
+  // Scanning still installs no agent or native runtime.
+  const scan = profiles.find((profile) => profile.name === "migrate-scan")
+  assert.ok(scan.absent.includes("@smthrs/flows"))
+  assert.ok(scan.absent.includes("@effect/sql-sqlite-node"))
+})
+
 test("a profile moved onto another Effect moves the application's Effect packages and nothing else", () => {
   const [node] = adapterProfiles([{ version: "1.0.0" }]).filter((profile) => profile.name === "node")
   const moved = onEffect(node, "4.9.0", "latest")
