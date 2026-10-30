@@ -78,7 +78,8 @@ describe.skipIf(!present)("the idle probe in a real container", () => {
       expect(zombies()).toBeGreaterThan(0)
       expect(probe()).toBe(0)
     } finally {
-      expect(exec("0:0", ["timeout", "5", "sh", "-c", "echo done > /tmp/f"])).toBe(0)
+      // protected_fifos refuses another user's FIFO even for container root.
+      expect(exec("585780777:2000", ["timeout", "5", "sh", "-c", "echo done > /tmp/f"])).toBe(0)
     }
   }, 60_000)
 
