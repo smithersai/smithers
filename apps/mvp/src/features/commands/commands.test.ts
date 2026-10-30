@@ -174,8 +174,8 @@ describe("the catalog", () => {
       { name: "queue", flow: "app/navigate", minimum: "member", description: "Queue", fields: [], args: { to: "/app/queue" } },
       { name: "home", flow: "app/navigate", minimum: "anyone", description: "Home", fields: [] },
     ])
-    // The built-ins' (src/plugins/builtin.ts): the bug plugin's form and inbox, and the queue.
-    expect(PLUGIN_COMMANDS.map(({ name }) => name)).toEqual(["bug", "bugs", "queue"])
+    // The built-ins' (src/plugins/builtin.ts): the bug plugin's form and inbox, the factory's three, and the queue.
+    expect(PLUGIN_COMMANDS.map(({ name }) => name)).toEqual(["bug", "bugs", "factory", "lanes", "decide", "queue"])
   })
 
   test("names are command syntax, one per flow, and each slash door's flow carries a description", () => {
@@ -336,7 +336,7 @@ describe("the menu", () => {
   test("a menu for an older draft never shows, and choosing from it, or past its rows, does nothing", async () => {
     const tab = await open()
     await ready(tab)
-    tab.actions.choose(COMMANDS.length, "complete")
+    tab.actions.choose(tab.menu()!.items.length, "complete")
     expect(tab.draft()).toBe("/")
     // Edit on an unsent question, or asking, changes the draft without the menu.
     tab.chat.actions.setDraft("/the")
