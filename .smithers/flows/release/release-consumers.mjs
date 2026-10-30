@@ -105,8 +105,8 @@ export const adapterProfiles = (entries) => {
       name: "cli-default",
       dependencies: { "@smthrs/cli": firstParty, effect },
       // The executable selects its native host on Node or Bun; libraries keep
-      // private adapters; this command installs only the native SQL peer.
-      required: ["@effect/sql-sqlite-node"],
+      // private adapters; the executable ships both supported SQL backends.
+      required: ["@effect/sql-sqlite-node", "@effect/sql-pg"],
       absent: [
         ...runners,
         "@effect/platform-node",

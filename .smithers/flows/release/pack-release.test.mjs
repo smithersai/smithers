@@ -512,7 +512,7 @@ test("every published library takes Effect as a ranged peer and every executable
   assert.deepEqual(misplaced, [], "library packages must not install a private Effect runtime")
 })
 
-test("published adapters remain optional while executable SQLite and Bun host prerequisites are required", () => {
+test("published adapters remain optional while executable SQL and Bun host prerequisites are required", () => {
   const byName = new Map([...readWorkspaceManifests().values()].map((manifest) => [manifest.name, publicationManifest(manifest)]))
   const optional = {
     "@smthrs/database": {
@@ -576,9 +576,9 @@ test("published adapters remain optional while executable SQLite and Bun host pr
     assert.equal(byName.get(name).peerDependencies[peer], version)
     assert.notEqual(byName.get(name).peerDependenciesMeta?.[peer]?.optional, true)
   }
-  // Required adapters stay pinned to the tested release. The CLI also peers
-  // its SQLite driver so npm shares the executable's exact Effect cohort.
-  for (const [name, adapter] of [["@smthrs/cli", "@effect/sql-sqlite-node"], ["@smthrs/observability", "@effect/opentelemetry"]]) {
+  // The CLI's declarations and both supported backends require their SQL
+  // drivers. Exact peers keep them on the executable's tested Effect cohort.
+  for (const [name, adapter] of [["@smthrs/cli", "@effect/sql-sqlite-node"], ["@smthrs/cli", "@effect/sql-pg"], ["@smthrs/observability", "@effect/opentelemetry"]]) {
     assert.equal(byName.get(name).dependencies[adapter], EXPECTED_EFFECT_VERSION, name + " must install " + adapter)
     assert.equal(byName.get(name).peerDependencies?.[adapter], name === "@smthrs/cli" ? EXPECTED_EFFECT_VERSION : undefined)
     assert.equal(byName.get(name).peerDependenciesMeta?.[adapter], undefined)

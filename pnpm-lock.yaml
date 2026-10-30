@@ -1252,6 +1252,9 @@ importers:
       '@clack/prompts':
         specifier: 1.7.0
         version: 1.7.0
+      '@effect/sql-pg':
+        specifier: 4.0.5
+        version: 4.0.5(effect@4.0.5)
       '@effect/sql-sqlite-node':
         specifier: 4.0.5
         version: 4.0.5(effect@4.0.5)
@@ -1413,9 +1416,6 @@ importers:
         specifier: 4.0.5
         version: 4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/platform-node-shared':
-        specifier: 4.0.5
-        version: 4.0.5(effect@4.0.5)
-      '@effect/sql-pg':
         specifier: 4.0.5
         version: 4.0.5(effect@4.0.5)
       '@effect/vitest':

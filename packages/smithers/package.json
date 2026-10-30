@@ -874,7 +874,8 @@
     "redis": "6.2.1",
     "@types/ws": "8.18.2",
     "ws": "8.22.0",
-    "@effect/sql-sqlite-node": "4.0.5"
+    "@effect/sql-sqlite-node": "4.0.5",
+    "@effect/sql-pg": "4.0.5"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -902,7 +903,6 @@
     "@effect/platform-node-shared": "4.0.5",
     "effect": "4.0.5",
     "fast-check": "4.9.0",
-    "@effect/sql-pg": "4.0.5",
     "@effect/platform-bun": "4.0.5",
     "@smthrs/platform-bun": "1.0.0-rc.16"
   },
@@ -913,9 +913,6 @@
     "@smthrs/platform-bun": "1.0.0-rc.16"
   },
   "peerDependenciesMeta": {
-    "@effect/sql-pg": {
-      "optional": true
-    },
     "@smthrs/platform-bun": {
       "optional": true
     }

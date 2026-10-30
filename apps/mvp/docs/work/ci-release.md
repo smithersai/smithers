@@ -57,3 +57,11 @@ boundary hid the root's package import map. The shared library builder preserves
 external imports and rebases source targets to emitted JavaScript and
 declarations. Real CommonJS resolution regressions fail on the old builder;
 unsupported relative targets fail the build instead of shipping broken links.
+
+Strict installed CLI typechecking then exposed two declaration defects. The
+generic sandbox command payload now constructs its Struct explicitly; the same
+conditional-type problem reproduces under TypeScript and VibeLang. The CLI's
+published declarations require the PostgreSQL driver's types, so the executable
+installs both supported SQL drivers at its tested Effect version. Database
+library drivers remain optional. The installed CLI MCP consumer typechecks remain
+strict for ESM and CommonJS, without `skipLibCheck`.
