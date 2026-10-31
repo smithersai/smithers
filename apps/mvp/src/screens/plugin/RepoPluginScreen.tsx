@@ -5,7 +5,7 @@ import { PluginView } from "./PluginView"
 import "../repo/repo-screen.css"
 import "./plugin-screen.css"
 
-// /<owner>/<repo>/-/<plugin>/<path>: a plugin's `repository` view (decision 0126 §8) under the repository's header,
+// /<owner>/<repo>/-/<plugin>/<path>: a plugin's `repository` view (decision 0128 §8) under the repository's header,
 // whose `repo.tabs` slot holds the plugin's tab. The view gets the repository it shows on. No view at the path is the
 // router's not-found.
 export function RepoPluginScreen() {

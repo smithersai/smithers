@@ -5,7 +5,7 @@ import { runners } from "../../boundary"
 import { feedDocumentId, FEEDS_SHAPE_ROUTE } from "./contract"
 import { FeedDocument } from "./schema"
 
-// Repository feeds on this tab (decision 0126 §5, docs/features/feeds.md#the-browser): Electric's `feed_documents`,
+// Repository feeds on this tab (decision 0128 §5, docs/features/feeds.md#the-browser): Electric's `feed_documents`,
 // never kept on the device. A repository's index (the documents whose name has no `/`) syncs once something asks for
 // it, for as long as the store lives, one collection per repository. A document with a `/` in its name syncs only while
 // something listens to it, and stops when the last listener leaves. The shape decides what the viewer may see: public

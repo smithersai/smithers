@@ -1,4 +1,4 @@
-# 0126: Repository feeds: an outside collector pushes a repository's status, and plugins draw it
+# 0128: Repository feeds: an outside collector pushes a repository's status, and plugins draw it
 
 Status: accepted (smithers-factory, 2026-10-30). Will reviews it with the feature (HOST-3).
 

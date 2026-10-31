@@ -3,7 +3,7 @@ import { Effect, Exit, Scope } from "effect"
 import { type AskRow, type FeedDocument, type Feeds, feedsOf, repoOf } from "./feeds"
 import { decisionsOf, statusOf, type Status, VIEWS, type ViewId } from "./model"
 
-// The factory's tab (decision 0126 §9): one per app, built by the host on first use. It reads a repository's feed
+// The factory's tab (decision 0128 §9): one per app, built by the host on first use. It reads a repository's feed
 // documents through `Feeds` (./feeds.ts), the one seam to the core's queries, and gives the views each repository's
 // status and the document the person opened (a lane's transcript, a commit's diff, a review). It keeps no clock: a
 // view counts durations to the status's own time, and the status's age ticks on @smthrs/ui's shared `RelativeTime`.
@@ -163,7 +163,7 @@ export const make = (host: Host.PluginHost, feeds: Feeds) =>
       ))
 
     const opened = cell<Opened | null>(null)
-    // The opened document's scope: an on-demand document is followed only while it shows (decision 0126 §5).
+    // The opened document's scope: an on-demand document is followed only while it shows (decision 0128 §5).
     let reading: Scope.Closeable | undefined
     const close = () => {
       const closing = reading

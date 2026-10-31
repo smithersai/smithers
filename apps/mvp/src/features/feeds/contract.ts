@@ -1,6 +1,6 @@
 import { isRepository, REPOS_ROUTE } from "../repo/contract"
 
-// Repository feeds' contract between the browser, ChatApi and an outside collector (decision 0126,
+// Repository feeds' contract between the browser, ChatApi and an outside collector (decision 0128,
 // docs/features/feeds.md): the routes, the tables, the limits and the refusals. Nothing here imports a library, so every
 // side can.
 
@@ -44,7 +44,7 @@ const FEED_NAME = /^[a-z0-9_.-]+(\/[A-Za-z0-9_.:-]+)*$/
 /** Whether `name` is a document name. */
 export const isFeedName = (name: string): boolean => name.length <= MAX_FEED_NAME_LENGTH && FEED_NAME.test(name)
 
-/** Whether a document is in its repository's index, which syncs eagerly: its name has no `/` (decision 0126 §5). */
+/** Whether a document is in its repository's index, which syncs eagerly: its name has no `/` (decision 0128 §5). */
 export const isIndexName = (name: string): boolean => !name.includes("/")
 
 /** A repository as feeds key it: `owner/name`, lowercased. */

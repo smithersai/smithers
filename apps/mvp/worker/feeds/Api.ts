@@ -31,7 +31,7 @@ import { repositoryOf } from "../github/Config.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"
 
-// Repository feeds' routes (decision 0126, docs/features/feeds.md):
+// Repository feeds' routes (decision 0128, docs/features/feeds.md):
 //
 // - `POST /api/repos/<owner>/<name>/feeds`, bearer feed key: an outside collector sets or deletes a repository's
 //   documents. A body equal to the stored one is left alone, so Electric sends nothing.
@@ -315,7 +315,7 @@ export const make = <E, R, X>(
         }
         const actor = yield* (yield* Sessions).resolve
         if (Option.isNone(actor)) return refuse(401, "authentication")
-        // An answer is the person's own (decision 0126 §6): anyone acting for them is refused.
+        // An answer is the person's own (decision 0128 §6): anyone acting for them is refused.
         if (yield* refusesPersonOnly(actor.value, "feed/answer")) return refuse(403, "person_only")
         const resolved = yield* roles.resolve(actor.value, repositoryOf(repo)).pipe(Effect.result)
         if (resolved._tag === "Failure") {

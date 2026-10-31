@@ -640,7 +640,7 @@ describe("Merge", () => {
   }, WITHIN)
 })
 
-describe("Review (decision 0126)", () => {
+describe("Review (decision 0129)", () => {
   test("a Maintainer's press asks Smithers to review the head shown, once at a time; the page says it was requested", async () => {
     const tab = await open()
     await server(tab.api).pull(pullOf(2))

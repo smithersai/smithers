@@ -5,7 +5,7 @@ import { IssueNumber } from "../issues/flows"
 import { RepoName } from "../repo/flows"
 import { REVIEW_REFUSALS, SHA } from "./contract"
 
-// Review on request (decision 0126, docs/features/pulls.md#review-on-request):
+// Review on request (decision 0129, docs/features/pulls.md#review-on-request):
 //
 //   pull/review { repo, number, headSha? }    a Maintainer asks Smithers to review a pull request's head
 //     pull/review/request ─ POST /api/repos/<owner>/<name>/pulls/<number>/review

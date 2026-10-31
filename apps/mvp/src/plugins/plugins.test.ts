@@ -369,7 +369,7 @@ describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
   })
 })
 
-describe("a repository's plugin views (decision 0126 §8)", () => {
+describe("a repository's plugin views (decision 0128 §8)", () => {
   test("a repository view shows on its repository's page, opens there, and has no page without one", async () => {
     const api = await openApi()
     const a = await openDevice(api)

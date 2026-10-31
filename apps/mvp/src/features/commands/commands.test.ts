@@ -212,7 +212,7 @@ describe("the catalog", () => {
       payload: { repo: "octo/hello", number: 12, body: "Looks good to me" },
     })
     expect(slashSubmit("/issue octo/hello", COMMANDS)).toMatchObject({ kind: "missing", fields: ["title"] })
-    // `/review` asks for a review of a pull request's current head, for a Maintainer (decision 0126).
+    // `/review` asks for a review of a pull request's current head, for a Maintainer (decision 0129).
     const review = COMMANDS.find(({ flow }) => flow === "pull/review")!
     expect([review.minimum, review.fields.map(({ name }) => name)]).toEqual(["maintainer", ["repo", "number"]])
     expect(slashSubmit("/review octo/hello 12", COMMANDS)).toEqual({

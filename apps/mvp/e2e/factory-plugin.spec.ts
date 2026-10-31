@@ -4,7 +4,7 @@ import { DEV_FEED_KEY } from "../worker/feeds/dev"
 import { expect, test } from "./fixtures"
 import { baseURL, requires, target } from "./target"
 
-// The factory plugin, end to end (docs/features/factory.md, decision 0126): the test pushes a repository's status as
+// The factory plugin, end to end (docs/features/factory.md, decision 0128): the test pushes a repository's status as
 // its collector does, one index document per top-level key of the sample plus a lane's transcript and a commit's
 // diff, through the feeds route with the repository's feed key. The run's person then opens the repository's Factory
 // tab: Now draws the scoreboard and the lanes, Agents opens a lane's live transcript, Commits a commit's diff, and For

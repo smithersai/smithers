@@ -19,7 +19,7 @@ import { checkRunIdOf, ReviewRun } from "../flows/Checks.ts"
 import { type GitHubApp, type Repository, repositoryOf } from "./Config.ts"
 import * as RepoRoles from "./RepoRoles.ts"
 
-// Review on request (decision 0126, docs/features/pulls.md#review-on-request): `POST
+// Review on request (decision 0129, docs/features/pulls.md#review-on-request): `POST
 // /api/repos/<owner>/<name>/pulls/<number>/review` asks Smithers to review a pull request's current head, any pull
 // request of any repository the deployment acts on, for a Maintainer or Admin there (`RepoRoles`, decision 0079) in
 // person. It reads the head from the pull request's projection, claims the head's one `checks/review` run row and starts

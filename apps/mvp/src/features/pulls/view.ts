@@ -341,7 +341,7 @@ export const reviewAnswered = (
 
 /**
  * The review box: whether Review shows, for a Maintainer or Admin of the routed repository, wherever the deployment acts
- * on it (decision 0126), on an open pull request whose head the device has; and what it says.
+ * on it (decision 0129), on an open pull request whose head the device has; and what it says.
  */
 export const reviewBoxOf = (
   session: { readonly status: string } | undefined,

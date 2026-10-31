@@ -1,7 +1,7 @@
 import type { Host } from "@smthrs/plugin"
 import { Effect } from "effect"
 
-// The factory's one seam to the core's feed queries (decision 0126 §5, §7, docs/features/feeds.md): every read of a
+// The factory's one seam to the core's feed queries (decision 0128 §5, §7, docs/features/feeds.md): every read of a
 // repository's feed documents goes through `Feeds`, so how a query learns its repository and a document's name changes
 // here and nowhere else. The core asks them with `params`: `core/feeds` with `{ repo }` (the index), `core/feed` with
 // `{ repo, name }` (one document, synced only while it is followed), `core/feed-items` with `{ repo, name }` (the

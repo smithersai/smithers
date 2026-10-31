@@ -1,4 +1,4 @@
-// The factory's view-models (decision 0126 §9): the repository's feed documents, as the collector pushes them, into
+// The factory's view-models (decision 0128 §9): the repository's feed documents, as the collector pushes them, into
 // the rows each view draws. Pure functions over plain data: no Effect, no React, no clock but the `now` they are given.
 // A document the collector hasn't pushed yet, or a field it left out, reads as empty, never as a crash: the factory
 // keeps drawing what it has.

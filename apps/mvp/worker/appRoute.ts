@@ -9,7 +9,7 @@ import { BUILTIN_MANIFESTS } from "../src/plugins/manifests"
 // No loaders or I/O: the same TanStack path grammar as the view, at the document boundary.
 const root = createRootRoute()
 const routes = Object.values(ROUTE_PATHS).filter((path) => !path.includes("$plugin")).map((path) => createRoute({ getParentRoute: () => root, path }))
-// A plugin's view: `/app/<plugin>/<path>`, or a repository's page `/$owner/$repo/-/<plugin>/<path>` (decision 0126 §8).
+// A plugin's view: `/app/<plugin>/<path>`, or a repository's page `/$owner/$repo/-/<plugin>/<path>` (decision 0128 §8).
 const plugins = BUILTIN_MANIFESTS.flatMap((plugin) => (plugin.contributes.views as ReadonlyArray<{ readonly scope: string; readonly path: string }>).map((view) =>
   createRoute({
     getParentRoute: () => root,

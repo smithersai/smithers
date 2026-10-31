@@ -99,7 +99,7 @@ Screens (`src/screens/pulls/`), at GitHub's paths:
 
 ## Review on request
 
-Decision [0126](../decisions/0126-review-on-request.md). A Maintainer asks Smithers to review any open pull request of a repository the deployment acts on, whoever opened it: Review on the page, or `/review <owner/name> <number>`.
+Decision [0129](../decisions/0129-review-on-request.md). A Maintainer asks Smithers to review any open pull request of a repository the deployment acts on, whoever opened it: Review on the page, or `/review <owner/name> <number>`.
 
 ```
 pull/review (device, person-only) ─▶ pull/review/request ─▶ POST .../pulls/<n>/review { headSha? }

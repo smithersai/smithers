@@ -1,4 +1,4 @@
-# 0127: Review on request: a Maintainer asks Smithers to review any open pull request
+# 0129: Review on request: a Maintainer asks Smithers to review any open pull request
 
 Date: 2026-10-30. Status: accepted. Builds on [0012](0012-git-end-to-end.md) decision 12 (checks are Smithers runs),
 [0079](0079-roles-per-repository.md) (per-repository roles), [0099](0099-hosted-inference-flag.md) and

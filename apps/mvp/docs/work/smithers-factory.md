@@ -4,14 +4,14 @@ status: in-progress
 area: factory
 owner: smithers-factory (Claude Opus)
 updated: 2026-10-30 02:20 PDT
-links: [../decisions/0126-repository-feeds.md, vibelang-coding-factory.md, prelaunch-custom-domains.md]
+links: [../decisions/0128-repository-feeds.md, vibelang-coding-factory.md, prelaunch-custom-domains.md]
 ---
 
 **What:** Will, 2026-10-30: "get Smithers working with our Vibelang repo and deployed to factory.smithers.sh. It should
 have feature parity with the current factory but be built on top of Smithers". The old factory is
 `~/Desktop/vibelang-monitor/` (factory.vibelang.sh).
 
-**Design:** [decision 0126](../decisions/0126-repository-feeds.md): the collector pushes repository feeds; the factory
+**Design:** [decision 0128](../decisions/0128-repository-feeds.md): the collector pushes repository feeds; the factory
 is the `factory` plugin on repository-scoped plugin views; `APP_ALIASES` serves it at factory.smithers.sh.
 
 **Milestones:**

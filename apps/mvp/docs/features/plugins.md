@@ -90,7 +90,7 @@ Under a plugin's view, in host UI (`ActionStrip.tsx`, `src/plugins/strip.ts`): o
 
 ## Repository views
 
-A view with `scope: "repository"` belongs to one repository's page (decision 0126 §8):
+A view with `scope: "repository"` belongs to one repository's page (decision 0128 §8):
 
 ```
 /<owner>/<repo>/-/<plugin>/<path>      RepoPluginScreen: the repository's header, the view, the strip

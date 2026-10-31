@@ -1,6 +1,6 @@
 # Factory
 
-A repository's factory, the VibeLang factory (factory.vibelang.sh) rebuilt on Smithers: the lanes an orchestrator runs, the decisions that wait on a maintainer, failures, spec and implementation reviews, commits, media and the merge queue ([decision 0126](../decisions/0126-repository-feeds.md) §9). It is the first-party plugin `plugins/factory/` over the core's repository feeds ([feeds.md](feeds.md)): a collector pushes the status, the factory draws it. Libraries: `@smthrs/plugin` (manifest, `PluginHost`) and `@smthrs/ui` (`Table`, `Badge`, `Markdown`, `DiffHunks`, `parseUnifiedFile`, `LinkTabs`, `RelativeTime`), per [docs/libraries.md](../../../../docs/libraries.md).
+A repository's factory, the VibeLang factory (factory.vibelang.sh) rebuilt on Smithers: the lanes an orchestrator runs, the decisions that wait on a maintainer, failures, spec and implementation reviews, commits, media and the merge queue ([decision 0128](../decisions/0128-repository-feeds.md) §9). It is the first-party plugin `plugins/factory/` over the core's repository feeds ([feeds.md](feeds.md)): a collector pushes the status, the factory draws it. Libraries: `@smthrs/plugin` (manifest, `PluginHost`) and `@smthrs/ui` (`Table`, `Badge`, `Markdown`, `DiffHunks`, `parseUnifiedFile`, `LinkTabs`, `RelativeTime`), per [docs/libraries.md](../../../../docs/libraries.md).
 
 ## Where it shows
 
@@ -22,7 +22,7 @@ Every view is a `scope: "repository"` view ([plugins.md](plugins.md#repository-v
 | Implementation | Constructs pending per VIP, verdicts with their reports, lanes, what landed. `impl`, `impl_grades`, `vip`, `agents` |
 | Commits | Main's newest commits; one opens its diff in `@smthrs/ui`'s `DiffHunks`. `commits`, `diff/<id>` |
 | Agents | Every lane: machine, model and account, state, duration; one opens its live transcript. Daemons; accounts for a maintainer. `agents`, `daemons`, `transcript/<lane>`, `accounts` |
-| Media | What the factory recorded, newest first. Playing it needs blob storage (decision 0126, Consequences). `media` |
+| Media | What the factory recorded, newest first. Playing it needs blob storage (decision 0128, Consequences). `media` |
 | Docs | Opens the repository's docs pane. |
 | Queue | The merge queue, main after each merge, the resolver, migrations, build hosts, the Telegram thread for a maintainer. `queue`, `postmerge`, `resolver`, `migrations`, `hosts`, `telegram` |
 

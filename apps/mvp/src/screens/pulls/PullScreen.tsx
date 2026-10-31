@@ -19,7 +19,7 @@ import { useRepoAnswer } from "../../features/repo/components/RepoContext"
 // the Smithers runs on its head; Files the files its base and head differ by. Merge is the person's own press, bound to
 // the head and base this page shows; the page says Merging, then Merged, or why not. Beside Merge into the default
 // branch, the page says merging deploys it (ruling GH-9). Review, for a Maintainer of the repository, asks Smithers to
-// review the head this page shows (decision 0126); the review runs on the Checks tab and posts one comment review.
+// review the head this page shows (decision 0129); the review runs on the Checks tab and posts one comment review.
 export function PullScreen({ tab }: { readonly tab: PullTab }) {
   const { owner, repo, number } = useParams({ strict: false }) as { owner: string; repo: string; number: number }
   const { queries, actions } = usePulls()

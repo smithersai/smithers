@@ -1,6 +1,6 @@
 # Repository feeds
 
-An outside system pushes named JSON documents onto a repository, and plugins draw them. Will, 2026-10-30: "We should theoretically be able to recreate our factory ui using Smithers". The VibeLang factory's collector reads its build hosts and lanes every 30 seconds; it pushes the same snapshot to Smithers, and a Maintainer answers the decisions it shows. [Decision 0126](../decisions/0126-repository-feeds.md) says why it is a push, one generic primitive, and roles instead of a password.
+An outside system pushes named JSON documents onto a repository, and plugins draw them. Will, 2026-10-30: "We should theoretically be able to recreate our factory ui using Smithers". The VibeLang factory's collector reads its build hosts and lanes every 30 seconds; it pushes the same snapshot to Smithers, and a Maintainer answers the decisions it shows. [Decision 0128](../decisions/0128-repository-feeds.md) says why it is a push, one generic primitive, and roles instead of a password.
 
 ```
 collector ──POST .../feeds (feed key)──▶ ChatApi ──▶ feed_documents ──Electric──▶ tab: core/feeds, core/feed ──▶ plugin view

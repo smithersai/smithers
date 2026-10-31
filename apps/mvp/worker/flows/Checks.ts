@@ -139,7 +139,7 @@ export const ChecksRun = Flow.make("checks/Run", {
 })
 
 /**
- * `pull/Review`: the review a Maintainer asked for on a pull request's head (decision 0126), any pull request of a
+ * `pull/Review`: the review a Maintainer asked for on a pull request's head (decision 0129), any pull request of a
  * repository the deployment acts on, not only one a TODO opened. The head's `checks/Review` for the person who asked,
  * then `checks/Report`, so the head's `smithers/review` status says how it ended. No scripts and no machine: the review
  * reads the diff from GitHub. `POST /api/repos/<owner>/<name>/pulls/<n>/review` starts it (worker/github/Review.ts).

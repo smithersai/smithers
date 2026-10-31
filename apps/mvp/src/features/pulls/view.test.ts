@@ -313,7 +313,7 @@ test("an applied empty pull list is known without a repository sync marker", () 
   expect(listPageOf([], repo, undefined, { status: "allowed", installed: false }, true).unknown).toBe(true)
 })
 
-describe("review on request (decision 0126)", () => {
+describe("review on request (decision 0129)", () => {
   const idle = { reviewing: false, reviewNotice: null }
 
   test("Review shows for a Maintainer or Admin of the repository on an open pull request the device has read", () => {

@@ -4,7 +4,7 @@ import { Schema } from "effect"
 import { REFUSALS } from "./contract"
 import { Answered, FeedAnswerPayload } from "./schema"
 
-// A person's answer to an item a repository's feed shows, as a flow (decision 0126 §6, docs/features/feeds.md):
+// A person's answer to an item a repository's feed shows, as a flow (decision 0128 §6, docs/features/feeds.md):
 //
 //   feed/answer { owner, name, id, item, choice?, text? }   a Maintainer answers, in person
 //     feed/answer/request ─ POST /api/repos/<owner>/<name>/feeds/answers

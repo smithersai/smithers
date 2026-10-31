@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test"
 import { requires } from "./target"
 import { as, REPO, requiresContributor, requiresMaintainer } from "./vibelang"
 
-// Review on request (decision 0126, docs/features/pulls.md#review-on-request): a Maintainer of smithersai/vibelang opens
+// Review on request (decision 0129, docs/features/pulls.md#review-on-request): a Maintainer of smithersai/vibelang opens
 // one of its open pull requests, someone else's, and presses Review; the page says Review requested (or that the head's
 // review already runs or ran, which answers the same), and the head's review shows on the Checks tab. A Contributor
 // sees no Review. Against a deployment the test account must be a Maintainer there (decision 0079); until it is, the

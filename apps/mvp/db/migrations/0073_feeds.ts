@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { SqlClient } from "effect/sql"
 
-// Repository feeds (decision 0126, docs/features/feeds.md): what an outside collector pushes about a repository, and
+// Repository feeds (decision 0128, docs/features/feeds.md): what an outside collector pushes about a repository, and
 // what people answer back.
 //
 // - `feed_documents`: one named JSON document per repository (`repo` is `owner/name`, lowercased). `id` is

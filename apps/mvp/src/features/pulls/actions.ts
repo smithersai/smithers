@@ -136,7 +136,7 @@ export const merge = (headSha: string, baseSha: string, number: number) =>
   }).pipe(Effect.orDie)
 
 /**
- * Review on the routed pull request (decision 0126): `pull/review`, the person's own press, door `button`, bound to the
+ * Review on the routed pull request (decision 0129): `pull/review`, the person's own press, door `button`, bound to the
  * head this page shows. It returns at once; the page says Review requested, or why not (`reviewNoticeOf`), until the
  * route shows another pull request.
  */

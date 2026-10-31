@@ -6,7 +6,7 @@ import {
   VISIBILITIES,
 } from "./contract"
 
-// Repository feeds' records (decision 0126, docs/features/feeds.md): a document as Electric delivers it, the
+// Repository feeds' records (decision 0128, docs/features/feeds.md): a document as Electric delivers it, the
 // collector's write, a person's answer and the collector's read of the answers.
 
 /**

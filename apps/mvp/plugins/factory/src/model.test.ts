@@ -1,6 +1,6 @@
 // The factory's view-models (plugins/factory/src/model.ts) over the status the collector pushes: a sample of the real
 // status (status.sample.json, scrubbed of hosts' paths and accounts), one index document per top-level key, as the
-// collector pushes it (decision 0126 §5). Each view's rows are checked against what the old factory showed.
+// collector pushes it (decision 0128 §5). Each view's rows are checked against what the old factory showed.
 import { describe, expect, test } from "vitest"
 import {
   commitDiffOf,

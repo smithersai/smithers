@@ -299,7 +299,7 @@ const needs = {
       run.target === "local"
         ? !set(run, "FEED_KEYS") || set(run, "E2E_FEED_KEY")
         : set(run, "E2E_FEED_KEY") && /^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_FEED_REPOSITORY ?? ""),
-    reason: "it pushes a repository's feed documents as its collector does (decision 0126): on a deployment, set E2E_FEED_REPOSITORY to a repository the app can open and E2E_FEED_KEY to the key whose SHA-256 the server's FEED_KEYS lists for it; a local dev server started with FEED_KEYS needs E2E_FEED_KEY too",
+    reason: "it pushes a repository's feed documents as its collector does (decision 0128): on a deployment, set E2E_FEED_REPOSITORY to a repository the app can open and E2E_FEED_KEY to the key whose SHA-256 the server's FEED_KEYS lists for it; a local dev server started with FEED_KEYS needs E2E_FEED_KEY too",
   },
   githubScratch: {
     met: scratchSet,

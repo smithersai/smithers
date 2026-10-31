@@ -340,7 +340,7 @@ export const registry = {
     userOnlyReason: "A Maintainer pauses the triage flow; the agent never does.",
     slash: { command: "triage.pause", description: "Pause automatic triage", minimum: "maintainer" },
   },
-  // Review on request (decision 0126, docs/features/pulls.md#review-on-request): a Maintainer of the pull request's
+  // Review on request (decision 0129, docs/features/pulls.md#review-on-request): a Maintainer of the pull request's
   // repository asks Smithers to review its head; `/review owner/repo <n>` does too. The page pins the head it showed.
   "pull/review": {
     flow: PullReview,
@@ -418,7 +418,7 @@ export const registry = {
     changes: "sends a bug report, with the page and the tab's latest run and trace ids, to the deployment's Admins",
   },
   "app/bug/list": { flow: ListBugs, minimum: "admin" },
-  // Repository feeds (decision 0126, docs/features/feeds.md): a Maintainer answers an item a repository's feed shows,
+  // Repository feeds (decision 0128, docs/features/feeds.md): a Maintainer answers an item a repository's feed shows,
   // such as a decision its factory asks for. ChatApi checks the role on that repository.
   "feed/answer": {
     flow: FeedAnswer,

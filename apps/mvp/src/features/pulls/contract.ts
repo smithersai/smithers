@@ -173,7 +173,7 @@ export const todoExecutionId = (attemptId: string): string => `todo:${attemptId}
 export const mergeExecutionId = (writeId: string): string => `pr-merge:${writeId}`
 
 /**
- * A review a Maintainer asked for (`pull/Review`, decision 0126): one per repository, head and claim of the head's
+ * A review a Maintainer asked for (`pull/Review`, decision 0129): one per repository, head and claim of the head's
  * review run, so asking again while it runs or after it passed starts nothing, and asking after it failed starts a new
  * one. `claimedAtMs` is when the route claimed the head's `checks/review` run row.
  */

@@ -283,7 +283,7 @@ const pluginIndexRoute = pluginRoute(ROUTE_PATHS.pluginIndex)
 const pluginPathRoute = pluginRoute(ROUTE_PATHS.pluginPath)
 
 /**
- * `/$owner/$repo/-/$plugin` and `/$owner/$repo/-/$plugin/<path>`: a plugin's `repository` view (decision 0126 §8), on
+ * `/$owner/$repo/-/$plugin` and `/$owner/$repo/-/$plugin/<path>`: a plugin's `repository` view (decision 0128 §8), on
  * the repository's page: the repository opens for its header, then the host shows the view. The `-` segment keeps every
  * plugin path apart from the core's repository routes; a path no plugin declares is not found.
  */
