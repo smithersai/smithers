@@ -127,6 +127,7 @@ export const make = (host: Host.PluginHost, feeds: Feeds) =>
     const feed = perRepository<Feed>({ _tag: "Loading" }, (repository, set) =>
       feeds.index(repository).pipe(
         Effect.flatMap((live) => Effect.andThen(Scope.provide(follow(live, set, feedOf), scope), Effect.void)),
+        // expected: a refused read shows on the factory's frame as Refused, with its reason
         Effect.catch((refused) => Effect.sync(() => set({ _tag: "Refused", reason: refused.reason }))),
       ))
 
@@ -183,6 +184,7 @@ export const make = (host: Host.PluginHost, feeds: Feeds) =>
       run(
         feeds.document(repository, name).pipe(
           Effect.flatMap((live) => Scope.provide(follow(live, set, (rows) => rows[0]?.body), own)),
+          // expected: a document the collector never pushed, or one this person can't read, shows "Not available"
           Effect.catch(() => Effect.sync(() => set(null))),
         ),
       )

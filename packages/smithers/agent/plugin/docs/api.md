@@ -615,17 +615,17 @@ like a secret (`secret`, `password`, `token`, `credential`) refuses
 
 ## Host
 
-| Export                                           | Summary                                                                       |
-| ------------------------------------------------ | ----------------------------------------------------------------------------- |
-| `PluginHost`                                     | The interface and its `Context.Service` key `"@smthrs/plugin/PluginHost"`.    |
-| `PluginRefused`, `RefusedReason`                 | `Schema.TaggedError` `"plugin/PluginRefused"`: `{ plugin, reason, detail }`.  |
-| `Live<R>`                                        | `{ current, subscribe }`, a framework-free live source.                       |
+| Export                                           | Summary                                                                                |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `PluginHost`                                     | The interface and its `Context.Service` key `"@smthrs/plugin/PluginHost"`.             |
+| `PluginRefused`, `RefusedReason`                 | `Schema.TaggedError` `"plugin/PluginRefused"`: `{ plugin, reason, detail }`.           |
+| `Live<R>`                                        | `{ current, subscribe }`, a framework-free live source.                                |
 | `ItemRef`, `EventRef`, `Dispatched`, `Delivered` | `{ query, key, params? }`, `{ view, name }`, `{ runId, settled }`, `{ name, fields }`. |
-| `QueryParams` | `Readonly<Record<string, string>>`: what a query that takes parameters is asked for. |
-| `Settled`                                        | Schema: `{ _tag: "Done" }` or `{ _tag: "Failed", code }`, how a run ended.    |
-| `PluginTab<Q, A>`                                | `{ queries, actions }`, what a tab layer gives its components.                |
-| `Repository`, `Rendered<T>`                      | `{ owner, name }`; a component's props: `{ tab, repository? }`.               |
-| `pathOf(view, repository?)`                      | A view's path; none for a `repository` view without one.                      |
+| `QueryParams`                                    | `Readonly<Record<string, string>>`: what a query that takes parameters is asked for.   |
+| `Settled`                                        | Schema: `{ _tag: "Done" }` or `{ _tag: "Failed", code }`, how a run ended.             |
+| `PluginTab<Q, A>`                                | `{ queries, actions }`, what a tab layer gives its components.                         |
+| `Repository`, `Rendered<T>`                      | `{ owner, name }`; a component's props: `{ tab, repository? }`.                        |
+| `pathOf(view, repository?)`                      | A view's path; none for a `repository` view without one.                               |
 
 ```ts
 export interface PluginHost {
