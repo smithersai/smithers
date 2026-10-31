@@ -4,8 +4,9 @@ import { connect, createServer, type Server, type Socket } from "node:net"
 import { tmpdir, userInfo } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { afterAll, beforeAll, describe, expect, it, onTestFailed } from "vitest"
 import * as Environments from "../src/ExecutionEnvironment.ts"
+import { childEnvironment } from "./support/node-child.ts"
 
 // A real SSH server and transport; only the synthetic native application is a fixture.
 describe.skipIf(process.platform === "win32")("execution environments over real SSH", () => {
@@ -129,7 +130,7 @@ describe.skipIf(process.platform === "win32")("execution environments over real 
   })
   it("keeps native login in remote home across independent SSH connections and shares the TUI location", async () => {
     const cli = fileURLToPath(new URL("../bin/smithers.mjs", import.meta.url))
-    const env = { ...process.env, ...source }
+    const env = childEnvironment({ ...process.env, ...source })
     execFileSync(process.execPath, [cli, "environment", "exec", "remote", "--", "native-tool", "login"], {
       env,
       stdio: "pipe"
@@ -212,12 +213,22 @@ describe.skipIf(process.platform === "win32")("execution environments over real 
     }
   }
   it("bounds a silent SSH handshake and emits only a fixed actionable transport diagnostic", async () => {
+    const started = Date.now()
+    let connectedMs: number | undefined
     const peer = await silentPeer()
     const saved = { ...profile, name: peer.destination, destination: peer.destination }
     await Environments.add(saved, source)
     const cli = fileURLToPath(new URL("../bin/smithers.mjs", import.meta.url))
-    const child = spawn(process.execPath, [cli, "environment", "exec", saved.name, "--", "true"], {
-      env: { ...process.env, ...source },
+    const receipt = join(root, "handshake-bootstrap.json")
+    const observe = "data:text/javascript," + encodeURIComponent(`
+import { getCompileCacheDir } from "node:module";
+import { writeFileSync } from "node:fs";
+writeFileSync(${
+      JSON.stringify(receipt)
+    }, JSON.stringify({ pid: process.pid, cached: getCompileCacheDir() !== undefined }));
+`)
+    const child = spawn(process.execPath, ["--import", observe, cli, "environment", "exec", saved.name, "--", "true"], {
+      env: childEnvironment({ ...process.env, ...source }),
       stdio: ["ignore", "pipe", "pipe"]
     })
     children.push(child)
@@ -229,9 +240,29 @@ describe.skipIf(process.platform === "win32")("execution environments over real 
       stdout += data
     })
     const exited = new Promise<number | null>((resolve) => child.once("close", resolve))
+    onTestFailed(({ task }) => {
+      const diagnostic = "SSH handshake progress " + JSON.stringify({
+        elapsedMs: Date.now() - started,
+        connectedMs,
+        exitCode: child.exitCode,
+        signalCode: child.signalCode,
+        stdoutBytes: Buffer.byteLength(stdout),
+        stderrBytes: Buffer.byteLength(stderr)
+      })
+      for (const error of task.result?.errors ?? []) error.message += `\n${diagnostic}`
+      console.error(diagnostic)
+    })
     const watchdog = setTimeout(() => child.kill("SIGTERM"), 23_000)
     try {
       await peer.connected
+      connectedMs = Date.now() - started
+      const bootstrap = JSON.parse(await readFile(receipt, "utf8"))
+      expect(bootstrap.pid).toBe(child.pid)
+      if (process.env.SMITHERS_CLI_NODE_COMPILE_CACHE) {
+        expect(bootstrap.cached).toBe(
+          !process.env.SMITHERS_CLI_DISABLE_COMPILE_CACHE && process.env.NODE_V8_COVERAGE === undefined
+        )
+      }
       expect(await exited).toBe(255)
       expect(stderr.trim()).toBe("SSH session failed (exit 255). Check connectivity, known_hosts and SSH access.")
       expect(stdout).toBe("")
