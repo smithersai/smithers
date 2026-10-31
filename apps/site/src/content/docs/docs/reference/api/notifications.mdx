@@ -130,6 +130,7 @@ interface DrainInput {
   readonly boundary: string
   readonly wouldIdle: boolean
   readonly cutoffSeq?: number | undefined
+  readonly ids?: ReadonlyArray<string> | undefined
 }
 ```
 
@@ -140,6 +141,7 @@ interface DrainInput {
 | `boundary`        | The name of this safe point. With `runId` and `targetLineageId` it is the drain identity.                                                                                                                                                   |
 | `wouldIdle`       | Whether the run would have nothing to do if this boundary delivered nothing. When true and no steer was promoted, one queued notification is promoted.                                                                                      |
 | `cutoffSeq`       | The journal sequence that opened this turn. Steers admitted after it are held for the next boundary. Omitting it delivers everything pending for the lineage. A value that is not a non-negative integer fails with `notification_invalid`. |
+| `ids`             | The pending steers this boundary delivers, by id, for a consumer that confirms each one it took, such as an agent outside the run that answered after each. Ids not pending for the lineage are ignored; nothing else is promoted, queued notifications included. It takes the place of `cutoffSeq`. |
 
 ### DrainReceipt
 
@@ -299,6 +301,7 @@ The pure bounded queue: the same rules with no I/O and no journal. Import from
 | `applyAdmission` | `(state: State, notification: Notification, seq: number, decision: AdmissionDecision) => State`     | Applies a decision already committed in a journal record. Replay never re-decides.                                                                                                             |
 | `pending`        | `(state: State, admission: "steer" \| "queue", targetLineageId?: string) => ReadonlyArray<Pending>` | Still-pending notifications of one admission class, in durable journal order, for one lineage or for every lineage.                                                                            |
 | `promoteSteers`  | `(state: State, cutoffSeq: number, targetLineageId?: string) => Promotion`                          | Promotes every steer admitted at or before the cutoff. Notifications admitted after it remain pending.                                                                                         |
+| `promoteIds`     | `(state: State, ids: ReadonlyArray<string>, targetLineageId?: string) => Promotion`                 | Promotes the pending steers named in `ids`, in admission order, whatever their sequences. Ids not pending for the lineage are ignored.                                                          |
 | `promoteQueued`  | `(state: State, targetLineageId?: string) => Promotion`                                             | Promotes exactly the oldest pending queued notification, or nothing.                                                                                                                           |
 | `applyPromoted`  | `(state: State, ids: ReadonlyArray<string>) => State`                                               | Removes the ids a durable promotion record names, while replaying history.                                                                                                                     |
 

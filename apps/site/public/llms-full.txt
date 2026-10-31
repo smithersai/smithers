@@ -1867,6 +1867,13 @@ Adds an exit finalizer to the flow scope, preserving the services available when
 
 Runs an effect and registers how to undo its successful result if the enclosing flow later exits unsuccessfully. An effect that fails registers no rollback. A flow that succeeds discards it. The data-last form takes the rollback alone.
 
+### `Flow.OnCancel`
+
+- **Signature:** `class OnCancel extends Context.Service<OnCancel, { readonly flow: Any; readonly executionId: (payload: any) => string }>`
+- **Since:** `1.0.0`
+
+A flow's durable cancellation, attached with `flow.annotate(Flow.OnCancel, { flow, executionId })`. When a store-backed engine that registers the flow cancels one of its executions, it admits `flow` as a root run named `executionId(payload)` with the cancelled execution's payload, before it commits the cancellation, and records that run in the cancelled state, where a Durable Object host's routing starts it. Unlike a `withRollback` compensation, it runs for an execution parked with no process holding its scope. Its payload schema must decode the cancelled flow's encoded payload, and its steps must be idempotent: a compensation that also ran in process asks the same.
+
 ### `Flow.suspend`
 
 - **Signature:** `suspend(instance: FlowInstance["Service"]): Effect.Effect<never>`
@@ -8463,8 +8470,10 @@ reads, `maxHours` (1 to `MAX_HOURS`, 12) and `restarts` (0 to `MAX_RESTARTS`, 5)
   what a runner claims. `reclaimed` marks a job handed back to a runner that
   restarted while holding it.
 - `ClaimRequest` `{ profiles, free, running, waitSeconds }`, `ClaimResponse`,
-  `HeartbeatRequest`, `HeartbeatResponse` `{ held, cancel, leaseSeconds }`,
-  `SettleRequest`, `SettleResponse`, and `ROUTES` (`/api/runners/claim`,
+  `HeartbeatRequest` `{ key, claim, delivered? }` (the steers the agent read),
+  `HeartbeatResponse` `{ held, cancel, leaseSeconds, steers? }` (the steers it
+  hasn't, oldest first, each a `Steer` `{ id, text }`),
+  `SettleRequest` `{ key, claim, outcome, delivered? }`, `SettleResponse`, and `ROUTES` (`/api/runners/claim`,
   `/heartbeat`, `/settle`, `/events`).
 - `Outcome`: `Done { changes, summary, usage }`, `Failed { reason }` with a code
   of `FAILURES` (`agent`, `refused`, `workspace`, `too_large`, `timeout`,
@@ -8485,7 +8494,8 @@ What a runner sends its host of an external agent's session as it happens.
 - `Event` `{ seq, at, kind, update }`: `seq` counts from 0 within one job
   generation, `at` is when the runner received it in epoch milliseconds, `kind`
   is the update's `sessionUpdate` or one of `KINDS` (`_smithers/turn`,
-  `_smithers/end`, `_smithers/truncated`).
+  `_smithers/end`, `_smithers/truncated`, `_smithers/steer`,
+  `_smithers/cancel`).
 - `EventsRequest` `{ key, claim, events }` and `EventsResponse` `{ next }`, the
   lowest `seq` the host lacks, posted to `AgentRunner.ROUTES.events`.
 - `prepare(kind, update, scrub)`: none for a `DROPPED_KINDS` kind
@@ -8502,8 +8512,10 @@ What a runner sends its host of an external agent's session as it happens.
 `ExternalAgent.make(tag, { payload, task })` declares a durable step an external
 agent does on a runner: an `ExternalJob` from `@smthrs/flow` over
 `AgentRunner.AgentJobs`. `call(payload)` runs it as a child execution, `flows`
-lists its three declarations for a host that resolves executions by tag, and
-`toLayer()` implements it. It probes from 2 seconds doubling to 30, has a
+lists its declarations for a host that resolves executions by tag, and
+`toLayer()` implements it; `flows` lists its stop too, the run a cancellation of a
+parked generation starts (`cancel:<key>`, `ExternalJob` in `@smthrs/flow`). It
+probes from 2 seconds doubling to 30, has a
 deadline of `TIMEOUT` (`MAX_HOURS` plus ten minutes), and replaces a retryable
 generation up to `MAX_RESTARTS` times; the store ends a job sooner by its own
 agent's settings.
@@ -8522,9 +8534,12 @@ each `session/update` in order; `options.permission` (`allow` unless set)
 answers permission requests. The client offers the agent no file system and no
 terminal, and answers any other request from the agent method-not-found.
 
-The client has `initialize` (`{ protocolVersion, loadSession }`),
+The client has `initialize` (`{ protocolVersion, loadSession, steering }`),
 `newSession(cwd)`, `loadSession(sessionId, cwd)`, `prompt(sessionId, text)`
-(the turn's `StopReason`) and `cancel(sessionId)`. Failures are `AcpError`
+(the turn's `StopReason`), `cancel(sessionId)`, and `steer(sessionId, text)`,
+which hands a message to the turn in flight over `_session/steering` and answers
+whether the agent took it in. Ask it only of an agent whose `initialize` said
+`steering`; the agent's next update is the first sign it read the message. Failures are `AcpError`
 with a `code` of `closed`, `protocol` or `remote` (and the JSON-RPC `rpcCode`),
 never the agent's message. `messageText(update)` and `usage(update)` read an
 `agent_message_chunk`'s text and a `usage_update`'s context and USD cost.
@@ -20794,7 +20809,9 @@ to the notification queue's own boundary-aware drain, mapping failures into
 person's message (a steer or a follow-up, not a system event) carries
 `Notifications.precedence` between the two, which tells the model it is a newer
 instruction that wins where it conflicts with earlier ones, the task's
-included.
+included. `Notifications.text(notification)` is that rendering as plain text,
+for an agent outside Smithers that reads the same message, such as one on a
+runner.
 
 `layerForExecution` is the same source for a flow host, which builds an agent
 action's layer once and runs it for every execution it drives. It names its
@@ -29679,6 +29696,7 @@ interface DrainInput {
   readonly boundary: string
   readonly wouldIdle: boolean
   readonly cutoffSeq?: number | undefined
+  readonly ids?: ReadonlyArray<string> | undefined
 }
 ```
 
@@ -29689,6 +29707,7 @@ interface DrainInput {
 | `boundary`        | The name of this safe point. With `runId` and `targetLineageId` it is the drain identity.                                                                                                                                                   |
 | `wouldIdle`       | Whether the run would have nothing to do if this boundary delivered nothing. When true and no steer was promoted, one queued notification is promoted.                                                                                      |
 | `cutoffSeq`       | The journal sequence that opened this turn. Steers admitted after it are held for the next boundary. Omitting it delivers everything pending for the lineage. A value that is not a non-negative integer fails with `notification_invalid`. |
+| `ids`             | The pending steers this boundary delivers, by id, for a consumer that confirms each one it took, such as an agent outside the run that answered after each. Ids not pending for the lineage are ignored; nothing else is promoted, queued notifications included. It takes the place of `cutoffSeq`. |
 
 ### DrainReceipt
 
@@ -29848,6 +29867,7 @@ The pure bounded queue: the same rules with no I/O and no journal. Import from
 | `applyAdmission` | `(state: State, notification: Notification, seq: number, decision: AdmissionDecision) => State`     | Applies a decision already committed in a journal record. Replay never re-decides.                                                                                                             |
 | `pending`        | `(state: State, admission: "steer" \| "queue", targetLineageId?: string) => ReadonlyArray<Pending>` | Still-pending notifications of one admission class, in durable journal order, for one lineage or for every lineage.                                                                            |
 | `promoteSteers`  | `(state: State, cutoffSeq: number, targetLineageId?: string) => Promotion`                          | Promotes every steer admitted at or before the cutoff. Notifications admitted after it remain pending.                                                                                         |
+| `promoteIds`     | `(state: State, ids: ReadonlyArray<string>, targetLineageId?: string) => Promotion`                 | Promotes the pending steers named in `ids`, in admission order, whatever their sequences. Ids not pending for the lineage are ignored.                                                          |
 | `promoteQueued`  | `(state: State, targetLineageId?: string) => Promotion`                                             | Promotes exactly the oldest pending queued notification, or nothing.                                                                                                                           |
 | `applyPromoted`  | `(state: State, ids: ReadonlyArray<string>) => State`                                               | Removes the ids a durable promotion record names, while replaying history.                                                                                                                     |
 
