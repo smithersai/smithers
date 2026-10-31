@@ -1,6 +1,6 @@
 import { expect, step, test } from "./fixtures"
 import type { Page } from "@playwright/test"
-import { requires } from "./target"
+import { describeNeed, requires } from "./target"
 import { as, REPO, requiresContributor, requiresMaintainer } from "./vibelang"
 
 // Review on request (decision 0129, docs/features/pulls.md#review-on-request): a Maintainer of smithersai/vibelang opens
@@ -14,6 +14,10 @@ const openPull = async (page: Page) => {
   await page.goto(`${REPO}/pulls`)
   const list = page.locator('[data-slot="issues-view"]')
   await expect(list).not.toHaveAttribute("aria-busy", "true", { timeout: 60_000 })
+  // The synced list's count says whether there is one to open (VibeLang lands through its own merge queue).
+  const counts = page.getByText(/^\d+ open · \d+ closed$/)
+  await expect(counts).toBeVisible({ timeout: 60_000 })
+  test.skip((await counts.innerText()).startsWith("0 open"), describeNeed("vibelangOpenPull"))
   const open = list.locator("a[href*='/pull/']").first()
   await expect(open, "smithersai/vibelang has an open pull request").toBeVisible({ timeout: 60_000 })
   const href = (await open.getAttribute("href"))!

@@ -188,6 +188,15 @@ const needs = {
     reason: "it needs the test account to be a Maintainer or Admin on smithersai/vibelang (maintain or admin there on GitHub); the deployment says it is less",
     blocked: true,
   },
+  vibelangFeed: {
+    met: (run) => run.target === "deployment",
+    reason: "it reads smithersai/vibelang's live factory feed, which only VibeLang's collector pushes, and only to a deployment (docs/features/factory.md); local development has no such feed",
+  },
+  vibelangOpenPull: {
+    met: (run) => run.target === "local",
+    reason: "it needs an open pull request on smithersai/vibelang, and its synced list has none: VibeLang lands changes through its own merge queue, not GitHub pull requests",
+    blocked: true,
+  },
   vibelangContributor: {
     met: (run) => run.target === "local",
     reason: "it needs the test account below Maintainer on smithersai/vibelang, to see what a contributor sees there; the deployment says it is a Maintainer or Admin",

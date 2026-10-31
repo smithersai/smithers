@@ -28,7 +28,9 @@ test("another repository: an issue reaches GitHub, then syncs into that reposito
     await page.getByLabel("Title").fill(title)
     await page.getByLabel("Description").fill("Opened by the second-repository e2e test.")
     await page.getByRole("button", { name: "Create issue" }).click()
-    await expect(page).toHaveURL(new RegExp(`/${repo}/issues$`))
+    // The form keeps its queued write in the URL until GitHub numbers the issue, then opens it (NewIssueScreen).
+    await expect(page).toHaveURL(new RegExp(`/${repo}/issues/(new\\?write=[\\w-]+|\\d+)$`))
+    await page.goto(`/${repo}/issues`)
   })
 
   const row = page.getByRole("listitem").filter({ hasText: title })
