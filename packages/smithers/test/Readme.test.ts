@@ -101,7 +101,7 @@ describe("the CLI documentation contracts", () => {
     expect(readme).not.toContain("FLOWS_*")
   })
 
-  it("describes the manifest's shared Effect peer, private adapter, SQLite dependency and optional PostgreSQL peer", () => {
+  it("describes the manifest's shared Effect peer, private adapter and required SQL dependencies", () => {
     const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"))
     const introduction = readme.split("**Documentation:**")[0]!.replace(/\s+/g, " ")
 
@@ -116,15 +116,16 @@ describe("the CLI documentation contracts", () => {
       "effect"
     ])
     expect(manifest.dependencies["@effect/sql-sqlite-node"]).toBe(manifest.peerDependencies.effect)
-    expect(manifest.peerDependenciesMeta["@effect/sql-pg"].optional).toBe(true)
+    expect(manifest.dependencies["@effect/sql-pg"]).toBe(manifest.peerDependencies.effect)
+    expect(manifest.peerDependenciesMeta["@effect/sql-pg"]?.optional).not.toBe(true)
     expect(manifest.peerDependenciesMeta["@smthrs/platform-bun"].optional).toBe(true)
     expect(introduction).toContain(
       `\`effect\` as an exact \`${manifest.peerDependencies.effect}\` peer dependency`
     )
     expect(introduction).toContain(
-      `\`@effect/sql-sqlite-node\` is a direct dependency, at \`${
+      `\`@effect/sql-sqlite-node\` and \`@effect/sql-pg\` are direct dependencies at \`${
         manifest.dependencies["@effect/sql-sqlite-node"]
-      }\`; \`@effect/sql-pg\` is an optional peer for PostgreSQL`
+      }\`, required by its supported backends and public declarations`
     )
   })
 })
