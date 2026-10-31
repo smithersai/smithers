@@ -111,8 +111,10 @@ it.each(["normal", "ssh", "socket"])(
                   "set -o errtrace",
                   `trap 'printf "Guide command failed at line %s: %s\\n" "$LINENO" "$BASH_COMMAND" >&2; cat "$GUIDE_STDOUT" >&2' ERR`,
                   "smthrs() { XDG_CONFIG_HOME=\"$HOME/config\" XDG_DATA_HOME=\"$HOME/data\" OPENAI_API_KEY=fixture-never-sent SMITHERS_BACKEND=sqlite NODE_OPTIONS=\"--import=$GUIDE_PRELOAD\" \"$GUIDE_NODE\" --no-warnings --import \"$GUIDE_PRELOAD\" \"$GUIDE_BIN\" \"$@\" | tee \"$GUIDE_STDOUT\"; }",
-                  command,
-                  name === "script-the-cli" ? "printf \"%s\" \"$approval\"" : ""
+                  // The negative control exercises Bash startup. A no-op
+                  // keeps a startup warning from launching another real run.
+                  clean ? command : ":",
+                  clean && name === "script-the-cli" ? "printf \"%s\" \"$approval\"" : ""
                 ].join("\n")
               ], {
                 cwd: root,
@@ -156,6 +158,7 @@ it.each(["normal", "ssh", "socket"])(
         if (startup !== "normal") {
           const old = await execute(false).catch((error: unknown) => ({ stderr: String(error) }))
           expect(old.stderr).toContain("unbound variable")
+          expect(old.stderr).toMatch(/bashrc:.*unbound variable/)
         }
         if (startup === "normal" && name === "script-the-cli") {
           const failure = await execute(true, join(root, "missing-helper")).catch((error: unknown) =>
@@ -189,6 +192,7 @@ it.each(["normal", "ssh", "socket"])(
         const launched = JSON.parse(detached.stdout)
         expect(launched).toMatchObject({ detached: true, runId: expect.any(String), logFile: expect.any(String) })
         const page = await cli("runs", "list")
+        expect(page.items).toHaveLength(1)
         expect(page.items.some((item: { runId: string }) => item.runId === launched.runId)).toBe(true)
       } finally {
         socket?.destroy()
