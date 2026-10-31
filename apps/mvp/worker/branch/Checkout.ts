@@ -22,16 +22,19 @@ const script = (namespace: CodeStorage.RefNamespace) => [
   "set -e",
   // Files the clone writes are the `workspace` group's to change too: every person's shell shares the checkout.
   "umask 002",
-  `if git -C ${WORKSPACE} rev-parse --verify -q HEAD >/dev/null 2>&1; then exit 0; fi`,
   // A CI job's machine names a commit, not a branch: it fetches that one commit by its id and checks it out detached,
-  // since a pull request's head from a fork is no branch of the repository.
+  // since a pull request's head from a fork is no branch of the repository. Its image may hold another commit's
+  // checkout as a base (infra/gate/Dockerfile): only the commit itself counts as checked out, and the fetch brings
+  // what the commit adds to it.
   `if printf '%s' "$1" | grep -Eq '^[0-9a-f]{40}$'; then`,
+  `  [ "$(git -C ${WORKSPACE} rev-parse --verify -q HEAD 2>/dev/null)" = "$1" ] && exit 0`,
   // A machine stopped mid-checkout left the repository and its origin: set it again, never fail on it.
   `  git init --quiet ${WORKSPACE} || exit 72`,
   `  git -C ${WORKSPACE} remote set-url origin "$2" 2>/dev/null || git -C ${WORKSPACE} remote add origin "$2" || exit 72`,
   `  git -C ${WORKSPACE} fetch --quiet --depth 1 origin "$1" || exit 72`,
-  `  exec git -C ${WORKSPACE} -c advice.detachedHead=false checkout --quiet --detach FETCH_HEAD`,
+  `  exec git -C ${WORKSPACE} -c advice.detachedHead=false checkout --quiet --force --detach FETCH_HEAD`,
   "fi",
+  `if git -C ${WORKSPACE} rev-parse --verify -q HEAD >/dev/null 2>&1; then exit 0; fi`,
   `refs=$(git ls-remote --heads "$2" 2>/dev/null) || exit 70`,
   `printf '%s\\n' "$refs" | awk -v ref="refs/heads/$1" '$2 == ref { found = 1 } END { exit !found }' || exit 71`,
   `git clone --quiet ${namespace === "ephemeral" ? "" : `--depth ${DEPTH} `}--branch "$1" --single-branch "$2" ${WORKSPACE} || exit 72`,

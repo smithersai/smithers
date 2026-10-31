@@ -133,6 +133,23 @@ describe("checkoutArgv for a CI job", () => {
     expect(git(workspace, "rev-list", "--count", "HEAD").trim()).toBe("1")
   })
 
+  test("moves an image's checkout of another commit to the job's commit, keeping untracked node_modules; once there, keeps it", () => {
+    const workspace = join(root, "job-image")
+    mkdirSync(workspace)
+    const main = git(remote.slice("file://".length), "rev-parse", "main").trim()
+    const feature = git(remote.slice("file://".length), "rev-parse", "feature/x").trim()
+    checkout(workspace, main)
+    mkdirSync(join(workspace, "node_modules"))
+    writeFileSync(join(workspace, "node_modules", "kept.txt"), "kept\n")
+    checkout(workspace, feature)
+    expect(git(workspace, "rev-parse", "HEAD").trim()).toBe(feature)
+    expect(readFileSync(join(workspace, "feature.txt"), "utf8")).toBe("x\n")
+    expect(readFileSync(join(workspace, "node_modules", "kept.txt"), "utf8")).toBe("kept\n")
+    // At the commit already: nothing is fetched, even from a forge that no longer answers.
+    checkout(workspace, feature, "file:///nowhere/at/all")
+    expect(git(workspace, "rev-parse", "HEAD").trim()).toBe(feature)
+  })
+
   test("finishes a checkout a stopped machine left half done: a repository with its origin and no HEAD", () => {
     const workspace = join(root, "job-resumed")
     mkdirSync(workspace)
