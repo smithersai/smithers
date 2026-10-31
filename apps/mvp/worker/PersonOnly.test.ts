@@ -164,6 +164,7 @@ const protectedActs: { readonly [A in keyof typeof PROTECTED_ACTS]: Case } = {
     })
     return { status, counted: h.count(personOnlyRefusals, { act, by: actor.act!.kind }) }
   },
+  "stack/configure": stackChange({ op: "configure", lanes: 2, maxOpen: 50, base: "independent" }),
 }
 
 describe("person-only acts refuse anyone acting for the person", () => {

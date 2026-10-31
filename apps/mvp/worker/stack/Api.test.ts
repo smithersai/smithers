@@ -608,3 +608,44 @@ describe("another repository's stack (decision 0079)", () => {
     expect(await sql(`SELECT * FROM todos`)).toEqual([])
   })
 })
+
+describe("independent lanes (decision 0135)", () => {
+  const admin: Actor = { subject: { kind: "person", id: "person-admin" }, role: "admin", login: "ada" }
+  const configure = (fields: Record<string, unknown> = {}) => ({ opId: uuid(), op: "configure", lanes: 10, maxOpen: 200, base: "independent", ...fields })
+
+  test("an Admin configures the stack 202 with no number; the writer keeps the settings and starts what a raise frees", async () => {
+    const h = await stackHarness(runtime, { actor: admin, runs: runs() })
+    const body = configure()
+    expect(await json(await post(h, body))).toEqual([202, { txid: expect.any(Number), opId: body.opId, outcome: "configured" }])
+    expect(await json(await post(h, body))).toEqual([200, { txid: null, opId: body.opId, outcome: "configured" }])
+    expect(await sql(`SELECT lanes, max_open AS "maxOpen", base FROM stacks`)).toEqual([{ lanes: 10, maxOpen: 200, base: "independent" }])
+    expect(h.line("stack.request").map((line) => line.annotations.outcome)).toEqual(["configured", "repeated"])
+    expect(h.line("stack.request")[0]!.annotations).not.toHaveProperty("number")
+  })
+
+  test("a Maintainer, a Member and an Admin's agent may not configure; settings out of range are 400", async () => {
+    const maintainer: Actor = { ...member, role: "maintainer" }
+    for (const actor of [member, maintainer, { ...admin, act: { kind: "agent" as const, id: "answer-1" } }]) {
+      const h = await stackHarness(runtime, { actor })
+      expect(await json(await post(h, configure())), actor.role ?? "").toEqual([403, { code: "forbidden" }])
+    }
+    const h = await stackHarness(runtime, { actor: admin })
+    for (const fields of [{ lanes: 0 }, { lanes: 65 }, { maxOpen: 501 }, { base: "sideways" }, { lanes: 1.5 }]) {
+      expect(await json(await post(h, configure(fields))), JSON.stringify(fields)).toEqual([400, { code: "invalid" }])
+    }
+    expect(await sql(`SELECT lanes FROM stacks`)).toEqual([])
+  })
+
+  test("a commit names the TODO it stacks on, or none; one that isn't open is 409 after_not_open", async () => {
+    const h = await stackHarness(runtime, { actor: member })
+    await post(h, commitBody())
+    await post(h, commitBody({ after: null }))
+    await post(h, commitBody({ after: 1 }))
+    await post(h, commitBody())
+    const ids = await sql<{ id: string }>(`SELECT id FROM todos ORDER BY number`)
+    expect((await sql<{ after: string | null }>(`SELECT after::text AS after FROM todos ORDER BY number`)).map((row) => row.after))
+      .toEqual([null, null, ids[0]!.id, ids[2]!.id])
+    expect(await json(await post(h, commitBody({ after: 99 })))).toEqual([409, { code: "after_not_open" }])
+    expect(await json(await post(h, commitBody({ after: 0 })))).toEqual([400, { code: "invalid" }])
+  })
+})

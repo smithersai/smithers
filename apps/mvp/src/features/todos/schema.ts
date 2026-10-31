@@ -7,6 +7,7 @@ import {
   TODO_NOTES,
   TODO_STATES,
   TODO_STEPS,
+  TODO_WAITS,
 } from "./contract"
 
 // The TODOs feature's rows (decision 0016 §1, docs/features/todos.md), as the Effect Schemas their collections check
@@ -37,6 +38,10 @@ export const Todo = Schema.Struct({
   issueNumber: Schema.NullOr(Schema.Number),
   /** Its latest attempt's `todo` run, `todo:<attempt id>`, once one started (migration `0036_todo_run`). */
   runId: Schema.NullOr(Schema.String),
+  /** The open TODO it waits for and stacks on, or none (migration `0077_independent_lanes`, decision 0135). */
+  after: Schema.NullOr(Schema.String),
+  /** What it waits for while Working, before its agent runs: a runner (migration `0077_independent_lanes`). */
+  waiting: Schema.NullOr(Schema.Literals(TODO_WAITS)),
 })
 export type Todo = typeof Todo.Type
 

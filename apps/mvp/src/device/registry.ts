@@ -209,7 +209,8 @@ const synced = [
   Migrations.synced({ id: "sandbox-limits", version: 1, schema: SandboxLimitsRow }),
   // Version 2: each report's error records (docs/features/bugs.md#what-a-report-carries).
   Migrations.synced({ id: "bug-reports", version: 2, schema: BugReport }),
-  Migrations.synced({ id: "todos", version: 4, schema: Todo, family: true }),
+  // Version 5: `after` and `waiting`, independent lanes (decision 0135).
+  Migrations.synced({ id: "todos", version: 5, schema: Todo, family: true }),
   Migrations.synced({ id: "todo-requests", version: 1, schema: TodoRequest, family: true }),
   Migrations.synced({ id: "text-updates", version: 1, schema: TextUpdate, family: true }),
   Migrations.synced({ id: "pull-rows", version: 1, schema: PullRow, family: true }),

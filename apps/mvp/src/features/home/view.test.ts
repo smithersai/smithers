@@ -379,6 +379,8 @@ const todo = (fields: Partial<Todo>): Todo => ({
   settledAt: null,
   issueNumber: null,
   runId: null,
+  after: null,
+  waiting: null,
   ...fields,
 })
 

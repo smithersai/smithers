@@ -1329,7 +1329,7 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
   test("a restored stacked wait whose base has no PR parks on its own PR and settles on its close", async () => {
     const ctx = await setup()
     const first = (await commit("One", "First"))!
-    await sql(runtime, "UPDATE stacks SET lanes = 2")
+    await sql(runtime, "UPDATE stacks SET lanes = 2, base = 'independent'")
     const base = "smithers/unpublished"
     const sha = ctx.github.push(base, { "ONE.md": "one" })
     await runtime.runPromise(Stack.report(first, { kind: "branch", branch: base, baseRef: "main", baseSha: sha }, { runs: true }))
@@ -1423,7 +1423,8 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
         payload: { attemptId: start1.attemptId, todoId: start1.todoId, baseClosed: true },
       }).pipe(Effect.provide(context)))
       expect(cancellations).toBe(cancellationCount)
-      expect(await todo(3)).toMatchObject({ state: "failed", failure: "base_closed", branch: null })
+      // T3 stacks on T2, not on the closed T1: it waits behind the failed T2 (decision 0135).
+      expect(await todo(3)).toMatchObject({ state: "queued", failure: null, branch: null })
       expect(ctx.github.pulls.size).toBe(1)
       expect(ctx.starts.filter((entry) => entry.flow === "checks/Run")).toHaveLength(0)
       const retry = await runtime.runPromise(Stack.apply({ opId: crypto.randomUUID(), repoId: REPOSITORY.id, actor: maya,
@@ -1513,8 +1514,10 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     await sql(runtime, "UPDATE stacks SET lanes = 2")
     expect(await commit("Three", "Queued behind the closed base")).toBeUndefined()
     expect(await todo(3)).toMatchObject({ state: "queued", branch: null })
-    await runtime.runPromise(Stack.descendants({ ...start1, baseClosed: true }))
-    expect(await todo(3)).toMatchObject({ state: "failed", failure: "base_closed", branch: null })
+    // T3 stacks on T2, which runs on the closed T1: T2 is the descendant to stop, and T3 waits behind it (decision 0135).
+    const found = await runtime.runPromise(Stack.descendants({ ...start1, baseClosed: true }))
+    expect(found.map((descendant) => descendant.number)).toEqual([2])
+    expect(await todo(3)).toMatchObject({ state: "queued", failure: null, branch: null })
   })
 
   test("a close delivery still addresses the original attempt after Retry replaces its PR projection", async () => {
@@ -1924,7 +1927,7 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     expect(await todo(1)).toMatchObject({ state: "working", failure: null })
   })
 
-  test("invalidation starts a queued Retry when cancelling a descendant frees its lane", async () => {
+  test("invalidation holds a TODO stacked on a cancelled descendant; dropping that descendant starts it", async () => {
     const cancelled: Array<string> = []
     const ctx = await setup({ cancel: (id) => Effect.sync(() => { cancelled.push(id) }) })
     const first = (await commit("One", "First"))!
@@ -1933,11 +1936,17 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     const second = (await runtime.runPromise(Stack.report(first, { kind: "published", headSha: BASE(), prNumber: 1, draft: false }, { runs: true }))).starts[0]!
     await commit("Three", "Third")
     await runtime.runPromise(Stack.apply({ opId: crypto.randomUUID(), repoId: REPOSITORY.id, actor: maya, via: "person", op: { kind: "drop", number: 1 } }, { runs: true }))
-    await runtime.runPromise(Stack.apply({ opId: crypto.randomUUID(), repoId: REPOSITORY.id, actor: maya, via: "person", op: { kind: "retry", number: 3 } }, { runs: true }))
+    // T3 stacks on T2, which still runs: it is Queued, not failed, so there is nothing to retry (decision 0135).
+    const retry = await runtime.runPromise(Stack.apply({ opId: crypto.randomUUID(), repoId: REPOSITORY.id, actor: maya, via: "person", op: { kind: "retry", number: 3 } }, { runs: true }))
+    expect(retry).toMatchObject({ receipt: { outcome: "not_retryable" } })
     await runtime.runPromise(TodoBaseClosed.stop(ctx.services)({ descendants: [{ ...second, prNumber: null }] }))
     expect(cancelled).toEqual([todoExecutionId(second.attemptId)])
-    expect(ctx.starts).toMatchObject([{ flow: Todo.Todo._tag, payload: { number: 3 } }])
+    expect(ctx.starts).toEqual([])
     expect(await todo(2)).toMatchObject({ state: "failed", failure: "base_closed" })
+    expect(await todo(3)).toMatchObject({ state: "queued" })
+    // Dropping the failed T2 hands T3 its base, the default branch, and T3 starts in the lane T2 freed.
+    const dropped = await runtime.runPromise(Stack.apply({ opId: crypto.randomUUID(), repoId: REPOSITORY.id, actor: maya, via: "person", op: { kind: "drop", number: 2 } }, { runs: true }))
+    expect(dropped).toMatchObject({ receipt: { starts: [{ number: 3 }] } })
     expect(await todo(3)).toMatchObject({ state: "working" })
   })
 

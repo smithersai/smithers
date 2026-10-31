@@ -75,6 +75,7 @@ import feeds from "./migrations/0073_feeds.ts"
 import hostSessions from "./migrations/0074_host_sessions.ts"
 import modelConnections from "./migrations/0075_model_connections.ts"
 import mergeFlow from "./migrations/0076_merge_flow.ts"
+import independentLanes from "./migrations/0077_independent_lanes.ts"
 import aboutRefusalQuota from "./migrations/0070_about_refusal_quota.ts"
 
 /** The compose Postgres (`docker-compose.yml`): what `DATABASE_URL` defaults to, and the only one tests use. */
@@ -189,6 +190,7 @@ export const migrations = {
   "0074_host_sessions": hostSessions,
   "0075_model_connections": modelConnections,
   "0076_merge_flow": mergeFlow,
+  "0077_independent_lanes": independentLanes,
 }
 
 /** Applies every migration in `db/migrations` that hasn't run, in order; returns the ones it applied. */

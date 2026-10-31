@@ -104,7 +104,8 @@ test.each(["merged", "dropped", "failed"] as const)("%s retries same-process adm
       sql`SELECT state, attempt FROM todos ORDER BY number`))).toEqual([
       { state, attempt: 1 },
       { state: state === "failed" ? "queued" : "failed", attempt: 0 },
-      { state: state === "failed" ? "queued" : "failed", attempt: 0 },
+      // The third stacks on the second: it waits behind it, failed or not (decision 0135).
+      { state: "queued", attempt: 0 },
     ])
     return
   }
@@ -199,7 +200,8 @@ test.each([
         client`SELECT state, attempt FROM todos ORDER BY number`).pipe(Effect.provide(services.database))).toEqual([
         { state, attempt: 1 },
         { state: state === "failed" ? "queued" : "failed", attempt: 0 },
-        { state: state === "failed" ? "queued" : "failed", attempt: 0 },
+        // The third stacks on the second: it waits behind it, failed or not (decision 0135).
+        { state: "queued", attempt: 0 },
       ])
       return
     }

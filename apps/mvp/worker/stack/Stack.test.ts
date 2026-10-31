@@ -6,7 +6,7 @@ import { Arbitrary, Effect, Logger, Metric, Schema, Tracer } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
-import { openOf, type Row, violations } from "../../src/features/todos/stack.ts"
+import { isReady, openOf, type Row, type Stack as Rules, violations } from "../../src/features/todos/stack.ts"
 import { testFile, uuid } from "../test/harness.ts"
 import * as Stack from "./Stack.ts"
 import { foldCommit } from "./StackFeed.ts"
@@ -32,6 +32,15 @@ const commit = (fields: Partial<Stack.Change> & { readonly title?: string; reado
     acceptance: [],
   },
 })
+const configure = (lanes: number, base: "stacked" | "independent", maxOpen = 50): Stack.Change => ({
+  opId: uuid(),
+  repoId: REPO,
+  actor: { id: "person-ada", login: "ada" },
+  via: "person",
+  op: { kind: "configure", lanes, maxOpen, base },
+})
+const commitAfter = (after: number | null): Stack.Change =>
+  commit({ op: { kind: "commit", title: "Stacked on another", prompt: "Build on it.", acceptance: [], after } })
 const drop = (number: number, opId = uuid()): Stack.Change => ({
   opId,
   repoId: REPO,
@@ -94,6 +103,15 @@ const stack = async () =>
   (await sql<{ nextNumber: number; version: number }>(
     `SELECT next_number AS "nextNumber", version::int AS version FROM stacks WHERE repo_id = '${REPO}'`,
   ))[0]
+
+/** The stack as Postgres holds it, in the rules' terms. */
+const loaded = async () => {
+  const rows = await sql<Row>(`SELECT id, number, state, position, attempt, revision, after::text AS after
+    FROM todos WHERE repo_id = '${REPO}' ORDER BY number`)
+  const [settings] = await sql<{ nextNumber: number; lanes: number; maxOpen: number; base: Rules["base"] }>(`
+    SELECT next_number AS "nextNumber", lanes, max_open AS "maxOpen", base FROM stacks WHERE repo_id = '${REPO}'`)
+  return { ...(settings ?? { nextNumber: 1, lanes: 1, maxOpen: 50, base: "stacked" as const }), todos: rows }
+}
 
 describe("a commit", () => {
   test("records the writer's request time with the remote execution id and no content", async () => {
@@ -568,25 +586,6 @@ describe("observability", () => {
 })
 
 describe("concurrent writers", () => {
-  /** The stack as Postgres holds it, in the rules' terms. */
-  const loaded = async () => {
-    const rows = await todos()
-    const { nextNumber } = (await stack()) ?? { nextNumber: 1 }
-    return {
-      nextNumber,
-      lanes: 1,
-      maxOpen: 50,
-      todos: rows.map((row): Row => ({
-        id: row.id,
-        number: row.number,
-        state: row.state as Row["state"],
-        position: row.position,
-        attempt: row.attempt,
-        revision: row.revision,
-      })),
-    }
-  }
-
   test("twelve writers commit at once: twelve numbers, positions 1 to 12, no change lost", async () => {
     const changes = Array.from({ length: 12 }, () => commit())
     const applied = await Promise.all(changes.map((change) => applyOn(change, true)))
@@ -604,7 +603,9 @@ describe("concurrent writers", () => {
     const Round = Schema.Array(
       Schema.Union([
         Schema.Struct({ kind: Schema.Literal("commit") }),
+        Schema.Struct({ kind: Schema.Literal("after"), number: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 12 })) }),
         Schema.Struct({ kind: Schema.Literal("drop"), number: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 12 })) }),
+        Schema.Struct({ kind: Schema.Literal("configure"), lanes: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 4 })), independent: Schema.Boolean }),
       ]),
     ).check(Schema.isMinLength(1), Schema.isMaxLength(6))
     const rounds = Arbitrary.array(Arbitrary.schema(Round), { minLength: 1, maxLength: 4 })
@@ -617,7 +618,15 @@ describe("concurrent writers", () => {
             const committed = new Set<string>()
             const dropped = new Set<number>()
             for (const round of history) {
-              const changes = round.map((step) => (step.kind === "commit" ? commit() : drop(step.number)))
+              const changes = round.map((step) =>
+                step.kind === "commit"
+                  ? commit()
+                  : step.kind === "after"
+                  ? commit({ op: { kind: "commit", title: "T", prompt: "P", acceptance: [], after: step.number } })
+                  : step.kind === "configure"
+                  ? configure(step.lanes, step.independent ? "independent" : "stacked")
+                  : drop(step.number)
+              )
               const applied = await Promise.all(changes.map((change) => applyOn(change, true)))
               applied.forEach((result, index) => {
                 if (result.kind !== "applied") return
@@ -628,7 +637,10 @@ describe("concurrent writers", () => {
             }
             const after = await loaded()
             const byNumber = new Map(after.todos.map((todo) => [todo.number, todo]))
-            return violations(after).length === 0 &&
+            // With every op settled, no lane idles while a ready TODO waits.
+            const idle = after.todos.filter((todo) => todo.state === "working").length < after.lanes &&
+              openOf(after).some((todo) => isReady(after.todos, todo))
+            return violations(after).length === 0 && !idle &&
               after.todos.length === committed.size &&
               after.todos.every((todo) => committed.has(todo.id)) &&
               [...dropped].every((number) => byNumber.get(number)?.state === "dropped") &&
@@ -647,8 +659,8 @@ describe("the seam's errors", () => {
   })
 
   test("isRefusal names the outcomes the route refuses", () => {
-    expect(["committed", "dropped", "stack_full", "merged", "not_found"].map((outcome) => Stack.isRefusal(outcome as never)))
-      .toEqual([false, false, true, true, true])
+    expect(["committed", "dropped", "configured", "stack_full", "merged", "not_found", "not_retryable", "after_not_open"]
+      .map((outcome) => Stack.isRefusal(outcome as never))).toEqual([false, false, false, true, true, true, true, true])
   })
 })
 
@@ -724,9 +736,11 @@ test("repeated retry before admission cannot erase the old attempt's base identi
   await runtime.runPromise(Stack.report(a, {
     kind: "finished", state: "dropped", note: "closed_on_github",
   }, { runs: false }))
+  // The TODO it waited on closed unmerged: the retried TODO fails base_closed again, and a person decides again. The
+  // repeated press answers its first receipt; a new one stacks it on what the closed one stacked on (the default branch).
+  expect(await sql("SELECT state, failure, after FROM todos WHERE number = 2")).toEqual([{ state: "failed", failure: "base_closed", after: null }])
   const again = await runtime.runPromise(Stack.apply(retry(), { runs: false }))
-  // The first Retry remains queued after its predecessor settles; a fresh press cannot reset it again.
-  expect(again).toMatchObject({ receipt: { outcome: "not_retryable", starts: [] } })
+  expect(again).toMatchObject({ receipt: { outcome: "retried", starts: [] } })
   expect(await runtime.runPromise(Stack.baseTodoOf(REPO, "smithers/old-base"))).toMatchObject({
     value: { number: 2, prNumber: 2, state: "failed" },
   })
@@ -783,29 +797,31 @@ test("admission records the base before Begin, so drop discovers a delayed execu
   expect(await runtime.runPromise(Stack.descendants(a))).toMatchObject([{ attemptId: b.attemptId, prNumber: null }])
 })
 
-test("Retry keeps its new-base intent while another lane is occupied and the closed predecessor settles", async () => {
+test("a Retry waiting for a lane fails base_closed again when the TODO it stacks on closes; Retry once more starts it on main", async () => {
   const made = await applyOn(commit(), true)
   if (made.kind !== "applied") throw new Error("commit refused")
   const a = made.receipt.starts[0]!
   await applyOn(commit(), true)
   await runtime.runPromise(Stack.report(a, { kind: "branch", branch: "base", baseRef: "main", baseSha: "a".repeat(40) }, { runs: true }))
   const b = (await runtime.runPromise(Stack.report(a, { kind: "published", headSha: "a".repeat(40), prNumber: 1, draft: false }, { runs: true }))).starts[0]!
-  await sql("UPDATE stacks SET lanes = 2")
-  const other = await applyOn(commit(), true)
+  await applyOn(configure(2, "stacked"), true)
+  // An independent TODO takes the second lane.
+  const other = await applyOn(commitAfter(null), true)
   if (other.kind !== "applied") throw new Error("commit refused")
   const c = other.receipt.starts[0]!
   await runtime.runPromise(Stack.report(b, { kind: "finished", state: "failed", failure: "base_closed" }, { runs: true }))
-  // C occupies the only lane. Retry must remember the person's choice until that lane frees.
-  await sql("UPDATE stacks SET lanes = 1")
+  await applyOn(configure(1, "stacked"), true)
+  // C holds the only lane: the retried TODO waits, still stacked on A, which is In review.
   const retry = await applyOn({ ...drop(2), op: { kind: "retry", number: 2 } }, true)
   expect(retry).toMatchObject({ receipt: { outcome: "retried", starts: [] } })
-  expect(await sql("SELECT state, base_reset FROM todos WHERE number = 2")).toEqual([{ state: "queued", base_reset: true }])
+  expect(await sql(`SELECT state, after::text AS after FROM todos WHERE number = 2`)).toEqual([{ state: "queued", after: a.todoId }])
   await runtime.runPromise(Stack.report(a, { kind: "finished", state: "dropped", note: "closed_on_github" }, { runs: true }))
-  expect(await sql("SELECT state, base_reset FROM todos WHERE number = 2")).toEqual([{ state: "queued", base_reset: true }])
-  const admitted = await runtime.runPromise(Stack.report(c, { kind: "finished", state: "failed", failure: "base_closed" }, { runs: true }))
+  expect(await sql("SELECT state, failure, after FROM todos WHERE number = 2")).toEqual([{ state: "failed", failure: "base_closed", after: null }])
+  const again = await applyOn({ ...drop(2), op: { kind: "retry", number: 2 } }, true)
+  expect(again).toMatchObject({ receipt: { outcome: "retried", starts: [] } })
+  const admitted = await runtime.runPromise(Stack.report(c, { kind: "finished", state: "failed", failure: "implement" }, { runs: true }))
   expect(admitted.starts).toMatchObject([{ todoId: b.todoId, ordinal: 2 }])
   expect((await runtime.runPromise(Stack.belowOf(admitted.starts[0]!)))._tag).toBe("None")
-  expect(await sql("SELECT base_reset FROM todos WHERE number = 2")).toEqual([{ base_reset: false }])
 })
 
 
@@ -834,7 +850,7 @@ test("Retry of a grandchild skips ancestors failed by the same closed base", asy
 })
 
 
-test("a queued Retry starts when cleanup frees the last lane in the same base_closed report", async () => {
+test("a TODO queued on a working one waits through its base's close; dropping the failed one starts it on main", async () => {
   const made = await applyOn(commit(), true)
   if (made.kind !== "applied") throw new Error("commit refused")
   const a = made.receipt.starts[0]!
@@ -842,12 +858,19 @@ test("a queued Retry starts when cleanup frees the last lane in the same base_cl
   await runtime.runPromise(Stack.report(a, { kind: "branch", branch: "base", baseRef: "main", baseSha: "a".repeat(40) }, { runs: true }))
   const b = (await runtime.runPromise(Stack.report(a, { kind: "published", headSha: "a".repeat(40), prNumber: 1, draft: false }, { runs: true }))).starts[0]!
   await applyOn(commit(), true)
+  // T1 closes under T2 (Working): T2 now stacks on nothing, and T3 still waits for T2.
   await applyOn(drop(1), true)
-  const retry = await applyOn({ ...drop(3), op: { kind: "retry", number: 3 } }, true)
-  expect(retry).toMatchObject({ receipt: { outcome: "retried", starts: [] } })
+  expect(await sql(`SELECT number, state, after::text AS after FROM todos WHERE number > 1 ORDER BY number`)).toEqual([
+    { number: 2, state: "working", after: null },
+    { number: 3, state: "queued", after: b.todoId },
+  ])
+  expect(await applyOn({ ...drop(3), op: { kind: "retry", number: 3 } }, true)).toMatchObject({ receipt: { outcome: "not_retryable" } })
   const settled = await runtime.runPromise(Stack.report(b, { kind: "finished", state: "failed", failure: "base_closed" }, { runs: true }))
-  expect(settled.starts).toMatchObject([{ number: 3, ordinal: 1 }])
-  expect((await runtime.runPromise(Stack.belowOf(settled.starts[0]!)))._tag).toBe("None")
+  expect(settled.starts).toEqual([])
+  const dropped = await applyOn(drop(2), true)
+  if (dropped.kind !== "applied") throw new Error("drop refused")
+  expect(dropped.receipt.starts).toMatchObject([{ number: 3, ordinal: 1 }])
+  expect((await runtime.runPromise(Stack.belowOf(dropped.receipt.starts[0]!)))._tag).toBe("None")
 })
 
 test("descendant discovery ignores absent attempts, branchless work and a base that is still open", async () => {
@@ -859,4 +882,150 @@ test("descendant discovery ignores absent attempts, branchless work and a base t
   await runtime.runPromise(Stack.report(first, { kind: "branch", branch: "open-base", baseRef: "main", baseSha: "a".repeat(40) }, { runs: true }))
   expect(await runtime.runPromise(Stack.descendants(first))).toEqual([])
   expect(await sql("SELECT state, failure FROM todos")).toEqual([{ state: "working", failure: null }])
+})
+
+describe("independent lanes (decision 0135)", () => {
+  const publish = (attempt: Stack.AttemptStart, prNumber: number, branch = `smithers/t${attempt.number}`) =>
+    runtime.runPromise(Effect.gen(function* () {
+      yield* Stack.report(attempt, { kind: "branch", branch, baseRef: "main", baseSha: "a".repeat(40) }, { runs: true })
+      return yield* Stack.report(attempt, { kind: "published", headSha: "b".repeat(40), prNumber, draft: false }, { runs: true })
+    }))
+  const states = async () => (await sql<{ state: string }>(`SELECT state FROM todos WHERE repo_id = '${REPO}' ORDER BY number`)).map((row) => row.state)
+
+  test("ten lanes: ten Working at once, one fails, nine publish, and a TODO after another waits for it, then stacks on it", async () => {
+    expect(await applyOn(configure(10, "independent"), true)).toMatchObject({ kind: "applied", receipt: { outcome: "configured", starts: [] } })
+    const starts: Array<Stack.AttemptStart> = []
+    for (let index = 0; index < 10; index++) {
+      const applied = await applyOn(commit(), true)
+      if (applied.kind !== "applied") throw new Error("commit refused")
+      starts.push(...applied.receipt.starts)
+    }
+    expect(starts.map((start) => start.number)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    expect(await states()).toEqual(Array(10).fill("working"))
+    // T11 stacks on T3 by choice: it waits though no lane is free and, later, while one is.
+    expect(await applyOn(commitAfter(3), true)).toMatchObject({ receipt: { outcome: "committed", number: 11, starts: [] } })
+    expect(await sql(`SELECT after::text AS after FROM todos WHERE number = 11`)).toEqual([{ after: starts[2]!.todoId }])
+    const failed = await runtime.runPromise(Stack.report(starts[6]!, { kind: "finished", state: "failed", failure: "implement" }, { runs: true }))
+    expect(failed.starts).toEqual([])
+    for (const start of starts.filter((_, index) => index !== 6 && index !== 2)) expect((await publish(start, start.number)).starts).toEqual([])
+    expect(await states()).toEqual(["in_review", "in_review", "working", "in_review", "in_review", "in_review", "failed", "in_review", "in_review", "in_review", "queued"])
+    // T3 publishes: T11 starts on T3's branch.
+    const third = await publish(starts[2]!, 3, "smithers/t3-base")
+    expect(third.starts).toMatchObject([{ number: 11, ordinal: 1 }])
+    expect(await sql(`SELECT base_ref AS "baseRef" FROM todos WHERE number = 11`)).toEqual([{ baseRef: "smithers/t3-base" }])
+    expect(await runtime.runPromise(Stack.belowOf(third.starts[0]!))).toMatchObject({ value: { number: 3, branch: "smithers/t3-base", prNumber: 3 } })
+    expect(await sql(`SELECT count(*)::int AS n FROM todos WHERE state = 'in_review'`)).toEqual([{ n: 9 }])
+    expect(violations(await loaded())).toEqual([])
+  })
+
+  test("a stacked repository's commit stacks on the last open TODO; an independent one's on nothing; a commit may choose", async () => {
+    await applyOn(commit())
+    await applyOn(commit())
+    await applyOn(configure(1, "independent"))
+    await applyOn(commit())
+    await applyOn(commitAfter(1))
+    await applyOn(configure(1, "stacked"))
+    await applyOn(commitAfter(null))
+    await applyOn(commit())
+    const ids = await sql<{ id: string }>(`SELECT id FROM todos ORDER BY number`)
+    expect((await sql<{ after: string | null }>(`SELECT after::text AS after FROM todos ORDER BY number`)).map((row) => row.after))
+      .toEqual([null, ids[0]!.id, null, ids[0]!.id, null, ids[4]!.id])
+  })
+
+  test("a commit after a TODO that isn't open is refused, keeps its receipt and spends no number", async () => {
+    await applyOn(commit())
+    await applyOn(drop(1))
+    for (const after of [1, 99]) {
+      const refused = commitAfter(after)
+      expect(await applyOn(refused)).toMatchObject({ kind: "applied", receipt: { outcome: "after_not_open", starts: [] } })
+      expect(await applyOn(refused)).toEqual({ kind: "repeated", receipt: { outcome: "after_not_open", starts: [] } })
+    }
+    expect(await stack()).toMatchObject({ nextNumber: 2 })
+  })
+
+  test("configure writes the stack's settings, starts what a raise frees, keeps a receipt, and starts nothing with no runs", async () => {
+    for (let index = 0; index < 3; index++) await applyOn(commitAfter(null), false)
+    const quiet = await applyOn(configure(3, "independent", 200), false)
+    expect(quiet).toMatchObject({ kind: "applied", receipt: { outcome: "configured", starts: [] } })
+    expect(await sql(`SELECT lanes, max_open AS "maxOpen", base FROM stacks`)).toEqual([{ lanes: 3, maxOpen: 200, base: "independent" }])
+    expect(await states()).toEqual(["queued", "queued", "queued"])
+    const change = configure(2, "independent", 200)
+    const raised = await applyOn(change, true)
+    expect(raised).toMatchObject({ receipt: { outcome: "configured", starts: [{ number: 1 }, { number: 2 }] } })
+    expect(await applyOn(change, true)).toMatchObject({ kind: "repeated" })
+    expect(await states()).toEqual(["working", "working", "queued"])
+    expect(await sql(`SELECT op, outcome, actor_id AS "actorId" FROM stack_ops WHERE id = '${change.opId}'`))
+      .toEqual([{ op: "configure", outcome: "configured", actorId: "person-ada" }])
+    expect(await applyOn(configure(1, "independent", 1), true)).toMatchObject({ receipt: { starts: [] } })
+    expect(await applyOn(commit(), true)).toMatchObject({ receipt: { outcome: "stack_full" } })
+  })
+
+  test("a Working TODO waits for a runner until its run says one claimed it; any other state is stale and clears it", async () => {
+    const made = await applyOn(commit(), true)
+    if (made.kind !== "applied") throw new Error("commit refused")
+    const attempt = made.receipt.starts[0]!
+    const waiting = () => sql<{ waiting: string | null }>(`SELECT waiting FROM todos WHERE number = 1`)
+    const observed = observe()
+    expect(await runtime.runPromise(observed.provide(Stack.report(attempt, { kind: "waiting", waiting: "runner" }, { runs: true }))))
+      .toEqual({ outcome: "applied", starts: [] })
+    expect(await waiting()).toEqual([{ waiting: "runner" }])
+    expect(observed.lines.at(-1)).toMatchObject({ message: "stack.report", annotations: { kind: "waiting", waiting: "runner" } })
+    await runtime.runPromise(Stack.report(attempt, { kind: "waiting", waiting: null }, { runs: true }))
+    expect(await waiting()).toEqual([{ waiting: null }])
+    await runtime.runPromise(Stack.report(attempt, { kind: "waiting", waiting: "runner" }, { runs: true }))
+    await publish(attempt, 1)
+    expect(await waiting()).toEqual([{ waiting: null }])
+    expect(await runtime.runPromise(Stack.report(attempt, { kind: "waiting", waiting: "runner" }, { runs: true }))).toEqual({ outcome: "stale", starts: [] })
+  })
+
+  test("a closed base fails only the Queued TODOs stacked on it; independent ones and those further up wait", async () => {
+    await applyOn(configure(1, "independent"), true)
+    const made = await applyOn(commit(), true)
+    if (made.kind !== "applied") throw new Error("commit refused")
+    const first = made.receipt.starts[0]!
+    await applyOn(commit(), true)
+    await applyOn(commitAfter(1), true)
+    await applyOn(commitAfter(3), true)
+    await applyOn(commit(), true)
+    // T1 publishes: T2, the oldest ready, takes the lane; T3, stacked on T1, is ready and waits for one.
+    await publish(first, 1, "smithers/t1")
+    expect(await states()).toEqual(["in_review", "working", "queued", "queued", "queued"])
+    expect(await runtime.runPromise(Stack.descendants({ ...first, baseClosed: true }))).toEqual([])
+    expect(await sql(`SELECT number, state, failure FROM todos ORDER BY number`)).toEqual([
+      { number: 1, state: "in_review", failure: null },
+      { number: 2, state: "working", failure: null },
+      { number: 3, state: "failed", failure: "base_closed" },
+      { number: 4, state: "queued", failure: null },
+      { number: 5, state: "queued", failure: null },
+    ])
+  })
+
+  test("Fixes #n waits for every other open TODO from the issue, except those it stacks on", async () => {
+    await applyOn(configure(4, "independent"), true)
+    const issued = (after?: number | null) => commit({ op: { kind: "commit", title: "T", prompt: "P", acceptance: [], issue: 12, ...(after === undefined ? {} : { after }) } })
+    const starts: Array<Stack.AttemptStart> = []
+    for (const after of [undefined, undefined, 1]) {
+      const applied = await applyOn(issued(after), true)
+      if (applied.kind === "applied") starts.push(...applied.receipt.starts)
+    }
+    const above = (attempt: Stack.AttemptStart) => runtime.runPromise(Stack.openAboveFromIssue(attempt))
+    // T1 and T2 are independent, from one issue: each waits for the other. T3 stacks on T1: T1 doesn't count for it.
+    expect(await above(starts[0]!)).toBe(2)
+    expect(await above(starts[1]!)).toBe(2)
+    const third = (await publish(starts[0]!, 1)).starts[0]!
+    expect(await above(third)).toBe(1)
+    await applyOn(drop(2), true)
+    expect(await above(third)).toBe(0)
+  })
+
+  test("each change logs its lanes: how many there are, Working, ready for a lane, and held by a TODO they stack on", async () => {
+    const observed = observe()
+    await applyOn(commit(), true, observed)
+    await applyOn(commit(), true, observed)
+    await applyOn(commitAfter(null), true, observed)
+    expect(observed.lines.filter((line) => line.message === "stack.apply").at(-1)!.annotations)
+      .toMatchObject({ lanes: 1, working: 1, ready: 1, held: 1 })
+    expect(observed.count(Stack.admissions, { base: "default" })).toBe(1)
+    expect(observed.lines.find((line) => line.message === "todo.run.requested")!.annotations).toMatchObject({ base: "default" })
+  })
 })

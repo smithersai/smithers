@@ -23,7 +23,7 @@ Drop ─▶ todo/drop ─▶ the same outbox and route
 ```
 
 - **One writer.** `worker/stack/Stack.ts` `apply` is the only code that writes `stacks`, `todos`, `todo_requests`, `todo_attempts` and `stack_ops`. Each change is one transaction that locks the repository's `stacks` row first, applies the stack's rules (`src/features/todos/stack.ts`), writes back what changed in one statement, and keeps a receipt under the op id. Writers racing on the same repository queue on the lock, so none loses another's change.
-- **The rules are one pure function.** `stack.ts` `apply(stack, op)`: a commit takes the next number, which is never reused, and the last position; a drop clears the TODO's position and closes the gap; a full stack (`max_open`) refuses a commit; a merged TODO refuses a drop; dropping a dropped TODO changes nothing. Property tests prove them over random histories.
+- **The rules are one pure function.** `stack.ts` `apply(stack, op)`: a commit takes the next number, which is never reused, and the last position; a drop clears the TODO's position and closes the gap; a full stack (`max_open`) refuses a commit; a merged TODO refuses a drop; dropping a dropped TODO changes nothing; whenever a lane is free, the oldest ready TODOs start ([lanes](#lanes)). Property tests prove them over random histories.
 - **A person commits; the agent drafts** (0016 §3). `todo/draft` is the agent's; `todo/commit` and `todo/drop` are a person's only. The agent's catalog lists neither, the step refuses a run that is the agent's call before it asks any tab, and the route takes who acts from the session (`Actor.act`), never from the request: a body that claims a door claims nothing.
 - **One route.** Buttons, slash commands, the agent's drafts once a person commits them, and the API all change a stack through `POST /api/repos/<owner>/<name>/stack`.
 - **The run starts from the writer.** The writer starts an attempt only when the host provides `TodoRuns` (`worker/stack/Stack.ts`): `start(attempt)` and `stop(attempt)`, idempotent by attempt id. ChatApi provides it when the GitHub App is configured and `TODO_RUNS` isn't `false`: each attempt runs `todo` on its own Durable Object, `todo:<attempt id>`. Without it the writer works with no lanes and every TODO stays Queued.
@@ -52,18 +52,19 @@ Every role here is the person's on the repository the route names ([decision 007
 | `GET /api/shapes/todos?repo=<owner>/<name>` | the repository's `todos`, `TODO_COLUMNS`; never cached |
 | `GET /api/shapes/todo-requests?repo=<owner>/<name>` | their `todo_requests`, `TODO_REQUEST_COLUMNS`; never cached |
 
-The stack route's body is `{ opId, op: "commit", title, prompt, acceptance?, issue? }` or `{ opId, op: "drop", number }`: a UUID op id (a commit's is its TODO's id), a title of 1 to 120 characters not blank, a prompt not blank of at most 16,384 bytes, at most 20 criteria of 1 to 300 characters, the number of the issue it was made from, and a number of 1 to 2,147,483,647. Its refusals are `{ code }`, `Cache-Control: no-store`:
+The stack route's body is `{ opId, op: "commit", title, prompt, acceptance?, issue?, after? }`, `{ opId, op: "drop" | "retry", number }` or an Admin's `{ opId, op: "configure", lanes, maxOpen, base }`: a UUID op id (a commit's is its TODO's id), a title of 1 to 120 characters not blank, a prompt not blank of at most 16,384 bytes, at most 20 criteria of 1 to 300 characters, the number of the issue it was made from, the number of the open TODO it stacks on (`null` for none; absent takes the repository's base, [lanes](#lanes)), a number of 1 to 2,147,483,647, lanes of 1 to 64, an open limit of 1 to 500, and a base of `stacked` or `independent`. A `configure` answers `202 { txid, opId, outcome: "configured" }`. Its refusals are `{ code }`, `Cache-Control: no-store`:
 
 | Status | `code` | When |
 |---|---|---|
 | 400 | `invalid` | not that body |
 | 401 | `authentication` | signed out |
-| 403 | `forbidden` | not a Member on that repository, an agent, flow or sandbox acting for the person, or a role that changed between the read and the change |
+| 403 | `forbidden` | not a Member on that repository (an Admin, for `configure`), an agent, flow or sandbox acting for the person, or a role that changed between the read and the change |
 | 404 | `not_found` | a drop of a number the stack never had, or a repository `GITHUB_ALLOWED_REPOSITORIES` leaves out |
 | 404 | `app_not_installed` | another repository the App isn't installed on |
 | 409 | `conflict` | the op id was used for another change |
 | 409 | `stack_full` | `max_open` TODOs are open |
 | 409 | `merged` | a drop of a merged TODO |
+| 409 | `after_not_open` | a commit after a TODO that isn't open |
 | 413 | `too_large` | a body over `MAX_STACK_BODY_BYTES` |
 | 429 | `rate_limited` | GitHub rate limited the role's read; `Retry-After` is its wait, and the device sends again |
 | 503 | `not_configured` | another repository, on a deployment without the App |
@@ -129,7 +130,7 @@ Make TODO drafts a TODO from an issue, linked to it (Will, 2026-10-20). Everythi
 `todo` (`worker/flows/Todo.ts`, decision 0016's factory simplified): one durable run per attempt, on the `FlowExecution` Durable Object.
 
 ```
-todo/Begin      the TODO and its prompt; its base, the head of the TODO in review before it (stacked), else of the
+todo/Begin      the TODO and its prompt; its base, the head of the TODO it stacks on (`after`, in review), else of the
                 default branch; its branch's name smithers/t<n>-<slug>-<key> reserved; nothing written to GitHub
                 ─▶ writer: branch and its base, step implement
 todo/Implement  the agent (AgentAction, the `coding` role) writes the change on the attempt's machine, checked out at the
@@ -139,17 +140,18 @@ todo/Collect    the files it changed, read whole from the machine (50 files, 1 M
 todo/Publish    the branch made on GitHub at the base, as the App, under the reserved name; one commit,
                 createCommitOnBranch fenced by the base ("T<n>: <title>", "Smithers for @maya"); the pull request into
                 its base (a draft while that is another TODO's branch), its body the prompt, "Fixes #n" for a TODO from
-                an issue, and whom the App acted for ─▶ writer: in review, which frees the lane for the next TODO; the
-                head's checks start (checks/Run, docs/features/pulls.md)
+                an issue, and whom the App acted for ─▶ writer: in review, which frees the lane for the oldest ready
+                TODO and readies those stacked on it; the head's checks start (checks/Run, docs/features/pulls.md)
 todo/Await      parks on a durable PR-close event; GitHub Apply signals it after a merge or close; an hourly engine clock covers missed webhooks; a TODO dropped
                 in Smithers meanwhile closes the pull request its run opened. Stacked: see below
-todo/Settle     writer: merged releases the next Queued TODO; an unmerged close fails queued successors base_closed
+todo/Settle     writer: merged hands its `after` to the TODOs stacked on it; an unmerged close fails the Queued ones
+                base_closed
 todo/Fail       any step that gave up ─▶ writer: failed with its code (implement, empty_change, publish_refused,
-                pr_refused, app_not_installed, base_closed); queued successors hold behind the failed TODO
+                pr_refused, app_not_installed, base_closed); the TODOs stacked on it hold behind it
 ```
 
 - **Nothing on GitHub before Publish.** `todo/Begin` reserves the branch name and its base; `todo/Publish` creates the branch on GitHub with its one commit, so an attempt that publishes nothing leaves nothing on GitHub (GH-11).
-- **States** (decision 0016's factory simplified): Queued, Working, In review, Merged, Dropped, Failed. Steps: implement, publish, await. Only Working holds one of the stack's lanes (`stacks.lanes`, 1): a TODO in review frees it, so the next one starts.
+- **States** (decision 0016's factory simplified): Queued, Working, In review, Merged, Dropped, Failed. Steps: implement, publish, await. Only Working holds one of the stack's lanes (`stacks.lanes`, 1 to 64, [lanes](#lanes)): a TODO in review frees it, so the next one starts. A Working TODO whose job no runner has claimed reads Waiting for a runner.
 - **Published reports keep their receipt.** The first `published` report stores the attempts it started (`todo_attempts.published_report`), so a retried `todo/Publish`, or a new head after a restack, starts the same ones and never another. A drop copies those starts into its own receipt under the stack lock before cancelling the old run, so the durable drop request owns their admission even when publish stopped after its report committed.
 - **Drop cancels durably.** The route cancels the old execution before admitting successors. The object persists a tombstone, interrupts active work through the engine, and wakes parked work to settle cancelled and release ownership. First admission rechecks the current attempt and TODO state; a dropped TODO creates no engine run. The independent `todo/Drop` flow closes the PR recorded for that dropped attempt, with engine-owned retries and stable id `todo-drop:<attempt id>`. A PR created externally before its publish report committed is not inferred by branch. The handoff starts `todo/Drop` and the descendants' invalidation even when the cancel fails, and answers `503` if any part failed, so the outbox's resend makes each again. Before 2026-10-31 a failed cancel skipped both starts: T112's cancel failed (`cloudflare.execution.cancel`, `JournalError`) as its e2e browser closed, nothing started `todo/Drop`, and with no device left to send the drop again its pull request #122 stayed open, as #120 and #121 had.
 - **Every writer call is fenced** by the TODO and the attempt (`Stack.report`): a dropped TODO's run, or an earlier attempt's, is stale and stops.
@@ -158,6 +160,24 @@ todo/Fail       any step that gave up ─▶ writer: failed with its code (imple
 - **How the agent checks its change** (`TodoAgent.SYSTEM`): it reads what the TODO names, makes the change, then runs the lint and typecheck scripts of each package it changed, each command on its own (and, for a change to what code does, the tests that cover it), and fixes what they find, in as few commands as it can (a command takes one to two minutes in production; it reads the working copy with `sandbox/status` and `sandbox/diff`). It never installs dependencies, checks the whole repository or writes a script or log to run checks: the branch machine has no internet, so an install hangs until its command times out, and Smithers commits every file left in the working copy. A check whose tools aren't installed can't run there; the agent says so and publishes, and the pull request's checks (each `.smithers/checks/` script, on a job machine that installs) run the full checks ([where checks run](pulls.md#where-checks-run)). Each turn tells it the time it has left of `IMPLEMENT_TIMEOUT` (40 minutes, `Steering.withTimeLeft` in `@smthrs/harness`), and a run that runs out of time publishes nothing. On 2026-10-22 the dogfood loop's T3 (`todo:7844cd5e`), a two-line lint fix, timed out without publishing: its lint found no `eslint`, and it spent the rest of its 40 minutes writing its own check script and installing the monorepo, which hung. `evals/todo-lint.eval.ts` holds the agent to the narrow path ([agent evals](agent-evals.md#todo-lint)).
 - **The machine** is the attempt's own branch machine, `todo-<attempt id>`, checking out the attempt's base commit alone and detached from GitHub (`todo_attempts.base_sha`; the branch doesn't exist yet), its tools running as the person who committed the TODO (`worker/flows/TodoMachine.ts`).
 - **The agent's sandbox on Cloudflare** (`worker/AgentSandbox.ts`): `Agent.layerDefaultsWithVariant` over QuickJS's separate-`.wasm` build. workerd compiles no WebAssembly from bytes, so the single-file build `Agent.layerDefaults` uses fails there ("Wasm code generation disallowed by embedder"). The `.wasm` file arrives as `#quickjs.wasm`, a package.json `imports` name ending in `.wasm`, which Alchemy's bundler uploads as a CompiledWasm module and hands the Worker as a `WebAssembly.Module`. The import is dynamic, inside the layer: `alchemy dev` imports the stack in Node, where a static `.wasm` import fails ("Cannot find package 'a'").
+
+### Lanes
+
+A repository runs up to `stacks.lanes` TODOs at once (1 to 64), each stacked on the TODO it names or independent of the rest (decision [0135](../decisions/0135-independent-lanes.md)).
+
+```
+main ─┬ T1                 independent: starts from the default branch's head at Begin
+      ├ T2
+      ├ T3 ── T7           T7.after = T3: waits for T3 In review, then starts on T3's branch
+      └ …                  a failure holds only the TODOs stacked on it
+```
+
+- **`after`.** A TODO names the open TODO it waits for and stacks on, or none. A commit that names none takes the repository's `base`: `stacked` (every repository until an Admin changes it) stacks it on the last open TODO, `independent` on none.
+- **Starting.** Whenever a lane frees, the writer starts the oldest Queued TODOs whose whole `after` chain is In review. A TODO In review holds no lane.
+- **Leaving.** A TODO that merges or is dropped hands its own `after` to the TODOs stacked on it. One that leaves unmerged after publishing fails the Queued ones `base_closed`.
+- **Settings.** An Admin of the repository sets `lanes`, `max_open` and `base` in person (`op: "configure"`). A raise starts what it frees; a lower count stops nothing.
+- **Waiting for a runner.** A Working TODO whose job no runner has claimed reads Waiting for a runner and doesn't blink (`todos.waiting`, reported by its run).
+- **On the page.** A stacked TODO's row and page link `After T<n>` to the TODO it stacks on while it is open.
 
 ### Stacked pull requests
 
@@ -172,7 +192,7 @@ a person squash-merges #1 ─▶ T1 Merged; T2's await:
   PATCH base: main, then markPullRequestReadyForReview  ─▶ #2 is into main, ready, and shows only T2
 ```
 
-- **The base.** `todo/Begin` takes the nearest TODO before it in the stack that is In review, at its branch's head on GitHub; with none, the default branch; with its branch gone, it fails `base_closed`. The TODO keeps it as `todos.base_ref` (migration `0039_stacked_todos`) and its head as `base_sha`; `todo/Publish` makes the branch there, and its pull request is into it.
+- **The base.** `todo/Begin` takes the TODO it stacks on (`todos.after`), In review, at its branch's head on GitHub; with none, the default branch; with its branch gone, or one below it closed, it fails `base_closed`. The TODO keeps it as `todos.base_ref` (migration `0039_stacked_todos`) and its head as `base_sha`; `todo/Publish` makes the branch there, and its pull request is into it.
 - **Draft while stacked.** A pull request into another TODO's branch opens as a draft, so nobody merges it there; GitHub and the Merge route refuse a draft. It is marked ready when it moves onto the default branch.
 - **The TODO below merged.** The waiting run merges that TODO's merge commit into its own branch (`GitHub.Commits.mergeInto`, 204 when it holds it already), reports the new head, starts its checks, moves the pull request onto the default branch and only then marks it ready, so it is never a ready pull request into the old branch. A step cut short does it all again, each part a no-op once done; one stopped between the move and the mark is marked ready by the next await. Under squash merge the TODO below's changes appear on both sides and merge once. A merge GitHub can't make (a conflict) closes the pull request as the App and fails `pr_refused`.
 - **The TODO below won't merge** (dropped in Smithers, closed on GitHub, or failed, `base_closed` included, so the failure climbs the stack): this branch holds a change that won't merge, so the run closes its pull request as the App and fails `base_closed`. It checks this before reading its own pull request's state, so a close whose answer was lost still ends `base_closed`, never as closed on GitHub.
@@ -211,12 +231,12 @@ A TODO starts the work through to a mergeable pull request; while it runs, it sh
 
 ## Postgres
 
-Migrations `0022_todos`, `0027_todo_issue`, `0035_todo_report_receipts`, `0036_todo_run` and `0039_stacked_todos`. Synced tables are `REPLICA IDENTITY FULL`.
+Migrations `0022_todos`, `0027_todo_issue`, `0035_todo_report_receipts`, `0036_todo_run`, `0039_stacked_todos` and `0077_independent_lanes`. Synced tables are `REPLICA IDENTITY FULL`.
 
 | Table | | |
 |---|---|---|
-| `stacks` | `repo_id`, `next_number`, `version`, `lanes` (1), `max_open` (50), `updated_at` | never synced; the row the writer locks |
-| `todos` | `id`, `repo_id`, `number`, `title`, `state`, `step`, `position`, `revision`, `attempt`, `branch`, SHAs, `pr_number`, `pr_draft`, `failure`, `note`, `created_by`, `created_login`, `settled_by`, times, `issue_number` (`0027_todo_issue`), `run_id` (`0036_todo_run`: its latest attempt's run, `todo:<attempt id>`), `base_ref` (`0039_stacked_todos`: the branch its branch was made from, never synced) | `(repo_id, number)` unique; `(repo_id, position)` unique at each statement's end; settled exactly when merged or dropped, and then unplaced |
+| `stacks` | `repo_id`, `next_number`, `version`, `lanes` (1, at most 64), `max_open` (50, at most 500), `base` (`stacked` or `independent`, `0077_independent_lanes`), `updated_at` | never synced; the row the writer locks |
+| `todos` | `id`, `repo_id`, `number`, `title`, `state`, `step`, `position`, `revision`, `attempt`, `branch`, SHAs, `pr_number`, `pr_draft`, `failure`, `note`, `created_by`, `created_login`, `settled_by`, times, `issue_number` (`0027_todo_issue`), `run_id` (`0036_todo_run`: its latest attempt's run, `todo:<attempt id>`), `base_ref` (`0039_stacked_todos`: the branch its branch was made from, never synced), `after` (`0077_independent_lanes`: the open TODO it stacks on, always one before it), `waiting` (`runner` while a Working TODO's job waits for a runner) | `(repo_id, number)` unique; `(repo_id, position)` unique at each statement's end; settled exactly when merged or dropped, and then unplaced |
 | `todo_requests` | `todo_id`, `revision`, `repo_id`, `prompt`, `acceptance`, `by_login`, `created_at` | each revision of a prompt, never changed |
 | `todo_attempts` | `id` (the run's id), `todo_id`, `ordinal`, `revision`, `base_sha`, `status` (`running`, `published`, `settled`, `failed`), `published_report` (the starts its first publish made, `0039_stacked_todos`), `finished_report` (terminal event and starts) | the run's; written only when a host runs TODOs; receipts never synced |
 | `stack_ops` | `id` (the op id), `repo_id`, `actor_id`, `via` (from the session), `op`, `payload_hash`, `outcome`, `result` | never synced: the receipt a repeated op answers from |
@@ -228,8 +248,9 @@ No record carries a title, a prompt, a criterion or a login ([observability.md](
 | Record | Kind | Fields |
 |---|---|---|
 | `stack.request` | log, span | `op`, `via`, `opId`, `outcome` (the change's outcome, `repeated`, or the refusal's code), `number`, `status`, `bytes`, `durationMs`, `errorCode` |
-| `stack.apply` | log, span | `repoId`, `opId`, `op`, `via`, `outcome`, `number`, `version`, `durationMs` |
-| `stack.report`; `smithers_todo_reports{kind,outcome}` | log, span, counter | attempt and TODO ids, kind, `applied` / `repeated` / `stale`, successor count; a repeated report counts no state transition |
+| `stack.apply` | log, span | `repoId`, `opId`, `op`, `via`, `outcome`, `number`, `version`, `durationMs`; after a change, `lanes`, `working`, `ready` and `held` ([lanes](#lanes)) |
+| `stack.report`; `smithers_todo_reports{kind,outcome}` | log, span, counter | attempt and TODO ids, kind, `applied` / `repeated` / `stale`, successor count, `waiting`; a repeated report counts no state transition |
+| `todo.run.requested`; `smithers_todo_lane_starts{base}` | log, counter | an attempt the writer started, on the TODO it stacks on (`after`) or the default branch (`default`) |
 | `todo.start`; `smithers_todo_admissions{flow,outcome}` | log, span, counter | flow, execution id, `started` / `not_started`, error code; records admission acknowledgment, not execution completion |
 | `todo.restack` | log | attempt and TODO ids, the TODO below's number, the pull request's number: a stacked TODO took in the one below it and moved onto the default branch |
 | `stack.shape.todos`, `stack.shape.todo_requests` | log, span | Electric's request records |
@@ -245,8 +266,9 @@ Run with the compose Postgres and Electric up (`pnpm db:up`).
 
 | Test | Proves |
 |---|---|
-| `src/features/todos/stack.test.ts` | property tests over random histories of commits, drops and run failures: the rules hold after every change; order is the model's, a permutation of 1 to n; numbers count up and are never reused; Drop is idempotent; a refusal changes nothing; no lane idles while a TODO waits; each start is the first Queued TODO |
-| `worker/stack/Stack.test.ts` | the writer on real Postgres: what each change writes, receipts, repeated ops and conflicts, refusals, attempts when the host runs TODOs; twelve writers committing at once and random races of commits and drops on connections of their own: no change lost, the rules hold |
+| `src/features/todos/stack.test.ts` | property tests over random independent, stacked and mixed histories of commits (after the base, none or a chosen TODO), drops, retries, settings and runs publishing, failing, merging and closing: the rules hold after every change; order is the model's; numbers count up and are never reused; Drop is idempotent; a refusal changes nothing; no lane idles while a ready TODO waits; a TODO starts only once its whole `after` chain is In review; each start is the oldest ready TODO, into a free lane; a failure holds only the TODOs stacked on it; independent, a failure holds nothing; stacked, a TODO starts only once every open TODO before it is In review; a TODO that leaves after publishing fails only the Queued TODOs stacked on it |
+| `worker/stack/Stack.test.ts` | the writer on real Postgres: what each change writes, receipts, repeated ops and conflicts, refusals, attempts when the host runs TODOs; twelve writers committing at once and random races of commits, commits after a TODO, settings and drops on connections of their own: no change lost, the rules hold, no lane idles; ten lanes: ten Working at once, one fails, nine publish, and a TODO after another waits for it and starts on its branch; `after_not_open`; `configure`; Waiting for a runner; a closed base failing only the Queued TODOs stacked on it; `Fixes #n` across independent TODOs |
+| `db/Database.test.ts` "0077_independent_lanes" | the migration stacks every open TODO on the one before it, widens `lanes` to 64, adds `base` and `waiting`, and drops `base_reset` |
 | `worker/stack/Api.test.ts` | every route and refusal through the real handler; who acts from the session, never the body (the agent's door can't commit or drop); the run host's seam; the shapes' access and columns; no title or prompt in any record |
 | `worker/stack/Api.status.test.ts` | authorized current status and absence, real access refusals, invalid numbers and malformed repository escapes |
 | `src/features/todos/todos.test.ts` "a shared TODO status read" | the registered durable read keeps the host's authenticated HTTP client; reads a missing TODO and a failed TODO's Cloud run from Postgres, and preserves a Guest's refusal |
@@ -254,12 +276,14 @@ Run with the compose Postgres and Electric up (`pnpm db:up`).
 | `src/features/todos/steps.test.ts`, `api.test.ts`, `view.test.ts` | the steps' refusals, the agent's door refused before any tab, a draft from an issue and `issue_not_found`; the client against a local server; the views as GitHub's list and page, the issue links both ways, Make TODO's rule, and the contract |
 | `src/features/todos/todos.test.ts` "from an issue" | Make TODO drafts from a real issue row, Commit stores `issue_number` and syncs it to another device, which lists the issue's TODO; a second TODO from the same issue while the first is open; the agent's own title and prompt; `issue_not_found`; `/todo.issue` |
 | `src/features/keys/keys.test.ts` | a one-key shortcut presses the shown, enabled button that declares it; never with ⌘, Ctrl or Alt, in a field, a dialog or a menu, or once handled |
+| `e2e/todos-independent.spec.ts` | "after", locally: an Admin sets ten independent lanes, commits a TODO and one after it, and the stack shows `After T<n>` on its row and page, the link opening the TODO it stacks on; a commit after a TODO that isn't open is refused. "ten at once", against a live instance with the App on a scratch repository (`factoryRepository`): ten Working at once, one fails, nine reach In review, and the TODO after the first waits for it, then runs |
 | `e2e/todos.spec.ts` | real browsers, two people: Ann asks Smithers for a TODO, edits the draft and commits; Ben sees it numbered and opens its page; both reload; Ann drops it from its page and both see Dropped; it has left Open and shows under Closed. New TODO, Commit and Drop from the row's menu with the keyboard only. Make TODO from an issue's menu, the link both ways, and `t` on the issue's page, with `E2E_ISSUES_REPOSITORY` and a Member's `E2E_SESSION_COOKIE` (it skips without either). GIFs: `todos-todo-commit-drop.gif`, `todos-todo-new-keyboard.gif`, `todos-todo-from-issue.gif` |
 
 ## Not built yet
 
 - The run's step strip on a TODO's page.
-- Slice 2's rest: Before Tn and Amend, Move, two lanes, forward updates while the TODO below is still in review, out-of-order merges, and redoing a TODO whose base closed instead of failing it.
+- Slice 2's rest: Before Tn and Amend, Move, forward updates while the TODO below is still in review, out-of-order merges, and redoing a TODO whose base closed instead of failing it.
+- Choosing `after` on a draft card, and the stack's settings in a repository's Settings: the route takes both; the browser's commit takes the repository's base.
 
 
 ### Boundary regression guarantees
@@ -285,7 +309,8 @@ confirms cancellation and the writer rechecks its current attempt id; a live
 run cannot be reset by claiming it stopped.
 
 Retry resets the failed attempt's branch and publication projection and queues
-a new attempt at the same stack position. The TODO's number, title, prompt
+a new attempt at the same stack position, stacked on the nearest TODO its `after` chain still has, past any whose pull
+request closed unmerged, or on none. The TODO's number, title, prompt
 revision and issue stay intact; previous attempts and durable run records stay
 readable. Publishing follows the normal stack report path, freeing the lane for
 a held successor (the failure hold policy is owned by `todo-stack-hold`).
@@ -304,9 +329,9 @@ test would not prove the TODO ran.
 
 Retry uses the same `worker/stack/TodoRuns.ts` adapter as durable Drop and admission. A cancellation tombstone or a missing engine run is insufficient: only a recorded engine status of `cancelled` allows a stopped current attempt to retry. Drop cleanup and delayed admission fencing remain unchanged.
 
-### Admission after a failed base (2026-10-22)
+### Admission after a failed base (2026-10-22, decision 0135)
 
-The writer admits no queued TODO beyond the first failed predecessor. Dropping an unpublished failed TODO releases its dependency; dropping an In review base holds queued successors `base_closed`. A PR closed unmerged fails queued successors `base_closed`; a missing published base branch also refuses `base_closed`, never falling back to main. Already published descendants retain the existing close-and-fail behavior. Retrying the failed predecessor preserves its position; its publication releases the held TODO onto its branch.
+The writer admits no Queued TODO whose `after` chain runs through a TODO that isn't In review: a failed TODO holds the TODOs stacked on it, and only those. Dropping an unpublished failed TODO hands its `after` to them; dropping an In review base fails the Queued ones stacked on it `base_closed`. A PR closed unmerged fails them `base_closed` too; a missing published base branch also refuses `base_closed`, never falling back to main. Already published descendants retain the existing close-and-fail behavior. Retrying the failed predecessor preserves its position; its publication releases the held TODO onto its branch.
 
 Stack initialization retains the store’s shape source, including cache isolation and injected access refusals. A prompt shape refused with 401 or 403 keeps access at `sign_in` or `forbidden` even when the TODO shape succeeds.
 
@@ -323,8 +348,8 @@ original base after replacement publication, including a confirmed GitHub merge.
 
 A dropped or closed-unmerged base cancels its running descendants through the
 durable engine and settles them `base_closed`, freeing their lanes before
-another implementation cycle publishes. Queued successors hold. Retry chooses
-the nearest open ancestor, or the default branch. The durable cleanup records
+another implementation cycle publishes. The Queued TODOs stacked on it fail `base_closed`; those stacked on them hold.
+Retry chooses the nearest open ancestor, or the default branch. The durable cleanup records
 its descendant snapshot before cancellation; repeated delivery and recovery
 preserve attempt fencing. `todo.base_closed` logs and spans carry attempt IDs
 and outcomes; `smithers_todo_base_closed` counts settlement outcomes. PR cleanup

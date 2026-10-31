@@ -21,3 +21,9 @@ export const viaOf = (actor: Actor): StackVia => (actor.act === undefined ? "per
 
 /** Least role for retry: Member for their own TODO; Maintainer for anyone's. Ownership stays under the writer lock. */
 export const mayRetryAny = (actor: Actor): boolean => actor.role === "maintainer" || actor.role === "admin"
+
+/**
+ * Whether `actor` may change a stack's settings, its lanes, open limit and base (decision 0135): an Admin of the
+ * repository, in person. Lanes are spend: each one is an agent run on a runner.
+ */
+export const mayConfigure = (actor: Actor): boolean => actor.role === "admin" && actor.act === undefined

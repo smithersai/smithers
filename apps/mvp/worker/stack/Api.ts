@@ -10,8 +10,11 @@ import {
   isAcceptance,
   isPrompt,
   isTitle,
+  MAX_LANES,
+  MAX_OPEN_LIMIT,
   MAX_STACK_BODY_BYTES,
   MAX_TODO_NUMBER,
+  STACK_BASES,
   REFUSAL_STATUS,
   STACK_SEGMENT,
   TODO_STATUS_NOT_FOUND,
@@ -29,7 +32,7 @@ import { codeOf } from "../ErrorCode.ts"
 import { repositoryOf as repositoryNamed } from "../github/Config.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"
-import { mayChange, mayRead, mayRetryAny, viaOf } from "./Access.ts"
+import { mayChange, mayConfigure, mayRead, mayRetryAny, viaOf } from "./Access.ts"
 import * as Stack from "./Stack.ts"
 import type { TodoStatusRead } from "../../src/features/todos/schema.ts"
 
@@ -77,8 +80,9 @@ const TodoNumber = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: MAX_
 const IssueNumber = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: MAX_ISSUE_NUMBER }))
 
 /**
- * The route's body: a commit or a drop, under its op id. It names no door: who acts is the session's to say, so a body
- * that claims a `via` claims nothing.
+ * The route's body: a commit (after the TODO it stacks on, `null` for none, the stack's base when absent), a drop, a
+ * retry, or an Admin's settings, under its op id. It names no door: who acts is the session's to say, so a body that
+ * claims a `via` claims nothing.
  */
 const Body = Schema.Union([
   Schema.Struct({
@@ -88,8 +92,16 @@ const Body = Schema.Union([
     prompt: Prompt,
     acceptance: Schema.optional(Acceptance),
     issue: Schema.optional(IssueNumber),
+    after: Schema.optional(Schema.NullOr(TodoNumber)),
   }),
   Schema.Struct({ opId: Uuid, op: Schema.Literals(["drop", "retry"]), number: TodoNumber }),
+  Schema.Struct({
+    opId: Uuid,
+    op: Schema.Literal("configure"),
+    lanes: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: MAX_LANES })),
+    maxOpen: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: MAX_OPEN_LIMIT })),
+    base: Schema.Literals(STACK_BASES),
+  }),
 ])
 const decodeBody = Schema.decodeUnknownOption(Schema.fromJsonString(Body))
 
@@ -276,9 +288,9 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, rol
           fields.op = admitted.op
           fields.via = via
           fields.opId = admitted.opId.toLowerCase()
-          // Committing and dropping are the person's presses: anyone acting for them is refused, and counted as such
-          // (decision 0017 slice 0).
-          const act = admitted.op === "commit" ? "todo/commit" : "todo/drop"
+          // Committing, dropping and a stack's settings are the person's presses: anyone acting for them is refused, and
+          // counted as such (decision 0017 slice 0, decision 0135).
+          const act = admitted.op === "commit" ? "todo/commit" : admitted.op === "configure" ? "stack/configure" : "todo/drop"
           if (admitted.op !== "retry" && (yield* refusesPersonOnly(who, act))) return refused("forbidden")
           // The role is the person's on this repository, never another's (decision 0079).
           const resolved = yield* roles.resolve(who, repositoryNamed(`${target.owner}/${target.name}`)).pipe(Effect.result)
@@ -288,7 +300,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, rol
             return refusal(REFUSAL_STATUS[code], code, retryAfterSeconds)
           }
           const scopedActor = { ...who, role: resolved.success.role }
-          if (admitted.op === "retry" ? !mayRead(Option.some(scopedActor)) : !mayChange(scopedActor)) return refused("forbidden")
+          const allowed = admitted.op === "retry"
+            ? mayRead(Option.some(scopedActor))
+            : admitted.op === "configure"
+            ? mayConfigure(scopedActor)
+            : mayChange(scopedActor)
+          if (!allowed) return refused("forbidden")
           if (!canAsk(who)) return refused("forbidden")
           const held = resolved.success.held
           let stoppedAttemptId: string | undefined
@@ -310,7 +327,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, rol
                   prompt: admitted.prompt,
                   acceptance: admitted.acceptance ?? [],
                   ...(admitted.issue === undefined ? {} : { issue: admitted.issue }),
+                  ...(admitted.after === undefined ? {} : { after: admitted.after }),
                 }
+                : admitted.op === "configure"
+                ? { kind: "configure", lanes: admitted.lanes, maxOpen: admitted.maxOpen, base: admitted.base }
                 : { kind: admitted.op, number: admitted.number },
             },
             { runs: Option.isSome(runs), ...(Option.isSome(held) ? { holds: RepoRoles.holds(held.value) } : {}), ...(stoppedAttemptId === undefined ? {} : { stoppedAttemptId }) },
@@ -334,7 +354,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, rol
             }
           }
           fields.outcome = applied.kind === "applied" ? receipt.outcome : "repeated"
-          fields.number = receipt.number!
+          if (receipt.number !== undefined) fields.number = receipt.number
           return HttpServerResponse.jsonUnsafe(
             {
               txid: applied.kind === "applied" ? applied.txid : null,
