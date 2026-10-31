@@ -170,3 +170,15 @@ export default Flow.make("ci", { body: (run) => Node.all({ ${jobs} }) })`
     })
   })
 })
+
+test("plans this repository's own gate: 16 shards on the gate machine, then the coverage job that needs them all", async () => {
+  const source = readFileSync(new URL("../../../../.smithers/flows/gate/flow.ts", import.meta.url), "utf8")
+  const planned = await plan(source, "gate")
+  expect(planned._tag).toBe("planned")
+  if (planned._tag !== "planned") return
+  const shards = Array.from({ length: 16 }, (_, index) => `mvp-${index + 1}`)
+  expect(planned.jobs.map((job) => job.name)).toEqual([...shards, "mvp-coverage"])
+  expect(new Set(planned.jobs.map((job) => job.machine))).toEqual(new Set(["gate"]))
+  expect(planned.jobs.at(-1)?.needs).toEqual(shards)
+  expect(planned.jobs[2]?.steps.map((step) => step.run)).toEqual(["sh apps/mvp/ci/gate.sh install", "sh apps/mvp/ci/gate.sh shard 3 16"])
+})
