@@ -1,6 +1,6 @@
 import { expect, expectSameThread, pairs, test } from "./devices"
 import { step } from "./fixtures"
-import { fillYourModel, keyGroup, personalModelConfig, restorePersonalModel } from "./personal-model"
+import { fillYourModel, keyGroup, personalModelConfig, removeLeftModel, restorePersonalModel } from "./personal-model"
 import { requires } from "./target"
 
 // People's own models first (decision 0099, docs/features/model-endpoint.md#hosted-inference): while the deployment's own
@@ -27,7 +27,7 @@ test("byok first: no model shows Add your model; with one, the person's own mode
     type: "summary",
     description: "With the hosted model off, a Member without a model is sent to Settings; with one, it answers and summarizes.",
   },
-}, async ({ devices }) => {
+}, async ({ devices, request }) => {
   test.setTimeout(300_000)
   const word = devices.word
   const [a] = await devices.open("A")
@@ -53,10 +53,7 @@ test("byok first: no model shows Add your model; with one, the person's own mode
   await step("Open Settings, and remove a model an earlier run left", async () => {
     await page.goto(settings)
     await expect(section).toBeVisible({ timeout: 30_000 })
-    if (await remove.isVisible()) {
-      await remove.click()
-      await expect(remove).toHaveCount(0, { timeout: SAVED_WITHIN })
-    }
+    await removeLeftModel(request, section, SAVED_WITHIN)
   })
 
   await step("Back in the conversation: Add your model stands where the composer was", async () => {

@@ -87,3 +87,15 @@ export const restorePersonalModel = async (request: APIRequestContext) => {
   // Never attach the response body: a provider could echo credentials or prompt content.
   expect(result.ok === true, "saved personal model passes Test").toBe(true)
 }
+
+/**
+ * Removes the model an earlier run left, as a person does in Settings' Your model `section`: the server's rows say
+ * whether one is saved, since Remove shows only once the device has synced them and a look before that sees none.
+ */
+export const removeLeftModel = async (request: APIRequestContext, section: Locator, within: number) => {
+  if ((await shapeRows(request, PERSONAL_MODEL_SHAPE_ROUTE)).length === 0) return
+  const remove = section.getByRole("button", { name: "Remove" })
+  await expect(remove).toBeVisible({ timeout: within })
+  await remove.click()
+  await expect(remove).toHaveCount(0, { timeout: within })
+}

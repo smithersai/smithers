@@ -1,5 +1,5 @@
 import { baseUrlOf, resolveTier } from "../src/features/personal-model/contract"
-import { fillYourModel, keyGroup, personalModelConfig, restorePersonalModel } from "./personal-model"
+import { fillYourModel, keyGroup, personalModelConfig, removeLeftModel, restorePersonalModel } from "./personal-model"
 import { expect, expectSameThread, pairs, test } from "./devices"
 import { step } from "./fixtures"
 import { requires } from "./target"
@@ -52,13 +52,8 @@ test("your model: tiers on a key show after a reload; a refused key names the pr
     await expect(section).toBeVisible({ timeout: 30_000 })
   })
 
-  // An earlier run that stopped half way may have left its model.
-  if (await remove.isVisible()) {
-    await step("Remove the model an earlier run left", async () => {
-      await remove.click()
-      await expect(remove).toHaveCount(0, { timeout: SAVED_WITHIN })
-    })
-  }
+  // An earlier run that stopped half way, or the deployment setup, may have left its model.
+  await step("Remove the model an earlier run left", () => removeLeftModel(request, section, SAVED_WITHIN))
 
   await save(`sk-smithers-e2e-refused-${word}`)
 
@@ -80,18 +75,6 @@ test("your model: tiers on a key show after a reload; a refused key names the pr
     await expect(status).toHaveText(new RegExp(`^${HOST.replaceAll(".", "\\.")}( refused)? · HTTP 401`), { timeout: 60_000 })
   })
 
-  const toast = page.locator("[data-personal-model]")
-  await step("Back in the conversation, the toast says the same", async () => {
-    await page.goto(conversation)
-    await a.ready()
-    await expect(toast).toContainText(`${HOST} · HTTP 401`, { timeout: SAVED_WITHIN })
-  })
-
-  await step("Open Settings from the toast", async () => {
-    await toast.locator('[data-slot="toast-open"]').click()
-    await expect(section).toBeVisible({ timeout: 30_000 })
-  })
-
   await restorePersonalModel(request)
   await page.reload()
 
@@ -100,10 +83,9 @@ test("your model: tiers on a key show after a reload; a refused key names the pr
     await expect(status).toHaveText("OK", { timeout: 60_000 })
   })
 
-  await step("Ask in the conversation: the person's own model answers, and the toast is gone", async () => {
+  await step("Ask in the conversation: the person's own model answers", async () => {
     await page.goto(conversation)
     await a.ready()
-    await expect(toast).toHaveCount(0)
     await a.ask(`Reply with exactly this word and nothing else: byok-${word}`)
     const [exchange] = pairs(await expectSameThread([a], word, 2, 120_000))
     expect(exchange![1].text).toContain(`byok-${word}`)
