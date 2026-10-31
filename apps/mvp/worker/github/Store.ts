@@ -14,7 +14,7 @@ import {
   type WriteVia,
 } from "../../src/features/issues/contract.ts"
 import { UPDATE_METHODS } from "../../src/features/branch/contract.ts"
-import { MERGE_METHODS } from "../../src/features/pulls/contract.ts"
+import { MERGE_METHODS, type MergeFlow } from "../../src/features/pulls/contract.ts"
 import { Sealed } from "../SessionStore.ts"
 
 // The git loop's rows in Postgres (docs/features/issues.md#postgres, migration 0016_github_issues). GitHub is the truth:
@@ -368,7 +368,13 @@ export const beginAttempt = (id: string) =>
  * GitHub, such as enabling triage); or failed or refused, with why.
  */
 export type Settlement =
-  | { readonly status: "done"; readonly itemNumber: number | null; readonly githubId: number | null }
+  | {
+    readonly status: "done"
+    readonly itemNumber: number | null
+    readonly githubId: number | null
+    /** A merge's: how it landed its pull request (decision 0134). */
+    readonly mergeFlow?: MergeFlow
+  }
   | { readonly status: "failed" | "refused"; readonly failure: WriteFailure }
 
 /**
@@ -382,7 +388,7 @@ export const settleWrite = <E = never, R = never>(id: string, settlement: Settle
       const rows = settlement.status === "done"
         ? yield* sql`
           UPDATE github_writes SET status = 'done', item_number = ${settlement.itemNumber},
-            github_id = ${settlement.githubId}, settled_at = now()
+            github_id = ${settlement.githubId}, merge_flow = ${settlement.mergeFlow ?? null}, settled_at = now()
           WHERE id = ${id}::uuid AND status = 'pending' RETURNING id`
         : yield* sql`
           UPDATE github_writes SET status = ${settlement.status}, failure = ${settlement.failure}, settled_at = now()

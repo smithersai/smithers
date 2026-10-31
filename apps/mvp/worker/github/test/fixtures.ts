@@ -114,8 +114,11 @@ export const admit = (
 export const writeRow = async (runtime: Runtime, id: string) =>
   ((await sql(
     runtime,
-    `SELECT status, failure, attempts, item_number AS "itemNumber" FROM github_writes WHERE id = '${id}'`,
-  )) as unknown as Array<{ status: string; failure: string | null; attempts: number; itemNumber: number | null }>)[0]
+    `SELECT status, failure, attempts, item_number AS "itemNumber", merge_flow AS "mergeFlow"
+    FROM github_writes WHERE id = '${id}'`,
+  )) as unknown as Array<
+    { status: string; failure: string | null; attempts: number; itemNumber: number | null; mergeFlow: string | null }
+  >)[0]
 
 /** Every `items` row of the repository, by number. */
 export const items = async (runtime: Runtime) =>

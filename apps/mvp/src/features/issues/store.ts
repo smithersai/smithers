@@ -174,7 +174,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     getKey: (row) => row.id,
     shape: shape(WRITES_SHAPE_ROUTE),
     syncMode: "eager",
-    persist: { schemaVersion: 2 },
+    persist: { schemaVersion: 3 },
   }).pipe(Effect.provideService(ShapeSource.ShapeSource, signedInShapeSource(source, auth)))
   yield* observeInitialApplied(writes, "github-writes", "*").pipe(Effect.forkIn(scope, { startImmediately: true }))
   const drafts = yield* Collection.persisted<Draft, string>({

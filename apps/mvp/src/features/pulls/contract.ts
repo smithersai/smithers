@@ -103,6 +103,32 @@ export const MERGE_FAILURE_COPY: Readonly<Record<MergeFailure, (base: string) =>
 }
 
 /**
+ * How a repository's Merge lands a pull request (ruling BR-7, decision 0134): `github`, GitHub's own merge as the
+ * person, the default; or `queue`, the person's request to the repository's own merge queue, which lands it through its
+ * gate. The repository says which in {@link MERGE_FLOW_FILE} at the pull request's base.
+ */
+export const MERGE_FLOWS = ["github", "queue"] as const
+export type MergeFlow = (typeof MERGE_FLOWS)[number]
+export const DEFAULT_MERGE_FLOW: MergeFlow = "github"
+
+/** The file that names a repository's merge flow, `{ "flow": "queue" }`, read at the pull request's base. */
+export const MERGE_FLOW_FILE = ".smithers/merge.json"
+
+/**
+ * A queue request's marker: hidden in the person's comment, it names the head they pressed Merge on. A queue's poller
+ * reads it (with the comment's author) and enqueues exactly that head.
+ */
+export const queueMarkerOf = (headSha: string): string => `<!-- smithers:merge-queue head=${headSha} -->`
+
+/** The comment that asks the repository's merge queue to land `headSha`, as the person who pressed Merge. */
+export const queueRequestOf = (headSha: string): string =>
+  `Queued for this repository's merge queue at \`${headSha.slice(0, 12)}\`. The queue lands it on the base branch ` +
+  `through its gate and closes this pull request, or says here why not.\n\n${queueMarkerOf(headSha)}`
+
+/** What the merge box says once the queue took a person's request, until the pull request closes. */
+export const QUEUED_NOTICE = "Queued"
+
+/**
  * Ruling GH-9: merging into the repository's default branch on GitHub is a deploy, while production work (checks and
  * runs) happens on Smithers. The merge box says it beside Merge, naming the branch.
  */

@@ -1,7 +1,7 @@
 // A person's merge (worker/github/Merge.ts, decision 0012 decision 6) on the Node host's engine over this file's schema
 // of the compose Postgres, against the scripted GitHub: the write is admitted as the writes route admits it, then
 // `pr/Merge` rechecks what the person saw and merges with their own token, or settles why not.
-import { Cause, Effect, Exit, Metric, Redacted } from "effect"
+import { Cause, Effect, Exit, Metric, Option, Redacted } from "effect"
 import { HttpClient } from "effect/http"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
@@ -14,6 +14,7 @@ import * as Metrics from "./Metrics.ts"
 import { moveBase, readPull } from "./Pulls.ts"
 import { TokenUnavailable } from "./Tokens.ts"
 import * as Write from "./Write.ts"
+import { MERGE_FLOW_FILE, queueMarkerOf } from "../../src/features/pulls/contract.ts"
 import { admit, REPOSITORY, reset, services, signedIn, sql, writeRow } from "./test/fixtures.ts"
 import { BOT_LOGIN, type ScriptedGitHub, scriptedGitHub } from "./test/scriptedGitHub.ts"
 
@@ -71,8 +72,10 @@ describe("pr/Merge", { timeout: 60_000 }, () => {
     )
     expect(github.tree("main").get("README.md")).toBe("# Widgets\n\nA line\n")
     expect(github.seen("PUT", /\/merge$/).map((call) => call.token)).toEqual(["user"])
-    expect(await writeRow(runtime, writeId)).toMatchObject({ status: "done", itemNumber: seen.number })
+    expect(await writeRow(runtime, writeId)).toMatchObject({ status: "done", itemNumber: seen.number, mergeFlow: "github" })
     expect(await sql(runtime, `SELECT merged, merged_by AS "by" FROM pulls`)).toEqual([{ merged: true, by: "maya" }])
+    // No `.smithers/merge.json`: GitHub's merge, the default; and nothing asked any queue.
+    expect(github.seen("POST", /\/comments$/)).toHaveLength(0)
   })
 
   /** What changes on GitHub after the person saw the pull request. */
@@ -199,7 +202,7 @@ describe("pr/Merge", { timeout: 60_000 }, () => {
     const registry: Metric.MetricRegistry = new Map()
     const count = (base: Merge.Landed) =>
       Effect.runSync(
-        Metric.value(Metric.withAttributes(Merge.merges, { outcome: "done", base })).pipe(
+        Metric.value(Metric.withAttributes(Merge.merges, { outcome: "done", base, flow: "github" })).pipe(
           Effect.provideService(Metric.MetricRegistry, registry),
         ),
       ).count
@@ -233,7 +236,7 @@ describe("pr/Merge", { timeout: 60_000 }, () => {
     expect(merged.status).toBe("done")
     const unchecked = () =>
       Effect.runSync(
-        Metric.value(Metric.withAttributes(Merge.merges, { outcome: "done", base: "unchecked" })).pipe(
+        Metric.value(Metric.withAttributes(Merge.merges, { outcome: "done", base: "unchecked", flow: "github" })).pipe(
           Effect.provideService(Metric.MetricRegistry, registry),
         ),
       ).count
@@ -404,9 +407,16 @@ describe("pr/Merge", { timeout: 60_000 }, () => {
     const seen = opened(github)
     const { writeId } = await merging(github, seen)
     const { services: built } = await services(runtime, github)
+    // The App reads the merge flow (Contents: read, decision 0134), then can't mint the read-back's token.
     const noApp = {
       ...built,
-      tokens: { ...built.tokens, forInstallation: () => Effect.fail(new TokenUnavailable({ reason: "app_not_installed" })) },
+      tokens: {
+        ...built.tokens,
+        forInstallation: (...args: Parameters<typeof built.tokens.forInstallation>) =>
+          args[1] === "contents"
+            ? built.tokens.forInstallation(...args)
+            : Effect.fail(new TokenUnavailable({ reason: "app_not_installed" })),
+      },
     }
     const merged = await runtime.runPromise(Merge.steps(noApp).send({ writeId }))
     expect(merged).toEqual({ status: "done", mergeSha: github.pulls.get(seen.number)!.mergeSha })
@@ -506,4 +516,135 @@ test("an unknown merge outcome cannot claim a different GitHub person's merge", 
   github.merge(seen.number, "octocat")
   expect(await runtime.runPromise(Merge.steps(built).send({ writeId }))).toEqual({ status: "refused", mergeSha: null })
   expect(await writeRow(runtime, writeId)).toMatchObject({ status: "refused", failure: "merged" })
+})
+
+// The repository's merge flow (ruling BR-7, decision 0134): `.smithers/merge.json` at the base the person saw.
+describe("pr/Merge through the repository's merge queue", { timeout: 60_000 }, () => {
+  /** A repository whose main says `{ "flow": "queue" }` (or `text`), and a pull request opened on it. */
+  const queueing = (text = `{ "flow": "queue" }\n`) => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    github.push("main", { [MERGE_FLOW_FILE]: text })
+    return { github, seen: opened(github) }
+  }
+
+  const requests = (github: ScriptedGitHub, number: number) =>
+    github.issues.get(number)!.comments.filter((comment) => comment.body.includes("smithers:merge-queue"))
+
+  test("a queue repository's Merge posts one request as the person, naming the head they saw; nothing merges", async () => {
+    const { github, seen } = queueing()
+    const main = github.refs.get("main")
+    const { writeId } = await merging(github, seen)
+    const ran = await run(github, writeId)
+    expect(ran.exit).toEqual(Exit.succeed({ status: "done", mergeSha: null }))
+    const [request, ...others] = requests(github, seen.number)
+    expect(others).toEqual([])
+    expect(request!.login).toBe("maya")
+    expect(request!.body).toContain(queueMarkerOf(seen.headSha))
+    // The key the merge commit would carry, as the comment's write marker: a lost answer is found by it.
+    expect(request!.body).toContain(`<!-- smithers:write=${Merge.mergeKeyOf(writeId)} -->`)
+    expect([github.pulls.get(seen.number)!.merged, github.refs.get("main")]).toEqual([false, main])
+    expect(github.seen("PUT", /\/merge$/)).toHaveLength(0)
+    // The App read the file with only Contents: read, at the base the page showed.
+    expect(github.seen("GET", /\/contents\//).map((call) => call.token)).toEqual(["installation"])
+    expect(github.seen("POST", /\/comments$/).map((call) => call.token)).toEqual(["user"])
+    expect(await writeRow(runtime, writeId)).toMatchObject({ status: "done", itemNumber: seen.number, mergeFlow: "queue" })
+  })
+
+  test("a request whose answer was lost is found by its key: one comment", async () => {
+    const { github, seen } = queueing()
+    const { writeId } = await merging(github, seen)
+    github.faults.push({ match: (method, path) => method === "POST" && path.endsWith("/comments"), lost: true })
+    const ran = await run(github, writeId)
+    expect(ran.exit).toEqual(Exit.succeed({ status: "done", mergeSha: null }))
+    expect(requests(github, seen.number)).toHaveLength(1)
+    expect(github.seen("POST", /\/comments$/)).toHaveLength(1)
+    expect(await writeRow(runtime, writeId)).toMatchObject({ status: "done", mergeFlow: "queue" })
+  })
+
+  /** What changes on GitHub after the person saw the pull request. */
+  type Change = (github: ScriptedGitHub, number: number) => void
+  test.each<readonly [string, Change]>([
+    ["head_moved", (github) => void github.push("smithers/t1-readme", { "B.md": "b\n" })],
+    ["merged", (github, number) => void github.merge(number)],
+    ["closed", (github, number) => github.close(number)],
+    ["draft", (github, number) => void github.pulls.set(number, { ...github.pulls.get(number)!, draft: true })],
+  ])("refuses %s: no request posted, the write settled refused", async (failure, change) => {
+    const { github, seen } = queueing()
+    const { writeId } = await merging(github, seen)
+    change(github, seen.number)
+    const ran = await run(github, writeId)
+    expect(ran.exit).toEqual(Exit.succeed({ status: "refused", mergeSha: null }))
+    expect(requests(github, seen.number)).toEqual([])
+    expect(await writeRow(runtime, writeId)).toMatchObject({ status: "refused", failure })
+  })
+
+  test("a moved base is no refusal for a queue: the queue lands the head on main as it then is", async () => {
+    const { github, seen } = queueing()
+    github.push("main", { "C.md": "c\n" })
+    const { writeId } = await merging(github, seen)
+    await run(github, writeId)
+    expect(requests(github, seen.number)).toHaveLength(1)
+    expect(await writeRow(runtime, writeId)).toMatchObject({ status: "done", mergeFlow: "queue" })
+  })
+
+  test("the file is read at the base the person saw: a pull request can't choose its own merge flow", async () => {
+    const { github } = queueing()
+    // The pull request itself says GitHub's merge; main, its base, says the queue.
+    const baseSha = github.refs.get("main")!
+    const headSha = github.push("smithers/t1-readme", { [MERGE_FLOW_FILE]: `{ "flow": "github" }\n` })
+    const pull = github.openPull("smithers/t1-readme", "T1: flow", BOT_LOGIN)
+    const { writeId } = await merging(github, { number: pull.number, headSha, baseSha })
+    await run(github, writeId)
+    expect(requests(github, pull.number)).toHaveLength(1)
+    expect(github.pulls.get(pull.number)!.merged).toBe(false)
+  })
+
+  test("a page that saw a base without the file binds GitHub's merge, so its moved base is refused, not queued", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const older = opened(github)
+    github.push("main", { [MERGE_FLOW_FILE]: `{ "flow": "queue" }\n` })
+    const { writeId } = await merging(github, older)
+    await run(github, writeId)
+    expect(await writeRow(runtime, writeId)).toMatchObject({ status: "refused", failure: "base_moved" })
+    expect(github.seen("POST", /\/comments$/)).toHaveLength(0)
+  })
+
+  test.each([
+    ["not JSON", "flow: queue\n"],
+    ["an unknown flow", `{ "flow": "rebase-train" }`],
+    ["an unknown field", `{ "flow": "queue", "who": "member" }`],
+  ])("a file that says %s is refused invalid: never a direct merge, never a request", async (_, text) => {
+    const { github, seen } = queueing(text)
+    const main = github.refs.get("main")
+    const { writeId } = await merging(github, seen)
+    await run(github, writeId)
+    expect(await writeRow(runtime, writeId)).toMatchObject({ status: "refused", failure: "invalid" })
+    expect([github.refs.get("main"), requests(github, seen.number)]).toEqual([main, []])
+  })
+
+  test("a file GitHub can't read now is tried again, never read as the default; then the request goes", async () => {
+    const { github, seen } = queueing()
+    const { writeId } = await merging(github, seen)
+    const { services: built } = await services(runtime, github)
+    github.faults.push({ match: (method, path) => method === "GET" && path.includes("/contents/"), status: 502 })
+    const first = await runtime.runPromise(Effect.exit(Merge.steps(built).send({ writeId })))
+    expect(Exit.isFailure(first) && Cause.squash(first.cause)).toBeInstanceOf(Merge.MergeUnavailable)
+    expect([github.seen("PUT", /\/merge$/), requests(github, seen.number)]).toEqual([[], []])
+    expect(await runtime.runPromise(Merge.steps(built).send({ writeId }))).toEqual({ status: "done", mergeSha: null })
+    expect(requests(github, seen.number)).toHaveLength(1)
+  })
+
+  test("an App without Contents: read is refused not_allowed: the flow can't be known, so nothing is sent", async () => {
+    const { github, seen } = queueing()
+    github.contentsGranted = false
+    const { writeId } = await merging(github, seen)
+    await run(github, writeId)
+    expect(await writeRow(runtime, writeId)).toMatchObject({ status: "refused", failure: "not_allowed" })
+    expect([github.seen("PUT", /\/merge$/), requests(github, seen.number)]).toEqual([[], []])
+  })
+
+  test("`mergeFlowOf` reads the file's one field", () => {
+    expect([`{"flow":"queue"}`, `{"flow":"github"}`, `{}`, `[]`, ``].map((text) => Option.getOrUndefined(Merge.mergeFlowOf(text))))
+      .toEqual(["queue", "github", undefined, undefined, undefined])
+  })
 })

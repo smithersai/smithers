@@ -75,6 +75,7 @@ const write = (fields: Partial<WriteRow> & Pick<WriteRow, "id" | "status">): Wri
   createdAt: "2026-10-28 11:59:50+00",
   settledAt: null,
   branchId: null,
+  mergeFlow: null,
   ...fields,
 })
 

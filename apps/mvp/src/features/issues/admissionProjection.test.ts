@@ -34,7 +34,7 @@ for (const op of ["issue/create", "issue/comment", "issue/triage"] as const) tes
     yield* shows("not_sent")
     yield* requested.update(id, value => { value.status = "requested"; value.reason = null })
     yield* shows("requested")
-    yield* writes.insert({ id, repoId: repo, op, status: "failed", failure: null, itemNumber: null, createdAt: "2026-10-27", settledAt: null, branchId: null })
+    yield* writes.insert({ id, repoId: repo, op, status: "failed", failure: null, itemNumber: null, createdAt: "2026-10-27", settledAt: null, branchId: null, mergeFlow: null })
     yield* shows("not_sent")
     yield* writes.delete(id)
     yield* requested.update(id, value => { value.status = "not_sent" })

@@ -173,6 +173,7 @@ export const viewQuery = (view: View, writes: Synced<WriteRow>) =>
         pullStatus: view.pullStatus,
         mergeStatus: Query.coalesce(write?.status, ""),
         mergeFailure: Query.coalesce(write?.failure, ""),
+        mergeFlow: Query.coalesce(write?.mergeFlow, ""),
       }))
       .findOne()
   )
