@@ -10,7 +10,7 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/age
 
 > **Related APIs:** [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/harness`](/docs/reference/api/harness/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/memory`](/docs/reference/api/memory/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/observability`](/docs/reference/api/observability/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/plugin`](/docs/reference/api/plugin/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/std`](/docs/reference/api/std/)
 
-`@smthrs/agent` exports twenty-eight modules from its root entry point, and each is
+`@smthrs/agent` exports thirty-one modules from its root entry point, and each is
 also importable from `@smthrs/agent/<Module>`:
 
 ```ts
@@ -3124,3 +3124,63 @@ compaction marks, seat routing, the supervisor and `memory/mine`, which accepts
 nothing. Each answer is computed from
 the state by the matching `answer.*` answerer, and `answererFor(ids)` picks one
 by question ids. A question-id set no classifier asks fails `unreachable`.
+
+## AgentRunner
+
+The contract between a host whose flows hand work to an external agent and the
+runner machine that runs it. It names no agent vendor: an `Agent` is a `name`,
+the machine `labels` a runner must carry, an opaque `profile` only the runner
+reads, `maxHours` (1 to `MAX_HOURS`, 12) and `restarts` (0 to `MAX_RESTARTS`, 5).
+
+- `Task`: `{ agent, repository, base, system, prompt, limits }`. `base` is a full
+  commit id; `limits` is `{ files, bytes }` for the change.
+- `Job`: `{ key, claim, generation, task, deadline, leaseSeconds, reclaimed }`,
+  what a runner claims. `reclaimed` marks a job handed back to a runner that
+  restarted while holding it.
+- `ClaimRequest` `{ profiles, free, running, waitSeconds }`, `ClaimResponse`,
+  `HeartbeatRequest`, `HeartbeatResponse` `{ held, cancel, leaseSeconds }`,
+  `SettleRequest`, `SettleResponse`, and `ROUTES` (`/api/runners/claim`,
+  `/heartbeat`, `/settle`).
+- `Outcome`: `Done { changes, summary, usage }`, `Failed { reason }` with a code
+  of `FAILURES` (`agent`, `refused`, `workspace`, `too_large`, `timeout`,
+  `machine_lost`, `exhausted`), `Retryable { afterSeconds? }`, or
+  `Cancelled { processTreeGone }`. `Usage` fields an agent doesn't report stay
+  absent.
+- `AgentJobs`: the host's job store port, `start(task, key)`, `status(key)`
+  (`Running`, `Again` or `Ended`) and `cancel(key)`. A store that can't record an
+  operation fails `AgentJobsUnavailable`, an `infra` fault the engine retries.
+  The store owns the agent's hours and restarts.
+- `parseKey(key)`: the `origin` and `generation` of `<origin>#g<n>`; throws
+  `RangeError` for anything else.
+
+## ExternalAgent
+
+`ExternalAgent.make(tag, { payload, task })` declares a durable step an external
+agent does on a runner: an `ExternalJob` from `@smthrs/flow` over
+`AgentRunner.AgentJobs`. `call(payload)` runs it as a child execution, `flows`
+lists its three declarations for a host that resolves executions by tag, and
+`toLayer()` implements it. It probes from 2 seconds doubling to 30, has a
+deadline of `TIMEOUT` (`MAX_HOURS` plus ten minutes), and replaces a retryable
+generation up to `MAX_RESTARTS` times; the store ends a job sooner by its own
+agent's settings.
+
+The step answers `Result` `{ changes, summary, usage, generation }`, or fails
+`AgentFailed { reason }` (a runner's code, or `cancelled`), `ExternalJobLost` or
+`ExternalJobTimedOut`. It counts `smithers_external_agent_jobs` by agent and
+outcome and traces `agent.external.<operation>` spans; neither carries the task.
+
+## Acp
+
+`Acp.make(transport, options)` is a client of one Agent Client Protocol agent.
+`transport` is `{ incoming, send }`: the agent's stdout as a stream of lines,
+and a function that writes one line to its stdin. `options.onUpdate` runs for
+each `session/update` in order; `options.permission` (`allow` unless set)
+answers permission requests. The client offers the agent no file system and no
+terminal, and answers any other request from the agent method-not-found.
+
+The client has `initialize` (`{ protocolVersion, loadSession }`),
+`newSession(cwd)`, `loadSession(sessionId, cwd)`, `prompt(sessionId, text)`
+(the turn's `StopReason`) and `cancel(sessionId)`. Failures are `AcpError`
+with a `code` of `closed`, `protocol` or `remote` (and the JSON-RPC `rpcCode`),
+never the agent's message. `messageText(update)` and `usage(update)` read an
+`agent_message_chunk`'s text and a `usage_update`'s context and USD cost.
