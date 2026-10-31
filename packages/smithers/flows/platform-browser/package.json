@@ -179,7 +179,7 @@
     "eslint-plugin-unicorn": "65.0.0",
     "madge": "8.0.0",
     "typescript-eslint": "8.69.0",
-    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-b9d250df199d.tgz",
+    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-c3292f2c8df3.tgz",
     "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-a2b67ac4484b.tgz",
     "vitest": "5.0.0",
     "@effect/platform-node": "4.1.0",
