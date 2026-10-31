@@ -149,7 +149,7 @@ export const withTodos = <ROut, E, R, SE, SR, DE, DR, ME, MR, IE, IR>(
     flows.registration,
     Layer.unwrap(Effect.map(services, (built) =>
       Layer.mergeAll(
-        Todo.registration(built, implement),
+        Todo.registration(built, implement, commandSeconds, stepWaitSeconds),
         TodoDrop.registration(built),
         TodoBaseClosed.registration(built),
         Checks.registration(built, commandSeconds, stepWaitSeconds),
@@ -269,14 +269,14 @@ export const withSecrets = <ROut, E, R, DE, DR>(
 })
 
 /**
- * `flows`, plus `model/Put` and `model/Delete` over the app's tables: a person's own model, its key sealed before it
+ * `flows`, plus `model/Put`, `model/Delete` and `model/CodexLink` over the app's tables: a person's own model, its key sealed before it
  * reaches either (docs/features/personal-model.md#saving).
  */
 export const withPersonalModels = <ROut, E, R, DE, DR>(
   flows: Flows<ROut, E, R>,
   database: Layer.Layer<SqlClient.SqlClient, DE, DR>,
 ) => ({
-  flows: [...flows.flows, ModelFlows.Put, ModelFlows.Delete],
+  flows: [...flows.flows, ModelFlows.Put, ModelFlows.Delete, ModelFlows.CodexLink],
   registration: Layer.merge(flows.registration, ModelFlows.registration(database)),
 })
 

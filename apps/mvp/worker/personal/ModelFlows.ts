@@ -1,14 +1,15 @@
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
-import { Node } from "@smthrs/plan"
-import { Effect, Layer, Metric, Schema } from "effect"
+import { Node, type Planned } from "@smthrs/plan"
+import { Clock, Effect, Layer, Metric, Option, Redacted, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
-import { PROTOCOLS } from "../../src/features/personal-model/contract.ts"
+import { CONNECTION_KINDS, PROTOCOLS } from "../../src/features/personal-model/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
+import { SecretKeys } from "../secrets/Keys.ts"
+import * as Codex from "./Codex.ts"
 import * as Store from "./Store.ts"
 
-// `model/Put` and `model/Delete` (decisions 0096 and 0107, docs/features/personal-model.md#saving): a person saves or
-// removes their own keys and the models their tiers use. The route admits the write and seals each key typed before it
-// starts the flow, so the payload, and with it the journal, holds only ciphertext. Each flow is one durable step that writes the row and records the change once,
+// `model/Put` and `model/Delete` (decisions 0096, 0107 and 0134, docs/features/personal-model.md#saving): a person saves
+// or removes their own connections. The route admits the write and seals each credential typed before it starts the flow, so the payload, and with it the journal, holds only ciphertext. Each flow is one durable step that writes the row and records the change once,
 // under its invocation key. They run on any host; the deployment runs them on the Cloudflare host (`FlowExecution`).
 
 /** Postgres couldn't record the write. Retried. */
@@ -29,12 +30,20 @@ export const writes = Metric.counter("smithers_personal_model_writes", {
 /** Recording: 1 s doubling to a minute, for at most 30 minutes, while Postgres is unreachable. */
 export const STORE_RETRY = RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000, expirationMs: 30 * 60_000 })
 
-const Protocol = Schema.Literals(PROTOCOLS)
+const Models = Schema.Struct({
+  fast: Schema.optional(Schema.String),
+  implement: Schema.optional(Schema.String),
+  hard: Schema.optional(Schema.String),
+})
 
-/** A key the save keeps: sealed when the person typed it again, else the one saved at the same base URL stays. */
-const KeyWrite = Schema.Struct({
-  protocol: Protocol,
-  baseUrl: Schema.String,
+/** A connection the save keeps: sealed when the person typed its credential again, else the saved one stays. */
+const ConnectionWrite = Schema.Struct({
+  id: Schema.String,
+  kind: Schema.Literals(CONNECTION_KINDS),
+  active: Schema.Boolean,
+  protocol: Schema.NullOr(Schema.Literals(PROTOCOLS)),
+  baseUrl: Schema.NullOr(Schema.String),
+  models: Models,
   sealed: Schema.optional(Schema.Struct({
     ciphertext: Schema.String,
     nonce: Schema.String,
@@ -43,21 +52,15 @@ const KeyWrite = Schema.Struct({
   })),
 })
 
-const TierChoice = Schema.Struct({ protocol: Protocol, modelId: Schema.String })
+const decodeDevice = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(Schema.Struct({ deviceAuthId: Schema.String, userCode: Schema.String })),
+)
 
-const putPayload = {
-  personId: Schema.String,
-  keys: Schema.Array(KeyWrite),
-  models: Schema.Struct({
-    fast: Schema.optional(TierChoice),
-    implement: Schema.optional(TierChoice),
-    hard: Schema.optional(TierChoice),
-  }),
-}
+const putPayload = { personId: Schema.String, connections: Schema.Array(ConnectionWrite) }
 
 const deletePayload = { personId: Schema.String }
 
-/** Writes the keys and the tiers' models, and records `set` or `replace`. */
+/** Writes the connections, and records `set` or `replace`. */
 export const Store_ = Action.make("model/Store", {
   payload: putPayload,
   success: Schema.Struct({ change: Schema.Literals(["set", "replace", "repeat", "stale"]) }),
@@ -75,9 +78,9 @@ export const Erase = Action.make("model/Erase", {
   retryPolicy: STORE_RETRY,
 })
 
-/** `model/Put`: saves or replaces a person's own keys, sealed, and the models their tiers use. */
+/** `model/Put`: saves or replaces a person's own connections, sealed, in their order. */
 export const Put = Flow.make("model/Put", {
-  description: "Save or replace a person's own keys, sealed, and their tiers' models; the person acting in person only.",
+  description: "Save or replace a person's own connections, sealed; the person acting in person only.",
   capabilities: ["db:write:personal_models"],
   modelInvocable: false,
   payload: putPayload,
@@ -86,9 +89,9 @@ export const Put = Flow.make("model/Put", {
   body: Node.capture({ store: Store_.name }, (write) => Store_.call(write)),
 })
 
-/** `model/Delete`: removes a person's own keys, so the deployment's model answers them again. */
+/** `model/Delete`: removes a person's own connections, so the deployment's model answers them again. */
 export const Delete = Flow.make("model/Delete", {
-  description: "Remove a person's own keys, so the deployment's model answers them again.",
+  description: "Remove a person's own connections, so the deployment's model answers them again.",
   capabilities: ["db:write:personal_models"],
   modelInvocable: false,
   payload: deletePayload,
@@ -97,10 +100,81 @@ export const Delete = Flow.make("model/Delete", {
   body: Node.capture({ erase: Erase.name }, (write) => Erase.call(write)),
 })
 
+/** Where a device link stands while the person hasn't typed the code. Retried on the code's own clock. */
+export class LinkPending extends Schema.TaggedError<LinkPending>()("@smthrs/mvp/personal/LinkPending", {}) {}
+
+/** OpenAI refused the link for good, by its status: the person starts again. */
+export class LinkRefused extends Schema.TaggedError<LinkRefused>()("@smthrs/mvp/personal/LinkRefused", {
+  status: Schema.NullOr(Schema.Number),
+}) {}
+
+/** Polling a device code: every 5 seconds for its 15 minutes, as `codex login --device-auth` does. A refusal ends it. */
+export const LINK_RETRY = RetryPolicy.make({
+  initialMs: 5_000,
+  factor: 1,
+  maxMs: 5_000,
+  expirationMs: 15 * 60_000,
+  nonRetryable: ["@smthrs/mvp/personal/LinkRefused"],
+})
+
+const linkPayload = {
+  personId: Schema.String,
+  /** The new connection's id, chosen by the route, so a replay writes one row. */
+  id: Schema.String,
+  /** The device code, sealed: `{ deviceAuthId, userCode }`. */
+  ciphertext: Schema.String,
+  nonce: Schema.String,
+  keyVersion: Schema.Int,
+}
+
+/** The credential OpenAI issued, sealed: what `model/CodexPoll` journals. */
+const SealedCredential = Schema.Struct({
+  ciphertext: Schema.String,
+  nonce: Schema.String,
+  keyVersion: Schema.Int,
+  keyLast4: Schema.String,
+})
+
+/**
+ * Polls the device code and seals the credential once approved. Its own step, since OpenAI's code works once: a store
+ * that fails after it retries from the journaled seal, never exchanging the code again.
+ */
+export const Poll = Action.make("model/CodexPoll", {
+  payload: linkPayload,
+  success: SealedCredential,
+  error: Schema.Union([LinkPending, LinkRefused]),
+  capabilities: ["network:auth.openai.com"],
+  retryPolicy: LINK_RETRY,
+})
+
+/** Puts the sealed credential on the person's list, once. */
+export const Keep = Action.make("model/CodexKeep", {
+  payload: { personId: Schema.String, id: Schema.String, sealed: SealedCredential },
+  success: Schema.Struct({ change: Schema.Literals(["set", "replace", "repeat"]) }),
+  error: StoreUnavailable,
+  capabilities: ["db:write:personal_models"],
+  retryPolicy: STORE_RETRY,
+})
+
+/** `model/CodexLink`: one device-code sign-in, from the code the person was shown to their sealed credential. */
+export const CodexLink = Flow.make("model/CodexLink", {
+  description: "Link a person's Codex subscription once they approve its device code at OpenAI.",
+  capabilities: ["db:write:personal_models", "network:auth.openai.com"],
+  modelInvocable: false,
+  payload: linkPayload,
+  success: Keep.successSchema,
+  error: Schema.Union([LinkPending, LinkRefused, StoreUnavailable]),
+  body: Node.capture({ poll: Poll.name, keep: Keep.name }, (write) =>
+    Poll.call(write).pipe(
+      Node.bindPlanned(Node.capture({ keep: Keep.name }, (sealed: Planned.Planned<typeof SealedCredential.Type>) =>
+        Keep.call({ personId: write.personId, id: write.id, sealed }))),
+    )),
+})
+
 /** Every outcome as one record: a count, a log line and a span, carrying the op and the change, never the person's model. */
-const recorded = <A extends { readonly change: string }, R>(
-  op: "put" | "delete",
-  effect: Effect.Effect<A, StoreUnavailable, R>,
+const recorded = <A extends { readonly change: string }, E, R>(
+  op: "put" | "delete" | "link",
+  effect: Effect.Effect<A, E, R>,
 ) =>
   effect.pipe(
     Effect.tap(({ change }) =>
@@ -134,8 +208,7 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       const key = yield* invocationKey
       const change = yield* Store.put({
         personId: write.personId,
-        keys: write.keys,
-        models: write.models,
+        connections: write.connections,
         invocationKey: key,
       }).pipe(Effect.provide(database), Effect.catch(unavailable))
       return { change }
@@ -154,11 +227,49 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
   return { store, erase }
 }
 
-/** Registers `model/Put` and `model/Delete` with their steps over `database`. */
+/** The link's polling step, opening and sealing under `SecretKeys`. */
+export const pollStep = (write: typeof Poll.payloadSchema.Type) =>
+    Effect.gen(function* () {
+      const keys = yield* SecretKeys
+      if (Option.isNone(keys)) return yield* new LinkRefused({ status: null })
+      const { cipher, version } = keys.value
+      const opened = yield* cipher.open(
+        { ciphertext: write.ciphertext, nonce: write.nonce },
+        { id: `person:${write.personId}`, name: "model-link", version: write.keyVersion },
+      ).pipe(Effect.mapError(() => new LinkRefused({ status: null })))
+      const device = yield* decodeDevice(Redacted.value(opened)).pipe(Effect.mapError(() => new LinkRefused({ status: null })))
+      const now = yield* Clock.currentTimeMillis
+      const credential = yield* Codex.poll(device.deviceAuthId, device.userCode, now).pipe(
+        Effect.mapError((failure) =>
+          failure.reason === "refused" ? new LinkRefused({ status: failure.status }) : new LinkPending()
+        ),
+      )
+      const sealed = yield* cipher.seal(
+        Redacted.make(JSON.stringify(credential)),
+        { id: `person:${write.personId}`, name: "model", version },
+      ).pipe(Effect.orDie)
+      return { ...sealed, keyVersion: version, keyLast4: credential.accountId.slice(-4).padStart(4, "*") }
+    })
+
+/** The link's storing step over `database`, recording once under its invocation key. */
+export const keepStep = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
+  (write: typeof Keep.payloadSchema.Type) =>
+    Effect.gen(function* () {
+      const change = yield* Store.link({
+        personId: write.personId,
+        id: write.id,
+        sealed: write.sealed,
+        invocationKey: yield* invocationKey,
+      }).pipe(Effect.provide(database), Effect.catch(unavailable))
+      return { change }
+    }).pipe((effect) => recorded("link", effect))
+
+/** Registers `model/Put`, `model/Delete` and `model/CodexLink` with their steps over `database`. */
 export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => {
   const implementation = steps(database)
-  return Layer.merge(
+  return Layer.mergeAll(
     Interpreter.layerWithImplementations(Put, Store_.toLayer(implementation.store)),
     Interpreter.layerWithImplementations(Delete, Erase.toLayer(implementation.erase)),
-  ).pipe(Layer.provideMerge(Action.layerImplementations))
+    Interpreter.layerWithImplementations(CodexLink, Layer.merge(Poll.toLayer(pollStep), Keep.toLayer(keepStep(database)))),
+  ).pipe(Layer.provide(Layer.orDie(SecretKeys.layerConfig)), Layer.provideMerge(Action.layerImplementations))
 }

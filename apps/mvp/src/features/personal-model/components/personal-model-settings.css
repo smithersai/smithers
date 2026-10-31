@@ -1,17 +1,17 @@
-/* Layout only; components, colors and type come from @smthrs/ui. Fields stack at phone width. */
+/* Layout only; components, colors and type come from @smthrs/ui. Controls wrap at phone width. */
 .personal-model { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
-.personal-model-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; min-width: 0; }
-.personal-model-form [data-slot="field"] { min-width: 0; }
-.personal-model-key { display: grid; gap: 0.75rem; min-width: 0; margin: 0; padding: 0; border: 0; }
-.personal-model-key legend { padding: 0; margin-bottom: 0.25rem; font-weight: 600; }
-.personal-model-tier-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; }
-.personal-model-tier-row [data-slot="select-trigger"] { width: 100%; }
+.personal-model-list { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; margin: 0; padding: 0; list-style: none; }
+.personal-model-row { display: grid; gap: 0.25rem; min-width: 0; }
+.personal-model-row-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; min-width: 0; }
+.personal-model-row-name { flex: 1 1 10rem; min-width: 0; overflow-wrap: anywhere; }
+.personal-model-row-name span { font-weight: 600; }
 .personal-model-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .personal-model-status { margin: 0; overflow-wrap: anywhere; }
-@media (min-width: 40rem) {
-  .personal-model-form,
-  .personal-model-tier-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .personal-model-tier,
-  .personal-model-actions,
-  .personal-model-status { grid-column: 1 / -1; }
-}
+.personal-model-status:empty { display: none; }
+.personal-model-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; min-width: 0; }
+.personal-model-form [data-slot="field"] { min-width: 0; }
+.personal-model-form [data-slot="select-trigger"] { width: 100%; }
+.personal-model-menu { display: grid; gap: 0.25rem; }
+.personal-model-menu [data-slot="button"] { justify-content: flex-start; }
+.personal-model-steps { display: grid; gap: 0.75rem; margin: 0; padding: 0 0 0 1.25rem; }
+.personal-model-steps li { display: grid; gap: 0.25rem; min-width: 0; }

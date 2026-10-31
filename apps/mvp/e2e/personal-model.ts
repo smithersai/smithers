@@ -5,10 +5,11 @@ import {
   PERSONAL_MODEL_ROUTE,
   PERSONAL_MODEL_TEST_ROUTE,
   PERSONAL_MODEL_SHAPE_ROUTE,
+  type ConnectionKind,
   isProtocol,
   type Protocol,
 } from "../src/features/personal-model/contract"
-import { PROTOCOL_LABEL, TIER_LABEL, tierKeyLabel } from "../src/features/personal-model/copy"
+import { KIND_LABEL, PROTOCOL_LABEL, TIER_LABEL } from "../src/features/personal-model/copy"
 import { shapeRows } from "./shape"
 import { baseURL, me } from "./target"
 
@@ -23,9 +24,18 @@ export const personalModelConfig = () => {
   }
 }
 
+/** Opens Add's menu in Settings' Your model `section` and a kind's form: its dialog. */
+export const openAdd = async (section: Locator, page: Page, kind: ConnectionKind) => {
+  await section.getByRole("button", { name: "Add", exact: true }).click()
+  await page.getByRole("button", { name: KIND_LABEL[kind], exact: true }).click()
+  const dialog = page.getByRole("dialog", { name: KIND_LABEL[kind], exact: true })
+  await expect(dialog).toBeVisible()
+  return dialog
+}
+
 /**
- * Fills Settings' Your model `section` as a person does: one key's Base URL and Key, under its protocol's name, and each
- * of `tiers`' models on that key; then Save. Context must have tracing disabled: the key is typed.
+ * Fills the API key form as a person does: its protocol, Base URL, Key and each of `tiers`' models; then Save. Context
+ * must have tracing disabled: the key is typed.
  */
 export const fillYourModel = async (
   section: Locator,
@@ -37,23 +47,33 @@ export const fillYourModel = async (
     readonly tiers: Partial<Record<ModelTier, string>>
   },
 ) => {
-  const group = section.getByRole("group", { name: PROTOCOL_LABEL[fill.protocol], exact: true })
-  await group.getByLabel(`${PROTOCOL_LABEL[fill.protocol]} Base URL`, { exact: true }).fill(fill.baseUrl)
-  await group.getByLabel(`${PROTOCOL_LABEL[fill.protocol]} Key`, { exact: true }).fill(fill.key)
+  const dialog = await openAdd(section, page, "api_key")
+  await dialog.getByRole("combobox", { name: "Protocol", exact: true }).click()
+  await page.getByRole("option", { name: PROTOCOL_LABEL[fill.protocol], exact: true }).click()
+  await dialog.getByLabel("Base URL", { exact: true }).fill(fill.baseUrl)
+  await dialog.getByLabel("Key", { exact: true }).fill(fill.key)
   for (const [tier, model] of Object.entries(fill.tiers) as Array<[ModelTier, string]>) {
-    await section.getByLabel(TIER_LABEL[tier], { exact: true }).fill(model)
-    await section.getByRole("combobox", { name: tierKeyLabel(tier), exact: true }).click()
-    await page.getByRole("option", { name: PROTOCOL_LABEL[fill.protocol], exact: true }).click()
+    await dialog.getByLabel(TIER_LABEL[tier], { exact: true }).fill(model)
   }
-  await section.getByRole("button", { name: "Save" }).click()
+  await dialog.getByRole("button", { name: "Save" }).click()
+  await expect(dialog).toHaveCount(0, { timeout: 30_000 })
 }
 
-/** One protocol's key group in the Your model section. */
-export const keyGroup = (section: Locator, protocol: Protocol) =>
-  section.getByRole("group", { name: PROTOCOL_LABEL[protocol], exact: true })
+/** The rows of the Your model section, in the person's order. */
+export const connectionRows = (section: Locator) => section.getByRole("listitem")
+
+/** Presses every Remove in the section until no connection is left, as a run that stopped half way may leave some. */
+export const removeConnections = async (section: Locator, within: number) => {
+  const removes = section.getByRole("button", { name: "Remove" })
+  while ((await removes.count()) > 0) {
+    const left = await removes.count()
+    await removes.first().click()
+    await expect(removes).toHaveCount(left - 1, { timeout: within })
+  }
+}
 
 /**
- * Save and Test through the same product endpoints as Settings: the one key, Fast named on it. Context must have
+ * Save and Test through the same product endpoints as Settings: the one API key, Fast named on it. Context must have
  * tracing disabled.
  */
 export const restorePersonalModel = async (request: APIRequestContext) => {
@@ -62,13 +82,18 @@ export const restorePersonalModel = async (request: APIRequestContext) => {
   const headers = { origin: new URL(baseURL).origin, [DEVICE_PERSON_HEADER]: me().personId }
   // Transport diagnostics can contain request bodies. Drop them whole rather than risk printing the key.
   const config = personalModelConfig()
-  type Saved = { updated_at: string; protocol: string; base_url: string; fast_model: string | null; key_last4: string }
+  type Saved = { updated_at: string; kind: string; protocol: string | null; base_url: string | null; fast_model: string | null; key_last4: string }
   const latest = (rows: ReadonlyArray<Saved>) => rows.map((row) => row.updated_at).sort().at(-1)
   const before = latest(await shapeRows<Saved>(request, PERSONAL_MODEL_SHAPE_ROUTE))
-  // The whole configuration: this one key, Fast on it; a key an earlier run left goes.
+  // The whole list: this one key, Fast on it; a connection an earlier run left goes.
   const data = {
-    keys: [{ protocol: config.protocol, baseUrl: config.baseUrl, key }],
-    models: { fast: { protocol: config.protocol, modelId: config.modelId } },
+    connections: [{
+      kind: "api_key",
+      protocol: config.protocol,
+      baseUrl: config.baseUrl,
+      key,
+      models: { fast: config.modelId },
+    }],
   }
   const saved = await request.put(PERSONAL_MODEL_ROUTE, { headers, data })
     .catch(() => { throw new Error("Personal model Save transport failed (details withheld)") })
@@ -77,7 +102,7 @@ export const restorePersonalModel = async (request: APIRequestContext) => {
   await expect.poll(async () => {
     const rows = await shapeRows<Saved>(request, PERSONAL_MODEL_SHAPE_ROUTE)
     const row = rows[0]
-    return rows.length === 1 && row !== undefined && latest(rows) !== before && row.protocol === config.protocol &&
+    return rows.length === 1 && row !== undefined && latest(rows) !== before && row.kind === "api_key" && row.protocol === config.protocol &&
       row.fast_model === config.modelId && row.key_last4 === [...key].slice(-4).join("")
   }, { timeout: 30_000, message: "personal model Save completed" }).toBe(true)
   const tested = await request.post(PERSONAL_MODEL_TEST_ROUTE, { headers, timeout: 60_000 })

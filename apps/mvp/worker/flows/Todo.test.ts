@@ -32,7 +32,7 @@ import * as Apply from "../github/Apply.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
 import * as ModelEndpoint from "../ModelEndpoint.ts"
 import { PersonalModels } from "../personal/Models.ts"
-import { KEY, resetModels, seed, VALUE } from "../personal/test/harness.ts"
+import { KEY, resetModels, seed, seedKeys, VALUE } from "../personal/test/harness.ts"
 import { scriptedProvider } from "../personal/test/provider.ts"
 import { SecretKeys } from "../secrets/Keys.ts"
 import * as Stack from "../stack/Stack.ts"
@@ -157,6 +157,8 @@ const setup = async (
     readonly schema?: string
     /** The people's own models' provider: the run's committer's model answers its agent. */
     readonly personal?: typeof globalThis.fetch
+    /** SECRETS_KEY is set, so a run can open what its committer sealed. */
+    readonly secrets?: boolean
   } = {},
 ) => {
   const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
@@ -178,7 +180,14 @@ const setup = async (
     Todo.registration(todoServices, TodoAgent.registration(seat, await database(), Agent.layerSandbox)),
     SandboxCommand.registration,
     TodoBaseClosed.registration(todoServices),
-  ).pipe(Layer.provide(machine.layer))
+  ).pipe(
+    Layer.provide(machine.layer),
+    Layer.provide(
+      options.secrets === true
+        ? ConfigProvider.layer(ConfigProvider.fromUnknown({ SECRETS_KEY: Redacted.value(KEY) }))
+        : Layer.empty,
+    ),
+  )
   const run = (start: Stack.AttemptStart) =>
     runFlow(Todo.Todo, start, registration, {
       executionId: todoExecutionId(start.attemptId),
@@ -419,6 +428,35 @@ describe("the todo run", { timeout: 120_000 }, () => {
         SELECT DISTINCT person_id AS "personId", role FROM personal_model_usage`,
     ])))
     expect(ledgers).toEqual([[{ n: 0 }], [{ personId: maya.id, role: "coding" }]])
+  })
+
+  describe("a committer whose list puts a subscription first", () => {
+    test("gets the vendor's agent in the box, not the Smithers agent, and a Codex row below it can't stop the run", async () => {
+      await seedKeys(runtime, maya.id, [
+        { kind: "claude_subscription", key: "sk-ant-oat01-SENTINEL-claude-token" },
+        { kind: "codex_subscription", key: "not a credential that could ever refresh" },
+      ])
+      const commands: Array<string> = []
+      const provider = scriptedProvider({ text: "unused" })
+      const ctx = await setup({ personal: provider.fetch, secrets: true, run: (command) => (commands.push(command), 0) })
+      const start = (await commit("Mine", "Change nothing."))!
+      const ran = await ctx.run(start)
+      // The scripted box writes nothing, so the run reaches `todo/Collect` and stops there.
+      expect(ran.exit).toEqual(Exit.succeed({ state: "failed" }))
+      expect(await todo()).toMatchObject({ state: "failed", failure: "empty_change" })
+      expect(commands.some((command) => command.includes("claude -p --output-format json"))).toBe(true)
+      expect(commands.join("\n")).not.toContain("SENTINEL")
+      expect(provider.seen).toEqual([])
+      expect(ctx.agent.requests).toEqual([])
+    })
+
+    test("gets the agent's refusal as the TODO's failure when it exits non-zero", async () => {
+      await seedKeys(runtime, maya.id, [{ kind: "claude_subscription", key: "sk-ant-oat01-SENTINEL-claude-token" }])
+      const ctx = await setup({ secrets: true, run: (command) => command.includes("claude -p") ? 1 : 0 })
+      const start = (await commit("Mine", "Change nothing."))!
+      expect((await ctx.run(start)).exit).toEqual(Exit.succeed({ state: "failed" }))
+      expect(await todo()).toMatchObject({ state: "failed", failure: "implement" })
+    })
   })
 
   test("an agent that never answers in the schema fails the TODO implement", async () => {

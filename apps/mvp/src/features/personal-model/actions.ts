@@ -1,19 +1,32 @@
-import { Effect, Exit, Option, Redacted } from "effect"
+import { Duration, Effect, Exit, Option, Redacted } from "effect"
 import { recordUnhandled } from "../../boundary"
 import { FlowDispatch } from "../../flows/dispatch"
 import { type ModelNotTaken, PersonalModelClient } from "./api"
-import { checkSave, type Refusal } from "./contract"
+import { checkSave, type ConnectionPut, type Refusal } from "./contract"
 import { record } from "./metrics"
 import { testDraftProblem } from "./testDraft"
-import { FORM, type Form, type Sent, TEST } from "./schema"
+import { ADD, type AddView, FORM, type Form, LINK, type LinkRow, type Sent, TEST } from "./schema"
 import { PersonalModelStore } from "./store"
-import { lastFailure, latestUpdate, onItsWay, type SaveForm } from "./view"
+import {
+  defaultsFrom,
+  latestLink,
+  latestUpdate,
+  listOf,
+  onItsWay,
+  type SaveForm,
+  withActive,
+  withAdded,
+  withMoved,
+  without,
+} from "./view"
 
 // What a person does in the Your model section (docs/features/personal-model.md#the-settings-section), as Effects that
-// finish synchronously. Save sends the keys at once, in the person's own session, straight to ChatApi
+// finish synchronously. Every press saves the whole list, so moving or switching one needs no key. Save sends any key at
+// once, in the person's own session, straight to ChatApi
 // (`PersonalModelClient`), never through the device's outbox or a browser flow, either of which would keep it on the
 // device; each key is `Redacted` from the moment it reaches the action and lives only in the one request. Remove and
-// Test dispatch `model/remove` and `model/test` (door `button`), the flows the agent calls too.
+// Test dispatch `model/remove` and `model/test` (door `button`), the flows the agent calls too. Link asks ChatApi for a
+// Codex device code; the connection arrives in the rows (store.ts's follower), or the code expires.
 //
 // ChatApi's 202 means a write's flow started, not that it landed: the form clears its keys at once and says Saving
 // until the rows show the write (store.ts's follower), or that it hasn't shown up after `confirmWithin`. No whole answer
@@ -25,7 +38,7 @@ import { lastFailure, latestUpdate, onItsWay, type SaveForm } from "./view"
  */
 const followUp = <A, E, R>(effect: Effect.Effect<A, E, R>) => recordUnhandled(Effect.orDie(effect), "personal-model", "fork")
 
-/** The person's saved keys' rows, as the device has them. */
+/** The person's connections' rows, as the device has them, in their order. */
 const current = Effect.flatMap(PersonalModelStore, (store) => store.saved.toArray)
 
 /** Forgets the last test, which said how the model before this write answered. */
@@ -35,7 +48,7 @@ const forgetTest = Effect.flatMap(PersonalModelStore, ({ tests }) => Effect.igno
  * Marks a write `sending`, remembering the rows' latest `updatedAt` now (`before`). Answers the form's row, or none
  * while its last write is on its way.
  */
-const begin = (op: Form["op"], sent: Sent | null) =>
+const begin = (op: Form["op"], sent: Sent | null, adding = false) =>
   Effect.gen(function* () {
     const store = yield* PersonalModelStore
     const held = yield* store.form.get(FORM)
@@ -48,6 +61,7 @@ const begin = (op: Form["op"], sent: Sent | null) =>
       before: latestUpdate(yield* current),
       sent,
       saved: Option.isSome(held) ? held.value.saved : 0,
+      adding,
       quiet: false,
     }
     if (Option.isSome(held)) yield* store.form.update(FORM, (draft) => void Object.assign(draft, write))
@@ -77,6 +91,7 @@ const confirm = (write: Form) =>
       draft.state = "confirming"
       draft.saved = saved
     })
+    if (write.adding) yield* store.add.update(ADD, (draft) => void (draft.view = "closed"))
     if (op === "put") yield* record(op, "started")
     yield* Effect.sleep(store.confirmWithin)
     const now = yield* store.form.get(FORM)
@@ -87,39 +102,38 @@ const confirm = (write: Form) =>
   })
 
 /**
- * Save: sets the person's keys and their tiers' models to `form`'s, removing a saved key it leaves out. A key left
- * empty keeps the one saved at the same base URL, so a saved key never goes to another host without the person typing
- * it again. What the server would refuse is refused here, unsent, with the server's own code (`checkSave`). Answers
- * whether the save was sent: not while the last write is on its way, nor when the section refused it.
+ * Sends `form`, the whole list, for a press of Save (`adding`: the Add dialog's, which closes once ChatApi takes it). A
+ * connection it leaves out is removed. A key left empty keeps the one saved on that connection, at the same base URL, so
+ * a saved key never goes to another host without the person typing it again. What the server would refuse is refused
+ * here, unsent, with the server's own code (`checkSave`). Answers whether the save was sent: not while the last write is
+ * on its way, nor when the section refused it.
  */
-export const save = (form: SaveForm) => {
-  const keys = form.keys.map(({ protocol, baseUrl, key }) => ({ protocol, baseUrl, key: Redacted.make(key) }))
+const send = (form: SaveForm, adding: boolean) => {
+  const connections = form.connections.map(({ key, ...connection }) => ({
+    ...connection,
+    key: key === undefined || key === "" ? undefined : Redacted.make(key),
+  }))
   return Effect.gen(function* () {
     const store = yield* PersonalModelStore
+    const saved = yield* current
     const checked = checkSave({
-      keys: keys.map(({ protocol, baseUrl, key }) => ({ protocol, baseUrl, key: Redacted.value(key) })),
-      models: form.models,
-    }, yield* current)
+      connections: connections.map(({ key, ...connection }) => ({
+        ...connection,
+        key: key === undefined ? undefined : Redacted.value(key),
+      })),
+    }, saved, undefined, defaultsFrom(saved))
     const sent: Sent | null = typeof checked === "string"
       ? null
-      : { keys: checked.keys.map(({ protocol, baseUrl }) => ({ protocol, baseUrl })), models: checked.models }
-    const begun = yield* begin("save", sent)
+      : { connections: checked.connections.map(({ key: _key, id, ...connection }) => ({ ...connection, id: id ?? null })) }
+    const begun = yield* begin("save", sent, adding)
     if (Option.isNone(begun)) return false
     if (typeof checked === "string") {
       yield* refuse(checked)
       yield* record("put", "refused", { code: checked })
       return false
     }
-    const put = {
-      // The key as typed, `Redacted`, beside the base URL ChatApi keeps; none where the saved one stays.
-      keys: checked.keys.map(({ protocol, baseUrl, key }) => ({
-        protocol,
-        baseUrl,
-        key: key === undefined ? undefined : keys.find((typed) => typed.protocol === protocol)!.key,
-      })),
-      models: checked.models,
-    }
-    yield* (yield* PersonalModelClient).put(put).pipe(
+    // The list as the form says it, each key `Redacted`: ChatApi normalizes it, and fills in what a kind leaves out.
+    yield* (yield* PersonalModelClient).put({ connections }).pipe(
       Effect.matchEffect({
         onSuccess: () => confirm(begun.value),
         onFailure: (refused: ModelNotTaken) =>
@@ -137,11 +151,85 @@ export const save = (form: SaveForm) => {
   }).pipe(Effect.orDie)
 }
 
+/** Save: sets the person's connections to `form`'s, in its order. */
+export const save = (form: SaveForm) => send(form, false)
+
+/** The saved list changed by `edit`, sent whole. */
+const edited = (edit: (list: ReadonlyArray<ConnectionPut>) => ReadonlyArray<ConnectionPut>) =>
+  Effect.flatMap(current, (rows) => send({ connections: edit(listOf(rows)) }, false))
+
+/** Add: the saved list and `connection`, last; the dialog closes once ChatApi takes it. */
+export const add = (connection: ConnectionPut) =>
+  Effect.flatMap(current, (rows) => send({ connections: withAdded(listOf(rows), connection) }, true))
+
+/** A row's Active: routing reads it or not. */
+export const setActive = (id: string, active: boolean) => edited((list) => withActive(list, id, active))
+
+/** A row's Move up or Move down. */
+export const move = (id: string, by: -1 | 1) => edited((list) => withMoved(list, id, by))
+
+/** Shows Add's menu, a kind's form, or neither, with no earlier write's words beside it. */
+export const showAdd = (view: AddView) =>
+  Effect.gen(function* () {
+    const store = yield* PersonalModelStore
+    yield* store.add.update(ADD, (draft) => void (draft.view = view))
+    if (Option.isSome(yield* store.form.get(FORM))) yield* store.form.update(FORM, (draft) => void (draft.quiet = true))
+  }).pipe(Effect.orDie)
+
+/**
+ * Link: asks ChatApi for a Codex device code, which the section shows until the connection arrives in the rows or the
+ * code expires. Answers whether it was sent: not while the last link is on its way.
+ */
+export const link = Effect.gen(function* () {
+  const store = yield* PersonalModelStore
+  const client = yield* PersonalModelClient
+  const held = yield* store.link.get(LINK)
+  if (Option.isSome(held) && (held.value.state === "starting" || held.value.state === "waiting")) return false
+  const attempt = Option.isSome(held) ? held.value.attempt + 1 : 1
+  const starting: LinkRow = {
+    id: LINK,
+    state: "starting",
+    userCode: null,
+    verificationUrl: null,
+    failure: null,
+    before: latestLink(yield* current),
+    attempt,
+  }
+  if (Option.isSome(held)) yield* store.link.update(LINK, (draft) => void Object.assign(draft, starting))
+  else yield* store.link.insert(starting)
+  yield* client.link.pipe(
+    Effect.matchEffect({
+      onSuccess: ({ userCode, verificationUrl, expiresInSeconds }) =>
+        Effect.gen(function* () {
+          yield* store.link.update(LINK, (draft) => void Object.assign(draft, { state: "waiting", userCode, verificationUrl }))
+          yield* record("link", "started")
+          yield* Effect.sleep(Duration.seconds(expiresInSeconds))
+          // Unless it landed meanwhile (`done`), or a later link took the row.
+          const lapsed = Option.exists(yield* store.link.get(LINK), (now) => now.state === "waiting" && now.attempt === attempt)
+          if (!lapsed) return
+          yield* store.link.update(LINK, (draft) => void Object.assign(draft, { state: "expired", userCode: null, verificationUrl: null }))
+          yield* record("link", "expired")
+        }),
+      onFailure: (refused: ModelNotTaken) =>
+        Effect.andThen(
+          store.link.update(LINK, (draft) => void Object.assign(draft, { state: "failed", failure: refused.code ?? "unavailable" })),
+          record("link", refused.code === undefined ? "unknown" : "refused", {
+            ...(refused.status === undefined ? {} : { status: refused.status }),
+            ...(refused.code === undefined ? {} : { code: refused.code }),
+          }),
+        ),
+    }),
+    followUp,
+    Effect.forkIn(store.scope),
+  )
+  return true
+}).pipe(Effect.orDie)
+
 /**
  * Remove: dispatches `model/remove`, door `button`. It returns at once; the section waits until the rows are gone, or
  * says why it didn't go. Answers whether it was sent: not while the last write is on its way.
  */
-export const remove = Effect.gen(function* () {
+export const removeAll = Effect.gen(function* () {
   const store = yield* PersonalModelStore
   const flows = yield* FlowDispatch
   const begun = yield* begin("remove", null)
@@ -162,23 +250,33 @@ export const remove = Effect.gen(function* () {
   return true
 }).pipe(Effect.orDie)
 
+/** A row's Remove: the list without it, or, for the last one, which no list can leave out, Remove. */
+export const remove = (id: string) =>
+  Effect.gen(function* () {
+    return (yield* current).length <= 1 ? yield* removeAll : yield* edited((list) => without(list, id))
+  })
+
 /**
- * Test: dispatches `model/test`, door `button`. It returns at once; the section shows the result, or why there was
- * none, once the flow ends. A supplied form is checked synchronously and must match the saved model; only a refusal
- * code survives that check. Answers whether it was sent: not while a test or a write is on its way.
+ * Test: dispatches `model/test` of `connection` (none: every active one), door `button`. It returns at once; the
+ * section shows the result, or why there was none, once the flow ends. A supplied list, the one on screen, is checked
+ * synchronously and must match the saved one; only a refusal code survives that check. Answers whether it was sent:
+ * not while a test or a write is on its way.
  */
-export const test = (draft?: SaveForm) => Effect.gen(function* () {
+export const test = (connection?: string, draft?: SaveForm) => Effect.gen(function* () {
   const store = yield* PersonalModelStore
   const flows = yield* FlowDispatch
   const held = yield* store.tests.get(TEST)
   const write = yield* store.form.get(FORM)
+  const tested = connection ?? null
+  /** That connection's last failure, as a result now knows it. */
+  const failedAt = Effect.map(current, (rows) => rows.find((row) => row.id === connection)?.failedAt ?? null)
   if (Option.isSome(held) && held.value.state === "testing" || Option.isSome(write) && onItsWay(write.value)) return false
   if (draft !== undefined) {
     const failure = testDraftProblem(draft, yield* current)
     if (failure !== undefined) {
       // Replace an old result without storing the draft, especially its keys.
       if (Option.isSome(write)) yield* store.form.update(FORM, (row) => void (row.quiet = true))
-      const refused = { id: TEST, state: "failed" as const, result: null, failure, failedAt: lastFailure(yield* current)?.failedAt ?? null }
+      const refused = { id: TEST, connection: tested, state: "failed" as const, result: null, failure, failedAt: yield* failedAt }
       if (Option.isSome(held)) yield* store.tests.update(TEST, (row) => void Object.assign(row, refused))
       else yield* store.tests.insert(refused)
       yield* record("test", "refused", { code: failure })
@@ -187,27 +285,27 @@ export const test = (draft?: SaveForm) => Effect.gen(function* () {
   }
   // The test takes the status line from the last write's outcome. The form keeps its count, which keys its fields.
   if (Option.isSome(write)) yield* store.form.update(FORM, (draft) => void (draft.quiet = true))
-  const testing = { id: TEST, state: "testing" as const, result: null, failure: null, failedAt: null }
+  const testing = { id: TEST, connection: tested, state: "testing" as const, result: null, failure: null, failedAt: null }
   if (Option.isSome(held)) yield* store.tests.update(TEST, (draft) => void Object.assign(draft, testing))
   else yield* store.tests.insert(testing)
-  yield* flows.dispatch("model/test", {}, { door: "button" }).pipe(
+  yield* flows.dispatch("model/test", connection === undefined ? {} : { connection }, { door: "button" }).pipe(
     Effect.exit,
     Effect.flatMap((exit) =>
       Effect.gen(function* () {
         const now = yield* store.tests.get(TEST)
         // A write since forgot this test: its answer is about the model before.
         if (Option.isNone(now) || now.value.state !== "testing") return
-        const failedAt = lastFailure(yield* current)?.failedAt ?? null
+        const at = yield* failedAt
         if (Exit.isSuccess(exit) && exit.value._tag === "Done") {
           const result = exit.value.value
-          return yield* store.tests.update(TEST, (draft) => void Object.assign(draft, { state: "done", result, failedAt }))
+          return yield* store.tests.update(TEST, (draft) => void Object.assign(draft, { state: "done", result, failedAt: at }))
         }
         const refused = Exit.isSuccess(exit) && exit.value._tag === "Failed" &&
             exit.value.error._tag === "@smthrs/mvp/personal-model/ModelRefused"
           ? exit.value.error.code
           : undefined
         yield* store.tests.update(TEST, (draft) =>
-          void Object.assign(draft, { state: "failed", failure: refused ?? "unavailable", failedAt }))
+          void Object.assign(draft, { state: "failed", failure: refused ?? "unavailable", failedAt: at }))
       })
     ),
     // expected: a save meanwhile can delete the test row (forgetTest), and its answer is then about the model before

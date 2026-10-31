@@ -2,7 +2,9 @@ import { type FlowEngineLike, ModelStep } from "@smthrs/agent"
 import { Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Classifier, Evaluator, type Model, ModelError, ModelProxy } from "@smthrs/model"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { HttpClient, HttpClientRequest } from "effect/http"
 import { MODEL_ROUTE, quotaRefused } from "../model/contract"
+import { JEV_ROUTE } from "../personal-model/contract"
 import { type JevFlow, JUDGE_ROLE, SURE_LABEL, SURE_YES_NO, UNSURE, type VerdictCode } from "./contract"
 import {
   Classify,
@@ -41,6 +43,11 @@ export class JudgeSeat extends Context.Service<
     readonly route: FlowEngineLike.RouteResolver
     /** Host-selected retry timings; omitted uses the durable model step's production policy. */
     readonly retryPolicy?: RetryPolicy.RetryPolicy
+    /**
+     * The person's own Jev (decision 0132): the judgment, or none when they have no Jev connection, and the seat answers.
+     * Omitted, the seat always does.
+     */
+    readonly ownJev?: (request: Evaluator.Request) => Effect.Effect<Option.Option<Evaluator.Response>, Evaluator.EvaluatorError>
   }
 >()("@smthrs/mvp/jev/JudgeSeat") {
   /** The `judge` role of the model endpoint on `origin`, through the host's `HttpClient`. */
@@ -49,9 +56,58 @@ export class JudgeSeat extends Context.Service<
       JudgeSeat,
       Effect.gen(function* () {
         const url = `${origin}${MODEL_ROUTE}/${JUDGE_ROLE}`
-        return { model: yield* ModelProxy.makeClient({ url }), route: { prepare: ModelProxy.prepare({ url }) }, retryPolicy: MODEL_RETRY }
+        const client = yield* HttpClient.HttpClient
+        return {
+          model: yield* ModelProxy.makeClient({ url }),
+          route: { prepare: ModelProxy.prepare({ url }) },
+          retryPolicy: MODEL_RETRY,
+          ownJev: ownJev(`${origin}${JEV_ROUTE}`, client),
+        }
       }),
     )
+}
+
+/**
+ * Asks the person's own Jev through ChatApi, which holds their key: `404` means they have none. A failure keeps Jev's
+ * code; one with no code is `unreachable`.
+ */
+const ownJev = (url: string, client: HttpClient.HttpClient) => (request: Evaluator.Request) =>
+  Effect.gen(function* () {
+    const body = { state: request.state, questions: request.questions }
+    const answer = yield* client.execute(HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(url), body))
+    if (answer.status === 404) return Option.none<Evaluator.Response>()
+    const json = yield* answer.json
+    if (answer.status !== 200) {
+      const { code } = yield* decodeJevFailure(json)
+      return yield* new Evaluator.EvaluatorError({ code, message: "Your Jev connection refused the judgment." })
+    }
+    return Option.some(json as unknown as Evaluator.Response)
+  }).pipe(
+    Effect.catch((failure) =>
+      failure instanceof Evaluator.EvaluatorError
+        ? Effect.fail(failure)
+        : Effect.fail(new Evaluator.EvaluatorError({ code: "unreachable", message: "Jev couldn't be reached." }))
+    ),
+  )
+
+const decodeJevFailure = Schema.decodeUnknownEffect(Schema.Struct({ code: Evaluator.EvaluatorErrorCode }))
+
+/** The judge for one judgment: the person's own Jev when they have one, else `model` through the seat. */
+export const judgeOn = (seat: JudgeSeat["Service"], model: Model.Model): Layer.Layer<Evaluator.Evaluator> => {
+  const onSeat = Evaluator.layerFromSeat({ modelId: JUDGE_ROLE, model })
+  if (seat.ownJev === undefined) return onSeat
+  const own = seat.ownJev
+  return Layer.effect(
+    Evaluator.Evaluator,
+    Effect.map(Effect.service(Evaluator.Evaluator), (fallback) =>
+      Evaluator.Evaluator.of({
+        evaluate: (request) =>
+          Effect.flatMap(own(request), Option.match({
+            onNone: () => fallback.evaluate(request),
+            onSome: Effect.succeed,
+          })),
+      })),
+  ).pipe(Layer.provide(onSeat))
 }
 
 /** One verdict and the code the records count it by. */
@@ -93,7 +149,7 @@ const judge = <A>(
     const model = yield* ModelStep.model({ name: `${flow}/model`, ...seat })
     const classifier = Classifier.make(flow, { description: "One question per item, about the items.", state: Schema.Json, questions })
     const answered = yield* classifier.evaluate(state).pipe(
-      Effect.provide(Evaluator.layerFromSeat({ modelId: JUDGE_ROLE, model })),
+      Effect.provide(judgeOn(seat, model)),
       Effect.result,
     )
     const durationMs = (yield* Clock.currentTimeMillis) - started

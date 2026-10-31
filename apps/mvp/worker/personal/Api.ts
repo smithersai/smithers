@@ -1,14 +1,19 @@
 import { ShapeProxy } from "@smthrs/effect-electric"
-import { ModelError, ModelEvent, ModelProxy, ModelRequest } from "@smthrs/model"
+import { Classifier, Evaluator, ModelError, ModelEvent, ModelProxy, ModelRequest } from "@smthrs/model"
 import { Binding } from "@smthrs/secrets"
-import { Cause, Clock, Duration, Effect, Exit, type Layer, Metric, Option, Redacted, Schema, Stream } from "effect"
-import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { Cause, Clock, Duration, Effect, Exit, Layer, Metric, Option, Redacted, Schema, Stream } from "effect"
+import { FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
-import { MODEL_TIERS, type ModelTier } from "../../src/features/model/contract.ts"
 import {
   checkSave,
+  CODEX_LINK_ROUTE,
+  type CodexLinkStart,
+  JEV_ROUTE,
+  jevOf,
   keyTail,
+  LINK_SECONDS,
+  MAX_JEV_BODY_BYTES,
   MAX_PUT_BODY_BYTES,
   PERSONAL_MODEL_ROUTE,
   PERSONAL_MODEL_SHAPE_COLUMNS,
@@ -27,23 +32,28 @@ import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
 import { SecretKeys } from "../secrets/Keys.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"
+import * as Codex from "./Codex.ts"
 import * as ModelFlows from "./ModelFlows.ts"
 import { type Opened, PersonalModels, PersonalModelUnusable, sealContext } from "./Models.ts"
+import { connectionDefaults } from "./Defaults.ts"
+import * as Subscriptions from "./Subscriptions.ts"
 import * as Store from "./Store.ts"
 import * as PersonalUsage from "./Usage.ts"
 
-// A person's own models' routes (decisions 0096 and 0107, docs/features/personal-model.md). Keys are write-only: no
-// route answers one.
+// A person's own connections' routes (decisions 0096, 0107 and 0134, docs/features/personal-model.md). Credentials are
+// write-only: no route answers one.
 //
-// - `PUT /api/me/model { keys, models }`: saves the person's keys, one per protocol, and the models their tiers use,
-//   replacing what they saved. It admits the write (anyone signed in, ruling AUTH-8, the person in person: never an agent,
-//   flow or sandbox, since a key would pass through them), checks every field (`checkSave`), seals each key typed under
-//   SECRETS_KEY and starts `model/Put` with only ciphertext. A key's base URL changes only with the key, so nobody
-//   points a saved key at another host.
-// - `DELETE /api/me/model`: removes every key through `model/Delete`, for anyone signed in. The agent may, for the
+// - `PUT /api/me/model { connections }`: saves the person's ordered list, replacing what they saved. It admits the write
+//   (anyone signed in, ruling AUTH-8, the person in person: never an agent, flow or sandbox, since a key would pass
+//   through them), checks every field (`checkSave`), seals each credential typed under SECRETS_KEY and starts `model/Put`
+//   with only ciphertext. A connection's base URL changes only with its credential, so nobody points a saved key at
+//   another host.
+// - `DELETE /api/me/model`: removes every connection through `model/Delete`, for anyone signed in. The agent may, for the
 //   person (FLOW-3).
-// - `POST /api/me/model/test`: one tiny real call with each key the tiers use, answered as one `TestResult`, for anyone
-//   signed in. The agent may.
+// - `POST /api/me/model/test[?connection=<id>]`: Check Access, answered as one `TestResult`, for anyone signed in. The
+//   agent may.
+// - `POST /api/me/model/codex`: asks OpenAI for a device code, starts `model/CodexLink` and answers the code. Person only.
+// - `POST /api/me/model/jev`: one judgment on the person's own Jev, for their judge.
 // - `GET /api/shapes/personal-model`: the person's own rows, never another's, never a sealed key.
 //
 // No log line, span, metric or answer carries a key, and a refusal names a code, never the input.
@@ -65,13 +75,39 @@ export const TEST_WITHIN = Duration.seconds(30)
 
 /** Whether a path is one of the personal model routes. */
 export const handles = (path: string): boolean =>
-  path === PERSONAL_MODEL_ROUTE || path === PERSONAL_MODEL_TEST_ROUTE || path === PERSONAL_MODEL_SHAPE_ROUTE
+  path === PERSONAL_MODEL_ROUTE || path === PERSONAL_MODEL_TEST_ROUTE || path === PERSONAL_MODEL_SHAPE_ROUTE ||
+  path === CODEX_LINK_ROUTE || path === JEV_ROUTE
 
 const PutBody = Schema.Struct({
-  keys: Schema.Array(Schema.Struct({ protocol: Schema.String, baseUrl: Schema.String, key: Schema.optional(Schema.String) })),
-  models: Schema.Record(Schema.String, Schema.Struct({ protocol: Schema.String, modelId: Schema.String })),
+  connections: Schema.Array(Schema.Struct({
+    id: Schema.optional(Schema.String),
+    kind: Schema.String,
+    active: Schema.optional(Schema.Boolean),
+    protocol: Schema.optional(Schema.String),
+    baseUrl: Schema.optional(Schema.String),
+    key: Schema.optional(Schema.String),
+    models: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  })),
 })
 const decodePut = Schema.decodeUnknownEffect(Schema.fromJsonString(PutBody))
+
+const decodeJudgment = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(Schema.Struct({ state: Schema.Json, questions: Schema.Record(Schema.String, Schema.Json) })),
+)
+
+/** Check Access's judgment: one question with an obvious answer. */
+const JEV_CHECK: Evaluator.Request = { state: { ok: true }, questions: { ok: Classifier.boolean({ instructions: "Is ok true?" }) } }
+
+/** What a Jev connection answers as, in the person's ledger: TypeSafe's model through the Vercel AI Gateway. */
+const JEV_MODEL = "typesafe-ai/jev"
+const JEV_HOST = "ai-gateway.vercel.sh"
+
+/** The gateway's status a Jev failure is recorded with: a refusal of the key marks the connection, as a model's does. */
+const jevStatus = (failure: Evaluator.EvaluatorError) => failure.code === "refused" ? failure.status : undefined
+
+/** A connection's id, when a save names one: `personal_models.id` is a uuid, and Postgres refuses anything else. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 
 /** What a shape filters on for someone signed out: no person, so it holds no rows. */
 const NOBODY = ""
@@ -95,6 +131,7 @@ export const make = <E, R>(
   const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
   // What the database layer needs, captured here, so a test's ledger write needs nothing of the request.
   const context = yield* Effect.context<R>()
+  const defaults = yield* connectionDefaults
 
   /** `GET /api/shapes/personal-model`: the person's own row; sessions unreadable, 503. */
   const shape = ShapeProxy.make({
@@ -113,47 +150,160 @@ export const make = <E, R>(
     metric: shapes,
   })
 
-  /**
-   * One tiny real call with each of the person's keys the tiers use, the first tier on each key, each settled in their
-   * ledger as any of their calls is: the first failure, else the `fast` tier's answer. None when they saved no key.
-   */
-  const test = (personId: string) =>
+  /** Check Access on one connection: a tiny real call, a Jev judgment or a token refresh, by its kind. */
+  const testOne = (personId: string, connection: Store.Saved, latency: Effect.Effect<number>) =>
     Effect.gen(function* () {
       const personal = yield* PersonalModels
-      const startedAt = yield* Clock.currentTimeMillis
-      const latency = Effect.map(Clock.currentTimeMillis, (now) => now - startedAt)
-      const calls: Array<Opened> = []
-      for (const tier of MODEL_TIERS) {
-        const opened = yield* personal.open(personId, tier).pipe(Effect.result)
+      if (connection.protocol !== null) {
+        const opened = yield* personal.openConnection(personId, connection.id).pipe(Effect.result)
         if (opened._tag === "Failure") {
           const failure = opened.failure
           // Postgres couldn't say: the route answers 503.
           if (!(failure instanceof PersonalModelUnusable)) return yield* failure
-          return Option.some<TestResult>({
-            ok: false,
-            latencyMs: yield* latency,
-            code: "unusable",
-            status: null,
-            host: failure.host,
-          })
+          return { ok: false, latencyMs: yield* latency, code: "unusable", status: null, host: failure.host } satisfies TestResult
         }
-        if (Option.isNone(opened.success)) return Option.none<TestResult>()
-        const model = opened.success.value
-        if (!calls.some((call) => call.protocol === model.protocol)) calls.push(model)
+        return yield* testCall(personId, Option.getOrThrow(opened.success), latency)
       }
+      const keys = yield* SecretKeys
+      const unusable = Effect.map(latency, (latencyMs): TestResult =>
+        ({ ok: false, latencyMs, code: "unusable", status: null, host: "" }))
+      if (Option.isNone(keys)) return yield* unusable
+      if (connection.kind === "jev") {
+        const key = yield* keys.value.cipher.open(connection, sealContext(personId, connection.keyVersion)).pipe(Effect.option)
+        if (Option.isNone(key)) return yield* unusable
+        const answered = yield* judged(personId, connection.id, key.value, "test", JEV_CHECK)
+        const latencyMs = yield* latency
+        if (Exit.isSuccess(answered)) return { ok: true, latencyMs, sample: "" } satisfies TestResult
+        const failure = Cause.squash(answered.cause) as Evaluator.EvaluatorError
+        return { ok: false, latencyMs, code: failure.code, status: jevStatus(failure) ?? null, host: JEV_HOST } satisfies TestResult
+      }
+      if (connection.kind === "codex_subscription") {
+        const refreshed = yield* Subscriptions.fresh(personId, keys.value, true).pipe(
+          Effect.provide(database),
+          Effect.provideContext(context),
+          Effect.result,
+        )
+        const latencyMs = yield* latency
+        if (refreshed._tag === "Success") return { ok: true, latencyMs, sample: "" } satisfies TestResult
+        const status = refreshed.failure instanceof Codex.CodexAuthFailed ? refreshed.failure.status : null
+        return { ok: false, latencyMs, code: "refused", status, host: "auth.openai.com" } satisfies TestResult
+      }
+      // Only Claude Code may use a Claude subscription: its first run says whether the token works (decision 0132).
+      return { ok: false, latencyMs: yield* latency, code: "unchecked", status: null, host: "" } satisfies TestResult
+    })
+
+  /**
+   * Check Access (Amp's name for it): `connectionId`'s, or every active connection's that can be checked here, each
+   * settled in the person's ledger as any of their calls is. The first failure, else the first answer. None when they
+   * have nothing to check.
+   */
+  const test = (personId: string, connectionId: string | undefined) =>
+    Effect.gen(function* () {
+      const startedAt = yield* Clock.currentTimeMillis
+      const latency = Effect.map(Clock.currentTimeMillis, (now) => now - startedAt)
+      const saved = yield* Store.saved(personId).pipe(Effect.provide(database), Effect.provideContext(context))
+      const targets = connectionId === undefined
+        ? saved.filter((connection) => connection.active && connection.kind !== "claude_subscription")
+        : saved.filter((connection) => connection.id === connectionId)
       let first: TestResult | undefined
-      for (const opened of calls) {
-        const result = yield* testCall(personId, opened, latency)
+      for (const connection of targets) {
+        const result = yield* testOne(personId, connection, latency)
         if (!result.ok) return Option.some(result)
         first ??= result
       }
-      return Option.some(first!)
+      return Option.fromNullishOr(first)
+    })
+
+  /** The person's active Jev connection opened for one call, or none. */
+  const openJev = (personId: string) =>
+    Effect.gen(function* () {
+      const saved = yield* Store.saved(personId).pipe(Effect.provide(database), Effect.provideContext(context))
+      const connection = jevOf(saved) as Store.Saved | undefined
+      if (connection === undefined) return Option.none()
+      const opened = yield* SecretKeys
+      if (Option.isNone(opened)) return Option.none()
+      const key = yield* opened.value.cipher.open(connection, sealContext(personId, connection.keyVersion)).pipe(Effect.option)
+      return Option.some({ connection, key })
+    })
+
+  /** One Jev judgment with `key`, kept in the person's ledger as `role`. */
+  const judged = (
+    personId: string,
+    connectionId: string,
+    key: Redacted.Redacted<string>,
+    role: string,
+    asked: Evaluator.Request,
+  ) =>
+    Effect.gen(function* () {
+      const invocationId = crypto.randomUUID()
+      const call: PersonalUsage.Call = {
+        invocationId,
+        requestId: invocationId,
+        personId,
+        role,
+        modelId: JEV_MODEL,
+        host: JEV_HOST,
+        connectionId,
+        protocol: null,
+        tier: undefined,
+      }
+      yield* PersonalUsage.begin(call).pipe(Effect.provide(database), Effect.provideContext(context))
+      const answered = yield* Effect.flatMap(Effect.service(Evaluator.Evaluator), (judge) => judge.evaluate(asked)).pipe(
+        Effect.provide(Evaluator.layerVercelGateway({ apiKey: key }).pipe(Layer.provide(FetchHttpClient.layer))),
+        Effect.exit,
+      )
+      const failure = Exit.isFailure(answered) ? Cause.squash(answered.cause) as Evaluator.EvaluatorError : undefined
+      const usage = Exit.isSuccess(answered) ? answered.value.usage : undefined
+      yield* PersonalUsage.end(call, {
+        outcome: failure === undefined ? "success" : "failed",
+        usage: { inputTokens: usage?.inputTokens, outputTokens: usage?.outputTokens },
+        ...(failure === undefined ? {} : { errorCode: failure.code, httpStatus: jevStatus(failure) }),
+      }, database).pipe(Effect.provideContext(context))
+      return answered
+    })
+
+  /** `POST /api/me/model/jev`: one judgment on the person's own Jev; `404 none` sends their judge back to the seat. */
+  const evaluate = (
+    personId: string,
+    request: HttpServerRequest.HttpServerRequest,
+    refuse: (status: number, code: Refusal) => HttpServerResponse.HttpServerResponse,
+    fields: Fields,
+  ) =>
+    Effect.gen(function* () {
+      const opened = yield* openJev(personId)
+      if (Option.isNone(opened)) return refuse(404, "none")
+      // A key that no longer opens is a refusal Jev's flows name, never a silent fallback (decision 0096).
+      if (Option.isNone(opened.value.key)) {
+        fields.outcome = "unusable"
+        return HttpServerResponse.jsonUnsafe({ code: "refused" }, { status: 409, headers: noStore })
+      }
+      const key = opened.value.key.value
+      const body = yield* readBounded(request, MAX_JEV_BODY_BYTES).pipe(Effect.option)
+      if (Option.isNone(body)) return refuse(400, "invalid")
+      const asked = yield* decodeJudgment(body.value).pipe(Effect.option)
+      if (Option.isNone(asked)) return refuse(400, "invalid")
+      const answered = yield* judged(
+        personId,
+        opened.value.connection.id,
+        key,
+        "judge",
+        asked.value as unknown as Evaluator.Request,
+      )
+      if (Exit.isFailure(answered)) {
+        const { code } = Cause.squash(answered.cause) as Evaluator.EvaluatorError
+        fields.outcome = "failed"
+        fields.failure = code
+        return HttpServerResponse.jsonUnsafe({ code }, { status: 502, headers: noStore })
+      }
+      fields.outcome = "judged"
+      const { answers, confidence, latencyMs } = answered.value
+      return HttpServerResponse.jsonUnsafe({ answers, confidence, latencyMs }, { status: 200, headers: noStore })
     })
 
   /** One tiny real call with `opened`, settled in the person's ledger: how it went. */
   const testCall = (personId: string, opened: Opened, latency: Effect.Effect<number>) =>
     Effect.gen(function* () {
-      const { model, modelId, host, protocol } = opened
+      const { model, modelId, host, protocol, connectionId } = opened
       const invocationId = crypto.randomUUID()
       const call: PersonalUsage.Call = {
         invocationId,
@@ -162,6 +312,7 @@ export const make = <E, R>(
         role: "test",
         modelId,
         host,
+        connectionId,
         protocol,
         tier: undefined,
       }
@@ -212,15 +363,24 @@ export const make = <E, R>(
     const keys = yield* SecretKeys
     const startedAt = yield* Clock.currentTimeMillis
     const path = request.url.split("?")[0]!
-    const op = path === PERSONAL_MODEL_TEST_ROUTE ? "test" : request.method === "DELETE" ? "delete" : "put"
+    const op = path === PERSONAL_MODEL_TEST_ROUTE
+      ? "test"
+      : path === CODEX_LINK_ROUTE
+      ? "link"
+      : path === JEV_ROUTE
+      ? "jev"
+      : request.method === "DELETE"
+      ? "delete"
+      : "put"
     const fields: Fields = { op }
     const refuse = (status: number, code: Refusal) => {
       fields.code = code
       return HttpServerResponse.jsonUnsafe({ code }, { status, headers: noStore })
     }
     const response = yield* Effect.gen(function* () {
-      if (op === "test" ? request.method !== "POST" : request.method !== "PUT" && request.method !== "DELETE") {
-        return HttpServerResponse.empty({ status: 405, headers: { allow: op === "test" ? "POST" : "PUT, DELETE" } })
+      const posted = op === "test" || op === "link" || op === "jev"
+      if (posted ? request.method !== "POST" : request.method !== "PUT" && request.method !== "DELETE") {
+        return HttpServerResponse.empty({ status: 405, headers: { allow: posted ? "POST" : "PUT, DELETE" } })
       }
       const actor = yield* sessions.resolve
       if (Option.isNone(actor)) return refuse(401, "authentication")
@@ -238,7 +398,8 @@ export const make = <E, R>(
       // Anyone signed in saves and tests a model of their own: it is their key, and it answers only their calls (ruling
       // AUTH-8). Where they may ask, ChatApi decides by their role on each conversation's repository.
       if (op === "test") {
-        const result = yield* test(personId)
+        const connection = new URL(request.url, "http://smithers").searchParams.get("connection") ?? undefined
+        const result = yield* test(personId, connection)
         if (Option.isNone(result)) return refuse(404, "none")
         fields.outcome = result.value.ok ? "ok" : "failed"
         if (!result.value.ok) {
@@ -247,9 +408,34 @@ export const make = <E, R>(
         }
         return HttpServerResponse.jsonUnsafe(result.value, { status: 200, headers: noStore })
       }
+      if (op === "jev") return yield* evaluate(personId, request, refuse, fields)
       // The key would pass through whoever acts for the person: only the person saves one (decision 0017).
       if (yield* refusesPersonOnly(actor.value, "model")) return refuse(403, "forbidden")
       if (Option.isNone(keys)) return refuse(503, "off")
+      if (op === "link") {
+        const device = yield* Codex.requestCode.pipe(Effect.result)
+        if (device._tag === "Failure") {
+          fields.outcome = "refused"
+          if (device.failure.status !== null) fields.providerStatus = device.failure.status
+          return refuse(502, "link_refused")
+        }
+        const { deviceAuthId, userCode, verificationUrl } = device.success
+        const { cipher, version } = keys.value
+        const sealed = yield* cipher.seal(
+          Redacted.make(JSON.stringify({ deviceAuthId, userCode })),
+          { id: `person:${personId}`, name: "model-link", version },
+        )
+        const started = yield* starter.start(ModelFlows.CodexLink, {
+          executionId: writeExecutionId("link", crypto.randomUUID()),
+          payload: { personId, id: crypto.randomUUID(), ...sealed, keyVersion: version },
+        }).pipe(Effect.result)
+        if (started._tag === "Failure") return refuse(503, "unavailable")
+        fields.outcome = "linking"
+        return HttpServerResponse.jsonUnsafe(
+          { userCode, verificationUrl, expiresInSeconds: LINK_SECONDS } satisfies CodexLinkStart,
+          { status: 202, headers: noStore },
+        )
+      }
       const body = yield* readBounded(request, MAX_PUT_BODY_BYTES).pipe(Effect.result)
       if (body._tag === "Failure") {
         return body.failure.reason === "too_large" ? refuse(413, "too_large") : refuse(400, "invalid")
@@ -257,27 +443,33 @@ export const make = <E, R>(
       // A decoding failure would quote its input, the key: it is dropped whole.
       const decoded = yield* decodePut(body.success).pipe(Effect.option)
       if (Option.isNone(decoded)) return refuse(400, "invalid")
+      if (decoded.value.connections.some(({ id }) => id !== undefined && id !== "" && !UUID.test(id))) {
+        return refuse(400, "invalid")
+      }
       // A key kept without its value must be the one saved at the same base URL: read what the person saved.
       const saved = yield* Store.saved(personId).pipe(Effect.provide(database), Effect.provideContext(context))
       // The browser sees each key's last characters again: they must be a small part of it (`too_short`).
-      const checked = checkSave(decoded.value, saved, Binding.valueProblem)
+      const checked = checkSave(decoded.value, saved, Binding.valueProblem, defaults)
       if (typeof checked === "string") return refuse(400, checked)
       const { cipher, version } = keys.value
-      const writes = yield* Effect.forEach(checked.keys, ({ protocol, baseUrl, key }) =>
-        key === undefined
-          ? Effect.succeed({ protocol, baseUrl })
+      const writes = yield* Effect.forEach(checked.connections, ({ key, ...connection }) => {
+        // The id is chosen here, so a new connection's row is the same on every replay of the flow's step.
+        const write = { ...connection, id: connection.id ?? crypto.randomUUID() }
+        return key === undefined
+          ? Effect.succeed(write)
           : Effect.map(
             cipher.seal(Redacted.make(key), sealContext(personId, version)),
-            (sealed) => ({ protocol, baseUrl, sealed: { ...sealed, keyVersion: version, keyLast4: keyTail(key) } }),
-          ))
+            (sealed) => ({ ...write, sealed: { ...sealed, keyVersion: version, keyLast4: keyTail(key) } }),
+          )
+      })
       const started = yield* starter.start(ModelFlows.Put, {
         executionId,
-        payload: { personId, keys: writes, models: checked.models },
+        payload: { personId, connections: writes },
       }).pipe(Effect.result)
       if (started._tag === "Failure") return refuse(503, "unavailable")
       fields.outcome = "putting"
-      fields.keys = checked.keys.length
-      fields.tiers = (Object.keys(checked.models) as ReadonlyArray<ModelTier>).join(",")
+      fields.connections = checked.connections.length
+      fields.kinds = [...new Set(checked.connections.map((connection) => connection.kind))].join(",")
       return HttpServerResponse.jsonUnsafe({}, { status: 202, headers: noStore })
     }).pipe(
       Effect.catchCause((cause) =>

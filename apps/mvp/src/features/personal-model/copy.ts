@@ -1,5 +1,5 @@
 import type { ModelTier } from "../model/contract"
-import type { Protocol, Refusal } from "./contract"
+import type { ConnectionKind, Protocol, Refusal } from "./contract"
 
 // What the Your model section say (docs/features/personal-model.md#the-settings-section): the fewest
 // words to act, in product words.
@@ -11,13 +11,42 @@ export const YOUR_MODEL = "Your model"
 export const BASE_URL = "Base URL"
 export const KEY = "Key"
 
-/** Each protocol's base URL example. */
-export const BASE_URL_PLACEHOLDER: Record<Protocol, string> = {
-  "openai-chat": "https://api.openai.com",
-  "anthropic-messages": "https://api.anthropic.com",
+/** The Base URL field's example. */
+export const BASE_URL_PLACEHOLDER = "https://api.openai.com"
+
+/** The protocol select's name. */
+export const PROTOCOL = "Protocol"
+
+/** Add, and each kind as its entry, its dialog's title and its row name it. */
+export const ADD = "Add"
+export const KIND_LABEL: Record<ConnectionKind, string> = {
+  api_key: "API key",
+  moonshot: "Kimi K3",
+  claude_subscription: "Claude subscription",
+  codex_subscription: "Codex subscription",
+  jev: "Jev",
 }
 
-/** Each protocol as its key's group and a tier's select name it. */
+/** A row's controls. */
+export const ACTIVE = "Active"
+export const MOVE_UP = "Move up"
+export const MOVE_DOWN = "Move down"
+
+/** Claude's form: what to run, its copy button, its two steps and its field. */
+export const CLAUDE_COMMAND = "claude setup-token"
+export const COPY_COMMAND = "Copy command"
+export const CLAUDE_RUN = "Run"
+export const CLAUDE_PASTE = "Paste"
+export const TOKEN = "Token"
+
+/** Codex's form. */
+export const LINK = "Link"
+export const COPY_CODE = "Copy code"
+export const OPEN_OPENAI = "Open OpenAI"
+export const LINK_WAITING = "Waiting"
+export const LINK_EXPIRED = "Code expired"
+
+/** Each protocol as the protocol select names it. */
 export const PROTOCOL_LABEL: Record<Protocol, string> = {
   "openai-chat": "OpenAI-compatible",
   "anthropic-messages": "Anthropic-compatible",
@@ -37,9 +66,6 @@ export const TIER_PURPOSE: Record<ModelTier, string> = {
   hard: "Plans and reviews",
 }
 
-/** A tier's key select, as a screen reader names it. */
-export const tierKeyLabel = (tier: ModelTier): string => `${TIER_LABEL[tier]} key`
-
 /** The buttons. */
 export const SAVE = "Save"
 export const REMOVE = "Remove"
@@ -54,7 +80,7 @@ export const REMOVING = "Removing"
 /** A test that went through. */
 export const OK = "OK"
 
-/** The key field's placeholder once a model is saved: its last characters behind dots. */
+/** A saved credential: its last characters behind dots. */
 export const keyPlaceholder = (keyLast4: string): string => `····${keyLast4}`
 
 /** Why a write or test was refused, including an unsaved local draft. */
@@ -72,9 +98,10 @@ export const REFUSAL_COPY: Record<Refusal | "unsaved", string> = {
   control_character: "Keys can't contain line breaks or control characters",
   malformed_text: "Keys must be plain text",
   too_large: "Keys are at most 16 KiB",
-  key_required: "Enter the key for this base URL",
-  no_key: "Save a key for that model",
-  no_model: "Name a Fast model",
+  key_required: "Enter the key",
+  invalid_token: "Tokens start with sk-ant-oat",
+  link_expired: LINK_EXPIRED,
+  link_refused: "OpenAI refused the link",
   none: "No model saved",
   off: "Your own model is off on this deployment",
   unavailable: "Unavailable; try again",

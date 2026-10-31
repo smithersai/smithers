@@ -4,6 +4,10 @@ Status: implemented (2026-10-21). Ruling PROC-23 and its addendum (Will, 2026-10
 
 PROC-23 asked for the general ability to choose what backs the coding agent, so a deployment can point it at models it serves itself; our own use of the Claude Code and Codex subscriptions on the Mac mini is our configuration, not a product feature. The addendum set the bar: "there shouldn't be any buttons or anything that directly do claude or codex. Instead it should support the seams needed to do it yourself and it's at your own risk … do the bare minimum minimal cleanest seam you can that enables us to use claude and codex but do not actually make them claude or codex. Do not make our code buggy or complex with a bunch of complicated logic about rules for running peoples todos or stuff."
 
+**Amended by [0132](0132-model-connections.md) (ruling AUTH-10, 2026-10-31):** decision 4 no longer holds. A person's
+Claude or Codex subscription runs the vendor's own agent in their `todo` run's box, through one `sandbox/Command` job and
+not through this decision's rejected `ExternalAgent` design. Decisions 1 to 3 stand for every other run.
+
 ## Decisions
 
 1. **The seam is one model role, `coding`.** `todo/Implement`'s agent asks the model endpoint's `coding` role (`worker/Executions.ts`), the `agent` role keeps answering chat. An Admin sets it with `admin/SetModel { role: "coding", model }`, like every role. Until one does, `coding` answers with the `agent` role's model, its setting included, so a deployment that never sets it sees no change.

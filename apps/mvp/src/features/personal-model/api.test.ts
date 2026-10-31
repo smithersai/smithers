@@ -40,46 +40,42 @@ const json = (body: unknown, status: number) =>
   Promise.resolve(new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }))
 
 const put = {
-  keys: [
-    { protocol: "openai-chat", baseUrl: "https://api.openai.com", key: Redacted.make(KEY) },
-    // The key saved at this base URL stays: the body carries no key for it.
-    { protocol: "anthropic-messages", baseUrl: "https://api.anthropic.com", key: undefined },
+  connections: [
+    { kind: "api_key", protocol: "openai-chat", baseUrl: "https://api.openai.com", key: Redacted.make(KEY), models: { implement: "gpt-6.1-sol" } },
+    // The key saved on this connection stays: the body carries no key for it.
+    { id: "connection-2", kind: "jev", active: false, key: undefined },
   ],
-  models: {
-    fast: { protocol: "anthropic-messages", modelId: "claude-haiku-4-5" },
-    implement: { protocol: "openai-chat", modelId: "gpt-6.1-sol" },
-  },
-} as const
+}
+
+const started = { userCode: "ABCD-EFGH", verificationUrl: "https://auth.openai.com/codex/device", expiresInSeconds: 900 }
 
 const ok: TestResult = { ok: true, latencyMs: 412, sample: "ok" }
 const refusedByProvider: TestResult = { ok: false, latencyMs: 98, code: "authentication", status: 401, host: "api.openai.com" }
 
 describe("PersonalModelClient", () => {
-  test("Save puts each key's protocol and base URL, a typed key once, and the tiers; Remove deletes; Test posts", async () => {
-    const answers = [json({}, 202), json({}, 202), json(ok, 200), json(refusedByProvider, 200)]
+  test("Save puts the whole list, a typed key once; Remove deletes; Test posts, of one connection when named; Link posts", async () => {
+    const answers = [json({}, 202), json({}, 202), json(ok, 200), json(refusedByProvider, 200), json(started, 202)]
     const { run, seen } = client(() => answers.shift()!)
     expect(await run((c) => c.put(put))).toEqual(Exit.succeed(undefined))
     expect(await run((c) => c.remove)).toEqual(Exit.succeed(undefined))
-    expect(await run((c) => c.test)).toEqual(Exit.succeed(ok))
-    expect(await run((c) => c.test)).toEqual(Exit.succeed(refusedByProvider))
+    expect(await run((c) => c.test())).toEqual(Exit.succeed(ok))
+    expect(await run((c) => c.test("a/b c"))).toEqual(Exit.succeed(refusedByProvider))
+    expect(await run((c) => c.link)).toEqual(Exit.succeed(started))
     expect(seen).toEqual([
       {
         method: "PUT",
         url: "http://chat.test/api/me/model",
         body: JSON.stringify({
-          keys: [
-            { protocol: "openai-chat", baseUrl: "https://api.openai.com", key: KEY },
-            { protocol: "anthropic-messages", baseUrl: "https://api.anthropic.com" },
+          connections: [
+            { kind: "api_key", protocol: "openai-chat", baseUrl: "https://api.openai.com", models: { implement: "gpt-6.1-sol" }, key: KEY },
+            { id: "connection-2", kind: "jev", active: false },
           ],
-          models: {
-            fast: { protocol: "anthropic-messages", modelId: "claude-haiku-4-5" },
-            implement: { protocol: "openai-chat", modelId: "gpt-6.1-sol" },
-          },
         }),
       },
       { method: "DELETE", url: "http://chat.test/api/me/model", body: "" },
       { method: "POST", url: "http://chat.test/api/me/model/test", body: "" },
-      { method: "POST", url: "http://chat.test/api/me/model/test", body: "" },
+      { method: "POST", url: "http://chat.test/api/me/model/test?connection=a%2Fb%20c", body: "" },
+      { method: "POST", url: "http://chat.test/api/me/model/codex", body: "" },
     ])
   })
 
@@ -89,10 +85,15 @@ describe("PersonalModelClient", () => {
       status: 400,
       code: "invalid_base_url",
     })
-    expect(refusalOf(await client(() => json({ code: "none" }, 404)).run((c) => c.test))).toEqual({
+    expect(refusalOf(await client(() => json({ code: "none" }, 404)).run((c) => c.test()))).toEqual({
       _tag: "ModelNotTaken",
       status: 404,
       code: "none",
+    })
+    expect(refusalOf(await client(() => json({ code: "link_refused" }, 502)).run((c) => c.link))).toEqual({
+      _tag: "ModelNotTaken",
+      status: 502,
+      code: "link_refused",
     })
     expect(refusalOf(await client(() => json({ code: "made_up" }, 403)).run((c) => c.remove))).toEqual({
       _tag: "ModelNotTaken",
@@ -103,21 +104,22 @@ describe("PersonalModelClient", () => {
     // A save is answered 202 once its flow started, and a test 200 once its call came back: no other success.
     expect(refusalOf(await client(() => json({}, 200)).run((c) => c.put(put))))
       .toEqual({ _tag: "ModelNotTaken", status: 200 })
-    expect(refusalOf(await client(() => json(ok, 202)).run((c) => c.test))).toEqual({ _tag: "ModelNotTaken", status: 202 })
+    expect(refusalOf(await client(() => json(ok, 202)).run((c) => c.test()))).toEqual({ _tag: "ModelNotTaken", status: 202 })
   })
 
   test("no network, a body that isn't the route's, and no answer within the deadline are not taken", async () => {
     expect(refusalOf(await client(() => Promise.reject(new TypeError("offline"))).run((c) => c.put(put)))).toEqual({
       _tag: "ModelNotTaken",
     })
-    expect(refusalOf(await client(() => json({ ok: "yes" }, 200)).run((c) => c.test))).toEqual({
+    expect(refusalOf(await client(() => json({ ok: "yes" }, 200)).run((c) => c.test()))).toEqual({
       _tag: "ModelNotTaken",
       status: 200,
     })
     const never = client(() => new Promise<Response>(() => {}), { within: "50 millis", testWithin: "60 millis" })
     expect(refusalOf(await never.run((c) => c.put(put)))).toEqual({ _tag: "ModelNotTaken" })
     expect(refusalOf(await never.run((c) => c.remove))).toEqual({ _tag: "ModelNotTaken" })
-    expect(refusalOf(await never.run((c) => c.test))).toEqual({ _tag: "ModelNotTaken" })
+    expect(refusalOf(await never.run((c) => c.link))).toEqual({ _tag: "ModelNotTaken" })
+    expect(refusalOf(await never.run((c) => c.test()))).toEqual({ _tag: "ModelNotTaken" })
     // A test waits on the provider's call, so it gets longer than a write.
     expect([MODEL_WITHIN, TEST_WITHIN]).toEqual(["15 seconds", "45 seconds"])
   })
@@ -146,6 +148,8 @@ describe("failureOf", () => {
 })
 
 describe("model/test/request and model/remove/request", () => {
+  const asked: Array<string | undefined> = []
+
   /** A step over a client answering `answer`, with its counts by outcome. */
   const step = <A>(
     run: Effect.Effect<A, unknown, PersonalModelClient>,
@@ -159,7 +163,11 @@ describe("model/test/request and model/remove/request", () => {
         Effect.provide(Layer.succeed(PersonalModelClient, PersonalModelClient.of({
           put: () => Effect.die("no step saves"),
           remove: answer.remove ?? Effect.die("not this step"),
-          test: answer.test ?? Effect.die("not this step"),
+          test: answer.test === undefined ? () => Effect.die("not this step") : (connection) => {
+            asked.push(connection)
+            return answer.test!
+          },
+          link: Effect.die("no step links"),
         }))),
         Effect.flatMap((exit) =>
           Effect.map(
@@ -175,16 +183,21 @@ describe("model/test/request and model/remove/request", () => {
   }
 
   test("a test that went through answers its result, counted ok or failed", async () => {
-    expect(await step(requestTest, "test", { test: Effect.succeed(ok) })).toEqual({ exit: Exit.succeed(ok), counts: { ok: 1 } })
-    expect(await step(requestTest, "test", { test: Effect.succeed(refusedByProvider) })).toEqual({
+    expect(await step(requestTest(), "test", { test: Effect.succeed(ok) })).toEqual({ exit: Exit.succeed(ok), counts: { ok: 1 } })
+    expect(await step(requestTest(), "test", { test: Effect.succeed(refusedByProvider) })).toEqual({
       exit: Exit.succeed(refusedByProvider),
       counts: { failed: 1 },
     })
     const unreachable: TestResult = { ok: false, latencyMs: 30_000, code: "transport", status: null, host: "api.openai.com" }
-    expect(await step(requestTest, "test", { test: Effect.succeed(unreachable) })).toEqual({
+    expect(await step(requestTest(), "test", { test: Effect.succeed(unreachable) })).toEqual({
       exit: Exit.succeed(unreachable),
       counts: { failed: 1 },
     })
+  })
+
+  test("a test of one connection asks about it", async () => {
+    await step(requestTest("connection-2"), "test", { test: Effect.succeed(ok) })
+    expect(asked.at(-1)).toBe("connection-2")
   })
 
   test("a remove ChatApi took answers removed, counted sent", async () => {
@@ -195,7 +208,7 @@ describe("model/test/request and model/remove/request", () => {
   })
 
   test("a refusal fails for good, and an unreachable ChatApi fails to be tried again", async () => {
-    expect(await step(requestTest, "test", { test: Effect.fail(new ModelNotTaken({ status: 404, code: "none" })) })).toEqual({
+    expect(await step(requestTest(), "test", { test: Effect.fail(new ModelNotTaken({ status: 404, code: "none" })) })).toEqual({
       exit: Exit.fail(new ModelRefused({ status: 404, code: "none" })),
       counts: { refused: 1 },
     })
@@ -207,7 +220,7 @@ describe("model/test/request and model/remove/request", () => {
       exit: Exit.fail(new ModelUnsent()),
       counts: { unsent: 1 },
     })
-    expect(await step(requestTest, "test", { test: Effect.fail(new ModelNotTaken({ status: 502 })) })).toEqual({
+    expect(await step(requestTest(), "test", { test: Effect.fail(new ModelNotTaken({ status: 502 })) })).toEqual({
       exit: Exit.fail(new ModelUnsent()),
       counts: { unsent: 1 },
     })

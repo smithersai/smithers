@@ -1629,6 +1629,101 @@ describe("0073_feeds", () => {
   }))
 })
 
+describe("0075_model_connections", () => {
+  /** A person's row as 0065 left it. */
+  const saved = (person: string, protocol: string, baseUrl: string, fast: string | null) => Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+    INSERT INTO personal_models (person_id, protocol, base_url, fast_model, ciphertext, nonce, key_version, key_last4)
+    VALUES (${person}, ${protocol}, ${baseUrl}, ${fast}, ${`sealed-${protocol}`}, 'n', 1, 'abcd')`)
+  const insert = (fields: { readonly person?: string; readonly kind: string; readonly protocol?: string | null; readonly baseUrl?: string | null; readonly active?: boolean; readonly position?: number }) =>
+    Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO personal_models (person_id, id, kind, position, active, protocol, base_url, ciphertext, nonce, key_version, key_last4)
+      VALUES (${fields.person ?? "p"}, gen_random_uuid(), ${fields.kind}, ${fields.position ?? 0}, ${fields.active ?? true}, ${fields.protocol ?? null},
+        ${fields.baseUrl ?? null}, 'c', 'n', 1, 'abcd')`)
+
+  test("keeps each person's rows, in the order the routes read them, as api_key connections with ids", () => emptySchema(async (url) => {
+    const database = Database.layer(Effect.succeed(Redacted.make(url)))
+    const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+    await on(through("0074"))
+    await on(saved("maya", "openai-chat", "https://models.example.com", "gpt"))
+    await on(saved("maya", "anthropic-messages", "https://anthropic.example.com", "claude"))
+    await on(saved("sam", "openai-chat", "https://models.example.com", null))
+    expect((await on(through("0075"))).map(([id, name]) => `${id}_${name}`)).toEqual(["75_model_connections"])
+    const rows = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{
+      readonly id: string
+      readonly person: string
+      readonly protocol: string
+      readonly kind: string
+      readonly position: number
+      readonly active: boolean
+      readonly ciphertext: string
+      readonly fast: string | null
+    }>`
+      SELECT id, person_id AS person, protocol, kind, position, active, ciphertext, fast_model AS fast
+      FROM personal_models ORDER BY person_id, position`))
+    expect(rows.map(({ id: _id, ...row }) => row)).toEqual([
+      { person: "maya", protocol: "anthropic-messages", kind: "api_key", position: 0, active: true, ciphertext: "sealed-anthropic-messages", fast: "claude" },
+      { person: "maya", protocol: "openai-chat", kind: "api_key", position: 1, active: true, ciphertext: "sealed-openai-chat", fast: "gpt" },
+      { person: "sam", protocol: "openai-chat", kind: "api_key", position: 0, active: true, ciphertext: "sealed-openai-chat", fast: null },
+    ])
+    expect(new Set(rows.map((row) => row.id)).size).toBe(3)
+    expect(rows[0]!.id).toMatch(/^[0-9a-f-]{36}$/)
+    expect(await on(through("0075"))).toEqual([])
+  }))
+
+  test("the ledger says which connection answered, none for the calls before it", () => emptySchema(async (url) => {
+    const database = Database.layer(Effect.succeed(Redacted.make(url)))
+    const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+    await on(through("0074"))
+    await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO personal_model_usage (invocation_id, request_id, person_id, role, model_id) VALUES ('i', 'r', 'p', 'agent', 'm')`))
+    await on(through("0075"))
+    expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`SELECT connection_id AS id FROM personal_model_usage`)))
+      .toEqual([{ id: null }])
+  }))
+
+  test("a model kind needs its wire, any other refuses a protocol, a kind is one of the five, a position isn't negative", () => emptySchema(async (url) => {
+    const database = Database.layer(Effect.succeed(Redacted.make(url)))
+    const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+    await on(through("0075"))
+    const refused = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+      on(effect.pipe(Effect.as("taken"), Effect.orElseSucceed(() => "refused")))
+    const wire = { protocol: "openai-chat", baseUrl: "https://models.example.com" }
+    expect(await refused(insert({ kind: "api_key" }))).toBe("refused")
+    expect(await refused(insert({ kind: "api_key", protocol: "openai-chat" }))).toBe("refused")
+    expect(await refused(insert({ kind: "moonshot", baseUrl: wire.baseUrl }))).toBe("refused")
+    expect(await refused(insert({ kind: "claude_subscription", protocol: "openai-chat" }))).toBe("refused")
+    expect(await refused(insert({ kind: "gemini", ...wire }))).toBe("refused")
+    expect(await refused(insert({ kind: "api_key", ...wire, position: -1 }))).toBe("refused")
+    expect(await refused(insert({ kind: "api_key", ...wire }))).toBe("taken")
+    expect(await refused(insert({ kind: "moonshot", ...wire }))).toBe("taken")
+    expect(await refused(insert({ kind: "jev" }))).toBe("taken")
+    // A Claude subscription may keep its own base URL.
+    expect(await refused(insert({ kind: "claude_subscription", baseUrl: wire.baseUrl }))).toBe("taken")
+    expect(await refused(insert({ kind: "codex_subscription" }))).toBe("taken")
+    // `kind` has no default: every writer names it.
+    expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO personal_models (person_id, id, position, protocol, base_url, ciphertext, nonce, key_version, key_last4)
+      VALUES ('p', gen_random_uuid(), 9, 'openai-chat', 'https://a.example.com', 'c', 'n', 1, 'a')`))).toBe("refused")
+  }))
+
+  test("one active subscription of a kind per person; inactive ones and other people's don't count; API keys aren't limited", () => emptySchema(async (url) => {
+    const database = Database.layer(Effect.succeed(Redacted.make(url)))
+    const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+    await on(through("0075"))
+    const refused = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+      on(effect.pipe(Effect.as("taken"), Effect.orElseSucceed(() => "refused")))
+    for (const kind of ["claude_subscription", "codex_subscription", "jev"]) {
+      expect(await refused(insert({ kind }))).toBe("taken")
+      expect(await refused(insert({ kind, position: 1 }))).toBe("refused")
+      expect(await refused(insert({ kind, position: 1, active: false }))).toBe("taken")
+      expect(await refused(insert({ kind, person: "someone-else" }))).toBe("taken")
+    }
+    const wire = { protocol: "openai-chat", baseUrl: "https://models.example.com" }
+    expect(await refused(insert({ kind: "api_key", ...wire }))).toBe("taken")
+    expect(await refused(insert({ kind: "api_key", ...wire, position: 1 }))).toBe("taken")
+  }))
+})
+
 describe("0074_host_sessions", () => {
   test("keys a hand-off by its code's digest and an alias session by its token's, both ending with their home session", () => emptySchema(async (url) => {
     const database = Database.layer(Effect.succeed(Redacted.make(url)))

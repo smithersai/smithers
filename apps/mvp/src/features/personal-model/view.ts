@@ -1,12 +1,25 @@
 import type { Role } from "../auth/contract"
 import { MODEL_TIERS, type ModelTier } from "../model/contract"
-import { hostOf, type Protocol, PROTOCOLS, type Refusal, resolveTier, type SavedKey, TIER_FIELDS } from "./contract"
-import { codeText, LATE, OK, REFUSAL_COPY, REMOVING, SAVING, UNKNOWN } from "./copy"
-import type { Form, PersonalModelRow, TestResult, TestRow } from "./schema"
+import {
+  type ConnectionKind,
+  type ConnectionPut,
+  DEFAULTS,
+  type Defaults,
+  hostOf,
+  MODEL_KINDS,
+  type ModelsPut,
+  type Refusal,
+  resolveTier,
+  type SavedConnection,
+  SINGLE_KINDS,
+  TIER_FIELDS,
+} from "./contract"
+import { codeText, KIND_LABEL, keyPlaceholder, LATE, LINK_EXPIRED, LINK_WAITING, OK, REFUSAL_COPY, REMOVING, SAVING, UNKNOWN } from "./copy"
+import type { AddView, Form, LinkRow, PersonalModelRow, TestResult, TestRow } from "./schema"
 
-// What the Your model section show, as pure rules their views read
+// What the Your model section shows, as pure rules its views read
 // (docs/features/personal-model.md#the-settings-section). ChatApi is the authority on every write and on the rows;
-// these only decide which controls, values and words show, and what the form sends.
+// these only decide which controls, values and words show, and what each press sends: always the whole list.
 
 /** Who the session says is signed in: sign-in's row (src/features/auth/schema.ts `Session`). */
 export interface Reader {
@@ -31,83 +44,136 @@ export const latestUpdate = (rows: ReadonlyArray<PersonalModelRow>): string | nu
   rows.reduce<string | null>((latest, row) => latest === null || row.updatedAt > latest ? row.updatedAt : latest, null)
 
 /**
- * Whether the rows show a write landed: a remove, once there are none; a save, once there is a row for each key it sent,
- * at its base URL, and no other, each row's tiers' models are the ones it sent for that key, and the latest
- * `updatedAt` is another than the one before it was sent. The server's clock is never compared with this device's.
+ * Whether the rows show a write landed: a remove, once there are none; a save, once the rows are the connections it
+ * sent, in its order, and the latest `updatedAt` is another than the one before it was sent. A new connection has no id
+ * to compare yet, and a Kimi connection's endpoint and models are the server's. The server's clock is never compared
+ * with this device's.
  */
 export const landed = (form: Pick<Form, "op" | "before" | "sent">, rows: ReadonlyArray<PersonalModelRow>): boolean => {
   if (form.op === "remove") return rows.length === 0
   const sent = form.sent
-  if (sent === null || rows.length !== sent.keys.length || latestUpdate(rows) === form.before) return false
-  return sent.keys.every(({ protocol, baseUrl }) => {
-    const row = rows.find((each) => each.protocol === protocol)
-    return row !== undefined && row.baseUrl === baseUrl && MODEL_TIERS.every((tier) => {
-      const choice = sent.models[tier]
-      return row[TIER_FIELDS[tier]] === (choice?.protocol === protocol ? choice.modelId : null)
-    })
+  if (sent === null || rows.length !== sent.connections.length || latestUpdate(rows) === form.before) return false
+  return sent.connections.every((connection, index) => {
+    const row = rows[index]!
+    if (row.kind !== connection.kind || row.active !== connection.active) return false
+    if (connection.id !== null && row.id !== connection.id) return false
+    if (connection.kind === "moonshot") return true
+    return row.protocol === connection.protocol && row.baseUrl === connection.baseUrl &&
+      MODEL_TIERS.every((tier) => row[TIER_FIELDS[tier]] === (connection.models[tier] ?? null))
   })
 }
 
-/** The saved key of `protocol`, if the person saved one. */
-export const keyOf = (rows: ReadonlyArray<PersonalModelRow>, protocol: Protocol): PersonalModelRow | undefined =>
-  rows.find((row) => row.protocol === protocol)
+/** The latest `updatedAt` of the person's Codex rows: what a link remembers as `before`. */
+export const latestLink = (rows: ReadonlyArray<PersonalModelRow>): string | null =>
+  latestUpdate(rows.filter((row) => row.kind === "codex_subscription"))
+
+/** Whether a link waiting shows in the rows: a Codex row written since it started. */
+export const linked = (link: Pick<LinkRow, "state" | "before">, rows: ReadonlyArray<PersonalModelRow>): boolean => {
+  if (link.state !== "waiting") return false
+  const latest = latestLink(rows)
+  return latest !== null && latest !== link.before
+}
+
+/** Whether any tier resolves to a model: what the composer needs of a person's own connections. */
+export const answers = (rows: ReadonlyArray<SavedConnection>): boolean => resolveTier(rows, "fast") !== undefined
 
 /**
- * What a tier's fields show: the model the person named for it (`model`, `""` when none), the model it uses when its
- * field is left empty (`placeholder`: a preset or the tier it falls back to; none when nothing would answer it), and
- * the key its select starts on: the named model's, else the one it would use, else the first saved key, else the
- * first protocol.
+ * The defaults a check of the saved list needs: a saved Kimi connection's endpoint, which the deployment chose, so a
+ * connection kept keeps its credential whatever endpoint this build's `DEFAULTS` name.
  */
-export const tierView = (
-  rows: ReadonlyArray<PersonalModelRow>,
-  tier: ModelTier,
-): { readonly model: string; readonly placeholder: string | undefined; readonly protocol: Protocol } => {
-  const field = TIER_FIELDS[tier]
-  const named = rows.find((row) => row[field] !== null)
-  // What the tier uses with its field left empty: the same keys, none naming it.
-  const unnamed = resolveTier(rows.map((row): SavedKey => ({
-    protocol: row.protocol,
-    baseUrl: row.baseUrl,
-    fastModel: tier === "fast" ? null : row.fastModel,
-    implementModel: tier === "implement" ? null : row.implementModel,
-    hardModel: tier === "hard" ? null : row.hardModel,
-  })), tier)
+export const defaultsFrom = (rows: ReadonlyArray<Pick<SavedConnection, "kind" | "baseUrl">>): Defaults => {
+  const baseUrl = rows.find((row) => row.kind === "moonshot")?.baseUrl ?? DEFAULTS.moonshot.baseUrl
+  return { moonshot: { ...DEFAULTS.moonshot, baseUrl } }
+}
+
+/** What Save sends: the whole list, in the person's order. A key is `""` or absent where the saved one stays. */
+export type SaveForm = ModelsPut
+
+/** A saved connection as a save keeps it: no credential, and only the fields its kind carries. */
+const keptOf = (row: PersonalModelRow): ConnectionPut => {
+  const models = Object.fromEntries(MODEL_TIERS.flatMap((tier) => {
+    const model = row[TIER_FIELDS[tier]]
+    return model === null ? [] : [[tier, model]]
+  }))
   return {
-    model: named?.[field] ?? "",
-    placeholder: unnamed?.modelId,
-    protocol: named?.protocol ?? unnamed?.protocol ?? PROTOCOLS.find((protocol) => keyOf(rows, protocol)) ??
-      PROTOCOLS[0],
+    id: row.id,
+    kind: row.kind,
+    active: row.active,
+    ...(row.kind === "api_key" ? { protocol: row.protocol! } : {}),
+    ...(row.baseUrl === null || row.kind === "moonshot" ? {} : { baseUrl: row.baseUrl }),
+    ...(MODEL_KINDS.includes(row.kind) ? { models } : {}),
   }
 }
 
-/** The form's field names: each protocol's base URL and key, and each tier's model and key. */
-export const FIELDS = {
-  baseUrl: (protocol: Protocol) => `baseUrl:${protocol}`,
-  key: (protocol: Protocol) => `key:${protocol}`,
-  model: (tier: ModelTier) => `${tier}Model`,
-  tierKey: (tier: ModelTier) => `${tier}Key`,
-} as const
+/** The saved list as a save sends it, each credential kept. */
+export const listOf = (rows: ReadonlyArray<PersonalModelRow>): ReadonlyArray<ConnectionPut> => rows.map(keptOf)
 
-/** What Save sends from the form: each key whose base URL was filled in, and each tier whose model was. */
-export interface SaveForm {
-  readonly keys: ReadonlyArray<{ readonly protocol: string; readonly baseUrl: string; readonly key: string }>
-  readonly models: Readonly<Record<string, { readonly protocol: string; readonly modelId: string }>>
+/** `list` with no other active connection of `connection`'s kind when that kind allows one active. */
+const single = (list: ReadonlyArray<ConnectionPut>, connection: ConnectionPut) =>
+  (connection.active ?? true) && SINGLE_KINDS.includes(connection.kind as ConnectionKind)
+    ? list.map((each) => (each.kind === connection.kind && each.id !== connection.id ? { ...each, active: false } : each))
+    : list
+
+/** `list` with `added` last. */
+export const withAdded = (list: ReadonlyArray<ConnectionPut>, added: ConnectionPut): ReadonlyArray<ConnectionPut> => [
+  ...single(list, added),
+  added,
+]
+
+/** `list` with `id` active or not. Turning on a kind that allows one active turns its other one off. */
+export const withActive = (list: ReadonlyArray<ConnectionPut>, id: string, active: boolean): ReadonlyArray<ConnectionPut> => {
+  const next = list.map((each) => (each.id === id ? { ...each, active } : each))
+  return single(next, next.find((each) => each.id === id)!)
 }
 
-/**
- * The save the form says, its fields read by `field` (`""` for a missing one): every protocol whose base URL is filled
- * in, with its key (`""` keeps the saved one), and every tier whose model is filled in, on the key its select names.
- */
-export const readForm = (field: (name: string) => string): SaveForm => ({
-  keys: PROTOCOLS.flatMap((protocol) => {
-    const baseUrl = field(FIELDS.baseUrl(protocol))
-    return baseUrl.trim() === "" ? [] : [{ protocol, baseUrl, key: field(FIELDS.key(protocol)) }]
-  }),
-  models: Object.fromEntries(MODEL_TIERS.flatMap((tier): Array<readonly [ModelTier, SaveForm["models"][string]]> => {
-    const modelId = field(FIELDS.model(tier))
-    return modelId.trim() === "" ? [] : [[tier, { protocol: field(FIELDS.tierKey(tier)), modelId }]]
-  })),
-})
+/** `list` with `id` moved one place, up (`-1`) or down (`1`); as it was at either end. */
+export const withMoved = (list: ReadonlyArray<ConnectionPut>, id: string, by: -1 | 1): ReadonlyArray<ConnectionPut> => {
+  const from = list.findIndex((each) => each.id === id)
+  const to = from + by
+  if (to < 0 || to >= list.length) return list
+  const next = [...list]
+  next[from] = list[to]!
+  next[to] = list[from]!
+  return next
+}
+
+/** `list` without `id`. */
+export const without = (list: ReadonlyArray<ConnectionPut>, id: string): ReadonlyArray<ConnectionPut> =>
+  list.filter((each) => each.id !== id)
+
+/** The Add form's field names. */
+export const FIELDS = {
+  protocol: "protocol",
+  baseUrl: "baseUrl",
+  key: "key",
+  model: (tier: ModelTier) => `${tier}Model`,
+} as const
+
+/** The connection a kind's Add form says, its fields read by `field` (`""` for a missing one). */
+export const readAdd = (kind: ConnectionKind, field: (name: string) => string): ConnectionPut => {
+  if (kind !== "api_key") return { kind, key: field(FIELDS.key) }
+  return {
+    kind,
+    protocol: field(FIELDS.protocol),
+    baseUrl: field(FIELDS.baseUrl),
+    key: field(FIELDS.key),
+    models: Object.fromEntries(MODEL_TIERS.flatMap((tier) => {
+      const modelId = field(FIELDS.model(tier))
+      return modelId.trim() === "" ? [] : [[tier, modelId]]
+    })),
+  }
+}
+
+/** Whether a row shows Test: a Claude subscription can't be checked from here. */
+export const testable = (row: Pick<PersonalModelRow, "kind">): boolean => row.kind !== "claude_subscription"
+
+/** The form Add shows: its kind, or none for nothing or the menu. */
+export const addKind = (view: AddView | undefined): ConnectionKind | undefined =>
+  view === undefined || view === "closed" || view === "menu" ? undefined : view
+
+/** What identifies a row after its kind: its host, else its credential's last characters. */
+export const rowDetail = (row: Pick<PersonalModelRow, "baseUrl" | "keyLast4">): string =>
+  row.baseUrl === null ? keyPlaceholder(row.keyLast4) : hostOf(row.baseUrl)
 
 /** A test's result in words: `OK`, `<host> · HTTP <status>`, or `<host> · <why>` when there was no status. */
 export const testText = (result: TestResult): string => {
@@ -119,8 +185,8 @@ export const testText = (result: TestResult): string => {
 export const refusalText = (refusal: Refusal | "unsaved"): string => REFUSAL_COPY[refusal]
 
 /**
- * What the one status line says: words (`text`), or a saved key's failure with when it happened (`failure`, `at` in epoch
- * milliseconds), or nothing.
+ * What a status line says: words (`text`), or a saved connection's failure with when it happened (`failure`, `at` in
+ * epoch milliseconds), or nothing.
  */
 export type Status =
   | { readonly _tag: "None" }
@@ -130,52 +196,63 @@ export type Status =
 const none: Status = { _tag: "None" }
 const text = (words: string): Status => ({ _tag: "Text", text: words })
 
-/** The saved key whose last refusal is the latest, with its status and when; none while no key has one. */
-export const lastFailure = (
-  rows: ReadonlyArray<PersonalModelRow>,
-): { readonly host: string; readonly status: number; readonly failedAt: string } | undefined =>
-  rows.reduce<{ readonly host: string; readonly status: number; readonly failedAt: string } | undefined>(
-    (latest, row) =>
-      row.failureStatus === null || row.failedAt === null || (latest !== undefined && latest.failedAt >= row.failedAt)
-        ? latest
-        : { host: hostOf(row.baseUrl), status: row.failureStatus, failedAt: row.failedAt },
-    undefined,
-  )
+/** A test's outcome in words; nothing while it runs. */
+const testStatus = (test: TestRow): Status => {
+  if (test.state === "done" && test.result !== null) return text(testText(test.result))
+  if (test.state === "failed" && test.failure !== null) return text(refusalText(test.failure))
+  return none
+}
 
-/** The latest refusal of a saved key: `<host> refused · HTTP <status>`, at `failedAt`; nothing while no key has one. */
-const failureOf = (rows: ReadonlyArray<PersonalModelRow>): Status => {
-  const failure = lastFailure(rows)
-  return failure === undefined
+/** The row's last refusal, by its host, else its kind: `<name> refused · HTTP <status>`, at `failedAt`. */
+const failureOf = (row: PersonalModelRow): Status =>
+  row.failureStatus === null || row.failedAt === null
     ? none
-    : { _tag: "Failure", text: `${failure.host} refused · HTTP ${failure.status}`, at: Date.parse(failure.failedAt) }
+    : {
+      _tag: "Failure",
+      text: `${row.baseUrl === null ? KIND_LABEL[row.kind] : hostOf(row.baseUrl)} refused · HTTP ${row.failureStatus}`,
+      at: Date.parse(row.failedAt),
+    }
+
+/**
+ * A row's refusal line: the last test of it, unless the row records a failure newer than it (a real call that failed
+ * since); then the row's failure.
+ */
+export const rowStatusOf = (row: PersonalModelRow, test: TestRow | undefined): Status => {
+  const failure = failureOf(row)
+  if (test === undefined || test.connection !== row.id) return failure
+  const tested = testStatus(test)
+  return tested._tag === "None" || (failure._tag === "Failure" && row.failedAt !== test.failedAt) ? failure : tested
 }
 
 /**
- * The status line, the latest first: a save on its way says `Saving`, a remove `Removing`; the last write's refusal, unknown outcome or
- * lateness says so, unless a test came since (`quiet`); then the last test's result or refusal, unless a row records
- * a failure newer than it (a real call that failed since); then the latest row's failure.
+ * The section's status line: a save on its way says `Saving`, a remove `Removing`; the last write's refusal, unknown
+ * outcome or lateness says so, unless a test or a dialog came since (`quiet`); then a test of no one connection.
  */
-export const statusOf = (
-  rows: ReadonlyArray<PersonalModelRow>,
-  form: Form | undefined,
-  test: TestRow | undefined,
-): Status => {
+export const statusOf = (form: Form | undefined, test: TestRow | undefined): Status => {
   if (form !== undefined && !form.quiet) {
     if (onItsWay(form)) return text(form.op === "save" ? SAVING : REMOVING)
     if (form.state === "failed" && form.failure !== null) return text(refusalText(form.failure))
     if (form.state === "unknown") return text(UNKNOWN)
     if (form.state === "late") return text(LATE)
   }
-  const failure = failureOf(rows)
-  const newer = failure._tag === "Failure" && lastFailure(rows)!.failedAt !== test?.failedAt
-  if (test !== undefined && !newer) {
-    if (test.state === "done" && test.result !== null) return text(testText(test.result))
-    if (test.state === "failed" && test.failure !== null) return text(refusalText(test.failure))
+  return test === undefined || test.connection !== null ? none : testStatus(test)
+}
+
+/** What a Codex link shows: the code while it waits, what a press may do, and its status line. */
+export const linkView = (link: LinkRow | undefined): {
+  readonly code: { readonly userCode: string; readonly verificationUrl: string } | undefined
+  readonly canLink: boolean
+  readonly status: string | undefined
+} => {
+  if (link?.state === "waiting") {
+    return { code: { userCode: link.userCode!, verificationUrl: link.verificationUrl! }, canLink: false, status: LINK_WAITING }
   }
-  return failure
+  if (link?.state === "starting") return { code: undefined, canLink: false, status: undefined }
+  if (link?.state === "expired") return { code: undefined, canLink: true, status: LINK_EXPIRED }
+  if (link?.state === "failed") return { code: undefined, canLink: true, status: refusalText(link.failure!) }
+  return { code: undefined, canLink: true, status: undefined }
 }
 
 /** Whether the buttons wait: a write is on its way, or a test runs. */
 export const busy = (form: Form | undefined, test: TestRow | undefined): boolean =>
   (form !== undefined && onItsWay(form)) || test?.state === "testing"
-

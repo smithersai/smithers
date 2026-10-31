@@ -7,6 +7,7 @@ import { COMPOSER } from "../chat/schema"
 import { ChatStore } from "../chat/store"
 import { ConversationsStore } from "../conversations/store"
 import { PersonalModelStore } from "../personal-model/store"
+import { answers } from "../personal-model/view"
 import { steps } from "./metrics"
 import { FIRST_RUN, FirstRunRow } from "./schema"
 import { conversationsOf, firstRunOf, type FirstRun, HIDDEN, ownOf, rowOf, sameFirstRun, WAITING } from "./view"
@@ -58,7 +59,7 @@ export class FirstRunStore extends Context.Service<
         const saved = yield* model.saved.toArray
         const search = (yield* conversations.search.toArray)[0]
         const composer = yield* chat.composer.get(COMPOSER)
-        const own = ownOf(saved.length, modelReady)
+        const own = ownOf(answers(saved) ? saved.length : 0, modelReady)
         const next = firstRunOf({
           access: composerAccess(session, confirmed, own),
           hostedModel: session.hostedModel,

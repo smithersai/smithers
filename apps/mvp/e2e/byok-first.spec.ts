@@ -1,6 +1,6 @@
 import { expect, expectSameThread, pairs, test } from "./devices"
 import { step } from "./fixtures"
-import { fillYourModel, keyGroup, personalModelConfig, removeLeftModel, restorePersonalModel } from "./personal-model"
+import { connectionRows, fillYourModel, personalModelConfig, removeConnections, restorePersonalModel } from "./personal-model"
 import { requires } from "./target"
 
 // People's own models first (decision 0099, docs/features/model-endpoint.md#hosted-inference): while the deployment's own
@@ -27,14 +27,13 @@ test("byok first: no model shows Add your model; with one, the person's own mode
     type: "summary",
     description: "With the hosted model off, a Member without a model is sent to Settings; with one, it answers and summarizes.",
   },
-}, async ({ devices, request }) => {
+}, async ({ devices }) => {
   test.setTimeout(300_000)
   const word = devices.word
   const [a] = await devices.open("A")
   const page = a.page
   const conversation = page.url()
   const section = page.getByRole("region", { name: "Your model" })
-  const remove = section.getByRole("button", { name: "Remove" })
   const addModel = page.locator("[data-add-model]")
   const composer = page.getByRole("textbox", { name: "Message Smithers", exact: true })
   const chat = page.getByRole("button", { name: /^Chat\b/ })
@@ -53,7 +52,7 @@ test("byok first: no model shows Add your model; with one, the person's own mode
   await step("Open Settings, and remove a model an earlier run left", async () => {
     await page.goto(settings)
     await expect(section).toBeVisible({ timeout: 30_000 })
-    await removeLeftModel(request, section, SAVED_WITHIN)
+    await removeConnections(section, SAVED_WITHIN)
   })
 
   await step("Back in the conversation: Add your model stands where the composer was", async () => {
@@ -69,11 +68,9 @@ test("byok first: no model shows Add your model; with one, the person's own mode
     await expect(section).toBeVisible({ timeout: 30_000 })
   })
 
-  await step("Fill Base URL, Key and Fast, then Save", async () => {
+  await step("Add an API key: Base URL, Key and Fast, then Save", async () => {
     await fillYourModel(section, page, { protocol: PROTOCOL, baseUrl: BASE_URL, key: KEY, tiers: { fast: MODEL } })
-    await expect(keyGroup(section, PROTOCOL).getByLabel(/compatible Key$/)).toHaveAttribute("placeholder", /····/, {
-      timeout: SAVED_WITHIN,
-    })
+    await expect(connectionRows(section)).toHaveCount(1, { timeout: SAVED_WITHIN })
   })
 
   await step("Ask: the person's own model answers, and writes the timeline's summary", async () => {
@@ -95,8 +92,7 @@ test("byok first: no model shows Add your model; with one, the person's own mode
 
   await step("Remove: Add your model stands where the composer was again", async () => {
     await page.goto(settings)
-    await remove.click()
-    await expect(remove).toHaveCount(0, { timeout: SAVED_WITHIN })
+    await removeConnections(section, SAVED_WITHIN)
     await page.goto(conversation)
     await openChat()
     await expect(addModel).toBeVisible({ timeout: 60_000 })

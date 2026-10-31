@@ -7,7 +7,7 @@ import { Evaluator, ModelError } from "@smthrs/model"
 import { Clock, Config, Data, Effect, Layer, Metric, Stream } from "effect"
 import { codeOf } from "../../errorCode"
 import { FlowsClient } from "../flows-ui/api"
-import { JudgeSeat } from "../jev/steps"
+import { judgeOn, JudgeSeat } from "../jev/steps"
 import { OpeningFailed, OpeningRefused, prompt } from "./flows"
 import { MEMORY_BANK, Remember, RememberRecord } from "./memoryFlows"
 import type { Turn } from "./schema"
@@ -64,7 +64,7 @@ export const prepare = (turn: Turn & { readonly candidates: ReadonlyArray<Openin
       const reading = yield* Relevance.judge({ task: Opening.boundedQuery(prompt(turn)) }, items.map((item) => ({
         kind: item.kind, id: item.key, text: item.text,
       }))).pipe(
-        Effect.provide(Evaluator.layerFromSeat({ modelId: "judge", model: observed })),
+        Effect.provide(judgeOn(seat, observed)),
         Effect.mapError((error) => quota ? new OpeningFailed({ quota: true }) : new JudgeUnavailable({ reason: error.reason })),
       )
       return reading.verdicts.map((verdict, index) => ({

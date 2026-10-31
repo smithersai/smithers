@@ -104,8 +104,7 @@ describe("a signed-in person's first page", () => {
     await until(() => expect(tab.now()).toMatchObject({ show: "steps", at: "model" }))
     expect(tab.steps()).toEqual(["sign_in:done", "model:next", "repository:later"])
     expect(tab.personalModel.actions.save({
-      keys: [{ protocol: "openai-chat", baseUrl: `${OPENAI_ORIGIN}/v1/`, key: "sk-first-run-guest-0123456789" }],
-      models: { fast: { protocol: "openai-chat", modelId: "gpt-test" } },
+      connections: [{ kind: "api_key", protocol: "openai-chat", baseUrl: `${OPENAI_ORIGIN}/v1/`, key: "sk-first-run-guest-0123456789", models: { fast: "gpt-test" } }],
     })).toBe(true)
     await until(() => expect(tab.now()).toMatchObject({ show: "steps", at: "repository" }))
     expect(tab.steps()).toEqual(["sign_in:done", "model:done", "repository:next"])
@@ -137,8 +136,7 @@ describe("a signed-in person's first page", () => {
 
     // Saved through Settings: the row syncs back, and the person is at Ask Smithers.
     expect(tab.personalModel.actions.save({
-      keys: [{ protocol: "openai-chat", baseUrl: `${OPENAI_ORIGIN}/v1/`, key: "sk-first-run-0123456789" }],
-      models: { fast: { protocol: "openai-chat", modelId: "gpt-test" } },
+      connections: [{ kind: "api_key", protocol: "openai-chat", baseUrl: `${OPENAI_ORIGIN}/v1/`, key: "sk-first-run-0123456789", models: { fast: "gpt-test" } }],
     })).toBe(true)
     await until(() => expect(tab.now()).toMatchObject({ show: "steps", at: "ask" }))
     expect(tab.steps()).toEqual(["sign_in:done", "model:done", "ask:next"])

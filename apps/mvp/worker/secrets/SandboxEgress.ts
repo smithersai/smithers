@@ -3,8 +3,11 @@ import { Config, Effect, Layer, Option } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { HttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
+import { KEY_REFUSALS } from "../../src/features/personal-model/contract.ts"
 import { repoId } from "../../src/features/repo/contract.ts"
 import * as RegistryEgress from "../branch/RegistryEgress.ts"
+import * as Store_ from "../personal/Store.ts"
+import * as Subscriptions from "../personal/Subscriptions.ts"
 import { type Keys, SecretKeys } from "./Keys.ts"
 import * as Store from "./Store.ts"
 
@@ -115,21 +118,83 @@ export const environment = (guest: Guest) =>
     return secrets.map((secret) => `${secret.name}=${secret.placeholder}\n`).join("")
   })
 
+/** The name a person's subscription goes by in a box's policy and in `secret_events`: its connection, never a value. */
+const subscriptionName = (subscription: Subscriptions.Subscription) => `connection:${subscription.connectionId}`
+
+/** The placeholder the guest's box holds for `subscription`. */
+export const subscriptionPlaceholder = (guest: Guest, keys: Keys, subscription: Subscriptions.Subscription) =>
+  keys.minter.derive(scopeOf(guest), subscriptionName(subscription))
+
+/**
+ * Answers one request a `todo` box sent to its committer's vendor host: `Egress.forward` under the guest's own policy
+ * plus the person's credential, so a repository secret bound to that host keeps working. The credential opens per
+ * request from the sealed row and never enters the box (ARCH-16). Only a request that used it says anything of the
+ * connection: the vendor's refusal marks it, its answer clears it. `unavailable` (503) when the policy can't be read.
+ */
+export const forwardSubscription = (
+  guest: Guest,
+  subscription: Subscriptions.Subscription,
+  allow: ReadonlyArray<string> = [],
+) =>
+  Effect.gen(function* () {
+    const keys = yield* SecretKeys
+    if (Option.isNone(keys)) return HttpServerResponse.text("off", { status: 503 })
+    const name = subscriptionName(subscription)
+    const placeholder = yield* subscriptionPlaceholder(guest, keys.value, subscription)
+    const request = yield* HttpServerRequest.HttpServerRequest
+    const sql = yield* SqlClient.SqlClient
+    const repository = yield* policyFor(guest, keys.value, allow).pipe(
+      Effect.provideService(SqlClient.SqlClient, sql),
+      Effect.option,
+    )
+    if (Option.isNone(repository)) return HttpServerResponse.text("unavailable", { status: 503 })
+    const policy: Egress.Policy = {
+      secrets: [...repository.value.secrets, { name, placeholder, hosts: subscription.hosts }],
+      allow,
+    }
+    const decision = Egress.decide({ method: request.method, url: request.originalUrl, headers: request.headers }, policy)
+    const usedIt = decision._tag === "Allowed" && decision.used.some((secret) => secret.name === name)
+    const repositoryValue = revealer(guest, keys.value, sql)
+    const opened = Layer.succeed(
+      Egress.Vault,
+      Egress.Vault.of({
+        reveal: (asked) =>
+          asked !== name
+            ? repositoryValue(asked)
+            : Subscriptions.reveal(subscription.personId, subscription.connectionId, keys.value).pipe(
+              Effect.provideService(SqlClient.SqlClient, sql),
+              Effect.flatMap(Option.match({
+                onNone: () => Effect.fail(new Egress.SecretUnavailable({ name })),
+                onSome: Effect.succeed,
+              })),
+              Effect.catch(() => Effect.fail(new Egress.SecretUnavailable({ name }))),
+            ),
+      }),
+    )
+    const response = yield* Egress.forward(request, policy).pipe(Effect.provide(Layer.merge(opened, audit(guest, sql))))
+    const refused = KEY_REFUSALS.includes(response.status) && response.status !== 429
+    if (usedIt && (refused || (response.status >= 200 && response.status < 300))) {
+      yield* Store_.markConnection(subscription.personId, subscription.connectionId, refused ? response.status : undefined).pipe(
+        Effect.provideService(SqlClient.SqlClient, sql),
+        Effect.ignore,
+      )
+    }
+    return response
+  }).pipe(Effect.withSpan("secrets.egress.subscription", { attributes: { "smithers.branch.id": guest.branchId } }))
+
+/** Opens one of a guest's values from its sealed row, through `sql`. */
+const revealer = (guest: Guest, keys: Keys, sql: SqlClient.SqlClient) => (name: string) =>
+  Effect.gen(function* () {
+    const sealed = yield* Store.sealed(guest.repoId, name)
+    return yield* keys.cipher.open(sealed, { id: guest.repoId, name, version: sealed.keyVersion })
+  }).pipe(
+    Effect.provideService(SqlClient.SqlClient, sql),
+    Effect.catch(() => Effect.fail(new Egress.SecretUnavailable({ name }))),
+  )
+
 /** Opens a guest's values from their sealed rows, one per request, through `sql`. */
 const vault = (guest: Guest, keys: Keys, sql: SqlClient.SqlClient) =>
-  Layer.succeed(
-    Egress.Vault,
-    Egress.Vault.of({
-      reveal: (name) =>
-        Effect.gen(function* () {
-          const sealed = yield* Store.sealed(guest.repoId, name)
-          return yield* keys.cipher.open(sealed, { id: guest.repoId, name, version: sealed.keyVersion })
-        }).pipe(
-          Effect.provideService(SqlClient.SqlClient, sql),
-          Effect.catch(() => Effect.fail(new Egress.SecretUnavailable({ name }))),
-        ),
-    }),
-  )
+  Layer.succeed(Egress.Vault, Egress.Vault.of({ reveal: revealer(guest, keys, sql) }))
 
 /** Records a guest's decisions in `secret_events`, through `sql`. */
 const audit = (guest: Guest, sql: SqlClient.SqlClient) =>

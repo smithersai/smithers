@@ -217,8 +217,8 @@ const synced = [
   Migrations.synced({ id: "pull-checks", version: 1, schema: CheckRow, family: true }),
   // A repository's secret names and bindings, one collection per repository; never a value.
   Migrations.synced({ id: "secrets", version: 1, schema: SecretRow, family: true }),
-  // The person's own keys, one row per protocol: where each answers, its tiers' models and its last characters; never a key.
-  Migrations.synced({ id: "personal-model", version: 2, schema: PersonalModelRow }),
+  // The person's own connections, in their order: what each is, its tiers' models and its last characters; never a key.
+  Migrations.synced({ id: "personal-model", version: 3, schema: PersonalModelRow }),
   Migrations.synced({ id: "repo-runs", version: 1, schema: RepoRunRow, family: true }),
 ]
 

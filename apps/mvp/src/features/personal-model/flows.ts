@@ -6,7 +6,7 @@ import { Removed, TestResult } from "./schema"
 
 // A person's own model, as flows (decision 0096, docs/features/personal-model.md#the-flows):
 //
-//   model/test {}     one tiny call with the person's saved model: whether it answers, or how it failed
+//   model/test { connection? }   one tiny call with that connection, else each active one: OK, or how it failed
 //     model/test/request ─ POST /api/me/model/test
 //   model/remove {}   removes the person's model, so the deployment's model answers them again
 //     model/remove/request ─ DELETE /api/me/model
@@ -47,9 +47,12 @@ export const TEST_RETRY = RetryPolicy.make({
   nonRetryable: ["@smthrs/mvp/personal-model/ModelRefused"],
 })
 
+/** Which connection a test is of: its id; absent, every active one. */
+const testPayload = { connection: Schema.optional(Schema.String) }
+
 /** The step: ask ChatApi to test the person's model. */
 export const TestRequestStep = Action.make("model/test/request", {
-  payload: {},
+  payload: testPayload,
   success: TestResult,
   error: ModelFailure,
   retryPolicy: TEST_RETRY,
@@ -66,11 +69,12 @@ export const RemoveRequestStep = Action.make("model/remove/request", {
 /** `model/test`: one tiny call with the person's own model. */
 export const ModelTest = Flow.make("model/test", {
   description: "Test the person's own model with one tiny call: OK, or the provider's host and why it failed. " +
-    "Members and above, for the model they saved in Settings.",
-  payload: {},
+    "`connection` names one of their connections; without it, every active one. Members and above, for the model they " +
+    "saved in Settings.",
+  payload: testPayload,
   success: TestResult,
   error: ModelFailure,
-  body: Node.capture({ action: TestRequestStep.name }, () => TestRequestStep.call({})),
+  body: Node.capture({ action: TestRequestStep.name }, (request) => TestRequestStep.call(request)),
 }).annotate(Flow.Placement, Placement.client())
 
 /** `model/remove`: the person's own model goes, and the deployment's model answers them again. */

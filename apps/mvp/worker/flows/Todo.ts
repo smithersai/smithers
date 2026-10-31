@@ -20,6 +20,9 @@ import type { GitHubTokens } from "../github/Tokens.ts"
 import * as Stack from "../stack/Stack.ts"
 import { ChecksRun } from "./Checks.ts"
 import { Implement } from "./TodoAgent.ts"
+import { COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
+import * as TodoCli from "./TodoCli.ts"
+import { AgentCliFailed, ImplementCli, Route, RouteUnavailable, Routed } from "./TodoCli.ts"
 import { awaitPullClosed, readPullClosed } from "./TodoWait.ts"
 import { machineOf } from "./TodoMachine.ts"
 
@@ -227,7 +230,7 @@ export const Settle = Action.make("todo/Settle", {
 })
 
 /** What `todo/Fail` reads: a step's own failure, or the agent's. */
-const Failure = Schema.Union([TodoFailed, TodoUnavailable, StillOpen, AgentAction.AgentFailure])
+const Failure = Schema.Union([TodoFailed, TodoUnavailable, StillOpen, AgentAction.AgentFailure, AgentCliFailed, RouteUnavailable])
 type Failure = typeof Failure.Type
 
 export const Fail = Action.make("todo/Fail", {
@@ -261,7 +264,9 @@ export const Todo = Flow.make("todo", {
   body: Node.capture(
     {
       begin: Begin.name,
+      route: Route.name,
       implement: Implement.name,
+      cli: ImplementCli.name,
       collect: Collect.name,
       publish: Publish.name,
       await: Await.name,
@@ -270,8 +275,8 @@ export const Todo = Flow.make("todo", {
     },
     (request) =>
       Begin.call({ request }).pipe(
-        Node.bindPlanned(Node.capture({ implement: Implement.name }, (begun: Planned.Planned<Begun>) =>
-          Implement.call({
+        Node.bindPlanned(Node.capture({ route: Route.name }, (begun: Planned.Planned<Begun>) => {
+          const task = {
             attemptId: request.attemptId,
             todoId: request.todoId,
             repoId: request.repoId,
@@ -280,7 +285,14 @@ export const Todo = Flow.make("todo", {
             prompt: begun.prompt,
             acceptance: begun.acceptance,
             branch: begun.branch,
-          }).pipe(
+          }
+          return Route.call({ ownerId: begun.ownerId }).pipe(
+            Node.branch({
+              if: Node.capture({ smithers: "smithers" }, (routed: typeof Routed.Type) => routed.agent === "smithers"),
+              then: Node.capture({ implement: Implement.name }, () => Implement.call(task)),
+              else: Node.capture({ cli: ImplementCli.name }, (routed: Planned.Planned<typeof Routed.Type>) =>
+                ImplementCli.call({ ...task, agent: routed.agent as never })),
+            }),
             Node.andThen(Collect.call({ request, begun })),
             Node.bindPlanned(Node.capture({ publish: Publish.name }, (collected: Planned.Planned<Collected>) =>
               Publish.call({ request, begun, collected }))),
@@ -288,7 +300,8 @@ export const Todo = Flow.make("todo", {
               Await.call({ request, begun, published }))),
             Node.bindPlanned(Node.capture({ settle: Settle.name }, (awaited: Planned.Planned<Awaited>) =>
               Settle.call({ request, awaited }))),
-          ))),
+          )
+        })),
         Node.catch({
           onFailure: Node.capture({ fail: Fail.name }, (error: Planned.Planned<Failure>) => Fail.call({ request, error })),
         }),
@@ -842,6 +855,8 @@ export const steps = <E, R>(services: Services<E, R>) => {
 export const registration = <E, R, IE, IR>(
   services: Services<E, R>,
   implement: Layer.Layer<Layer.Success<typeof Implement.layer>, IE, IR>,
+  commandSeconds?: number,
+  stepWaitSeconds?: number,
 ) => {
   const implementation = steps(services)
   return Interpreter.layerWithImplementations(
@@ -854,6 +869,7 @@ export const registration = <E, R, IE, IR>(
       Settle.toLayer(implementation.settle),
       Fail.toLayer(implementation.fail),
       implement,
+      TodoCli.registration(services.database, commandSeconds ?? COMMAND_LIMIT_SECONDS, stepWaitSeconds ?? COMMAND_LIMIT_SECONDS),
     ),
   ).pipe(Layer.provideMerge(Action.layerImplementations))
 }

@@ -3,6 +3,7 @@ import { useLiveQuery } from "@tanstack/react-db"
 import { useNavigate } from "@tanstack/react-router"
 import type { ReactNode } from "react"
 import { usePersonalModel } from "../../personal-model/components/PersonalModelContext"
+import { answers } from "../../personal-model/view"
 import { ADD_YOUR_MODEL, composerAccess, MEMBERS_ASK, OPEN_SETTINGS, type OwnModel, SIGN_IN_TO_ASK } from "../contract"
 import { useAuth } from "./AuthContext"
 
@@ -10,7 +11,8 @@ import { useAuth } from "./AuthContext"
 // §11; ruling AUTH-8): the composer for them, even offline after a reload; a short line for a signed-in Guest or a
 // person with no role there; and the sign-in prompt for anyone signed out, so nothing they type leaves the browser.
 // While the deployment's own model doesn't answer them (decision 0099), a person without a model of their own sees the
-// way to add one instead of a composer whose answers would all fail. `member` is what a branch page's access says of
+// way to add one instead of a composer whose answers would all fail: a subscription or a connection that is off answers
+// no tier, so it doesn't count. `member` is what a branch page's access says of
 // its repository; without it, the person's role on the deployment's own repository, whose home conversation `/app`
 // shows. `composerAccess` decides.
 export function ComposerGate({ children, member }: { readonly children: ReactNode; readonly member?: boolean }) {
@@ -21,7 +23,7 @@ export function ComposerGate({ children, member }: { readonly children: ReactNod
   const { data: confirmed } = useLiveQuery(queries.confirmed)
   const { data: rows, isReady } = useLiveQuery(model.queries.saved)
   if (session === undefined) return null
-  const own: OwnModel = rows.length > 0 ? "saved" : isReady ? "none" : "loading"
+  const own: OwnModel = answers(rows) ? "saved" : isReady ? "none" : "loading"
   switch (composerAccess(session, confirmed, own, member)) {
     case "ask":
       return children

@@ -1,8 +1,8 @@
 // A person's own model's routes (worker/personal/) for the worker tests, on a test file's own schema of the compose
 // Postgres and through the compose Electric (`pnpm db:up`, db/TestDatabase.ts). `model/Put` and `model/Delete` run for
 // real on the Node host's durable engine (worker/test/flowHost.ts), so a write is in Postgres when its request answers;
-// a test may set a failing `FlowStarter` instead. The person's provider is scripted at the network
-// (`worker/personal/test/provider.ts`). Every log line, span and metric is kept.
+// a test may set a failing `FlowStarter` instead. The person's provider, OpenAI's auth server and Vercel's gateway are
+// scripted at the network (`worker/personal/test/provider.ts`). Every log line, span and metric is kept.
 import { type Flow, FlowRuntime } from "@smthrs/flow"
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { Scrub } from "@smthrs/secrets"
@@ -10,16 +10,19 @@ import { ConfigProvider, Context, type Duration, Effect, Exit, Layer, Logger, Me
 import { FetchHttpClient, HttpEffect, HttpServerRequest } from "effect/http"
 import { SqlClient } from "effect/sql"
 import * as TestDatabase from "../../../db/TestDatabase.ts"
-import { keyTail, PERSONAL_MODELS_TABLE, type Protocol } from "../../../src/features/personal-model/contract.ts"
+import type { ModelTier } from "../../../src/features/model/contract.ts"
+import { type ConnectionKind, keyTail, PERSONAL_MODELS_TABLE, type Protocol } from "../../../src/features/personal-model/contract.ts"
 import * as Actor from "../../Actor.ts"
 import * as Flows from "../../Flows.ts"
 import { SecretKeys } from "../../secrets/Keys.ts"
+import * as SandboxEgress from "../../secrets/SandboxEgress.ts"
 import * as FlowHost from "../../test/flowHost.ts"
 import { signedIn, type testFile } from "../../test/harness.ts"
 import * as PersonalApi from "../Api.ts"
 import * as ModelFlows from "../ModelFlows.ts"
 import { PersonalModels, sealContext } from "../Models.ts"
 import * as Store from "../Store.ts"
+import type * as Subscriptions from "../Subscriptions.ts"
 import { OPENAI_ORIGIN } from "./provider.ts"
 
 type Runtime = ReturnType<typeof testFile>
@@ -39,26 +42,44 @@ export const roleless: Actor.Actor = { subject: { kind: "person", id: "person-ro
 /** An agent acting for the Member. */
 export const agent: Actor.Actor = { ...member, act: { kind: "agent", id: "agent-run-1" } }
 
-/** A valid save of the scripted OpenAI-compatible provider: its key, and `gpt-test` as the fast model. */
+/** A valid save of the scripted OpenAI-compatible provider: one connection, its key, and `gpt-test` as the fast model. */
 export const SAVE = {
-  keys: [{ protocol: "openai-chat", baseUrl: `${OPENAI_ORIGIN}/v1`, key: VALUE }],
-  models: { fast: { protocol: "openai-chat", modelId: "gpt-test" } },
+  connections: [
+    { kind: "api_key", protocol: "openai-chat", baseUrl: `${OPENAI_ORIGIN}/v1`, key: VALUE, models: { fast: "gpt-test" } },
+  ],
 }
 
 /** Every form an echo of `values` may take that `text` contains: none when nothing leaked. */
 export const leaks = (text: string, values: ReadonlyArray<string> = [VALUE]) =>
   values.flatMap((value) => Scrub.forms(value).filter((form) => text.includes(form)))
 
+/** What the file's engine reaches beyond Postgres: OpenAI's auth server, scripted, and its keys. */
+export interface EngineOptions {
+  readonly database?: Layer.Layer<SqlClient.SqlClient, unknown>
+  /** The network its steps reach: the runtime's unless set. */
+  readonly fetch?: typeof globalThis.fetch
+  /** Configuration its steps read; `SECRETS_KEY` is `KEY`, as the routes' is, unless `keys` is `false`. */
+  readonly config?: Record<string, string>
+  readonly keys?: boolean
+}
+
 /**
- * The Node host's engine with `model/Put` and `model/Delete` over the file's schema, built once for the file, and a
- * `FlowStarter` that runs a started flow to its end before it answers.
+ * The Node host's engine with `model/Put`, `model/Delete` and `model/CodexLink` over the file's schema, built once for
+ * the file, and a `FlowStarter` that runs a started flow to its end before it answers.
  */
-export const engine = async (runtime: Runtime, database?: Layer.Layer<SqlClient.SqlClient, unknown>) => {
+export const engine = async (runtime: Runtime, options: EngineOptions = {}) => {
   const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
   const scope = Effect.runSync(Scope.make())
-  const built = await Effect.runPromise(
-    Scope.provide(FlowHost.build(ModelFlows.registration(database ?? scratch.database)), scope),
+  const config = ConfigProvider.fromUnknown({
+    ...(options.keys === false ? {} : { SECRETS_KEY: Redacted.value(KEY) }),
+    ...options.config,
+  })
+  // A step runs with the context its implementation was registered in: the host's own, so these go in there.
+  const registration = ModelFlows.registration(options.database ?? scratch.database).pipe(
+    Layer.provide(ConfigProvider.layer(config)),
+    Layer.provide(Layer.succeed(FetchHttpClient.Fetch, options.fetch ?? globalThis.fetch)),
   )
+  const built = await Effect.runPromise(Scope.provide(FlowHost.build(registration), scope))
   const flows = Context.get(built.context, FlowRuntime.FlowRuntime)
   const exits: Array<Exit.Exit<unknown, unknown>> = []
   const starter = Flows.FlowStarter.of({
@@ -90,6 +111,8 @@ export interface Options {
   readonly provider?: typeof globalThis.fetch
   /** How long a test's call may take. */
   readonly testWithin?: Duration.Input
+  /** Configuration the routes read: `MOONSHOT_BASE_URL`, `CODEX_AUTH_ORIGIN` and the like. */
+  readonly config?: Record<string, string>
 }
 
 /** The personal model routes on the file's schema, recording every log line, span, metric and Electric request. */
@@ -127,7 +150,7 @@ export const personalHarness = async (
       ? toElectric(input, init)
       : options.provider(input, init)
   }
-  const config = ConfigProvider.fromUnknown({ ELECTRIC_URL: await runtime.runPromise(TestDatabase.electricUrl) })
+  const config = ConfigProvider.fromUnknown({ ELECTRIC_URL: await runtime.runPromise(TestDatabase.electricUrl), ...options.config })
   const observed = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(
       Effect.provideService(Tracer.Tracer, tracer),
@@ -153,6 +176,18 @@ export const personalHarness = async (
   )
   const handler = HttpEffect.toWebHandler(served)
   const line = (message: string) => logs.filter((log) => log.message === message)
+  /** A box's requests to its vendor's host, through the egress, as `guest`. */
+  const subscriptionEgress = (guest: SandboxEgress.Guest, subscription: Subscriptions.Subscription) =>
+    HttpEffect.toWebHandler(
+      observed(
+        SandboxEgress.forwardSubscription(guest, subscription).pipe(
+          Effect.provide(keys),
+          Effect.provide(database),
+          Effect.provide(FetchHttpClient.layer),
+          Effect.provideService(FetchHttpClient.Fetch, fetch),
+        ),
+      ),
+    )
   return {
     fetch: (path: string, init?: RequestInit) => handler(new Request(`http://chat.test${path}`, init)),
     /** The request served as a fiber of its own, so a test can interrupt it as a cancelled request would be. */
@@ -165,6 +200,7 @@ export const personalHarness = async (
           ),
         ),
       ),
+    subscriptionEgress,
     electric,
     count: (metric: Metric.Metric<number, Metric.CounterState<number>>, attributes: Record<string, string>) =>
       runtime.runSync(
@@ -222,27 +258,32 @@ export const resetModels = (runtime: Runtime) =>
     ),
   )
 
-/** The saved models, as Postgres keeps them. */
+/** The saved connections, as Postgres keeps them: by person, then in their order. */
 export const rows = (runtime: Runtime) =>
   runtime.runPromise(
     Effect.flatMap(SqlClient.SqlClient, (sql) =>
       sql<{
         readonly personId: string
-        readonly protocol: string
-        readonly baseUrl: string
+        readonly id: string
+        readonly kind: ConnectionKind
+        readonly position: number
+        readonly active: boolean
+        readonly protocol: string | null
+        readonly baseUrl: string | null
         readonly fastModel: string | null
         readonly implementModel: string | null
         readonly hardModel: string | null
         readonly ciphertext: string
+        readonly nonce: string
         readonly keyVersion: number
         readonly keyLast4: string
         readonly failureStatus: number | null
         readonly failedAt: Date | null
       }>`
-        SELECT person_id AS "personId", protocol, base_url AS "baseUrl", fast_model AS "fastModel",
-          implement_model AS "implementModel", hard_model AS "hardModel", ciphertext, key_version AS "keyVersion",
-          key_last4 AS "keyLast4", failure_status AS "failureStatus", failed_at AS "failedAt"
-        FROM personal_models ORDER BY person_id, protocol`),
+        SELECT person_id AS "personId", id, kind, position, active, protocol, base_url AS "baseUrl",
+          fast_model AS "fastModel", implement_model AS "implementModel", hard_model AS "hardModel", ciphertext, nonce,
+          key_version AS "keyVersion", key_last4 AS "keyLast4", failure_status AS "failureStatus", failed_at AS "failedAt"
+        FROM personal_models ORDER BY person_id, position`),
   )
 
 /** The audit's rows, oldest first. */
@@ -261,6 +302,7 @@ export const usage = (runtime: Runtime) =>
         readonly personId: string
         readonly role: string
         readonly modelId: string
+        readonly connectionId: string | null
         readonly protocol: string | null
         readonly tier: string | null
         readonly inputTokens: number
@@ -270,60 +312,78 @@ export const usage = (runtime: Runtime) =>
         readonly httpStatus: number | null
         readonly settled: boolean
       }>`
-        SELECT person_id AS "personId", role, model_id AS "modelId", protocol, tier, input_tokens AS "inputTokens",
+        SELECT person_id AS "personId", role, model_id AS "modelId", connection_id AS "connectionId", protocol, tier, input_tokens AS "inputTokens",
           output_tokens AS "outputTokens", outcome, error_code AS "errorCode", http_status AS "httpStatus",
           settled_at IS NOT NULL AS settled
         FROM personal_model_usage ORDER BY created_at, invocation_id`),
   )
 
-/** One key a seeded configuration keeps: its protocol, base URL and key text (`VALUE` unless set). */
-export interface SeedKey {
-  readonly protocol: Protocol
-  readonly baseUrl: string
+/** One connection a seeded list keeps: `api_key` and active unless set, its text `VALUE` unless set. */
+export interface SeedConnection {
+  readonly id?: string
+  readonly kind?: ConnectionKind
+  readonly active?: boolean
+  readonly protocol?: Protocol | null
+  readonly baseUrl?: string | null
   readonly key?: string
+  readonly models?: Readonly<Partial<Record<ModelTier, string>>>
 }
 
 /**
- * Saves `person`'s keys and tiers' models straight through the store, each key sealed under `key` (`KEY` unless set),
- * as `model/Put` would: for a test of what reads saved models.
+ * Saves `person`'s connections, in their order, straight through the store, each credential sealed under `key` (`KEY`
+ * unless set), as `model/Put` would: for a test of what reads saved models. Answers each connection's id.
  */
 export const seedKeys = (
   runtime: Runtime,
   person: string,
-  saved: { readonly keys: ReadonlyArray<SeedKey>; readonly models: Store.Put["models"] },
+  connections: ReadonlyArray<SeedConnection>,
   key: Redacted.Redacted<string> = KEY,
 ) =>
   runtime.runPromise(
     Effect.gen(function* () {
       const keys = Option.getOrThrow(yield* Effect.service(SecretKeys).pipe(Effect.provide(SecretKeys.layer(key))))
-      const writes = yield* Effect.forEach(saved.keys, (each) => {
+      const writes = yield* Effect.forEach(connections, (each) => {
         const value = each.key ?? VALUE
         return Effect.map(
           keys.cipher.seal(Redacted.make(value), sealContext(person, keys.version)),
           (sealed) => ({
-            protocol: each.protocol,
-            baseUrl: each.baseUrl,
+            id: each.id ?? crypto.randomUUID(),
+            kind: each.kind ?? "api_key" as const,
+            active: each.active ?? true,
+            protocol: each.protocol ?? null,
+            baseUrl: each.baseUrl ?? null,
+            models: each.models ?? {},
             sealed: { ...sealed, keyVersion: keys.version, keyLast4: keyTail(value) },
           }),
         )
       })
-      return yield* Store.put({ personId: person, keys: writes, models: saved.models, invocationKey: crypto.randomUUID() })
+      yield* Store.put({ personId: person, connections: writes, invocationKey: crypto.randomUUID() })
+      return writes.map((write) => write.id)
     }),
   )
 
 /**
  * Saves `person`'s one key with its fast model (`gpt-test` at the scripted OpenAI-compatible provider unless set), as
- * `model/Put` would.
+ * `model/Put` would. Answers its id.
  */
-export const seed = (
+export const seed = async (
   runtime: Runtime,
   person: string,
-  model: { readonly protocol?: Protocol; readonly baseUrl?: string; readonly modelId?: string; readonly key?: string } = {},
+  model: {
+    readonly id?: string
+    readonly protocol?: Protocol
+    readonly baseUrl?: string
+    readonly modelId?: string
+    readonly key?: string
+  } = {},
   key: Redacted.Redacted<string> = KEY,
 ) => {
-  const protocol = model.protocol ?? "openai-chat"
-  return seedKeys(runtime, person, {
-    keys: [{ protocol, baseUrl: model.baseUrl ?? OPENAI_ORIGIN, ...(model.key === undefined ? {} : { key: model.key }) }],
-    models: { fast: { protocol, modelId: model.modelId ?? "gpt-test" } },
-  }, key)
+  const [id] = await seedKeys(runtime, person, [{
+    ...(model.id === undefined ? {} : { id: model.id }),
+    protocol: model.protocol ?? "openai-chat",
+    baseUrl: model.baseUrl ?? OPENAI_ORIGIN,
+    models: { fast: model.modelId ?? "gpt-test" },
+    ...(model.key === undefined ? {} : { key: model.key }),
+  }], key)
+  return id!
 }

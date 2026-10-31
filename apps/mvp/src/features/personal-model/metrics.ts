@@ -4,19 +4,20 @@ import { Effect, Metric } from "effect"
 // refusal codes, a failed test's model error code, and HTTP statuses. Never a key, a URL or a model id.
 
 /**
- * Writes and tests from this tab, by `op` (`put`, `delete`, `test`) and `outcome`. A save sent from the tab: `started`
+ * Writes and tests from this tab, by `op` (`put`, `delete`, `test`, `link`) and `outcome`. A save sent from the tab: `started`
  * (ChatApi took it and its flow started), `refused`, `unknown` (no whole answer), then `landed` once the row shows it,
  * or `late` past the deadline. A remove's or a test's request, sent by its flow's step: `sent`, `refused` or `unsent`
- * (tried again); a remove then `landed` or `late` too; a test that went through, `ok` or `failed`.
+ * (tried again); a remove then `landed` or `late` too; a test that went through, `ok` or `failed`. A Codex link:
+ * `started` (the person has the code), `refused`, `unknown`, then `landed` once the row shows it, or `expired`.
  */
 export const writes = Metric.counter("smithers_web_personal_model_writes", {
-  description: "Your-model saves, removes and tests this tab sent, by op and outcome",
+  description: "Your-model saves, removes, tests and links this tab sent, by op and outcome",
   incremental: true,
 })
 
-export type Op = "put" | "delete" | "test"
+export type Op = "put" | "delete" | "test" | "link"
 
-export type Outcome = "started" | "refused" | "unknown" | "landed" | "late" | "sent" | "unsent" | "ok" | "failed"
+export type Outcome = "started" | "refused" | "unknown" | "landed" | "late" | "sent" | "unsent" | "ok" | "failed" | "expired"
 
 /** The fields a record may carry beside its op and outcome. */
 export interface Fields {
@@ -31,6 +32,7 @@ export const RECORD: Record<Op, string> = {
   put: "personal_model.put",
   delete: "personal_model.delete",
   test: "personal_model.test",
+  link: "personal_model.link",
 }
 
 /** One record's log line, named for its op, and its count. */

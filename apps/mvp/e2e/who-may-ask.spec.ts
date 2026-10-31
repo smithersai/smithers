@@ -3,7 +3,7 @@ import { DONE, OPEN, REPOSITORY_FIELD } from "../src/features/first-run/contract
 import { expect, test } from "./devices"
 import { step, test as pageTest } from "./fixtures"
 import { firstRun, firstRunStep } from "./firstRun"
-import { fillYourModel } from "./personal-model"
+import { connectionRows, fillYourModel } from "./personal-model"
 import { requires, scriptedAgent } from "./target"
 import { expectServerError } from "./watch"
 
@@ -50,7 +50,7 @@ test("who may ask: a new person who is Admin of their own repository signs in, a
       key: `sk-who-may-ask-${word}-0123456789`,
       tiers: { fast: "gpt-test" },
     })
-    await expect(section.getByLabel(/compatible Key$/).first()).toHaveAttribute("placeholder", /^····/, { timeout: 30_000 })
+    await expect(connectionRows(section)).toHaveCount(1, { timeout: 30_000 })
   })
 
   await step("Back to chat: Open your repository is next", async () => {

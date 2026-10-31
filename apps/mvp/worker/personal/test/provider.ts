@@ -30,6 +30,81 @@ export interface Seen {
   readonly body: Record<string, unknown>
 }
 
+/** OpenAI's auth server, as `CODEX_AUTH_ORIGIN` points a test at it. */
+export const CODEX_AUTH_ORIGIN = "https://auth.example.com"
+
+/** The credential's tokens a scripted OpenAI hands out: none occurs in any other test text. */
+export const CODEX_ACCESS = "SENTINEL-codex-access-token"
+export const CODEX_REFRESH = "SENTINEL-codex-refresh-token"
+
+/** A JWT of `claims`, unsigned, as an id token's payload reads. */
+export const idToken = (claims: { readonly accountId: string; readonly planType: string }) =>
+  ["e30", btoa(JSON.stringify({
+    "https://api.openai.com/auth": { chatgpt_account_id: claims.accountId, chatgpt_plan_type: claims.planType },
+  })).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_"), "SENTINEL-codex-id-signature"].join(".")
+
+/** One request OpenAI's auth server saw: its path, and its body as JSON or a form's fields. */
+export interface AuthSeen {
+  readonly path: string
+  readonly body: Record<string, string>
+}
+
+/**
+ * OpenAI's auth server at {@link CODEX_AUTH_ORIGIN}, scripted: each path answers what `script` says, by how many came
+ * to it before. Unscripted, the code is answered, the poll is pending and the token endpoint refuses. Any other address
+ * goes to `passthrough`.
+ */
+export const scriptedOpenAi = (
+  script: (path: string, index: number, body: Record<string, string>) => { readonly status: number; readonly body?: unknown } | string | undefined,
+  passthrough: typeof globalThis.fetch = globalThis.fetch,
+) => {
+  const seen: Array<AuthSeen> = []
+  const fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = new Request(input, init)
+    const url = new URL(request.url)
+    if (url.origin !== CODEX_AUTH_ORIGIN) return passthrough(input, init)
+    const text = await request.text()
+    const body = (request.headers.get("content-type") ?? "").includes("json")
+      ? JSON.parse(text) as Record<string, string>
+      : Object.fromEntries(new URLSearchParams(text))
+    const index = seen.filter((each) => each.path === url.pathname).length
+    seen.push({ path: url.pathname, body })
+    const answer = script(url.pathname, index, body)
+    if (typeof answer === "string") return new Response(answer, { status: 200 })
+    if (answer !== undefined) return Response.json(answer.body ?? {}, { status: answer.status })
+    return url.pathname.endsWith("/usercode")
+      ? Response.json({ device_auth_id: "device-1", user_code: "ABCD-EFGH", interval: "5" })
+      : new Response("{}", { status: url.pathname.endsWith("/deviceauth/token") ? 403 : 400 })
+  }) as typeof globalThis.fetch
+  return { fetch, seen }
+}
+
+/** Vercel's AI Gateway's Jev endpoint. */
+export const GATEWAY_URL = "https://ai-gateway.vercel.sh/v4/ai/evaluation-model"
+
+/** One request the gateway saw. */
+export interface GatewaySeen {
+  readonly headers: Headers
+  readonly body: Record<string, unknown>
+}
+
+/** Vercel's gateway, scripted: `answer` is each request's status and body. Any other address goes to `passthrough`. */
+export const scriptedGateway = (
+  answer: (index: number) => { readonly status: number; readonly body: unknown },
+  passthrough: typeof globalThis.fetch = globalThis.fetch,
+) => {
+  const seen: Array<GatewaySeen> = []
+  const fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = new Request(input, init)
+    if (request.url !== GATEWAY_URL) return passthrough(input, init)
+    const index = seen.length
+    seen.push({ headers: request.headers, body: await request.json() as Record<string, unknown> })
+    const { status, body } = answer(index)
+    return Response.json(body, { status })
+  }) as typeof globalThis.fetch
+  return { fetch, seen }
+}
+
 const sse = (events: ReadonlyArray<unknown>, named = false) =>
   events.map((event) =>
     named ? `event: ${(event as { type: string }).type}\ndata: ${JSON.stringify(event)}\n\n` : `data: ${JSON.stringify(event)}\n\n`

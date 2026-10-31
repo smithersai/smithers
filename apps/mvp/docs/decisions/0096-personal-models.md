@@ -1,6 +1,8 @@
 # 0096: A person's own model (bring your own key)
 
-2026-10-24. Accepted.
+2026-10-24. Accepted. **Amended by [0132](0132-model-connections.md) (ruling AUTH-10, 2026-10-31):** one model per person
+became an ordered list of connections, vendors are named, and plan logins are built. Sealing, origin pinning, the ledger,
+failure display and Test hold for every connection.
 
 Will, 2026-10-24 10:04, after reading the BYOK and subscriptions research report: "impleent it and get it working
 please in production". The report's Recommendation A is the design brief; its Recommendation B (plan logins) waits on

@@ -1,9 +1,15 @@
 import { Context, Data, type Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
-import type { ModelTier } from "../model/contract"
-import { PERSONAL_MODEL_ROUTE, PERSONAL_MODEL_TEST_ROUTE, type Protocol, REFUSALS, type Refusal, type TierChoice } from "./contract"
+import {
+  CODEX_LINK_ROUTE,
+  type ConnectionPut,
+  PERSONAL_MODEL_ROUTE,
+  PERSONAL_MODEL_TEST_ROUTE,
+  REFUSALS,
+  type Refusal,
+} from "./contract"
 import { RECORD } from "./metrics"
-import { TestResult } from "./schema"
+import { CodexLinkStart, TestResult } from "./schema"
 
 // ChatApi's routes for a person's own model as the browser calls them (docs/features/personal-model.md#the-routes),
 // through Effect's HttpClient, with one deadline covering each whole exchange. Save is sent from the person's own tab,
@@ -27,21 +33,17 @@ export class ModelNotTaken extends Data.TaggedError("ModelNotTaken")<{
 }> {}
 
 /**
- * What Save sends: every key the person keeps, each with its protocol, its base URL and, unless the saved one stays,
- * the key, `Redacted` until the body is made; and the model of each tier they named.
+ * What Save sends: every connection the person keeps, in their order, each as the form said it and, unless the saved
+ * one stays, its key, `Redacted` until the body is made.
  */
 export interface ModelPut {
-  readonly keys: ReadonlyArray<{
-    readonly protocol: Protocol
-    readonly baseUrl: string
-    readonly key: Redacted.Redacted<string> | undefined
-  }>
-  readonly models: Readonly<Partial<Record<ModelTier, TierChoice>>>
+  readonly connections: ReadonlyArray<Omit<ConnectionPut, "key"> & { readonly key: Redacted.Redacted<string> | undefined }>
 }
 
 const Refused = Schema.Struct({ code: Schema.Literals(REFUSALS) })
 const decodeRefused = Schema.decodeUnknownEffect(Refused)
 const decodeTested = Schema.decodeUnknownEffect(TestResult)
+const decodeLink = Schema.decodeUnknownEffect(CodexLinkStart)
 
 /** ChatApi's routes for a person's own model, as a service. Tests of a route that fails provide a faulty one. */
 export class PersonalModelClient extends Context.Service<
@@ -51,8 +53,10 @@ export class PersonalModelClient extends Context.Service<
     readonly put: (put: ModelPut) => Effect.Effect<void, ModelNotTaken>
     /** `DELETE /api/me/model`: `202` took it. */
     readonly remove: Effect.Effect<void, ModelNotTaken>
-    /** `POST /api/me/model/test`: `200` with how one tiny call with the saved model went. */
-    readonly test: Effect.Effect<TestResult, ModelNotTaken>
+    /** `POST /api/me/model/test`: `200` with how `connection`, or else every active one, answered. */
+    readonly test: (connection?: string) => Effect.Effect<TestResult, ModelNotTaken>
+    /** `POST /api/me/model/codex`: `202` with the code the person types at OpenAI. */
+    readonly link: Effect.Effect<CodexLinkStart, ModelNotTaken>
   }
 >()("@smthrs/mvp/personal-model/PersonalModelClient") {
   /** The real client: ChatApi at `origin`, with `within` for a save or a remove and `testWithin` for a test. */
@@ -100,10 +104,9 @@ export class PersonalModelClient extends Context.Service<
               "put",
               HttpClientRequest.put(url).pipe(
                 HttpClientRequest.bodyJsonUnsafe({
-                  keys: put.keys.map(({ protocol, baseUrl, key }) =>
-                    key === undefined ? { protocol, baseUrl } : { protocol, baseUrl, key: Redacted.value(key) }
+                  connections: put.connections.map(({ key, ...connection }) =>
+                    key === undefined ? connection : { ...connection, key: Redacted.value(key) }
                   ),
-                  models: put.models,
                 }),
               ),
               202,
@@ -111,12 +114,24 @@ export class PersonalModelClient extends Context.Service<
               within,
             ),
           remove: send("delete", HttpClientRequest.delete(url), 202, () => Effect.void, within),
-          test: send(
-            "test",
-            HttpClientRequest.post(`${options.origin}${PERSONAL_MODEL_TEST_ROUTE}`),
-            200,
-            (response) => Effect.flatMap(response.json, decodeTested),
-            options.testWithin ?? TEST_WITHIN,
+          test: (connection) =>
+            send(
+              "test",
+              HttpClientRequest.post(
+                `${options.origin}${PERSONAL_MODEL_TEST_ROUTE}${
+                  connection === undefined ? "" : `?connection=${encodeURIComponent(connection)}`
+                }`,
+              ),
+              200,
+              (response) => Effect.flatMap(response.json, decodeTested),
+              options.testWithin ?? TEST_WITHIN,
+            ),
+          link: send(
+            "link",
+            HttpClientRequest.post(`${options.origin}${CODEX_LINK_ROUTE}`),
+            202,
+            (response) => Effect.flatMap(response.json, decodeLink),
+            within,
           ),
         })
       }),

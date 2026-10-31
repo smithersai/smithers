@@ -3,7 +3,7 @@ import { ContainerSession, ContainerTerminal, SandboxObject as SandboxHost } fro
 import type { SandboxTools } from "@smthrs/sandbox"
 import { RuntimeContext } from "alchemy"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Cause, Clock, Config, Effect, Fiber, Layer, Schema, Scope } from "effect"
+import { Cause, Clock, Config, Effect, Fiber, Layer, Option, Schema, Scope } from "effect"
 import { FetchHttpClient, Headers, HttpBody, HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as Database from "../db/Database.ts"
 import { BranchSandbox } from "../infra/BranchSandbox.ts"
@@ -35,6 +35,8 @@ import {
   SandboxUnavailable,
   TerminalSockets,
 } from "./branch/Sandboxes.ts"
+import * as Agents from "./personal/Agents.ts"
+import * as Subscriptions from "./personal/Subscriptions.ts"
 import { SecretKeys } from "./secrets/Keys.ts"
 import * as RegistryEgress from "./branch/RegistryEgress.ts"
 import * as SandboxEgress from "./secrets/SandboxEgress.ts"
@@ -96,7 +98,19 @@ export const sandboxStartTimeoutSeconds = Config.schema(
 const startTimedOut = (cause: Cause.Cause<unknown>) => Cause.squash(cause) instanceof SandboxHost.StartTimedOut
 
 /** The step of a wake a failure happened in, as its `sandbox.wake` log line names it. */
-type WakeStage = "admit" | "start" | "checkout" | "restore" | "placeholders"
+type WakeStage = "admit" | "start" | "checkout" | "restore" | "placeholders" | "agent"
+
+/** What a TODO's box keeps of its committer's subscription: no credential. */
+interface BoxSubscription {
+  readonly subscription: Subscriptions.Subscription
+  /** What their commands run with: placeholders and switches. */
+  readonly environment: Readonly<Record<string, string>>
+  /** The machine's user whose commands get it. */
+  readonly user: string
+}
+
+/** Whether `branch` is a TODO attempt's machine (worker/flows/TodoMachine.ts `machineId`). */
+const isTodoBox = (branch: SandboxBranch) => branch.branchId.startsWith("todo-")
 
 /** `NAME=value` lines as variables. */
 const variablesOf = (environment: string): Record<string, string> =>
@@ -309,6 +323,8 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
             stage = "placeholders"
             if (RegistryEgress.secretsEgress(branch, secretsOn)) yield* timed(placeholders(branch, generation))
             else yield* timed(trustEgress)
+            stage = "agent"
+            if (isTodoBox(branch) && ownerId !== undefined) yield* timed(agent(branch, ownerId, generation))
             yield* Effect.logInfo("sandbox.wake").pipe(
               Effect.annotateLogs({ branchId: branch.branchId, outcome: "woken", generation, ...took }),
             )
@@ -355,6 +371,55 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
         )
 
       /**
+       * A TODO's box whose committer's list puts a subscription first: what the box's egress and the agent's commands
+       * need of it, kept with the object. Placeholders only: the credential opens per request (`egressSubscription`).
+       * Read on each wake, so the box follows the person's list.
+       */
+      const agent = (branch: SandboxBranch, ownerId: string, generation: number) =>
+        Effect.gen(function* () {
+          if (Option.isNone(secretKeys)) return yield* state.storage.delete("subscription")
+          const keys = secretKeys.value
+          const found = yield* Subscriptions.of(ownerId, keys).pipe(Effect.provide(database))
+          if (Option.isNone(found)) return yield* state.storage.delete("subscription")
+          const guest = SandboxEgress.guestOf(branch, generation)
+          const placeholder = yield* SandboxEgress.subscriptionPlaceholder(guest, keys, found.value)
+          const now = new Date(yield* Clock.currentTimeMillis)
+          const environment = Agents.environment(found.value.agent, placeholder, {
+            baseUrl: found.value.baseUrl,
+            account: found.value.account,
+            now,
+          })
+          yield* state.storage.put("subscription", {
+            subscription: found.value,
+            environment,
+            user: userOf(ownerId),
+          } satisfies BoxSubscription)
+        }).pipe(
+          // A box that can't read the person's list has no subscription, and its agent's first request is refused.
+          Effect.catchCause((cause) =>
+            Effect.andThen(
+              state.storage.delete("subscription"),
+              Effect.logWarning("sandbox.agent").pipe(Effect.annotateLogs(failureFields(cause))),
+            )
+          ),
+          Effect.withSpan("sandbox.agent", { attributes: { "smithers.branch.id": branch.branchId } }),
+        )
+
+      const subscriptionOf = state.storage.get<BoxSubscription>("subscription")
+
+      /** A request of the box's agent to its vendor's host, with the person's credential put in outside the box. */
+      const egressSubscription = (held: BoxSubscription) =>
+        Effect.gen(function* () {
+          const branch = yield* branchOf
+          const generation = yield* state.storage.get<number>("generation")
+          if (branch === undefined || generation === undefined) return HttpServerResponse.empty({ status: 403 })
+          return yield* SandboxEgress.forwardSubscription(SandboxEgress.guestOf(branch, generation), held.subscription, egressAllowHosts).pipe(
+            Effect.provideService(SecretKeys, secretKeys),
+            Effect.provide(Layer.merge(database, FetchHttpClient.layer)),
+          )
+        })
+
+      /**
        * A box without secrets, a check job's included: the egress's CA trusted (SandboxEgress.TRUST), so its installs
        * reach the registries over HTTPS, and no environment file, since it holds no placeholder. A failure leaves the box
        * without the registries' HTTPS, and an install fails as it would offline.
@@ -386,12 +451,14 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
         sessionAs: (name) =>
           Effect.gen(function* () {
             const placeholders = yield* environmentNow
+            const held = yield* subscriptionOf
             const { env, user } = yield* asUser(name)
             return yield* ContainerSession.make(box, {
               id: state.id.toString(),
               workdir: WORKSPACE,
               user,
-              env: { ...placeholders, ...env },
+              // Only the committer's own commands get their agent's placeholder: never another person's shell.
+              env: { ...placeholders, ...(held?.user === name ? held.environment : {}), ...env },
             })
           }),
         run,
@@ -593,7 +660,11 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
           if (host === FORGE_HOST) return yield* egress(request)
           // Only ChatApi holds a ticket: a socket it hands over is attached, once per ticket.
           if (tickets.delete(request.headers[TICKET_HEADER] ?? "")) return yield* attach(request)
-          // Every other request is the box's own, out through its egress.
+          // Every other request is the box's own, out through its egress: its agent's to its vendor first.
+          const held = yield* subscriptionOf
+          if (held?.subscription.hosts.includes(new URL(request.originalUrl).hostname)) {
+            return yield* egressSubscription(held)
+          }
           if (RegistryEgress.secretsEgress(yield* branchOf, secretsOn)) return yield* egressOut
           return yield* RegistryEgress.forward(request).pipe(Effect.provide(FetchHttpClient.layer))
         })),

@@ -11,6 +11,7 @@ import { appliedRecord, IssueLayoutSync } from "./layout-sync"
 import type { Role } from "../src/features/auth/contract"
 import { openComposer } from "./composer"
 import { serveFramedPage } from "./framed-page"
+import { openAdd } from "./personal-model"
 import { shapeRows } from "./shape"
 import { redactRequestErrors } from "./redact"
 import { baseURL, meets, requires, scriptedAgent, target, writeHeaders, me, stackRepository, syncedRepository, ownPlace, signedOut, sessionFiles } from "./target"
@@ -393,20 +394,16 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
         if (signedIn) test("your model: controls and text fit", async ({ page }, info) => {
           requires("member")
           await page.goto("/app/settings")
-          const form = page.getByRole("form", { name: "Your model", exact: true })
-          await expect(form).toBeVisible()
-          for (const name of ["OpenAI-compatible", "Anthropic-compatible"]) {
-            const group = form.getByRole("group", { name, exact: true })
-            await expect(group.getByRole("textbox", { name: `${name} Base URL`, exact: true })).toBeVisible()
-            await expect(group.getByLabel(`${name} Key`, { exact: true })).toBeVisible()
+          const section = page.getByRole("region", { name: "Your model", exact: true })
+          await expect(section).toBeVisible()
+          const form = await openAdd(section, page, "api_key")
+          for (const label of ["Base URL", "Key", "Fast", "Implement", "Hard"]) {
+            await expect(form.getByLabel(label, { exact: true })).toBeVisible()
           }
-          for (const tier of ["Fast", "Implement", "Hard"]) {
-            const key = form.getByRole("combobox", { name: `${tier} key`, exact: true })
-            await expect(key).toBeVisible()
-            await key.click()
-            await page.getByRole("option", { name: "Anthropic-compatible", exact: true }).click()
-            await expect(key).toHaveText("Anthropic-compatible")
-          }
+          const protocol = form.getByRole("combobox", { name: "Protocol", exact: true })
+          await protocol.click()
+          await page.getByRole("option", { name: "Anthropic-compatible", exact: true }).click()
+          await expect(protocol).toHaveText("Anthropic-compatible")
           await audit(page, info, "your-model", form)
         })
         if (signedIn) test("composer: controls and text fit", async ({ page }, info) => {

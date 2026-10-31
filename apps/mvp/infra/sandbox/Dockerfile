@@ -17,13 +17,17 @@
 # exact version from npm, whose registry checks its integrity; Python, pip and the C toolchain are trixie's. Node 26
 # ships without corepack, and a container's exec passes only PATH, so a corepack cache keyed by each user's HOME would
 # download pnpm on first use: pnpm is installed globally instead. For the same reason `go` and `gofmt` are linked into
-# /usr/local/bin, on the default PATH. Alchemy pins the built image by its own digest.
+# /usr/local/bin, on the default PATH. Alchemy pins the built image by its own digest. Claude Code and Codex are the
+# vendors' own, unmodified, by exact version from npm: a person's subscription runs them (decision 0132,
+# worker/personal/Agents.ts), and neither ever updates itself in a box.
 FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
 ARG TARGETARCH
 ARG NODE_VERSION=26.5.0
 ARG NODE_SHA256_AMD64=22b5f47ad6ae78837e4c2b846019965ce1a06ba143de176102294a1bf44fc677
 ARG NODE_SHA256_ARM64=308e5fe89a82461ba5a6cf15ff5221b2cdbd7ae87600aa72bb3c3fbdc66412d1
 ARG PNPM_VERSION=11.25.0
+ARG CLAUDE_CODE_VERSION=2.1.310
+ARG CODEX_VERSION=0.166.0
 ARG GO_VERSION=1.27.3
 ARG GO_SHA256_AMD64=65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40
 ARG GO_SHA256_ARM64=a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49
@@ -45,7 +49,7 @@ RUN apt-get update \
   && tar -xzf /tmp/go.tar.gz -C /usr/local --no-same-owner \
   && rm /tmp/go.tar.gz \
   && ln -s /usr/local/go/bin/go /usr/local/go/bin/gofmt /usr/local/bin/ \
-  && npm install -g "pnpm@$PNPM_VERSION" \
+  && npm install -g "pnpm@$PNPM_VERSION" "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION" "@openai/codex@$CODEX_VERSION" \
   && npm cache clean --force \
   && groupadd --gid 2000 workspace \
   && useradd --create-home --shell /bin/bash --uid 1000 --gid workspace smithers \

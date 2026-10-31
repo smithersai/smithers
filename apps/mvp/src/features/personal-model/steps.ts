@@ -35,16 +35,17 @@ const request = <A>(op: "delete" | "test", send: (client: PersonalModelClient["S
   })
 
 /**
- * `model/test/request`: one `POST /api/me/model/test`. A test that went through is `ok`, or `failed` with the model
- * error's code and the provider's status.
+ * `model/test/request`: one `POST /api/me/model/test`, of `connection` when it names one. A test that went through is
+ * `ok`, or `failed` with the model error's code and the provider's status.
  */
-export const requestTest = request("test", (client) => client.test).pipe(
-  Effect.tap((result) =>
-    result.ok
-      ? record("test", "ok")
-      : record("test", "failed", { code: result.code, ...(result.status === null ? {} : { status: result.status }) })
-  ),
-)
+export const requestTest = (connection?: string) =>
+  request("test", (client) => client.test(connection)).pipe(
+    Effect.tap((result) =>
+      result.ok
+        ? record("test", "ok")
+        : record("test", "failed", { code: result.code, ...(result.status === null ? {} : { status: result.status }) })
+    ),
+  )
 
 /** `model/remove/request`: one `DELETE /api/me/model`. */
 export const requestRemove = request("delete", (client) => client.remove).pipe(
@@ -54,7 +55,7 @@ export const requestRemove = request("delete", (client) => client.remove).pipe(
 
 /** Registers `model/test` and `model/remove` with their steps, asking through the host's `PersonalModelClient`. */
 export const registration = Layer.merge(
-  Interpreter.layerWithImplementations(ModelTest, TestRequestStep.toLayer(() => requestTest)),
+  Interpreter.layerWithImplementations(ModelTest, TestRequestStep.toLayer(({ connection }) => requestTest(connection))),
   Interpreter.layerWithImplementations(ModelRemove, RemoveRequestStep.toLayer(() => requestRemove)),
 )
 

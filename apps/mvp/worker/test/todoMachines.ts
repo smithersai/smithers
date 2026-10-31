@@ -98,6 +98,6 @@ export const machines = (
       ),
     sleepIfIdle: () => Effect.die("the todo run never puts a machine to sleep"),
   })
-  return { calls, copies, layer: Layer.succeed(Machines, service) }
+  return { calls, copies, service, layer: Layer.succeed(Machines, service) }
 }
 

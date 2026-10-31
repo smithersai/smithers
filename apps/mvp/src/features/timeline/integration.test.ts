@@ -48,8 +48,7 @@ test("an idle page and a page receiving N messages cause at most N summary calls
   const model = await a.runtime.runPromise(Effect.service(PersonalModel))
   for (const query of Object.values(model.queries)) query.startSyncImmediate()
   expect(model.actions.save({
-    keys: [{ protocol: "openai-chat", baseUrl: `${OPENAI_ORIGIN}/v1/`, key: "sk-test-timeline-summaries" }],
-    models: { fast: { protocol: "openai-chat", modelId: "gpt-test" } },
+    connections: [{ kind: "api_key", protocol: "openai-chat", baseUrl: `${OPENAI_ORIGIN}/v1/`, key: "sk-test-timeline-summaries", models: { fast: "gpt-test" } }],
   })).toBe(true)
   await until(() => expect(model.queries.form.toArray[0]).toMatchObject({ state: "done" }))
 
