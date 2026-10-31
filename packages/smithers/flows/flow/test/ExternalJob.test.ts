@@ -197,6 +197,19 @@ describe("ExternalJob", () => {
       .toThrow(RangeError)
   })
 
+  effect("its stop, run on its own as a cancellation run, asks the provider to cancel the generation once", () => {
+    const h = harness([], false, true)
+    return Effect.gen(function*() {
+      const initial = yield* h.round(Job, { value: "stopped" }, "stopped-root")
+      if (initial._tag !== "Handoff") return yield* Effect.die("missing handoff")
+      // The observation's payload, as an engine that cancelled it admits the stop with.
+      const stop = h.declarations.get("test/external-job/stop")!
+      const result = yield* h.round(stop as unknown as Flow.AnyWithProps, initial.payload, "cancel:stopped-root#g1")
+      expect(result._tag).toBe("Complete")
+      expect(h.calls.filter((call) => call.startsWith("cancel:"))).toEqual(["cancel:stopped-root#g1"])
+    }).pipe(Effect.provide(h.layer))
+  })
+
   effect("separate hosts retain their own cancellation adapter for the same declaration", () => {
     const first = harness([], false, true)
     const second = harness([], false, true)
@@ -508,12 +521,25 @@ describe("ExternalJob", () => {
     }).pipe(Effect.provide(h.layer))
   })
 
-  it("lists its own declaration and its two continuations for a host that routes by tag", () => {
+  it("lists its own declaration, its two continuations and its stop for a host that routes by tag", () => {
     expect(Job.flows.map((flow) => flow._tag)).toEqual([
       "test/external-job",
       "test/external-job/launch",
-      "test/external-job/observe"
+      "test/external-job/observe",
+      "test/external-job/stop"
     ])
+  })
+
+  it("declares its observation's durable cancellation: its stop, run as cancel:<key>", () => {
+    const observe = Job.flows[2]!
+    const declared = Context.getOption(observe.annotations, Flow.OnCancel)
+    expect(Option.isSome(declared)).toBe(true)
+    if (Option.isNone(declared)) return
+    expect(declared.value.flow).toBe(Job.flows[3])
+    expect(declared.value.executionId({ origin: "run-1", generation: 2 })).toBe("cancel:run-1#g2")
+    // Only the observation parks with a live generation; the job itself and its launch declare none.
+    expect(Option.isNone(Context.getOption(Job.flows[0]!.annotations, Flow.OnCancel))).toBe(true)
+    expect(Option.isNone(Context.getOption(Job.flows[1]!.annotations, Flow.OnCancel))).toBe(true)
   })
 
   effect("timeout keeps the initial deadline across generations", () => {

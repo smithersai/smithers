@@ -12,7 +12,7 @@ import { Journal, Redaction } from "@smthrs/journal"
 import { Ownership, RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
-import type * as Context from "effect/Context"
+import * as Context from "effect/Context"
 import type * as Crypto from "effect/Crypto"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
@@ -1719,11 +1719,16 @@ const cancelOwned = (
 ): Effect.Effect<void> =>
   Effect.gen(function*() {
     const interruptedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
+    // The flow's declared cancellation run (`Flow.OnCancel`) is admitted before the cancellation commits: the request
+    // is already durable, so a crash between the two re-closes the run here and admits the same id again, which
+    // changes nothing.
+    const cancellation = yield* admitCancellationRun(driver, runId, state)
     const stateJson = yield* encodeState({
       ...withoutResult(state),
-      cancellation: { interruptedAtMs }
+      cancellation: { interruptedAtMs, ...(cancellation === undefined ? {} : { run: cancellation }) }
     })
     const { settled, cascaded } = yield* commitCancellation(driver, runId, stateJson, interruptedAtMs)
+    if (cancellation !== undefined) yield* driver.coordinator.schedule(cancellation)
     if (settled) yield* recordSettled(driver, runId, state, { outcome: "cancelled", code: "cancelled" })
     // Post-commit, and only reachable after a transition that actually
     // happened. Closing the parked flow scope runs the finalizers the
@@ -1748,6 +1753,50 @@ const cancelOwned = (
       yield* announceSettled(driver, runId, state)
     }
   })
+
+/**
+ * Admits the cancellation run `runId`'s flow declares (`Flow.OnCancel`), with
+ * the run's own payload, and answers its execution id; nothing when the flow
+ * declares none or isn't registered in this process. A payload the flow no
+ * longer decodes, or an admission that fails, is logged and closes the run
+ * without one: the cancellation itself must never wait on its follow-up.
+ */
+const admitCancellationRun = (
+  driver: Driver,
+  runId: string,
+  state: RunState
+): Effect.Effect<string | undefined> =>
+  Effect.gen(function*() {
+    const registration = driver.registrations.get(state.flowName)?.at(-1)
+    if (registration === undefined) return undefined
+    const declared = Context.getOption(registration.flow.annotations, Flow.OnCancel)
+    if (Option.isNone(declared)) return undefined
+    const payload = yield* (Schema.decodeUnknownEffect(
+      Schema.toCodecJson(registration.flow.payloadSchema)
+    )(state.payload) as Effect.Effect<object, Schema.SchemaError>)
+    const executionId = declared.value.executionId(payload)
+    yield* ensureRun(driver, declared.value.flow, { executionId, payload })
+    yield* Effect.logInfo("flow.run.cancellation").pipe(Effect.annotateLogs({
+      "smithers.execution.id": runId,
+      "smithers.flow": state.flowName,
+      "smithers.cancellation.execution.id": executionId
+    }))
+    return executionId
+  }).pipe(
+    Effect.catchCause((cause) =>
+      Cause.hasInterruptsOnly(cause)
+        ? Effect.failCause(cause as Cause.Cause<never>)
+        : Effect.logError("flow.run.cancellation").pipe(
+          Effect.annotateLogs({
+            "smithers.execution.id": runId,
+            "smithers.flow": state.flowName,
+            outcome: "not_admitted",
+            "error.type": String((Cause.squash(cause) as { readonly _tag?: unknown } | undefined)?._tag ?? "defect")
+          }),
+          Effect.as(undefined)
+        )
+    )
+  )
 
 /**
  * Commits a run's `cancelled` transition in one transaction with its

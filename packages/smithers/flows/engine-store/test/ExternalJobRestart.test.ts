@@ -127,3 +127,34 @@ it("cancelling the original caller while its external job is parked runs Cancel"
     await rm(directory, { recursive: true, force: true })
   }
 }, 30_000)
+
+it("a process that never held the parked job cancels its caller, and the job's Cancel runs as cancel:<key>", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "external-job-cancel-restart-"))
+  const children: Array<ChildProcessWithoutNullStreams> = []
+  try {
+    const first = launch(directory, "start")
+    children.push(first)
+    await receipt(first, "parked")
+    const closed = once(first, "close")
+    first.kill("SIGKILL")
+    await closed
+    const second = launch(directory, "cancel-restart")
+    children.push(second)
+    const result = await receipt(second, "cancelled")
+    const calls = (await readFile(join(directory, "calls"), "utf8")).trim().split("\n")
+    const starts = calls.filter((call) => call.startsWith("start:"))
+    expect(starts).toEqual([`start:${String(result.key)}`])
+    // Once, by the durable cancellation run: the parked scope's rollback died with the first process.
+    expect(calls.filter((call) => call.startsWith("cancel:"))).toEqual([`cancel:${String(result.key)}`])
+    expect(calls.filter((call) => call.startsWith("collect:"))).toEqual([])
+  } finally {
+    await Promise.all(children.map(async (child) => {
+      if (child.exitCode === null && child.signalCode === null) {
+        const closed = once(child, "close")
+        child.kill("SIGKILL")
+        await closed
+      }
+    }))
+    await rm(directory, { recursive: true, force: true })
+  }
+}, 50_000)

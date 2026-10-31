@@ -17,6 +17,7 @@ import * as Schema from "effect/Schema"
 import * as Action from "./Action/index.ts"
 import * as Fault from "./Fault.ts"
 import * as Flow from "./Flow/index.ts"
+import { OnCancel } from "./Flow/OnCancel.ts"
 import { DriveDeadline } from "./FlowRuntime/DriveDeadline.ts"
 import { FlowInstance } from "./FlowRuntime/FlowInstance.ts"
 import { FlowRuntime } from "./FlowRuntime/FlowRuntime.ts"
@@ -158,11 +159,20 @@ export interface Operations<P, H, A, E, R> {
  * running at the deadline, or reached after it, cancels or abandons its
  * generation and fails `ExternalJobTimedOut`, and no start runs after it.
  *
- * `flows` lists the job's declarations: the job itself and its two private
- * continuations. A host that resolves an execution's flow by its tag, such
- * as a Durable Object per execution, must list all three, because `call`
- * runs the job as its own child execution and a round hands off to the
- * continuations.
+ * A cancellation that reaches a generation while it is parked between
+ * probes stops it durably: a store-backed engine that cancels the parked
+ * observation starts `<tag>/stop` as its own run, `cancel:<key>`, whose one
+ * step is the generation's `cancel`, retried like any step (`Flow.OnCancel`).
+ * The rollback that stops a generation in the process that holds it can't
+ * run there, because no process holds a parked execution once its host
+ * stops. `cancel` may therefore be asked twice for one key, and must be
+ * idempotent.
+ *
+ * `flows` lists the job's declarations: the job itself, its two private
+ * continuations and its stop. A host that resolves an execution's flow by
+ * its tag, such as a Durable Object per execution, must list all four,
+ * because `call` runs the job as its own child execution, a round hands off
+ * to the continuations, and a cancellation starts the stop.
  * @category constructors
  * @since 1.0.0
  */
@@ -350,6 +360,21 @@ export const make = <
       )
     }
   )
+  // A parked observation has no process holding its scope, so its rollback can't stop the work when a cancellation
+  // reaches it later. A store-backed engine that cancels it runs this instead: the generation's cancel as an
+  // ordinary, retried step of its own run, `cancel:<key>` (Flow.OnCancel).
+  const stop: Flow.Flow<string, typeof observed, typeof Schema.Void, E, Action.Requirement<string>> = Flow.make<
+    `${Tag}/stop`,
+    typeof observed,
+    typeof Schema.Void,
+    E,
+    Action.Requirement<string>
+  >(`${tag}/stop`, {
+    payload: observed,
+    success: Schema.Void,
+    error: providerError,
+    body: Node.capture(captures, (job) => Cancel.call(job))
+  })
   const recover = (job: Observed, result: Action.PlannedPayload<{ restart: State; wakeAt: number }>) =>
     Cancel.call(job).pipe(Node.andThen(
       Node.succeed(job).pipe(Node.branch({
@@ -370,7 +395,10 @@ export const make = <
       payload: observed,
       success: options.success,
       error: failure,
-      annotations,
+      annotations: Context.add(annotations, OnCancel, {
+        flow: stop,
+        executionId: (job: Observed) => `cancel:${keyOf(job)}`
+      }),
       body: Node.capture(
         captures,
         (job) =>
@@ -446,7 +474,12 @@ export const make = <
         })
       )
     }))
-    const interpreter = Layer.mergeAll(Interpreter.layer(flow), Interpreter.layer(launch), Interpreter.layer(observe))
+    const interpreter = Layer.mergeAll(
+      Interpreter.layer(flow),
+      Interpreter.layer(launch),
+      Interpreter.layer(observe),
+      Interpreter.layer(stop)
+    )
     const layer = Layer.mergeAll(
       interpreter,
       bindCancellation,
@@ -522,10 +555,12 @@ export const make = <
           return collected.value
         })
       ),
+      // Inside the job's own execution it also clears the generation its rollback would stop; in `cancel:<key>` there
+      // is no rollback to clear.
       Cancel.toLayer((job) =>
         Effect.tap(operations.cancel(job.handle, keyOf(job)), () =>
-          Effect.map(active, (value) => {
-            value.current = undefined
+          Effect.map(Effect.serviceOption(active), (value) => {
+            if (Option.isSome(value)) value.value.current = undefined
           }))
       ),
       Fail.toLayer(({ job, timedOut }) =>
@@ -669,7 +704,7 @@ export const make = <
       return Option.isSome(done) ? done.value : yield* execute
     })
   }
-  const flows: ReadonlyArray<Flow.Any> = [flow, launch, observe]
+  const flows: ReadonlyArray<Flow.Any> = [flow, launch, observe, stop]
   return Object.assign(flow, { call, run, toLayer, flows }) as {
     readonly call: typeof call
     readonly run: typeof run

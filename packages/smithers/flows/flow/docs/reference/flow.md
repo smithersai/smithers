@@ -1013,6 +1013,13 @@ Adds an exit finalizer to the flow scope, preserving the services available when
 
 Runs an effect and registers how to undo its successful result if the enclosing flow later exits unsuccessfully. An effect that fails registers no rollback. A flow that succeeds discards it. The data-last form takes the rollback alone.
 
+### `Flow.OnCancel`
+
+- **Signature:** `class OnCancel extends Context.Service<OnCancel, { readonly flow: Any; readonly executionId: (payload: any) => string }>`
+- **Since:** `1.0.0`
+
+A flow's durable cancellation, attached with `flow.annotate(Flow.OnCancel, { flow, executionId })`. When a store-backed engine that registers the flow cancels one of its executions, it admits `flow` as a root run named `executionId(payload)` with the cancelled execution's payload, before it commits the cancellation, and records that run in the cancelled state, where a Durable Object host's routing starts it. Unlike a `withRollback` compensation, it runs for an execution parked with no process holding its scope. Its payload schema must decode the cancelled flow's encoded payload, and its steps must be idempotent: a compensation that also ran in process asks the same.
+
 ### `Flow.suspend`
 
 - **Signature:** `suspend(instance: FlowInstance["Service"]): Effect.Effect<never>`

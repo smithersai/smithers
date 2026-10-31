@@ -79,6 +79,27 @@ export const Supervisor = Flow.make("cloudflare-test/Supervisor", {
   body: Node.capture({}, () => Relay.child({}))
 })
 
+/** A cancellation run: records `cleanup:<label>`. */
+export const Cleanup = Flow.make("cloudflare-test/Cleanup", {
+  payload: { label: Schema.String },
+  success: Schema.String,
+  body: Node.capture({}, ({ label }) => Step.call({ label: `cleanup:${label}` }))
+})
+
+/** A child that parks until answered and declares {@link Cleanup}, run as `cleanup:<label>`, as its cancellation. */
+export const Holder = Flow.make("cloudflare-test/Holder", {
+  payload: { label: Schema.String },
+  success: Schema.String,
+  body: Node.capture({}, () => Flow.park({ reason: "approval", token: "holder" }))
+}).annotate(Flow.OnCancel, { flow: Cleanup, executionId: ({ label }: { readonly label: string }) => `cleanup:${label}` })
+
+/** Runs {@link Holder} as its own execution and waits on it. */
+export const Keeper = Flow.make("cloudflare-test/Keeper", {
+  payload: { label: Schema.String },
+  success: Schema.String,
+  body: Node.capture({}, ({ label }) => Holder.child({ label }))
+})
+
 type CounterFlow = Flow.Flow<
   "cloudflare-test/Counter",
   Schema.Struct<{ value: typeof Schema.Number; target: typeof Schema.Number }>,
@@ -110,7 +131,19 @@ export const Counter: CounterFlow = Flow.make("cloudflare-test/Counter", {
 })
 
 /** Every flow here, for an object's `flows`. */
-export const flows: ReadonlyArray<Flow.Any> = [Parent, Child, Guardian, Faulty, Supervisor, Relay, Patient, Counter]
+export const flows: ReadonlyArray<Flow.Any> = [
+  Parent,
+  Child,
+  Guardian,
+  Faulty,
+  Supervisor,
+  Relay,
+  Patient,
+  Counter,
+  Keeper,
+  Holder,
+  Cleanup
+]
 
 /**
  * Registers every flow here with `record` as each step: `Step` records its
@@ -129,7 +162,10 @@ export const registration = (record: (label: string) => Effect.Effect<string>) =
     Interpreter.layerWithImplementations(Patient, implementations),
     Interpreter.layerWithImplementations(Relay, implementations),
     Interpreter.layerWithImplementations(Supervisor, implementations),
-    Interpreter.layerWithImplementations(Counter, implementations)
+    Interpreter.layerWithImplementations(Counter, implementations),
+    Interpreter.layerWithImplementations(Keeper, implementations),
+    Interpreter.layerWithImplementations(Holder, implementations),
+    Interpreter.layerWithImplementations(Cleanup, implementations)
   ).pipe(Layer.provideMerge(Action.layerImplementations))
 }
 

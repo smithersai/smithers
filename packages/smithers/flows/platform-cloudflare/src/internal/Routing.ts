@@ -5,7 +5,8 @@
  * one. A drive can still create executions and make them due: a `.child()`
  * call admits a child, a `.to()` handoff admits the next round, and a
  * settlement makes the parents waiting on it due, or asks a linked child to
- * cancel. The store records each of those, and `EngineStore.drive` records a
+ * cancel, and a cancellation admits the run its flow declared for it
+ * (`Flow.OnCancel`). The store records each of those, and `EngineStore.drive` records a
  * settled run's parent wakes again whenever it finds one missing, so the
  * object reads them back from the store after every drive, not from what the
  * drive happened to report before an isolate died.
@@ -48,7 +49,10 @@ const decodeState = Schema.decodeUnknownEffect(Schema.fromJsonString(RunState.Ru
  *    ends the linked children of every round. One with work due is started
  *    when it is still `pending`, since no object has its intent yet, and woken
  *    otherwise, as a child asked to cancel is.
- * 2. Its parents, when it settled and is the last round of its lineage: every
+ * 2. When it was cancelled, the cancellation run its flow declared, which its
+ *    cancelled state names: started on its own object, since nothing else
+ *    holds its intent.
+ * 3. Its parents, when it settled and is the last round of its lineage: every
  *    parent the engine wakes for a settlement (the one its state names and
  *    the edges of every round), when that parent has work due. An earlier
  *    round's settlement wakes no parent; the lineage has not settled.
@@ -92,6 +96,9 @@ const read = (executionId: string) =>
     }
     const next: Array<RunStore.RunRow> = successor === undefined ? [] : [successor]
     for (const child of linked) next.push(yield* runs.latestRound(child))
+    const state = settled ? yield* decodeState(self.stateJson) : undefined
+    const cancellation = state?.cancellation?.run
+    if (cancellation !== undefined) next.push(yield* runs.latestRound(cancellation))
 
     const start: Array<Routes["start"][number]> = []
     const wake: Array<string> = []
@@ -101,12 +108,11 @@ const read = (executionId: string) =>
         wake.push(row.runId)
         continue
       }
-      const state = yield* decodeState(row.stateJson)
-      start.push({ flow: state.flowName, executionId: row.runId, payload: state.payload })
+      const admitted = yield* decodeState(row.stateJson)
+      start.push({ flow: admitted.flowName, executionId: row.runId, payload: admitted.payload })
     }
 
-    if (settled) {
-      const state = yield* decodeState(self.stateJson)
+    if (state !== undefined) {
       const parents = new Set<string>(state.parentExecutionId === undefined ? [] : [state.parentExecutionId])
       for (const round of lineage) {
         for (const edge of yield* engineState.runParents(round.runId)) parents.add(edge.parentId)

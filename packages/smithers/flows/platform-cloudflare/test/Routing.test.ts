@@ -17,7 +17,20 @@ import * as TestClock from "effect/testing/TestClock"
 import { randomUUID } from "node:crypto"
 import { ExecutionObject } from "../src/index.ts"
 import * as Routing from "../src/internal/Routing.ts"
-import { Child, Counter, flows, Guardian, Parent, Patient, Relay, runtime, Supervisor } from "./fixtures/NestedFlows.ts"
+import {
+  Child,
+  Cleanup,
+  Counter,
+  flows,
+  Guardian,
+  Holder,
+  Keeper,
+  Parent,
+  Patient,
+  Relay,
+  runtime,
+  Supervisor
+} from "./fixtures/NestedFlows.ts"
 import * as Objects from "./fixtures/Objects.ts"
 import * as Postgres from "./fixtures/Postgres.ts"
 import * as StatementTrace from "./fixtures/StatementTrace.ts"
@@ -171,6 +184,39 @@ for (const target of Postgres.targets) {
         const runs = yield* c.runs
         expect(runs.map((run) => run.status)).toEqual(["cancelled", "completed", "cancelled"])
         expect(c.objects.outcomes.get(runs[2]!.id)).toEqual([{ _tag: "Parked", wakeAtMs: null }, settled])
+        expect(Object.values(alarms(c.objects))).toEqual(["forget", "forget", "forget"])
+      }).pipe(Effect.ensuring(c.cleanup))
+    })
+
+    it.live("a parked child cancelled with its parent starts its declared cancellation run on an object of its own", () => {
+      const c = setup(target)
+      const parentId = `keeper-${randomUUID()}`
+      const label = randomUUID()
+      return Effect.gen(function*() {
+        const intent = yield* ExecutionObject.intent(Keeper, { executionId: parentId, payload: { label } })
+        yield* ExecutionObject.start(c.objects.object(parentId).storage, intent, Effect.void)
+        yield* c.objects.run()
+        expect((yield* c.runs).map(({ flow, status }) => ({ flow, status }))).toEqual([
+          { flow: Keeper._tag, status: "suspended" },
+          { flow: Holder._tag, status: "suspended" }
+        ])
+
+        // The app cancels the parent, then wakes its object: the parked child's object closes it, nothing of its
+        // body runs again, and its routing starts the cancellation run the child's flow declared.
+        yield* Keeper.interrupt(parentId).pipe(
+          Effect.provide(runtime({ record: Effect.succeed, database: Postgres.database(c.schema, target.url) })(intent))
+        )
+        yield* c.objects.router.wake(parentId)
+        yield* c.objects.run()
+
+        const runs = yield* c.runs
+        expect(runs.map(({ flow, id, status }) => ({ flow, id, status }))).toEqual([
+          { flow: Keeper._tag, id: parentId, status: "cancelled" },
+          { flow: Holder._tag, id: expect.any(String), status: "cancelled" },
+          { flow: Cleanup._tag, id: `cleanup:${label}`, status: "completed" }
+        ])
+        expect(c.steps).toEqual([`cleanup:${label}`])
+        expect(c.objects.outcomes.get(`cleanup:${label}`)).toEqual([settled])
         expect(Object.values(alarms(c.objects))).toEqual(["forget", "forget", "forget"])
       }).pipe(Effect.ensuring(c.cleanup))
     })

@@ -105,6 +105,28 @@ await Effect.runPromise(withCrypto(Effect.scoped(
         process.stdout.write(`${JSON.stringify({ status: "parked" })}\n`)
         return yield* Effect.never
       }
+      // A process that never held the parked job's scope cancels it: its Cancel must still run, as the job's
+      // durable cancellation run `cancel:<key>`.
+      if (mode === "cancel-restart" && row.status === "suspended") {
+        yield* engine.interrupt(Caller, "external-job-root")
+        for (let attempt = 0; attempt < 400; attempt++) {
+          const calls = yield* Effect.promise(() => readFile(join(directory, "calls"), "utf8"))
+          const key = /start:(.+)\n/.exec(calls)?.[1]
+          const stopped = key === undefined
+            ? undefined
+            : yield* runs.get(`cancel:${key}`).pipe(Effect.option)
+          const cancelled = yield* runs.get("external-job-root")
+          if (
+            key !== undefined && calls.includes(`cancel:${key}`) && cancelled.status === "cancelled" &&
+            stopped !== undefined && Option.isSome(stopped) && stopped.value.status === "completed"
+          ) {
+            process.stdout.write(`${JSON.stringify({ status: "cancelled", key })}\n`)
+            return
+          }
+          yield* Effect.sleep("25 millis")
+        }
+        return yield* Effect.die("cancellation did not finish")
+      }
       if (mode === "cancel" && row.status === "suspended") {
         yield* engine.interrupt(Caller, "external-job-root")
         for (let attempt = 0; attempt < 200; attempt++) {

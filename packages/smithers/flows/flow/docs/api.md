@@ -90,7 +90,7 @@ A flow settles with one of three results:
 
 `Outcome` is the vocabulary a trampoline body settles a round with: `Done(value)` ends the lineage, `To(payload)` opens the next round, and `Park` suspends it. `isOutcome` is its guard.
 
-Scope helpers are `scope`, `provideScope`, `addFinalizer`, `withRollback`, and `suspend`. Policy references are `CaptureDefects` and `SuspendOnFailure`. `Execution` is a type-level marker that ties a service to a flow tag; it carries no runtime value and identifies nothing at run time.
+Scope helpers are `scope`, `provideScope`, `addFinalizer`, `withRollback`, and `suspend`. `OnCancel` is the annotation (`flow.annotate(Flow.OnCancel, { flow, executionId })`) by which a flow declares its durable cancellation: the run a store-backed engine admits, with the cancelled execution's payload, when it cancels one of the flow's executions, so a compensation still runs for an execution parked with no process holding its scope. Policy references are `CaptureDefects` and `SuspendOnFailure`. `Execution` is a type-level marker that ties a service to a flow tag; it carries no runtime value and identifies nothing at run time.
 
 ## `Action`
 

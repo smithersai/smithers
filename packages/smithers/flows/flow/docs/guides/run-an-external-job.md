@@ -134,17 +134,28 @@ The actual flow scope retains `Flow.withRollback` cancellation. Timer parking,
 replay and host release preserve the external worker. Explicit cancellation
 cancels it, including a retained parked scope. The rollback is process-local
 and has no step to retry in: it asks `cancel` or `abandon` once and logs a
-failure by operation and key. Providers still need their retained-machine lease
-or reaper after a host dies.
+failure by operation and key.
+
+A generation parked between probes after its host stopped has no process that
+holds its scope, so no rollback can run when a cancellation reaches it. The
+job's observation declares its durable cancellation instead (`Flow.OnCancel`):
+a store-backed engine that cancels the parked observation admits
+`<tag>/stop` as its own run, execution id `cancel:<key>`, with the
+observation's payload, before it commits the cancellation. Its one step is the
+generation's `cancel`, retried like any step, so the stop reaches the provider
+even when nothing held the job. A Durable Object host starts that run on an
+object of its own. A generation stopped in process may therefore be asked to
+`cancel` twice; `cancel` must be idempotent at the provider.
 
 ## Hosts that route by tag
 
-`call` runs the job as its own child execution, and each round hands off to
-one of two private continuations, `<tag>/launch` and `<tag>/observe`. A host
-that finds an execution's flow by its tag, such as a Durable Object per
-execution, must list all three: `[...otherFlows, ...Build.flows]`. Otherwise
-the child's object refuses the job as an unknown flow and the job never
-starts.
+`call` runs the job as its own child execution, each round hands off to
+one of two private continuations, `<tag>/launch` and `<tag>/observe`, and a
+cancellation of a parked observation starts `<tag>/stop`. A host that finds an
+execution's flow by its tag, such as a Durable Object per execution, must list
+all four: `[...otherFlows, ...Build.flows]`. Otherwise the child's object
+refuses the job as an unknown flow and the job never starts, or a stop never
+runs.
 
 ## Abandon a key that never returned a handle
 

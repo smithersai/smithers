@@ -84,8 +84,10 @@ export const RunState = Schema.Struct({
   // `Flow.Handoff` that opened it.
   deadline: Schema.optionalKey(Flow.LineageDeadline),
   result: Schema.optionalKey(Schema.Unknown),
+  // `run` is the cancellation run its flow declared (`Flow.OnCancel`), admitted with the cancellation.
   cancellation: Schema.optionalKey(Schema.Struct({
-    interruptedAtMs: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))
+    interruptedAtMs: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)),
+    run: Schema.optionalKey(Schema.NonEmptyString)
   })),
   // Who started the run and when it was admitted, as its usage metrics label
   // it (`@smthrs/flow` `RunMetrics`): the door and the actor kind, never who.
