@@ -123,5 +123,5 @@ The release roster comes from [readWorkspaceManifests and publishedPackages](htt
 | `@smthrs/testing`             | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/testing/package.json)                            |
 | `@smthrs/time-travel`         | `>=22.19.0`    | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/time-travel/package.json)         |
 | `@smthrs/triggers`            | `>=22.19.0`    | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/triggers/package.json)            |
-| `@smthrs/views`               | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/ui/views/package.json)                  |
+| `@smthrs/views`               | `>=22.19.0`    | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/ui/views/package.json)                  |
 | `smthrs`                      | `>=22.19.0`    | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smthrs-deprecation/package.json)                 |
