@@ -147,6 +147,7 @@ describe("needs", () => {
       "duplicateDrafts",
       "inspectRun",
       "outsideRoles",
+      "vibelangFeed",
       "sandboxSecrets",
       "webhookSecret",
       "alertProviders",
@@ -208,11 +209,11 @@ describe("needs", () => {
 
   it("in a deployment, leave out every dev-only need, and meet a role need by the account's role", () => {
     const met = (role: ReturnType<Run["role"]>) => (Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].met(deployedAs(role)))
-    expect(met("guest")).toEqual(["outsideRoles", "githubSignIn", "codeStorage", "hostedModelOff", "githubApp"])
-    expect(met(null)).toEqual(["outsideRoles", "githubSignIn", "codeStorage", "hostedModelOff", "githubApp"])
-    expect(met("member")).toEqual(["outsideRoles", "githubSignIn", "codeStorage", "hostedModelOff", "githubApp", "member"])
-    expect(met("maintainer")).toEqual(["outsideRoles", "githubSignIn", "codeStorage", "hostedModelOff", "githubApp", "member", "maintainer"])
-    expect(met("admin")).toEqual(["outsideRoles", "githubSignIn", "codeStorage", "hostedModelOff", "githubApp", "member", "maintainer"])
+    expect(met("guest")).toEqual(["outsideRoles", "vibelangFeed", "githubSignIn", "codeStorage", "hostedModelOff", "githubApp"])
+    expect(met(null)).toEqual(["outsideRoles", "vibelangFeed", "githubSignIn", "codeStorage", "hostedModelOff", "githubApp"])
+    expect(met("member")).toEqual(["outsideRoles", "vibelangFeed", "githubSignIn", "codeStorage", "hostedModelOff", "githubApp", "member"])
+    expect(met("maintainer")).toEqual(["outsideRoles", "vibelangFeed", "githubSignIn", "codeStorage", "hostedModelOff", "githubApp", "member", "maintainer"])
+    expect(met("admin")).toEqual(["outsideRoles", "vibelangFeed", "githubSignIn", "codeStorage", "hostedModelOff", "githubApp", "member", "maintainer"])
 
     // An Admin turned the deployment's own model on; a local dev server answers with it unless told otherwise.
     expect(NEEDS.hostedModelOff.met(deployedAs("member", { E2E_HOSTED_MODEL: "on" }))).toBe(false)
@@ -410,7 +411,7 @@ describe("needs", () => {
 
   it("each say why, and missing account or fixture prerequisites block the run", () => {
     for (const name of Object.keys(NEEDS) as Array<NeedName>) expect(NEEDS[name].reason.length, name).toBeGreaterThan(20)
-    expect((Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].blocked)).toEqual(["vibelangMaintainer", "absentRepository", "unsyncedRepository", "failedRun", "repositoryRun", "emptySecretsRepository", "syncedRepository", "member", "ownConversation", "maintainer"])
+    expect((Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].blocked)).toEqual(["vibelangMaintainer", "vibelangOpenPull", "absentRepository", "unsyncedRepository", "failedRun", "repositoryRun", "emptySecretsRepository", "syncedRepository", "member", "ownConversation", "maintainer"])
   })
 })
 
