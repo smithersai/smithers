@@ -3137,12 +3137,17 @@ reads, `maxHours` (1 to `MAX_HOURS`, 12) and `restarts` (0 to `MAX_RESTARTS`, 5)
 - `Job`: `{ key, claim, generation, task, deadline, leaseSeconds, reclaimed }`,
   what a runner claims. `reclaimed` marks a job handed back to a runner that
   restarted while holding it.
-- `ClaimRequest` `{ profiles, free, running, waitSeconds }`, `ClaimResponse`,
-  `HeartbeatRequest` `{ key, claim, delivered? }` (the steers the agent read),
+- `ClaimRequest` `{ profiles, free, running, waitSeconds, machine? }`,
+  `ClaimResponse`, `HeartbeatRequest` `{ key, claim, delivered?, account?,
+  cpuSeconds?, usage? }` (`delivered`: the steers the agent read),
   `HeartbeatResponse` `{ held, cancel, leaseSeconds, steers? }` (the steers it
   hasn't, oldest first, each a `Steer` `{ id, text }`),
   `SettleRequest` `{ key, claim, outcome, delivered? }`, `SettleResponse`, and `ROUTES` (`/api/runners/claim`,
-  `/heartbeat`, `/settle`, `/events`).
+  `/heartbeat`, `/settle`, `/events`). `Machine` `{ version?, load1?, diskFreeGb? }` is
+  what a claim says about the runner's machine; a heartbeat's `account` is the
+  opaque label the runner's hook chose (written as a profile is), `cpuSeconds`
+  the agent's process tree's CPU time, and `usage` what it reported so far. A
+  host reads them for its fleet view and stall alerts.
 - `Outcome`: `Done { changes, summary, usage }`, `Failed { reason }` with a code
   of `FAILURES` (`agent`, `refused`, `workspace`, `too_large`, `timeout`,
   `machine_lost`, `exhausted`), `Retryable { afterSeconds? }`, or

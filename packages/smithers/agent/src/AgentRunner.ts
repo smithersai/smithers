@@ -175,6 +175,29 @@ export const Job = Schema.Struct({
 export type Job = typeof Job.Type
 
 /**
+ * What a runner says about its machine with each claim, for a host's fleet
+ * view: the runner's version, the one-minute load average, and the free disk
+ * in gigabytes where its checkouts live. Each is optional; a host shows a
+ * missing one as unknown.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Machine = Schema.Struct({
+  version: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64))),
+  load1: Schema.optional(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))),
+  diskFreeGb: Schema.optional(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))
+})
+
+/**
+ * What a runner says about its machine, decoded.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Machine = typeof Machine.Type
+
+/**
  * What a runner may take: the profiles its configuration has, how many jobs it
  * has room for now, the keys of the jobs it is running, and how long the host
  * may hold the request open while nothing is queued. A job the runner holds
@@ -188,7 +211,8 @@ export const ClaimRequest = Schema.Struct({
   profiles: Schema.Array(Profile),
   free: Count,
   running: Schema.Array(NonEmpty),
-  waitSeconds: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 25 }))
+  waitSeconds: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 25 })),
+  machine: Schema.optional(Machine)
 })
 
 /**
@@ -217,10 +241,36 @@ export const Steer = Schema.Struct({ id: NonEmpty, text: NonEmpty })
 export type Steer = typeof Steer.Type
 
 /**
+ * What a run cost, as far as its agent reported it: the context it filled, and
+ * its cumulative cost in US dollars. An agent that reports nothing leaves both
+ * out, which a host shows as unreported, never as zero.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Usage = Schema.Struct({
+  contextTokens: Schema.optional(Count),
+  costUsd: Schema.optional(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))
+})
+
+/**
+ * What a run cost, decoded.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Usage = typeof Usage.Type
+
+/**
  * A runner keeping its claim: it still runs the job. `delivered` lists the
  * steers the agent read: each one the agent sent an update after the runner
  * handed it over. The runner lists them on every heartbeat until the host
- * stops handing them out.
+ * stops handing them out. It may also say how the job runs, for a host's fleet
+ * view and alerts: the opaque `account` label the profile's hook chose (never
+ * a path or a credential), the CPU seconds the agent's whole process tree has
+ * used so far, and the usage the agent reported so far. Each is optional. An
+ * account label is written as a profile is: letters, digits, dots, dashes and
+ * underscores.
  *
  * @category schemas
  * @since 1.0.0
@@ -228,7 +278,10 @@ export type Steer = typeof Steer.Type
 export const HeartbeatRequest = Schema.Struct({
   key: NonEmpty,
   claim: NonEmpty,
-  delivered: Schema.optional(Schema.Array(NonEmpty))
+  delivered: Schema.optional(Schema.Array(NonEmpty)),
+  account: Schema.optional(Profile),
+  cpuSeconds: Schema.optional(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))),
+  usage: Schema.optional(Usage)
 })
 
 /**
@@ -268,27 +321,6 @@ export const Changes = Schema.Struct({
  * @since 1.0.0
  */
 export type Changes = typeof Changes.Type
-
-/**
- * What a run cost, as far as its agent reported it: the context it filled, and
- * its cumulative cost in US dollars. An agent that reports nothing leaves both
- * out, which a host shows as unreported, never as zero.
- *
- * @category schemas
- * @since 1.0.0
- */
-export const Usage = Schema.Struct({
-  contextTokens: Schema.optional(Count),
-  costUsd: Schema.optional(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)))
-})
-
-/**
- * What a run cost, decoded.
- *
- * @category models
- * @since 1.0.0
- */
-export type Usage = typeof Usage.Type
 
 /**
  * Why a job ended without a change, as a code. A runner never sends the

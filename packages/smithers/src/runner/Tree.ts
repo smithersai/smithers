@@ -13,11 +13,26 @@
 import { Effect } from "effect"
 import { execFileSync } from "node:child_process"
 
-/** One process: its parent, whether it is a zombie, and its start time as `ps` prints it. */
+/** One process: its parent, whether it is a zombie, its CPU seconds so far, and its start time as `ps` prints it. */
 interface Entry {
   readonly ppid: number
   readonly zombie: boolean
+  readonly cpu: number
   readonly started: string
+}
+
+/**
+ * CPU time as `ps -o time=` prints it, `[[dd-]hh:]mm:ss[.ss]`, in seconds; 0
+ * for anything else.
+ *
+ * @category parsers
+ * @since 1.0.0
+ */
+export const cpuOf = (text: string): number => {
+  const [days, clock] = text.includes("-") ? text.split("-", 2) as [string, string] : ["0", text]
+  const parts = clock.split(":").map(Number)
+  if (parts.some((part) => !Number.isFinite(part)) || !/^\d+$/.test(days)) return 0
+  return Number(days) * 86_400 + parts.reduce((total, part) => total * 60 + part, 0)
 }
 
 /** Every process on the host by pid, or none when `ps` can't answer: a table it couldn't read proves nothing gone. */
@@ -25,7 +40,7 @@ const table = (): Map<number, Entry> | undefined => {
   const entries = new Map<number, Entry>()
   let text: string
   try {
-    text = execFileSync("/bin/ps", ["-A", "-o", "pid=,ppid=,stat=,lstart="], {
+    text = execFileSync("/bin/ps", ["-A", "-o", "pid=,ppid=,stat=,time=,lstart="], {
       env: { LC_ALL: "C", TZ: "UTC", PATH: "/usr/bin:/bin" },
       encoding: "utf8",
       timeout: 5000,
@@ -35,9 +50,14 @@ const table = (): Map<number, Entry> | undefined => {
     return undefined
   }
   for (const line of text.split("\n")) {
-    const match = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.+?)\s*$/.exec(line)
+    const match = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(.+?)\s*$/.exec(line)
     if (match !== null) {
-      entries.set(Number(match[1]), { ppid: Number(match[2]), zombie: match[3]!.startsWith("Z"), started: match[4]! })
+      entries.set(Number(match[1]), {
+        ppid: Number(match[2]),
+        zombie: match[3]!.startsWith("Z"),
+        cpu: cpuOf(match[4]!),
+        started: match[5]!
+      })
     }
   }
   return entries
@@ -62,6 +82,12 @@ const alive = (pid: number): boolean => {
  */
 export interface Tree {
   readonly observe: Effect.Effect<void>
+  /**
+   * The CPU seconds every process seen so far has used, as of the last
+   * `observe`: each process counts its most recent time, so one that exited
+   * keeps the time it had used.
+   */
+  readonly cpuSeconds: () => number
   /** Signals every process seen that still runs as itself; answers how many it signalled. */
   readonly signal: (signal: NodeJS.Signals) => Effect.Effect<number>
   readonly gone: Effect.Effect<boolean>
@@ -70,8 +96,6 @@ export interface Tree {
     { readonly root: number; readonly seen: number; readonly observed: number; readonly unreadable: number }
   >
 }
-
-
 
 /**
  * Watches the tree under `root`, the root included.
@@ -88,6 +112,8 @@ export const watch = (root: number): Tree => {
     if (entries === undefined) unreadable++
     return entries
   }
+  // Each process's CPU time, keyed by pid and start time so a reused pid counts as a new process.
+  const cpu = new Map<string, number>()
   const observe = Effect.sync(() => {
     const entries = read()
     if (entries === undefined) return
@@ -108,6 +134,10 @@ export const watch = (root: number): Tree => {
         }
       }
     }
+    for (const [pid, started] of seen) {
+      const entry = entries.get(pid)
+      if (entry !== undefined && entry.started === started) cpu.set(`${pid}@${started}`, entry.cpu)
+    }
   })
   /** The processes seen that still run as themselves: same pid, same start time, not a zombie; none when unknown. */
   const living = () => {
@@ -120,6 +150,7 @@ export const watch = (root: number): Tree => {
   }
   return {
     observe,
+    cpuSeconds: () => [...cpu.values()].reduce((total, seconds) => total + seconds, 0),
     signal: (signal) =>
       Effect.sync(() => {
         // A table it couldn't read can't tell a process from another that took its pid: signal none.

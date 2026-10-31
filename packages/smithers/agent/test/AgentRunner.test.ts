@@ -47,6 +47,24 @@ describe("AgentRunner", () => {
     expect(is(AgentRunner.ClaimRequest)({ ...claim, waitSeconds: 26 })).toBe(false)
   })
 
+  it("takes a claim's machine facts and a heartbeat's account, CPU time and usage, each optional", () => {
+    const claim = { profiles: ["p"], free: 1, running: [], waitSeconds: 0 }
+    expect(is(AgentRunner.ClaimRequest)({ ...claim, machine: { version: "1.0.0", load1: 0.5, diskFreeGb: 212 } }))
+      .toBe(true)
+    expect(is(AgentRunner.ClaimRequest)({ ...claim, machine: {} })).toBe(true)
+    expect(is(AgentRunner.ClaimRequest)({ ...claim, machine: { load1: -1 } })).toBe(false)
+    expect(is(AgentRunner.ClaimRequest)({ ...claim, machine: { version: "" } })).toBe(false)
+    expect(is(AgentRunner.ClaimRequest)({ ...claim, machine: { diskFreeGb: -0.5 } })).toBe(false)
+    const beat = { key: "k#g1", claim: "c" }
+    expect(is(AgentRunner.HeartbeatRequest)(beat)).toBe(true)
+    expect(is(AgentRunner.HeartbeatRequest)({ ...beat, account: "acct-3", cpuSeconds: 12.5, usage: { costUsd: 1 } }))
+      .toBe(true)
+    expect(is(AgentRunner.HeartbeatRequest)({ ...beat, account: "x".repeat(64) })).toBe(false)
+    expect(is(AgentRunner.HeartbeatRequest)({ ...beat, account: "/home/lane/.agent" })).toBe(false)
+    expect(is(AgentRunner.HeartbeatRequest)({ ...beat, cpuSeconds: -1 })).toBe(false)
+    expect(is(AgentRunner.HeartbeatRequest)({ ...beat, usage: { contextTokens: -1 } })).toBe(false)
+  })
+
   it("settles each outcome and no other", () => {
     const outcomes: ReadonlyArray<AgentRunner.Outcome> = [
       { _tag: "Done", changes: { additions: [{ path: "a", contents: "" }], deletions: ["b"] }, summary: "", usage: {} },

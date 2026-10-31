@@ -90,6 +90,22 @@ export interface Control {
   readonly steers: Queue.Queue<AgentRunner.Steer>
   /** The ids of steers the agent read, which the serve loop reports until the host stops listing them. */
   readonly delivered: Set<string>
+  /** How the job runs, as the work last saw it: what each heartbeat tells the host. */
+  readonly stats: Stats
+}
+
+/**
+ * How a job runs, for the host's fleet view and alerts: the account label the
+ * profile's hook chose, the CPU seconds the agent's whole tree has used, and
+ * the usage the agent reported. The work writes it; each heartbeat reads it.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Stats {
+  account?: string
+  cpuSeconds?: number
+  usage?: AgentRunner.Usage
 }
 
 /**
@@ -282,6 +298,7 @@ export const work = (
       })
     }
     const account: { account?: string } = chosen.account === undefined ? {} : { account: chosen.account }
+    if (chosen.account !== undefined) control.stats.account = chosen.account
     const scrub = Transcript.scrubber([
       ...(profile.secretEnv ?? []).flatMap((name) => base[name] === undefined ? [] : [base[name]]),
       ...Object.values(chosen.env)
@@ -343,7 +360,15 @@ const session = (options: {
     if (Exit.isFailure(spawned)) return ended(failed("refused"), "spawn")
     const handle = spawned.value
     const tree = Tree.watch(handle.targetPid)
-    yield* tree.observe.pipe(Effect.andThen(Effect.sleep(1000)), Effect.forever, Effect.forkScoped)
+    // Each look at the tree also counts its CPU time, which the host's stall rule reads from the heartbeat.
+    yield* tree.observe.pipe(
+      Effect.andThen(Effect.sync(() => {
+        control.stats.cpuSeconds = tree.cpuSeconds()
+      })),
+      Effect.andThen(Effect.sleep(1000)),
+      Effect.forever,
+      Effect.forkScoped
+    )
     // Every way out stops the whole tree, the agent's detached tools included.
     yield* Effect.addFinalizer(() => Tree.stop(tree, { graceMs: 2000, settleMs: 5000 }).pipe(Effect.ignore))
     const lines = yield* Queue.unbounded<string>()
@@ -403,6 +428,7 @@ const session = (options: {
                 contextTokens: reported.value.contextTokens,
                 ...(reported.value.costUsd === undefined ? {} : { costUsd: reported.value.costUsd })
               }
+              control.stats.usage = usage
               return
             }
             if (current !== "") {
