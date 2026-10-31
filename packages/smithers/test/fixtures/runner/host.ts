@@ -24,6 +24,8 @@ export interface Row {
   cancel: boolean
   held: boolean
   heartbeats: number
+  /** Every heartbeat's body, in order. */
+  readonly beats: Array<typeof AgentRunner.HeartbeatRequest.Type>
   outcome?: AgentRunner.Outcome
 }
 
@@ -43,12 +45,15 @@ const json = (response: ServerResponse, status: number, body: unknown) => {
 /** Starts the host on a loopback port, accepting `token` as the runner's bearer. */
 export const start = async (token: string) => {
   const rows = new Map<string, Row>()
+  /** Every claim's machine facts, in order. */
+  const machines: Array<AgentRunner.Machine | undefined> = []
   const server = createServer(async (request, response) => {
     const body = await read(request)
     if (request.headers.authorization !== `Bearer ${token}`) return json(response, 401, { code: "authentication" })
     const value = JSON.parse(body) as Record<string, unknown>
     if (request.url === AgentRunner.ROUTES.claim) {
       const wants = value as unknown as typeof AgentRunner.ClaimRequest.Type
+      machines.push(wants.machine)
       const asJob = (row: Row, reclaimed: boolean): AgentRunner.Job => ({
         key: row.key,
         claim: row.claim!,
@@ -74,7 +79,10 @@ export const start = async (token: string) => {
     const row = rows.get(String(value.key))
     const holds = row !== undefined && row.state === "claimed" && row.claim === value.claim && row.held
     if (request.url === AgentRunner.ROUTES.heartbeat) {
-      if (row !== undefined) row.heartbeats++
+      if (row !== undefined) {
+        row.heartbeats++
+        row.beats.push(value as unknown as typeof AgentRunner.HeartbeatRequest.Type)
+      }
       return json(response, 200, { held: holds, cancel: holds && row.cancel, leaseSeconds: 45 })
     }
     if (request.url === AgentRunner.ROUTES.settle) {
@@ -91,6 +99,7 @@ export const start = async (token: string) => {
   return {
     origin,
     rows,
+    machines,
     /** Queues generation `generation` of the step `origin` with `task`. */
     enqueue: (
       task: AgentRunner.Task,
@@ -107,7 +116,8 @@ export const start = async (token: string) => {
         claims: 0,
         cancel: false,
         held: true,
-        heartbeats: 0
+        heartbeats: 0,
+        beats: []
       }
       rows.set(key, row)
       return row

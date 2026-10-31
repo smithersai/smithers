@@ -97,6 +97,17 @@ scrubbed of known secret values, API key and bearer shapes, GitHub tokens,
 JWTs and email addresses. Usage is the agent's last `usage_update`; an agent
 that reports no cost leaves it out.
 
+## What the host sees
+
+Each claim also says what the machine is like: the runner's version, the
+one-minute load average and the free disk where its checkouts live. Each
+heartbeat says how the job runs: the account label `prestart` printed, the
+CPU seconds the agent's whole process tree has used (a process that exited
+keeps the time it had used), and the usage the agent reported so far. Each is
+optional, and a label that isn't written as a profile is (a path, say) is left
+out. A host shows them in its fleet view, and its stall alert reads the CPU
+time, so a quiet build isn't mistaken for a stuck agent.
+
 ## Stop, loss and restart
 
 - **Stop.** A heartbeat that says `cancel` sends `session/cancel`, waits up to

@@ -247,6 +247,7 @@ export { Skeleton } from "./skeleton";
 export { LOADING_DELAY_MS, LoadingBar, type LoadingBarProps } from "./loading";
 export { intentPath, LinkIntent, type LinkIntentProps } from "./link-intent";
 export { formatRelativeTime } from "./time/formatRelativeTime";
+export { useClock } from "./clock";
 export { RelativeTime, useRelativeTime, type RelativeTimeProps } from "./time/RelativeTime";
 export { useDialogFocusTrap, type UseDialogFocusTrapOptions } from "./internal/useDialogFocusTrap";
 export { EmptyState, type EmptyStateProps } from "./empty-state";

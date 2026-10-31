@@ -13,12 +13,15 @@
  * @since 1.0.0
  */
 
-import type * as AgentRunner from "@smthrs/agent/AgentRunner"
-import { Cause, Deferred, Effect, type Fiber } from "effect"
+import * as AgentRunner from "@smthrs/agent/AgentRunner"
+import { Cause, Deferred, Effect, type Fiber, Schema } from "effect"
 import type * as Config from "./Config.ts"
 import * as Host from "./Host.ts"
 import * as Job from "./Job.ts"
+import * as Machine from "./Machine.ts"
 import type * as Session from "./Session.ts"
+
+const isAccount = Schema.is(AgentRunner.Profile)
 
 /**
  * Runs the claim loop forever under `config`, with `controls` shared with the
@@ -38,7 +41,15 @@ export const loop = (config: Config.Checked, controls: Map<string, Session.Contr
       Effect.gen(function*() {
         while (true) {
           yield* Effect.sleep(`${config.heartbeatSeconds} seconds`)
-          const beat = yield* Effect.result(host.heartbeat({ key: job.key, claim: job.claim }))
+          const { account, cpuSeconds, usage } = control.stats
+          const beat = yield* Effect.result(host.heartbeat({
+            key: job.key,
+            claim: job.claim,
+            // A label the protocol can't carry (a path, say) is left out rather than refused with the beat.
+            ...(account === undefined || !isAccount(account) ? {} : { account }),
+            ...(cpuSeconds === undefined ? {} : { cpuSeconds: Math.round(cpuSeconds * 100) / 100 }),
+            ...(usage === undefined ? {} : { usage })
+          }))
           if (beat._tag === "Failure") {
             if (beat.failure.code === "refused") return yield* drop(job, control)
             // An unreachable host doesn't prove the claim is gone: keep working, and keep asking.
@@ -64,7 +75,8 @@ export const loop = (config: Config.Checked, controls: Map<string, Session.Contr
         const control: Session.Control = {
           cancel: yield* Deferred.make<void>(),
           dropped: yield* Deferred.make<void>(),
-          reclaimed: job.reclaimed
+          reclaimed: job.reclaimed,
+          stats: {}
         }
         controls.set(job.key, control)
         const payload: Session.JobPayload = {
@@ -114,7 +126,7 @@ export const loop = (config: Config.Checked, controls: Map<string, Session.Contr
         continue
       }
       const claimed = yield* Effect.result(
-        host.claim({ profiles, free, running: [...running.keys()], waitSeconds: 25 })
+        host.claim({ profiles, free, running: [...running.keys()], waitSeconds: 25, machine: Machine.facts(config) })
       )
       if (claimed._tag === "Failure") {
         yield* Effect.logWarning("runner.claim").pipe(Effect.annotateLogs({ outcome: claimed.failure.code }))

@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import * as RunnerCmd from "../src/commands/Runner.ts"
 import * as Config from "../src/runner/Config.ts"
 import * as Scrub from "../src/runner/Scrub.ts"
+import * as Tree from "../src/runner/Tree.ts"
 import * as Host from "./fixtures/runner/host.ts"
 
 const AGENT = fileURLToPath(new URL("../agent/test/fixtures/acp-test-agent.mjs", import.meta.url))
@@ -124,6 +125,32 @@ describe("smthrs runner serve", () => {
     },
     90_000
   )
+
+  test("each heartbeat tells the host the hook's account, the tree's CPU time and the agent's usage; each claim the machine", async () => {
+    const hook = join(root, "pick.sh")
+    writeFileSync(hook, "#!/bin/sh\necho account=acct-1\n", { mode: 0o755 })
+    configure({ picked: { prestart: [hook] } })
+    const row = host.enqueue(Host.task({ profile: "picked", base: mirror.base, prompt: "run `busy 4`\nadd the line `a` to `A.md`" }))
+    serveInProcess()
+    expect((await host.settled(row))._tag).toBe("Done")
+    const beat = row.beats.find((each) => each.usage !== undefined)
+    expect(beat, "a heartbeat after the agent reported usage").toBeDefined()
+    expect(beat).toMatchObject({ key: row.key, claim: row.claim, account: "acct-1", usage: { contextTokens: 1234 } })
+    expect(row.beats.every((each) => each.cpuSeconds === undefined || each.cpuSeconds >= 0)).toBe(true)
+    // The busy child's CPU counts toward the tree's, after it exited too (ps counts whole seconds on Linux).
+    expect(Math.max(...row.beats.map((each) => each.cpuSeconds ?? 0))).toBeGreaterThanOrEqual(1)
+    const machine = host.machines.find((each) => each !== undefined)
+    expect(machine?.version).toMatch(/^\d+\.\d+\.\d+/)
+    expect(machine?.load1).toBeGreaterThanOrEqual(0)
+  }, 90_000)
+
+  test("reads ps CPU times in each form it prints", () => {
+    expect(Tree.cpuOf("00:00:03")).toBe(3)
+    expect(Tree.cpuOf("1:02.50")).toBe(62.5)
+    expect(Tree.cpuOf("2-01:00:00")).toBe(2 * 86_400 + 3600)
+    expect(Tree.cpuOf("-")).toBe(0)
+    expect(Tree.cpuOf("x-1:00")).toBe(0)
+  })
 
   test("a cancel stops the agent's whole tree, a detached command included, and settles Cancelled", async () => {
     configure()

@@ -6,6 +6,8 @@
 // Instructions, one per line of the prompt's text (other lines are ignored):
 //   add the line `X` to `FILE`      appends X and a newline to FILE, relative to the session's cwd
 //   run `sleep N`                   a tool call that waits N seconds; session/cancel ends it (stop reason cancelled)
+//   run `busy N`                    a tool call that keeps a child process busy on the CPU for N seconds and says
+//                                   nothing meanwhile, as a quiet build or test run does; session/cancel ends it
 //   run `sleep N` detached          a tool call that starts `sleep N` in a session of its own and waits for it; a
 //                                   cancel ends the turn but leaves the sleep running, as some agents' tools do
 //   refuse                          ends the turn with stop reason refusal
@@ -64,6 +66,7 @@ const ask = (method, params) =>
 const PATTERNS = [
   [/^add the line `([^`]*)` to `([^`]+)`$/, (m) => ({ kind: "add", text: m[1], file: m[2] })],
   [/^run `sleep (\d+(?:\.\d+)?)`$/, (m) => ({ kind: "sleep", seconds: Number(m[1]) })],
+  [/^run `busy (\d+(?:\.\d+)?)`$/, (m) => ({ kind: "busy", seconds: Number(m[1]) })],
   [/^run `sleep (\d+)` detached$/, (m) => ({ kind: "detached", seconds: Number(m[1]) })],
   [/^say env ([A-Za-z_][A-Za-z0-9_]*)$/, (m) => ({ kind: "env", name: m[1] })],
   [/^late update$/, () => ({ kind: "late" })],
@@ -138,6 +141,24 @@ const runTurn = async (id, sessionId, text) => {
         }
       })
       if (cancelled) {
+        update(sessionId, { sessionUpdate: "tool_call_update", toolCallId, status: "failed" })
+        return end("cancelled")
+      }
+      update(sessionId, { sessionUpdate: "tool_call_update", toolCallId, status: "completed" })
+      state.pending.shift()
+      writeState(state)
+      continue
+    }
+    if (step.kind === "busy") {
+      const toolCallId = randomUUID()
+      update(sessionId, { sessionUpdate: "tool_call", toolCallId, title: "Run a command", kind: "execute", status: "in_progress" })
+      const child = spawn(process.execPath, ["-e", `const end = Date.now() + ${step.seconds * 1000}; while (Date.now() < end) {}`], {
+        stdio: "ignore"
+      })
+      const exited = new Promise((done) => child.on("exit", done))
+      await Promise.race([exited, new Promise((done) => (wake = done))])
+      if (cancelled) {
+        child.kill("SIGKILL")
         update(sessionId, { sessionUpdate: "tool_call_update", toolCallId, status: "failed" })
         return end("cancelled")
       }
