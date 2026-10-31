@@ -318,7 +318,8 @@ export const SettleResponse = Schema.Struct({ recorded: Schema.Boolean })
 
 /**
  * The runner routes, relative to the host's origin. Each takes the runner's
- * own bearer token.
+ * own bearer token. `events` carries the agent's transcript
+ * ({@link module:Transcript}).
  *
  * @category constants
  * @since 1.0.0
@@ -326,7 +327,8 @@ export const SettleResponse = Schema.Struct({ recorded: Schema.Boolean })
 export const ROUTES = {
   claim: "/api/runners/claim",
   heartbeat: "/api/runners/heartbeat",
-  settle: "/api/runners/settle"
+  settle: "/api/runners/settle",
+  events: "/api/runners/events"
 } as const
 
 /**
