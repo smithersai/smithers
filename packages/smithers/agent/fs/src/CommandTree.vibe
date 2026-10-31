@@ -71,43 +71,48 @@ const resourceLimit = (method: string, description: string): FsError =>
 
 // Bound foreign reflection with a JavaScript try hatch and normalize to FsError.
 const routeReferences = effect (input: ReadonlyArray<Route.Route>): Effect<ReadonlyArray<Route.Route>, FsError> => {
-  return try Effect.try({ try: () => ((input, maximumRoutes, resourceLimit) => {
-    if (!Array.isArray(input) || Object.getPrototypeOf(input) !== Array.prototype) {
-      throw new FsError({
+  return try Effect.try({
+    try: () =>
+      ((input, maximumRoutes, resourceLimit) => {
+        if (!Array.isArray(input) || Object.getPrototypeOf(input) !== Array.prototype) {
+          throw new FsError({
+            code: "invalid_route",
+            method: "CommandTree.make",
+            description: "Routes must be supplied as an ordinary dense array"
+          })
+        }
+        if (input.length > maximumRoutes) {
+          throw resourceLimit("CommandTree.make", `A command tree may contain at most ${maximumRoutes} routes`)
+        }
+        if (Reflect.ownKeys(input).length !== input.length + 1) {
+          throw new FsError({
+            code: "invalid_route",
+            method: "CommandTree.make",
+            description: "Routes must be supplied as an ordinary dense array"
+          })
+        }
+        const output: Array<Route.Route> = []
+        for (let index = 0; index < input.length; index++) {
+          const descriptor = Object.getOwnPropertyDescriptor(input, String(index))
+          if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
+            throw new FsError({
+              code: "invalid_route",
+              method: "CommandTree.make",
+              description: "Routes must be supplied as enumerable data properties",
+              path: `$[${index}]`
+            })
+          }
+          output.push(descriptor.value as Route.Route)
+        }
+        return Object.freeze(output)
+      })(input, maximumRoutes, resourceLimit),
+    catch: (cause) =>
+      cause instanceof FsError ? cause : new FsError({
         code: "invalid_route",
         method: "CommandTree.make",
-        description: "Routes must be supplied as an ordinary dense array"
+        description: "Routes could not be inspected without executing user code"
       })
-    }
-    if (input.length > maximumRoutes) {
-      throw resourceLimit("CommandTree.make", `A command tree may contain at most ${maximumRoutes} routes`)
-    }
-    if (Reflect.ownKeys(input).length !== input.length + 1) {
-      throw new FsError({
-        code: "invalid_route",
-        method: "CommandTree.make",
-        description: "Routes must be supplied as an ordinary dense array"
-      })
-    }
-    const output: Array<Route.Route> = []
-    for (let index = 0; index < input.length; index++) {
-      const descriptor = Object.getOwnPropertyDescriptor(input, String(index))
-      if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
-        throw new FsError({
-          code: "invalid_route",
-          method: "CommandTree.make",
-          description: "Routes must be supplied as enumerable data properties",
-          path: `$[${index}]`
-        })
-      }
-      output.push(descriptor.value as Route.Route)
-    }
-    return Object.freeze(output)
-  })(input, maximumRoutes, resourceLimit), catch: (cause) => cause instanceof FsError ? cause : new FsError({
-    code: "invalid_route",
-    method: "CommandTree.make",
-    description: "Routes could not be inspected without executing user code"
-  }) })
+  })
 }
 
 const freezeTree = (root: MutableTree): CommandTree => {
@@ -236,7 +241,10 @@ export effect function resolve(tree: CommandTree, input: ReadonlyArray<string>):
  * @category constructors
  * @since 0.1.0
  */
-export effect function resolveExact(tree: CommandTree, argv: ReadonlyArray<string>): Effect<Route.Route, FsError, infer R> {
+export effect function resolveExact(
+  tree: CommandTree,
+  argv: ReadonlyArray<string>
+): Effect<Route.Route, FsError, infer R> {
   const { rest, route } = try resolve(tree, argv)
   if (rest.length !== 0) {
     throw new FsError({

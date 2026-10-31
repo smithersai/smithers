@@ -54,13 +54,15 @@ const kindOf = (descriptor: Descriptor.FlowDescriptor): Route.Kind => {
 const failure = (code: FsError["code"], description: string): FsError =>
   new FsError({ code, method: "FileRouter.scan", description })
 
-const discoveryFailure = (cause: unknown): FsError =>
-  match (cause) {
-    when DiscoveryError and { code: "root_missing" }: failure("root_missing", "The flow root does not exist");
-    when DiscoveryError and { code: "invalid_root" }: failure("invalid_root", "The flow root is not a readable directory");
-    when DiscoveryError and { code: "read_failed" }: failure("read_failed", "The flow root could not be read");
-    default: failure("discovery_failed", "Flow discovery failed");
-  }
+const discoveryFailure = (cause: unknown): FsError => match (cause) {
+  when DiscoveryError and { code: "root_missing" }: failure("root_missing", "The flow root does not exist");
+  when DiscoveryError and { code: "invalid_root" }: failure(
+    "invalid_root",
+    "The flow root is not a readable directory"
+  );
+  when DiscoveryError and { code: "read_failed" }: failure("read_failed", "The flow root could not be read");
+  default: failure("discovery_failed", "Flow discovery failed");
+}
 
 const readFailure = (): FsError => failure("read_failed", "A route companion could not be inspected")
 

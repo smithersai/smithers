@@ -8,13 +8,16 @@ const discovery = vi.hoisted(() => ({
   scan: undefined as undefined | ((options: unknown) => Effect<unknown, unknown>)
 }))
 
-vi.mock("@smthrs/registry/Discovery", (importOriginal) =>
-  importOriginal<typeof import("@smthrs/registry/Discovery")>().then((actual) => ({
-    ...actual,
-    make: (): infer _ => ({
-      scan: effect (options: unknown) => try discovery.scan!(options)
-    })
-  })))
+vi.mock(
+  "@smthrs/registry/Discovery",
+  (importOriginal) =>
+    importOriginal<typeof import("@smthrs/registry/Discovery")>().then((actual) => ({
+      ...actual,
+      make: (): infer _ => ({
+        scan: effect (options: unknown) => try discovery.scan!(options)
+      })
+    }))
+)
 
 import * as CommandTree from "../src/CommandTree.vibe"
 import * as FileRouter from "../src/FileRouter.vibe"
@@ -37,8 +40,7 @@ const result = effect (entries: ReadonlyArray<Descriptor.FlowDescriptor>) => ({ 
 // A stub whose methods may fail with a foreign error a real file system never raises.
 const fileSystem = (
   methods: { exists: () => Effect<boolean, unknown>; realPath?: () => Effect<string, unknown> }
-): FileSystem =>
-  methods as unknown as FileSystem
+): FileSystem => methods as unknown as FileSystem
 
 /** Scans `/flows` over the mocked discovery, a stub file system, and the real path service. */
 effect function scanFlows(files: FileSystem = fileSystem({ exists: effect () => false })) {
@@ -70,7 +72,9 @@ describe("FileRouter failure projection", () => {
 
   it.effect("bounds scan results before inspecting route companions") {
     discovery.scan = effect () =>
-      try result(Array.from({ length: CommandTree.maximumRoutes + 1 }, (_, index) => descriptor(`/flows/r${index}/flow.ts`)))
+      try result(
+        Array.from({ length: CommandTree.maximumRoutes + 1 }, (_, index) => descriptor(`/flows/r${index}/flow.ts`))
+      )
     expect((try failureOf(scanFlows())).code).toBe("resource_limit")
   }
 
@@ -78,7 +82,8 @@ describe("FileRouter failure projection", () => {
     discovery.scan = effect () => try result([descriptor("/flows/flow.ts"), descriptor("/flows/kept/flow.ts")])
     expect((try scanFlows()).routes.map((route) => route.name)).toEqual(["kept"])
 
-    discovery.scan = effect () => try result([descriptor("/flows/duplicate/flow.ts"), descriptor("/flows/duplicate/other.ts")])
+    discovery.scan = effect () =>
+      try result([descriptor("/flows/duplicate/flow.ts"), descriptor("/flows/duplicate/other.ts")])
     expect((try failureOf(scanFlows())).code).toBe("duplicate_route")
   }
 

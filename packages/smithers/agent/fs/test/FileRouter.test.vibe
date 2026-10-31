@@ -32,7 +32,9 @@ layer(platformLayer)("FileRouter", (it) => {
     ])
     expect(result.routes.find((route) => route.name === "review")?.segments).toEqual(["review"])
     expect(result.routes.find((route) => route.name === "domains/list")?.segments).toEqual(["domains", "list"])
-    expect(result.routes.find((route) => route.name === "review")?.sourcePath).toBe(path.join(root, "review", "flow.ts"))
+    expect(result.routes.find((route) => route.name === "review")?.sourcePath).toBe(
+      path.join(root, "review", "flow.ts")
+    )
   }
 
   it.effect("preserves registry entry precedence and diagnostics") {

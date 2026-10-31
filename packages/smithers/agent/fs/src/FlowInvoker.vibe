@@ -51,13 +51,16 @@ export const make = (implementation: FlowInvoker.Shape): FlowInvoker.Shape => {
 export const makeNoop = (overrides: Partial<FlowInvoker.Shape> = {}): FlowInvoker.Shape => {
   return make({
     invoke: overrides.invoke ?? (effect (_invocation) =>
-      try withSpan(effect {
-        throw new FsError({
-          code: "invocation_unavailable",
-          method: "FlowInvoker.invoke",
-          description: "No flow invoker is installed"
-        })
-      }, "FlowInvoker.invoke"))
+      try withSpan(
+        effect {
+          throw new FsError({
+            code: "invocation_unavailable",
+            method: "FlowInvoker.invoke",
+            description: "No flow invoker is installed"
+          })
+        },
+        "FlowInvoker.invoke"
+      ))
   })
 }
 

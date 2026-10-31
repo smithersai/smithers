@@ -95,12 +95,15 @@ describe("Route boundary", () => {
     expect((try failureOf(Route.snapshot(accessor))).code).toBe("invalid_route")
     expect(getter).not.toHaveBeenCalled()
 
-    const hostileOption = try sync((target) => new Proxy(target, {
-      has: () => {
-        throw new Error("trap")
-      }
-    }), {})
-    expect((try failureOf(Route.snapshot({ ...base, description: hostileOption as never }))).code).toBe("invalid_route")
+    const hostileOption = try sync((target) =>
+      new Proxy(target, {
+        has: () => {
+          throw new Error("trap")
+        }
+      }), {})
+    expect((try failureOf(Route.snapshot({ ...base, description: hostileOption as never }))).code).toBe(
+      "invalid_route"
+    )
     expect((try failureOf(Route.snapshot({ ...base, placement: hostileOption as never }))).code).toBe("invalid_route")
   }
 
@@ -135,11 +138,12 @@ describe("Route boundary", () => {
     })
     expect((try failureOf(Route.snapshot({ ...base, input: accessorPath as never }))).code).toBe("invalid_route")
     expect(pathGetter).not.toHaveBeenCalled()
-    const hostileRef = try sync((target) => new Proxy(target, {
-      getPrototypeOf: () => {
-        throw new Error("trap")
-      }
-    }), { _tag: "None" })
+    const hostileRef = try sync((target) =>
+      new Proxy(target, {
+        getPrototypeOf: () => {
+          throw new Error("trap")
+        }
+      }), { _tag: "None" })
     expect((try failureOf(Route.snapshot({ ...base, input: hostileRef as never }))).code).toBe("invalid_route")
 
     for (

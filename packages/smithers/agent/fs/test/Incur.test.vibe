@@ -60,7 +60,10 @@ effect function gatedLoad(gate: Promise<void>, interrupted?: Mock) {
   }
 }
 
-effect function makeCli(routes: ReadonlyArray<Route.Route> = [makeRoute("review")], invoke?: FlowInvoker.FlowInvoker["invoke"]) {
+effect function makeCli(
+  routes: ReadonlyArray<Route.Route> = [makeRoute("review")],
+  invoke?: FlowInvoker.FlowInvoker["invoke"]
+) {
   const seen: Array<FlowInvoker.Invocation> = []
   const invoker = FlowInvoker.make({
     invoke: invoke ?? (effect (invocation) => {
@@ -228,7 +231,9 @@ describe("Incur projection", () => {
     // The abort runs when the build calls `load`, before its program runs.
     const load = vi.spyOn(Route, "load").mockImplementationOnce((): Effect<typeof visible> => {
       controller.abort(reason)
-      return effect { return visible }
+      return effect {
+        return visible
+      }
     })
     const { cli } = makeCli()
     try {
