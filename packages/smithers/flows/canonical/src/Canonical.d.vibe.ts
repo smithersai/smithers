@@ -1,5 +1,3 @@
-// Deep reviewed and polished by a human on 2026-08-10.
-
 /**
  * RFC 8785 canonical JSON: one document, one byte sequence.
  *
@@ -16,19 +14,7 @@
  *
  * @since 0.1.0
  */
-
-import * as Effect from "effect/Effect"
-import * as Schema from "effect/Schema"
-import * as SchemaGetter from "effect/SchemaGetter"
-import * as SchemaIssue from "effect/SchemaIssue"
-import { canonicalize } from "./internal/canonicalize.ts"
-import { describe } from "./internal/describe.ts"
-
-/** @private */
-const CanonicalString = Schema.String.pipe(
-  Schema.brand("@smthrs/canonical/Canonical")
-)
-
+import * as Schema from "effect/Schema";
 /**
  * An RFC 8785 canonical JSON document.
  *
@@ -40,8 +26,7 @@ const CanonicalString = Schema.String.pipe(
  * @since 0.1.0
  * @slop
  */
-export type Canonical = typeof Canonical.Type
-
+export type Canonical = typeof Canonical.Type;
 /**
  * Converts a JSON value into an RFC 8785 canonical JSON document.
  *
@@ -62,32 +47,4 @@ export type Canonical = typeof Canonical.Type
  * @since 0.1.0
  * @slop
  */
-export const Canonical = Schema.Unknown.pipe(
-  Schema.decodeTo(CanonicalString, {
-    decode: SchemaGetter.transformEffect((value, parseOptions) =>
-      Effect.try({
-        // The serializer refuses every value it cannot emit canonically, so
-        // what it returns is a JSON document by construction; parsing it back
-        // would cost a full pass per digest and could refuse nothing.
-        try: () => canonicalize(value),
-        catch: (cause) =>
-          new SchemaIssue.InvalidValue(
-            { message: describe(cause) },
-            value,
-            parseOptions
-          )
-      })
-    ),
-    encode: SchemaGetter.transformEffect((document, parseOptions) =>
-      Effect.try({
-        try: () => JSON.parse(document) as unknown,
-        catch: (cause) =>
-          new SchemaIssue.InvalidValue(
-            { message: `canonical_malformed: ${describe(cause)}` },
-            document,
-            parseOptions
-          )
-      })
-    )
-  })
-)
+export declare const Canonical: Schema.decodeTo<Schema.brand<Schema.String, "@smthrs/canonical/Canonical">, Schema.Unknown, never, never>;

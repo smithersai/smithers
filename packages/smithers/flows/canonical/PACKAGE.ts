@@ -91,7 +91,7 @@ const securityReview = Smithers.SecurityReview({
         "The loneSurrogates \"escape\" mode reachable from a digest path that expects strict RFC 8785 output.",
         "A toJSON result or boxed primitive whose bytes depend on overridable toString/valueOf rather than the internal slot."
       ],
-      paths: ["src/internal/canonicalize.ts", "src/Canonical.ts", "src/Serializer.ts"]
+      paths: ["src/internal/canonicalize.ts", "src/Canonical.vibe", "src/Serializer.ts"]
     },
     {
       id: "canonical-resource-bounds",
@@ -147,7 +147,7 @@ const securityReview = Smithers.SecurityReview({
         "src/IssuePath.ts",
         "src/BoundedJson.ts",
         "src/internal/canonicalize.ts",
-        "src/Canonical.ts"
+        "src/Canonical.vibe"
       ]
     },
     {
