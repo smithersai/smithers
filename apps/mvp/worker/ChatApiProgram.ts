@@ -151,9 +151,18 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     // machines, `SandboxObject`s ChatApi hosts (worker/BranchSandboxes.ts).
     const branchApi = yield* BranchApi.make(database).pipe(Effect.provide(FetchHttpClient.layer))
     const secretsApi = yield* SecretsApi.make(yield* GitHubConfig.repository)
+    // A writer of the engine's schema (worker/ExecutionHost.ts `database`), which takes the engine's writer lock: steers
+    // are admitted to and delivered from a run's queue in its journal.
+    const engineWriter = Layer.unwrap(
+      Effect.map(
+        hyperdrive.connectionString,
+        (url) => ExecutionHost.database(Redacted.value(url), ExecutionHost.ENGINE_SCHEMA),
+      ),
+    )
     // External agents on runner machines (docs/features/agent-runners.md): the runners' own routes, which their token
     // authenticates, and an Admin's writes of a repository's runners and agents.
-    // A claim tells a TODO's attempt it no longer waits for a runner (decision 0135).
+    // A claim tells a TODO's attempt it no longer waits for a runner (decision 0135), and a heartbeat carries the
+    // messages Members sent the TODO's agent (docs/features/agent-runners.md#steering).
     const runnersApi = RunnersApi.make(database, {
       onClaimed: (task) =>
         task.context?.attemptId === undefined
@@ -161,6 +170,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
           : TodoSession.claimed(task.context.attemptId).pipe(Effect.provide(database)),
       // A TODO's agent writes its transcript to the TODO's run (decision 0141).
       runOf: TodoSession.runOf,
+      steering: TodoSession.steering(engineWriter),
     })
     const runnerAdmin = yield* RunnerAdmin.make(database)
     // Custom domains (docs/features/domains.md): a Maintainer's, through the deployment's provider; off without one.
@@ -222,12 +232,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
           (url) => ExecutionHost.readDatabase(Redacted.value(url), ExecutionHost.ENGINE_SCHEMA),
         ),
       ),
-      writer: Layer.unwrap(
-        Effect.map(
-          hyperdrive.connectionString,
-          (url) => ExecutionHost.database(Redacted.value(url), ExecutionHost.ENGINE_SCHEMA),
-        ),
-      ),
+      writer: engineWriter,
       schema: ExecutionHost.ENGINE_SCHEMA,
       flows: [Todo.Todo, RepoFlow.Run, RepoFlow.Jobs, CiJob.CiJob],
       // A repository's run stops on the Durable Object that holds it (docs/features/actions.md#acts).

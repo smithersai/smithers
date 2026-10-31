@@ -20,7 +20,7 @@ import {
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link } from "@tanstack/react-router"
 import { ANSWER, OPEN, REFUSAL_WORDS, RESUME, RETRY, RETRY_FROM, RETRY_LATEST, STOP } from "../contract"
-import { actsOf, journalOf, missingOf, repoRunStateOf, retriesFrom, selectedStep } from "../page"
+import { actsOf, agentStopOf, journalOf, missingOf, repoRunStateOf, retriesFrom, selectedStep } from "../page"
 import { headerStatusOf } from "../todoRun"
 import { graphOf, runTitle } from "../graph"
 import type { RunsActions } from "../runs"
@@ -69,6 +69,7 @@ function ReadRunPage({ page, view, actions, fromRuns }: { page: RunPage; view: R
   const steps = graph.steps
   const shown = selectedStep(steps, view.selected)
   const acts = actsOf(inspection, now, journalOf(page), repo !== null)
+  const agentStop = agentStopOf(inspection, view)
   const busy = view.acting !== null
   // Retry from here: the selected step, when it is this run's own and offers it.
   const from = shown?.node !== undefined && shown.node.runId === run.runId &&
@@ -92,13 +93,14 @@ function ReadRunPage({ page, view, actions, fromRuns }: { page: RunPage; view: R
       <RunHeader
         title={runTitle(run)}
         state={headerStatusOf(run)}
-        cancelRequested={run.cancelRequestedAtMs !== null}
+        cancelRequested={run.cancelRequestedAtMs !== null || agentStop === "stopping"}
+        {...(agentStop === "stopped" ? { word: "Stopped" as const } : {})}
         startedAtMs={run.startedAtMs ?? run.createdAtMs}
         finishedAtMs={run.finishedAtMs}
         now={now}
         actions={
           <>
-            {acts.stop ? <Button variant="outline" disabled={busy} onClick={actions.stop}>{STOP}</Button> : null}
+            {acts.stop && agentStop === null ? <Button variant="outline" disabled={busy} onClick={actions.stop}>{STOP}</Button> : null}
             {acts.resume ? <Button variant="outline" disabled={busy} onClick={actions.resume}>{RESUME}</Button> : null}
             {acts.retry ? <Button disabled={busy} onClick={() => actions.retry("pinned")}>{RETRY}</Button> : null}
             {acts.retry && run.flowName === "flow/run"

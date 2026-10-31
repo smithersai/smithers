@@ -18,7 +18,11 @@ ACP agent ─ session/update ─▶ scrub, bound, number
 - **What leaves.** Every `session/update` the agent streams, as `{ seq, at, kind, update }`: `seq` counts from 0 within
   the job's generation, `at` is when the runner received it, `kind` is the update's `sessionUpdate`. The agent's slash
   commands and configuration options (`available_commands_update`, `config_option_update`) are dropped. The runner adds
-  `_smithers/turn { stopReason }` when a prompt turn ends and `_smithers/end { outcome }` when the session ends.
+  `_smithers/turn { stopReason }` when a prompt turn ends, a steer's cancelled turn included; `_smithers/steer { id,
+  mode }` (never the words) when it hands a person's [steer](runs.md#steering) to the agent; `_smithers/cancel {}` when
+  the host stops the job, before the agent hears it (a person's [Stop](runs.md#stopping-a-todos-agent), the agent's hours
+  running out, or its run [dying](todos.md)); and `_smithers/end { outcome }`
+  when the session ends.
   Nothing but `session/update` is read, so an adapter's `_auth/*` notices, which carry the account, never leave.
 - **Scrubbed.** Every string is scrubbed before it is spooled: the profile's `secretEnv` values and its `prestart`
   environment, then `sk-` and `sess-` keys, `Bearer` credentials, GitHub tokens, three-part JWTs and email addresses.
@@ -88,7 +92,7 @@ A run whose steps include `agent/Session` shows the Transcript panel on its page
 replays the run from the start, checks its own digest against the run's (`data-verified`), then follows live. It reads
 ACP kinds generically: chunks of one message join into one message (by `messageId`), a tool call is one row whose
 title and status its updates change, a plan is a checklist, usage shows the latest figures (cost only when the agent
-reports it), and the runner's turn ends and session end read in words. Every event is text; nothing renders as markup.
+reports it), and the runner's turn ends, a steer, a stop and the session end read in words. Every event is text; nothing renders as markup.
 
 A socket that drops dials again after 1 s doubling to 30 s, from the last event the panel holds, so it holds each event
 once; after 30 minutes without the run it closes, saying the transcript couldn't be reached. Before dialing again it

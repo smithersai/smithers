@@ -31,13 +31,13 @@ export const decodeFrame = Schema.decodeUnknownOption(Schema.fromJsonString(Fram
 
 /**
  * One thing the panel shows, folded from the events: a `message` (the agent's text, or a prompt it was given), a `tool`
- * call with its title and status, a `plan` as a checklist, the agent's `usage`, a `turn` that ended, or the session's
- * `end`. `order` is the `n` of its first event, so items keep the order they began in.
+ * call with its title and status, a `plan` as a checklist, the agent's `usage`, a `turn` that ended, a `steer` a person
+ * sent, a `stop` the host sent, or the session's `end`. `order` is the `n` of its first event, so items keep the order they began in.
  */
 export const Item = Schema.Struct({
   id: Schema.String,
   order: Schema.Int,
-  kind: Schema.Literals(["message", "thought", "prompt", "tool", "plan", "usage", "turn", "end", "other"]),
+  kind: Schema.Literals(["message", "thought", "prompt", "tool", "plan", "usage", "turn", "steer", "stop", "end", "other"]),
   generation: Schema.Int,
   text: Schema.String,
   status: Schema.NullOr(Schema.String),

@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest"
 import { ACTIONS_LIMIT } from "../actions/contract"
 import {
   actsOf,
+  agentStopOf,
   cloudHref,
   cloudRowOf,
   deviceActor,
@@ -366,10 +367,28 @@ test("stall detection uses the latest event from More as well as the first journ
 test("failed system TODO runs have Retry while remote running TODOs do not", () => {
   const input = { repoId: "github/octo/hello", number: 1 }
   const base = { runId: "todo:12345678-1234-1234-1234-123456789abc", flowName: "todo", input: value(JSON.stringify(input)), status: "running", result: null }
-  const inspection = { run: base, journal: { events: [] } } as unknown as Parameters<typeof actsOf>[0]
+  const inspection = { run: base, steps: [], journal: { events: [] } } as unknown as Parameters<typeof actsOf>[0]
   expect(actsOf(inspection, 0).retry).toBe(false)
   expect(actsOf({ ...inspection, run: { ...inspection.run, status: "completed", result: value(JSON.stringify({ state: "failed" })) } }, 0).retry).toBe(true)
   expect(actsOf({ ...inspection, run: { ...inspection.run, status: "completed", result: value(JSON.stringify({ state: "merged" })) } }, 0).retry).toBe(false)
+})
+
+test("a TODO run offers Stop while its external agent works, never for Smithers' own; this tab reads Stopping, then Stopped", () => {
+  const base = { runId: "todo:12345678-1234-1234-1234-123456789abc", flowName: "todo", input: value("{}"), status: "running", result: null }
+  const withSteps = (steps: ReadonlyArray<{ action: string; status: string }>, status = "running") =>
+    ({ run: { ...base, status }, steps, journal: { events: [] } }) as unknown as Parameters<typeof actsOf>[0]
+  const external = withSteps([{ action: "todo/Agent", status: "completed" }, { action: "agent/Session", status: "waiting" }])
+  expect(actsOf(external, 0).stop).toBe(true)
+  expect(actsOf(withSteps([{ action: "agent/Session", status: "running" }]), 0).stop).toBe(true)
+  expect(actsOf(withSteps([{ action: "todo/Implement", status: "running" }]), 0).stop).toBe(false)
+  expect(actsOf(withSteps([{ action: "agent/Session", status: "failed" }]), 0).stop).toBe(false)
+  expect(actsOf(withSteps([{ action: "agent/Session", status: "running" }], "failed"), 0).stop).toBe(false)
+  // Stopping and Stopped are this tab's own, for the run it stopped.
+  expect(agentStopOf(external, { stopping: null })).toBeNull()
+  expect(agentStopOf(external, { stopping: "todo:another" })).toBeNull()
+  expect(agentStopOf(external, { stopping: base.runId })).toBe("stopping")
+  expect(agentStopOf(withSteps([{ action: "agent/Session", status: "failed" }]), { stopping: base.runId })).toBe("stopped")
+  expect(agentStopOf(withSteps([{ action: "agent/Session", status: "completed" }]), { stopping: base.runId })).toBeNull()
 })
 
 test("only the known Runs origin survives search decoding", () => {

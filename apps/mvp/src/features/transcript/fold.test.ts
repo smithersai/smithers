@@ -50,13 +50,15 @@ describe("the transcript fold", () => {
     ])
   })
 
-  test("a plan is the newest checklist; usage the newest figures; the runner's turns and end read plainly", () => {
+  test("a plan is the newest checklist; usage the newest figures; the runner's turns, steers, stops and end read plainly", () => {
     const rows = [
       row("plan", { entries: [{ content: "Read", status: "completed" }, { content: "Write", status: "pending" }] }),
       row("usage_update", { used: 1234, size: 200000, cost: { amount: 0.5, currency: "USD" } }),
       row("plan", { entries: [{ content: "Write", status: "in_progress" }, {}] }),
       row("usage_update", { used: 2000 }),
       row("_smithers/turn", { stopReason: "end_turn" }),
+      row("_smithers/steer", { id: "s1", mode: "cancel_prompt" }),
+      row("_smithers/cancel", {}),
       row("_smithers/truncated", {}),
       row("_smithers/end", { outcome: "done" }),
     ]
@@ -66,11 +68,13 @@ describe("the transcript fold", () => {
       ["plan", ""],
       ["usage", "2,000 tokens"],
       ["turn", "end_turn"],
+      ["steer", ""],
+      ["stop", ""],
       ["other", "truncated"],
       ["end", "done"],
     ])
     expect(items[0]!.entries).toEqual([{ content: "Write", status: "in_progress" }, { content: "", status: "pending" }])
-    expect(changed).toHaveLength(5)
+    expect(changed).toHaveLength(7)
     expect(fold(EMPTY, row("usage_update", { used: 5, size: 10, cost: { amount: 1, currency: "EUR" } })).changed[0]!.text)
       .toBe("5 of 10 tokens · EUR 1.00")
   })

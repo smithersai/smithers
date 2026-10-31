@@ -1,7 +1,9 @@
 import type { Page } from "@playwright/test"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { createServer, type IncomingMessage, request as httpRequest, type Server } from "node:http"
 import { request as httpsRequest } from "node:https"
 import type { AddressInfo } from "node:net"
+import { join } from "node:path"
 import { expect, test } from "./devices"
 import { step } from "./fixtures"
 import { github } from "./github"
@@ -21,6 +23,10 @@ import { baseURL, onThisMachine, requires } from "./target"
 // proxy of the spec's own, which refuses the runner's transcript posts for a minute, after which the transcript catches
 // up with every event once and in order; events after that reach the page within 3 s at the 95th percentile; and a
 // second browser, opening the run afresh, replays the same events with the run's own digest.
+//
+// "steers" and "stops" (decision 0142): a person steers the agent from the run's page and the steer's line is in the
+// pull request; a person stops an agent parked in a 10-minute command, the runner ends its whole process tree, and
+// nothing reaches GitHub. The run's Transcript panel shows each steer and the stop where they reached the agent.
 //
 // It writes to GitHub, so it runs only signed in through the GitHub App, against a deployment or a dev build, on a
 // scratch repository the test account administers (`agentRunner`, e2e/target.ts). It never merges. The runner's setup
@@ -208,4 +214,163 @@ test("agent runner: an external agent's TODO publishes a pull request, watched l
     await runner?.stop()
     proxy.server.close()
   }
+})
+
+/** Commits a TODO with `prompt` from the stack page; answers its row. */
+const commitTodo = async (page: Page, title: string, prompt: string) => {
+  await step("A person commits a TODO", async () => {
+    await page.getByRole("button", { name: "New TODO", exact: true }).click()
+    const draft = page.getByRole("form", { name: "TODO draft" })
+    await draft.getByLabel("Title", { exact: true }).fill(title)
+    await draft.getByLabel("Prompt", { exact: true }).fill(prompt)
+    await draft.getByRole("button", { name: "Commit", exact: true }).click()
+  })
+  return page.getByRole("region", { name: `${repo} stack` }).locator("[data-slot=issues-row]", { hasText: title })
+}
+
+/** The App's open pull request on TODO `number`'s branch, and the files it changes. */
+const pullOf = async (page: Page, number: string) => {
+  const pulls = await github<Array<{ number: number; head: { ref: string }; user: { type: string } }>>(
+    page,
+    `/repos/${repo}/pulls?state=open&per_page=100`,
+  )
+  const pull = pulls.find((each) => each.head.ref.startsWith(`smithers/t${number}-`))
+  expect(pull, "one pull request on the TODO's branch").toBeDefined()
+  expect(pull!.user.type).toBe("Bot")
+  const files = await github<Array<{ filename: string; patch?: string }>>(page, `/repos/${repo}/pulls/${pull!.number}/files`)
+  return { pull: pull!, files }
+}
+
+const numberOf = async (row: ReturnType<Page["locator"]>) => (await row.textContent())!.match(/T(\d+)/)![1]!
+
+/**
+ * One test's runner on Maya's own device, with the stack's lanes independent while it runs; `body` answers the TODO
+ * it committed, which is dropped after, and the stack, the runner and its agent are put back whatever happens.
+ */
+const withRunner = async (
+  devices: { readonly open: (...names: Array<string>) => Promise<ReadonlyArray<{ readonly page: Page }>> },
+  body: (context: { readonly page: Page; readonly runner: Runner; readonly word: string }) => Promise<ReturnType<Page["locator"]>>,
+) => {
+  const [maya] = await devices.open("Maya")
+  const page = maya!.page
+  const word = `a${Date.now().toString(36)}`
+  let runner: Runner | undefined
+  let row: ReturnType<Page["locator"]> | undefined
+  try {
+    await step("An Admin registers a runner and names the coding agent", async () => {
+      await page.goto(`/${repo}/stack`)
+      runner = await startRunner(page, repo, word, 1)
+      expect(await configureStack(page, repo, 1, "independent")).toMatchObject({ status: 202 })
+    })
+    row = await body({ page, runner: runner!, word })
+  } catch (error) {
+    await test.info().attach("runner.log", { body: runner?.log() ?? "" })
+    throw error
+  } finally {
+    const number = row === undefined ? undefined : (await row.textContent({ timeout: 5_000 }).catch(() => null))?.match(/T(\d+)/)?.[1]
+    if (number !== undefined) await dropTodo(page, repo, Number(number))
+    await configureStack(page, repo, 1, "stacked")
+    await runner?.stop()
+  }
+}
+
+test("agent runner steers: a person's message reaches the agent on its runner and its change is in the pull request", {
+  annotation: { type: "summary", description: "Steer an external agent from its run page; it reads Delivered and the PR has its line." },
+}, async ({ devices }) => {
+  requires("agentRunner")
+  test.setTimeout(15 * 60_000)
+  await withRunner(devices, async ({ page, word }) => {
+    const row = await commitTodo(page, `Steered ${word}`, `run \`sleep 20\`\nadd the line \`alpha ${word}\` to \`NOTES.md\``)
+    const steer = `add the line \`steer ${word}\` to \`NOTES.md\``
+    const messages = page.getByRole("region", { name: "Steer" }).getByRole("listitem").filter({ hasText: `steer ${word}` })
+    await step("Watch opens its run on Cloudflare while the agent works", async () => {
+      await expect(row).toHaveAttribute("data-status", "running", { timeout: 60_000 })
+      await row.getByRole("link", { name: "Watch" }).click()
+      await expect(page).toHaveURL(/\/app\/runs\/todo(%3A|:)/, { timeout: 30_000 })
+    })
+    await step("Steer the agent: Sent at once, then Delivered", async () => {
+      const composer = page.getByRole("textbox", { name: "Steer the agent" })
+      await expect(composer).toBeVisible({ timeout: 60_000 })
+      const sentAt = Date.now()
+      await composer.fill(steer)
+      await composer.press("Enter")
+      await expect(messages).toHaveAttribute("data-state", /sent|delivered/, { timeout: 5_000 })
+      await expect(messages).toHaveAttribute("data-state", "delivered", { timeout: 60_000 })
+      expect(Date.now() - sentAt).toBeLessThan(60_000)
+    })
+    await step("The run's transcript shows the steer where it reached the agent", async () => {
+      const panel = page.getByRole("region", { name: "Transcript", exact: true })
+      await expect(panel.getByText("A person steered the agent.")).toBeVisible({ timeout: 30_000 })
+    })
+    await step("Its pull request has the task's line and the steer's", async () => {
+      await page.goto(`/${repo}/stack`)
+      await expect(row).toHaveAttribute("data-status", /in_review|failed/, { timeout: 10 * 60_000 })
+      await expect(row).toHaveAttribute("data-status", "in_review")
+      const { files } = await pullOf(page, await numberOf(row))
+      expect(files.map((file) => file.filename)).toEqual(["NOTES.md"])
+      expect(files[0]!.patch).toContain(`+alpha ${word}`)
+      expect(files[0]!.patch).toContain(`+steer ${word}`)
+    })
+    return row
+  })
+})
+
+test("agent runner stops: Stop ends a parked agent's whole process tree and nothing reaches GitHub", {
+  annotation: { type: "summary", description: "Stop an external agent parked in a long command: Stopping, then Stopped, no branch." },
+}, async ({ devices }) => {
+  requires("agentRunner")
+  test.setTimeout(15 * 60_000)
+  await withRunner(devices, async ({ page, runner, word }) => {
+    const row = await commitTodo(page, `Long sleep ${word}`, "run `sleep 600` detached")
+    const sleepers = () => {
+      const directory = join(runner.state, "agent")
+      return existsSync(directory)
+        ? readdirSync(directory).filter((name) => name.startsWith("detached-")).map((name) =>
+          Number(readFileSync(join(directory, name), "utf8"))
+        )
+        : []
+    }
+    const alive = (pid: number) => {
+      try {
+        process.kill(pid, 0)
+        return true
+      } catch {
+        return false
+      }
+    }
+    await step("Its agent runs a 10-minute command on the runner", async () => {
+      await expect(row).toHaveAttribute("data-status", "running", { timeout: 60_000 })
+      await expect.poll(() => sleepers().length, { timeout: 60_000 }).toBe(1)
+      await row.getByRole("link", { name: "Watch" }).click()
+      await expect(page).toHaveURL(/\/app\/runs\/todo(%3A|:)/, { timeout: 30_000 })
+    })
+    const number = await numberOf(row)
+    const [sleeper] = sleepers()
+    await step("Stop: the run reads Stopping, and the command's process is gone within 20 s", async () => {
+      // Parked between its step's probes: the step is waiting on its job, which no process here holds.
+      await page.waitForTimeout(30_000)
+      const asked = Date.now()
+      await page.getByRole("button", { name: "Stop", exact: true }).click()
+      await expect(page.getByText("Stopping", { exact: true })).toBeVisible({ timeout: 10_000 })
+      await expect.poll(() => alive(sleeper!), { timeout: 20_000 }).toBe(false)
+      expect(Date.now() - asked).toBeLessThan(20_000)
+    })
+    await step("The run reads Stopped, the TODO Stopped, and it offers Retry", async () => {
+      await expect(page.getByText("Stopped", { exact: true }).first()).toBeVisible({ timeout: 90_000 })
+      const panel = page.getByRole("region", { name: "Transcript", exact: true })
+      await expect(panel.getByText("Smithers stopped the agent.")).toBeVisible()
+      await expect(panel.getByText("The agent was stopped.")).toBeVisible({ timeout: 60_000 })
+      await page.goto(`/${repo}/stack/${number}`)
+      const todo = page.getByRole("article", { name: new RegExp(`Long sleep ${word}`) })
+      await expect(todo).toHaveAttribute("data-status", "failed", { timeout: 60_000 })
+      await expect(todo).toContainText("Stopped")
+      await expect(todo.getByRole("button", { name: "Retry", exact: true })).toBeVisible()
+    })
+    await step("Nothing reached GitHub: no branch for the TODO", async () => {
+      const branches = await github<Array<{ name: string }>>(page, `/repos/${repo}/branches?per_page=100`)
+      expect(branches.map((branch) => branch.name).filter((name) => name.startsWith(`smithers/t${number}-`))).toEqual([])
+    })
+    await page.goto(`/${repo}/stack`)
+    return row
+  })
 })

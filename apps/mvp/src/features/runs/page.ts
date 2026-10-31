@@ -12,8 +12,11 @@ import {
   ON_ANOTHER_DEVICE,
   runPath,
   settled,
+  EXTERNAL_AGENT_ACTION,
+  RUNNER_STEER_BOUNDARY,
   steerable,
   STEERED_ACTION,
+  stoppable,
   type SteerRefusal,
   THIS_DEVICE,
 } from "./contract"
@@ -66,7 +69,7 @@ export const STALLED_AFTER_MS = 60_000
  * Which acts the page offers on a run at `now`: Stop while it hasn't settled and no stop was asked; Retry once it
  * settled, when its flow is retried; Resume while it waits, or runs but has recorded nothing for `STALLED_AFTER_MS`.
  * A Cloudflare TODO offers Retry through todo/Retry, which allocates its attempt through the stack writer.
- * Stop and Resume remain local-engine acts; a remote TODO stops when its TODO drops.
+ * Stop and Resume remain local-engine acts; a remote TODO stops when its TODO drops, or its external agent by Stop.
  */
 export const actsOf = (
   inspection: Inspection,
@@ -84,7 +87,14 @@ export const actsOf = (
       resume: false,
     }
   }
-  if (isRemoteRun(run.runId)) return { stop: false, retry: failedTodoRun(run) && todoRetryPayload(run.input) !== undefined, resume: false }
+  // A TODO's run stops its external agent while it works; Smithers' own agent stops when its TODO is dropped.
+  if (isRemoteRun(run.runId)) {
+    return {
+      stop: stoppable(run, inspection.steps),
+      retry: failedTodoRun(run) && todoRetryPayload(run.input) !== undefined,
+      resume: false,
+    }
+  }
   const last = events.at(-1)?.emittedAtMs ?? run.createdAtMs
   return {
     stop: !settled(run.status) && run.cancelRequestedAtMs === null,
@@ -92,6 +102,19 @@ export const actsOf = (
     resume: run.status === "suspended" || (run.status === "running" && now - last >= STALLED_AFTER_MS),
   }
 }
+
+/**
+ * Where a TODO run's external agent stands after this tab's Stop (docs/features/runs.md#stopping-a-todos-agent):
+ * `stopping` while its step still works, `stopped` once it ended; none for a run this tab didn't stop.
+ */
+export const agentStopOf = (inspection: Inspection, view: Pick<RunView, "stopping">): "stopping" | "stopped" | null =>
+  view.stopping !== inspection.run.runId
+    ? null
+    : stoppable(inspection.run, inspection.steps)
+    ? "stopping"
+    : inspection.steps.some((step) => step.action === EXTERNAL_AGENT_ACTION && step.status === "failed")
+    ? "stopped"
+    : null
 
 /**
  * The steps of a run that offer Retry from here (ruling FLOW-11), by node id: on a settled run of this device whose flow
@@ -302,7 +325,8 @@ export const steerOpen = (inspection: Inspection): boolean =>
  * its promotions, when a boundary handed them to the agent's next turn), and this device's own that the journal doesn't
  * show yet, from the outbox (`sending`) and the route's answers (`sent`). A promotion alone is no proof the agent read
  * it: the run may stop before that turn. A message is Delivered once the agent acted after its promotion, a cell call
- * the journal records (`Journal.CallFact`) or its step's answer.
+ * the journal records (`Journal.CallFact`) or its step's answer; an external agent's runner promotes a message only once
+ * the agent answered after it (`RUNNER_STEER_BOUNDARY`), so its promotion is Delivered.
  */
 export const steersOf = (
   page: RunPage,
@@ -313,7 +337,7 @@ export const steersOf = (
   if (inspection === null) return []
   const runId = inspection.run.runId
   const events = [...inspection.journal.events, ...(page.more as Inspection["journal"]["events"])]
-  const promotions = new Map<string, { readonly seq: number; readonly at: number }>()
+  const promotions = new Map<string, { readonly seq: number; readonly at: number; readonly confirmed: boolean }>()
   let lastAct = -1
   const admitted: Array<SteerItem> = []
   for (const event of events) {
@@ -323,7 +347,13 @@ export const steersOf = (
       const promoted = decodePromoted(payloadOf(event))
       if (Option.isSome(promoted) && promoted.value.targetLineageId === runId) {
         for (const id of promoted.value.ids) {
-          if (!promotions.has(id)) promotions.set(id, { seq: event.seq, at: event.emittedAtMs })
+          if (!promotions.has(id)) {
+            promotions.set(id, {
+              seq: event.seq,
+              at: event.emittedAtMs,
+              confirmed: promoted.value.boundary.startsWith(RUNNER_STEER_BOUNDARY),
+            })
+          }
         }
       }
     } else if (event.eventType === NotificationEvent.AdmittedEventType) {
@@ -347,7 +377,9 @@ export const steersOf = (
     ?.settledAtMs ?? null
   const journaled = admitted.map((item): SteerItem => {
     const promoted = promotions.get(item.id)
-    const read = promoted !== undefined && (lastAct > promoted.seq || (answeredAt !== null && answeredAt >= promoted.at))
+    // A runner promotes a steer only once its agent answered after it: that promotion is the evidence.
+    const read = promoted !== undefined &&
+      (promoted.confirmed || lastAct > promoted.seq || (answeredAt !== null && answeredAt >= promoted.at))
     return read
       ? { ...item, state: "delivered", deliveredAtMs: promoted.at }
       : { ...item, state: open ? "sent" : "not_delivered" }

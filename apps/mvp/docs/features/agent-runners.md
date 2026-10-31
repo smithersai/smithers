@@ -95,8 +95,48 @@ agent's own session recorded. Nothing outside the runner module knows how.
 - **A retryable end.** A profile maps an agent's limit or exit to `Retryable`. The step starts the next generation,
   pinned to the same runner, whose checkout holds the work so far; the runner's `prestart` hook may pick another
   account. A runner that comes back without the checkout settles `machine_lost`.
-- **Stop.** Cancelling the run cancels the job; the runner's next heartbeat says so. It cancels the ACP turn, then ends
-  the agent's whole process tree and settles `Cancelled { processTreeGone }`.
+- **Stop.** A Member's Stop on the run's page stops the job ([Stop](#stop)); cancelling the run, as dropping its TODO
+  does, cancels it too. The runner's next heartbeat says so. It cancels the ACP turn, then ends the agent's whole process
+  tree and settles `Cancelled { processTreeGone }`. A run cancelled while `agent/Session` is parked between probes
+  stops its job through `@smthrs/flow`'s durable cancellation: the cancelled observation starts `agent/Session/stop` as
+  its own run, `cancel:<job key>`, whose one step cancels the job, so the stop reaches the runner although no process
+  held the step (decision [0142](../decisions/0142-stop-and-steer-external-agents.md)).
+
+## Steering
+
+A Member steers a TODO's external agent as they steer Smithers' own ([runs](runs.md#steering)): the message is admitted
+to the run's notification queue, and the run's page shows it. The runner reaches it, not the agent's step:
+
+```
+run page ─ Steer ─▶ POST /api/remote-runs/<run>/steers ─▶ the run's queue (Sent)
+runner heartbeat (10 s) ◀── { steers: [{ id, text }] }: the run's pending steers, rendered as Smithers' agent reads them
+   the runner hands each over once: _session/steering into the turn in flight, else cancel the turn, then prompt
+   the agent's next update ─▶ next heartbeat { delivered: [id] } ─▶ the queue promotes exactly those ids under
+   `runner:<job key>:<digest>` ─▶ the run page reads Delivered
+```
+
+- **Delivered means read.** The runner reports a steer only once the agent sent an update after it was handed over,
+  and the heartbeat route promotes those ids and no others (`DrainInput.ids`, `@smthrs/notifications`). A steer handed
+  over before a runner restart and never confirmed stays Sent, then Not delivered when the agent ends; it is never
+  handed over twice.
+- **Cancel, then prompt** is the fallback every ACP agent takes: an agent that doesn't advertise `_session/steering`
+  has its turn cancelled and is prompted with the steer and "Then continue the task." S0 found both coding agents' published
+  ACP adapters it probed take `_session/steering`. A runner profile's `steering: "prompt"` uses cancel-then-prompt
+  even so, for an agent whose native steering moves its running command to the background and ends its turn.
+- **The route** (`worker/runners/Api.ts`) carries steers only while the job holds its claim and isn't asked to stop. A
+  steering read that fails hands out none and still renews the lease; the runner reports its deliveries again.
+- **Cost.** Each heartbeat of a working job reads its run's pending steers from the engine's journal: about one read
+  every 10 s per job.
+
+## Stop
+
+A Member stops a TODO's external agent from the run's page while its `agent/Session` step works
+([runs](runs.md#stopping-a-todos-agent)). `POST /api/remote-runs/<run>/stop` (`worker/RemoteRuns.ts`) stops every
+open generation of the attempt's job in one statement (`TodoSession.stop`, `Jobs.stop`): a queued or retryable one ends
+`cancelled` at once, a claimed one gets `cancel` at its runner's next heartbeat, and a later generation's start finds
+its predecessor cancelled and queues nothing. The run is not cancelled: `agent/Session` reads the job `Cancelled` at
+its next probe and fails `cancelled`, and `todo/Fail` fails the TODO `stopped`, which keeps its place for Retry.
+Nothing reaches GitHub before Publish, so a stopped attempt leaves no branch.
 
 ## The runner protocol
 
@@ -105,8 +145,8 @@ Every request carries the runner's token as `Authorization: Bearer`. Schemas: `@
 | Route | Body | Answer |
 |---|---|---|
 | `POST /api/runners/claim` | `{ profiles, free, running, waitSeconds ≤ 25 }` | `{ job }` or `{ job: null }`; a held job not in `running` comes back first, `reclaimed: true` |
-| `POST /api/runners/heartbeat` | `{ key, claim }` | `{ held, cancel, leaseSeconds: 45 }` |
-| `POST /api/runners/settle` | `{ key, claim, outcome }` | `{ recorded }`; `false` when the claim no longer holds the job |
+| `POST /api/runners/heartbeat` | `{ key, claim, delivered? }` | `{ held, cancel, leaseSeconds: 45, steers? }`: the job's undelivered steers, `{ id, text }` |
+| `POST /api/runners/settle` | `{ key, claim, outcome, delivered? }` | `{ recorded }`; `false` when the claim no longer holds the job. `delivered` records the steers the agent read since the last heartbeat that reported them |
 | `POST /api/runners/events` | `{ key, claim, events }` | `{ next }`: the agent's transcript ([transcripts](agent-transcripts.md#the-events-route)) |
 
 A job is `{ key, claim, generation, task, deadline, leaseSeconds, reclaimed }`; its task is `{ agent, repository, base,
@@ -134,8 +174,10 @@ Nothing here syncs to browsers yet; the fleet view (slice S5) reads them.
 
 - Spans: `agent.external.{start,status,collect,cancel,abandon}` with the job's key, agent and generation;
   `agent.jobs.{start,status,cancel}`; `runner.{claim,heartbeat,settle}`; `runner.admin`, `runner.admin_request`;
-  `todo.agent`, `todo.received`.
-- Metrics: `smithers_external_agent_jobs{agent,outcome,reason}`, `smithers_agent_jobs{op,outcome}`,
+  `todo.agent`, `todo.received`, `todo.stop`, `agent.jobs.stop`; the runner's `runner.steer` log line (mode, outcome,
+  duration) and the heartbeat line's `delivered`, `steers` and `steering` (a failed read's code) fields.
+- Metrics: `smithers_external_agent_jobs{agent,outcome,reason}`, `smithers_agent_jobs{op,outcome}` (`op` `stop`:
+  `stopping` or `ended`),
   `smithers_runner_requests{route,outcome}`, `smithers_runner_admin_requests`, `smithers_runner_admin_writes`.
 - Logs carry runner names, job keys, agent names and outcome codes. Never a token, a prompt, a summary, a file, argv,
   environment or an account path (OBS-5).
@@ -150,6 +192,10 @@ Nothing here syncs to browsers yet; the fleet view (slice S5) reads them.
   (store, routes and Admin writes on Postgres); `worker/runners/TodoRunner.test.ts` (a TODO to a pull request through a
   real `smthrs runner` process and the deterministic ACP test agent, the runner killed mid-job and resumed);
   `e2e/agent-runner.spec.ts` (the same through `alchemy dev` and GitHub).
+- Steering and Stop (slice S3): `worker/runners/TodoRunner.test.ts` steers a TODO's agent on a real runner process into
+  its pull request and stops one parked in a detached 10-minute command (process gone, TODO `stopped`, nothing on
+  GitHub, Retry); `worker/runners/Runners.test.ts` covers a faulty steering store and `Jobs.stop`;
+  `e2e/agent-runner.spec.ts` "steers" and "stops" run the same through the browser;
+  `packages/smithers/evals/agent-steer-cli.eval.ts` steers and stops real agents through a real runner.
 - The agent's transcript, live on the run page: [Transcripts of external agents](agent-transcripts.md).
-- Not built yet: Stop and steering on the run page (S3), the fleet view and alerts (S5), choosing
-  an agent per TODO, and a Settings page for runners and agents.
+- Not built yet: the fleet view and alerts (S5), choosing an agent per TODO, and a Settings page for runners and agents.

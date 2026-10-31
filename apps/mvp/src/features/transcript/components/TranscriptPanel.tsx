@@ -50,6 +50,10 @@ function Shown({ item }: { item: Item }) {
       return <p className="transcript-meta" data-kind="usage">{item.text}</p>
     case "turn":
       return <p className="transcript-meta" data-kind="turn">Turn ended: {item.text.replaceAll("_", " ")}</p>
+    case "steer":
+      return <p className="transcript-meta" data-kind="steer">A person steered the agent.</p>
+    case "stop":
+      return <p className="transcript-meta" data-kind="stop">Smithers stopped the agent.</p>
     case "end":
       return (
         <ChatMessage role="system">

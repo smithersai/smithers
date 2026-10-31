@@ -11,7 +11,7 @@ import { codeOf } from "../ErrorCode.ts"
 // runner that stops answering keeps its job: a missing heartbeat doesn't prove its agent stopped, so the job reads
 // Running until the runner comes back or the agent's hours are up. Nothing here logs a task.
 
-/** Job store operations, by `op` (`start`, `status`, `cancel`) and `outcome`. */
+/** Job store operations, by `op` (`start`, `status`, `cancel`, `stop`) and `outcome`. */
 export const operations = Metric.counter("smithers_agent_jobs", {
   description: "Agent job store operations, by op and outcome",
   incremental: true,
@@ -63,20 +63,25 @@ export const make = <E>(database: Layer.Layer<SqlClient.SqlClient, E>) => {
       const { origin, generation } = AgentRunner.parseKey(key)
       const sql = yield* SqlClient.SqlClient
       // A later generation continues the work so far: on the runner that ran the one before it, after the wait that
-      // one's retryable end asked for, by the first generation's deadline.
+      // one's retryable end asked for, by the first generation's deadline. One whose step was stopped (`stop`, which
+      // ends the generation before it cancelled) is cancelled as it is queued, so nothing claims it.
       const inserted = yield* sql`
         WITH previous AS (
-          SELECT runner_id, deadline_at,
+          SELECT runner_id, deadline_at, status = 'cancelled' AS stopped,
             CASE WHEN status = 'retryable' AND outcome ? 'afterSeconds'
               THEN settled_at + (outcome->>'afterSeconds')::int * interval '1 second' END AS not_before
           FROM agent_jobs WHERE key = ${`${origin}#g${generation - 1}`})
         INSERT INTO agent_jobs (key, origin, generation, repo_id, agent, profile, labels, task, pinned_runner, not_before,
-          deadline_at)
-        VALUES (${key}, ${origin}, ${generation}, ${task.repository}, ${task.agent.name}, ${task.agent.profile},
+          deadline_at, status, outcome, cancel_requested, settled_at)
+        SELECT ${key}, ${origin}, ${generation}, ${task.repository}, ${task.agent.name}, ${task.agent.profile},
           ARRAY(SELECT jsonb_array_elements_text(${JSON.stringify(task.agent.labels)}::jsonb)),
           ${JSON.stringify(task)}::jsonb,
           (SELECT runner_id FROM previous), (SELECT not_before FROM previous),
-          COALESCE((SELECT deadline_at FROM previous), now() + ${task.agent.maxHours}::int * interval '1 hour'))
+          COALESCE((SELECT deadline_at FROM previous), now() + ${task.agent.maxHours}::int * interval '1 hour'),
+          CASE WHEN stopped THEN 'cancelled' ELSE 'queued' END,
+          CASE WHEN stopped THEN '{"_tag":"Cancelled","processTreeGone":true}'::jsonb END,
+          stopped, CASE WHEN stopped THEN now() END
+        FROM (SELECT COALESCE((SELECT stopped FROM previous), false) AS stopped) AS ended
         ON CONFLICT (key) DO NOTHING RETURNING key`
       return inserted.length > 0
     }).pipe(
@@ -137,6 +142,28 @@ export const make = <E>(database: Layer.Layer<SqlClient.SqlClient, E>) => {
 
   return AgentRunner.AgentJobs.of({ start: (task, key) => Effect.asVoid(start(task, key)), status, cancel })
 }
+
+/**
+ * Stops the step `origin` names, every generation of it, for a person's Stop: a queued generation, or one that ended
+ * retryable and waits for the next, ends cancelled now; a claimed one ends when its runner, told at its next
+ * heartbeat, has stopped the agent's whole process tree and settled. A later generation's start finds its predecessor
+ * cancelled and queues nothing. Answers how many generations were still open: none means the step had ended.
+ */
+export const stop = (origin: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const rows = yield* sql<{ readonly key: string; readonly status: Status }>`
+      UPDATE agent_jobs SET cancel_requested = true,
+        status = CASE WHEN status IN ('queued', 'retryable') THEN 'cancelled' ELSE status END,
+        outcome = CASE WHEN status IN ('queued', 'retryable')
+          THEN '{"_tag":"Cancelled","processTreeGone":true}'::jsonb ELSE outcome END,
+        settled_at = CASE WHEN status IN ('queued', 'retryable') THEN now() ELSE settled_at END,
+        updated_at = now()
+      WHERE origin = ${origin} AND status IN ('queued', 'claimed', 'retryable')
+      RETURNING key, status`
+    yield* Metric.update(Metric.withAttributes(operations, { op: "stop", outcome: rows.length === 0 ? "ended" : "stopping" }), 1)
+    return rows.length
+  }).pipe(Effect.withSpan("agent.jobs.stop", { attributes: { "smithers.agent.job.origin": origin } }))
 
 /** `AgentRunner.AgentJobs` on Postgres through `database`, whose own requirements it captures when built. */
 export const layer = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>

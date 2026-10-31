@@ -116,6 +116,8 @@ export const RunView = Schema.Struct({
   listLoaded: Schema.optionalKey(Schema.Boolean),
   /** The runs on Cloudflare have answered once, read or refused. */
   cloudLoaded: Schema.optionalKey(Schema.Boolean),
+  /** The TODO run whose external agent this tab asked to stop, and ChatApi took it (docs/features/runs.md). */
+  stopping: Schema.optionalKey(Schema.NullOr(Schema.String)),
 })
 export type RunView = typeof RunView.Type
 

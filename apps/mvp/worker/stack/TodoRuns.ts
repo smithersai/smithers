@@ -8,6 +8,7 @@ import type { FlowStarter } from "../Flows.ts"
 import * as Todo from "../flows/Todo.ts"
 import * as TodoBaseClosed from "../flows/TodoBaseClosed.ts"
 import * as TodoDrop from "../flows/TodoDrop.ts"
+import * as TodoSession from "../flows/TodoSession.ts"
 import * as Stack from "./Stack.ts"
 
 /** The production adapter from persisted stack receipts to remote executions. */
@@ -107,6 +108,8 @@ export const settleCrashed = <E, R>(executionId: string, engine: Layer.Layer<Sql
       FROM todo_attempts WHERE id::text = ${executionId.slice(todoExecutionId("").length)}`
     if (attempt === undefined) return []
     const reported = yield* Stack.report(attempt, { kind: "finished", state: "failed", failure: "crashed" }, { runs: true })
+    // An external agent still at work stops with its run: no step waits on its job now, and a settled run offers no Stop.
+    yield* TodoSession.stop(attempt.attemptId)
     yield* Metric.update(Metric.withAttributes(crashes, { outcome: reported.outcome }), 1)
     yield* (reported.outcome === "applied" ? Effect.logWarning : Effect.logInfo)("todo.crashed").pipe(
       Effect.annotateLogs({ runId: executionId, attemptId: attempt.attemptId, todoId: attempt.todoId, outcome: reported.outcome }),

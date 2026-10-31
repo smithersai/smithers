@@ -92,8 +92,9 @@ const declarationOf = (flow: string) =>
 
 /**
  * Stop on a repository's run on Cloudflare: ChatApi's stop route, which its Durable Object answers
- * (docs/features/actions.md#acts). A refusal for who asks is `forbidden`, one for the run `not_found`; a route that
- * couldn't answer fails the step, and the page says the engine couldn't be reached.
+ * (docs/features/actions.md#acts), or a TODO's external agent (docs/features/runs.md#stopping-a-todos-agent). A refusal
+ * for who asks is `forbidden`, one for the run `not_found`, an agent that isn't working `settled`; a route that couldn't
+ * answer fails the step, and the page says the engine couldn't be reached.
  */
 const cancelCloud = (runId: string) =>
   Effect.gen(function* () {
@@ -108,6 +109,10 @@ const cancelCloud = (runId: string) =>
     }
     if (status === 404) {
       return yield* Effect.andThen(recordAct("cancel", runId, "not_found", "remote"), new RunActRefused({ code: "not_found" }))
+    }
+    // A TODO's external agent that isn't working any more: it ended.
+    if (status === 409) {
+      return yield* Effect.andThen(recordAct("cancel", runId, "settled", "remote"), new RunActRefused({ code: "settled" }))
     }
     yield* recordAct("cancel", runId, "unavailable", "remote")
     return yield* Effect.die(answer.failure)

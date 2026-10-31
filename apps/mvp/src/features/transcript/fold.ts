@@ -4,8 +4,9 @@ import type { Item, Row } from "./schema"
 // Agent Client Protocol kind generically, never by vendor. Message chunks of one message join into one item (by the
 // update's `messageId`, or, without one, while chunks of the same kind follow each other); a tool call is one item whose
 // title and status its updates change; a plan is a checklist the newest plan replaces; usage keeps the latest figures;
-// the runner's own `_smithers/turn` and `_smithers/end` say where a turn and the session ended. Other kinds, such as an
-// agent's session title, change nothing the panel shows.
+// the runner's own `_smithers/turn` and `_smithers/end` say where a turn and the session ended, and `_smithers/steer` and
+// `_smithers/cancel` where a person's steer reached the agent and where the host stopped it (decision 0142). Other
+// kinds, such as an agent's session title, change nothing the panel shows.
 
 /** What folding needs to remember between events: the items so far, and the text item chunks without an id join. */
 export interface Folded {
@@ -104,6 +105,8 @@ export const fold = (state: Folded, row: Row): { readonly state: Folded; readonl
     return put({ ...(items.get(id) ?? base(id, row, "usage")), text: usageWords(update), at: row.at })
   }
   if (row.kind === "_smithers/turn") return put({ ...base(`turn:${row.n}`, row, "turn"), text: string(update.stopReason) ?? "" })
+  if (row.kind === "_smithers/steer") return put(base(`steer:${row.n}`, row, "steer"))
+  if (row.kind === "_smithers/cancel") return put(base(`stop:${row.n}`, row, "stop"))
   if (row.kind === "_smithers/end") return put({ ...base(`end:${row.n}`, row, "end"), text: string(update.outcome) ?? "" })
   if (row.kind === "_smithers/truncated") return put({ ...base(`other:${row.n}`, row, "other"), text: "truncated" })
   // A kind the panel doesn't show, such as a session's title, leaves an open message open.

@@ -14,7 +14,7 @@ import { deviceRegistry } from "../../device/registry"
 import * as RunCredentials from "../../flows/credentials"
 import { faultyPersistenceOn } from "../../test/deviceFixture"
 import { afterFailedSteer } from "./actions"
-import { STEERED_ACTION } from "./contract"
+import { EXTERNAL_AGENT_ACTION, STEERED_ACTION } from "./contract"
 import { SteerStepRefused } from "./flows"
 import { steersQueued } from "./metrics"
 import { type PageStep, responseStep, steerOpen, steersOf } from "./page"
@@ -49,11 +49,11 @@ const admitted = (seq: number, at: number, id: string, body: string, login = "ma
     decision: "admitted",
   })),
 })
-const promoted = (seq: number, at: number, ids: ReadonlyArray<string>, lineage = RUN) => ({
+const promoted = (seq: number, at: number, ids: ReadonlyArray<string>, lineage = RUN, boundary = `${seq}:0`) => ({
   seq,
   eventType: "flows/notifications/Promoted",
   emittedAtMs: at,
-  payload: value(JSON.stringify({ boundary: `${seq}:0`, targetLineageId: lineage, ids })),
+  payload: value(JSON.stringify({ boundary, targetLineageId: lineage, ids })),
 })
 
 /** A cell call the agent made: the journal's record that a turn acted. */
@@ -161,6 +161,22 @@ describe("the run page's steers", () => {
     // An answer from before it was handed over is no proof.
     expect(steersOf(pageOf(handed, { steps: [step(STEERED_ACTION, "completed", 390)] }), [], [])[0]!.state)
       .toBe("not_delivered")
+  })
+
+  test("an external agent's runner promotes a message only once its agent read it: Delivered at once, and the composer stays while it works", () => {
+    const external = [step("todo/Agent", "completed"), step(EXTERNAL_AGENT_ACTION, "waiting")]
+    const events = [
+      admitted(3, 300, "a", "Also add steer"),
+      admitted(4, 350, "b", "And this"),
+      promoted(5, 420, ["a"], RUN, "runner:todo:x#g1:0123456789abcdef0123456789abcdef"),
+    ]
+    expect(steersOf(pageOf(events, { steps: external }), [], []).map((item) => [item.id, item.state, item.deliveredAtMs]))
+      .toEqual([["a", "delivered", 420], ["b", "sent", null]])
+    expect(steerOpen(pageOf(events, { steps: external }).inspection as never)).toBe(true)
+    // Its agent's step ended: the one it never read is Not delivered, and the composer goes.
+    const ended = pageOf(events, { steps: [step(EXTERNAL_AGENT_ACTION, "failed")] })
+    expect(steersOf(ended, [], []).map((item) => item.state)).toEqual(["delivered", "not_delivered"])
+    expect(steerOpen(ended.inspection as never)).toBe(false)
   })
 
   test("a message no turn read before the agent ended is Not delivered, whether the run or only its agent ended", () => {

@@ -41,7 +41,7 @@ The stop route's refusals are `{ code }`, `Cache-Control: no-store`:
 
 | Act | Shown | Does |
 |---|---|---|
-| `run/cancel { runId, seq, host: "cloud" }` | Stop: on the run's own page (not a job's), while the run hasn't settled and no stop was asked | Asks ChatApi, which answers `settled` for a run that ended and otherwise asks the run's `FlowExecution` to stop it (`ExecutionObject.make`'s `cancel`, `@smthrs/platform-cloudflare`): a durable tombstone, then the engine's cancellation of the run and every run it started; a run the object hasn't begun never starts. The object's next alarm settles it `cancelled`. A step already running finishes first. Refused `forbidden` for who may not stop it, `not_found` for a run that isn't a repository's |
+| `run/cancel { runId, seq, host: "cloud" }` | Stop: on the run's own page (not a job's), while the run hasn't settled and no stop was asked | Asks ChatApi, which answers `settled` for a run that ended and otherwise asks the run's `FlowExecution` to stop it (`ExecutionObject.make`'s `cancel`, `@smthrs/platform-cloudflare`): a durable tombstone, then the engine's cancellation of the run and every run it started; a run the object hasn't begun never starts. The object's next alarm settles it `cancelled`. A step already running finishes first. Refused `forbidden` for who may not stop it, `not_found` for a run that isn't a repository's. On a TODO's run the same route stops its external agent instead ([runs](runs.md#stopping-a-todos-agent)) |
 
 The person's Stop and the agent's call run the same flow on this device's engine; its step asks ChatApi as the run that made it (decision 0017 slice 0).
 

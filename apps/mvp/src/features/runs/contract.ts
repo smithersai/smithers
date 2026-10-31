@@ -31,29 +31,56 @@ export const CLOUD_RUNS_ROUTE = "/api/cloud-runs"
 /** The most runs on Cloudflare one list read answers. */
 export const CLOUD_RUNS_LIMIT = 50
 
-/** `POST <route>/<runId>/stop`: Stop a repository's run on Cloudflare (docs/features/actions.md#acts). */
+/**
+ * `POST <route>/<runId>/stop`: Stop a repository's run on Cloudflare (docs/features/actions.md#acts), or the external
+ * agent of a TODO's run (docs/features/runs.md#stopping-a-todos-agent).
+ */
 export const stopRoute = (runId: string): string => `${remoteRunRoute(runId)}/stop`
 
 /**
  * Why the stop route refused, as `{ code }`: `authentication` (401), `forbidden` (403: not a Member), `not_found` (404:
- * no repository's run has that id) and `unavailable` (503).
+ * no repository's run, nor a TODO's, has that id), `not_working` (409: a TODO's run whose external agent isn't
+ * working, because it hasn't started, ended, or the TODO is coded by Smithers' own agent) and `unavailable` (503).
  */
-export const STOP_REFUSALS = ["authentication", "forbidden", "not_found", "unavailable"] as const
+export const STOP_REFUSALS = ["authentication", "forbidden", "not_found", "not_working", "unavailable"] as const
 export type StopRefusal = (typeof STOP_REFUSALS)[number]
 
-/** The step whose agent a steer reaches: the `todo` run's agent (worker/flows/TodoAgent.ts `Implement`). */
+/** The step whose agent a steer reaches when Smithers' own agent codes: the `todo` run's (worker/flows/TodoAgent.ts). */
 export const STEERED_ACTION = "todo/Implement"
 
+/** The step an external agent codes in, on a runner (worker/flows/TodoSession.ts `Session`, decision 0136). */
+export const EXTERNAL_AGENT_ACTION = "agent/Session"
+
 /**
- * Whether a TODO's run still has an agent to steer: neither the run nor its agent's step has ended. The steer route
- * admits a message only then, and the run page offers the composer only then.
+ * The boundary prefix an external agent's steers are delivered under: its runner promotes a steer in the run's queue
+ * only once the agent answered after it (worker/flows/TodoSession.ts `steering`), so such a promotion is Delivered.
+ */
+export const RUNNER_STEER_BOUNDARY = "runner:"
+
+/** The steps whose agent a steer reaches: Smithers' own agent's, or an external agent's. */
+export const AGENT_ACTIONS: ReadonlyArray<string> = [STEERED_ACTION, EXTERNAL_AGENT_ACTION]
+
+const working = (step: { readonly status: string }) => step.status === "running" || step.status === "waiting"
+
+/**
+ * Whether a TODO's run still has an agent to steer: neither the run nor its agent's step has ended, whichever agent
+ * codes it. The steer route admits a message only then, and the run page offers the composer only then.
  */
 export const steerable = (
   run: { readonly status: string },
   steps: ReadonlyArray<{ readonly action: string | null; readonly status: string }>,
 ): boolean =>
   !settled(run.status) &&
-  !steps.some((step) => step.action === STEERED_ACTION && step.status !== "running" && step.status !== "waiting")
+  !steps.some((step) => step.action !== null && AGENT_ACTIONS.includes(step.action) && !working(step))
+
+/**
+ * Whether a TODO's run has an external agent to stop: the run hasn't ended and its agent's step is working. The stop
+ * route stops it only then, and the run page offers Stop only then.
+ */
+export const stoppable = (
+  run: { readonly status: string },
+  steps: ReadonlyArray<{ readonly action: string | null; readonly status: string }>,
+): boolean => !settled(run.status) && steps.some((step) => step.action === EXTERNAL_AGENT_ACTION && working(step))
 
 /** The longest steer, in characters. */
 export const MAX_STEER_CHARS = 4_000

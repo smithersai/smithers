@@ -40,6 +40,8 @@ export const runnerEnv = (env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessE
 /** A runner this spec started for `repo`, and the coding agent it serves. */
 export interface Runner {
   readonly name: string
+  /** The runner's state directory; the test agent keeps its own state in `agent` under it. */
+  readonly state: string
   /** What the runner wrote so far, for a failing test's attachment. */
   readonly log: () => string
   /** The repository codes with Smithers' own agent again, the runner is retired, and its process and state go. */
@@ -115,5 +117,5 @@ export const startRunner = async (
       return ""
     }
   }
-  return { name, log: () => `${Buffer.concat(output).toString()}\n--- the agent's stderr ---\n${agentLog()}`, stop }
+  return { name, state, log: () => `${Buffer.concat(output).toString()}\n--- the agent's stderr ---\n${agentLog()}`, stop }
 }

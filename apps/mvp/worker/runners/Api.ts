@@ -1,6 +1,6 @@
 import { AgentRunner, Transcript } from "@smthrs/agent"
 import { digestSync, WebCrypto } from "@smthrs/crypto"
-import { Clock, Crypto, Effect, type Layer, Metric, Option, Schema } from "effect"
+import { Cause, Clock, Crypto, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { SUMMARY_EVERY_SECONDS } from "../../src/features/transcript/contract.ts"
@@ -20,10 +20,13 @@ import { Transcripts } from "./RunContent.ts"
 //   (it restarted), handed back with its claim, `reclaimed`; else, while it has room under its capacity, its
 //   repository's oldest queued job for a profile it has, whose labels it carries, and pinned to no other runner,
 //   claimed with a new claim id and a lease. With nothing queued it waits up to `waitSeconds`, asking again each second.
-// - `POST /api/runners/heartbeat { key, claim }`: renews the lease while the claim holds the job; `cancel` when the host
-//   asked to stop it or its hours are up, `held: false` when the claim no longer holds it.
-// - `POST /api/runners/settle { key, claim, outcome }`: records how the job ended while the claim holds it. A change
-//   over the job's limits is recorded `too_large`.
+// - `POST /api/runners/heartbeat { key, claim, delivered? }`: renews the lease while the claim holds the job; `cancel`
+//   when the host asked to stop it or its hours are up, `held: false` when the claim no longer holds it. While it holds,
+//   the host's `steering` records the steers the runner says the agent read, then hands out those it hasn't yet
+//   (docs/features/agent-runners.md#steering).
+// - `POST /api/runners/settle { key, claim, outcome, delivered? }`: records how the job ended while the claim holds it,
+//   and the steers the agent read since the last heartbeat that reported them. A change over the job's limits is
+//   recorded `too_large`.
 // - `POST /api/runners/events { key, claim, events }`: a job's transcript events (decision 0141), from the runner that
 //   holds or held its claim, so the end of a settled job's transcript still arrives. Scrubbed again, they go to the
 //   job's run's `RunContent` (`Transcripts`); the answer is the next `seq` that run lacks of the job's generation. The
@@ -77,6 +80,15 @@ const newClaim = Effect.flatMap(Crypto.Crypto, (crypto) => crypto.randomUUIDv4()
   Effect.orDie,
 )
 
+/**
+ * The messages people send a job's agent, as the host keeps them: `pending` reads those the agent hasn't read yet,
+ * oldest first, and `delivered` records the ones the runner says it read. Both are keyed by the job's task and key.
+ */
+export interface Steering<R> {
+  readonly pending: (task: AgentRunner.Task) => Effect.Effect<ReadonlyArray<AgentRunner.Steer>, unknown, R>
+  readonly delivered: (task: AgentRunner.Task, key: string, ids: ReadonlyArray<string>) => Effect.Effect<void, unknown, R>
+}
+
 /** A runner as its request authenticated it. */
 interface Runner {
   readonly id: string
@@ -125,6 +137,7 @@ export const make = <E, R>(
     readonly onClaimed?: (task: AgentRunner.Task) => Effect.Effect<void, unknown, R>
     /** The run whose transcript a job's events belong to, from its task; none keeps no transcript. */
     readonly runOf: (task: AgentRunner.Task) => string | undefined
+    readonly steering?: Steering<R>
   },
 ) => {
   const leaseSeconds = options.leaseSeconds ?? LEASE_SECONDS
@@ -258,15 +271,53 @@ export const make = <E, R>(
       const sql = yield* SqlClient.SqlClient
       // A lease that ran out still holds the job: the runner came back.
       const [row] = isUuid(beat.value.claim)
-        ? yield* sql<{ readonly cancel: boolean }>`
+        ? yield* sql<{ readonly cancel: boolean; readonly task: unknown }>`
           UPDATE agent_jobs SET lease_until = now() + ${leaseSeconds}::int * interval '1 second', updated_at = now()
           WHERE key = ${beat.value.key} AND claim = ${beat.value.claim}::uuid AND runner_id = ${runner.id}::uuid
             AND status = 'claimed'
-          RETURNING (cancel_requested OR deadline_at <= now()) AS cancel`
+          RETURNING (cancel_requested OR deadline_at <= now()) AS cancel, task`
         : []
       const outcome = row === undefined ? "not_held" : row.cancel ? "cancel" : "held"
-      return answer(fields, outcome, { held: row !== undefined, cancel: row?.cancel ?? false, leaseSeconds })
+      if (row === undefined) return answer(fields, outcome, { held: false, cancel: false, leaseSeconds })
+      const steers = row.cancel || options.steering === undefined
+        ? []
+        : yield* exchange(options.steering, row.task, beat.value.key, beat.value.delivered ?? [], fields)
+      return answer(fields, outcome, {
+        held: true,
+        cancel: row.cancel,
+        leaseSeconds,
+        ...(steers.length === 0 ? {} : { steers }),
+      })
     }).pipe(Effect.provide(database))
+
+  /**
+   * Records the steers the runner says its agent read, then reads those it hasn't. A failure is logged by code and
+   * hands out nothing: the lease is renewed all the same, and the runner says the same again at its next heartbeat.
+   */
+  const exchange = (
+    steering: Steering<R>,
+    stored: unknown,
+    key: string,
+    delivered: ReadonlyArray<string>,
+    fields: Fields,
+  ) =>
+    Effect.gen(function* () {
+      const task = yield* decodeTask(stored).pipe(Effect.orDie)
+      if (delivered.length > 0) {
+        yield* steering.delivered(task, key, delivered)
+        fields.delivered = delivered.length
+      }
+      const pending = yield* steering.pending(task)
+      if (pending.length > 0) fields.steers = pending.length
+      return pending
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.sync(() => {
+          fields.steering = codeOf(Cause.squash(cause))
+          return [] as ReadonlyArray<AgentRunner.Steer>
+        })
+      ),
+    )
 
   /** `POST /api/runners/settle`. */
   const settle = (request: HttpServerRequest.HttpServerRequest, runner: Runner, fields: Fields) =>
@@ -294,6 +345,14 @@ export const make = <E, R>(
           UPDATE agent_jobs SET status = ${status}, outcome = ${JSON.stringify(outcome)}::jsonb, claim = NULL,
             lease_until = NULL, settled_at = now(), updated_at = now()
           WHERE key = ${key}`
+        const delivered = settled.value.delivered ?? []
+        if (delivered.length > 0 && options.steering !== undefined) {
+          // Recorded with the settlement's claim still checked; a failure is logged and never refuses the settlement.
+          yield* options.steering.delivered(task, key, delivered).pipe(
+            Effect.tap(() => Effect.sync(() => (fields.delivered = delivered.length))),
+            Effect.catchCause((cause) => Effect.sync(() => (fields.steering = codeOf(Cause.squash(cause))))),
+          )
+        }
         return answer(fields, "recorded", { recorded: true })
       }))
     }).pipe(Effect.provide(database))

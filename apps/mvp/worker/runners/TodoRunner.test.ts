@@ -8,10 +8,13 @@ import { HostModel } from "@smthrs/model-host"
 import { Model } from "@smthrs/model"
 import { digestSync } from "@smthrs/crypto"
 import { Agent } from "@smthrs/agent"
+import { Journal as FlowJournal, Database as FlowsDatabase } from "@smthrs/flows"
+import { Notification, NotificationEvent, NotificationQueue, SteerPayload } from "@smthrs/notifications"
 import { ConfigProvider, Effect, Exit, Layer, Redacted, Stream } from "effect"
+import { SqlClient } from "effect/sql"
 import { FetchHttpClient, HttpEffect } from "effect/http"
 import { type ChildProcess, execFileSync, spawn } from "node:child_process"
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { createServer, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
@@ -35,6 +38,7 @@ import * as RunContentTest from "../test/runContent.ts"
 import * as RunContent from "./RunContent.ts"
 import { eventually, testFile } from "../test/harness.ts"
 import { machines } from "../test/todoMachines.ts"
+import * as ExecutionHost from "../ExecutionHost.ts"
 import * as RunnersApi from "./Api.ts"
 import * as Store from "./Store.ts"
 
@@ -86,17 +90,24 @@ const mirror = () => {
   return { path, base: jj(path, "log", "-r", "@-", "--no-graph", "-T", "commit_id") }
 }
 
-/** The runner routes over real HTTP on a free local port, and the runs' transcripts they write. */
-const serve = async () => {
+/** A writer of the engine's `schema` on the compose Postgres, as ChatApi's (worker/ExecutionHost.ts `database`). */
+const engineWriter = async (schema: string) =>
+  ExecutionHost.database((await runtime.runPromise(TestDatabase.serverUrl)).toString(), schema)
+
+/**
+ * The runner routes over real HTTP on a free local port, carrying the steers of runs in the engine's `schema`, and the
+ * runs' transcripts they write. As ChatApi wires them: a claim tells the TODO's attempt it no longer waits for a runner,
+ * a heartbeat carries steers, and the job's events go to the TODO's run's transcript.
+ */
+const serve = async (schema: string) => {
   const db = await database()
   const transcripts = RunContentTest.transcripts()
-  // As ChatApi wires it: a claim tells the TODO's attempt it no longer waits for a runner, and the job's events go to
-  // the TODO's run's transcript.
   const handler = HttpEffect.toWebHandler(RunnersApi.make(db, {
     pollMillis: 100,
     onClaimed: (task) =>
       task.context?.attemptId === undefined ? Effect.void : TodoSession.claimed(task.context.attemptId).pipe(Effect.provide(db)),
     runOf: TodoSession.runOf,
+    steering: TodoSession.steering(await engineWriter(schema)),
   }).fetch.pipe(Effect.provide(transcripts.layer)))
   const server = createServer(async (incoming, outgoing) => {
     const chunks: Array<Buffer> = []
@@ -126,11 +137,16 @@ const startRunner = (config: string) => {
 
 let running: Array<ChildProcess> = []
 let servers: Array<Server> = []
+let schemas: Array<string> = []
 afterEach(async () => {
   for (const child of running) child.kill("SIGKILL")
   for (const server of servers) server.close()
+  for (const schema of schemas) {
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`DROP SCHEMA IF EXISTS ${sql(schema)} CASCADE`))
+  }
   running = []
   servers = []
+  schemas = []
 })
 
 /** A model Smithers' own agent would ask: this test's TODOs never reach it. */
@@ -157,7 +173,10 @@ const setup = async (options: { readonly run?: (command: string) => number; read
     { repoId: REPOSITORY.id, agent, coding: true },
     { actorId: "person-admin", invocationKey: crypto.randomUUID() },
   ))
-  const { origin, server, transcripts } = await serve()
+  // The run's engine keeps its journal here, so the runner routes read and deliver its steers.
+  const schema = `flows_${crypto.randomUUID().replaceAll("-", "")}`
+  schemas.push(schema)
+  const { origin, server, transcripts } = await serve(schema)
   servers.push(server)
   const state = join(scratch, `runner-${crypto.randomUUID()}`)
   mkdirSync(state)
@@ -168,6 +187,7 @@ const setup = async (options: { readonly run?: (command: string) => number; read
     name: "test-runner",
     capacity: 2,
     stateDir: state,
+    heartbeatSeconds: 2,
     repositories: { [REPOSITORY.id]: { mirror: path } },
     profiles: {
       "acp-test": { argv: [process.execPath, testAgent], env: { ACP_TEST_AGENT_STATE: join(state, "agent-state") } },
@@ -200,7 +220,7 @@ const setup = async (options: { readonly run?: (command: string) => number; read
     )
   github.onPullOpened = (number) => void github.merge(number, "maya")
   const run = (start: Stack.AttemptStart) =>
-    runFlow(Todo.Todo, start, registration, { executionId: todoExecutionId(start.attemptId) })
+    runFlow(Todo.Todo, start, registration, { executionId: todoExecutionId(start.attemptId), schema })
   /** Run `runId`'s transcript once its session's end arrived: its events, and whether their seqs run on unbroken. */
   const transcript = async (runId: string) => {
     let rows: ReadonlyArray<{ readonly kind: string; readonly seq: number; readonly update: Record<string, unknown> }> = []
@@ -210,7 +230,7 @@ const setup = async (options: { readonly run?: (command: string) => number; read
     }, 60_000)
     return { rows, contiguous: rows.every((row, n) => row.seq === n) }
   }
-  return { github, base, config, run, transcript }
+  return { github, base, config, run, transcript, schema, state }
 }
 
 const jobs = () =>
@@ -293,6 +313,121 @@ describe("a TODO on an external agent", { timeout: 240_000 }, () => {
     const prompts = rows.filter((row) => row.kind === "user_message_chunk").map((row) => JSON.stringify(row.update))
     expect(prompts.length).toBeGreaterThan(0)
     expect(new Set(prompts).size).toBe(prompts.length)
+  })
+})
+
+/** A Member's steer, admitted to the run's queue in the engine's `schema` as the steer route admits it. */
+const steer = async (schema: string, runId: string, id: string, body: string) => {
+  const queue = NotificationQueue.layer.pipe(
+    Layer.provideMerge(FlowJournal.SqlJournal.layer({ capacity: 1024, overflow: "reject", sourceEventCache: 1 }).pipe(
+      Layer.provideMerge(Layer.provideMerge(FlowsDatabase.DurableWriter.layer(), await engineWriter(schema))),
+    )),
+  )
+  return Effect.runPromise(Effect.flatMap(NotificationQueue.NotificationQueue, (notifications) =>
+    notifications.admit(runId, Notification.humanSteer({
+      runId,
+      id,
+      actor: `person:${maya.id}`,
+      attribution: { login: maya.login, via: "person" },
+      payload: SteerPayload.encode({ kind: "Message", body }),
+    }))).pipe(Effect.provide(queue), Effect.scoped))
+}
+
+/** The promotions of the run's queue in the engine's `schema`: each boundary and the steers it delivered. */
+const promotions = async (schema: string, runId: string) =>
+  ((await sql(runtime, `SELECT payload_json FROM ${schema}.flows_journal_events
+    WHERE run_id = '${runId}' AND event_type = '${NotificationEvent.PromotedEventType}' ORDER BY seq`)) as Array<
+    { readonly payload_json: string }
+  >).map((row) => JSON.parse(row.payload_json) as { readonly boundary: string; readonly ids: ReadonlyArray<string> })
+
+/** The pids the test agent's detached commands wrote under the runner's `state`. */
+const detached = (state: string) => {
+  const directory = join(state, "agent-state")
+  return existsSync(directory)
+    ? readdirSync(directory).filter((name) => name.startsWith("detached-")).map((name) =>
+      Number(readFileSync(join(directory, name), "utf8"))
+    )
+    : []
+}
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+describe("steering and stopping a TODO's external agent", { timeout: 240_000 }, () => {
+  test("a Member's steer reaches the agent on its runner, reads Delivered, and its change is in the pull request", async () => {
+    const ctx = await setup()
+    const runner = startRunner(ctx.config)
+    running.push(runner.child)
+    // Long enough that the runner's next heartbeat hands the steer over while the agent's command still runs.
+    const start = await commit("Steered alpha", "run `sleep 12`\nadd the line `alpha` to `NOTES.md`")
+    const runId = todoExecutionId(start.attemptId)
+    const run = ctx.run(start)
+    await eventually(async () => (await jobs())[0]?.status === "claimed", 60_000)
+    const id = crypto.randomUUID()
+    await steer(ctx.schema, runId, id, "add the line `steer-x` to `NOTES.md`")
+    const ran = await run
+    expect(ran.exit, runner.log()).toEqual(Exit.succeed({ state: "merged" }))
+    // The steer's line, after the task's, in the one App commit.
+    expect(ctx.github.tree("main").get("NOTES.md")).toBe("alpha\nsteer-x\n")
+    // Delivered: the runner's confirmation promoted exactly this steer, under its job's runner boundary.
+    expect(await promotions(ctx.schema, runId)).toEqual([
+      { boundary: expect.stringMatching(/^runner:.+#g1:[0-9a-f]{32}$/), targetLineageId: runId, ids: [id] },
+    ])
+    // The run's transcript marks the steer once, by id, through the runner's spool (decision 0142).
+    const { rows } = await ctx.transcript(runId)
+    expect(rows.filter((row) => row.kind === "_smithers/steer").map((row) => row.update)).toEqual([
+      { id, mode: expect.any(String) },
+    ])
+  })
+
+  test("Stop ends the agent's whole process tree, fails the TODO stopped with nothing on GitHub, and Retry starts again", async () => {
+    const ctx = await setup()
+    const runner = startRunner(ctx.config)
+    running.push(runner.child)
+    const start = await commit("Long sleep", "run `sleep 600` detached")
+    const run = ctx.run(start)
+    await eventually(async () => detached(ctx.state).length === 1, 60_000)
+    const [sleeper] = detached(ctx.state)
+    const asked = Date.now()
+    expect(await runtime.runPromise(TodoSession.stop(start.attemptId))).toBe(1)
+    // The runner learns it at its next heartbeat, ends the tree, and settles Cancelled with no process left.
+    await eventually(async () => (await jobs())[0]?.status === "cancelled", 30_000)
+    expect(Date.now() - asked).toBeLessThan(20_000)
+    const [settled] = (await sql(runtime, "SELECT outcome FROM agent_jobs")) as Array<{ readonly outcome: unknown }>
+    expect(settled!.outcome).toEqual({ _tag: "Cancelled", processTreeGone: true })
+    expect(alive(sleeper!)).toBe(false)
+    const ran = await run
+    expect(ran.exit, runner.log()).toEqual(Exit.succeed({ state: "failed" }))
+    const [todo] = (await sql(runtime, `SELECT state, failure FROM todos WHERE id = '${start.todoId}'`)) as Array<
+      { readonly state: string; readonly failure: string }
+    >
+    expect(todo).toEqual({ state: "failed", failure: "stopped" })
+    // The run's transcript marks the stop once, then the session's end (decision 0142).
+    const { rows } = await ctx.transcript(todoExecutionId(start.attemptId))
+    const marks = rows.filter((row) => row.kind === "_smithers/cancel" || row.kind === "_smithers/end")
+    expect(marks.map((row) => [row.kind, row.update])).toEqual([
+      ["_smithers/cancel", {}],
+      ["_smithers/end", { outcome: "cancelled" }],
+    ])
+    // Nothing reached GitHub: no branch, no pull request.
+    expect(ctx.github.pulls.size).toBe(0)
+    expect([...ctx.github.refs.keys()]).toEqual(["main"])
+    // A second Stop finds nothing open.
+    expect(await runtime.runPromise(TodoSession.stop(start.attemptId))).toBe(0)
+    // The TODO kept its place: Retry starts a new attempt.
+    const retried = await runtime.runPromise(Stack.apply({
+      opId: crypto.randomUUID(),
+      repoId: REPOSITORY.id,
+      actor: maya,
+      via: "person",
+      op: { kind: "retry", number: 1 },
+    }, { runs: true }))
+    expect(retried.kind === "applied" ? retried.receipt.starts.length : 0).toBe(1)
   })
 })
 

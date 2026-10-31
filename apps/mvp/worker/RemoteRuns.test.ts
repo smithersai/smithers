@@ -671,6 +671,25 @@ const post = (body: unknown) => ({
   body: typeof body === "string" ? body : JSON.stringify(body),
 })
 
+describe("POST /api/remote-runs/<runId>/stop on a TODO's run", () => {
+  test("a TODO's run with no external agent working answers not_working, and a Guest or outsider is refused", async () => {
+    const start = await attempt()
+    const runId = todoExecutionId(start.attemptId)
+    await withEngine(async (engine) => {
+      await engine.start(runId, 60_000)
+      await eventually(async () => (await engine.status(runId)) === "suspended" || (await engine.status(runId)) === "running", 10_000)
+      // Its steps are Smithers' own: nothing on a runner to stop, and the run itself is never cancelled from here.
+      const h = await routes(engine, { actor: member, stop: (id) => Effect.die(`the run ${id} was stopped`) })
+      const response = await h.fetch(stopRoute(runId), { method: "POST" })
+      expect([response.status, await response.json()]).toEqual([409, { code: "not_working" }])
+      expect(h.line("run.stop").map((line) => line.annotations.outcome)).toEqual(["not_working"])
+      const outsider = await routes(engine, { actor: { ...guest, role: null }, roles: rolesOn({}) })
+      expect((await outsider.fetch(stopRoute(runId), { method: "POST" })).status).toBe(403)
+      expect(await engine.status(runId)).not.toBe("cancelled")
+    })
+  }, 60_000)
+})
+
 describe("POST /api/remote-runs/<runId>/steers", () => {
   test.each([null, "guest"] as const)("a repository Member with deployment role %s cannot steer a working TODO machine", async role => {
     const start = await attempt("github/acme/widgets")

@@ -289,9 +289,13 @@ export const Fail = Action.make("todo/Fail", {
   retryPolicy: RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000 }),
 })
 
-/** The TODO failure code a run that gave up ends with: a step's own, its step's, or the agent's `implement`. */
+/**
+ * The TODO failure code a run that gave up ends with: a step's own, its step's, `stopped` for an external agent a
+ * person stopped, or the agent's `implement`.
+ */
 export const failureOf = (error: Failure): StepFailure => {
   if (error instanceof TodoFailed) return error.failure
+  if (error instanceof ExternalAgent.AgentFailed && error.reason === "cancelled") return "stopped"
   if (error instanceof TodoUnavailable) {
     return error.step === "begin" || error.step === "publish" ? "publish_refused" : error.step === "collect"
       ? "implement"

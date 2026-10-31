@@ -141,6 +141,30 @@ const dying = Layer.mergeAll(
   Interpreter.layer(Dies, { callbackIdentity: "stable" }),
 ).pipe(Layer.provideMerge(Action.layerImplementations))
 
+test("a run that died stops its external agent: a queued generation ends, a claimed one is told at its heartbeat", () =>
+  runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+    const committed = yield* Stack.apply(change(), { runs: true })
+    if (committed.kind !== "applied") throw new Error("not applied")
+    const { attemptId } = committed.receipt.starts[0]!
+    const executionId = todoExecutionId(attemptId)
+    const sql = yield* SqlClient.SqlClient
+    const task = JSON.stringify({ context: { attemptId } })
+    yield* sql`
+      INSERT INTO agent_jobs (key, origin, generation, repo_id, agent, profile, labels, task, status, claim, lease_until, deadline_at)
+      VALUES
+        ('agent#g1', 'agent', 1, 'r', 'a', 'p', '{}', ${task}::jsonb, 'claimed', gen_random_uuid(), now(), now() + interval '1 hour'),
+        ('agent#g2', 'agent', 2, 'r', 'a', 'p', '{}', ${task}::jsonb, 'queued', NULL, NULL, now() + interval '1 hour')`
+    const { context, engine } = yield* build(dying)
+    const engineDatabase = ExecutionHost.readDatabase((yield* TestDatabase.serverUrl).toString(), engine.schema)
+    yield* Effect.exit(Context.get(context, FlowRuntime.FlowRuntime).execute(Dies, { executionId, payload: { fail: true } }))
+      .pipe(Effect.provide(context))
+    yield* TodoRuns.settleCrashed(executionId, engineDatabase)
+    expect(yield* sql`SELECT key, status, cancel_requested FROM agent_jobs ORDER BY key`).toEqual([
+      { key: "agent#g1", status: "claimed", cancel_requested: true },
+      { key: "agent#g2", status: "cancelled", cancel_requested: true },
+    ])
+  }))), 60_000)
+
 test("a TODO whose run died fails `crashed` and frees its lane, once; a run that ended any other way changes nothing", () =>
   runtime.runPromise(Effect.scoped(Effect.gen(function* () {
     // Production 2026-11-01: two TODO runs died seconds after their agents settled Done, and the TODOs stayed Working.

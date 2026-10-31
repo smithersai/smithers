@@ -1,7 +1,13 @@
 import { AgentRunner, ExternalAgent } from "@smthrs/agent"
+import { digestSync } from "@smthrs/crypto"
 import { Action, RetryPolicy } from "@smthrs/flow"
+import { Database, Journal } from "@smthrs/flows"
+import { Notifications } from "@smthrs/harness"
+import { NotificationQueue } from "@smthrs/notifications"
 import { Effect, Layer, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
+import { RUNNER_STEER_BOUNDARY } from "../../src/features/runs/contract.ts"
+import type { Steering } from "../runners/Api.ts"
 import * as Stack from "../stack/Stack.ts"
 import * as Jobs from "../runners/Jobs.ts"
 import * as Store from "../runners/Store.ts"
@@ -110,3 +116,68 @@ export const claimed = (attemptId: string) =>
     if (attempt === undefined) return
     yield* Stack.report(attempt, { kind: "waiting", waiting: null }, { runs: false })
   })
+
+/**
+ * The boundary a runner's confirmation of `ids` drains under, for job `key` (docs/features/runs.md#steering): the same
+ * ids confirmed again replay the same drain, and the run page reads a promotion under `RUNNER_STEER_BOUNDARY` as
+ * Delivered.
+ */
+export const boundaryOf = (key: string, ids: ReadonlyArray<string>): string =>
+  `${RUNNER_STEER_BOUNDARY}${key}:${digestSync([...ids].sort().join("\n")).slice(0, 32)}`
+
+/**
+ * The messages Members sent a TODO's external agent, kept where Smithers' own agent's are: the run's durable
+ * notification queue in the engine's schema, written through `writer` (worker/ExecutionHost.ts `database`), which takes
+ * the engine's writer lock. `pending` hands the runner the steers no boundary has delivered, rendered as Smithers' agent
+ * reads them; `delivered` promotes the ones the runner says the agent answered after, by id, so a steer the runner
+ * handed over and can't vouch for stays pending, never Delivered (docs/features/agent-runners.md#steering).
+ */
+export const steering = <E, R>(writer: Layer.Layer<SqlClient.SqlClient, E, R>): Steering<R> => {
+  // The run's queue over the engine's own journal. It runs no migrations (the engine owns them) and remembers one
+  // journal event at startup, not the journal's default thousands.
+  const queue = NotificationQueue.layer.pipe(
+    Layer.provideMerge(Journal.SqlJournal.layer({ capacity: 1024, overflow: "reject", sourceEventCache: 1 }).pipe(
+      Layer.provideMerge(Layer.provideMerge(Database.DurableWriter.layer(), writer)),
+    )),
+  )
+  return {
+    pending: (task) => {
+      const runId = runOf(task)
+      if (runId === undefined) return Effect.succeed([])
+      return Effect.flatMap(NotificationQueue.NotificationQueue, (notifications) => notifications.pending(runId)).pipe(
+        Effect.map((pending) =>
+          pending.filter((notification) => notification._tag === "human-steer").map((notification) => ({
+            id: notification.id,
+            text: Notifications.text(notification),
+          }))
+        ),
+        Effect.provide(queue),
+        Effect.scoped,
+      )
+    },
+    delivered: (task, key, ids) => {
+      const runId = runOf(task)
+      if (runId === undefined) return Effect.void
+      return Effect.flatMap(NotificationQueue.NotificationQueue, (notifications) =>
+        notifications.drain({ runId, targetLineageId: runId, boundary: boundaryOf(key, ids), wouldIdle: false, ids })
+      ).pipe(Effect.asVoid, Effect.provide(queue), Effect.scoped)
+    },
+  }
+}
+
+/**
+ * A person's Stop on attempt `attemptId`'s run (docs/features/runs.md#stopping-a-todos-agent): every open generation
+ * of its agent's job stops (`Jobs.stop`), the runner ending the agent's whole process tree at its next heartbeat. The
+ * step then fails `cancelled` and the run fails the TODO, which keeps its place for Retry. Answers how many generations
+ * were open; none when the agent had ended or its job wasn't queued yet.
+ */
+export const stop = (attemptId: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [job] = yield* sql<{ readonly origin: string }>`
+      SELECT origin FROM agent_jobs WHERE task->'context'->>'attemptId' = ${attemptId}
+      ORDER BY created_at DESC LIMIT 1`
+    const open = job === undefined ? 0 : yield* Jobs.stop(job.origin)
+    yield* Effect.logInfo("todo.stop").pipe(Effect.annotateLogs({ attemptId, generations: open }))
+    return open
+  }).pipe(Effect.withSpan("todo.stop", { attributes: { "smithers.todo.attempt": attemptId } }))

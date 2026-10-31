@@ -21,11 +21,13 @@ import {
   settled,
   steerable,
   type SteerRefusal,
+  stoppable,
   type StopRefusal,
 } from "../src/features/runs/contract.ts"
 import { type Actor, canAsk, Sessions } from "./Actor.ts"
 import { readBounded } from "./Body.ts"
 import * as CloudRuns from "./CloudRuns.ts"
+import * as TodoSession from "./flows/TodoSession.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as ShapeAccess from "./ShapeAccess.ts"
 import * as RepoRuns from "./RepoRuns.ts"
@@ -81,7 +83,7 @@ export const steers = Metric.counter("smithers_run_steers", {
   incremental: true,
 })
 
-/** Stops, by `outcome`: `requested`, `settled`, or the refusal's code. */
+/** Stops, of a repository's run or a TODO's agent, by `outcome`: `requested`, `settled`, or the refusal's code. */
 export const stops = Metric.counter("smithers_run_stops", {
   description: "POST /api/remote-runs/<runId>/stop requests, by outcome",
   incremental: true,
@@ -292,6 +294,22 @@ export const make = <E, R, EE, ER, RS>(
           const admitted = yield* access(runId, actor.value.value)
           if (!admitted.allowed) return refused(403, "forbidden")
           fields.via = actor.value.value.act === undefined ? "person" : "agent"
+          // A TODO's run: its external agent stops, and the run goes on to fail the TODO, which keeps its place for
+          // Retry (docs/features/runs.md#stopping-a-todos-agent).
+          const attempt = yield* attemptOf(runId).pipe(Effect.provide(database))
+          if (Option.isSome(attempt)) {
+            if (!admitted.watched) return refused(403, "forbidden")
+            const read = yield* Effect.flatMap(
+              EngineStore.RunInspection.RunInspection,
+              (reads) => reads.inspect(runId, { limit: 1 }),
+            ).pipe(Effect.provide(inspection), Effect.provide(engine.database), Effect.option)
+            if (Option.isNone(read) || !stoppable(read.value.run, read.value.steps)) return refused(409, "not_working")
+            const open = yield* TodoSession.stop(attempt.value.id).pipe(Effect.provide(database))
+            if (open === 0) return refused(409, "not_working")
+            fields.outcome = "requested"
+            fields.generations = open
+            return HttpServerResponse.jsonUnsafe({ outcome: "requested" }, { status: 202, headers: noStore })
+          }
           // Only a repository's run itself: a job stops with its run.
           if (Option.isNone(admitted.repoRun) || admitted.repoRun.value.execution !== runId) return refused(404, "not_found")
           // A run that ended has nothing to stop. One its object hasn't begun is stopped before it starts.

@@ -62,17 +62,20 @@ const register = async (name: string, labels: ReadonlyArray<string> = ["linux", 
 
 /**
  * The runner routes over this file's schema, a claim asking again every 50 ms, a TODO's job writing its transcript to
- * its run as ChatApi's does, over `transcripts` (one SQLite store per run unless set).
+ * its run as ChatApi's does, over `transcripts` (one SQLite store per run unless set), and a heartbeat carrying the
+ * steers `steering` hands out.
  */
 const routes = async (
   onClaimed?: (task: AgentRunner.Task) => Effect.Effect<void, unknown>,
   transcripts: Layer.Layer<RunContent.Transcripts> = RunContentTest.transcripts().layer,
+  steering?: RunnersApi.Steering<never>,
 ) => {
   const handler = HttpEffect.toWebHandler(
     RunnersApi.make(await database(), {
       pollMillis: 50,
       runOf: TodoSession.runOf,
       ...(onClaimed === undefined ? {} : { onClaimed }),
+      ...(steering === undefined ? {} : { steering }),
     }).fetch.pipe(Effect.provide(transcripts)),
   )
   const call = async <A>(route: keyof typeof AgentRunner.ROUTES, token: string | undefined, body: unknown) => {
@@ -101,6 +104,63 @@ const done = (changes: AgentRunner.Changes = { additions: [{ path: "NOTES.md", c
   ({ _tag: "Done", changes, summary: "Added alpha.", usage: {} }) as const
 
 describe("the job store and the runner routes", () => {
+  test("a steering store that can't answer hands out no steers and keeps the lease; a job asked to stop hands out none", async () => {
+    const token = await register("nyc-01")
+    const store = await jobs()
+    await Effect.runPromise(store.start(taskOf(), "todo:s#g1"))
+    const asked: Array<string> = []
+    // A faulty steering service: the heartbeat must renew the lease all the same.
+    const { call, claim } = await routes(undefined, undefined, {
+      pending: () => Effect.sync(() => void asked.push("pending")).pipe(Effect.andThen(Effect.fail("down"))),
+      delivered: (_task, key, ids) => Effect.sync(() => void asked.push(`delivered:${key}:${ids.join(",")}`)),
+    })
+    const job = (await claim(token)).body.job!
+    expect((await call("heartbeat", token, { key: job.key, claim: job.claim, delivered: ["s1"] })).body).toEqual({
+      held: true,
+      cancel: false,
+      leaseSeconds: 45,
+    })
+    expect(asked).toEqual(["delivered:todo:s#g1:s1", "pending"])
+    await Effect.runPromise(store.cancel(job.key))
+    expect((await call("heartbeat", token, { key: job.key, claim: job.claim })).body).toEqual({
+      held: true,
+      cancel: true,
+      leaseSeconds: 45,
+    })
+    expect(asked).toHaveLength(2)
+  })
+
+  test("Stop ends every open generation of a step, and a later generation of it queues cancelled", async () => {
+    const token = await register("nyc-01")
+    const store = await jobs()
+    const { call, claim } = await routes()
+    // g1 claimed: stopped at its runner's next heartbeat.
+    await Effect.runPromise(store.start(taskOf(), "todo:t#g1"))
+    const job = (await claim(token)).body.job!
+    expect(await query(Jobs.stop("todo:t"))).toBe(1)
+    expect((await call("heartbeat", token, { key: job.key, claim: job.claim })).body).toMatchObject({ cancel: true })
+    // A retryable settlement of a job asked to stop ends it cancelled, so no g2 follows.
+    expect((await call("settle", token, { key: job.key, claim: job.claim, outcome: { _tag: "Retryable" } })).body)
+      .toEqual({ recorded: true })
+    expect(await Effect.runPromise(store.status("todo:t#g1"))).toEqual({
+      _tag: "Ended",
+      outcome: { _tag: "Cancelled", processTreeGone: true },
+    })
+    // g1 retryable, then stopped before g2 starts: g1 ends cancelled, and g2's start queues it cancelled.
+    await Effect.runPromise(store.start(taskOf(), "todo:u#g1"))
+    const second = (await claim(token)).body.job!
+    await call("settle", token, { key: second.key, claim: second.claim, outcome: { _tag: "Retryable" } })
+    expect(await query(Jobs.stop("todo:u"))).toBe(1)
+    await Effect.runPromise(store.start(taskOf(), "todo:u#g2"))
+    expect(await sql`SELECT key, status, cancel_requested FROM agent_jobs WHERE origin = 'todo:u' ORDER BY key`).toEqual([
+      { key: "todo:u#g1", status: "cancelled", cancel_requested: true },
+      { key: "todo:u#g2", status: "cancelled", cancel_requested: true },
+    ])
+    expect((await claim(token)).body.job).toBeNull()
+    // Nothing open: a second Stop finds none.
+    expect(await query(Jobs.stop("todo:u"))).toBe(0)
+  })
+
   test("a job is queued once, claimed by a runner with its profile and labels, and settled with its change", async () => {
     const token = await register("nyc-01")
     const store = await jobs()

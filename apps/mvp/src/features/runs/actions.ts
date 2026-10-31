@@ -137,17 +137,23 @@ const acting = (
 const refusalOf = (dispatched: { readonly _tag: "Done" } | { readonly _tag: "Failed"; readonly error: { readonly code: string } | { readonly _tag: string } }) =>
   dispatched._tag === "Done" ? Option.none() : Option.some("code" in dispatched.error ? dispatched.error.code : "unavailable")
 
-/** Stop: `run/cancel` on the open run; on Cloudflare for a repository's run. */
+/** Stop: `run/cancel` on the open run; on Cloudflare for a repository's run, or a TODO's external agent. */
 export const stop = acting("stop", (inspection) =>
   Effect.gen(function* () {
     const view = Option.getOrThrow(yield* (yield* RunsStore).view.get(VIEW))
     const payload = { runId: inspection.run.runId, seq: inspection.run.lastSeq }
     return yield* (yield* FlowDispatch).dispatch(
       "run/cancel",
-      view.repo == null ? payload : { ...payload, host: "cloud" as const },
+      view.repo == null && !isRemoteRun(inspection.run.runId) ? payload : { ...payload, host: "cloud" as const },
       { door: "button" },
     )
-  }).pipe(Effect.map(refusalOf)))
+  }).pipe(
+    Effect.map(refusalOf),
+    // A TODO's agent stops at its runner's next heartbeat: until its step ends, the page reads Stopping.
+    Effect.tap((refusal) =>
+      Option.isNone(refusal) && isRemoteRun(inspection.run.runId) ? setView({ stopping: inspection.run.runId }) : Effect.void
+    ),
+  ))
 
 /** Resume: `run/resume` on the open run. */
 export const resume = acting("resume", (inspection) =>

@@ -1919,3 +1919,25 @@ describe("0082_agent_transcripts", () => {
     expect(await on(through("0082"))).toEqual([])
   }))
 })
+
+describe("0083_agent_stops", () => {
+  test("indexes a job by the attempt its task names and by its step; a TODO may fail stopped", () => emptySchema(async (url) => {
+    const database = Database.layer(Effect.succeed(Redacted.make(url)))
+    const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+    await on(through("0082"))
+    expect((await on(through("0083"))).map(([id, name]) => `${id}_${name}`)).toEqual(["83_agent_stops"])
+    const indexes = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ readonly indexname: string }>`
+      SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'agent_jobs'
+        AND indexname IN ('agent_jobs_attempt', 'agent_jobs_origin')
+      ORDER BY indexname`))
+    expect(indexes.map((row) => row.indexname)).toEqual(["agent_jobs_attempt", "agent_jobs_origin"])
+    const check = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ readonly definition: string }>`
+      SELECT pg_get_constraintdef(c.oid) AS definition FROM pg_constraint c
+      JOIN pg_namespace n ON n.oid = c.connamespace
+      WHERE c.conname = 'todos_failure_check' AND n.nspname = current_schema()`))
+    expect(check[0]!.definition).toContain("'stopped'")
+    // 0081_todo_crashed's value survives the constraint being rebuilt.
+    expect(check[0]!.definition).toContain("'crashed'")
+    expect(await on(through("0083"))).toEqual([])
+  }))
+})

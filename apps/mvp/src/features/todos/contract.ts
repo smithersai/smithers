@@ -114,6 +114,7 @@ export const TODO_FAILURES = [
   "budget",
   "base_closed",
   "crashed",
+  "stopped",
 ] as const
 export type TodoFailure = (typeof TODO_FAILURES)[number]
 
