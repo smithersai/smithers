@@ -1,4 +1,5 @@
 import { type Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
+import type { TimelineNotice } from "../timeline/notice"
 import type { Effect } from "effect"
 import { COULDNT_ANSWER, MODEL_QUOTA_SPENT } from "./contract"
 import type { View } from "../views/schema"
@@ -50,6 +51,9 @@ export const conversationQuery = (
           // An answer's one-line summary and the content it summarizes (worker/TimelineSummaries.ts), "" while it has none.
           summary: Query.coalesce(synced.summary, ""),
           summaryRevision: Query.coalesce(synced.summaryRevision, ""),
+          // The phase and arc that start here (src/features/timeline/marks.ts), "" on most messages.
+          phase: Query.coalesce(synced.phase, ""),
+          arc: Query.coalesce(synced.arc, ""),
         })),
         q.from({ view: views.tanstack }).select(({ view }) => ({
           id: view.id,
@@ -137,6 +141,19 @@ export const shownQuery = (latest: Latest) =>
   LiveQuery.make((q) =>
     q
       .from({ message: latest.tanstack })
+      .orderBy(({ message }) => message.local)
+      .orderBy(({ message }) => message.at),
+  )
+
+/** Why timeline summaries can't be made now: nothing while they can (src/features/timeline/notice.ts). */
+export const timelineNoticeQuery = (notices: Collection.Collection<TimelineNotice, string>) =>
+  LiveQuery.make((q) => q.from({ notice: notices.tanstack }).findOne())
+
+/** The whole conversation, oldest first: what the timeline rail spans (FE-16), however little the window shows. */
+export const everythingQuery = (conversation: Conversation) =>
+  LiveQuery.make((q) =>
+    q
+      .from({ message: conversation.tanstack })
       .orderBy(({ message }) => message.local)
       .orderBy(({ message }) => message.at),
   )

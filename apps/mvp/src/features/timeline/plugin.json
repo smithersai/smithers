@@ -5,6 +5,6 @@
   "contributes": {
     "slots": [{ "slot": "chat.rail", "view": "timeline.rail" }],
     "views": [{ "id": "timeline.rail", "entry": "./TimelineContribution.tsx" }],
-    "flows": [{ "name": "timeline/summarize", "entry": "./flow.ts" }]
+    "flows": [{ "name": "timeline/summarize", "entry": "./flow.ts" }, { "name": "timeline/phases", "entry": "./flow.ts" }]
   }
 }

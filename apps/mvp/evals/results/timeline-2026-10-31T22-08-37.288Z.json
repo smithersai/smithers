@@ -1,0 +1,339 @@
+{
+  "eval": "timeline",
+  "model": "haiku",
+  "scores": {
+    "summariesMade": 0.9907407407407408,
+    "entryAccurate": 0.8721944444444443,
+    "entrySpecific": 0.8435277777777778,
+    "boundaryF1": 0.7222222222222222,
+    "boundaries": 0.75,
+    "titles": 0.9,
+    "faithful": 0.3833333333333333
+  },
+  "fixtures": [
+    {
+      "name": "long-coding-chat",
+      "entries": 72,
+      "summariesMade": 0.9722222222222222,
+      "entryAccurate": 0.8470833333333331,
+      "entrySpecific": 0.8687499999999999,
+      "boundaryF1": 0.6666666666666666,
+      "phases": [
+        {
+          "from": 0,
+          "title": "Researching issue 450",
+          "summary": "Traced flaky saved card test in issue 450 to a fixed 2 s wait; slow runners exceed it, and two other specs share it.",
+          "closed": true
+        },
+        {
+          "from": 5,
+          "title": "Fixing checkout spec waits",
+          "summary": "Replaced the saved card wait with a frame locator, applied the same change to coupon and refund specs, and repeated checkout runs 20 times, all passing.",
+          "closed": true
+        },
+        {
+          "from": 8,
+          "title": "Diagnosing refund e2e failure",
+          "summary": "Ran e2e specs, found refund test failing due to seeding twice in beforeEach, then moved seed into test body.",
+          "closed": true
+        },
+        {
+          "from": 11,
+          "title": "Verifying e2e suite passes",
+          "summary": "Re-ran e2e folder, getting 42 of 42 passing after the refund seed fix.",
+          "closed": true
+        },
+        {
+          "from": 12,
+          "title": "Opening PR 512 for waits",
+          "summary": "Opened pull request 512 to wait for the payment frame in e2e specs, closing issue 450.",
+          "closed": true
+        },
+        {
+          "from": 13,
+          "title": "Reviewing PR 512 readiness",
+          "summary": "Checked PR 512's e2e results, refactored the repeated locator into a helper, renamed it per Maya's comment, and confirmed it is approved and ready for a person to merge.",
+          "closed": true
+        },
+        {
+          "from": 20,
+          "title": "Researching issue 440",
+          "summary": "Opened issue 440 about login losing the return page, then traced the cause to a read after the cookie is cleared in redirect.ts.",
+          "closed": true
+        },
+        {
+          "from": 23,
+          "title": "Fixing auth tests for PR 513",
+          "summary": "Fixed redirect ordering and the fake clock in auth tests, so all 42 pass, then opened PR 513 closing issue 440.",
+          "closed": true
+        },
+        {
+          "from": 30,
+          "title": "Drafting v2.3.0 release notes",
+          "summary": "Drafted v2.3.0 notes from 14 merged PRs, listed 11 closed issues, and updated the receipt snapshot after one failing test.",
+          "closed": false
+        }
+      ],
+      "truth": [
+        0,
+        5,
+        12,
+        20,
+        30
+      ],
+      "calls": 11,
+      "invalidCalls": 0,
+      "boundaries": 0.85,
+      "titles": 0.9,
+      "faithful": 0.15,
+      "samples": [
+        {
+          "id": "q0",
+          "summary": "Open GitHub issue 450",
+          "raw": "Open GitHub issue 450"
+        },
+        {
+          "id": "a0",
+          "summary": "Opened issue #450 on saved card flakiness",
+          "raw": "Opened issue #450 on saved card flakiness"
+        },
+        {
+          "id": "q1",
+          "summary": "Find CI failure output for flaky issue 450",
+          "raw": "Find CI failure output for flaky issue 450"
+        },
+        {
+          "id": "a1",
+          "summary": "CI timeout at checkout.spec.ts \"pays with a saved",
+          "raw": "CI timeout at checkout.spec.ts \"pays with a saved card\""
+        },
+        {
+          "id": "q2",
+          "summary": "Find the source of payment-frame wait timeout",
+          "raw": "Find the source of payment-frame wait timeout"
+        },
+        {
+          "id": "a2",
+          "summary": "Hardcoded 2s wait in checkout spec",
+          "raw": "Hardcoded 2s wait in checkout spec"
+        },
+        {
+          "id": "q3",
+          "summary": "Investigate frame readiness timing in checkout spec",
+          "raw": "Investigate frame readiness timing in checkout spec"
+        },
+        {
+          "id": "a3",
+          "summary": "Frame timing: median 1.4s, p95 2.6s",
+          "raw": "Frame timing: median 1.4s, p95 2.6s"
+        },
+        {
+          "id": "q4",
+          "summary": "Check whether other code depends on the fixed",
+          "raw": "Check whether other code depends on the fixed 2 s wait"
+        },
+        {
+          "id": "a4",
+          "summary": "Two specs share the fixed 2 s wait",
+          "raw": "Two specs share the fixed 2 s wait"
+        },
+        {
+          "id": "q5",
+          "summary": "Fix saved card test e2e",
+          "raw": "Fix saved card test e2e"
+        },
+        {
+          "id": "a5",
+          "summary": "Replaced checkout.spec.ts wait with data-ready locator",
+          "raw": "Replaced checkout.spec.ts wait with data-ready locator"
+        }
+      ]
+    },
+    {
+      "name": "issues-flows-review",
+      "entries": 28,
+      "summariesMade": 1,
+      "entryAccurate": 0.8799999999999999,
+      "entrySpecific": 0.7908333333333336,
+      "boundaryF1": 0.5,
+      "phases": [
+        {
+          "from": 0,
+          "title": "Triaging bug issues",
+          "summary": "Filtered 23 open issues to 9 bugs, narrowed to three checkout bugs, and labeled the nine as bug.",
+          "closed": true
+        },
+        {
+          "from": 3,
+          "title": "Investigating coupon clearing issue 418",
+          "summary": "Opened issue 418, traced the coupon clearing to CouponField state, and drafted a TODO for checkout state, awaiting edit and commit.",
+          "closed": true
+        },
+        {
+          "from": 6,
+          "title": "Triaging shop issues, reviewing PRs",
+          "summary": "Created a labeling flow and ran it on 10 shop issues; reviewed issue 431 and the CSV export run, then listed 5 open PRs.",
+          "closed": false
+        }
+      ],
+      "truth": [
+        0,
+        6,
+        10
+      ],
+      "calls": 3,
+      "invalidCalls": 0,
+      "boundaries": 0.5,
+      "titles": 0.85,
+      "faithful": 0.2,
+      "samples": [
+        {
+          "id": "q0",
+          "summary": "Filter open issues by bug label",
+          "raw": "Filter open issues by bug label"
+        },
+        {
+          "id": "a0",
+          "summary": "Nine open bugs: #401 through #433",
+          "raw": "Nine open bugs: #401 through #433"
+        },
+        {
+          "id": "q1",
+          "summary": "Label issues 401, 405, 409, 412, 418, 420,",
+          "raw": "Label issues 401, 405, 409, 412, 418, 420, 422, 425, 433 as bug"
+        },
+        {
+          "id": "a1",
+          "summary": "Labeled 9 issues as bug",
+          "raw": "Labeled 9 issues as bug"
+        },
+        {
+          "id": "q2",
+          "summary": "Filter bug issues mentioning checkout",
+          "raw": "Filter bug issues mentioning checkout"
+        },
+        {
+          "id": "a2",
+          "summary": "Three matches: #405, #418, #422",
+          "raw": "Three matches: #405, #418, #422"
+        },
+        {
+          "id": "q3",
+          "summary": "Open issue 418",
+          "raw": "Open issue 418"
+        },
+        {
+          "id": "a3",
+          "summary": "Issue 418 opened for coupon field",
+          "raw": "Issue 418 opened for coupon field"
+        },
+        {
+          "id": "q4",
+          "summary": "Find cause of issue 418 coupon clearing",
+          "raw": "Find cause of issue 418 coupon clearing"
+        },
+        {
+          "id": "a4",
+          "summary": "Cause found in CouponField.tsx",
+          "raw": "Cause found in CouponField.tsx"
+        },
+        {
+          "id": "q5",
+          "summary": "Draft TODO for CouponField checkout state",
+          "raw": "Draft TODO for CouponField checkout state"
+        },
+        {
+          "id": "a5",
+          "summary": "Draft TODO awaiting user commit",
+          "raw": "Draft TODO awaiting user commit"
+        }
+      ]
+    },
+    {
+      "name": "one-goal-with-failures",
+      "entries": 20,
+      "summariesMade": 1,
+      "entryAccurate": 0.8894999999999997,
+      "entrySpecific": 0.8710000000000001,
+      "boundaryF1": 1,
+      "phases": [
+        {
+          "from": 0,
+          "title": "Upgrading Vitest to 3.2",
+          "summary": "Bumped Vitest to 3.2.0, moved vi.mock calls to file tops, updated four snapshots; all 200 web tests now pass.",
+          "closed": false
+        }
+      ],
+      "truth": [
+        0
+      ],
+      "calls": 2,
+      "invalidCalls": 0,
+      "boundaries": 0.9,
+      "titles": 0.95,
+      "faithful": 0.8,
+      "samples": [
+        {
+          "id": "q0",
+          "summary": "Upgrade Vitest to 3.2 in web package",
+          "raw": "Upgrade Vitest to 3.2 in web package"
+        },
+        {
+          "id": "a0",
+          "summary": "Vitest bumped to 3.2.0 in web",
+          "raw": "Vitest bumped to 3.2.0 in web"
+        },
+        {
+          "id": "q1",
+          "summary": "Run the web package tests",
+          "raw": "Run the web package tests"
+        },
+        {
+          "id": "a1",
+          "summary": "188 passed, 12 failed in src/charts",
+          "raw": "188 passed, 12 failed in src/charts"
+        },
+        {
+          "id": "q2",
+          "summary": "Explain why those 12 tests fail",
+          "raw": "Explain why those 12 tests fail"
+        },
+        {
+          "id": "a2",
+          "summary": "Calls to vi.mock moved out of helper",
+          "raw": "Calls to vi.mock moved out of helper"
+        },
+        {
+          "id": "q3",
+          "summary": "Move vi.mock calls to file top",
+          "raw": "Move vi.mock calls to file top"
+        },
+        {
+          "id": "a3",
+          "summary": "Moved calls to top in 12 src/charts files",
+          "raw": "Moved calls to top in 12 src/charts files"
+        },
+        {
+          "id": "q4",
+          "summary": "Rerun the chart file edits",
+          "raw": "Rerun the chart file edits"
+        },
+        {
+          "id": "a4",
+          "summary": "196 passed, 4 failed in legend.test.tsx",
+          "raw": "196 passed, 4 failed in legend.test.tsx"
+        },
+        {
+          "id": "q5",
+          "summary": "Assess whether legend snapshot whitespace diffs are real",
+          "raw": "Assess whether legend snapshot whitespace diffs are real"
+        },
+        {
+          "id": "a5",
+          "summary": "Snapshot empty-text serialization changed in 3.2",
+          "raw": "Snapshot empty-text serialization changed in 3.2"
+        }
+      ]
+    }
+  ]
+}

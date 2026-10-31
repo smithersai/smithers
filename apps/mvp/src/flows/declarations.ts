@@ -1,6 +1,6 @@
 import { ChatPin, ChatUnpin } from "../features/pins/flows"
 import { Remember } from "../features/agent/memoryFlows"
-import { Summarize } from "../features/timeline/flow"
+import { Phases, Summarize } from "../features/timeline/flow"
 import { Flow } from "@smthrs/flow"
 import { Context } from "effect"
 import { BranchCreate, BranchTrack } from "../features/branch/flows"
@@ -63,6 +63,7 @@ import { type FlowName, type FlowOf, names } from "./registry"
 /** Each registered flow's declaration, by name: one per registry entry, with that entry's tag and schemas. */
 export const declarations = {
   "timeline/summarize": Summarize,
+  "timeline/phases": Phases,
   "auth/refresh": AuthRefresh,
   "app/theme/set": SetTheme,
   "conversation/new": ConversationNew,

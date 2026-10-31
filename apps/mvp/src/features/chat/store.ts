@@ -1,6 +1,7 @@
 import { makePins, pinnedQuery } from "../pins/store"
 import { observeLoad } from "./load"
-import { makeLane, followSummaries } from "../timeline/store"
+import { makeLane, followPhases, followSummaries, type Lane } from "../timeline/store"
+import { TimelineNotice } from "../timeline/notice"
 import { answerCannotFinish } from "./answerEnd"
 import { ElectricCollection, type ShapeSource } from "@smthrs/effect-electric"
 import { Collection, Outbox, Persistence } from "@smthrs/effect-tanstack-db"
@@ -39,6 +40,8 @@ import {
   placeQuery,
   queuedQuery,
   shownQuery,
+  everythingQuery,
+  timelineNoticeQuery,
 } from "./queries"
 import { FormValues } from "../views/schema"
 import {
@@ -113,6 +116,7 @@ export interface ConversationState {
   readonly conversation: Query<typeof conversationQuery>
   readonly latest: Query<typeof latestQuery>
   readonly shown: Query<typeof shownQuery>
+  readonly everything: Query<typeof everythingQuery>
   readonly queued: Query<typeof queuedQuery>
   readonly history: Collection.Collection<History, string>
   readonly historyState: Query<typeof historyQuery>
@@ -134,6 +138,10 @@ export class ChatStore extends Context.Service<
   {
     readonly pinState: Effect.Success<ReturnType<typeof makePins>>
     readonly pinned: Query<typeof pinnedQuery>
+    /** The summaries' turns, shared by every conversation on this tab, and why they stopped when they have. */
+    readonly summaryLane: Lane
+    readonly timelineNotices: Collection.Collection<TimelineNotice, string>
+    readonly timelineNotice: Query<typeof timelineNoticeQuery>
     readonly messages: ElectricCollection.ElectricCollection<Message>
     readonly asking: Collection.Collection<Asking, string>
     readonly unsent: Collection.Collection<Unsent, string>
@@ -145,6 +153,7 @@ export class ChatStore extends Context.Service<
     readonly conversation: Query<typeof conversationQuery>
     readonly latest: Query<typeof latestQuery>
     readonly shown: Query<typeof shownQuery>
+    readonly everything: Query<typeof everythingQuery>
     readonly queued: Query<typeof queuedQuery>
     readonly composerState: Query<typeof composerQuery>
     readonly connectionState: Query<typeof connectionQuery>
@@ -269,6 +278,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
 
   // One lane for the home and the branch conversation: their summaries take turns on the engine together.
   const summaryLane = yield* makeLane
+  const timelineNotices = yield* Collection.local<TimelineNotice, string>({ id: "timeline-notice", schema: TimelineNotice, getKey: (row) => row.id })
   const composer = yield* Collection.local<Composer, string>({
     id: "chat-composer",
     schema: Composer,
@@ -301,8 +311,8 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     schema: Message,
     getKey: (row) => row.id,
     syncMode: "eager",
-    // 2: `attempts` is gone (server answering went with it) and an answer can fail `unfinished`. 5: an answer's summary.
-    persist: { schemaVersion: 5 },
+    // 2: `attempts` is gone (server answering went with it) and an answer can fail `unfinished`. 5: an answer's summary. 6: its phase and arc.
+    persist: { schemaVersion: 6 },
     shape: {
       url: config.shapeUrl,
       columnMapper: ElectricCollection.snakeCamelMapper(),
@@ -442,7 +452,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
         schema: Message,
         getKey: (row) => row.id,
         syncMode: "eager",
-        persist: { schemaVersion: 5 },
+        persist: { schemaVersion: 6 },
         shape: {
           url: `${config.shapeUrl}?conversation=${encodeURIComponent(conversationId)}`,
           columnMapper: ElectricCollection.snakeCamelMapper(),
@@ -460,8 +470,10 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
       })
       const branchConversation = yield* conversationQuery(branchMessages, unsent, asking, branchViews, conversationId)
       const branchLatest = yield* latestQuery(branchConversation, pageSize)
-      // The rail summarizes what this conversation's window shows (src/features/timeline/store.ts).
-      yield* followSummaries(branchLatest, branchMessages, flows, summaryLane).pipe(Effect.forkIn(scope))
+      // The rail spans the whole conversation, and summarizes what it spans (src/features/timeline/store.ts).
+      const branchEverything = yield* everythingQuery(branchConversation)
+      yield* followSummaries(branchEverything, branchMessages, flows, summaryLane).pipe(Effect.forkIn(scope))
+      yield* followPhases(branchEverything, flows, summaryLane).pipe(Effect.forkIn(scope))
       const opened: ConversationState = {
         pinned: yield* pinnedQuery(pinState.effective, branchMessages, pinState.pending, conversationId),
         conversationId,
@@ -469,6 +481,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
         conversation: branchConversation,
         latest: branchLatest,
         shown: yield* shownQuery(branchLatest),
+        everything: branchEverything,
         queued: yield* queuedQuery(branchConversation),
         history: branchHistory,
         historyState: yield* historyQuery(branchHistory),
@@ -613,9 +626,14 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     }
   }
 
-  // The rail summarizes what the window shows, never every message the device holds (src/features/timeline/store.ts).
-  yield* followSummaries(latest, messages, flows, summaryLane).pipe(Effect.forkIn(scope))
+  // The rail spans the whole conversation, and summarizes what it spans (src/features/timeline/store.ts).
+  const everything = yield* everythingQuery(conversation)
+  yield* followSummaries(everything, messages, flows, summaryLane).pipe(Effect.forkIn(scope))
+  yield* followPhases(everything, flows, summaryLane).pipe(Effect.forkIn(scope))
   const store = ChatStore.of({
+    summaryLane,
+    timelineNotices,
+    timelineNotice: yield* timelineNoticeQuery(timelineNotices),
     pinState,
     pinned: yield* pinnedQuery(pinState.effective, messages, pinState.pending),
     messages,
@@ -629,6 +647,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     conversation,
     latest,
     shown: yield* shownQuery(latest),
+    everything,
     queued,
     composerState: yield* composerQuery(composer),
     connectionState: yield* connectionQuery(connection),

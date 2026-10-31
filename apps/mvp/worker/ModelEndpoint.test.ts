@@ -1679,7 +1679,7 @@ describe("timeline summary role", () => {
     const scope = Effect.runSync(Scope.make())
     try {
       // A fresh answer's claim is this run's (worker/TimelineSummaries.ts); this test is about the model call after it.
-      const claimed = Layer.succeed(SummaryLedger, SummaryLedger.of({ claim: () => Effect.succeed(true), record: () => Effect.void }))
+      const claimed = Layer.succeed(SummaryLedger, SummaryLedger.of({ release: () => Effect.void, claimSpans: () => Effect.succeed(true), recordSpans: () => Effect.void, releaseSpans: () => Effect.void, claim: () => Effect.succeed(true), record: () => Effect.void }))
       const { context } = await Effect.runPromise(Scope.provide(scope)(build(summaries.pipe(
         Layer.provide(Layer.merge(counted, claimed)),
         Layer.provideMerge(Action.layerImplementations),

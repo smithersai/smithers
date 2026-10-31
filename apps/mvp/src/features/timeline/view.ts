@@ -1,6 +1,8 @@
-import { formatRelativeTime, type ChatTimelineEntry } from "@smthrs/ui"
+import { formatRelativeTime, type ChatTimelineEntry, type TimelineMarker } from "@smthrs/ui"
+import { Option } from "effect"
 import { postgresTime } from "../chat/view"
 import { isGenericSummary, revisionOf, safeTimelineText } from "./identity"
+import { parseMark } from "./marks"
 
 export interface RailMessage {
   readonly id: string
@@ -14,6 +16,9 @@ export interface RailMessage {
   /** An answer's recorded summary and the content identity it summarizes; "" or none while it has none. */
   readonly summary?: string | null
   readonly summaryRevision?: string | null
+  /** The phase and the arc that start at this message, as stored ("" or none on most). */
+  readonly phase?: string | null
+  readonly arc?: string | null
 }
 export interface RailStatus { readonly id: string; readonly state: string; readonly flow?: string | null }
 export interface RailDraft { readonly id: string; readonly answerId: string | null; readonly title: string; readonly createdAt: number }
@@ -65,7 +70,7 @@ export const railEntries = (
       time: displayTime(message.createdAt),
       tokens: message.inputTokens != null && message.outputTokens != null && message.inputTokens + message.outputTokens > 0
         ? message.inputTokens + message.outputTokens : undefined,
-      kind: message.role === "user" ? "ask" : "answer", state,
+      kind: message.role === "user" ? "ask" : "answer", state, length: message.text.length,
       summary: summary && !isGenericSummary(summary) ? safeTimelineText(summary) : undefined,
       label: fallback(message, messages, state),
     }]
@@ -87,3 +92,12 @@ export const railEntries = (
     ].join(" · "),
   })),
 ]
+
+/** The phases or arcs stored on `messages`, as the rail's level 1 or level 2 takes them. */
+export const railMarkers = (messages: readonly RailMessage[], field: "phase" | "arc"): TimelineMarker[] =>
+  messages.flatMap(message => {
+    const mark = parseMark(message[field])
+    if (Option.isNone(mark)) return []
+    const { title, summary, closed } = mark.value
+    return [{ id: `${field}:${message.id}`, start: message.status === "unsent" ? `unsent:${message.id}` : message.id, title: safeTimelineText(title), summary: safeTimelineText(summary), closed }]
+  })

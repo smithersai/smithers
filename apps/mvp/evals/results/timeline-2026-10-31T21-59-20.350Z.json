@@ -1,0 +1,351 @@
+{
+  "eval": "timeline",
+  "model": "gpt-6-luna",
+  "scores": {
+    "summariesMade": 0,
+    "entryAccurate": 0,
+    "entrySpecific": 0,
+    "boundaryF1": 0.7662337662337663,
+    "boundaries": 0.6333333333333333,
+    "titles": 0.9033333333333333,
+    "faithful": 0.7000000000000001
+  },
+  "fixtures": [
+    {
+      "name": "long-coding-chat",
+      "entries": 72,
+      "summariesMade": 0,
+      "entryAccurate": 0,
+      "entrySpecific": 0,
+      "boundaryF1": 0.7272727272727273,
+      "phases": [
+        {
+          "from": 0,
+          "title": "Investigating issue 450 iframe waits",
+          "summary": "Traced the flaky saved-card test to fixed two-second waits in three specs, while CI frame loads reached 3.1 seconds.",
+          "closed": true
+        },
+        {
+          "from": 5,
+          "title": "Fixing saved-card, coupon, and refund waits",
+          "summary": "Updated three specs to wait for payment-frame readiness, fixed duplicate refund seeding, and confirmed all 42 e2e tests passed.",
+          "closed": true
+        },
+        {
+          "from": 12,
+          "title": "Opening and refining PR 512",
+          "summary": "Opened PR 512, confirmed its checks passed, and added a shared payment-frame helper to address a reviewer concern.",
+          "closed": true
+        },
+        {
+          "from": 17,
+          "title": "Updating PR 512",
+          "summary": "Renamed the payment-frame helper across the specs, pushed the change, and confirmed checks passed and Maya approved.",
+          "closed": true
+        },
+        {
+          "from": 20,
+          "title": "Fixing login redirect #440",
+          "summary": "Located the return path being read after session startup, unskipped its test, and moved the read earlier so the test passed.",
+          "closed": true
+        },
+        {
+          "from": 25,
+          "title": "Fixing auth test clock",
+          "summary": "The auth suite had one timeout, traced to a broken fake clock; after a failed attempt, the clock fix passed all 42 tests.",
+          "closed": true
+        },
+        {
+          "from": 29,
+          "title": "Opening auth PR 513",
+          "summary": "Opened PR 513, which changes three files and closes issue 440.",
+          "closed": true
+        },
+        {
+          "from": 30,
+          "title": "Drafting v2.3.0 release notes",
+          "summary": "Summarized 14 merged pull requests, drafted release notes with fixes before features, and listed 11 closing issues.",
+          "closed": false
+        }
+      ],
+      "truth": [
+        0,
+        5,
+        12,
+        20,
+        30
+      ],
+      "calls": 11,
+      "invalidCalls": 0,
+      "boundaries": 0.6,
+      "titles": 0.88,
+      "faithful": 0.8,
+      "samples": [
+        {
+          "id": "q0",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "a0",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "q1",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "a1",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "q2",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "a2",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "q3",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "a3",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "q4",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "a4",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "q5",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "a5",
+          "summary": null,
+          "raw": ""
+        }
+      ]
+    },
+    {
+      "name": "issues-flows-review",
+      "entries": 28,
+      "summariesMade": 0,
+      "entryAccurate": 0,
+      "entrySpecific": 0,
+      "boundaryF1": 0.5714285714285715,
+      "phases": [
+        {
+          "from": 0,
+          "title": "Labeling open bug issues",
+          "summary": "Identified nine open bugs and labeled them bug.",
+          "closed": true
+        },
+        {
+          "from": 2,
+          "title": "Investigating checkout issue 418",
+          "summary": "Found checkout issues #405, #418 and #422, then traced #418’s lost coupon to state in CouponField.tsx.",
+          "closed": true
+        },
+        {
+          "from": 5,
+          "title": "Drafting issue 418 TODO",
+          "summary": "Drafted a TODO to fix the coupon field losing its value when leaving the page.",
+          "closed": true
+        },
+        {
+          "from": 6,
+          "title": "Creating issue-labeling flow",
+          "summary": "Started creating a flow to label new issues for northwind/shop.",
+          "closed": true
+        },
+        {
+          "from": 7,
+          "title": "Running issue classification",
+          "summary": "Classified the last 10 issues as 6 bugs, 3 enhancements, and 1 question; issue 431 asks how to export orders as CSV, and the run’s classify step took 1.2 seconds.",
+          "closed": false
+        },
+        {
+          "from": 10,
+          "title": "Checking open pull requests",
+          "summary": "Found 5 open pull requests; #96 Fix coupon rounding is the newest.",
+          "closed": false
+        }
+      ],
+      "truth": [
+        0,
+        6,
+        10
+      ],
+      "calls": 4,
+      "invalidCalls": 0,
+      "boundaries": 0.4,
+      "titles": 0.9,
+      "faithful": 0.7,
+      "samples": [
+        {
+          "id": "q0",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "a0",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "q1",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "a1",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "q2",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "a2",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "q3",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "a3",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "q4",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "a4",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "q5",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "a5",
+          "summary": null,
+          "raw": ""
+        }
+      ]
+    },
+    {
+      "name": "one-goal-with-failures",
+      "entries": 20,
+      "summariesMade": 0,
+      "entryAccurate": 0,
+      "entrySpecific": 0,
+      "boundaryF1": 1,
+      "phases": [
+        {
+          "from": 0,
+          "title": "Upgrading Vitest to 3.2",
+          "summary": "Updated Vitest and the lockfile, fixed chart test mocks and snapshots, and finished with all 200 tests passing.",
+          "closed": false
+        }
+      ],
+      "truth": [
+        0
+      ],
+      "calls": 2,
+      "invalidCalls": 0,
+      "boundaries": 0.9,
+      "titles": 0.93,
+      "faithful": 0.6,
+      "samples": [
+        {
+          "id": "q0",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "a0",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "q1",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "a1",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "q2",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "a2",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "q3",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "a3",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "q4",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "a4",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "q5",
+          "summary": null,
+          "raw": ""
+        },
+        {
+          "id": "a5",
+          "summary": null,
+          "raw": ""
+        }
+      ]
+    }
+  ]
+}

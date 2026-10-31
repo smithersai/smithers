@@ -767,7 +767,6 @@ export const agenticReasoningCss = `
 
 /** All component sheets, composed in a stable order. */
 export const smithersUiCss = [
-  chatTimelineCss,
   sharedCss,
   buttonCss,
   badgeCss,
@@ -838,6 +837,7 @@ export const smithersUiCss = [
   kbdCss,
   segmentedControlCss,
   commandPaletteCss,
+  chatTimelineCss,
   reducedMotionCss,
 ]
   .map((block) => block.trim())

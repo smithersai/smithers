@@ -107,6 +107,8 @@ export default class DevChatApi extends Cloudflare.Worker<DevChatApi>()(
     spendAlerts: false,
     dev: true,
     hostedModel: true,
+    // One person here is every parallel spec and a laptop's whole day; a deploy's people keep the 200 a day.
+    summaryDailyCap: 100_000,
     feedKey: DEV_FEED_KEY,
   }),
 ) {}

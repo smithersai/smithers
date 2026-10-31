@@ -1,17 +1,37 @@
 # Conversation timeline
 
-`ChatTranscript` accepts a `rail` contribution. Pass `ChatTimeline` entries with transcript anchor ids, kind, recorded state and an optional short summary, actor, time, duration, token total and formatted cost. The host supplies data; the component never calls a model. It appears at a viewport width of 1180 pixels when the transcript column is at least 600 pixels wide, outside the message column, and stays closed on narrow screens until the conversation’s Timeline header control is activated. The control works with touch, Enter and Space; the sheet overlays chat without reducing its width. Rows keep their height when summaries arrive.
+`ChatTranscript` accepts a `rail` contribution. Pass `ChatTimeline` the conversation's entries, with their transcript anchor ids, kind, recorded state and short summary, and its logical phases. The rail is a slim vertical scrubber left of the chat. It never narrows the transcript.
 
 ```tsx
-<ChatTranscript rail={<ChatTimeline entries={entries} onJump={jump} />}>
+<ChatTranscript rail={<ChatTimeline entries={entries} phases={phases} arcs={arcs} onJump={jump} />}>
   {messages}
 </ChatTranscript>
 ```
 
-Native buttons activate with Enter or Space. Arrow keys and J/K move to the neighboring entry and jump; Home/End reach the boundaries. Without `onJump`, it scrolls the matching DOM anchor into the transcript viewport. `onJump` handles scrolling during keyboard traversal. `onActivate` handles explicit activation (click, Enter or Space) of one entry, for destinations such as a TODO page; groups and focus movement never activate a destination. Without `onActivate`, activation also jumps. The inclusive visible band follows transcript scroll and resize. The resting rail uses small, muted type and a thin viewport marker. Hover or keyboard focus reveals a compact summary, actor, supplied time/duration, tokens/cost, status and jump hint. Optional evidence is omitted when absent; the component never estimates billing or timing. Waiting and failure rows use theme warning/danger colors; their transcript cards must retain written states.
+## Levels
 
-`timelineKey` and `timelineLabel` are pure helpers. Supply `label` with the recorded object and outcome while a summary is unavailable. A nonempty `summary` takes precedence over `label`; legacy callers without either retain state labels. Its host must invalidate summaries when entry content changes and must never supply secrets as labels or summaries.
+Level 0 holds one 34 px row per entry: a mark whose height follows `length` (neutral for a question, teal for an answer) and up to two lines of summary. A track on its left carries a thumb over what the transcript shows, and a dot at the reading line.
 
-Zoom levels share a horizontal flex row on desktop, with blocks distributed vertically within each level. `onGroupsChange` reports changed visible groups; an inline callback may update parent summaries without requesting the same groups again. Enabling the callback requests the current groups.
+Level 1 appears once entries no longer fit, and level 2 once phases no longer fit level 1. `phases` and `arcs` are `TimelineMarker`s: a block starts at entry `start` and runs to the next one, so sizes follow what happened. Blocks in a column are one height; a strip of marks shows each block's size. Entries that no marker covers are one block titled with the first entry's label, marked pending. The rail never shows a count in place of a title.
 
-Each zoom column shows its label. Compact row labels use an ellipsis instead of splitting words or painting outside their boxes; focus or hover reveals the full summary. Desktop previews remain within the rail beside the transcript.
+A lens on each outer strip marks the stretch the next level shows, joined to it by funnel lines. Dragging the thumb or a lens scrubs the transcript. Each level holds still while the viewport stays inside it and pages when it leaves, so scrolling never drags it along.
+
+A level slides in over 240 ms, then its lens fades in and its funnel draws. It leaves in reverse. With reduced motion, these become a 120 ms fade.
+
+## Appearance
+
+The rail stays behind the chat: 11 px muted text (10 px in outer levels), marks at about half strength, soft thumb and lens. Hover or keyboard focus brings it to full contrast in 150 ms. Summaries are always visible; hover adds detail: an entry's actor, time, tokens and cost, and a block's sentence, message count and time span.
+
+A mark pulses teal while working. `Needs you` is gold, a failure is ember and a queued entry is hatched. In level 0 the transcript's words replace the summary: `Working`, `Needs you`, `Couldn't answer`, `Waiting`, `Queued`, `Not sent`. Outer strips show the colors.
+
+The rail needs room beside the transcript: a viewport of at least 1,180 px and a transcript of at least 600 px. It measures the space to the page's left edge, or to an ancestor marked `data-rail-bound`. Below that it is closed behind `Timeline`, which opens the same levels in a sheet over the chat at full contrast; Escape closes it.
+
+## Pending and unavailable
+
+`label` carries the recorded object and outcome while a summary is pending, shown in italics; a nonempty `summary` takes precedence, and the accessible name keeps both. Pass `unavailable` when summaries can't be made: entries and blocks missing one are marked, and hover shows that text.
+
+## Keys
+
+Native buttons activate with Enter or Space. Arrow keys and J/K move to the neighbor and jump; Home/End reach the boundaries; Left and Right move between an entry and the blocks that hold it; Escape focuses the transcript entry. Without `onJump`, activation scrolls the anchor into view. `onActivate` is an explicit activation of a single entry, which keyboard traversal never fires.
+
+`timelineKey` and `timelineLabel` are pure helpers, and `timelineZoom.ts`' geometry (`timelineLevelCount`, `timelineBlocks`, `timelineWidths` and more) is exported for hosts that lay out their own.

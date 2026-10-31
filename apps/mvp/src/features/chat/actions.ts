@@ -384,6 +384,24 @@ export const retryAnswer = (answerId: string) =>
     yield* ask(question.text)
   })
 
+/** Widens the window to message `id`, which the rail spans and the transcript hasn't shown yet. */
+export const showMessage = (id: string) => Effect.gen(function* () {
+  const store = yield* ChatStore
+  const shown = yield* windowNow
+  const rows = yield* shown.everything.toArray
+  const position = rows.findIndex((row) => row.id === id || `unsent:${row.id}` === id)
+  if (position === -1) return
+  const now = Option.getOrThrow(yield* shown.history.get(HISTORY))
+  const limit = Math.max(now.limit, rows.length - position + store.pageSize)
+  if (limit === now.limit) return
+  yield* shown.latest.setWindow({ limit }).pipe(Effect.orDie, Effect.forkIn(store.scope, { startImmediately: true }))
+  yield* shown.history.update(HISTORY, (history) => {
+    history.limit = limit
+    history.earlier = rows.length > limit
+  })
+  yield* Metric.update(historyLoads, 1)
+})
+
 /**
  * Shows the page of messages before the ones shown. The device has them all, so the window moves without the network;
  * TanStack DB applies it a moment later.

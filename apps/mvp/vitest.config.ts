@@ -62,6 +62,7 @@ export default defineConfig({
         // The timeline's summaries, once per message (docs/features/timeline.md#cost).
         "worker/TimelineSummaries.ts",
         "db/migrations/0066_timeline_summaries.ts",
+        "db/migrations/0075_timeline_phases.ts",
         "worker/Actor.ts",
         "worker/ErrorCode.ts",
         "worker/ModelEndpoint.ts",

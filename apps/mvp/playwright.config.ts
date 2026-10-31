@@ -51,7 +51,7 @@ const deployment = (): PlaywrightTestConfig => {
 /** The specs whose scripted agent answers in the local shared conversation and waits for its turn there. */
 const TAKES_TURNS = [
   "answer-ordering", "coedit", "factory", "files", "forms", "generated-view", "model-quota", "notifications", "pin-message",
-  "queue", "repo-in-chat", "run-credentials", "run-graph", "sandbox-tools", "status", "sync", "timeline", "toast-overlap",
+  "queue", "repo-in-chat", "run-credentials", "run-graph", "sandbox-tools", "status", "sync", "timeline", "timeline-look", "toast-overlap",
   "todos",
 ].map((name) => `**/${name}.spec.ts`)
 

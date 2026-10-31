@@ -190,6 +190,7 @@ describe("names and placement", () => {
     expect(clientFlows).toEqual(names.map(declarationOf))
     expect(clientFlows.map((flow) => flow._tag)).toEqual([
       "timeline/summarize",
+      "timeline/phases",
       "auth/refresh",
       "app/theme/set",
       "conversation/new",

@@ -14,6 +14,7 @@ import {
   edit,
   editUnsent,
   loadEarlier,
+  showMessage,
   openComposer,
   resendUnadmitted,
   resendUnsent,
@@ -51,9 +52,12 @@ export interface ChatQueries {
    * A branch conversation's window and history, by its id, once it is shown; the home conversation's for `null` or one
    * not opened yet.
    */
+  /** Why timeline summaries can't be made now; empty while they can (src/features/timeline/notice.ts). */
+  readonly timelineNotice: Store["timelineNotice"]["tanstack"]
   readonly of: (conversationId: string | null | undefined) => {
     readonly pinned: Store["pinned"]["tanstack"]
     readonly conversation: Store["shown"]["tanstack"]
+    readonly everything: Store["everything"]["tanstack"]
     readonly history: Store["historyState"]["tanstack"]
     readonly queued: Store["queued"]["tanstack"]
   }
@@ -77,6 +81,8 @@ export interface ChatActions {
   readonly takeComposerFocus: () => boolean
   readonly setDraft: (text: string) => Promise<void>
   readonly loadEarlier: () => void
+  /** Widens the transcript's window to message `id`: the rail spans more than it shows. */
+  readonly showMessage: (id: string) => void
   /** Retry on the connection pill: sync and send now. */
   readonly retry: () => void
   /** Retry on an answer Smithers couldn't give. */
@@ -183,13 +189,14 @@ export class Chat extends Context.Service<Chat, { readonly queries: ChatQueries;
           connection: store.connectionState.tanstack,
           history: store.historyState.tanstack,
           place: store.placeState.tanstack,
+          timelineNotice: store.timelineNotice.tanstack,
           of: (conversationId) => {
             const branch = conversationId === null || conversationId === undefined
               ? undefined
               : store.opened(conversationId)
             return branch === undefined
-              ? { pinned: store.pinned.tanstack, conversation: store.shown.tanstack, history: store.historyState.tanstack, queued: store.queued.tanstack }
-              : { pinned: branch.pinned.tanstack, conversation: branch.shown.tanstack, history: branch.historyState.tanstack, queued: branch.queued.tanstack }
+              ? { pinned: store.pinned.tanstack, conversation: store.shown.tanstack, everything: store.everything.tanstack, history: store.historyState.tanstack, queued: store.queued.tanstack }
+              : { pinned: branch.pinned.tanstack, conversation: branch.shown.tanstack, everything: branch.everything.tanstack, history: branch.historyState.tanstack, queued: branch.queued.tanstack }
           },
         },
         actions: {
@@ -211,6 +218,7 @@ export class Chat extends Context.Service<Chat, { readonly queries: ChatQueries;
           takeComposerFocus: () => run(takeComposerFocus),
           setDraft: (text) => runAsync(setDraft(text)),
           loadEarlier: () => run(loadEarlier),
+          showMessage: (id) => run(showMessage(id)),
           retry: () => run(retry("button")),
           retryAnswer: (answerId) => runAsync(retryAnswer(answerId)),
           editUnsent: (id) => runAsync(editUnsent(id)),

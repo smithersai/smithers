@@ -30,6 +30,7 @@ export type PersonOnlyEnforcement =
 export const PERSON_ONLY_FLOWS = {
   "auth/refresh": { device: "It asks the tab that started it to read its own session again; it reaches no route of its own." },
   "timeline/summarize": { device: "The device projects conversation labels and reaches only the metered model role; no approval or shared write authority is granted." },
+  "timeline/phases": { device: "The device projects conversation phases and reaches only the metered model role; no approval or shared write authority is granted." },
   "repo/about": { device: "A repository's page reads what GitHub says of it through RepoApi's about route, which any visitor may read; it grants nothing." },
   "chat/Answer": { starts: "POST /api/questions" },
   "chat/Close": {

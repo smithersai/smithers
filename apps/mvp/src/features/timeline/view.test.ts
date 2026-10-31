@@ -1,7 +1,7 @@
 import { expect, test } from "vitest"
 import { formatRelativeTime } from "@smthrs/ui"
 import { postgresTime } from "../chat/view"
-import { railEntries } from "./view"
+import { railEntries, railMarkers } from "./view"
 import { revisionOf } from "./identity"
 
 test("only chat entries join the rail; recorded states and content identities control summaries", () => {
@@ -151,4 +151,15 @@ test("an untitled draft remains identifiable and an active TODO names its step",
   expect(railEntries([{ ...message, createdAt: "invalid" }], [])[0]?.time).toBeUndefined()
   const todo = { id: "t", title: "Ship", number: 1, state: "done", prNumber: null, step: null, failure: null, updatedAt: createdAt }
   expect(railEntries([], [], [], [todo])[0]?.time).toBe(time)
+})
+
+test("a phase stands at the message it starts at; a message without one, or with a malformed one, adds nothing", () => {
+  const mark = JSON.stringify({ title: "Researching issue 450", summary: "Traced the flaky test", closed: true, covered: 3 })
+  const base = { role: "user", status: "done", text: "Find it" }
+  const markers = railMarkers([
+    { ...base, id: "plain", phase: "" }, { ...base, id: "broken", phase: "{" }, { ...base, id: "kept", phase: mark }, { ...base, id: "draft", status: "unsent", phase: mark },
+  ] as never, "phase")
+  expect(markers.map(marker => [marker.id, marker.start, marker.title])).toEqual([
+    ["phase:kept", "kept", "Researching issue 450"], ["phase:draft", "unsent:draft", "Researching issue 450"],
+  ])
 })

@@ -40,6 +40,9 @@ export const Message = Schema.Struct({
    */
   summary: Schema.optional(Schema.NullOr(Schema.String)),
   summaryRevision: Schema.optional(Schema.NullOr(Schema.String)),
+  /** The phase, then the arc, that starts at this message, as JSON (src/features/timeline/marks.ts); none on most. */
+  phase: Schema.optional(Schema.NullOr(Schema.String)),
+  arc: Schema.optional(Schema.NullOr(Schema.String)),
 })
 export type Message = typeof Message.Type
 

@@ -24,7 +24,7 @@ const CELL = "```cell\nctx.done(" + JSON.stringify(ANSWER) + ")\n```"
 const SUMMARY = "Release retry check completed"
 const isSummary = (call: { readonly body: Record<string, unknown> } | undefined) => JSON.stringify(call?.body ?? {}).includes("navigation summary")
 
-test("an idle page and a page receiving N messages cause at most N summary calls in total, across two tabs", async () => {
+test("an idle page and a page receiving N messages cause at most one summary call per message in total, across two tabs", async () => {
   let api: TestChatApi["Service"] | undefined
   const root = openTestApp({ answers: false }, {
     actor: member,
@@ -76,16 +76,15 @@ test("an idle page and a page receiving N messages cause at most N summary calls
   const b = await tab()
   await summarized(b, [first])
   await a.runtime.runPromise(Effect.sleep("1500 millis"))
-  expect(summaryCalls()).toBe(1)
+  expect(summaryCalls()).toBe(2)
 
   // The page receives four more messages (two exchanges), shown in both tabs.
   const more = [await ask("Did the deploy retry?"), await ask("Did the docs build retry?")]
   await summarized(a, [first, ...more])
   await summarized(b, [first, ...more])
   await a.runtime.runPromise(Effect.sleep("1500 millis"))
-  // Six messages arrived in all; one call per finished answer, and each question keeps its own words for free.
-  expect(summaryCalls()).toBeLessThanOrEqual(6)
-  expect(summaryCalls()).toBe(3)
+  // Six messages arrived in all; one call each, however many tabs show them.
+  expect(summaryCalls()).toBe(6)
   // Each call went to the person's own key, with no reasoning effort and a one-line budget.
   for (const call of api.providerCalls.filter(isSummary)) {
     expect(call.headers.get("authorization")).toBe("Bearer sk-test-timeline-summaries")

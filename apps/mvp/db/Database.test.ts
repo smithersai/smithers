@@ -1724,6 +1724,21 @@ describe("0075_model_connections", () => {
   }))
 })
 
+describe("0079_timeline_phases", () => {
+  test("keeps phases on messages, claims spans once, and leaves old claims' reasons valid", () => emptySchema(async (url) => {
+    const database = Database.layer(Effect.succeed(Redacted.make(url)))
+    const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+    await on(through("0078"))
+    expect((await on(through("0079"))).map(([id, name]) => `${id}_${name}`)).toEqual(["79_timeline_phases"])
+    const columns = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ column_name: string }>`
+      SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'messages' AND column_name IN ('phase', 'arc') ORDER BY 1`))
+    expect(columns.map((row) => row.column_name)).toEqual(["arc", "phase"])
+    const claims = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ column_name: string }>`
+      SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'timeline_phase_claims' AND column_name = 'released_at'`))
+    expect(claims).toHaveLength(1)
+  }))
+})
+
 describe("0074_host_sessions", () => {
   test("keys a hand-off by its code's digest and an alias session by its token's, both ending with their home session", () => emptySchema(async (url) => {
     const database = Database.layer(Effect.succeed(Redacted.make(url)))

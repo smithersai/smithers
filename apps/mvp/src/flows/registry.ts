@@ -1,7 +1,7 @@
 import { ChatPin, ChatUnpin } from "../features/pins/flows"
 import { Context, Layer } from "effect"
 import { Remember } from "../features/agent/memoryFlows"
-import { Summarize } from "../features/timeline/flow"
+import { Phases, Summarize } from "../features/timeline/flow"
 import type { BrowserEngine } from "@smthrs/platform-browser"
 import { BranchCreate, BranchTrack } from "../features/branch/flows"
 import { BranchPublish, BranchResync, BranchUpdate } from "../features/branch/publishFlows"
@@ -129,6 +129,7 @@ export interface Entry {
 /** Every flow the app declares, by name. */
 export const registry = {
   "timeline/summarize": { flow: Summarize, acts: "flow", userOnlyReason: "The conversation projection requests summaries; the agent does not summarize itself." },
+  "timeline/phases": { flow: Phases, acts: "flow", userOnlyReason: "The conversation projection requests phases; the agent does not segment itself." },
   // A tab's failed session check, asked again until ChatApi answers (docs/features/sign-in.md#when-chatapi-cant-say).
   "auth/refresh": {
     flow: AuthRefresh,

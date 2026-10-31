@@ -39,28 +39,40 @@ test("claims and records through the route, and says whether this claim took the
 
 test.each([
   [{ status: 429, body: { code: "capped" } }, "capped"],
-  [{ status: 503, body: { code: "unavailable" } }, "unavailable"],
-  [{ status: 408 }, "unavailable"],
+  [{ status: 503, body: { code: "unavailable" } }, "server"],
+  [{ status: 408 }, "server"],
   [{ status: 404, body: { code: "not_found" } }, "refused"],
   [{ status: 409, body: { code: "unfinished" } }, "refused"],
-  [{ status: 200 }, "unavailable"],
-  [{ status: 200, body: { claimed: "yes" } }, "unavailable"],
-  ["transport", "unavailable"],
+  [{ status: 200 }, "server"],
+  [{ status: 200, body: { claimed: "yes" } }, "server"],
+  ["transport", "server"],
 ] as const)("a claim answered %j fails %s", async (answer, code) => {
   expect(failed((await run(answer, ledger => ledger.claim(claim))).exit)).toBe(code)
 })
 
-test("a claim the server never answers is unavailable after its deadline", async () => {
+test("a claim the server never answers is the server's failure after its deadline", async () => {
   const { layer } = ledgerOver("hang")
   const exit = await Effect.runPromise(Effect.gen(function* () {
     const fiber = yield* Effect.forkChild(Effect.exit(Effect.flatMap(Effect.service(SummaryLedger), ledger => ledger.claim(claim))))
     yield* TestClock.adjust("15 seconds")
     return yield* Fiber.join(fiber)
   }).pipe(Effect.provide(Layer.merge(layer, TestClock.layer()))))
-  expect(failed(exit)).toBe("unavailable")
+  expect(failed(exit)).toBe("server")
 })
 
 test("a record the server refuses as unclaimed fails refused", async () => {
   const exit = (await run({ status: 409, body: { code: "unclaimed" } }, ledger => ledger.record({ messageId: "m", revision: claim.revision, summary: "x" }))).exit
   expect(failed(exit)).toBe("refused")
+})
+
+test("spans go through the same route: a claim, its record, and a release that frees it", async () => {
+  const span = { messageId: "m", level: 1 as const, revision: claim.revision }
+  const took = await run({ status: 200, body: { claimed: true } }, ledger => ledger.claimSpans(span))
+  expect(took.exit).toEqual(Exit.succeed(true))
+  expect(took.seen[0]!.body).toMatchObject({ op: "claim_spans" })
+  const recorded = await run({ status: 200, body: { recorded: true } }, ledger => ledger.recordSpans({ ...span, spans: [] }))
+  expect(recorded.exit).toEqual(Exit.succeed(undefined))
+  expect(recorded.seen[0]!.body).toMatchObject({ op: "record_spans", spans: [] })
+  const released = await run({ status: 200, body: { released: true } }, ledger => ledger.releaseSpans(span))
+  expect(released.seen[0]!.body).toMatchObject({ op: "release_spans" })
 })

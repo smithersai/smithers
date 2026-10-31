@@ -25,10 +25,25 @@ import { debugRunOf, timeOf } from "../view"
 // (src/features/views) shows where it was added, from its own row. An answer shows its agent status under it
 // (src/features/status): its question while it needs you, in place of an empty bubble. Empty, it shows `empty`: the
 // wordmark on /app, the branch's own empty state on a branch's page.
+/** How long a jump waits for a widened window to reach the page, and the frames it holds its place once there. */
+const JUMP_WAIT_MS = 5_000
+const JUMP_SETTLE_FRAMES = 3
+
 export function Conversation({ empty = <Wordmark />, readOnly = false, timelineTodos = [], timelineRepo }: { readonly empty?: ReactNode; readonly readOnly?: boolean; readonly timelineTodos?: readonly RailTodo[]; readonly timelineRepo?: { readonly owner: string; readonly name: string } } = {}) {
   const navigate = useNavigate()
+  // The rail spans the whole conversation and the transcript only its window: an entry above it widens the window first.
   const jump = (id: string) => {
-    document.getElementById(id)?.scrollIntoView({ block: "center", behavior: "instant" })
+    // A long window takes more than a second to render, and the rows it adds move what's on screen for a frame or two.
+    const deadline = performance.now() + JUMP_WAIT_MS
+    const scroll = (settling: number) => {
+      const element = document.getElementById(id)
+      if (element !== null) element.scrollIntoView({ block: "center", behavior: "instant" })
+      if (element === null ? performance.now() < deadline : settling > 0) {
+        requestAnimationFrame(() => scroll(element === null ? settling : settling - 1))
+      }
+    }
+    if (document.getElementById(id) === null) actions.showMessage(id)
+    scroll(JUMP_SETTLE_FRAMES)
   }
   const activate = (id: string) => {
     const todo = timelineTodos.find(todo => `todo:${todo.id}` === id)
@@ -43,6 +58,8 @@ export function Conversation({ empty = <Wordmark />, readOnly = false, timelineT
   const status = useStatus().queries.of(place?.conversationId)
   const { data: statuses } = useLiveQuery(status.statuses)
   const { data: conversation } = useLiveQuery(shown.conversation)
+  const { data: everything } = useLiveQuery(shown.everything)
+  const { data: timelineNotice } = useLiveQuery(queries.timelineNotice)
   const { data: pinned } = useLiveQuery(shown.pinned)
   const { data: collapsedPins } = useLiveQuery(queries.pinCollapsed)
   const { data: pinPending } = useLiveQuery(queries.pinPending)
@@ -56,7 +73,7 @@ export function Conversation({ empty = <Wordmark />, readOnly = false, timelineT
     <div className="mvp-conversation">
     {failedPin === undefined ? null : <Button variant="ghost" size="sm" aria-label={failedPin.messageId === null ? "Retry unpin" : "Retry pin"} onClick={() => actions.retryPin(failedPin.conversationId)}>Retry</Button>}
     {pin === undefined ? null : <PinnedMessage message={pin} collapsed={collapsed} onUnpin={actions.unpin} onCollapse={() => actions.collapsePin(pin.id, !collapsed)} />}
-    <ChatTranscript empty={history?.opened === true ? empty : null} rail={<TimelineContribution messages={conversation} statuses={statuses} drafts={readOnly ? [] : drafts} todos={timelineTodos} onJump={jump} onActivate={activate} />}>
+    <ChatTranscript empty={history?.opened === true ? empty : null} rail={<TimelineContribution messages={everything} statuses={statuses} unavailable={timelineNotice?.text} drafts={readOnly ? [] : drafts} todos={timelineTodos} onJump={jump} onActivate={activate} />}>
       {history?.earlier === true ? (
         <Button variant="ghost" size="sm" onClick={actions.loadEarlier}>
           Load earlier

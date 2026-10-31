@@ -131,8 +131,8 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
     expect(outcomes).toEqual({
       "auth-confirmed": "migrated 1→2 migrated 1 kept 0",
       "chat-drafts": `migrated 1→2 migrated ${rowsOf(fixture, "chat-drafts").length} kept 0`,
-      "chat-messages": legacy ? "resync 2→5 migrated 0 kept 0" : "resync 3→5 migrated 0 kept 0",
-      [branch]: legacy ? "resync 2→5 migrated 0 kept 0" : "resync 3→5 migrated 0 kept 0",
+      "chat-messages": legacy ? "resync 2→6 migrated 0 kept 0" : "resync 3→6 migrated 0 kept 0",
+      [branch]: legacy ? "resync 2→6 migrated 0 kept 0" : "resync 3→6 migrated 0 kept 0",
       "chat-unsent": "migrated 1→2 migrated 1 kept 0",
       flows: legacy ? "resync 1→2 migrated 0 kept 0" : "current 2→2 migrated 0 kept 0",
       "issue-drafts": "current 1→1 migrated 0 kept 0",

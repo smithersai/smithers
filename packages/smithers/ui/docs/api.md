@@ -336,19 +336,19 @@ and `title` rather than throwing.
 returns the first and last visible message ids, or `undefined`. `onBand`
 receives the same band when visibility changes.
 
-`ChatTimelineProps` supplies `entries`, optional `onJump`, `onActivate`,
-`groupSummaries` and `onGroupsChange`. Each `ChatTimelineEntry` has `id`,
-`kind` (`ask`, `answer`, `tool`, `flow`) and `state` (`done`, `working`,
-`waiting`, `failed`, `queued`), with optional summary, label, actor, time,
-duration, tokens and cost. See [conversation navigation](./chat-timeline.md).
+`ChatTimelineProps` supplies `entries`, optional `phases`, `arcs`, `unavailable`, `onJump` and `onActivate`. Each `ChatTimelineEntry` has `id`,
+`kind` and `state`, with optional summary, label, length, actor, time, duration, tokens and cost. See [conversation navigation](./chat-timeline.md).
 
-| Helper | Contract |
+| Export | Purpose |
 | --- | --- |
-| `timelineCapacity(height, rowHeight = 32)` | Number of rows that fit, at least two. |
-| `timelineLevelCount(count, height, rowHeight = 32)` | Zoom levels needed; zero for an empty list. |
-| `timelineLevels(ids, height, first, last, rowHeight = 32)` | `ReadonlyArray<TimelineLevel>` around the inclusive visible entry range. |
-| `TimelineBlock` | `{ id, start, end }`; entry indices form a half-open range. |
-| `TimelineLevel` | `{ level, start, end, blocks, band: { top, height } }`; band values are proportions. |
+| `timelineCapacity(height)` | Rows or blocks a column holds, at least two. |
+| `timelineLevelCount(entries, spans, height)` | Columns needed; zero for an empty list. |
+| `timelineBlocks(ids, markers, level)` | Contiguous `TimelineBlock`s at `markers`; an unmarked conversation is one pending block. |
+| `timelineExchanges(asks)` | Half-open entry ranges, each a question and what followed it. |
+| `timelineMarkHeight(length)`, `timelineMarks(parts, room, gap)` | A mark's height, and stacked marks by share. |
+| `timelineWidths(levels, available)` | Column widths, innermost first, and their gap. |
+| `TimelineMarker` | `{ id, start, title, summary?, closed? }`; `start` is an entry id. |
+| `TimelineBlock` | `{ id, start, end, title?, summary?, closed? }`; entry indices form a half-open range. |
 
 ## Prompt input
 

@@ -90,6 +90,9 @@ export const SYNCED_MESSAGE_COLUMNS = [
   // An answer's one-line summary, made once for every device (worker/TimelineSummaries.ts).
   "summary",
   "summary_revision",
+  // The phase and arc that start at a message, made once for every device (worker/TimelineSummaries.ts).
+  "phase",
+  "arc",
 ]
 
 /**
@@ -157,6 +160,8 @@ export const make = <E, R>(
     readonly spendAlerts?: boolean
     /** `HOSTED_MODEL_ENABLED`'s default: on only under `alchemy dev` (decision 0099). */
     readonly hostedModel?: boolean
+    /** `TIMELINE_SUMMARY_DAILY_CAP`'s default when not 200: only `alchemy dev` sets it, for its one person's every spec. */
+    readonly summaryDailyCap?: number
     /** The realm generated views render in (worker/ViewRealm.ts): `load` on Cloudflare, `loadNode` in the tests. */
     readonly realm: Effect.Effect<PresentationRealm.Realm, PresentationRealm.RealmError>
   },
@@ -172,7 +177,7 @@ export const make = <E, R>(
     const answers = yield* Answers.make(database)
     const pins = yield* Pins.make(database)
     // POST /api/timeline/summaries: an answer's one summary, claimed once and recorded on the message (docs/features/timeline.md#cost).
-    const timelineSummaries = yield* TimelineSummaries.make(database)
+    const timelineSummaries = yield* TimelineSummaries.make(database, options.summaryDailyCap)
     // POST /api/views and GET /api/shapes/views: the conversation's views (docs/features/web-pages.md).
     const views = yield* Views.make(database, options)
     // POST /api/web/preview: a page checked before it is framed (docs/features/web-pages.md#before-a-page-is-framed).

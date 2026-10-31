@@ -6,11 +6,13 @@ import { Cause, Context, Effect, Exit, Layer, Logger, Metric, References, Schema
 import { FetchHttpClient } from "effect/http"
 import { afterEach, expect, test } from "vitest"
 import { build } from "../../../worker/test/flowHost"
-import { Summarize, SummaryFailed, type SummaryPayload } from "./flow"
+import { Phases, Summarize, SummaryFailed, type SummaryPayload } from "./flow"
 import { registration, summaryCalls, SummaryLedger, SummarySeat } from "./steps"
 
 const scopes: Scope.Closeable[] = []
 afterEach(async () => { for (const scope of scopes.splice(0)) await Effect.runPromise(Scope.close(scope, Exit.void)) })
+/** Everything a ledger does besides what a test scripts. */
+const quiet = { release: () => Effect.void, claimSpans: () => Effect.succeed(true), recordSpans: () => Effect.void, releaseSpans: () => Effect.void }
 const payload = { id: "entry", revision: "r1", role: "user" as const, text: "Please check whether the release retried twice." }
 /** The server's claims, as worker/TimelineSummaries.ts keeps them: the first claim of a revision takes it. */
 const memoryLedger = () => {
@@ -19,6 +21,7 @@ const memoryLedger = () => {
   return {
     recorded,
     layer: Layer.succeed(SummaryLedger, SummaryLedger.of({
+      ...quiet,
       claim: ({ messageId, revision }) => Effect.sync(() => !claimed.has(`${messageId}:${revision}`) && !!claimed.add(`${messageId}:${revision}`)),
       record: record => Effect.sync(() => { recorded.push(record) }),
     })),
@@ -171,7 +174,7 @@ test("claims before the model, records what it wrote, and sends a bounded exchan
   expect(requests).toHaveLength(1)
   const request = requests[0]!
   expect(request.modelId).toBe("summary")
-  expect(request.params.maxTokens).toBe(24)
+  expect(request.params.maxTokens).toBe(32)
   expect(request.params.reasoningEffort).toBeUndefined()
   const sent = JSON.parse((request.messages[0]!.content[0] as { readonly text: string }).text) as { question: string; answer: string }
   expect([sent.question.length, sent.answer.length]).toEqual([500, 2000])
@@ -180,7 +183,7 @@ test("claims before the model, records what it wrote, and sends a bounded exchan
 
 test("an answer another tab, device or person claimed completes taken without a model call", async () => {
   const { requests, model } = answering()
-  const taken = Layer.succeed(SummaryLedger, SummaryLedger.of({ claim: () => Effect.succeed(false), record: () => Effect.die("never recorded") }))
+  const taken = Layer.succeed(SummaryLedger, SummaryLedger.of({ ...quiet, claim: () => Effect.succeed(false), record: () => Effect.die("never recorded") }))
   const lines: Array<{ level: string; message: unknown; annotations: unknown }> = []
   const exit = await executeWith(taken, model, payload, "summary-taken", lines)
   expect(exit).toEqual(Exit.succeed({ outcome: "taken" }))
@@ -191,15 +194,81 @@ test("an answer another tab, device or person claimed completes taken without a 
 
 test.each(["capped", "unavailable"] as const)("a claim the server refuses %s costs no model call", async code => {
   const { requests, model } = answering()
-  const refusing = Layer.succeed(SummaryLedger, SummaryLedger.of({ claim: () => Effect.fail(new SummaryFailed({ code })), record: () => Effect.die("never recorded") }))
+  const refusing = Layer.succeed(SummaryLedger, SummaryLedger.of({ ...quiet, claim: () => Effect.fail(new SummaryFailed({ code })), record: () => Effect.die("never recorded") }))
   const exit = await executeWith(refusing, model, payload, `summary-${code}`)
   expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toEqual(new SummaryFailed({ code }))
   expect(requests).toHaveLength(0)
 })
 
-test("a summary the server couldn't record is unavailable", async () => {
+test("a summary the server couldn't record is the server's failure, not the model's", async () => {
   const { model } = answering()
-  const lost = Layer.succeed(SummaryLedger, SummaryLedger.of({ claim: () => Effect.succeed(true), record: () => Effect.fail(new SummaryFailed({ code: "unavailable" })) }))
+  const lost = Layer.succeed(SummaryLedger, SummaryLedger.of({ ...quiet, claim: () => Effect.succeed(true), record: () => Effect.fail(new SummaryFailed({ code: "server" })) }))
   const exit = await executeWith(lost, model, payload, "summary-lost")
-  expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toEqual(new SummaryFailed({ code: "unavailable" }))
+  expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toEqual(new SummaryFailed({ code: "server" }))
+})
+
+const segmenting = { level: 1 as const, anchorId: "q0", revision: "seg1", items: [{ id: "q0", text: "Asked: a" }, { id: "q1", text: "Asked: b" }], full: false }
+
+/** A ledger that records what happens to one segmentation. */
+const spanLedger = () => {
+  const events: Array<string> = []
+  const records: Array<unknown> = []
+  return {
+    events, records,
+    layer: Layer.succeed(SummaryLedger, SummaryLedger.of({
+      ...quiet,
+      claim: () => Effect.succeed(true),
+      record: () => Effect.void,
+      release: () => Effect.sync(() => { events.push("release") }),
+      claimSpans: () => Effect.sync(() => { events.push("claim"); return true }),
+      recordSpans: record => Effect.sync(() => { events.push("record"); records.push(record) }),
+      releaseSpans: () => Effect.sync(() => { events.push("release") }),
+    })),
+  }
+}
+
+const textModel = (text: string) => answering(text).model
+/** A model whose every call fails with the provider error `code`. */
+const refusingModel = (code: ModelError.ModelError["code"]) => Model.make({ stream: () => Stream.fail(new ModelError.ModelError({ code, message: "provider said no" })) })
+const runSegment = async (ledger: Layer.Layer<SummaryLedger>, model: Model.Model, executionId: string) => {
+  const seat = Layer.effect(SummarySeat, Effect.map(SummarySeat, service => ({
+    ...service, retryPolicy: RetryPolicy.make({ ...ModelStep.defaultRetryPolicy, initialMs: 1, maxMs: 1 }),
+  }))).pipe(Layer.provide(SummarySeat.layer("https://summary.test", model)))
+  const scope = Effect.runSync(Scope.make()); scopes.push(scope)
+  const { context } = await Effect.runPromise(Scope.provide(scope)(build(registration.pipe(
+    Layer.provide(Layer.merge(seat, ledger)), Layer.provideMerge(Action.layerImplementations),
+  ))))
+  const runtime = Context.get(context, FlowRuntime.FlowRuntime)
+  return Effect.runPromise(Effect.exit(runtime.execute(Phases, { executionId, payload: segmenting })).pipe(Effect.provide(context)))
+}
+
+test("a segmentation claims first, then stores the model's spans on the messages they start at", async () => {
+  const ledger = spanLedger()
+  const model = textModel(JSON.stringify({ spans: [{ from: 1, title: "Researching issue 450", summary: "Found the cause." }, { from: 2, title: "Fixing the test", summary: "It passed." }] }))
+  expect(await runSegment(ledger.layer, model, "phases-ready")).toEqual(Exit.succeed({ spans: 2 }))
+  expect(ledger.events).toEqual(["claim", "record"])
+  expect(ledger.records).toMatchObject([{ messageId: "q0", level: 1, revision: "seg1", spans: [{ id: "q0" }, { id: "q1" }] }])
+})
+
+test("a segmentation another device claimed makes no call", async () => {
+  const { requests, model } = answering()
+  const taken = Layer.succeed(SummaryLedger, SummaryLedger.of({ ...quiet, claim: () => Effect.succeed(true), record: () => Effect.void, claimSpans: () => Effect.succeed(false) }))
+  expect(await runSegment(taken, model, "phases-taken")).toEqual(Exit.succeed({ outcome: "taken" }))
+  expect(requests).toHaveLength(0)
+})
+
+test("a model's unusable answer frees its claim, so one bad reply can't freeze a conversation's phases", async () => {
+  const ledger = spanLedger()
+  const exit = await runSegment(ledger.layer, textModel("I can't help."), "phases-invalid")
+  expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toEqual(new SummaryFailed({ code: "invalid" }))
+  expect(ledger.events).toEqual(["claim", "release"])
+})
+
+test.each([
+  ["no_route", "unconfigured"], ["out_of_credit", "credit"], ["quota_exceeded", "capped"], ["provider_internal", "unavailable"],
+] as const)("a model refusing %s fails %s and frees the claim", async (error, code) => {
+  const ledger = spanLedger()
+  const exit = await runSegment(ledger.layer, refusingModel(error), `phases-${error}`)
+  expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toEqual(new SummaryFailed({ code }))
+  expect(ledger.events).toEqual(["claim", "release"])
 })

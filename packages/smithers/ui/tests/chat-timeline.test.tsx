@@ -5,62 +5,6 @@ import { createRoot } from "react-dom/client";
 import { ChatTimeline, timelineKey, timelineLabel, type ChatTimelineEntry } from "../src/chat/ChatTimeline";
 import { chatTimelineCss } from "../src/chat/chatTimelineCss";
 
-test("inline group callbacks can update parent summaries without repeating unchanged groups", async () => {
-  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  const host = document.createElement("div");
-  document.body.append(host);
-  const root = createRoot(host);
-  const entries = Array.from({ length: 100 }, (_, index) => ({ id: `group-entry-${index}`, kind: "ask" as const, state: "done" as const }));
-  let notifications = 0;
-  function Parent() {
-    const [summaries, setSummaries] = useState<Readonly<Record<string, string>>>({});
-    return <ChatTimeline entries={entries} groupSummaries={summaries} onGroupsChange={groups => {
-      notifications++;
-      // Bound the faulty build's feedback loop so the regression can fail without hanging.
-      if (notifications <= 3) setSummaries(Object.fromEntries(groups.map(group => [group.id, "Group summary"])));
-    }} />;
-  }
-  try {
-    await act(async () => root.render(<Parent />));
-    expect(host.textContent).toContain("Group summary");
-    expect(notifications).toBe(1);
-    await act(async () => {
-      document.dispatchEvent(new Event("scroll"));
-      window.dispatchEvent(new Event("resize"));
-    });
-    expect(notifications).toBe(1);
-  } finally { await act(async () => root.unmount()); host.remove(); }
-});
-
-test("desktop timeline keeps zoom levels in flex columns", () => {
-  // Check the shipped desktop override, including its higher-specificity open disclosure selector.
-  const desktop = chatTimelineCss.slice(chatTimelineCss.indexOf("@media(min-width:1180px)"), chatTimelineCss.indexOf(".sui-timeline-band{position:"));
-  const declarations = desktop.match(/\.sui-timeline-disclosure \.sui-chat-timeline,\.sui-timeline-disclosure\[open\] \.sui-chat-timeline\{([^}]+)\}/)?.[1];
-  expect(declarations).toBeDefined();
-  const style = document.createElement("div").style;
-  style.cssText = `display:flex;flex-direction:row;${declarations}`;
-  expect(style.display).toBe("flex");
-  expect(style.flexDirection).toBe("row");
-  expect(chatTimelineCss).toContain(".sui-chat-timeline ol{position:relative;display:flex;flex-direction:column");
-});
-
-test("enabling group callbacks requests current groups even without geometry changes", async () => {
-  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  const host = document.createElement("div");
-  document.body.append(host);
-  const root = createRoot(host);
-  const entries = Array.from({ length: 100 }, (_, index) => ({ id: `late-group-${index}`, kind: "ask" as const, state: "done" as const }));
-  const received: string[] = [];
-  try {
-    await act(async () => root.render(<ChatTimeline entries={entries} />));
-    await act(async () => root.render(<ChatTimeline entries={entries} onGroupsChange={groups => { if (groups.length) received.push("first"); }} />));
-    expect(received).toEqual(["first"]);
-    await act(async () => root.render(<ChatTimeline entries={entries} />));
-    await act(async () => root.render(<ChatTimeline entries={entries} onGroupsChange={groups => { if (groups.length) received.push("second"); }} />));
-    expect(received).toEqual(["first", "second"]);
-  } finally { await act(async () => root.unmount()); host.remove(); }
-});
-
 test("timeline keys are bounded and leave other keys to the host", () => {
   for (const key of ["ArrowDown", "j"]) { expect(timelineKey(key, 1, 3)).toBe(2); expect(timelineKey(key, 2, 3)).toBe(2); }
   for (const key of ["ArrowUp", "k"]) { expect(timelineKey(key, 1, 3)).toBe(0); expect(timelineKey(key, 0, 3)).toBe(0); }
@@ -122,13 +66,25 @@ test("fallback labels distinguish unsent asks, tools and flow runs", () => {
   }
 });
 
-test("previews expose supplied evidence and mobile disclosure starts closed", async () => {
+test("hover and focus add detail; the disclosure starts closed", async () => {
   const { ChatTranscript } = await import("../src/chat/ChatTranscript");
-  const html = renderToStaticMarkup(<ChatTranscript rail={<ChatTimeline entries={[{ id: "proof", kind: "answer", state: "done", summary: "Checked retries", actor: "Reviewer", time: "19:58", duration: "4s", tokens: 240, cost: "$0.002" }]} />} />);
+  const html = renderToStaticMarkup(<ChatTranscript rail={<ChatTimeline entries={[{ id: "proof", kind: "answer", state: "done", summary: "Checked retries" }]} />} />);
   expect(html).toContain('<details class="sui-timeline-disclosure">');
   expect(html).not.toContain('<details open');
   expect(html).toContain('<summary>Timeline</summary>');
-  for (const evidence of ["Checked retries", "Reviewer", "19:58 · 4s", "240 tokens · $0.002", "Completed", "Enter to jump", 'role="tooltip"', 'aria-describedby="timeline-preview-0-proof"']) expect(html).toContain(evidence);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<ChatTimeline entries={[{ id: "proof", kind: "answer", state: "done", summary: "Checked retries", actor: "Reviewer", time: "19:58", duration: "4s", tokens: 240, cost: "$0.002" }]} />));
+    const tip = host.querySelector<HTMLElement>('[role="tooltip"]')!;
+    expect(tip.hidden).toBe(true);
+    await act(async () => host.querySelector("button")!.focus());
+    expect(tip.hidden).toBe(false);
+    expect(tip.textContent).toBe("Checked retriesReviewer · 19:58 · 4s · 240 tokens · $0.002");
+    await act(async () => host.querySelector("button")!.blur());
+    expect(tip.hidden).toBe(true);
+  } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
 test("Escape closes an open timeline and restores its control", async () => {
@@ -153,22 +109,6 @@ test("Escape closes an open timeline and restores its control", async () => {
     await act(async () => toggle.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
     expect(disclosure.open).toBe(false);
   } finally { await act(async () => root.unmount()); host.remove(); }
-});
-
-test("preview evidence preserves zero usage and omits unavailable measurements", () => {
-  const base = { id: "evidence", kind: "answer" as const, state: "done" as const };
-  const preview = (evidence: Partial<ChatTimelineEntry>) =>
-    renderToStaticMarkup(<ChatTimeline entries={[{ ...base, ...evidence }]} />);
-  expect(preview({ tokens: 0 })).toContain("0 tokens");
-  expect(preview({ cost: "$0.002" })).toContain("$0.002</span>");
-  expect(preview({ duration: "4s" })).toContain("4s</span>");
-  expect(preview({ time: "19:58" })).toContain("19:58</span>");
-  const absent = preview({});
-  expect(absent).not.toContain("tokens");
-  expect(absent).not.toContain("$");
-  for (const [kind, actor] of [["ask", "Person"], ["answer", "Agent"], ["tool", "Tool"], ["flow", "Flow"]] as const) {
-    expect(preview({ kind })).toContain(`>${actor}</span>`);
-  }
 });
 
 test("concrete host labels render while a summary is pending, and a summary takes precedence", () => {
@@ -197,14 +137,9 @@ test("summary navigation retains the recorded object and outcome in its accessib
   expect(buttons[1]!.getAttribute("aria-label")).toBe("Replied briefly · Timeline check unique · answered");
   expect(buttons[0]!.textContent).toBe("Requested a short reply");
   expect(buttons[1]!.getAttribute("aria-controls")).toBe("answer");
-  for (const button of [...buttons].slice(2)) expect(button.hasAttribute("aria-label")).toBe(false);
-  expect(buttons[2]!.textContent).toBe("Timeline check unique · failed");
-  // A grouped button names its group, never just its first member's object.
-  host.innerHTML = renderToStaticMarkup(<ChatTimeline entries={Array.from({ length: 100 }, (_, i) => ({ ...entries[0]!, id: `q-${i}` }))} />);
-  for (const button of host.querySelectorAll('ol:not([data-level="0"]) button')) {
-    expect(button.hasAttribute("aria-label")).toBe(false);
-    expect(button.textContent).toMatch(/^\d+ entries$/);
-  }
+  expect(buttons[2]!.textContent).toBe("Couldn't answer");
+  expect(buttons[2]!.getAttribute("aria-label")).toBe("Couldn't answer · Timeline check unique · failed");
+  for (const button of [...buttons].slice(3)) expect(button.hasAttribute("aria-label")).toBe(false);
 })
 
 test("keyboard traversal does not activate an entry's external destination", async () => {
@@ -228,34 +163,101 @@ test("keyboard traversal does not activate an entry's external destination", asy
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
-test("horizontal keys navigate octaves and clamp to the nearest detailed window", async () => {
+const phased = (count: number, every: number) => ({
+  entries: Array.from({ length: count }, (_, index) => ({ id: `e${index}`, kind: index % 2 === 0 ? "ask" as const : "answer" as const, state: "done" as const, label: `Entry ${index}`, time: `${index}m` })),
+  phases: Array.from({ length: Math.ceil(count / every) }, (_, index) => ({ id: `p${index}`, start: `e${index * every}`, title: `Phase ${index}`, summary: `What happened in ${index}.`, closed: true })),
+});
+
+test("phases are logical blocks: never counts, and hover adds their span", async () => {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
-  const entries = Array.from({ length: 100 }, (_, index) => ({ id: `octave-${index}`, kind: "ask" as const, state: "done" as const }));
+  const { entries, phases } = phased(100, 14);
+  try {
+    await act(async () => root.render(<ChatTimeline entries={entries} phases={phases} />));
+    const blocks = host.querySelectorAll<HTMLButtonElement>('ol[data-level="1"] button');
+    expect([...blocks].map(block => block.textContent)).toEqual(phases.map(phase => phase.title));
+    expect(host.textContent).not.toMatch(/\d+ entries|Zoom level/);
+    await act(async () => blocks[1]!.focus());
+    expect(host.querySelector('[role="tooltip"]')!.textContent).toBe("Phase 1What happened in 1.14 messages · 14m – 27m");
+    expect(blocks[1]!.getAttribute("aria-label")).toBe("Phase 1, 14 messages · 14m – 27m");
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+test("an unwritten tail is honest: its first entry's label, pending or marked unavailable with the reason", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const { entries } = phased(100, 14);
+  const phases = [{ id: "p0", start: "e0", title: "Research" }, { id: "p1", start: "e60", title: "", closed: false }].slice(0, 1);
   try {
     await act(async () => root.render(<ChatTimeline entries={entries} />));
+    const block = () => host.querySelector<HTMLButtonElement>('ol[data-level="1"] button')!;
+    expect(block().textContent).toBe("Entry 0");
+    expect(block().dataset.summary).toBe("pending");
+    await act(async () => root.render(<ChatTimeline entries={entries} unavailable="No summary model" />));
+    expect(block().dataset.summary).toBe("unavailable");
+    expect(host.querySelector<HTMLButtonElement>('ol[data-level="0"] button')!.dataset.summary).toBe("unavailable");
+    await act(async () => block().focus());
+    expect(host.querySelector('[role="tooltip"]')!.textContent).toContain("No summary model");
+    await act(async () => root.render(<ChatTimeline entries={entries} phases={phases} unavailable="No summary model" />));
+    expect(block().dataset.summary).toBe("ready");
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+test("a third level appears only when phases outgrow the column, and each level is marked as it enters", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const small = phased(20, 4), large = phased(400, 8);
+  const arcs = [{ id: "a0", start: "e0", title: "Early arc" }, { id: "a1", start: "e200", title: "Late arc" }];
+  try {
+    await act(async () => root.render(<ChatTimeline entries={small.entries} phases={small.phases} />));
+    expect(host.querySelector("nav")!.dataset.levels).toBe("1");
+    expect(host.querySelector('[data-level="1"]')).toBeNull();
+    await act(async () => root.render(<ChatTimeline entries={large.entries} phases={large.phases} arcs={arcs} />));
+    expect(host.querySelector("nav")!.dataset.levels).toBe("3");
+    expect(host.querySelector('.sui-tl-lv[data-level="2"]')!.hasAttribute("data-entering")).toBe(true);
+    expect(host.querySelector('g[data-f="2"]')!.hasAttribute("data-entering")).toBe(true);
+    expect(host.querySelector('.sui-tl-lv[data-level="0"]')!.hasAttribute("data-entering")).toBe(false);
+    expect([...host.querySelectorAll('ol[data-level="2"] button')].map(button => button.textContent)).toEqual(["Early arc", "Late arc"]);
+    await act(async () => root.render(<ChatTimeline entries={small.entries} phases={small.phases} />));
+    expect(host.querySelector('.sui-tl-lv[data-level="2"]')!.hasAttribute("data-leaving")).toBe(true);
+    await act(async () => { await new Promise(done => setTimeout(done, 450)); });
+    expect(host.querySelector('.sui-tl-lv[data-level="2"]')).toBeNull();
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+test("horizontal keys move between an entry and the blocks that contain it", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const { entries, phases } = phased(100, 14);
+  try {
+    await act(async () => root.render(<ChatTimeline entries={entries} phases={phases} />));
     const detail = host.querySelectorAll<HTMLButtonElement>('ol[data-level="0"] button');
     const coarse = host.querySelectorAll<HTMLButtonElement>('ol[data-level="1"] button');
-    expect(coarse.length).toBeGreaterThan(1);
     const key = async (button: HTMLButtonElement, value: string) => {
       button.focus();
       await act(async () => button.dispatchEvent(new KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true })));
     };
-    await key(detail[5]!, "ArrowLeft");
-    expect(document.activeElement).toBe(coarse[0]);
-    await key(coarse[0]!, "ArrowRight");
-    expect(document.activeElement).toBe(detail[0]);
-    await key(coarse[coarse.length - 1]!, "ArrowRight");
-    expect(document.activeElement).toBe(detail[detail.length - 1]);
+    await key(detail[20]!, "ArrowLeft");
+    expect(document.activeElement).toBe(coarse[1]);
+    await key(coarse[1]!, "ArrowRight");
+    expect(document.activeElement).toBe(detail[14]);
     await key(detail[0]!, "ArrowRight");
     expect(document.activeElement).toBe(detail[0]);
     await key(coarse[0]!, "ArrowLeft");
     expect(document.activeElement).toBe(coarse[0]);
-    // A transcript entry can have left the mounted window; clicking it is safe.
-    await act(async () => detail[0]!.click());
-    expect(document.activeElement).toBe(coarse[0]);
   } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+test("the stylesheet is the mock's: quiet at rest, forward on hover, no level headers, reduced motion", () => {
+  for (const rule of [
+    "--q-off:.85;--q-mk:30%", "--q-off:1;--q-mk:48%", ".sui-tl-mk{position:absolute;left:11px;top:2px;width:3px", "@keyframes sui-tl-in{from{opacity:0;transform:translateX(-18px)}}",
+    "font-size:10px;line-height:12px", "@media(prefers-reduced-motion:reduce)", "sui-tl-fade 120ms",
+  ]) expect(chatTimelineCss).toContain(rule);
+  expect(chatTimelineCss).not.toContain("content:attr(aria-label)");
 });
 
 test("the default jump reaches a mounted transcript anchor and Escape focuses it", async () => {

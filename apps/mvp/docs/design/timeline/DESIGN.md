@@ -8,9 +8,9 @@ These are the product's facts as built on 2026-10-20. Every element of the mock 
 
 **Entries.** One entry per conversation message, in conversation order: each question the person asked (`role: user`, kind `ask`) and each answer from Smithers (`role: assistant`, kind `answer`). Views the agent adds to the conversation (`role: view`) are not entries. Sources: `railEntries` in `apps/mvp/src/features/timeline/view.ts` and its test `view.test.ts`. A question and its answer are inserted together and take adjacent positions (`position` steps by 2), so the conversation is a run of exchanges, each a question followed by its answer (`apps/mvp/docs/features/chat.md`, contract). An entry carries its text (`RailMessage.text`), so the rail knows its length. It also carries its time (`created_at`) and, for an answer, its token total (`view.ts`). The steps inside an answer (`parts`), tool calls, flow runs, toasts and views never reach the rail (`view.ts` reads none of them). A run's own step timeline lives on its run page (`apps/mvp/docs/features/runs.md`).
 
-**Summary.** Each settled entry gets a summary: 3 to 8 plain words, at most 96 characters, on one line (`cleanSummary`, `timeline/steps.ts`). A question's summary says what the person wanted; an answer's says only what was observed to happen. The durable flow `timeline/summarize` writes it on the browser engine, through one sealed `ModelStep` call to `/api/model/summary` (at most 8,000 input characters and 40 output tokens) (`timeline/flow.ts`, `steps.ts`). The flow starts once a message settles `done` with non-empty text, and the summary is stored on the device under a hash of the content, so a changed message gets a new summary (`store.ts`, `identity.ts`). A message that is streaming, failed or queued never gets a summary. Until a summary arrives, the rail shows an honest state label, never the message's first line (`apps/mvp/docs/features/timeline.md`, `packages/smithers/ui/docs/chat-timeline.md`). The `summary` role works only after an Admin configures it. Without it, the rail shows labels only, as the local app did on 2026-10-20 ("Question sent", "Reply completed").
+**Summary.** Each settled entry gets a summary: 1 to 8 plain words, at most 96 characters, on one line (`cleanSummary`, `timeline/steps.ts`). A question's summary says what the person wanted; an answer's says only what was observed to happen. The durable flow `timeline/summarize` writes it through one sealed `ModelStep` call to `/api/model/summary`, once per message revision for every device (`timeline/flow.ts`, `steps.ts`). A message that is streaming, failed or queued never gets a summary. Until a summary arrives the rail shows the entry's label as a placeholder, in italics. When summaries can't be made, the app says so with a toast and the rail marks what is missing one, with the reason on hover.
 
-**Group summaries.** Outer levels summarize bigger blocks (FE-16). `ChatTimeline` takes one summary per block (`groupSummaries`) and asks its host only for blocks in levels that exist (`onGroupsChange`). Until a block has one, it reads "N entries" (`packages/smithers/ui/src/chat/ChatTimeline.tsx`). Group summaries keep intent and observed outcome, for example "App capability checks" (`.specs/product/mvp.md` §6.4, Timeline).
+**Phases and arcs.** Outer levels are logical phases of the conversation, with sizes that follow what happened (FE-19), never a fixed stride. The durable flow `timeline/phases` has the cheap `summary` model divide the conversation at changes of goal and write each phase a short title ("Researching issue 450") and a sentence. Arcs group phases the same way. They are stored on the message each one starts at, so every device shares them. A stretch not yet divided shows its first entry's label, marked pending or unavailable, and never a count (decision [0138](../../decisions/0138-timeline-phases.md)).
 
 **States.** From `railEntries` (`view.ts`), with the words the transcript shows:
 
@@ -28,19 +28,22 @@ A block takes its most urgent member's state, in the order failed, waiting, work
 
 **Viewport.** The viewport is the transcript's scroll area (`[data-slot="message-scroller-viewport"]`). Entries whose boxes cross it are in view (`aria-current="location"`), and the band follows scroll and resize (`ChatTimeline.tsx`). Clicking an entry centers it in the transcript; clicking a block jumps to its first entry (`ChatTimeline.tsx`).
 
-**Levels.** Level 0 holds entries in rows of a fixed 34 px; the e2e asserts every rail button is 34 px tall (`e2e/timeline.spec.ts`). Each level out groups 8 times as many entries. The level count is a pure function of the entry count `n` and the rail's height `H` (`timelineLevelCount`, `packages/smithers/ui/src/chat/timelineZoom.ts`):
+**Levels.** Level 0 holds entries in rows of a fixed 34 px. A further level appears only when the one inside it no longer fits, and the mock's three is the limit. `n` is the entry count, `p` the phase count and `H` the rail's height (`timelineLevelCount`, `packages/smithers/ui/src/chat/timelineZoom.ts`):
 
 ```
-capacity(H) = max(2, floor(H / 34))                 entries level 0 shows; blocks level 1 shows
-levels(n, H) = the smallest L with n <= capacity(H) * 8^(L-1)
+capacity(H) = max(2, floor(H / 34))          rows or blocks a column holds
 
-H = 804 (1440 x 900):  capacity 23   1 level up to 23 entries   2 up to 184   3 up to 1,472
-H = 704 (1280 x 800):  capacity 20   1 level up to 20 entries   2 up to 160   3 up to 1,280
+levels = 1   when n <= capacity(H)           entries fit
+levels = 2   when p <= capacity(H)           phases fit
+levels = 3   otherwise                       phases group into arcs
+
+H = 804 (1440 x 900):  capacity 23
+H = 704 (1280 x 800):  capacity 20
 ```
 
-So level 1 appears only once the conversation no longer fits level 0, and level 2 only once its blocks no longer fit level 1. Every level shows only what fits around the viewport, and the outermost covers everything. Because a question and its answer are adjacent, 8 entries make 4 exchanges.
+So level 1 appears once the conversation no longer fits level 0, and level 2 once its phases no longer fit level 1. Every level shows only what fits around the viewport, and the outermost covers everything.
 
-**Hover.** Hover adds detail only. An entry adds its actor (`Person` or `Smithers`), time and tokens; a block adds "N entries · time – time" (`ChatTimeline.tsx`, `view.ts`). The projection has no duration or cost, so the rail shows none (`view.test.ts`).
+**Hover.** Hover adds detail only. An entry adds its actor (`Person` or `Smithers`), time and tokens; a block adds its sentence and "N messages · time – time" (`ChatTimeline.tsx`, `view.ts`). The projection has no duration or cost, so the rail shows none (`view.test.ts`).
 
 **Keyboard.** Entries are native buttons. Enter or Space jumps. Up, Down, J and K move to the neighbor and jump, and Home and End reach the ends. Left and Right move to the containing block in the next level out or in. Escape focuses the transcript entry (`chat-timeline.md`, `ChatTimeline.tsx`).
 
@@ -64,8 +67,8 @@ So level 1 appears only once the conversation no longer fits level 0, and level 
 - **A quiet companion.** The chat is the main content (Will, 2026-10-20: "it needs to be less prominent"). At rest the rail's summaries use the muted and faint text tones at 11 px (10 px in outer levels), its marks are 3 px wide at about half strength, off-screen entries drop to 85 % opacity, and the thumb, dot, lens and funnel lines are soft. No accent is bright. Hovering the rail or focusing it from the keyboard brings it to full contrast in 150 ms. Summaries stay visible either way.
 - **Level 0** touches the chat and holds entries in fixed 34 px rows. Each entry has a mark whose height grows with the message's length (log scale), neutral for a question and teal for an answer, and its summary of up to two lines. Level 0 holds still while the viewport stays inside it. When the viewport leaves, it pages to recenter, animated, so scrolling never drags it along.
 - **Viewport.** Level 0's left edge is a track. A thumb on it covers what the transcript shows, a dot marks the middle, and a short cursor line crosses the marks. In-view entries are a step brighter. Clicking an entry jumps; dragging the thumb scrubs.
-- **Level 1** appears by the rule above and usually covers the whole conversation. Each block is 4 exchanges: its group summary, then a strip on the right with one mark per exchange. Blocks are all one height, so the column doesn't reflow when level 2 arrives. A lens, a capsule on the strip, marks the stretch level 0 shows. Two lines run from the lens's ends into level 0's track ends, with a faint fill between them. Dragging the lens scrubs, and level 0 follows.
-- **Level 2** appears by the rule above. Its blocks are 8 level-1 blocks, and its lens marks the stretch level 1 shows. A group summary whose words don't fit its column is hidden rather than cut. On a rail under 300 px wide (a 1,280 px window), level 2 is a strip without labels; hover still shows them.
+- **Level 1** appears by the rule above and usually covers the whole conversation. Each block is one phase: its title, then a strip on the right with one mark per exchange, as tall as the phase is long against the longest. Blocks are all one height, so a two-line title always fits and the column doesn't reflow when level 2 arrives (decision 0138). A lens, a capsule on the strip, marks the stretch level 0 shows. Two lines run from the lens's ends into level 0's track ends, with a faint fill between them. Dragging the lens scrubs, and level 0 follows.
+- **Level 2** appears by the rule above. Its blocks are arcs of phases, and its lens marks the stretch level 1 shows. A title whose words don't fit its column is hidden rather than cut. On a rail under 300 px wide (a 1,280 px window), level 2 is a strip without labels; hover still shows them.
 - **A level appears.** The new column slides in 18 px from the left and fades in over 240 ms while the existing columns ease to their new positions and widths. Level 0's window pages to the new message in the same motion. Then the lens fades in and the funnel lines draw from the lens to the inner level over 220 ms. Nothing jumps: rows are fixed, blocks are uniform, and each window animates from where it was.
 - **A level leaves** (the chat got shorter, which is rare). The same steps run in reverse: the funnel lines undraw and the lens fades in 150 ms, then the column slides out and fades over 220 ms while the others ease back.
 - **Reduced motion.** No slide and no line drawing: the column, lens and lines fade in or out over 120 ms, and the other columns move at once.
@@ -89,14 +92,14 @@ Screenshots: `screenshots/scrubber-{short,medium,long}-{light,dark}.png` (1440 �
 | `Waiting`, hatched | `queued` state from the run's `waiting` (`view.ts`); `○ Waiting` (`agent-status.md`) |
 | Thumb and dot on the track; brighter in-view entries | visible band, `aria-current="location"` (`ChatTimeline.tsx`) |
 | Levels 1 and 2, added only as the chat grows | `timelineZoom.ts`; FE-16 21:05 |
-| 4 exchanges a block, 8 blocks a level-2 block | stride 8 per level (`timelineZoom.ts`) |
-| Group summary text | `groupSummaries` (`ChatTimeline.tsx`); mvp.md §6.4 |
+| A block per logical phase, an arc of phases beyond it | `messages.phase`, `messages.arc`; `timeline/marks.ts`; FE-19 |
+| Phase titles and sentences | `timeline/phases` (`timeline/steps.ts`); FE-19 |
 | Block mark color from its most urgent member | `ChatTimeline.tsx` |
 | Lens and funnel lines | FE-16 21:14 and 22:10 |
-| Fixed 34 px rows; levels added by `levels(n, H)` | `e2e/timeline.spec.ts` (34 px), `timelineZoom.ts` |
+| Fixed 34 px rows; levels added by the rule above | `timelineZoom.ts`, `tests/timeline-geometry.test.ts` |
 | Level slides in, then the funnel draws; the reverse on removal | Will, 2026-10-20: "we should make sure we animate them in when they do appear" |
 | Quiet at rest, full contrast on hover or focus | Will, 2026-10-20: "it needs to be less prominent" |
-| Hover: Person or Smithers · time · tokens; N entries · time – time | `ChatTimeline.tsx` preview, `view.ts` |
+| Hover: Person or Smithers · time · tokens; sentence, N messages · time – time | `ChatTimeline.tsx` preview, `view.ts` |
 | Chat: bubbles, hidden time and Copy, Retry, Needs you card, `○ Waiting` | `chat.md` (message controls), FE-13, `NeedsYouCard.tsx`, `agent-status.md` |
 | Header: Flows, Runs, Settings, bell, theme | the running app, 2026-10-20 |
 | Phone `Timeline` control and sheet | `ChatTranscript.tsx`, `chatTimelineCss.ts`, `e2e/timeline.spec.ts` |
@@ -116,21 +119,20 @@ Will's seven FE-16 quotes, in order, the facts above, then his two notes on this
 | 7. The tweet is not the spec | Yes: no lanes, models, handoffs, legend or totals |
 | Entries, summaries, viewport, levels as above | Yes |
 | States | Yes: Couldn't answer in level 0; Working and Waiting in level 2's last block; Needs you in the medium shots |
-| Levels appear only when needed | Yes: short has one level, medium two, long three, each by `levels(n, H)` |
+| Levels appear only when needed | Yes: short has one level, medium two, long three |
 | A level animates in | Yes: `scrubber-level-appears.png` and the GIF |
 | Less prominent than the chat | Yes: muted 11 px text, 3 px marks, soft cursor; full contrast only on hover (GIF, 15 s) |
 
-## Open questions
+## Settled since
 
-1. **Who writes group summaries?** `ChatTimeline` accepts them, but no flow produces them; `timeline/summarize` summarizes single entries. The mock shows written ones.
-2. **What does the rail span?** `Conversation.tsx` hands the rail the transcript's window (the latest 50 messages, widened by Load earlier). FE-16's outer level, "most of the time this will be everything", needs the device's whole conversation. The mock spans it all.
-3. **Which words?** The built labels say "Reply failed", "Waiting for reply" and "Waiting to send"; the transcript says "Couldn't answer", "Waiting" and "Queued". The mock uses the transcript's words.
-4. **Unused kinds.** `ChatTimelineEntry.kind` still allows `tool` and `flow`, which the app never sends (FE-16 22:08 rules them out).
-5. **Height.** The built rail stops at `min(560px, 70vh)`; the mock fills the column.
+1. **Who writes group summaries?** The durable flow `timeline/phases` (decision 0138).
+2. **What does the rail span?** The whole conversation (`everythingQuery`). Jumping to an entry above the transcript's window widens the window first.
+3. **Which words?** The transcript's: `Couldn't answer`, `Waiting`, `Queued`, `Not sent`.
+4. **Height.** The rail fills the column, as in the mock.
 
 ## Durable summary contract and cost
 
-`timeline/summarize` → sealed `timeline/SummarizeEntry` → `ModelStep.run` → `/api/model/summary`. An Admin selects a cheap model for that role. No provider key reaches the browser. Observability records outcome, role and replay status only, never entry text or a summary. A versioned SHA-256 identity covers the entry's id, role and full content; deterministic execution ids resume the same run after a reload, and sealed results replay. A changed entry gets a new execution, and a stale result is discarded. Each changed settled entry costs one request of at most 8,000 input characters and 40 output tokens; an unchanged cached entry costs nothing. A crash after the provider accepted a call but before it sealed may repeat a charge (ModelStep's at-least-once window). Summaries are stored per device; another device pays for its own.
+[The feature page](../../features/timeline.md#cost) holds the contract and cost; decision [0138](../../decisions/0138-timeline-phases.md) holds the phases' design.
 
 ## Plugin boundary
 

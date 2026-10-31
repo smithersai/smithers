@@ -29,6 +29,7 @@ const memoryLedger = () => {
   return {
     claims, recorded,
     layer: Layer.succeed(SummaryLedger, SummaryLedger.of({
+      release: () => Effect.void, claimSpans: () => Effect.succeed(true), recordSpans: () => Effect.void, releaseSpans: () => Effect.void,
       claim: ({ messageId, revision, reason }) => Effect.sync(() => {
         claims.push({ messageId, reason })
         const key = `${messageId}:${revision}`
@@ -68,28 +69,29 @@ const summarizing = () => {
 const sync = (run: <A, E, R>(effect: Effect.Effect<A, E, R>) => Promise<A>, messages: Collection.Collection<Message>, recorded: ReadonlyArray<{ readonly messageId: string; readonly revision: string; readonly summary: string }>) =>
   Promise.all(recorded.map(({ messageId, revision, summary }) => run(messages.update(messageId, draft => { draft.summary = summary; draft.summaryRevision = revision }))))
 
-test("summarizes a long answer once on the real durable engine, and its synced summary ends every later ask", () => scoped(async scope => {
+test("summarizes a question and its answer once each on the real durable engine, and a synced summary ends every later ask", () => scoped(async scope => {
   const ledger = memoryLedger()
   const { model, calls } = summarizing()
   const { run, dispatch } = await device(scope, ledger.layer, model)
   const messages = await run(Collection.local<Message, Collection.Key>({ id: "test-timeline-messages", schema: Message, getKey: message => message.id }))
   await run(Effect.forkIn(followSummaries(messages, messages, dispatch, await run(makeLane)), scope, { startImmediately: true }))
   await run(messages.insert([question("a", "Did the release retry?"), answer("a")]))
-  await vi.waitFor(() => expect(ledger.recorded).toHaveLength(1), { timeout: 15_000 })
-  expect(ledger.recorded[0]).toEqual({ messageId: "a", revision: revisionOf(answer("a")), summary: "Release retry check completed" })
-  expect(ledger.claims).toEqual([{ messageId: "a", reason: "long_answer" }])
-  expect(calls()).toBe(1)
+  await vi.waitFor(() => expect(ledger.recorded).toHaveLength(2), { timeout: 15_000 })
+  expect(ledger.recorded).toContainEqual({ messageId: "a", revision: revisionOf(answer("a")), summary: "Release retry check completed" })
+  // The newest message first: a long conversation's latest work reads first.
+  expect(ledger.claims).toEqual(expect.arrayContaining([{ messageId: "a", reason: "answer" }, { messageId: "q-a", reason: "question" }]))
+  expect(calls()).toBe(2)
   await sync(run, messages, ledger.recorded)
-  // Syncs, re-renders and metadata changes never ask again; streaming, empty, short and question rows never ask.
+  // Syncs, re-renders and metadata changes never ask again; streaming and empty rows never ask.
   await run(messages.update("a", draft => { draft.updatedAt = "2026-10-20 18:00:01+00" }))
-  await run(messages.insert([{ ...answer("stream"), status: "streaming" }, answer("empty", " "), answer("short", "Retried twice."), question("long-question", `${LONG}\n${LONG}`)]))
+  await run(messages.insert([{ ...answer("stream"), status: "streaming" }, answer("empty", " ")]))
   await run(Effect.sleep("50 millis"))
-  expect(ledger.claims).toHaveLength(1)
+  expect(ledger.claims).toHaveLength(2)
   // Changed content is a new revision: one more claim and call.
   await run(messages.update("a", draft => { draft.text = `${LONG}\nIt also found a stale cache.` }))
-  await vi.waitFor(() => expect(ledger.recorded).toHaveLength(2), { timeout: 15_000 })
-  expect(ledger.claims.at(-1)).toEqual({ messageId: "a", reason: "multiline_answer" })
-  expect(calls()).toBe(2)
+  await vi.waitFor(() => expect(ledger.recorded).toHaveLength(3), { timeout: 15_000 })
+  expect(ledger.claims.at(-1)).toEqual({ messageId: "a", reason: "answer" })
+  expect(calls()).toBe(3)
 }), 30_000)
 
 test("two devices showing the same answers make one model call per answer between them", () => scoped(async scope => {
@@ -126,7 +128,7 @@ test("an idle page whose summary model refuses for credit makes at most two mode
   const messages = await run(Collection.local<Message, Collection.Key>({ id: "refusing-model", schema: Message, getKey: message => message.id }))
   await run(messages.insert(Array.from({ length: 10 }, (_, n) => answer(`m${n}`))))
   await run(Effect.forkIn(followSummaries(messages, messages, dispatch, await run(makeLane)), scope, { startImmediately: true }))
-  await vi.waitFor(() => expect(calls).toBeGreaterThanOrEqual(1))
+  await vi.waitFor(() => expect(calls).toBeGreaterThanOrEqual(1), { timeout: 20_000 })
   // Long enough for every entry's six attempts at these timings, had the lane gone on.
   await run(Effect.sleep("500 millis"))
   expect(calls).toBeLessThanOrEqual(2)
@@ -168,7 +170,8 @@ test.each(STOPPING_FAILURES)("stops once a summary fails %s: no later entry is d
   const followed = await run(Effect.forkIn(followSummaries(messages, messages, dispatch, await run(makeLane)), scope, { startImmediately: true }))
   await run(Fiber.join(followed))
   await run(messages.insert(answer("c")))
-  expect(dispatched).toEqual(["a"])
+  // The newest first.
+  expect(dispatched).toEqual(["b"])
 }))
 
 test("a lane records its stop once, whichever summary stops it first", async () => {
@@ -188,22 +191,22 @@ test.each(["invalid", "refused", "taken"] as const)("a summary that fails %s bel
   // One turn, so each entry runs after the one before it failed.
   const lane = { ...(await run(makeLane)), permits: Semaphore.makeUnsafe(1) }
   await run(Effect.forkIn(followSummaries(shownWindow(["a", "b", "c"], true), messages, dispatch, lane), scope, { startImmediately: true }))
-  await vi.waitFor(() => expect(dispatched).toEqual(["a", "b", "c"]))
+  await vi.waitFor(() => expect(dispatched).toEqual(["c", "b", "a"]))
   // Another conversation on the lane showing the same answers asks nothing.
   await run(Effect.forkIn(followSummaries(shownWindow(["a", "b", "c"]), messages, dispatch, lane), scope, { startImmediately: true }))
   await run(Effect.sleep("20 millis"))
-  expect(dispatched).toEqual(["a", "b", "c"])
+  expect(dispatched).toEqual(["c", "b", "a"])
   expect(await run(Deferred.isDone(lane.stopped))).toBe(false)
 }))
 
-test("summarizes long finished answers only, never a question, a short answer or a view the window shows", () => scoped(async scope => {
+test("summarizes every settled question and answer, however short, never a view", () => scoped(async scope => {
   const { run, messages } = await store(scope, "with-view")
   const { dispatched, dispatch } = answering(() => failing("invalid"))
   const shown = (value: { readonly id: string; readonly role: string; readonly text: string }) => ({ type: "insert" as const, key: value.id, value: { ...value, status: "done" }, previousValue: undefined })
   const rows = [question("ask", LONG), answer("short", "Done: two retries."), answer("multi", "Retried.\nKept."), answer("long")]
   await run(messages.insert(rows))
   await run(followSummaries({ changes: () => Stream.make([shown({ id: "view", role: "view", text: LONG }), ...rows.map(shown)]) }, messages, dispatch, await run(makeLane)))
-  expect(dispatched).toEqual(["multi", "long"])
+  expect(dispatched).toEqual(["long", "multi", "short", "q-ask"])
 }))
 
 test("sends the question the answer replies to, and nothing when its question isn't held", () => scoped(async scope => {
@@ -215,7 +218,7 @@ test("sends the question the answer replies to, and nothing when its question is
   await run(followSummaries({ changes: () => Stream.make(rows.map(row => ({ type: "insert" as const, key: row.id, value: row, previousValue: undefined }))) }, messages, dispatch, await run(makeLane)))
   await vi.waitFor(() => expect(payloads).toHaveLength(3))
   const byId = Object.fromEntries(payloads.map(payload => [payload.id, payload]))
-  expect(byId.a).toMatchObject({ role: "assistant", reason: "long_answer", question: "Did the release retry?", revision: revisionOf(answer("a")) })
+  expect(byId.a).toMatchObject({ role: "assistant", reason: "answer", question: "Did the release retry?", revision: revisionOf(answer("a")) })
   expect(byId.b).not.toHaveProperty("question")
   expect(byId.c).not.toHaveProperty("question")
 }))
@@ -291,13 +294,13 @@ test("an entry that changes, leaves or gets its summary while it waits for its t
   const release = Effect.runSync(Deferred.make<void>())
   const { dispatched, dispatch } = answering(() => Deferred.await(release).pipe(Effect.andThen(done)))
   await run(Effect.forkIn(followSummaries(shownWindow(ids), messages, dispatch, await run(makeLane)), scope, { startImmediately: true }))
-  await vi.waitFor(() => expect(dispatched).toEqual(["a", "b"]))
+  await vi.waitFor(() => expect(dispatched).toEqual(["e", "d"]))
   await run(messages.delete("c"))
-  await run(messages.update("d", draft => { draft.text = `${LONG} changed` }))
-  await run(messages.update("e", draft => { draft.summary = "Made elsewhere"; draft.summaryRevision = revisionOf(answer("e")) }))
+  await run(messages.update("b", draft => { draft.text = `${LONG} changed` }))
+  await run(messages.update("a", draft => { draft.summary = "Made elsewhere"; draft.summaryRevision = revisionOf(answer("a")) }))
   await run(Deferred.succeed(release, undefined))
   await run(Effect.sleep("30 millis"))
-  expect(dispatched).toEqual(["a", "b"])
+  expect(dispatched).toEqual(["e", "d"])
 }))
 
 test("an answer whose summary is already on the message is never sent", () => scoped(async scope => {
@@ -313,8 +316,8 @@ test("an entry waiting for its turn when the role answers it has no model is nev
   const { run, messages } = await store(scope, "waiting-stop")
   await run(messages.insert(["a", "b"].map(id => answer(id))))
   const { dispatched, dispatch } = answering(() => failing("unconfigured"))
-  // One turn: "b" waits while "a" holds it, and takes it the moment "a" answers that there is no model.
+  // One turn: "a" waits while "b" holds it, and takes it the moment "b" answers that there is no model.
   const lane = { ...(await run(makeLane)), permits: Semaphore.makeUnsafe(1) }
   await run(followSummaries(shownWindow(["a", "b"]), messages, dispatch, lane))
-  expect(dispatched).toEqual(["a"])
+  expect(dispatched).toEqual(["b"])
 }))

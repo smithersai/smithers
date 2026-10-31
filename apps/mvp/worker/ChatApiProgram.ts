@@ -100,6 +100,8 @@ export interface ProgramOptions {
   readonly spendAlerts?: boolean
   readonly dev?: boolean
   readonly hostedModel?: boolean
+  /** `Chat.make`'s: the summaries' daily cap when `TIMELINE_SUMMARY_DAILY_CAP` is unset. Only `alchemy dev` sets it. */
+  readonly summaryDailyCap?: number
   readonly feedKey?: string
 }
 
@@ -133,6 +135,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       ...(options.localHttp === undefined ? {} : { localHttp: options.localHttp }),
       ...(options.spendAlerts === undefined ? {} : { spendAlerts: options.spendAlerts }),
       ...(options.hostedModel === undefined ? {} : { hostedModel: options.hostedModel }),
+      ...(options.summaryDailyCap === undefined ? {} : { summaryDailyCap: options.summaryDailyCap }),
     })
     // A person's own model (docs/features/personal-model.md): saving, removing and testing it, and its shape.
     const personalApi = yield* PersonalApi.make(database)

@@ -11,7 +11,12 @@ describe("timeline summary contract", () => {
     expect(cleanSummary("README.md")).toBe("README.md")
     expect(cleanSummary("Use API_TOKEN=example-secret")).not.toContain("example-secret")
     for (const text of ["Waiting to send", "Waiting for reply", "Not sent", "Done", "Failed", "Queued"]) expect(cleanSummary(text)).toBeUndefined()
-    for (const text of ["", "Reply sent", "Run completed", "Working", "one two three four five six seven eight nine", "one\ntwo three", "one\rtwo three", "one <two> three", "one `two` three", "a "+"b".repeat(98)+" c"]) expect(cleanSummary(text)).toBeUndefined()
+    for (const text of ["", "Reply sent", "Run completed", "Working", "one <two> three", "one `two` three", "a "+"b".repeat(98)+" c"]) expect(cleanSummary(text)).toBeUndefined()
+  })
+  test("a wordy reply still names the message: its first line, first eight words, no wrappers", () => {
+    expect(cleanSummary("one two three four five six seven eight nine")).toBe("one two three four five six seven eight")
+    expect(cleanSummary('"Cause found in redirect.ts."\nSecond line')).toBe("Cause found in redirect.ts")
+    expect(cleanSummary("**Tests passed**")).toBe("Tests passed")
   })
   test("keys every content change, even beyond the model excerpt, independently of streaming metadata", () => {
     const row = { id: "a", role: "user" as const, text: "Find help commands" }
@@ -28,18 +33,5 @@ describe("timeline summary contract", () => {
     expect(decode({ id: "a", revision: "r", role: "assistant", text: "x", question: "q", reason: "multiline_answer" })).toMatchObject({ question: "q", reason: "multiline_answer" })
     expect(() => decode({ id: "a", revision: "r", role: "assistant", text: "x", question: "q".repeat(2001) })).toThrow()
     expect(() => decode({ id: "a", revision: "r", role: "assistant", text: "x", reason: "words" })).toThrow()
-  })
-})
-
-describe("free summaries", () => {
-  test("an answer of one line and at most eight words keeps its free label; longer or multi-line answers need the model", async () => {
-    const { summaryReason } = await import("./identity")
-    expect(summaryReason("Retried twice.")).toBeUndefined()
-    expect(summaryReason("one two three four five six seven eight")).toBeUndefined()
-    expect(summaryReason("  \n one two three \n\n")).toBeUndefined()
-    expect(summaryReason("")).toBeUndefined()
-    expect(summaryReason("one two three four five six seven eight nine")).toBe("long_answer")
-    expect(summaryReason("Retried.\nKept both.")).toBe("multiline_answer")
-    expect(summaryReason("Retried.\r\nKept both.")).toBe("multiline_answer")
   })
 })

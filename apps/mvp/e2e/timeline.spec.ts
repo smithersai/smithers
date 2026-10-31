@@ -41,29 +41,20 @@ test("Conversation timeline: scroll, jump by key and receive durable summaries",
     expect((await a.conversation.boundingBox())!.width).toBe(transcriptWidth)
     expect(initialHeights.every(height => height > 0)).toBe(true)
     expect(await rowHeights()).toEqual(initialHeights)
-    expect(await rail.getByRole("button").evaluateAll(buttons => buttons.every(button => {
-      const row = button.getBoundingClientRect()
-      const column = button.closest("ol")!.getBoundingClientRect()
-      const label = button.querySelector("span")!.getBoundingClientRect()
-      return row.top >= column.top - 1 && row.bottom <= column.bottom + 1 && label.height <= row.height + 1
-    }))).toBe(true)
+    // Level 0 scrolls inside its column once the shared conversation is long, so only a row's own fit is fixed.
+    expect(await detail.getByRole("button").evaluateAll(buttons => buttons.every(button =>
+      button.querySelector(".sui-tl-tx")!.getBoundingClientRect().height <= button.getBoundingClientRect().height + 1))).toBe(true)
   })
   await test.step("Preview an entry on hover and focus", async () => {
     await a.page.locator(`[id="${firstQuestionId}"]`).scrollIntoViewIfNeeded()
     const first = detail.locator(`button[aria-controls="${firstQuestionId}"]`)
     await expect(first).toBeVisible()
-    const preview = first.locator("..").getByRole("tooltip")
+    const preview = rail.getByRole("tooltip")
     await expect(preview).toBeHidden()
     await first.hover()
     await expect(preview).toBeVisible()
     await expect(preview).toContainText("Person")
-    await expect(preview).toContainText("Enter to jump")
-    const transcript = (await a.conversation.boundingBox())!
-    const box = (await preview.boundingBox())!
-    expect(box.x).toBeGreaterThanOrEqual(0)
-    expect(box.x + box.width).toBeLessThanOrEqual(transcript.x)
-    await expect(first.locator("span")).toHaveCSS("white-space", "nowrap")
-    await expect(first.locator("span")).toHaveCSS("overflow", "hidden")
+    expect((await preview.boundingBox())!.x).toBeGreaterThanOrEqual(0)
     await a.page.mouse.move(1100, 20)
     await expect(preview).toBeHidden()
     await first.focus()
@@ -83,7 +74,9 @@ test("Conversation timeline: scroll, jump by key and receive durable summaries",
   })
   await test.step("Scroll the transcript and follow its band", async () => {
     await a.conversation.locator('[data-slot="message-scroller-viewport"]').evaluate(el => { el.scrollTop = el.scrollHeight })
-    await expect(detail.getByRole("button").last()).toHaveAttribute("aria-current", "location")
+    // Another project may be asking in the shared conversation: the row named here is the last when this step began.
+    const lastId = await detail.getByRole("button").last().getAttribute("aria-controls")
+    await expect(detail.locator(`button[aria-controls="${lastId}"]`)).toHaveAttribute("aria-current", "location")
     await detail.getByRole("button").nth(1).press("End")
     await expect(detail.getByRole("button").last()).toBeFocused()
   })
@@ -98,14 +91,18 @@ test("Conversation timeline: scroll, jump by key and receive durable summaries",
     await toggle.click()
     await expect(rail).toBeVisible()
     await expect(async () => {
-      expect(await rail.getByRole("button").evaluateAll(buttons => buttons.every(button => {
+      // Rows beyond the window a level shows are clipped until it pages to them.
+      expect(await rail.getByRole("button").evaluateAll(buttons => buttons.filter(button => {
+        const box = button.getBoundingClientRect(), clip = button.closest(".sui-tl-clip")!.getBoundingClientRect()
+        return box.top >= clip.top && box.bottom <= clip.bottom
+      }).every(button => {
         const box = button.getBoundingClientRect()
         const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
         return hit !== null && button.contains(hit)
       }))).toBe(true)
     }).toPass({ timeout: 10_000 })
     await detail.getByRole("button").first().focus()
-    await expect(detail.getByRole("tooltip").first()).toBeVisible()
+    await expect(rail.getByRole("tooltip")).toBeVisible()
     await toggle.focus()
     await toggle.press("Enter")
     await expect(rail).toBeHidden()
@@ -137,13 +134,12 @@ test("Branch timeline: question, reply, run and TODO name their objects", {
     const rows = rail.locator('ol[data-level="0"] button')
     // The branch's conversation is shared with every spec that asks on octocat/Spoon-Knife's main, so earlier entries
     // can sit above this test's: its own are its question's row and every row after it.
-    const ours = async () => {
-      const labels = await rows.allTextContents()
-      const first = labels.findIndex((label) => label.includes(`todo-draft octocat/Spoon-Knife ${word}`))
-      return first === -1 ? [] : labels.slice(first)
-    }
-    await expect.poll(async () => (await ours()).filter((label) => label.includes("chat/Answer · completed")).length, { timeout: 30_000 })
-      .toBe(1)
+    // A row's words become its summary as soon as one arrives, so this test's question is found by what it anchors to.
+    const ours = () => rows.evaluateAll((buttons, asked) => {
+      const first = buttons.findIndex((button) => document.getElementById(button.getAttribute("aria-controls") ?? "")?.textContent?.includes(asked))
+      return first === -1 ? [] : buttons.slice(first).map((button) => button.textContent ?? "")
+    }, `todo-draft octocat/Spoon-Knife ${word}`)
+    await expect.poll(async () => (await ours()).length, { timeout: 30_000 }).toBeGreaterThan(1)
     await expect(rows.filter({ hasText: `README release ${word} · draft` })).toHaveCount(1)
     await expect.poll(async () => (await ours()).length).toBe(4)
     for (const label of await rows.allTextContents()) {

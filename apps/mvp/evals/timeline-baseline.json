@@ -1,0 +1,12 @@
+{
+  "model": "haiku",
+  "scores": {
+    "summariesMade": 0.9907407407407408,
+    "entryAccurate": 0.8721944444444443,
+    "entrySpecific": 0.8435277777777778,
+    "boundaryF1": 0.7222222222222222,
+    "boundaries": 0.75,
+    "titles": 0.9,
+    "faithful": 0.3833333333333333
+  }
+}

@@ -18,6 +18,7 @@ import { Clipboard } from "./clipboard"
 import { AuthClient } from "./features/auth/api"
 import { Attention, type AttentionView } from "./features/attention/attention"
 import { AttentionNavigation, AttentionStore } from "./features/attention/store"
+import { followNotice } from "./features/timeline/notice"
 import { Auth, bindSessionConnectivity, type AuthView } from "./features/auth/auth"
 import { Branch, type BranchView } from "./features/branch/branch"
 import { BranchStore } from "./features/branch/store"
@@ -615,6 +616,9 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
     const personalModel = yield* PersonalModel
     const firstRun = yield* FirstRun
     const store = yield* ChatStore
+    // Summaries that can't be made say so, on the one stack (ruling FE-19).
+    const { launches } = yield* AttentionStore
+    yield* followNotice(store.summaryLane, store.timelineNotices, launches).pipe(Effect.forkIn(store.scope))
     yield* bindSessionConnectivity(options.target)
     yield* resumeAdmissions
     const timeline = options.timeline

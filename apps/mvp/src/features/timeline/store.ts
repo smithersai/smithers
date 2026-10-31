@@ -1,6 +1,7 @@
-import { ANSWER_EXCERPT, QUESTION_EXCERPT, revisionOf, summaryReason } from "./identity"
+import { ANSWER_EXCERPT, QUESTION_EXCERPT, revisionOf } from "./identity"
+import { exchangeUnits, phaseUnits, planOf, type PhaseRow } from "./marks"
 import type { Collection } from "@smthrs/effect-tanstack-db"
-import { Deferred, Effect, Metric, Semaphore, Stream } from "effect"
+import { Deferred, Duration, Effect, Metric, Semaphore, Stream } from "effect"
 import { codeOf } from "../../errorCode"
 import type { FlowDispatch } from "../../flows/dispatch"
 import type { Message } from "../chat/schema"
@@ -16,11 +17,11 @@ export const SUMMARIES_AT_ONCE = 2
 /**
  * Why a summary failed in a way every later entry would fail too, so the tab starts no more until the app opens again:
  * the role has no model (`unconfigured`), the model couldn't answer after the durable step's own retries
- * (`unavailable`: an outage, a refused key, or credit or quota that ran out), or the person's summaries for the day are
- * spent (`capped`). A rejected output (`invalid`), a policy refusal (`refused`) or a summary someone else is making
+ * (`unavailable`: an outage or a refused key), the model ran out of credit (`credit`), or the person's summaries for the
+ * day are spent (`capped`). A rejected output (`invalid`), a policy refusal (`refused`) or a summary someone else is making
  * (`taken`) belongs to one entry, so later entries still run.
  */
-export const STOPPING_FAILURES: ReadonlyArray<string> = ["unconfigured", "unavailable", "capped"]
+export const STOPPING_FAILURES: ReadonlyArray<string> = ["unconfigured", "unavailable", "capped", "credit", "server"]
 
 /**
  * What every conversation the tab follows shares: the summaries' turns on the engine, the entries waiting for or
@@ -39,18 +40,23 @@ export interface Lane {
    * window's stream, whose scope holds the fiber that stops it.
    */
   readonly stop: (code: string) => Effect.Effect<void>
+  /** Why it stopped, once it has: what the rail and the toast say (src/features/timeline/notice.ts). */
+  readonly stoppedFor: () => string | undefined
 }
 
 /** A tab's lane: made once, shared by its home and branch conversations. */
 export const makeLane: Effect.Effect<Lane> = Effect.gen(function* () {
   const stopped = yield* Deferred.make<void>()
+  let cause: string | undefined
   const stop = (code: string) =>
     Effect.uninterruptible(Effect.gen(function* () {
+      // Before the stop is seen: a follower reads why as soon as it wakes.
+      if (cause === undefined) cause = code
       if (!(yield* Deferred.succeed(stopped, undefined))) return
       yield* Effect.logWarning("timeline.summary.stopped").pipe(Effect.annotateLogs({ code }))
       yield* Metric.update(summaryStops, 1)
     }))
-  return { permits: yield* Semaphore.make(SUMMARIES_AT_ONCE), pending: new Set<string>(), settled: new Set<string>(), stopped, stop }
+  return { permits: yield* Semaphore.make(SUMMARIES_AT_ONCE), pending: new Set<string>(), settled: new Set<string>(), stopped, stop, stoppedFor: () => cause }
 })
 
 /** A row of the conversation's window, as far as a summary reads it: chat's `latest` query gives these. */
@@ -67,18 +73,19 @@ export interface Shown {
 /** The conversation's window: the messages the rail shows, as they enter, change and leave it. */
 export interface Window {
   readonly changes: (options?: { readonly initial?: boolean }) => Stream.Stream<ReadonlyArray<Collection.Change<Shown>>>
+  /** Everything in it, oldest first: what comes before a question. */
+  readonly toArray?: Effect.Effect<ReadonlyArray<Shown>>
 }
 
 /**
- * Asks for the one model summary of each finished answer the rail shows that needs one (docs/features/timeline.md#cost):
- * longer than its free label says ({@link summaryReason}), and with no summary recorded on the message for its content.
- * Questions and short answers keep their free labels and cost nothing. The run claims the answer on the server before
- * any model call, so however many tabs, devices and people show it, the answer costs one call, and the summary syncs to
- * them all on the message; before this, on smithers.sh on 2026-10-25, every tab, device and fresh browser made its own,
- * and the same 15 messages were summarized again in every burst. Each revision is asked about once per tab; streaming
- * chunks never launch runs. At most `SUMMARIES_AT_ONCE` run at once across every conversation sharing `lane`. Once a
- * summary fails in a way every later one would ({@link STOPPING_FAILURES}), every follower on the lane stops until the
- * app opens again.
+ * Asks for the one model summary of each settled message the rail spans with no summary recorded for its content
+ * (docs/features/timeline.md#cost), newest first, so a long conversation's latest work reads first. The run claims the
+ * message on the server before any model call, so however many tabs, devices and people show it, it costs one call, and
+ * the summary syncs to them all; before this, on smithers.sh on 2026-10-25, every tab, device and fresh browser made its
+ * own, and the same 15 messages were summarized again in every burst. Each revision is asked about once per tab;
+ * streaming chunks never launch runs. At most `SUMMARIES_AT_ONCE` run at once across every conversation sharing `lane`.
+ * Once a summary fails in a way every later one would ({@link STOPPING_FAILURES}), every follower on the lane stops
+ * until the app opens again.
  */
 export const followSummaries = (
   window: Window,
@@ -88,15 +95,18 @@ export const followSummaries = (
 ) => Effect.gen(function* () {
   const { stopped } = lane
   /** Summarizes `row` at `revision` in its turn, unless the entry changed, left or got its summary meanwhile. */
-  const summarize = (row: Shown, revision: string, reason: NonNullable<ReturnType<typeof summaryReason>>) =>
+  const summarize = (row: Shown, revision: string) =>
     lane.permits.withPermits(1)(Effect.gen(function* () {
       const waited = yield* messages.get(row.id)
       if (waited._tag === "None" || revisionOf(waited.value) !== revision || waited.value.summaryRevision === revision) return
       const asked = row.questionId ? yield* messages.get(row.questionId) : undefined
-      const question = asked?._tag === "Some" ? asked.value.text.slice(0, QUESTION_EXCERPT) : undefined
+      const shown = row.role === "user" && window.toArray !== undefined ? yield* window.toArray : []
+      const before = shown[shown.findIndex(other => other.id === row.id) - 1]
+      const question = (asked?._tag === "Some" ? asked.value.text : before?.text)?.slice(0, QUESTION_EXCERPT)
       lane.settled.add(revision)
+      const asker = row.role === "user"
       const result = yield* dispatch.dispatch("timeline/summarize", {
-        id: row.id, revision, role: "assistant", text: row.text.slice(0, ANSWER_EXCERPT), reason,
+        id: row.id, revision, role: asker ? "user" : "assistant", text: row.text.slice(0, ANSWER_EXCERPT), reason: asker ? "question" : "answer",
         ...(question === undefined ? {} : { question }),
       }, { door: "sync", executionId: `timeline-${revision}` })
       // A summary made here or elsewhere arrives with the message.
@@ -106,8 +116,9 @@ export const followSummaries = (
       yield* lane.stop(result.error.code)
     }))
   yield* Effect.scoped(window.changes({ initial: true }).pipe(
+    Stream.map(changes => changes.toReversed()),
     Stream.flattenIterable,
-    Stream.filter(change => change.type !== "delete" && change.value.role === "assistant" && change.value.status === "done" && change.value.text.trim() !== ""),
+    Stream.filter(change => change.type !== "delete" && (change.value.role === "assistant" || change.value.role === "user") && change.value.status === "done" && change.value.text.trim() !== ""),
     Stream.interruptWhen(Deferred.await(stopped)),
     Stream.runForEachWhile(change => Effect.gen(function* () {
       if (yield* Deferred.isDone(stopped)) return false
@@ -115,10 +126,9 @@ export const followSummaries = (
         const row = change.value
         const revision = revisionOf(row)
         if (row.summaryRevision === revision) return
-        const reason = summaryReason(row.text)
-        if (reason === undefined || lane.pending.has(revision) || lane.settled.has(revision)) return
+        if (lane.pending.has(revision) || lane.settled.has(revision)) return
         lane.pending.add(revision)
-        yield* Effect.ensuring(summarize(row, revision, reason), Effect.sync(() => lane.pending.delete(revision)))
+        yield* Effect.ensuring(summarize(row, revision), Effect.sync(() => lane.pending.delete(revision)))
       }).pipe(
         Effect.catch((error) =>
           Effect.logWarning("timeline.summary.unavailable").pipe(
@@ -140,3 +150,37 @@ export const followSummaries = (
     })),
   ))
 })
+
+/** The whole conversation, as phases read it: chat's `everything` query gives these. */
+export interface Everything {
+  readonly toArray: Effect.Effect<ReadonlyArray<PhaseRow & { readonly arc?: string | null | undefined }>>
+  readonly changes: Window["changes"]
+}
+
+/** How long a conversation stays quiet before phases look at it: it never reads a burst of syncing rows one by one. */
+export const PHASES_SETTLE = Duration.seconds(3)
+
+/**
+ * Keeps a conversation's phases and arcs up to date (decision 0138): whenever it has settled, runs the next
+ * segmentation that is due ({@link planOf}), one at a time, on the summaries' lane. Each plan is asked about once per
+ * tab, the server's claim makes it one call for everyone, and a closed span is never read again.
+ */
+export const followPhases = (everything: Everything, dispatch: FlowDispatch["Service"], lane: Lane) =>
+  Effect.scoped(everything.changes({ initial: true }).pipe(
+    Stream.filter(changes => changes.some(change => change.value.status === "done" || change.value.status === "failed")),
+    Stream.debounce(PHASES_SETTLE),
+    Stream.interruptWhen(Deferred.await(lane.stopped)),
+    Stream.runForEach(() => Effect.gen(function* () {
+      const rows = yield* everything.toArray
+      const plans = [planOf(exchangeUnits(rows), 1), planOf(phaseUnits(rows), 2)]
+      for (const plan of plans) {
+        if (plan === undefined || lane.settled.has(plan.revision)) continue
+        lane.settled.add(plan.revision)
+        const result = yield* lane.permits.withPermits(1)(dispatch.dispatch("timeline/phases", plan, { door: "sync", executionId: `timeline-${plan.revision}` }))
+        if (result._tag === "Done" || !STOPPING_FAILURES.includes(result.error.code)) continue
+        yield* lane.stop(result.error.code)
+      }
+    }).pipe(
+      Effect.catch(error => Effect.logWarning("timeline.summary.unavailable").pipe(Effect.annotateLogs({ feature: "timeline", errorCode: codeOf(error), reason: error.reason }))),
+    )),
+  ))

@@ -32,7 +32,7 @@ const SYNCED = [
   "updated_at",
   "parts",
   "summary",
-  "summary_revision",
+  "summary_revision", "phase", "arc",
 ]
 
 const runtime = testFile("shapes")

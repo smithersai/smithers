@@ -336,3 +336,16 @@ resources belong to a session scope closed at program teardown (or immediately i
 `evals/baseline-update.test.ts` covers the complete, safe baseline-write guard. `evals/session-lifecycle.test.ts`
 uses real Effect scopes and failing Effects to cover finalization, dispatch rejection during polling and after
 timeout, and poll failure. These run with the eval unit tests and require no model credentials.
+
+## Timeline
+
+`evals/timeline.eval.ts` grades what the rail says (ruling FE-19): three realistic coding-agent conversations (`evals/timelineFixtures.ts`), sent the flows' exact requests and carried through the real segmentation plan, one exchange at a time, as they would grow. The judge asks whether each sampled summary is accurate and specific, and whether phases follow changes of goal, name the work and stay faithful; boundary F1 compares the phases with a person's own division. Scores compare with `evals/timeline-baseline.json`, and a fall of more than 0.1 fails.
+
+`TIMELINE_EVAL_SEAT` grades a subscription seat (`claude-code:haiku`, `luna`), and `TIMELINE_EVAL_MODEL` a model record. Run it before changing the `summary` role's model.
+
+| Model | Accurate | Specific | Boundary F1 | Phases follow goals | Titles | Faithful |
+| --- | --- | --- | --- | --- | --- | --- |
+| Claude Haiku (subscription, 2026-10-31, the baseline) | 0.87 | 0.84 | 0.72 | 0.75 | 0.90 | 0.38 |
+| GPT-6 Luna (subscription, 2026-10-31) | no summaries | no summaries | 0.77 | 0.63 | 0.90 | 0.70 |
+
+Luna returned empty text within the summary's 32 output tokens with no reasoning effort set. Its row predates the answer excerpts in phase input. The same model's boundary F1 moved between 0.72 and 0.82 across runs, and `faithful` between 0.38 and 0.73, so a small difference between two runs means little.

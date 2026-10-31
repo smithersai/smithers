@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { Children, type ComponentProps, type ReactNode } from "react";
+import { Children, type ComponentProps, type ReactNode, useLayoutEffect, useRef } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
 import { ChatMessage } from "./ChatMessage";
@@ -21,6 +21,41 @@ export type ChatTranscriptProps = ComponentProps<"div"> & {
   empty?: ReactNode;
 };
 
+/** Where the rail stands beside the transcript instead of behind its disclosure (chatTimelineCss.ts). */
+const RAIL_WIDE_VIEWPORT = "(min-width:1180px)";
+const RAIL_WIDE_TRANSCRIPT = 600;
+
+/**
+ * Keeps the disclosure open while the rail stands beside the transcript. CSS alone can't: WebKit renders nothing of a
+ * closed `<details>`. Returns whether it stands there now, when Escape has nothing to close.
+ */
+function useRailBeside(hasRail: boolean) {
+  const disclosure = useRef<HTMLDetailsElement>(null);
+  const beside = useRef(false);
+  useLayoutEffect(() => {
+    const details = disclosure.current;
+    const transcript = details?.parentElement;
+    if (details === null || transcript === null || transcript === undefined) return;
+    const viewport = window.matchMedia(RAIL_WIDE_VIEWPORT);
+    const sync = () => {
+      const now = viewport.matches && transcript.clientWidth >= RAIL_WIDE_TRANSCRIPT;
+      if (now === beside.current) return;
+      beside.current = now;
+      details.open = now;
+    };
+    sync();
+    viewport.addEventListener("change", sync);
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(sync);
+    observer?.observe(transcript);
+    return () => {
+      viewport.removeEventListener("change", sync);
+      observer?.disconnect();
+      beside.current = false;
+    };
+  }, [hasRail]);
+  return { disclosure, beside };
+}
+
 /** Scrollable, accessible transcript container for Smithers chat surfaces. */
 export function ChatTranscript({
   rail,
@@ -32,6 +67,7 @@ export function ChatTranscript({
   ...props
 }: ChatTranscriptProps) {
   useInjectUiCss();
+  const { disclosure, beside } = useRailBeside(Boolean(rail));
   const isEmpty = Children.toArray(children).length === 0;
   return (
     <div
@@ -42,8 +78,8 @@ export function ChatTranscript({
       className={cn("sui-chat-transcript", className)}
       {...props}
     >
-      {rail ? <details className="sui-timeline-disclosure" onKeyDown={event => {
-        if (event.key !== "Escape" || !event.currentTarget.open) return;
+      {rail ? <details ref={disclosure} className="sui-timeline-disclosure" onKeyDown={event => {
+        if (event.key !== "Escape" || !event.currentTarget.open || beside.current) return;
         event.currentTarget.open = false;
         event.currentTarget.querySelector("summary")?.focus();
       }}>

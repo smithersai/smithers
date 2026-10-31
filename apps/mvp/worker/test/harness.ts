@@ -64,7 +64,7 @@ export const testFile = (prefix: string) => {
   const runtime = ManagedRuntime.make(TestDatabase.layer(prefix))
   beforeAll(() => runtime.runPromise(Effect.void))
   beforeEach(() =>
-    runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`TRUNCATE message_pins, timeline_summaries, messages, views, view_moves RESTART IDENTITY`))
+    runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`TRUNCATE message_pins, timeline_summaries, timeline_phase_claims, messages, views, view_moves RESTART IDENTITY`))
   )
   afterAll(() => runtime.dispose())
   return runtime

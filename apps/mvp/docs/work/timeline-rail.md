@@ -2,10 +2,18 @@
 title: Timeline rail beside the conversation
 status: in-progress
 area: app
-owner: Opus timeline designer assigned by lead; prior codex-timeline-zoom implementation stopped
-updated: 2026-10-21 01:54 PDT
-links: [old-app-feature-gaps.md, conversations-and-history.md, notifications-and-live-work.md, model-endpoint.md, ../decisions/0009-notifications-and-live-work.md, everything-is-a-plugin.md, ../rulings.md]
+owner: CL-timeline-fe19
+updated: 2026-10-31 18:40 PDT
+links: [../decisions/0138-timeline-phases.md, old-app-feature-gaps.md, conversations-and-history.md, notifications-and-live-work.md, model-endpoint.md, ../decisions/0009-notifications-and-live-work.md, everything-is-a-plugin.md, ../rulings.md]
 ---
+
+## FE-19 rebuild — 2026-10-31
+
+**What:** Will's FE-19 ruling: the rail looks like the approved mock, every message has a model summary, outer levels are logical phases, and summaries that can't be made say so.
+
+**Current state:** Rail ported from the mock, phases on `timeline/phases` (decision 0138), toasts per cause, Jev eval committed.
+
+**Open questions for Will:** None here; the model choice is in the builder's status.
 
 ## Tracker reconciliation — 2026-10-21 01:54 PDT
 
