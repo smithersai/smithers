@@ -1,11 +1,12 @@
 /**
  * The host side of the runner protocol for the runner's tests: a real HTTP
  * server on loopback that keeps its jobs in memory and answers claim,
- * heartbeat and settle as `AgentRunner` specifies, so the runner under test
+ * heartbeat, settle and transcript events as `AgentRunner` and `Transcript` specify, so the runner under test
  * speaks to a peer over the wire. The app's own routes and job store are
  * tested against Postgres in apps/mvp; this is the runner's peer, not theirs.
  */
 import * as AgentRunner from "@smthrs/agent/AgentRunner"
+import type * as Transcript from "@smthrs/agent/Transcript"
 import { execFileSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { mkdirSync, writeFileSync } from "node:fs"
@@ -25,6 +26,21 @@ export interface Row {
   held: boolean
   heartbeats: number
   outcome?: AgentRunner.Outcome
+  /** The job's transcript events, by seq, each kept once. */
+  readonly events: Map<number, Transcript.Event>
+  /** When the host first stored each seq, in epoch ms. */
+  readonly received: Map<number, number>
+  /** When the job was claimed, in epoch ms. */
+  claimedAt?: number
+  /** Events requests: how many were answered, and how many were refused while events were blocked. */
+  posts: number
+  refusedPosts: number
+}
+
+/** The job's events in seq order, and whether their seqs run from 0 with no gap. */
+export const transcriptOf = (row: Row) => {
+  const events = [...row.events.values()].sort((a, b) => a.seq - b.seq)
+  return { events, contiguous: events.every((event, n) => event.seq === n) }
 }
 
 const read = (request: IncomingMessage) =>
@@ -43,6 +59,8 @@ const json = (response: ServerResponse, status: number, body: unknown) => {
 /** Starts the host on a loopback port, accepting `token` as the runner's bearer. */
 export const start = async (token: string) => {
   const rows = new Map<string, Row>()
+  // Until when the events route answers 503, as a host that can't be reached.
+  let blockedUntil = 0
   const server = createServer(async (request, response) => {
     const body = await read(request)
     if (request.headers.authorization !== `Bearer ${token}`) return json(response, 401, { code: "authentication" })
@@ -69,6 +87,7 @@ export const start = async (token: string) => {
       queued.state = "claimed"
       queued.claim = randomUUID()
       queued.claims++
+      queued.claimedAt = Date.now()
       return json(response, 200, { job: asJob(queued, false) })
     }
     const row = rows.get(String(value.key))
@@ -76,6 +95,24 @@ export const start = async (token: string) => {
     if (request.url === AgentRunner.ROUTES.heartbeat) {
       if (row !== undefined) row.heartbeats++
       return json(response, 200, { held: holds, cancel: holds && row.cancel, leaseSeconds: 45 })
+    }
+    if (request.url === AgentRunner.ROUTES.events) {
+      // The runner that held the claim may send its events after it settled.
+      if (row === undefined || row.claim !== value.claim) return json(response, 409, { code: "not_held" })
+      if (Date.now() < blockedUntil) {
+        row.refusedPosts++
+        return json(response, 503, { code: "unavailable" })
+      }
+      row.posts++
+      for (const event of value.events as ReadonlyArray<Transcript.Event>) {
+        if (!row.events.has(event.seq)) {
+          row.events.set(event.seq, event)
+          row.received.set(event.seq, Date.now())
+        }
+      }
+      let next = 0
+      while (row.events.has(next)) next++
+      return json(response, 200, { next })
     }
     if (request.url === AgentRunner.ROUTES.settle) {
       if (!holds) return json(response, 200, { recorded: false })
@@ -107,7 +144,11 @@ export const start = async (token: string) => {
         claims: 0,
         cancel: false,
         held: true,
-        heartbeats: 0
+        heartbeats: 0,
+        events: new Map(),
+        received: new Map(),
+        posts: 0,
+        refusedPosts: 0
       }
       rows.set(key, row)
       return row
@@ -120,6 +161,19 @@ export const start = async (token: string) => {
         await new Promise((done) => setTimeout(done, 50))
       }
       return row.outcome!
+    },
+    /** Answers every events request 503 for the next `ms` milliseconds. */
+    blockEvents: (ms: number) => {
+      blockedUntil = Date.now() + ms
+    },
+    /** Waits until `row`'s transcript holds the session's end, for at most `timeoutMs`. */
+    transcribed: async (row: Row, timeoutMs = 60_000) => {
+      const until = Date.now() + timeoutMs
+      while (![...row.events.values()].some((event) => event.kind === "_smithers/end")) {
+        if (Date.now() > until) throw new Error(`job ${row.key}'s transcript did not end within ${timeoutMs} ms`)
+        await new Promise((done) => setTimeout(done, 50))
+      }
+      return transcriptOf(row)
     },
     close: () => new Promise<void>((done) => server.close(() => done()))
   }

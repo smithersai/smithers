@@ -15,6 +15,11 @@
  * again and starts a fresh session told that the checkout holds earlier work.
  * Nothing outside this module knows a session can resume.
  *
+ * Every update the agent streams goes to the job's transcript spool
+ * (Spool.ts), which the host shows as the run's transcript, except the
+ * history an agent replays while it loads a session: the host has it already.
+ * The runner adds `_smithers/turn` with each prompt turn's stop reason.
+ *
  * Nothing here logs a prompt, the agent's text, a command line, an
  * environment or a path: ids, codes, the account label and durations only.
  *
@@ -23,12 +28,14 @@
 
 import * as Acp from "@smthrs/agent/Acp"
 import * as AgentRunner from "@smthrs/agent/AgentRunner"
+import * as Transcript from "@smthrs/agent/Transcript"
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
 import { Cause, Deferred, Effect, Exit, Fiber, Option, Queue, Schema, Stream } from "effect"
 import { execFile } from "node:child_process"
 import { chmodSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import type * as Config from "./Config.ts"
-import * as Scrub from "./Scrub.ts"
+import type * as Host from "./Host.ts"
+import * as Spool from "./Spool.ts"
 import * as Tree from "./Tree.ts"
 import * as Workspace from "./Workspace.ts"
 
@@ -186,7 +193,7 @@ export const work = (
   config: Config.Checked,
   job: JobPayload,
   control: Control
-): Effect.Effect<AgentRunner.Outcome> =>
+): Effect.Effect<AgentRunner.Outcome, never, Host.Host> =>
   Effect.gen(function*() {
     const startedAt = Date.now()
     const { origin } = AgentRunner.parseKey(job.key)
@@ -230,23 +237,30 @@ export const work = (
         ...(hook.account === undefined ? {} : { account: hook.account })
       })
     }
-    const account: Record<string, string> = chosen.account === undefined ? {} : { account: chosen.account }
-    const scrub = Scrub.make([
+    const account: { account?: string } = chosen.account === undefined ? {} : { account: chosen.account }
+    const scrub = Transcript.scrubber([
       ...(profile.secretEnv ?? []).flatMap((name) => base[name] === undefined ? [] : [base[name]]),
       ...Object.values(chosen.env)
     ])
-    const outcome = yield* Effect.scoped(session({
-      profile,
-      job,
-      checkout,
-      mirror: repository.mirror,
-      control,
-      env: { ...base, ...chosen.env },
-      resume: same ? saved.sessionId : undefined,
-      checkpoint: { generation: job.generation, env: chosen.env, ...account },
-      scrub
+    const outcome = yield* Effect.scoped(Effect.gen(function*() {
+      const spool = yield* Spool.open({ stateDir: config.stateDir, key: job.key, claim: job.claim, scrub })
+      yield* Effect.forkScoped(spool.upload)
+      return yield* session({
+        profile,
+        job,
+        checkout,
+        mirror: repository.mirror,
+        control,
+        env: { ...base, ...chosen.env },
+        resume: same ? saved.sessionId : undefined,
+        checkpoint: { generation: job.generation, env: chosen.env, ...account },
+        scrub,
+        spool
+      })
     }))
-    return yield* report(outcome.outcome, { ...account, stop: outcome.stop })
+    const fields: Record<string, string> = { stop: outcome.stop }
+    if (chosen.account !== undefined) fields.account = chosen.account
+    return yield* report(outcome.outcome, fields)
   })
 
 /** One agent process and its session, in the caller's scope: how it ended, and the stop reason or end code. */
@@ -260,6 +274,7 @@ const session = (options: {
   readonly resume: string | undefined
   readonly checkpoint: Checkpoint
   readonly scrub: (text: string) => string
+  readonly spool: Spool.Spool
 }) =>
   Effect.gen(function*() {
     const { checkout, control, job, profile } = options
@@ -294,32 +309,37 @@ const session = (options: {
     let current = ""
     let previous = ""
     let usage: AgentRunner.Usage = {}
+    // While the agent loads a session it replays that session's history, which the transcript holds already.
+    let loading = false
     const client = yield* Acp.make({
       incoming: Stream.splitLines(Stream.decodeText(handle.stdout)),
       send: (line) => Queue.offer(lines, line)
     }, {
       permission: profile.permission,
       onUpdate: (update) =>
-        Effect.sync(() => {
-          lastUpdate = Date.now()
-          const text = Acp.messageText(update)
-          if (Option.isSome(text)) {
-            current = (current + text.value).slice(-MAX_SUMMARY)
-            return
-          }
-          const reported = Acp.usage(update)
-          if (Option.isSome(reported)) {
-            usage = {
-              contextTokens: reported.value.contextTokens,
-              ...(reported.value.costUsd === undefined ? {} : { costUsd: reported.value.costUsd })
+        Effect.andThen(
+          loading ? Effect.void : options.spool.append(update.kind, update.update),
+          Effect.sync(() => {
+            lastUpdate = Date.now()
+            const text = Acp.messageText(update)
+            if (Option.isSome(text)) {
+              current = (current + text.value).slice(-MAX_SUMMARY)
+              return
             }
-            return
-          }
-          if (current !== "") {
-            previous = current
-            current = ""
-          }
-        })
+            const reported = Acp.usage(update)
+            if (Option.isSome(reported)) {
+              usage = {
+                contextTokens: reported.value.contextTokens,
+                ...(reported.value.costUsd === undefined ? {} : { costUsd: reported.value.costUsd })
+              }
+              return
+            }
+            if (current !== "") {
+              previous = current
+              current = ""
+            }
+          })
+        )
     })
     const failure = (error: Acp.AcpError) =>
       error.code === "closed"
@@ -350,7 +370,9 @@ const session = (options: {
       Effect.gen(function*() {
         const initialized = yield* client.initialize
         if (options.resume !== undefined && initialized.loadSession) {
+          loading = true
           const loaded = yield* Effect.exit(client.loadSession(options.resume, checkout.dir))
+          loading = false
           if (Exit.isSuccess(loaded)) return { sessionId: options.resume, text: CONTINUE }
         }
         const sessionId = yield* client.newSession(checkout.dir)
@@ -370,6 +392,7 @@ const session = (options: {
       return error === undefined ? ended(failed("agent"), "exit") : failure(error)
     }
     const stop = first.value
+    yield* options.spool.append(Transcript.KINDS.turn, { stopReason: stop })
     if (stop === "refusal") return ended(retry("refusal") ?? failed("agent"), stop)
     if (stop !== "end_turn") return ended(failed("agent"), stop)
     // The turn ended; the agent may still be talking. Collect once it has been quiet a while.

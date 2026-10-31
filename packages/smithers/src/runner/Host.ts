@@ -6,6 +6,7 @@
  */
 
 import * as AgentRunner from "@smthrs/agent/AgentRunner"
+import * as Transcript from "@smthrs/agent/Transcript"
 import { Context, Duration, Effect, Layer, Schema } from "effect"
 import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
@@ -25,7 +26,8 @@ export class HostError extends Schema.TaggedError<HostError>()("@smthrs/cli/Runn
 }) {}
 
 /**
- * The runner routes of one host.
+ * The runner routes of one host: `events` sends a job's transcript events and
+ * answers the next `seq` the host lacks.
  *
  * @category services
  * @since 1.0.0
@@ -40,11 +42,15 @@ export class Host extends Context.Service<Host, {
   readonly settle: (
     request: typeof AgentRunner.SettleRequest.Type
   ) => Effect.Effect<typeof AgentRunner.SettleResponse.Type, HostError>
+  readonly events: (
+    request: typeof Transcript.EventsRequest.Type
+  ) => Effect.Effect<typeof Transcript.EventsResponse.Type, HostError>
 }>()("@smthrs/cli/Runner/Host") {}
 
 const decodeClaim = Schema.decodeUnknownEffect(Schema.fromJsonString(AgentRunner.ClaimResponse))
 const decodeHeartbeat = Schema.decodeUnknownEffect(Schema.fromJsonString(AgentRunner.HeartbeatResponse))
 const decodeSettle = Schema.decodeUnknownEffect(Schema.fromJsonString(AgentRunner.SettleResponse))
+const decodeEvents = Schema.decodeUnknownEffect(Schema.fromJsonString(Transcript.EventsResponse))
 
 /**
  * The routes at `origin` with `token`, over the context's `HttpClient`. A
@@ -85,7 +91,8 @@ export const layer = (options: { readonly origin: string; readonly token: string
         claim: (request) =>
           post("claim", request, decodeClaim, request.waitSeconds).pipe(Effect.map((answer) => answer.job)),
         heartbeat: (request) => post("heartbeat", request, decodeHeartbeat),
-        settle: (request) => post("settle", request, decodeSettle)
+        settle: (request) => post("settle", request, decodeSettle),
+        events: (request) => post("events", request, decodeEvents)
       })
     })
   )
