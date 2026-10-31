@@ -2,7 +2,8 @@
  * @since 1.0.0
  */
 
-import { NodeCrypto, NodeServices } from "@effect/platform-node"
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import * as NodeServices from "@effect/platform-node/NodeServices"
 import type * as Undici from "@effect/platform-node/Undici"
 import * as NodeGateway from "@smthrs/gateway/node/NodeGateway"
 import * as NodeJj from "@smthrs/jj/node/NodeJj"

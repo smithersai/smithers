@@ -7,7 +7,8 @@
  * @deprecated Use cli/Entry.main; removed in #3634 phase 2.
  */
 
-import { NodeRuntime, NodeServices } from "@effect/platform-node"
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime"
+import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Audience from "@smthrs/build-cli/Audience"
 import { ApprovalAuthority } from "@smthrs/control"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"

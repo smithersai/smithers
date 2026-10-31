@@ -2,7 +2,7 @@
  * @since 1.0.0
  */
 
-import { NodeServices } from "@effect/platform-node"
+import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Context, Effect, Layer } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"

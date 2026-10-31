@@ -4,7 +4,8 @@
  * @since 0.1.0
  */
 
-import { NodeHttpServer, NodeServices } from "@effect/platform-node"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import * as NodeServices from "@effect/platform-node/NodeServices"
 import { Control, ControlRpcs, type ControlRuntime, ControlServer } from "@smthrs/control"
 
 import type * as Journal from "@smthrs/journal/Journal"

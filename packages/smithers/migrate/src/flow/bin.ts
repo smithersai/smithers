@@ -6,7 +6,7 @@
  * @since 1.0.0-rc.0
  */
 
-import { NodeRuntime } from "@effect/platform-node"
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime"
 import { main } from "./Cli.ts"
 
 NodeRuntime.runMain(main)

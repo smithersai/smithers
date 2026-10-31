@@ -3,7 +3,8 @@
  * @since 1.0.0
  */
 
-import { NodeCrypto, NodeServices } from "@effect/platform-node"
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as AgentSession from "@smthrs/agent/AgentSession"
 import { Control, ControlRuntime } from "@smthrs/control"
 import * as Dialect from "@smthrs/database/Dialect"

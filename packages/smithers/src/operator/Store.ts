@@ -4,7 +4,7 @@
  * @since 1.0.0
  */
 
-import { NodeCrypto } from "@effect/platform-node"
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Layer } from "effect"
 import { z } from "incur"
 import type * as Environment from "../Environment.ts"

@@ -4,7 +4,7 @@
  * @since 1.0.0
  */
 
-import { NodeServices } from "@effect/platform-node"
+import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Audience from "@smthrs/build-cli/Audience"
 import type { RuntimeConfig } from "@smthrs/build-cli/Cli"
 import { ApprovalAuthority, Control } from "@smthrs/control"
