@@ -66,10 +66,10 @@ import * as Redacted from "effect/Redacted"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
-import { valueProblem } from "./Binding.ts"
+import { valueProblem } from "./Binding.vibe"
 import { base64, fromBase64, utf8 } from "./internal/bytes.ts"
 import * as Placeholder from "./Placeholder.ts"
-import * as Scrub from "./Scrub.ts"
+import * as Scrub from "./Scrub.vibe"
 
 /**
  * A secret as one guest holds it: its name, the placeholder this guest has

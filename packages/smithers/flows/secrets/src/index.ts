@@ -27,7 +27,7 @@
  *
  * @since 0.1.0
  */
-export * as Binding from "./Binding.ts"
+export * as Binding from "./Binding.vibe"
 
 /**
  * The egress: substitution, refusal, audit and scrubbing.
@@ -48,4 +48,4 @@ export * as Placeholder from "./Placeholder.ts"
  *
  * @since 0.1.0
  */
-export * as Scrub from "./Scrub.ts"
+export * as Scrub from "./Scrub.vibe"
