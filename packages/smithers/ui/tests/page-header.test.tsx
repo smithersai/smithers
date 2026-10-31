@@ -21,6 +21,7 @@ describe("PageHeader", () => {
   });
 
   test("omits the slots it is not given", () => {
+    expect(renderToStaticMarkup(<PageHeader back={<a href="/app/runs">Runs</a>} />)).not.toContain("<h1");
     const html = renderToStaticMarkup(<PageHeader title="Settings" />);
     expect(html).not.toContain("<nav");
     expect(html).not.toContain("sui-page-header-back");

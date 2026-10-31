@@ -4,8 +4,8 @@ import { cn } from "./cn";
 import { useInjectUiCss } from "./styles";
 
 export type PageHeaderProps = Omit<ComponentProps<"header">, "title"> & {
-  /** The page's name, rendered as its `h1`. */
-  title: ReactNode;
+  /** The page's name, rendered as its `h1`. Leave it out when the page's content carries its own `h1`. */
+  title?: ReactNode;
   /** A quiet way back, such as the router's link to the chat. Sits before the title. */
   back?: ReactNode;
   /** The page's own sections, such as a repository's Issues and Pull requests links. `aria-current="page"` marks the active one. */
@@ -27,7 +27,7 @@ export function PageHeader({ title, back, nav, navLabel = "Sections", actions, c
     <header data-slot="page-header" className={cn("sui-page-header", className)} {...props}>
       <div className="sui-page-header-inner">
         {back === undefined ? null : <div className="sui-page-header-back">{back}</div>}
-        <h1 className="sui-page-header-title">{title}</h1>
+        {title === undefined ? null : <h1 className="sui-page-header-title">{title}</h1>}
         {nav === undefined ? null : (
           <nav className="sui-page-header-nav" aria-label={navLabel}>{nav}</nav>
         )}

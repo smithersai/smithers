@@ -84,9 +84,9 @@ export function RunList({ runs, now, renderLink, empty, renderDetails, className
             {shows.toggle ? <TableHead className="sui-run-list-toggle"><span className="sui-sr-only">Details</span></TableHead> : null}
             <TableHead>Flow</TableHead>
             <TableHead>Status</TableHead>
-            {shows.trigger ? <TableHead>Trigger</TableHead> : null}
-            {shows.branch ? <TableHead>Branch</TableHead> : null}
-            {shows.actor ? <TableHead>Started by</TableHead> : null}
+            {shows.trigger ? <TableHead className="sui-run-list-meta-head">Trigger</TableHead> : null}
+            {shows.branch ? <TableHead className="sui-run-list-meta-head">Branch</TableHead> : null}
+            {shows.actor ? <TableHead className="sui-run-list-meta-head">Started by</TableHead> : null}
             <TableHead>Started</TableHead>
             <TableHead>Duration</TableHead>
           </TableRow>

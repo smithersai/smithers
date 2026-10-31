@@ -318,6 +318,15 @@ describe("RunList like a CI system's runs", () => {
     expect(device!.querySelector("[data-slot='run-where']")).toBeNull();
   });
 
+  test("on a phone the trigger, branch and actor columns hide, head and cells alike, and a flow never breaks mid-word", async () => {
+    await render(<RunList runs={runs} now={60_000} />);
+    const metaHeads = $$("thead th.sui-run-list-meta-head").map((head) => head.textContent);
+    expect(metaHeads).toEqual(["Trigger", "Branch", "Started by"]);
+    expect(smithersUiCss).toContain("@media (max-width:640px) { .sui-run-list-meta, .sui-run-list-meta-head { display:none; } }");
+    expect(smithersUiCss).toContain(".sui-run-list-flow { font-weight:650; white-space:nowrap; }");
+    expect(smithersUiCss).not.toContain(".sui-run-list-flow { font-weight:650; overflow-wrap:anywhere; }");
+  });
+
   test("a toggle links to the row opened or closed; only an expanded row shows its details, full width", async () => {
     await render(<RunList runs={runs} now={60_000} renderDetails={(run) => <p data-details={run.id}>details</p>} />);
     const toggles = $$("[data-slot='run-details-toggle']");

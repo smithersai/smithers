@@ -14,7 +14,7 @@ export const runPageCss = `
 .sui-run-header-elapsed { font-variant-numeric:tabular-nums; }
 .sui-run-header-actions { display:flex; flex-wrap:wrap; gap:6px; }
 .sui-run-list { min-width:0; }
-.sui-run-list-flow { font-weight:650; overflow-wrap:anywhere; }
+.sui-run-list-flow { font-weight:650; white-space:nowrap; }
 .sui-run-list-flow a { color:${t.foreground}; text-decoration:none; }
 .sui-run-list-flow a:hover { text-decoration:underline; }
 .sui-run-list-flow a:focus-visible { outline:none; box-shadow:0 0 0 3px ${t.ring}; border-radius:${t.radiusControl}; }
@@ -31,6 +31,7 @@ export const runPageCss = `
 .sui-run-list-where { margin-left:6px; vertical-align:middle; font-weight:500; }
 .sui-run-list-meta { color:${t.mutedForeground}; font-size:13px; max-width:16rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sui-run-list-branch { font-family:${t.fontMono}; font-size:${t.fontSizeCompact}; }
+@media (max-width:640px) { .sui-run-list-meta, .sui-run-list-meta-head { display:none; } }
 .sui-run-list-details > td { padding:0 8px 12px 36px; background:${t.hoverSubtle}; }
 .sui-run-details { display:flex; flex-direction:column; gap:10px; min-width:0; padding-top:8px; }
 .sui-run-details-job { display:flex; flex-direction:column; gap:2px; min-width:0; }
