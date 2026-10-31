@@ -33,5 +33,6 @@
       "diagnosticSeverity": { "globalErrorInEffectFailure": "off" }
     }]
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "vibelang": { "declarationSidecars": true }
 }

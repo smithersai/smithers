@@ -149,6 +149,7 @@
     "effect": "4.1.0"
   },
   "dependencies": {
-    "@smthrs/canonical": "1.0.0-rc.16"
+    "@smthrs/canonical": "1.0.0-rc.16",
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-c838030582d5.tgz"
   }
 }
