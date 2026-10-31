@@ -201,6 +201,8 @@ export interface Services<E, R> {
   readonly tokens: GitHubTokens
   readonly http: HttpClient.HttpClient
   readonly apiBaseUrl: string
+  /** The job machines the deployment declared beside its default one (worker/branch/JobMachines.ts `declared`). */
+  readonly machines: ReadonlyArray<string>
 }
 
 /** The steps over `services`; the realm's QuickJS build comes from the host. */
@@ -261,13 +263,18 @@ export const steps = <E, R>(services: Services<E, R>) => {
           ),
         )
       if (file === "not_found" || file === "unreadable") return { _tag: "refused", reason: file } as const
-      return yield* Realm.plan(request.flow, file, {
+      const planned = yield* Realm.plan(request.flow, file, {
         run: request.run,
         repo: request.repo,
         sha: request.sha,
         ref: request.ref,
         event: request.event,
       })
+      // A job may name only a machine this deployment declared: anything else runs nothing (decision 0128).
+      return planned._tag === "planned" &&
+          planned.jobs.some((job) => job.machine !== undefined && !services.machines.includes(job.machine))
+        ? { _tag: "refused", reason: "machine" } as const
+        : planned
     }).pipe(
       Effect.tap((planned) =>
         Effect.andThen(

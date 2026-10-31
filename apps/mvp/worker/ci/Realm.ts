@@ -43,7 +43,7 @@ export interface Payload {
 }
 
 /** Why a flow couldn't be planned. */
-export const Reason = Schema.Literals(["too_large", "syntax", "import", "evaluation", "limit", "invalid_plan", "tag"])
+export const Reason = Schema.Literals(["too_large", "syntax", "import", "evaluation", "limit", "invalid_plan", "tag", "machine"])
 export type Reason = typeof Reason.Type
 
 /** A plan: the flow's tag and its jobs, in the order the body named them. */

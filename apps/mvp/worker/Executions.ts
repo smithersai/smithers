@@ -217,9 +217,10 @@ const object = <E, R>(
       >
       // A `ci/job` naming a job machine runs on that machine's objects (docs/features/ci.md#machines): the gate's,
       // when the deployment declares it.
+      const declaredMachines = yield* JobMachines.declared.pipe(Effect.orDie)
       const machineObjects = BranchSandboxes.namespaces(
         sandboxObjects,
-        (yield* JobMachines.declared.pipe(Effect.orDie)).includes(JobMachines.GATE)
+        declaredMachines.includes(JobMachines.GATE)
           ? (yield* BranchSandboxes.GateObject) as Cloudflare.DurableObject<BranchSandboxes.SandboxObjectShape>
           : undefined,
       )
@@ -414,7 +415,8 @@ const object = <E, R>(
                   ))),
                 commandSeconds,
                 stepWaitSeconds,
-              ), githubServices(github.value), AgentSandbox.variant), dispatchServices(github.value)),
+              ), Effect.map(githubServices(github.value), (services) => ({ ...services, machines: declaredMachines })),
+              AgentSandbox.variant), dispatchServices(github.value)),
             )
             : hostFor(flows)
         const host = Option.isSome(repoClone)

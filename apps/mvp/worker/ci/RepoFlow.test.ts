@@ -81,7 +81,7 @@ const run = async (
   github: ReturnType<typeof scriptedGitHub>,
   box: ReturnType<typeof machine>,
   input: RepoFlow.RunRequest,
-  options: { readonly databaseFailures?: number } = {},
+  options: { readonly databaseFailures?: number; readonly machines?: ReadonlyArray<string> } = {},
 ) => {
   const { services } = await githubServices(runtime, github)
   // A Postgres that can't be reached the first `databaseFailures` times a step opens it.
@@ -94,7 +94,7 @@ const run = async (
     input,
     ExecutionHost.withRepoFlows(
       ExecutionHost.withCiJobs({ flows: [], registration: Layer.empty }, box.layer),
-      Effect.succeed({ ...services, database }), variant,
+      Effect.succeed({ ...services, database, machines: options.machines ?? [] }), variant,
     ).registration,
     { executionId: input.run },
   )
@@ -189,6 +189,21 @@ export default Flow.make("ci", {
     await run(github, box, request(sha))
     expect(box.ran()).toContain("pnpm lint")
     expect(box.ran()).not.toContain("pnpm lint --fix")
+  })
+
+  test("a job naming a machine the deployment didn't declare runs nothing; a declared one runs", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const gated = CI.replace('CiJob.make("lint", {', 'CiJob.make("lint", { machine: "gate",')
+    expect(gated).not.toBe(CI)
+    const sha = github.push("main", { ".smithers/flows/ci/flow.ts": gated })
+    const refused = machine()
+    expect((await run(github, refused, request(sha))).exit).toEqual(Exit.succeed({ state: "failure", outcome: "sent", jobs: [] }))
+    expect(refused.commands).toEqual([])
+    expect(github.statuses.get(sha)!.at(-1)?.description).toBe("Couldn't run the flow (machine)")
+    const declared = machine()
+    const ran = await run(github, declared, { ...request(sha), run: "ci:delivery-machine" }, { machines: ["gate"] })
+    expect(ran.exit).toMatchObject(Exit.succeed({ state: "success" }))
+    expect(declared.ran()).toContain("pnpm lint")
   })
 
   test("a flow with no flow.ts at the commit, or one the realm refuses, runs no job and reports failure", async () => {
