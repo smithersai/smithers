@@ -179,3 +179,21 @@ export * as MemoryCalibration from "./MemoryCalibration.ts"
  * @since 1.0.0
  */
 export * as MemoryMine from "./MemoryMine.ts"
+
+/**
+ * @category models
+ * @since 1.0.0
+ */
+export * as AgentRunner from "./AgentRunner.ts"
+
+/**
+ * @category constructors
+ * @since 1.0.0
+ */
+export * as ExternalAgent from "./ExternalAgent.ts"
+
+/**
+ * @category constructors
+ * @since 1.0.0
+ */
+export * as Acp from "./Acp.ts"
