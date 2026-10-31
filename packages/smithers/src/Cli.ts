@@ -35,6 +35,7 @@ import * as GcCmd from "./commands/Gc.ts"
 import type * as Globals from "./commands/Globals.ts"
 import * as MigrateCmd from "./commands/Migrate.ts"
 import * as OpenCmd from "./commands/Open.ts"
+import { createRunnerCli } from "./commands/Runner.ts"
 import * as TuiCmd from "./commands/Tui.ts"
 import * as UpdateCmd from "./commands/Update.ts"
 import * as DidYouMean from "./DidYouMean.ts"
@@ -146,6 +147,7 @@ export const makeCli = (
     .command(mcp)
     .command(createCredentialsCli())
     .command(createTokenCli(config))
+    .command(createRunnerCli(config))
     .command(createTriggersCli(config))
     .command(createIntegrationsCli())
     .command(createEnvironmentCli(config))
