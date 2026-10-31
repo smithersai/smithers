@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "allowArbitraryExtensions": true,
     // DOM as well as ESNext: the contract test reaches @smthrs/control, whose
     // WebCrypto sources are typed against DOM, as the module that owns them
     // declares.

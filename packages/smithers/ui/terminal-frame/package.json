@@ -55,6 +55,7 @@
     "playwright": "1.62.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "typescript": "~5.9.3"
+    "typescript": "~5.9.3",
+    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-3ee099e972e9.tgz"
   }
 }

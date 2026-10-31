@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "allowArbitraryExtensions": true,
     "allowImportingTsExtensions": true,
     "erasableSyntaxOnly": true,
     "exactOptionalPropertyTypes": true,

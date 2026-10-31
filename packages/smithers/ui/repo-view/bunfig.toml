@@ -5,7 +5,7 @@
 # module-level cache such as the Markdown editor's layout probe starts
 # unmeasured in every file, and coverage still adds up across files.
 [test]
-preload = ["./test/happy-dom-preload.ts"]
+preload = ["vibelang/bun", "./test/happy-dom-preload.ts"]
 coverage = true
 coverageThreshold = { lines = 1.0, functions = 1.0 }
 coverageSkipTestFiles = true
