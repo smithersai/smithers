@@ -12,7 +12,7 @@ import {
 import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
 
-const sources = Input.glob("{src,examples}/**/*.ts")
+const sources = Input.glob("{src,examples}/**/*.{ts,vibe}")
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
@@ -144,7 +144,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/internal/describe.ts",
-        "src/IssuePath.ts",
+        "src/IssuePath.vibe",
         "src/BoundedJson.ts",
         "src/internal/canonicalize.ts",
         "src/Canonical.vibe"

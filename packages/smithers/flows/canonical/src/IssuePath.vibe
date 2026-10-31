@@ -3,7 +3,6 @@
  */
 
 import type * as Schema from "effect/Schema"
-import type * as SchemaIssue from "effect/SchemaIssue"
 
 // A key holding `.` or `[` must not read as a different field, so only an
 // identifier renders with a dot; any other key renders as a quoted JSON string,
