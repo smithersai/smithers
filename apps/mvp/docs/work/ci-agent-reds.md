@@ -1,210 +1,92 @@
 ---
 title: Repair assigned CLI, agent, control, gateway and Electric CI targets
-status: in-progress
+status: blocked
 area: sdk
 owner: ci-agent
-updated: 2026-10-30
+updated: 2026-10-31
 links:
   - https://github.com/smithersai/smithers/actions/runs/40929998769
 ---
 
-Reproduce the seven assigned target failures with the CI runner on Latitude.
-Fix each root cause with regression evidence; retain the existing coverage and
-timeout gates. Deliver separate commits by root cause for the CI repair batch.
+Not ready to land. The last complete integrated run passes five of seven assigned
+targets. CLI and agent still need complete green receipts. The latest journal
+candidate has focused assertion coverage only; its complete package gate and the
+required final read-only review are pending. No timeout, coverage floor or
+known-red entry was widened.
 
-Libraries: the CLI, agent, model-host, control, gateway, and effect-electric
-entries in `docs/libraries.md`, plus build-cli, flow, harness, database, journal, run-store and engine-store;
-existing services remain their public seams.
+Libraries used: CLI, agent, model-host, control, gateway, effect-electric,
+build-cli, flow, harness, database, journal, run-store and engine-store from
+`docs/libraries.md`. Existing SDK services remain the dependency seams.
 
-The shared test setup preserves the CLI target's explicit Node compile-cache
-path. Standalone runs still clean up their default cache. Real loader tests
-cover success and failure with owned and shared caches. The original worker
-probe disabled coverage and missed Vitest stripping the Node cache reference.
-The actual V8 worker fixture now keeps that cache disabled in measured workers,
-passes a separate run-owned reference to unmeasured CLI children, and checks
-100% coverage of both branches of its measured source. Explicit opt-outs and
-external Node coverage retain disabled caches and precise source ranges.
+## Current receipts
 
-The CLI runner preserves the configured normal/fault split and schedules each
-file in one Vitest pool with four workers. Independent runners repeated compiler
-coordination and left a late static group holding the remaining suite budget.
-The real discovery fixture retains every default file exactly once, keeps the
-fault tier separate and preserves the configured coverage thresholds. Real
-worker fixtures check queued progress, late failure propagation, both compiler
-caches and cleanup.
-The source-host startup profile exposed the offline preload entering esbuild's
-worker through `NODE_OPTIONS`, despite the worker's empty `execArgv`. The preload
-now applies to main threads only; the real-process regression retains inheritance
-by child CLIs and exercises esbuild's synchronous transform. Per-file results
-remain visible if a target ends before Vitest can print its final summary.
-Native peer recovery retains its former early group priority through Vitest's
-public sequencer. The previous size ordering started its first scenario 38
-minutes into the 40-minute run, after the other 323 files had produced coverage.
-Cold actual discovery rejects that ordering and verifies the recovery file is
-first, retaining the same inventory, configured gate and four-worker pool.
-The follow-logs assertion reproduced in a later four-copy run. Its follower
-returned engine interruption events without `control.run.cancelled`: the engine
-observation became terminal before the control transaction committed. Observed
-summaries now retain `recordedStatus`, and following uses that committed status
-for its final drain. Real control services exercise the gap for every terminal
-status and both ordinary and past-terminal cursors; SQLite reconciliation checks
-retain current engine truth beside the recorded state. Cache inheritance remains
-a separate verified environment correction.
-The next full CLI run completed within its original deadline (316 files passed,
-three assertions failed). The raw environment execution assertion still expected
-the measured worker's cache instead of the explicit child environment. The
-cross-host takeover fixture started a same-host observer before aging the stopped
-owner's lease; its legitimate live-PID confirmation could renew that lease.
-The takeover now precedes that observer's registration. Health discovery also
-reported an unregistered timer wake during host teardown; its probe scope now closes before discovery registration is released. A real
-SQLite timer driven during a held probe finalizer rejects the old implementation
-with that exact warning; all nine health cases pass with the correction, including
-bounded admission and reopening the same discovery lineage. The nineteen
-environment and peer-recovery cases, the real canonical-refusal warning case
-and the CLI typecheck also pass. The next full CLI run reached its unchanged deadline with the binary suite
-still launching processes. Those launchers bypassed the verified child cache
-handoff, inheriting Vitest's disabled worker caches. Their real Node adapter
-now applies that handoff to ordinary and deliberately narrow environments;
-the V8 worker regression uses the same adapter, checks environment isolation,
-and retains precise measured-source coverage. The next full CLI run again reached its original deadline with 325 files recorded and the binary suite still spawning. A live child had the native cache reference, caches enabled, and no external coverage. The binary contracts now occupy seven files in the same four-worker pool, sharing the existing fixtures; their cases, process deadlines and assertions are unchanged. Public discovery checks the distributed inventory, and verbose case timings survive an interrupted run. Public size ordering ranked the seven binary files 53rd through 133rd despite their process workload; the first distributed attempt was cancelled to correct that scheduling. The sequencer now dispatches all seven immediately after peer recovery. A cold public discovery regression checks that early dispatch while preserving the same inventory, worker limit, deadlines and fault split. Final validation is pending.
-Native recovery probes wait for actual admission refusals before asserting a
-park, retaining the explicit-consent and exactly-once execution checks.
+- Control: passed, 152.8 seconds.
+- Gateway: passed, 38.7 seconds, including committed grants and unreadable selectors.
+- Model host: passed, 25.4 seconds.
+- Harbor offline: passed, 29.0 seconds.
+- Electric: passed, 69.1 seconds with fresh real Compose dependencies.
+- CLI: failed, 1963.9 seconds. README, silent SSH and live-child startup failed.
+- Agent: failed its unchanged 1200-second target limit; its stderr also records
+  three 30-second tweet failures.
 
-The agent target declares its PostgreSQL service and keeps its full 100% gate.
-Resume offers carry their durable delegation sequence; a per-run admission
-permit checks and acknowledges that sequence around the handoff. Current wait
-observations retain their grant tokens over unversioned legacy history.
+These integrated receipts precede the latest journal and test-harness changes.
+They do not prove those changes pass the complete targets.
 
-Scaffold compilation uses VibeLang and exposes portable SDK declarations
-without Node ambient types. The SDK host-probe typing fixes preserve runtime
-behavior and the existing observable host-access contract.
+Three agent workers complete the full queue in 758.4 seconds on four CPUs, but
+that run still has two tweet failures. A real worker CPU profile records 13.2
+seconds of sampled self time in the journal credential-URL regex. The candidate
+checks its two mandatory literal markers before scanning, preserving the exact
+regex, replacement and custom same-id rules. All 373 focused redaction assertions
+and all 24 focused agent assertions pass. The paired old-code agent run also
+passes; the profile is diagnostic evidence, not a portable benchmark or proof
+that the complete agent target is fixed. The original test clock is unchanged.
 
-The canonical spelling scan filters ordinary package imports before parsing,
-keeps compiler decoding for escaped source, and resolves lines only for
-relevant decoded text in an AST without parent links. Discovery includes
-VibeLang. Real parser cases retain escaped commands, newline boundaries,
-templates, shell arguments and migration warnings. Four concurrent instrumented
-probes pass the unchanged deadline; old record behavior and TypeScript-only
-discovery each fail the parser regression.
+The latest four-CPU mixed CLI probe passes four files and 58 assertions. The
+remaining failure is the independent SSH login/execution/TUI journey exceeding
+its original 30-second case limit. Its three child CLIs now receive the shared
+run-owned compile cache; that handoff alone does not resolve this loaded case.
+The real silent-handshake case passes its original watchdog and verifies its
+actual Node child cache. Its raw-environment negative control fails that check.
+README assertions now follow the required SQL dependency contract introduced by
+`ad31a575b6a2`. The live-run case passes with bounded success/failure phase
+receipts and fixed operation names; its original live-child limit remains.
 
-The native human-wait budget fixture uses the public Clock service for
-provider time and parked time, retaining real scheduling. Replacement-host
-adoption ages the persisted delegation by the public ownership grace. A
-negative control charging the parked span still exceeds the unchanged ceiling.
-External-worker lease checks retain every scenario execution while excluding
-the observer's unrelated health-discovery release.
+## Completed repairs retained in the stack
 
-Metadata cancellation waits for the engine's fenced terminal transition,
-retaining the no-import, no-replay and idempotency checks. An observing control
-port does not disable the engine's metadata-only cancellation guard.
+CLI children preserve the run-owned compile cache without enabling caches in
+measured V8 workers or overriding explicit opt-outs. One coordinator preserves
+the complete inventory and schedules slow process suites before ordinary units.
+Native bootstrap remains restricted to non-persistent environment CRUD; durable
+commands keep the established compiler and persisted callback identity. Real
+retained-fork tests reject the former `plan_changed` behavior. Public type checks
+use the required native compiler; Bash controls stop at the actual startup
+boundary. Compiler preloads exclude the compiler itself. Canonical-spelling
+scans retain all recorded sites while avoiding irrelevant parsing.
 
-Native planning timeout injection follows catalog construction rather than
-loader invocation count. The catalog deadline can expire during source
-verification; its direct retry intentionally has no catalog deadline. Four
-loaded coverage probes retain real timeout refusals, schema validation and
-planning, including an initial load never reaching its loader.
+Follow readers drain through committed control status and detect a positively
+dead same-host writer. Real SQLite process-death regressions cover terminal
+outcomes and ownership. Materialization shares its memo map, and health teardown
+closes probes before discovery unregisters. Agent admission preserves durable
+delegation sequence. Gateway grants survive unversioned observations and reject
+unreadable selectors safely. Harbor accepts curl transport failures only with
+an explicit proxy denial. Electric cannot silently skip unavailable dependencies.
 
-The approval-gated image push passes with a real Docker registry and buildx.
-Electric also passes its full coverage target after provisioning fresh real
-Docker Compose services. Neither check relies on a simulated dependency.
+The engine-store timer reads time inside the sleeping fiber. Its SQLite old-code
+counterexample finishes at 6000 ms for a 3000 ms wake; the correction finishes at
+3000 ms. The complete SQLite/PostgreSQL matrix passed before the latest journal
+candidate. This is not a proven explanation for every loaded tweet timeout.
 
-Safe adoption diagnostics preserve strict response decoding and record bounded
-process and status metadata. The earlier empty-document failure has not recurred
-in the instrumented probes or the latest complete source-snapshot group; the
-diagnostics remain evidence collection, not a claimed correction of its cause.
+## Remaining work
 
-Native materialization shares the calling layer's memo map. The control-first
-transaction regression fails on the previous graph with Effect 4.0.5; both
-acquisition orders and standalone materialization pass with the existing fix.
+Diagnose the slow SSH login/TUI journey without moving its deadline. Then rerun
+all seven exact CI targets and the complete journal check/test matrix. Complete
+the bounded final read-only review and address its findings before landing.
+Earlier Sol reviews found an orphaned follow-reader; its process-death regression
+and fix are retained. The latest journal candidate has not received that review.
 
-Payload refusals retain both real CLI entrypoints. Their durable checks read
-plans and executions directly and reject an action output, avoiding another
-host startup. Bounded process and startup-stage receipts survive fixture cleanup.
-
-The fresh agent gate completed 165 files with one signed-thread timeout.
-Failure receipts now retain timer polling, virtual time, the persisted wake
-and the clock-advance stage. Four loaded repeats did not reproduce it.
-A real SQLite counterexample forces the caller to advance after reading the
-clock: the old armer sleeps until 6000 ms against a persisted 3000 ms deadline.
-The timer now samples time in its own fiber. Its committed completion is at
-3000 ms, the focused clock suites pass, and all twenty loaded example cases
-pass. The full SQLite/PostgreSQL engine-store matrix and the agent target now pass their original coverage gates, as do refreshed control, gateway and model-host targets. The original loaded example repeats did not reproduce the timeout.
-
-All seven assigned targets passed on the rebased candidate with their original
-gates: CLI 2155.2 s, agent 1085.4 s, control 130.9 s, gateway 38.9 s, model-host
-25.5 s, Harbor offline 37.4 s and Electric 44.8 s using fresh Compose services.
-The additional engine-store check and full SQLite/PostgreSQL matrix passed.
-The read-only Sol review identified one follow-liveness gap: a writer dying
-between engine and control terminal commits leaves no future control event.
-The reader now uses the existing same-host PID probe to recognize that orphan,
-drains without writes, and preserves the wait for live or unknown owners. A
-real two-store writer is killed after its engine commits; all terminal outcomes,
-parked ownership and past-terminal cursors are covered. The old reader fails
-that real process-death regression, and all twelve focused follower cases pass.
-
-The post-review full CLI gate completed within its original 40-minute bound
-but exposed two further failures. External cancellation returned the valid
-`Terminal(cancelled)` receipt and exit 130 before the caller resumed; the test
-still selected exit 0 from its scenario name. It now checks the returned receipt
-against the RC4 contract retained by `a17c0ca10679`, including terminal receipts
-for released owners. All four real cancellation modes pass.
-
-The five-process environment lifecycle exceeded its unchanged 30-second budget.
-Profiles show cold source transformation and warm module loading dominate startup.
-A resolver-result cache did not improve it and was discarded. The CLI now loads
-its own erasable TypeScript graph with Node's native support, retaining Effect
-identity and VibeLang hooks, then enables the existing declaration/CommonJS loader
-before handling commands. Legacy routing enables the full loader before loading
-its entry. The build-cli default is unchanged, and explicit declaration imports
-also complete an opted-in bootstrap. Real ESM and emitted CommonJS processes
-check native loading, promotion, schema identity and NodeNext typed bridges; the
-old resolver fails the native-load assertion. All 51 applicable resolution cases
-pass. The environment lifecycle passes in 14.6 seconds with its original budget;
-four concurrent five-process journeys pass in 17.5–18.3 seconds with unchanged
-per-process and lifecycle budgets. All 28 environment/bootstrap cases and both
-CLI/build-cli typechecks pass. Full CLI/build-cli validation is pending.
-
-Bootstrap promotion must retain the first resolver's ownership across physical
-copies and preserve the previous installation protocol. Its pending activation
-now belongs to the original installation; an older, fully installed resolver
-has no pending activation. Real copies of Effect make a resolver replacement
-observable in ESM and emitted CommonJS regression cases. All four cases fail
-against the previous bootstrap and pass with the correction. All 55 applicable
-resolver cases and both CLI/build-cli typechecks pass.
-
-The next full CLI run reached its unchanged deadline during heavy shared-host
-CPU contention. Cold discovery also lacked cached file statistics: the default
-comparator preserved an alphabetical queue after the explicit process priorities.
-The CLI sequencer now reads actual file sizes and applies a deterministic source
-cost order after those priorities. Cold public discovery rejects the old order
-(633 bytes before 14,270 bytes); the corrected queue, exact inventory, worker
-limit, coverage configuration and real queued-worker checks pass. The environment
-lifecycle also passes its original budget. Full validation remains pending.
-
-The next full CLI gate completed inside its original deadline with three failures:
-retained-fork resume rejected a rebuilt plan, and the SSH/socket guide examples
-exceeded their unchanged lifecycle limit. Native bootstrap must stay limited to
-non-persistent environment CRUD; durable commands retain the established compiler
-before importing SDK callback bodies. The real retained-fork scenario exercises
-that cross-process compatibility boundary. Direct and clean-shell guide launchers
-also need the existing run-owned cache handoff without widening their narrow
-environments. Guide failure receipts retain operation, stage, elapsed time and
-exit status without environment values or command payloads. Validation is pending.
-
-The old bootstrap reproduces `plan_changed` in retained-fork resume; the restricted
-policy passes that same real scenario. All 52 focused bootstrap, child-cache,
-environment and guide cases pass, with 100% coverage of the policy. Guide cases
-complete in 84.1, 92.1 and 96.8 seconds against their unchanged 120-second limits.
-The CLI check passes. The full build-cli gate passes all 148 files at its existing
-coverage floors. A bounded read-only Sol follow-up finds no actionable P0–P2
-correctness findings in the changes since the first review. The full CLI gate is
-running; the other six assigned target receipts remain unchanged and passing.
-
-That full CLI run reached its unchanged 40-minute limit with 301 coverage records
-collected and no reported assertion failure in the retained output. Its tail
-contains small files with long process journeys: portable control, TUI runtimes
-and local CLI operations. These launchers still inherit the measured worker's
-disabled Node cache or discard the cache reference in a narrow environment.
-Complete the existing child-environment handoff at those remaining boundaries
-and schedule process suites before ordinary unit files; retain four workers,
-the full inventory, all assertions and the original gates.
+An additional, unowned build-cli run reaches all 158 files but fails the real
+workspace-catalog discovery child at its existing 30-second limit. Its receipt
+is retained for the CI lead; no current full build-cli pass is claimed. An older
+empty-document source-snapshot failure has not recurred and its cause remains
+unconfirmed. Generated target indexes and documentation projections remain the
+lander's responsibility under the builder contract.
