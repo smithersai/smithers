@@ -22,6 +22,6 @@
     "bun-types": "^1.4.0",
     "effect": "4.1.0",
     "typescript": "~5.9.3",
-    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-3ee099e972e9.tgz"
+    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-909723830fba.tgz"
   }
 }
