@@ -65,7 +65,8 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/effect-tanstack-db": "workspace:*"
+    "@smthrs/effect-tanstack-db": "workspace:*",
+    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-956814eb1e95.tgz"
   },
   "devDependencies": {
     "@smthrs/database": "workspace:*",

@@ -22,7 +22,8 @@
     ".smithers",
     "docs/reference.md",
     "src/internal/prices.generated.ts",
-    "test/fixtures"
+    "test/fixtures",
+    "**/*.d.vibe.ts"
   ],
   "plugins": [
     "https://plugins.dprint.dev/typescript-0.93.4.wasm@cdbf74066391bdb11ddaef9ea95299636a97d637f5a9bf7f121d584875647c7a",

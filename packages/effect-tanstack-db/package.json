@@ -99,5 +99,8 @@
     "@tanstack/offline-transactions": {
       "optional": true
     }
+  },
+  "dependencies": {
+    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-956814eb1e95.tgz"
   }
 }

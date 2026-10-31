@@ -1,12 +1,14 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "rewriteRelativeImportExtensions": true,
     "types": [
       "@cloudflare/workers-types"
     ]
   },
   "include": [
-    "worker/**/*.ts"
+    "worker/**/*.ts",
+    "worker/**/*.vibe"
   ],
   "exclude": [
     "worker/test/**"

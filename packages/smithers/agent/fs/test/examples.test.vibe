@@ -7,13 +7,13 @@ describe("examples/agent-command", () => {
     const result = try runAgentCommand(flowsRoot, "review --number 42")
     expect(result).toEqual({
       listed: [{ name: "review", description: "Review a pull request." }],
-      output: { accepted: true, number: 42 }
+      output: { accepted: true, number: 42 },
     })
   }
 
   it.effect("refuses a command string the flow schema rejects") {
     expect(try failureOf(runAgentCommand(flowsRoot, "review --number forty-two"))).toMatchObject({
-      code: "decode_failed"
+      code: "decode_failed",
     })
   }
 

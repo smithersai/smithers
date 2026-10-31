@@ -11,6 +11,7 @@ const generated = ["packages/smithers/src/internal/backend/ProductApi.ts"]
 const sources = ["packages/*/src/**/*.ts", "packages/*/*/src/**/*.ts", "packages/*/*/*/src/**/*.ts"]
 
 export default [
+  { ignores: ["**/*.d.vibe.ts"] },
   { ignores: ["**/node_modules/**", "**/dist/**", "**/coverage/**", "**/template/**", "**/fixtures/**", ...optedOut, ...generated] },
   // Non-JSDoc directives belong to each package's full lint pass.
   { linterOptions: { reportUnusedDisableDirectives: false } },

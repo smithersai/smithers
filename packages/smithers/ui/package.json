@@ -156,7 +156,8 @@
     "yjs": "13.6.32",
     "@lezer/highlight": "1.2.3",
     "y-protocols": "1.0.6",
-    "@smthrs/views": "workspace:*"
+    "@smthrs/views": "workspace:*",
+    "vibelang-runtime": "file:../../../.vibelang-toolchain/vibelang-runtime-0.0.11-956814eb1e95.tgz"
   },
   "peerDependencies": {
     "react": "^19.2.8",

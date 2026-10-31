@@ -19,7 +19,7 @@ import { failureOf, makeRoute } from "./helpers.vibe"
 // is imported from "vitest"; `vi` from "@effect/vitest" fails at load.
 vitest.mock(
   "effect/Schema",
-  (importOriginal) => importOriginal<typeof import("effect/Schema")>().then((module) => ({ ...module }))
+  (importOriginal) => importOriginal<typeof import("effect/Schema")>().then((module) => ({ ...module })),
 )
 
 // A service that a decoding transformation needs and the bridge cannot supply.
@@ -36,7 +36,7 @@ interface Reply {
 effect function request(
   cli: { fetch: (request: Request) => Promise<Response> },
   url: string,
-  init: RequestInit = {}
+  init: RequestInit = {},
 ): Effect<Reply> {
   return try sync(
     async (cli, url, init) => {
@@ -45,7 +45,7 @@ effect function request(
     },
     cli,
     url,
-    init
+    init,
   )
 }
 
@@ -61,37 +61,37 @@ describe("SchemaBridge", () => {
     const command = try SchemaBridge.toCommandSchema(new Descriptor.SchemaRefNone({}), Schema.String)
     expect(try failureOf(command.decode(command.assemble([], {})))).toMatchObject({
       code: "decode_failed",
-      method: "SchemaBridge.decodeInput"
+      method: "SchemaBridge.decodeInput",
     })
   }
 
   it.effect("joins markdown arguments but refuses output locators as input") {
     const command = try SchemaBridge.toCommandSchema(
       new Descriptor.SchemaRefMarkdownArgs({}),
-      Schema.Struct({ args: Schema.String })
+      Schema.Struct({ args: Schema.String }),
     )
     expect(try command.decode(command.assemble(["hello", "world"], {}))).toEqual({
-      args: "hello world"
+      args: "hello world",
     })
     // Incur delivers positionals as `{ args: [...] }`, and they join with a
     // single space exactly as the array form does.
     expect(try command.decode(command.assemble({ args: ["hello", "world"] }, {}))).toEqual({
-      args: "hello world"
+      args: "hello world",
     })
     expect(try command.decode(command.assemble({ args: "already text" }, {}))).toEqual({
-      args: "already text"
+      args: "already text",
     })
     expect(try command.decode(command.assemble({}, {}))).toEqual({ args: "" })
     // An option of the same name wins, as it does in every other strategy.
     expect(try command.decode(command.assemble(["p1", "p2"], { args: "override" }))).toEqual({
-      args: "override"
+      args: "override",
     })
     // A non-string positional is refused rather than stringified through a
     // caller-supplied `toString`.
     expect((try failureOf(command.decode(command.assemble({ args: [1, 2] } as never, {})))).code).toBe("decode_failed")
 
     const unsupported = try failureOf(
-      SchemaBridge.toCommandSchema(new Descriptor.SchemaRefMarkdownOutput({}), Schema.String)
+      SchemaBridge.toCommandSchema(new Descriptor.SchemaRefMarkdownOutput({}), Schema.String),
     )
     expect(unsupported.code).toBe("unsupported_schema")
   }
@@ -105,7 +105,7 @@ describe("SchemaBridge", () => {
       tags: Schema.Array(Schema.String),
       nested: Schema.Struct({ value: Schema.String }),
       anything: Schema.Unknown,
-      optional: Schema.optionalKey(Schema.String)
+      optional: Schema.optionalKey(Schema.String),
     })
     const command = try SchemaBridge.toCommandSchema(moduleRef, Input)
     const decoded = try command.decode(command.assemble([], {
@@ -115,7 +115,7 @@ describe("SchemaBridge", () => {
       enabled: "true",
       tags: ["a", "b"],
       nested: "{\"value\":\"inside\"}",
-      anything: "{\"free\":true}"
+      anything: "{\"free\":true}",
     }))
 
     expect(decoded).toEqual({
@@ -125,7 +125,7 @@ describe("SchemaBridge", () => {
       enabled: true,
       tags: ["a", "b"],
       nested: { value: "inside" },
-      anything: { free: true }
+      anything: { free: true },
     })
     expect(Object.isFrozen(decoded)).toBe(true)
     expect(
@@ -136,8 +136,8 @@ describe("SchemaBridge", () => {
         enabled: true,
         tags: [],
         nested: {},
-        anything: null
-      })))).code
+        anything: null,
+      })))).code,
     ).toBe("decode_failed")
   }
 
@@ -145,7 +145,7 @@ describe("SchemaBridge", () => {
     const Input = Schema.Struct({
       count: Schema.Number,
       mode: Schema.Literals(["fast", "slow"]),
-      note: Schema.NullOr(Schema.String)
+      note: Schema.NullOr(Schema.String),
     })
     const command = try SchemaBridge.toCommandSchema(moduleRef, Input)
     const advertised = z.toJSONSchema(command.options!, { unrepresentable: "any" }) as {
@@ -171,21 +171,21 @@ describe("SchemaBridge", () => {
     expect(try command.decode(command.assemble([], { count: "42", mode: "fast", note: null }))).toEqual({
       count: 42,
       mode: "fast",
-      note: null
+      note: null,
     })
     // An empty flag value is refused rather than coerced to zero.
     expect((try failureOf(command.decode(command.assemble([], { count: "", mode: "fast", note: null })))).code).toBe(
-      "decode_failed"
+      "decode_failed",
     )
     // The published schema is Effect's own, which renders a number as
     // `number | "Infinity" | "-Infinity" | "NaN"`. The authoritative decoder
     // takes the number side only, and the invocation boundary refuses
     // non-finite values, so a token is refused rather than invoked.
     expect(
-      (try failureOf(command.decode(command.assemble([], { count: "Infinity", mode: "fast", note: null })))).code
+      (try failureOf(command.decode(command.assemble([], { count: "Infinity", mode: "fast", note: null })))).code,
     ).toBe("decode_failed")
     expect(
-      (try failureOf(command.decode(command.assemble([], { count: 1, mode: "sideways", note: null })))).code
+      (try failureOf(command.decode(command.assemble([], { count: 1, mode: "sideways", note: null })))).code,
     ).toBe("decode_failed")
   }
 
@@ -195,23 +195,23 @@ describe("SchemaBridge", () => {
       name: "optional nullable string",
       field: Schema.optional(Schema.NullOr(Schema.String)),
       value: "note",
-      optional: true
+      optional: true,
     },
     {
       name: "nullable enum",
       field: Schema.NullOr(Schema.Literals(["fast", "slow"])),
       value: "fast",
-      optional: false
+      optional: false,
     },
     {
       name: "optional nullable enum",
       field: Schema.optional(Schema.NullOr(Schema.Literals(["fast", "slow"]))),
       value: "slow",
-      optional: true
-    }
+      optional: true,
+    },
   ])("preserves the declared $name values and requiredness", effect ({ field, optional, value }) => {
     const Input = Schema.Struct({
-      choice: field
+      choice: field,
     })
     type Input = typeof Input.Type
     const command = try SchemaBridge.toCommandSchema(moduleRef, Input)
@@ -241,7 +241,7 @@ describe("SchemaBridge", () => {
     schema WithArgs { args: string[] }
     const argsCommand = try SchemaBridge.toCommandSchema(moduleRef, WithArgs)
     expect(try argsCommand.decode(argsCommand.assemble(["a", "b"], {}))).toEqual({
-      args: ["a", "b"]
+      args: ["a", "b"],
     })
 
     const Identified = Schema.Struct({ value: Schema.Finite }).annotate({ identifier: "FsIdentified" })
@@ -250,7 +250,7 @@ describe("SchemaBridge", () => {
 
     const optional = try SchemaBridge.toCommandSchema(
       moduleRef,
-      Schema.Struct({ value: Schema.optionalKey(Schema.String) })
+      Schema.Struct({ value: Schema.optionalKey(Schema.String) }),
     )
     expect(try optional.decode(optional.assemble([], {}))).toEqual({})
   }
@@ -267,7 +267,7 @@ describe("SchemaBridge", () => {
 
     const dictionary = try SchemaBridge.toCommandSchema(moduleRef, Schema.Record(Schema.String, Schema.String))
     expect(try dictionary.decode(dictionary.assemble([], { input: "{\"a\":\"b\"}" }))).toEqual({
-      a: "b"
+      a: "b",
     })
   }
 
@@ -280,7 +280,7 @@ describe("SchemaBridge", () => {
         [[], { input: "1", typo: "x" }],
         [["1"], { input: "2" }],
         [{ input: "1", extra: "x" }, {}],
-        [{ input: "1" }, { input: "2" }]
+        [{ input: "1" }, { input: "2" }],
       ] as const
     ) {
       expect((try failureOf(finite.decode(finite.assemble(args, options)))).code).toBe("decode_failed")
@@ -303,17 +303,17 @@ describe("SchemaBridge", () => {
     {
       name: "tuple with rest",
       schema: Schema.TupleWithRest(Schema.Tuple([Schema.String]), [Schema.Boolean]),
-      value: ["a", true, false]
+      value: ["a", true, false],
     },
     {
       name: "tuple with unknown rest",
       schema: Schema.TupleWithRest(Schema.Tuple([Schema.String]), [Schema.Unknown]),
-      value: ["a", 1, false]
+      value: ["a", 1, false],
     },
     { name: "tuple", schema: Schema.Tuple([Schema.String, Schema.Finite]), value: ["a", 1] },
     { name: "unknown array", schema: Schema.Array(Schema.Unknown), value: ["a", { value: true }] },
     { name: "JSON array", schema: Schema.Array(Schema.Json), value: [null, [1]] },
-    { name: "any array", schema: Schema.Array(Schema.Any), value: [1, false] }
+    { name: "any array", schema: Schema.Array(Schema.Any), value: [1, false] },
   ])("projects $name without a synchronous defect", effect ({ schema, value }) => {
     const command = try SchemaBridge.toCommandSchema(moduleRef, schema)
     expect(try command.decode(command.assemble([], { input: value }))).toEqual(value)
@@ -328,7 +328,7 @@ describe("SchemaBridge", () => {
       prefixItems: [{ type: "string" }, { type: "number" }],
       items: false,
       minItems: 2,
-      maxItems: 2
+      maxItems: 2,
     })
     for (const input of [["a"], ["a", 1, true], [1, "a"]]) {
       expect((try failureOf(command.decode(command.assemble([], { input })))).code).toBe("decode_failed")
@@ -339,15 +339,15 @@ describe("SchemaBridge", () => {
     const nested = Schema.Struct({
       mode: Schema.Literals(["fast", "slow"]),
       count: Schema.Finite,
-      label: Schema.optionalKey(Schema.String)
+      label: Schema.optionalKey(Schema.String),
     }).annotate({ identifier: "Nested" })
     const command = try SchemaBridge.toCommandSchema(
       moduleRef,
       Schema.Struct({
         nested,
         rows: Schema.Array(nested),
-        values: Schema.Record(Schema.String, Schema.Boolean)
-      })
+        values: Schema.Record(Schema.String, Schema.Boolean),
+      }),
     )
     const advertised = z.toJSONSchema(command.options!, { unrepresentable: "any" })
     const expected = {
@@ -355,10 +355,10 @@ describe("SchemaBridge", () => {
       properties: {
         mode: { type: "string", enum: ["fast", "slow"] },
         count: { type: "number" },
-        label: { type: "string" }
+        label: { type: "string" },
       },
       required: ["mode", "count"],
-      additionalProperties: false
+      additionalProperties: false,
     }
     expect(advertised.properties?.nested).toEqual(expected)
     expect(advertised.properties?.rows).toMatchObject({ type: "array", items: expected })
@@ -367,8 +367,8 @@ describe("SchemaBridge", () => {
       (try failureOf(command.decode(command.assemble([], {
         nested: { mode: "fast" },
         rows: [],
-        values: {}
-      })))).code
+        values: {},
+      })))).code,
     ).toBe("decode_failed")
   }
 
@@ -378,18 +378,18 @@ describe("SchemaBridge", () => {
     // flag through and invoke the flow without it.
     const command = try SchemaBridge.toCommandSchema(
       moduleRef,
-      Schema.Struct({ nested: Schema.Struct({ mode: Schema.String }) })
+      Schema.Struct({ nested: Schema.Struct({ mode: Schema.String }) }),
     )
     const advertised = z.toJSONSchema(command.options!, { unrepresentable: "any" })
     expect(advertised.additionalProperties).toBe(false)
     expect(advertised.properties?.nested).toMatchObject({ additionalProperties: false })
     expect(try command.decode(command.assemble([], { nested: { mode: "fast" } }))).toEqual({
-      nested: { mode: "fast" }
+      nested: { mode: "fast" },
     })
     for (
       const options of [
         { nested: { mode: "fast" }, mdoe: "slow" },
-        { nested: { mode: "fast", extra: true } }
+        { nested: { mode: "fast", extra: true } },
       ]
     ) {
       expect((try failureOf(command.decode(command.assemble([], options)))).code).toBe("decode_failed")
@@ -403,7 +403,7 @@ describe("SchemaBridge", () => {
         Schema.suspend((): typeof Schema.String => {
           throw new Error("private schema cause")
         })
-      )
+      ),
     ))
     expect(error).toMatchObject({ code: "unsupported_schema", method: "SchemaBridge.toCommandSchema" })
     expect(JSON.stringify(error)).not.toContain("private schema cause")
@@ -413,12 +413,12 @@ describe("SchemaBridge", () => {
     { name: "non-string reference", schema: { $ref: 1 }, definitions: {} },
     { name: "missing reference", schema: { $ref: "#/$defs/Missing" }, definitions: {} },
     { name: "external reference", schema: { $ref: "https://example.com/schema" }, definitions: {} },
-    { name: "cyclic reference", schema: { $ref: "#/$defs/Loop" }, definitions: { Loop: { $ref: "#/$defs/Loop" } } }
+    { name: "cyclic reference", schema: { $ref: "#/$defs/Loop" }, definitions: { Loop: { $ref: "#/$defs/Loop" } } },
   ])("refuses a $name through the typed boundary", effect ({ schema, definitions }) => {
     const document = vi.spyOn(Schema, "toJsonSchemaDocument").mockReturnValue({
       dialect: "draft-2020-12",
       schema,
-      definitions
+      definitions,
     })
     try {
       expect((try failureOf(SchemaBridge.toCommandSchema(moduleRef, Schema.Unknown))).code).toBe("unsupported_schema")
@@ -439,13 +439,13 @@ describe("SchemaBridge", () => {
     {
       name: "closed tuple",
       node: { type: "array", prefixItems: [{ type: "string" }], minItems: 1, items: false },
-      value: ["a"]
-    }
+      value: ["a"],
+    },
   ])("projects a $name document without changing its values", effect ({ node, value }) => {
     const document = vi.spyOn(Schema, "toJsonSchemaDocument").mockReturnValue({
       dialect: "draft-2020-12",
       schema: { type: "object", properties: { value: node }, required: ["value"] },
-      definitions: {}
+      definitions: {},
     })
     try {
       const command = try SchemaBridge.toCommandSchema(moduleRef, Schema.Unknown)
@@ -460,12 +460,12 @@ describe("SchemaBridge", () => {
     { type: "unsupported" },
     { allOf: [{ type: "string" }] },
     { not: { type: "string" } },
-    { type: "object", properties: { child: { $ref: "#/$defs/Recursive" } } }
+    { type: "object", properties: { child: { $ref: "#/$defs/Recursive" } } },
   ])("refuses unsupported structural documents with a typed error", effect (schema) => {
     const document = vi.spyOn(Schema, "toJsonSchemaDocument").mockReturnValue({
       dialect: "draft-2020-12",
       schema,
-      definitions: { Recursive: schema }
+      definitions: { Recursive: schema },
     })
     try {
       expect((try failureOf(SchemaBridge.toCommandSchema(moduleRef, Schema.Unknown))).code).toBe("unsupported_schema")
@@ -478,7 +478,7 @@ describe("SchemaBridge", () => {
     const document = vi.spyOn(Schema, "toJsonSchemaDocument").mockReturnValue({
       dialect: "draft-2020-12",
       schema: { $ref: "#/$defs/First" },
-      definitions: { First: { $ref: "#/$defs/a~1b~0c" }, "a/b~c": { type: "string" } }
+      definitions: { First: { $ref: "#/$defs/a~1b~0c" }, "a/b~c": { type: "string" } },
     })
     try {
       const command = try SchemaBridge.toCommandSchema(moduleRef, Schema.String)
@@ -497,15 +497,15 @@ describe("SchemaBridge", () => {
       ),
       tuple: Schema.Tuple([Schema.String, Schema.Finite]),
       healthy: Schema.Struct({
-        nested: Schema.Struct({ mode: Schema.Literals(["fast", "slow"]), count: Schema.Finite })
-      })
+        nested: Schema.Struct({ mode: Schema.Literals(["fast", "slow"]), count: Schema.Finite }),
+      }),
     }
     const load = vi.spyOn(Route, "load").mockImplementation(effect (route) => ({
       capabilities: [],
       effects: undefined,
       name: route.name,
       input: inputs[route.name]!,
-      output: Schema.Void
+      output: Schema.Void,
     } as const))
     try {
       const cli = do {
@@ -521,14 +521,14 @@ describe("SchemaBridge", () => {
         expect(spec.paths["/healthy"].post.requestBody.content["application/json"].schema.properties.nested)
           .toMatchObject({
             properties: { mode: { enum: ["fast", "slow"] }, count: { type: "number" } },
-            required: ["mode", "count"]
+            required: ["mode", "count"],
           })
       }
       const writes: Array<string> = []
       try sync(
         async (cli, writes) => cli.serve(["--help"], { stdout: (text) => writes.push(text), exit: () => {} }),
         cli,
-        writes
+        writes,
       )
       expect(writes.join("")).toContain("healthy")
       expect(writes.join("")).toContain("bad")
@@ -536,7 +536,7 @@ describe("SchemaBridge", () => {
         const response = try request(cli, "http://localhost/mcp", {
           method: "POST",
           headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
-          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params })
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
         })
         expect(response.status).toBe(200)
         return response.body
@@ -546,7 +546,7 @@ describe("SchemaBridge", () => {
       const details = try rpc("tools/call", { name: "get_tool_details", arguments: { name: "healthy" } })
       expect(JSON.parse(details.result.content[0].text).inputSchema.properties.nested).toMatchObject({
         properties: { mode: { enum: ["fast", "slow"] }, count: { type: "number" } },
-        required: ["mode", "count"]
+        required: ["mode", "count"],
       })
       const badDetails = try rpc("tools/call", { name: "get_tool_details", arguments: { name: "bad" } })
       expect(JSON.parse(badDetails.result.content[0].text).name).toBe("bad")
@@ -568,11 +568,11 @@ describe("SchemaBridge", () => {
     expect(try SchemaBridge.encodeOutput(Schema.Void, undefined)).toBeUndefined()
     expect(try SchemaBridge.decodeInput(Schema.Void, undefined)).toBeUndefined()
     expect(try SchemaBridge.encodeOutput(Schema.DateFromString, new Date("2026-01-01"))).toBe(
-      "2026-01-01T00:00:00.000Z"
+      "2026-01-01T00:00:00.000Z",
     )
     expect((try failureOf(SchemaBridge.decodeInput(Schema.DateFromString, "2026-01-01"))).code).toBe("decode_failed")
     expect(
-      (try failureOf(SchemaBridge.encodeOutput(Schema.instanceOf(Date), new Date(Clock.currentTimeMillis())))).code
+      (try failureOf(SchemaBridge.encodeOutput(Schema.instanceOf(Date), new Date(Clock.currentTimeMillis())))).code,
     ).toBe("encode_failed")
   }
 
@@ -582,9 +582,9 @@ describe("SchemaBridge", () => {
         Schema.String,
         SchemaTransformation.transformEffect({
           decode: effect (value) => `${try Prefix()}${value}`,
-          encode: effect (value) => value.slice((try Prefix()).length)
-        })
-      )
+          encode: effect (value) => value.slice((try Prefix()).length),
+        }),
+      ),
     )
 
     expect((try failureOf(SchemaBridge.decodeInput(ServiceSchema, "value"))).code).toBe("decode_failed")

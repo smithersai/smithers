@@ -66,8 +66,8 @@ const resourceLimit = (description: string): FsError =>
  */
 export effect function lex(commandString: string): Effect<ReadonlyArray<string>, FsError, infer R> {
   if (
-    typeof commandString !== "string" || !Boundary.isWellFormedText(commandString) ||
-    encoder.encode(commandString).byteLength > maximumCommandBytes
+    typeof commandString !== "string" || !Boundary.isWellFormedText(commandString)
+    || encoder.encode(commandString).byteLength > maximumCommandBytes
   ) {
     throw resourceLimit(`A command may contain at most ${maximumCommandBytes} UTF-8 bytes`)
   }
@@ -140,7 +140,7 @@ const validFlagName = (name: string): boolean => flagName.test(name) && !reserve
 const append = effect (
   options: Record<string, unknown>,
   name: string,
-  value: unknown
+  value: unknown,
 ): Effect<void, FsError, infer R> => {
   if (!validFlagName(name)) throw parseError("The command contains an invalid option name", `$.options.${name}`)
   const current = Object.hasOwn(options, name) ? options[name] : undefined
@@ -157,7 +157,7 @@ export effect function parseFlags(input: ReadonlyArray<string>): Effect<ParsedFl
   const captured = Boundary.stringArray(input, {
     maxItems: maximumCommandTokens,
     maxLength: maximumTokenLength,
-    allowEmpty: true
+    allowEmpty: true,
   })
   if (!captured.ok) {
     if (captured.kind === "invalid_text") {
@@ -208,6 +208,6 @@ export effect function parseFlags(input: ReadonlyArray<string>): Effect<ParsedFl
   }
   return Object.freeze({
     args: Object.freeze(args),
-    options: Object.freeze(options)
+    options: Object.freeze(options),
   })
 }

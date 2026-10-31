@@ -192,7 +192,8 @@
   "dependencies": {
     "@smthrs/core": "1.0.0-rc.16",
     "@smthrs/scorers": "1.0.0-rc.16",
-    "devalue": "5.9.2"
+    "devalue": "5.9.2",
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-956814eb1e95.tgz"
   },
   "peerDependencies": {
     "effect": "4.1.0"

@@ -15,7 +15,7 @@ it("constructs a tagged failure with safe context and a separately retained caus
     summary: "Provider unavailable",
     docsUrl: failure.docsUrl,
     details: { reason: "transport", retryable: true },
-    _tag: "SmithersError"
+    _tag: "SmithersError",
   })
 })
 

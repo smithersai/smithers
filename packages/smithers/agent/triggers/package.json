@@ -238,7 +238,8 @@
   },
   "dependencies": {
     "@smthrs/control": "1.0.0-rc.16",
-    "@smthrs/database": "1.0.0-rc.16"
+    "@smthrs/database": "1.0.0-rc.16",
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-956814eb1e95.tgz"
   },
   "peerDependencies": {
     "effect": "4.1.0"

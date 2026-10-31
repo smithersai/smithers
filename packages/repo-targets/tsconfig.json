@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "rewriteRelativeImportExtensions": true,
     "allowArbitraryExtensions": true,
     "target": "ES2024",
     "module": "NodeNext",
@@ -13,6 +14,8 @@
   },
   "include": [
     "src/**/*.ts",
-    "test/**/*.ts"
+    "test/**/*.ts",
+    "src/**/*.vibe",
+    "test/**/*.vibe"
   ]
 }

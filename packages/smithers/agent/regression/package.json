@@ -26,7 +26,8 @@
     "@smthrs/registry": "workspace:*",
     "@smthrs/scorers": "workspace:*",
     "effect": "4.1.0",
-    "yaml": "2.9.0"
+    "yaml": "2.9.0",
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-956814eb1e95.tgz"
   },
   "devDependencies": {
     "@smthrs/crypto": "workspace:*",
