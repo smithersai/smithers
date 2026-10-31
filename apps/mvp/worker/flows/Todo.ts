@@ -221,6 +221,17 @@ export const Collect = Action.make("todo/Collect", {
   retryPolicy: STEP_RETRY,
 })
 
+/**
+ * `todo/Wait`: before an external agent's job is queued, the TODO reads Waiting for a runner (`todos.waiting`, decision
+ * 0135), until a runner claims the job (`TodoSession.claimed`, from the claim route).
+ */
+export const Wait = Action.make("todo/Wait", {
+  payload: { request: TodoRequest },
+  success: Schema.Void,
+  error: StepError,
+  retryPolicy: STEP_RETRY,
+})
+
 /** `todo/Received`: the change an external agent's runner settled, checked as `todo/Collect` checks a machine's. */
 export const Received = Action.make("todo/Received", {
   payload: { request: TodoRequest, result: ExternalAgent.Result },
@@ -306,6 +317,7 @@ export const Todo = Flow.make("todo", {
       route: Route.name,
       implement: Implement.name,
       cli: ImplementCli.name,
+      wait: Wait.name,
       session: TodoSession.Session._tag,
       collect: Collect.name,
       received: Received.name,
@@ -333,7 +345,7 @@ export const Todo = Flow.make("todo", {
             Node.branch({
               if: Node.capture({ external: "external" }, (coding: TodoSession.Coding) => coding.agent !== null),
               then: Node.capture({ session: TodoSession.Session._tag }, (coding: Planned.Planned<TodoSession.Coding>) =>
-                TodoSession.Session.call({
+                Wait.call({ request }).pipe(Node.andThen(TodoSession.Session.call({
                   attemptId: request.attemptId,
                   todoId: request.todoId,
                   repoId: request.repoId,
@@ -348,7 +360,7 @@ export const Todo = Flow.make("todo", {
                 }).pipe(
                   Node.bindPlanned(Node.capture({ received: Received.name }, (result: Planned.Planned<ExternalAgent.Result>) =>
                     Received.call({ request, result }))),
-                )),
+                )))),
               else: Node.capture({ route: Route.name, collect: Collect.name }, () =>
                 Route.call({ ownerId: begun.ownerId }).pipe(
                   Node.branch({
@@ -654,6 +666,14 @@ export const steps = <E, R>(services: Services<E, R>) => {
       )
     }))
 
+  /** Waiting for a runner, reported once; a TODO that left Working ends the run as any stale report does. */
+  const wait = ({ request }: typeof Wait.payloadSchema.Type) =>
+    report(request, { kind: "waiting", waiting: "runner" }).pipe(
+      Effect.provide(services.database),
+      Effect.mapError((error) => error instanceof TodoFailed ? error : new TodoUnavailable({ step: "collect" })),
+      Effect.withSpan("todo.wait", { attributes: { "smithers.todo.attempt": request.attemptId } }),
+    )
+
   /**
    * The change an external agent's runner settled, checked as a machine's is: something changed, within the commit's
    * limits, at paths relative to the checkout outside its version control.
@@ -932,7 +952,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
       })))
   }
 
-  return { begin, collect, received, publish, await: await_, awaitMerge, settle, fail }
+  return { begin, collect, wait, received, publish, await: await_, awaitMerge, settle, fail }
 }
 
 /**
@@ -951,6 +971,7 @@ export const registration = <E, R, IE, IR>(
     Layer.mergeAll(
       Begin.toLayer(implementation.begin, { implementationVersion: BEGIN_VERSION }),
       Collect.toLayer(implementation.collect),
+      Wait.toLayer(implementation.wait),
       Received.toLayer(implementation.received),
       // An external agent's step waits on the agent job store in the app's Postgres (decision 0136).
       TodoSession.registration(services.database),

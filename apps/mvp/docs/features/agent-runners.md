@@ -64,6 +64,9 @@ started; each records its change once in `runner_changes` or `agent_changes`. Re
 `todo/Agent` reads the repository's coding agent once per attempt and journals it. With one set, `agent/Session` hands
 the TODO to a runner:
 
+- **Waiting for a runner.** Until a runner claims the job, the TODO reads Waiting for a runner (`todos.waiting`,
+  decision 0135): `todo/Wait` reports it before the job is queued, and the claim route clears it for every claim and
+  reclaim (`TodoSession.claimed`).
 - **Claim.** A runner registered for the repository claims the oldest queued job whose profile its configuration has
   and whose labels it carries, while it has fewer jobs than its capacity.
 - **Work.** The runner checks the repository out at the attempt's base in a `jj` workspace and runs the agent there

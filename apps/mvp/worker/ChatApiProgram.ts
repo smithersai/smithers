@@ -52,6 +52,7 @@ import { PersonalModels } from "./personal/Models.ts"
 import * as SecretsApi from "./secrets/Api.ts"
 import * as RunnerAdmin from "./runners/Admin.ts"
 import * as RunnersApi from "./runners/Api.ts"
+import * as TodoSession from "./flows/TodoSession.ts"
 import { SecretKeys } from "./secrets/Keys.ts"
 import * as SignIn from "./SignIn.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
@@ -148,7 +149,13 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const secretsApi = yield* SecretsApi.make(yield* GitHubConfig.repository)
     // External agents on runner machines (docs/features/agent-runners.md): the runners' own routes, which their token
     // authenticates, and an Admin's writes of a repository's runners and agents.
-    const runnersApi = RunnersApi.make(database)
+    // A claim tells a TODO's attempt it no longer waits for a runner (decision 0135).
+    const runnersApi = RunnersApi.make(database, {
+      onClaimed: (task) =>
+        task.context?.attemptId === undefined
+          ? Effect.void
+          : TodoSession.claimed(task.context.attemptId).pipe(Effect.provide(database)),
+    })
     const runnerAdmin = yield* RunnerAdmin.make(database)
     // Custom domains (docs/features/domains.md): a Maintainer's, through the deployment's provider; off without one.
     const domainsApi = yield* DomainsApi.make(yield* GitHubConfig.repository, database)

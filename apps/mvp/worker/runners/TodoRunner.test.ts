@@ -22,6 +22,7 @@ import { CONNECTION_KINDS } from "../../src/features/personal-model/contract.ts"
 import { todoExecutionId } from "../../src/features/pulls/contract.ts"
 import * as Todo from "../flows/Todo.ts"
 import * as TodoAgent from "../flows/TodoAgent.ts"
+import * as TodoSession from "../flows/TodoSession.ts"
 import { REPOSITORY, reset, services as githubServices, sql } from "../github/test/fixtures.ts"
 import { scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import * as ModelEndpoint from "../ModelEndpoint.ts"
@@ -84,7 +85,13 @@ const mirror = () => {
 
 /** The runner routes over real HTTP on a free local port. */
 const serve = async (): Promise<{ readonly origin: string; readonly server: Server }> => {
-  const handler = HttpEffect.toWebHandler(RunnersApi.make(await database(), { pollMillis: 100 }).fetch)
+  const db = await database()
+  // As ChatApi wires it: a claim tells the TODO's attempt it no longer waits for a runner.
+  const handler = HttpEffect.toWebHandler(RunnersApi.make(db, {
+    pollMillis: 100,
+    onClaimed: (task) =>
+      task.context?.attemptId === undefined ? Effect.void : TodoSession.claimed(task.context.attemptId).pipe(Effect.provide(db)),
+  }).fetch)
   const server = createServer(async (incoming, outgoing) => {
     const chunks: Array<Buffer> = []
     for await (const chunk of incoming) chunks.push(chunk as Buffer)
@@ -197,12 +204,19 @@ const jobs = () =>
   >
 
 describe("a TODO on an external agent", { timeout: 240_000 }, () => {
-  test("runs on the runner and publishes the agent's change as one App commit and pull request", async () => {
+  test("waits for a runner, runs on it and publishes the agent's change as one App commit and pull request", async () => {
     const ctx = await setup()
+    const start = await commit("Note alpha", "add the line `alpha` to `NOTES.md`")
+    const waiting = async () =>
+      ((await sql(runtime, `SELECT waiting FROM todos WHERE id = '${start.todoId}'`)) as Array<{ waiting: string | null }>)[0]!
+        .waiting
+    const run = ctx.run(start)
+    // No runner yet: the TODO reads Waiting for a runner (decision 0135).
+    await eventually(async () => (await waiting()) === "runner", 60_000)
     const runner = startRunner(ctx.config)
     running.push(runner.child)
-    const start = await commit("Note alpha", "add the line `alpha` to `NOTES.md`")
-    const ran = await ctx.run(start)
+    await eventually(async () => (await waiting()) === null, 60_000)
+    const ran = await run
     expect(ran.exit, runner.log()).toEqual(Exit.succeed({ state: "merged" }))
     const pull = [...ctx.github.pulls.values()][0]!
     expect(ctx.github.tree("main").get("NOTES.md")).toBe("alpha\n")
@@ -247,5 +261,12 @@ describe("a TODO on an external agent", { timeout: 240_000 }, () => {
     // The line went in once, and the job never needed a second generation.
     expect(ctx.github.tree("main").get("NOTES.md")).toBe("alpha\n")
     expect(await jobs()).toEqual([{ key: expect.stringMatching(/#g1$/), status: "done", outcome: "Done" }])
+  })
+})
+
+describe("TodoSession.claimed", () => {
+  test("a claim for an attempt Smithers doesn't know changes nothing", async () => {
+    await runtime.runPromise(TodoSession.claimed(crypto.randomUUID()))
+    expect(await sql(runtime, "SELECT count(*)::int AS n FROM todos WHERE waiting IS NOT NULL")).toEqual([{ n: 0 }])
   })
 })
