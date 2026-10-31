@@ -1576,6 +1576,27 @@ export const faultyTabLayer = (api: TestChatApi["Service"], options: TabOptions 
     : withTabClock(started.pipe(Layer.provide(Layer.succeed(Socket.WebSocketConstructor, options.webSocket))), options.clock)
 }
 
+/**
+ * A display clock for `TabOptions.clock`: the real time until `hold(at)` (now, unless `at`), then the time held until
+ * `release()`. Sleep and monotonic time stay real, so the tab's timers and deadlines keep running; only what the tab
+ * reads as now stops, as a transient toast's window counts from it.
+ */
+export const displayClock = () => {
+  const live = Effect.runSync(Clock.clockWith(Effect.succeed))
+  let held: number | undefined
+  const now = () => held ?? live.currentTimeMillisUnsafe()
+  const clock: Clock.Clock = {
+    ...live,
+    monotonicTimeNanosUnsafe: () => live.monotonicTimeNanosUnsafe(),
+    sleep: (duration) => live.sleep(duration),
+    currentTimeMillisUnsafe: now,
+    currentTimeMillis: Effect.sync(now),
+    currentTimeNanosUnsafe: () => BigInt(now()) * 1_000_000n,
+    currentTimeNanos: Effect.sync(() => BigInt(now()) * 1_000_000n),
+  }
+  return { clock, hold: (at = now()) => void (held = at), release: () => void (held = undefined) }
+}
+
 const withTabClock = <A, E, R>(layer: Layer.Layer<A, E, R>, clock?: Clock.Clock) =>
   clock === undefined ? layer : layer.pipe(Layer.provideMerge(Layer.succeed(Clock.Clock, clock)))
 

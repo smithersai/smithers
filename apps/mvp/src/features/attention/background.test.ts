@@ -5,11 +5,11 @@
 // whose storage refuses or waits. A reload is a new tab on the same device and the same tab's input receipts.
 import { BrowserEngine, PendingSnapshot } from "@smthrs/platform-browser"
 import { GitHub } from "@smthrs/integrations"
-import { Clock, Effect, Fiber, Layer, Option, Stream } from "effect"
+import { Effect, Fiber, Layer, Option, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import * as Store from "../../../worker/github/Store.ts"
-import { CHATAPI_ORIGIN, nodeDevice, type NodeDevice, openFaultyTab, openTab, openTestApi, type TabOptions, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
+import { CHATAPI_ORIGIN, displayClock, nodeDevice, type NodeDevice, openFaultyTab, openTab, openTestApi, type TabOptions, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
 import { ChangeNotTaken, StackClient } from "../todos/api"
 import { EngineFaults, ShapeRecovery } from "../../test/faults"
 import { NOTIFICATIONS_SHAPE_ROUTE } from "./contract"
@@ -284,18 +284,9 @@ describe("Commit after recovery cleanup", () => {
     const api = await openApi()
     // Hold display time while the real server, Electric and device finish cleanup. Slow I/O must not consume the
     // four-second window this assertion inspects. Sleep and monotonic deadlines retain the real clock.
-    const live = await Effect.runPromise(Clock.clockWith(Effect.succeed))
-    let now = Date.now()
-    const clock: Clock.Clock = {
-      ...live,
-      monotonicTimeNanosUnsafe: () => live.monotonicTimeNanosUnsafe(),
-      sleep: duration => live.sleep(duration),
-      currentTimeMillisUnsafe: () => now,
-      currentTimeMillis: Effect.sync(() => now),
-      currentTimeNanosUnsafe: () => BigInt(now) * 1_000_000n,
-      currentTimeNanos: Effect.sync(() => BigInt(now) * 1_000_000n),
-    }
-    const tab = await tabOn(api, deviceOf(api), { faulty: true, clock })
+    const display = displayClock()
+    display.hold()
+    const tab = await tabOn(api, deviceOf(api), { faulty: true, clock: display.clock })
     const shapes = await tab.runtime.runPromise(Effect.serviceOption(ShapeRecovery))
     await tab.runtime.runPromise(Option.getOrThrow(shapes).withhold(NOTIFICATIONS_SHAPE_ROUTE))
     await tab.runtime.runPromise(readRepositoryRole(OWNER, NAME))
@@ -312,7 +303,7 @@ describe("Commit after recovery cleanup", () => {
     await until(() => expect(tab.titled("Commit TODO")).toMatchObject({ state: "done", href: `/${TEST_REPOSITORY}/stack/1`, local: true }))
     const subject = tab.titled("Commit TODO")!.id
     expect(tab.runtime.runSync(tab.attention.notices.toArray).some((row) => row.subject === subject)).toBe(false)
-    now = Date.now() + 5_000
+    display.hold(Date.now() + 5_000)
     await tab.runtime.runPromise(Option.getOrThrow(shapes).release(NOTIFICATIONS_SHAPE_ROUTE))
     await until(() => { expect(tab.entry(subject)).toMatchObject({ state: "done", stack: false }); expect(tab.entry(subject)?.local).toBeUndefined() })
   }, WITHIN)

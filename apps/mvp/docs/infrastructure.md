@@ -121,7 +121,9 @@ exporter and shape subscriptions running beside their explicitly created devices
 `openTestApi` is the shared backend fixture for cases that create their own tabs. A tab's optional `clock` service
 controls display timestamps for transient UI assertions; tests keep sleep and monotonic deadlines live, and the
 server and durable engine retain their own clocks. Assertions wait on real collection signals before advancing
-display time, so dependency latency cannot consume the toast window under test.
+display time, so dependency latency cannot consume the toast window under test. `displayClock()` builds one that reads
+real time until `hold()` and again after `release()`; a faulty tab's `ShapeRecovery.lag(route, duration)` delivers each
+of a shape's responses that much later, as a slow box does.
 
 ChatApi's tests (`worker/`, `db/`) use the compose Postgres and Electric and nothing else (`db/TestDatabase.ts`):
 

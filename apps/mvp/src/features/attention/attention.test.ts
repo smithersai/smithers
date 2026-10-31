@@ -4,14 +4,14 @@
 // is scripted. Proves decision 0009's first slice: a tab follows the conversation it shows; Ann's run reaches her feed
 // on both her devices and Ben's as a quiet toast, because he is on its branch; Read, Hide and Dismiss on one of Ann's
 // devices reach the other; a finished toast hides by itself.
-import { Deferred, Effect, Exit, Layer, Logger, ManagedRuntime, Metric } from "effect"
+import { type Clock, Deferred, Effect, Exit, Layer, Logger, ManagedRuntime, Metric } from "effect"
 import { SqlClient } from "effect/sql"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
 import { DispatchFailed, FlowDispatch, dispatches } from "../../flows/dispatch"
-import { asPerson, nodeDevice, type NodeDevice, openFaultyTab, openTab, openTestApi, tabLayer, TestChatApi } from "../../test/chatApi"
-import { EngineFaults } from "../../test/faults"
+import { asPerson, displayClock, nodeDevice, type NodeDevice, openFaultyTab, openTab, openTestApi, tabLayer, TestChatApi } from "../../test/chatApi"
+import { EngineFaults, ShapeRecovery } from "../../test/faults"
 import { SESSION } from "../auth/store"
 import { AuthStore } from "../auth/store"
 import { show } from "../chat/actions"
@@ -21,6 +21,7 @@ import { Status } from "../status/status"
 import { StatusStore } from "../status/store"
 import { dropped, hide, retry } from "./actions"
 import { Attention } from "./attention"
+import { NOTIFICATIONS_SHAPE_ROUTE } from "./contract"
 import { ActRefused } from "./flows"
 import { panel as panelActs, shown } from "./metrics"
 import { AttentionStore } from "./store"
@@ -50,13 +51,17 @@ type Tab = ManagedRuntime.ManagedRuntime<
   unknown
 >
 
-/** A device with a tab on it, whose engine leads unless `answers` is false; a `faulty` tab's behind `EngineFaults`. */
+/**
+ * A device with a tab on it, whose engine leads unless `answers` is false; a `faulty` tab's behind `EngineFaults` and
+ * `ShapeRecovery`; `clock` is its display clock (`displayClock`).
+ */
 const openDevice = async (
   api: TestChatApi["Service"],
-  options: { readonly answers?: boolean; readonly faulty?: boolean } = {},
+  options: { readonly answers?: boolean; readonly faulty?: boolean; readonly clock?: Clock.Clock } = {},
 ) => {
   const host: NodeDevice = nodeDevice(options.answers === false ? {} : { agent: api })
-  const runtime: Tab = options.faulty === true ? openFaultyTab(api, { host }) : openTab(api, { host })
+  const tab = { host, ...(options.clock === undefined ? {} : { clock: options.clock }) }
+  const runtime: Tab = options.faulty === true ? openFaultyTab(api, tab) : openTab(api, tab)
   runtimes.push(runtime)
   const chat = await runtime.runPromise(Effect.service(Chat))
   const attention = await runtime.runPromise(Effect.service(Attention))
@@ -89,6 +94,7 @@ const openDevice = async (
     pending: () => store.pending.tanstack.toArray.map((row) => row.id),
     count: (metric: Metric.Metric<number, Metric.CounterState<number>>) => runtime.runSync(Metric.value(metric)).count,
     faults: () => runtime.runPromise(Effect.service(EngineFaults) as Effect.Effect<EngineFaults["Service"], never, never>),
+    shapes: () => runtime.runPromise(Effect.service(ShapeRecovery) as Effect.Effect<ShapeRecovery["Service"], never, never>),
   }
 }
 
@@ -114,9 +120,12 @@ const watched = (device: Device) =>
 describe("the feed on two people's devices", { timeout: ENGINE_WITHIN }, () => {
   test("Ann's run reaches both her devices and Ben's; her acts on one device reach the other; done toasts hide", async () => {
     const api = await openApi()
-    const ann = await openDevice(api)
+    // Display time on Ann's first device and Ben's, held while the done toast is on its way (below).
+    const annClock = displayClock()
+    const benClock = displayClock()
+    const ann = await openDevice(api, { faulty: true, clock: annClock.clock })
     const annToo = await openDevice(api)
-    const benDevice = await openDevice(asPerson(api, "ben"))
+    const benDevice = await openDevice(asPerson(api, "ben"), { clock: benClock.clock })
     // Each tab shows the home conversation, so each person follows its branch and repository.
     await until(async () => expect(await watchesOf(api, "person-member")).toHaveLength(2))
     await until(async () => expect(await watchesOf(api, "person-ben")).toHaveLength(2))
@@ -186,16 +195,26 @@ describe("the feed on two people's devices", { timeout: ENGINE_WITHIN }, () => {
     }
     const annDone = await watchDone(ann, true)
     const benDone = await watchDone(benDevice, false)
+    // The done toast's 4 s count from the server's time for it (decision 0124 §9), so a device that hears of it later
+    // never shows it. Hold display time from before it's written; and Ann's device hears of it 5 s late, as on a slow
+    // box, so this case doesn't depend on how fast the answer, the engine and Electric are.
+    annClock.hold()
+    benClock.hold()
+    await Effect.runPromise((await ann.shapes()).lag(NOTIFICATIONS_SHAPE_ROUTE, "5 seconds"))
     try {
       annToo.status.actions.answer(answerId, "docs-v2")
       ;(await Effect.runPromise(api.answerTo("Deploy the docs preview", 1))).cell(`ctx.done("Deploying docs-v2.")`)
-      // Done: a new version, so it shows again, unread, then hides by itself after 4 s and stays in Ann's list.
-      // Consume the recorded frames after the toast expired, as a delayed assertion would.
-      await until(() => expect(ann.entry(subject)).toMatchObject({ state: "done", stack: false, listed: true }), 10_000)
+      // Done: a new version, so it shows again, unread.
       await until(() => expect(annDone.observed(), JSON.stringify(annDone.frames)).toBe(true))
       await until(() => expect(benDone.observed(), JSON.stringify(benDone.frames)).toBe(true))
+      // Then, with time moving again, it hides by itself after its 4 s and stays in Ann's list; the hide waits on the
+      // feed's own timer, due 4 s after the toast's time plus the time display time stood still.
+      await Effect.runPromise((await ann.shapes()).lag(NOTIFICATIONS_SHAPE_ROUTE, 0))
+      annClock.release()
+      benClock.release()
+      await until(() => expect(ann.entry(subject)).toMatchObject({ state: "done", stack: false, listed: true }))
       // Ben's, someone else's, leaves his feed altogether.
-      await until(() => expect(benDevice.entry(subject)).toBeUndefined(), 10_000)
+      await until(() => expect(benDevice.entry(subject)).toBeUndefined())
 
       // Dismiss on one device closes it on both.
       annToo.attention.actions.dismiss(subject)

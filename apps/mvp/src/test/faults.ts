@@ -2,7 +2,7 @@ import { ShapeSource } from "@smthrs/effect-electric"
 import type { Persistence } from "@smthrs/effect-tanstack-db"
 import { Interpreter } from "@smthrs/flow"
 import { BrowserEngine } from "@smthrs/platform-browser"
-import { Context, Effect, Exit, Latch, Layer, Ref, Stream, SubscriptionRef } from "effect"
+import { Context, Duration, Effect, Exit, Latch, Layer, Ref, Stream, SubscriptionRef } from "effect"
 import { AuthClient } from "../features/auth/api"
 import { ChatClient, type Question, QuestionNotTaken } from "../features/chat/api"
 import { type AppOptions, realServices } from "../boot"
@@ -216,13 +216,15 @@ const faultyEngine = Layer.effectContext(
 
 /**
  * A finite 503 outage on a new branch's message shape (`failures`), and `withhold(route)`: every request for the shape at
- * `route` answers 503 until `release(route)`, as when that one shape's sync is down; every other request uses the real
- * source.
+ * `route` answers 503 until `release(route)`, as when that one shape's sync is down; `lag(route, duration)`: each of its
+ * responses reaches the device `duration` after Electric sent it, as on a slow box, until a zero lag. Every other request
+ * uses the real source.
  */
 export class ShapeRecovery extends Context.Service<ShapeRecovery, {
   readonly failures: Effect.Effect<number>
   readonly withhold: (route: string) => Effect.Effect<void>
   readonly release: (route: string) => Effect.Effect<void>
+  readonly lag: (route: string, duration: Duration.Input) => Effect.Effect<void>
 }>()(
   "@smthrs/mvp/test/ShapeRecovery",
 ) {}
@@ -231,6 +233,7 @@ const recoveringSource = (failures: number) => Layer.effectContext(Effect.gen(fu
   const real = yield* ShapeSource.ShapeSource
   const failed = yield* Ref.make(0)
   const withheld = yield* Ref.make<ReadonlySet<string>>(new Set())
+  const lagged = yield* Ref.make<ReadonlyMap<string, Duration.Duration>>(new Map())
   const source = ShapeSource.ShapeSource.of({ request: (url, init) => Effect.gen(function* () {
     const target = new URL(url)
     if ((yield* Ref.get(withheld)).has(target.pathname)) return new Response(null, { status: 503 })
@@ -239,13 +242,25 @@ const recoveringSource = (failures: number) => Layer.effectContext(Effect.gen(fu
       yield* Ref.update(failed, (count) => count + 1)
       return new Response(null, { status: 503 })
     }
-    return yield* real.request(url, init)
+    const response = yield* real.request(url, init)
+    // After Electric answered: a live request's change waits too, not only the request that asks for it.
+    const lag = (yield* Ref.get(lagged)).get(target.pathname)
+    if (lag !== undefined) yield* Effect.sleep(lag)
+    return response
   }) })
   return Context.make(ShapeSource.ShapeSource, source).pipe(
     Context.add(ShapeRecovery, ShapeRecovery.of({
       failures: Ref.get(failed),
       withhold: (route) => Ref.update(withheld, (routes) => new Set([...routes, route])),
       release: (route) => Ref.update(withheld, (routes) => new Set([...routes].filter((held) => held !== route))),
+      lag: (route, duration) =>
+        Ref.update(lagged, (routes) => {
+          const next = new Map(routes)
+          const lag = Duration.fromInputUnsafe(duration)
+          if (Duration.isZero(lag)) next.delete(route)
+          else next.set(route, lag)
+          return next
+        }),
     })),
   )
 }))
