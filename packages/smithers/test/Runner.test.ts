@@ -4,6 +4,7 @@
  * process, on its own SQLite journal, except where the case is the process itself: the token command, and a runner
  * killed mid-job and started again.
  */
+import * as Transcript from "@smthrs/agent/Transcript"
 import { Cause, Effect, Exit, Fiber } from "effect"
 import { type ChildProcess, execFileSync, spawn } from "node:child_process"
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
@@ -13,7 +14,6 @@ import { fileURLToPath } from "node:url"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import * as RunnerCmd from "../src/commands/Runner.ts"
 import * as Config from "../src/runner/Config.ts"
-import * as Scrub from "../src/runner/Scrub.ts"
 import * as Host from "./fixtures/runner/host.ts"
 
 const AGENT = fileURLToPath(new URL("../agent/test/fixtures/acp-test-agent.mjs", import.meta.url))
@@ -125,6 +125,115 @@ describe("smthrs runner serve", () => {
     90_000
   )
 
+  test(
+    "sends the agent's transcript once and in order, scrubbed and bounded, without its configuration, then its end",
+    async () => {
+      configure()
+      const row = host.enqueue(Host.task({
+        base: mirror.base,
+        prompt: "leak sk-abcdefgh12345 from me@example.org\nadd the line `alpha` to `NOTES.md`\nsay 40 KiB"
+      }))
+      serveInProcess()
+      expect((await host.settled(row))._tag).toBe("Done")
+      const { events, contiguous } = await host.transcribed(row)
+      expect(contiguous).toBe(true)
+      const kinds = events.map((event) => event.kind)
+      expect(kinds[0]).toBe("user_message_chunk")
+      expect(kinds).toContain("tool_call")
+      expect(kinds).toContain("tool_call_update")
+      expect(kinds).not.toContain("available_commands_update")
+      expect(events.find((event) => event.kind === Transcript.KINDS.turn)?.update).toEqual({ stopReason: "end_turn" })
+      expect(events.at(-1)).toMatchObject({ kind: Transcript.KINDS.end, update: { outcome: "done" } })
+      const wire = JSON.stringify(events)
+      expect(wire).not.toContain("sk-abcdefgh12345")
+      expect(wire).not.toContain("me@example.org")
+      const big = events.filter((event) => /^k+$/.test(String((event.update.content as { text?: string })?.text)))
+      expect(big.length).toBeGreaterThanOrEqual(3)
+      expect(big.map((event) => (event.update.content as { text: string }).text).join("")).toBe("k".repeat(40 * 1024))
+      for (const event of events) {
+        expect(Buffer.byteLength(JSON.stringify(event.update))).toBeLessThanOrEqual(Transcript.MAX_EVENT_BYTES)
+        expect(event.at).toBeGreaterThan(0)
+      }
+      // The spool is deleted once the host has everything.
+      await until(() => readdirSync(join(stateDir, "spool")).length === 0)
+    },
+    90_000
+  )
+
+  test(
+    "a host that can't take events for a minute gets every one once it answers, contiguous, at about one post a second",
+    async () => {
+      configure()
+      const row = host.enqueue(Host.task({ base: mirror.base, prompt: "talk for 75 seconds" }))
+      const blockedAt = Date.now()
+      host.blockEvents(60_000)
+      serveInProcess()
+      expect((await host.settled(row, 150_000))._tag).toBe("Done")
+      const { events, contiguous } = await host.transcribed(row)
+      expect(contiguous).toBe(true)
+      expect(row.refusedPosts).toBeGreaterThan(0)
+      const words = events.flatMap((event) => {
+        const text = (event.update.content as { text?: string } | undefined)?.text ?? ""
+        const match = /^word (\d+) $/.exec(text)
+        return match === null ? [] : [Number(match[1])]
+      })
+      expect(words.length).toBeGreaterThan(200)
+      expect(words).toEqual(words.map((_, n) => n))
+      // The minute's backlog arrived within 10 s of the host answering again, and later events within 3 s.
+      const unblocked = blockedAt + 60_000
+      const late = events.map((event) => ({ at: event.at, lag: row.received.get(event.seq)! - event.at }))
+      expect(Math.max(...late.filter((event) => event.at < unblocked).map((event) => event.at + event.lag)))
+        .toBeLessThan(
+          unblocked + 10_000
+        )
+      const after = late.filter((event) => event.at > unblocked + 10_000).map((event) => event.lag)
+      expect(after.length).toBeGreaterThan(20)
+      expect(Math.max(...after)).toBeLessThanOrEqual(3000)
+      // About 15 s of live talk after the block, a post a second, plus the backlog and the drain.
+      expect(row.posts).toBeLessThanOrEqual(40)
+    },
+    180_000
+  )
+
+  test("ten jobs at once: each transcript arrives whole and in order while its agent works", async () => {
+    configure()
+    const config = JSON.parse(readFileSync(configPath, "utf8")) as { capacity: number }
+    writeFileSync(configPath, JSON.stringify({ ...config, capacity: 10 }))
+    const rows = Array.from(
+      { length: 10 },
+      () =>
+        host.enqueue(Host.task({ base: mirror.base, prompt: "talk for 8 seconds\nadd the line `alpha` to `NOTES.md`" }))
+    )
+    serveInProcess()
+    const settledAt = new Map<Host.Row, number>()
+    await Promise.all(rows.map(async (row) => {
+      expect((await host.settled(row, 150_000))._tag).toBe("Done")
+      settledAt.set(row, Date.now())
+    }))
+    const lags: Array<number> = []
+    const firsts: Array<number> = []
+    for (const row of rows) {
+      const { events, contiguous } = await host.transcribed(row)
+      expect(contiguous).toBe(true)
+      expect(events.length).toBeGreaterThan(30)
+      // Live, not at the end: most of the talk reached the host before the job settled.
+      const before = [...row.received.values()].filter((at) => at < settledAt.get(row)!).length
+      expect(before).toBeGreaterThan(events.length / 2)
+      firsts.push(Math.min(...row.received.values()) - row.claimedAt!)
+      for (const event of events) lags.push(row.received.get(event.seq)! - event.at)
+    }
+    // The measurement, for the record: on a shared test host these numbers say as much about its load as the runner.
+    // e2e/agent-runner.spec.ts holds a deployment to FINAL.md's 30 s and 3 s.
+    lags.sort((a, b) => a - b)
+    firsts.sort((a, b) => a - b)
+    const at = (values: ReadonlyArray<number>, p: number) =>
+      values[Math.min(values.length - 1, Math.floor(values.length * p))]
+    console.info(
+      `runner transcript over 10 jobs: claim to first event p50 ${at(firsts, 0.5)} ms, max ${firsts.at(-1)} ms; ` +
+        `event lag over ${lags.length} events p50 ${at(lags, 0.5)} ms, p95 ${at(lags, 0.95)} ms, max ${lags.at(-1)} ms`
+    )
+  }, 240_000)
+
   test("a cancel stops the agent's whole tree, a detached command included, and settles Cancelled", async () => {
     configure()
     const row = host.enqueue(Host.task({ base: mirror.base, prompt: "run `sleep 60` detached" }))
@@ -194,7 +303,7 @@ describe("smthrs runner serve", () => {
         expect(outcome.summary).not.toContain("hook-secret-value")
         expect(outcome.summary).not.toContain("ghp_")
         expect(outcome.summary).not.toContain("someone@example.com")
-        expect(outcome.summary).toContain(Scrub.REDACTED)
+        expect(outcome.summary).toContain(Transcript.REDACTED)
       }
       expect(await host.settled(refused)).toEqual({ _tag: "Failed", reason: "refused" })
     },
@@ -280,6 +389,15 @@ describe("smthrs runner, as processes", () => {
     ])
     expect(row.claim).toBe(claim)
     expect(row.claims).toBe(1)
+    // The transcript runs on from where the first runner's spool stopped: one seq each, and none of the history the
+    // agent replayed while it loaded the session.
+    const { events, contiguous } = await host.transcribed(row)
+    expect(contiguous).toBe(true)
+    const prompts = events.filter((event) => event.kind === "user_message_chunk")
+    expect(prompts.map((event) => (event.update.content as { text: string }).text.split("\n")[0])).toEqual([
+      "You are a test.",
+      "Continue"
+    ])
   }, 180_000)
 
   test("token writes a 0600 token and prints only its SHA-256; a second token needs --rotate", async () => {
@@ -338,23 +456,5 @@ describe("runner configuration", () => {
     await Effect.runPromise(Config.makeToken(empty))
     writeFileSync(Config.tokenFile(empty), "\n")
     expect(Exit.isFailure(await Effect.runPromiseExit(Config.readToken(empty)))).toBe(true)
-  })
-
-  test("scrubs known values longest first, then credential shapes", () => {
-    const scrub = Scrub.make(["abc", "secret-value", "secret-value-long"])
-    expect(scrub("x secret-value-long y secret-value abc")).toBe(`x ${Scrub.REDACTED} y ${Scrub.REDACTED} abc`)
-    for (
-      const shape of [
-        "sk-abcdefgh1234",
-        "sess-abcdefgh1234",
-        "Bearer abc.def",
-        "ghp_abcdefgh1234",
-        "github_pat_abcdefgh1234",
-        "eyJhbGciOi.eyJzdWIiOi.c2lnbmF0dXJl",
-        "a.person@example.org"
-      ]
-    ) {
-      expect(scrub(`before ${shape} after`)).toBe(`before ${Scrub.REDACTED} after`)
-    }
   })
 })

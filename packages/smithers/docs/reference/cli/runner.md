@@ -55,7 +55,7 @@ commit. The runner settles the files the agent changed.
 | `origin` | The host. `https`, or `http` on `localhost` only. |
 | `name` | The name the admin registered. |
 | `capacity` | Jobs run at once; 4 unless set, 64 at most. |
-| `stateDir` | Token, journal (`engine.db`) and checkouts (`work/`); `~/.smithers/runner` unless set. |
+| `stateDir` | Token, journal (`engine.db`), checkouts (`work/`) and transcript spools (`spool/`); `~/.smithers/runner` unless set. |
 | `heartbeatSeconds` | How often a running job's claim is renewed; 10 unless set. |
 | `pollSeconds` | The wait after a claim that found nothing; 2 unless set. |
 | `repositories` | Each repository the host may name, by the host's repository id, mapped to a local jj repository the runner checks out from. The runner fetches it when a job's base commit is missing. |
@@ -91,6 +91,29 @@ Each claimed job is a durable flow, `runner/Job`, on the runner's journal:
 2. **Settle.** The runner reports the outcome, fenced by its claim, retrying
    while the host can't be reached. A final outcome then forgets the checkout;
    a retryable one keeps it for the next generation.
+3. **Transcript.** Beside the settlement, never before it, the runner writes
+   the session's end to the job's transcript and sends whatever the host
+   doesn't have yet, retrying for up to a day, then deletes the spool.
+
+## Transcript
+
+While the agent works, the runner sends its `session/update` stream to the host
+at `POST /api/runners/events` (`@smthrs/agent`'s `Transcript`), so a person can
+watch it:
+
+- Each update becomes one or more events numbered from 0 within the job's
+  generation. The agent's slash commands and configuration options are
+  dropped; every string is scrubbed as the summary is; an event is at most
+  16 KiB, so a long message is split and any other long string cut. The runner
+  adds `_smithers/turn` with each turn's stop reason and `_smithers/end` with
+  the outcome.
+- Each event is written to `spool/<key hash>.jsonl` (`0600`) before it is
+  sent, and sent at most once a second in requests of at most 64 KiB, at once
+  again while a full request waits. The host answers the next number it lacks;
+  the runner sends again from there, so an outage of the host costs nothing
+  but time. A job's spool holds at most 64 MiB.
+- After a restart the runner sends its spool again. The history an agent
+  replays when it loads a session is not sent twice.
 
 The summary the runner reports is the agent's last message, at most 4 KiB,
 scrubbed of known secret values, API key and bearer shapes, GitHub tokens,
@@ -122,5 +145,6 @@ that reports no cost leaves it out.
 
 Logs carry job keys, generations, outcome codes, account labels and durations:
 `runner.serve`, `runner.claim`, `runner.heartbeat`, `runner.session`,
-`runner.settle` and `runner.job`. They never carry a prompt, the agent's text,
+`runner.settle`, `runner.events`, `runner.transcript` and `runner.job`. They
+never carry a prompt, the agent's text,
 a command line, an environment or a path.
