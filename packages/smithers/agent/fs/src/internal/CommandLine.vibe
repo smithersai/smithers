@@ -137,7 +137,11 @@ export effect function lex(commandString: string): Effect<ReadonlyArray<string>,
 
 const validFlagName = (name: string): boolean => flagName.test(name) && !reservedNames.has(name)
 
-const append = effect (options: Record<string, unknown>, name: string, value: unknown): Effect<void, FsError, infer R> => {
+const append = effect (
+  options: Record<string, unknown>,
+  name: string,
+  value: unknown
+): Effect<void, FsError, infer R> => {
   if (!validFlagName(name)) throw parseError("The command contains an invalid option name", `$.options.${name}`)
   const current = Object.hasOwn(options, name) ? options[name] : undefined
   options[name] = current === undefined ? value : Array.isArray(current) ? [...current, value] : [current, value]

@@ -61,7 +61,10 @@ const schemaFailure = (code: "decode_failed" | "encode_failed", method: string):
  * @private
  * @since 0.1.0
  */
-export effect function recover<A>(program: Effect<A, unknown, unknown>, failure: () => Effect<FsError>): Effect<A, FsError, infer R> {
+export effect function recover<A>(
+  program: Effect<A, unknown, unknown>,
+  failure: () => Effect<FsError>
+): Effect<A, FsError, infer R> {
   // @vibelang-diagnostics-next-line EK4810:off
   return match (try exit(program as Effect<A, unknown>)) {
     when Exit.Success(let value): value;
@@ -258,7 +261,11 @@ const scalarRecord = (args: Positional, options: Readonly<Record<string, unknown
   return merged
 }
 
-effect function decodeWith(schema: Schema.Top, zodSchema: z.ZodType, assembly: Assembly): Effect<unknown, FsError, infer R> {
+effect function decodeWith(
+  schema: Schema.Top,
+  zodSchema: z.ZodType,
+  assembly: Assembly
+): Effect<unknown, FsError, infer R> {
   const parsed = zodSchema.safeParse(assembly.value)
   if (!parsed.success) throw schemaFailure("decode_failed", "SchemaBridge.decodeInput")
   return try decodeInput(schema, parsed.data)
@@ -271,7 +278,10 @@ effect function decodeWith(schema: Schema.Top, zodSchema: z.ZodType, assembly: A
  * @since 0.1.0
  */
 export effect function decodeInput(schema: Schema.Top, value: unknown): Effect<unknown, FsError, infer R> {
-  const decoded = try recover(Schema.decodeUnknownEffect(schema)(value), effect () => schemaFailure("decode_failed", "SchemaBridge.decodeInput"))
+  const decoded = try recover(
+    Schema.decodeUnknownEffect(schema)(value),
+    effect () => schemaFailure("decode_failed", "SchemaBridge.decodeInput")
+  )
   if (decoded === undefined) return undefined
   const admitted = Boundary.admitJson(decoded)
   if (!admitted.ok) throw schemaFailure("decode_failed", "SchemaBridge.decodeInput")
@@ -316,7 +326,10 @@ const projectSchema = effect (schema: Schema.Top): Effect<CommandSchema, FsError
  * @private
  * @since 0.1.0
  */
-export effect function toCommandSchema(ref: Descriptor.SchemaRef, schema: Schema.Top): Effect<CommandSchema, FsError, infer R> {
+export effect function toCommandSchema(
+  ref: Descriptor.SchemaRef,
+  schema: Schema.Top
+): Effect<CommandSchema, FsError, infer R> {
   if (ref._tag === "MarkdownOutput") {
     throw new FsError({
       code: "unsupported_schema",
@@ -335,7 +348,10 @@ export effect function toCommandSchema(ref: Descriptor.SchemaRef, schema: Schema
         if (Object.keys(assembly.value as Record<string, unknown>).length !== 0) {
           throw schemaFailure("decode_failed", "SchemaBridge.decodeInput")
         }
-        return try recover(Schema.decodeUnknownEffect(schema)(undefined), effect () => schemaFailure("decode_failed", "SchemaBridge.decodeInput"))
+        return try recover(
+          Schema.decodeUnknownEffect(schema)(undefined),
+          effect () => schemaFailure("decode_failed", "SchemaBridge.decodeInput")
+        )
       }
     }
     return Object.freeze(none)
@@ -360,7 +376,10 @@ export effect function toCommandSchema(ref: Descriptor.SchemaRef, schema: Schema
  * @since 0.1.0
  */
 export effect function encodeOutput(schema: Schema.Top, value: unknown): Effect<unknown, FsError, infer R> {
-  const encoded = try recover(Schema.encodeUnknownEffect(schema)(value), effect () => schemaFailure("encode_failed", "SchemaBridge.encodeOutput"))
+  const encoded = try recover(
+    Schema.encodeUnknownEffect(schema)(value),
+    effect () => schemaFailure("encode_failed", "SchemaBridge.encodeOutput")
+  )
   if (encoded === undefined) return undefined
   const admitted = Boundary.admitJson(encoded)
   if (!admitted.ok) throw schemaFailure("encode_failed", "SchemaBridge.encodeOutput")

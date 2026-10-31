@@ -78,7 +78,11 @@ effect function snapshotDecoded(value: unknown): Effect<unknown, FsError, infer 
   return admitted.value
 }
 
-effect function validateDecoded(schema: Schema.Top, value: unknown, field: "input" | "output"): Effect<unknown, FsError, infer R> {
+effect function validateDecoded(
+  schema: Schema.Top,
+  value: unknown,
+  field: "input" | "output"
+): Effect<unknown, FsError, infer R> {
   const decoded = try SchemaBridge.recover(
     Schema.decodeUnknownEffect(Schema.toType(schema))(snapshotDecoded(value)),
     effect () =>
@@ -140,20 +144,26 @@ export effect function make(routes: ReadonlyArray<Route.Route>): Effect<CommandS
       return Object.freeze({ route, argv, input })
     },
     execute: effect (commandString) =>
-      try withSpan(effect {
-        const { flow, input, route } = try prepare(commandString)
-        return try SchemaBridge.encodeOutput(flow.output, try invoke(route, flow, input))
-      }, "Command.execute"),
+      try withSpan(
+        effect {
+          const { flow, input, route } = try prepare(commandString)
+          return try SchemaBridge.encodeOutput(flow.output, try invoke(route, flow, input))
+        },
+        "Command.execute"
+      ),
     call: effect <N extends Route.Name>(name: N, candidate: Route.Input<N>) =>
-      try withSpan(effect {
-        const input = try snapshotDecoded(candidate)
-        const segments = typeof name === "string" ? name.split("/") : []
-        const route = try CommandTree.resolveExact(tree, segments)
-        const flow = try Route.load(route)
-        const decoded = try validateDecoded(flow.input, input, "input")
-        const output = try invoke(route, flow, decoded)
-        return (try validateDecoded(flow.output, output, "output")) as Route.Output<N>
-      }, "Command.call")
+      try withSpan(
+        effect {
+          const input = try snapshotDecoded(candidate)
+          const segments = typeof name === "string" ? name.split("/") : []
+          const route = try CommandTree.resolveExact(tree, segments)
+          const flow = try Route.load(route)
+          const decoded = try validateDecoded(flow.input, input, "input")
+          const output = try invoke(route, flow, decoded)
+          return (try validateDecoded(flow.output, output, "output")) as Route.Output<N>
+        },
+        "Command.call"
+      )
   }
   return Object.freeze(surface)
 }

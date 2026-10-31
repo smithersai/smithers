@@ -12,7 +12,9 @@ describe("examples/agent-command", () => {
   }
 
   it.effect("refuses a command string the flow schema rejects") {
-    expect(try failureOf(runAgentCommand(flowsRoot, "review --number forty-two"))).toMatchObject({ code: "decode_failed" })
+    expect(try failureOf(runAgentCommand(flowsRoot, "review --number forty-two"))).toMatchObject({
+      code: "decode_failed"
+    })
   }
 
   it.effect("serves the same route over HTTP") {

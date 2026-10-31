@@ -66,10 +66,14 @@ export const latchedInvoke = (): {
   return {
     invoke: effect (_invocation) => {
       try {
-        return try sync(async (begin, gate) => {
-          begin()
-          return gate
-        }, begin, gate)
+        return try sync(
+          async (begin, gate) => {
+            begin()
+            return gate
+          },
+          begin,
+          gate
+        )
       } finally (exit) {
         if (exit is Exit.Failure(let cause) && cause.hasInterrupts()) finish()
       }

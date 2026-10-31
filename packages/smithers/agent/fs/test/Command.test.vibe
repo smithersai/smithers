@@ -152,20 +152,21 @@ describe("Command", () => {
         "\ud800"
       ]
     ) {
-      expect(try exit(CommandLine.lex(command)) is Exit.Failure).toBe(true)
+      expect((try exit(CommandLine.lex(command))) is Exit.Failure).toBe(true)
     }
 
     const exact = Array.from({ length: CommandLine.maximumCommandTokens }, () => "x").join(" ")
     expect(try CommandLine.lex(exact)).toHaveLength(CommandLine.maximumCommandTokens)
     const tooMany = `${exact} x`
-    expect(try exit(CommandLine.lex(tooMany)) is Exit.Failure).toBe(true)
+    expect((try exit(CommandLine.lex(tooMany))) is Exit.Failure).toBe(true)
 
-    const hostile = try sync((target) => new Proxy(target, {
-      ownKeys: () => {
-        throw new Error("trap")
-      }
-    }), ["--safe=x"])
-    expect(try exit(CommandLine.parseFlags(hostile)) is Exit.Failure).toBe(true)
+    const hostile = try sync((target) =>
+      new Proxy(target, {
+        ownKeys: () => {
+          throw new Error("trap")
+        }
+      }), ["--safe=x"])
+    expect((try exit(CommandLine.parseFlags(hostile))) is Exit.Failure).toBe(true)
   }
 
   it.effect("bounds command bytes independently of the token bounds") {
@@ -224,7 +225,7 @@ describe("Command.call decoded boundary", () => {
       expect(try surface.call("scalar", 42)).toBe(42)
       expect(try surface.execute("scalar 42")).toBe(42)
       expect(invoke.mock.calls.map(([invocation]) => invocation.input)).toEqual([42, 42])
-      expect(try exit(surface.call("scalar", "42")) is Exit.Failure).toBe(true)
+      expect((try exit(surface.call("scalar", "42"))) is Exit.Failure).toBe(true)
     }
     expect(invoke).toHaveBeenCalledTimes(2)
   }
@@ -285,7 +286,7 @@ describe("Command.call decoded boundary", () => {
     })
     for (const output of [accessor, { value: "x".repeat(65_537) }]) {
       provide FlowInvoker.layerNoop({ invoke: effect () => output }) {
-        expect(try exit(surface.call("scalar", { value: "ok" })) is Exit.Failure).toBe(true)
+        expect((try exit(surface.call("scalar", { value: "ok" }))) is Exit.Failure).toBe(true)
       }
     }
     expect(getterCalls).toBe(0)

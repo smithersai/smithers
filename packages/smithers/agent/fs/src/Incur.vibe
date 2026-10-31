@@ -20,7 +20,10 @@ const mapError = (context: IncurHost.Context, error: FsError): never =>
 // Incur's ok and error callbacks throw transport control signals, so each
 // settles the call as a defect, outside the program whose failures are
 // sanitized.
-effect function execute(selected: IncurHost.SelectedRoute, context: IncurHost.Context): Effect<unknown, never, FlowInvoker.FlowInvoker> {
+effect function execute(
+  selected: IncurHost.SelectedRoute,
+  context: IncurHost.Context
+): Effect<unknown, never, FlowInvoker.FlowInvoker> {
   const outcome = try exit {
     const input = try selected.schema.decode(selected.schema.assemble(context.args, context.options))
     const output = try FlowInvoker.FlowInvoker.invoke(Object.freeze({
@@ -37,7 +40,9 @@ effect function execute(selected: IncurHost.SelectedRoute, context: IncurHost.Co
   provide Logger.LogToStderr = true {
     try logDebug("Incur invocation failed", cause)
   }
-  if (cause.hasInterrupts()) return try Effect.failCause(Cause.fromReasons<never>(cause.reasons.filter(Cause.isInterruptReason)))
+  if (cause.hasInterrupts()) {
+    return try Effect.failCause(Cause.fromReasons<never>(cause.reasons.filter(Cause.isInterruptReason)))
+  }
   return mapError(
     context,
     new FsError({
@@ -54,20 +59,23 @@ effect function refuse(context: IncurHost.Context, error: FsError): Effect<never
 
 effect function project(route: Route.Route): Effect<IncurHost.Projection> {
   try {
-    const selected = try Effect.timeoutOrElse(effect {
-      const flow = try Route.load(route)
-      const schema = try SchemaBridge.toCommandSchema(route.input, flow.input)
-      return { route, flow, schema }
-    }, {
-      duration: "5 seconds",
-      orElse: effect () =>
-        throw new FsError({
-          code: "load_failed",
-          method: "Incur.project",
-          description: "The route metadata load timed out",
-          path: route.name
-        })
-    })
+    const selected = try Effect.timeoutOrElse(
+      effect {
+        const flow = try Route.load(route)
+        const schema = try SchemaBridge.toCommandSchema(route.input, flow.input)
+        return { route, flow, schema }
+      },
+      {
+        duration: "5 seconds",
+        orElse: effect () =>
+          throw new FsError({
+            code: "load_failed",
+            method: "Incur.project",
+            description: "The route metadata load timed out",
+            path: route.name
+          })
+      }
+    )
     return { _tag: "Ready", selected }
   } catch (error) {
     return { _tag: "Failed", error }

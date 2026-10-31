@@ -117,8 +117,7 @@ export type Name = keyof Manifest extends never ? string : Extract<keyof Manifes
  * @category models
  * @since 0.1.0
  */
-export type Input<N extends Name> = N extends keyof Manifest
-  ? Manifest[N] extends { input: infer I } ? I : unknown
+export type Input<N extends Name> = N extends keyof Manifest ? Manifest[N] extends { input: infer I } ? I : unknown
   : unknown
 
 /**
@@ -127,8 +126,7 @@ export type Input<N extends Name> = N extends keyof Manifest
  * @category models
  * @since 0.1.0
  */
-export type Output<N extends Name> = N extends keyof Manifest
-  ? Manifest[N] extends { output: infer O } ? O : unknown
+export type Output<N extends Name> = N extends keyof Manifest ? Manifest[N] extends { output: infer O } ? O : unknown
   : unknown
 
 const invalidRoute = (path: string, description = "Route metadata violates the command contract"): FsError =>
@@ -160,41 +158,51 @@ const schemaFields = effect (
   required: ReadonlyArray<string>,
   optional: ReadonlyArray<string> = []
 ): Effect<Readonly<Record<string, unknown>>, FsError> => {
-  return try Effect.try({ try: () => ((input, required, optional, invalidRoute) => {
-    if (typeof input !== "object" || input === null || Array.isArray(input)) throw invalidRoute("$")
-    const prototype = Object.getPrototypeOf(input)
-    const known = input instanceof Descriptor.SchemaRefMarkdownArgs ||
-      input instanceof Descriptor.SchemaRefMarkdownOutput ||
-      input instanceof Descriptor.SchemaRefNone ||
-      input instanceof Descriptor.SchemaRefModule ||
-      input instanceof Descriptor.SchemaRefInline
-    if (!known && prototype !== Object.prototype && prototype !== null) throw invalidRoute("$")
-    const allowed = new Set([...required, ...optional])
-    const keys = Reflect.ownKeys(input)
-    if (keys.some((key) => typeof key === "symbol" || !allowed.has(key))) throw invalidRoute("$")
-    const output: Record<string, unknown> = Object.create(null) as Record<string, unknown>
-    for (const key of required) {
-      const descriptor = Object.getOwnPropertyDescriptor(input, key)
-      if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) throw invalidRoute(`$.${key}`)
-      output[key] = descriptor.value
-    }
-    for (const key of optional) {
-      const descriptor = Object.getOwnPropertyDescriptor(input, key)
-      if (descriptor === undefined) continue
-      if (!("value" in descriptor) || !descriptor.enumerable) throw invalidRoute(`$.${key}`)
-      output[key] = descriptor.value
-    }
-    return Object.freeze(output)
-  })(input, required, optional, invalidRoute), catch: (cause) => cause instanceof FsError ? cause : invalidRoute("$") })
+  return try Effect.try({
+    try: () =>
+      ((input, required, optional, invalidRoute) => {
+        if (typeof input !== "object" || input === null || Array.isArray(input)) throw invalidRoute("$")
+        const prototype = Object.getPrototypeOf(input)
+        const known = input instanceof Descriptor.SchemaRefMarkdownArgs ||
+          input instanceof Descriptor.SchemaRefMarkdownOutput ||
+          input instanceof Descriptor.SchemaRefNone ||
+          input instanceof Descriptor.SchemaRefModule ||
+          input instanceof Descriptor.SchemaRefInline
+        if (!known && prototype !== Object.prototype && prototype !== null) throw invalidRoute("$")
+        const allowed = new Set([...required, ...optional])
+        const keys = Reflect.ownKeys(input)
+        if (keys.some((key) => typeof key === "symbol" || !allowed.has(key))) throw invalidRoute("$")
+        const output: Record<string, unknown> = Object.create(null) as Record<string, unknown>
+        for (const key of required) {
+          const descriptor = Object.getOwnPropertyDescriptor(input, key)
+          if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
+            throw invalidRoute(`$.${key}`)
+          }
+          output[key] = descriptor.value
+        }
+        for (const key of optional) {
+          const descriptor = Object.getOwnPropertyDescriptor(input, key)
+          if (descriptor === undefined) continue
+          if (!("value" in descriptor) || !descriptor.enumerable) throw invalidRoute(`$.${key}`)
+          output[key] = descriptor.value
+        }
+        return Object.freeze(output)
+      })(input, required, optional, invalidRoute),
+    catch: (cause) => cause instanceof FsError ? cause : invalidRoute("$")
+  })
 }
 
 // Inspect foreign Option values inside JavaScript so hostile proxy traps are normalized.
 const inspectOption = effect (input: unknown, path: string): Effect<Option<unknown>, FsError> =>
-  try Effect.try({ try: () => ((input) => {
-    if (!Option.isOption(input)) throw new Error("Invalid Option")
-    // Reading the payload here also catches a hostile getter.
-    return input._tag === "None" ? Option.none() : Option.some(input.value)
-  })(input), catch: () => invalidRoute(path) })
+  try Effect.try({
+    try: () =>
+      ((input) => {
+        if (!Option.isOption(input)) throw new Error("Invalid Option")
+        // Reading the payload here also catches a hostile getter.
+        return input._tag === "None" ? Option.none() : Option.some(input.value)
+      })(input),
+    catch: () => invalidRoute(path)
+  })
 
 const optionText = effect (
   input: unknown,

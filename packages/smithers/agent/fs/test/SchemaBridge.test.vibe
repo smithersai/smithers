@@ -38,10 +38,15 @@ effect function request(
   url: string,
   init: RequestInit = {}
 ): Effect<Reply> {
-  return try sync(async (cli, url, init) => {
-    const response = await cli.fetch(new Request(url, init))
-    return { status: response.status, body: await response.json() }
-  }, cli, url, init)
+  return try sync(
+    async (cli, url, init) => {
+      const response = await cli.fetch(new Request(url, init))
+      return { status: response.status, body: await response.json() }
+    },
+    cli,
+    url,
+    init
+  )
 }
 
 describe("SchemaBridge", () => {
@@ -206,9 +211,9 @@ describe("SchemaBridge", () => {
     }
   ])("preserves the declared $name values and requiredness", effect ({ field, optional, value }) => {
     const Input = Schema.Struct({
-    choice: field,
-});
-    type Input = typeof Input.Type;
+      choice: field
+    })
+    type Input = typeof Input.Type
     const command = try SchemaBridge.toCommandSchema(moduleRef, Input)
     const advertised = z.toJSONSchema(command.options!, { unrepresentable: "any" })
     const declared = Schema.toJsonSchemaDocument(Input).schema
@@ -394,9 +399,11 @@ describe("SchemaBridge", () => {
   it.effect("turns document-generation errors into sanitized typed unsupported_schema failures") {
     const error = try failureOf(SchemaBridge.toCommandSchema(
       moduleRef,
-      sync(() => Schema.suspend((): typeof Schema.String => {
-        throw new Error("private schema cause")
-      }))
+      sync(() =>
+        Schema.suspend((): typeof Schema.String => {
+          throw new Error("private schema cause")
+        })
+      )
     ))
     expect(error).toMatchObject({ code: "unsupported_schema", method: "SchemaBridge.toCommandSchema" })
     expect(JSON.stringify(error)).not.toContain("private schema cause")
@@ -483,9 +490,11 @@ describe("SchemaBridge", () => {
 
   it.effect("keeps help, OpenAPI, and MCP usable beside an unsupported schema") {
     const inputs: Record<string, Schema.Top> = {
-      bad: try sync(() => Schema.suspend((): typeof Schema.String => {
-        throw new Error("private schema cause")
-      })),
+      bad: try sync(() =>
+        Schema.suspend((): typeof Schema.String => {
+          throw new Error("private schema cause")
+        })
+      ),
       tuple: Schema.Tuple([Schema.String, Schema.Finite]),
       healthy: Schema.Struct({
         nested: Schema.Struct({ mode: Schema.Literals(["fast", "slow"]), count: Schema.Finite })
