@@ -145,13 +145,14 @@ const enterRepo = (
     const href = canonicalRepoHref(load.location, params, canonical, fileAtTree)
     if (href !== undefined) throw redirect({ href, replace: true })
   }, () => {
-    if (!staysInRepository(shownPath(), params)) context.repo.actions.role(params.owner, params.repo)
+    context.repo.actions.role(params.owner, params.repo, staysInRepository(shownPath(), params))
     return open()
   })
 
 /**
  * The path of the page the router shows until this navigation resolves. A navigation that stays in its repository,
- * such as a file clicked in its tree, asks ChatApi again neither who the person is there nor its home: the tab has both.
+ * such as a file clicked in its tree, reuses who the person is there and its home when the tab holds a good answer for
+ * each (`reuse` in `repo.actions.role` and `home.actions.open`).
  */
 const shownPath = (): string | undefined => router.state.resolvedLocation?.pathname
 
@@ -372,7 +373,7 @@ const treeRoute = createRoute({
     enterRepo(context, params, load, () => Promise.all([context.repo.actions.warmRoute("tree", params, { L: search.L }), context.home.actions.warm(params.owner, params.repo)]), () =>
       Promise.all([
         context.repo.actions.openRoute("tree", params, { L: search.L }),
-        staysInRepository(shownPath(), params) ? undefined : context.home.actions.open(params.owner, params.repo),
+        context.home.actions.open(params.owner, params.repo, staysInRepository(shownPath(), params)),
         context.todos.actions.warm(params.owner, params.repo),
         openBranchPage(context.branch, context.terminal, load.abortController.signal, params, search),
       ])),
@@ -397,7 +398,7 @@ const blobRoute = createRoute({
     enterRepo(context, params, load, () => context.repo.actions.warmRoute("blob", params, search), () =>
       Promise.all([
         context.repo.actions.openRoute("blob", params, search),
-        staysInRepository(shownPath(), params) ? undefined : context.home.actions.open(params.owner, params.repo),
+        context.home.actions.open(params.owner, params.repo, staysInRepository(shownPath(), params)),
         openBranchPage(context.branch, context.terminal, load.abortController.signal, params, params._splat === undefined ? {} : { file: params._splat }),
       ])),
   onLeave: ({ context, abortController }) => {

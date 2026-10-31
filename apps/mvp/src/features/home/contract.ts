@@ -65,6 +65,7 @@ export const HOME_TELEMETRY = {
     "home.resolve",
     "home.file.load",
     "home.answer",
+    "home.open",
     "home.action",
     "home.navigate",
     "smithers_web_home_resolves",

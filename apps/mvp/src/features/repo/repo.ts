@@ -80,7 +80,7 @@ export interface RepoActions {
    * What every repository route calls once it opens: asks ChatApi who the person is on `owner/name`, their role there,
    * into `roles`. Returns at once.
    */
-  readonly role: (owner: string, name: string) => void
+  readonly role: (owner: string, name: string, reuse?: boolean) => void
 }
 
 export class Repo extends Context.Service<
@@ -141,7 +141,7 @@ export class Repo extends Context.Service<
           copy: (what) =>
             promise(Effect.flatMap(copy(what), (copied) => (copied ? Effect.void : Effect.fail(new NotCopied())))),
           navigate: (to) => run(Effect.asVoid(Effect.forkIn(navigate(to), store.scope))),
-          role: (owner, name) => run(Effect.asVoid(Effect.forkIn(role(owner, name), store.scope))),
+          role: (owner, name, reuse) => run(Effect.asVoid(Effect.forkIn(role(owner, name, reuse), store.scope))),
         },
       })
     }),

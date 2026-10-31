@@ -236,9 +236,17 @@ export const warm = (owner: string, name: string) =>
  * scope: who the person is and the curated home at once, the repository's own home once it is ready. Opening another
  * repository interrupts a load still waiting.
  */
-export const open = (owner: string, name: string) =>
+export const open = (owner: string, name: string, reuse = false) =>
   Effect.gen(function* () {
     const store = yield* HomeStore
+    // With `reuse`, a navigation that stays in the repository: a home this tab shows for it, answered, stands as it is.
+    // One that is still answering, failed, or names another repository opens as any other.
+    if (reuse && isRepository(owner, name)) {
+      const shown = Option.getOrThrow(yield* store.current.get(CURRENT))
+      if (shown.repoId === repoId(owner, name) && !shown.answering && shown.audience !== null) {
+        return yield* Effect.logInfo("home.open").pipe(Effect.annotateLogs({ outcome: "kept" }))
+      }
+    }
     if (!isRepository(owner, name)) {
       store.actions.clear()
       yield* FiberHandle.clear(store.loader)

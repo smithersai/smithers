@@ -515,6 +515,49 @@ describe("Smithers' curated home", () => {
     expect(page(tab).page).toMatchObject({ source: "curated", audience: "contributor" })
   })
 
+  test("staying in the repository keeps an answered home and asks ChatApi nothing; a failed or another repository's home opens", async () => {
+    const state = { down: true, asked: 0 }
+    const counting = Layer.effect(
+      HomeClient,
+      Effect.map(HomeClient, (real) =>
+        HomeClient.of({
+          answer: (owner, name) => Effect.andThen(
+            Effect.sync(() => void state.asked++),
+            state.down ? Effect.fail(new HomeRefused({ status: 503 })) : real.answer(owner, name),
+          ),
+        })),
+    )
+    const h = await repoHarness(server, { homes: [curatedFor("octocat/Spoon-Knife")], roles: "octocat/Spoon-Knife" })
+    const tab = await open(
+      h,
+      counting.pipe(Layer.provide(HomeClient.layer({ origin: h.origin, within: "10 seconds" })), Layer.provide(fetchLayer(h))),
+    )
+    // Nothing shown yet: reuse has nothing to keep.
+    tab.home.actions.open("octocat", "Spoon-Knife", true)
+    await waitFor(() => expect(page(tab).current).toMatchObject({ answering: false }))
+    expect(state.asked).toBe(1)
+    // A failed answer is never kept.
+    state.down = false
+    tab.home.actions.open("octocat", "Spoon-Knife", true)
+    await waitFor(() => expect(page(tab).page).toMatchObject({ source: "curated" }))
+    expect(state.asked).toBe(2)
+    // Answered: another page of the repository keeps it, in any case.
+    tab.home.actions.open("octocat", "Spoon-Knife", true)
+    tab.home.actions.open("Octocat", "spoon-knife", true)
+    await waitFor(() => expect(tab.lines("home.open").filter((line) => line.annotations.outcome === "kept")).toHaveLength(2))
+    expect(state.asked).toBe(2)
+    expect(page(tab).page).toMatchObject({ source: "curated", audience: "contributor" })
+    // The home shown is another repository's: this one opens.
+    tab.home.actions.open("acme", "widgets")
+    await waitFor(() => expect(page(tab).current).toMatchObject({ repoId: "github/acme/widgets", answering: false }))
+    const before = state.asked
+    tab.home.actions.open("octocat", "Spoon-Knife", true)
+    await waitFor(() => expect(state.asked).toBe(before + 1))
+    // A name GitHub couldn't have opens as before.
+    tab.home.actions.open("-bad", "x", true)
+    await waitFor(() => expect(page(tab).current).toMatchObject({ repoId: null }))
+  })
+
   test("a curated home without a stack block, or a tab without TODOs or issues, opens no stack and no issues", async () => {
     const withStack: CuratedFile = {
       repository: "octocat/Spoon-Knife",

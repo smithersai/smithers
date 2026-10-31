@@ -265,13 +265,23 @@ export const retryAbout = (owner: string, name: string) =>
  * own repository, kept in this tab's `roles` row for the repository, which the header's links and each page's buttons
  * read, and whether the deployment syncs its issues and pull requests (decision 0079 slice 1b). A refused answer keeps
  * the row this tab had: nothing role-gated shows on a repository ChatApi never answered.
+ * With `reuse`, a navigation that stays in the repository, the tab's answer stands when it has one that wasn't refused
+ * (`outcome: kept`); a refused or missing one is asked again. ChatApi caches the role for 5 minutes anyway (decision
+ * 0079 §5).
  * One log line and span `repo.role` and one count, with the outcome, the role and whether it is the deployment's own.
  */
-export const role = (owner: string, name: string) =>
+export const role = (owner: string, name: string, reuse = false) =>
   Effect.gen(function* () {
     if (!isRepository(owner, name)) return
     const store = yield* RepoStore
     const id = repoId(owner, name)
+    if (reuse) {
+      const held = yield* store.roles.get(id)
+      if (Option.isSome(held) && held.value.failure === undefined) {
+        yield* Metric.update(Metric.withAttributes(roleAnswers, { outcome: "kept", role: held.value.role ?? "none" }), 1)
+        return yield* Effect.logInfo("repo.role").pipe(Effect.annotateLogs({ outcome: "kept", role: held.value.role ?? "none" }))
+      }
+    }
     const startedAt = yield* Clock.currentTimeMillis
     const result = yield* Effect.result((yield* RepoClient).role(owner, name))
     const durationMs = (yield* Clock.currentTimeMillis) - startedAt

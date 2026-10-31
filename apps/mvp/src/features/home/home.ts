@@ -39,7 +39,7 @@ export interface HomeQueries {
 /** What a route does. */
 export interface HomeActions {
   /** A repository route, once warm: reads `owner/name`'s homes, who the person is on it, and its live rows. Returns at once. */
-  readonly open: (owner: string, name: string) => void
+  readonly open: (owner: string, name: string, reuse?: boolean) => void
   /**
    * A repository route first, on a link's hover or focus and before every navigation: reads `owner/name`'s own home
    * and its files into this tab without showing them. Resolves once read, or after a second.
@@ -84,7 +84,7 @@ export class Home extends Context.Service<Home, { readonly queries: HomeQueries;
           stackAccess: Option.isSome(todos) ? todos.value.accessQuery.tanstack : store.noAccess.tanstack,
         },
         actions: {
-          open: (owner, name) => run(open(owner, name)),
+          open: (owner, name, reuse) => run(open(owner, name, reuse)),
           warm: (owner, name) => promise(warm(owner, name)),
           run: (flow, login) => promise(runAction(flow, login)),
           view: (audience) => run(view(audience)),
