@@ -5,7 +5,7 @@ import vibelang from "vibelang-vite"
 import { configDefaults, defineConfig } from "vitest/config"
 
 export default defineConfig({
-  plugins: [vibelang({ project: "tsconfig.test.json" })],
+  plugins: [vibelang({ register: true, project: "tsconfig.test.json" })],
   test: {
     // The fault tier lives under `test/faults` and runs from
     // `vitest.faults.config.ts` instead, serially and without coverage: its

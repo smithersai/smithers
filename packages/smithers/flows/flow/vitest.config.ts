@@ -7,7 +7,7 @@ import { parseCLI } from "vitest/node"
 import { coversWholeSuite } from "./test/CoverageGate.ts"
 
 export default defineConfig({
-  plugins: [vibelang({ project: "tsconfig.test.json" })],
+  plugins: [vibelang({ register: true, project: "tsconfig.test.json" })],
   test: {
     include: [...configDefaults.include, "**/*.{test,spec}.vibe"],
     environment: "node",
