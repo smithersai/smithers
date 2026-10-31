@@ -10,7 +10,7 @@
 
 import { type Brand, Schema } from "effect"
 import { Action } from "./Action.ts"
-import { PatternResource } from "./internal/PatternResource.ts"
+import { PatternResource } from "./internal/PatternResource.vibe"
 
 /**
  * An exact adapter request subject to authorization.
