@@ -15,6 +15,7 @@ import {
   type MergeFailure,
   PULL_STATE_WORDS,
   pullPath,
+  QUEUED_NOTICE,
   pullStateOf,
   REVIEW_REFUSAL_COPY,
 } from "./contract"
@@ -269,6 +270,8 @@ export const fileStatusOf = (status: string) =>
 export interface MergeView {
   readonly mergeStatus: string
   readonly mergeFailure: string
+  /** How the merge landed its pull request once settled (decision 0131): `github`, `queue`, or "" while it hasn't. */
+  readonly mergeFlow?: string
   readonly mergeRefused: string | null
   readonly merging: boolean
 }
@@ -279,10 +282,15 @@ const refusalCopyOf = (failure: string, base: string): string =>
     ? MERGE_FAILURE_COPY[failure as MergeFailure](base)
     : NOT_SENT_COPY[failure as NotSentReason] ?? "Couldn't merge"
 
-/** What the merge box says: merged, merging, or why the merge didn't happen. */
+/**
+ * What the merge box says: merged, merging, queued, or why the merge didn't happen. A request the repository's merge
+ * queue took says Queued while the pull request is open; the queue says on the pull request how it went, and closes it
+ * once landed (decision 0131).
+ */
 export const mergeNoticeOf = (view: MergeView | undefined, pull: Pull): string | undefined => {
   if (pull.merged) return "Merged"
   if (view === undefined) return undefined
+  if (view.mergeStatus === "done" && view.mergeFlow === "queue") return pull.state === "open" ? QUEUED_NOTICE : undefined
   if (view.merging || view.mergeStatus === "pending" || view.mergeStatus === "done") return "Merging"
   if (view.mergeRefused === "forbidden") return "Not allowed"
   if (view.mergeRefused === "sign_in") return "Sign in"

@@ -1659,3 +1659,23 @@ describe("0074_host_sessions", () => {
     expect(await on(through("0074"))).toEqual([])
   }))
 })
+
+describe("0075_merge_flow", () => {
+  test("a write says how a merge landed: github, queue or nothing; never another word", () => emptySchema(async (url) => {
+    const database = Database.layer(Effect.succeed(Redacted.make(url)))
+    const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+    await on(through("0074"))
+    expect((await on(through("0075"))).map(([id, name]) => `${id}_${name}`)).toEqual(["75_merge_flow"])
+    const columns = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ name: string; nullable: string }>`
+      SELECT column_name AS name, is_nullable AS nullable FROM information_schema.columns
+      WHERE table_schema = current_schema() AND table_name = 'github_writes' AND column_name = 'merge_flow'`))
+    expect(columns).toEqual([{ name: "merge_flow", nullable: "YES" }])
+    const checks = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ definition: string }>`
+      SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
+      WHERE conrelid = 'github_writes'::regclass AND pg_get_constraintdef(oid) LIKE '%merge_flow%'`))
+    expect(checks.map((row) => row.definition)).toEqual([
+      "CHECK ((merge_flow = ANY (ARRAY['github'::text, 'queue'::text])))",
+    ])
+    expect(await on(through("0075"))).toEqual([])
+  }))
+})

@@ -88,7 +88,7 @@ describe("github/Write", () => {
     // Action.once looks for the marker before every write, a first attempt's included: a host that lost its journal
     // is still right. One read, as the person's own token.
     expect(github.seen("GET", /\/issues$/).map((call) => call.token)).toEqual(["user"])
-    expect(await writeRow(runtime, writeId)).toEqual({ status: "done", failure: null, attempts: 1, itemNumber: 1 })
+    expect(await writeRow(runtime, writeId)).toEqual({ status: "done", failure: null, attempts: 1, itemNumber: 1, mergeFlow: null })
     expect(await items(runtime)).toEqual([
       {
         number: 1,

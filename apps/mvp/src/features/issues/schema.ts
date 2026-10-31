@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { MERGE_FLOWS } from "../pulls/contract"
 import { COMMITMENTS } from "./lifecycle"
 import {
   NOT_SENT_REASONS,
@@ -77,6 +78,8 @@ export const WriteRow = Schema.Struct({
   settledAt: Schema.NullOr(Schema.String),
   /** The branch a Publish or an Update branch acts on (docs/features/branch-publish.md); null for every other write. */
   branchId: Schema.NullOr(Schema.String),
+  /** How a merge landed its pull request (decision 0131): `github` or `queue`; null for every other write and until it settles. */
+  mergeFlow: Schema.NullOr(Schema.Literals(MERGE_FLOWS)),
 })
 export type WriteRow = typeof WriteRow.Type
 

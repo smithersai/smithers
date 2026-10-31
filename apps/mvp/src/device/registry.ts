@@ -194,7 +194,8 @@ const synced = [
   Migrations.synced({ id: "issue-items", version: 3, schema: Item, family: true }),
   Migrations.synced({ id: "issue-comments", version: 1, schema: Comment, family: true }),
   Migrations.synced({ id: "issue-sync", version: 1, schema: SyncRow, family: true }),
-  Migrations.synced({ id: "issue-writes", version: 2, schema: WriteRow }),
+  // Version 3: a merge says how it landed its pull request (`mergeFlow`, decision 0131).
+  Migrations.synced({ id: "issue-writes", version: 3, schema: WriteRow }),
   Migrations.synced({ id: "issue-triage-settings", version: 1, schema: TriageSettings, family: true }),
   Migrations.synced({ id: "flows", version: 2, schema: FlowRow }),
   Migrations.synced({ id: "flow-drafts", version: 1, schema: FlowDraft }),

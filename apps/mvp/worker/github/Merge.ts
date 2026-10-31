@@ -1,11 +1,18 @@
 import { digestSync } from "@smthrs/crypto"
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
-import { GitHub } from "@smthrs/integrations"
+import { Core, GitHub } from "@smthrs/integrations"
 import { Node } from "@smthrs/plan"
 import { Cause, Clock, Effect, Layer, Metric, Option, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { WRITE_FAILURES, type WriteFailure } from "../../src/features/issues/contract.ts"
+import {
+  DEFAULT_MERGE_FLOW,
+  MERGE_FLOW_FILE,
+  MERGE_FLOWS,
+  type MergeFlow,
+  queueRequestOf,
+} from "../../src/features/pulls/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import type { Services } from "./Apply.ts"
 import { classify, withToken } from "./Calls.ts"
@@ -28,6 +35,13 @@ import * as Store from "./Store.ts"
 // GitHub's merge takes no base precondition, so a push to the base between the step's read and GitHub's merge, one
 // round trip, still lands under the merge; branch protection ("require branches to be up to date") is the only fence
 // for it. The step reads a squash merge back against the base it checked and records `base="moved"` when that happened.
+//
+// Which merge runs is the repository's to say (ruling BR-7, decision 0131): `.smithers/merge.json` at the base the
+// person saw names its merge flow. `github` (no file) is the merge above. `queue` asks the repository's own merge queue
+// instead: after the same recheck of the head, the step posts one comment as the person, keyed like the merge, whose
+// hidden marker names the head they pressed Merge on. The queue's poller enqueues exactly that head, lands it through
+// its gate, says on the pull request how it went, and closes it once landed. The base isn't checked for a queue: the
+// queue lands the head on whatever main is then, through its gate.
 
 /** GitHub or Postgres couldn't answer, or the answer was lost: retried, after `retryAfterMillis`. */
 export class MergeUnavailable extends Schema.TaggedError<MergeUnavailable>()("@smthrs/mvp/github/MergeUnavailable", {
@@ -49,9 +63,9 @@ export type Merged = typeof Merged.Type
 /**
  * `send`'s implementation version. v2 (2026-10-21) merges through `Action.once` keyed by the write and rechecks the
  * base branch's own head; a run parked on a v1 plan stops with `plan_changed` rather than resume under different
- * recovery.
+ * recovery. v3 (2026-10-31, decision 0131) reads the repository's merge flow first and may ask its queue instead.
  */
-export const SEND_VERSION = "pr-merge/send/v2"
+export const SEND_VERSION = "pr-merge/send/v3"
 
 /**
  * The step: recheck and merge once. Its merge goes through `Action.once`, so a repeat is safe: the durable engine
@@ -88,9 +102,10 @@ export const Merge = Flow.make("pr/Merge", {
 })
 
 /**
- * Merges, by `outcome`: `done`, or the failure; a merge also by `base`, the base GitHub merged it onto: `seen` (the one
- * the step checked), `moved` (a push landed between the check and the merge), or `unchecked` (a merge commit or a
- * rebase, or a read-back that failed).
+ * Merges, by `outcome`: `done`, or the failure; by `flow` once the repository's merge flow is known (`github` or
+ * `queue`, decision 0131); a GitHub merge also by `base`, the base GitHub merged it onto: `seen` (the one the step
+ * checked), `moved` (a push landed between the check and the merge), or `unchecked` (a merge commit or a rebase, or a
+ * read-back that failed).
  */
 export const merges = Metric.counter("smithers_pr_merges", {
   description: "Pull request merges a person asked for, by outcome and, for a merge, the base it landed on",
@@ -105,6 +120,17 @@ export type Landed = "seen" | "moved" | "unchecked"
  * started, so every attempt and every run of this write derives the same one and no other write does.
  */
 export const mergeKeyOf = (writeId: string): string => digestSync(`smithers/pr-merge/v1\n${writeId}`)
+
+/**
+ * `.smithers/merge.json`'s one field (decision 0131). Anything else in the file is refused, so a typo never reads as
+ * the default.
+ */
+const MergeFile = Schema.Struct({ flow: Schema.Literals(MERGE_FLOWS) })
+const decodeMergeFile = Schema.decodeUnknownOption(Schema.fromJsonString(MergeFile), { onExcessProperty: "error" })
+
+/** A repository's merge flow from its `.smithers/merge.json` text, or none when the file says nothing we know. */
+export const mergeFlowOf = (text: string): Option.Option<MergeFlow> =>
+  Option.map(decodeMergeFile(text), (file) => file.flow)
 
 /** The recheck refused the merge before anything was sent: why, and the base branch's head when it moved. */
 class Refused extends Schema.TaggedError<Refused>()("@smthrs/mvp/github/MergeRefused", {
@@ -134,11 +160,15 @@ export const steps = <E, R>(services: Services<E, R>) => {
     mergeSha: string | null,
     landed?: Landed,
     project?: Effect.Effect<unknown, never, SqlClient.SqlClient>,
+    flow?: MergeFlow,
   ) =>
     Effect.gen(function* () {
       const now = yield* Store.settleWrite(write.id, settlement, project)
       const outcome = settlement.status === "done" ? "done" : settlement.failure
-      const base: Record<string, string> = landed === undefined ? {} : { base: landed }
+      const base: Record<string, string> = {
+        ...(landed === undefined ? {} : { base: landed }),
+        ...(flow === undefined ? {} : { flow }),
+      }
       if (now) {
         yield* Metric.update(Metric.withAttributes(merges, { outcome, ...base }), 1)
         yield* Metric.update(Metric.withAttributes(Metrics.writeMs, { op: write.op }), (yield* Clock.currentTimeMillis) - write.createdAt)
@@ -182,6 +212,97 @@ export const steps = <E, R>(services: Services<E, R>) => {
       )
     })
 
+  /**
+   * The repository's merge flow (decision 0131): `.smithers/merge.json` at the base the person saw, read with the App's
+   * contents token. No file is GitHub's merge. A file that isn't `{ "flow": "github" | "queue" }` is refused `invalid`,
+   * never read as the default, so a repository that asked for its queue never gets a direct merge by mistake.
+   */
+  const flowOf = (repository: ReturnType<typeof repositoryOf>, ref: string) =>
+    Effect.gen(function* () {
+      const token = yield* services.tokens.forInstallation(repository, "contents").pipe(
+        Effect.mapError((error) =>
+          error.reason === "app_not_installed" || error.reason === "not_allowed"
+            ? new Refused({ failure: error.reason })
+            : new MergeUnavailable(error.retryAfterMillis === undefined ? {} : { retryAfterMillis: error.retryAfterMillis })
+        ),
+      )
+      const file = yield* GitHub.Contents.getText(repository.owner, repository.name, MERGE_FLOW_FILE, { ref }).pipe(
+        withToken(token, services.apiBaseUrl),
+        Effect.mapError((error) => {
+          // A directory, a file over 1 MB or bytes that aren't UTF-8: no merge flow we can read.
+          if (Core.IntegrationError.isIntegrationError(error) && error.reason === "decode-failed") {
+            return new Refused({ failure: "invalid" })
+          }
+          const classified = classify(error)
+          return classified.kind === "refused"
+            ? new Refused({ failure: refusalOf(classified.status) })
+            : new MergeUnavailable(
+              classified.kind === "retry" && classified.retryAfterMillis !== undefined
+                ? { retryAfterMillis: classified.retryAfterMillis }
+                : {},
+            )
+        }),
+      )
+      if (Option.isNone(file)) return DEFAULT_MERGE_FLOW
+      const flow = mergeFlowOf(file.value.text)
+      return Option.isSome(flow) ? flow.value : yield* new Refused({ failure: "invalid" })
+    })
+
+  /**
+   * A queue merge: the head rechecked as for a merge, then one comment as the person asking the repository's queue to
+   * land it, found again by the write's key in its hidden marker. The base isn't checked: the queue lands the head on
+   * whatever main is then, through its own gate.
+   */
+  const queued = (repository: ReturnType<typeof repositoryOf>, number: number, headSha: string, key: string) => {
+    const request = GitHub.Once.comment(repository.owner, repository.name, number, queueRequestOf(headSha))
+    return Action.once(
+      "queue",
+      Action.keyed({
+        find: request.find,
+        perform: (key) =>
+          Effect.gen(function* () {
+            const pull = yield* GitHub.Pulls.getPull(repository.owner, repository.name, number)
+            if (pull.merged) return yield* new Refused({ failure: "merged" })
+            if (pull.state === "closed") return yield* new Refused({ failure: "closed" })
+            if (pull.draft) return yield* new Refused({ failure: "draft" })
+            if (pull.head.sha !== headSha) return yield* new Refused({ failure: "head_moved" })
+            return yield* request.perform(key)
+          }),
+      }),
+      { key },
+    )
+  }
+
+  /** A merge or a queue request that failed: refused for good and settled, or unavailable and tried again. */
+  const failedSend = (write: Store.Write, failure: unknown, flow: MergeFlow) =>
+    Effect.gen(function* () {
+      if (failure instanceof Refused) {
+        return yield* settled(write, { status: "refused", failure: failure.failure }, null, undefined, undefined, flow)
+      }
+      const classified = classify(failure)
+      if (classified.kind === "refused") {
+        return yield* settled(
+          write,
+          { status: "refused", failure: refusalOf(classified.status) },
+          null,
+          undefined,
+          undefined,
+          flow,
+        )
+      }
+      if (classified.kind === "unknown") {
+        yield* Metric.update(Metric.withAttributes(Metrics.writeUnknown, { op: write.op }), 1)
+      }
+      yield* Effect.logWarning("github.merge").pipe(
+        Effect.annotateLogs({ writeId: write.id, flow, outcome: classified.kind, errorCode: codeOf(failure) }),
+      )
+      return yield* new MergeUnavailable(
+        classified.kind === "retry" && classified.retryAfterMillis !== undefined
+          ? { retryAfterMillis: classified.retryAfterMillis }
+          : {},
+      )
+    })
+
   const send = ({ writeId }: typeof Send.payloadSchema.Type) =>
     Effect.gen(function* () {
       const found = yield* Store.writeOf(writeId)
@@ -203,6 +324,29 @@ export const steps = <E, R>(services: Services<E, R>) => {
           )
         }
         return yield* settled(write, { status: "refused", failure: "sign_in_required" }, null)
+      }
+      const flow = yield* flowOf(repository, payload.baseSha).pipe(Effect.result)
+      if (flow._tag === "Failure") {
+        if (flow.failure instanceof Refused) {
+          return yield* settled(write, { status: "refused", failure: flow.failure.failure }, null)
+        }
+        return yield* flow.failure
+      }
+      if (flow.success === "queue") {
+        const asked = yield* Effect.gen(function* () {
+          // Counted for the write's record; `Action.once` decides what was asked, by the key alone.
+          yield* Store.beginAttempt(write.id)
+          return yield* queued(repository, payload.number, payload.headSha, mergeKeyOf(write.id))
+        }).pipe(withToken(token.success, services.apiBaseUrl), Effect.result)
+        if (asked._tag === "Failure") return yield* failedSend(write, asked.failure, "queue")
+        return yield* settled(
+          write,
+          { status: "done", itemNumber: payload.number, githubId: asked.success.id, mergeFlow: "queue" },
+          null,
+          undefined,
+          undefined,
+          "queue",
+        )
       }
       const keyed = (commitTitle?: string) =>
         GitHub.Once.merge(repository.owner, repository.name, payload.number, {
@@ -248,36 +392,20 @@ export const steps = <E, R>(services: Services<E, R>) => {
       }).pipe(withToken(token.success, services.apiBaseUrl), Effect.result)
       if (outcome._tag === "Failure") {
         const failure = outcome.failure
-        if (failure instanceof Refused) {
-          // The base moved: every open pull request into it shows the head read, so the person decides again on it.
-          if (failure.baseHead !== undefined) {
-            yield* moveBase(repository.id, payload.number, payload.baseSha, failure.baseHead)
-          }
-          return yield* settled(write, { status: "refused", failure: failure.failure }, null)
+        // The base moved: every open pull request into it shows the head read, so the person decides again on it.
+        if (failure instanceof Refused && failure.baseHead !== undefined) {
+          yield* moveBase(repository.id, payload.number, payload.baseSha, failure.baseHead)
         }
-        const classified = classify(failure)
-        if (classified.kind === "refused") {
-          return yield* settled(write, { status: "refused", failure: refusalOf(classified.status) }, null)
-        }
-        if (classified.kind === "unknown") {
-          yield* Metric.update(Metric.withAttributes(Metrics.writeUnknown, { op: write.op }), 1)
-        }
-        yield* Effect.logWarning("github.merge").pipe(
-          Effect.annotateLogs({ writeId, outcome: classified.kind, errorCode: codeOf(failure) }),
-        )
-        return yield* new MergeUnavailable(
-          classified.kind === "retry" && classified.retryAfterMillis !== undefined
-            ? { retryAfterMillis: classified.retryAfterMillis }
-            : {},
-        )
+        return yield* failedSend(write, failure, "github")
       }
       const merged = outcome.success
       return yield* settled(
         write,
-        { status: "done", itemNumber: payload.number, githubId: null },
+        { status: "done", itemNumber: payload.number, githubId: null, mergeFlow: "github" },
         merged.sha,
         merged.landed,
         yield* projected(write.id, repository, payload.number, payload.baseSha, merged.sha),
+        "github",
       )
     }).pipe(
       Effect.provideService(HttpClient.HttpClient, services.http),

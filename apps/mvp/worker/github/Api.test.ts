@@ -902,6 +902,7 @@ describe("the shapes", () => {
         created_at: expect.any(String),
         settled_at: null,
         branch_id: null,
+        merge_flow: null,
       },
     ])
     const nobody = await githubHarness(runtime, { actor: null })

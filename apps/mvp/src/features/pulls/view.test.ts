@@ -177,6 +177,18 @@ describe("merge", () => {
     expect(mergeNoticeOf({ ...view, mergeStatus: "failed", mergeFailure: "unavailable" }, pull())).toBe("GitHub unavailable")
     expect(mergeNoticeOf({ ...view, mergeStatus: "failed", mergeFailure: "odd" }, pull())).toBe("Couldn't merge")
   })
+
+  test("a request the repository's merge queue took says Queued while open, and Merge shows again (decision 0131)", () => {
+    const queued: MergeView = { mergeStatus: "done", mergeFailure: "", mergeFlow: "queue", mergeRefused: null, merging: false }
+    expect(mergeNoticeOf(queued, pull())).toBe("Queued")
+    // GitHub's own merge, settled, still says Merging until the pull request reads merged.
+    expect(mergeNoticeOf({ ...queued, mergeFlow: "github" }, pull())).toBe("Merging")
+    // The queue closes the pull request once it lands it; its comment says so, the box says nothing more.
+    expect(mergeNoticeOf(queued, pull({ state: "closed" }))).toBeUndefined()
+    expect(mergeNoticeOf(queued, pull({ merged: true }))).toBe("Merged")
+    // After a rejection the person presses again; a second request for the same head the queue answers itself.
+    expect(mergeBoxOf(signedIn, maintainer, pull(), queued)).toMatchObject({ notice: "Queued", merge: true })
+  })
 })
 
 describe("the merge box and the deploy warning (ruling GH-9)", () => {

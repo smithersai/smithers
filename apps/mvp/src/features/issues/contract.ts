@@ -72,7 +72,18 @@ export const COMMENT_COLUMNS = [
 ] as const
 
 /** The `github_writes` columns a device syncs: never the payload, the session or the actor, which the shape filters on. */
-export const WRITE_COLUMNS = ["id", "repo_id", "op", "status", "failure", "item_number", "created_at", "settled_at", "branch_id"] as const
+export const WRITE_COLUMNS = [
+  "id",
+  "repo_id",
+  "op",
+  "status",
+  "failure",
+  "item_number",
+  "created_at",
+  "settled_at",
+  "branch_id",
+  "merge_flow",
+] as const
 
 /** The `github_sync` columns a device syncs: never the cursor. */
 export const SYNC_COLUMNS = ["repo_id", "stream", "synced_at", "complete", "failure"] as const
