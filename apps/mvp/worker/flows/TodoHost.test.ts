@@ -20,6 +20,7 @@ import * as Todo from "./Todo.ts"
 import * as TodoBaseClosed from "./TodoBaseClosed.ts"
 import * as TodoDrop from "./TodoDrop.ts"
 import * as TodoAgent from "./TodoAgent.ts"
+import * as TodoSession from "./TodoSession.ts"
 
 const runtime = testFile("todo_host")
 beforeEach(async () => {
@@ -46,7 +47,15 @@ test("withTodos registers the todo run and a head's checks, and the object runs 
     machines,
     TodoAgent.registration(seat, services.database, Agent.layerSandbox),
   )
-  expect(flows.flows.slice(-5)).toEqual([Todo.Todo, TodoDrop.Drop, TodoBaseClosed.Invalidate, Checks.ChecksRun, Checks.ReviewRun])
+  // An external agent's step runs as its own child execution, with its two continuations (decision 0133).
+  expect(flows.flows.slice(-8)).toEqual([
+    Todo.Todo,
+    ...TodoSession.Session.flows,
+    TodoDrop.Drop,
+    TodoBaseClosed.Invalidate,
+    Checks.ChecksRun,
+    Checks.ReviewRun,
+  ])
   expect(flows.flows.some((flow) => flow._tag === "issue/Prototype")).toBe(false)
   const values = new Map<string, unknown>()
   const storage: ExecutionHost.Storage = {

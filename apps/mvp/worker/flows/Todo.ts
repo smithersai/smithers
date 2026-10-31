@@ -1,6 +1,6 @@
-import { AgentAction } from "@smthrs/agent"
+import { AgentAction, AgentRunner, ExternalAgent } from "@smthrs/agent"
 import { digestSync, Uuid, WebCrypto } from "@smthrs/crypto"
-import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
+import { Action, ExternalJob, Flow, Interpreter, RetryPolicy, Sleep } from "@smthrs/flow"
 import { GitHub } from "@smthrs/integrations"
 import { Node, type Planned } from "@smthrs/plan"
 import { Cause, Config, Effect, Layer, Metric, Option, Schema } from "effect"
@@ -8,6 +8,7 @@ import { HttpClient } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { agentAttribution } from "../../src/features/issues/contract.ts"
 import { checkExecutionId, todoExecutionId } from "../../src/features/pulls/contract.ts"
+import { base64Bytes } from "../../src/features/runners/contract.ts"
 import { TODO_FAILURES } from "../../src/features/todos/contract.ts"
 import * as Change from "../branch/Change.ts"
 import type { Machines } from "../branch/Machines.ts"
@@ -20,6 +21,7 @@ import type { GitHubTokens } from "../github/Tokens.ts"
 import * as Stack from "../stack/Stack.ts"
 import { ChecksRun } from "./Checks.ts"
 import { Implement } from "./TodoAgent.ts"
+import * as TodoSession from "./TodoSession.ts"
 import { awaitPullClosed, readPullClosed } from "./TodoWait.ts"
 import { machineOf } from "./TodoMachine.ts"
 
@@ -29,9 +31,14 @@ import { machineOf } from "./TodoMachine.ts"
 //   todo/Begin      the TODO and its prompt; its base, the head of the TODO in review before it (stacked), else of the
 //                   default branch; its branch's name `smithers/t<n>-<slug>-<key>` reserved, nothing written to GitHub
 //                   ─▶ writer: branch and its base, step implement
-//   todo/Implement  the agent writes the change on the attempt's machine, checked out at the base, with the sandbox tools
-//                   (worker/flows/TodoAgent.ts, worker/flows/TodoMachine.ts)
+//   todo/Agent      which agent codes the attempt: the repository's coding agent, read once (worker/flows/TodoSession.ts)
+//   todo/Implement  Smithers' own agent writes the change on the attempt's machine, checked out at the base, with the
+//                   sandbox tools (worker/flows/TodoAgent.ts, worker/flows/TodoMachine.ts)
 //   todo/Collect    the files it changed, read whole from the machine; none ─▶ failed empty_change
+//   or, with an external agent (decision 0133):
+//   agent/Session   a runner whose labels and profile fit the agent checks the repository out at the base and runs the
+//                   agent there; it settles the files the agent changed (worker/flows/TodoSession.ts)
+//   todo/Received   those files, checked as Collect checks a machine's; none ─▶ failed empty_change
 //   todo/Publish    the branch made on GitHub at the base, as the App, with the reserved name; one commit,
 //                   `createCommitOnBranch` fenced by the base; the pull request into its base (a draft while that is
 //                   another TODO's branch), its body ending "Fixes #n" for a TODO from issue n ─▶ writer: in review,
@@ -164,6 +171,13 @@ export const MAX_FILES = 50
 /** The most bytes one TODO's commit adds. */
 export const MAX_CHANGE_BYTES = 1024 * 1024
 
+/** Whether a path a runner settled names a file inside the checkout: relative, no `..`, outside `.git` and `.jj`. */
+export const isCheckoutPath = (path: string): boolean => {
+  const parts = path.split("/")
+  return path.length > 0 && !path.startsWith("/") && !path.includes("\\") &&
+    parts.every((part) => part !== "" && part !== "." && part !== "..") && parts[0] !== ".git" && parts[0] !== ".jj"
+}
+
 /**
  * A step whose GitHub writes all go through `Action.once` repeats safely, so it declares the attempt as its key: a
  * durable engine then re-runs an attempt that died mid-write instead of stopping it, and `once` finds the write.
@@ -200,6 +214,13 @@ export const Collect = Action.make("todo/Collect", {
   retryPolicy: STEP_RETRY,
 })
 
+/** `todo/Received`: the change an external agent's runner settled, checked as `todo/Collect` checks a machine's. */
+export const Received = Action.make("todo/Received", {
+  payload: { request: TodoRequest, result: ExternalAgent.Result },
+  success: Collected,
+  error: StepError,
+})
+
 export const Publish = Action.make("todo/Publish", {
   payload: { request: TodoRequest, begun: Begun, collected: Collected },
   success: Published,
@@ -227,7 +248,18 @@ export const Settle = Action.make("todo/Settle", {
 })
 
 /** What `todo/Fail` reads: a step's own failure, or the agent's. */
-const Failure = Schema.Union([TodoFailed, TodoUnavailable, StillOpen, AgentAction.AgentFailure])
+const Failure = Schema.Union([
+  TodoFailed,
+  TodoUnavailable,
+  StillOpen,
+  AgentAction.AgentFailure,
+  TodoSession.CodingUnavailable,
+  ExternalAgent.AgentFailed,
+  AgentRunner.AgentJobsUnavailable,
+  ExternalJob.ExternalJobLost,
+  ExternalJob.ExternalJobTimedOut,
+  Sleep.SleepRequestInvalid,
+])
 type Failure = typeof Failure.Type
 
 export const Fail = Action.make("todo/Fail", {
@@ -261,8 +293,11 @@ export const Todo = Flow.make("todo", {
   body: Node.capture(
     {
       begin: Begin.name,
+      agent: TodoSession.Agent.name,
       implement: Implement.name,
+      session: TodoSession.Session._tag,
       collect: Collect.name,
+      received: Received.name,
       publish: Publish.name,
       await: Await.name,
       settle: Settle.name,
@@ -271,17 +306,38 @@ export const Todo = Flow.make("todo", {
     (request) =>
       Begin.call({ request }).pipe(
         Node.bindPlanned(Node.capture({ implement: Implement.name }, (begun: Planned.Planned<Begun>) =>
-          Implement.call({
-            attemptId: request.attemptId,
-            todoId: request.todoId,
-            repoId: request.repoId,
-            number: request.number,
-            title: begun.title,
-            prompt: begun.prompt,
-            acceptance: begun.acceptance,
-            branch: begun.branch,
-          }).pipe(
-            Node.andThen(Collect.call({ request, begun })),
+          TodoSession.Agent.call({ attemptId: request.attemptId, repoId: request.repoId }).pipe(
+            Node.branch({
+              if: Node.capture({ external: "external" }, (coding: TodoSession.Coding) => coding.agent !== null),
+              then: Node.capture({ session: TodoSession.Session._tag }, (coding: Planned.Planned<TodoSession.Coding>) =>
+                TodoSession.Session.call({
+                  attemptId: request.attemptId,
+                  todoId: request.todoId,
+                  repoId: request.repoId,
+                  number: request.number,
+                  title: begun.title,
+                  prompt: begun.prompt,
+                  acceptance: begun.acceptance,
+                  baseSha: begun.baseSha,
+                  // The branch is taken only when the agent is set.
+                  agent: coding.agent as unknown as Planned.Planned<AgentRunner.Agent>,
+                  limits: { files: MAX_FILES, bytes: MAX_CHANGE_BYTES },
+                }).pipe(
+                  Node.bindPlanned(Node.capture({ received: Received.name }, (result: Planned.Planned<ExternalAgent.Result>) =>
+                    Received.call({ request, result }))),
+                )),
+              else: Node.capture({ implement: Implement.name, collect: Collect.name }, () =>
+                Implement.call({
+                  attemptId: request.attemptId,
+                  todoId: request.todoId,
+                  repoId: request.repoId,
+                  number: request.number,
+                  title: begun.title,
+                  prompt: begun.prompt,
+                  acceptance: begun.acceptance,
+                  branch: begun.branch,
+                }).pipe(Node.andThen(Collect.call({ request, begun })))),
+            }),
             Node.bindPlanned(Node.capture({ publish: Publish.name }, (collected: Planned.Planned<Collected>) =>
               Publish.call({ request, begun, collected }))),
             Node.bindPlanned(Node.capture({ await: Await.name }, (published: Planned.Planned<Published>) =>
@@ -575,6 +631,27 @@ export const steps = <E, R>(services: Services<E, R>) => {
       )
     }))
 
+  /**
+   * The change an external agent's runner settled, checked as a machine's is: something changed, within the commit's
+   * limits, at paths relative to the checkout outside its version control.
+   */
+  const received = ({ request, result }: typeof Received.payloadSchema.Type) =>
+    Effect.gen(function* () {
+      const { additions, deletions } = result.changes
+      const paths = [...additions.map((file) => file.path), ...deletions]
+      const bytes = additions.reduce((sum, file) => sum + base64Bytes(file.contents), 0)
+      const outcome = paths.length === 0
+        ? "empty_change" as const
+        : paths.length > MAX_FILES || bytes > MAX_CHANGE_BYTES || !paths.every(isCheckoutPath)
+        ? "implement" as const
+        : undefined
+      yield* Effect.logInfo("todo.received").pipe(
+        Effect.annotateLogs({ attemptId: request.attemptId, files: paths.length, generation: result.generation, outcome: outcome ?? "ok" }),
+      )
+      if (outcome !== undefined) return yield* new TodoFailed({ failure: outcome })
+      return { additions, deletions } satisfies Collected
+    }).pipe(Effect.withSpan("todo.received", { attributes: { "smithers.todo.attempt": request.attemptId } }))
+
   const publish = ({ request, begun, collected }: typeof Publish.payloadSchema.Type) =>
     step("publish", request, Effect.gen(function* () {
       yield* assertBase(request, baseOf(begun))
@@ -832,7 +909,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
       })))
   }
 
-  return { begin, collect, publish, await: await_, awaitMerge, settle, fail }
+  return { begin, collect, received, publish, await: await_, awaitMerge, settle, fail }
 }
 
 /**
@@ -849,6 +926,9 @@ export const registration = <E, R, IE, IR>(
     Layer.mergeAll(
       Begin.toLayer(implementation.begin, { implementationVersion: BEGIN_VERSION }),
       Collect.toLayer(implementation.collect),
+      Received.toLayer(implementation.received),
+      // An external agent's step waits on the agent job store in the app's Postgres (decision 0133).
+      TodoSession.registration(services.database),
       Publish.toLayer(implementation.publish, { implementationVersion: PUBLISH_VERSION }),
       Await.toLayer(implementation.awaitMerge),
       Settle.toLayer(implementation.settle),

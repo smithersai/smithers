@@ -3,7 +3,11 @@
 // in (`act`), and counts it, through that route's real handler on this file's schema of the compose Postgres. The cases
 // are keyed by the list itself, so a person-only flow added to the registry fails the compiler here until its route is
 // held to it.
-import { Effect, Option, Stream } from "effect"
+import { Effect, Metric, Option, Stream } from "effect"
+import { HttpEffect } from "effect/http"
+import * as TestDatabase from "../db/TestDatabase.ts"
+import * as Flows from "./Flows.ts"
+import * as RunnerAdmin from "./runners/Admin.ts"
 import { describe, expect, test } from "vitest"
 import { secretRoute } from "../src/features/secrets/contract.ts"
 import { stackRoute } from "../src/features/todos/contract.ts"
@@ -21,7 +25,7 @@ import { stackHarness } from "./stack/test/stack.ts"
 import { feedAnswersRoute } from "../src/features/feeds/contract.ts"
 import { feedsHarness, REPO as FEED_REPO } from "./feeds/test/harness.ts"
 import { branchHarness } from "./test/branch.ts"
-import { harness, testFile } from "./test/harness.ts"
+import { branchRoles, harness, signedIn, testFile } from "./test/harness.ts"
 
 const runtime = testFile("person_only")
 
@@ -143,6 +147,26 @@ const flows: Routed = {
   "feed/answer": feedAnswer,
 }
 
+/** An Admin's write to a repository's runners or agents, with a starter that is never reached. */
+const runnerAdmin = (path: string, body: unknown): Case => async (actor, act) => {
+  const database = await runtime.runPromise(Effect.map(Effect.service(TestDatabase.Scratch), (scratch) => scratch.database))
+  const registry: Metric.MetricRegistry = new Map()
+  const api = await Effect.runPromise(RunnerAdmin.make(database))
+  const handler = HttpEffect.toWebHandler(api.fetch.pipe(
+    Effect.provideService(Flows.FlowStarter, Flows.FlowStarter.of({ start: () => Effect.die(new Error("never started")) })),
+    Effect.provide(signedIn(actor)),
+    Effect.provide(branchRoles(database)),
+    Effect.provideService(Metric.MetricRegistry, registry),
+  ))
+  const { status } = await handler(new Request(`http://chat.test${path}`, { ...json(body), method: "PUT" }))
+  const counted = Effect.runSync(
+    Metric.value(Metric.withAttributes(personOnlyRefusals, { act, by: actor.act!.kind })).pipe(
+      Effect.provideService(Metric.MetricRegistry, registry),
+    ),
+  ).count
+  return { status, counted }
+}
+
 /** How each protected act's route is reached. */
 const protectedActs: { readonly [A in keyof typeof PROTECTED_ACTS]: Case } = {
   secret: async (actor, act) => {
@@ -165,6 +189,12 @@ const protectedActs: { readonly [A in keyof typeof PROTECTED_ACTS]: Case } = {
     return { status, counted: h.count(personOnlyRefusals, { act, by: actor.act!.kind }) }
   },
   "stack/configure": stackChange({ op: "configure", lanes: 2, maxOpen: 50, base: "independent" }),
+  runner: runnerAdmin(`/api/repos/${REPO.owner}/${REPO.name}/runners/nyc-01`, {
+    tokenSha256: "a".repeat(64),
+    labels: ["linux"],
+    capacity: 1,
+  }),
+  agent: runnerAdmin(`/api/repos/${REPO.owner}/${REPO.name}/agents/coder`, { labels: [], profile: "coder" }),
 }
 
 describe("person-only acts refuse anyone acting for the person", () => {

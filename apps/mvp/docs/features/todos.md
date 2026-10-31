@@ -137,6 +137,10 @@ todo/Implement  the agent (AgentAction, the `coding` role) writes the change on 
                 base, with the sandbox tools (worker/flows/TodoAgent.ts), and checks only the packages it changed, with
                 their own scripts
 todo/Collect    the files it changed, read whole from the machine (50 files, 1 MiB at most); none ─▶ failed empty_change
+                or, when the repository's coding agent is an external agent (todo/Agent, read once; agent-runners.md):
+agent/Session   a runner checks the repository out at the base and runs the agent with its own tools there; it settles
+                the files the agent changed (worker/flows/TodoSession.ts)
+todo/Received   those files, checked as Collect checks a machine's; none ─▶ failed empty_change
 todo/Publish    the branch made on GitHub at the base, as the App, under the reserved name; one commit,
                 createCommitOnBranch fenced by the base ("T<n>: <title>", "Smithers for @maya"); the pull request into
                 its base (a draft while that is another TODO's branch), its body the prompt, "Fixes #n" for a TODO from

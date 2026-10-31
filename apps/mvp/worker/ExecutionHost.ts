@@ -38,6 +38,8 @@ import * as Todo from "./flows/Todo.ts"
 import * as TodoBaseClosed from "./flows/TodoBaseClosed.ts"
 import * as TodoDrop from "./flows/TodoDrop.ts"
 import type { Implement } from "./flows/TodoAgent.ts"
+import * as TodoSession from "./flows/TodoSession.ts"
+import * as RunnerAdmin from "./runners/AdminFlows.ts"
 import * as GitHubHost from "./github/Host.ts"
 import type * as Triage from "./github/Triage.ts"
 
@@ -144,7 +146,17 @@ export const withTodos = <ROut, E, R, SE, SR, DE, DR, ME, MR, IE, IR>(
   commandSeconds?: number,
   stepWaitSeconds?: number,
 ) => ({
-  flows: [...flows.flows, Todo.Todo, TodoDrop.Drop, TodoBaseClosed.Invalidate, Checks.ChecksRun, Checks.ReviewRun],
+  // An external agent's step runs as its own child execution with two continuations, each on its own object, which
+  // resolves each by its tag (decision 0133).
+  flows: [
+    ...flows.flows,
+    Todo.Todo,
+    ...TodoSession.Session.flows,
+    TodoDrop.Drop,
+    TodoBaseClosed.Invalidate,
+    Checks.ChecksRun,
+    Checks.ReviewRun,
+  ],
   registration: Layer.mergeAll(
     flows.registration,
     Layer.unwrap(Effect.map(services, (built) =>
@@ -266,6 +278,18 @@ export const withSecrets = <ROut, E, R, DE, DR>(
 ) => ({
   flows: [...flows.flows, SecretFlows.Put, SecretFlows.Delete],
   registration: Layer.merge(flows.registration, SecretFlows.registration(database)),
+})
+
+/**
+ * `flows`, plus `admin/AddRunner`, `admin/RemoveRunner`, `admin/SetAgent` and `admin/RemoveAgent` over the app's tables:
+ * an Admin's runner machines and named external agents (docs/features/agent-runners.md#admin).
+ */
+export const withRunners = <ROut, E, R, DE, DR>(
+  flows: Flows<ROut, E, R>,
+  database: Layer.Layer<SqlClient.SqlClient, DE, DR>,
+) => ({
+  flows: [...flows.flows, ...RunnerAdmin.flows],
+  registration: Layer.merge(flows.registration, RunnerAdmin.registration(database)),
 })
 
 /**

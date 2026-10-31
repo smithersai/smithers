@@ -50,6 +50,8 @@ import { DomainProvider } from "./domains/Provider.ts"
 import * as PersonalApi from "./personal/Api.ts"
 import { PersonalModels } from "./personal/Models.ts"
 import * as SecretsApi from "./secrets/Api.ts"
+import * as RunnerAdmin from "./runners/Admin.ts"
+import * as RunnersApi from "./runners/Api.ts"
 import { SecretKeys } from "./secrets/Keys.ts"
 import * as SignIn from "./SignIn.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
@@ -144,6 +146,10 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     // machines, `SandboxObject`s ChatApi hosts (worker/BranchSandboxes.ts).
     const branchApi = yield* BranchApi.make(database).pipe(Effect.provide(FetchHttpClient.layer))
     const secretsApi = yield* SecretsApi.make(yield* GitHubConfig.repository)
+    // External agents on runner machines (docs/features/agent-runners.md): the runners' own routes, which their token
+    // authenticates, and an Admin's writes of a repository's runners and agents.
+    const runnersApi = RunnersApi.make(database)
+    const runnerAdmin = yield* RunnerAdmin.make(database)
     // Custom domains (docs/features/domains.md): a Maintainer's, through the deployment's provider; off without one.
     const domainsApi = yield* DomainsApi.make(yield* GitHubConfig.repository, database)
     const domainProvider = yield* DomainsConfig.provider(options).pipe(
@@ -297,6 +303,14 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
             Effect.provideService(Flows.FlowStarter, starter),
             Effect.provide(signedIn),
             Effect.provide(Layer.mergeAll(forge, sockets, rooms, directory, FetchHttpClient.layer)),
+          )
+        }
+        if (RunnersApi.handles(path)) return yield* runnersApi.fetch
+        // Before the repository routes: `/api/repos/<owner>/<name>/runners/<name>` and `.../agents/<name>`.
+        if (RunnerAdmin.handles(path)) {
+          return yield* runnerAdmin.fetch.pipe(
+            Effect.provideService(Flows.FlowStarter, starter),
+            Effect.provide(signedIn),
           )
         }
         // Before the repository routes: a write is `/api/repos/<owner>/<name>/writes`.

@@ -1733,3 +1733,38 @@ describe("0076_independent_lanes", () => {
     expect(await on(through("0076"))).toEqual([])
   }))
 })
+
+describe("0077_agent_runners", () => {
+  test("keeps one coding agent per repository, a runner's token once, and a job's claim with its lease", () => emptySchema(async (url) => {
+    const database = Database.layer(Effect.succeed(Redacted.make(url)))
+    const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+    await on(through("0076"))
+    expect((await on(through("0077"))).map(([id, name]) => `${id}_${name}`)).toEqual(["77_agent_runners"])
+    const refused = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+      on(effect.pipe(Effect.as("taken"), Effect.orElseSucceed(() => "refused")))
+    const sha = "a".repeat(64)
+    await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO runners (repo_id, name, labels, capacity, token_sha256, added_by) VALUES ('github/a/b', 'nyc-01', '{linux}', 4, ${sha}, 'p')`))
+    expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO runners (repo_id, name, capacity, token_sha256, added_by) VALUES ('github/a/b', 'nyc-02', 4, ${sha}, 'p')`))).toBe("refused")
+    expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO runners (repo_id, name, capacity, token_sha256, added_by) VALUES ('github/a/b', 'nyc-02', 65, ${"b".repeat(64)}, 'p')`))).toBe("refused")
+    await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO agents (repo_id, name, profile, coding, updated_by) VALUES ('github/a/b', 'opus', 'p1', true, 'p')`))
+    expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO agents (repo_id, name, profile, coding, updated_by) VALUES ('github/a/b', 'sol', 'p2', true, 'p')`))).toBe("refused")
+    expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO agents (repo_id, name, profile, updated_by) VALUES ('github/a/b', 'smithers', 'p2', 'p')`))).toBe("refused")
+    expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO agents (repo_id, name, profile, max_hours, updated_by) VALUES ('github/a/b', 'long', 'p2', 13, 'p')`))).toBe("refused")
+    // A claimed job holds its claim and lease together; a cancelled-first key holds no task.
+    expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO agent_jobs (key, origin, generation, status) VALUES ('x#g1', 'x', 1, 'queued')`))).toBe("refused")
+    await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO agent_jobs (key, origin, generation, status, outcome) VALUES ('x#g1', 'x', 1, 'cancelled', '{}')`))
+    expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO agent_jobs (key, origin, generation, repo_id, agent, profile, labels, task, deadline_at, status)
+      VALUES ('y#g1', 'y', 1, 'r', 'a', 'p', '{}', '{}', now(), 'claimed')`))).toBe("refused")
+    expect(await on(through("0077"))).toEqual([])
+  }))
+})
