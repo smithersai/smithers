@@ -1,8 +1,9 @@
 import type { UpdateTrigger } from "./pwa"
+import type { ReloadReason } from "./reloadReason"
 
 // What the page's host saw go wrong that the app's program records (src/boot.ts `logHostRecords`): React's render
-// errors (main.tsx's root) and the service worker's registration, install, update checks and parked reloads
-// (src/pwa.ts). The host sees some before the program starts, so they wait here until it listens. Names and outcomes
+// errors (main.tsx's root), the service worker's registration, install, update checks and parked reloads
+// (src/pwa.ts), and why this boot is a reload (src/reloadReason.ts). The host sees some before the program starts, so they wait here until it listens. Names and outcomes
 // only: never an error's message or a component's props. Nothing here imports a library.
 
 /** One thing the host saw. */
@@ -17,6 +18,8 @@ export type HostRecord =
   | { readonly _tag: "pwa.update.check"; readonly trigger: UpdateTrigger }
   /** A new release activated and the page reloads into it, or an editor's unsaved write held the reload back. */
   | { readonly _tag: "pwa.update"; readonly outcome: "activated" | "editor_unpersisted" }
+  /** This boot is a reload, and why (src/reloadReason.ts). */
+  | { readonly _tag: "page.reload"; readonly reason: ReloadReason }
 
 /** Where the host puts what it saw, and where the program hears it. */
 export interface HostRecords {

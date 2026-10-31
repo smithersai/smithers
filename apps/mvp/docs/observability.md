@@ -76,7 +76,7 @@ Logs:
 | `chat retried` | Retry on the pill, the browser came back online, or the device was adopted in place by the person signed in ([sign-in](features/sign-in.md#the-devices-owner)) | Info | `via` (`button`, `online`, `adopted`) |
 | `page error` | an uncaught error on the window; counted by `LogFailures` ([Errors](#errors)) | Error | `name`, `source` (`file:line:column`); never the message |
 | `unhandled rejection` | a rejection nothing handled | Error | `name`; never the message |
-| `page reloaded` | a page restored from the back/forward cache, just before it reloads | Info | none. It reaches the relay only if an export runs before the page unloads; the console always keeps it |
+| `page reloaded` | the boot after a reload, logged by that boot ([page reloads](#page-reloads)) | Info | `reason` |
 | `collection cleanup failed` | a collection's cleanup rejected as its scope closed (`@smthrs/effect-tanstack-db`) | Warn | `collection` (its id), `error` (the error's name, never its message) |
 | `persistence unavailable` | the device store's database couldn't open, so rows stay in memory (`@smthrs/effect-tanstack-db`) | Warn | `error` (the name or tag of what `open` rejected with) |
 | `flows.editor.storage` | editor storage admission and per-collection restore receipts; retained rows remain untouched on failure | Info / Warn | `collection` (`device`, `flow-form`, `flow-answers`, `flow-code`), `outcome` (`unavailable`, `restored`, `failed`), sanitized `errorCode` (`TimeoutError` for the five-second deadline) |
@@ -137,7 +137,7 @@ Metrics (`src/features/chat/metrics.ts`, `src/boot.ts`, `src/page.ts`, and `@smt
 | `smithers_web_history_loads` | counter | Load earlier presses |
 | `smithers_web_storage_persisted` | counter | `granted` = `true` or `false` |
 | `smithers_web_boot_ms` | histogram | from page start to the conversation restored from the device |
-| `smithers_web_page_reloads` | counter | a page restored from the back/forward cache; reaches the relay only if an export runs before the page unloads |
+| `smithers_web_page_reloads` | counter | boots that were reloads, counted by the boot after the reload; attribute `reason` ([page reloads](#page-reloads)) |
 | `smithers_web_repo_alias_checks` | counter | tree-to-file alias checks by `outcome`: `file`, `unconfirmed`, `timed_out` |
 | `smithers_slash_choices` | counter | rows chosen from the command menu: `kind` = `commands` or `values`, `how` = `accept` (Enter or a click) or `complete` (Tab) |
 | `smithers_slash_submits` | counter | command lines submitted: `outcome` = `run`, `unknown`, `missing` or `invalid`, and `command` for a command the app offers |
@@ -207,7 +207,7 @@ A request is the same request when its method and full URL are; a request its ca
 | the engine worker | `browser.runtime.stopped`, now logged through the worker's exporter, an engine that couldn't be built included | Error | `error.type` |
 | the language worker | `browser.language_server.failed` (`@smthrs/platform-browser` `BrowserLanguageServer`), in the tab, when the worker fails | Error | `error.type`: its error's name, or `ErrorEvent` when the browser gives none |
 | the service worker | Workbox's generated worker runs no app code, so its failures are what the page sees (`src/hostRecords.ts`, logged by `src/boot.ts` `logHostRecords`): `pwa.register` (it couldn't be registered), `pwa.install` (a worker that was installing became redundant before it installed: the shell couldn't be precached, or the script threw), `pwa.update.check` (asking the browser to check for a new one failed) | Warn | `outcome: failed`; `name` for `pwa.register`, `trigger` (`visible`, `focus`, `navigation`) for `pwa.update.check` |
-| the page | `pwa.update` (`src/hostRecords.ts`): a new release activated and the page reloads into it, or an editor's unsaved write held the reload back | Info `activated`, Warn `editor_unpersisted` | `outcome` |
+| the page | `pwa.update` (`src/hostRecords.ts`): a new release activated, so the page reloads into it once hidden ([decision 0131](decisions/0131-release-reload-when-hidden.md)), or an editor's unsaved write held the reload back | Info `activated`, Warn `editor_unpersisted` | `outcome` |
 
 A request a service worker failed to answer shows as a failed fetch or module load in the page: `http.request.failed` for `/api/`, which the worker never answers, and a render error or an unhandled rejection for a module.
 
@@ -928,6 +928,29 @@ Which flows run, and how (Will, 2026-10-20: "Everything is a flow so the most ob
 - **Bounded, content-free.** Doors, actors, placements, outcomes and wait kinds are closed sets (`other` otherwise). Flow tags, model ids and codes are cleaned to identifiers and capped per engine at 200, 50 and 100 distinct values (`other` past the cap). No record carries a payload, a result, a failure's message or who started a run.
 - **Where they go.** The engine worker's records reach ChatApi's log through the relay (`FLOWS_TELEMETRY`); `FlowExecution`'s are its own log lines. The [flow usage dashboard](../ops/grafana/README.md) reads the `flow.run.*` and `flow.model.call` lines from Loki, since a browser's counters start over on each reload and a line per run adds up across devices. On the device, the Runs page sums its own runs ([runs](features/runs.md#flows)).
 
+### Page reloads
+
+Every place the app reloads its own page names a reason (`src/reloadReason.ts`). The reason waits in the tab's
+sessionStorage (`smithers-reload-reason`) across the reload; the next boot reads it once and logs `page reloaded` with
+`reason`, and counts `smithers_web_page_reloads` by `reason`. A line logged just before a reload rarely reaches the
+relay before the page unloads; the next boot's always can. The console shows `page.reload {reason}` just before.
+
+| `reason` | Reloaded by |
+| --- | --- |
+| `pwa_update` | a new release, once the page was hidden ([decision 0131](decisions/0131-release-reload-when-hidden.md)) |
+| `stale_module` | a new release, when the old page needed a module only the old release had (`vite:preloadError`) |
+| `identity_reopen` | a session answer that named someone other than the device's owner (`auth.device_identity reopened`); every page reloads with this reason |
+| `older_leader` | a tab of an older build leading the device store (`device.leader older_build_reopened`); every page reloads with this reason |
+| `wipe` | sign-out's wipe |
+| `wipe_channel_reopen` | another tab asked every page to load again and named no reason (an older build) |
+| `error_retry` | Reload on the app's error page |
+| `engine_stopped` | Reload on the pill when this tab's engine stopped |
+| `bfcache` | a page restored from the back/forward cache |
+| `browser` | the browser reloaded and the app hadn't asked: the person's own reload, or a reload nothing above names |
+
+A stored reason older than 60 s is ignored, so a reload that never happened can't name a later one. Opening a raw file
+(`/raw/`) is a document navigation away from the app, not a reload, and records nothing.
+
 ### Relayed browser records
 
 `POST /api/telemetry/v1/{logs,traces,metrics}` relays the browser's records through `OtlpRelay.serve` with limits and an allowlist (`worker/Chat.ts`; [chat.md](features/chat.md#post-apitelemetryv1logstracesmetrics)):
@@ -965,7 +988,7 @@ The relay doesn't check the values: a caller picks its records' `service.name`, 
 | `src/features/chat/telemetry.test.ts` "the connection and the window" | the same for `chat connection changed`, `chat retried`, `smithers_web_sync_failures`, `smithers_web_sync_retries` and `smithers_web_history_loads` |
 | `packages/effect-tanstack-db/test/Outbox.test.ts`, `Persistence.test.ts` | `outbox.send` with its link and attributes, `outbox write failed`, `outbox couldn't load its writes`, `persistence unavailable`, `persisted write failed`, and every `outbox_*` and `persistence_*` metric |
 | `src/features/chat/chat.test.ts` | each metric's count by its attributes in every case: asking, failures, sync health, history, the composer and shortcuts |
-| `src/boot.test.ts` | read back from the OTLP exports: `chat ready` and `smithers_web_boot_ms` once the conversation is restored from the device; `chat couldn't restore` and no boot time when it can't be; `persistent storage requested` and `smithers_web_storage_persisted`, granted or not; `page error` and `unhandled rejection` by name and place, never their message; `page reloaded` and `smithers_web_page_reloads` |
+| `src/boot.test.ts` | read back from the OTLP exports: `chat ready` and `smithers_web_boot_ms` once the conversation is restored from the device; `chat couldn't restore` and no boot time when it can't be; `persistent storage requested` and `smithers_web_storage_persisted`, granted or not; `page error` and `unhandled rejection` by name and place, never their message; `page reloaded` and `smithers_web_page_reloads` by reason, from the host's `page.reload` record, and none from the page that asked for the reload; `src/reloadReason.test.ts`: the reason stored, read once, within its window, and `browser` for a reload nobody asked for; `src/wipe.test.ts`: every page leaves for the reason the wipe channel's message names |
 | `packages/effect-tanstack-db/test/Collection.test.ts` | `collection cleanup failed` with the collection's id and the error's name, never its message |
 | `packages/effect-electric/test/ShapeProxy.test.ts` | the shape proxy's log line, span, count and 405, a subset request's parameters dropped and never forwarded, and the Electric secret in no log or span |
 | `src/telemetry.test.ts` "the relay keeps everything the browser exports" | the tab's and the engine worker's exports, as `src/boot.ts` and `src/flows/engine.worker.ts` install their exporters, through the real relay with `BROWSER_TELEMETRY`: an answer whose agent calls a flow, asking, a refused ask, sync failing and retried. Nothing is dropped that `WITHHELD` doesn't name, the end-to-end tests' fields arrive, and no engine export comes near 128 KiB |

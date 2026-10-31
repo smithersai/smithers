@@ -1158,15 +1158,17 @@ describe("the page", () => {
     expect(tab.api.reloads()).toBe(0)
     target.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }))
     expect(tab.api.reloads()).toBe(1)
+    expect(tab.api.reloadReasons()).toEqual(["bfcache"])
     await tab.runtime.runPromise(Scope.close(scope, Exit.void))
     target.dispatchEvent(new Event("offline"))
     expect(tab.connection()?.status).toBe("up")
   })
 
-  test("reload asks the page to reload", async () => {
+  test("reload asks the page to reload, for a stopped engine", async () => {
     const tab = await openChat()
     tab.actions.reload()
     expect(tab.api.reloads()).toBe(1)
+    expect(tab.api.reloadReasons()).toEqual(["engine_stopped"])
   })
 })
 

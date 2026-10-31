@@ -1,7 +1,8 @@
 import { applyDocumentLocale } from "./documentLocale"
 import { PendingSnapshot } from "@smthrs/platform-browser"
 import { hostRecords, thrownName } from "./hostRecords"
-import { watchInstalls, watchUpdates } from "./pwa"
+import { applyRelease, type ReleaseReason, watchInstalls, watchUpdates } from "./pwa"
+import { reloadedBecause, reloadFor } from "./reloadReason"
 import { SmithersUiStyles } from "@smthrs/ui"
 import { BrowserCollectionCoordinator, createBrowserWASQLitePersistence } from "@tanstack/browser-db-sqlite-persistence"
 import { SharedSqlite, StoragePersistence, WebLock } from "@smthrs/platform-browser"
@@ -94,11 +95,41 @@ const awaitSafeInputs = (): Promise<void> => {
 // What this host sees go wrong, for the app's program to log once it starts (src/hostRecords.ts, src/boot.ts): the
 // service worker's registration, install, update checks and held reloads, and React's render errors.
 const records = hostRecords()
+// Why this boot is a reload, if it is one; every reload below names its reason for the next boot (src/reloadReason.ts).
+const reasonStorage = () => sessionStorage
+const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined
+const reloaded = reloadedBecause(reasonStorage, navigation?.type, Date.now())
+if (reloaded !== undefined) records.record({ _tag: "page.reload", reason: reloaded })
+const reloadWith = reloadFor({
+  storage: reasonStorage,
+  now: Date.now,
+  log: (reason) => console.info("page.reload", { reason }),
+  reload: () => window.location.reload(),
+})
 let updateReloading = false
 const editorUpdateParked = () => {
   records.record({ _tag: "pwa.update", outcome: "editor_unpersisted" })
   window.alert("Couldn't save your edit on this device. Copy it before reloading.")
 }
+/** Reloads into a new release once every editor's write is saved and no input holds unsaved text. */
+const reloadWhenSafe = async (reason: ReleaseReason) => {
+  for (;;) {
+    await awaitEditorWrites()
+    if (hasFailedEditorWrite()) {
+      editorUpdateParked()
+      return
+    }
+    await awaitSafeInputs()
+    if (hasFailedEditorWrite()) {
+      editorUpdateParked()
+      return
+    }
+    if (hasPendingEditorWrites() || inputStillUnsaved()) continue
+    reloadWith(reason)
+    return
+  }
+}
+
 registerSW({
   immediate: true,
   onRegistered: (registration) => {
@@ -120,27 +151,29 @@ registerSW({
       },
     })
   },
+  // A new release activated: it waits until the page is hidden, or needs a module only the old release had (src/pwa.ts
+  // `applyRelease`, decision 0131); then the editors' gate above holds the reload until every edit is saved.
   onNeedReload: () => {
     if (updateReloading) return
     updateReloading = true
     records.record({ _tag: "pwa.update", outcome: "activated" })
-    void (async () => {
-      for (;;) {
-        await awaitEditorWrites()
-        if (hasFailedEditorWrite()) {
-          editorUpdateParked()
-          return
+    applyRelease({
+      hidden: () => document.visibilityState === "hidden",
+      listen: (signal, listener) => {
+        if (signal === "visibility") {
+          document.addEventListener("visibilitychange", listener)
+          return () => document.removeEventListener("visibilitychange", listener)
         }
-        await awaitSafeInputs()
-        if (hasFailedEditorWrite()) {
-          editorUpdateParked()
-          return
+        // The old page can't load the module: the reload replaces the failed import's error.
+        const stale = (event: Event) => {
+          event.preventDefault()
+          listener()
         }
-        if (hasPendingEditorWrites() || inputStillUnsaved()) continue
-        window.location.reload()
-        return
-      }
-    })()
+        window.addEventListener("vite:preloadError", stale)
+        return () => window.removeEventListener("vite:preloadError", stale)
+      },
+      reload: (reason) => void reloadWhenSafe(reason),
+    })
   },
   onRegisterError: (error: unknown) => records.record({ _tag: "pwa.register", name: thrownName(error) }),
 })
@@ -173,7 +206,7 @@ const wipe = pageWipe(
     directory: () => navigator.storage.getDirectory(),
     indexedDB,
     channel: (name) => new BroadcastChannel(name),
-    reload: () => window.location.reload(),
+    reload: reloadWith,
   },
   { engine: ENGINE_NAME, outbox: OUTBOX_DATABASE },
 )
@@ -205,6 +238,7 @@ const REOPENED = "smithers-identity-reopened"
 const OLDER_LEADER_REOPENED = "smithers-older-leader-reopened"
 const reopen = (
   why: () => void = () => console.info("auth.device_identity", { outcome: "reopened" }),
+  reason: "identity_reopen" | "older_leader" = "identity_reopen",
   mark = REOPENED,
   within = 60_000,
 ) => {
@@ -217,7 +251,7 @@ const reopen = (
   }
   if (Date.now() - last < within) return
   why()
-  wipe.reopen()
+  wipe.reopen(reason)
 }
 // Adopting in place (decision 0023, "Adopting in place"): a page that opened the visitor's data asks its leader to
 // claim it for the person signed in now, instead of reopening every page, and waits for the receipt.
@@ -306,7 +340,7 @@ const host: Omit<Host, "editorTabId" | "editorTabPersistent" | "editorTabRefusal
     coordinator: () =>
       watchLeader(new BrowserCollectionCoordinator({ dbName: "smithers" }), (error) => {
         if (!olderLeader(deviceRegistry, error)) return
-        reopen(() => console.info("device.leader", { outcome: "older_build_reopened" }), OLDER_LEADER_REOPENED, 10 * 60_000)
+        reopen(() => console.info("device.leader", { outcome: "older_build_reopened" }), "older_leader", OLDER_LEADER_REOPENED, 10 * 60_000)
       }),
   },
   outbox: {
@@ -443,7 +477,7 @@ const render: BootOptions["render"] = (
   root.render(
     <StrictMode>
       <SmithersUiStyles withTheme />
-      <AppErrorBoundary reload={() => window.location.reload()}>
+      <AppErrorBoundary reload={() => reloadWith("error_retry")}>
       <ChatProvider value={chat}>
         <AuthProvider value={auth}>
           <ThemeProvider value={theme}>
@@ -521,7 +555,7 @@ const page = {
     reopensOnSignIn: () => activation.state() === "memory" && sealedUntilSignIn,
     adopt,
   }),
-  reload: () => window.location.reload(),
+  reload: reloadWith,
   host,
   target: window,
   startedAt: performance.timeOrigin,

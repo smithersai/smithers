@@ -219,7 +219,7 @@ export class Chat extends Context.Service<Chat, { readonly queries: ChatQueries;
           copy: (messageId) =>
             runAsync(Effect.flatMap(copy(messageId), (copied) => (copied ? Effect.void : Effect.fail(new NotCopied())))),
           edit: (questionId) => run(edit(questionId)),
-          reload: () => run(reload),
+          reload: () => run(reload("engine_stopped")),
           show: (conversationId) => runAsync(show(conversationId)),
         },
       })

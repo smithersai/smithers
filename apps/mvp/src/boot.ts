@@ -110,7 +110,8 @@ import { TabErrors } from "./flows/errors"
 import { failFastOnEngine, tabAnswers, tabEngine } from "./flows/engine"
 import type { Endpoint } from "./flows/tabPort"
 import { deviceRegistry } from "./device/registry"
-import { Page } from "./page"
+import { Page, pageReloads } from "./page"
+import type { AppReloadReason } from "./reloadReason"
 import { apiRoute } from "./apiRoutes"
 import { recordUnhandled } from "./boundary"
 import { markStage, recordStages, type Timeline } from "./bootStages"
@@ -186,7 +187,8 @@ export interface Host extends ChatHost {
 export interface AppOptions extends Omit<ChatConfig, "shapeUrl"> {
   readonly origin: string
   readonly fetch: typeof globalThis.fetch
-  readonly reload: () => void
+  /** Reloads the page for a reason, which the next boot records (src/reloadReason.ts). */
+  readonly reload: (reason: AppReloadReason) => void
   readonly host: Host
   readonly answerWithin?: Duration.Input
 }
@@ -496,13 +498,18 @@ const logHostRecord = (record: HostRecord): Effect.Effect<void> => {
       return (record.outcome === "activated" ? Effect.logInfo : Effect.logWarning)("pwa.update").pipe(
         Effect.annotateLogs({ outcome: record.outcome }),
       )
+    case "page.reload":
+      return Effect.andThen(
+        Metric.update(Metric.withAttributes(pageReloads, { reason: record.reason }), 1),
+        Effect.logInfo("page reloaded").pipe(Effect.annotateLogs({ reason: record.reason })),
+      )
   }
 }
 
 /**
  * Logs what the page's host saw (src/hostRecords.ts): React's render errors as `render error`, and the service
- * worker's failed registration, install and update check and a reload an editor held back as `pwa.*`, those it saw
- * before the program started first. The listener runs each log with the services it was bound with.
+ * worker's failed registration, install and update check and a reload an editor held back as `pwa.*`, and why this boot
+ * is a reload as `page reloaded` with its reason and a count by reason, those it saw before the program started first. The listener runs each log with the services it was bound with.
  */
 export const logHostRecords = Effect.fnUntraced(function* (records: HostRecords) {
   const run = Effect.runSyncWith(yield* Effect.context<never>())

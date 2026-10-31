@@ -121,6 +121,7 @@ export const APP_TELEMETRY = {
     "outcome",
     "stage",
     "trigger",
+    "reason",
     "kind",
     "errorCode",
     "http.request.method",

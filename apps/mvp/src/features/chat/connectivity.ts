@@ -21,7 +21,7 @@ export const bindConnectivity = Effect.fnUntraced(function* (target: EventTarget
   const onOnline = () => run(retry("online"))
   const onAdopted = () => run(retry("adopted"))
   const onPageShow = (event: Event) => {
-    if ((event as PageTransitionEvent).persisted) run(reload)
+    if ((event as PageTransitionEvent).persisted) run(reload("bfcache"))
   }
   const onFocus = () => run(lead)
   const bindings: ReadonlyArray<readonly [string, (event: Event) => void]> = [

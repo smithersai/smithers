@@ -329,6 +329,8 @@ test("logs what the page's host saw, those from before it listened first: render
     host.record({ _tag: "pwa.update.check", trigger: "navigation" })
     host.record({ _tag: "pwa.update", outcome: "activated" })
     host.record({ _tag: "pwa.update", outcome: "editor_unpersisted" })
+    host.record({ _tag: "page.reload", reason: "pwa_update" })
+    host.record({ _tag: "page.reload", reason: "browser" })
   })))
   // Once the program stops listening, nothing it hears is logged.
   host.record({ _tag: "pwa.install" })
@@ -349,6 +351,13 @@ test("logs what the page's host saw, those from before it listened first: render
     { severity: "Info", attributes: { feature: "app", outcome: "activated" } },
     { severity: "Warn", attributes: { feature: "app", outcome: "editor_unpersisted" } },
   ])
+  // Why this boot is a reload: logged and counted by reason.
+  expect(lines("page reloaded")).toEqual([
+    { severity: "Info", attributes: { feature: "app", reason: "pwa_update" } },
+    { severity: "Info", attributes: { feature: "app", reason: "browser" } },
+  ])
+  expect(records.point("smithers_web_page_reloads", { reason: "pwa_update" })?.value).toBe(1)
+  expect(records.point("smithers_web_page_reloads", { reason: "browser" })?.value).toBe(1)
 })
 
 test("start logs a defect that ends the program, by its name, never its message", async () => {
@@ -378,16 +387,15 @@ test("start logs a defect that ends the program, by its name, never its message"
   expect(JSON.stringify(records.logs)).not.toContain(secret)
 })
 
-test("reload counts and logs the reload, then asks the page to reload", async () => {
+test("the pill's reload asks the page to reload for a stopped engine; the next boot, not this page, records it", async () => {
   const { runtime, api, exported } = await app()
   const { actions } = await runtime.runPromise(Effect.service(Chat))
   actions.reload()
   expect(api.reloads()).toBe(1)
+  expect(api.reloadReasons()).toEqual(["engine_stopped"])
   const records = await exported()
-  expect(records.log("page reloaded")).toEqual([
-    expect.objectContaining({ severity: "Info", attributes: { feature: "app" } }),
-  ])
-  expect(records.point("smithers_web_page_reloads")?.value).toBe(1)
+  expect(records.log("page reloaded")).toEqual([])
+  expect(records.points.filter(({ metric }) => metric === "smithers_web_page_reloads")).toEqual([])
 })
 
 test("start is the boundary: it builds the one runtime, renders the chat layer once, and stops everything", async () => {

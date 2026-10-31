@@ -3,7 +3,7 @@ import { Effect, ManagedRuntime } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
 import { tabEngine } from "./flows/engine"
 import { nodeDevice } from "./test/chatApi"
-import { DATA_LOCK, ENGINES_DIRECTORY, inMemory, memoryStorage, pageWipe, unwiped, WIPE, type WipeHost, WipeUnfinished } from "./wipe"
+import { DATA_LOCK, ENGINES_DIRECTORY, inMemory, leaveReason, memoryStorage, pageWipe, unwiped, WIPE, type WipeHost, WipeUnfinished } from "./wipe"
 
 // Sign-out's device wipe across pages (src/wipe.ts, docs/features/sign-in.md#signing-out), on Node's own Web Locks and
 // BroadcastChannel. Node has no OPFS and no IndexedDB, so those two are stand-ins that keep what was deleted, and a
@@ -65,6 +65,7 @@ const browser = () => {
   }
   const page = (stop?: () => Promise<void>) => {
     const events: Array<string> = []
+    const reasons: Array<string> = []
     const wipe = pageWipe(
       {
         locks,
@@ -79,7 +80,10 @@ const browser = () => {
         directory: async () => directory,
         indexedDB,
         channel: (name) => new BroadcastChannel(scoped(name)),
-        reload: () => void events.push("reload"),
+        reload: (reason) => {
+          events.push("reload")
+          reasons.push(reason)
+        },
       },
       targets,
     )
@@ -90,7 +94,7 @@ const browser = () => {
       })
     }
     closing.push(wipe.close)
-    return { ...wipe, events }
+    return { ...wipe, events, reasons }
   }
   /** Locks of this profile requested and not yet granted, as `name mode`. */
   const pending = async () =>
@@ -130,6 +134,7 @@ test("a page that still holds the device's data holds a sign-out's wipe off unti
     expect(one.events).toEqual(["stop", "reload"])
     expect(two.events).toEqual(["stop", "reload"])
   })
+  expect([...one.reasons, ...two.reasons]).toEqual(["wipe", "wipe"])
 
   // Tab 1 loads again while tab 2 is still unloading: its boot waits for the data, and deletes nothing yet.
   const again = device.page()
@@ -312,11 +317,13 @@ test("reopening loads every page again, this one included, and deletes nothing: 
   const other = device.page(async () => {})
   expect(await other.open()).toBe(true)
   const asking = device.page(async () => {})
-  asking.reopen()
+  asking.reopen("identity_reopen")
   await until(() => {
     expect(asking.events).toEqual(["stop", "reload"])
     expect(other.events).toEqual(["stop", "reload"])
   })
+  // Every page loads again for the asking page's reason.
+  expect([...asking.reasons, ...other.reasons]).toEqual(["identity_reopen", "identity_reopen"])
   expect(device.marks.has(WIPE)).toBe(false)
   other.close()
   expect(await device.page().open()).toBe(true)
@@ -336,4 +343,13 @@ test("a page refused the device's data runs in memory, and its engine says why",
   const engine = await runtime.runPromise(Effect.service(BrowserEngine.BrowserEngine))
   expect(await runtime.runPromise(engine.unavailable)).toMatchObject({ reason: "worker-failed", error: "Sealed" })
   await runtime.dispose()
+})
+
+test("each page loads again for the reason the channel's message names, a message naming none another page's ask", () => {
+  expect(leaveReason("wipe")).toBe("wipe")
+  expect(leaveReason("reopen:identity_reopen")).toBe("identity_reopen")
+  expect(leaveReason("reopen:older_leader")).toBe("older_leader")
+  // A build that names no reason sends a bare `reopen`.
+  expect(leaveReason("reopen")).toBe("wipe_channel_reopen")
+  expect(leaveReason({ reopen: true })).toBe("wipe_channel_reopen")
 })

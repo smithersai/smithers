@@ -3,10 +3,12 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, test } from "vitest"
 import {
+  applyRelease,
   DOCS_SITE,
   DOCS_SITE_PATHS,
   FRAME_POLICY,
   PAGE_HEADERS,
+  type ReleaseHost,
   shellCaches,
   watchInstalls,
   watchUpdates,
@@ -124,6 +126,54 @@ describe("open tabs check for releases", () => {
     ])
     stop()
     expect(listeners.size).toBe(0)
+  })
+})
+
+describe("a new release that activated", () => {
+  /** A page whose visibility and module loads the test drives; `reloads` is every reload it asked for. */
+  const page = (hidden: boolean) => {
+    const state = { hidden }
+    const listeners = new Map<string, () => void>()
+    const reloads: Array<string> = []
+    const host: ReleaseHost = {
+      hidden: () => state.hidden,
+      listen: (signal, listener) => {
+        listeners.set(signal, listener)
+        return () => listeners.delete(signal)
+      },
+      reload: (reason) => reloads.push(reason),
+    }
+    const fire = (signal: "visibility" | "stale_module") => listeners.get(signal)?.()
+    return { state, listeners, reloads, host, fire }
+  }
+
+  test("never reloads a visible page: it waits until the page is hidden, then reloads once", () => {
+    const tab = page(false)
+    applyRelease(tab.host)
+    expect(tab.reloads).toEqual([])
+    // Visible again (a visibility change that isn't hiding) reloads nothing.
+    tab.fire("visibility")
+    expect(tab.reloads).toEqual([])
+    tab.state.hidden = true
+    tab.fire("visibility")
+    expect(tab.reloads).toEqual(["pwa_update"])
+    // It stopped listening: nothing reloads it a second time.
+    expect(tab.listeners.size).toBe(0)
+  })
+
+  test("reloads a page that is already hidden at once", () => {
+    const tab = page(true)
+    applyRelease(tab.host)
+    expect(tab.reloads).toEqual(["pwa_update"])
+    expect(tab.listeners.size).toBe(0)
+  })
+
+  test("reloads a visible page that needs a module only the old release had, once", () => {
+    const tab = page(false)
+    applyRelease(tab.host)
+    tab.fire("stale_module")
+    expect(tab.reloads).toEqual(["stale_module"])
+    expect(tab.listeners.size).toBe(0)
   })
 })
 

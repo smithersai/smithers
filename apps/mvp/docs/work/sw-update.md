@@ -11,3 +11,5 @@ Check the registered service worker when the tab becomes visible, receives focus
 
 
 Validation: Latitude typecheck and importRules pass; `src/pwa.test.ts` passes 8 tests with 100% statements, branches, functions and lines on `src/pwa.ts`. The mini-run attempt cannot start Playwright: the unchanged `packages/errors/src/SmithersError.vibe:15:36` fails parsing its inline type import, so the local backend never answers its readiness check. The VibeLang migration is a separate workstream. The two-production-build service-worker test is committed but has no execution receipt yet.
+
+Since [decision 0131](../decisions/0131-release-reload-when-hidden.md), an activated release reloads the tab only once it is hidden, or when it needs a module the old release removed; each reload names its reason (`page reloaded`).

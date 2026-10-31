@@ -339,9 +339,11 @@ export class TestChatApi extends Context.Service<
     readonly spans: Array<Tracer.NativeSpan>
     /** Every call a person's own model's scripted provider got (`ChatApiOptions.provider`), in order. */
     readonly providerCalls: ReadonlyArray<ProviderSeen>
-    /** The page reload the app asks for: it counts, and reloads nothing. */
-    readonly reload: () => void
+    /** The page reload the app asks for: it counts, keeps its reason, and reloads nothing. */
+    readonly reload: (reason?: string) => void
     readonly reloads: () => number
+    /** The reason of each reload the app asked for, in order. */
+    readonly reloadReasons: () => ReadonlyArray<string | undefined>
     /**
      * A fresh schema on the compose Postgres for a device's engine store (in place of SQLite on OPFS). Each one, and
      * every leader kept on it, goes when this ChatApi closes.
@@ -869,6 +871,7 @@ export class TestChatApi extends Context.Service<
         }
 
         let reloads = 0
+        const reloadReasons: Array<string | undefined> = []
         const telemetry: Array<{ path: string; body: string }> = []
         const origin = options.origin ?? CHATAPI_ORIGIN
         const postQuestion = (body: unknown) =>
@@ -987,10 +990,12 @@ export class TestChatApi extends Context.Service<
           telemetry,
           spans,
           providerCalls: provider.seen,
-          reload: () => {
+          reload: (reason?: string) => {
             reloads += 1
+            reloadReasons.push(reason)
           },
           reloads: () => reloads,
+          reloadReasons: () => reloadReasons,
           engineStore: () => {
             const store = `flows_${crypto.randomUUID().replaceAll("-", "")}`
             stores.push(store)

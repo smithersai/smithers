@@ -138,3 +138,41 @@ export const watchUpdates = (registration: { readonly update: () => Promise<unkn
   }))
   return () => { for (const stop of stops) stop() }
 }
+
+/** Why a new release reloads the page (src/reloadReason.ts). */
+export type ReleaseReason = "pwa_update" | "stale_module"
+
+/** The page's signals a new release waits on, and how it reloads; main.tsx gives the window's and the document's. */
+export interface ReleaseHost {
+  readonly hidden: () => boolean
+  /**
+   * Calls `listener` on `visibility` (the page's visibility changed) or `stale_module` (the page couldn't load a
+   * module, Vite's `vite:preloadError`); answers how to stop.
+   */
+  readonly listen: (signal: "visibility" | "stale_module", listener: () => void) => () => void
+  /** Reloads into the new release, behind the editors' safety gate (main.tsx). */
+  readonly reload: (reason: ReleaseReason) => void
+}
+
+/**
+ * A new release activated: the page keeps running, never reloading under the person, and reloads into the release
+ * the first time it is hidden (`pwa_update`), at once when it already is. If before then it needs a module only the old
+ * release had, it can't go on, and reloads then (`stale_module`). Reloads once (decision 0131).
+ */
+export const applyRelease = (host: ReleaseHost): void => {
+  if (host.hidden()) {
+    host.reload("pwa_update")
+    return
+  }
+  const stops: Array<() => void> = []
+  const once = (reason: ReleaseReason) => {
+    for (const stop of stops.splice(0)) stop()
+    host.reload(reason)
+  }
+  stops.push(
+    host.listen("visibility", () => {
+      if (host.hidden()) once("pwa_update")
+    }),
+    host.listen("stale_module", () => once("stale_module")),
+  )
+}

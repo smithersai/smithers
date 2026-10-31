@@ -2,6 +2,7 @@ import type { StorageAdapter } from "@tanstack/offline-transactions"
 import type { BrowserEngine } from "@smthrs/platform-browser"
 import type { Host } from "./boot"
 import type { Endpoint } from "./flows/tabPort"
+import type { AppReloadReason } from "./reloadReason"
 
 // Sign-out's device wipe as each page takes part in it (decision 0008 §4.6, docs/features/sign-in.md#signing-out). The
 // device's data lives in two stores that open handles pin: the engine's OPFS directory, which the leading tab's engine
@@ -33,6 +34,27 @@ export interface WipeTargets {
   readonly outbox: string
 }
 
+/** Why a page leaving on the wipe channel loads again: the sender's reason, else the message's own. */
+export type WipeReason = Extract<AppReloadReason, "wipe" | "wipe_channel_reopen" | "identity_reopen" | "older_leader">
+
+/** Why a page reopens every page: the device's owner changed, or an older build's tab leads the store. */
+export type ReopenReason = Extract<WipeReason, "identity_reopen" | "older_leader">
+
+/**
+ * What a page hears on the wipe channel, and why it loads again: `wipe` a sign-out's; `reopen:<reason>` a reopen whose
+ * sender named its reason; any other message, such as a bare `reopen` from a build that names none, another page asking
+ * every page to load again. Every build loads again on any message, so a reason in the message reaches older builds
+ * unharmed.
+ */
+export const leaveReason = (message: unknown): WipeReason =>
+  message === "wipe"
+    ? "wipe"
+    : message === "reopen:identity_reopen"
+    ? "identity_reopen"
+    : message === "reopen:older_leader"
+    ? "older_leader"
+    : "wipe_channel_reopen"
+
 /** The page's browser: its Web Locks, localStorage, OPFS, IndexedDB and BroadcastChannel, and how it loads again. */
 export interface WipeHost {
   readonly locks: Pick<LockManager, "request">
@@ -40,7 +62,7 @@ export interface WipeHost {
   readonly directory: () => Promise<Pick<FileSystemDirectoryHandle, "getDirectoryHandle" | "removeEntry">>
   readonly indexedDB: Pick<IDBFactory, "deleteDatabase">
   readonly channel: (name: string) => Pick<BroadcastChannel, "postMessage" | "close" | "onmessage">
-  readonly reload: () => void
+  readonly reload: (reason: WipeReason) => void
 }
 
 /** A page's part in the wipe. */
@@ -59,7 +81,7 @@ export interface PageWipe {
    * Tells every page, this one included, to leave and load again without marking a wipe, so the next boot checks
    * the device's owner again (src/device/identity.ts). Nothing is deleted.
    */
-  readonly reopen: () => void
+  readonly reopen: (reason: ReopenReason) => void
   /** Stops hearing wipes and lets go of the data, as the page ending does. */
   readonly close: () => void
 }
@@ -91,13 +113,13 @@ export const pageWipe = (host: WipeHost, targets: WipeTargets): PageWipe => {
   let release!: () => void
   const released = new Promise<void>((resolve) => (release = resolve))
 
-  const leave = () =>
+  const leave = (reason: WipeReason) =>
     (leaving ??= Promise.resolve().then(() => stop?.())
       // expected: the page reloads whether its program stopped or not
       .catch(() => undefined)
-      .then(() => host.reload()))
+      .then(() => host.reload(reason)))
   const hearing = host.channel(WIPE)
-  hearing.onmessage = () => void leave()
+  hearing.onmessage = (event: MessageEvent) => void leave(leaveReason(event.data))
 
   const marked = () => {
     try {
@@ -141,7 +163,7 @@ export const pageWipe = (host: WipeHost, targets: WipeTargets): PageWipe => {
   }
 
   // Every page hears it on its own channel, this one's included, and leaves.
-  const tell = (message: "wipe" | "reopen") => {
+  const tell = (message: "wipe" | `reopen:${ReopenReason}`) => {
     const telling = host.channel(WIPE)
     telling.postMessage(message)
     telling.close()
@@ -168,7 +190,7 @@ export const pageWipe = (host: WipeHost, targets: WipeTargets): PageWipe => {
       host.marks.setItem(WIPE, "1")
       tell("wipe")
     },
-    reopen: () => tell("reopen"),
+    reopen: (reason) => tell(`reopen:${reason}`),
     close: () => {
       hearing.close()
       release()

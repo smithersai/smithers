@@ -8,11 +8,19 @@ import { requires } from "./target"
 
 test.use({ serviceWorkers: "allow" })
 
-test("release: an open tab discovers and activates a second production build on navigation", async ({ page }) => {
+test("release: an open tab discovers a second production build on navigation and moves to it once hidden, never under a click", {
+  annotation: { type: "summary", description: "A deploy reaches an open tab without reloading it under a click; the tab moves once hidden." },
+}, async ({ page }) => {
   requires("localServer")
   const checks: string[] = []
+  const lines: string[] = []
   page.on("console", (message) => {
+    lines.push(message.text())
     if (message.text().startsWith("pwa.update.check")) checks.push(message.text())
+  })
+  let documents = 0
+  page.on("request", (request) => {
+    if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documents++
   })
   test.setTimeout(300_000)
   const root = join(import.meta.dirname, "..")
@@ -39,13 +47,33 @@ test("release: an open tab discovers and activates a second production build on 
         builds.use("new")
         await expect(page.locator('meta[name="release-test"]')).toHaveAttribute("content", "old")
       })
-      await step("Navigate in the app and receive the new release automatically", async () => {
+      await step("Navigate in the app: the new release activates and the page stays as it is", async () => {
+        const changed = page.evaluate(() =>
+          new Promise<void>((resolve) => navigator.serviceWorker.addEventListener("controllerchange", () => resolve(), { once: true })))
+        const before = documents
         // A real router link: no manual registration.update(), reload or document navigation.
         await page.getByRole("link", { name: "Flows", exact: true }).click()
+        await changed
+        expect(checks.some((record) => record.includes("navigation"))).toBe(true)
+        // Five seconds after the release took over the tab, the click's page is still the old release's, not reloaded.
+        await page.waitForTimeout(5_000)
+        await expect(page.locator('meta[name="release-test"]')).toHaveAttribute("content", "old")
+        expect(documents).toBe(before)
+        expect(lines.some((line) => line.startsWith("page.reload"))).toBe(false)
+      })
+      await step("Leave the tab: hidden, it reloads into the new release and says why", async () => {
+        // Headless Chromium keeps every page visible, so the page is told it was hidden the way a browser tells it.
+        await page.evaluate(() => {
+          Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" })
+          document.dispatchEvent(new Event("visibilitychange"))
+        })
         await expect(page.locator('meta[name="release-test"]')).toHaveAttribute("content", "new", { timeout: 30_000 })
         expect(await page.evaluate(() => navigator.serviceWorker.controller !== null)).toBe(true)
-        expect(checks.some((record) => record.includes("navigation"))).toBe(true)
+        expect(lines.some((line) => line.startsWith("page.reload") && line.includes("pwa_update"))).toBe(true)
+        await expect.poll(() => lines.some((line) => line.includes("page reloaded") && line.includes("pwa_update")), { timeout: 30_000 }).toBe(true)
       })
+      // Leave the release before its server stops, so the reloaded page's own requests don't fail mid-flight.
+      await page.goto("about:blank")
     } finally { await builds.close() }
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
