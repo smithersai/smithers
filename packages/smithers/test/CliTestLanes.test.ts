@@ -62,7 +62,7 @@ it("schedules every default CLI file once in one bounded pool with the configure
   const standard = discover([])
   const faults = discover(["--config", "vitest.faults.config.ts"]).files
   const bothTiers = discover(["--exclude", "**/node_modules/**"]).files
-  expect(actual.maxWorkers).toBe(4)
+  expect(actual.maxWorkers).toBe(6)
   expect(actual.fileParallelism).toBe(true)
   expect(actual.coverageRequested).toBe(true)
   expect(actual.thresholds).toEqual(standard.thresholds)
@@ -108,7 +108,7 @@ it.skipIf(process.platform === "win32")(
   "starts queued files while earlier files are blocked and retains late failures and cache cleanup",
   () => {
     const root = mkdtempSync(join(tmpdir(), "smithers-cli-lanes-"))
-    const phases = Array.from({ length: 6 }, (_, index) => `${index}`)
+    const phases = Array.from({ length: 8 }, (_, index) => `${index}`)
     try {
       symlinkSync(join(cwd, "node_modules"), join(root, "node_modules"), "dir")
       writeFileSync(join(root, "package.json"), "{\"type\":\"module\"}")
@@ -160,14 +160,14 @@ it(${JSON.stringify(phase)}, async () => {
   expect(getCompileCacheDir()).toBeUndefined();
   expect(isolatedCache).toEqual({ vibe: process.env.VIBELANG_CACHE_DIR, node: nodeCache, enabled: true });
   writeFileSync(${JSON.stringify(join(root, phase))}, JSON.stringify({ ...isolatedCache, pid: process.pid }));
-  if (${Number(phase) < 3}) {
+  if (${Number(phase) < 5}) {
     const deadline = Date.now() + 8000;
-    while (!existsSync(${JSON.stringify(join(root, "4"))}) && Date.now() < deadline) {
+    while (!existsSync(${JSON.stringify(join(root, "6"))}) && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    expect(existsSync(${JSON.stringify(join(root, "4"))})).toBe(true);
+    expect(existsSync(${JSON.stringify(join(root, "6"))})).toBe(true);
   }
-  if (${phase === "5"} && process.env.SMITHERS_LANES_FAIL_LAST === "1") {
+  if (${phase === "7"} && process.env.SMITHERS_LANES_FAIL_LAST === "1") {
     throw new Error("retained-late-failure");
   }
 });`
@@ -216,8 +216,8 @@ it(${JSON.stringify(phase)}, async () => {
           workers.push(pid)
           expect(cache).toEqual({ vibe: join(owned, "vibelang-cache"), node: join(owned, "cache"), enabled: true })
         }
-        expect(new Set(workers.slice(0, 3)).size).toBe(3)
-        expect(workers.slice(0, 3)).not.toContain(workers[3])
+        expect(new Set(workers.slice(0, 5)).size).toBe(5)
+        expect(workers.slice(0, 5)).not.toContain(workers[5])
         expect(readdirSync(scratch)).toEqual([])
         expect(existsSync(owned)).toBe(false)
       }

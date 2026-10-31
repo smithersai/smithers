@@ -235,7 +235,7 @@ Finite CLI history projections retain at most 50,000 events and 16 MiB, with a 1
 
 ## Integration test inputs
 
-The declared CLI test target schedules files in one Vitest pool with four
+The declared CLI test target schedules files in one Vitest pool with six
 workers, retaining its configured coverage gate. Its Node and content-validated
 VibeLang compile caches are shared with CLI children and removed with the
 target's scratch directory.

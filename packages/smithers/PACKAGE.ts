@@ -184,7 +184,7 @@ const historyPostgresDatabase = Smithers.Docker.Service({
 const vitest = "pnpm exec vitest run --config vitest.config.ts --environment node"
 
 const test = Smithers.Shell.Test({
-  // One compiler coordinator shares transforms across four worker processes.
+  // One compiler coordinator shares transforms across six worker processes.
   // Static groups repeated that work and left a late group owning the budget.
   // Vitest schedules individual files and applies the original coverage gate.
   shell: [
@@ -194,7 +194,7 @@ const test = Smithers.Shell.Test({
     "SMITHERS_CLI_NODE_COMPILE_CACHE=\"$work/cache\" " +
     "SMITHERS_CLI_DISABLE_COMPILE_CACHE=\"${SMITHERS_CLI_DISABLE_COMPILE_CACHE-${NODE_DISABLE_COMPILE_CACHE-}}\" " +
     "VIBELANG_CACHE_DIR=\"$work/vibelang-cache\" && " +
-    `${vitest} --fileParallelism --maxWorkers=4 --coverage.enabled=true --reporter=github-actions --reporter=verbose`
+    `${vitest} --fileParallelism --maxWorkers=6 --coverage.enabled=true --reporter=github-actions --reporter=verbose`
   ].join(" "),
   data: [
     lib,
