@@ -15,7 +15,7 @@
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as PlatformError from "effect/PlatformError"
-import * as Crypto from "./Crypto.ts"
+import * as Crypto from "./Crypto.vibe"
 
 /**
  * The most bytes one `crypto.getRandomValues` call may fill, per the Web

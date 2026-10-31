@@ -23,7 +23,7 @@ import { describe } from "./internal/describe.ts"
 
 /** @private */
 const CanonicalString = Schema.String.pipe(
-  Schema.brand("@smthrs/canonical/Canonical"),
+  Schema.brand("@smthrs/canonical/Canonical")
 )
 
 /**
@@ -71,8 +71,8 @@ export const Canonical = Schema.Unknown.pipe(
           new SchemaIssue.InvalidValue(
             { message: describe(cause) },
             value,
-            parseOptions,
-          ),
+            parseOptions
+          )
       })
     ),
     encode: SchemaGetter.transformEffect((document, parseOptions) =>
@@ -82,9 +82,9 @@ export const Canonical = Schema.Unknown.pipe(
           new SchemaIssue.InvalidValue(
             { message: `canonical_malformed: ${describe(cause)}` },
             document,
-            parseOptions,
-          ),
+            parseOptions
+          )
       })
-    ),
-  }),
+    )
+  })
 )

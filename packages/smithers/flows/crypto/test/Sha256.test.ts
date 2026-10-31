@@ -2,7 +2,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Effect, PlatformError, Schema, SchemaIssue } from "effect"
 import { inspect } from "node:util"
 import { describe, expect, it } from "vitest"
-import * as Crypto from "../src/Crypto.ts"
+import * as Crypto from "../src/Crypto.vibe"
 import { Digest, digest, digestSync, Sha256, Sha256Error, syncCrypto } from "../src/index.ts"
 import { millionA, vectors } from "./fixtures.ts"
 
