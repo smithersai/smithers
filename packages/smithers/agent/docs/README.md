@@ -146,7 +146,8 @@ Every export of every namespace, with signatures and errors, is on the
   [subagents](./guides/subagents.md),
   [seat resolvers](./guides/seat-resolvers.md),
   [workspace isolation](./guides/workspace.md),
-  [promoting flows](./guides/promote-flows.md), and
+  [promoting flows](./guides/promote-flows.md),
+  [external agents on runners](./guides/external-agents.md), and
   [testing](./guides/testing.md).
 - Concepts: [the agent loop](./concepts/agent-loop.md),
   [seats](./concepts/seats.md), [the engine port](./concepts/engine-port.md),

@@ -64,7 +64,10 @@
     "./WorkspaceObservation": "./src/WorkspaceObservation.ts",
     "./WorkspaceSandbox": "./src/WorkspaceSandbox.ts",
     "./index": "./src/index.ts",
-    "./ScriptedJudge": "./src/ScriptedJudge.ts"
+    "./ScriptedJudge": "./src/ScriptedJudge.ts",
+    "./Acp": "./src/Acp.ts",
+    "./AgentRunner": "./src/AgentRunner.ts",
+    "./ExternalAgent": "./src/ExternalAgent.ts"
   },
   "files": [
     "src/**/*.ts",
@@ -374,6 +377,36 @@
         "require": {
           "types": "./dist/cjs/ScriptedJudge.d.ts",
           "default": "./dist/cjs/ScriptedJudge.js"
+        }
+      },
+      "./Acp": {
+        "import": {
+          "types": "./dist/esm/Acp.d.ts",
+          "default": "./dist/esm/Acp.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Acp.d.ts",
+          "default": "./dist/cjs/Acp.js"
+        }
+      },
+      "./AgentRunner": {
+        "import": {
+          "types": "./dist/esm/AgentRunner.d.ts",
+          "default": "./dist/esm/AgentRunner.js"
+        },
+        "require": {
+          "types": "./dist/cjs/AgentRunner.d.ts",
+          "default": "./dist/cjs/AgentRunner.js"
+        }
+      },
+      "./ExternalAgent": {
+        "import": {
+          "types": "./dist/esm/ExternalAgent.d.ts",
+          "default": "./dist/esm/ExternalAgent.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ExternalAgent.d.ts",
+          "default": "./dist/cjs/ExternalAgent.js"
         }
       }
     }
