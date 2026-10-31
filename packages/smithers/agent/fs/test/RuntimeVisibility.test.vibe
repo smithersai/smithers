@@ -22,7 +22,7 @@ const invoker = FlowInvoker.make({
   invoke: effect (invocation) => {
     invoked.push(invocation.name)
     return invocation.input
-  }
+  },
 })
 
 /** Runs a program with the recording invoker. */
@@ -56,7 +56,7 @@ describe("runtime model visibility", () => {
       expect(response.status).toBe(400)
       expect(try sync(async (response) => response.json(), response)).toMatchObject({
         ok: false,
-        error: { code: "load_failed" }
+        error: { code: "load_failed" },
       })
       expect(invoked).toEqual([])
     } finally {

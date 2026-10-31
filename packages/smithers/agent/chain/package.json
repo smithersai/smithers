@@ -90,7 +90,8 @@
     "@smthrs/model": "workspace:*",
     "@smthrs/registry": "workspace:*",
     "effect": "4.1.0",
-    "quickjs-emscripten-core": "0.32.0"
+    "quickjs-emscripten-core": "0.32.0",
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-956814eb1e95.tgz"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",

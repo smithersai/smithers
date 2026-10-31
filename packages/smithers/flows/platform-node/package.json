@@ -204,7 +204,8 @@
     "esbuild": "0.28.2",
     "redis": "6.2.1",
     "undici": "8.12.3",
-    "ws": "8.22.0"
+    "ws": "8.22.0",
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-956814eb1e95.tgz"
   },
   "peerDependencies": {
     "effect": "4.1.0"

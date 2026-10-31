@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "rewriteRelativeImportExtensions": true,
     "target": "ES2022",
     "lib": [
       "ES2024",
@@ -23,7 +24,8 @@
     ]
   },
   "include": [
-    "**/*.ts"
+    "**/*.ts",
+    "**/*.vibe"
   ],
   "exclude": [
     "node_modules",

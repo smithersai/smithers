@@ -229,7 +229,8 @@
     "yaml": "2.9.0",
     "@mdx-js/mdx": "3.1.1",
     "@smthrs/artifacts": "1.0.0-rc.16",
-    "@smthrs/crypto": "1.0.0-rc.16"
+    "@smthrs/crypto": "1.0.0-rc.16",
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-956814eb1e95.tgz"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",

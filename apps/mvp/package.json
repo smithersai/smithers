@@ -81,7 +81,8 @@
     "quickjs-emscripten-core": "0.32.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "sucrase": "3.35.1"
+    "sucrase": "3.35.1",
+    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-956814eb1e95.tgz"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.64.0",

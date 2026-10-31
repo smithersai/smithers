@@ -1,6 +1,7 @@
 {
   "extends": "../../../../tsconfig.base.json",
   "compilerOptions": {
+    "rewriteRelativeImportExtensions": true,
     "module": "Node18",
     // The suite reaches the review flow, whose walkthrough renderer
     // sources are typed against DOM, as the modules that own them declare.
@@ -15,6 +16,6 @@
     // suites, so the checked set needs Bun's globals as well as Node's.
     "types": ["bun-types", "node"]
   },
-  "include": ["*.ts"],
+  "include": ["*.ts", "*.vibe"],
   "exclude": ["PACKAGE.ts"]
 }

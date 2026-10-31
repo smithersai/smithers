@@ -159,8 +159,8 @@ const nextBetween = (min: number, max: number, draw: number): number => {
 }
 
 const readUint53 = (bytes: Uint8Array): number =>
-  (bytes[0]! & 0x1f) * 2 ** 48 + bytes[1]! * 2 ** 40 + bytes[2]! * 2 ** 32 + bytes[3]! * 2 ** 24 +
-  bytes[4]! * 2 ** 16 + bytes[5]! * 2 ** 8 + bytes[6]!
+  (bytes[0]! & 0x1f) * 2 ** 48 + bytes[1]! * 2 ** 40 + bytes[2]! * 2 ** 32 + bytes[3]! * 2 ** 24
+  + bytes[4]! * 2 ** 16 + bytes[5]! * 2 ** 8 + bytes[6]!
 
 /**
  * Builds the `Crypto` service from a source of random bytes and a digest, as
@@ -174,7 +174,7 @@ export const make = (impl: {
   readonly randomBytes: (size: number) => Uint8Array
   readonly digest: (
     algorithm: DigestAlgorithm,
-    data: Uint8Array
+    data: Uint8Array,
   ) => Uint8Array!PlatformError.PlatformError
 }): Crypto => {
   const randomBytesUnsafe = impl.randomBytes
@@ -202,7 +202,7 @@ export const make = (impl: {
         throw PlatformError.badArgument({
           module: "Crypto",
           method: "randomBytes",
-          description: "size must be a non-negative safe integer"
+          description: "size must be a non-negative safe integer",
         })
       }
       return randomBytesUnsafe(size)
@@ -240,7 +240,7 @@ export const make = (impl: {
     randomUUIDv7: randomUUIDv7 as Crypto["randomUUIDv7"],
     randomULID: effect {
       return try ulidString(try Clock.currentTimeMillis, randomBytesUnsafe(10))
-    }
+    },
   })
 }
 
@@ -248,7 +248,7 @@ const digestAlgorithms: Readonly<Record<DigestAlgorithm, Digest.Algorithm>> = {
   "SHA-1": Digest.sha1,
   "SHA-256": Digest.sha256,
   "SHA-384": Digest.sha384,
-  "SHA-512": Digest.sha512
+  "SHA-512": Digest.sha512,
 }
 
 /**
@@ -274,11 +274,11 @@ export const layerFromDigest = <E, R>(digest: Layer.Layer<Digest.Digest, E, R>):
             throw PlatformError.badArgument({
               module: "Crypto",
               method: "digest",
-              description: `unsupported digest algorithm ${String(algorithm)}`
+              description: `unsupported digest algorithm ${String(algorithm)}`,
             })
           }
           return try service.digest(known, data)
-        }
+        },
       })
-    }
+    },
   ).pipe(Layer.provide(digest))

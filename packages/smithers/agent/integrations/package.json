@@ -478,7 +478,8 @@
     "@smthrs/notifications": "1.0.0-rc.16",
     "@smthrs/canonical": "1.0.0-rc.16",
     "@smthrs/plan": "1.0.0-rc.16",
-    "@smthrs/crypto": "1.0.0-rc.16"
+    "@smthrs/crypto": "1.0.0-rc.16",
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-956814eb1e95.tgz"
   },
   "peerDependencies": {
     "effect": "4.1.0"

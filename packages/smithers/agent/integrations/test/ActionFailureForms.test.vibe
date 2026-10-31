@@ -39,7 +39,7 @@ const payload = {
   message: "slow down",
   retryable: true,
   deliveredMessageIds: [7],
-  retryAfterMillis: 500
+  retryAfterMillis: 500,
 }
 
 describe("IntegrationFailure as a schema error", () => {

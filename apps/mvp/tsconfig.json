@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "rewriteRelativeImportExtensions": true,
     "allowArbitraryExtensions": true,
     "target": "ES2022",
     "module": "ESNext",
@@ -20,6 +21,8 @@
     "dev",
     "e2e",
     "vite.config.ts",
-    "playwright.config.ts"
+    "playwright.config.ts",
+    "vite.config.vibe",
+    "playwright.config.vibe"
   ]
 }

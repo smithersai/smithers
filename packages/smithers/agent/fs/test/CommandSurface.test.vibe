@@ -11,12 +11,12 @@ describe("Command surface", () => {
       makeRoute("markdown", undefined, { kind: "markdown" }),
       makeRoute("skill", undefined, { kind: "skill" }),
       makeRoute("nested/visible"),
-      makeRoute("alpha")
+      makeRoute("alpha"),
     ])
 
     expect(surface.list()).toEqual([
       { name: "alpha", description: "alpha description" },
-      { name: "nested/visible", description: "nested/visible description" }
+      { name: "nested/visible", description: "nested/visible description" },
     ])
     expect(Object.isFrozen(surface.list())).toBe(true)
     expect(Object.isFrozen(surface)).toBe(true)
@@ -40,7 +40,7 @@ describe("Command surface", () => {
       invoke: effect (invocation) => {
         seen.push(invocation)
         return { accepted: true, number: (invocation.input as { number: number }).number }
-      }
+      },
     })
     provide FlowInvoker.FlowInvoker = invoker {
       expect(try surface.execute("review --number 42")).toEqual({ accepted: true, number: 42 })
@@ -57,7 +57,7 @@ describe("Command surface", () => {
       invoke: effect ({ input }) => {
         observed.push(input)
         return { accepted: true, number: (input as { number: number }).number }
-      }
+      },
     })
     provide FlowInvoker.FlowInvoker = invoker {
       const source: { mutable number: number } = { number: 1 }
@@ -79,11 +79,11 @@ describe("Command surface", () => {
   it.effect("returns typed decode, encode, and load failures without input disclosure") {
     const surface = try Command.make([
       makeRoute("review"),
-      makeRoute("invalid", invalidModule)
+      makeRoute("invalid", invalidModule),
     ])
     const badInput = try failureOf(surface.parse("review --number TOP-SECRET"))
     expect(badInput).toMatchObject({
-      code: "decode_failed"
+      code: "decode_failed",
     })
     expect(JSON.stringify(badInput)).not.toContain("TOP-SECRET")
 

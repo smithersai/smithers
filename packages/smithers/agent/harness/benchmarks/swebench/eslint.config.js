@@ -5,6 +5,7 @@ import tseslint from "typescript-eslint"
 import { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from "../../../../../../eslint.invariants.js"
 
 export default tseslint.config(
+  { ignores: ["**/*.d.vibe.ts"] },
   {
     // Captured evaluator output is evidence of what a wave measured.
     ignores: ["PACKAGE.ts", "archive/**", "baseline/**", "fixtures/**", "fullbench/**", "golf/**", "reports/**", "docs/**"]

@@ -1,6 +1,7 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "rewriteRelativeImportExtensions": true,
     "types": [
       "node",
       "vitest/globals"
@@ -12,6 +13,7 @@
     ]
   },
   "include": [
-    "worker/test/cli-contract.test.ts"
+    "worker/test/cli-contract.test.ts",
+    "worker/test/cli-contract.test.vibe"
   ]
 }

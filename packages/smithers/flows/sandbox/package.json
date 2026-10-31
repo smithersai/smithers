@@ -367,7 +367,8 @@
     "@smthrs/flow": "1.0.0-rc.16",
     "@smthrs/jj": "1.0.0-rc.16",
     "@smthrs/kernel": "1.0.0-rc.16",
-    "@smthrs/plan": "workspace:*"
+    "@smthrs/plan": "workspace:*",
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-956814eb1e95.tgz"
   },
   "devDependencies": {
     "@smthrs/engine": "1.0.0-rc.16",

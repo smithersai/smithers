@@ -2,7 +2,7 @@ import tseslint from "typescript-eslint"
 import { failureObserved } from "./eslint.frontend-failures.js"
 import { noSharedInflight } from "./eslint.worker-inflight.js"
 
-export default [{
+export default [{ ignores: ["**/*.d.vibe.ts"] }, {
   files: ["worker/**/*.ts"],
   ignores: ["worker/**/*.test.ts", "worker/**/test/**"],
   languageOptions: { parser: tseslint.parser },
