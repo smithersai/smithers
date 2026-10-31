@@ -165,6 +165,7 @@ describe("needs", () => {
       "personalModelKey",
       "hostedModelOff",
       "factoryRepository",
+      "agentRunner",
       "githubScratch",
       "syncedScratch",
       "secondRepository",

@@ -119,6 +119,9 @@ export const PROTECTED_ACTS = {
   model: { route: "PUT /api/me/model" },
   // A stack's lanes, open limit and base (decision 0135): an Admin's spend and a repository's way of working.
   "stack/configure": { route: "POST /api/repos/<owner>/<name>/stack (configure)" },
+  // Registering a runner machine or naming an external agent (decision 0136): what runs code on whose machine.
+  runner: { route: "PUT, DELETE /api/repos/<owner>/<name>/runners/<name>" },
+  agent: { route: "PUT, DELETE /api/repos/<owner>/<name>/agents/<name>" },
 } as const
 
 /** A person-only act: a registry flow with a `userOnlyReason`, or a protected act. */

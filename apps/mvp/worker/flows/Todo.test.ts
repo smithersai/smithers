@@ -35,6 +35,7 @@ import { PersonalModels } from "../personal/Models.ts"
 import { KEY, resetModels, seed, seedKeys, VALUE } from "../personal/test/harness.ts"
 import { scriptedProvider } from "../personal/test/provider.ts"
 import { SecretKeys } from "../secrets/Keys.ts"
+import * as RunnerStore from "../runners/Store.ts"
 import * as Stack from "../stack/Stack.ts"
 import { build, runFlow } from "../test/flowHost.ts"
 import * as Box from "../test/box.ts"
@@ -54,6 +55,7 @@ beforeEach(async () => {
   await reset(runtime)
   await sql(runtime, "TRUNCATE stack_ops, todo_attempts, todo_requests, todos, stacks, pulls, pull_commits, reviews, runs")
   await sql(runtime, "TRUNCATE model_usage, model_budget_days")
+  await sql(runtime, "TRUNCATE agent_jobs, agents, agent_changes RESTART IDENTITY CASCADE")
   await resetModels(runtime)
 })
 
@@ -448,6 +450,23 @@ describe("the todo run", { timeout: 120_000 }, () => {
       expect(commands.join("\n")).not.toContain("SENTINEL")
       expect(provider.seen).toEqual([])
       expect(ctx.agent.requests).toEqual([])
+    })
+
+    test("still gets it when the repository names an external agent but not as its coding agent (decision 0136)", async () => {
+      // Only a repository's coding agent takes a TODO off the committer's connections (worker/flows/Todo.ts).
+      await runtime.runPromise(RunnerStore.setAgent(
+        { repoId: REPOSITORY.id, agent: { name: "reviewer", labels: ["linux"], profile: "p", maxHours: 1, restarts: 1 }, coding: false },
+        { actorId: "person-admin", invocationKey: crypto.randomUUID() },
+      ))
+      await seedKeys(runtime, maya.id, [{ kind: "claude_subscription", key: "sk-ant-oat01-SENTINEL-claude-token" }])
+      const commands: Array<string> = []
+      const ctx = await setup({ secrets: true, run: (command) => (commands.push(command), 0) })
+      const start = (await commit("Mine", "Change nothing."))!
+      expect((await ctx.run(start)).exit).toEqual(Exit.succeed({ state: "failed" }))
+      expect(await todo()).toMatchObject({ state: "failed", failure: "empty_change" })
+      expect(commands.some((command) => command.includes("claude -p --output-format json"))).toBe(true)
+      expect(ctx.agent.requests).toEqual([])
+      expect(await sql(runtime, "SELECT count(*)::int AS n FROM agent_jobs")).toEqual([{ n: 0 }])
     })
 
     test("gets the agent's refusal as the TODO's failure when it exits non-zero", async () => {

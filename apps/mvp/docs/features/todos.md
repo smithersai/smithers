@@ -133,10 +133,19 @@ Make TODO drafts a TODO from an issue, linked to it (Will, 2026-10-20). Everythi
 todo/Begin      the TODO and its prompt; its base, the head of the TODO it stacks on (`after`, in review), else of the
                 default branch; its branch's name smithers/t<n>-<slug>-<key> reserved; nothing written to GitHub
                 ─▶ writer: branch and its base, step implement
+todo/Agent      which agent codes the attempt: the repository's coding agent, read once (worker/flows/TodoSession.ts)
+                with none, the committer's model connections (decision 0132, ruling AUTH-10):
+todo/Route      the committer's connection list, sealed for the attempt (worker/flows/TodoCli.ts): a Claude or Codex
+                subscription first runs the vendor's own agent CLI in the branch's sandbox (todo/ImplementCli);
+                anything else runs Smithers' own agent:
 todo/Implement  the agent (AgentAction, the `coding` role) writes the change on the attempt's machine, checked out at the
                 base, with the sandbox tools (worker/flows/TodoAgent.ts), and checks only the packages it changed, with
                 their own scripts
 todo/Collect    the files it changed, read whole from the machine (50 files, 1 MiB at most); none ─▶ failed empty_change
+                or, when the repository names a coding agent, whatever the committer's list holds (agent-runners.md):
+agent/Session   a runner checks the repository out at the base and runs the agent with its own tools there; it settles
+                the files the agent changed (worker/flows/TodoSession.ts)
+todo/Received   those files, checked as Collect checks a machine's; none ─▶ failed empty_change
 todo/Publish    the branch made on GitHub at the base, as the App, under the reserved name; one commit,
                 createCommitOnBranch fenced by the base ("T<n>: <title>", "Smithers for @maya"); the pull request into
                 its base (a draft while that is another TODO's branch), its body the prompt, "Fixes #n" for a TODO from
@@ -150,6 +159,7 @@ todo/Fail       any step that gave up ─▶ writer: failed with its code (imple
                 pr_refused, app_not_installed, base_closed); the TODOs stacked on it hold behind it
 ```
 
+- **Who codes a TODO** ([decision 0136](../decisions/0136-external-agents-on-runners.md) §9). The repository's coding agent comes first: when an Admin named one, an external agent on one of the repository's runners codes every TODO, whatever its committer's connections hold. A repository that names none codes with the committer's connections exactly as [decision 0132](../decisions/0132-model-connections.md) built them (ruling AUTH-10): a Claude or Codex subscription first in the list runs that vendor's CLI in the branch's sandbox, and an API key or gateway runs Smithers' own agent. `worker/flows/Todo.test.ts` and `worker/runners/TodoRunner.test.ts` prove both sides.
 - **Nothing on GitHub before Publish.** `todo/Begin` reserves the branch name and its base; `todo/Publish` creates the branch on GitHub with its one commit, so an attempt that publishes nothing leaves nothing on GitHub (GH-11).
 - **States** (decision 0016's factory simplified): Queued, Working, In review, Merged, Dropped, Failed. Steps: implement, publish, await. Only Working holds one of the stack's lanes (`stacks.lanes`, 1 to 64, [lanes](#lanes)): a TODO in review frees it, so the next one starts. A Working TODO whose job no runner has claimed reads Waiting for a runner.
 - **Published reports keep their receipt.** The first `published` report stores the attempts it started (`todo_attempts.published_report`), so a retried `todo/Publish`, or a new head after a restack, starts the same ones and never another. A drop copies those starts into its own receipt under the stack lock before cancelling the old run, so the durable drop request owns their admission even when publish stopped after its report committed.

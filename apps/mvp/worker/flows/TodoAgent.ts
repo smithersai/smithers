@@ -95,7 +95,9 @@ export const SYSTEM = [
 ]
 
 /** The step's task, from the TODO. */
-export const promptOf = (payload: Schema.Struct.Type<typeof ImplementPayload>): string =>
+export const promptOf = (
+  payload: Pick<Schema.Struct.Type<typeof ImplementPayload>, "number" | "title" | "prompt" | "acceptance">,
+): string =>
   [
     `TODO T${payload.number}: ${payload.title}`,
     "",

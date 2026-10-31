@@ -310,6 +310,12 @@ const needs = {
     met: (run) => run.target === "deployment" && set(run, "E2E_FACTORY_REPOSITORY") && !/^smithersai\//i.test(run.env.E2E_FACTORY_REPOSITORY!),
     reason: "it runs TODOs to pull requests: run against a live instance whose GITHUB_REPOSITORY is a scratch repository, named in E2E_FACTORY_REPOSITORY, never a smithersai one",
   },
+  agentRunner: {
+    met: (run) =>
+      run.target === "deployment" && set(run, "E2E_FACTORY_REPOSITORY", "E2E_RUNNER_MIRROR") &&
+      !/^smithersai\//i.test(run.env.E2E_FACTORY_REPOSITORY!) && run.role() === "admin",
+    reason: "it runs a TODO to a pull request on an external agent (decision 0136): a dev build signing in through the GitHub App (E2E_TARGET=deployment) on a scratch repository the test account administers, named in E2E_FACTORY_REPOSITORY, never a smithersai one, and E2E_RUNNER_MIRROR naming a jj clone of it on this machine for the spec's own `smthrs runner`",
+  },
   feedKey: {
     // Locally, `alchemy dev` accepts its development feed key (worker/feeds/dev.ts) unless FEED_KEYS is set.
     met: (run) =>
