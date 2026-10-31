@@ -369,7 +369,21 @@ native_jj_export() {
 gate_tools() {
   case "$1" in
     workspace) echo 'js jj foundry postgres' ;;
+    workspace-2) echo 'js jj foundry postgres' ;;
+    workspace-3) echo 'js jj foundry postgres' ;;
+    workspace-4) echo 'js jj foundry postgres' ;;
+    workspace-5) echo 'js jj foundry postgres' ;;
+    workspace-6) echo 'js jj foundry postgres' ;;
+    workspace-7) echo 'js jj foundry postgres' ;;
+    workspace-8) echo 'js jj foundry postgres' ;;
     packages) echo 'js jj foundry postgres sshd' ;;
+    packages-2) echo 'js jj foundry postgres sshd' ;;
+    packages-3) echo 'js jj foundry postgres sshd' ;;
+    packages-4) echo 'js jj foundry postgres sshd' ;;
+    packages-5) echo 'js jj foundry postgres sshd' ;;
+    packages-6) echo 'js jj foundry postgres sshd' ;;
+    packages-7) echo 'js jj foundry postgres sshd' ;;
+    packages-8) echo 'js jj foundry postgres sshd' ;;
     flows-issue-claim) echo 'js jj rust' ;;
     flows-evidence-bindings) echo 'js jj rust' ;;
     flows-release-rehearsal) echo 'js jj rust' ;;
@@ -489,11 +503,34 @@ bootstrap_for() {
 # Docker integration cases retain their existing no-daemon skip behavior.
 # Omitted: credentialed cache publishing/model reviews, the macOS/Windows
 # matrix, and wasm byte reproducibility (requires its canonical x86_64 host).
+# workspace and packages are shard 1 of ci.yml's test and packages jobs;
+# workspace-N and packages-N are shards test-N and packages-N.
 # Bootstrap belongs to bootstrap_for, so single-gate and group mode share this.
 run_gate() {
   case "$1" in
     workspace)
-      pnpm exec smthrs ci '//packages/...' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs ci '//packages/smithers:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      ;;
+    workspace-2)
+      pnpm exec smthrs ci '//packages/smithers/agent/harness-detect:*' '//packages/smithers/agent/harness:*' '//packages/smithers/agent/memory:*' '//packages/smithers/build/build-cli:*' '//packages/smithers/flows/capability:*' '//packages/smithers/flows/database:*' '//packages/smithers/flows/patterns:*' '//packages/smithers/flows/step-cache:*' '//packages/smthrs-deprecation:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      ;;
+    workspace-3)
+      pnpm exec smthrs ci '//packages/effect-electric:*' '//packages/smithers/agent/harness/benchmarks/swebench:*' '//packages/smithers/flows/engine-store:*' '//packages/smithers/flows/kernel:*' '//packages/smithers/flows/secrets:*' '//packages/smithers/gateway:*' '//packages/smithers/ui/repo-view:*' '//packages/smithers/ui:*' '//packages/testing:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      ;;
+    workspace-4)
+      pnpm exec smthrs ci '//packages/effect-tanstack-db:*' '//packages/smithers/agent/model:*' '//packages/smithers/agent/scorers:*' '//packages/smithers/agent/triggers:*' '//packages/smithers/flows/core:*' '//packages/smithers/flows/engine:*' '//packages/smithers/flows/flow:*' '//packages/smithers/flows/platform-browser:*' '//packages/smithers/ui/terminal-frame:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      ;;
+    workspace-5)
+      pnpm exec smthrs ci '//packages/errors:*' '//packages/rpc:*' '//packages/smithers/agent/fs:*' '//packages/smithers/agent/harness/benchmarks/ale:*' '//packages/smithers/agent/integrations:*' '//packages/smithers/agent/std:*' '//packages/smithers/agent:*' '//packages/smithers/build:*' '//packages/smithers/flows/journal:*' '//packages/smithers/flows:*' '//packages/smithers/notifications:*' '//packages/smithers/ui/ui-styleguide:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      ;;
+    workspace-6)
+      pnpm exec smthrs ci '//packages/repo-targets:*' '//packages/smithers/agent/chain:*' '//packages/smithers/agent/regression:*' '//packages/smithers/build/infra:*' '//packages/smithers/flows/jj-wasm:*' '//packages/smithers/flows/jj:*' '//packages/smithers/flows/keys:*' '//packages/smithers/flows/platform-bun:*' '//packages/smithers/flows/platform-node:*' '//packages/smithers/flows/sync:*' '//packages/smithers/mcp:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      ;;
+    workspace-7)
+      pnpm exec smthrs ci '//packages/effect-code-storage:*' '//packages/smithers/agent/model-host:*' '//packages/smithers/agent/plugin:*' '//packages/smithers/flows/crypto:*' '//packages/smithers/flows/plan-store:*' '//packages/smithers/flows/run-store:*' '//packages/smithers/flows/sandbox:*' '//packages/smithers/flows/time-travel:*' '//packages/smithers/migrate:*' '//packages/smithers/ui/views:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      ;;
+    workspace-8)
+      pnpm exec smthrs ci '//packages/smithers/agent/evals:*' '//packages/smithers/agent/harness/benchmarks/harbor:*' '//packages/smithers/agent/registry:*' '//packages/smithers/build/targets:*' '//packages/smithers/control:*' '//packages/smithers/flows/artifacts:*' '//packages/smithers/flows/canonical:*' '//packages/smithers/flows/observability:*' '//packages/smithers/flows/plan:*' '//packages/smithers/flows/platform-cloudflare:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
       ;;
     flows-issue-claim)
       pnpm exec smthrs test '//.smithers/flows:issueClaim' --known-red '.github/ci-known-red.json' --verbose
@@ -693,7 +730,28 @@ run_gate() {
       pnpm exec smthrs test '//packages/repo-targets:webBundleContract' --known-red '.github/ci-known-red.json' --verbose
       ;;
     packages)
-      pnpm exec smthrs test '//packages/...' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs test '//packages/smithers:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      ;;
+    packages-2)
+      pnpm exec smthrs test '//packages/smithers/agent/harness-detect:*' '//packages/smithers/agent/harness:*' '//packages/smithers/agent/memory:*' '//packages/smithers/build/build-cli:*' '//packages/smithers/flows/capability:*' '//packages/smithers/flows/database:*' '//packages/smithers/flows/patterns:*' '//packages/smithers/flows/step-cache:*' '//packages/smthrs-deprecation:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      ;;
+    packages-3)
+      pnpm exec smthrs test '//packages/effect-electric:*' '//packages/smithers/agent/harness/benchmarks/swebench:*' '//packages/smithers/flows/engine-store:*' '//packages/smithers/flows/kernel:*' '//packages/smithers/flows/secrets:*' '//packages/smithers/gateway:*' '//packages/smithers/ui/repo-view:*' '//packages/smithers/ui:*' '//packages/testing:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      ;;
+    packages-4)
+      pnpm exec smthrs test '//packages/effect-tanstack-db:*' '//packages/smithers/agent/model:*' '//packages/smithers/agent/scorers:*' '//packages/smithers/agent/triggers:*' '//packages/smithers/flows/core:*' '//packages/smithers/flows/engine:*' '//packages/smithers/flows/flow:*' '//packages/smithers/flows/platform-browser:*' '//packages/smithers/ui/terminal-frame:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      ;;
+    packages-5)
+      pnpm exec smthrs test '//packages/errors:*' '//packages/rpc:*' '//packages/smithers/agent/fs:*' '//packages/smithers/agent/harness/benchmarks/ale:*' '//packages/smithers/agent/integrations:*' '//packages/smithers/agent/std:*' '//packages/smithers/agent:*' '//packages/smithers/build:*' '//packages/smithers/flows/journal:*' '//packages/smithers/flows:*' '//packages/smithers/notifications:*' '//packages/smithers/ui/ui-styleguide:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      ;;
+    packages-6)
+      pnpm exec smthrs test '//packages/repo-targets:*' '//packages/smithers/agent/chain:*' '//packages/smithers/agent/regression:*' '//packages/smithers/build/infra:*' '//packages/smithers/flows/jj-wasm:*' '//packages/smithers/flows/jj:*' '//packages/smithers/flows/keys:*' '//packages/smithers/flows/platform-bun:*' '//packages/smithers/flows/platform-node:*' '//packages/smithers/flows/sync:*' '//packages/smithers/mcp:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      ;;
+    packages-7)
+      pnpm exec smthrs test '//packages/effect-code-storage:*' '//packages/smithers/agent/model-host:*' '//packages/smithers/agent/plugin:*' '//packages/smithers/flows/crypto:*' '//packages/smithers/flows/plan-store:*' '//packages/smithers/flows/run-store:*' '//packages/smithers/flows/sandbox:*' '//packages/smithers/flows/time-travel:*' '//packages/smithers/migrate:*' '//packages/smithers/ui/views:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
+      ;;
+    packages-8)
+      pnpm exec smthrs test '//packages/smithers/agent/evals:*' '//packages/smithers/agent/harness/benchmarks/harbor:*' '//packages/smithers/agent/registry:*' '//packages/smithers/build/targets:*' '//packages/smithers/control:*' '//packages/smithers/flows/artifacts:*' '//packages/smithers/flows/canonical:*' '//packages/smithers/flows/observability:*' '//packages/smithers/flows/plan:*' '//packages/smithers/flows/platform-cloudflare:*' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
       ;;
     cloud-contract)
       bun test ./.github/scripts/ci/cloud.test.ts
