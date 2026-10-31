@@ -18,7 +18,7 @@ export const reopens = Metric.counter("smithers_web_branch_reopens", {
   incremental: true,
 })
 
-/** Branch pages opened, by `outcome`: `ready`, `missing`, `sign_in`, `forbidden`, `failed` or `offline`. */
+/** Branch pages opened, by `outcome`: `ready`, `kept` (another page of the branch the tab shows), `missing`, `sign_in`, `forbidden`, `failed` or `offline`. */
 export const opens = Metric.counter("smithers_web_branch_opens", {
   description: "Branch pages opened in this browser, by outcome",
   incremental: true,

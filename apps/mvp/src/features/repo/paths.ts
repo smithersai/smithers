@@ -236,3 +236,18 @@ export const canonicalRepoHref = (
   const pathname = `${nextPrefix}${nextSuffix}`
   return pathname === location.pathname ? undefined : `${pathname}${location.searchStr}${location.hash === "" ? "" : `#${location.hash.replace(/^#/, "")}`}`
 }
+
+/**
+ * Whether the page the router showed before this navigation (`shown`, its path) was a page of `owner/repo` too, such
+ * as the tree a file was clicked in. Such a navigation stays in the repository: who the person is there and its home
+ * are already this tab's, so the route doesn't ask ChatApi for them again. GitHub's owner and repository names ignore
+ * case. A first load shows nothing before (`undefined`).
+ */
+export const staysInRepository = (
+  shown: string | undefined,
+  params: { readonly owner: string; readonly repo: string },
+): boolean => {
+  if (shown === undefined) return false
+  const [, owner, repo] = shown.split("/")
+  return owner?.toLowerCase() === params.owner.toLowerCase() && repo?.toLowerCase() === params.repo.toLowerCase()
+}

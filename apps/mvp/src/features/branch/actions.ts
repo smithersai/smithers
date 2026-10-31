@@ -83,6 +83,16 @@ export const open = (owner: string, repo: string, ref: string, signal?: AbortSig
       value === request && signal?.aborted !== true ? Effect.void : Effect.fail(new Superseded())))
     const route = `${owner.toLowerCase()}/${repo.toLowerCase()}/${ref}`
     const empty = { branchId: null, conversationId: null, mode: null, access: null }
+    // Another page of the branch this tab shows, such as the next file in its tree: the workspace stays as it is, its
+    // conversation and its shares' follower included, and nothing unmounts while ChatApi would answer what it already
+    // did. Leaving the branch, or a reload, tracks it again.
+    const shown = yield* (yield* BranchStore).current.get(CURRENT)
+    if (Option.isSome(shown) && shown.value.status === "ready" && shown.value.branchId !== null &&
+      `${shown.value.owner.toLowerCase()}/${shown.value.repo.toLowerCase()}/${shown.value.name}` === route) {
+      yield* Metric.update(Metric.withAttributes(opens, { outcome: "kept" }), 1)
+      yield* Effect.logInfo("branch.open").pipe(Effect.annotateLogs({ outcome: "kept" }))
+      return shown.value.branchId
+    }
     yield* FiberHandle.clear((yield* BranchStore).follower)
     if (!isRepository(owner, repo) || !isBranchName(ref)) {
       yield* setCurrent({ owner, repo, name: ref, status: "missing", ...empty })

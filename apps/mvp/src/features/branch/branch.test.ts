@@ -141,6 +141,37 @@ describe("opening a branch", () => {
     expect(tab.dispatched()).toBe(3)
   }, WITHIN)
 
+  test("another page of the branch the tab shows keeps it ready: nothing unmounts, and ChatApi isn't asked again", async () => {
+    const tab = await open()
+    const branchId = await tab.actions.open("octo", "hello", "feature/one")
+    const shown = tab.current()
+    const tracked = tab.dispatched()
+    const reads = tab.api.branches.github.seen.length
+
+    // A file in the tree, then another: the page never goes back to tracking, not even for one render.
+    const states: Array<string> = []
+    const branch = await tab.runtime.runPromise(Effect.service(Branch))
+    const watching = branch.queries.current.subscribeChanges((batch) => {
+      for (const change of batch) states.push(change.value.status)
+    })
+    // Owner and repository as GitHub's URLs may spell them.
+    expect(await tab.actions.open("Octo", "Hello", "feature/one")).toBe(branchId)
+    expect(await tab.actions.open("octo", "hello", "feature/one")).toBe(branchId)
+    watching.unsubscribe()
+
+    expect(states).toEqual([])
+    expect(tab.current()).toEqual(shown)
+    expect(tab.place()).toBe(shown?.conversationId)
+    expect(tab.dispatched()).toBe(tracked)
+    expect(tab.api.branches.github.seen).toHaveLength(reads)
+    expect(tab.opened("kept")).toBe(2)
+
+    // Another branch still tracks, and coming back to the first after it tracks again.
+    await tab.actions.open("octo", "hello", "main")
+    expect(await tab.actions.open("octo", "hello", "feature/one")).toBe(branchId)
+    expect(tab.dispatched()).toBe(tracked + 2)
+  }, WITHIN)
+
   test("an answer that comes after the tab moved on, to another branch or home, isn't shown", async () => {
     const tab = await open()
 

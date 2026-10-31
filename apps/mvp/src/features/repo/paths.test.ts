@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest"
 import {
+  staysInRepository,
   blobKey,
   canonicalRepoHref,
   copyPayloadOf,
@@ -273,4 +274,21 @@ test("canonical repository URLs preserve route, search and fragment with GitHub'
   expect(canonicalRepoHref({ ...location, hash: "#L3" }, params, "smithersai/smithers")).toBe("/smithersai/smithers/issues/12?a=1#L3")
   expect(canonicalRepoHref({ pathname: "/o/r/tree/main/a%20b.ts", searchStr: "", hash: "" }, { owner: "o", repo: "r" }, "o/r", true)).toBe("/o/r/blob/main/a%20b.ts")
   expect(canonicalRepoHref({ pathname: "/o/r/issues", searchStr: "", hash: "" }, { owner: "o", repo: "r" }, "o/r", true)).toBeUndefined()
+})
+
+describe("staysInRepository", () => {
+  const params = { owner: "smithersai", repo: "smithers" }
+  test("a page of the same repository, any page and any case, stays in it", () => {
+    expect(staysInRepository("/smithersai/smithers/tree/main", params)).toBe(true)
+    expect(staysInRepository("/smithersai/smithers", params)).toBe(true)
+    expect(staysInRepository("/SmithersAI/Smithers/blob/main/README.md", params)).toBe(true)
+  })
+  test("a first load, another repository, another owner's or an app page enters it", () => {
+    expect(staysInRepository(undefined, params)).toBe(false)
+    expect(staysInRepository("/smithersai/vibelang/tree/main", params)).toBe(false)
+    expect(staysInRepository("/octocat/smithers", params)).toBe(false)
+    expect(staysInRepository("/smithersai", params)).toBe(false)
+    expect(staysInRepository("/", params)).toBe(false)
+    expect(staysInRepository("/app", params)).toBe(false)
+  })
 })

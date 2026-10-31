@@ -13,7 +13,7 @@ import { PULL_TABS, type PullTab } from "./features/pulls/contract"
 import type { PullsLayer } from "./features/pulls/pulls"
 import { type StackFilter, stackFilterOf, todoNumberOf } from "./features/todos/contract"
 import type { TodosView } from "./features/todos/todos"
-import { canonicalRepoHref, lineSearch } from "./features/repo/paths"
+import { canonicalRepoHref, lineSearch, staysInRepository } from "./features/repo/paths"
 import type { RepoView } from "./features/repo/repo"
 import type { RunsView } from "./features/runs/runs"
 import type { SecretsLayer } from "./features/secrets/secrets"
@@ -145,9 +145,15 @@ const enterRepo = (
     const href = canonicalRepoHref(load.location, params, canonical, fileAtTree)
     if (href !== undefined) throw redirect({ href, replace: true })
   }, () => {
-    context.repo.actions.role(params.owner, params.repo)
+    if (!staysInRepository(shownPath(), params)) context.repo.actions.role(params.owner, params.repo)
     return open()
   })
+
+/**
+ * The path of the page the router shows until this navigation resolves. A navigation that stays in its repository,
+ * such as a file clicked in its tree, asks ChatApi again neither who the person is there nor its home: the tab has both.
+ */
+const shownPath = (): string | undefined => router.state.resolvedLocation?.pathname
 
 /** Repository feature routes share the same frame, including on a direct visit. */
 const enterRepository = (
@@ -366,7 +372,7 @@ const treeRoute = createRoute({
     enterRepo(context, params, load, () => Promise.all([context.repo.actions.warmRoute("tree", params, { L: search.L }), context.home.actions.warm(params.owner, params.repo)]), () =>
       Promise.all([
         context.repo.actions.openRoute("tree", params, { L: search.L }),
-        context.home.actions.open(params.owner, params.repo),
+        staysInRepository(shownPath(), params) ? undefined : context.home.actions.open(params.owner, params.repo),
         context.todos.actions.warm(params.owner, params.repo),
         openBranchPage(context.branch, context.terminal, load.abortController.signal, params, search),
       ])),
@@ -391,7 +397,7 @@ const blobRoute = createRoute({
     enterRepo(context, params, load, () => context.repo.actions.warmRoute("blob", params, search), () =>
       Promise.all([
         context.repo.actions.openRoute("blob", params, search),
-        context.home.actions.open(params.owner, params.repo),
+        staysInRepository(shownPath(), params) ? undefined : context.home.actions.open(params.owner, params.repo),
         openBranchPage(context.branch, context.terminal, load.abortController.signal, params, params._splat === undefined ? {} : { file: params._splat }),
       ])),
   onLeave: ({ context, abortController }) => {
