@@ -1768,3 +1768,21 @@ describe("0077_agent_runners", () => {
     expect(await on(through("0077"))).toEqual([])
   }))
 })
+
+describe("0078_agent_transcripts", () => {
+  test("adds a job's transcript summary, null until its first event and never negative", () => emptySchema(async (url) => {
+    const database = Database.layer(Effect.succeed(Redacted.make(url)))
+    const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+    await on(through("0077"))
+    await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO agent_jobs (key, origin, generation, status, outcome) VALUES ('x#g1', 'x', 1, 'cancelled', '{}')`))
+    expect((await on(through("0078"))).map(([id, name]) => `${id}_${name}`)).toEqual(["78_agent_transcripts"])
+    const [row] = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      SELECT first_event_at, last_event_at, transcript_events, transcript_bytes FROM agent_jobs WHERE key = 'x#g1'`))
+    expect(row).toEqual({ first_event_at: null, last_event_at: null, transcript_events: null, transcript_bytes: null })
+    const refused = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      UPDATE agent_jobs SET transcript_bytes = -1 WHERE key = 'x#g1'`).pipe(Effect.as("taken"), Effect.orElseSucceed(() => "refused")))
+    expect(refused).toBe("refused")
+    expect(await on(through("0078"))).toEqual([])
+  }))
+})
