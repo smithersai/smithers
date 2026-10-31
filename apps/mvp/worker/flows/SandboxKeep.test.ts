@@ -24,13 +24,18 @@ const REPO = "github/octocat/spoon-knife"
 
 /** A machine that answers `sleepIfIdle` from its script, in order, recording every question. */
 const machine = (answers: ReadonlyArray<Effect.Effect<SleepOutcome, SandboxUnavailable>>) => {
-  const asked: Array<{ readonly branchId: string; readonly generation: number; readonly idleMs: number }> = []
+  const asked: Array<{
+    readonly branchId: string
+    readonly generation: number
+    readonly idleMs: number
+    readonly machine?: string | undefined
+  }> = []
   const service = Machines.of({
     commands: () => noCommands,
     tool: () => Effect.die("sandbox/Keep never runs a tool"),
-    sleepIfIdle: (branchId, generation, idleMs) =>
+    sleepIfIdle: (branchId, generation, idleMs, machine) =>
       Effect.suspend(() => {
-        asked.push({ branchId, generation, idleMs })
+        asked.push({ branchId, generation, idleMs, machine })
         return answers[Math.min(asked.length - 1, answers.length - 1)]!
       }),
   })
@@ -94,6 +99,19 @@ describe("sandbox/Keep on the Node host", () => {
     expect(machines.asked).toEqual([{ branchId: branch.branchId, generation: 1, idleMs: 60_000 }])
     expect((await terminals(branch.branchId))[branch.first]).toEqual(["ended", "slept"])
     expect((await terminals(branch.branchId))[branch.second]).toEqual(["open", null])
+  })
+
+  test("a job machine's keep asks that machine, by the name its payload carries", async () => {
+    const branch = await withTerminals()
+    const machines = machine([Effect.succeed("slept")])
+    const ran = await runFlow(
+      SandboxKeep.Keep,
+      { branchId: branch.branchId, generation: 2, machine: "gate" },
+      SandboxKeep.registration(await database(), 1_000).pipe(Layer.provide(machines.layer)),
+    )
+
+    expect(ran.exit).toEqual(Exit.succeed({ ended: "slept", terminals: 1 }))
+    expect(machines.asked).toStrictEqual([{ branchId: branch.branchId, generation: 2, idleMs: 1_000, machine: "gate" }])
   })
 })
 

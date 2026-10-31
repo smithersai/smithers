@@ -10,6 +10,7 @@ import * as AlertChannels from "./AlertChannels.ts"
 import * as Conversations from "./branch/Conversations.ts"
 import * as BranchSandboxes from "./BranchSandboxes.ts"
 import * as Overflow from "./runners/Overflow.ts"
+import * as JobMachines from "./branch/JobMachines.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as AgentSandbox from "./AgentSandbox.ts"
 import * as DomainsConfig from "./domains/Config.ts"
@@ -214,6 +215,14 @@ const object = <E, R>(
       const sandboxObjects = (yield* BranchSandboxes.SandboxObject) as Cloudflare.DurableObject<
         BranchSandboxes.SandboxObjectShape
       >
+      // A `ci/job` naming a job machine runs on that machine's objects (docs/features/ci.md#machines): the gate's,
+      // when the deployment declares it.
+      const machineObjects = BranchSandboxes.namespaces(
+        sandboxObjects,
+        (yield* JobMachines.declared.pipe(Effect.orDie)).includes(JobMachines.GATE)
+          ? (yield* BranchSandboxes.GateObject) as Cloudflare.DurableObject<BranchSandboxes.SandboxObjectShape>
+          : undefined,
+      )
       // Workers Logs keeps every JSON line, as it does ChatApi's.
       const logs = Logger.layerStructuredJson()
       // The object's id exists only at runtime: Alchemy evaluates this outer effect at plan time with a stand-in state.
@@ -275,10 +284,11 @@ const object = <E, R>(
               ], { discard: true }),
           })
         // Each wake of a branch's machine starts that generation's `sandbox/Keep` on its own object, once
-        // (docs/features/sandbox-tools.md#sleep-and-wake).
-        const keep: BranchSandboxes.Keep = (branchId, generation) => {
+        // (docs/features/sandbox-tools.md#sleep-and-wake); a job machine's keep names it, so it asks that machine.
+        const keep: BranchSandboxes.Keep = (branchId, generation, machine) => {
           const executionId = keepExecutionId(branchId, generation)
-          return ExecutionHost.intent(SandboxKeep.Keep, { executionId, payload: { branchId, generation } }).pipe(
+          const payload = machine === undefined ? { branchId, generation } : { branchId, generation, machine }
+          return ExecutionHost.intent(SandboxKeep.Keep, { executionId, payload }).pipe(
             Effect.flatMap((intent) => executions.getByName(executionId).start(intent)),
             Effect.catchCause((cause) =>
               Effect.logWarning("sandbox.keep.start").pipe(
@@ -304,11 +314,11 @@ const object = <E, R>(
               BranchSandboxes.sandboxesLayer(sandboxObjects, keep),
             ),
             appDatabase,
-            BranchSandboxes.machinesLayer(sandboxObjects, keep),
+            BranchSandboxes.machinesLayer(machineObjects, keep),
             idleMs,
           ),
           appDatabase,
-        ), appDatabase), appDatabase, Layer.succeed(DomainProvider, domains)), BranchSandboxes.machinesLayer(sandboxObjects, keep)),
+        ), appDatabase), appDatabase, Layer.succeed(DomainProvider, domains)), BranchSandboxes.machinesLayer(machineObjects, keep)),
           appDatabase), appDatabase, repoId(options.homeRepository.owner, options.homeRepository.name), fleet, raiser, alertChannels)
         // A person's write whose GitHub token is about to expire starts the session's `auth/RecheckRole` on its own
         // object, the one redeemer of the refresh token, with the execution's own runtime context. Triage and a head's
@@ -352,7 +362,7 @@ const object = <E, R>(
         // The coding factory's `todo` run and a head's checks (docs/features/todos.md#the-run) need the App: they make
         // branches, commits and pull requests. They start what they start (the next TODO's run, a head's checks) on
         // their own objects, and the agent writes on the branches' machines.
-        const machines = BranchSandboxes.machinesLayer(sandboxObjects, keep)
+        const machines = BranchSandboxes.machinesLayer(machineObjects, keep)
         const todoServices = <GE, GR>(ready: GitHubHost.Ready<GE, GR>) =>
           Effect.gen(function* () {
             const runtime = yield* RuntimeContext

@@ -47,6 +47,46 @@ settles { job0: Result, job1: Result, … }   keyed by position; never fails
 
 A CI job starts only from a repository's flow; no route starts one by name ([no remote door](remote-flows.md#no-remote-door)).
 
+## Machines
+
+A deployment declares job machines beside its default one ([decision 0128](../decisions/0128-gates-on-cloudflare-job-machines.md) (c)). Each is its own container class, with its own image and instance type, and its own Durable Object class with the same implementation as `SandboxObject` (`worker/BranchSandboxes.ts`). A branch names one in `SandboxBranch.machine`; without one it runs on the default machine.
+
+| Machine | Container class | Durable Object | Image | Instance type | Declared when |
+|---|---|---|---|---|---|
+| default | `BranchSandbox` | `SandboxObject` | built from `infra/sandbox/Dockerfile` | `SANDBOX_INSTANCE` (`standard-1`) | always |
+| `gate` | `GateMachine` (`infra/GateMachine.ts`) | `GateObject` | `GATE_IMAGE`, a prebuilt registry reference by digest | `GATE_INSTANCE` (`standard-4`) | `GATE_IMAGE` is set |
+
+```
+Machines.tool / commands ─┐                         machine absent ─▶ SandboxObject namespace
+sandbox/Keep { machine } ─┼─ routed by machine name ─▶ "gate"        ─▶ GateObject namespace (with GATE_IMAGE)
+box request (props)      ─┘                         anything else  ─▶ SandboxUnavailable "undeclared"; nothing wakes
+```
+
+- **Routing.** `Machines.tool`, `Machines.commands` and `Machines.sleepIfIdle` go to the namespace of the branch's machine (`worker/branch/Machines.ts` `routed`). The generation a call ran on starts its `sandbox/Keep` with the machine in its payload, so the keep asks the same object. A box's own requests reach ChatApi with `props` naming its object and its machine (`sandboxMachine`), and ChatApi hands each back to that namespace (`answerBox`).
+- **Undeclared names.** A branch whose machine the deployment didn't declare wakes nothing: each call fails `SandboxUnavailable` with reason `undeclared` and logs `sandbox.machine`. `JobMachines.declared` (`worker/branch/JobMachines.ts`) answers the declared names, `["gate"]` or `[]`, for the plan-time check that refuses an unknown name before a job runs.
+- **Pricing.** Each machine records the instance type it starts on in the sandbox ledger, so its awake time is priced at that type ([sandbox budgets](sandbox-budgets.md)).
+- **Off by default.** A deployment without `GATE_IMAGE` declares no `GateMachine`, `GateObject` or artifacts bucket, and production is unchanged until the gate is turned on.
+
+## Artifacts
+
+A job box reads and writes its run's artifacts at `http://artifacts.smithers.internal/<name>` ([decision 0128](../decisions/0128-gates-on-cloudflare-job-machines.md#artifacts)). The host is an intercept, like the forge proxy's; the box's own object answers it (`worker/branch/Artifacts.ts`) from the `CiArtifacts` R2 bucket (`infra/GateMachine.ts`), declared with the gate machine. No credential enters the box.
+
+| Request | Answer |
+|---|---|
+| `PUT /<name>` with `Content-Length` up to 512 MiB | 201: stored at `ci/<scope>/<name>`, replacing what was there |
+| `GET /<name>` | 200 with the bytes, streamed; 404 when absent |
+| any request from a box with no scope | 403 |
+| a name not matching `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$` | 400 |
+| another method | 405 |
+| `PUT` without `Content-Length` | 411 |
+| `PUT` over 512 MiB | 413 |
+| the bucket fails | 502 |
+
+- **Scope.** The scope is `SandboxBranch.artifacts`, which `worker/flows/CiJobMachine.ts` `machineOf` sets to a digest of `run:<run>`. Every job of a run shares it; the scope comes from the object's own branch, never the request, so no box can name another run's.
+- **Exact length.** The body is piped through workerd's `FixedLengthStream` of the declared length, so a body longer or shorter than it said fails the write.
+- **Expiry.** The bucket deletes each object 7 days after it was written.
+- **Only the gate's boxes.** The default machine registers no artifacts intercept: its boxes reach that host only as any other host, through the registry egress, which refuses it.
+
 ## Repository flows
 
 A repository declares its CI as TypeScript: `.smithers/flows/<flow>/flow.ts`, one `Flow.make` whose body returns the flow's jobs. It type-checks against the real SDK; the realm reads only its tag and its body (e2e/fixtures/ci-repo is one).
@@ -137,11 +177,14 @@ A repository says when its flows run in its plugin manifest, `.smithers/factory.
 | `ci.dispatch` | log | `delivery`, `repo`, `event`, `sha`, `outcome` (`matched`, `none`, `no_manifest`, `unreadable`), `flows` |
 | `ci.start` | log | `delivery`, `repo`, `flow`, `executionId`, `outcome` (`started`, `not_started`), `errorCode` |
 | `ci.dispatch.match`, `ci.dispatch.start` | span | `smithers.ci.delivery` |
+| `sandbox.artifact` | log, span | `method` (`GET`, `PUT`, `other`), `outcome` (`stored`, `read`, `absent`, `bad_name`, `no_scope`, `method`, `length_required`, `too_large`, `store_failed`), `bytes` |
+| `smithers_sandbox_artifacts{method,outcome}` | counter | |
+| `sandbox.machine` | log | `branchId`, `machine`, `outcome: undeclared` |
 | `smithers_ci_dispatches{event,outcome}`, `smithers_ci_starts{outcome}` | counter | |
 | `github.webhook` | log | gains `dispatched`: the repository a push or pull request dispatched for |
 | `smithers_repo_flow_plans{outcome}`, `smithers_repo_flow_statuses{state,outcome}` | counter | |
 
-No record carries a flow's source, a command, its output or a secret.
+No record carries a flow's source, a command, its output, an artifact's name or content, or a secret.
 
 ## Tests
 
@@ -150,6 +193,11 @@ No record carries a flow's source, a command, its output or a secret.
 | `packages/smithers/flows/sandbox/test/CiJob.test.ts` | the flow on the memory engine: order, skip after a failure, a timeout, another commit, the schemas' refusals, and two jobs as two child runs where one fails and its sibling passes; `ci/graph`'s waves and their order, a failed need skipping its dependents and theirs, a graph refused before anything runs, and each job's machine name reaching the host |
 | `worker/flows/CiJobMachine.test.ts` | the app's machine on the Node host: one machine per run and job, a job's named machine on its `SandboxBranch`, the `ci` user, one call id per call, a lost step, a machine that couldn't start |
 | `worker/flows/CiJob.docker.test.ts` | real containers of the branch sandbox's image, commands as a user of their own: two jobs at once, each at exactly a commit of `roninjin10/smithers-github-tests` fetched from GitHub, Node v26.5.0 and pnpm 11.25.0, `exit 1` failing while its sibling passes, and a background process a step left stopped by the release |
+| `worker/branch/Machines.test.ts` (`routed`) | each call reaches the object of the branch's machine; its keep names the machine; an undeclared machine wakes nothing and every call fails `undeclared` |
+| `worker/branch/JobMachines.test.ts` | the gate declared exactly when `GATE_IMAGE` names an image; `GATE_INSTANCE` and its default |
+| `worker/flows/SandboxKeep.test.ts` | a job machine's keep asks that machine, by the name its payload carries |
+| `worker/branch/Artifacts.test.ts` | the artifacts handler over Miniflare's R2 in Node: a 3 MiB round trip, another run's scope reading nothing, an empty artifact, 400, 403, 405, 411 and 413, a failing bucket's 502, and the log and counter |
+| `worker/branch/Artifacts.workerd.test.ts` | the handler bundled as Alchemy bundles ChatApi, in workerd over a real R2 binding and `FixedLengthStream`, through real HTTP: a 16 MiB round trip, 403, 400, 405, and 411 for a streamed body |
 | `worker/branch/Checkout.test.ts` | the checkout of one commit by its id, detached and shallow, and a commit the forge lacks |
 | `worker/ci/Realm.test.ts` | the realm in Node's QuickJS: a TypeScript flow's jobs; a body deciding from its payload; refused imports, used or not, static or aliased; a loop, a memory bomb and a runaway recursion stopped; syntax, throws, a forged `JSON.stringify`, bad or repeated jobs, a wrong tag; machines and needs planned, and a need on a later, undeclared or own job refused |
 | `worker/ci/Realm.workerd.test.ts` | the realm in local workerd, bundled as Alchemy bundles ChatApi: a flow planned, and a loop stopped by the step budget, since workerd holds its clock still while code runs |

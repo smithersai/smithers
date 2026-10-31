@@ -99,6 +99,7 @@ describe("ci/job on a job machine", { timeout: 60_000 }, () => {
       branch: target.sha,
       forge: "github",
       kind: "job",
+      artifacts: expect.stringMatching(/^[0-9a-f]{40}$/),
     })
     expect(box.calls.map((call) => [call.branch, call.owner, call.command])).toEqual([
       [JSON.stringify(branch), "ci", `test "$(git rev-parse HEAD)" = ${target.sha}`],
@@ -129,6 +130,12 @@ describe("ci/job on a job machine", { timeout: 60_000 }, () => {
     expect(branch).toMatchObject({ kind: "job", machine: "gate" })
     expect(branch.branchId).toBe(CiJobMachine.machineOf(target, { name: "shard" }).branchId)
     expect(new Set(box.calls.map((call) => call.branch))).toEqual(new Set([JSON.stringify(branch)]))
+  })
+
+  test("every job of a run shares the run's artifacts scope; another run's is another", () => {
+    const scope = (run: string, name: string) => CiJobMachine.machineOf({ ...target, run }, { name }).artifacts
+    expect(scope(target.run, "build")).toBe(scope(target.run, "lint"))
+    expect(scope("ci:delivery-8", "build")).not.toBe(scope(target.run, "build"))
   })
 
   test("a machine at another commit runs no step", async () => {

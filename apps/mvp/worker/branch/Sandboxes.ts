@@ -13,6 +13,8 @@ import type { Policy } from "./Access.ts"
  * where it lives when it isn't the deployment's forge: `github` for a TODO's attempt, whose machine checks out its base
  * commit from GitHub (worker/flows/TodoMachine.ts, worker/branch/Forge.ts `forgeOf`). `kind: "job"` is a throwaway machine a head's
  * checks run on, whose box never holds a secret. Every box reaches the package registries (worker/branch/RegistryEgress.ts).
+ * `machine` names a job machine the deployment declared (worker/branch/JobMachines.ts), else the default one. `artifacts`
+ * is the run's artifacts scope a job box reads and writes (worker/branch/Artifacts.ts); a box without one has none.
  */
 export const SandboxBranch = Schema.Struct({
   branchId: Schema.String,
@@ -24,16 +26,18 @@ export const SandboxBranch = Schema.Struct({
   kind: Schema.optional(Schema.Literal("job")),
   /** A job machine's kind, by the name the deployment declared it under; the default job machine when absent. */
   machine: Schema.optional(Schema.String),
+  artifacts: Schema.optional(Schema.String),
 })
 export type SandboxBranch = typeof SandboxBranch.Type
 
 /**
- * The machine couldn't start or answer: the platform failed (`start`, `exec`), or the sandbox limits leave no machine
- * free (`waiting`, worker/branch/Budget.ts). A step tries again.
+ * The machine couldn't start or answer: the platform failed (`start`, `exec`), the sandbox limits leave no machine
+ * free (`waiting`, worker/branch/Budget.ts), or the branch names a machine this deployment didn't declare
+ * (`undeclared`, worker/branch/JobMachines.ts), which nothing wakes. A step tries again.
  */
 export class SandboxUnavailable extends Schema.TaggedError<SandboxUnavailable>()(
   "@smthrs/mvp/branch/SandboxUnavailable",
-  { reason: Schema.Literals(["start", "exec", "waiting"]) },
+  { reason: Schema.Literals(["start", "exec", "waiting", "undeclared"]) },
 ) {}
 
 /**

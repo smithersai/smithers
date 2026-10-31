@@ -7,6 +7,7 @@ import { Cause, Clock, Config, Effect, Fiber, Layer, Option, Schema, Scope } fro
 import { FetchHttpClient, Headers, HttpBody, HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as Database from "../db/Database.ts"
 import { BranchSandbox } from "../infra/BranchSandbox.ts"
+import { CiArtifacts, GateMachine } from "../infra/GateMachine.ts"
 import { ROLES } from "../src/features/auth/contract.ts"
 import { FORGE_HOST, SANDBOX_USER, WORKSPACE } from "../src/features/terminal/contract.ts"
 import type { Role } from "./Actor.ts"
@@ -14,12 +15,14 @@ import { canEdit, canView, type Policy, underPolicy } from "./branch/Access.ts"
 import { CHECKOUT_FAILURES, checkoutArgv, forgeRemote } from "./branch/Checkout.ts"
 import * as Budget from "./branch/Budget.ts"
 import * as Machine from "./branch/Machine.ts"
+import * as Artifacts from "./branch/Artifacts.ts"
+import * as JobMachines from "./branch/JobMachines.ts"
 import {
   type CommandOutcome,
   type CommandRequest,
-  commandsOver,
+  type MachineObject,
   Machines,
-  ranOf,
+  routed,
   type SleepOutcome,
   type ToolOutcome,
 } from "./branch/Machines.ts"
@@ -53,6 +56,12 @@ import * as Overflow from "./runners/Overflow.ts"
 // or with SANDBOX_SECRETS on, the secrets egress. ChatApi hosts it; the flows and
 // routes reach it through `Sandboxes` and `TerminalSockets`, and the sandbox tools through `Machines`
 // (docs/features/sandbox-tools.md), which this file provides from its namespace.
+//
+// A job machine the deployment declares (worker/branch/JobMachines.ts, docs/features/ci.md#machines) is the same object
+// over its own container class and instance type, in its own namespace: `GateObject`, over the gate image
+// (infra/GateMachine.ts). A branch names it in `SandboxBranch.machine`; its tools, its keep and its box's requests reach
+// that namespace. A gate box also reaches its run's artifacts at `http://artifacts.smithers.internal`
+// (worker/branch/Artifacts.ts), which its object answers from the `CiArtifacts` bucket.
 
 /** The headers only ChatApi sets on a socket it hands the object; it strips any a browser sent (worker/branch/Terminals.ts). */
 const TERMINAL_HEADER = "x-smithers-terminal"
@@ -79,10 +88,9 @@ export const sandboxSecrets = Config.Boolean("SANDBOX_SECRETS").pipe(Config.with
  * vCPU, 4 GiB of memory and 8 GB of disk. Cloudflare's own default, `lite`, has 256 MiB, too little for a real
  * repository's clone and tests.
  */
-export const sandboxInstance = Config.schema(
-  Schema.Literals(["lite", "basic", "standard-1", "standard-2", "standard-3", "standard-4"]),
-  "SANDBOX_INSTANCE",
-).pipe(Config.withDefault("standard-1" as const))
+export const sandboxInstance = Config.schema(JobMachines.Instance, "SANDBOX_INSTANCE").pipe(
+  Config.withDefault("standard-1" as const),
+)
 
 /**
  * `SANDBOX_START_TIMEOUT_SECONDS`: the longest a stopped machine's container may take to start before its wake fails
@@ -141,10 +149,19 @@ const roleOf = (value: string | undefined): Role | null =>
  */
 export const BOX_PROP = "sandboxObject"
 
-/** The id of the object whose box sent the request with these `props`; nothing for any other request. */
-export const boxOf = (props: unknown): string | undefined => {
-  const value = typeof props === "object" && props !== null ? (props as Record<string, unknown>)[BOX_PROP] : undefined
-  return typeof value === "string" && value !== "" ? value : undefined
+/** The `ctx.props` key naming the job machine whose namespace that object is in; absent for the default machine. */
+export const MACHINE_PROP = "sandboxMachine"
+
+/**
+ * The object whose box sent the request with these `props`: its id and its machine (none for the default one); nothing
+ * for any other request.
+ */
+export const boxOf = (props: unknown): { readonly id: string; readonly machine?: string } | undefined => {
+  const fields = typeof props === "object" && props !== null ? (props as Record<string, unknown>) : {}
+  const id = fields[BOX_PROP]
+  const machine = fields[MACHINE_PROP]
+  if (typeof id !== "string" || id === "") return undefined
+  return typeof machine === "string" && machine !== "" ? { id, machine } : { id }
 }
 
 /** The loopback to ChatApi's own default entrypoint a Durable Object's `ctx.exports` holds, with `props`. */
@@ -189,15 +206,58 @@ export interface SandboxObjectShape {
 /** The `SandboxObject` Durable Object namespace: a branch's object is `getByName(branchId)`. */
 export class SandboxObject extends Cloudflare.DurableObject<SandboxObject, SandboxObjectShape>()("SandboxObject") {}
 
+/** The gate machine's namespace (`JobMachines.GATE`), the same object over the gate image; declared with GATE_IMAGE. */
+export class GateObject extends Cloudflare.DurableObject<GateObject, SandboxObjectShape>()("GateObject") {}
+
+/** A machine's object: its container class, the instance type it starts on, and the artifacts bucket its boxes reach. */
+interface MachineSpec<CR, BR> {
+  /** The job machine's name, none for the default machine. */
+  readonly machine: string | undefined
+  readonly container: Effect.Effect<Cloudflare.Container, never, CR>
+  readonly instance: Config.Config<JobMachines.Instance>
+  /** Binds the bucket in construction; answers the effect that reads its handle in a request. */
+  readonly artifacts: Effect.Effect<Effect.Effect<Artifacts.Bucket, never, RuntimeContext>, never, BR> | undefined
+}
+
 const isBranch = Schema.is(SandboxBranch)
 
 /**
  * The object's implementation: the branch's container, its checkout, its terminals, its forge and, with
  * `SANDBOX_SECRETS` on, its egress, which reaches Postgres through `connection`, the Hyperdrive config ChatApi binds.
  */
-export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>) => SandboxObject.make(
+export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>) =>
+  SandboxObject.make(implementation(connection, {
+    machine: undefined,
+    container: BranchSandbox,
+    instance: sandboxInstance,
+    artifacts: undefined,
+  }))
+
+/**
+ * The gate machine's objects (`GateObject`) when the deployment declares it (GATE_IMAGE), on GATE_INSTANCE, their
+ * boxes reaching the run's artifacts in `CiArtifacts`; nothing otherwise, and nothing then yields `GateObject`.
+ */
+export const gateLive = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>) =>
+  Layer.unwrap(Effect.map(JobMachines.declared.pipe(Effect.orDie), (machines) => {
+    const layer = GateObject.make(implementation(connection, {
+      machine: JobMachines.GATE,
+      container: GateMachine,
+      instance: JobMachines.gateInstance,
+      artifacts: Effect.map(
+        Cloudflare.R2.ReadWriteBucket(CiArtifacts),
+        (bucket) => bucket.raw as unknown as Effect.Effect<Artifacts.Bucket, never, RuntimeContext>,
+      ),
+    }))
+    // Undeclared, the namespace is never bound: the program yields `GateObject` only for a declared gate.
+    return machines.includes(JobMachines.GATE) ? layer : (Layer.empty as unknown as typeof layer)
+  }))
+
+const implementation = <E, R, CR, BR = never>(
+  connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>,
+  spec: MachineSpec<CR, BR>,
+) =>
   Effect.gen(function* () {
-    const box = yield* BranchSandbox
+    const box = yield* spec.container
     // Session provisioning and machine commands share the SDK runner that discards unread output.
     const runBox = {
       exec: (argv: Array<string>, options: UserOptions) =>
@@ -207,9 +267,10 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
     const forge = yield* Effect.service(Forge).pipe(Effect.provide(Forge.layerConfig), Effect.provide(FetchHttpClient.layer))
     const secretsOn = yield* sandboxSecrets.pipe(Effect.orDie)
     const egressAllowHosts = yield* SandboxEgress.allowHosts.pipe(Effect.orDie)
-    const branchInstance = yield* sandboxInstance.pipe(Effect.orDie)
+    // The machine's own instance type (its spec), except an overflow box's, which starts on OVERFLOW_INSTANCE.
+    const branchInstance = yield* spec.instance.pipe(Effect.orDie)
     const boxInstance = yield* overflowInstance.pipe(Effect.orDie)
-    /** The instance type `branch`'s machine starts on: an overflow box's, or every other machine's. */
+    /** The instance type `branch`'s machine starts on: an overflow box's, or its machine's. */
     const instanceOf = (branch: SandboxBranch | undefined) =>
       branch !== undefined && Overflow.isBox(branch.branchId) ? boxInstance : branchInstance
     const startTimeoutMs = (yield* sandboxStartTimeoutSeconds.pipe(Effect.orDie)) * 1000
@@ -219,6 +280,8 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
     const database = Database.layer(hyperdrive.connectionString)
     // Workers Logs keeps every JSON line, as it does ChatApi's and FlowExecution's. Without it this object's lines
     // (`sandbox.wake`, `sandbox.checkout`, `sandbox.forge`) never reached a log or a tail.
+    // The machine's artifacts bucket, bound in construction; its handle is read per request.
+    const artifactsBucket = spec.artifacts === undefined ? undefined : yield* spec.artifacts
     const logs = Logger.layerStructuredJson()
     const logged = <A, E, RE>(effect: Effect.Effect<A, E, RE>) => Effect.provide(effect, logs)
     return Effect.gen(function* () {
@@ -244,10 +307,20 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
       // (`answerBox`), which answers them as the forge proxy; every other request it makes does too, as its egress:
       // the package registries (worker/branch/RegistryEgress.ts), or with SANDBOX_SECRETS on, the secrets egress,
       // which allows them too. A check job's box always has the registry egress.
+      // A job machine's box says which namespace its object is in (MACHINE_PROP), so ChatApi hands it back there.
       const own = Cloudflare.fromCloudflareFetcher(
-        (state.raw as unknown as Loopback).exports.default({ props: { [BOX_PROP]: state.id.toString() } }),
+        (state.raw as unknown as Loopback).exports.default({
+          props: {
+            [BOX_PROP]: state.id.toString(),
+            ...(spec.machine === undefined ? {} : { [MACHINE_PROP]: spec.machine }),
+          },
+        }),
       )
-      const intercepts = [{ host: FORGE_HOST, fetcher: own }]
+      // A machine with an artifacts bucket answers its box's artifacts host too (worker/branch/Artifacts.ts).
+      const intercepts = [
+        { host: FORGE_HOST, fetcher: own },
+        ...(artifactsBucket === undefined ? [] : [{ host: Artifacts.ARTIFACTS_HOST, fetcher: own }]),
+      ]
       // One-use tickets ChatApi took for the sockets it is about to hand this object (TICKET_HEADER).
       const tickets = new Set<string>()
       const branchOf = state.storage.get<SandboxBranch>("branch").pipe(
@@ -746,6 +819,13 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
           const request = yield* HttpServerRequest.HttpServerRequest
           const host = new URL(request.originalUrl).host
           if (host === FORGE_HOST) return yield* egress(request)
+          // The run's artifacts, under the scope this object's own branch names, never the request.
+          if (host === Artifacts.ARTIFACTS_HOST && artifactsBucket !== undefined) {
+            const bucket = yield* artifactsBucket
+            return yield* Artifacts.answer(request, (yield* branchOf)?.artifacts).pipe(
+              Effect.provide(Artifacts.layerR2(bucket, (bytes) => new FixedLengthStream(bytes))),
+            )
+          }
           // Only ChatApi holds a ticket: a socket it hands over is attached, once per ticket.
           if (tickets.delete(request.headers[TICKET_HEADER] ?? "")) return yield* attach(request)
           // Every other request is the box's own, out through its egress. An overflow box's go only through its own
@@ -761,14 +841,26 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
         })),
       }
     })
-  }),
-)
+  })
 
 /** The namespace as ChatApi and the flow host hold it once they have bound it (`yield* SandboxObject`). */
 type Objects = Cloudflare.DurableObject<SandboxObjectShape>
 
-/** Starts generation `generation`'s `sandbox/Keep` (worker/flows/SandboxKeep.ts); the same generation again is a no-op. */
-export type Keep = (branchId: string, generation: number) => Effect.Effect<void, never, RuntimeContext>
+/**
+ * Starts generation `generation`'s `sandbox/Keep` (worker/flows/SandboxKeep.ts) for the branch's machine (`machine`, none
+ * for the default one); the same generation again is a no-op.
+ */
+export type Keep = (branchId: string, generation: number, machine?: string) => Effect.Effect<void, never, RuntimeContext>
+
+/**
+ * The namespace of each machine the deployment declared, by its name: the default machine's for none, a declared job
+ * machine's for its name, nothing for any other.
+ */
+export type Namespaces = (machine: string | undefined) => Objects | undefined
+
+/** `Namespaces` over the default namespace and, when the deployment declared the gate, the gate's. */
+export const namespaces = (objects: Objects, gate: Objects | undefined): Namespaces => (machine) =>
+  machine === undefined ? objects : machine === JobMachines.GATE ? gate : undefined
 
 const noKeep: Keep = () => Effect.void
 
@@ -839,14 +931,17 @@ export const terminalSocketsOver = (objects: Objects) => Effect.gen(function* ()
 })
 
 /**
- * ChatApi's answer to a request a branch's box sent (`boxOf` its `props`): handed back to that box's own object, which
- * answers it as the box's forge or its egress. 502 when the object can't be reached.
+ * ChatApi's answer to a request a branch's box sent (`boxOf` its `props`): handed back to that box's own object, in its
+ * machine's namespace, which answers it as the box's forge, its artifacts or its egress. 502 when the object can't be
+ * reached or its machine isn't declared here.
  */
-export const answerBox = (objects: Objects, objectId: string) =>
+export const answerBox = (objectsFor: Namespaces, box: { readonly id: string; readonly machine?: string }) =>
   Effect.gen(function* () {
     const runtime = yield* RuntimeContext
     const request = yield* HttpServerRequest.HttpServerRequest
-    return yield* objects.get(objects.idFromString(objectId)).fetch(request).pipe(
+    const objects = objectsFor(box.machine)
+    if (objects === undefined) return yield* Effect.die(new Error("undeclared machine"))
+    return yield* objects.get(objects.idFromString(box.id)).fetch(request).pipe(
       Effect.provideService(RuntimeContext, runtime),
     )
   }).pipe(
@@ -863,44 +958,41 @@ export const sandboxesLayer = (objects: Objects, keep: Keep = noKeep) =>
   Layer.effect(Sandboxes, sandboxesOver(objects, keep))
 
 /**
- * The flow host's `Machines` over the bound namespace (docs/features/sandbox-tools.md): a tool call runs on the
- * branch's object, which wakes the machine; the generation it ran on gets its `sandbox/Keep` through `keep`. A
- * command's start does the same; its other operations never wake the machine.
+ * The flow host's `Machines` over the deployment's namespaces (docs/features/sandbox-tools.md,
+ * docs/features/ci.md#machines): a call runs on the object of the branch's machine, which wakes it; the generation it
+ * ran on gets its `sandbox/Keep` through `keep`, with the machine (worker/branch/Machines.ts `routed`). A branch naming
+ * a machine the deployment didn't declare wakes nothing.
  */
-export const machinesOver = (objects: Objects, keep: Keep = noKeep) => Effect.gen(function* () {
+export const machinesOver = (objectsFor: Namespaces, keep: Keep = noKeep) => Effect.gen(function* () {
   const runtime = yield* RuntimeContext
-  return Machines.of({
-    commands: (branch, ownerId, callId) =>
-      commandsOver(
-        (request) =>
-          objects.getByName(branch.branchId).command(branch, ownerId, request).pipe(
-            Effect.provideService(RuntimeContext, runtime),
-            Effect.orElseSucceed((): CommandOutcome => ({ _tag: "Unavailable" })),
-          ),
-        (generation) => keep(branch.branchId, generation).pipe(Effect.provideService(RuntimeContext, runtime)),
-        callId,
-      ),
-    tool: (branch, ownerId, callId, call) =>
-      Effect.gen(function* () {
-        const outcome: ToolOutcome = yield* objects.getByName(branch.branchId).tool(branch, ownerId, callId, call).pipe(
+  const objectOf = (branchId: string, machine: string | undefined): MachineObject | undefined => {
+    const objects = objectsFor(machine)
+    if (objects === undefined) return undefined
+    const object = () => objects.getByName(branchId)
+    return {
+      tool: (branch, ownerId, callId, call) =>
+        object().tool(branch, ownerId, callId, call).pipe(
           Effect.provideService(RuntimeContext, runtime),
           Effect.orElseSucceed((): ToolOutcome => ({ _tag: "Unavailable" })),
-        )
-        if (outcome._tag === "Done") {
-          yield* keep(branch.branchId, outcome.generation).pipe(Effect.provideService(RuntimeContext, runtime))
-        }
-        return yield* ranOf(outcome)
-      }),
-    sleepIfIdle: (branchId, generation, idleMs) =>
-      objects.getByName(branchId).sleepIfIdle(generation, idleMs).pipe(
-        Effect.provideService(RuntimeContext, runtime),
-        Effect.orElseSucceed(() => "unavailable" as const),
-        Effect.flatMap((outcome) =>
-          outcome === "unavailable" ? Effect.fail(new SandboxUnavailable({ reason: "exec" })) : Effect.succeed(outcome)
         ),
-      ),
-  })
+      command: (branch, ownerId, request) =>
+        object().command(branch, ownerId, request).pipe(
+          Effect.provideService(RuntimeContext, runtime),
+          Effect.orElseSucceed((): CommandOutcome => ({ _tag: "Unavailable" })),
+        ),
+      sleepIfIdle: (generation, idleMs) =>
+        object().sleepIfIdle(generation, idleMs).pipe(
+          Effect.provideService(RuntimeContext, runtime),
+          Effect.orElseSucceed(() => "unavailable" as const),
+        ),
+    }
+  }
+  return Machines.of(routed(
+    objectOf,
+    (branchId, generation, machine) => keep(branchId, generation, machine).pipe(Effect.provideService(RuntimeContext, runtime)),
+  ))
 })
 
 /** `Machines` as a layer, built in the runtime that runs the flows (`RuntimeContext`). */
-export const machinesLayer = (objects: Objects, keep: Keep = noKeep) => Layer.effect(Machines, machinesOver(objects, keep))
+export const machinesLayer = (objectsFor: Namespaces, keep: Keep = noKeep) =>
+  Layer.effect(Machines, machinesOver(objectsFor, keep))

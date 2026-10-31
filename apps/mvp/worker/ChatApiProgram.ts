@@ -16,6 +16,7 @@ import * as SignInSecret from "../infra/SignIn.ts"
 import { AUTH_ROUTE } from "../src/features/auth/contract.ts"
 import { REPOS_ROUTE, REPOSITORIES_SHAPE_ROUTE } from "../src/features/repo/contract.ts"
 import * as Conversations from "./branch/Conversations.ts"
+import * as JobMachines from "./branch/JobMachines.ts"
 import * as BranchApi from "./branch/BranchApi.ts"
 import { Forge } from "./branch/Forge.ts"
 import { Directory } from "./branch/People.ts"
@@ -112,14 +113,17 @@ export const program = (options: ProgramOptions = {}) =>
     const repoFlows = yield* Dispatch.enabled
     const repositories = yield* Dispatch.repositories
     const homeRepository = yield* Conversations.configuredHomeRepositoryNames
-    return yield* configuredProgram(options, { repoFlows, repositories, homeRepository })
+    // The job machines the deployment declared beside the default one (docs/features/ci.md#machines).
+    const machines = yield* JobMachines.declared.pipe(Effect.orDie)
+    return yield* configuredProgram(options, { repoFlows, repositories, homeRepository, machines })
   })
 
 /** All deployment choices below are already captured before Alchemy builds the handlers. */
-const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, homeRepository }: {
+const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, homeRepository, machines }: {
   readonly repoFlows: boolean
   readonly repositories: ReadonlySet<string>
   readonly homeRepository: { readonly owner: string; readonly name: string }
+  readonly machines: ReadonlyArray<string>
 }) =>
   Effect.gen(function* () {
     yield* Electric.bind
@@ -183,6 +187,13 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const sandboxObjects = (yield* BranchSandboxes.SandboxObject) as Cloudflare.DurableObject<
       BranchSandboxes.SandboxObjectShape
     >
+    // The gate machine's objects, `GateObject`s ChatApi hosts too, when the deployment declares it (GATE_IMAGE).
+    const machineObjects = BranchSandboxes.namespaces(
+      sandboxObjects,
+      machines.includes(JobMachines.GATE)
+        ? (yield* BranchSandboxes.GateObject) as Cloudflare.DurableObject<BranchSandboxes.SandboxObjectShape>
+        : undefined,
+    )
     // Each branch's room, `RoomObject`s ChatApi hosts (worker/BranchRooms.ts), and the people a branch can be shared
     // with: everyone who signed in, and local development's own people (docs/features/branch-workspace.md#sharing).
     const roomObjects = (yield* BranchRooms.RoomObject) as Cloudflare.DurableObject<BranchRooms.RoomObjectShape>
@@ -304,7 +315,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
         // A branch's box reaches its forge through this Worker's own entrypoint, with props naming its object
         // (worker/BranchSandboxes.ts): handed straight back to that object, never routed as a person's request.
         const box = BranchSandboxes.boxOf((yield* Cloudflare.WorkerExecutionContext).raw.props)
-        if (box !== undefined) return yield* BranchSandboxes.answerBox(sandboxObjects, box)
+        if (box !== undefined) return yield* BranchSandboxes.answerBox(machineObjects, box)
         const request = yield* HttpServerRequest.HttpServerRequest
         const runtime = yield* RuntimeContext
         const limited = yield* Throttle.make({
@@ -429,12 +440,15 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       ...(options.hostedModel === undefined ? {} : { hostedModel: options.hostedModel }),
     })),
     Effect.provide(BranchSandboxes.live(ChatDatabase)),
+    Effect.provide(BranchSandboxes.gateLive(ChatDatabase)),
     Effect.provide(BranchRooms.live),
     Effect.provide(RunContent.live),
     Effect.provide(
       Layer.mergeAll(
         HostModel.layerConfig("CHAT_MODEL", DEFAULT_CHAT_MODEL),
         Cloudflare.Hyperdrive.ConnectBinding,
+        // The gate's run artifacts (`CiArtifacts`), bound only with the gate machine.
+        Cloudflare.R2.ReadWriteBucketBinding,
         Cloudflare.RateLimitBinding,
         Cloudflare.Telemetry({ persist: true }),
       ),

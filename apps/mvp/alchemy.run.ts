@@ -18,6 +18,9 @@
  *   (docs/features/remote-flows.md). Declaring ChatApi declares it.
  * - RunContent (worker/RunContent.ts): the Durable Object ChatApi hosts, one per run, which keeps an external agent's
  *   transcript in its own SQLite and serves its watchers' sockets (docs/features/agent-transcripts.md).
+ * - The branch sandboxes' `SandboxObject` and its `BranchSandbox` container, which ChatApi hosts; with GATE_IMAGE also the
+ *   gate's job machine, `GateObject` and its `GateMachine` container, and the `CiArtifacts` R2 bucket its boxes keep their
+ *   run's artifacts in (infra/GateMachine.ts, docs/features/ci.md#machines). ChatApi's program binds them.
  * - The site (Vite build + worker/index.ts): serves the app and hands /api/* to ChatApi over a service binding. In
  *   production it answers at the custom domain `APP_DOMAIN` (infra/Domain.ts), unless that is `workers.dev`, the
  *   hostnames in `APP_DOMAIN_REDIRECTS` answer with a 301 to it, and those in `APP_ALIASES` serve it too, each opening

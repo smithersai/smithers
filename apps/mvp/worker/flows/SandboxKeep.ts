@@ -50,7 +50,8 @@ export const KEEP_RETRY = RetryPolicy.make({
 /** Recording: 1 s doubling to a minute, for at most 30 minutes. */
 export const RECORD_RETRY = RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000, expirationMs: 30 * 60_000 })
 
-const payload = { branchId: Schema.String, generation: Schema.Number }
+/** The generation of a branch's machine to keep: `machine` names a job machine (docs/features/ci.md#machines), else the default one. */
+const payload = { branchId: Schema.String, generation: Schema.Number, machine: Schema.optional(Schema.String) }
 
 /** How the generation ended: put to sleep by this flow, or gone before (stopped, restarted, or another sleep). */
 const Ended = Schema.Literals(["slept", "gone"])
@@ -81,10 +82,10 @@ export const Keep = Flow.make("sandbox/Keep", {
   payload,
   success: Slept.successSchema,
   error: Schema.Union([MachineBusy, SleptUnrecorded]),
-  body: Node.capture({ sleep: SleepIfIdle.name, slept: Slept.name }, ({ branchId, generation }) =>
-    SleepIfIdle.call({ branchId, generation }).pipe(
+  body: Node.capture({ sleep: SleepIfIdle.name, slept: Slept.name }, (kept) =>
+    SleepIfIdle.call(kept).pipe(
       Node.bindPlanned(Node.capture({ slept: Slept.name }, (ended: Planned.Planned<"slept" | "gone">) =>
-        Slept.call({ branchId, generation, ended }))),
+        Slept.call({ branchId: kept.branchId, generation: kept.generation, ended }))),
     )),
 })
 
@@ -93,8 +94,8 @@ export const idleSeconds = Config.Int("SANDBOX_IDLE_SECONDS").pipe(Config.withDe
 
 /** The steps over the host's `Machines` and `database`, the machine idle for `idleMs` before it sleeps. */
 export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, idleMs: number) => {
-  const sleepIfIdle = ({ branchId, generation }: typeof SleepIfIdle.payloadSchema.Type) =>
-    Effect.flatMap(Machines, (machines) => machines.sleepIfIdle(branchId, generation, idleMs)).pipe(
+  const sleepIfIdle = ({ branchId, generation, machine }: typeof SleepIfIdle.payloadSchema.Type) =>
+    Effect.flatMap(Machines, (machines) => machines.sleepIfIdle(branchId, generation, idleMs, machine)).pipe(
       Effect.catchTag("@smthrs/mvp/branch/SandboxUnavailable", (error: SandboxUnavailable) =>
         Effect.as(
           Effect.logWarning("sandbox.keep").pipe(Effect.annotateLogs({ branchId, generation, errorCode: codeOf(error) })),

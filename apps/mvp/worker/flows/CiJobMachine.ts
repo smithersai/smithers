@@ -31,6 +31,8 @@ export const machineOf = (target: CiJob.Target, job: CiJob.JobRef): SandboxBranc
     forge: "github",
     kind: "job",
     ...(job.machine === undefined ? {} : { machine: job.machine }),
+    // Every job of the run shares its artifacts (worker/branch/Artifacts.ts); no other run's box can name them.
+    artifacts: digestSync(`run:${target.run}`).slice(0, 40),
   }
 }
 
@@ -118,7 +120,10 @@ export const layer = Layer.effect(
       // until its keep-alive gives up. Best effort.
       release: (target, job) =>
         tool(target, job, "release", { tool: "run", command: STOP_LEFTOVERS, timeoutSeconds: 30 }).pipe(
-          Effect.flatMap((ran) => machines.sleepIfIdle(machineOf(target, job).branchId, ran.generation, 0)),
+          Effect.flatMap((ran) => {
+            const machine = machineOf(target, job)
+            return machines.sleepIfIdle(machine.branchId, ran.generation, 0, machine.machine)
+          }),
           Effect.tap((outcome) => counted("release", outcome, target, job)),
           Effect.ignore,
         ),

@@ -109,12 +109,13 @@ export class Machines extends Context.Service<
     /**
      * Puts generation `generation` of the branch's machine to sleep when nothing happened in it for `idleMs`: no call,
      * no terminal input, and no process but the shells. It saves the working copy first, and stays awake when it can't.
-     * Never wakes a machine.
+     * Never wakes a machine. `machine` is the branch's `SandboxBranch.machine`: the default machine when absent.
      */
     readonly sleepIfIdle: (
       branchId: string,
       generation: number,
       idleMs: number,
+      machine?: string,
     ) => Effect.Effect<SleepOutcome, SandboxUnavailable>
   }
 >()("@smthrs/mvp/branch/Machines") {}
@@ -190,3 +191,67 @@ export const commandsOver = <R>(
     cancel: (key) => Effect.asVoid(answer({ op: "cancel", key }, (outcome) => (outcome._tag === "Cancelled" ? outcome : undefined))),
   }
 }
+
+/**
+ * One branch's object as `routed` reaches it (on Cloudflare a `SandboxObject` or a job machine's own class,
+ * worker/BranchSandboxes.ts): its answers as plain data, an object it couldn't reach already answered `Unavailable`.
+ */
+export interface MachineObject {
+  readonly tool: (branch: SandboxBranch, ownerId: string, callId: string, call: SandboxTools.Call) => Effect.Effect<ToolOutcome>
+  readonly command: (branch: SandboxBranch, ownerId: string, request: CommandRequest) => Effect.Effect<CommandOutcome>
+  readonly sleepIfIdle: (generation: number, idleMs: number) => Effect.Effect<SleepOutcome | "unavailable">
+}
+
+/**
+ * Starts generation `generation`'s `sandbox/Keep` for the branch's machine (`machine` its `SandboxBranch.machine`), so
+ * the keep asks the same machine; the same generation again is a no-op.
+ */
+export type Keep = (branchId: string, generation: number, machine?: string) => Effect.Effect<void>
+
+/** The failure of every call on a machine the deployment didn't declare: nothing is woken. */
+const undeclared = (branchId: string, machine: string | undefined) =>
+  Effect.andThen(
+    Effect.logWarning("sandbox.machine").pipe(Effect.annotateLogs({ branchId, machine, outcome: "undeclared" })),
+    Effect.fail(new SandboxUnavailable({ reason: "undeclared" })),
+  )
+
+/**
+ * `Machines` over the deployment's machines (docs/features/ci.md#machines): each call goes to the object of the
+ * branch's machine, `objectOf(branchId, branch.machine)`, which answers none for a machine the deployment didn't
+ * declare; such a call fails `SandboxUnavailable` `undeclared` and wakes nothing. A tool call that ran, and a
+ * command's start, start their generation's `sandbox/Keep` through `keep`, with the machine.
+ */
+export const routed = (
+  objectOf: (branchId: string, machine: string | undefined) => MachineObject | undefined,
+  keep: Keep,
+): Machines["Service"] => ({
+  commands: (branch, ownerId, callId) => {
+    const object = objectOf(branch.branchId, branch.machine)
+    if (object === undefined) {
+      const refused = undeclared(branch.branchId, branch.machine)
+      return { start: () => refused, observe: () => refused, collect: () => refused, cancel: () => refused }
+    }
+    return commandsOver(
+      (request) => object.command(branch, ownerId, request),
+      (generation) => keep(branch.branchId, generation, branch.machine),
+      callId,
+    )
+  },
+  tool: (branch, ownerId, callId, call) =>
+    Effect.suspend(() => {
+      const object = objectOf(branch.branchId, branch.machine)
+      if (object === undefined) return undeclared(branch.branchId, branch.machine)
+      return Effect.flatMap(object.tool(branch, ownerId, callId, call), (outcome) =>
+        Effect.andThen(
+          outcome._tag === "Done" ? keep(branch.branchId, outcome.generation, branch.machine) : Effect.void,
+          ranOf(outcome),
+        ))
+    }),
+  sleepIfIdle: (branchId, generation, idleMs, machine) =>
+    Effect.suspend(() => {
+      const object = objectOf(branchId, machine)
+      if (object === undefined) return undeclared(branchId, machine)
+      return Effect.flatMap(object.sleepIfIdle(generation, idleMs), (outcome) =>
+        outcome === "unavailable" ? Effect.fail(new SandboxUnavailable({ reason: "exec" })) : Effect.succeed(outcome))
+    }),
+})
