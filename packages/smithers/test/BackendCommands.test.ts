@@ -2,9 +2,9 @@ import { spawnSync } from "node:child_process"
 import { EventEmitter } from "node:events"
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
+import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
-import ts from "typescript"
+import { dirname, join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { makeCli } from "../src/Cli.ts"
 import { main } from "../src/cli/Entry.ts"
@@ -18,6 +18,7 @@ import { misc } from "../src/internal/backend/Misc.ts"
 import { gitAuth, repositories } from "../src/internal/backend/Repositories.ts"
 import { stacks } from "../src/internal/backend/Stack.ts"
 import { resolveID, workspaces } from "../src/internal/backend/Workspaces.ts"
+import { spawnNodeSync } from "./support/node-child.ts"
 
 const dirs: string[] = []
 const cwd = process.cwd()
@@ -619,24 +620,37 @@ describe("repository selection and transfer", () => {
       exports: Record<string, string>
     }
     expect(manifest.name).toBe("@smthrs/targets")
-    // TypeScript is already a test dependency; checking the manifest's public source entry
-    // catches missing namespace members without relying on a prior package build.
-    const program = ts.createProgram([file], {
-      target: ts.ScriptTarget.ES2024,
-      module: ts.ModuleKind.NodeNext,
-      moduleResolution: ts.ModuleResolutionKind.NodeNext,
-      strict: true,
-      noEmit: true,
-      skipLibCheck: true,
-      allowImportingTsExtensions: true,
-      types: ["node"],
-      paths: { [manifest.name]: [join(targetsRoot, manifest.exports["."]!)] }
-    })
-    expect(
-      ts.getPreEmitDiagnostics(program, program.getSourceFile(file)!).map((diagnostic) =>
-        ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n")
-      )
-    ).toEqual([])
+    // Use the same compiler as package checks, outside the measured V8 worker.
+    // The source export keeps this independent of a prior package build.
+    const compiler = join(dirname(createRequire(import.meta.url).resolve("vibelang/package.json")), "bin/vibelang")
+    const config = join(home, "tsconfig.json")
+    await writeFile(
+      config,
+      JSON.stringify({
+        compilerOptions: {
+          target: "ES2024",
+          module: "NodeNext",
+          moduleResolution: "NodeNext",
+          strict: true,
+          noEmit: true,
+          skipLibCheck: true,
+          allowImportingTsExtensions: true,
+          types: ["node"],
+          typeRoots: [join(import.meta.dirname, "../node_modules/@types")],
+          paths: { [manifest.name]: [join(targetsRoot, manifest.exports["."]!)] }
+        },
+        files: [file]
+      })
+    )
+    const check = () => spawnNodeSync([compiler, "-p", config], { encoding: "utf8", timeout: 25_000 })
+    const compiled = check()
+    expect(compiled.error, compiled.stderr).toBeUndefined()
+    expect(compiled.status, compiled.stdout + compiled.stderr).toBe(0)
+    await writeFile(file, content + "\nSmithers.RemoteCache.smithersCloud({ repo: 123 });\n")
+    const rejected = check()
+    expect(rejected.error, rejected.stderr).toBeUndefined()
+    expect(rejected.status, rejected.stdout + rejected.stderr).not.toBe(0)
+    expect(rejected.stdout + rejected.stderr).toContain("not assignable to type 'string'")
   })
   it("appends cache setup to the standard named Smithers import without replacing existing targets", async () => {
     const { c, home, request } = await fixture()

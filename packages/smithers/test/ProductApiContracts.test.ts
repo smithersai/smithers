@@ -1,14 +1,17 @@
 import { it } from "@effect/vitest"
 import { Effect } from "effect"
-import { spawnSync } from "node:child_process"
 import { createHmac } from "node:crypto"
+import { writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import { createRequire } from "node:module"
+import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect } from "vitest"
 import { WebSocketServer } from "ws"
 import { Client } from "../src/internal/backend/Client.ts"
 import * as ProductApi from "../src/internal/backend/ProductApi.ts"
+import { withTemporaryDirectory } from "./helpers/TemporaryDirectory.ts"
+import { spawnNodeSync } from "./support/node-child.ts"
 
 const attempt = <A>(run: () => Promise<A>) => Effect.tryPromise(run)
 
@@ -98,28 +101,34 @@ it.effect("GitHub webhook transmits exact signed payload bytes and per-delivery 
   })))
 
 it.effect("owner settings reject invalid request bodies at compile time", () =>
-  Effect.sync(() => {
-    const file = fileURLToPath(new URL("./fixtures/product-api-install.types.ts", import.meta.url))
-    // Keep the full real compiler check outside V8's instrumented test worker.
-    // It still checks every transitive implementation and all @ts-expect-error cases.
-    const compiler = createRequire(import.meta.url).resolve("typescript/lib/tsc.js")
-    const result = spawnSync(process.execPath, [
-      compiler,
-      file,
-      "--target",
-      "es2024",
-      "--module",
-      "nodenext",
-      "--moduleResolution",
-      "nodenext",
-      "--strict",
-      "--noEmit",
-      "--skipLibCheck",
-      "--allowImportingTsExtensions"
-    ], { encoding: "utf8", timeout: 25_000 })
-    expect(result.error).toBeUndefined()
-    expect(result.status, result.stdout + result.stderr).toBe(0)
-  }))
+  Effect.promise(() =>
+    withTemporaryDirectory("smithers-product-types-", async (root) => {
+      const file = fileURLToPath(new URL("./fixtures/product-api-install.types.ts", import.meta.url))
+      // Keep the full real compiler check outside V8's instrumented test worker.
+      // It still checks every transitive implementation and all @ts-expect-error cases.
+      const compiler = join(dirname(createRequire(import.meta.url).resolve("vibelang/package.json")), "bin/vibelang")
+      const config = join(root, "tsconfig.json")
+      await writeFile(
+        config,
+        JSON.stringify({
+          compilerOptions: {
+            target: "ES2024",
+            module: "NodeNext",
+            moduleResolution: "NodeNext",
+            strict: true,
+            noEmit: true,
+            skipLibCheck: true,
+            allowImportingTsExtensions: true,
+            typeRoots: [join(import.meta.dirname, "../node_modules/@types")]
+          },
+          files: [file]
+        })
+      )
+      const result = spawnNodeSync([compiler, "-p", config], { encoding: "utf8", timeout: 25_000 })
+      expect(result.error).toBeUndefined()
+      expect(result.status, result.stdout + result.stderr).toBe(0)
+    })
+  ))
 
 it.effect("live subscription returns a usable WebSocket and its projection events", () =>
   Effect.scoped(Effect.gen(function*() {
