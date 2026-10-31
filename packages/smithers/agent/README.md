@@ -738,7 +738,7 @@ The package test suite builds `smithers-jj-export` from this checkout with Cargo
 before running. FlowStore disk tests use its real descriptor-relative filesystem;
 a clean checkout needs the workspace Rust toolchain as well as pnpm dependencies.
 
-The coverage suite uses at most two workers. Each file opens real engines;
+The coverage suite uses at most three workers. Each file opens real engines;
 parallel replay, migrations and filesystem work can exhaust a case's budget.
 Timer cases report their last durable wait and virtual-clock progress if they
 are interrupted before completion; deadlines and coverage thresholds stay fixed.
