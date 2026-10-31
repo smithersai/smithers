@@ -135,7 +135,7 @@ describe("RepoClient against a gateway", () => {
   })
 
   test("the refs arrive decoded; a body outside the contract is refused with its status", async () => {
-    const refs = { defaultBranch: "main", head: SHA, branches: [{ name: "main", sha: SHA }], tags: [], truncated: false }
+    const refs = { defaultBranch: "main", head: SHA, refsChangedAt: null, branches: [{ name: "main", sha: SHA }], tags: [], truncated: false }
     const good = await serve((_request, response) => response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(refs)))
     expect(await withClient(good.origin, (client) => client.refs("o", "n"))).toMatchObject({ _tag: "Success", success: refs })
     const absent = await serve((_request, response) => response.writeHead(204).end())

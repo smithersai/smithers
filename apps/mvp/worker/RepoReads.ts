@@ -234,7 +234,7 @@ export const make = <E, R>(services: Services<E, R>) => {
       )
       const listing = yield* Effect.orDie(decodeRefs(decoder.decode(entry.bytes)))
       if (ephemeralNames.length === 0) {
-        return { defaultBranch: head.value.defaultBranch, head: head.value.sha, ...listing } satisfies Refs
+        return { defaultBranch: head.value.defaultBranch, head: head.value.sha, refsChangedAt: head.value.refsChangedAt, ...listing } satisfies Refs
       }
       // The default listing is shared; ephemeral discovery is authorized per request and never cached on a device
       // across an access decision. Object reads remain pinned to SHA: both namespaces share Git objects.
@@ -252,7 +252,7 @@ export const make = <E, R>(services: Services<E, R>) => {
         if (visible.has(name)) branches.set(name, { name, sha })
       }
       return {
-        defaultBranch: head.value.defaultBranch, head: head.value.sha,
+        defaultBranch: head.value.defaultBranch, head: head.value.sha, refsChangedAt: head.value.refsChangedAt,
         tags: listing.tags, branches: [...branches.values()], truncated: listing.truncated || ephemeral.truncated,
       } satisfies Refs
     })

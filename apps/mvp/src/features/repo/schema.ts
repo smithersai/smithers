@@ -29,7 +29,7 @@ export const Repository = Schema.Struct({
   settledAt: Schema.NullOr(Schema.String),
   /**
    * When its branches or tags last changed in a way the app knows of (a ready clone, a branch the app made); the refs a
-   * device keeps are keyed by it. Absent from a database before migration 0038, and null until such a change.
+   * device keeps are keyed by it. Absent from a database before migration 0041, and null until such a change.
    */
   refsChangedAt: Schema.optional(Schema.NullOr(Schema.String)),
   /**
@@ -71,6 +71,8 @@ export type RefsListing = typeof RefsListing.Type
 export const Refs = Schema.Struct({
   defaultBranch: Schema.String,
   head: Schema.String,
+  /** The ready row's refs revision as Electric delivers it, or null. Optional to decode older durable results. */
+  refsChangedAt: Schema.optional(Schema.NullOr(Schema.String)),
   ...RefsListing.fields,
 })
 export type Refs = typeof Refs.Type

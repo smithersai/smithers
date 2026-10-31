@@ -675,6 +675,7 @@ describe("branches and tags", () => {
     expect(await first.json()).toEqual({
       defaultBranch: "main",
       head: headSha,
+      refsChangedAt: expect.any(String),
       branches: [{ name: "b0", sha: shaOf("b0") }, { name: "main", sha: headSha }],
       tags: [{ name: "v1", sha: shaOf("b0") }],
       truncated: false,
@@ -689,6 +690,27 @@ describe("branches and tags", () => {
     expect(h.line("repo.refs")[0]!.annotations).not.toHaveProperty("sha")
     expect((await usageRow(runtime))!.read).toBeGreaterThan(0)
   })
+
+  test.each([
+    ["2026-10-31 12:34:56.123456+00", "2026-10-31 12:34:56.123456+00"],
+    ["2026-10-31 12:34:56.123400+00", "2026-10-31 12:34:56.1234+00"],
+    ["2026-10-31 12:34:00+00", "2026-10-31 12:34:00+00"],
+    [null, null],
+  ])(
+    "the ready head keeps Electric's refs revision despite SQL session timezone and date style: %s",
+    async (refsChangedAt, expected) => {
+      const h = await repoHarness(runtime)
+      const { id } = await h.seed("octocat", "Spoon-Knife")
+      const head = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql.withTransaction(Effect.gen(function* () {
+          yield* sql`UPDATE repositories SET refs_changed_at = ${refsChangedAt}::timestamptz WHERE id = ${id}`
+          yield* sql`SET LOCAL TIME ZONE 'America/New_York'`
+          yield* sql`SET LOCAL DateStyle = 'SQL, DMY'`
+          return yield* Repos.readyHead(id)
+        }))))
+      expect(Option.getOrThrow(head).refsChangedAt).toBe(expected)
+    },
+  )
 
   test("a branch made with the default branch's head where it was is listed at once: the refs are keyed by their last change too", async () => {
     // Before, the listing was cached under the head commit alone, so a branch the app made on the forge stayed out of
@@ -844,6 +866,7 @@ describe("the agent's reads on the server", () => {
     expect(refs.exit).toEqual(Exit.succeed({
       defaultBranch: "main",
       head: headSha,
+      refsChangedAt: expect.any(String),
       branches: [{ name: "main", sha: headSha }],
       tags: [],
       truncated: false,
@@ -1093,7 +1116,8 @@ describe("GET /api/repos/<owner>/<name>/about", () => {
     expect(Number(kept.headers.get("retry-after"))).toBeGreaterThan(500)
     expect(h.line("repo.about").at(-1)?.annotations).toMatchObject({ cache: "refusal", errorCode: "rate_limited" })
     expect(h.github.calls).toHaveLength(calls)
-    await sql(`UPDATE repo_about SET next_read_at = now() WHERE repo_id = 'github/octocat/limited'`)
+    // Make the refusal unambiguously expired across Postgres's and the reader's clocks.
+    await sql(`UPDATE repo_about SET next_read_at = now() - interval '1 second' WHERE repo_id = 'github/octocat/limited'`)
     expect((await h.fetch(aboutRoute("octocat", "Limited"))).status).toBe(200)
   })
 

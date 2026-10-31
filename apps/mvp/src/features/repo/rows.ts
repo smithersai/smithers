@@ -28,8 +28,8 @@ export const BlobRow = Schema.Struct({
 export type BlobRow = typeof BlobRow.Type
 
 /**
- * A repository's branches and tags as of one sync, keyed `<id>@<headSha>`, as the picker takes them: loading, ready
- * (each list in name order, and whether either stopped early) or failed.
+ * A repository's branches and tags as of one sync, keyed `<id>@<headSha>@<refsChangedAt>`, as the picker takes them:
+ * loading, ready (each list in name order, and whether either stopped early) or failed.
  */
 export const RefsRow = Schema.Struct({
   key: Schema.String,
@@ -67,8 +67,8 @@ export const AboutRow = Schema.Struct({
 export type AboutRow = typeof AboutRow.Type
 
 /**
- * A repository's ready head as RepoApi's refs named it for this tab, keyed by the repository's id: the default branch and
- * head commit Postgres has, read before Electric delivered the repository's row (actions.ts `ensureHead`). Loading,
+ * A repository's ready head as RepoApi's refs named it for this tab, keyed by the repository's id: the default branch,
+ * head commit and refs revision Postgres has, read before Electric delivered its row (actions.ts `ensureHead`). Loading,
  * ready, absent (Postgres has no ready clone: not cloned, cloning, failed or refused) or failed (RepoApi couldn't
  * answer).
  */
@@ -77,6 +77,7 @@ export const HeadRow = Schema.Struct({
   state: Schema.Literals(["loading", "ready", "absent", "failed"]),
   defaultBranch: Schema.NullOr(Schema.String),
   headSha: Schema.NullOr(Schema.String),
+  refsChangedAt: Schema.NullOr(Schema.String),
 })
 export type HeadRow = typeof HeadRow.Type
 

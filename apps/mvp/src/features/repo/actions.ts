@@ -449,18 +449,18 @@ const ensureHead = (repository: Named, again: boolean) =>
     const { id } = repository
     const found = yield* store.heads.get(id)
     if (Option.isSome(found) && (found.value.state === "loading" || found.value.state === "ready" || !again)) return
-    yield* put<HeadRow>(store.heads, id, { key: id, state: "loading", defaultBranch: null, headSha: null })
+    yield* put<HeadRow>(store.heads, id, { key: id, state: "loading", defaultBranch: null, headSha: null, refsChangedAt: null })
     const load = Effect.gen(function* () {
       const startedAt = yield* Clock.currentTimeMillis
       const result = yield* Effect.result((yield* RepoClient).refs(repository.owner, repository.name))
       if (result._tag === "Success") {
-        const { head, branches, tags, truncated } = result.success
-        const key = refsKey(id, head)
+        const { head, refsChangedAt, branches, tags, truncated } = result.success
+        const key = refsKey(id, head, refsChangedAt)
         yield* put<RefsRow>(store.refs, key, { key, state: "ready", branches, tags, truncated, message: null })
       }
       const row: HeadRow = result._tag === "Success"
-        ? { key: id, state: "ready", defaultBranch: result.success.defaultBranch, headSha: result.success.head }
-        : { key: id, state: result.failure.status === 404 ? "absent" : "failed", defaultBranch: null, headSha: null }
+        ? { key: id, state: "ready", defaultBranch: result.success.defaultBranch, headSha: result.success.head, refsChangedAt: result.success.refsChangedAt ?? null }
+        : { key: id, state: result.failure.status === 404 ? "absent" : "failed", defaultBranch: null, headSha: null, refsChangedAt: null }
       yield* put(store.heads, id, row)
       yield* observeLoad("repo.head.load", headLoadMs, row.state, startedAt, result)
     })
@@ -478,7 +478,7 @@ const fromHead = (repository: Named, head: HeadRow): Readable => ({
   defaultBranch: head.defaultBranch,
   // A ready head always names its commit (`ensureHead`).
   headSha: head.headSha!,
-  refsKey: refsKey(repository.id, head.headSha!),
+  refsKey: refsKey(repository.id, head.headSha!, head.refsChangedAt),
   source: "refs",
 })
 

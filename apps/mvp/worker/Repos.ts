@@ -289,13 +289,13 @@ export const indexing = (clone: Attempt) =>
   })
 
 /**
- * A ready repository's default branch and its head commit, as Settle wrote them, and when its refs last changed (epoch
- * ms; 0 for never since migration 0038): what the refs it lists are keyed by.
+ * A ready repository's default branch and its head commit, as Settle wrote them, and when its refs last changed:
+ * Postgres timestamp text as Electric delivers it, or null for never since migration 0041.
  */
 export interface ReadyHead {
   readonly defaultBranch: string
   readonly sha: string
-  readonly refsChangedAt: number
+  readonly refsChangedAt: string | null
 }
 
 /** Repository `id`'s default branch and head commit when it is `ready`; none for any other row, or no row. */
@@ -304,7 +304,8 @@ export const readyHead = (id: string) =>
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<ReadyHead>`
       SELECT default_branch AS "defaultBranch", head_sha AS sha,
-        COALESCE((extract(epoch FROM refs_changed_at) * 1000)::float8, 0) AS "refsChangedAt"
+        rtrim(rtrim(to_char(refs_changed_at AT TIME ZONE 'UTC',
+          'YYYY-MM-DD HH24:MI:SS.US'), '0'), '.') || '+00' AS "refsChangedAt"
       FROM repositories WHERE id = ${id} AND status = 'ready'`
     return Option.fromNullishOr(row)
   })

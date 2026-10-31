@@ -93,7 +93,7 @@ describe("readerLayer", () => {
 
 describe("refs", () => {
   test("the branches and tags as RepoApi sent them; a repository that isn't ready is gone", async () => {
-    const refs: Refs = { defaultBranch: "main", head: SHA, branches: [{ name: "main", sha: SHA }], tags: [], truncated: false }
+    const refs: Refs = { defaultBranch: "main", head: SHA, refsChangedAt: null, branches: [{ name: "main", sha: SHA }], tags: [], truncated: false }
     const refsOf = (answer: Effect.Effect<Refs, RepoRefused>) =>
       Effect.runPromise(
         Effect.service(RepoReader).pipe(

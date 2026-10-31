@@ -2,7 +2,7 @@ import { Action } from "@smthrs/flow"
 import { TabChannel } from "@smthrs/platform-browser"
 import { Cause, Deferred, Effect, Exit, Layer, Schedule } from "effect"
 import { FetchHttpClient } from "effect/http"
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest"
 import { fixture, shaOf } from "../../../worker/test/codeStorage"
 import { testFile } from "../../../worker/test/harness"
 import { type RepoHarness, repoHarness, resetRepos } from "../../../worker/test/repos"
@@ -23,6 +23,7 @@ import { aliasChecks, aboutLoadMs, blobLoadMs, clones, copies, refsLoadMs, roleA
 import { NotCopied } from "./repo"
 import { aboutOf, generatedLinksFor, headerOf, previewReadmeOf, previewTreeOf } from "./view"
 import * as Repos from "../../../worker/Repos.ts"
+import * as RepoMetrics from "../../../worker/RepoMetrics.ts"
 
 // The repository state machine on a tab, driven as React drives it, with no React: through the `Repo` layer's plain
 // actions, reading its live queries. The tab reaches RepoApi's real handler (worker/RepoApi.ts) over the compose
@@ -313,6 +314,40 @@ describe("reading a ready repository", () => {
 })
 
 describe("branches, tags and commits", () => {
+  test.each([
+    ["before hover", "2026-10-31 12:34:56.123456+00"],
+    ["after hover", "2026-10-31 12:34:56.123456+00"],
+    ["before hover", null],
+    ["after hover", null],
+  ])("head discovery and a synced row share one refs load when the row arrives %s with revision %s", async (arrival, refsChangedAt) => {
+    const h = await repoHarness(server)
+    const { id, headSha } = await h.seed("octocat", "Spoon-Knife", branched())
+    await server.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      UPDATE repositories SET refs_changed_at = ${refsChangedAt}::timestamptz WHERE id = ${id}`))
+    // Keep this revision fixed: a read-driven mirror refresh is a separate, legitimate invalidation.
+    onTestFinished(h.scripted.hold("pullUpstream"))
+    // A cold Electric response is delayed through its faulty Effect service, never replaced with a fake row.
+    const tab = await open(h, "stalled")
+    at(tab, "tree", "main")
+    await waitFor(() => expect(tab.refs().refs?.state).toBe("ready"))
+    expect(tab.view().view.sha).toBe(headSha)
+    const discovered = tab.refs().refs!.key
+    const synced = async () => {
+      await tab.heal()
+      await rowReady(tab, id)
+    }
+    if (arrival === "before hover") await synced()
+    const file = { owner: "octocat", repo: "Spoon-Knife", ref: "test-branch", _splat: "only.txt" }
+    await tab.repo.actions.warmRoute("blob", file, {})
+    if (arrival === "after hover") await synced()
+    tab.repo.actions.openRoute("blob", file, {})
+    await waitFor(() => expect(tab.file().file?.contents).toBe("x"))
+    // Count HTTP reads, not forge reads: the server cache hid the duplicate /refs requests.
+    expect(h.count(RepoMetrics.reads, { kind: "refs", status: "200" })).toBe(1)
+    expect(tab.view().repository?.refsChangedAt).toBe(refsChangedAt)
+    expect(tab.refs().refs?.key).toBe(discovered)
+  })
+
   test("the picker's refs load once per sync; a branch, a tag and a name with a slash read at their commits", async () => {
     const h = await repoHarness(server)
     const { id, headSha } = await h.seed("octocat", "Spoon-Knife", branched())
@@ -460,6 +495,7 @@ describe("the agent's repository flows on this device", () => {
     expect(refs.exit).toEqual(Exit.succeed({
       defaultBranch: "main",
       head: headSha,
+      refsChangedAt: expect.any(String),
       branches: [
         { name: "feature/x", sha: shaOf("feature/x") },
         { name: "main", sha: headSha },

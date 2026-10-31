@@ -49,7 +49,7 @@ about        ◀── GET /api/repos/<o>/<n>/about ◀── immutable cache (b
 | `GET /api/repos/<owner>/<name>/blob/<sha>/<path>` | anyone | the file's bytes (`application/octet-stream`, `x-blob-sha`) |
 | `GET /api/repos/<owner>/<name>/raw/<sha>/<path>` | anyone | the same bytes as a page shows them: `text/plain; charset=utf-8` for text, `application/octet-stream` for a binary, with `x-content-type-options: nosniff` and `content-security-policy: default-src 'none'; sandbox`, so a file is never sniffed or run |
 | `GET /api/repos/<owner>/<name>/about` | anyone | what GitHub says of the repository, cloned or not ([About](#about)); `Cache-Control: public, max-age=` the seconds left in its window |
-| `GET /api/repos/<owner>/<name>/refs` | anyone | `{ defaultBranch, head, branches, tags, truncated }`: the ready row's default branch and head commit, and every branch and tag as `{ name, sha }`, in pages of 100 up to `REPO_MAX_REFS` each; `Cache-Control: no-cache`, since it follows the row |
+| `GET /api/repos/<owner>/<name>/refs` | anyone | `{ defaultBranch, head, refsChangedAt, branches, tags, truncated }`: the ready row's default branch, head commit and refs revision (Postgres timestamp text as Electric delivers it, or null), and every branch and tag as `{ name, sha }`, in pages of 100 up to `REPO_MAX_REFS` each; `Cache-Control: private, no-store`, since it follows the row |
 
 Refusals are `{ code }` JSON with `Cache-Control: no-store`:
 
@@ -178,7 +178,7 @@ Every repository action is one registered client flow (`src/features/repo/flows.
 |---|---|---|
 | `repo/tree { repo, revision }` | `{ paths, truncated }` | `RepoNotFound`, `RepoReadsPaused`, `RepoReadUnavailable` |
 | `repo/read { repo, revision, path }` | `{ state: "text", contents, size }`, or `{ state, size }` for a binary file or one over 512 KiB | the same |
-| `repo/refs { repo }` | `{ defaultBranch, head, branches, tags, truncated }`: the agent's way to a SHA for the reads, and to a branch or tag name for `app/navigate` | the same; `RepoNotFound` for a repository that isn't ready |
+| `repo/refs { repo }` | `{ defaultBranch, head, refsChangedAt, branches, tags, truncated }`: the agent's way to a SHA for the reads, and to a branch or tag name for `app/navigate` | the same; `RepoNotFound` for a repository that isn't ready |
 | `repo/about { repo }` | what GitHub says of the repository, cloned or not ([About](#about)); the page's, not the agent's | the same; `RepoNotFound` for one GitHub doesn't have |
 | `repo/clone { repo }` | RepoApi's answer: `{ id, txid, attempt }` for a clone it started, `{ id, txid: null, status }` for one already cloning or ready | `RepoCloneRefused { reason }` (`sign_in`, `forbidden`, `limit`, `invalid`, `not_configured`), `RepoCloneUnavailable` |
 | `repo/copy { repo, what, revision?, path?, kind?, line?, lineEnd? }` | `{ copied }` | `RepoCopyRefused { reason }` (`invalid`: a needed `revision` or `path` missing; `not_text`), or the read's failure for `contents` |
@@ -212,8 +212,8 @@ Its step runs in the leader tab's engine worker, which has no clipboard, so it a
 | `trees`, `blobs` | local-only collections keyed `<id>@<sha>` and `<id>@<sha>:<path>`, in the states `RepoView` takes |
 | `clones` | this tab's clone requests while they are on their way or were refused |
 | `abouts` | local-only, keyed by the repository's id: what GitHub says of it ([About](#about)), `loading`, `ready`, `missing` or `failed` |
-| `refs` | local-only, keyed `<id>@<head sha>`: the branches and tags as of the repository's sync, loaded once per tab through `GET /refs`, for the picker and for resolving a ref |
-| `heads` | local-only, keyed by the repository's id: its ready head as `GET /refs` named it before Electric delivered its row ([a page's head](#a-pages-head)), `loading`, `ready` (the default branch and head commit; its branches and tags go into `refs`), `absent` (`404`: no ready clone) or `failed` |
+| `refs` | local-only, keyed `<id>@<head sha>@<refsChangedAt>` (empty revision for null): the branches and tags as of the repository's sync, loaded once per revision per tab through `GET /refs`, for the picker and for resolving a ref; head discovery and Electric use the same key |
+| `heads` | local-only, keyed by the repository's id: its ready head as `GET /refs` named it before Electric delivered its row ([a page's head](#a-pages-head)), `loading`, `ready` (the default branch, head commit and refs revision; its branches and tags go into `refs`), `absent` (`404`: no ready clone) or `failed` |
 | `clone(owner, name)`, `retryClone` | validate, show `cloning` at once, dispatch `repo/clone` (door `button`), wait for Electric to deliver the row. Not chat's outbox: RepoApi takes a clone idempotently, and it needs the network and sign-in anyway |
 | `warmRoute(kind, params, search)` | what a route calls first, on a link's hover or focus and before every navigation ([navigation](navigation.md)): loads what GitHub says of the repository, then, once its clone is ready ([a page's head](#a-pages-head)), its branches and tags, the ref, the tree at its commit, and the file or the directory's README, without opening the view; ends once they loaded or failed, or after `pageWait` (1 s). A failed load, an absent or failed head included, loads again |
 | `openRoute(kind, params, search)` | what a route calls once warm: opens the location in the view, reading what the warm loaded and asking for what isn't loading yet; a failure stays as the warm left it. Once it knows where the location is, a log line `repo.locate` and `smithers_web_repo_locate_ms` say how long that took and where the head came from (`row` or `refs`) |
