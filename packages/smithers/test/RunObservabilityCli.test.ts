@@ -10,7 +10,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
-import { describe, expect, it, onTestFailed, vi } from "vitest"
+import { describe, expect, it, onTestFailed, onTestFinished, vi } from "vitest"
 import { createRunsCli } from "../src/cli/ControlCommands.ts"
 import { childEnvironment } from "./support/node-child.ts"
 
@@ -33,7 +33,7 @@ const processStages = (root: string) => {
       const lines = readFileSync(join(directory, name), "utf8").trim().split("\n")
       return {
         pid: Number(name.slice(0, -6)),
-        stages: (lines.length > 12 ? [...lines.slice(0, 4), ...lines.slice(-8)] : lines)
+        stages: (lines.length > 32 ? [...lines.slice(0, 24), ...lines.slice(-8)] : lines)
           .map((line) => JSON.parse(line) as { stage?: string })
       }
     } catch {
@@ -191,15 +191,20 @@ describe("runs show and runs logs on a live parent run", { timeout: 180_000 }, (
       }
       | undefined
     const mark = (stage: string) => stages.push({ stage, elapsedMs: Date.now() - started })
-    onTestFailed(({ task }) => {
-      const receipt = "Live run progress " + JSON.stringify({
+    const reportProgress = () =>
+      "Live run progress " + JSON.stringify({
         stages,
         elapsedMs: Date.now() - started,
         cleanup,
         commands: [...activeCommands].map((progress) => progress())
       })
+    onTestFailed(({ task }) => {
+      const receipt = reportProgress()
       for (const error of task.result?.errors ?? []) error.message += `\n${receipt}`
       console.error(receipt)
+    })
+    onTestFinished(({ task }) => {
+      if (task.result?.state === "pass") console.info(reportProgress())
     })
     mark("create project")
     const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-run-observability-")))

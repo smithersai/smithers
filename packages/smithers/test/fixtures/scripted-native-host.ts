@@ -50,7 +50,7 @@ if (isMainThread && !compiler) {
         const span = nativeSpan(options)
         // Only fixed SDK operation names; never attributes, arguments or errors.
         if (
-          /^(SqlControlRuntime|Registry|AgentSession|Control|RunStore|DurableWriter|ExecutionSnapshot)\.[A-Za-z]+$/
+          /^(SqlControlRuntime|Registry|Discovery|AgentSession|Control|RunStore|DurableWriter|ExecutionSnapshot)\.[A-Za-z]+$/
             .test(
               options.name
             )
