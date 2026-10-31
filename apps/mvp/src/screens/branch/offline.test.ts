@@ -105,6 +105,7 @@ const open = async (reopenRoute?: () => void) => {
       files: await runtime.runPromise(Effect.service(Files)), chat, auth, repo, branch, intel, status, commands, theme, terminal,
       attention, spend, personalModel: await runtime.runPromise(Effect.service(PersonalModel)), todos,
       views: await runtime.runPromise(Effect.service(Views)),
+      plugins: await runtime.runPromise(Effect.service(PluginsUi)),
     }),
   }
 }

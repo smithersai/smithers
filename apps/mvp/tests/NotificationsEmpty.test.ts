@@ -16,6 +16,7 @@ import { Runs } from "../src/features/runs/runs"
 import { Secrets } from "../src/features/secrets/secrets"
 import { Todos } from "../src/features/todos/todos"
 import { Views } from "../src/features/views/views"
+import { PluginsUi } from "../src/plugins/ui"
 import { openTestApp } from "../src/test/chatApi"
 import { renderRepositoryPages } from "./fixtures/repository-pages"
 
@@ -27,6 +28,7 @@ test("an empty notification panel says No notifications", async () => {
       chat: Effect.service(Chat), flows: Effect.service(FlowsUi), home: Effect.service(Home),
       issues: Effect.service(Issues), pulls: Effect.service(Pulls), repo: Effect.service(Repo),
       runs: Effect.service(Runs), secrets: Effect.service(Secrets), todos: Effect.service(Todos), views: Effect.service(Views),
+      plugins: Effect.service(PluginsUi),
     }))
     const store = await app.runPromise(Effect.service(AttentionStore))
     await app.runPromise(store.panel.update("panel", row => { row.open = true }))

@@ -34,6 +34,7 @@ import { Attention } from "../src/features/attention/attention"
 import { Chat } from "../src/features/chat/chat"
 import { Spend } from "../src/features/spend/spend"
 import { Views } from "../src/features/views/views"
+import { PluginsUi } from "../src/plugins/ui"
 
 // Real feature collections and views. These are stored row fixtures, with no module mocks or intercepted requests.
 test("direct feature pages keep navigation, fence the deployment's own repository, and name GitHub instead of an unobservable write", async () => {
@@ -57,6 +58,7 @@ test("direct feature pages keep navigation, fence the deployment's own repositor
       chat: Effect.service(Chat),
       spend: Effect.service(Spend),
       views: Effect.service(Views),
+      plugins: Effect.service(PluginsUi),
     }))
     const [repo, auth, todos] = await app.runPromise(Effect.all([Effect.service(RepoStore), Effect.service(AuthStore), Effect.service(TodosStore)]))
     const home = homeStore
@@ -212,6 +214,7 @@ test.each(["queued", "missing"])("a %s Create URL has honest progress and recove
     const services = await app.runPromise(Effect.all({
       flows: FlowsUi, auth: Auth, repo: Repo, home: Home, issues: Issues, todos: Todos,
       pulls: Pulls, runs: Runs, secrets: Secrets, attention: Attention, chat: Chat, spend: Spend, views: Views,
+      plugins: PluginsUi,
     }))
     const store = await app.runPromise(Effect.service(IssuesStore))
     const auth = await app.runPromise(Effect.service(AuthStore))

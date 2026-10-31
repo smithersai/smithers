@@ -27,6 +27,8 @@ import type { Spend } from "../../src/features/spend/spend"
 import { SpendProvider } from "../../src/features/spend/components/SpendContext"
 import type { Views } from "../../src/features/views/views"
 import { ViewsProvider } from "../../src/features/views/components/ViewsContext"
+import type { PluginsUi } from "../../src/plugins/ui"
+import { PluginsProvider } from "../../src/plugins/components/PluginsContext"
 export type Services = {
   flows: FlowsUi["Service"]
   auth: Auth["Service"]
@@ -41,9 +43,11 @@ export type Services = {
   chat: Chat["Service"]
   spend: Spend["Service"]
   views: Views["Service"]
+  plugins: PluginsUi["Service"]
 }
 export const renderRepositoryPages = (router: Parameters<typeof RouterProvider>[0]["router"], services: Services) => {
   let tree: ReactNode = createElement(RouterProvider, { router })
+  tree = createElement(PluginsProvider, { value: services.plugins }, tree)
   tree = createElement(ChatProvider, { value: services.chat }, tree)
   tree = createElement(SpendProvider, { value: services.spend }, tree)
   tree = createElement(ViewsProvider, { value: services.views }, tree)
