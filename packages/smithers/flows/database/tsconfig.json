@@ -49,5 +49,6 @@
   },
   "include": [
     "src/**/*"
-  ]
+  ],
+  "vibelang": { "declarationSidecars": true }
 }

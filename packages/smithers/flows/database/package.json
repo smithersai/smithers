@@ -241,5 +241,8 @@
     "@effect/sql-pg": {
       "optional": true
     }
+  },
+  "dependencies": {
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-c838030582d5.tgz"
   }
 }
