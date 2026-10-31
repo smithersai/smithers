@@ -98,7 +98,7 @@ export const checkpoints = Metric.counter("smithers_sandbox_checkpoints", {
 const counted = (op: "save" | "restore", outcome: string, failure?: SandboxTools.ToolRefused | SandboxTools.ToolUnavailable) =>
   Effect.andThen(
     Metric.update(Metric.withAttributes(checkpoints, { op, outcome }), 1),
-    Effect.logWithLevel(outcome === "saved" || outcome === "restored" || outcome === "none" ? "Info" : "Warn")(
+    Effect.logWithLevel(outcome === "saved" || outcome === "restored" || outcome === "none" || outcome === "job" ? "Info" : "Warn")(
       `sandbox.checkpoint.${op}`,
     ).pipe(Effect.annotateLogs({ outcome, ...failureOf(failure) })),
   )
@@ -127,6 +127,7 @@ export const touch = <R>(box: Box<R>) =>
 export const save = <R>(box: Box<R>, generation: number) =>
   Effect.gen(function* () {
     if ((yield* box.storage.get<number>("restored")) !== generation) return "skipped" as const
+    if ((yield* box.storage.get<{ readonly kind?: string }>("branch"))?.kind === "job") return "skipped" as const
     const session = yield* box.sessionAs(SANDBOX_USER)
     const captured = yield* Effect.result(SandboxTools.checkpoint(session))
     if (captured._tag === "Failure") {
@@ -188,6 +189,12 @@ const isTransient = (failure: SandboxTools.ToolRefused | SandboxTools.ToolUnavai
 export const restore = <R>(box: Box<R>, generation: number) =>
   Effect.gen(function* () {
     if ((yield* box.storage.get<number>("restored")) === generation) return "done" as const
+    // A job's machine is throwaway (docs/features/ci.md#jobs): nothing is restored into it and, never marked restored,
+    // nothing is saved from it, so its release never waits on a checkpoint of a checkout nobody will open again.
+    if ((yield* box.storage.get<{ readonly kind?: string }>("branch"))?.kind === "job") {
+      yield* counted("restore", "job")
+      return "job" as const
+    }
     const saved = yield* box.storage.get<Saved>("checkpoint")
     let outcome: string = "none"
     let failure: SandboxTools.ToolRefused | SandboxTools.ToolUnavailable | undefined

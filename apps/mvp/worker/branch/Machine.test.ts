@@ -384,6 +384,21 @@ describe("command records", () => {
 })
 
 describe("save", () => {
+  test("a job's machine restores nothing and saves nothing: its checkout is never checkpointed", async () => {
+    const job = boxOf({ store: memory({ branch: { branchId: "job-1", owner: "o", name: "n", branch: "a".repeat(40), kind: "job" } }) })
+    const restored = await observed(Machine.restore(job.box, 1))
+    expect(restored.value).toBe("job")
+    expect(restored.counted("restore", "job")).toBe(1)
+    writeFileSync(join(job.workdir, "new.txt"), "new\n")
+    expect(await Effect.runPromise(Machine.save(job.box, 1))).toBe("skipped")
+    expect(job.map.has("checkpoint")).toBe(false)
+    // One a release finds marked restored by an earlier version saves nothing either.
+    const marked = boxOf({ store: memory({ restored: 1, branch: { branchId: "job-2", owner: "o", name: "n", branch: "a".repeat(40), kind: "job" } }) })
+    writeFileSync(join(marked.workdir, "new.txt"), "new\n")
+    expect(await Effect.runPromise(Machine.save(marked.box, 1))).toBe("skipped")
+    expect(marked.map.has("checkpoint")).toBe(false)
+  })
+
   test("skipped until the generation's restore ran, or without a checkout; failed when the machine can't answer", async () => {
     const unrestored = boxOf()
     writeFileSync(join(unrestored.workdir, "new.txt"), "new\n")
