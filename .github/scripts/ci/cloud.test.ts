@@ -24,6 +24,9 @@ const gates = Array.from(dispatch.matchAll(/^ {4}([a-z][a-z0-9-]*)\)\n([\s\S]*?)
 describe("Local CI gate runner", () => {
   test("every gate declares its toolchains and retains its exact GitHub CI command", () => {
     expect(Array.from(tools.keys()).sort()).toEqual(gates.map(({ name }) => name).sort())
+    // Parsed once: ci.yml carries every shard, and parsing it per gate passed
+    // bun's 5 s test deadline on a loaded runner.
+    const workflowCommands = [...runs(github), ...runs(drift)]
     for (const { name, body } of gates) {
       // Bootstrap lives in bootstrap_for now, keyed off gate_tools.
       expect(tools.get(name)).toContain("js")
@@ -41,7 +44,7 @@ describe("Local CI gate runner", () => {
         if (repair) expect(all).toContain(repair)
         const commands = all.filter(command => command !== repair)
         expect(commands.length).toBe(1)
-        expect([...runs(github), ...runs(drift)]).toContain(commands[0])
+        expect(workflowCommands).toContain(commands[0])
       }
     }
     for (const toolchain of tools.values()) {
