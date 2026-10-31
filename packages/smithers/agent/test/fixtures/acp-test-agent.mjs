@@ -8,6 +8,10 @@
 //   run `sleep N`                   a tool call that waits N seconds; session/cancel ends it (stop reason cancelled)
 //   run `sleep N` detached          a tool call that starts `sleep N` in a session of its own and waits for it; a
 //                                   cancel ends the turn but leaves the sleep running, as some agents' tools do
+//   run `sleep N` through a helper  a tool call whose helper waits 2 s, then starts `sleep N` in a session of its own
+//                                   and waits for it, so the command starts under a process already running; a cancel
+//                                   kills the helper and ends the turn, orphaning the sleep, as one agent's adapter does.
+//                                   The sleep's pid goes to `orphan-<uuid>.pid` in the state directory
 //   refuse                          ends the turn with stop reason refusal
 //   exit                            the process exits with code 3 in the middle of the turn
 //   leak X                          sends X back as message text (for scrubbing tests)
@@ -27,7 +31,11 @@
 // unless set), never in its cwd. A prompt whose text has a line `continue` (case-insensitive) carries on with the
 // session's pending instructions, so a run killed mid-turn and resumed with session/load then "continue" applies
 // every instruction once. ACP_TEST_AGENT_MODE=bad-initialize answers initialize with no protocol version;
-// ACP_TEST_AGENT_NO_LOAD=1 says it can't load sessions. The agent writes its pid to `agent-<pid>.pid` in the state
+// ACP_TEST_AGENT_NO_LOAD=1 says it can't load sessions. It serves `_session/steering` (advertised as
+// `_meta.steering.supported`, as two coding agents' adapters do): the steer's instruction lines join the turn in
+// flight after its current step, which then says `Steered.`; with no turn in flight it answers `idle`. Each steer it
+// takes appends a line to `steered.log` in the state directory.
+// ACP_TEST_AGENT_NO_STEER=1 advertises no steering and answers the method not found. The agent writes its pid to `agent-<pid>.pid` in the state
 // directory, and a detached sleep's pid to `detached-<pid>.pid`, so tests can check what is still running.
 //
 // As the published adapters do, each turn first echoes its prompt as a `user_message_chunk`, and session/load replays
@@ -74,6 +82,7 @@ const PATTERNS = [
   [/^add the line `([^`]*)` to `([^`]+)`$/, (m) => ({ kind: "add", text: m[1], file: m[2] })],
   [/^run `sleep (\d+(?:\.\d+)?)`$/, (m) => ({ kind: "sleep", seconds: Number(m[1]) })],
   [/^run `sleep (\d+)` detached$/, (m) => ({ kind: "detached", seconds: Number(m[1]) })],
+  [/^run `sleep (\d+)` through a helper$/, (m) => ({ kind: "helper", seconds: Number(m[1]) })],
   [/^say env ([A-Za-z_][A-Za-z0-9_]*)$/, (m) => ({ kind: "env", name: m[1] })],
   [/^late update$/, () => ({ kind: "late" })],
   [/^talk for (\d+(?:\.\d+)?) seconds$/, (m) => ({ kind: "talk", seconds: Number(m[1]) })],
@@ -100,7 +109,7 @@ const instructionsOf = (text) =>
 const textOf = (prompt) =>
   (Array.isArray(prompt) ? prompt : []).filter((block) => block.type === "text").map((block) => block.text).join("\n")
 
-// The turn in progress, per session: how to cancel it.
+// The turn in progress, per session: how to cancel it, and its state, which a steer adds instructions to.
 const turns = new Map()
 
 const runTurn = async (id, sessionId, text) => {
@@ -113,9 +122,15 @@ const runTurn = async (id, sessionId, text) => {
   let cancelled = false
   let late = false
   let wake = () => {}
-  turns.set(sessionId, () => {
-    cancelled = true
-    wake()
+  turns.set(sessionId, {
+    cancel: () => {
+      cancelled = true
+      wake()
+    },
+    steer: (instructions) => {
+      state.pending = [...state.pending, { kind: "steered" }, ...instructions]
+      writeState(state)
+    }
   })
   const end = (stopReason) => {
     turns.delete(sessionId)
@@ -169,6 +184,30 @@ const runTurn = async (id, sessionId, text) => {
       writeState(state)
       continue
     }
+    if (step.kind === "helper") {
+      const toolCallId = randomUUID()
+      update(sessionId, { sessionUpdate: "tool_call", toolCallId, title: "Run a command", kind: "execute", status: "in_progress" })
+      // The helper starts the command in a session of its own 2 s in, once the helper itself has been running.
+      const file = join(stateDir, `orphan-${randomUUID()}.pid`)
+      const helper = spawn(process.execPath, [
+        "-e",
+        `setTimeout(() => { const c = require("node:child_process").spawn("sleep", [${JSON.stringify(String(step.seconds))}], ` +
+        `{ detached: true, stdio: "ignore" }); require("node:fs").writeFileSync(${JSON.stringify(file)}, String(c.pid)); ` +
+        `c.on("exit", () => process.exit(0)) }, 2000); setInterval(() => {}, 1000)`
+      ], { stdio: "ignore" })
+      const exited = new Promise((done) => helper.on("exit", done))
+      await Promise.race([exited, new Promise((done) => (wake = done))])
+      if (cancelled) {
+        // The helper goes; the command it started is left to whoever finds it.
+        helper.kill("SIGKILL")
+        update(sessionId, { sessionUpdate: "tool_call_update", toolCallId, status: "failed" })
+        return end("cancelled")
+      }
+      update(sessionId, { sessionUpdate: "tool_call_update", toolCallId, status: "completed" })
+      state.pending.shift()
+      writeState(state)
+      continue
+    }
     if (step.kind === "detached") {
       const toolCallId = randomUUID()
       update(sessionId, { sessionUpdate: "tool_call", toolCallId, title: "Run a command", kind: "execute", status: "in_progress" })
@@ -188,6 +227,7 @@ const runTurn = async (id, sessionId, text) => {
     }
     state.pending.shift()
     writeState(state)
+    if (step.kind === "steered") say(sessionId, "Steered.")
     if (step.kind === "refuse") return end("refusal")
     if (step.kind === "env") say(sessionId, process.env[step.name] ?? "")
     if (step.kind === "late") late = true
@@ -245,7 +285,8 @@ const handle = (message) => {
       result: {
         protocolVersion: 1,
         agentCapabilities: { loadSession: process.env.ACP_TEST_AGENT_NO_LOAD !== "1" },
-        authMethods: []
+        authMethods: [],
+        ...(process.env.ACP_TEST_AGENT_NO_STEER === "1" ? {} : { _meta: { steering: { supported: true } } })
       }
     })
   }
@@ -271,9 +312,16 @@ const handle = (message) => {
   }
   if (method === "session/prompt") return void runTurn(id, params.sessionId, textOf(params.prompt))
   if (method === "session/cancel") {
-    const cancel = turns.get(params.sessionId)
-    if (cancel !== undefined) cancel()
+    const turn = turns.get(params.sessionId)
+    if (turn !== undefined) turn.cancel()
     return
+  }
+  if (method === "_session/steering" && process.env.ACP_TEST_AGENT_NO_STEER !== "1") {
+    const turn = turns.get(params.sessionId)
+    if (turn === undefined) return send({ id, result: { outcome: "idle" } })
+    turn.steer(instructionsOf(textOf(params.prompt)))
+    appendFileSync(join(stateDir, "steered.log"), `${params.sessionId}\n`)
+    return send({ id, result: { outcome: "injected" } })
   }
   if (id !== undefined) send({ id, error: { code: -32601, message: "Method not found" } })
 }

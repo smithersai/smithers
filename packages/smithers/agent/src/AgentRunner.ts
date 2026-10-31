@@ -13,6 +13,8 @@
  * HTTPS, works in its own checkout of the job's repository at the job's base
  * commit, keeps the claim's lease with heartbeats, and settles one
  * {@link Outcome}: the files the agent changed, or why it ended without them.
+ * A heartbeat also carries the messages people sent the agent while it works
+ * ({@link Steer}) and which of them the agent read.
  * Nothing calls into the runner, so it needs no inbound address.
  *
  * @since 1.0.0
@@ -198,22 +200,54 @@ export const ClaimRequest = Schema.Struct({
 export const ClaimResponse = Schema.Struct({ job: Schema.NullOr(Job) })
 
 /**
- * A runner keeping its claim: it still runs the job.
+ * A message a person sent the job's agent while it works: its id, and the text
+ * the agent reads, which the host renders with who sent it.
  *
  * @category schemas
  * @since 1.0.0
  */
-export const HeartbeatRequest = Schema.Struct({ key: NonEmpty, claim: NonEmpty })
+export const Steer = Schema.Struct({ id: NonEmpty, text: NonEmpty })
+
+/**
+ * A message for the job's agent, decoded.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Steer = typeof Steer.Type
+
+/**
+ * A runner keeping its claim: it still runs the job. `delivered` lists the
+ * steers the agent read: each one the agent sent an update after the runner
+ * handed it over. The runner lists them on every heartbeat until the host
+ * stops handing them out.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const HeartbeatRequest = Schema.Struct({
+  key: NonEmpty,
+  claim: NonEmpty,
+  delivered: Schema.optional(Schema.Array(NonEmpty))
+})
 
 /**
  * Whether the claim still holds the job, whether the host wants it stopped,
- * and the lease the heartbeat renewed. A runner whose claim no longer holds
- * its job stops it and settles nothing.
+ * the lease the heartbeat renewed, and the steers the agent hasn't read yet,
+ * oldest first. A runner whose claim no longer holds its job stops it and
+ * settles nothing. A runner hands each steer over once: one it handed over
+ * and can't say the agent read, because it restarted in between, is never
+ * handed over again.
  *
  * @category schemas
  * @since 1.0.0
  */
-export const HeartbeatResponse = Schema.Struct({ held: Schema.Boolean, cancel: Schema.Boolean, leaseSeconds: Positive })
+export const HeartbeatResponse = Schema.Struct({
+  held: Schema.Boolean,
+  cancel: Schema.Boolean,
+  leaseSeconds: Positive,
+  steers: Schema.optional(Schema.Array(Steer))
+})
 
 /**
  * The files one step changed: each added or modified file's path and its
@@ -300,12 +334,18 @@ export const Outcome = Schema.Union([
 export type Outcome = typeof Outcome.Type
 
 /**
- * A runner settling its claim with how the job ended.
+ * A runner settling its claim with how the job ended, and the steers the agent
+ * read that it may not have reported on a heartbeat yet (`delivered`).
  *
  * @category schemas
  * @since 1.0.0
  */
-export const SettleRequest = Schema.Struct({ key: NonEmpty, claim: NonEmpty, outcome: Outcome })
+export const SettleRequest = Schema.Struct({
+  key: NonEmpty,
+  claim: NonEmpty,
+  outcome: Outcome,
+  delivered: Schema.optional(Schema.Array(NonEmpty))
+})
 
 /**
  * Whether the settlement was recorded: `false` when the claim no longer held

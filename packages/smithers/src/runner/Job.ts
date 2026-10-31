@@ -160,7 +160,15 @@ export const registration = (config: Config.Checked, controls: ReadonlyMap<strin
       Settle.toLayer(({ job, outcome }) =>
         Effect.gen(function*() {
           const host = yield* Host.Host
-          const answer = yield* host.settle({ key: job.key, claim: job.claim, outcome }).pipe(
+          // The steers the agent read since the last heartbeat that reported them: a job that ended between two
+          // heartbeats reports them here. After a restart that replays this step, none are known: they stay unread.
+          const delivered = [...controls.get(job.key)?.delivered ?? []]
+          const answer = yield* host.settle({
+            key: job.key,
+            claim: job.claim,
+            outcome,
+            ...(delivered.length === 0 ? {} : { delivered })
+          }).pipe(
             Effect.map((settled) => settled.recorded),
             Effect.catchTag("@smthrs/cli/Runner/HostError", (error) =>
               error.code === "unavailable" ? Effect.fail(new SettleUnavailable()) : Effect.succeed(false))

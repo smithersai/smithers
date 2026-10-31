@@ -20,6 +20,17 @@
  * history an agent replays while it loads a session: the host has it already.
  * The runner adds `_smithers/turn` with each prompt turn's stop reason.
  *
+ * A message a person sends the agent while it works (a steer) reaches the
+ * turn in flight through ACP's `_session/steering` when the agent advertises
+ * it, and otherwise by cancelling the turn and prompting again with the
+ * message and {@link STEER_CONTINUE}; a steer that arrives after the turn
+ * ended starts the next one. The checkpoint's ledger records each steer
+ * before it is handed over and once the agent sent an update after it, which
+ * is the first evidence it was read: a steer is handed over at most once,
+ * and one handed over before a restart and never confirmed stays unconfirmed.
+ * The transcript marks each steer as `_smithers/steer` when it is handed over,
+ * and a stop the host asked for as `_smithers/cancel`.
+ *
  * Nothing here logs a prompt, the agent's text, a command line, an
  * environment or a path: ids, codes, the account label and durations only.
  *
@@ -75,6 +86,10 @@ export interface Control {
   readonly cancel: Deferred.Deferred<void>
   readonly dropped: Deferred.Deferred<void>
   readonly reclaimed: boolean
+  /** The messages people sent the agent, each once, as the host handed them out. */
+  readonly steers: Queue.Queue<AgentRunner.Steer>
+  /** The ids of steers the agent read, which the serve loop reports until the host stops listing them. */
+  readonly delivered: Set<string>
 }
 
 /**
@@ -96,6 +111,14 @@ export const MAX_SUMMARY = 4096
 export const QUIET = { afterMs: 5000, maxMs: 60_000 }
 
 /**
+ * How long a stopped agent's processes have after `SIGINT` before `SIGKILL`.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const STOP_GRACE_MS = 5000
+
+/**
  * The prompt that resumes a loaded session.
  *
  * @category constants
@@ -104,6 +127,24 @@ export const QUIET = { afterMs: 5000, maxMs: 60_000 }
 export const CONTINUE =
   "Continue\n\nYour earlier turn was interrupted. The checkout holds your work so far; carry on with " +
   "the task from where you stopped."
+
+/**
+ * What a steer's prompt ends with when the runner cancelled the turn to
+ * deliver it, or the turn had already ended: the agent's task goes on.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const STEER_CONTINUE = "Then continue the task."
+
+/**
+ * How long the runner waits for a cancelled turn to end before it prompts
+ * with a steer anyway.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const STEER_CANCEL_WAIT_MS = 30_000
 
 /**
  * The line a fresh session's prompt ends with when the checkout holds an
@@ -118,7 +159,9 @@ const Checkpoint = Schema.Struct({
   generation: Schema.Int,
   sessionId: Schema.optional(Schema.String),
   env: Schema.Record(Schema.String, Schema.String),
-  account: Schema.optional(Schema.String)
+  account: Schema.optional(Schema.String),
+  // Each steer by id: `handed` once the runner began handing it over, `delivered` once the agent answered after it.
+  steers: Schema.optional(Schema.Record(Schema.String, Schema.Literals(["handed", "delivered"])))
 })
 type Checkpoint = typeof Checkpoint.Type
 const decodeCheckpoint = Schema.decodeUnknownOption(Schema.fromJsonString(Checkpoint))
@@ -234,7 +277,8 @@ export const work = (
       yield* writeCheckpoint(checkout, {
         generation: job.generation,
         env: hook.env,
-        ...(hook.account === undefined ? {} : { account: hook.account })
+        ...(hook.account === undefined ? {} : { account: hook.account }),
+        ...(saved?.steers === undefined ? {} : { steers: saved.steers })
       })
     }
     const account: { account?: string } = chosen.account === undefined ? {} : { account: chosen.account }
@@ -253,7 +297,13 @@ export const work = (
         control,
         env: { ...base, ...chosen.env },
         resume: same ? saved.sessionId : undefined,
-        checkpoint: { generation: job.generation, env: chosen.env, ...account },
+        checkpoint: {
+          generation: job.generation,
+          env: chosen.env,
+          ...account,
+          // A later generation keeps the ledger: a steer handed to an earlier one is never handed over again.
+          ...(saved?.steers === undefined ? {} : { steers: saved.steers })
+        },
         scrub,
         spool
       })
@@ -311,6 +361,16 @@ const session = (options: {
     let usage: AgentRunner.Usage = {}
     // While the agent loads a session it replays that session's history, which the transcript holds already.
     let loading = false
+    // The checkpoint as it stands, its steer ledger included; every write goes through `save`.
+    let checkpoint: Checkpoint = options.checkpoint
+    const ledger: Record<string, "handed" | "delivered"> = { ...checkpoint.steers }
+    const save = () => writeCheckpoint(checkout, { ...checkpoint, steers: { ...ledger } })
+    // Steers the agent read before a restart, which the host may not have recorded yet.
+    for (const [id, state] of Object.entries(ledger)) if (state === "delivered") control.delivered.add(id)
+    // Steers handed over that no update has followed yet.
+    let awaiting: Array<string> = []
+    const steerLog = (id: string, fields: Record<string, string | number | boolean>) =>
+      Effect.logInfo("runner.steer").pipe(Effect.annotateLogs({ job: job.key, steer: id, ...fields }))
     const client = yield* Acp.make({
       incoming: Stream.splitLines(Stream.decodeText(handle.stdout)),
       send: (line) => Queue.offer(lines, line)
@@ -319,8 +379,19 @@ const session = (options: {
       onUpdate: (update) =>
         Effect.andThen(
           loading ? Effect.void : options.spool.append(update.kind, update.update),
-          Effect.sync(() => {
+          Effect.gen(function*() {
             lastUpdate = Date.now()
+            if (awaiting.length > 0) {
+              // The agent's first word after a steer was handed over: it read it.
+              const read = awaiting
+              awaiting = []
+              for (const id of read) {
+                ledger[id] = "delivered"
+                control.delivered.add(id)
+              }
+              yield* save()
+              for (const id of read) yield* steerLog(id, { outcome: "delivered" })
+            }
             const text = Acp.messageText(update)
             if (Option.isSome(text)) {
               current = (current + text.value).slice(-MAX_SUMMARY)
@@ -358,9 +429,16 @@ const session = (options: {
       value === "cancel" || value === "dropped" || value === "deadline"
     const stopped = (cause: Signal, sessionId: string | undefined, turn: Fiber.Fiber<unknown, unknown> | undefined) =>
       Effect.gen(function*() {
+        // Seen before the cancel: an agent may end its own helpers on a cancel and orphan the commands they ran
+        // (one adapter does), which no later look at the tree finds under the agent.
+        yield* tree.observe
+        // A stop the host asked for is marked in the transcript before the agent hears it.
+        if (cause === "cancel") yield* options.spool.append(Transcript.KINDS.cancel, {})
         if (sessionId !== undefined) yield* client.cancel(sessionId).pipe(Effect.ignore)
         if (turn !== undefined) yield* Fiber.await(turn).pipe(Effect.timeout("30 seconds"), Effect.ignore)
-        const gone = yield* Tree.stop(tree, { graceMs: 15_000, settleMs: 5000 })
+        // A stop a person asked for: tools that ignore SIGINT (S3's real agents' commands did) get SIGKILL after 5 s,
+        // so the tree is gone within a heartbeat and about 10 s.
+        const gone = yield* Tree.stop(tree, { graceMs: STOP_GRACE_MS, settleMs: 5000 })
         // A dropped claim settles nothing the host keeps: its settlement is fenced off.
         return cause === "deadline"
           ? ended(failed("timeout"), "deadline")
@@ -373,37 +451,117 @@ const session = (options: {
           loading = true
           const loaded = yield* Effect.exit(client.loadSession(options.resume, checkout.dir))
           loading = false
-          if (Exit.isSuccess(loaded)) return { sessionId: options.resume, text: CONTINUE }
+          if (Exit.isSuccess(loaded)) return { sessionId: options.resume, text: CONTINUE, steering: initialized.steering }
         }
         const sessionId = yield* client.newSession(checkout.dir)
-        yield* writeCheckpoint(checkout, { ...options.checkpoint, sessionId })
-        return { sessionId, text: promptOf(job.task, job.generation > 1 || options.resume !== undefined) }
+        checkpoint = { ...checkpoint, sessionId }
+        yield* save()
+        return {
+          sessionId,
+          text: promptOf(job.task, job.generation > 1 || options.resume !== undefined),
+          steering: initialized.steering
+        }
       }).pipe(Effect.result),
       signal
     )
     if (isSignal(opened)) return yield* stopped(opened, undefined, undefined)
     if (opened._tag === "Failure") return failure(opened.failure)
-    const { sessionId, text } = opened.success
-    const turn = yield* Effect.forkScoped(client.prompt(sessionId, text))
-    const first = yield* Effect.raceFirst(Fiber.await(turn), signal)
-    if (isSignal(first)) return yield* stopped(first, sessionId, turn)
-    if (Exit.isFailure(first)) {
-      const error = Option.getOrUndefined(Cause.findErrorOption(first.cause))
-      return error === undefined ? ended(failed("agent"), "exit") : failure(error)
-    }
-    const stop = first.value
-    yield* options.spool.append(Transcript.KINDS.turn, { stopReason: stop })
-    if (stop === "refusal") return ended(retry("refusal") ?? failed("agent"), stop)
-    if (stop !== "end_turn") return ended(failed("agent"), stop)
-    // The turn ended; the agent may still be talking. Collect once it has been quiet a while.
-    const endedAt = Date.now()
-    const quiet = Effect.gen(function*() {
-      while (Date.now() - lastUpdate < QUIET.afterMs && Date.now() - endedAt < QUIET.maxMs) {
-        yield* Effect.sleep(Math.max(10, Math.min(QUIET.afterMs - (Date.now() - lastUpdate), 1000)))
+    const { sessionId, steering, text } = opened.success
+    // The turn in flight. A steer may replace it: `replacing` says its end is the cancel the steer asked for, and
+    // `turns` takes each turn a steer started.
+    let turn = yield* Effect.forkScoped(client.prompt(sessionId, text))
+    let open = true
+    let replacing = false
+    const turns = yield* Queue.unbounded<void>()
+    const prompt = (steer: AgentRunner.Steer) =>
+      Effect.gen(function*() {
+        turn = yield* Effect.forkScoped(client.prompt(sessionId, `${steer.text}\n\n${STEER_CONTINUE}`))
+        open = true
+        awaiting = [...awaiting, steer.id]
+        yield* Queue.offer(turns, undefined)
+      })
+    /** Hands one steer to the agent: into the turn in flight when it can, else as the next prompt. */
+    const handOver = (steer: AgentRunner.Steer) =>
+      Effect.gen(function*() {
+        const startedAt = Date.now()
+        if (open && steering && profile.steering !== "prompt") {
+          const taken = yield* client.steer(sessionId, steer.text).pipe(Effect.orElseSucceed(() => false))
+          if (taken) {
+            awaiting = [...awaiting, steer.id]
+            yield* options.spool.append(Transcript.KINDS.steer, { id: steer.id, mode: "steering" })
+            return yield* steerLog(steer.id, { mode: "steering", outcome: "handed", durationMs: Date.now() - startedAt })
+          }
+        }
+        // No turn in flight: the steer starts the next one. Else the only way every ACP agent takes it: cancel the
+        // turn, then prompt.
+        const mode = open ? "cancel_prompt" : "prompt"
+        if (open) {
+          replacing = true
+          // Seen before the cancel, so a command the cancel orphans is still stopped with the session.
+          yield* tree.observe
+          yield* client.cancel(sessionId).pipe(Effect.ignore)
+          yield* Fiber.await(turn).pipe(Effect.timeout(STEER_CANCEL_WAIT_MS), Effect.ignore)
+        }
+        // Marked before the prompt that carries it, so the agent's answer follows it in the transcript.
+        yield* options.spool.append(Transcript.KINDS.steer, { id: steer.id, mode })
+        yield* prompt(steer)
+        yield* steerLog(steer.id, { mode, outcome: "handed", durationMs: Date.now() - startedAt })
+      })
+    yield* Effect.gen(function*() {
+      while (true) {
+        const steer = yield* Queue.take(control.steers)
+        // Never twice: one handed over before a restart, read or not, is the agent's already.
+        if (ledger[steer.id] !== undefined) continue
+        ledger[steer.id] = "handed"
+        yield* save()
+        yield* handOver(steer)
       }
-    })
-    const settled = yield* Effect.raceFirst(quiet.pipe(Effect.as("quiet" as const)), signal)
-    if (settled !== "quiet") return yield* stopped(settled, sessionId, undefined)
+    }).pipe(Effect.forkScoped)
+    let stop: Acp.StopReason
+    while (true) {
+      const awaited = turn
+      const first = yield* Effect.raceFirst(Fiber.await(awaited), signal)
+      if (isSignal(first)) return yield* stopped(first, sessionId, turn)
+      // Every prompt turn that ends says why, a turn a steer cancelled included.
+      if (Exit.isSuccess(first)) yield* options.spool.append(Transcript.KINDS.turn, { stopReason: first.value })
+      if (awaited !== turn) {
+        // A steer replaced the turn while this one ended: the next one is the turn to wait on.
+        replacing = false
+        continue
+      }
+      if (Exit.isSuccess(first) && first.value === "cancelled" && replacing) {
+        // The cancel a steer asked for: wait for the turn it starts.
+        replacing = false
+        const next = yield* Effect.raceFirst(Queue.take(turns), signal)
+        if (isSignal(next)) return yield* stopped(next, sessionId, turn)
+        continue
+      }
+      open = false
+      if (Exit.isFailure(first)) {
+        const error = Option.getOrUndefined(Cause.findErrorOption(first.cause))
+        return error === undefined ? ended(failed("agent"), "exit") : failure(error)
+      }
+      stop = first.value
+      if (stop === "refusal") return ended(retry("refusal") ?? failed("agent"), stop)
+      if (stop !== "end_turn") return ended(failed("agent"), stop)
+      // The turn ended; the agent may still be talking, or a steer may start another turn. Collect once it has been
+      // quiet a while.
+      const endedAt = Date.now()
+      const quiet = Effect.gen(function*() {
+        while (Date.now() - lastUpdate < QUIET.afterMs && Date.now() - endedAt < QUIET.maxMs) {
+          yield* Effect.sleep(Math.max(10, Math.min(QUIET.afterMs - (Date.now() - lastUpdate), 1000)))
+        }
+        yield* Effect.logInfo("runner.quiet").pipe(Effect.annotateLogs({ job: job.key, waitedMs: Date.now() - endedAt }))
+      })
+      const settled = yield* Effect.raceAll([
+        quiet.pipe(Effect.as("quiet" as const)),
+        Queue.take(turns).pipe(Effect.as("steered" as const)),
+        signal
+      ])
+      if (settled === "steered") continue
+      if (settled !== "quiet") return yield* stopped(settled, sessionId, undefined)
+      break
+    }
     yield* Tree.stop(tree, { graceMs: 2000, settleMs: 5000 }).pipe(Effect.ignore)
     const changes = yield* Effect.exit(Workspace.changes(checkout, job.task.base, job.task.limits, options.mirror))
     if (Exit.isFailure(changes)) return ended(failed("workspace"), stop)

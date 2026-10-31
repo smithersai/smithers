@@ -6,6 +6,9 @@
  * heartbeat. A heartbeat that says `cancel` stops the job's agent and the job
  * settles cancelled; one that says the claim no longer holds the job
  * interrupts it, which stops the agent's whole tree, and nothing is settled.
+ * A heartbeat also hands the job's work each message a person sent its agent
+ * (once each, whatever the host repeats), and tells the host which of them the
+ * agent read, until the host stops listing them.
  * A runner that restarts lists no running jobs, so the host hands back the
  * claims it still holds (`reclaimed`), and each one's execution resumes from
  * the runner's journal.
@@ -14,7 +17,7 @@
  */
 
 import type * as AgentRunner from "@smthrs/agent/AgentRunner"
-import { Cause, Deferred, Effect, type Fiber } from "effect"
+import { Cause, Deferred, Effect, type Fiber, Queue } from "effect"
 import type * as Config from "./Config.ts"
 import * as Host from "./Host.ts"
 import * as Job from "./Job.ts"
@@ -36,9 +39,15 @@ export const loop = (config: Config.Checked, controls: Map<string, Session.Contr
     /** Beats for one job until its claim is lost: then the job's `dropped` completes. */
     const heartbeat = (job: AgentRunner.Job, control: Session.Control) =>
       Effect.gen(function*() {
+        const offered = new Set<string>()
         while (true) {
           yield* Effect.sleep(`${config.heartbeatSeconds} seconds`)
-          const beat = yield* Effect.result(host.heartbeat({ key: job.key, claim: job.claim }))
+          const delivered = [...control.delivered]
+          const beat = yield* Effect.result(host.heartbeat({
+            key: job.key,
+            claim: job.claim,
+            ...(delivered.length === 0 ? {} : { delivered })
+          }))
           if (beat._tag === "Failure") {
             if (beat.failure.code === "refused") return yield* drop(job, control)
             // An unreachable host doesn't prove the claim is gone: keep working, and keep asking.
@@ -49,6 +58,14 @@ export const loop = (config: Config.Checked, controls: Map<string, Session.Contr
           }
           if (!beat.success.held) return yield* drop(job, control)
           if (beat.success.cancel) yield* Deferred.succeed(control.cancel, undefined)
+          const steers = beat.success.steers ?? []
+          // A delivered steer the host no longer lists was recorded there; one it still lists is acknowledged again.
+          for (const id of delivered) if (!steers.some((steer) => steer.id === id)) control.delivered.delete(id)
+          for (const steer of steers) {
+            if (offered.has(steer.id)) continue
+            offered.add(steer.id)
+            yield* Queue.offer(control.steers, steer)
+          }
         }
       })
 
@@ -64,7 +81,9 @@ export const loop = (config: Config.Checked, controls: Map<string, Session.Contr
         const control: Session.Control = {
           cancel: yield* Deferred.make<void>(),
           dropped: yield* Deferred.make<void>(),
-          reclaimed: job.reclaimed
+          reclaimed: job.reclaimed,
+          steers: yield* Queue.unbounded<AgentRunner.Steer>(),
+          delivered: new Set()
         }
         controls.set(job.key, control)
         const payload: Session.JobPayload = {

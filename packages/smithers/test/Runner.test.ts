@@ -113,6 +113,10 @@ afterEach(async () => {
   await Promise.all(children.splice(0).map(stopGroup))
   await host.close()
   for (const pid of [...pids("agent-"), ...pids("detached-")]) if (alive(pid)) process.kill(pid, "SIGKILL")
+  for (const name of readdirSync(agentState).filter((each) => each.startsWith("orphan-"))) {
+    const pid = Number(readFileSync(join(agentState, name), "utf8").trim())
+    if (pid > 0 && alive(pid)) process.kill(pid, "SIGKILL")
+  }
   rmSync(root, { recursive: true, force: true })
 })
 
@@ -265,6 +269,138 @@ describe("smthrs runner serve", () => {
     row.cancel = true
     const outcome = await host.settled(row)
     expect(outcome).toEqual({ _tag: "Cancelled", processTreeGone: true })
+    expect(alive(sleeper!)).toBe(false)
+    // The transcript marks the stop once, then the end.
+    const marks = (await host.transcribed(row)).events.map((event) => event.kind)
+      .filter((kind) => kind === Transcript.KINDS.cancel || kind === Transcript.KINDS.end)
+    expect(marks).toEqual([Transcript.KINDS.cancel, Transcript.KINDS.end])
+  }, 90_000)
+
+  test("a steer reaches the turn in flight through the agent's steering, once, and its change is settled", async () => {
+    configure()
+    const row = host.enqueue(Host.task({
+      base: mirror.base,
+      prompt: "run `sleep 3`\nadd the line `alpha` to `NOTES.md`"
+    }))
+    // A host that keeps handing the steer out: the runner hands it to the agent once all the same.
+    row.promote = false
+    serveInProcess()
+    await until(() => row.state === "claimed")
+    row.steers = [{ id: "steer-1", text: "add the line `steered` to `NOTES.md`" }]
+    const outcome = await host.settled(row)
+    expect(outcome._tag).toBe("Done")
+    if (outcome._tag !== "Done") return
+    expect(outcome.changes.additions.map((file) => [file.path, decode(file.contents)])).toEqual([
+      ["NOTES.md", "alpha\nsteered\n"]
+    ])
+    expect(existsSync(join(agentState, "steered.log"))).toBe(true)
+    // Delivered once the agent answered after it, and acknowledged on every heartbeat while the host lists it.
+    expect(row.delivered.length).toBeGreaterThan(0)
+    expect(new Set(row.delivered)).toEqual(new Set(["steer-1"]))
+    // The transcript marks the steer once, as it reached the turn in flight.
+    const steers = (await host.transcribed(row)).events.filter((event) => event.kind === Transcript.KINDS.steer)
+    expect(steers.map((event) => event.update)).toEqual([{ id: "steer-1", mode: "steering" }])
+  }, 90_000)
+
+  test("a steer the agent read that no heartbeat got recorded is reported on the settlement", async () => {
+    configure()
+    const row = host.enqueue(Host.task({ base: mirror.base, prompt: "run `sleep 3`\nadd the line `alpha` to `NOTES.md`" }))
+    // A host whose heartbeat answers never record a delivery, as a job that ends between two heartbeats sees.
+    row.heartbeatAcks = false
+    serveInProcess()
+    await until(() => row.state === "claimed")
+    row.steers = [{ id: "steer-late", text: "add the line `late` to `NOTES.md`" }]
+    const outcome = await host.settled(row)
+    expect(outcome._tag).toBe("Done")
+    expect(row.delivered).toEqual(["steer-late"])
+  }, 90_000)
+
+  test("an agent without steering is cancelled, then prompted with the steer, and carries on", async () => {
+    configure({ plain: { env: { ACP_TEST_AGENT_STATE: agentState, ACP_TEST_AGENT_NO_STEER: "1" } } })
+    const row = host.enqueue(Host.task({
+      profile: "plain",
+      base: mirror.base,
+      prompt: "run `sleep 3`\nadd the line `alpha` to `NOTES.md`"
+    }))
+    serveInProcess()
+    await until(() => row.state === "claimed")
+    row.steers = [{ id: "steer-2", text: "add the line `steered` to `NOTES.md`" }]
+    const outcome = await host.settled(row)
+    expect(outcome._tag).toBe("Done")
+    if (outcome._tag !== "Done") return
+    expect(outcome.changes.additions.map((file) => [file.path, decode(file.contents)])).toEqual([
+      ["NOTES.md", "alpha\nsteered\n"]
+    ])
+    expect(row.delivered).toEqual(["steer-2"])
+    expect(row.steers).toEqual([])
+    // The transcript says the turn was cancelled, then marks the steer before the agent's answer to it.
+    const { events } = await host.transcribed(row)
+    const kinds = events.map((event) => event.kind)
+    const steer = kinds.indexOf(Transcript.KINDS.steer)
+    expect(events[steer]?.update).toMatchObject({ id: "steer-2", mode: "cancel_prompt" })
+    expect(events.slice(0, steer).filter((event) => event.kind === Transcript.KINDS.turn).map((event) => event.update))
+      .toEqual([{ stopReason: "cancelled" }])
+    expect(kinds.slice(steer + 1)).toContain(Transcript.KINDS.turn)
+  }, 90_000)
+
+  test("a profile that steers by prompt cancels the turn and prompts, though its agent takes steering", async () => {
+    configure({ prompted: { steering: "prompt" } })
+    const row = host.enqueue(Host.task({
+      profile: "prompted",
+      base: mirror.base,
+      prompt: "run `sleep 3`\nadd the line `alpha` to `NOTES.md`"
+    }))
+    serveInProcess()
+    await until(() => row.state === "claimed")
+    row.steers = [{ id: "steer-p", text: "add the line `steered` to `NOTES.md`" }]
+    const outcome = await host.settled(row)
+    expect(outcome._tag).toBe("Done")
+    if (outcome._tag !== "Done") return
+    expect(outcome.changes.additions.map((file) => [file.path, decode(file.contents)])).toEqual([
+      ["NOTES.md", "alpha\nsteered\n"]
+    ])
+    expect(row.delivered).toContain("steer-p")
+    // Never over `_session/steering`.
+    expect(existsSync(join(agentState, "steered.log"))).toBe(false)
+  }, 90_000)
+
+  test("a steer after the turn ended starts the next turn before the change is collected", async () => {
+    configure()
+    const row = host.enqueue(Host.task({ base: mirror.base, prompt: "add the line `alpha` to `NOTES.md`" }))
+    serveInProcess()
+    const notes = () => {
+      const [work] = checkouts().filter((name) => !name.endsWith(".acp.json"))
+      return work === undefined ? "" : (() => {
+        try {
+          return readFileSync(join(stateDir, "work", work, "NOTES.md"), "utf8")
+        } catch {
+          return ""
+        }
+      })()
+    }
+    await until(() => notes() === "alpha\n")
+    row.steers = [{ id: "steer-3", text: "add the line `later` to `NOTES.md`" }]
+    const outcome = await host.settled(row)
+    expect(outcome._tag).toBe("Done")
+    if (outcome._tag !== "Done") return
+    expect(outcome.changes.additions.map((file) => [file.path, decode(file.contents)])).toEqual([
+      ["NOTES.md", "alpha\nlater\n"]
+    ])
+    expect(row.delivered).toEqual(["steer-3"])
+  }, 90_000)
+
+  test("a cancel that orphans a command started deep in the tree, after its parent was seen, still ends it", async () => {
+    configure()
+    const row = host.enqueue(Host.task({ base: mirror.base, prompt: "run `sleep 60` through a helper" }))
+    serveInProcess()
+    const orphans = () =>
+      readdirSync(agentState).filter((name) => name.startsWith("orphan-")).map((name) =>
+        Number(readFileSync(join(agentState, name), "utf8").trim())
+      ).filter((pid) => pid > 0)
+    await until(() => orphans().length === 1)
+    const [sleeper] = orphans()
+    row.cancel = true
+    expect(await host.settled(row)).toEqual({ _tag: "Cancelled", processTreeGone: true })
     expect(alive(sleeper!)).toBe(false)
   }, 90_000)
 

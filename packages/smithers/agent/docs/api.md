@@ -3131,8 +3131,10 @@ reads, `maxHours` (1 to `MAX_HOURS`, 12) and `restarts` (0 to `MAX_RESTARTS`, 5)
   what a runner claims. `reclaimed` marks a job handed back to a runner that
   restarted while holding it.
 - `ClaimRequest` `{ profiles, free, running, waitSeconds }`, `ClaimResponse`,
-  `HeartbeatRequest`, `HeartbeatResponse` `{ held, cancel, leaseSeconds }`,
-  `SettleRequest`, `SettleResponse`, and `ROUTES` (`/api/runners/claim`,
+  `HeartbeatRequest` `{ key, claim, delivered? }` (the steers the agent read),
+  `HeartbeatResponse` `{ held, cancel, leaseSeconds, steers? }` (the steers it
+  hasn't, oldest first, each a `Steer` `{ id, text }`),
+  `SettleRequest` `{ key, claim, outcome, delivered? }`, `SettleResponse`, and `ROUTES` (`/api/runners/claim`,
   `/heartbeat`, `/settle`, `/events`).
 - `Outcome`: `Done { changes, summary, usage }`, `Failed { reason }` with a code
   of `FAILURES` (`agent`, `refused`, `workspace`, `too_large`, `timeout`,
@@ -3153,7 +3155,8 @@ What a runner sends its host of an external agent's session as it happens.
 - `Event` `{ seq, at, kind, update }`: `seq` counts from 0 within one job
   generation, `at` is when the runner received it in epoch milliseconds, `kind`
   is the update's `sessionUpdate` or one of `KINDS` (`_smithers/turn`,
-  `_smithers/end`, `_smithers/truncated`).
+  `_smithers/end`, `_smithers/truncated`, `_smithers/steer`,
+  `_smithers/cancel`).
 - `EventsRequest` `{ key, claim, events }` and `EventsResponse` `{ next }`, the
   lowest `seq` the host lacks, posted to `AgentRunner.ROUTES.events`.
 - `prepare(kind, update, scrub)`: none for a `DROPPED_KINDS` kind
@@ -3170,8 +3173,10 @@ What a runner sends its host of an external agent's session as it happens.
 `ExternalAgent.make(tag, { payload, task })` declares a durable step an external
 agent does on a runner: an `ExternalJob` from `@smthrs/flow` over
 `AgentRunner.AgentJobs`. `call(payload)` runs it as a child execution, `flows`
-lists its three declarations for a host that resolves executions by tag, and
-`toLayer()` implements it. It probes from 2 seconds doubling to 30, has a
+lists its declarations for a host that resolves executions by tag, and
+`toLayer()` implements it; `flows` lists its stop too, the run a cancellation of a
+parked generation starts (`cancel:<key>`, `ExternalJob` in `@smthrs/flow`). It
+probes from 2 seconds doubling to 30, has a
 deadline of `TIMEOUT` (`MAX_HOURS` plus ten minutes), and replaces a retryable
 generation up to `MAX_RESTARTS` times; the store ends a job sooner by its own
 agent's settings.
@@ -3190,9 +3195,12 @@ each `session/update` in order; `options.permission` (`allow` unless set)
 answers permission requests. The client offers the agent no file system and no
 terminal, and answers any other request from the agent method-not-found.
 
-The client has `initialize` (`{ protocolVersion, loadSession }`),
+The client has `initialize` (`{ protocolVersion, loadSession, steering }`),
 `newSession(cwd)`, `loadSession(sessionId, cwd)`, `prompt(sessionId, text)`
-(the turn's `StopReason`) and `cancel(sessionId)`. Failures are `AcpError`
+(the turn's `StopReason`), `cancel(sessionId)`, and `steer(sessionId, text)`,
+which hands a message to the turn in flight over `_session/steering` and answers
+whether the agent took it in. Ask it only of an agent whose `initialize` said
+`steering`; the agent's next update is the first sign it read the message. Failures are `AcpError`
 with a `code` of `closed`, `protocol` or `remote` (and the JSON-RPC `rpcCode`),
 never the agent's message. `messageText(update)` and `usage(update)` read an
 `agent_message_chunk`'s text and a `usage_update`'s context and USD cost.

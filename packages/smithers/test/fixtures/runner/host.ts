@@ -35,6 +35,14 @@ export interface Row {
   /** Events requests: how many were answered, and how many were refused while events were blocked. */
   posts: number
   refusedPosts: number
+  /** The messages for the agent the host hands out at each heartbeat, until the runner says the agent read them. */
+  steers: Array<AgentRunner.Steer>
+  /** Every id the runner said the agent read, in the order it said so, repeats included. */
+  delivered: Array<string>
+  /** Whether a delivered steer stops being handed out; `false` keeps handing it out, as a host that lost the record. */
+  promote: boolean
+  /** Whether a heartbeat's `delivered` is recorded; `false` records only the settlement's, as answers lost would. */
+  heartbeatAcks: boolean
 }
 
 /** The job's events in seq order, and whether their seqs run from 0 with no gap. */
@@ -94,7 +102,16 @@ export const start = async (token: string) => {
     const holds = row !== undefined && row.state === "claimed" && row.claim === value.claim && row.held
     if (request.url === AgentRunner.ROUTES.heartbeat) {
       if (row !== undefined) row.heartbeats++
-      return json(response, 200, { held: holds, cancel: holds && row.cancel, leaseSeconds: 45 })
+      if (!holds) return json(response, 200, { held: false, cancel: false, leaseSeconds: 45 })
+      const delivered = row.heartbeatAcks ? (value.delivered ?? []) as ReadonlyArray<string> : []
+      row.delivered.push(...delivered)
+      if (row.promote) row.steers = row.steers.filter((steer) => !delivered.includes(steer.id))
+      return json(response, 200, {
+        held: true,
+        cancel: row.cancel,
+        leaseSeconds: 45,
+        ...(row.steers.length === 0 ? {} : { steers: row.steers })
+      })
     }
     if (request.url === AgentRunner.ROUTES.events) {
       // The runner that held the claim may send its events after it settled.
@@ -116,6 +133,7 @@ export const start = async (token: string) => {
     }
     if (request.url === AgentRunner.ROUTES.settle) {
       if (!holds) return json(response, 200, { recorded: false })
+      row.delivered.push(...((value.delivered ?? []) as ReadonlyArray<string>))
       row.state = "settled"
       row.outcome = value.outcome as AgentRunner.Outcome
       return json(response, 200, { recorded: true })
@@ -148,7 +166,11 @@ export const start = async (token: string) => {
         events: new Map(),
         received: new Map(),
         posts: 0,
-        refusedPosts: 0
+        refusedPosts: 0,
+        steers: [],
+        delivered: [],
+        promote: true,
+        heartbeatAcks: true
       }
       rows.set(key, row)
       return row

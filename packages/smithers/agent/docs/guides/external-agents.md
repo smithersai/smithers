@@ -59,6 +59,25 @@ heartbeat and settle its rows; the step only starts, reads and cancels:
 Fail `AgentJobsUnavailable` when the store can't record an operation; the engine
 retries it.
 
+`cancel` may be asked twice for one key: a run cancelled while its step is
+parked between probes stops the generation through its own run, `cancel:<key>`,
+and a host that held the step in process also stops it from its rollback. Keep
+it idempotent.
+
+## Steer the agent
+
+A heartbeat's answer may carry `steers`, the messages people sent the agent that
+it hasn't read, and the next heartbeat lists in `delivered` the ones the agent
+answered after. Your heartbeat route reads them from wherever your host keeps a
+run's messages and records each delivery; the runner hands every steer over
+once, into the turn in flight when the agent takes `_session/steering`, else by
+cancelling the turn and prompting again.
+
+The runner marks each steer it hands over in the transcript as
+`Transcript.KINDS.steer` (`{ id, mode }`, never the words), and a stop your host asked
+for as `Transcript.KINDS.cancel`, so a person watching sees where the agent
+was interrupted.
+
 ## Durability
 
 The step is the session's durable unit. Its journal holds the start, each probe,

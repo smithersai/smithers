@@ -7,7 +7,8 @@
  * a host builds from a child process's stdout and stdin, so this module names
  * no platform. It covers what a runner needs to drive any ACP agent through
  * one task: `initialize`, `session/new` or `session/load`, `session/prompt`
- * and its stop reason, `session/cancel`, and every `session/update` the agent
+ * and its stop reason, `session/cancel`, the `_session/steering` extension
+ * for a message in the middle of a turn, and every `session/update` the agent
  * streams, passed on as it arrived. The client offers the agent no file
  * system and no terminal, so the agent works with its own tools, and it
  * answers a permission request with the agent's first option of the kind its
@@ -93,8 +94,10 @@ export interface Update {
 }
 
 /**
- * What the agent said of itself at `initialize`: the version it agreed to, and
- * whether it can load a session it ran before.
+ * What the agent said of itself at `initialize`: the version it agreed to,
+ * whether it can load a session it ran before, and whether it takes a message
+ * in the middle of a turn (`_session/steering`, which it advertises as
+ * `_meta.steering.supported`).
  *
  * @category models
  * @since 1.0.0
@@ -102,6 +105,7 @@ export interface Update {
 export interface Initialized {
   readonly protocolVersion: number
   readonly loadSession: boolean
+  readonly steering: boolean
 }
 
 /**
@@ -118,6 +122,14 @@ export interface Client {
   readonly prompt: (sessionId: string, text: string) => Effect.Effect<StopReason, AcpError>
   /** Asks the agent to end the session's turn; its prompt then answers `cancelled`. */
   readonly cancel: (sessionId: string) => Effect.Effect<void, AcpError>
+  /**
+   * Hands `text` to the session's turn in flight (`_session/steering`, an
+   * extension the published ACP adapters of two coding agents serve): whether the
+   * agent took it in. Ask it only of an agent whose `initialize` said
+   * `steering`. Taken in is not read: the agent's next update is the first
+   * sign it read the message.
+   */
+  readonly steer: (sessionId: string, text: string) => Effect.Effect<boolean, AcpError>
 }
 
 /**
@@ -164,8 +176,12 @@ const decodeUpdate = Schema.decodeUnknownOption(SessionUpdate)
 const isObject = Schema.is(JsonObject)
 const InitializeResult = Schema.Struct({
   protocolVersion: Schema.Int,
-  agentCapabilities: Schema.optional(Schema.Struct({ loadSession: Schema.optional(Schema.Boolean) }))
+  agentCapabilities: Schema.optional(Schema.Struct({ loadSession: Schema.optional(Schema.Boolean) })),
+  _meta: Schema.optional(Schema.Struct({
+    steering: Schema.optional(Schema.Struct({ supported: Schema.optional(Schema.Boolean) }))
+  }))
 })
+const SteeringResult = Schema.Struct({ outcome: Schema.String })
 const NewSessionResult = Schema.Struct({ sessionId: Schema.String })
 const PromptResult = Schema.Struct({ stopReason: Schema.Literals(STOP_REASONS) })
 const PermissionRequest = Schema.Struct({
@@ -328,7 +344,8 @@ export const make = <E, R>(
         Effect.flatMap(decoded("initialize", InitializeResult)),
         Effect.map((result) => ({
           protocolVersion: result.protocolVersion,
-          loadSession: result.agentCapabilities?.loadSession === true
+          loadSession: result.agentCapabilities?.loadSession === true,
+          steering: result._meta?.steering?.supported === true
         }))
       ),
       newSession: (cwd) =>
@@ -343,7 +360,12 @@ export const make = <E, R>(
           Effect.map((result) => result.stopReason)
         ),
       cancel: (sessionId) =>
-        write("session/cancel", { jsonrpc: "2.0", method: "session/cancel", params: { sessionId } })
+        write("session/cancel", { jsonrpc: "2.0", method: "session/cancel", params: { sessionId } }),
+      steer: (sessionId, text) =>
+        request("_session/steering", { sessionId, prompt: [{ type: "text", text }] }).pipe(
+          Effect.flatMap(decoded("_session/steering", SteeringResult)),
+          Effect.map((result) => result.outcome === "injected")
+        )
     }
     return client
   })

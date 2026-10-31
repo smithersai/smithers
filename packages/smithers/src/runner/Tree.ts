@@ -20,8 +20,8 @@ interface Entry {
   readonly started: string
 }
 
-/** Every process on the host by pid, or an empty table when `ps` can't answer. */
-const table = (): Map<number, Entry> => {
+/** Every process on the host by pid, or none when `ps` can't answer: a table it couldn't read proves nothing gone. */
+const table = (): Map<number, Entry> | undefined => {
   const entries = new Map<number, Entry>()
   let text: string
   try {
@@ -32,7 +32,7 @@ const table = (): Map<number, Entry> => {
       maxBuffer: 16 * 1024 * 1024
     })
   } catch {
-    return entries
+    return undefined
   }
   for (const line of text.split("\n")) {
     const match = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.+?)\s*$/.exec(line)
@@ -62,9 +62,16 @@ const alive = (pid: number): boolean => {
  */
 export interface Tree {
   readonly observe: Effect.Effect<void>
-  readonly signal: (signal: NodeJS.Signals) => Effect.Effect<void>
+  /** Signals every process seen that still runs as itself; answers how many it signalled. */
+  readonly signal: (signal: NodeJS.Signals) => Effect.Effect<number>
   readonly gone: Effect.Effect<boolean>
+  /** Its root's pid, how many processes it has seen, how many times it looked, and how many table reads failed. */
+  readonly stats: Effect.Effect<
+    { readonly root: number; readonly seen: number; readonly observed: number; readonly unreadable: number }
+  >
 }
+
+
 
 /**
  * Watches the tree under `root`, the root included.
@@ -74,25 +81,38 @@ export interface Tree {
  */
 export const watch = (root: number): Tree => {
   const seen = new Map<number, string>()
-  const observe = Effect.sync(() => {
+  let unreadable = 0
+  let observed = 0
+  const read = () => {
     const entries = table()
+    if (entries === undefined) unreadable++
+    return entries
+  }
+  const observe = Effect.sync(() => {
+    const entries = read()
+    if (entries === undefined) return
+    observed++
     const rootEntry = entries.get(root)
     if (rootEntry !== undefined) seen.set(root, rootEntry.started)
+    // The whole tree every time: a process seen before may have started children since, at any depth.
+    const visited = new Set([root])
     let frontier = [root]
     while (frontier.length > 0) {
       const parents = new Set(frontier)
       frontier = []
       for (const [pid, entry] of entries) {
-        if (parents.has(entry.ppid) && !seen.has(pid)) {
-          seen.set(pid, entry.started)
+        if (parents.has(entry.ppid) && !visited.has(pid)) {
+          visited.add(pid)
           frontier.push(pid)
+          if (!seen.has(pid)) seen.set(pid, entry.started)
         }
       }
     }
   })
-  /** The processes seen that still run as themselves: same pid, same start time, not a zombie. */
+  /** The processes seen that still run as themselves: same pid, same start time, not a zombie; none when unknown. */
   const living = () => {
-    const entries = table()
+    const entries = read()
+    if (entries === undefined) return undefined
     return [...seen].filter(([pid, started]) => {
       const entry = entries.get(pid)
       return entry !== undefined && entry.started === started && !entry.zombie && alive(pid)
@@ -102,15 +122,19 @@ export const watch = (root: number): Tree => {
     observe,
     signal: (signal) =>
       Effect.sync(() => {
-        for (const pid of living()) {
+        // A table it couldn't read can't tell a process from another that took its pid: signal none.
+        const pids = living() ?? []
+        for (const pid of pids) {
           try {
             process.kill(pid, signal)
           } catch {
             // Gone between the read and the signal.
           }
         }
+        return pids.length
       }),
-    gone: Effect.sync(() => living().length === 0)
+    gone: Effect.sync(() => living()?.length === 0),
+    stats: Effect.sync(() => ({ root, seen: seen.size, observed, unreadable }))
   }
 }
 
@@ -123,8 +147,9 @@ export const watch = (root: number): Tree => {
  */
 export const stop = (tree: Tree, options: { readonly graceMs: number; readonly settleMs: number }) =>
   Effect.gen(function*() {
+    const startedAt = Date.now()
     yield* tree.observe
-    yield* tree.signal("SIGINT")
+    const interrupted = yield* tree.signal("SIGINT")
     const until = (ms: number) =>
       Effect.gen(function*() {
         const deadline = Date.now() + ms
@@ -134,7 +159,16 @@ export const stop = (tree: Tree, options: { readonly graceMs: number; readonly s
         }
         return yield* tree.gone
       })
-    if (yield* until(options.graceMs)) return true
-    yield* tree.signal("SIGKILL")
-    return yield* until(options.settleMs)
+    const quick = yield* until(options.graceMs)
+    const killed = quick ? 0 : yield* tree.signal("SIGKILL")
+    const gone = quick || (yield* until(options.settleMs))
+    // Counts only: what it saw, what it signalled, and whether anything was left, never a command or a path.
+    yield* Effect.logInfo("runner.tree").pipe(Effect.annotateLogs({
+      ...(yield* tree.stats),
+      interrupted,
+      killed,
+      gone,
+      durationMs: Date.now() - startedAt
+    }))
+    return gone
   })

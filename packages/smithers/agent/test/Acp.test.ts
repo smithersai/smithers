@@ -83,7 +83,7 @@ describe("Acp against the test agent", () => {
       const stop = yield* client.prompt(session, "add the line `alpha` to `NOTES.md`")
       return { initialized, stop, updates, session }
     }))
-    expect(result.initialized).toEqual({ protocolVersion: 1, loadSession: true })
+    expect(result.initialized).toEqual({ protocolVersion: 1, loadSession: true, steering: true })
     expect(result.stop).toBe("end_turn")
     expect(readFileSync(join(root, "NOTES.md"), "utf8")).toBe("alpha\n")
     const kinds = result.updates.map((update) => update.kind)
@@ -114,6 +114,36 @@ describe("Acp against the test agent", () => {
       return stop
     }))
     expect(stop).toBe("cancelled")
+  })
+
+  test("steer hands a message to the turn in flight, which acts on it before it ends", async () => {
+    const result = await run(Effect.gen(function*() {
+      const { client, updates } = yield* connect()
+      expect((yield* client.initialize).steering).toBe(true)
+      const session = yield* client.newSession(root)
+      const idle = yield* client.steer(session, "add the line `early` to `NOTES.md`")
+      const turn = yield* Effect.forkChild(client.prompt(session, "run `sleep 0.5`"))
+      while (!updates.some((update) => update.kind === "tool_call")) yield* Effect.sleep(10)
+      const taken = yield* client.steer(session, "add the line `steered` to `NOTES.md`")
+      const stop = yield* Fiber.join(turn)
+      return { idle, taken, stop, texts: texts(updates) }
+    }))
+    // No turn in flight takes nothing; the one in flight takes the steer and does it.
+    expect(result.idle).toBe(false)
+    expect(result.taken).toBe(true)
+    expect(result.stop).toBe("end_turn")
+    expect(result.texts).toEqual(["Working through 1 instructions.", "Steered.", "Done."])
+    expect(readFileSync(join(root, "NOTES.md"), "utf8")).toBe("steered\n")
+  })
+
+  test("an agent that doesn't advertise steering refuses it as method not found", async () => {
+    const refused = await run(Effect.gen(function*() {
+      const { client } = yield* connect({ env: { ACP_TEST_AGENT_NO_STEER: "1" } })
+      expect((yield* client.initialize).steering).toBe(false)
+      const session = yield* client.newSession(root)
+      return yield* Effect.flip(client.steer(session, "hello"))
+    }))
+    expect(refused).toMatchObject({ code: "remote", method: "_session/steering", rpcCode: -32601 })
   })
 
   test("loads a session it ran before and continues its pending instructions", async () => {

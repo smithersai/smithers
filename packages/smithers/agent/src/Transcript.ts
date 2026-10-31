@@ -57,8 +57,11 @@ export const DROPPED_KINDS: ReadonlySet<string> = new Set(["available_commands_u
 
 /**
  * The kinds a runner adds of its own: a prompt turn ended (`{ stopReason }`),
- * and the session ended (`{ outcome }`, the job's outcome code). Later
- * slices add theirs under the same prefix.
+ * the session ended (`{ outcome }`, the job's outcome code), a person's
+ * message was handed to the agent (`{ id, mode }`, `mode` being `steering`,
+ * `cancel_prompt` or `prompt`; never its words, which the host keeps), and a
+ * stop the host asked for reached the agent (`{}`). Later slices add theirs
+ * under the same prefix.
  *
  * @category constants
  * @since 1.0.0
@@ -66,7 +69,9 @@ export const DROPPED_KINDS: ReadonlySet<string> = new Set(["available_commands_u
 export const KINDS = {
   turn: "_smithers/turn",
   end: "_smithers/end",
-  truncated: "_smithers/truncated"
+  truncated: "_smithers/truncated",
+  steer: "_smithers/steer",
+  cancel: "_smithers/cancel"
 } as const
 
 /**

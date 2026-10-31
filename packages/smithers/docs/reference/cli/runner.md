@@ -71,6 +71,7 @@ A profile:
 | `secretEnv` | Variables whose values are scrubbed from anything the runner uploads. `prestart`'s variables are always scrubbed. |
 | `retryOn` | Ends that settle `Retryable` instead of failing: `refusal` (the agent's stop reason), `exit` (the agent exited mid-turn) and `error` (an error answer to a request, which is how an agent reports a missing login or a usage limit). The host then queues another generation on this runner, up to the agent's restarts. |
 | `permission` | How the agent's permission requests are answered: `allow` (the default) or `reject`. |
+| `steering` | How a steer reaches the agent: `native` (the default) hands it to the turn in flight over `_session/steering` when the agent advertises it; `prompt` always cancels the turn and prompts with it, for an agent whose native steering moves its running command to the background and ends its turn. |
 
 Which agents, logins and accounts a machine has is your own configuration. The
 host knows a profile only by its name.
@@ -84,8 +85,9 @@ Each claimed job is a durable flow, `runner/Job`, on the runner's journal:
    a later generation continues the earlier one's work. The runner runs
    `prestart`, starts the agent in the checkout, opens an ACP session and
    prompts it with the job's instructions and task. After the turn ends it
-   waits until the agent has been quiet for 5 seconds (at most a minute), stops
-   the agent's process tree, and reads the change: each added or modified
+   waits until the agent has been quiet for 5 seconds (at most a minute),
+   logging `runner.quiet` with how long it waited, then stops the agent's
+   process tree, and reads the change: each added or modified
    file whole, and each deleted path. A change over the job's limits fails
    `too_large`.
 2. **Settle.** The runner reports the outcome, fenced by its claim, retrying
@@ -105,8 +107,9 @@ watch it:
   generation. The agent's slash commands and configuration options are
   dropped; every string is scrubbed as the summary is; an event is at most
   16 KiB, so a long message is split and any other long string cut. The runner
-  adds `_smithers/turn` with each turn's stop reason and `_smithers/end` with
-  the outcome.
+  adds `_smithers/turn` with each turn's stop reason, `_smithers/steer` with
+  each message's id and mode as it hands it to the agent, `_smithers/cancel`
+  when the host stops the job, and `_smithers/end` with the outcome.
 - Each event is written to `spool/<key hash>.jsonl` (`0600`) before it is
   sent, and sent at most once a second in requests of at most 64 KiB, at once
   again while a full request waits. The host answers the next number it lacks;
@@ -120,13 +123,41 @@ scrubbed of known secret values, API key and bearer shapes, GitHub tokens,
 JWTs and email addresses. Usage is the agent's last `usage_update`; an agent
 that reports no cost leaves it out.
 
+## Steering
+
+A heartbeat's answer carries the messages people sent the job's agent that it
+hasn't read yet. The runner hands each one over once, in order:
+
+- **Into the turn in flight** over ACP's `_session/steering`, when the agent's
+  `initialize` advertised it and the profile's `steering` isn't `prompt` (`_meta.steering.supported`), as the published ACP
+  adapters of two coding agents do.
+- **Cancel, then prompt.** An agent without it, or one that didn't take the
+  steer, has its turn cancelled (up to 30 s for it to end), then gets a prompt
+  with the steer and "Then continue the task.": the only way every ACP agent
+  takes a message.
+- **As the next turn.** A steer that arrives after the turn ended, before the
+  change is collected, starts the next turn the same way.
+
+The agent read a steer once it sends its next update after it; the runner then
+lists the steer as `delivered` on every heartbeat until the host stops handing it
+out, and on the settlement, so a job that ends between two heartbeats still
+reports it. The session checkpoint keeps a ledger of every steer, `handed` before it is
+sent and `delivered` once read, carried from one generation to the next, so a
+steer is never handed over twice: one handed over before a restart and never
+confirmed stays unconfirmed. Each hand-over logs `runner.steer` with the steer's
+id, its `mode` (`steering`, `cancel_prompt` or `prompt`) and how long it took;
+never its words.
+
 ## Stop, loss and restart
 
 - **Stop.** A heartbeat that says `cancel` sends `session/cancel`, waits up to
   30 s for the turn to end, then signals every process the agent started
-  (`SIGINT`, then `SIGKILL` after 15 s), detached ones included: the runner
+  (`SIGINT`, then `SIGKILL` after 5 s), detached ones included: the runner
   watches the agent's descendants by pid and start time while it runs. The
-  job settles `Cancelled` with `processTreeGone` true only when none is left.
+  job settles `Cancelled` with `processTreeGone` true only when none is left;
+  a process table the runner couldn't read never counts as none left. Each
+  stop logs `runner.tree` with how many processes it saw, signalled and
+  killed, whether any was left, and how many table reads failed.
 - **Lost claim.** A heartbeat that says the claim no longer holds the job stops
   the agent the same way and settles nothing.
 - **Unreachable host.** The runner keeps working and keeps beating; a missing
@@ -144,7 +175,7 @@ that reports no cost leaves it out.
 ## Records
 
 Logs carry job keys, generations, outcome codes, account labels and durations:
-`runner.serve`, `runner.claim`, `runner.heartbeat`, `runner.session`,
+`runner.serve`, `runner.claim`, `runner.heartbeat`, `runner.session`, `runner.steer`, `runner.quiet`, `runner.tree`,
 `runner.settle`, `runner.events`, `runner.transcript` and `runner.job`. They
 never carry a prompt, the agent's text,
 a command line, an environment or a path.

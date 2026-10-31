@@ -27,8 +27,12 @@ const EnvName = Schema.String.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_]*$/)
  * the variables whose values the runner scrubs from what it uploads, the ends
  * that ask for another generation instead of failing (`refusal`, the agent's
  * stop reason; `exit`, the agent exiting mid-turn; `error`, an error answer to
- * a request, which is how an agent reports a missing login or a limit), and
- * how the agent's permission requests are answered.
+ * a request, which is how an agent reports a missing login or a limit), how
+ * the agent's permission requests are answered, and how a steer reaches it:
+ * `native` (unless set) hands it to the turn in flight over
+ * `_session/steering` when the agent advertises it, `prompt` always cancels
+ * the turn and prompts with it, for an agent whose native steering moves its
+ * running command to the background and ends its turn.
  *
  * @category schemas
  * @since 1.0.0
@@ -39,7 +43,8 @@ export const Profile = Schema.Struct({
   prestart: Schema.optional(Schema.Array(NonEmpty).check(Schema.isMinLength(1))),
   secretEnv: Schema.optional(Schema.Array(EnvName)),
   retryOn: Schema.optional(Schema.Array(Schema.Literals(["refusal", "exit", "error"]))),
-  permission: Schema.optional(Schema.Literals(["allow", "reject"]))
+  permission: Schema.optional(Schema.Literals(["allow", "reject"])),
+  steering: Schema.optional(Schema.Literals(["native", "prompt"]))
 })
 
 /**
