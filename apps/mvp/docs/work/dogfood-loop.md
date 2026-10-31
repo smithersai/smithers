@@ -11,7 +11,7 @@ links: [../rulings.md, ../features/issues.md, ../features/todos.md, ../features/
 
 **Why:** Will, 2026-10-21 11:10: "Seeing if we can use our own product to produce an issue make todos from that issue produce a stacked diff run ci/cd on our infrastructure and merge. We likely are unable to do this yet and should prioritize unblocking it."
 
-**The issue:** `packages/smithers/flows/platform-browser` lint fails on `main`: `import()` type annotations at `src/BrowserRuntime.ts:78` and `src/internal/Engine.ts:53` (pre-existing reds, 2026-10-21 10:55). Two lines, two TODOs, nothing blocked by them.
+**The issue:** [smithersai/smithers#4432](https://github.com/smithersai/smithers/issues/4432): this note named #4430's platform-browser import() type annotations, which main has since fixed. Two TODOs, nothing blocked by them.
 
 ## Where it stands (2026-10-21 13:45, production 931fed70)
 
