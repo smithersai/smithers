@@ -5,7 +5,7 @@
  */
 
 import { type Brand, Schema } from "effect"
-import { PatternResource } from "./internal/PatternResource.ts"
+import { PatternResource } from "./internal/PatternResource.vibe"
 import { PatternAction } from "./PatternAction.ts"
 
 /**

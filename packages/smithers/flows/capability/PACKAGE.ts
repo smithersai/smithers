@@ -14,7 +14,7 @@ import * as Input from "@smthrs/targets/Input"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd: "packages/smithers/flows/capability"
 })
 
@@ -95,7 +95,7 @@ const securityReview = Smithers.SecurityReview({
         "src/maxMatchWork.ts",
         "src/maxResourceLength.ts",
         "src/evaluate.ts",
-        "src/internal/PatternResource.ts"
+        "src/internal/PatternResource.vibe"
       ]
     },
     {
