@@ -209,7 +209,8 @@ test("each hostname and route has one owning Worker in this repository", () => {
     claims.push(entry)
     owners.set(entry.host, new Set([...(owners.get(entry.host) ?? []), entry.owner]))
   }
-  const host = { name: "example.com", redirects: ["www.example.com"] }
+  const host = { name: "example.com", redirects: ["www.example.com"],
+    aliases: [{ host: "factory.example.com", path: "/acme/widgets/-/factory" }] }
   const bindings = new Map([
     [join(root, "apps/mvp/alchemy.run.ts"), new Map([["workerDomain(domain.value)", workerDomain(host)]])],
     [join(root, "apps/mvp/infra/DocsSite.ts"), new Map([["docsRoutes(domain)", docsRoutes(host.name)]])]
@@ -245,6 +246,9 @@ test("each hostname and route has one owning Worker in this repository", () => {
   // The docs redirect Worker's routes are read too: one retired docs site.
   assert.deepEqual([...owners.get("flows.smithers.sh") ?? []], ["smithers-docs-redirect"])
   assert.equal(claims.filter((entry) => entry.host === host.name && entry.kind === "domain").length, 1)
+  // An APP_ALIASES hostname is another custom domain of the app Worker, owned by it alone.
+  const app = claims.find((entry) => entry.host === host.name && entry.kind === "domain")?.owner
+  assert.deepEqual([...owners.get("factory.example.com") ?? []], [app])
   assert.deepEqual(claims.filter((entry) => entry.host === host.name && entry.kind === "route").map((entry) => entry.path),
     docsRoutes(host.name).map((entry) => entry.pattern.slice(host.name.length)))
   assert.deepEqual(conflicts(claims), [])
