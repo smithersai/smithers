@@ -465,6 +465,26 @@ describe("what the hand-off refuses", () => {
     expect(await hostSessions()).toEqual([])
   })
 
+  // The arrive page sends no referrer, so a real browser's form post carries `Origin: null` (Fetch, "append a request
+  // `Origin` header": a POST under the no-referrer policy serializes its origin as null). Fetch Metadata says where it
+  // came from: Arc sent exactly this on 2026-10-31, and the sign-in answered 403 until null counted as no origin.
+  test("the arrive page's own post, Origin null under its no-referrer policy, signs in; another site's null origin doesn't", async () => {
+    const h = await harness()
+    const { pressed, code } = await h.handedOff()
+    const lured = await h.handedOff()
+    const crossSite = await h.arrive(lured.code, lured.pressed.cookies, ALIAS, {
+      headers: { origin: "null", "sec-fetch-site": "cross-site" },
+    })
+    expect(crossSite.status).toBe(403)
+    expect(h.count({ route: "arrive", reason: "cross_site" })).toBe(1)
+    const arrived = await h.arrive(code, pressed.cookies, ALIAS, {
+      headers: { origin: "null", "sec-fetch-site": "same-origin" },
+    })
+    expect(arrived.status).toBe(303)
+    expect(arrived.headers.get("location")).toBe("/acme/widgets/-/factory")
+    expect(await h.sessionAt(ALIAS, values(arrived))).toMatchObject({ signedIn: true, login: "octocat" })
+  })
+
   test("another site's form, a missing code or an oversized body signs nobody in", async () => {
     const h = await harness()
     const { pressed, code } = await h.handedOff()

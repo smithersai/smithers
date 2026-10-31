@@ -602,10 +602,13 @@ export const make = <E, R>(
       const { keys, maxAgeSeconds } = setup.value
       const host = url.hostname
       const outcome = yield* Effect.gen(function* () {
-        // Only this origin's page posts a code: another site's form signs nobody in here (login CSRF).
-        const fromHere = request.headers.origin === undefined
+        // Only this origin's page posts a code: another site's form signs nobody in here (login CSRF). The arrive page
+        // sends no referrer, so a browser's post from it says `Origin: null` (Fetch serializes a no-referrer POST's
+        // origin as null); then, as with no Origin at all, Fetch Metadata decides.
+        const claimed = request.headers.origin
+        const fromHere = claimed === undefined || claimed === "null"
           ? request.headers["sec-fetch-site"] === "same-origin"
-          : request.headers.origin === origin
+          : claimed === origin
         if (!fromHere) return yield* new ArriveFailed({ reason: "cross_site" })
         const body = yield* readBounded(request, 1024).pipe(Effect.mapError(() => new ArriveFailed({ reason: "body" })))
         const code = new URLSearchParams(body).get("code")
