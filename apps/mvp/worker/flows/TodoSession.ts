@@ -1,7 +1,8 @@
 import { AgentRunner, ExternalAgent } from "@smthrs/agent"
 import { Action, RetryPolicy } from "@smthrs/flow"
 import { Effect, Layer, Option, Schema } from "effect"
-import type { SqlClient } from "effect/sql"
+import { SqlClient } from "effect/sql"
+import * as Stack from "../stack/Stack.ts"
 import * as Jobs from "../runners/Jobs.ts"
 import * as Store from "../runners/Store.ts"
 import { promptOf } from "./TodoAgent.ts"
@@ -90,3 +91,18 @@ export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E,
     Agent.toLayer(agentStep(database)),
     Session.toLayer().pipe(Layer.provide(Jobs.layer(database))),
   )
+
+/**
+ * A runner claimed attempt `attemptId`'s job: its TODO no longer waits for one (`todos.waiting`, decision 0132). The
+ * claim route runs it for every claim and reclaim (worker/runners/Api.ts `onClaimed`); an attempt the TODO no longer
+ * runs is a stale report, which changes nothing.
+ */
+export const claimed = (attemptId: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [attempt] = yield* sql<Stack.RunAttempt>`
+      SELECT id::text AS "attemptId", todo_id::text AS "todoId", repo_id AS "repoId", ordinal
+      FROM todo_attempts WHERE id::text = ${attemptId}`
+    if (attempt === undefined) return
+    yield* Stack.report(attempt, { kind: "waiting", waiting: null }, { runs: false })
+  })
