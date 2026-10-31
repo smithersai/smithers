@@ -1,0 +1,34 @@
+import { Effect } from "effect"
+import { SqlClient } from "effect/sql"
+
+// Sign-in on other hosts (decision 0130, docs/features/sign-in.md#other-hosts). Nothing here is synced to browsers, and
+// no column holds a credential in the clear.
+//
+// - `sign_in_handoffs`: a code `APP_DOMAIN` handed to an alias for one of its sessions: single-use, 60 seconds. Only
+//   the code's SHA-256 is kept, bound to the session, the alias's host and the SHA-256 of the nonce the alias's browser
+//   holds in its cookie.
+// - `host_sessions`: a session at an alias, nested in a session at `APP_DOMAIN` (`parent_id`): it reads its person and
+//   role through it and ends with it. `token_digest` is the SHA-256 of the alias's cookie's token.
+export default Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql`
+    CREATE TABLE sign_in_handoffs (
+      code_digest text PRIMARY KEY,
+      session_id uuid NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
+      host text NOT NULL,
+      nonce_digest text NOT NULL,
+      return_to text NOT NULL,
+      expires_at timestamptz NOT NULL
+    )`
+  yield* sql`CREATE INDEX sign_in_handoffs_expires_at ON sign_in_handoffs (expires_at)`
+  yield* sql`
+    CREATE TABLE host_sessions (
+      id uuid PRIMARY KEY,
+      token_digest text NOT NULL UNIQUE,
+      parent_id uuid NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
+      host text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      revoked_at timestamptz
+    )`
+  yield* sql`CREATE INDEX host_sessions_parent ON host_sessions (parent_id)`
+})

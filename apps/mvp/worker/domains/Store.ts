@@ -169,3 +169,11 @@ export const erase = (hostname: string): Effect.Effect<void, unknown, SqlClient.
 /** The repository that holds `hostname`, if any: what a route checks before it starts a claim. */
 export const holder = (hostname: string): Effect.Effect<Option.Option<string>, unknown, SqlClient.SqlClient> =>
   Effect.map(read(hostname), Option.map((row) => row.repoId))
+
+/** Whether `hostname` is a verified custom domain, its row `active`: a host sign-in hands sessions to (decision 0130). */
+export const active = (hostname: string): Effect.Effect<boolean, unknown, SqlClient.SqlClient> =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const rows = yield* sql`SELECT 1 FROM domains WHERE hostname = ${hostname} AND state = 'active'`
+    return rows.length > 0
+  })

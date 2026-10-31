@@ -115,13 +115,18 @@ export const createSession = (session: {
     }))
   })
 
-/** A live session: its id, its person's id and login, its role and when the role was last checked (epoch ms). */
+/**
+ * A live session: its id, its person's id and login, its role and when the role was last checked (epoch ms). An alias
+ * session (`host_sessions`, decision 0130) has its home session's role, and `home` names that session, which it acts
+ * as: the one a role check checks, a run credential names and GitHub writes take the person's tokens from.
+ */
 export interface Live {
   readonly id: string
   readonly personId: string
   readonly login: string
   readonly role: Role | null
   readonly roleCheckedAt: number
+  readonly home?: string
 }
 
 /** The live session `which` picks: not signed out, not revoked and not past its end. */
@@ -168,6 +173,104 @@ export const ownerOf = (tokenDigest: string) => Effect.gen(function* () {
 
 /** The live session `id`, as a run credential minted under it names it: none once it ended. */
 export const findLiveById = (id: string) => findLiveBy((sql) => sql`s.id = ${id}`)
+
+/** The live alias session at `host` whose token has `tokenDigest`: not signed out, and its home session live. */
+export const findHostLive = (tokenDigest: string, host: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<Omit<Live, "roleCheckedAt"> & { readonly roleCheckedAt: string; readonly home: string }>`
+      SELECT h.id, s.person_id AS "personId", p.github_login AS login, ${latestRole(sql, sql`s.person_id`)} AS role,
+        (extract(epoch FROM s.role_checked_at) * 1000)::bigint::text AS "roleCheckedAt", s.id AS home
+      FROM host_sessions h JOIN sessions s ON s.id = h.parent_id JOIN people p ON p.id = s.person_id
+      WHERE h.token_digest = ${tokenDigest} AND h.host = ${host} AND h.revoked_at IS NULL
+        AND s.revoked_at IS NULL AND s.expires_at > now()`
+    return Option.map(Option.fromNullishOr(row), (found): Live => ({
+      ...found,
+      roleCheckedAt: Number(found.roleCheckedAt),
+    }))
+  })
+
+/**
+ * Records a code `APP_DOMAIN` hands to `host` for session `sessionId`, valid `ttlSeconds`, after deleting every one past
+ * its expiry. Only digests are kept: the code's and the alias's nonce's.
+ */
+export const beginHandoff = (handoff: {
+  readonly codeDigest: string
+  readonly sessionId: string
+  readonly host: string
+  readonly nonceDigest: string
+  readonly returnTo: string
+  readonly ttlSeconds: number
+}) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    yield* sql`DELETE FROM sign_in_handoffs WHERE expires_at < now()`
+    yield* sql`
+      INSERT INTO sign_in_handoffs (code_digest, session_id, host, nonce_digest, return_to, expires_at)
+      VALUES (${handoff.codeDigest}, ${handoff.sessionId}, ${handoff.host}, ${handoff.nonceDigest}, ${handoff.returnTo},
+        now() + make_interval(secs => ${handoff.ttlSeconds}))`
+  })
+
+/**
+ * Takes the hand-off whose code has `codeDigest`, once: the row is deleted as it is read, so every attempt spends it.
+ * `live` is false when it was past its expiry.
+ */
+export const takeHandoff = (codeDigest: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<{
+      readonly sessionId: string
+      readonly host: string
+      readonly nonceDigest: string
+      readonly returnTo: string
+      readonly live: boolean
+    }>`
+      DELETE FROM sign_in_handoffs WHERE code_digest = ${codeDigest}
+      RETURNING session_id::text AS "sessionId", host, nonce_digest AS "nonceDigest", return_to AS "returnTo",
+        expires_at > now() AS live`
+    return Option.fromNullishOr(row)
+  })
+
+/**
+ * A new alias session at `host` under home session `parentId`, only while that session is live; returns whether it was
+ * created.
+ */
+export const createHostSession = (session: {
+  readonly id: string
+  readonly tokenDigest: string
+  readonly parentId: string
+  readonly host: string
+}) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const rows = yield* sql`
+      INSERT INTO host_sessions (id, token_digest, parent_id, host)
+      SELECT ${session.id}, ${session.tokenDigest}, s.id, ${session.host} FROM sessions s
+      WHERE s.id = ${session.parentId} AND s.revoked_at IS NULL AND s.expires_at > now()
+      RETURNING id`
+    return rows.length > 0
+  })
+
+/** Ends the alias session at `host` whose token has `tokenDigest`; returns its id when it ended now. */
+export const revokeHost = (tokenDigest: string, host: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<{ readonly id: string }>`
+      UPDATE host_sessions SET revoked_at = now()
+      WHERE token_digest = ${tokenDigest} AND host = ${host} AND revoked_at IS NULL
+      RETURNING id::text AS id`
+    return Option.map(Option.fromNullishOr(row), (found) => found.id)
+  })
+
+/** The person of the alias session at `host` whose token has `tokenDigest`, ended or not. */
+export const hostOwnerOf = (tokenDigest: string, host: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<{ readonly personId: string }>`
+      SELECT s.person_id::text AS "personId" FROM host_sessions h JOIN sessions s ON s.id = h.parent_id
+      WHERE h.token_digest = ${tokenDigest} AND h.host = ${host}`
+    return Option.map(Option.fromNullishOr(row), (found) => found.personId)
+  })
 
 /**
  * Ends the session with this id for `reason`. Returns its id when it ended now, `None` when it had ended already. A

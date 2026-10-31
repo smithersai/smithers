@@ -27,6 +27,18 @@ export const SIGN_IN_ROUTE = "/api/auth/sign-in"
 /** Where GitHub sends the person back: `GET <route>?code&state`. Register `<origin><route>` on the GitHub App. */
 export const CALLBACK_ROUTE = "/api/auth/callback"
 
+/**
+ * Hands a session at `APP_DOMAIN` to an alias or a verified custom domain (decision 0130): `GET <route>?request=<signed>`
+ * at `APP_DOMAIN` answers with a redirect to the alias's {@link ARRIVE_ROUTE}, the one-time code in its fragment.
+ */
+export const HANDOFF_ROUTE = "/api/auth/handoff"
+
+/**
+ * Where an alias redeems a hand-off's code: `GET` is a page that posts the code from its fragment back, and `POST` with
+ * the form field `code` signs the alias in (decision 0130).
+ */
+export const ARRIVE_ROUTE = "/api/auth/arrive"
+
 /** Ends this browser's session: `POST`, answered `204`. */
 export const SIGN_OUT_ROUTE = "/api/auth/sign-out"
 
@@ -170,6 +182,19 @@ export const OPEN_SETTINGS = "Open settings"
 
 /** Beside the button after the callback failed. */
 export const SIGN_IN_FAILED = "Couldn't sign in."
+
+/** The title of `APP_DOMAIN`'s page asking whether to sign custom domain `host` in (decision 0130). */
+export const handoffTitle = (host: string) => `Sign in to ${host}?`
+
+/** What that page says: who `host` will be signed in as. */
+export const handoffExplanation = (host: string, login: string) =>
+  `${host} will be signed in as @${login}. Continue only if you opened ${host} yourself.`
+
+/** That page's button. */
+export const continueTo = (host: string) => `Continue to ${host}`
+
+/** That page's way back, signing nobody in. */
+export const CANCEL_HANDOFF = "Cancel"
 
 /** The button that ends the session. */
 export const SIGN_OUT = "Sign out"

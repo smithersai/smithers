@@ -153,6 +153,7 @@ describe("needs", () => {
       "alertProviders",
       "oldBuild",
       "githubSignIn",
+      "aliasSignIn",
       "absentRepository",
       "unsyncedRepository",
       "failedRun",

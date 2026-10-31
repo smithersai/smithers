@@ -2,9 +2,16 @@ import { Core } from "@smthrs/integrations"
 import { Cause, Clock, Config, Context, Duration, Effect, Layer, Metric, Option, Redacted, Schema } from "effect"
 import { type HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
+import { digestSync } from "@smthrs/crypto"
 import {
+  ARRIVE_ROUTE,
   CALLBACK_ROUTE,
   DEVICE_PERSON_HEADER,
+  CANCEL_HANDOFF,
+  continueTo,
+  handoffExplanation,
+  handoffTitle,
+  HANDOFF_ROUTE,
   NO_DEVICE_DATA,
   SESSION_ROUTE,
   type SessionState,
@@ -14,6 +21,9 @@ import {
 } from "../src/features/auth/contract.ts"
 import { installUrl } from "../src/features/repo/contract.ts"
 import * as Actor from "./Actor.ts"
+import { readBounded } from "./Body.ts"
+import { HOSTNAME, parseAliases } from "./aliases.ts"
+import * as Domains from "./domains/Store.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as Flows from "./Flows.ts"
 import { RevokeGitHubToken, revokeExecutionId } from "./flows/RevokeGitHubToken.ts"
@@ -43,6 +53,9 @@ export const ROLE_RECHECK_MINUTES = 60
 
 /** How long a sign-in may take, from the button to GitHub's callback. */
 export const SIGN_IN_TTL_SECONDS = 600
+
+/** How long a hand-off's code lives, from `APP_DOMAIN` minting it to the alias redeeming it (decision 0130). */
+export const HANDOFF_CODE_TTL_SECONDS = 60
 
 /** Sign-in requests, by `route` (`sign_in`, `callback`, `sign_out`), `outcome` and `reason`. */
 export const requests = Metric.counter("smithers_auth_requests", {
@@ -119,6 +132,82 @@ export const configured = (github?: GitHubAuth["Service"]) =>
   })
 
 /**
+ * Where sign-in hands sessions from (decision 0130): `APP_DOMAIN`, the one host GitHub calls back to, and the hosts of
+ * `APP_ALIASES`. `None` without a domain (`APP_DOMAIN` unset, `workers.dev` or not a hostname): every host signs in
+ * through GitHub itself, as before. Verified custom domains are read from Postgres per request.
+ */
+export interface Home {
+  readonly host: string
+  readonly aliases: ReadonlySet<string>
+}
+
+const home = Effect.gen(function* () {
+  const domain = yield* Config.option(Config.String("APP_DOMAIN"))
+  // `workers.dev` is infra/Domain.ts' `WORKERS_DEV`: a deployment with no domain of its own.
+  if (Option.isNone(domain) || domain.value === "workers.dev" || !HOSTNAME.test(domain.value)) return Option.none<Home>()
+  const listed = parseAliases(Option.getOrElse(yield* Config.option(Config.String("APP_ALIASES")), () => ""))
+  // A list that doesn't parse never deployed (infra/Domain.ts); read here, it names no alias.
+  const aliases = "invalid" in listed ? [] : listed.map((alias) => alias.host)
+  return Option.some<Home>({ host: domain.value, aliases: new Set(aliases.filter((host) => host !== domain.value)) })
+})
+
+/** What an alias asks `APP_DOMAIN` for, signed: its host, the path to return to, its nonce's digest and an expiry. */
+const HandoffRequest = Schema.Struct({
+  host: Schema.String,
+  returnTo: Schema.String,
+  nonce: Schema.String,
+  expiresAt: Schema.Number,
+})
+const decodeHandoffRequest = Schema.decodeUnknownOption(Schema.fromJsonString(HandoffRequest))
+
+/**
+ * The page an alias's browser lands on with a hand-off's code in its fragment (decision 0130): its one script drops the
+ * fragment from history and posts the code back to this origin, so the code is never in a URL a server sees.
+ */
+const ARRIVE_SCRIPT = `const form = document.forms[0];
+const code = new URLSearchParams(location.hash.slice(1)).get("code");
+history.replaceState(null, "", location.pathname);
+if (code) { form.elements.code.value = code; form.submit() } else location.replace("/?${SIGN_IN_FAILED_PARAM}=failed");`
+
+const hexToBase64 = (hex: string) => btoa(String.fromCharCode(...hex.match(/../g)!.map((pair) => parseInt(pair, 16))))
+
+/** The arrive page's headers: no cache, no referrer, and a CSP that runs only its own script and posts only here. */
+export const ARRIVE_HEADERS = {
+  "cache-control": "no-store",
+  "referrer-policy": "no-referrer",
+  "content-security-policy": `default-src 'none'; script-src 'sha256-${hexToBase64(digestSync(ARRIVE_SCRIPT))}'; ` +
+    "form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+  "x-frame-options": "DENY",
+}
+
+const ARRIVE_PAGE = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>Signing in</title></head>
+<body><form method="post" action="${ARRIVE_ROUTE}"><input type="hidden" name="code"></form>
+<noscript>Turn on JavaScript to finish signing in.</noscript>
+<script>${ARRIVE_SCRIPT}</script></body></html>`
+
+/** `text` safe inside HTML text and a double-quoted attribute. */
+const escapeHtml = (text: string) =>
+  text.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`)
+
+/** The confirm page's headers: no cache, no referrer, no script, never framed, and it posts only here. */
+export const CONFIRM_HEADERS = {
+  "cache-control": "no-store",
+  "referrer-policy": "no-referrer",
+  "content-security-policy": "default-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+  "x-frame-options": "DENY",
+}
+
+/** `APP_DOMAIN`'s page asking a signed-in person whether to sign custom domain `host` in as them (decision 0130). */
+const confirmPage = (host: string, login: string, request: string) => `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(handoffTitle(host))}</title></head>
+<body><main><h1>${escapeHtml(handoffTitle(host))}</h1><p>${escapeHtml(handoffExplanation(host, login))}</p>
+<form method="post" action="${HANDOFF_ROUTE}"><input type="hidden" name="request" value="${escapeHtml(request)}">
+<button type="submit">${escapeHtml(continueTo(host))}</button></form>
+<p><a href="/">${escapeHtml(CANCEL_HANDOFF)}</a></p></main></body></html>`
+
+/**
  * Where a request arrived: its origin, and whether it came over https. A Worker's request carries its whole URL; a
  * server that passes only the path arrives at http://localhost.
  */
@@ -138,12 +227,14 @@ const cookieNames = (secure: boolean) =>
     ? {
       session: "__Host-smithers_session",
       signIn: "__Host-smithers_sign_in",
+      handoff: "__Host-smithers_handoff",
       devSignedOut: "__Host-smithers_dev_signed_out",
       devPerson: "__Host-smithers_dev_person",
     }
     : {
       session: "smithers_session",
       signIn: "smithers_sign_in",
+      handoff: "smithers_handoff",
       devSignedOut: "smithers_dev_signed_out",
       devPerson: "smithers_dev_person",
     }
@@ -152,6 +243,7 @@ const cookieOptions = (secure: boolean, maxAge: Duration.Duration) =>
   ({ httpOnly: true, secure, sameSite: "lax", path: "/", maxAge }) as const
 
 const noStore = { "cache-control": "no-store" }
+const noReferrer = { ...noStore, "referrer-policy": "no-referrer" }
 
 /**
  * `value` when it is a path on this origin, else `/`: never a redirect to another site. A failed sign-in's
@@ -197,6 +289,13 @@ const startSignOut = (sessionId: string) =>
     ),
   )
 
+/** Why an alias's redemption of a hand-off didn't sign anyone in; logged and counted, shown as "Couldn't sign in." */
+class ArriveFailed extends Schema.TaggedError<ArriveFailed>()("ArriveFailed", {
+  reason: Schema.String,
+  returnTo: Schema.optional(Schema.String),
+  errorCode: Schema.optional(Schema.String),
+}) {}
+
 /** Why a callback didn't sign anyone in; logged and counted, never shown beyond "Couldn't sign in." */
 class CallbackFailed extends Schema.TaggedError<CallbackFailed>()("CallbackFailed", {
   reason: Schema.String,
@@ -227,6 +326,8 @@ export const make = <E, R>(
 ) =>
   Effect.gen(function* () {
     const setup = yield* configured(options.github)
+    // Where GitHub calls back for every host, when sign-in is configured and the deployment has a domain (decision 0130).
+    const handoff = Option.isSome(setup) ? yield* home : Option.none<Home>()
     // Where Install goes (the GitHub App's installation on GitHub), when this deployment signs in with the App.
     const install = Option.isSome(setup) ? installUrl(yield* appSlug) : undefined
     // Whether the deployment's own model answers when no Admin set it (decision 0099); a value that doesn't parse is off.
@@ -263,9 +364,18 @@ export const make = <E, R>(
         return Option.fromNullishOr(teammate ?? options.fallback)
       }
       const { keys, recheckAfterMs } = setup.value
-      const token = yield* keys.verify("session", request.cookies[cookieNames(arrival(request).secure).session])
+      const { url, secure } = arrival(request)
+      const token = yield* keys.verify("session", request.cookies[cookieNames(secure).session])
       if (Option.isNone(token)) return Option.none()
-      const live = yield* SessionStore.findLive(SessionKeys.digest(token.value)).pipe(
+      const digest = SessionKeys.digest(token.value)
+      // Away from home, an alias session first; a session signed in at this host itself, as before 0130, still reads.
+      const away = Option.isSome(handoff) && url.hostname !== handoff.value.host
+      const live = yield* (away
+        ? Effect.flatMap(
+          SessionStore.findHostLive(digest, url.hostname),
+          (found) => Option.isSome(found) ? Effect.succeed(found) : SessionStore.findLive(digest),
+        )
+        : SessionStore.findLive(digest)).pipe(
         Effect.provide(database),
         Effect.tapError((error) =>
           Effect.logError("auth.session").pipe(Effect.annotateLogs({ outcome: "error", errorCode: codeOf(error) }))
@@ -275,15 +385,66 @@ export const make = <E, R>(
       if (Option.isNone(live)) return Option.none()
       const now = yield* Clock.currentTimeMillis
       if (now - live.value.roleCheckedAt >= recheckAfterMs) {
-        yield* (yield* RoleChecks).start(live.value.id, live.value.roleCheckedAt)
+        // An alias session's role is its home session's, so the check is the home session's.
+        yield* (yield* RoleChecks).start(live.value.home ?? live.value.id, live.value.roleCheckedAt)
       }
+      // An alias session acts as its home session, which holds the person's GitHub tokens and role (decision 0130).
       return Option.some<Signed>({
-        actor: { subject: { kind: "person", id: live.value.personId }, role: live.value.role, session: live.value.id },
+        actor: {
+          subject: { kind: "person", id: live.value.personId },
+          role: live.value.role,
+          session: live.value.home ?? live.value.id,
+        },
         login: live.value.login,
       })
     }).pipe(Effect.withSpan("auth.resolve"))
 
-    /** `GET /api/auth/sign-in?return=<path>`: records the sign-in and sends the browser to GitHub. */
+    /**
+     * Whether `host` is one sign-in hands sessions to: not `APP_DOMAIN`, and an `APP_ALIASES` host or a verified custom
+     * domain (decision 0130).
+     */
+    const handsTo = (host: string) =>
+      Option.isNone(handoff) || host === handoff.value.host
+        ? Effect.succeed(false)
+        : handoff.value.aliases.has(host)
+        ? Effect.succeed(true)
+        : Domains.active(host).pipe(Effect.provide(database))
+
+    /** Records a sign-in that returns to `returnTo` on this origin and sends the browser to GitHub. */
+    const toGitHub = (keys: SessionKeys.SessionKeys, github: GitHubAuth["Service"], origin: string, secure: boolean, returnTo: string) =>
+      Effect.gen(function* () {
+        const state = yield* keys.token
+        const stateDigest = SessionKeys.digest(state)
+        const pkce = yield* Core.Pkce.createPkcePair().pipe(Effect.orDie)
+        const redirectUri = `${origin}${CALLBACK_ROUTE}`
+        yield* SessionStore.beginAttempt({
+          stateDigest,
+          verifier: yield* keys.seal(Redacted.make(pkce.codeVerifier), {
+            id: stateDigest,
+            name: "pkce_verifier",
+            version: 1,
+          }),
+          redirectUri,
+          returnTo,
+          ttlSeconds: SIGN_IN_TTL_SECONDS,
+        }).pipe(Effect.provide(database))
+        yield* record("sign_in", { outcome: "redirected" })
+        return HttpServerResponse.redirect(
+          github.authorizeUrl({ state, codeChallenge: pkce.codeChallenge, redirectUri }),
+          { status: 302, headers: noStore },
+        ).pipe(
+          HttpServerResponse.setCookieUnsafe(
+            cookieNames(secure).signIn,
+            yield* keys.sign("sign_in", state),
+            cookieOptions(secure, Duration.seconds(SIGN_IN_TTL_SECONDS)),
+          ),
+        )
+      })
+
+    /**
+     * `GET /api/auth/sign-in?return=<path>`: records the sign-in and sends the browser to GitHub; at an alias, to
+     * `APP_DOMAIN`'s hand-off instead (decision 0130).
+     */
     const signIn = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest
       if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
@@ -303,29 +464,28 @@ export const make = <E, R>(
       const { keys, github } = setup.value
       const { url, origin, secure } = arrival(request)
       const returnTo = returnPath(url.searchParams.get("return"), origin)
-      const state = yield* keys.token
-      const stateDigest = SessionKeys.digest(state)
-      const pkce = yield* Core.Pkce.createPkcePair().pipe(Effect.orDie)
-      const redirectUri = `${origin}${CALLBACK_ROUTE}`
-      yield* SessionStore.beginAttempt({
-        stateDigest,
-        verifier: yield* keys.seal(Redacted.make(pkce.codeVerifier), {
-          id: stateDigest,
-          name: "pkce_verifier",
-          version: 1,
-        }),
-        redirectUri,
-        returnTo,
-        ttlSeconds: SIGN_IN_TTL_SECONDS,
-      }).pipe(Effect.provide(database))
-      yield* record("sign_in", { outcome: "redirected" })
+      if (Option.isNone(handoff) || !(yield* handsTo(url.hostname))) return yield* toGitHub(keys, github, origin, secure, returnTo)
+      // An alias: only a press on its own page, or an address typed in, starts a sign-in; a link on another site
+      // signs nobody in (M-46). Browsers without Fetch Metadata are refused too.
+      const site = request.headers["sec-fetch-site"]
+      if (site !== "same-origin" && site !== "none") {
+        yield* record("sign_in", { outcome: "refused", reason: "cross_site", host: url.hostname })
+        return HttpServerResponse.redirect(failedPath(returnTo, origin), { status: 303, headers: noStore })
+      }
+      const nonce = yield* keys.token
+      const expiresAt = (yield* Clock.currentTimeMillis) + SIGN_IN_TTL_SECONDS * 1000
+      const handoffRequest = yield* keys.sign(
+        "handoff_request",
+        JSON.stringify({ host: url.hostname, returnTo, nonce: SessionKeys.digest(nonce), expiresAt }),
+      )
+      yield* record("sign_in", { outcome: "handed_off", host: url.hostname })
       return HttpServerResponse.redirect(
-        github.authorizeUrl({ state, codeChallenge: pkce.codeChallenge, redirectUri }),
-        { status: 302, headers: noStore },
+        `${url.protocol}//${handoff.value.host}${HANDOFF_ROUTE}?request=${encodeURIComponent(handoffRequest)}`,
+        { status: 302, headers: noReferrer },
       ).pipe(
         HttpServerResponse.setCookieUnsafe(
-          cookieNames(secure).signIn,
-          yield* keys.sign("sign_in", state),
+          cookieNames(secure).handoff,
+          yield* keys.sign("handoff", nonce),
           cookieOptions(secure, Duration.seconds(SIGN_IN_TTL_SECONDS)),
         ),
       )
@@ -338,6 +498,179 @@ export const make = <E, R>(
       ),
       Effect.withSpan("auth.sign_in"),
     )
+
+    /**
+     * `GET /api/auth/handoff?request=<signed>` at `APP_DOMAIN` (decision 0130): hands this browser's session to the alias
+     * that signed the request, as a one-time code in the fragment of its arrive page. Without a session here, signs in
+     * through GitHub first, returning here. For a custom domain, whose owner controls where its name points, the GET is a
+     * page asking the person to continue, and only its same-origin `POST` (form field `request`) hands the session over.
+     */
+    const handoffRoute = Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest
+      if (request.method !== "GET" && request.method !== "POST") {
+        return HttpServerResponse.empty({ status: 405, headers: { allow: "GET, POST" } })
+      }
+      const { url, origin, secure } = arrival(request)
+      if (Option.isNone(setup) || Option.isNone(handoff) || url.hostname !== handoff.value.host) {
+        yield* record("handoff", { outcome: "refused", reason: "not_home" })
+        return HttpServerResponse.empty({ status: 404, headers: noStore })
+      }
+      const { keys, github } = setup.value
+      const confirming = request.method === "POST"
+      if (confirming && !(request.headers.origin === undefined
+        ? request.headers["sec-fetch-site"] === "same-origin"
+        : request.headers.origin === origin)) {
+        yield* record("handoff", { outcome: "refused", reason: "cross_site" })
+        return HttpServerResponse.empty({ status: 403, headers: noStore })
+      }
+      const signed = confirming
+        ? new URLSearchParams(yield* readBounded(request, 4096).pipe(Effect.orElseSucceed(() => ""))).get("request")
+        : url.searchParams.get("request")
+      const verified = yield* keys.verify("handoff_request", signed ?? undefined)
+      const asked = Option.flatMap(verified, decodeHandoffRequest)
+      const now = yield* Clock.currentTimeMillis
+      if (Option.isNone(asked) || asked.value.expiresAt <= now) {
+        yield* record("handoff", { outcome: "refused", reason: Option.isNone(asked) ? "invalid_request" : "expired_request" })
+        return HttpServerResponse.empty({ status: 400, headers: noStore })
+      }
+      const { host, returnTo, nonce } = asked.value
+      if (!HOSTNAME.test(host) || !(yield* handsTo(host))) {
+        yield* record("handoff", { outcome: "refused", reason: "foreign_host", host })
+        return HttpServerResponse.empty({ status: 400, headers: noStore })
+      }
+      const away = `${url.protocol}//${host}`
+      if (url.searchParams.get(SIGN_IN_FAILED_PARAM) !== null) {
+        // GitHub's sign-in here failed: the alias says so, rather than starting it again.
+        yield* record("handoff", { outcome: "failed", reason: "sign_in_failed", host })
+        return HttpServerResponse.redirect(`${away}${failedPath(returnTo, away)}`, { status: 303, headers: noReferrer })
+      }
+      const signedIn = yield* current
+      if (Option.isNone(signedIn)) {
+        yield* record("handoff", { outcome: "signing_in", host })
+        return yield* toGitHub(keys, github, origin, secure, `${HANDOFF_ROUTE}?request=${encodeURIComponent(signed!)}`)
+      }
+      if (!confirming && !handoff.value.aliases.has(host)) {
+        // A custom domain: the person says so here, on this origin, before its owner's host gets a session.
+        yield* record("handoff", { outcome: "confirming", host })
+        return HttpServerResponse.text(confirmPage(host, signedIn.value.login, signed!), {
+          contentType: "text/html; charset=utf-8",
+          headers: CONFIRM_HEADERS,
+        })
+      }
+      const code = yield* keys.token
+      yield* SessionStore.beginHandoff({
+        codeDigest: SessionKeys.digest(code),
+        sessionId: signedIn.value.actor.session!,
+        host,
+        nonceDigest: nonce,
+        returnTo,
+        ttlSeconds: HANDOFF_CODE_TTL_SECONDS,
+      }).pipe(Effect.provide(database))
+      yield* record("handoff", { outcome: "issued", host })
+      return HttpServerResponse.redirect(`${away}${ARRIVE_ROUTE}#code=${code}`, { status: 303, headers: noReferrer })
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.as(
+          record("handoff", { outcome: "failed", reason: "error", errorCode: codeOf(Cause.squash(cause)) }),
+          HttpServerResponse.empty({ status: 503, headers: noStore }),
+        )
+      ),
+      Effect.withSpan("auth.handoff"),
+    )
+
+    /**
+     * `GET /api/auth/arrive` at an alias: the page that posts a hand-off's code from its fragment back here. `POST` with
+     * the form field `code`: redeems it, once, against this browser's nonce, and signs the alias in (decision 0130).
+     */
+    const arrive = Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest
+      const { url, origin, secure } = arrival(request)
+      const names = cookieNames(secure)
+      if (Option.isNone(setup) || Option.isNone(handoff) || url.hostname === handoff.value.host) {
+        yield* record("arrive", { outcome: "refused", reason: "not_away" })
+        return HttpServerResponse.empty({ status: 404, headers: noStore })
+      }
+      if (request.method === "GET") {
+        return HttpServerResponse.text(ARRIVE_PAGE, { contentType: "text/html; charset=utf-8", headers: ARRIVE_HEADERS })
+      }
+      if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET, POST" } })
+      const { keys, maxAgeSeconds } = setup.value
+      const host = url.hostname
+      const outcome = yield* Effect.gen(function* () {
+        // Only this origin's page posts a code: another site's form signs nobody in here (login CSRF).
+        const fromHere = request.headers.origin === undefined
+          ? request.headers["sec-fetch-site"] === "same-origin"
+          : request.headers.origin === origin
+        if (!fromHere) return yield* new ArriveFailed({ reason: "cross_site" })
+        const body = yield* readBounded(request, 1024).pipe(Effect.mapError(() => new ArriveFailed({ reason: "body" })))
+        const code = new URLSearchParams(body).get("code")
+        if (code === null || code.length === 0) return yield* new ArriveFailed({ reason: "missing_code" })
+        const fromDatabase = <A, E, R2>(effect: Effect.Effect<A, E, R2>, returnTo?: string) =>
+          effect.pipe(
+            Effect.mapError((error) =>
+              new ArriveFailed({ reason: "database", errorCode: codeOf(error), ...(returnTo === undefined ? {} : { returnTo }) })
+            ),
+          )
+        // Taken before anything is checked, so every attempt spends the code.
+        const taken = yield* fromDatabase(SessionStore.takeHandoff(SessionKeys.digest(code)).pipe(Effect.provide(database)))
+        if (Option.isNone(taken)) return yield* new ArriveFailed({ reason: "unknown_code" })
+        const { sessionId, nonceDigest, live } = taken.value
+        // Another host's code says nothing of where to return here.
+        if (taken.value.host !== host) return yield* new ArriveFailed({ reason: live ? "other_host" : "expired" })
+        const { returnTo } = taken.value
+        const failing = (reason: string, errorCode?: string) =>
+          new ArriveFailed({ reason, returnTo, ...(errorCode === undefined ? {} : { errorCode }) })
+        if (!live) return yield* failing("expired")
+        // A custom domain removed since the code was issued signs nobody in.
+        if (!(yield* fromDatabase(handsTo(host), returnTo))) return yield* failing("foreign_host")
+        const nonce = yield* keys.verify("handoff", request.cookies[names.handoff])
+        if (Option.isNone(nonce)) return yield* failing("nonce_missing")
+        if (!sameString(SessionKeys.digest(nonce.value), nonceDigest)) return yield* failing("nonce_mismatch")
+        const stored = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+          fromDatabase(effect.pipe(Effect.provide(database)), returnTo)
+        // Signing in again at this alias ends the session this browser held here: an alias session, or one signed in
+        // through GitHub at this host before 0130, whose sign-out flow is admitted first, as the callback does.
+        const previous = yield* keys.verify("session", request.cookies[names.session])
+        if (Option.isSome(previous)) {
+          const digest = SessionKeys.digest(previous.value)
+          const ended = yield* stored(SessionStore.revokeHost(digest, host))
+          const pending = Option.isSome(ended) ? Option.none<string>() : yield* stored(SessionStore.signingOut(digest))
+          if (Option.isSome(pending)) {
+            yield* startSignOut(pending.value).pipe(
+              Effect.mapError((error) => failing("sign_out_not_started", error.errorCode)),
+            )
+            yield* stored(SessionStore.revoke({ id: pending.value }, "sign_out"))
+          }
+        }
+        // A token drawn now, never one the browser brought (session fixation).
+        const token = yield* keys.token
+        const created = yield* stored(
+          SessionStore.createHostSession({ id: crypto.randomUUID(), tokenDigest: SessionKeys.digest(token), parentId: sessionId, host }),
+        )
+        if (!created) return yield* failing("home_ended")
+        return { returnTo, cookie: yield* keys.sign("session", token) }
+      }).pipe(
+        Effect.catchDefect((defect) => Effect.fail(new ArriveFailed({ reason: "error", errorCode: codeOf(defect) }))),
+        Effect.result,
+      )
+      if (outcome._tag === "Success") {
+        yield* record("arrive", { outcome: "signed_in", host })
+        return HttpServerResponse.redirect(returnPath(outcome.success.returnTo, origin), { status: 303, headers: noReferrer }).pipe(
+          HttpServerResponse.setCookieUnsafe(names.session, outcome.success.cookie, cookieOptions(secure, Duration.seconds(maxAgeSeconds))),
+          HttpServerResponse.expireCookieUnsafe(names.handoff, cookieOptions(secure, Duration.zero)),
+        )
+      }
+      const failure = outcome.failure
+      yield* record("arrive", {
+        outcome: "failed",
+        reason: failure.reason,
+        host,
+        ...(failure.errorCode === undefined ? {} : { errorCode: failure.errorCode }),
+      })
+      if (failure.reason === "cross_site") return HttpServerResponse.empty({ status: 403, headers: noStore })
+      return HttpServerResponse.redirect(failedPath(failure.returnTo ?? "/", origin), { status: 303, headers: noReferrer })
+        .pipe(HttpServerResponse.expireCookieUnsafe(names.handoff, cookieOptions(secure, Duration.zero)))
+    }).pipe(Effect.withSpan("auth.arrive"))
 
     /** `GET /api/auth/callback?code&state`: GitHub's answer. Signs the browser in, or sends it back saying so. */
     const callback = Effect.gen(function* () {
@@ -464,8 +797,10 @@ export const make = <E, R>(
     const signOut = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest
       if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
-      const { origin, secure } = arrival(request)
+      const { url, origin, secure } = arrival(request)
       const names = cookieNames(secure)
+      const hostname = url.hostname
+      const away = Option.isSome(handoff) && hostname !== handoff.value.host
       // SameSite=Lax keeps the cookie off a cross-site POST in current browsers. The request must also say it came from
       // this origin, which refuses one from an older browser or from another origin on this site (decision 0008 §8).
       const fromHere = request.headers.origin === undefined
@@ -483,8 +818,11 @@ export const make = <E, R>(
           ? Option.map(yield* current, (signed) => signed.actor.subject.id)
           : yield* Effect.gen(function* () {
             const token = yield* setup.value.keys.verify("session", request.cookies[names.session])
-            return Option.isNone(token) ? Option.none<string>() : yield* SessionStore.ownerOf(SessionKeys.digest(token.value)).pipe(Effect.provide(database))
-          })
+            if (Option.isNone(token)) return Option.none<string>()
+            const digest = SessionKeys.digest(token.value)
+            const atAlias = away ? yield* SessionStore.hostOwnerOf(digest, hostname) : Option.none<string>()
+            return Option.isSome(atAlias) ? atAlias : yield* SessionStore.ownerOf(digest)
+          }).pipe(Effect.provide(database))
         if (Option.isSome(owner) && (expected === undefined || owner.value !== expected)) {
           yield* record("sign_out", { outcome: "refused", reason: expected === undefined ? "unbound" : "other_person" })
           return HttpServerResponse.empty({ status: 403, headers: noStore })
@@ -507,6 +845,15 @@ export const make = <E, R>(
       const token = Option.isNone(setup)
         ? Option.none<string>()
         : yield* setup.value.keys.verify("session", request.cookies[names.session])
+      // At an alias, signing out ends this alias's session only; its home session and every other alias's stay
+      // (decision 0130). Nothing to revoke on GitHub: an alias session holds no token.
+      const ended = Option.isSome(token) && away
+        ? yield* SessionStore.revokeHost(SessionKeys.digest(token.value), hostname).pipe(Effect.provide(database))
+        : Option.none<string>()
+      if (Option.isSome(ended)) {
+        yield* record("sign_out", { outcome: "signed_out", reason: "alias" })
+        return signedOut
+      }
       // A live session, or one that ended with GitHub tokens nothing revoked yet (its earlier sign-out never started its
       // flow), is signed out by the durable flow, admitted before anything changes: a start the host refuses is a 503
       // that leaves the session as it was, so signing out again can finish. Once admitted, the session ends here too,
@@ -576,6 +923,10 @@ export const make = <E, R>(
           return yield* signIn
         case CALLBACK_ROUTE:
           return yield* callback
+        case HANDOFF_ROUTE:
+          return yield* handoffRoute
+        case ARRIVE_ROUTE:
+          return yield* arrive
         case SIGN_OUT_ROUTE:
           return yield* signOut
         case SESSION_ROUTE:

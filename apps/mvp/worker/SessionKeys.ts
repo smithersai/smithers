@@ -13,9 +13,10 @@ export const MIN_SECRET_LENGTH = 32
 
 /**
  * What a signed value is for, so a value signed for one use never verifies as another: a cookie (`session`,
- * `sign_in`) or a run credential (`run`, worker/RunCredentials.ts).
+ * `sign_in`, an alias's hand-off nonce `handoff`), an alias's hand-off request to `APP_DOMAIN` (`handoff_request`,
+ * decision 0130) or a run credential (`run`, worker/RunCredentials.ts).
  */
-export type Purpose = "session" | "sign_in" | "run"
+export type Purpose = "session" | "sign_in" | "handoff" | "handoff_request" | "run"
 
 /** What a sealed value is and whose it is; the cipher authenticates both with the ciphertext. */
 export type SealContext = CredentialCipher.Context

@@ -107,6 +107,10 @@ Steps 1 to 3 belong in `alchemy.run.ts` beside the app's own domain ([infrastruc
 - `src/features/domains/domains.test.ts`, on the compose Postgres and Electric with ChatApi's real handler: a Maintainer's add (normalized, `Adding…`, then the pending row with its CNAME), Refresh and Remove; a name refused on the tab, unsent; the page's list per repository; Copy, and a clipboard that refuses; an engine that can't run the write (`unavailable`); a Member's add refused `forbidden`, with no rows.
 - `e2e/domains.spec.ts` (local development's people): a Maintainer adds a domain under `.example`, sees the CNAME record and `Pending verification` with the certificate `Unmanaged`, refreshes and removes it; a Member sees no Settings link, no Domains section and no rows.
 
+## Signing in
+
+A domain whose row is `active` signs people in through `APP_DOMAIN`'s one GitHub callback, the session handed over by a one-time code, so adding a domain never touches the GitHub App ([sign-in.md](sign-in.md#other-hosts), [decision 0130](../decisions/0130-sign-in-on-other-hosts.md)). A domain still `pending` or `failed` signs nobody in that way.
+
 ## What's not built
 
 - **Known gaps.** A `domain/Claim` that fails for 30 minutes (Postgres down) ends its poll with no row, after the route answered `202`. A lost `202` that the browser retries starts a second poll, or a second removal; a delayed second removal could remove a domain added again in between. A registration a check couldn't forget is logged `orphaned`.

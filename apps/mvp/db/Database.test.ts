@@ -1628,3 +1628,34 @@ describe("0073_feeds", () => {
     expect(await on(through("0073"))).toEqual([])
   }))
 })
+
+describe("0074_host_sessions", () => {
+  test("keys a hand-off by its code's digest and an alias session by its token's, both ending with their home session", () => emptySchema(async (url) => {
+    const database = Database.layer(Effect.succeed(Redacted.make(url)))
+    const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+    await on(through("0073"))
+    expect((await on(through("0074"))).map(([id, name]) => `${id}_${name}`)).toEqual(["74_host_sessions"])
+    const refused = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+      on(effect.pipe(Effect.as("taken"), Effect.orElseSucceed(() => "refused")))
+    const person = crypto.randomUUID()
+    const session = crypto.randomUUID()
+    await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO people (id, github_id, github_login) VALUES (${person}, 1, 'octocat')`))
+    await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO sessions (id, token_digest, person_id, role_checked_at, expires_at) VALUES (${session}, 'home', ${person}, now(), now() + interval '1 day')`))
+    await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO host_sessions (id, token_digest, parent_id, host) VALUES (gen_random_uuid(), 'alias', ${session}, 'factory.test')`))
+    await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO sign_in_handoffs (code_digest, session_id, host, nonce_digest, return_to, expires_at)
+      VALUES ('code', ${session}, 'factory.test', 'nonce', '/', now() + interval '60 seconds')`))
+    expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO host_sessions (id, token_digest, parent_id, host) VALUES (gen_random_uuid(), 'alias', ${session}, 'other.test')`))).toBe("refused")
+    expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO host_sessions (id, token_digest, parent_id, host) VALUES (gen_random_uuid(), 'x', gen_random_uuid(), 'other.test')`))).toBe("refused")
+    await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`DELETE FROM sessions WHERE id = ${session}`))
+    const left = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ n: string }>`
+      SELECT ((SELECT count(*) FROM host_sessions) + (SELECT count(*) FROM sign_in_handoffs))::text AS n`))
+    expect(left).toEqual([{ n: "0" }])
+    expect(await on(through("0074"))).toEqual([])
+  }))
+})

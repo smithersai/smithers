@@ -238,6 +238,10 @@ const needs = {
     reason: "it upgrades from a deployed build kept on this machine: put one at OLD_BUILD_DIR",
   },
   githubSignIn: { met: (run) => run.target === "deployment", reason: "it signs in through GitHub; local development signs its person in without GitHub" },
+  aliasSignIn: {
+    met: (run) => run.target === "deployment" && /^https:\/\/[a-z0-9.-]+\/?$/.test(run.env.E2E_ALIAS_URL ?? ""),
+    reason: "it signs in at another host of the deployment through APP_DOMAIN (decision 0130): set E2E_ALIAS_URL to one of its APP_ALIASES or verified custom domains, such as https://factory.smithers.sh",
+  },
   codeStorage: {
     met: (run) => run.target === "deployment" || set(run, "CODE_STORAGE_ORG", "CODE_STORAGE_KEY"),
     reason: "it clones into Code Storage, which the local dev server reaches only with CODE_STORAGE_ORG and CODE_STORAGE_KEY set",

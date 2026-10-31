@@ -129,6 +129,8 @@ export const signInHarness = async (runtime: Runtime, options: Options = {}) => 
   )
   const origin = options.origin ?? "http://smithers.test"
   const fetch = (path: string, init?: RequestInit) => handler(new Request(`${origin}${path}`, init))
+  /** A request to the same routes at another host: an alias's, or the whole URL a redirect gave. */
+  const at = (url: string, init?: RequestInit) => handler(new Request(url, init))
   const snapshot = () => runtime.runSync(Metric.snapshot.pipe(Effect.provideService(Metric.MetricRegistry, registry)))
 
   /** Presses "Sign in with GitHub" in a fresh browser at `returnTo`: the redirect and the state cookie. */
@@ -155,6 +157,7 @@ export const signInHarness = async (runtime: Runtime, options: Options = {}) => 
     signIn,
     github,
     fetch,
+    at,
     start,
     callback,
     signInAs,
