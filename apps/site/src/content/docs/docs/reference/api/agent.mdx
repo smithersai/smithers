@@ -3140,7 +3140,7 @@ reads, `maxHours` (1 to `MAX_HOURS`, 12) and `restarts` (0 to `MAX_RESTARTS`, 5)
 - `ClaimRequest` `{ profiles, free, running, waitSeconds }`, `ClaimResponse`,
   `HeartbeatRequest`, `HeartbeatResponse` `{ held, cancel, leaseSeconds }`,
   `SettleRequest`, `SettleResponse`, and `ROUTES` (`/api/runners/claim`,
-  `/heartbeat`, `/settle`).
+  `/heartbeat`, `/settle`, `/events`).
 - `Outcome`: `Done { changes, summary, usage }`, `Failed { reason }` with a code
   of `FAILURES` (`agent`, `refused`, `workspace`, `too_large`, `timeout`,
   `machine_lost`, `exhausted`), `Retryable { afterSeconds? }`, or
@@ -3152,6 +3152,25 @@ reads, `maxHours` (1 to `MAX_HOURS`, 12) and `restarts` (0 to `MAX_RESTARTS`, 5)
   The store owns the agent's hours and restarts.
 - `parseKey(key)`: the `origin` and `generation` of `<origin>#g<n>`; throws
   `RangeError` for anything else.
+
+## Transcript
+
+What a runner sends its host of an external agent's session as it happens.
+
+- `Event` `{ seq, at, kind, update }`: `seq` counts from 0 within one job
+  generation, `at` is when the runner received it in epoch milliseconds, `kind`
+  is the update's `sessionUpdate` or one of `KINDS` (`_smithers/turn`,
+  `_smithers/end`, `_smithers/truncated`).
+- `EventsRequest` `{ key, claim, events }` and `EventsResponse` `{ next }`, the
+  lowest `seq` the host lacks, posted to `AgentRunner.ROUTES.events`.
+- `prepare(kind, update, scrub)`: none for a `DROPPED_KINDS` kind
+  (`available_commands_update`, `config_option_update`); otherwise the update
+  with every string scrubbed, as events of at most `MAX_EVENT_BYTES` (16 KiB):
+  a long message chunk is split, any other long string cut, ending `CUT`.
+- `scrubber(secrets)`: replaces each secret value of at least 4 characters,
+  longest first, then every `SHAPES` match (API keys, bearer credentials, GitHub
+  tokens, JWTs, email addresses), with `REDACTED`.
+- `MAX_BATCH_BYTES` (64 KiB a request) and `MAX_RUN_BYTES` (64 MiB a run).
 
 ## ExternalAgent
 
