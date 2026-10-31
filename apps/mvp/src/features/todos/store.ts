@@ -149,8 +149,8 @@ const make = Effect.fnUntraced(function* (config: TodosConfig) {
         getKey: byId,
         shape: shape(TODOS_SHAPE_ROUTE, id),
         syncMode: "eager",
-        // 4: a failure may be `base_closed` (stacked TODOs).
-        persist: { schemaVersion: 4 },
+        // 4: a failure may be `base_closed` (stacked TODOs); 5: `after` and `waiting` (decision 0132).
+        persist: { schemaVersion: 5 },
       }).pipe(Effect.provideService(ShapeSource.ShapeSource, guarded))
       yield* observeInitialApplied(todos, "todos", id.slice("github/".length)).pipe(Effect.forkIn(scope, { startImmediately: true }))
       const requests = yield* ElectricCollection.make<TodoRequest>({

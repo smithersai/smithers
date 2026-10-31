@@ -6,6 +6,7 @@ import { pullPath } from "../pulls/contract"
 import { hrefFor } from "../repo/paths"
 import { OPEN, runPath } from "../runs/contract"
 import {
+  afterLabel,
   COMMITTED,
   DROP,
   dropTitle,
@@ -20,6 +21,8 @@ import {
   type TodoFailure,
   type TodoState,
   todoPath,
+  type TodoWait,
+  WAITING_WORDS,
   WATCH,
 } from "./contract"
 import type { Access, Draft, Requested, Sending, Todo, TodoRequest } from "./schema"
@@ -143,6 +146,9 @@ export interface TodoCardProps {
   readonly issueNumber: number | null
   readonly runId: string | null
   readonly failure?: TodoFailure | null
+  /** The number of the TODO it stacks on, or none (decision 0132). */
+  readonly afterNumber: number | null
+  readonly waiting: TodoWait | null
   readonly pending?: "requested" | "not_sent"
 }
 
@@ -174,9 +180,15 @@ export const todoCardOf = (
     issueNumber: todo.issueNumber,
     runId: todo.runId,
     failure: todo.failure,
+    afterNumber: afterNumberOf(todo, todos),
+    waiting: todo.waiting,
     ...(pending === undefined ? {} : { pending }),
   }
 }
+
+/** The number of the TODO `todo` stacks on, once the device has it; none for an independent TODO. */
+const afterNumberOf = (todo: Pick<Todo, "after">, todos: ReadonlyArray<Pick<Todo, "id" | "number">>): number | null =>
+  todo.after === null ? null : todos.find((row) => row.id === todo.after)?.number ?? null
 
 /** Each state's icon, as GitHub draws an item's state. */
 export const STATE_KINDS: Readonly<Record<TodoState, ItemStateKind>> = {
@@ -192,11 +204,14 @@ const isSettled = (state: TodoState): boolean => (SETTLED_STATES as ReadonlyArra
 
 /**
  * A TODO's icon and word: `Requested` until the stack numbers it, then its state's. Working is live: its icon blinks
- * while the agent works (ruling TODO-3).
+ * while the agent works (ruling TODO-3). A Working TODO whose job no runner has claimed yet says so, and holds still:
+ * nothing works on it yet (decision 0132).
  */
-export const statusOf = (number: number | null, state: TodoState): ItemStatus =>
+export const statusOf = (number: number | null, state: TodoState, waiting: TodoWait | null = null): ItemStatus =>
   number === null
     ? { kind: "requested", label: REQUESTED }
+    : state === LIVE_STATE && waiting !== null
+    ? { kind: STATE_KINDS[state], label: WAITING_WORDS[waiting] }
     : { kind: STATE_KINDS[state], label: TODO_STATE_WORDS[state], ...(state === LIVE_STATE ? { live: true } : {}) }
 
 /** The run a TODO links to while working or after failure, so the failed attempt remains inspectable. */
@@ -217,14 +232,18 @@ export const isDroppable = (todo: Pick<StackRow, "number" | "state" | "pending">
  */
 const linksOf = (
   todo: Pick<Todo, "branch" | "prNumber" | "issueNumber" | "state" | "runId">,
+  afterNumber: number | null,
   owner: string,
   name: string,
 ): {
+  readonly after?: IssuesViewLink
   readonly issue?: IssuesViewLink
   readonly branch?: IssuesViewLink
   readonly pullRequest?: IssuesViewLink
   readonly run?: IssuesViewLink
 } => ({
+  // The TODO it stacks on, while it is open (decision 0132).
+  ...(afterNumber === null || isSettled(todo.state) ? {} : { after: { label: afterLabel(afterNumber), href: todoPath(owner, name, afterNumber) } }),
   ...(todo.issueNumber === null
     ? {}
     : { issue: { label: `#${todo.issueNumber}`, href: issuePath(owner, name, todo.issueNumber) } }),
@@ -268,14 +287,14 @@ export const stackItemsOf = (
   const byId = new Map(todos.map((todo) => [todo.id, todo]))
   return rows.map((row) => {
     const todo = byId.get(row.id)
-    const links = todo === undefined ? {} : linksOf(todo, owner, name)
-    const shown = [links.issue, links.branch, links.pullRequest, links.run].filter((link) => link !== undefined)
+    const links = todo === undefined ? {} : linksOf(todo, afterNumberOf(todo, todos), owner, name)
+    const shown = [links.after, links.issue, links.branch, links.pullRequest, links.run].filter((link) => link !== undefined)
     return {
       id: row.id,
       number: row.number,
       title: row.title,
       state: isSettled(row.state) ? "closed" : "open",
-      status: statusOf(row.number, row.state),
+      status: statusOf(row.number, row.state, todo?.waiting ?? null),
       droppable: isDroppable(row),
       ...(todo === undefined ? {} : { author: todo.createdLogin, updatedAt: isoOf(todo.settledAt ?? todo.createdAt) }),
       ...(shown.length === 0 ? {} : { links: shown }),
@@ -316,6 +335,8 @@ export interface TodoPage {
   /** The prompt, then its acceptance criteria, as Markdown. */
   readonly body: string
   readonly events: ReadonlyArray<ItemConversationEvent>
+  /** The TODO it stacks on, while it is open (decision 0132). */
+  readonly after?: IssuesViewLink
   readonly issue?: IssuesViewLink
   readonly branch?: IssuesViewLink
   readonly pullRequest?: IssuesViewLink
@@ -360,12 +381,12 @@ export const todoPageOf = (card: TodoCardProps, owner: string, name: string): To
     number: card.number,
     title: card.title,
     state: isSettled(card.state) ? "closed" : "open",
-    status: statusOf(card.number, card.state),
+    status: statusOf(card.number, card.state, card.waiting),
     author: card.createdLogin,
     createdAt: isoOf(card.createdAt),
     body: `${card.prompt}${criteria}`,
     events,
-    ...linksOf(card, owner, name),
+    ...linksOf(card, card.afterNumber, owner, name),
     ...(card.pending === undefined ? {} : { pending: card.pending }),
     droppable: isDroppable(card),
   }

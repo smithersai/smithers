@@ -117,6 +117,8 @@ export const PROTECTED_ACTS = {
   "pr/merge": { route: "POST /api/repos/<owner>/<name>/writes" },
   // Saving a person's own model (decision 0096): the key would pass through whoever acts for them.
   model: { route: "PUT /api/me/model" },
+  // A stack's lanes, open limit and base (decision 0132): an Admin's spend and a repository's way of working.
+  "stack/configure": { route: "POST /api/repos/<owner>/<name>/stack (configure)" },
 } as const
 
 /** A person-only act: a registry flow with a `userOnlyReason`, or a protected act. */

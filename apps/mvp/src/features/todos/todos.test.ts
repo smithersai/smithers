@@ -284,6 +284,8 @@ describe("a commit", () => {
           issueNumber: null,
           runId: null,
           failure: null,
+          afterNumber: null,
+          waiting: null,
         })
       )
     } finally {

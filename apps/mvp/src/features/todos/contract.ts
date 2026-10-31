@@ -53,6 +53,8 @@ export const TODO_COLUMNS = [
   "settled_at",
   "issue_number",
   "run_id",
+  "after",
+  "waiting",
 ] as const
 
 /** The `todo_requests` columns a device syncs: each revision of a TODO's prompt. */
@@ -123,6 +125,9 @@ export type TodoNote = (typeof TODO_NOTES)[number]
  * Retry resets a failed TODO in place. Slice 2 also adds `move` and `amend`.
  */
 export const STACK_OPS = ["commit", "drop", "retry"] as const
+
+/** An Admin's change to a stack's settings (`lanes`, `max_open`, `base`), through the same route and writer. */
+export const CONFIGURE_OP = "configure"
 export type StackOp = (typeof STACK_OPS)[number]
 
 /** Who a change acts for: a person's own press, or the agent's call for them (decision 0016 Appendix B). */
@@ -152,6 +157,23 @@ export const DEFAULT_MAX_OPEN = 50
 /** How many TODOs a new stack works on at once (`stacks.lanes`'s default): one, in slice 1 (decision 0016 §10). */
 export const DEFAULT_LANES = 1
 
+/** The most TODOs a stack may work on at once (`stacks.lanes`, decision 0132): one runner fleet's tested load. */
+export const MAX_LANES = 64
+
+/** The most TODOs a stack may hold open (`stacks.max_open`). */
+export const MAX_OPEN_LIMIT = 500
+
+/**
+ * Where a new TODO starts when its commit names no `after` (`stacks.base`, decision 0132): `stacked` waits for the TODO
+ * before it and stacks on its branch; `independent` starts from the default branch's head.
+ */
+export const STACK_BASES = ["stacked", "independent"] as const
+export type StackBase = (typeof STACK_BASES)[number]
+
+/** What a Working TODO waits for before its agent runs (`todos.waiting`): a runner to claim its job. */
+export const TODO_WAITS = ["runner"] as const
+export type TodoWait = (typeof TODO_WAITS)[number]
+
 /**
  * The refusal codes the stack route answers with, as `{ code }`: `invalid` (400), `authentication` (401), `forbidden`
  * (403: not a Member, or the agent's commit or drop, which only a person makes), `not_found` (404: no TODO with that
@@ -167,6 +189,7 @@ export const STACK_REFUSALS = [
   "stack_full",
   "merged",
   "not_retryable",
+  "after_not_open",
   "too_large",
   "unavailable",
   "app_not_installed",
@@ -186,6 +209,8 @@ export const REFUSAL_STATUS: Readonly<Record<StackRefusal, number>> = {
   stack_full: 409,
   merged: 409,
   not_retryable: 409,
+  // A commit's `after` names no open TODO of the stack.
+  after_not_open: 409,
   too_large: 413,
   unavailable: 503,
   // The role on a repository other than the deployment's own couldn't be read (decision 0079 §7).
@@ -196,7 +221,17 @@ export const REFUSAL_STATUS: Readonly<Record<StackRefusal, number>> = {
 }
 
 /** What a stack's writer settles a change as: done (`committed`, `dropped`), or refused for the stack's state. */
-export const STACK_OUTCOMES = ["committed", "dropped", "retried", "stack_full", "merged", "not_found", "not_retryable"] as const
+export const STACK_OUTCOMES = [
+  "committed",
+  "dropped",
+  "retried",
+  "configured",
+  "stack_full",
+  "merged",
+  "not_found",
+  "not_retryable",
+  "after_not_open",
+] as const
 export type StackOutcome = (typeof STACK_OUTCOMES)[number]
 
 /**
@@ -330,6 +365,12 @@ export const WATCH = "Watch"
 export const ISSUE = "Issue"
 export const TODO = "TODO"
 export const MAKE_TODO = "Make TODO"
+/** The section and link of the TODO a TODO stacks on (`todos.after`): `After`, `After T3`. */
+export const AFTER = "After"
+export const afterLabel = (number: number): string => `After T${number}`
+
+/** A Working TODO whose job no runner has claimed yet (`todos.waiting`, decision 0132). */
+export const WAITING_WORDS: Readonly<Record<TodoWait, string>> = { runner: "Waiting for a runner" }
 
 /** The key that presses Make TODO on an issue's page (`aria-keyshortcuts`, src/features/keys/keys.ts). */
 export const MAKE_TODO_KEY = "t"

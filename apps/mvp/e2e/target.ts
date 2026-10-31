@@ -302,6 +302,10 @@ const needs = {
     met: (run) => run.target === "deployment" ? run.env.E2E_HOSTED_MODEL !== "on" : run.env.HOSTED_MODEL_ENABLED === "false",
     reason: "it needs the deployment's own model off (decision 0099): a deployment, as a deploy leaves it unless E2E_HOSTED_MODEL=on says an Admin turned it on, or a local dev server started with HOSTED_MODEL_ENABLED=false",
   },
+  stackAdmin: {
+    met: (run) => run.target === "local",
+    reason: "it sets a stack's lanes and base, which only a repository Admin may (decision 0132): local development's person is one; the deployment's test account is a Member of its stack's repository",
+  },
   factoryRepository: {
     met: (run) => run.target === "deployment" && set(run, "E2E_FACTORY_REPOSITORY") && !/^smithersai\//i.test(run.env.E2E_FACTORY_REPOSITORY!),
     reason: "it runs TODOs to pull requests: run against a live instance whose GITHUB_REPOSITORY is a scratch repository, named in E2E_FACTORY_REPOSITORY, never a smithersai one",

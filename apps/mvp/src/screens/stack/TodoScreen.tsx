@@ -5,7 +5,7 @@ import { useNavigate, useParams } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
 import { SignInButton } from "../../features/auth/components/SignInButton"
 import { useTodos } from "../../features/todos/components/TodosContext"
-import { BRANCH, DROP, ISSUE, NOT_FOUND, PULL_REQUEST, RUN, STACK, stackPath } from "../../features/todos/contract"
+import { AFTER, BRANCH, DROP, ISSUE, NOT_FOUND, PULL_REQUEST, RUN, STACK, stackPath } from "../../features/todos/contract"
 import { mayRetry, accessFor, dropConfirm, mayChange, stackRows, todoCardOf, todoScreenOf } from "../../features/todos/view"
 import "./stack-screen.css"
 import { useRepoAnswer } from "../../features/repo/components/RepoContext"
@@ -64,11 +64,14 @@ export function TodoScreen() {
           events={screen.page.events}
           comments={[]}
           {...(screen.page.pending === undefined ? {} : { pending: screen.page.pending })}
-          aside={screen.page.issue === undefined && screen.page.branch === undefined &&
+          aside={screen.page.after === undefined && screen.page.issue === undefined && screen.page.branch === undefined &&
               screen.page.pullRequest === undefined && screen.page.run === undefined && !(may && screen.page.droppable) && !retryable
             ? undefined
             : (
               <>
+                {screen.page.after === undefined ? null : (
+                  <ItemAsideSection title={AFTER} links={[screen.page.after]} onNavigate={(href) => void navigate({ href })} />
+                )}
                 {screen.page.issue === undefined ? null : (
                   <ItemAsideSection title={ISSUE} links={[screen.page.issue]} onNavigate={(href) => void navigate({ href })} />
                 )}

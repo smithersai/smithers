@@ -1679,3 +1679,57 @@ describe("0075_merge_flow", () => {
     expect(await on(through("0075"))).toEqual([])
   }))
 })
+
+describe("0076_independent_lanes", () => {
+  test("stacks every open TODO on the one before it, widens lanes to 64 and takes a base", () => emptySchema(async (url) => {
+    const database = Database.layer(Effect.succeed(Redacted.make(url)))
+    const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+    const refused = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+      on(effect.pipe(Effect.as("taken"), Effect.orElseSucceed(() => "refused")))
+    await on(through("0075"))
+    const ids = Array.from({ length: 5 }, () => crypto.randomUUID())
+    await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`INSERT INTO stacks (repo_id, next_number) VALUES ('github/a/b', 6), ('github/c/d', 2)`))
+    // a/b: T1 merged, T2 to T4 open in that order, T5 dropped; c/d: one open TODO.
+    const rows: ReadonlyArray<readonly [string, string, number, string, number | null]> = [
+      [ids[0]!, "github/a/b", 1, "merged", null],
+      [ids[1]!, "github/a/b", 2, "in_review", 1],
+      [ids[2]!, "github/a/b", 3, "failed", 2],
+      [ids[3]!, "github/a/b", 4, "queued", 3],
+      [ids[4]!, "github/c/d", 1, "queued", 1],
+    ]
+    for (const [id, repo, number, state, position] of rows) {
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        INSERT INTO todos (id, repo_id, number, title, state, position, created_by, created_login, settled_at)
+        VALUES (${id}::uuid, ${repo}, ${number}, 'T', ${state}, ${position}, 'p', 'p', ${position === null ? new Date() : null})`))
+    }
+    expect((await on(through("0076"))).map(([id, name]) => `${id}_${name}`)).toEqual(["76_independent_lanes"])
+    const after = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ number: number; repo: string; after: string | null }>`
+      SELECT number, repo_id AS repo, after::text AS after FROM todos ORDER BY repo_id, number`))
+    expect(after).toEqual([
+      { number: 1, repo: "github/a/b", after: null },
+      { number: 2, repo: "github/a/b", after: null },
+      { number: 3, repo: "github/a/b", after: ids[1] },
+      { number: 4, repo: "github/a/b", after: ids[2] },
+      { number: 1, repo: "github/c/d", after: null },
+    ])
+    expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`SELECT DISTINCT base, lanes FROM stacks`))).toEqual([{ base: "stacked", lanes: 1 }])
+    for (const lanes of [1, 64]) {
+      expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE stacks SET lanes = ${lanes}`))).toBe("taken")
+    }
+    for (const lanes of [0, 65]) {
+      expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE stacks SET lanes = ${lanes}`))).toBe("refused")
+    }
+    expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE stacks SET base = 'independent'`))).toBe("taken")
+    expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE stacks SET base = 'sideways'`))).toBe("refused")
+    expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE todos SET waiting = 'runner'`))).toBe("taken")
+    expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE todos SET waiting = 'lane'`))).toBe("refused")
+    expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE todos SET after = gen_random_uuid()`))).toBe("refused")
+    expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`SELECT base_reset FROM todos`))).toBe("refused")
+    for (const [op, outcome] of [["configure", "configured"], ["commit", "after_not_open"]] as const) {
+      expect(await refused(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        INSERT INTO stack_ops (id, repo_id, actor_id, via, op, payload_hash, outcome, result)
+        VALUES (gen_random_uuid(), 'github/a/b', 'p', 'person', ${op}, ${"0".repeat(64)}, ${outcome}, '{}')`))).toBe("taken")
+    }
+    expect(await on(through("0076"))).toEqual([])
+  }))
+})

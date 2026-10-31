@@ -16,6 +16,8 @@ const card = (fields: Partial<TodoCardProps>): TodoCardProps => ({
   prNumber: null,
   issueNumber: null,
   runId: "todo:6b788f13-01cb-408d-86e6-78da878e0997",
+  afterNumber: null,
+  waiting: null,
   ...fields,
 })
 

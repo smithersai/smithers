@@ -69,6 +69,8 @@ const todo = (fields: Partial<Todo> & Pick<Todo, "id" | "number">): Todo => ({
   settledAt: null,
   issueNumber: null,
   runId: null,
+  after: null,
+  waiting: null,
   ...fields,
 })
 
@@ -190,6 +192,8 @@ describe("todoCardOf", () => {
       issueNumber: null,
       runId: null,
       failure: null,
+      afterNumber: null,
+      waiting: null,
       pending: "requested",
     })
     expect(todoCardOf(1, [], todos, [request({ revision: 2 })])).not.toHaveProperty("pending")
@@ -451,6 +455,8 @@ describe("a TODO's page as GitHub's issue page", () => {
     prNumber: null,
     issueNumber: null,
     runId: null,
+    afterNumber: null,
+    waiting: null,
     ...fields,
   })
 
@@ -656,4 +662,28 @@ test.each(["commit", "drop"] as const)("a restored %s outbox receipt overrides a
   const refusal = { ...stale, reason: "forbidden" as const }
   expect(stackRows(REPO, todos, [outgoing], [refusal])[0]!.pending).toBe("not_sent")
   expect(notSentRows(REPO, [refusal], [outgoing])).toHaveLength(1)
+})
+
+describe("independent lanes (decision 0132)", () => {
+  test("a TODO stacked on another links to it as After T<n> while open, on its row and page", () => {
+    const todos = [todo({ id: "a", number: 3, state: "in_review" }), todo({ id: "b", number: 4, after: "a" }), todo({ id: "c", number: 5 })]
+    const items = stackItemsOf(stackRows(REPO, todos, [], []), todos, "octo", "hello")
+    expect(items.find((item) => item.number === 4)!.links).toEqual([{ label: "After T3", href: "/octo/hello/stack/3" }])
+    expect(items.find((item) => item.number === 5)).not.toHaveProperty("links")
+    const request = { todoId: "b", revision: 1, repoId: REPO, prompt: "Build on T3", acceptance: [], byLogin: "maya", createdAt: "2026-10-20 10:00:00+00" }
+    const card = todoCardOf(4, stackRows(REPO, todos, [], []), todos, [request])!
+    expect(card.afterNumber).toBe(3)
+    expect(todoPageOf(card, "octo", "hello").after).toEqual({ label: "After T3", href: "/octo/hello/stack/3" })
+    expect(todoPageOf({ ...card, state: "merged" }, "octo", "hello")).not.toHaveProperty("after")
+    // The TODO it stacks on isn't on this device yet: no link rather than a wrong one.
+    expect(todoCardOf(4, stackRows(REPO, todos.slice(1), [], []), todos.slice(1), [request])!.afterNumber).toBeNull()
+  })
+
+  test("a Working TODO no runner has claimed reads Waiting for a runner and holds still; once claimed it blinks", () => {
+    expect(statusOf(4, "working", "runner")).toEqual({ kind: "running", label: "Waiting for a runner" })
+    expect(statusOf(4, "working", null)).toEqual({ kind: "running", label: "Working", live: true })
+    expect(statusOf(4, "queued", "runner")).toEqual({ kind: "queued", label: "Queued" })
+    const todos = [todo({ id: "a", number: 1, state: "working", waiting: "runner" })]
+    expect(stackItemsOf(stackRows(REPO, todos, [], []), todos, "octo", "hello")[0]?.status?.label).toBe("Waiting for a runner")
+  })
 })

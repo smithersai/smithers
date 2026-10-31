@@ -1,0 +1,33 @@
+import { Effect } from "effect"
+import { SqlClient } from "effect/sql"
+
+// Independent lanes (decision 0132, docs/features/todos.md#lanes): a repository runs many TODOs at once, each stacked on
+// the TODO it names or independent of the rest.
+//
+// - `stacks.lanes` takes 1 to 64 (it took 1 to 8).
+// - `stacks.base`: where a commit that names no `after` starts: `stacked` (the last open TODO; every stack until now)
+//   or `independent` (the default branch). Never synced.
+// - `todos.after`: the open TODO this one waits for and stacks on, or null. Synced. Every open TODO stacks on the open
+//   TODO before it, as the stack's order made it until now, so each repository behaves as it did.
+// - `todos.waiting`: what a Working TODO waits for before its agent runs (`runner`), or null. Synced.
+// - `todos.base_reset` goes: Retry now names the TODO it stacks on in `after`.
+// - `stack_ops` takes the Admin's `configure` and its outcome, and the `after_not_open` refusal.
+export default Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql`ALTER TABLE stacks DROP CONSTRAINT stacks_lanes_check`
+  yield* sql`ALTER TABLE stacks ADD CONSTRAINT stacks_lanes_check CHECK (lanes BETWEEN 1 AND 64)`
+  yield* sql`ALTER TABLE stacks ADD COLUMN base text NOT NULL DEFAULT 'stacked' CHECK (base IN ('stacked', 'independent'))`
+  yield* sql`ALTER TABLE todos ADD COLUMN after uuid REFERENCES todos (id)`
+  yield* sql`ALTER TABLE todos ADD COLUMN waiting text CHECK (waiting IN ('runner'))`
+  yield* sql`
+    UPDATE todos t SET after = p.after
+    FROM (SELECT id, lag(id) OVER (PARTITION BY repo_id ORDER BY position) AS after FROM todos WHERE position IS NOT NULL) p
+    WHERE t.id = p.id AND p.after IS NOT NULL`
+  yield* sql`ALTER TABLE todos DROP COLUMN base_reset`
+  yield* sql`ALTER TABLE stack_ops DROP CONSTRAINT stack_ops_op_check`
+  yield* sql`ALTER TABLE stack_ops ADD CONSTRAINT stack_ops_op_check
+    CHECK (op IN ('commit', 'drop', 'move', 'amend', 'retry', 'configure'))`
+  yield* sql`ALTER TABLE stack_ops DROP CONSTRAINT stack_ops_outcome_check`
+  yield* sql`ALTER TABLE stack_ops ADD CONSTRAINT stack_ops_outcome_check CHECK (outcome IN ('committed', 'dropped', 'retried',
+    'configured', 'stack_full', 'merged', 'not_found', 'not_retryable', 'after_not_open'))`
+})

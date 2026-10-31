@@ -123,7 +123,7 @@ ChatApi: Sessions.resolve ── a bearer token? ──▶ verify: signature, ex
 - **Signed out**, a run sends its requests with no credential and no cookie.
 - **The Node host** (`src/test/agent.ts`) runs the same credentials; with no tab, every root run its tests start is the person's own press.
 
-**Person-only acts.** `PERSON_ONLY_FLOWS` in `src/flows/personOnly.ts` holds every registry flow with a `userOnlyReason`, and the compiler refuses one missing or one too many; `refusesCredential` reads the same list. Each entry says how it stays the person's: its `route` refuses an `act`, only the person `starts` it there (`chat/Answer`: asking), or it reaches no server route (`device`, with why). `PROTECTED_ACTS` holds the server's own: a secret's write and merging a pull request; approving, pre-approving, members, roles and plugin grants join it with their routes. Each route calls `refusesPersonOnly(actor, act)`.
+**Person-only acts.** `PERSON_ONLY_FLOWS` in `src/flows/personOnly.ts` holds every registry flow with a `userOnlyReason`, and the compiler refuses one missing or one too many; `refusesCredential` reads the same list. Each entry says how it stays the person's: its `route` refuses an `act`, only the person `starts` it there (`chat/Answer`: asking), or it reaches no server route (`device`, with why). `PROTECTED_ACTS` holds the server's own: a secret's write, merging a pull request and a stack's settings (decision 0132); approving, pre-approving, members, roles and plugin grants join it with their routes. Each route calls `refusesPersonOnly(actor, act)`.
 
 | Act | Route | Refusal |
 |---|---|---|
@@ -137,7 +137,7 @@ ChatApi: Sessions.resolve ── a bearer token? ──▶ verify: signature, ex
 | `domain/add` | `POST /api/repos/<owner>/<name>/domains` | `403 person_only` |
 | `domain/remove` | `DELETE /api/repos/<owner>/<name>/domains/<hostname>` | `403 person_only` |
 | `issue/triage`, `triage/run`, `triage/enable`, `triage/pause`, `issue/commitment`, `pr/merge` | `POST /api/repos/<owner>/<name>/writes` | `403 forbidden`, the route's own contract |
-| `todo/commit`, `todo/drop` | `POST /api/repos/<owner>/<name>/stack` | `403 forbidden`, the route's own contract |
+| `todo/commit`, `todo/drop`, `stack/configure` | `POST /api/repos/<owner>/<name>/stack` | `403 forbidden`, the route's own contract |
 | `secret` | `PUT`, `DELETE /api/repos/<owner>/<name>/secrets/<name>` | `403 forbidden`, the route's own contract |
 
 `POST /api/runs/<run>/credential` answers `200 { token, act, expiresAt }`; `400 invalid` for a body that isn't `{ flow, ceiling? }`; `401` signed out; `403 forbidden` for another person's answer (`chat/Answer`'s run is the answer's id); `403 person_only`, `capability_exceeded` or `too_deep`; `404` for a run id that isn't one; `413` past 16 KiB.
