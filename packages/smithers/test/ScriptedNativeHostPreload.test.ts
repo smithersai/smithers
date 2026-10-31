@@ -1,11 +1,13 @@
 /** The offline CLI host belongs to processes, never a compiler's worker threads. */
 import { execFile } from "node:child_process"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { expect, it } from "vitest"
+import { childEnvironment } from "./support/node-child.ts"
 
 const execute = promisify(execFile)
 const preload = fileURLToPath(new URL("./fixtures/scripted-native-host.ts", import.meta.url))
@@ -42,7 +44,7 @@ console.log(JSON.stringify({ main: installed(), child: child.stdout.trim(), work
   transformed: transformed.code.includes("const value = 42") }));`
     )
     const child = await execute(process.execPath, ["--import", preload, join(directory, "main.mjs")], {
-      env: { ...process.env, NODE_OPTIONS: process.env.NODE_OPTIONS ?? "" },
+      env: childEnvironment({ ...process.env, NODE_OPTIONS: process.env.NODE_OPTIONS ?? "" }),
       timeout: 55_000
     })
     expect(JSON.parse(child.stdout), child.stderr).toEqual({
@@ -55,3 +57,43 @@ console.log(JSON.stringify({ main: installed(), child: child.stdout.trim(), work
     await rm(directory, { recursive: true, force: true })
   }
 }, 60_000)
+
+it("keeps the offline SDK host out of the real compiler launcher", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "scripted-compiler-preload-"))
+  try {
+    const receipt = join(directory, "loaded.json")
+    const audit = join(directory, "audit.mjs")
+    await writeFile(
+      audit,
+      `import { registerHooks } from "node:module";
+import { writeFileSync } from "node:fs";
+let host = false;
+const record = () => writeFileSync(${JSON.stringify(receipt)}, JSON.stringify({ host,
+  resolver: Boolean(globalThis[Symbol.for("smthrs/effect-resolution-installed")]) }));
+registerHooks({ load(url, context, next) {
+  if (url.includes("/src/internal/NodeControlHost.ts")) { host = true; record(); }
+  return next(url, context);
+} });
+record();
+process.once("exit", record);`
+    )
+    const compiler = join(dirname(createRequire(import.meta.url).resolve("vibelang/package.json")), "bin/vibelang")
+    const options = {
+      env: childEnvironment({ ...process.env, NODE_OPTIONS: process.env.NODE_OPTIONS ?? "" }),
+      timeout: 25_000
+    }
+    const baseline = await execute(process.execPath, ["--import", audit, compiler, "--version"], options)
+    const baselineState = JSON.parse(await readFile(receipt, "utf8"))
+    expect(baselineState).toEqual({ host: false, resolver: false })
+    const compiled = await execute(
+      process.execPath,
+      ["--import", audit, "--import", preload, compiler, "--version"],
+      options
+    )
+    expect(compiled.stdout.trim(), compiled.stderr).not.toBe("")
+    expect(compiled.stdout).toBe(baseline.stdout)
+    expect(JSON.parse(await readFile(receipt, "utf8"))).toEqual(baselineState)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})

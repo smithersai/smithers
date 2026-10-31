@@ -6,9 +6,10 @@
  */
 import { isMainThread } from "node:worker_threads"
 
-// NODE_OPTIONS also reaches compiler workers, even with their execArgv empty.
-// Only a real CLI process owns the offline native host.
-if (isMainThread) {
+// NODE_OPTIONS also reaches compiler workers and the native compiler's Node
+// launcher. They keep their own bootstrap; the offline host belongs to callers.
+const compiler = process.argv[1]?.replaceAll("\\", "/").endsWith("/vibelang/bin/vibelang") === true
+if (isMainThread && !compiler) {
   const { installEffectResolution } = await import("@smthrs/build-cli/effect-resolution")
 
   // Detached fixtures carry their preloads through NODE_OPTIONS. Preserve the
