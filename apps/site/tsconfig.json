@@ -1,6 +1,7 @@
 {
   "extends": "astro/tsconfigs/strict",
   "compilerOptions": {
+    "moduleSuffixes": ["",".d.vibe"],
     "rewriteRelativeImportExtensions": true,
     "allowArbitraryExtensions": true,
     "jsx": "react-jsx",

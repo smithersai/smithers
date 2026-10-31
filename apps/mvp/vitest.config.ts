@@ -8,7 +8,7 @@ import { defineConfig } from "vitest/config"
 // (db/), against the compose Postgres and Electric (`pnpm db:up`). View regressions in tests/ use a DOM environment;
 // Playwright covers real browsers. The coverage gate measures logic: every src/**/*.ts but tests and their hosts.
 export default defineConfig({
-  plugins: [vibelang({ project: "tsconfig.json" })],
+  plugins: [vibelang({ register: true, project: "tsconfig.json" })],
   test: {
     globalSetup: [
       fileURLToPath(new URL("../../packages/repo-targets/test-utils/test-schemas.ts", import.meta.url)),

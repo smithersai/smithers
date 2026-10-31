@@ -8,7 +8,7 @@
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",
     "db:migrate": "node db/migrate.ts",
-    "build": "vite build",
+    "build": "NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--import=vibelang/register\" vite --configLoader native build",
     "plan": "node infra/sandbox/pack-cli.mjs && NODE_OPTIONS=\"${NODE_OPTIONS:-} --import=vibelang/register\" alchemy plan --stage prod",
     "deploy": "node infra/sandbox/pack-cli.mjs && NODE_OPTIONS=\"${NODE_OPTIONS:-} --import=vibelang/register\" alchemy deploy --stage prod",
     "destroy": "NODE_OPTIONS=\"${NODE_OPTIONS:-} --import=vibelang/register\" alchemy destroy --stage prod",

@@ -14,7 +14,7 @@ const nodeOptions = withOption(process.env.NODE_OPTIONS, `--import=${pathToFileU
 const bunOptions = withOption(process.env.BUN_OPTIONS, `--preload=${resolve("vibelang/bun")}`)
 
 export default defineConfig({
-  plugins: [vibelang({ project: "tsconfig.test.json" })],
+  plugins: [vibelang({ register: true, project: "tsconfig.test.json" })],
   test: {
     globalSetup: [
       fileURLToPath(new URL("../../../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)),
