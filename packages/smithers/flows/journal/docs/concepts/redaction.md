@@ -68,6 +68,9 @@ A URL password runs to the last `@` before the host, as a URL parser reads it,
 so `redis://:pa:ss@cache` and `mysql://root:p@ss@db` lose the whole password,
 and a URL with no password (`ssh://git@host`) is unchanged.
 
+Credential URL scanning requires both `://` and `@`. The redactor checks those
+literals before running the same matcher; custom rules retain their own syntax.
+
 In a journal row a bare value is one token, and a string or container the text
 never closes stops at the end of its line: a stray backtick in an agent's
 Markdown must not erase the rest of a permanent row. A PEM or PGP private-key

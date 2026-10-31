@@ -813,6 +813,23 @@ describe("Redaction", () => {
     () => assertHazardFailures("lossy").pipe(Effect.provide(journalLayer()), Effect.scoped)
   )
 
+  it.each([
+    ["ordinary text", "ordinary text"],
+    ["password=never-persist", "password=[REDACTED]"],
+    ["user@example.test", "user@example.test"],
+    ["https://example.test/path", "https://example.test/path"],
+    ["user@example.test https://example.test/path", "user@example.test https://example.test/path"],
+    ["redis://:pa:ss@cache", "redis://:[REDACTED]@cache"],
+    ["mysql://root:p@ss@db/path", "mysql://root:[REDACTED]@db/path"]
+  ])("preserves credential URL marker semantics for %s", (text, expected) => {
+    expect(Redaction.make()(text)).toBe(expected)
+  })
+
+  it("applies a custom URL-named rule with different syntax", () => {
+    const redact = Redaction.make({ rules: [{ id: "url-credentials", pattern: /private-value/g }] })
+    expect(redact("private-value")).toBe(Redaction.placeholder)
+  })
+
   it("scans a long line in linear time", () => {
     // Every rule runs over every logged line and every journal payload, so a
     // rule that rescans is a stall on the hot path. `url-credentials` matched

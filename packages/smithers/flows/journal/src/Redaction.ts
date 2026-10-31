@@ -750,6 +750,9 @@ const redactArguments = (
 
 const durable: Scope = { header: false, diagnostic: false }
 
+const urlCredentials = /\b([a-z][a-z0-9+.-]{0,30}:\/\/[^\s:@/]*):(?!\[REDACTED\]@)[^\s/?#"'`\\]*@/gi
+const urlCredentialsSource = urlCredentials.source
+
 /**
  * Best-effort textual rules for credential shapes observed in real reports.
  * Every replacement reaches a fixed point so replaying or exporting an entry
@@ -793,7 +796,7 @@ export const defaultRules: ReadonlyArray<Rule> = [
     // connection strings. Stopping at the first `:` or `@` left the tail of
     // such a password in the row. Quotes and backslashes end the scan so a
     // URL inside JSON text never swallows the next string.
-    pattern: /\b([a-z][a-z0-9+.-]{0,30}:\/\/[^\s:@/]*):(?!\[REDACTED\]@)[^\s/?#"'`\\]*@/gi,
+    pattern: urlCredentials,
     replace: "$1:[REDACTED]@"
   },
   {
@@ -1195,6 +1198,13 @@ const candidate = (pattern: RegExp): RegExp | null => {
 const candidates = new WeakMap<RegExp, RegExp | null>()
 
 const applyRule = (text: string, rule: Rule): string => {
+  // Both literals are necessary for this exact pattern. Most journal strings
+  // have neither; avoid its credential scan on every ordinary key and value.
+  // Check the source too: custom rules may reuse the public rule's name.
+  if (
+    rule.id === "url-credentials" && rule.pattern.source === urlCredentialsSource &&
+    (!text.includes("://") || !text.includes("@"))
+  ) return text
   if (candidate(rule.pattern)?.test(text) === false) return text
   return rule.rewrite === undefined ? text.replace(rule.pattern, rule.replace ?? placeholder) : rule.rewrite(text)
 }
