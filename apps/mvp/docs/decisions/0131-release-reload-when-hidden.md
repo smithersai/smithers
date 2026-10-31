@@ -17,7 +17,8 @@ When a new release activates, the open tab keeps running on the old one and relo
 
 - the next time the tab is hidden (`visibilitychange` to `hidden`), or at once if it already is;
 - or when it needs a module only the old release had (Vite's `vite:preloadError`): the old page can't go on, so the
-  reload then is the least bad choice.
+  reload then is the least bad choice. The failed import still fails: the page's error, with Retry, shows until the
+  safety gate below lets the reload run.
 
 The editors' safety gate is unchanged: the reload still waits for every editor write and unsaved input, and an editor
 write that failed parks it with the alert. The update checks are unchanged too. Each reload records its reason,

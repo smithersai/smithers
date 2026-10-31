@@ -72,12 +72,22 @@ describe("why this boot is a reload", () => {
     const read = cases.map(([value, now]) => {
       const { entries, storage } = tab()
       entries.set(RELOAD_REASON_KEY, value)
-      const reason = reloadedBecause(storage, "navigate", now)
+      const reason = reloadedBecause(storage, "reload", now)
       // Whatever it held, it is gone.
       expect(entries.has(RELOAD_REASON_KEY)).toBe(false)
       return reason
     })
-    expect(read).toEqual(["bfcache", undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined])
+    expect(read).toEqual(["bfcache", "browser", "browser", "browser", "browser", "browser", "browser", "browser", "browser"])
+  })
+
+  test("a fresh reason a reload never followed never names a load that isn't one: Back, a reopened tab, a link", () => {
+    for (const navigation of ["back_forward", "navigate", "prerender", undefined]) {
+      const { entries, storage } = tab()
+      entries.set(RELOAD_REASON_KEY, JSON.stringify({ reason: "pwa_update", at: 0 }))
+      expect(reloadedBecause(storage, navigation, 1)).toBeUndefined()
+      // And it is gone, so the next reload doesn't claim it either.
+      expect(entries.has(RELOAD_REASON_KEY)).toBe(false)
+    }
   })
 
   test("a stale reason left by a reload that never happened falls back to what the browser says", () => {

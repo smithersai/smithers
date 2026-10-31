@@ -164,13 +164,10 @@ registerSW({
           document.addEventListener("visibilitychange", listener)
           return () => document.removeEventListener("visibilitychange", listener)
         }
-        // The old page can't load the module: the reload replaces the failed import's error.
-        const stale = (event: Event) => {
-          event.preventDefault()
-          listener()
-        }
-        window.addEventListener("vite:preloadError", stale)
-        return () => window.removeEventListener("vite:preloadError", stale)
+        // The old page can't load the module: its import still fails, so the page's error shows (with Retry) until the
+        // editors' gate lets the reload run.
+        window.addEventListener("vite:preloadError", listener)
+        return () => window.removeEventListener("vite:preloadError", listener)
       },
       reload: (reason) => void reloadWhenSafe(reason),
     })

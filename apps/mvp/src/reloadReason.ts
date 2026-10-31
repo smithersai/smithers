@@ -81,8 +81,12 @@ const stored = (storage: ReasonStorage, now: number): AppReloadReason | undefine
 }
 
 /**
- * Why this boot is a reload, once: the reason the app stored before it reloaded, which this removes, else `browser`
- * when the browser says it reloaded (`navigation` is the navigation timing entry's type), else nothing.
+ * Why this boot is a reload, once: only when the browser says it reloaded (`navigation` is the navigation timing
+ * entry's type), the reason the app stored before it reloaded, else `browser`. The stored reason is removed either way:
+ * one a reload never followed (the page was leaving when it asked) never names a later navigation, Back or a reopened
+ * tab, which are not reloads.
  */
-export const reloadedBecause = (storage: ReasonStorage, navigation: string | undefined, now: number): ReloadReason | undefined =>
-  stored(storage, now) ?? (navigation === "reload" ? "browser" : undefined)
+export const reloadedBecause = (storage: ReasonStorage, navigation: string | undefined, now: number): ReloadReason | undefined => {
+  const reason = stored(storage, now)
+  return navigation === "reload" ? reason ?? "browser" : undefined
+}
