@@ -16,6 +16,9 @@ import { DomainProvider } from "./domains/Provider.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as Flows from "./Flows.ts"
 import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
+import * as FleetAlert from "./flows/FleetAlert.ts"
+import * as Fleet from "./runners/Fleet.ts"
+import { repoId } from "../src/features/repo/contract.ts"
 import * as SandboxSpend from "./flows/SandboxSpend.ts"
 import * as Expire from "./flows/Expire.ts"
 import * as TodoAgent from "./flows/TodoAgent.ts"
@@ -117,9 +120,11 @@ export const live = <E, R>(
   connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>,
   options: ProgramOptions,
 ) => Layer.unwrap(Effect.map(
-  Effect.all([DatabaseLoad.sampler, SandboxSpend.sampler]),
-  // Each alarm starts its window's database sample, then its window's sandbox spend (docs/features/sandbox-budgets.md).
-  ([sampleLoad, sampleSpend]) => object(connection, options, Effect.andThen(sampleLoad, sampleSpend)),
+  Effect.all([DatabaseLoad.sampler, SandboxSpend.sampler, FleetAlert.sampler]),
+  // Each alarm starts its window's database sample, then its window's sandbox spend (docs/features/sandbox-budgets.md),
+  // then its window's look at the runners (docs/features/fleet.md#alerts).
+  ([sampleLoad, sampleSpend, sampleRunners]) =>
+    object(connection, options, Effect.andThen(Effect.andThen(sampleLoad, sampleSpend), sampleRunners)),
 ))
 
 /** One object, whose alarms start the window's `ops/DatabaseLoad` through `sampleLoad`. */
@@ -153,6 +158,8 @@ const object = <E, R>(
       // How long one alarm's drive keeps starting steps, under Cloudflare's 15-minute alarm limit
       // (docs/features/remote-flows.md#how-an-execution-runs).
       const driveBudgetMs = yield* ExecutionHost.driveBudget.pipe(Effect.orDie)
+      // The fleet's thresholds: stalls, waits, offline runners and run cost (docs/features/fleet.md#settings).
+      const fleet = yield* Fleet.settings.pipe(Effect.orDie)
       // The longest command the TODO agent's run tool takes (docs/features/sandbox-tools.md#configuration).
       const commandSeconds = yield* commandMaxSeconds.pipe(Effect.orDie)
       // How long a step waits on its command itself before the command goes on as its job (docs/features/sandbox-tools.md).
@@ -261,7 +268,10 @@ const object = <E, R>(
         // `model/Put` and `model/Delete` a person's own model (docs/features/personal-model.md#saving). The
         // Sandbox tools, custom domains, CI jobs, and an Admin's runner machines and external agents
         // (docs/features/agent-runners.md#admin) share the remote host.
-        const base = ExecutionHost.withRunners(ExecutionHost.withCiJobs(ExecutionHost.withDomains(ExecutionHost.withPersonalModels(ExecutionHost.withSecrets(
+        // The fleet's alerts (docs/features/fleet.md#alerts): an incident's `ops/FleetAlert` runs on its own object,
+        // started through this alarm's runtime.
+        const raiser = Effect.map(flowStarter, FleetAlert.startWith)
+        const base = ExecutionHost.withFleet(ExecutionHost.withRunners(ExecutionHost.withCiJobs(ExecutionHost.withDomains(ExecutionHost.withPersonalModels(ExecutionHost.withSecrets(
           ExecutionHost.withSandboxTools(
             ExecutionHost.withTerminals(
               Option.isSome(signIn)
@@ -276,7 +286,7 @@ const object = <E, R>(
           ),
           appDatabase,
         ), appDatabase), appDatabase, Layer.succeed(DomainProvider, domains)), BranchSandboxes.machinesLayer(sandboxObjects, keep)),
-          appDatabase)
+          appDatabase), appDatabase, repoId(options.homeRepository.owner, options.homeRepository.name), fleet, raiser, alertChannels)
         // A person's write whose GitHub token is about to expire starts the session's `auth/RecheckRole` on its own
         // object, the one redeemer of the refresh token, with the execution's own runtime context. Triage and a head's
         // review run on the `judge` and `review` roles, admitted and metered as the endpoint's calls are.
@@ -323,8 +333,10 @@ const object = <E, R>(
           Effect.gen(function* () {
             const runtime = yield* RuntimeContext
             const built = yield* githubServices(ready)
+            const raise = yield* raiser
             return {
               ...built,
+              fleet: { settings: fleet, raise },
               cancel: (executionId: string) => executions.getByName(executionId).cancel().pipe(Effect.provideService(RuntimeContext, runtime)),
               start: Todo.admission((flow, options) =>
                 ExecutionHost.intent(flow, { executionId: options.executionId, payload: options.payload as never }).pipe(

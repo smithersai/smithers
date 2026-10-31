@@ -5,7 +5,7 @@
 import { Host } from "@smthrs/plugin"
 import { Deferred, Effect, Layer, Stream } from "effect"
 import { describe, expect, test, vi } from "vitest"
-import { ASKS, type AskRow, DOCUMENT, type FeedDocument, INDEX, type Params } from "./feeds"
+import { ASKS, type AskRow, DOCUMENT, type FeedDocument, INDEX, type Params, RUNS } from "./feeds"
 import { hrefOf, tab } from "./tab"
 
 const vibelang = { owner: "smithersai", name: "vibelang" }
@@ -40,7 +40,7 @@ const decisions = (repo: string, waiting: ReadonlyArray<string>, decided: Readon
 const hostWith = (refused: ReadonlyArray<string> = [], held: ReadonlyArray<string> = []) => {
   const gate = Effect.runSync(Deferred.make<void>())
   const release = () => Effect.runSync(Deferred.succeed(gate, undefined))
-  const rows = new Map<string, Array<unknown>>([[INDEX, []], [DOCUMENT, []], [ASKS, []]])
+  const rows = new Map<string, Array<unknown>>([[INDEX, []], [DOCUMENT, []], [ASKS, []], [RUNS, []]])
   const listeners = new Set<() => void>()
   const asked: Array<unknown> = []
   const push = (name: string, ...added: Array<unknown>) => {
@@ -124,6 +124,20 @@ describe("a repository's feed", () => {
       await vi.waitFor(() => expect(built.queries.feed(vibelang).current()).toEqual({ _tag: "Refused", reason: "undeclared_query" }))
       expect(built.queries.asks(vibelang).current()).toEqual([])
       expect(built.queries.selected.current()).toBeNull()
+    })
+  })
+})
+
+describe("Smithers' own runs", () => {
+  test("a repository's agent runs, live; none when the host refuses them", async () => {
+    const host = hostWith()
+    await withTab(host, async (built) => {
+      const runs = built.queries.runs(vibelang)
+      host.push(RUNS, { repo: "smithersai/vibelang", key: "k#g1" }, { repo: "octo/hello", key: "theirs#g1" })
+      await vi.waitFor(() => expect(runs.current()).toEqual([{ repo: "smithersai/vibelang", key: "k#g1" }]))
+    })
+    await withTab(hostWith([RUNS]), async (built) => {
+      expect(built.queries.runs(vibelang).current()).toEqual([])
     })
   })
 })

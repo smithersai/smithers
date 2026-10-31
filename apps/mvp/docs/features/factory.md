@@ -21,7 +21,7 @@ Every view is a `scope: "repository"` view ([plugins.md](plugins.md#repository-v
 | Spec reviews | Each round's four reviewers, a reviewer at work, findings by origin. `grades`, `origins`, `agents` |
 | Implementation | Constructs pending per VIP, verdicts with their reports, lanes, what landed. `impl`, `impl_grades`, `vip`, `agents` |
 | Commits | Main's newest commits; one opens its diff in `@smthrs/ui`'s `DiffHunks`. `commits`, `diff/<id>` |
-| Agents | Every lane: machine, model and account, state, duration; one opens its live transcript. Daemons; accounts for a maintainer. `agents`, `daemons`, `transcript/<lane>`, `accounts` |
+| Agents | Smithers' own agent runs first, **On Smithers** (`core/agent-runs`, [fleet.md](fleet.md)), each opening its TODO; then every collector lane: machine, model and account, state, duration; one opens its live transcript. Daemons; accounts for a maintainer. `agents`, `daemons`, `transcript/<lane>`, `accounts` |
 | Media | What the factory recorded, newest first. Playing it needs blob storage (decision 0128, Consequences). `media` |
 | Docs | Opens the repository's docs pane. |
 | Queue | The merge queue, main after each merge, the resolver, migrations, build hosts, the Telegram thread for a maintainer. `queue`, `postmerge`, `resolver`, `migrations`, `hosts`, `telegram` |
@@ -49,7 +49,7 @@ plugins/factory/
   src/components/*.tsx    React over the tab; no Effect
 ```
 
-`feeds.ts` is the only file that names a core query. It asks `core/feeds` with `{ repo }`, `core/feed` with `{ repo, name }` and `core/feed-items` with `{ repo, name: "for_will" }` (`PluginHost.query(name, params)`, `@smthrs/plugin` 1.2), with the repository lowercased as feeds key it.
+`feeds.ts` is the only file that names a core query, Agents' `core/agent-runs` included. It asks `core/feeds` with `{ repo }`, `core/feed` with `{ repo, name }` and `core/feed-items` with `{ repo, name: "for_will" }` (`PluginHost.query(name, params)`, `@smthrs/plugin` 1.2), with the repository lowercased as feeds key it.
 
 ## Observability
 

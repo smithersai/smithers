@@ -316,6 +316,19 @@ const needs = {
       !/^smithersai\//i.test(run.env.E2E_FACTORY_REPOSITORY!) && run.role() === "admin",
     reason: "it runs a TODO to a pull request on an external agent (decision 0133): a dev build signing in through the GitHub App (E2E_TARGET=deployment) on a scratch repository the test account administers, named in E2E_FACTORY_REPOSITORY, never a smithersai one, and E2E_RUNNER_MIRROR naming a jj clone of it on this machine for the spec's own `smthrs runner`",
   },
+  fleetStall: {
+    met: (run) => run.env.AGENT_STALL_MINUTES === "1",
+    reason: "it waits for a silent agent to read Stalled (docs/features/fleet.md#alerts): the server under test must be " +
+      "started with AGENT_STALL_MINUTES=1, and the spec told so by the same variable; a deployment keeps the 10-minute default",
+    blocked: true,
+  },
+  fleetTelegram: {
+    met: (run) => set(run, "E2E_FLEET_TELEGRAM_URL", "E2E_FLEET_TELEGRAM_CHAT"),
+    reason: "it reads the Runner offline alert's Telegram message from a stand-in Bot API: start the server with " +
+      "ALERT_TELEGRAM_API_URL at the stand-in, set E2E_FLEET_TELEGRAM_URL to the same URL (the spec serves it) and " +
+      "E2E_FLEET_TELEGRAM_CHAT to the chat an Admin saved; a deployment's real Telegram can't be read back",
+    blocked: true,
+  },
   feedKey: {
     // Locally, `alchemy dev` accepts its development feed key (worker/feeds/dev.ts) unless FEED_KEYS is set.
     met: (run) =>

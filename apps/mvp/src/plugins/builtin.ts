@@ -1,4 +1,4 @@
-import { bugs, factory, queue } from "./manifests"
+import { bugs, factory, fleet, queue } from "./manifests"
 
 // The built-in plugins (decision 0017, "What stays hardcoded"): the one place the core names a plugin, as webpack's
 // `WebpackOptionsApply` lists its own. Each is a manifest, read without running plugin code, and two chunks loaded only
@@ -30,5 +30,10 @@ export const BUILTIN: ReadonlyArray<BuiltIn> = [
     manifest: factory,
     tab: () => import("../../plugins/factory/src/tab"),
     components: () => import("../../plugins/factory/src/components/index"),
+  },
+  {
+    manifest: fleet,
+    tab: () => import("../../plugins/fleet/src/tab"),
+    components: () => import("../../plugins/fleet/src/components/index"),
   },
 ]

@@ -65,7 +65,7 @@ Compiled UI plugin chunks run with the app's full power: the import rules are hy
 
 | Member | What it does here |
 |---|---|
-| `query(name, params?)` | The rows of a declared query, live: `core/waits` is the viewer's open waits, oldest first (from the synced `runs`, [agent status](agent-status.md)); `core/feeds`, `core/feed` and `core/feed-items` take `params` ([below](#repository-feeds)). |
+| `query(name, params?)` | The rows of a declared query, live: `core/waits` is the viewer's open waits, oldest first (from the synced `runs`, [agent status](agent-status.md)); `core/feeds`, `core/feed` and `core/feed-items` take `params` ([below](#repository-feeds)), as do `core/agent-runs` and `core/machines` ([the fleet](#the-fleet)). |
 | `select(item)` | The row the person is looking at, in its query as asked with `item.params`; the strip under every view of the plugin that reads its query acts on it. A key that isn't a row is refused `not_in_reads`. |
 | `propose(event, fields)` | Prefills the strip's note from a strip event's text field. Nothing runs until the person presses. |
 | `dispatch(event, fields)` | Runs an event whose flow isn't person-only, door `view`. Answers the run's id and `settled`, which waits for its end: `Done`, or `Failed` with the failure's stable code (a refusal's `code`, else its kind, dispatch's refusal, `interrupted`), never a message. |
@@ -121,6 +121,13 @@ The core queries `core/feeds` (a repository's index), `core/feed` (one on-demand
 ## The factory
 
 The third plugin (`plugins/factory/`, [factory.md](factory.md)): a repository's factory, ten `repository` views over the core's feeds (`core/feeds`, `core/feed`, `core/feed-items`), a `repo.tabs` entry, and `/factory`, `/lanes` and `/decide`. For you, for a maintainer, answers a decision through the strip: Accept (`a`) or Change (`c`) with the note, or `1`–`9` for a decision that lists its options.
+
+## The fleet
+
+The fourth plugin (`plugins/fleet/`, [fleet.md](fleet.md)): a repository's agent runs and runner machines, one
+`repository` view for Maintainers (`/<owner>/<repo>/-/fleet`) and a `repo.tabs` entry, over the core queries
+`core/agent-runs` and `core/machines`, each asked with `{ repo: "owner/name" }` and served from one Electric shape per
+repository (`src/features/fleet/store.ts`). It dispatches nothing: a run links to its TODO's page.
 
 ## Observability
 

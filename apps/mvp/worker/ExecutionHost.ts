@@ -39,6 +39,8 @@ import * as TodoBaseClosed from "./flows/TodoBaseClosed.ts"
 import * as TodoDrop from "./flows/TodoDrop.ts"
 import type { Implement } from "./flows/TodoAgent.ts"
 import * as TodoSession from "./flows/TodoSession.ts"
+import * as FleetAlert from "./flows/FleetAlert.ts"
+import * as Fleet from "./runners/Fleet.ts"
 import * as RunnerAdmin from "./runners/AdminFlows.ts"
 import * as GitHubHost from "./github/Host.ts"
 import type * as Triage from "./github/Triage.ts"
@@ -290,6 +292,29 @@ export const withRunners = <ROut, E, R, DE, DR>(
 ) => ({
   flows: [...flows.flows, ...RunnerAdmin.flows],
   registration: Layer.merge(flows.registration, RunnerAdmin.registration(database)),
+})
+
+/**
+ * `flows`, plus the fleet's alerts (docs/features/fleet.md#alerts): `ops/FleetAlert` over the app's tables, sending
+ * through `channels` and reading the roles on `home`, the deployment's own repository (`github/<owner>/<name>`), from
+ * sessions, and `ops/RunnerHealth`, which
+ * starts a Runner offline alert through `start` for each runner unseen for `settings.offlineSeconds`.
+ */
+export const withFleet = <ROut, E, R, DE, DR, SR>(
+  flows: Flows<ROut, E, R>,
+  database: Layer.Layer<SqlClient.SqlClient, DE, DR>,
+  home: string,
+  settings: Fleet.Settings,
+  start: Effect.Effect<(alert: Fleet.Alert) => Effect.Effect<void, unknown>, never, SR>,
+  channels?: Layer.Layer<Channels.Channels>,
+) => ({
+  flows: [...flows.flows, FleetAlert.FleetAlert, FleetAlert.RunnerHealth],
+  registration: Layer.mergeAll(
+    flows.registration,
+    FleetAlert.registration(database, home, channels),
+    // Built with each execution's registration, so its starts run on that execution's runtime.
+    Layer.unwrap(Effect.map(start, (raise) => FleetAlert.healthRegistration(database, settings.offlineSeconds, raise))),
+  ),
 })
 
 /**

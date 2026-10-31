@@ -166,6 +166,8 @@ describe("needs", () => {
       "hostedModelOff",
       "factoryRepository",
       "agentRunner",
+      "fleetStall",
+      "fleetTelegram",
       "githubScratch",
       "syncedScratch",
       "secondRepository",
@@ -177,6 +179,22 @@ describe("needs", () => {
       "longRun",
       "docsSite",
     ])
+  })
+
+  it("declares the fleet's stall threshold and Telegram stand-in, which a deployment can't offer, as blocked needs", () => {
+    for (const target of ["local", "deployment"] as const) {
+      const run = { ...local, target }
+      expect(NEEDS.fleetStall.met({ ...run, env: {} })).toBe(false)
+      expect(NEEDS.fleetStall.met({ ...run, env: { AGENT_STALL_MINUTES: "10" } })).toBe(false)
+      expect(NEEDS.fleetStall.met({ ...run, env: { AGENT_STALL_MINUTES: "1" } })).toBe(true)
+      expect(NEEDS.fleetTelegram.met({ ...run, env: { E2E_FLEET_TELEGRAM_URL: "http://127.0.0.1:1340" } })).toBe(false)
+      expect(NEEDS.fleetTelegram.met({
+        ...run,
+        env: { E2E_FLEET_TELEGRAM_URL: "http://127.0.0.1:1340", E2E_FLEET_TELEGRAM_CHAT: "-100123" },
+      })).toBe(true)
+    }
+    expect(NEEDS.fleetStall.blocked).toBe(true)
+    expect(NEEDS.fleetTelegram.blocked).toBe(true)
   })
 
   it("requires a scratch CI fixture independently of the deployment's pusher credentials", () => {
@@ -413,7 +431,7 @@ describe("needs", () => {
 
   it("each say why, and missing account or fixture prerequisites block the run", () => {
     for (const name of Object.keys(NEEDS) as Array<NeedName>) expect(NEEDS[name].reason.length, name).toBeGreaterThan(20)
-    expect((Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].blocked)).toEqual(["vibelangMaintainer", "vibelangOpenPull", "absentRepository", "unsyncedRepository", "failedRun", "repositoryRun", "emptySecretsRepository", "syncedRepository", "member", "ownConversation", "maintainer"])
+    expect((Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].blocked)).toEqual(["vibelangMaintainer", "vibelangOpenPull", "absentRepository", "unsyncedRepository", "failedRun", "repositoryRun", "emptySecretsRepository", "syncedRepository", "fleetStall", "fleetTelegram", "member", "ownConversation", "maintainer"])
   })
 })
 

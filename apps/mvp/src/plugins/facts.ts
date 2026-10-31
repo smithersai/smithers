@@ -1,6 +1,7 @@
 import { type Load, Manifest } from "@smthrs/plugin"
 import { BUG_REPORT_ROW } from "../features/bugs/contract"
 import { FEED_ITEM_ROW, FEED_ROW } from "../features/feeds/contract"
+import { AGENT_RUN_ROW, MACHINE_ROW } from "../features/fleet/schema"
 import { WAITS_ROW } from "../features/status/contract"
 import { type Entry, registry } from "../flows/registry"
 import { POINTS } from "./contract"
@@ -53,6 +54,9 @@ export const hostFacts = (catalog: Readonly<Record<string, Entry>> = registry): 
     ["core/feeds", FEED_ROW as never],
     ["core/feed", FEED_ROW as never],
     ["core/feed-items", FEED_ITEM_ROW as never],
+    // A repository's agent runs and runner machines (docs/features/fleet.md#queries), asked with `params.repo`.
+    ["core/agent-runs", AGENT_RUN_ROW as never],
+    ["core/machines", MACHINE_ROW as never],
   ]),
   // The core's own slash commands: a plugin command never shadows one.
   slash: Object.values(catalog).flatMap((entry) => (entry.slash === undefined ? [] : [entry.slash.command])),

@@ -1,7 +1,7 @@
 import { Host } from "@smthrs/plugin"
 import { Effect, Exit, Scope } from "effect"
 import { type AskRow, type FeedDocument, type Feeds, feedsOf, repoOf } from "./feeds"
-import { decisionsOf, statusOf, type Status, VIEWS, type ViewId } from "./model"
+import { decisionsOf, type SmithersRun, statusOf, type Status, VIEWS, type ViewId } from "./model"
 
 // The factory's tab (decision 0128 §9): one per app, built by the host on first use. It reads a repository's feed
 // documents through `Feeds` (./feeds.ts), the one seam to the core's queries, and gives the views each repository's
@@ -60,6 +60,8 @@ export interface FactoryTab {
     readonly selected: Watched<string | null>
     /** The document opened beside the view, if any. */
     readonly opened: Watched<Opened | null>
+    /** A repository's agent runs on Smithers itself, live; none when the host refused them. */
+    readonly runs: (repository: Host.Repository) => Watched<ReadonlyArray<SmithersRun>>
   }
   readonly actions: {
     /** Where one of the factory's views shows on `repository`, for its link. */
@@ -163,6 +165,13 @@ export const make = (host: Host.PluginHost, feeds: Feeds) =>
         Effect.ignore,
       ))
 
+    // Smithers' own runs (docs/features/fleet.md): a person the host refuses them to sees only the collector's lanes.
+    const runs = perRepository<ReadonlyArray<SmithersRun>>([], (repository, set) =>
+      feeds.runs(repository).pipe(
+        Effect.flatMap((live) => Effect.andThen(Scope.provide(follow(live, set, (rows) => rows), scope), Effect.void)),
+        Effect.ignore,
+      ))
+
     const opened = cell<Opened | null>(null)
     // The opened document's scope: an on-demand document is followed only while it shows (decision 0128 §5).
     let reading: Scope.Closeable | undefined
@@ -192,7 +201,7 @@ export const make = (host: Host.PluginHost, feeds: Feeds) =>
     yield* Effect.addFinalizer(() => Effect.sync(close))
 
     return {
-      queries: { feed, asks, selected, opened },
+      queries: { feed, asks, selected, opened, runs },
       actions: {
         href: (view, repository) => hrefOf(view, repository),
         open: (view, repository) => void run(host.open(view, repository)),

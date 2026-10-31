@@ -1,0 +1,26 @@
+{
+  "apiVersion": 1,
+  "id": "fleet",
+  "version": "0.1.0",
+  "title": "Fleet",
+  "description": "A repository's agent runs and runner machines, live: who works, who waits, what stalled or failed.",
+  "requires": { "api": "^1.0.0" },
+  "capabilities": [],
+  "uses": [],
+  "contributes": {
+    "views": [
+      {
+        "id": "fleet/runs", "title": "Fleet", "scope": "repository", "path": "", "sizes": ["full"], "minimum": "maintainer",
+        "reads": ["core/agent-runs", "core/machines"], "render": { "kind": "component", "export": "Fleet" }
+      }
+    ],
+    "slots": [{
+      "slot": "repo.tabs",
+      "id": "fleet/tab",
+      "order": 20,
+      "minimum": "maintainer",
+      "reads": ["core/agent-runs"],
+      "render": { "kind": "component", "export": "RepoTab" }
+    }]
+  }
+}

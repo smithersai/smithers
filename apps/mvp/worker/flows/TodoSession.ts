@@ -85,11 +85,14 @@ export const agentStep = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>
     Effect.withSpan("todo.agent", { attributes: { "smithers.todo.attempt": payload.attemptId } }),
   )
 
-/** `todo/Agent` and `agent/Session` over `database`: the step waits on the job store in the app's Postgres. */
-export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
+/**
+ * `todo/Agent` and `agent/Session` over `database`: the step waits on the job store in the app's Postgres, whose probe
+ * raises the fleet's alerts through `alerts` when given (docs/features/fleet.md#alerts).
+ */
+export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, alerts?: Jobs.Alerts) =>
   Layer.mergeAll(
     Agent.toLayer(agentStep(database)),
-    Session.toLayer().pipe(Layer.provide(Jobs.layer(database))),
+    Session.toLayer().pipe(Layer.provide(Jobs.layer(database, alerts))),
   )
 
 /**

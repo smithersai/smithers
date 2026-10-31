@@ -1,7 +1,8 @@
 import { AgentRunner } from "@smthrs/agent"
-import { Effect, Layer, Metric, Schema } from "effect"
+import { Cause, Effect, Layer, Metric, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { codeOf } from "../ErrorCode.ts"
+import * as Fleet from "./Fleet.ts"
 
 // The host's job store on Postgres (decision 0133, docs/features/agent-runners.md#the-job-store): `@smthrs/agent`'s
 // `AgentRunner.AgentJobs` port, which an external agent's step (`ExternalAgent`) drives. `agent_jobs` is the external
@@ -10,6 +11,10 @@ import { codeOf } from "../ErrorCode.ts"
 // starts anything. The store owns the agent's own limits, its hours and its restarts, so the step needs neither. A
 // runner that stops answering keeps its job: a missing heartbeat doesn't prove its agent stopped, so the job reads
 // Running until the runner comes back or the agent's hours are up. Nothing here logs a task.
+//
+// The store also keeps the fleet's projection, `agent_runs` (worker/runners/Fleet.ts, docs/features/fleet.md), under
+// the job's own key: `start` queues the run in its transaction, `cancel` marks it Stopping, and each `status`, the
+// step's parked probe, projects the job and starts the alerts that came due through `alerts.raise`.
 
 /** Job store operations, by `op` (`start`, `status`, `cancel`) and `outcome`. */
 export const operations = Metric.counter("smithers_agent_jobs", {
@@ -53,11 +58,39 @@ const recorded = <A, E, R>(op: "start" | "status" | "cancel", key: string, outco
     Effect.withSpan(`agent.jobs.${op}`, { attributes: { "smithers.agent.job.key": key } }),
   )
 
+/** How the probe raises the fleet's alerts: its thresholds, and the start of one alert's `ops/FleetAlert`. */
+export interface Alerts {
+  readonly settings: Fleet.Settings
+  readonly raise: (alert: Fleet.Alert) => Effect.Effect<void, unknown>
+}
+
 /**
  * The job store over `database`, which opens a Postgres client for each operation's scope. A database failure is
  * `AgentJobsUnavailable`, which the engine retries, `cancel` included: a cancellation is never acknowledged unrecorded.
+ * The fleet's projection is kept with `alerts`' thresholds (the defaults unless given); without `alerts.raise`, the
+ * probe raises none. A projection or alert that fails is logged and never fails the operation, whose job goes on.
  */
-export const make = <E>(database: Layer.Layer<SqlClient.SqlClient, E>) => {
+export const make = <E>(database: Layer.Layer<SqlClient.SqlClient, E>, alerts?: Alerts) => {
+  const settings = alerts?.settings ?? Fleet.DEFAULTS
+  /** The fleet's part of an operation: its failure is a log line by code, never the operation's. */
+  const projected = (op: string, key: string, effect: Effect.Effect<unknown, unknown, SqlClient.SqlClient>) =>
+    effect.pipe(
+      Effect.provide(database),
+      Effect.catchCause((cause) =>
+        Effect.logWarning("fleet.project").pipe(
+          Effect.annotateLogs({ op, key, outcome: "error", errorCode: codeOf(Cause.squash(cause)) }),
+        )
+      ),
+      Effect.asVoid,
+    )
+  /** The probe's projection, then the alerts it found due. */
+  const probe = (key: string) =>
+    Effect.gen(function* () {
+      // A run whose start's projection failed is queued now, so the probe still keeps it.
+      const due = yield* Fleet.queue(key).pipe(Effect.andThen(Fleet.probe(key, settings)), Effect.provide(database))
+      if (alerts === undefined || due.length === 0) return
+      yield* Fleet.raiseAll(key, due, alerts.raise, (mark) => Effect.provide(mark, database))
+    })
   const start = (task: AgentRunner.Task, key: string) =>
     Effect.gen(function* () {
       const { origin, generation } = AgentRunner.parseKey(key)
@@ -80,6 +113,7 @@ export const make = <E>(database: Layer.Layer<SqlClient.SqlClient, E>) => {
         ON CONFLICT (key) DO NOTHING RETURNING key`
       return inserted.length > 0
     }).pipe(
+      Effect.tap((queued) => (queued ? projected("queue", key, Fleet.queue(key)) : Effect.void)),
       Effect.provide(database),
       recorded("start", key, (queued) => (queued ? "queued" : "existing")),
       Effect.mapError(() => new AgentRunner.AgentJobsUnavailable()),
@@ -105,6 +139,7 @@ export const make = <E>(database: Layer.Layer<SqlClient.SqlClient, E>) => {
       return row === undefined ? { _tag: "Again" } as AgentRunner.Standing : yield* standingOf(row)
     }).pipe(
       Effect.provide(database),
+      Effect.tap(() => projected("probe", key, probe(key))),
       recorded("status", key, (standing) =>
         (standing._tag === "Ended" ? standing.outcome._tag : standing._tag).toLowerCase()),
       Effect.mapError(() => new AgentRunner.AgentJobsUnavailable()),
@@ -130,6 +165,7 @@ export const make = <E>(database: Layer.Layer<SqlClient.SqlClient, E>) => {
       return row!.status
     }).pipe(
       Effect.provide(database),
+      Effect.tap((status) => projected("stop", key, Fleet.stopping(key, status))),
       recorded("cancel", key, (status) => status),
       Effect.asVoid,
       Effect.mapError(() => new AgentRunner.AgentJobsUnavailable()),
@@ -138,9 +174,12 @@ export const make = <E>(database: Layer.Layer<SqlClient.SqlClient, E>) => {
   return AgentRunner.AgentJobs.of({ start: (task, key) => Effect.asVoid(start(task, key)), status, cancel })
 }
 
-/** `AgentRunner.AgentJobs` on Postgres through `database`, whose own requirements it captures when built. */
-export const layer = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
+/**
+ * `AgentRunner.AgentJobs` on Postgres through `database`, whose own requirements it captures when built, raising the
+ * fleet's alerts through `alerts` when given.
+ */
+export const layer = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, alerts?: Alerts) =>
   Layer.effect(
     AgentRunner.AgentJobs,
-    Effect.map(Effect.context<R>(), (context) => make(Layer.provide(database, Layer.succeedContext(context)))),
+    Effect.map(Effect.context<R>(), (context) => make(Layer.provide(database, Layer.succeedContext(context)), alerts)),
   )

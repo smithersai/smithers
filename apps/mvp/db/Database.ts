@@ -77,6 +77,7 @@ import mergeFlow from "./migrations/0075_merge_flow.ts"
 import independentLanes from "./migrations/0076_independent_lanes.ts"
 import agentRunners from "./migrations/0077_agent_runners.ts"
 import agentTranscripts from "./migrations/0078_agent_transcripts.ts"
+import fleet from "./migrations/0080_fleet.ts"
 import aboutRefusalQuota from "./migrations/0070_about_refusal_quota.ts"
 
 /** The compose Postgres (`docker-compose.yml`): what `DATABASE_URL` defaults to, and the only one tests use. */
@@ -193,6 +194,7 @@ export const migrations = {
   "0076_independent_lanes": independentLanes,
   "0077_agent_runners": agentRunners,
   "0078_agent_transcripts": agentTranscripts,
+  "0080_fleet": fleet,
 }
 
 /** Applies every migration in `db/migrations` that hasn't run, in order; returns the ones it applied. */

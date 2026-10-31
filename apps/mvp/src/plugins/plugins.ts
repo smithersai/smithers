@@ -8,6 +8,7 @@ import { isFeedName, isIndexName, parseFeedRepo } from "../features/feeds/contra
 import { itemsOf } from "../features/feeds/items"
 import { FeedItem } from "../features/feeds/schema"
 import { FeedsStore } from "../features/feeds/store"
+import { FleetStore } from "../features/fleet/store"
 import { StatusStore } from "../features/status/store"
 import { FlowDispatch } from "../flows/dispatch"
 import { codeOfFailure } from "../flows/history"
@@ -91,6 +92,10 @@ const FEED_INDEX = "core/feeds"
 const FEED_DOCUMENT = "core/feed"
 const FEED_ITEMS = "core/feed-items"
 
+/** The fleet's core queries (docs/features/fleet.md#queries): a repository's agent runs and its runner machines. */
+const AGENT_RUNS = "core/agent-runs"
+const MACHINES = "core/machines"
+
 /** Where `core/feed-items` keeps a document's items: `<repo>:<document>`. */
 const itemsKey = (repo: string, document: string) => `${repo}:${document}`
 
@@ -121,6 +126,10 @@ export class Plugins extends Context.Service<
     readonly itemsOpen: Map<string, CoreQuery>
     /** Every repository's feeds, which `core/feeds` and `core/feed` read. */
     readonly feeds: FeedsStore["Service"]
+    /** Every repository's agent runs and machines, which `core/agent-runs` and `core/machines` read. */
+    readonly fleet: FleetStore["Service"]
+    /** `core/agent-runs` and `core/machines` of each repository asked for so far, by `<query>:<repo>`, opened once. */
+    readonly fleetOpen: Map<string, Effect.Effect<Host.Live<Readonly<Record<string, unknown>>>>>
     readonly shown: Collection.Collection<Shown, string>
     readonly views: Collection.Collection<ViewState, string>
     /** The strip's notes, by view and item, kept on the device. */
@@ -154,6 +163,7 @@ export class Plugins extends Context.Service<
         const status = yield* StatusStore
         const bugs = yield* BugsStore
         const feeds = yield* FeedsStore
+        const fleet = yield* FleetStore
         const core = new Map<string, CoreQuery>([
           ["core/waits", {
             key: "runId",
@@ -200,6 +210,8 @@ export class Plugins extends Context.Service<
           items: new Map(),
           itemsOpen: new Map(),
           feeds,
+          fleet,
+          fleetOpen: new Map(),
           shown,
           views,
           drafts,
@@ -369,10 +381,25 @@ export const queryOf = (name: string, params: Host.QueryParams | undefined) =>
     const plugins = yield* Plugins
     const fixed = plugins.core.get(name)
     if (fixed !== undefined) return fixed.live
-    if (name !== FEED_INDEX && name !== FEED_DOCUMENT && name !== FEED_ITEMS) return yield* Effect.fail("query" as const)
+    const fleetQuery = name === AGENT_RUNS || name === MACHINES
+    if (name !== FEED_INDEX && name !== FEED_DOCUMENT && name !== FEED_ITEMS && !fleetQuery) {
+      return yield* Effect.fail("query" as const)
+    }
     const { repo: asked = "", name: document = "" } = params ?? {}
     const repo = parseFeedRepo(asked)
     if (repo === undefined) return yield* Effect.fail("repo" as const)
+    if (fleetQuery) {
+      // One live list per repository and query, opened on the first ask and kept for the host's life: a shape each.
+      const key = `${name}:${repo}`
+      const opening = plugins.fleetOpen.get(key) ?? (yield* Effect.cached(
+        Effect.gen(function* () {
+          const rows = name === AGENT_RUNS ? (yield* plugins.fleet.runs(repo)).rows : (yield* plugins.fleet.machines(repo)).rows
+          return (yield* liveOf(rows as Stream.Stream<ReadonlyArray<Readonly<Record<string, unknown>>>>)) as CoreQuery["live"]
+        }).pipe(Scope.provide(plugins.scope)),
+      ))
+      plugins.fleetOpen.set(key, opening)
+      return yield* opening
+    }
     if (name === FEED_INDEX) return (yield* indexOf(plugins, repo)).live
     if (!isFeedName(document)) return yield* Effect.fail("name" as const)
     if (name === FEED_DOCUMENT) return plugins.feeds.document(repo, document) as unknown as CoreQuery["live"]

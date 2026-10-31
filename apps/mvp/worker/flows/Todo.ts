@@ -22,6 +22,8 @@ import * as Stack from "../stack/Stack.ts"
 import { ChecksRun } from "./Checks.ts"
 import { Implement } from "./TodoAgent.ts"
 import * as TodoSession from "./TodoSession.ts"
+import type * as Jobs from "../runners/Jobs.ts"
+import * as Fleet from "../runners/Fleet.ts"
 import { awaitPullClosed, readPullClosed } from "./TodoWait.ts"
 import { machineOf } from "./TodoMachine.ts"
 
@@ -378,6 +380,11 @@ export interface Services<E, R> {
    * nothing. Admission failures reach the step's durable retry policy, which replays the writer's persisted receipt.
    */
   readonly start: (flow: Flow.Any, options: { readonly executionId: string; readonly payload: unknown }) => Effect.Effect<void, Stack.RunsUnavailable>
+  /**
+   * The fleet's alerts (docs/features/fleet.md#alerts): their thresholds, and the start of one incident's
+   * `ops/FleetAlert`. Without it, a run raises none.
+   */
+  readonly fleet?: Jobs.Alerts
 }
 
 /** Admissions requested by TODO steps, by flow and outcome; ids are confined to logs and spans. */
@@ -895,6 +902,16 @@ export const steps = <E, R>(services: Services<E, R>) => {
         runs: true,
       })
       yield* Effect.forEach(reported.starts, startTodo, { discard: true })
+      // Run failed or lost: the committer and the repository's Maintainers hear it once (docs/features/fleet.md#alerts).
+      if (reported.outcome !== "stale" && services.fleet !== undefined) {
+        const alert: Fleet.Alert = {
+          alertId: Fleet.alertId.failed(request.attemptId),
+          kind: "failed",
+          repoId: request.repoId,
+          subject: request.attemptId,
+        }
+        yield* Fleet.raiseAll(request.attemptId, [alert], services.fleet.raise, () => Effect.void)
+      }
       return { state: reported.outcome === "stale" ? "ended" : "failed" } satisfies Ran
     }).pipe(
       Effect.provide(services.database),
@@ -949,7 +966,7 @@ export const registration = <E, R, IE, IR>(
       Wait.toLayer(implementation.wait),
       Received.toLayer(implementation.received),
       // An external agent's step waits on the agent job store in the app's Postgres (decision 0133).
-      TodoSession.registration(services.database),
+      TodoSession.registration(services.database, services.fleet),
       Publish.toLayer(implementation.publish, { implementationVersion: PUBLISH_VERSION }),
       Await.toLayer(implementation.awaitMerge),
       Settle.toLayer(implementation.settle),

@@ -52,6 +52,7 @@ import { PersonalModels } from "./personal/Models.ts"
 import * as SecretsApi from "./secrets/Api.ts"
 import * as RunnerAdmin from "./runners/Admin.ts"
 import * as RunnersApi from "./runners/Api.ts"
+import * as FleetApi from "./runners/FleetApi.ts"
 import * as TodoSession from "./flows/TodoSession.ts"
 import { SecretKeys } from "./secrets/Keys.ts"
 import * as SignIn from "./SignIn.ts"
@@ -203,6 +204,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     // TODOs and the stack (docs/features/todos.md): the one route that changes a stack, through its one writer, and the
     // TODOs' shapes.
     const stack = yield* StackApi.make(database, roles)
+    // The fleet's shapes: a repository's agent runs and runner machines (docs/features/fleet.md#the-shapes).
+    const fleet = yield* FleetApi.make(roles)
     // A TODO's run, watched from its page (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare), and a repository's
     // (docs/features/actions.md): the engine's own read of it, from the engine's schema, and its row of the engine's
     // change feed through Electric. A Member steers a TODO's agent by admitting a message to the run's queue in the same
@@ -313,6 +316,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
           )
         }
         if (RunnersApi.handles(path)) return yield* runnersApi.fetch
+        if (FleetApi.handles(path)) return yield* fleet.fetch.pipe(Effect.provide(signedIn))
         // Before the repository routes: `/api/repos/<owner>/<name>/runners/<name>` and `.../agents/<name>`.
         if (RunnerAdmin.handles(path)) {
           return yield* runnerAdmin.fetch.pipe(

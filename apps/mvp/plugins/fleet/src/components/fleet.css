@@ -1,0 +1,9 @@
+/* Layout only; components and colors come from @smthrs/ui's theme. */
+.fleet { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.fleet-summary { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; margin: 0; font-size: 0.875rem; font-variant-numeric: tabular-nums; }
+.fleet-runs, .fleet-machines { min-width: 0; }
+.fleet-label a { color: inherit; }
+.fleet-number { font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (max-width: 40rem) {
+  .fleet-wide { display: none; }
+}

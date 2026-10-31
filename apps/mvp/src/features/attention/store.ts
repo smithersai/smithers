@@ -107,8 +107,9 @@ export class AttentionStore extends Context.Service<
           schema: Notice,
           getKey: (row) => row.subject,
           syncMode: "eager",
-          // Version 4 adds durable branch write notices; the device retains prior notification versions.
-          persist: { schemaVersion: 4 },
+          // Version 4 adds durable branch write notices; version 5 the fleet's alerts (`fleet`, docs/features/fleet.md).
+          // The device retains prior notification versions.
+          persist: { schemaVersion: 5 },
           shape: {
             url: `${config.origin}${NOTIFICATIONS_SHAPE_ROUTE}`,
             columnMapper: ElectricCollection.snakeCamelMapper(),

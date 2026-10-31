@@ -92,6 +92,7 @@ import { PluginsUi, type PluginsView } from "./plugins/ui"
 import { SpendStore } from "./features/spend/store"
 import { BugsStore } from "./features/bugs/store"
 import { FeedsStore } from "./features/feeds/store"
+import { FleetStore } from "./features/fleet/store"
 import { tabBugContext } from "./features/bugs/tab"
 import { Domains, type DomainsView } from "./features/domains/domains"
 import { PersonalModelClient } from "./features/personal-model/api"
@@ -325,6 +326,9 @@ export const appLayer = <S = never>(
         // Every repository's feeds, which the host serves as `core/feeds`, `core/feed` and `core/feed-items`
         // (docs/features/feeds.md).
         Layer.provideMerge(FeedsStore.layer({ origin })),
+        // Every repository's agent runs and runner machines, which the host serves as `core/agent-runs` and
+        // `core/machines` (docs/features/fleet.md).
+        Layer.provideMerge(FleetStore.layer({ origin })),
         Layer.provideMerge(
           AttentionStore.layer({ origin }).pipe(
             Layer.provide(RunSteers.layer),

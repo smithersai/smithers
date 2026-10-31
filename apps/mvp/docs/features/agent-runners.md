@@ -104,11 +104,13 @@ Every request carries the runner's token as `Authorization: Bearer`. Schemas: `@
 
 | Route | Body | Answer |
 |---|---|---|
-| `POST /api/runners/claim` | `{ profiles, free, running, waitSeconds ≤ 25 }` | `{ job }` or `{ job: null }`; a held job not in `running` comes back first, `reclaimed: true` |
-| `POST /api/runners/heartbeat` | `{ key, claim }` | `{ held, cancel, leaseSeconds: 45 }` |
+| `POST /api/runners/claim` | `{ profiles, free, running, waitSeconds ≤ 25, machine? }` | `{ job }` or `{ job: null }`; a held job not in `running` comes back first, `reclaimed: true` |
+| `POST /api/runners/heartbeat` | `{ key, claim, account?, cpuSeconds?, usage? }` | `{ held, cancel, leaseSeconds: 45 }` |
 | `POST /api/runners/settle` | `{ key, claim, outcome }` | `{ recorded }`; `false` when the claim no longer holds the job |
 
-A job is `{ key, claim, generation, task, deadline, leaseSeconds, reclaimed }`; its task is `{ agent, repository, base,
+A claim's `machine` is `{ version?, load1?, diskFreeGb? }`; a heartbeat's `account` is the label the profile's hook
+chose, `cpuSeconds` the agent's process tree's CPU time and `usage` what the agent reported so far, each for the
+[fleet](fleet.md). A job is `{ key, claim, generation, task, deadline, leaseSeconds, reclaimed }`; its task is `{ agent, repository, base,
 system, prompt, limits }`. An outcome is `Done { changes, summary, usage }`, `Failed { reason }`, `Retryable {
 afterSeconds? }` or `Cancelled { processTreeGone }`. Usage an agent doesn't report stays absent, never zero.
 
@@ -123,7 +125,8 @@ Migration `0077_agent_runners`:
 | `agent_jobs` | one row per generation, `<origin>#g<n>`: its task, `status` (`queued`, `claimed`, `done`, `failed`, `cancelled`, `retryable`), its runner and claim, `pinned_runner`, `not_before`, `deadline_at`, `cancel_requested`, `outcome` |
 | `runner_changes`, `agent_changes` | each Admin change once, by invocation key |
 
-Nothing here syncs to browsers yet; the fleet view (slice S5) reads them.
+Nothing here syncs to browsers. The [fleet](fleet.md) projects each job into `agent_runs` (migration `0080_fleet`),
+which does, with each runner's machine facts on `runners`.
 
 ## Observability
 
@@ -145,5 +148,6 @@ Nothing here syncs to browsers yet; the fleet view (slice S5) reads them.
   (store, routes and Admin writes on Postgres); `worker/runners/TodoRunner.test.ts` (a TODO to a pull request through a
   real `smthrs runner` process and the deterministic ACP test agent, the runner killed mid-job and resumed);
   `e2e/agent-runner.spec.ts` (the same through `alchemy dev` and GitHub).
-- Not built yet: the transcript (S2), Stop and steering on the run page (S3), the fleet view and alerts (S5), choosing
-  an agent per TODO, and a Settings page for runners and agents.
+- The fleet view and its alerts: [fleet.md](fleet.md).
+- Not built yet: Stop and steering on the run page (S3), choosing an agent per TODO, and a Settings page for runners and
+  agents.
