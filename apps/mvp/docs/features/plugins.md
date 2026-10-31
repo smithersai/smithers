@@ -101,7 +101,8 @@ A view with `scope: "repository"` belongs to one repository's page (decision 012
 ```
 
 - The route `/$owner/$repo/-/$plugin/$` (and its index) finds the view with `viewAt(plugin, path, "repository")`; an `app` view is never a repository page, and a path no plugin declares is not found. `worker/appRoute.ts` serves the document for every built-in's repository paths.
-- A component, view or `repo.tabs` entry, receives the repository it shows on as `repository` beside `tab`. A tab is built once per plugin, so its queries take the repository as an argument.
+- A component, view or `repo.tabs` entry, receives the repository it shows on as `repository` beside `tab`.
+- Its `minimum` is checked against the person's role on that repository, ChatApi's answer for it (decision 0079, `contributionViewer` in `src/features/auth/viewer.ts`), never their role on the deployment's own; until ChatApi answers, nothing role-gated shows. A tab is built once per plugin, so its queries take the repository as an argument.
 - `Host.pathOf(view, repository)` is the one path grammar; `PluginHost.open(view, repository)` navigates there, and does nothing for a repository view without one.
 - **Commands** with a `slash` join the composer's menu, running their flow with the payload the manifest fixes: `/queue` runs `app/navigate` to `/app/queue`.
 

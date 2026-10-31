@@ -52,3 +52,19 @@ export const hereOf = (
  * closed: no answer yet is not the deployment's own.
  */
 export const ownRepository = (answer: RepoAnswer | undefined): boolean => answer?.own === true
+
+/**
+ * Whom a plugin's contribution is gated against (its `minimum`, decision 0017): on a repository's page, the person's
+ * role on that repository, as ChatApi answered for it (`hereOf`, decision 0079), so a role on the deployment's own
+ * repository never opens a view on another, and a role on another isn't hidden by a lesser one here; off a
+ * repository, the session's (`viewerOf`). `repository` is the page's repository and ChatApi's answer for it.
+ */
+export const contributionViewer = (
+  session: { readonly status: "loading" | "signed_in" | "signed_out" | "unreachable"; readonly role: Role | null },
+  confirmed: { readonly role: Role | null } | undefined,
+  repository: { readonly answer: RepoAnswer | undefined } | undefined,
+): Viewer => {
+  if (repository === undefined) return viewerOf(session, confirmed)
+  const here = hereOf(session, confirmed, repository.answer)
+  return { signedIn: here.signedIn, role: here.role }
+}
