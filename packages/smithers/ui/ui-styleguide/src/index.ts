@@ -52,6 +52,13 @@ export const workflowUiPrimitiveCss = [
   "h3 { color:var(--text); font-size:var(--fs-3); font-weight:650; line-height:var(--lh-tight); }",
   "p { color:var(--muted); line-height:1.45; }",
   "code,.mono { font-family:var(--font-mono); }",
+  // Links read as the brand, not the user agent's blue and underline. `:where`
+  // keeps the rule at zero specificity, so any component or prose sheet that
+  // styles its own links wins without a fight. Hover underlines; the keyboard
+  // ring matches the controls' focus color.
+  ":where(a) { color:var(--brand); text-decoration:none; text-underline-offset:2px; }",
+  ":where(a):hover { text-decoration:underline; }",
+  ":where(a):focus-visible { outline:2px solid var(--ring-border); outline-offset:2px; border-radius:2px; }",
   ".muted,.meta { color:var(--muted); }",
   ".top,.topbar { min-width:0; display:flex; align-items:center; justify-content:space-between; gap:var(--sp-4); padding:var(--sp-3) 18px; border-bottom:1px solid var(--border); background:var(--surface-glass-strong); -webkit-backdrop-filter:blur(18px) saturate(180%); backdrop-filter:blur(18px) saturate(180%); }",
   ".title,.title-group { min-width:0; display:flex; align-items:center; gap:10px; }",

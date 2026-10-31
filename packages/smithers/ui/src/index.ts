@@ -177,7 +177,7 @@ export {
 export { Marker, type MarkerProps } from "./chat/Marker";
 export { Shimmer, type ShimmerProps } from "./chat/Shimmer";
 export { Alert, AlertTitle, AlertDescription, alertVariants, type AlertProps } from "./alert";
-export { Table, TableHeader, TableBody, TableRow, TableHead, TableCell, TableCaption } from "./table";
+export { Table, type TableProps, TableHeader, TableBody, TableRow, TableHead, TableCell, TableCaption } from "./table";
 export { Tabs, TabsList, TabsTrigger, TabsContent, type TabsTriggerProps } from "./tabs";
 export {
   Dialog,

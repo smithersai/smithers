@@ -314,6 +314,12 @@ export const alertCss = `
 
 export const tableCss = `
 .sui-table-container { min-width:0; width:100%; overflow-x:auto; }
+.sui-table-container[data-variant='card'] { border:1px solid ${t.border}; border-radius:${t.radius}; background:${t.card}; color:${t.cardForeground}; box-shadow:${shadowCard}; }
+.sui-table-container[data-variant='card'] .sui-table th, .sui-table-container[data-variant='card'] .sui-table td { padding:10px 14px; vertical-align:middle; }
+.sui-table-container[data-variant='card'] .sui-table tbody tr:last-child > td { border-bottom:none; }
+.sui-table-container[data-variant='card'] .sui-table th { border-radius:0; }
+.sui-table-container[data-variant='card'] .sui-table thead tr:first-child th:first-child { border-top-left-radius:${t.radius}; }
+.sui-table-container[data-variant='card'] .sui-table thead tr:first-child th:last-child { border-top-right-radius:${t.radius}; }
 .sui-table { width:100%; border-collapse:collapse; font-size:13px; }
 .sui-table th, .sui-table td { padding:8px 10px; border-bottom:1px solid ${t.border}; text-align:left; vertical-align:top; }
 .sui-table th { position:sticky; top:0; z-index:1; background:${t.card}; color:${t.mutedForeground}; font-size:11px; text-transform:uppercase; letter-spacing:.04em; font-weight:650; }

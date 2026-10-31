@@ -18,6 +18,15 @@ describe("ui styleguide", () => {
     expect(workflowUiStyles).toBe(`${workflowUiThemeCss}\n${workflowUiLayoutCss}`);
   });
 
+  test("styles bare links as the brand at zero specificity, underlined on hover, with a keyboard ring", () => {
+    const rules = workflowUiPrimitiveCss.split("\n");
+    expect(rules).toContain(":where(a) { color:var(--brand); text-decoration:none; text-underline-offset:2px; }");
+    expect(rules).toContain(":where(a):hover { text-decoration:underline; }");
+    expect(rules.find((rule) => rule.startsWith(":where(a):focus-visible"))).toContain("outline:2px solid var(--ring-border)");
+    // No bare `a` selector: it would outrank a component's own `:where()` link rules.
+    expect(rules.some((rule) => /(^|[\s,}])a(\s|,|\{|:)/.test(rule.split("{")[0]!))).toBe(false);
+  });
+
   test("defines and consumes one shared soft-tint recipe per semantic", () => {
     for (const semantic of ["brand", "success", "danger", "warning", "info"]) {
       expect(workflowUiThemeCss).toContain(`--${semantic}-soft:color-mix(in srgb, var(--${semantic}) 10%`);

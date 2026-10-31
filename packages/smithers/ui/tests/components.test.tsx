@@ -382,6 +382,18 @@ describe("Table", () => {
     expect(html).toContain('data-slot="table-caption"');
     expect(html).toContain("All runs");
   });
+
+  test("frames the table as a card by default; plain draws only row rules", () => {
+    const framed = renderToStaticMarkup(<Table><TableBody><TableRow><TableCell>a</TableCell></TableRow></TableBody></Table>);
+    const plain = renderToStaticMarkup(<Table variant="plain"><TableBody><TableRow><TableCell>a</TableCell></TableRow></TableBody></Table>);
+    expect(framed).toContain('data-variant="card"');
+    expect(plain).toContain('data-variant="plain"');
+    const css = composeSmithersUiStyles();
+    const rule = css.split("\n").find((line) => line.startsWith(".sui-table-container[data-variant='card'] {"));
+    expect(rule).toContain("border-radius:");
+    expect(rule).toContain("box-shadow:");
+    expect(rule).toContain("background:");
+  });
 });
 
 describe("Tabs", () => {

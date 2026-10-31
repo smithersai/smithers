@@ -656,7 +656,7 @@ function renderSpan(
       const header = rowCells(lines[0]!);
       const rows = lines.slice(2).map(rowCells);
       return (
-        <Table className="sui-md-table" key={key}>
+        <Table variant="plain" className="sui-md-table" key={key}>
           <TableHeader>
             <TableRow>
               {header.map((cell, column) => (

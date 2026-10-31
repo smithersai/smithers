@@ -26,6 +26,10 @@ export is missing from it, so nothing below can fall behind the code.
 
 The sheet includes only Paper light/dark. See [Paper stylesheet](./guides/pin-a-palette.md).
 
+The base element rules style bare links as the brand color with no underline,
+underlined on hover, with a brand focus ring. They match through `:where(a)`, at
+zero specificity, so a component or prose sheet that styles its own links wins.
+
 ### `themeCss(options?)`
 
 ```ts
