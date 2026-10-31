@@ -4,7 +4,7 @@
  */
 import * as Audience from "@smthrs/build-cli/Audience"
 import { spawn } from "node:child_process"
-import { existsSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -12,10 +12,35 @@ import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it, onTestFailed, vi } from "vitest"
 import { createRunsCli } from "../src/cli/ControlCommands.ts"
+import { childEnvironment } from "./support/node-child.ts"
 
 const bin = fileURLToPath(new URL("../src/bin.ts", import.meta.url))
 const preload = fileURLToPath(new URL("./fixtures/scripted-native-host.ts", import.meta.url))
+const observer = new URL("./fixtures/cli-exit-observer.ts", import.meta.url).href
+const bootstrapObserver = "data:text/javascript," + encodeURIComponent(`
+import { getCompileCacheDir } from "node:module";
+import { isMainThread } from "node:worker_threads";
+import { recordStage } from ${JSON.stringify(observer)};
+if (isMainThread) recordStage(getCompileCacheDir() === undefined ? "node cache disabled" : "node cache enabled");
+if (isMainThread) recordStage(process.argv[1]?.endsWith("bin.ts") || process.argv[1]?.endsWith("smithers.mjs") ? "cli process" : "helper process");
+`)
 const nodeModules = fileURLToPath(new URL("../node_modules", import.meta.url))
+const processStages = (root: string) => {
+  const directory = join(root, ".flows", "process-receipts")
+  if (!existsSync(directory)) return []
+  return readdirSync(directory).filter((name) => /^\d+\.jsonl$/.test(name)).slice(-16).map((name) => {
+    try {
+      const lines = readFileSync(join(directory, name), "utf8").trim().split("\n")
+      return {
+        pid: Number(name.slice(0, -6)),
+        stages: (lines.length > 12 ? [...lines.slice(0, 4), ...lines.slice(-8)] : lines)
+          .map((line) => JSON.parse(line) as { stage?: string })
+      }
+    } catch {
+      return { pid: Number(name.slice(0, -6)), stages: [] }
+    }
+  })
+}
 const source = `import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, FileSystem, Layer, Schema } from "effect"
@@ -58,10 +83,17 @@ const activeCommands = new Set<() => CommandProgress>()
 const command = (root: string, args: ReadonlyArray<string>, format: ReadonlyArray<string> = ["--json"]) => {
   const child = spawn(
     process.execPath,
-    ["--no-warnings", "--import", preload, bin, ...args, "--root", root, ...format],
+    ["--no-warnings", "--import", bootstrapObserver, "--import", preload, bin, ...args, "--root", root, ...format],
     {
       cwd: root,
-      env: { ...process.env, SMITHERS_REMOTE: "", SMITHERS_BACKEND: "sqlite", XDG_CONFIG_HOME: join(root, "config") }
+      env: childEnvironment({
+        ...process.env,
+        SMITHERS_REMOTE: "",
+        SMITHERS_BACKEND: "sqlite",
+        XDG_CONFIG_HOME: join(root, "config"),
+        SMITHERS_TEST_CLI_EXIT_DIR: join(root, ".flows", "process-receipts"),
+        NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${bootstrapObserver}`.trim()
+      })
     }
   )
   let stdout = "", stderr = ""
@@ -83,7 +115,11 @@ const command = (root: string, args: ReadonlyArray<string>, format: ReadonlyArra
       resolve({ code, stdout, stderr })
     })
   })
-  return { child, finished, output: () => ({ stdout, stderr, exitCode: child.exitCode }) }
+  return {
+    child,
+    finished,
+    output: () => ({ stdout, stderr, exitCode: child.exitCode, processes: processStages(root) })
+  }
 }
 const controlRun = (root: string) => {
   if (!existsSync(join(root, ".flows", "control.db"))) return undefined
@@ -147,19 +183,24 @@ describe("runs show and runs logs on a live parent run", { timeout: 180_000 }, (
   it("names the flow, lists the child, advances updatedAt, and prints recorded steps", async () => {
     const started = Date.now()
     const stages: Array<{ stage: string; elapsedMs: number }> = []
-    let cleanup: { commands: Array<CommandProgress>; run: ReturnType<typeof controlRun> } | undefined
+    let cleanup:
+      | {
+        commands: Array<CommandProgress>
+        run: ReturnType<typeof controlRun>
+        processes: ReturnType<typeof processStages>
+      }
+      | undefined
     const mark = (stage: string) => stages.push({ stage, elapsedMs: Date.now() - started })
-    onTestFailed(() =>
-      console.error(
-        "Live run progress",
-        JSON.stringify({
-          stages,
-          elapsedMs: Date.now() - started,
-          cleanup,
-          commands: [...activeCommands].map((progress) => progress())
-        })
-      )
-    )
+    onTestFailed(({ task }) => {
+      const receipt = "Live run progress " + JSON.stringify({
+        stages,
+        elapsedMs: Date.now() - started,
+        cleanup,
+        commands: [...activeCommands].map((progress) => progress())
+      })
+      for (const error of task.result?.errors ?? []) error.message += `\n${receipt}`
+      console.error(receipt)
+    })
     mark("create project")
     const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-run-observability-")))
     let runner: ReturnType<typeof command> | undefined
@@ -178,6 +219,12 @@ describe("runs show and runs logs on a live parent run", { timeout: 180_000 }, (
           throw new Error(`Flow start exited ${result.code} before its child: ${result.stdout}${result.stderr}`)
         })
       ])
+      if (process.env.SMITHERS_CLI_NODE_COMPILE_CACHE !== undefined) {
+        const disabled = Boolean(process.env.SMITHERS_CLI_DISABLE_COMPILE_CACHE) ||
+          process.env.NODE_V8_COVERAGE !== undefined
+        expect(processStages(root).find(({ pid }) => pid === runner!.child.pid)?.stages[0]?.stage)
+          .toBe(disabled ? "node cache disabled" : "node cache enabled")
+      }
 
       mark("show live run")
       const run = await show(root, runId)
@@ -239,7 +286,7 @@ describe("runs show and runs logs on a live parent run", { timeout: 180_000 }, (
       } catch {
         run = undefined
       }
-      cleanup = { commands: [...activeCommands].map((progress) => progress()), run }
+      cleanup = { commands: [...activeCommands].map((progress) => progress()), run, processes: processStages(root) }
       mark("cleanup launcher")
       runner?.child.kill("SIGKILL")
       await runner?.finished
