@@ -188,7 +188,7 @@ https://<APP_DOMAIN>/<path>
 
 ### Credentials
 
-Set these in the environment of `pnpm plan`, `pnpm run deploy` and `pnpm destroy`. Alchemy also loads `apps/mvp/.env`, which git ignores: keep identifiers such as `CLOUDFLARE_ACCOUNT_ID` and `NEON_ORG_ID` there, and secrets in your shell or a secret manager, never in a file in the repository. ChatApi reads its settings with Effect `Config` while Alchemy plans it, and Alchemy binds each one that is set to the Worker as a secret.
+Set these in the environment of `pnpm plan`, `pnpm run deploy` and `pnpm destroy`. Alchemy also loads `apps/mvp/.env`, which git ignores: keep identifiers such as `CLOUDFLARE_ACCOUNT_ID` and `NEON_ORG_ID` there, and secrets in your shell or a secret manager, never in a file in the repository. ChatApi reads its settings with Effect `Config` while Alchemy plans it, and Alchemy binds each one that is set to the Worker as a secret. A setting read only later, or only on a path the plan doesn't take, is never bound, and production reads it as unset: `worker/ChatApi.bindings.test.ts` plans ChatApi offline with every setting below that ChatApi, `FlowExecution` or `SandboxObject` uses, and fails on one it doesn't bind.
 
 A local `.env` that raises a limit for development, such as `MODEL_DAILY_TOKEN_BUDGET`, raises it in production too when you deploy from that checkout. Deploy from a clean `jj workspace` of the pushed revision, which has no `.env`, and pass the two identifiers and `APP_DOMAIN` in the environment.
 
@@ -223,7 +223,7 @@ A local `.env` that raises a limit for development, such as `MODEL_DAILY_TOKEN_B
 | `FEED_KEYS` | no | ChatApi | `owner/name=<sha256 hex of the key>,...`: each repository an outside collector may feed, by its key's SHA-256, never the key; unset or blank turns the collector's routes off (`503 off`), a malformed list fails the deploy ([feeds.md](features/feeds.md#configuration)); unset under `alchemy dev`, its development key opens every repository ([feeds.md](features/feeds.md#development)) |
 | `SMITHERS_BUILD` | no | the build | the build's name in the bundle and `/version.json`; unset, the checkout's jj revision, else `dev` ([bugs.md](features/bugs.md#the-build)) |
 | `ALERT_EMAIL_FROM`, `ALERT_EMAIL_API_URL`, `ALERT_TELEGRAM_API_URL` | no | FlowExecution | the sender (default `Smithers <onboarding@resend.dev>`) and the providers' origins ([spend-alerts.md](features/spend-alerts.md#channels)) |
-| `GITHUB_TOKEN`, `CODE_STORAGE_API_URL`, `REPO_MAX_REPOSITORIES`, `REPO_MAX_STORED_GB`, `REPO_MAX_READ_GB_PER_MONTH`, `REPO_MAX_SIZE_MB`, `REPO_BUDGET_USD`, `REPO_TREE_MAX_PATHS`, `REPO_CLONE_DEADLINE` | no | ChatApi, FlowExecution | [repo.md](features/repo.md#configuration) |
+| `GITHUB_APP_SLUG`, `GITHUB_TOKEN`, `CODE_STORAGE_API_URL`, `REPO_MAX_REPOSITORIES`, `REPO_MAX_STORED_GB`, `REPO_MAX_READ_GB_PER_MONTH`, `REPO_MAX_SIZE_MB`, `REPO_BUDGET_USD`, `REPO_TREE_MAX_PATHS`, `REPO_CLONE_DEADLINE` | no | ChatApi, FlowExecution | [repo.md](features/repo.md#configuration) |
 
 Leave `SESSION_SECRET` unset: Alchemy generates it once (`infra/SignIn.ts`) and binds it to ChatApi. Leave `DATABASE_URL`, `ELECTRIC_URL`, `ELECTRIC_SECRET`, `ELECTRIC_SECRET_AS` and `ELECTRIC_SOURCE_ID` unset for a deploy: the stack provides the database and Electric, and a set `ELECTRIC_URL` replaces the one ChatApi gets from the stack. They are for local runs.
 

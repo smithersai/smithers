@@ -326,10 +326,15 @@ export const make = <E, R>(
 ) =>
   Effect.gen(function* () {
     const setup = yield* configured(options.github)
+    // Read whether or not sign-in is configured: Alchemy binds a setting only if its plan reads it, and no plan sees
+    // SESSION_SECRET, which the stack binds itself, so a read behind `setup` never reached production
+    // (worker/ChatApi.bindings.test.ts).
+    const domain = yield* home
+    const slug = yield* appSlug
     // Where GitHub calls back for every host, when sign-in is configured and the deployment has a domain (decision 0130).
-    const handoff = Option.isSome(setup) ? yield* home : Option.none<Home>()
+    const handoff = Option.isSome(setup) ? domain : Option.none<Home>()
     // Where Install goes (the GitHub App's installation on GitHub), when this deployment signs in with the App.
-    const install = Option.isSome(setup) ? installUrl(yield* appSlug) : undefined
+    const install = Option.isSome(setup) ? installUrl(slug) : undefined
     // Whether the deployment's own model answers when no Admin set it (decision 0099); a value that doesn't parse is off.
     const hostedDefault = yield* HostedModel.hostedModelDefault(options.hostedModel).pipe(Effect.orElseSucceed(() => false))
 
