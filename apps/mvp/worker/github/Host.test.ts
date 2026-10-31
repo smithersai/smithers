@@ -120,13 +120,14 @@ describe("Host", () => {
       ),
     )
     const sessionKeys = await keys()
+    const { seat } = await judgeSeat(runtime, judging("abstain"))
     const flows = ExecutionHost.withGitHub(
       ExecutionHost.remote({ database: app, expiry: Expire.DEFAULT_EXPIRY }),
       Effect.succeed(
         Host.services(
           made,
           { keys: Option.some(sessionKeys), refresh: () => Effect.void },
-          (await judgeSeat(runtime, judging("abstain"))).seat,
+          () => seat,
         ),
       ),
     )

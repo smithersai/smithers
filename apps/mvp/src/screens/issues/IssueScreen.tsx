@@ -23,6 +23,7 @@ import {
 } from "../../features/issues/view"
 import "./issues-screen.css"
 import { useRepoAnswer } from "../../features/repo/components/RepoContext"
+import { usePersonalModel } from "../../features/personal-model/components/PersonalModelContext"
 
 // /$owner/$repo/issues/$number: one issue and its comments, this device's own last with their chip, "Open on GitHub ↗",
 // its triage state with Accept, Not accepted and Run triage again for a Member and above, and the comment composer for a
@@ -45,6 +46,8 @@ export function IssueScreen() {
   const { data: triagePending } = useLiveQuery(queries.triagePending)
   const { data: session } = useLiveQuery(auth.queries.session)
   const { data: confirmed } = useLiveQuery(auth.queries.confirmed)
+  // Triage judges on its enabler's model (ruling AUTH-8): a person with a model of their own may start it.
+  const { data: ownModels } = useLiveQuery(usePersonalModel().queries.saved)
   const answer = useRepoAnswer(owner, repo)
   const todos = useTodos()
   const { data: todosView } = useLiveQuery(todos.queries.view)
@@ -74,7 +77,7 @@ export function IssueScreen() {
   const control = triageControlOf(item, triagePending ?? [], {
     triage: session !== undefined && mayTriage(session, confirmed, answer),
     flowOn: triage !== undefined && !triage.paused,
-    start: session !== undefined && mayStartTriage(session, confirmed, answer),
+    start: session !== undefined && mayStartTriage(session, confirmed, answer, (ownModels?.length ?? 0) > 0),
   })
   return (
     <main className="issues-screen"><RepoHeader />{back}

@@ -43,7 +43,7 @@ import * as Api from "../Api.ts"
 import type { GitHubApp, Repository } from "../Config.ts"
 import * as RepoRoles from "../RepoRoles.ts"
 import * as Host from "../Host.ts"
-import type * as Triage from "../Triage.ts"
+import type { Seat } from "../../ModelEndpoint.ts"
 import { REPOSITORY, services as flowServices } from "./fixtures.ts"
 import { APP_ID, appKey, SCRIPTED_API, type ScriptedGitHub, scriptedGitHub } from "./scriptedGitHub.ts"
 
@@ -96,7 +96,7 @@ export interface Options {
   readonly run?: boolean
   readonly github?: ScriptedGitHub
   /** Triage's judge for the flows `run` runs: one that abstains unless set (test/fixtures.ts `judgeSeat`). */
-  readonly judge?: Triage.Services["judge"]
+  readonly judge?: Seat
   /** The database the routes use: the file's schema unless set. */
   readonly database?: Layer.Layer<SqlClient.SqlClient, unknown>
   /**

@@ -79,6 +79,7 @@ import { Publish, publishBlocked, Resync, Update } from "../branch/Publish.ts"
 import { type Actor, canAsk, refusesPersonOnly, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
+import * as PersonalStore from "../personal/Store.ts"
 import * as Dispatch from "../ci/Dispatch.ts"
 import { FlowStarter, StartUnavailable } from "../Flows.ts"
 import * as Notifications from "../Notifications.ts"
@@ -598,9 +599,13 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           // `repo:ask`, Member or above), so a Guest's write goes as the Guest or not at all, never as the bot.
           if (via === "agent" && !canAsk(who)) return refused(403, "forbidden")
           if (!mayWrite(who, write)) return refused(403, "forbidden")
-          // Triage's judge is the deployment's own model, which answers only Members of the deployment's own repository
-          // (ruling AUTH-8, decision 0122): starting the triage flow, on any repository, needs that role too.
-          if ((write.op === "triage/enable" || write.op === "triage/run") && !canAsk(signed)) {
+          // Triage judges on the model of the person who enabled it: their own, else the deployment's, which answers only
+          // Members of the deployment's own repository (ruling AUTH-8, decision 0122). Enabling it, on any repository,
+          // needs one of the two; Run triage again judges on the enabler's, as a new issue's run does.
+          if (
+            write.op === "triage/enable" && !canAsk(signed) &&
+            !(yield* PersonalStore.hasModel(who.subject.id).pipe(Effect.provide(database)))
+          ) {
             fields.refused = "deployment_model"
             return refused(403, "forbidden")
           }

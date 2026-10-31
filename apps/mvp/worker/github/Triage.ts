@@ -43,6 +43,7 @@ import * as TriageStore from "./TriageStore.ts"
 //   triage/Run/read ─ settings on? issue pinned? ─▶ the issue, its last comments and .smithers/triage.md at the
 //        │                                           default branch's head, read with installation tokens
 //   triage/Decide ─ Classifier.make, role judge, through ModelStep ─▶ accept | reject | abstain, a reason code
+//        │          on the enabler's own model (or the deployment's, for its Members: ruling AUTH-8);
 //        │          the repository's daily budget spent, the model failing or unsure, or its answer invalid: abstain
 //   issue/ApplyTriage/label ─ system, never a repository's: re-checks the enabler is a Maintainer, re-reads the issue;
 //        │                    pinned, relabeled or edited since the read ─▶ dropped, recorded why; else one label on,
@@ -259,8 +260,12 @@ export const TriageClassifier = Classifier.make("triage/Decide", {
 
 /** What `triage/Run`'s steps need: the GitHub flows' services and the judge model role's seat. */
 export interface Services<E = unknown, R = never> extends GitHubServices<E, R> {
-  /** The `judge` role, admitted and metered as the model endpoint's calls are (`ModelEndpoint.local`). */
-  readonly judge: Seat
+  /**
+   * The `judge` role for the person who enabled triage (`enabledBy`), admitted and metered as the model endpoint's
+   * calls are (`ModelEndpoint.local`): their own model decides, as it answers their chat, and the deployment's only
+   * when they are one of its own Members (ruling AUTH-8).
+   */
+  readonly judge: (enabledBy: string) => Seat
 }
 
 const cut = (text: string, max: number) => (text.length <= max ? text : text.slice(0, max))
@@ -495,7 +500,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
    */
   const judge = (input: Input) =>
     Effect.gen(function* () {
-      const model = yield* ModelStep.model({ name: "triage/Decide/model", ...services.judge })
+      const model = yield* ModelStep.model({ name: "triage/Decide/model", ...services.judge(input.enabledBy) })
       const reading = yield* TriageClassifier.read({
         repository: input.repo,
         guidelines: input.guidelines,

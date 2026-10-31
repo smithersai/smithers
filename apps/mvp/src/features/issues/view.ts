@@ -260,21 +260,24 @@ export const mayManageTriage = (
 
 /**
  * Whether the person may start the triage flow (Enable triage, Run triage again) beside the role those need: its judge
- * is the deployment's own model, which answers only Members of the deployment's own repository (ruling AUTH-8), so on
- * another repository the session's role must be Member or above too. On the deployment's own, the role there is it.
+ * is the model of the person who enabled it, their own (`own`, saved) or else the deployment's, which answers only
+ * Members of the deployment's own repository (ruling AUTH-8). Without a model of their own, on another repository the
+ * session's role must be Member or above too; on the deployment's own, the role there is it.
  */
 export const mayStartTriage = (
   session: SessionNow,
   confirmed: { readonly role: Role | null } | undefined,
   answer: RepoAnswer | undefined,
+  own = false,
 ): boolean => {
   const viewer = viewerOf(session, confirmed)
-  return viewer.signedIn && (answer?.own === true || mayAsk(viewer.role))
+  return viewer.signedIn && (own || answer?.own === true || mayAsk(viewer.role))
 }
 
 /**
  * The list's triage switch, as `action` (`triageSwitchOf`): for a Maintainer, once the repository's issues shape
- * completed a sync; Enable only for a person who may start the flow (`mayStartTriage`), Pause for any Maintainer.
+ * completed a sync; Enable only for a person who may start the flow (`mayStartTriage`, `own` whether they saved a model
+ * of their own), Pause for any Maintainer.
  */
 export const mayManageTriageOnList = (
   session: SessionNow,
@@ -282,9 +285,10 @@ export const mayManageTriageOnList = (
   answer: RepoAnswer | undefined,
   synced: unknown,
   action: "enable" | "pause",
+  own = false,
 ): boolean =>
   synced !== undefined && mayManageTriage(session, confirmed, answer) &&
-  (action === "pause" || mayStartTriage(session, confirmed, answer))
+  (action === "pause" || mayStartTriage(session, confirmed, answer, own))
 
 /** A row of this device's triage writes (queries.ts `triagePendingQuery`). */
 export interface TriagePendingRow {

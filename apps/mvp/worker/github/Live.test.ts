@@ -174,7 +174,8 @@ describe.skipIf(triageMissing.length > 0 || refused)("the real GitHub, triage", 
 
   test("a new spam issue: the App labels it not accepted and comments once, naming the enabler; it stays open", async () => {
     const base = await live()
-    const services: Triage.Services = { ...base, judge: (await judgeSeat(runtime, judging("reject", "spam"))).seat }
+    const { seat } = await judgeSeat(runtime, judging("reject", "spam"))
+    const services: Triage.Services = { ...base, judge: () => seat }
     const number = await arrange(base, "Smithers live triage (spam)", "Buy cheap watches, ping @everyone http://spam.example")
     const key = crypto.randomUUID()
     const ran = await runFlow(Triage.TriageRun, { repo: scratch, number, trigger: "opened", key }, Triage.registration(services), {
@@ -207,7 +208,8 @@ describe.skipIf(triageMissing.length > 0 || refused)("the real GitHub, triage", 
         Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv())),
       ),
     )
-    const services: Triage.Services = { ...base, judge: local("judge") }
+    const judge = local("judge")
+    const services: Triage.Services = { ...base, judge: () => judge }
     const number = await arrange(
       base,
       "Smithers live triage (bug)",

@@ -637,23 +637,40 @@ describe("POST /api/repos/<owner>/<name>/writes on another repository (decision 
     ])
   })
 
-  test("triage's judge is the deployment's own model: starting its flow also needs a Member of the deployment's own repository", async () => {
+  test("triage judges on its enabler's model: enabling it needs a model that answers her, her own or, as a Member of the deployment's own repository, its", async () => {
     const github = scriptedGitHub("acme", "widgets")
     github.roles.set("maya", "maintain")
     const h = await githubHarness(runtime, { own: OWN, actor: await maya("guest"), github })
     expect(await statuses(h, maintainerWrites())).toEqual([
       ["issue/triage", 202],
       ["issue/commitment", 202],
-      ["triage/run", 403],
+      // Run triage again judges on the model of whoever enabled triage, as a new issue's run does.
+      ["triage/run", 202],
       ["triage/enable", 403],
       ["triage/pause", 202],
       ["pr/merge", 202],
     ])
-    expect(h.starts.map((start) => start.flow)).not.toContain("triage/Run")
     expect(h.line("github.write.request").filter((line) => line.annotations.refused === "deployment_model").map((line) => line.annotations.op)).toEqual([
-      "triage/run",
       "triage/enable",
     ])
+  })
+
+  test("a Maintainer with a model of her own starts triage anywhere she maintains: her model judges (ruling AUTH-8)", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "maintain")
+    const actor = await maya("guest")
+    await sql(runtime, `INSERT INTO personal_models (person_id, protocol, base_url, fast_model, ciphertext, nonce, key_version,
+      key_last4) VALUES ('${actor.subject.id}', 'openai-chat', 'https://api.example.com', 'm-1', 'c', 'n', 1, 'abcd')`)
+    const h = await githubHarness(runtime, { own: OWN, actor, github })
+    expect(await statuses(h, maintainerWrites())).toEqual([
+      ["issue/triage", 202],
+      ["issue/commitment", 202],
+      ["triage/run", 202],
+      ["triage/enable", 202],
+      ["triage/pause", 202],
+      ["pr/merge", 202],
+    ])
+    expect(h.line("github.write.request").filter((line) => line.annotations.refused === "deployment_model")).toEqual([])
   })
 
   test("end to end on the Node host: a Maintainer of a second repository accepts an issue, commits to it and merges there, as herself", async () => {

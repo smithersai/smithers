@@ -25,6 +25,7 @@ import { COMMITMENTS, COMMITMENT_COPY, filterCommitment } from "../../features/i
 import { listFailureOf, listProps, listSyncOf, mayManageTriageOnList, mayWrite, syncsHere, triageSwitchOf } from "../../features/issues/view"
 import "./issues-screen.css"
 import { useRepo, useRepoAnswer } from "../../features/repo/components/RepoContext"
+import { usePersonalModel } from "../../features/personal-model/components/PersonalModelContext"
 import { repoId } from "../../features/repo/contract"
 
 // /$owner/$repo/issues: the repository's issues, this device's own new ones first with their chip, each with its triage
@@ -46,6 +47,9 @@ export function IssuesScreen() {
   const { data: triage } = useLiveQuery(queries.triage)
   const { data: triagePending } = useLiveQuery(queries.triagePending)
   const { data: confirmed } = useLiveQuery(auth.queries.confirmed)
+  // Triage judges on its enabler's model (ruling AUTH-8): a person with a model of their own may enable it.
+  const { data: ownModels } = useLiveQuery(usePersonalModel().queries.saved)
+  const own = (ownModels?.length ?? 0) > 0
   const answer = useRepoAnswer(owner, repo)
   const repository = useRepo()
   const { data: roles } = useLiveQuery(repository.queries.roles)
@@ -114,9 +118,9 @@ export function IssuesScreen() {
         actions={session !== undefined && mayWrite(session, confirmed, answer)
           ? (
             <>
-              {mayManageTriageOnList(session, confirmed, answer, synced, triageSwitch.action) && session.hostedModel === false
+              {mayManageTriageOnList(session, confirmed, answer, synced, triageSwitch.action, own) && session.hostedModel === false && !own
                 ? <Button variant="outline" disabled data-triage-off="">{TRIAGE_OFF}</Button>
-                : mayManageTriageOnList(session, confirmed, answer, synced, triageSwitch.action)
+                : mayManageTriageOnList(session, confirmed, answer, synced, triageSwitch.action, own)
                 ? (
                   <Button
                     variant="outline"

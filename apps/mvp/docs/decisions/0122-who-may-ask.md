@@ -97,3 +97,12 @@ The machine boundary includes attaching existing terminals, branch Publish/Updat
 A known deployment non-Member also receives the machine refusal before the browser selects or dials an existing shared terminal. A role lost after selection is checked again before dialing; the server independently checks every attachment.
 
 An attached terminal observes the session for its whole lifetime. Confirmed nonmembership or sign-out closes the connection scope and its pending reconnects before showing the refusal.
+
+## Amendment: triage judges on its enabler's model (builder, 2026-10-31)
+
+The table's triage row made starting triage's flow need a Member of `GITHUB_REPOSITORY` because the deployment's model
+judged. With that model off at release (ARCH-20), triage was off for everyone. Triage's `judge` seat now resolves the
+person who enabled triage (`triage_settings.enabled_by`) as its owner, as a TODO's review resolves its owner: their own
+model decides, and the deployment's only when they are its Member (this decision's rule). Enable triage needs a model of
+the person's own or that role; Run triage again judges on the enabler's model and needs only its role on the repository.
+The switch reads "Triage off: add your model" to a Maintainer with neither while the deployment's model is off.

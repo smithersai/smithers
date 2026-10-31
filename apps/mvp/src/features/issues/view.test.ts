@@ -371,7 +371,7 @@ describe("triage", () => {
     expect(mayManageTriageOnList(signedIn, undefined, { role: "member", own: true }, { syncedAt: "2026-10-23" }, "enable")).toBe(false)
   })
 
-  test("triage's judge is the deployment's own model: elsewhere, only its Members start the flow; any Maintainer there pauses it", () => {
+  test("triage's judge is the enabler's model, else the deployment's: elsewhere, a model of her own or its Members start the flow; any Maintainer there pauses it", () => {
     const synced = { syncedAt: "2026-10-23" }
     const elsewhere = { role: "maintainer" as const, own: false }
     const as = (role: "admin" | "maintainer" | "member" | "guest" | null) => ({ status: "signed_in" as const, role })
@@ -385,6 +385,10 @@ describe("triage", () => {
     expect(mayManageTriageOnList(as("guest"), undefined, elsewhere, synced, "enable")).toBe(false)
     expect(mayManageTriageOnList(as("guest"), undefined, elsewhere, synced, "pause")).toBe(true)
     expect(mayManageTriageOnList(as("member"), undefined, elsewhere, synced, "enable")).toBe(true)
+    // A model of her own judges wherever she maintains, whatever her role on the deployment's own repository.
+    expect([as("guest"), as(null)].map((session) => mayStartTriage(session, undefined, elsewhere, true))).toEqual([true, true])
+    expect(mayManageTriageOnList(as("guest"), undefined, elsewhere, synced, "enable", true)).toBe(true)
+    expect(mayStartTriage({ status: "signed_out", role: null }, undefined, elsewhere, true)).toBe(false)
     // Run triage again starts the flow too.
     const item = { number: 3, triage: "proposed" }
     expect(triageControlOf(item, [], { triage: true, flowOn: true, start: false })).toMatchObject({ accept: true, runAgain: false })

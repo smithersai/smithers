@@ -124,6 +124,11 @@ export const remove = (write: {
     }))
   })
 
+/** Whether a person saved a model of their own: a flow that runs on it, such as triage's judge, can answer them. */
+export const hasModel = (personId: string): Effect.Effect<boolean, unknown, SqlClient.SqlClient> =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    Effect.map(sql`SELECT 1 FROM personal_models WHERE person_id = ${personId} LIMIT 1`, (rows) => rows.length > 0))
+
 /** A person's saved keys, with their tiers' models and sealed keys, in protocol order; none when they saved none. */
 export const saved = (personId: string): Effect.Effect<ReadonlyArray<Saved>, unknown, SqlClient.SqlClient> =>
   Effect.flatMap(SqlClient.SqlClient, (sql) =>

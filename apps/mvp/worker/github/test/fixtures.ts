@@ -204,8 +204,8 @@ export const judgeSeat = async (
 
 /**
  * The GitHub flows' services over the scripted GitHub and the file's schema: the App with a fresh key, sign-in's keys
- * (none when `signIn` is false), a `refresh` that records each role check started, and triage's judge (`judge`, or one
- * that abstains).
+ * (none when `signIn` is false), a `refresh` that records each role check started, and triage's judge for every enabler
+ * (`judge`, or one that abstains).
  */
 export const services = async (
   runtime: Runtime,
@@ -213,11 +213,12 @@ export const services = async (
   options: {
     readonly signIn?: boolean
     readonly database?: Apply.Services["database"]
-    readonly judge?: Triage.Services["judge"]
+    readonly judge?: ModelEndpoint.Seat
   } = {},
 ) => {
   const refreshes: Refreshes = []
   const app = await Effect.runPromise(scriptedApp(github, await appKey()))
+  const judge = options.judge ?? (await judgeSeat(runtime, judging("abstain"), options)).seat
   const value: Triage.Services = {
     database: options.database ?? (await database(runtime)),
     http: github.http,
@@ -227,7 +228,7 @@ export const services = async (
       keys: options.signIn === false ? Option.none() : Option.some(await keys()),
       refresh: (sessionId, generation) => Effect.sync(() => void refreshes.push({ sessionId, generation })),
     }),
-    judge: options.judge ?? (await judgeSeat(runtime, judging("abstain"), options)).seat,
+    judge: () => judge,
   }
   return { services: value, refreshes }
 }

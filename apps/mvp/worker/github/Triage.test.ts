@@ -113,7 +113,7 @@ const project = (value: Triage.Services) =>
 const judged = async (github: ReturnType<typeof repository>, answer: JudgeAnswer, config?: Record<string, string>) => {
   const judge = await judgeSeat(runtime, answer, config === undefined ? {} : { config })
   const { services: value } = await services(runtime, github, { judge: judge.seat })
-  return { value, requests: judge.requests }
+  return { value, seat: judge.seat, requests: judge.requests }
 }
 
 /** The text of a judge request's user message: the state the judge reads. */
@@ -311,6 +311,18 @@ describe("triage/Run", () => {
     expect(github.seen("POST", /\/labels$/)).toHaveLength(labelWrites)
     expect(requests).toHaveLength(2)
     expect(await decisions()).toEqual([expect.objectContaining({ decision: "accept", tokens: 42, labeled: true })])
+  })
+
+  test("the judge is the enabler's: their own model decides, as it answers their chat (ruling AUTH-8)", async () => {
+    const github = repository()
+    await enable()
+    github.open("Crash when the body is empty", "Steps: open, submit.")
+    const { value, requests } = await judged(github, judging("accept"))
+    const judges: Array<string> = []
+    const enablers: Triage.Services = { ...value, judge: (enabledBy) => (judges.push(enabledBy), value.judge(enabledBy)) }
+    expect((await triage(enablers, 1)).exit).toEqual(Exit.succeed({ outcome: "labeled", decisionId: expect.any(String) }))
+    expect(judges).toEqual([SAM.id])
+    expect(requests).toHaveLength(1)
   })
 
   test("a conflict (both labels) settles to one: the decision's label on, the other off", async () => {
@@ -1120,11 +1132,11 @@ describe("a person's triage", () => {
     const github = repository()
     await enable()
     github.open("Was pinned", "Body")
-    const { value, requests } = await judged(github, judging("accept"))
+    const { value, seat, requests } = await judged(github, judging("accept"))
     await project(value)
     await runtime.runPromise(TriageStore.pin(REPOSITORY.id, 1, true))
     const person = await maya(github)
-    const h = await githubHarness(runtime, { actor: person.actor, run: true, github, judge: value.judge })
+    const h = await githubHarness(runtime, { actor: person.actor, run: true, github, judge: seat })
     const write = { writeId: crypto.randomUUID(), via: "person", op: "triage/run", number: 1 }
     expect((await h.fetch(writesRoute(REPOSITORY.owner, REPOSITORY.name), post(write))).status).toBe(202)
     expect(h.starts).toEqual([

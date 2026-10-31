@@ -51,7 +51,8 @@ export const ready = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
 
 /**
  * The flows' services from `ready`: sign-in's keys open a person's token (none without sign-in), `refresh` starts the
- * session's `auth/RecheckRole`, and `judge` is the model triage decides with (`ModelEndpoint.local`'s `judge` role).
+ * session's `auth/RecheckRole`, and `judge` is the model triage decides with for the person who enabled it
+ * (`ModelEndpoint.local`'s `judge` role).
  */
 export const services = <E, R>(
   ready: Ready<E, R>,
@@ -59,7 +60,7 @@ export const services = <E, R>(
     readonly keys: Option.Option<SessionKeys>
     readonly refresh: (sessionId: string, generation: number) => Effect.Effect<void>
   },
-  judge: Seat,
+  judge: (enabledBy: string) => Seat,
 ): Triage.Services<E, R> => ({
   database: ready.database,
   http: ready.http,

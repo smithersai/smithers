@@ -139,6 +139,14 @@ A `todo` run's agent calls the `coding` seat in process (`ModelEndpoint.local`).
 (`FlowRuntime.FlowInstance`), and `TodoMachine.ownerOf` its committer from `todos.created_by`; that person's model answers
 it exactly as their endpoint calls are answered, so the run works on their key while every device is off.
 
+### Triage
+
+A repository's triage run (`triage/Run`, [issues](issues.md#triage)) calls the `judge` seat in process for the person
+who enabled triage (`triage_settings.enabled_by`): their model decides each new issue on its `fast` tier, as it answers
+their own calls, and the deployment's only when they are a Member or above of its own repository (ruling AUTH-8). So a
+Maintainer with a model of their own may enable triage on any repository they maintain (`worker/github/Api.ts`,
+`personal/Store.ts` `hasModel`).
+
 ## Testing
 
 `POST /api/me/model/test` makes one tiny real call with each key the tiers use, with the first tier's model on it

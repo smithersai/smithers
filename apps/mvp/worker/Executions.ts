@@ -277,12 +277,13 @@ const object = <E, R>(
         ), appDatabase), appDatabase, Layer.succeed(DomainProvider, domains)), BranchSandboxes.machinesLayer(sandboxObjects, keep))
         // A person's write whose GitHub token is about to expire starts the session's `auth/RecheckRole` on its own
         // object, the one redeemer of the refresh token, with the execution's own runtime context. Triage and a head's
-        // review run on the `judge` and `review` roles, admitted and metered as the endpoint's calls are.
+        // review run on the `judge` and `review` roles, admitted and metered as the endpoint's calls are: triage's on
+        // the model of the person who enabled it, a review on its TODO owner's (ruling AUTH-8).
         const githubServices = <GE, GR>(ready: GitHubHost.Ready<GE, GR>) =>
           Effect.gen(function* () {
             const runtime = yield* RuntimeContext
             const started = yield* flowStarter
-            const judge = seats("judge", started)
+            const judge = (enabledBy: string) => seats("judge", started, () => ownedBy(enabledBy).pipe(Effect.provide(appDatabase)))
             const services = GitHubHost.services(ready, {
               keys: Option.map(signIn, (configured) => configured.keys),
               refresh: (sessionId, generation) => {
