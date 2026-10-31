@@ -22,7 +22,7 @@ import {
   TRIAGE_OFF,
 } from "../../features/issues/contract"
 import { COMMITMENTS, COMMITMENT_COPY, filterCommitment } from "../../features/issues/lifecycle"
-import { listFailureOf, listProps, mayManageTriageOnList, mayWrite, syncsHere, triageSwitchOf } from "../../features/issues/view"
+import { listFailureOf, listProps, listSyncOf, mayManageTriageOnList, mayWrite, syncsHere, triageSwitchOf } from "../../features/issues/view"
 import "./issues-screen.css"
 import { useRepo, useRepoAnswer } from "../../features/repo/components/RepoContext"
 import { repoId } from "../../features/repo/contract"
@@ -60,6 +60,7 @@ export function IssuesScreen() {
   const failure = listFailureOf(access, roles?.find((row) => row.id === repoId(owner, repo))?.failure,
     (list.unknown || !isReady || access?.installed !== true) && about?.view.repoId === repoId(owner, repo) ? about.about : undefined)
   const visible = listProps(visibleRows(filterCommitment(rows ?? [], search.commitment), search), synced, access, triage !== undefined && !triage.paused).issues
+  const listSync = listSyncOf(list.unknown, isReady, access)
   const triageSwitch = triageSwitchOf(triage, triagePending ?? [])
   // The full-screen size of the repository's issues view in the chat (ruling FE-9): Back to chat minimizes it.
   const header = <RepoHeader backTarget={{ template: "issues", props: { repo: `${owner}/${repo}` } }} />
@@ -89,7 +90,9 @@ export function IssuesScreen() {
           </Button>
         ))}
       </nav>
-      {failure === undefined && (list.unknown || !isReady || access?.installed !== true) ? <p role="status" data-list-sync="">Issues not synced · <a href={githubList(owner, repo, "issues").href}>Open on GitHub ↗</a></p> : null}
+      {failure !== undefined ? null : listSync === "not_synced"
+        ? <p role="status" data-list-sync="">Issues not synced · <a href={githubList(owner, repo, "issues").href}>Open on GitHub ↗</a></p>
+        : listSync === "syncing" ? <p role="status" data-list-sync="">Syncing issues…</p> : null}
       <div className="list-search-tools" role="search" aria-label="Search issues">
         <Input aria-label="Search issues" placeholder="Search issues" value={search.q ?? ""}
           onChange={(event) => void navigate({ to: "/$owner/$repo/issues", params: { owner, repo }, search: { ...search, q: event.currentTarget.value }, replace: true, resetScroll: false })} />

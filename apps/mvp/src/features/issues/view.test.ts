@@ -15,6 +15,7 @@ import {
   issueOf,
   listProps,
   listFailureOf,
+  listSyncOf,
   type ListRow,
   mayManageTriage,
   mayManageTriageOnList,
@@ -434,4 +435,14 @@ test("list availability explains a GitHub limit or a failed shape without claimi
   expect(listFailureOf({ status: "allowed" }, undefined, { state: "failed", message: "Couldn't load" })).toBe("Issues unavailable")
   expect(listFailureOf({ status: "allowed" }, undefined, { state: "ready", message: null })).toBeUndefined()
   expect(listFailureOf({ status: "allowed" }, undefined, null)).toBeUndefined()
+})
+
+// Will's VibeLang journey, 2026-10-31: a fresh device opening smithersai/vibelang's issues, which the deployment syncs,
+// read "Issues not synced" for its first seconds, until the rows arrived.
+test("the list's sync line says Syncing until ChatApi says the App isn't installed, and nothing once known", () => {
+  expect(listSyncOf(true, false, undefined)).toBe("syncing")
+  expect(listSyncOf(false, false, { installed: true })).toBe("syncing")
+  expect(listSyncOf(true, true, { installed: true })).toBe("syncing")
+  expect(listSyncOf(false, true, { installed: true })).toBeUndefined()
+  expect(listSyncOf(true, true, { installed: false })).toBe("not_synced")
 })
