@@ -1,4 +1,7 @@
 import type { APIRequestContext, Page, TestInfo } from "@playwright/test"
+import { mkdirSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import sample from "../plugins/factory/src/status.sample.json" with { type: "json" }
 import { DEV_FEED_KEY } from "../worker/feeds/dev"
 import { expect, test } from "./fixtures"
@@ -50,10 +53,28 @@ const extra = {
 /** Saves the page as `factory-<shot>.png` beside the run's results. */
 const shoot = (page: Page, info: TestInfo, shot: string) => page.screenshot({ path: info.outputPath(`factory-${shot}.png`), fullPage: true })
 
+// The feed is one repository's, shared by every browser project in the run: each project takes its turn, so one's
+// cleanup never empties the views another is checking. A turn left by a killed run fails the next after 80 s.
+const turn = join(tmpdir(), `smithers-e2e-feed-${owner}-${name}`)
+test.beforeAll(async () => {
+  for (const started = Date.now();; await new Promise((resolve) => setTimeout(resolve, 250))) {
+    try {
+      mkdirSync(turn)
+      return
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST" || Date.now() - started > 80_000) throw error
+    }
+  }
+})
+
 test.afterAll(async ({ playwright }) => {
-  const request = await playwright.request.newContext({ baseURL })
-  await push(request, Object.fromEntries([...Object.keys(index), ...Object.keys(extra)].map((key) => [key, null])))
-  await request.dispose()
+  try {
+    const request = await playwright.request.newContext({ baseURL })
+    await push(request, Object.fromEntries([...Object.keys(index), ...Object.keys(extra)].map((key) => [key, null])))
+    await request.dispose()
+  } finally {
+    rmSync(turn, { recursive: true, force: true })
+  }
 })
 
 test("factory: the collector's status shows on the repository's Factory tab, with lanes, a transcript, a diff and the decisions", {
