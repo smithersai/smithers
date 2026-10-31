@@ -16,7 +16,12 @@
  *   before any step runs, never a pass another commit earned.
  * - **The host owns the machine.** This module names no provider: the host
  *   provides {@link Machine} (a container per job on Cloudflare, a test's own
- *   machine in a test).
+ *   machine in a test). A job may name the machine it runs on (`machine`),
+ *   from those the host declared.
+ * - **A graph runs in waves.** `ci/graph` ({@link Graph}) runs many jobs on
+ *   one target: a job's `needs` name jobs declared before it, every job
+ *   whose needs settled starts at once, and a job whose need didn't pass is
+ *   `skipped` without a machine.
  *
  * ```ts
  * import { CiJob } from "@smthrs/sandbox"
@@ -49,6 +54,7 @@ import * as Schema from "effect/Schema"
  */
 export const limits = {
   steps: 32,
+  jobs: 32,
   commandLength: 16 * 1024,
   defaultTimeoutSeconds: 600,
   maxTimeoutSeconds: 600
@@ -103,14 +109,18 @@ export const Step = Schema.Struct({
 export type Step = typeof Step.Type
 
 /**
- * A job: its name and its steps, in order.
+ * A job: its name and its steps, in order; the machine it runs on, by the
+ * name the deployment declared it under (the host's default when absent);
+ * and the jobs that must pass before it starts, by name (see {@link Graph}).
  *
  * @category schemas
  * @since 1.0.0-rc.17
  */
 export const Job = Schema.Struct({
   name: Name,
-  steps: Schema.Array(Step).check(Schema.isMinLength(1), Schema.isMaxLength(limits.steps))
+  steps: Schema.Array(Step).check(Schema.isMinLength(1), Schema.isMaxLength(limits.steps)),
+  machine: Schema.optionalKey(Name),
+  needs: Schema.optionalKey(Schema.Array(Name).check(Schema.isMaxLength(limits.jobs)))
 })
 
 /**
@@ -120,6 +130,50 @@ export const Job = Schema.Struct({
  * @since 1.0.0-rc.17
  */
 export type Job = typeof Job.Type
+
+/**
+ * What the host learns of a job: its name and, when it named one, its
+ * machine.
+ *
+ * @category models
+ * @since 1.0.0-rc.17
+ */
+export interface JobRef {
+  readonly name: string
+  readonly machine?: string
+}
+
+/**
+ * Why a list of jobs isn't a graph, or `undefined` when it is: every name is
+ * unique, and every need names a job declared earlier in the list, so a
+ * graph never has a cycle.
+ *
+ * @category validation
+ * @since 1.0.0-rc.17
+ */
+export const graphProblem = (jobs: ReadonlyArray<Job>): string | undefined => {
+  const seen = new Set<string>()
+  for (const job of jobs) {
+    if (seen.has(job.name)) return `job ${job.name} is declared twice`
+    const unknown = job.needs?.find((need) => !seen.has(need))
+    if (unknown !== undefined) return `job ${job.name} needs ${unknown}, which isn't declared before it`
+    seen.add(job.name)
+  }
+  return undefined
+}
+
+/**
+ * A job graph: 1 to `limits.jobs` jobs, each needing only jobs declared
+ * before it, so the list's order is one the graph can run in.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.17
+ */
+export const Jobs = Schema.Array(Job).check(
+  Schema.isMinLength(1),
+  Schema.isMaxLength(limits.jobs),
+  Schema.makeFilter(graphProblem)
+)
 
 /**
  * What a job runs on: the run it belongs to, the repository (`owner/name`),
@@ -202,7 +256,8 @@ export class MachineUnavailable extends Schema.TaggedError<MachineUnavailable>()
 
 /**
  * A job's machine, which the host provides. One machine per `(target.run,
- * job)`: `checkout` puts exactly `target.sha` in its working copy and answers
+ * job.name)`, of the kind `job.machine` names (the host's default when absent;
+ * a host that declared no such machine answers `checkout` with `false`): `checkout` puts exactly `target.sha` in its working copy and answers
  * whether it did; `run` runs one step there at most once per `(target.run,
  * job, index)`, answering its exit code; `release` lets the machine go,
  * best effort.
@@ -213,10 +268,10 @@ export class MachineUnavailable extends Schema.TaggedError<MachineUnavailable>()
 export class Machine extends Context.Service<
   Machine,
   {
-    readonly checkout: (target: Target, job: string) => Effect.Effect<boolean, MachineUnavailable>
+    readonly checkout: (target: Target, job: JobRef) => Effect.Effect<boolean, MachineUnavailable>
     readonly run: (
       target: Target,
-      job: string,
+      job: JobRef,
       index: number,
       step: Step
     ) => Effect.Effect<
@@ -227,7 +282,7 @@ export class Machine extends Context.Service<
       },
       MachineUnavailable
     >
-    readonly release: (target: Target, job: string) => Effect.Effect<void>
+    readonly release: (target: Target, job: JobRef) => Effect.Effect<void>
   }
 >()("@smthrs/sandbox/CiJob/Machine") {}
 
@@ -354,6 +409,8 @@ const outputText = (text: string) => {
   return text.slice(0, low)
 }
 
+const refOf = ({ machine, name }: Job): JobRef => machine === undefined ? { name } : { name, machine }
+
 const machine = Effect.gen(function*() {
   return yield* Machine
 })
@@ -366,7 +423,7 @@ const machine = Effect.gen(function*() {
  */
 export const layer = Layer.mergeAll(
   Checkout.toLayer(({ job, target }) =>
-    Effect.flatMap(machine, (m) => m.checkout(target, job.name)).pipe(
+    Effect.flatMap(machine, (m) => m.checkout(target, refOf(job))).pipe(
       Effect.map((exact): Result => ({
         outcome: exact ? "passed" : "failed",
         steps: [{ name: CHECKOUT, outcome: exact ? "passed" : "failed", exitCode: null }]
@@ -384,7 +441,7 @@ export const layer = Layer.mergeAll(
         steps: [...prior, { name: step.name, outcome: "skipped", exitCode: null }]
       })
     }
-    return Effect.flatMap(machine, (m) => m.run(target, job.name, index, step)).pipe(
+    return Effect.flatMap(machine, (m) => m.run(target, refOf(job), index, step)).pipe(
       Effect.map(({ exitCode, timedOut, output }): Result => {
         const outcome = exitCode === 0 && !timedOut ? "passed" : "failed"
         const stdout = output === undefined ? "" : outputText(output.stdout)
@@ -410,19 +467,133 @@ export const layer = Layer.mergeAll(
     )
   }),
   Release.toLayer(({ job, result, target }) =>
-    Effect.flatMap(machine, (m) => m.release(target, job.name)).pipe(Effect.as(result))
+    Effect.flatMap(machine, (m) => m.release(target, refOf(job))).pipe(Effect.as(result))
   )
 )
 
 /**
- * A job a repository's flow declares: `make(name, { steps })`, then
- * `.call(target)` inside the flow's body starts it as a `ci/job` child run.
+ * The key job `index`'s result has in {@link Graph}'s success: its position,
+ * since a job's name may hold a dot.
+ *
+ * @category constants
+ * @since 1.0.0-rc.17
+ */
+export const key = (index: number): string => `job${index}`
+
+/**
+ * What a job settles when a job it needs didn't pass: `skipped`, with no
+ * machine and no step.
+ *
+ * @category constants
+ * @since 1.0.0-rc.17
+ */
+export const SKIPPED: Result = { outcome: "skipped", steps: [] }
+
+/**
+ * Each job's wave: 0 for a job with no needs, else one past its latest need's.
+ * {@link Jobs} has every need before its job, so one pass settles every wave.
+ */
+const wavesOf = (jobs: ReadonlyArray<Job>): ReadonlyArray<ReadonlyArray<number>> => {
+  const wave = new Map<string, number>()
+  const waves: Array<Array<number>> = []
+  jobs.forEach((job, index) => {
+    const at = Math.max(-1, ...(job.needs ?? []).map((need) => wave.get(need)!)) + 1
+    wave.set(job.name, at)
+    ;(waves[at] ??= []).push(index)
+  })
+  return waves
+}
+
+/**
+ * The `ci/graph` flow: a whole job graph on one target, in waves. Every job of
+ * a wave starts at once as a `ci/job` child; the next wave starts when this
+ * one has settled. A job whose need didn't pass settles {@link SKIPPED}
+ * without a machine, and so do its own dependents. It settles each job's
+ * result under {@link key}, and never fails: a job's failure is its result.
+ *
+ * @category flows
+ * @since 1.0.0-rc.17
+ */
+export const Graph = Flow.make("ci/graph", {
+  description: "Run a CI job graph on one commit in waves: every job whose needs settled starts at once on its own " +
+    "machine, and a job whose need didn't pass is skipped.",
+  capabilities: ["sandbox:job"],
+  modelInvocable: false,
+  payload: { target: Target, jobs: Jobs },
+  success: Schema.Record(Schema.String, Result),
+  body: Node.capture(
+    { job: CiJob.name, skipped: SKIPPED },
+    ({ jobs, target }: { readonly target: Target; readonly jobs: ReadonlyArray<Job> }) => {
+      const waves = wavesOf(jobs)
+      return waves.slice(1).reduce<Node.Node<Readonly<Record<string, Result>>>>(
+        (settled, wave) =>
+          settled.pipe(Node.bindPlanned(Node.capture(
+            {
+              job: CiJob.name,
+              target,
+              wave: wave.map((index) => ({
+                key: key(index),
+                job: jobs[index]!,
+                // A job past the first wave has needs: that's what put it there.
+                needs: jobs[index]!.needs!.map((need) => key(jobs.findIndex((job) => job.name === need)))
+              }))
+            },
+            function(this: {
+              readonly target: Target
+              readonly wave: ReadonlyArray<
+                { readonly key: string; readonly job: Job; readonly needs: ReadonlyArray<string> }
+              >
+            }, results) {
+              const members: Record<string, Node.Node<Result>> = { prior: Node.succeed(results) as never }
+              for (const { job, key, needs } of this.wave) {
+                members[key] = Node.succeed(results).pipe(Node.branch({
+                  if: Node.capture({ needs }, function(this: { readonly needs: ReadonlyArray<string> }, done) {
+                    return this.needs.every((need) => done[need]!.outcome === "passed")
+                  }),
+                  then: Node.capture({ job: CiJob.name, target: this.target, run: job }, function(this: {
+                    readonly target: Target
+                    readonly run: Job
+                  }) {
+                    return CiJob.child({ target: this.target, job: this.run })
+                  }),
+                  else: Node.capture({ skipped: SKIPPED }, function(this: { readonly skipped: Result }) {
+                    return Node.succeed(this.skipped)
+                  })
+                }))
+              }
+              return Node.all(members).pipe(Node.map(({ prior, ...wave }) => ({ ...prior, ...wave }) as never))
+            }
+          ))),
+        Node.all(
+          Object.fromEntries(waves[0]!.map((index) => [key(index), CiJob.child({ target, job: jobs[index]! })]))
+        ) as never
+      )
+    }
+  )
+})
+
+/**
+ * A job a repository's flow declares: `make(name, { steps, machine?, needs? })`,
+ * then `.call(target)` inside the flow's body starts it alone as a `ci/job`
+ * child run; {@link Graph} runs many with their needs.
  *
  * @category constructors
  * @since 1.0.0-rc.17
  */
-export const make = (name: string, options: { readonly steps: ReadonlyArray<Step> }) => {
-  const job: Job = { name, steps: options.steps }
+export const make = (
+  name: string,
+  options: {
+    readonly steps: ReadonlyArray<Step>
+    readonly machine?: string
+    readonly needs?: ReadonlyArray<string>
+  }
+) => {
+  const job: Job = {
+    name,
+    steps: options.steps,
+    ...(options.machine === undefined ? {} : { machine: options.machine }),
+    ...(options.needs === undefined ? {} : { needs: options.needs })
+  }
   return {
     job,
     call: (target: Target) => CiJob.child({ target, job })

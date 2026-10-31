@@ -11,11 +11,13 @@ import { transform } from "sucrase"
 //
 //   @smthrs/flow     Flow.make(tag, { body, ...rest })   the flow; only its tag and body are read
 //   @smthrs/plan     Node.all({ key: node, ... })        jobs that run at once
-//   @smthrs/sandbox  CiJob.make(name, { steps }).call()  one job, which `ci/job` runs on its own machine
+//   @smthrs/sandbox  CiJob.make(name, { steps, machine?, needs? }).call()
+//                                                        one job, which `ci/job` runs on its own machine: the
+//                                                        deployment's machine `machine` names, after its `needs` pass
 //   effect           Schema                              inert: a payload declaration reads, but decides nothing
 //
 // The body is called once with the run's payload `{ run, repo, sha, ref, event }`; what it returns is checked as
-// `CiJob.Job`s here, outside the realm, and nothing the realm says is trusted further: the run's commit, repository and
+// `CiJob.Jobs` here, outside the realm (unique names, each need declared before its job), and nothing the realm says is trusted further: the run's commit, repository and
 // machine come from the event, never from the flow. Any other import, a relative one included, is refused.
 
 /** The modules a repository flow may import. */
@@ -28,7 +30,7 @@ export const LIMITS = {
   stackBytes: QuickJSLifecycle.stackBytes,
   polls: 2_000,
   planBytes: 256 * 1024,
-  jobs: 32,
+  jobs: CiJob.limits.jobs,
 } as const
 
 /** What the body receives. */
@@ -48,7 +50,7 @@ export type Reason = typeof Reason.Type
 export const Planned = Schema.Struct({
   _tag: Schema.Literal("planned"),
   tag: Schema.String,
-  jobs: Schema.Array(CiJob.Job).check(Schema.isMinLength(1), Schema.isMaxLength(LIMITS.jobs)),
+  jobs: CiJob.Jobs,
 })
 export type Planned = typeof Planned.Type
 
@@ -72,7 +74,12 @@ const __modules = {
   "@smthrs/sandbox": {
     CiJob: {
       make: (name, options) => {
-        const job = { name, steps: options && options.steps };
+        const job = {
+          name,
+          steps: options && options.steps,
+          machine: options && options.machine,
+          needs: options && options.needs,
+        };
         return { job, call: () => ({ kind: "job", job }) };
       },
     },
@@ -169,8 +176,6 @@ __plan(__module.exports, ${JSON.stringify(payload)});`
         }
         const decoded = decodeJobs(parsed)
         if (decoded._tag === "None") return refused("invalid_plan")
-        const names = decoded.value.jobs.map((job) => job.name)
-        if (new Set(names).size !== names.length) return refused("invalid_plan")
         if (decoded.value.tag !== name) return refused("tag")
         return { _tag: "planned", tag: decoded.value.tag, jobs: decoded.value.jobs } satisfies Planned
       } finally {

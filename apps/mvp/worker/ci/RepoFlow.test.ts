@@ -135,6 +135,52 @@ describe("repo/Run", { timeout: 60_000 }, () => {
     expect(github.statuses.get(sha)!.at(-1)!.description).toBe("Failed: lint")
   })
 
+  test("a job runs after the jobs it needs; one whose need failed is skipped, runs nothing and fails the flow", async () => {
+    const GRAPH = `
+import { Flow } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { CiJob } from "@smthrs/sandbox"
+
+const build = CiJob.make("build", { steps: [{ name: "build", run: "make" }] })
+const lint = CiJob.make("lint", { steps: [{ name: "lint", run: "pnpm lint" }] })
+const test = CiJob.make("test", { steps: [{ name: "test", run: "make test" }], needs: ["build"] })
+const docs = CiJob.make("docs", { steps: [{ name: "docs", run: "make docs" }], needs: ["lint"] })
+
+export default Flow.make("ci", {
+  body: (run) => Node.all({ build: build.call(run), lint: lint.call(run), test: test.call(run), docs: docs.call(run) }),
+})
+`
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const sha = github.push("main", { ".smithers/flows/ci/flow.ts": GRAPH })
+    const passing = machine()
+    expect((await run(github, passing, request(sha))).exit).toEqual(Exit.succeed({
+      state: "success",
+      outcome: "sent",
+      jobs: [
+        { name: "build", outcome: "passed" },
+        { name: "lint", outcome: "passed" },
+        { name: "test", outcome: "passed" },
+        { name: "docs", outcome: "passed" },
+      ],
+    }))
+    const ran = passing.ran()
+    expect(ran.indexOf("make test")).toBeGreaterThan(ran.indexOf("make"))
+    const failing = machine({ make: 2 })
+    const second = github.push("main", { ".smithers/flows/ci/flow.ts": GRAPH, "README.md": "again" })
+    expect((await run(github, failing, request(second))).exit).toEqual(Exit.succeed({
+      state: "failure",
+      outcome: "sent",
+      jobs: [
+        { name: "build", outcome: "failed" },
+        { name: "lint", outcome: "passed" },
+        { name: "test", outcome: "skipped" },
+        { name: "docs", outcome: "passed" },
+      ],
+    }))
+    expect(failing.ran()).not.toContain("make test")
+    expect(github.statuses.get(second)!.at(-1)!.description).toBe("Failed: build, test")
+  })
+
   test("reads flow.ts at the run's commit, not the branch's head", async () => {
     const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
     const sha = github.push("main", { ".smithers/flows/ci/flow.ts": CI })

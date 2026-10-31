@@ -228,13 +228,13 @@ export const withSandboxTools = <ROut, E, R, DE, DR, ME, MR>(
 
 /**
  * `flows`, plus `@smthrs/sandbox`'s `ci/job`: one CI job on its own machine (`machines`: on Cloudflare, the
- * `SandboxObject` namespace, worker/BranchSandboxes.ts), docs/features/ci.md#jobs.
+ * `SandboxObject` namespace, worker/BranchSandboxes.ts), and `ci/graph`, a job graph in waves, docs/features/ci.md#jobs.
  */
 export const withCiJobs = <ROut, E, R, ME, MR>(
   flows: Flows<ROut, E, R>,
   machines: Layer.Layer<Machines, ME, MR>,
 ) => ({
-  flows: [...flows.flows, CiJob.CiJob],
+  flows: [...flows.flows, CiJob.CiJob, CiJob.Graph],
   registration: Layer.mergeAll(
     flows.registration,
     CiJobMachine.registration(machines),

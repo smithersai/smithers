@@ -22,6 +22,8 @@ export const SandboxBranch = Schema.Struct({
   forge: Schema.optional(Schema.Literal("github")),
   namespace: Schema.optional(Schema.Literals(["default", "ephemeral"])),
   kind: Schema.optional(Schema.Literal("job")),
+  /** A job machine's kind, by the name the deployment declared it under; the default job machine when absent. */
+  machine: Schema.optional(Schema.String),
 })
 export type SandboxBranch = typeof SandboxBranch.Type
 

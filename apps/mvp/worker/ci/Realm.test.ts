@@ -124,6 +124,30 @@ export default Flow.make("ci", { body: () => ${body} })`
     expect(await plan(flow(`Node.all({ deep: Node.all({ deeper: a.call() }) })`))).toMatchObject({ _tag: "planned", jobs: [{ name: "a" }] })
   })
 
+  test("plans each job's machine and needs, and refuses a need on a later, undeclared or own job, or a bad machine", async () => {
+    const flow = (jobs: string) => `
+import { Flow } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { CiJob } from "@smthrs/sandbox"
+const steps = [{ name: "a", run: "true" }]
+export default Flow.make("ci", { body: (run) => Node.all({ ${jobs} }) })`
+    const shard = `shard: CiJob.make("shard", { steps, machine: "gate" }).call()`
+    const merge = (needs: string) => `merge: CiJob.make("merge", { steps, machine: "gate", needs: ${needs} }).call()`
+    expect(await plan(flow(`${shard}, ${merge(`["shard"]`)}`))).toEqual({
+      _tag: "planned",
+      tag: "ci",
+      jobs: [
+        { name: "shard", steps: [{ name: "a", run: "true" }], machine: "gate" },
+        { name: "merge", steps: [{ name: "a", run: "true" }], machine: "gate", needs: ["shard"] },
+      ],
+    })
+    for (const jobs of [`${merge(`["shard"]`)}, ${shard}`, merge(`["nowhere"]`), merge(`["merge"]`), merge(`"shard"`)]) {
+      expect(await plan(flow(jobs))).toEqual({ _tag: "refused", reason: "invalid_plan" })
+    }
+    expect(await plan(flow(`bad: CiJob.make("bad", { steps, machine: "../gate" }).call()`)))
+      .toEqual({ _tag: "refused", reason: "invalid_plan" })
+  })
+
   test("refuses a flow whose tag isn't its directory's name", async () => {
     expect(await plan(CI, "release")).toEqual({ _tag: "refused", reason: "tag" })
   })

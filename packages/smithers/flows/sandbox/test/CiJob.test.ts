@@ -22,6 +22,10 @@ interface Asked {
   readonly checkouts: Array<string>
   readonly runs: Array<string>
   readonly released: Array<string>
+  /** Every call in order: `checkout:<job>`, `run:<job>`, `release:<job>`. */
+  readonly events: Array<string>
+  /** The machine each checkout asked for, by job: `default` when the job named none. */
+  readonly machines: Record<string, string>
 }
 
 /** A machine whose checkout is exact unless `wrongCommit`, and whose command `run` exits with `exits[run]` (0 unless set). */
@@ -34,7 +38,7 @@ const machine = (
     readonly unavailable?: boolean
   } = {}
 ) => {
-  const asked: Asked = { checkouts: [], runs: [], released: [] }
+  const asked: Asked = { checkouts: [], runs: [], released: [], events: [], machines: {} }
   const layer = Layer.succeed(
     CiJob.Machine,
     CiJob.Machine.of({
@@ -42,19 +46,26 @@ const machine = (
         options.unavailable === true
           ? Effect.fail(new CiJob.MachineUnavailable())
           : Effect.sync(() => {
-            asked.checkouts.push(`${at.run}:${job}@${at.sha}`)
+            asked.events.push(`checkout:${job.name}`)
+            asked.machines[job.name] = job.machine ?? "default"
+            asked.checkouts.push(`${at.run}:${job.name}@${at.sha}`)
             return options.wrongCommit !== true
           }),
       run: (at, job, index, step) =>
         Effect.sync(() => {
-          asked.runs.push(`${at.run}:${job}#${index}:${step.run}`)
+          asked.events.push(`run:${job.name}`)
+          asked.runs.push(`${at.run}:${job.name}#${index}:${step.run}`)
           return {
             ...(options.output === undefined ? {} : { output: options.output }),
             exitCode: options.exits?.[step.run] ?? 0,
             timedOut: options.timedOut?.includes(step.run) === true
           }
         }),
-      release: (at, job) => Effect.sync(() => void asked.released.push(`${at.run}:${job}`))
+      release: (at, job) =>
+        Effect.sync(() => {
+          asked.events.push(`release:${job.name}`)
+          asked.released.push(`${at.run}:${job.name}`)
+        })
     })
   )
   return { asked, layer }
@@ -95,7 +106,9 @@ describe("ci/job", () => {
       expect(box.asked).toEqual({
         checkouts: [`ci:delivery-1:build@${"a".repeat(40)}`],
         runs: ["ci:delivery-1:build#0:node --version", "ci:delivery-1:build#1:pnpm --version"],
-        released: ["ci:delivery-1:build"]
+        released: ["ci:delivery-1:build"],
+        events: ["checkout:build", "run:build", "run:build", "release:build"],
+        machines: { build: "default" }
       })
     }).pipe(Effect.provide(host(box.layer)))
   })
@@ -247,4 +260,88 @@ it.effect("command output records mark truncation independently for each stream"
       expect(result.steps.at(-1)!.output!.stdout).toBe(output.stdout)
     }
   })
+})
+
+const needing = (
+  name: string,
+  run: string,
+  options: { readonly needs?: ReadonlyArray<string>; readonly machine?: string } = {}
+): CiJob.Job => CiJob.make(name, { steps: [{ name: "run", run }], ...options }).job
+
+const graph = (box: ReturnType<typeof machine>, jobs: ReadonlyArray<CiJob.Job>, executionId: string) =>
+  CiJob.Graph.execute({ target, jobs }, { executionId }).pipe(Effect.provide(host(box.layer, CiJob.Graph)))
+
+describe("ci/graph", () => {
+  it.effect("runs a wave at once and starts the next only when it has settled, keyed by position", () =>
+    Effect.gen(function*() {
+      const box = machine()
+      const settled = yield* graph(box, [
+        needing("build", "make"),
+        needing("lint", "pnpm lint"),
+        needing("test", "make test", { needs: ["build"] }),
+        needing("coverage", "make coverage", { needs: ["build", "test"] })
+      ], "graph-waves")
+      expect(Object.keys(settled).sort()).toEqual(["job0", "job1", "job2", "job3"])
+      expect(Object.values(settled).map((result) => result.outcome)).toEqual(["passed", "passed", "passed", "passed"])
+      const at = (event: string) => box.asked.events.indexOf(event)
+      // Wave 2 (test) starts after both of wave 1's jobs let their machines go, lint included.
+      expect(at("checkout:test")).toBeGreaterThan(at("release:build"))
+      expect(at("checkout:test")).toBeGreaterThan(at("release:lint"))
+      expect(at("checkout:coverage")).toBeGreaterThan(at("release:test"))
+    }))
+
+  it.effect("a failed need skips its dependents and theirs without a machine; the rest still run", () =>
+    Effect.gen(function*() {
+      const box = machine({ exits: { make: 2 } })
+      const settled = yield* graph(box, [
+        needing("build", "make"),
+        needing("lint", "pnpm lint"),
+        needing("test", "make test", { needs: ["build"] }),
+        needing("coverage", "make coverage", { needs: ["test"] }),
+        needing("docs", "make docs", { needs: ["lint"] })
+      ], "graph-skips")
+      expect(settled).toMatchObject({
+        job0: { outcome: "failed" },
+        job1: { outcome: "passed" },
+        job2: CiJob.SKIPPED,
+        job3: CiJob.SKIPPED,
+        job4: { outcome: "passed" }
+      })
+      expect(box.asked.events.filter((event) => event.startsWith("checkout:")).sort())
+        .toEqual(["checkout:build", "checkout:docs", "checkout:lint"])
+    }))
+
+  it.effect("refuses a graph before anything runs: a need on a later or undeclared job, a repeated name", () =>
+    Effect.gen(function*() {
+      const box = machine()
+      for (
+        const [index, jobs] of [
+          [needing("test", "make test", { needs: ["build"] }), needing("build", "make")],
+          [needing("build", "make", { needs: ["nowhere"] })],
+          [needing("build", "make"), needing("build", "make again")],
+          [needing("loop", "make", { needs: ["loop"] })],
+          [],
+          Array.from({ length: CiJob.limits.jobs + 1 }, (_, index) => needing(`job-${index}`, "make"))
+        ].entries()
+      ) {
+        const exit = yield* graph(box, jobs, `graph-refused-${index}`).pipe(Effect.exit)
+        expect(Exit.isFailure(exit)).toBe(true)
+      }
+      expect(box.asked.events).toEqual([])
+      expect(CiJob.graphProblem([needing("test", "make", { needs: ["build"] })])).toBe(
+        "job test needs build, which isn't declared before it"
+      )
+      expect(CiJob.graphProblem([needing("a", "make"), needing("a", "make")])).toBe("job a is declared twice")
+    }))
+
+  it.effect("gives the host each job's machine name, and none for a job that named none", () =>
+    Effect.gen(function*() {
+      const box = machine()
+      yield* graph(box, [
+        needing("shard", "vitest", { machine: "gate" }),
+        needing("lint", "pnpm lint"),
+        needing("merge", "vitest --merge-reports", { machine: "gate", needs: ["shard"] })
+      ], "graph-machines")
+      expect(box.asked.machines).toEqual({ shard: "gate", lint: "default", merge: "gate" })
+    }))
 })

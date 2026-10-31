@@ -91,7 +91,7 @@ describe("ci/job on a job machine", { timeout: 60_000 }, () => {
         { name: "step-1", outcome: "passed", exitCode: 0 },
       ],
     }))
-    const branch = CiJobMachine.machineOf(target, "build")
+    const branch = CiJobMachine.machineOf(target, { name: "build" })
     expect(branch).toEqual({
       branchId: expect.stringMatching(/^job-[0-9a-f]{40}$/),
       owner: "acme",
@@ -113,11 +113,22 @@ describe("ci/job on a job machine", { timeout: 60_000 }, () => {
 
   test("each job of a run, and each run, has a machine of its own", () => {
     const ids = [
-      CiJobMachine.machineOf(target, "build").branchId,
-      CiJobMachine.machineOf(target, "lint").branchId,
-      CiJobMachine.machineOf({ ...target, run: "ci:delivery-8" }, "build").branchId,
+      CiJobMachine.machineOf(target, { name: "build" }).branchId,
+      CiJobMachine.machineOf(target, { name: "lint" }).branchId,
+      CiJobMachine.machineOf({ ...target, run: "ci:delivery-8" }, { name: "build" }).branchId,
     ]
     expect(new Set(ids).size).toBe(3)
+  })
+
+  test("a job that names a machine runs on that machine kind, still one machine per run and job name", async () => {
+    const box = machine()
+    const named: CiJob.Job = { ...job("shard", "vitest"), machine: "gate" }
+    const ran = await runFlow(CiJob.CiJob, { target, job: named }, registration(box.layer))
+    expect(ran.exit).toMatchObject(Exit.succeed({ outcome: "passed" }))
+    const branch = CiJobMachine.machineOf(target, { name: "shard", machine: "gate" })
+    expect(branch).toMatchObject({ kind: "job", machine: "gate" })
+    expect(branch.branchId).toBe(CiJobMachine.machineOf(target, { name: "shard" }).branchId)
+    expect(new Set(box.calls.map((call) => call.branch))).toEqual(new Set([JSON.stringify(branch)]))
   })
 
   test("a machine at another commit runs no step", async () => {

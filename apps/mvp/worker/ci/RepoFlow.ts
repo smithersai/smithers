@@ -18,8 +18,9 @@ import * as Realm from "./Realm.ts"
 // (worker/flows/CiJobMachine.ts), its result a GitHub commit status `smithers/<flow>` on that commit (ruling GH-10).
 //
 //   repo/Run    repo/Plan     reads flow.ts at the commit as the App (Contents: read) and plans it in the realm
-//               repo/Jobs     a child run: `smithers/<flow>` pending, every job at once (`ci/job` children), then
-//                             repo/Report: success when every job passed, else failure, as the App (Commit statuses)
+//               repo/Jobs     a child run: `smithers/<flow>` pending, the jobs as a `ci/graph` child (each job a
+//                             `ci/job` once its needs passed, skipped if one didn't), then repo/Report: success when
+//                             every job passed, else failure, as the App (Commit statuses)
 //
 // The Worker and the engine never evaluate the repository's code: the realm plans, the job machines run. A flow that
 // can't be planned (no flow.ts at the commit, a syntax error, a refused import, a realm limit) runs no job and reports
@@ -108,8 +109,8 @@ export const Report = Action.make("repo/Report", {
   retryPolicy: REPORT_RETRY,
 })
 
-/** The key each job's result has in `repo/Jobs`' `Node.all`: its position, since a job's name may hold a dot. */
-export const jobKey = (index: number): string => `job${index}`
+/** The key each job's result has in `ci/graph`'s success: its position, since a job's name may hold a dot. */
+export const jobKey = CiJob.key
 
 /** The target a run's jobs run on: its own commit, repository and ref, never the flow's say. */
 export const targetOf = (request: RunRequest): CiJob.Target => ({
@@ -119,7 +120,10 @@ export const targetOf = (request: RunRequest): CiJob.Target => ({
   ref: request.ref,
 })
 
-/** `repo/Jobs`: a planned flow's jobs at once, then its status; a flow with no plan reports failure and runs none. */
+/**
+ * `repo/Jobs`: a planned flow's jobs as one `ci/graph`, then its status; a flow with no plan reports failure and runs
+ * none. A job skipped because a need didn't pass hasn't passed.
+ */
 export const Jobs = Flow.make("repo/Jobs", {
   description: "Run a repository flow's planned jobs, each on its own machine, and report the flow's result on its " +
     "commit as the GitHub status smithers/<flow>.",
@@ -128,15 +132,12 @@ export const Jobs = Flow.make("repo/Jobs", {
   success: Reported,
   error: RepoFlowUnavailable,
   body: Node.capture(
-    { pending: Pending.name, job: CiJob.CiJob.name, report: Report.name },
+    { pending: Pending.name, graph: CiJob.Graph.name, report: Report.name },
     ({ plan, request }: { readonly request: RunRequest; readonly plan: PlanResult }) => {
       if (plan._tag === "refused") return Report.call({ request, names: [], results: {}, refused: plan.reason })
       const names = plan.jobs.map((job) => job.name)
       return Pending.call({ request }).pipe(
-        Node.andThen(Node.all(Object.fromEntries(plan.jobs.map((job, index) => [
-          jobKey(index),
-          CiJob.CiJob.child({ target: targetOf(request), job }),
-        ])))),
+        Node.andThen(CiJob.Graph.child({ target: targetOf(request), jobs: plan.jobs })),
         Node.bindPlanned(Node.capture(
           { report: Report.name, request, names },
           function(this: { readonly request: RunRequest; readonly names: ReadonlyArray<string> }, results) {
@@ -332,8 +333,8 @@ export const steps = <E, R>(services: Services<E, R>) => {
 }
 
 /**
- * Registers `repo/Run` and its `repo/Jobs` child over `services` and the realm's QuickJS build (`variant`). `ci/job`
- * itself is registered beside them (worker/ExecutionHost.ts `withCiJobs`).
+ * Registers `repo/Run` and its `repo/Jobs` child over `services` and the realm's QuickJS build (`variant`). `ci/graph`
+ * and `ci/job` are registered beside them (worker/ExecutionHost.ts `withCiJobs`).
  */
 export const registration = <E, R, VE, VR>(services: Services<E, R>, variant: Layer.Layer<QuickJSVariant.Variant, VE, VR>) => {
   const implementation = steps(services)

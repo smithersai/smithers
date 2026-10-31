@@ -40205,26 +40205,39 @@ const test = CiJob.make("test", { steps: [{ name: "test", run: "pnpm test" }] })
 // in a flow's body:
 Node.all({ lint: lint.call(target), test: test.call(target) })
 // each settles { outcome: "passed" | "failed" | "cancelled" | "skipped", steps: [{ name, outcome, exitCode }] }
+
+// a graph: wave 1 runs build and lint at once; wave 2 runs test once build passed, else skips it
+const build = CiJob.make("build", { steps: [{ name: "build", run: "make" }], machine: "gate" })
+const unit = CiJob.make("test", { steps: [{ name: "test", run: "make test" }], needs: ["build"] })
+CiJob.Graph.child({ target, jobs: [build.job, lint.job, unit.job] })
+// settles { job0: Result, job1: Result, job2: Result }, keyed by position
 ```
 
-| Name                    | What it is                                                                                                |
-| ----------------------- | --------------------------------------------------------------------------------------------------------- |
-| `CiJob`                 | the `ci/job` flow: payload `{ target, job }`, success `Result`; it never fails                            |
-| `make(name, { steps })` | a job's declaration; `.call(target)` starts it as a child run                                             |
-| `Target`                | `{ run, repo, sha, ref }`: the run it belongs to, `owner/name`, the 40-hex commit, the ref                |
-| `Job`, `Step`           | a job's name and 1 to 32 steps; a step's name, `run` (a `sh -c` command) and `timeoutSeconds?`            |
-| `Result`, `Outcome`     | the job's outcome, then the `checkout` and each step's outcome and exit code                              |
-| `Machine`               | the host's service: `checkout(target, job)`, `run(target, job, index, step)`, `release(target, job)`      |
-| `layer`                 | the actions `ci/job/Checkout`, `ci/job/Step` and `ci/job/Release` over `Machine`                          |
-| `MachineUnavailable`    | the machine couldn't start or answer; retried 1 s doubling to a minute for 30 minutes, then the job fails |
+| Name                                      | What it is                                                                                                                                                    |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CiJob`                                   | the `ci/job` flow: payload `{ target, job }`, success `Result`; it never fails                                                                                |
+| `make(name, { steps, machine?, needs? })` | a job's declaration; `.call(target)` starts it alone as a child run                                                                                           |
+| `Graph`                                   | the `ci/graph` flow: payload `{ target, jobs: Jobs }`, success `Record<string, Result>` keyed by `key(index)`; it never fails                                 |
+| `Jobs`, `graphProblem`                    | 1 to `limits.jobs` (32) jobs with unique names, each need declared earlier; `graphProblem(jobs)` says why a list isn't one                                    |
+| `key(index)`, `SKIPPED`                   | a job's result key in `Graph`'s success (`job<index>`); what a job whose need didn't pass settles                                                             |
+| `Target`                                  | `{ run, repo, sha, ref }`: the run it belongs to, `owner/name`, the 40-hex commit, the ref                                                                    |
+| `Job`, `Step`                             | a job's name, 1 to 32 steps, `machine?` (a `Name` the host declared) and `needs?` (job names); a step's name, `run` (a `sh -c` command) and `timeoutSeconds?` |
+| `Result`, `Outcome`                       | the job's outcome, then the `checkout` and each step's outcome and exit code                                                                                  |
+| `Machine`, `JobRef`                       | the host's service: `checkout(target, job)`, `run(target, job, index, step)`, `release(target, job)`; `job` is a `JobRef`, `{ name, machine? }`               |
+| `layer`                                   | the actions `ci/job/Checkout`, `ci/job/Step` and `ci/job/Release` over `Machine`                                                                              |
+| `MachineUnavailable`                      | the machine couldn't start or answer; retried 1 s doubling to a minute for 30 minutes, then the job fails                                                     |
 
 - **An outcome, never a failure.** A step that exits non-zero, or runs past its time (600 s at most), fails the job and
   skips the steps after it without running them. A machine that never answers fails the job.
 - **Exactly the commit.** A checkout that isn't exactly `target.sha` fails the job before any step runs.
 - **At most once.** Each step is its own durable action, so a resumed job never runs a step that ran; the host's
   machine runs each `(run, job, index)` once.
-- **The host owns the machine.** One machine per `(target.run, job)`. The Smithers app's is a container of the branch
-  sandbox's image that reaches the package registry and nothing else.
+- **The host owns the machine.** One machine per `(target.run, job.name)`, of the kind `job.machine` names (the host's
+  default when absent); a host with no machine by that name answers `checkout` with `false`, failing the job. The
+  Smithers app's is a container of the branch sandbox's image that reaches the package registry and nothing else.
+- **A graph runs in waves.** `ci/graph` checks its jobs before anything runs, then starts every job whose needs are in
+  earlier waves at once, each a `ci/job` child; a wave starts when the one before it has settled. A job whose need
+  didn't pass settles `SKIPPED` (`{ outcome: "skipped", steps: [] }`) without a machine, and so do its dependents.
 
 | Export    | Contract                                                                                                                                                                                                                                                                                               |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

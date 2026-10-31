@@ -28,6 +28,23 @@ FlowExecution DO                                   SandboxObject DO + container 
 - **At most once.** Each step is its own durable action; its tool call id is the version 5 UUID of `<run>:<job>:step:<index>`, so a step the machine started and lost settles `failed` with exit code `-1` and never runs twice.
 - **Released when done.** `ci/job/Release` stops whatever the job's steps left running (a server or a watcher started in the background) and puts the machine to sleep at once rather than waiting for its keep-alive. A job whose machine never answered is released too.
 
+### Needs and machines
+
+A job may name the jobs it needs and the machine it runs on: `CiJob.make("coverage", { steps, needs: ["shard-1", "shard-2"], machine: "gate" })`. `@smthrs/sandbox`'s `ci/graph` (`CiJob.Graph`) runs a flow's jobs on one target in waves:
+
+```
+ci/graph { target, jobs }
+  check before anything runs: unique names; each need names a job declared earlier; 1 to 32 jobs
+  wave 1: every job with no needs, at once ─────────────── ci/job × n
+  wave 2: every job whose needs are all in wave 1 ──────── ci/job, or skipped when a need didn't pass
+  …
+settles { job0: Result, job1: Result, … }   keyed by position; never fails
+```
+
+- **Waves.** A job's wave is one past its latest need's; a wave starts when the one before it has settled.
+- **A need that didn't pass skips.** A job whose need failed, was cancelled or was skipped settles `skipped` with no steps and no machine, so a skip carries down the graph. A skipped job hasn't passed: the flow fails and its status names it (`Failed: build, test`).
+- **Machines by name.** `machine` is a name the deployment declared, never an image or an instance type; absent, the job runs on the default job machine. `worker/flows/CiJobMachine.ts` carries it onto the job's `SandboxBranch` as `machine`. The deployment routes each name to its container class; until it does, every job runs on the default ([decision 0128](../decisions/0128-gates-on-cloudflare-job-machines.md)).
+
 A CI job starts only from a repository's flow; no route starts one by name ([no remote door](remote-flows.md#no-remote-door)).
 
 ## Repository flows
@@ -57,17 +74,17 @@ FlowExecution DO
    repo/Plan ── GET contents/.smithers/flows/<flow>/flow.ts?ref=<sha> (App, Contents: read)
              └─ QuickJS realm: sucrase strips types; Flow.make, Node.all, CiJob.make as data ─▶ { jobs }
    repo/Jobs (child) ─ repo/Pending ─▶ smithers/<flow> pending
-                     ─ ci/job × n, at once (one machine each)
+                     ─ ci/graph (child) ─ ci/job × n, in waves by needs (one machine each)
                      ─ repo/Report ─▶ smithers/<flow> success | failure (App, Commit statuses)
 ```
 
-- **The realm plans; the machines run.** `worker/ci/Realm.ts` evaluates `flow.ts` in a fresh QuickJS runtime with 8 MiB of memory, a 128 KiB stack and a step budget, against four modules: `@smthrs/flow` (`Flow.make`), `@smthrs/plan` (`Node.all`), `@smthrs/sandbox` (`CiJob.make(name, { steps }).call()`) and `effect` (`Schema`, inert). The body is called once with `{ run, repo, sha, ref, event }`. Any other import, a relative one included, is refused, and the plan is checked as `CiJob.Job`s outside the realm. The Worker and the engine never evaluate the repository's code, and no command runs anywhere but a job's machine.
-- **Exactly the commit.** `repo/Plan` reads `flow.ts` at the run's commit, and each job checks out that commit; nothing the flow returns can change the commit, the repository or the machine.
+- **The realm plans; the machines run.** `worker/ci/Realm.ts` evaluates `flow.ts` in a fresh QuickJS runtime with 8 MiB of memory, a 128 KiB stack and a step budget, against four modules: `@smthrs/flow` (`Flow.make`), `@smthrs/plan` (`Node.all`), `@smthrs/sandbox` (`CiJob.make(name, { steps, machine?, needs? }).call()`) and `effect` (`Schema`, inert). The body is called once with `{ run, repo, sha, ref, event }`. Any other import, a relative one included, is refused, and the plan is checked as `CiJob.Jobs` outside the realm: valid jobs, unique names, each need declared before its job. The Worker and the engine never evaluate the repository's code, and no command runs anywhere but a job's machine.
+- **Exactly the commit.** `repo/Plan` reads `flow.ts` at the run's commit, and each job checks out that commit; nothing the flow returns can change the commit or the repository, and a job's `machine` only picks among the machines the deployment declared.
 - **One status per flow.** `repo/Jobs` reports `smithers/<flow>` pending as its jobs start (best effort), then success when every job passed, else failure naming the failed jobs (`Failed: lint`). A flow that can't be planned runs no job and reports failure with the reason: `Couldn't run the flow (not_found)`, `(import)`, `(syntax)`, `(limit)`, `(invalid_plan)`, `(tag)`, `(too_large)`, `(evaluation)` or `(unreadable)`.
 - **The flow's tag is its directory.** `.smithers/flows/ci/flow.ts` must declare `Flow.make("ci", …)`.
 - **Retries.** GitHub's or Postgres' outages are retried, 1 s doubling to a minute, for 30 minutes (the report: until GitHub takes it). A refusal (no Contents or Commit statuses permission, the App not installed) is recorded once and never retried; the jobs still run.
 
-Not yet: a repository flow imports nothing but the four modules (no shared `../_ci/target.ts`); `Node.all` is the only combinator, so jobs can't depend on one another; a person can't start a repository flow by hand (`ci-parity-manual-run`). Runs are listed and watched on the [repository’s Actions page](actions.md), with Stop.
+Not yet: a repository flow imports nothing but the four modules (no shared `../_ci/target.ts`); `Node.all` is the only combinator, and order between jobs is `needs` only; a person can't start a repository flow by hand (`ci-parity-manual-run`). Runs are listed and watched on the [repository’s Actions page](actions.md), with Stop.
 
 ## Triggers
 
@@ -130,13 +147,13 @@ No record carries a flow's source, a command, its output or a secret.
 
 | Test | Proves |
 |---|---|
-| `packages/smithers/flows/sandbox/test/CiJob.test.ts` | the flow on the memory engine: order, skip after a failure, a timeout, another commit, the schemas' refusals, and two jobs as two child runs where one fails and its sibling passes |
-| `worker/flows/CiJobMachine.test.ts` | the app's machine on the Node host: one machine per run and job, the `ci` user, one call id per call, a lost step, a machine that couldn't start |
+| `packages/smithers/flows/sandbox/test/CiJob.test.ts` | the flow on the memory engine: order, skip after a failure, a timeout, another commit, the schemas' refusals, and two jobs as two child runs where one fails and its sibling passes; `ci/graph`'s waves and their order, a failed need skipping its dependents and theirs, a graph refused before anything runs, and each job's machine name reaching the host |
+| `worker/flows/CiJobMachine.test.ts` | the app's machine on the Node host: one machine per run and job, a job's named machine on its `SandboxBranch`, the `ci` user, one call id per call, a lost step, a machine that couldn't start |
 | `worker/flows/CiJob.docker.test.ts` | real containers of the branch sandbox's image, commands as a user of their own: two jobs at once, each at exactly a commit of `roninjin10/smithers-github-tests` fetched from GitHub, Node v26.5.0 and pnpm 11.25.0, `exit 1` failing while its sibling passes, and a background process a step left stopped by the release |
 | `worker/branch/Checkout.test.ts` | the checkout of one commit by its id, detached and shallow, and a commit the forge lacks |
-| `worker/ci/Realm.test.ts` | the realm in Node's QuickJS: a TypeScript flow's jobs; a body deciding from its payload; refused imports, used or not, static or aliased; a loop, a memory bomb and a runaway recursion stopped; syntax, throws, a forged `JSON.stringify`, bad or repeated jobs, a wrong tag |
+| `worker/ci/Realm.test.ts` | the realm in Node's QuickJS: a TypeScript flow's jobs; a body deciding from its payload; refused imports, used or not, static or aliased; a loop, a memory bomb and a runaway recursion stopped; syntax, throws, a forged `JSON.stringify`, bad or repeated jobs, a wrong tag; machines and needs planned, and a need on a later, undeclared or own job refused |
 | `worker/ci/Realm.workerd.test.ts` | the realm in local workerd, bundled as Alchemy bundles ChatApi: a flow planned, and a loop stopped by the step budget, since workerd holds its clock still while code runs |
-| `worker/ci/RepoFlow.test.ts` | `repo/Run` on the Node host against the scripted GitHub: flow.ts read at the commit, two jobs on two machines, `smithers/ci` pending then success or `Failed: lint`, no flow or a refused one running nothing, missing permissions, and GitHub's and Postgres' outages retried |
+| `worker/ci/RepoFlow.test.ts` | `repo/Run` on the Node host against the scripted GitHub: flow.ts read at the commit, two jobs on two machines, `smithers/ci` pending then success or `Failed: lint`, a job after its need and skipped when it failed (`Failed: build, test`), no flow or a refused one running nothing, missing permissions, and GitHub's and Postgres' outages retried |
 | `worker/ci/Triggers.test.ts` | the manifest's rows (a Plugin.Manifest only; rows this slice can't read skipped) and matching: branches, tags, tag-only triggers, pull request actions and base branches, globs |
 | `worker/ci/Dispatch.test.ts` | a delivery as the webhook names it (push, tag, deleted, pull requests from the repository, a fork or below Member); `triggers/Dispatch` on the Node host: active flows started under `<flow>:<delivery>`, a fork without secrets, a trigger only the branch adds starting nothing, no manifest, unreadable, outages retried |
 | `worker/github/Api.test.ts` | with `REPO_FLOWS` on, a push of any installed repository starts its `triggers/Dispatch`; off, nothing |

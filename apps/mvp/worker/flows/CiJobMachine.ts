@@ -17,16 +17,20 @@ export const CI_OWNER = "ci"
 /** The namespace of a job's tool call ids: the version 5 UUID of `<run>:<job>:<call>`. */
 export const CI_JOB_NAMESPACE = "6f3c0d1e-5b7a-4c8e-9a2d-1e4f6b8c0a35"
 
-/** The machine job `job` of `target`'s run runs on: one per run and job, named by a digest of the two. */
-export const machineOf = (target: CiJob.Target, job: string): SandboxBranch => {
+/**
+ * The machine job `job` of `target`'s run runs on: one per run and job name, named by a digest of the two, of the kind
+ * the job's `machine` names (the deployment's default when absent).
+ */
+export const machineOf = (target: CiJob.Target, job: CiJob.JobRef): SandboxBranch => {
   const [owner = "", name = ""] = target.repo.split("/")
   return {
-    branchId: `job-${digestSync(`job:${target.run}:${job}`).slice(0, 40)}`,
+    branchId: `job-${digestSync(`job:${target.run}:${job.name}`).slice(0, 40)}`,
     owner,
     name,
     branch: target.sha,
     forge: "github",
     kind: "job",
+    ...(job.machine === undefined ? {} : { machine: job.machine }),
   }
 }
 
@@ -58,10 +62,12 @@ type ToolError = Effect.Error<ReturnType<Machines["Service"]["tool"]>>
 const unavailable = (error: ToolError): boolean =>
   error._tag === "@smthrs/mvp/branch/SandboxUnavailable" || error._tag === "@smthrs/mvp/branch/SandboxStartTimedOut"
 
-const counted = (call: string, outcome: string, target: CiJob.Target, job: string) =>
+const counted = (call: string, outcome: string, target: CiJob.Target, job: CiJob.JobRef) =>
   Effect.andThen(
     Metric.update(Metric.withAttributes(calls, { call, outcome }), 1),
-    Effect.logInfo("ci.job.call").pipe(Effect.annotateLogs({ run: target.run, repo: target.repo, job, call, outcome })),
+    Effect.logInfo("ci.job.call").pipe(
+      Effect.annotateLogs({ run: target.run, repo: target.repo, job: job.name, call, outcome }),
+    ),
   )
 
 /** `CiJob.Machine` over the host's `Machines`. */
@@ -69,9 +75,9 @@ export const layer = Layer.effect(
   CiJob.Machine,
   Effect.gen(function* () {
     const machines = yield* Machines
-    const tool = (target: CiJob.Target, job: string, name: string, call: SandboxTools.Call) =>
+    const tool = (target: CiJob.Target, job: CiJob.JobRef, name: string, call: SandboxTools.Call) =>
       Effect.flatMap(
-        Uuid.v5(CI_JOB_NAMESPACE, `${target.run}:${job}:${name}`).pipe(Effect.provide(WebCrypto.layer), Effect.orDie),
+        Uuid.v5(CI_JOB_NAMESPACE, `${target.run}:${job.name}:${name}`).pipe(Effect.provide(WebCrypto.layer), Effect.orDie),
         (callId) => machines.tool(machineOf(target, job), CI_OWNER, callId, call),
       )
     return CiJob.Machine.of({
@@ -120,9 +126,9 @@ export const layer = Layer.effect(
   }),
 )
 
-/** Registers `ci/job` over the host's `machines`. */
+/** Registers `ci/job`, and `ci/graph` which runs many as children, over the host's `machines`. */
 export const registration = <E, R>(machines: Layer.Layer<Machines, E, R>) =>
-  Interpreter.layerWithImplementations(CiJob.CiJob, CiJob.layer).pipe(
+  Layer.merge(Interpreter.layerWithImplementations(CiJob.CiJob, CiJob.layer), Interpreter.layer(CiJob.Graph)).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provide(layer),
     Layer.provide(machines),
