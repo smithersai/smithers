@@ -880,7 +880,9 @@ to the notification queue's own boundary-aware drain, mapping failures into
 person's message (a steer or a follow-up, not a system event) carries
 `Notifications.precedence` between the two, which tells the model it is a newer
 instruction that wins where it conflicts with earlier ones, the task's
-included.
+included. `Notifications.text(notification)` is that rendering as plain text,
+for an agent outside Smithers that reads the same message, such as one on a
+runner.
 
 `layerForExecution` is the same source for a flow host, which builds an agent
 action's layer once and runs it for every execution it drives. It names its

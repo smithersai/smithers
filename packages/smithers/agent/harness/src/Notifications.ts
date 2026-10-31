@@ -29,11 +29,16 @@ export interface Options {
   readonly codingParticipantId?: string
 }
 
-// A real `UserMessage`, not a structurally similar literal: the turn-boundary
-// drain is journaled through `Steering.DrainRecord`, whose schema accepts
-// only `flows/model/UserMessage` instances, so a plain object fails the
-// record boundary the first time a composed run drains one.
-const render = (notification: Notification): ModelRequest.Message => {
+/**
+ * What a model reads for one notification: a header naming it, who sent it,
+ * from where and their attribution, then {@link precedence} for anything but a
+ * system event, then its words. An agent outside Smithers, such as one on a
+ * runner, gets the same text.
+ *
+ * @category rendering
+ * @since 1.0.0
+ */
+export const text = (notification: Notification): string => {
   const payload = notification.payload
   const record = typeof payload === "object" &&
       notification.payload !== null &&
@@ -46,12 +51,16 @@ const render = (notification: Notification): ModelRequest.Message => {
   const attribution = notification.provenance.attribution === undefined
     ? ""
     : ` attribution ${JSON.stringify(notification.provenance.attribution)}`
-  return ModelRequest.Message.user(
-    `[notification ${notification.id} from ${notification.provenance.sourceActor} ` +
-      `at ${notification.provenance.sourceLineageId} turn ${notification.provenance.sourceTurn}${attribution}]\n` +
-      (notification._tag === "system-event" ? "" : precedence) + body
-  )
+  return `[notification ${notification.id} from ${notification.provenance.sourceActor} ` +
+    `at ${notification.provenance.sourceLineageId} turn ${notification.provenance.sourceTurn}${attribution}]\n` +
+    (notification._tag === "system-event" ? "" : precedence) + body
 }
+
+// A real `UserMessage`, not a structurally similar literal: the turn-boundary
+// drain is journaled through `Steering.DrainRecord`, whose schema accepts
+// only `flows/model/UserMessage` instances, so a plain object fails the
+// record boundary the first time a composed run drains one.
+const render = (notification: Notification): ModelRequest.Message => ModelRequest.Message.user(text(notification))
 
 /**
  * How a person's message reads to the model: what they said while the run worked is newer than the task the run was

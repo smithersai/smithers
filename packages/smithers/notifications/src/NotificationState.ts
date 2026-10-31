@@ -260,6 +260,33 @@ export const promoteSteers = (state: State, cutoffSeq: number, targetLineageId?:
 }
 
 /**
+ * Promotes the pending steers named in `ids`, in admission order, whatever
+ * their sequences. Ids not pending for the lineage are ignored.
+ *
+ * @param state the current queue state
+ * @param ids the steers a consumer confirmed it delivered
+ * @param targetLineageId the lineage the boundary belongs to, or every lineage when absent
+ * @category operations
+ * @since 1.0.0
+ */
+export const promoteIds = (state: State, ids: ReadonlyArray<string>, targetLineageId?: string): Promotion => {
+  const named = new Set(ids)
+  const promoted: Array<Pending> = []
+  const remaining: Array<Pending> = []
+  for (const item of state.items) {
+    if (
+      admissionClass(item.notification) === "steer" && named.has(item.notification.id) &&
+      (targetLineageId === undefined || item.notification.targetLineageId === targetLineageId)
+    ) {
+      promoted.push(item)
+    } else {
+      remaining.push(item)
+    }
+  }
+  return immutablePromotion(immutable(state.capacity, remaining), promoted)
+}
+
+/**
  * Promotes exactly the oldest pending queue notification.
  *
  * @param state the current queue state

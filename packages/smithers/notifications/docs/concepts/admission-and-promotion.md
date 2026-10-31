@@ -111,6 +111,15 @@ Omitting `cutoffSeq` delivers everything pending for the lineage. That is the
 right default for a caller that has no turn to compare against, and the wrong
 one for a harness closing a turn, which knows the sequence and should pass it.
 
+## A consumer that confirms each steer names them
+
+An agent outside the run, such as one on a runner, takes each steer when it is
+handed over and shows it read one only by answering after it. Its host drains
+with `DrainInput.ids`, the steers it confirmed, and `promoteIds` delivers
+exactly those, whatever their sequences. A steer handed over and never
+confirmed, because the consumer restarted in between, stays pending rather
+than riding along with a later one that a cutoff would deliver.
+
 ## The unit of drain is a triple
 
 A drain is identified by `(runId, targetLineageId, boundary)`. Two lineages

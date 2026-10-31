@@ -875,6 +875,40 @@ describe("NotificationQueue", () => {
     expect(observed.next.notifications.map(({ id }) => id)).toEqual(["after"])
   })
 
+  it("delivers exactly the steers a boundary names, whatever their order, and holds the rest", async () => {
+    const observed = await run(
+      Effect.gen(function*() {
+        const queue = yield* NotificationQueue.NotificationQueue
+        yield* queue.admit("run", item("first", "steer"))
+        yield* queue.admit("run", item("second", "steer"))
+        yield* queue.admit("run", item("third", "steer"))
+        // A consumer confirmed the second and third, not the first, which earlier sequence numbers can't express.
+        const named = yield* queue.drain({
+          runId: "run",
+          targetLineageId: "run/root",
+          boundary: "confirmed-1",
+          wouldIdle: true,
+          ids: ["third", "second", "never-admitted"]
+        })
+        const again = yield* queue.drain({
+          runId: "run",
+          targetLineageId: "run/root",
+          boundary: "confirmed-1",
+          wouldIdle: true,
+          ids: ["first"]
+        })
+        const pending = yield* queue.pending("run")
+        return { named, again, pending }
+      })
+    )
+
+    expect(observed.named.notifications.map(({ id }) => id)).toEqual(["second", "third"])
+    // A boundary drains once: naming it again replays what it delivered.
+    expect(observed.again.duplicate).toBe(true)
+    expect(observed.again.notifications.map(({ id }) => id)).toEqual(["second", "third"])
+    expect(observed.pending.map(({ id }) => id)).toEqual(["first"])
+  })
+
   it.each([Number.NaN, -1, 1.5, Number.POSITIVE_INFINITY])(
     "refuses cutoff %s instead of committing an empty boundary",
     async (cutoffSeq) => {

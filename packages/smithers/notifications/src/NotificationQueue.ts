@@ -104,6 +104,14 @@ export interface DrainInput {
    * integer fails the drain with `notification_invalid` and records nothing.
    */
   readonly cutoffSeq?: number | undefined
+  /**
+   * The pending steers this boundary delivers, by id, when a consumer
+   * confirms each one it took rather than a turn that read everything up to
+   * a sequence: an agent outside the run that answered after each. Ids not
+   * pending for the lineage are ignored, and nothing else is promoted, queued
+   * notifications included. It takes the place of `cutoffSeq`.
+   */
+  readonly ids?: ReadonlyArray<string> | undefined
 }
 
 /**
@@ -793,8 +801,10 @@ export const layerWith = (
                   })
                 }
                 : loaded.state
-              const steers = NotificationState.promoteSteers(promotionState, cutoff, input.targetLineageId)
-              const queued = input.wouldIdle && steers.promoted.length === 0
+              const steers = input.ids === undefined
+                ? NotificationState.promoteSteers(promotionState, cutoff, input.targetLineageId)
+                : NotificationState.promoteIds(promotionState, input.ids, input.targetLineageId)
+              const queued = input.ids === undefined && input.wouldIdle && steers.promoted.length === 0
                 ? NotificationState.promoteQueued(steers.state, input.targetLineageId)
                 : { state: steers.state, promoted: [] }
               const promoted = [...steers.promoted, ...queued.promoted].map((item) => item.notification)

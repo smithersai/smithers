@@ -77,6 +77,20 @@ describe("NotificationState", () => {
     expect(promoted.state.items.map((item) => item.notification.id)).toEqual(["after", "queued"])
   })
 
+  it("promotes exactly the named steers, of the lineage when one is named, and nothing queued", () => {
+    let state = NotificationState.empty(8)
+    state = NotificationState.admit(state, notification("one", "human-steer"), 1).state
+    state = NotificationState.admit(state, notification("two", "human-steer"), 2).state
+    state = NotificationState.admit(state, notification("elsewhere", "human-steer", "x", undefined, "other"), 3).state
+    state = NotificationState.admit(state, notification("queued", "human-followup"), 4).state
+
+    const named = NotificationState.promoteIds(state, ["two", "elsewhere", "queued"], "run/root")
+    expect(named.promoted.map((item) => item.notification.id)).toEqual(["two"])
+    expect(named.state.items.map((item) => item.notification.id)).toEqual(["one", "elsewhere", "queued"])
+    const anyLineage = NotificationState.promoteIds(state, ["elsewhere", "one"])
+    expect(anyLineage.promoted.map((item) => item.notification.id)).toEqual(["one", "elsewhere"])
+  })
+
   it("coalesces system events with a later payload and earlier sequence", () => {
     let state = NotificationState.empty(5)
     let decision: NotificationState.AdmissionDecision | undefined
