@@ -40,7 +40,7 @@ export * as WebCrypto from "./WebCrypto.ts"
  * @category identity
  * @since 1.0.0-rc.17
  */
-export * as Uuid from "./Uuid.ts"
+export * as Uuid from "./Uuid.vibe"
 
 /**
  * The `Crypto` service Effect 4.0 shipped as `effect/Crypto`, which Effect 4.1
@@ -49,4 +49,4 @@ export * as Uuid from "./Uuid.ts"
  * @category services
  * @since 1.0.0
  */
-export * as Crypto from "./Crypto.ts"
+export * as Crypto from "./Crypto.vibe"

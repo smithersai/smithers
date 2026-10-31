@@ -25,7 +25,7 @@ const testSupport = "published test support: its failure fails the caller's test
 /** Reviewed files, with the number of raw sites each keeps and why. */
 const reviewed: ReadonlyArray<readonly [file: string, count: number, why: string]> = [
   [
-    "crypto/src/Crypto.ts",
+    "crypto/src/Crypto.vibe",
     1,
     "a randomBytes source that returns the wrong length for a ULID: a broken implementation, as Effect 4.0's Crypto reported it"
   ],
@@ -87,7 +87,8 @@ const sources = (directory: string): ReadonlyArray<string> => {
   return entries.flatMap((entry) => {
     const path = join(directory, entry.name)
     if (entry.isDirectory()) return sources(path)
-    return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : []
+    // A VibeLang module is source too; its generated `.d.vibe.ts` sidecar is not.
+    return /\.(?:tsx?|vibe)$/.test(entry.name) && !/\.test\.(?:tsx?|vibe)$|\.d\.vibe\.ts$/.test(entry.name) ? [path] : []
   })
 }
 

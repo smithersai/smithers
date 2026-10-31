@@ -37,7 +37,7 @@
     ".": "./src/index.ts",
     "./internal/*": null,
     "./*/index": null,
-    "./Crypto": "./src/Crypto.ts",
+    "./Crypto": "./src/Crypto.vibe",
     "./Identity": "./src/Identity.ts",
     "./Sha256": "./src/Sha256.ts",
     "./index": "./src/index.ts"
