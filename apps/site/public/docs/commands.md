@@ -35,6 +35,7 @@ The composer is available to Members and above. Minimum roles below describe eac
 | `/triage.run` | `repo number` | Member | Unpin and run automatic triage again. |
 | `/triage.enable` | `repo [dailyTokens]` | Maintainer | Enable automatic triage. |
 | `/triage.pause` | `repo` | Maintainer | Pause automatic triage. |
+| `/review` | `repo number` | Maintainer | Ask Smithers to review a pull request's current head. |
 | `/todo.new` | `repo prompt` | Member | Draft a private TODO. |
 | `/todo.issue` | `repo issue` | Member | Draft a TODO from an issue. |
 | `/todo.drop` | `repo number` | Member | Request dropping a committed TODO. |
