@@ -4,6 +4,8 @@ import { expect, test } from "vitest"
 
 test("the distribution smoke participates in the test graph after the library build", () => {
   const graph = JSON.parse(execFileSync(process.execPath, [
+    // PACKAGE.ts reaches this package's .vibe sources; each runtime loads them through its VibeLang loader.
+    ...(process.versions.bun === undefined ? ["--import", "vibelang/register"] : ["--preload", "vibelang/bun"]),
     "--experimental-strip-types",
     "--input-type=module",
     "--eval",

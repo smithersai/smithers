@@ -32,7 +32,7 @@
  * @since 0.1.0
  * @slop
  */
-export * from "./Canonical.ts"
+export * from "./Canonical.vibe"
 export { CanonicalError, canonicalize } from "./Serializer.ts"
 export type { CanonicalErrorCode } from "./Serializer.ts"
 

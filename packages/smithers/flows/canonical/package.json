@@ -22,7 +22,7 @@
     ".": "./src/index.ts",
     "./internal/*": null,
     "./*/index": null,
-    "./Canonical": "./src/Canonical.ts",
+    "./Canonical": "./src/Canonical.vibe",
     "./index": "./src/index.ts",
     "./Record": "./src/Record.ts",
     "./BoundedJson": "./src/BoundedJson.ts",
