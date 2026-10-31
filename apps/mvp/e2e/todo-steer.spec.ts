@@ -2,6 +2,7 @@ import { DEVICE_PERSON_HEADER } from "../src/features/auth/contract"
 import { expect, test } from "./devices"
 import { step } from "./fixtures"
 import { me, requires } from "./target"
+import { expectServerError } from "./watch"
 
 // Local limitation: the working TODO needs a Cloudflare Durable Object, branch Container, real model and GitHub write token. The mini has no model or remote sandbox installation. A local stack wired to those services can run as E2E_TARGET=deployment with E2E_LONG=1.
 //
@@ -29,6 +30,9 @@ test("todo-steer: message a TODO's working agent from its run, and its pull requ
   annotation: { type: "summary", description: "Commit a TODO, open its run, and steer the agent while it works." },
 }, async ({ devices }) => {
   requires("personalModel", "githubApp", "member", "longRun")
+  // A TODO's row says Working a moment before its run on Cloudflare can be read: Watch's first read may be 404, and the
+  // run page reads again (http.request.recovered).
+  expectServerError(404, "/api/remote-runs/*")
   expect(TODO_REPOSITORY, "a TODO run writes to GitHub: never a smithersai repository").not.toMatch(/^smithersai\//i)
   test.setTimeout(45 * 60_000)
   const word = devices.word
@@ -59,7 +63,8 @@ test("todo-steer: message a TODO's working agent from its run, and its pull requ
       await expect(row).toHaveAttribute("data-status", "running", { timeout: 5 * 60_000 })
       await row.getByRole("link", { name: "Watch" }).click()
       await expect(page).toHaveURL(/\/app\/runs\/todo(%3A|:)/, { timeout: 30_000 })
-      await expect(page.getByText("Cloud", { exact: true })).toBeVisible({ timeout: 60_000 })
+      // The run page names no host any more; its heading is the run's flow.
+      await expect(page.getByRole("heading", { name: "todo", level: 1 })).toBeVisible({ timeout: 60_000 })
     })
     const runPath = new URL(page.url()).pathname
 
@@ -110,6 +115,11 @@ test("todo-steer: message a TODO's working agent from its run, and its pull requ
       await todo.getByRole("button", { name: "Drop", exact: true }).click()
       await page.getByRole("dialog", { name: `Drop T${number}?` }).getByRole("button", { name: "Drop", exact: true }).click()
       await expect(todo).toHaveAttribute("data-status", "dropped", { timeout: 60_000 })
+      // The row turns Dropped as the device queues the drop; the stack has it only once the outbox sent it.
+      await expect.poll(async () => {
+        const read = await page.request.get(`/api/repos/${TODO_REPOSITORY}/stack/${number}`)
+        return read.ok() ? ((await read.json()) as { state?: string }).state : read.status()
+      }, { timeout: 60_000 }).toBe("dropped")
       dropped = true
     })
   } finally {
