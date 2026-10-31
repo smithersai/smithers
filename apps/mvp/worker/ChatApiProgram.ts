@@ -8,6 +8,8 @@ import { RuntimeContext } from "alchemy"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Effect, Layer, Option, Predicate, Redacted } from "effect"
 import { FetchHttpClient, HttpServerRequest } from "effect/http"
+import type { HttpServerResponse } from "effect/http"
+import type { SqlClient } from "effect/sql"
 import * as Database from "../db/Database.ts"
 import * as Electric from "../infra/Electric.ts"
 import * as ElectricUpstream from "../infra/ElectricUpstream.ts"
@@ -106,6 +108,17 @@ export interface ProgramOptions {
   /** `Chat.make`'s: the summaries' daily cap when `TIMELINE_SUMMARY_DAILY_CAP` is unset. Only `alchemy dev` sets it. */
   readonly summaryDailyCap?: number
   readonly feedKey?: string
+  /**
+   * A test deployment's own route, answered before ChatApi's (e2e/gates/Harness.ts): given the flow executions' namespace
+   * and the app's database, it answers a request or passes it on. No deploy of ChatApi itself sets it.
+   */
+  readonly door?: (services: Door) => Effect.Effect<Option.Option<HttpServerResponse.HttpServerResponse>, never, HttpServerRequest.HttpServerRequest | RuntimeContext>
+}
+
+/** What a test deployment's `door` reaches: the flow executions' objects and the app's database. */
+export interface Door {
+  readonly executions: Executions.Objects
+  readonly database: Layer.Layer<SqlClient.SqlClient, unknown, RuntimeContext>
 }
 
 export const program = (options: ProgramOptions = {}) =>
@@ -316,6 +329,10 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
         // (worker/BranchSandboxes.ts): handed straight back to that object, never routed as a person's request.
         const box = BranchSandboxes.boxOf((yield* Cloudflare.WorkerExecutionContext).raw.props)
         if (box !== undefined) return yield* BranchSandboxes.answerBox(machineObjects, box)
+        if (options.door !== undefined) {
+          const answered = yield* options.door({ executions, database })
+          if (Option.isSome(answered)) return answered.value
+        }
         const request = yield* HttpServerRequest.HttpServerRequest
         const runtime = yield* RuntimeContext
         const limited = yield* Throttle.make({
