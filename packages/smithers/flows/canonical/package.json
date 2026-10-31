@@ -26,7 +26,10 @@
     "./index": "./src/index.ts",
     "./Record": "./src/Record.ts",
     "./BoundedJson": "./src/BoundedJson.ts",
-    "./IssuePath": "./src/IssuePath.ts",
+    "./IssuePath": {
+      "types": "./src/IssuePath.d.vibe.ts",
+      "default": "./src/IssuePath.vibe"
+    },
     "./ReadonlyMap": "./src/ReadonlyMap.ts",
     "./Serializer": "./src/Serializer.ts"
   },
