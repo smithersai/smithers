@@ -314,7 +314,9 @@ export const alertCss = `
 
 export const tableCss = `
 .sui-page-header { position:sticky; top:0; z-index:20; border-bottom:1px solid ${t.border}; background:${t.background}; }
-.sui-page-header-inner { box-sizing:border-box; max-width:1040px; margin:0 auto; min-height:52px; padding:8px 56px 8px 24px; display:flex; align-items:center; gap:16px; min-width:0; }
+.sui-page-header-inner { box-sizing:border-box; max-width:1040px; margin:0 auto; min-height:52px; padding:8px 56px 8px 24px; display:flex; align-items:center; gap:16px; min-width:0; position:relative; }
+/* An anchored toast stack among the row's children hangs under the row's content, its end under the actions' end. */
+.sui-page-header-inner > .sui-toast-stack[data-placement='anchored'] { left:24px; right:56px; }
 .sui-page-header[data-width='narrow'] .sui-page-header-inner { max-width:760px; }
 .sui-page-header[data-width='wide'] .sui-page-header-inner { max-width:1280px; }
 .sui-page-header-back { display:flex; align-items:center; gap:8px; min-width:0; flex:none; }
@@ -334,6 +336,7 @@ export const tableCss = `
 .sui-page-body[data-width='wide'] { max-width:1280px; }
 @media (max-width: 640px) {
   .sui-page-header-inner { flex-wrap:wrap; gap:4px 12px; padding:8px 52px 8px 16px; }
+  .sui-page-header-inner > .sui-toast-stack[data-placement='anchored'] { left:16px; right:52px; }
   .sui-page-header-nav { order:3; flex-basis:100%; margin:0 -6px; }
   .sui-page-body { padding:16px 16px 48px; }
 }

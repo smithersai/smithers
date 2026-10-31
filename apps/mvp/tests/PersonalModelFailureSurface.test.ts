@@ -10,10 +10,10 @@ import { AuthStore, SESSION } from "../src/features/auth/store"
 import { AuthProvider } from "../src/features/auth/components/AuthContext"
 import { Attention } from "../src/features/attention/attention"
 import { AttentionProvider } from "../src/features/attention/components/AttentionContext"
+import { Notices } from "../src/features/attention/components/Notices"
 import { PersonalModel } from "../src/features/personal-model/personalModel"
 import { PersonalModelProvider } from "../src/features/personal-model/components/PersonalModelContext"
 import { PersonalModelSettings } from "../src/features/personal-model/components/PersonalModelSettings"
-import { Toasts } from "../src/screens/app/Toasts"
 import { openTab, openTestApp, TestChatApi } from "../src/test/chatApi"
 
 Object.assign(globalThis, { self: dom, HTMLFormElement: dom.HTMLFormElement, HTMLSelectElement: dom.HTMLSelectElement, DocumentFragment: dom.DocumentFragment, MutationObserver: dom.MutationObserver, CustomEvent: dom.CustomEvent, scrollTo: dom.scrollTo.bind(dom) })
@@ -30,8 +30,8 @@ test("a saved model failure stays in Settings without following the person onto 
     // A display fixture in real Postgres, read through the real authenticated Electric shape.
     // No model call reads these sealed-key fields in this test.
     await server.runPromise(api.branches.run(Effect.flatMap(SqlClient.SqlClient, sql => sql`
-      INSERT INTO personal_models (person_id, protocol, base_url, fast_model, ciphertext, nonce, key_version, key_last4, failure_status, failed_at)
-      VALUES ('person-member', 'openai-chat', 'https://models.example.com', 'display-test', 'unused', 'unused', 1, 'test', 402, now())`)))
+      INSERT INTO personal_models (person_id, kind, protocol, base_url, fast_model, ciphertext, nonce, key_version, key_last4, failure_status, failed_at)
+      VALUES ('person-member', 'api_key', 'openai-chat', 'https://models.example.com', 'display-test', 'unused', 'unused', 1, 'test', 402, now())`)))
     const model = await app.runPromise(Effect.service(PersonalModel))
     const auth = await app.runPromise(Effect.service(Auth))
     const attention = await app.runPromise(Effect.service(Attention))
@@ -41,8 +41,8 @@ test("a saved model failure stays in Settings without following the person onto 
     model.queries.saved.startSyncImmediate()
     await vi.waitFor(() => expect(model.queries.saved.toArray[0]?.failureStatus).toBe(402), { timeout: 40_000 })
     const root = createRootRoute()
-    const repo = createRoute({ getParentRoute: () => root, path: "/repo", component: () => createElement(Toasts, { surface: "page" }) })
-    const chat = createRoute({ getParentRoute: () => root, path: "/chat", component: Toasts })
+    const repo = createRoute({ getParentRoute: () => root, path: "/repo", component: () => createElement(Notices, { surface: "page" }) })
+    const chat = createRoute({ getParentRoute: () => root, path: "/chat", component: () => createElement(Notices, { surface: "conversation" }) })
     const settings = createRoute({ getParentRoute: () => root, path: "/settings", component: () => createElement(PersonalModelSettings, { canSave: true }) })
     const router = createRouter({ isServer: false, routeTree: root.addChildren([repo, chat, settings]), history: createMemoryHistory({ initialEntries: ["/repo"] }) })
     await act(async () => {

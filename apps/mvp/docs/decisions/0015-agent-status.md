@@ -55,7 +55,7 @@ tab title: (1) Smithers
 | Channel | When | Rule |
 |---|---|---|
 | The conversation | always | The card shows while the question is open. |
-| A toast, under the header | the question opens | 0009's stack, inline under the header rather than at the bottom-left, because the open composer docks over the column's foot and would hide it: gold, the question's first line, one action (Answer), Hide. Shown after 300 ms, so a question answered at once never flashes. Never hides itself; Hide keeps the card and the header pill. Answer scrolls to the card and focuses it. One toast per question: a new question raises a new one (0009's `version`). |
+| A toast, under the header | the question opens | 0009's stack, hung under the header rather than at the bottom-left, because the open composer docks over the column's foot and would hide it; an overlay since [0137](0137-toasts-overlay-the-page.md), never a row of the page: gold, the question's first line, one action (Answer), Hide. Shown after 300 ms, so a question answered at once never flashes. Never hides itself; Hide keeps the card and the header pill. Answer scrolls to the card and focuses it. One toast per question: a new question raises a new one (0009's `version`). |
 | A browser notification | the question opens while every tab is hidden | 0009 §4: one Allow ask, on the first needs-you toast, only on a click and only on HTTPS; tag `run:<id>:<version>`; closes when the question is answered anywhere. Phase 2. |
 
 The toast shows even when the card is on screen. 0009's rule against toasting a run whose card is visible is for live work; needs you is attention, and the header pill is not enough on a long conversation.

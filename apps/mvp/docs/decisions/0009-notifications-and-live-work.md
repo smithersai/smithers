@@ -149,6 +149,8 @@ run_commands  (id uuid PRIMARY KEY, run_id uuid, host_id text, kind text, payloa
 
 ## 4. The UI, one surface
 
+> Placement since: under the page's header, not at the bottom-left ([0015](0015-agent-status.md), because the docked composer covers the column's foot), and as an overlay that takes no layout space ([0137](0137-toasts-overlay-the-page.md); Will, 2026-10-31). The rest of this section stands.
+
 ```
 ┌ conversation ──────────────────────────────────────────┐
 │ ↑ 1 live above                                         │  edge: live work scrolled out of view

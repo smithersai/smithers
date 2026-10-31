@@ -49,6 +49,8 @@
 
 @media (max-width: 40rem) {
   .app-shell-header .sui-page-header-inner { padding-inline: 16px; }
+  /* The toasts hung under the bar keep to its phone padding, so their end stays under the bell (decision 0137). */
+  .app-shell-header .sui-page-header-inner > .sui-toast-stack[data-placement='anchored'] { right: 16px; }
   /* The account's sign-out stays; the login's name yields to the pages' row on a phone. */
   .app-shell-header [aria-label="Account"] > span:first-child { display: none; }
   .app-shell .sui-chat-empty .sui-wordmark { max-width: 13rem; }

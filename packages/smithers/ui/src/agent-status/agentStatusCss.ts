@@ -1,7 +1,8 @@
 /**
  * The agent-status sheet: the pill's glyph, delayed Working and count; the needs-you
- * card in gold; the toast stack at the bottom-left, full width on a phone;
- * an update's toast in muted tones, and an unread entry's brand dot.
+ * card in gold; the toast stack, floating at the bottom-left or anchored under a
+ * header, full width on a phone, never in the page's flow; an update's toast in
+ * muted tones, and an unread entry's brand dot.
  * Gold is `--warning` and ember is `--danger` (mvp.md §6.4: "Needs you is gold
  * and failures are ember").
  */
@@ -27,8 +28,11 @@ button.sui-agent-status:focus-visible { outline:none; box-shadow:0 0 0 3px ${t.r
 .sui-toast-stack { position:fixed; z-index:40; left:16px; bottom:16px; display:flex; flex-direction:column; align-items:flex-start; gap:6px; width:min(380px, calc(100vw - 32px)); pointer-events:none; }
 .sui-toast-stack > * { pointer-events:auto; }
 .sui-toast { display:flex; align-items:center; gap:8px; width:100%; min-width:0; padding:6px 6px 6px 12px; border:1px solid ${t.borderStrong}; border-left:3px solid ${t.mutedForeground}; border-radius:${t.radius}; background:${t.card}; color:${t.foreground}; box-shadow:${t.shadow3}; font-size:13px; }
-.sui-toast[data-delayed] { animation:sui-toast-in .12s ease .3s both; }
-@keyframes sui-toast-in { from { opacity:0; } to { opacity:1; } }
+/* Every toast arrives by opacity and transform alone, never by a property that lays the page out again. */
+.sui-toast { animation:sui-toast-in .12s ease both; }
+/* A delayed toast waits 300 ms first; the wait is a hold, kept under reduced motion (reducedMotionCss). */
+.sui-toast[data-delayed] { --motion-hold:300ms; animation-delay:.3s; }
+@keyframes sui-toast-in { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:none; } }
 .sui-toast[data-tone='needs_you'] { border-left-color:${t.warning}; }
 .sui-toast[data-tone='failed'] { border-left-color:${t.destructive}; }
 .sui-toast[data-tone='working'] { border-left-color:${t.primary}; }
@@ -43,7 +47,9 @@ button.sui-agent-status:focus-visible { outline:none; box-shadow:0 0 0 3px ${t.r
 .sui-toast-text b { font-weight:650; }
 .sui-toast-hide { flex:none; color:${t.mutedForeground}; }
 @media (max-width: 640px) { .sui-toast-stack[data-placement='fixed'] { left:16px; right:16px; bottom:64px; width:auto; } }
-.sui-toast-stack[data-placement='inline'] { position:static; width:100%; }
+/* Anchored: hung from the bottom of its positioned parent, at its end edge; no height in the flow, so nothing under it moves. */
+.sui-toast-stack[data-placement='anchored'] { position:absolute; top:calc(100% + 6px); right:0; bottom:auto; left:0; width:auto; align-items:flex-end; }
+.sui-toast-stack[data-placement='anchored'] > .sui-toast { width:min(380px, 100%); }
 button.sui-toast-open { flex:1; min-width:0; display:flex; align-items:center; gap:8px; padding:2px 0; border:0; border-radius:${t.radius}; background:transparent; color:inherit; font:inherit; text-align:left; cursor:pointer; }
 button.sui-toast-open:focus-visible { outline:none; box-shadow:0 0 0 3px ${t.ring}; }
 .sui-toast:has(button.sui-toast-open:hover) { border-color:${t.primaryBorder}; }

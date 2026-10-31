@@ -1,0 +1,51 @@
+# 0137: Toasts overlay the page under its header
+
+Date: 2026-10-31. Status: accepted. Ruling [FE-21](../rulings.md#5-frontend): Will, 2026-10-31 about 14:20, on
+smithers.sh: "when we get notifications it pushes the rest of the content on teh page down which is janky". Changes
+[0036](0036-toasts-reserve-page-space.md) (page notices reserved space) and the `inline` placement [0015](0015-agent-status.md)
+chose; keeps [0009](0009-notifications-and-live-work.md) §4's stack. Will reviews it with the feature (HOST-3).
+
+## Problem
+
+The stack sat in the page's flow: `ToastStack`'s `inline` placement, under `/app`'s header, in a row of the branch
+page's grid, and in a strip above every other page's screen. Each toast that arrived took its height from the page, so
+the conversation, the composer and the page's content jumped down, and jumped back when it left.
+
+## Decision
+
+1. **Every stack is an overlay.** `@smthrs/ui` `ToastStack` gains `placement="anchored"`: `position:absolute`, hung
+   under its positioned parent at the parent's end edge, with no height in the flow. `inline` is deleted; `fixed`
+   stays for hosts without a header to hang from.
+2. **Under the header, at its end.** 0015's reason stands: the open composer docks over the column's foot, so the
+   window's foot would hide a toast. The stack hangs under the header, at its end edge, under the bell the notices
+   belong to, at most 380px wide (full width on a phone). It overlays the top of the conversation or the page, the
+   part least in use: the newest messages and the composer are at the foot, and the header's controls stay clear.
+3. **One component, one owner per page.** `Notices` (`src/features/attention/components/Notices.tsx`) is the stack;
+   `src/screens/app/Toasts.tsx`, a copy of it with the placement fixed, is gone. The owner is the page's header box:
+   `/app`'s header, the flows page's and `RepoHeader`, all `@smthrs/ui` `PageHeader`, whose children hang under its
+   positioned row at the bell's end; the branch page's chrome, in a zero-height box across the top of its body; and, where the bell
+   floats, a fixed zero-height box under it
+   (`PageNotices`, which now renders only there). A repository page's header no longer shares the page with the
+   root's stack, so a blob page shows one stack, not two.
+4. **Motion is opacity and transform only.** A toast fades and slides in over 120 ms; a `delayed` toast first waits
+   its 300 ms, named in `--motion-hold` so the wait holds under reduced motion as the other holds do. A toast leaves
+   at once: a leave animation would keep a gone row on screen, against the 300 ms no-flash rule, the three-card cap
+   and focus hand-off, and the overlay already removes the jump.
+5. **Kept:** stacking, the three-card cap, `+N`, Hide on every row, Alt+T and the roving keys, the live region.
+
+```
+ header ─────────────────────────────── 🔔 ─┐        header ─────────────────────────────── 🔔 ─┐
+ ┌ toast (took a row) ──────────────────────┐   ─▶                     ┌ toast (hangs under) ──┐
+ │ conversation (pushed down)               │        │ conversation    │ ◆ Needs you  [Answer] ×│
+ ...                                                 ...               └───────────────────────┘
+ [ composer ]                                        [ composer ]        (nothing below moved)
+```
+
+## Proof
+
+`apps/mvp/e2e/toast-layout-shift.spec.ts`: on `/app` and a branch page, at 1280px and 390px, a run in a conversation
+the person isn't looking at (their own in a branch they track; a teammate's on `main`, which they follow) reports
+through the real runs route; the toast arrives and Hide removes it while the headers, the conversation, the composer
+and the view keep their boxes, the stack hangs under the header, and `PerformanceObserver`'s `layout-shift` entries
+name nothing outside the conversation's messages and the header's status. It failed on the inline stack.
+`@smthrs/ui` `tests/agent-status.test.tsx` pins the sheet; `src/features/attention/page-notices.test.ts` the owners.

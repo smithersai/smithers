@@ -28,6 +28,21 @@ describe("PageHeader", () => {
     expect(html).not.toContain("sui-page-header-actions");
   });
 
+  test("renders its children last in its row, which is positioned, so an anchored stack hangs under the bar", () => {
+    const html = renderToStaticMarkup(
+      <PageHeader title="Runs" actions={<button type="button">Bell</button>}>
+        <div data-slot="toast-stack" data-placement="anchored" />
+      </PageHeader>,
+    );
+    expect(html.indexOf("Bell")).toBeLessThan(html.indexOf('data-slot="toast-stack"'));
+    expect(html).toContain('data-placement="anchored"></div></div></header>');
+    const css = composeSmithersUiStyles().split("\n");
+    expect(css.find((rule) => rule.startsWith(".sui-page-header-inner {"))).toContain("position:relative");
+    // Its end lines up with the actions' end: the row's own padding, at both widths.
+    expect(css).toContain(".sui-page-header-inner > .sui-toast-stack[data-placement='anchored'] { left:24px; right:56px; }");
+    expect(css).toContain("  .sui-page-header-inner > .sui-toast-stack[data-placement='anchored'] { left:16px; right:52px; }");
+  });
+
   test("marks the active section with the brand tint and keeps the bar on the page background", () => {
     const css = composeSmithersUiStyles().split("\n");
     expect(css.find((rule) => rule.startsWith(".sui-page-header-nav > a[aria-current='page']"))).toContain("background:");

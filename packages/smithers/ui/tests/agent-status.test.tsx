@@ -299,15 +299,35 @@ describe("ToastStack and Toast", () => {
 
   test("a toast without a detail or an action shows its word and Hide", async () => {
     await render(
-      <ToastStack label="Smithers" placement="inline">
+      <ToastStack label="Smithers" placement="anchored">
         <Toast tone="failed" onHide={() => {}} />
       </ToastStack>,
     );
     expect($("[data-slot=toast-stack]")!.getAttribute("aria-label")).toBe("Smithers");
-    expect($("[data-slot=toast-stack]")!.dataset.placement).toBe("inline");
-    expect(smithersUiCss).toContain(".sui-toast-stack[data-placement='inline'] { position:static; width:100%; }");
+    expect($("[data-slot=toast-stack]")!.dataset.placement).toBe("anchored");
     expect($(".sui-toast-text")!.textContent).toBe("Failed");
     expect($$("button").map((button) => button.getAttribute("aria-label") ?? button.textContent)).toEqual(["Hide"]);
+  });
+
+  test("either placement overlays the page: the stack never sits in the flow, and a toast arrives by opacity and transform", () => {
+    // Fixed floats at the window's bottom-left.
+    expect(smithersUiCss).toContain(".sui-toast-stack { position:fixed; z-index:40; left:16px; bottom:16px;");
+    // Anchored hangs under its positioned parent (apps/mvp decision 0137): absolute, so it has no height in the flow,
+    // at the parent's end edge, each toast at most 380px and never wider than the parent.
+    expect(smithersUiCss).toContain(
+      ".sui-toast-stack[data-placement='anchored'] { position:absolute; top:calc(100% + 6px); right:0; bottom:auto; left:0; width:auto; align-items:flex-end; }",
+    );
+    expect(smithersUiCss).toContain(".sui-toast-stack[data-placement='anchored'] > .sui-toast { width:min(380px, 100%); }");
+    // There is no placement in the page's flow any more.
+    expect(smithersUiCss).not.toContain(".sui-toast-stack[data-placement='inline']");
+    expect(smithersUiCss).not.toContain("position:static; width:100%;");
+    // The entrance animates opacity and transform only: nothing a toast does lays the page out again.
+    expect(smithersUiCss).toContain(".sui-toast { animation:sui-toast-in .12s ease both; }");
+    expect(smithersUiCss).toContain(
+      "@keyframes sui-toast-in { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:none; } }",
+    );
+    const keyframes = smithersUiCss.match(/@keyframes sui-toast-in \{[^}]*\}[^}]*\}[^}]*\}/)![0];
+    for (const property of ["height", "margin", "padding", "top", "max-height"]) expect(keyframes).not.toContain(property);
   });
 
   test("a delayed toast fades in after 300 ms; others show at once", async () => {
@@ -320,7 +340,9 @@ describe("ToastStack and Toast", () => {
     const [delayed, plain] = $$("[data-slot=toast]");
     expect(delayed!.hasAttribute("data-delayed")).toBe(true);
     expect(plain!.hasAttribute("data-delayed")).toBe(false);
-    expect(smithersUiCss).toContain(".sui-toast[data-delayed] { animation:sui-toast-in .12s ease .3s both; }");
+    // The 300 ms is a hold, named in --motion-hold, so reduced motion keeps it (reducedMotionCss) and the toast
+    // still never flashes.
+    expect(smithersUiCss).toContain(".sui-toast[data-delayed] { --motion-hold:300ms; animation-delay:.3s; }");
   });
 
   test("an empty stack renders nothing", async () => {

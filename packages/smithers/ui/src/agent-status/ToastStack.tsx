@@ -26,21 +26,24 @@ export type ToastStackProps = Omit<ComponentProps<"section">, "children"> & {
   /** The region's accessible name. Default `Notifications`. */
   label?: string;
   /**
-   * `fixed` (the default) floats at the window's bottom-left; `inline` sits where it is rendered, such as just above a
-   * composer, so it never covers it.
+   * `fixed` (the default) floats at the window's bottom-left. `anchored` hangs just under its positioned parent, such
+   * as a page's header, at the parent's end edge, over whatever follows: it takes no layout space, so a toast arriving
+   * or leaving never moves the page (apps/mvp decision 0137).
    */
-  placement?: "fixed" | "inline";
+  placement?: "fixed" | "anchored";
 };
 
 /**
- * The toast stack (apps/mvp decision 0009 §4): bottom-left, or inline where
- * it is rendered, at most `max` toasts, and `+N`: with `onMore` it opens the
+ * The toast stack (apps/mvp decision 0009 §4): bottom-left, or anchored under
+ * a header, at most `max` toasts, and `+N`: with `onMore` it opens the
  * person's entries elsewhere; else it expands the rest in place, the toasts
  * past `max` then the `more` entries, and reads `Less` to collapse them again.
- * A polite live region, so a new toast is announced without taking focus.
- * Alt+T focuses its first toast from anywhere, arrows (and J and K, Home and
- * End) move between its toasts, and Escape gives focus back. Renders nothing
- * while it has no toasts and nothing more.
+ * Either placement overlays the page: a toast's arrival and departure never
+ * take layout space, and each toast fades and slides in (opacity and transform
+ * only). A polite live region, so a new toast is announced without taking
+ * focus. Alt+T focuses its first toast from anywhere, arrows (and J and K,
+ * Home and End) move between its toasts, and Escape gives focus back. Renders
+ * nothing while it has no toasts and nothing more.
  */
 export function ToastStack({
   children,
@@ -152,7 +155,10 @@ export type ToastProps = Omit<ComponentProps<"div">, "children" | "title"> & {
   hideLabel?: string;
   /** Not yet read: a dot before the glyph, and `Unread` for screen readers. */
   unread?: boolean;
-  /** Fades in only after 300 ms (0009's rule), so a toast gone within that never flashes. */
+  /**
+   * Fades in only after 300 ms (0009's rule), so a toast gone within that never flashes. The wait holds under reduced
+   * motion too (`--motion-hold`).
+   */
   delayed?: boolean;
   /** Opens what the toast is about: its words become a button. Clicking it, Enter or O. */
   onOpen?: () => void;

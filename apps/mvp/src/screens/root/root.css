@@ -1,10 +1,9 @@
 /* Page layout only: the top bar's bell at the window's top-right, on every page whose header doesn't hold it. */
 .root-bell { position: fixed; z-index: 30; top: 0.625rem; right: 0.75rem; }
 
-/* Live notices reserve their own space. The top strip keeps the floating bell usable on narrow screens too. */
-.root-notices { max-width:56rem; margin:0 auto; padding:3rem 1rem 0; box-sizing:border-box; }
-.root-notices:empty { display:none; }
-.root-notices [data-slot="toast-stack"] { width:min(380px, 100%); }
+/* The toasts' box under the floating bell: fixed, no height, the bell's inset; the stack hung under it (@smthrs/ui
+   ToastStack `anchored`) overlays the page and never pushes it down (decision 0137). */
+.root-notices { position: fixed; z-index: 40; top: 2.5rem; right: 0.75rem; left: 0.75rem; height: 0; }
 
 /* A page's or a doc's Full screen in the chat (src/features/views/components/ConversationView.tsx): a tap target. */
 @media (max-width: 60rem) {

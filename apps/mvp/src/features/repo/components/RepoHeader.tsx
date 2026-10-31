@@ -1,6 +1,7 @@
 import { Button, PageHeader } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link, useLocation } from "@tanstack/react-router"
+import { Notices } from "../../attention/components/Notices"
 import { NotificationsBell } from "../../attention/components/NotificationsBell"
 import { useAuth } from "../../auth/components/AuthContext"
 import { mayManageDomains, signInHref } from "../../auth/contract"
@@ -25,8 +26,10 @@ import { useRepo, useRepoAnswer } from "./RepoContext"
 // serves (decision 0079), then what can be done about it: Clone; nothing while it
 // clones (the files' place says Cloning, RepoPage); the sign-in link in Clone's place for a signed-out person; or why a
 // clone failed or was refused, with Try again only once this repository's role permits it (ruling AUTH-8). Readers see Members can clone. The person's bell is its last slot, so it never sits on
-// an action: the screens that render this header don't float it (attention/contract.ts `BELL_ROUTES`).
-export function RepoHeader({ backTarget }: { readonly backTarget?: Minimized } = {}) {
+// an action: the screens that render this header don't float it (attention/contract.ts `BELL_ROUTES`). The feed's
+// toasts are the header's children: hung under its row, over the page (decision 0137), unless the screen places its
+// own stack (`notices` false: the branch page, under its branch chrome).
+export function RepoHeader({ backTarget, notices = true }: { readonly backTarget?: Minimized; readonly notices?: boolean } = {}) {
   const { queries, actions } = useRepo()
   const { data } = useLiveQuery(queries.view)
   const auth = useAuth()
@@ -90,6 +93,8 @@ export function RepoHeader({ backTarget }: { readonly backTarget?: Minimized } =
           </span>
         </>
       }
-    />
+    >
+      {notices ? <Notices surface="page" /> : null}
+    </PageHeader>
   )
 }

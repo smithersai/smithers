@@ -26,7 +26,7 @@ import { Attention } from "./attention"
 import { Views } from "../views/views"
 import { PluginsUi } from "../../plugins/ui"
 
-test("a branch page renders its shared inline toast stack below the header", async () => {
+test("a branch page renders the shared toast stack, anchored under its chrome, once", async () => {
   const runtime = openTestApp({ answers: false }, { actor: { subject: { kind: "person", id: "person-member" }, role: "admin" } })
   try {
     const [api, attention, branch, repo, intel, spend, chat, auth, status, commands, theme, terminal, todos] =
@@ -80,12 +80,15 @@ test("a branch page renders its shared inline toast stack below the header", asy
     expect(history.spendEntries).not.toContain('data-slot="toast"')
     expect(history.bell).toContain('285 unread')
     expect(html).toContain('class="branch-screen"')
-    expect(html).toContain('data-placement="inline"')
+    expect(html).toContain('data-placement="anchored"')
     expect(html).toContain(`data-subject="${subject}"`)
     expect(html).toContain("Try again")
-    expect(html.indexOf('class="repo-header"')).toBeGreaterThan(-1)
-    expect(html.indexOf('class="repo-header"')).toBeLessThan(html.indexOf('data-placement="inline"'))
-    expect(html.indexOf('data-placement="inline"')).toBeLessThan(html.indexOf('class="branch-screen-view"'))
+    expect(html.indexOf('class="sui-page-header repo-header"')).toBeGreaterThan(-1)
+    // The stack hangs under the branch's chrome, in its own box before the view, and the repository header hangs none
+    // of its own on this page (decision 0137).
+    expect(html.indexOf('class="sui-page-header repo-header"')).toBeLessThan(html.indexOf('data-placement="anchored"'))
+    expect(html.indexOf('class="branch-screen-notices"')).toBeLessThan(html.indexOf('data-placement="anchored"'))
+    expect(html.indexOf('data-placement="anchored"')).toBeLessThan(html.indexOf('class="branch-screen-view"'))
     expect(html.match(/data-slot="toast-stack"/g)).toHaveLength(1)
   } finally {
     await runtime.dispose()

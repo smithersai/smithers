@@ -4,6 +4,7 @@ import { useAuth } from "../../features/auth/components/AuthContext"
 import { SignInButton } from "../../features/auth/components/SignInButton"
 import { Link } from "@tanstack/react-router"
 import { NEW_FLOW, NEW_FLOW_PATH } from "../../features/flows-ui/contract"
+import { Notices } from "../../features/attention/components/Notices"
 import { NotificationsBell } from "../../features/attention/components/NotificationsBell"
 import { FlowsPage } from "../../features/flows-ui/components/FlowsPage"
 import "./flows-screen.css"
@@ -29,7 +30,10 @@ export function FlowsScreen() {
             <NotificationsBell />
           </>
         }
-      />
+      >
+        {/* The toasts, the bar's children (decision 0137): hung under its row at the bell's end, taking no space. */}
+        <Notices surface="page" />
+      </PageHeader>
       <PageBody width="default">
         {session?.status === "signed_out"
           ? (

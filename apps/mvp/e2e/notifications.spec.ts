@@ -72,7 +72,7 @@ test("live work: Ann's run toasts for Ben on her branch, and her notifications f
     await expect(entry(tab, subject).getByRole("button", { name: "Answer" })).toBeVisible()
   }
   // Ben, on another page, sees her run waiting, named, in the page stack, with no Answer of his own.
-  await expect(stack(b)).toHaveAttribute("data-placement", "inline")
+  await expect(stack(b)).toHaveAttribute("data-placement", "anchored")
   await expect(entry(b, subject), "Ben: Ann's run on his branch toasts").toContainText("Waiting · local-developer", {
     timeout: SYNCED_WITHIN,
   })

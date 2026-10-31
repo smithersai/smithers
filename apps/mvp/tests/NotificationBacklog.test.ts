@@ -45,7 +45,7 @@ test("283 unread entries reserve no page space; only three live notices render",
   const root = createRoot(container)
   try {
     await act(async () => root.render(createElement(AttentionProvider, { value: data.view },
-      createElement(Notices, { surface: "page", placement: "inline" }))))
+      createElement(Notices, { surface: "page" }))))
     expect(data.entries.tanstack.toArray).toHaveLength(283)
     expect(data.entries.tanstack.toArray.every((entry) => entry.unread)).toBe(true)
     expect(container.childElementCount).toBe(0)

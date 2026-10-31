@@ -16,14 +16,20 @@ export type PageHeaderProps = Omit<ComponentProps<"header">, "title"> & {
   actions?: ReactNode;
   /** The column the bar's content lines up with: the same value as the page's {@link PageBody} `width`. */
   width?: "narrow" | "default" | "wide";
+  /**
+   * Rendered last in the bar's row, which is positioned: a `ToastStack` with `placement="anchored"` hangs under the
+   * row at its end, under the bell in `actions`, and takes no layout space (apps/mvp decision 0137).
+   */
+  children?: ReactNode;
 };
 
 /**
  * The top bar every full page shares: a quiet back link, the title, the page's
  * sections and its actions, on one hairline-ruled row that wraps on a phone and
- * scrolls its sections sideways instead of breaking them.
+ * scrolls its sections sideways instead of breaking them. Its children, such as
+ * an anchored `ToastStack`, hang under that row.
  */
-export function PageHeader({ title, back, nav, navLabel = "Sections", actions, width = "default", className, ...props }: PageHeaderProps) {
+export function PageHeader({ title, back, nav, navLabel = "Sections", actions, width = "default", className, children, ...props }: PageHeaderProps) {
   useInjectUiCss();
   return (
     <header data-slot="page-header" data-width={width} className={cn("sui-page-header", className)} {...props}>
@@ -34,6 +40,7 @@ export function PageHeader({ title, back, nav, navLabel = "Sections", actions, w
           <nav className="sui-page-header-nav" aria-label={navLabel}>{nav}</nav>
         )}
         {actions === undefined ? null : <div className="sui-page-header-actions">{actions}</div>}
+        {children}
       </div>
     </header>
   );

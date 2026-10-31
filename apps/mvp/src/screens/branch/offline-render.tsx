@@ -61,7 +61,7 @@ export const DeniedBranchHeader = () => createElement(BranchHeader, { access: "n
 export const renderNoticeHistory = (services: Services) => {
   const wrap = wrapBranch(services)
   return {
-    notices: renderToStaticMarkup(wrap(<Notices surface="conversation" placement="inline" />)),
+    notices: renderToStaticMarkup(wrap(<Notices surface="conversation" />)),
     spendEntries: renderToStaticMarkup(wrap(<SpendAlertEntries expanded={null} onExpand={services.attention.actions.expand} />)),
     bell: renderToStaticMarkup(wrap(<NotificationsBell />)),
   }

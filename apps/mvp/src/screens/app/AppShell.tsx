@@ -11,8 +11,8 @@ import { Conversation } from "../../features/chat/components/Conversation"
 import { HeaderStatus } from "../../features/status/components/HeaderStatus"
 import { ThemeButton } from "../../features/theme/components/ThemeButton"
 import { Link } from "@tanstack/react-router"
+import { Notices } from "../../features/attention/components/Notices"
 import { Slot } from "../../plugins/components/Slot"
-import { Toasts } from "./Toasts"
 import "./app-shell.css"
 
 export function AppShell() {
@@ -58,10 +58,12 @@ export function AppShell() {
             <FirstRunAccount />
           </>
         }
-      />
-      {/* The toasts, under the header and its pill: the open composer docks over the column's foot, so a toast there
-          would hide behind it (decision 0015). */}
-      <Toasts />
+      >
+        {/* The toasts, the bar's children (decision 0137): hung under its row at the bell's end, over the conversation's
+            top, taking no space, so a notice never pushes the page down. Under the header, not at the window's foot,
+            because the open composer docks over the column's foot and would hide them (decision 0015). */}
+        <Notices surface="conversation" />
+      </PageHeader>
       <div className="app-shell-center">
         {/* Until the person has a conversation of their own, the steps to their first one, above the composer's place,
             which they take while a step before Ask shows (decision 0121). */}

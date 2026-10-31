@@ -23,8 +23,8 @@ import { selfAccessOf } from "../../features/presence/view"
 import { useRepoAnswer } from "../../features/repo/components/RepoContext"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
 import { RepoPage } from "../../features/repo/components/RepoPage"
+import { Notices } from "../../features/attention/components/Notices"
 import { TerminalPanel } from "../../features/terminal/components/TerminalPanel"
-import { Toasts } from "../app/Toasts"
 import "./branch-screen.css"
 
 // /$owner/$repo/tree/$ref/$ and, as `BlobScreen`, /$owner/$repo/blob/$ref/$: the repository at a branch, and the branch's workspace once the app tracks it and this
@@ -59,10 +59,13 @@ export function BranchScreen({ homeTabs = false }: { readonly homeTabs?: boolean
   const editsFiles = open && writes(access) && current?.mode === "open"
   return (
     <main className="branch-screen" aria-label="Repository" data-workspace={open || denied || savedConversation ? "true" : "false"}>
-      <RepoHeader />
+      {/* This screen hangs the stack under its own chrome, so the repository header doesn't. */}
+      <RepoHeader notices={false} />
       {/* Offline before tracking answered: the pending view's public chrome until the route opens again online. */}
       {open ? <BranchHeader access={access} /> : current?.status === "offline" ? <BranchHeader access={undefined} pending /> : null}
-      <div className="branch-screen-notices"><Toasts surface={open ? "conversation" : "page"} /></div>
+      {/* The toasts, hung under the branch's chrome over the top of the body (decision 0137): no row of their own, so a
+          notice never moves the view, the conversation or the composer. */}
+      <div className="branch-screen-notices"><Notices surface={open ? "conversation" : "page"} /></div>
       <div className="branch-screen-body">
         <div className="branch-screen-view">
           {homeTabs ? <HomeTabs active="code" /> : null}

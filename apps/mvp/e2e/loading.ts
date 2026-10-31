@@ -27,8 +27,7 @@ export interface Frame {
   readonly markup: string | undefined
   /**
    * The repository header's box within the repository page, when it was on screen. Measured from the page's own top
-   * left: live notices above the page (src/screens/app/Toasts.tsx) push the whole page down by design, which is not the
-   * header moving.
+   * left, so only the header's own movement within its page counts.
    */
   readonly header: readonly [number, number, number, number] | undefined
 }

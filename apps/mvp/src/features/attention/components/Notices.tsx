@@ -6,7 +6,7 @@ import { TRY_AGAIN } from "../../repo/contract"
 import type { Entry } from "../schema"
 import { useAttention } from "./AttentionContext"
 
-// Current notices reserve space; older and overflow entries stay in the bell.
+// The current notices, at most three; older and overflow entries stay in the bell.
 export function useNotices(surface: Surface): {
   readonly toasts: ReadonlyArray<ReactElement>
 } {
@@ -17,11 +17,16 @@ export function useNotices(surface: Surface): {
   }
 }
 
-/** The stack on a page with nothing else to show: the feed alone. */
-export function Notices({ surface, placement }: { readonly surface: Surface; readonly placement: "fixed" | "inline" }) {
+/**
+ * The feed's stack, hung under the header of the page it is on (decision 0137): `ToastStack`'s `anchored` placement,
+ * so render it inside a positioned element, right after the header. It overlays what follows and takes no layout
+ * space, so a toast arriving or leaving never moves the conversation, the composer or the page. `surface` picks the
+ * entries: over a conversation, its own runs show in it instead, unless they need you.
+ */
+export function Notices({ surface }: { readonly surface: Surface }) {
   const { toasts } = useNotices(surface)
   return (
-    <ToastStack label="Smithers" placement={placement}>
+    <ToastStack label="Smithers" placement="anchored">
       {toasts.slice(0, 3)}
     </ToastStack>
   )

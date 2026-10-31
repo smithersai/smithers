@@ -35,8 +35,9 @@
   padding: 0.75rem 1.5rem 1rem;
 }
 
-.branch-screen-notices { padding-top: 0.75rem; }
-.branch-screen-notices:empty { display: none; }
+/* The toasts' box, right under the branch's chrome and across the body's column, with no height: the stack hung under
+   it (@smthrs/ui ToastStack `anchored`) overlays the body and never takes a row of the page (decision 0137). */
+.branch-screen-notices { position: relative; height: 0; }
 
 .branch-screen-body {
   flex: 1;
