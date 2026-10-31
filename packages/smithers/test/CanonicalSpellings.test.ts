@@ -103,10 +103,14 @@ const printedTexts = (
   // occur in most SDK sources, so parsing them traversed 1.8 million nodes.
   // Keep standalone spellings (including shellCommand's first argument),
   // escaped spellings and the separate migration-instruction check.
-  // Escapes can also join a keyword across source lines or create a boundary
-  // before it ("\\nsmthrs"). Let the compiler read every escaped source rather
-  // than duplicating its complete string-literal decoder in this prefilter.
-  if (!/(?<![\w@/.-])smthrs\b|smithers-migrate/.test(decodeEscapes(contents)) && !contents.includes("\\")) return []
+  // Keep possible identity escapes and escaped whitespace boundaries. Octal
+  // escapes enter the compiler directly. Ordinary regexes and newlines alone
+  // no longer force a full parse of unrelated SDK sources.
+  const candidate = decodeEscapes(contents.replace(/\\(?:\r\n|[\r\n\u2028\u2029])/g, ""))
+  if (
+    !/(?:(?<![\w@/.-])|\\[bfnrtv0])s\\?m\\?t\\?h\\?r\\?s\b|s\\?m\\?i\\?t\\?h\\?e\\?r\\?s\\?-\\?m\\?i\\?g\\?r\\?a\\?t\\?e/
+      .test(candidate) && !/\\[0-7]/.test(contents)
+  ) return []
   if (progress) progress.parsed++
   const source = ts.createSourceFile(file, contents, ts.ScriptTarget.Latest, false)
   const texts: Array<{ line: number; text: string }> = []
@@ -138,6 +142,60 @@ const printedTexts = (
 }
 
 describe("the spelling prefilter", () => {
+  const keyword = "smthrs"
+  const escapedKeywords = [...keyword].flatMap((letter, index) => {
+    const prefix = keyword.slice(0, index)
+    const suffix = keyword.slice(index + 1)
+    const hex = letter.charCodeAt(0).toString(16)
+    return [
+      `${prefix}\\u00${hex}${suffix}`,
+      `${prefix}\\u{${hex}}${suffix}`,
+      `${prefix}\\x${hex}${suffix}`,
+      `${prefix}\\${letter.charCodeAt(0).toString(8)}${suffix}`,
+      `${prefix}\\\n${letter}${suffix}`,
+      ...(["s", "m", "h"].includes(letter) ? [`${prefix}\\${letter}${suffix}`] : [])
+    ]
+  })
+  it.each([
+    ...escapedKeywords,
+    ...["\\n", "\\r", "\\t", "\\b", "\\f", "\\v", "\\0", "\\073", "\\u005c", "\\x5c", "\\u{5c}"]
+      .map((prefix) => `${prefix}smthrs`),
+    "a\\\\s\\mthrs",
+    "a\\u005cs\\mthrs"
+  ])("retains the compiler's decoded command for %j", (spelling) => {
+    const root = mkdtempSync(join(tmpdir(), "smithers-escaped-spelling-"))
+    const file = join(root, "commands.ts")
+    try {
+      writeFileSync(file, `const message = "${spelling} status"`)
+      expect(printedTexts(file).map(({ text }) => text)).toEqual(
+        expect.arrayContaining([expect.stringContaining("smthrs status")])
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("skips compiler parsing for unrelated escaped SDK text", () => {
+    const root = mkdtempSync(join(tmpdir(), "smithers-unprinted-spelling-"))
+    const file = join(root, "commands.ts")
+    try {
+      writeFileSync(
+        file,
+        [
+          "import { Flow } from \"@smthrs/flow\"",
+          "const newline = \"\\n\"",
+          "const whitespace = /\\s+/",
+          "const slash = /\\\\/g"
+        ].join("\n")
+      )
+      const progress: ScanProgress = { files: 0, parsed: 0, nodes: 0, locations: 0, texts: 0 }
+      expect(printedTexts(file, progress)).toEqual([])
+      expect(progress).toEqual({ files: 1, parsed: 0, nodes: 0, locations: 0, texts: 0 })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it("reads a literal that spells smthrs through escapes", () => {
     expect(decodeEscapes("\"sm\\u0074hrs status\"")).toContain("smthrs status")
     expect(decodeEscapes("\"\\x73mthrs\"")).toContain("smthrs")
@@ -217,8 +275,12 @@ describe("printed command spellings", () => {
     const stages: Array<{ stage: string; elapsedMs: number }> = []
     const progress: ScanProgress = { files: 0, parsed: 0, nodes: 0, locations: 0, texts: 0 }
     const mark = (stage: string) => stages.push({ stage, elapsedMs: Date.now() - started })
-    const diagnostic = () => console.error("Canonical scan progress", JSON.stringify({ stages, progress }))
-    onTestFailed(diagnostic)
+    const receipt = () => "Canonical scan progress " + JSON.stringify({ stages, progress })
+    const diagnostic = () => console.error(receipt())
+    onTestFailed(({ task }) => {
+      for (const error of task.result?.errors ?? []) error.message += `\n${receipt()}`
+      diagnostic()
+    })
     mark("manifest")
     const manifest = JSON.parse(
       await capture(["--llms-full", "--format", "json"], false, (stage) => mark(`manifest ${stage}`))
