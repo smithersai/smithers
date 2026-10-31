@@ -294,6 +294,7 @@ export {
   type DirectoryListingProps,
   type DirectoryTarget,
 } from "./directory-listing";
+export { PageBody, type PageBodyProps, PageHeader, type PageHeaderProps } from "./page-header";
 export { SectionHeader, Eyebrow, type SectionHeaderProps } from "./section-header";
 export { RowButton, type RowButtonProps } from "./row-button";
 export { KpiStat, type KpiStatProps } from "./kpi-stat";

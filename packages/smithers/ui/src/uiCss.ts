@@ -313,6 +313,25 @@ export const alertCss = `
 /* -------------------------------------------------------------------------- */
 
 export const tableCss = `
+.sui-page-header { position:sticky; top:0; z-index:20; border-bottom:1px solid ${t.border}; background:${t.background}; }
+.sui-page-header-inner { box-sizing:border-box; max-width:1280px; margin:0 auto; min-height:52px; padding:8px 56px 8px 24px; display:flex; align-items:center; gap:16px; min-width:0; }
+.sui-page-header-back a, .sui-page-header-back button { color:${t.mutedForeground}; font-size:13px; text-decoration:none; white-space:nowrap; }
+.sui-page-header-back a:hover { color:${t.foreground}; }
+.sui-page-header-title { margin:0; min-width:0; color:${t.foreground}; font-size:15px; font-weight:650; line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sui-page-header-title a { color:inherit; text-decoration:none; }
+.sui-page-header-nav { display:flex; align-items:center; gap:4px; min-width:0; overflow-x:auto; scrollbar-width:none; }
+.sui-page-header-nav > a { display:inline-flex; align-items:center; min-height:${t.controlHeight}; padding:0 10px; border-radius:${t.radiusControl}; color:${t.mutedForeground}; font-size:13px; text-decoration:none; white-space:nowrap; }
+.sui-page-header-nav > a:hover { background:${t.hoverSubtle}; color:${t.foreground}; }
+.sui-page-header-nav > a[aria-current='page'] { background:${t.primarySoft}; color:${t.primary}; font-weight:650; }
+.sui-page-header-actions { margin-inline-start:auto; display:flex; align-items:center; gap:8px; flex:none; }
+.sui-page-body { box-sizing:border-box; width:100%; max-width:1040px; margin:0 auto; padding:24px 24px 64px; display:grid; align-content:start; gap:16px; min-width:0; }
+.sui-page-body[data-width='narrow'] { max-width:760px; }
+.sui-page-body[data-width='wide'] { max-width:1280px; }
+@media (max-width: 640px) {
+  .sui-page-header-inner { flex-wrap:wrap; gap:4px 12px; padding:8px 52px 8px 16px; }
+  .sui-page-header-nav { order:3; flex-basis:100%; margin:0 -6px; }
+  .sui-page-body { padding:16px 16px 48px; }
+}
 .sui-table-container { min-width:0; width:100%; overflow-x:auto; }
 .sui-table-container[data-variant='card'] { border:1px solid ${t.border}; border-radius:${t.radius}; background:${t.card}; color:${t.cardForeground}; box-shadow:${shadowCard}; }
 .sui-table-container[data-variant='card'] .sui-table th, .sui-table-container[data-variant='card'] .sui-table td { padding:10px 14px; vertical-align:middle; }
