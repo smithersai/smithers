@@ -8,10 +8,15 @@ import { describe, expect, test } from "vitest"
 import * as ReadToken from "./github/ReadToken.ts"
 import { DEFAULT_RATE_LIMIT_WAIT_MS, RepoUpstream, UpstreamUnavailable } from "./RepoUpstream.ts"
 
+// GitHub answers the ref advertisement 200. Any other answer is not GitHub's: a box whose egress reaches only the
+// package registries gets the egress's own 403 (decision 0128), which is no more GitHub than no answer at all.
 const githubUp = await fetch("https://github.com/octocat/Spoon-Knife.git/info/refs?service=git-upload-pack", {
   signal: AbortSignal.timeout(5_000),
 }).then(
-  () => true,
+  (response) => {
+    if (!response.ok) console.warn(`The live GitHub check is skipped: github.com answered ${response.status}.`)
+    return response.ok
+  },
   (error: unknown) => {
     console.warn(`The live GitHub check is skipped: github.com did not answer (${(error as Error).name}).`)
     return false
