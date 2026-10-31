@@ -29,7 +29,7 @@
     "alchemy": "2.0.0-beta.84",
     "effect": "4.1.0",
     "typescript": "5.9.3",
-    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-909723830fba.tgz",
+    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-b9d250df199d.tgz",
     "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-a2b67ac4484b.tgz",
     "vitest": "5.0.0",
     "eslint": "9.39.1",

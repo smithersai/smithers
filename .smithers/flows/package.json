@@ -57,7 +57,7 @@
     "typescript-eslint": "8.69.0",
     "happy-dom": "20.13.2",
     "@types/bun": "1.4.4",
-    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-909723830fba.tgz",
+    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-b9d250df199d.tgz",
     "@smthrs/crypto": "workspace:*"
   }
 }
