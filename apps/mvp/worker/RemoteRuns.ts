@@ -32,6 +32,7 @@ import * as RepoRuns from "./RepoRuns.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import { repositoryOf } from "./github/Config.ts"
 import { mayRead } from "./stack/Access.ts"
+import { isUpgrade, sameOrigin } from "./branch/Upgrade.ts"
 
 // Runs Smithers runs on Cloudflare, read from the browser (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare), and
 // a repository's runs (docs/features/actions.md), read and stopped with a role on their recorded repository.
@@ -59,6 +60,14 @@ import { mayRead } from "./stack/Access.ts"
 //
 // Each steer is a span and a log line `run.steer` with its id, who sent it (`person` or `agent`), its outcome and size,
 // and one count by outcome: never the message.
+//
+// A TODO run's external agent writes its transcript to the run's `RunContent` Durable Object (decision 0134,
+// docs/features/agent-transcripts.md), and a Member watches it over a socket:
+//
+// - `GET /api/remote-runs/<runId>/transcript?after=<n>` with `Upgrade: websocket`, from a page of this app: handed to
+//   the run's `RunContent`, which replays every event after `n` and then sends each one as it is stored. The same
+//   request without `Upgrade` answers `426 upgrade` to a Member, or the refusal a socket would get, so a tab whose dial
+//   failed learns whether to dial again. Each is a span and a log line `run.transcript` with its outcome.
 
 /** Remote run reads, by `outcome`: `read`, or the refusal's code. */
 export const reads = Metric.counter("smithers_remote_run_reads", {
@@ -75,6 +84,12 @@ export const steers = Metric.counter("smithers_run_steers", {
 /** Stops, by `outcome`: `requested`, `settled`, or the refusal's code. */
 export const stops = Metric.counter("smithers_run_stops", {
   description: "POST /api/remote-runs/<runId>/stop requests, by outcome",
+  incremental: true,
+})
+
+/** Transcript sockets, by `outcome`: `connected`, `upgrade`, or the refusal's code. */
+export const transcriptConnects = Metric.counter("smithers_run_transcript_connects", {
+  description: "GET /api/remote-runs/<runId>/transcript requests, by outcome",
   incremental: true,
 })
 
@@ -97,6 +112,8 @@ export interface Engine<E, R, RS = never> {
   readonly schema: string
   /** The flows whose runs render through their own schemas: the remote flows a TODO and a repository start. */
   readonly flows: ReadonlyArray<Flow.Any>
+  /** Hands the request's socket, already admitted, to run `runId`'s transcript (worker/RunContent.ts `connect`). */
+  readonly transcript: (runId: string) => Effect.Effect<HttpServerResponse.HttpServerResponse, never, RS>
   /**
    * Stops a repository's run on the Durable Object that holds it (`ExecutionObject.make`'s `cancel`): a durable
    * tombstone, then the engine's cancellation of the run and every run it started. A run its object hasn't begun is
@@ -125,10 +142,14 @@ export const parseSteerPath = (path: string): string | undefined =>
 export const parseStopPath = (path: string): string | undefined =>
   path.endsWith("/stop") ? parseRunPath(path.slice(0, -"/stop".length)) : undefined
 
+/** A transcript route's run, from `/api/remote-runs/<runId>/transcript`; none for any other path. */
+export const parseTranscriptPath = (path: string): string | undefined =>
+  path.endsWith("/transcript") ? parseRunPath(path.slice(0, -"/transcript".length)) : undefined
+
 /** Whether a path is one of the remote runs' routes, the list of runs on Cloudflare included. */
 export const handles = (path: string): boolean =>
   path === REMOTE_RUN_SHAPE_ROUTE || path === CLOUD_RUNS_ROUTE || parseRunPath(path) !== undefined ||
-  parseSteerPath(path) !== undefined || parseStopPath(path) !== undefined
+  parseSteerPath(path) !== undefined || parseStopPath(path) !== undefined || parseTranscriptPath(path) !== undefined
 
 /** A steer's body: the outbox's id for it, and the message. */
 const SteerBody = Schema.Struct({
@@ -300,6 +321,56 @@ export const make = <E, R, EE, ER, RS>(
         ).pipe(Effect.annotateLogs({ ...fields, outcome }))
         return response
       }).pipe(Effect.withSpan("run.stop", { kind: "server" }))
+
+    /** `GET /api/remote-runs/<runId>/transcript`: a TODO run's transcript socket, for a Member. */
+    const transcript = (runId: string) =>
+      Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest
+        const startedAt = yield* Clock.currentTimeMillis
+        const fields: Record<string, string | number> = { host: "remote", runId }
+        const refused = (status: number, code: string) => {
+          fields.outcome = code
+          return HttpServerResponse.jsonUnsafe({ code }, {
+            status,
+            headers: status === 503 ? { ...noStore, "retry-after": String(ShapeAccess.RETRY_AFTER_SECONDS) } : noStore,
+          })
+        }
+        const response = yield* Effect.gen(function* () {
+          if (request.method !== "GET") {
+            fields.outcome = "method"
+            return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
+          }
+          const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
+          if (Option.isNone(actor)) return refused(503, "unavailable")
+          if (Option.isNone(actor.value)) return refused(401, "authentication")
+          // Only a TODO's run has a transcript, read by a Member or above of its attempt's repository (decision 0079).
+          const attempt = yield* attemptOf(runId).pipe(Effect.provide(database))
+          if (Option.isNone(attempt)) return refused(404, "not_found")
+          if (!(yield* memberOn(actor.value.value, attempt.value.repoId).pipe(Effect.provide(database)))) {
+            return refused(403, "forbidden")
+          }
+          if (!isUpgrade(request)) return refused(426, "upgrade")
+          // A cookie rides along on a cross-site WebSocket: the `Origin` keeps another site's page out.
+          if (!sameOrigin(request)) return refused(403, "origin")
+          fields.outcome = "connected"
+          return yield* engine.transcript(runId)
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.sync(() => {
+              fields.errorCode = codeOf(Cause.squash(cause))
+              return refused(503, "unavailable")
+            })
+          ),
+        )
+        const outcome = String(fields.outcome)
+        fields.status = response.status
+        fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
+        yield* Metric.update(Metric.withAttributes(transcriptConnects, { outcome }), 1)
+        yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
+        yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 && response.status !== 426
+          ? "Warn" : "Info")("run.transcript").pipe(Effect.annotateLogs({ ...fields, outcome }))
+        return response
+      }).pipe(Effect.withSpan("run.transcript", { kind: "server" }))
 
     /** `POST /api/remote-runs/<runId>/steers`. */
     const steer = (runId: string) =>
@@ -505,6 +576,8 @@ export const make = <E, R, EE, ER, RS>(
       if (steered !== undefined) return yield* steer(steered)
       const stopped = parseStopPath(path)
       if (stopped !== undefined) return yield* stop(stopped)
+      const watched = parseTranscriptPath(path)
+      if (watched !== undefined) return yield* transcript(watched)
       const runId = parseRunPath(path)
       return runId === undefined ? HttpServerResponse.empty({ status: 404 }) : yield* read(runId)
     })

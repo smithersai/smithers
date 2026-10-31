@@ -2,7 +2,8 @@
 // engine over this file's schema of the compose Postgres, the runner routes served over real HTTP, a real
 // `smthrs runner serve` process with its own SQLite journal and a real jj checkout, and the deterministic ACP test agent
 // as its profile's command. GitHub is the scripted GitHub on the `HttpClient` seam, as in worker/flows/Todo.test.ts,
-// whose `main` is the runner's mirror's commit. Smithers' own agent is never asked: its model dies if it is.
+// whose `main` is the runner's mirror's commit. Smithers' own agent is never asked: its model dies if it is. The run's
+// transcript is the store `RunContent` keeps, on Node's SQLite (worker/test/runContent.ts).
 import { HostModel } from "@smthrs/model-host"
 import { Model } from "@smthrs/model"
 import { digestSync } from "@smthrs/crypto"
@@ -28,6 +29,8 @@ import * as ModelEndpoint from "../ModelEndpoint.ts"
 import { PersonalModels } from "../personal/Models.ts"
 import * as Stack from "../stack/Stack.ts"
 import { runFlow } from "../test/flowHost.ts"
+import * as RunContentTest from "../test/runContent.ts"
+import * as RunContent from "./RunContent.ts"
 import { eventually, testFile } from "../test/harness.ts"
 import { machines } from "../test/todoMachines.ts"
 import * as RunnersApi from "./Api.ts"
@@ -80,15 +83,18 @@ const mirror = () => {
   return { path, base: jj(path, "log", "-r", "@-", "--no-graph", "-T", "commit_id") }
 }
 
-/** The runner routes over real HTTP on a free local port. */
-const serve = async (): Promise<{ readonly origin: string; readonly server: Server }> => {
+/** The runner routes over real HTTP on a free local port, and the runs' transcripts they write. */
+const serve = async () => {
   const db = await database()
-  // As ChatApi wires it: a claim tells the TODO's attempt it no longer waits for a runner.
+  const transcripts = RunContentTest.transcripts()
+  // As ChatApi wires it: a claim tells the TODO's attempt it no longer waits for a runner, and the job's events go to
+  // the TODO's run's transcript.
   const handler = HttpEffect.toWebHandler(RunnersApi.make(db, {
     pollMillis: 100,
     onClaimed: (task) =>
       task.context?.attemptId === undefined ? Effect.void : TodoSession.claimed(task.context.attemptId).pipe(Effect.provide(db)),
-  }).fetch)
+    runOf: TodoSession.runOf,
+  }).fetch.pipe(Effect.provide(transcripts.layer)))
   const server = createServer(async (incoming, outgoing) => {
     const chunks: Array<Buffer> = []
     for await (const chunk of incoming) chunks.push(chunk as Buffer)
@@ -101,7 +107,7 @@ const serve = async (): Promise<{ readonly origin: string; readonly server: Serv
     outgoing.end(Buffer.from(await response.arrayBuffer()))
   })
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done))
-  return { origin: `http://localhost:${(server.address() as AddressInfo).port}`, server }
+  return { origin: `http://localhost:${(server.address() as AddressInfo).port}`, server, transcripts }
 }
 
 /** A runner process over `config`, its stderr kept for a failure's report. */
@@ -145,7 +151,7 @@ const setup = async () => {
     { repoId: REPOSITORY.id, agent, coding: true },
     { actorId: "person-admin", invocationKey: crypto.randomUUID() },
   ))
-  const { origin, server } = await serve()
+  const { origin, server, transcripts } = await serve()
   servers.push(server)
   const state = join(scratch, `runner-${crypto.randomUUID()}`)
   mkdirSync(state)
@@ -182,7 +188,16 @@ const setup = async () => {
   github.onPullOpened = (number) => void github.merge(number, "maya")
   const run = (start: Stack.AttemptStart) =>
     runFlow(Todo.Todo, start, registration, { executionId: todoExecutionId(start.attemptId) })
-  return { github, base, config, run }
+  /** Run `runId`'s transcript once its session's end arrived: its events, and whether their seqs run on unbroken. */
+  const transcript = async (runId: string) => {
+    let rows: ReadonlyArray<{ readonly kind: string; readonly seq: number; readonly update: Record<string, unknown> }> = []
+    await eventually(async () => {
+      rows = RunContent.page(transcripts.of(runId), -1)
+      return rows.some((row) => row.kind === "_smithers/end")
+    }, 60_000)
+    return { rows, contiguous: rows.every((row, n) => row.seq === n) }
+  }
+  return { github, base, config, run, transcript }
 }
 
 const jobs = () =>
@@ -212,6 +227,16 @@ describe("a TODO on an external agent", { timeout: 240_000 }, () => {
     expect(branchCommit.parents).toEqual([ctx.base])
     expect(pull.merged).toBe(true)
     expect(await jobs()).toEqual([{ key: expect.stringMatching(/#g1$/), status: "done", outcome: "Done" }])
+    // The run's transcript: the prompt, the agent's work and the end, once each and in order (decision 0134).
+    const { rows, contiguous } = await ctx.transcript(todoExecutionId(start.attemptId))
+    expect(contiguous).toBe(true)
+    expect(rows[0]!.kind).toBe("user_message_chunk")
+    expect(rows.map((row) => row.kind)).toContain("tool_call")
+    expect(rows.at(-1)).toMatchObject({ kind: "_smithers/end", update: { outcome: "done" } })
+    const [summary] = (await sql(runtime, `SELECT first_event_at IS NOT NULL AS first, transcript_events::int AS events
+      FROM agent_jobs`)) as Array<{ first: boolean; events: number }>
+    expect(summary!.first).toBe(true)
+    expect(summary!.events).toBeGreaterThan(0)
   })
 
   test("a runner killed mid-job is restarted, reclaims its job and finishes it once, in the same generation", async () => {
@@ -231,6 +256,13 @@ describe("a TODO on an external agent", { timeout: 240_000 }, () => {
     // The line went in once, and the job never needed a second generation.
     expect(ctx.github.tree("main").get("NOTES.md")).toBe("alpha\n")
     expect(await jobs()).toEqual([{ key: expect.stringMatching(/#g1$/), status: "done", outcome: "Done" }])
+    // The transcript runs on unbroken across the restart, without the history the agent replayed when it resumed: each
+    // prompt once (one, or two with the resumed session's Continue, as far as the first runner got).
+    const { rows, contiguous } = await ctx.transcript(todoExecutionId(start.attemptId))
+    expect(contiguous).toBe(true)
+    const prompts = rows.filter((row) => row.kind === "user_message_chunk").map((row) => JSON.stringify(row.update))
+    expect(prompts.length).toBeGreaterThan(0)
+    expect(new Set(prompts).size).toBe(prompts.length)
   })
 })
 

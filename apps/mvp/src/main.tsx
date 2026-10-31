@@ -36,6 +36,7 @@ import { DomainsProvider } from "./features/domains/components/DomainsContext"
 import { PersonalModelProvider } from "./features/personal-model/components/PersonalModelContext"
 import { FirstRunProvider } from "./features/first-run/components/FirstRunContext"
 import { TerminalProvider } from "./features/terminal/components/TerminalContext"
+import { TranscriptProvider } from "./features/transcript/components/TranscriptContext"
 import { TodosProvider } from "./features/todos/components/TodosContext"
 import { ViewsProvider } from "./features/views/components/ViewsContext"
 import { WebProvider } from "./features/web/components/WebContext"
@@ -423,6 +424,7 @@ const render: BootOptions["render"] = (
   status,
   branch,
   terminal,
+  transcript,
   issues,
   runs,
   flows,
@@ -467,6 +469,7 @@ const render: BootOptions["render"] = (
                                 <SecretsProvider value={secrets}>
                                 <TodosProvider value={todos}>
                                 <RunsProvider value={runs}>
+                                <TranscriptProvider value={transcript}>
                                   <FlowsUiProvider value={flows}>
                                     <HomeProvider value={home}>
                                       <DocsProvider value={docs}>
@@ -483,6 +486,7 @@ const render: BootOptions["render"] = (
                                       </DocsProvider>
                                     </HomeProvider>
                                   </FlowsUiProvider>
+                                </TranscriptProvider>
                                 </RunsProvider>
                                 </TodosProvider>
                                 </SecretsProvider>

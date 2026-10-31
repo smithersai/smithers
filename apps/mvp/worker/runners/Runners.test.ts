@@ -2,7 +2,7 @@
 // routes and flows, the job store an `ExternalAgent` step drives, and the routes a runner pulls its jobs through. The
 // flows run for real on the Node host's durable engine (worker/test/flowHost.ts). Nothing is scripted but who is signed
 // in.
-import { AgentRunner } from "@smthrs/agent"
+import { AgentRunner, Transcript } from "@smthrs/agent"
 import { digestSync } from "@smthrs/crypto"
 import { Action, Fault, type Flow, FlowRuntime } from "@smthrs/flow"
 import { Context, Effect, Exit, Layer, Option, Scope } from "effect"
@@ -14,11 +14,13 @@ import * as Actor from "../Actor.ts"
 import * as TodoSession from "../flows/TodoSession.ts"
 import * as Flows from "../Flows.ts"
 import * as FlowHost from "../test/flowHost.ts"
+import * as RunContentTest from "../test/runContent.ts"
 import { branchRoles, signedIn, signedOut, testFile } from "../test/harness.ts"
 import * as Admin from "./Admin.ts"
 import * as AdminFlows from "./AdminFlows.ts"
 import * as RunnersApi from "./Api.ts"
 import * as Jobs from "./Jobs.ts"
+import * as RunContent from "./RunContent.ts"
 import * as Store from "./Store.ts"
 
 const runtime = testFile("runners")
@@ -58,10 +60,20 @@ const register = async (name: string, labels: ReadonlyArray<string> = ["linux", 
   return token
 }
 
-/** The runner routes over this file's schema, a claim asking again every 50 ms. */
-const routes = async (onClaimed?: (task: AgentRunner.Task) => Effect.Effect<void, unknown>) => {
+/**
+ * The runner routes over this file's schema, a claim asking again every 50 ms, a TODO's job writing its transcript to
+ * its run as ChatApi's does, over `transcripts` (one SQLite store per run unless set).
+ */
+const routes = async (
+  onClaimed?: (task: AgentRunner.Task) => Effect.Effect<void, unknown>,
+  transcripts: Layer.Layer<RunContent.Transcripts> = RunContentTest.transcripts().layer,
+) => {
   const handler = HttpEffect.toWebHandler(
-    RunnersApi.make(await database(), { pollMillis: 50, ...(onClaimed === undefined ? {} : { onClaimed }) }).fetch,
+    RunnersApi.make(await database(), {
+      pollMillis: 50,
+      runOf: TodoSession.runOf,
+      ...(onClaimed === undefined ? {} : { onClaimed }),
+    }).fetch.pipe(Effect.provide(transcripts)),
   )
   const call = async <A>(route: keyof typeof AgentRunner.ROUTES, token: string | undefined, body: unknown) => {
     const response = await handler(new Request(`http://localhost${AgentRunner.ROUTES[route]}`, {
@@ -256,7 +268,100 @@ describe("the job store and the runner routes", () => {
     await query(Store.removeRunner({ repoId: REPO, name: "nyc-01" }, by()))
     expect((await call("claim", token, {})).status).toBe(401)
     expect(RunnersApi.handles("/api/runners/claim")).toBe(true)
+    expect(RunnersApi.handles("/api/runners/events")).toBe(true)
     expect(RunnersApi.handles("/api/runners")).toBe(false)
+  })
+})
+
+describe("the runner events route", () => {
+  const said = (seq: number, text: string, kind = "agent_message_chunk"): Transcript.Event => ({
+    seq,
+    at: Date.now() - 200,
+    kind,
+    update: { sessionUpdate: kind, content: { type: "text", text } },
+  })
+  const summaryOf = async (key: string) =>
+    (await sql<{
+      readonly first: boolean
+      readonly last: boolean
+      readonly events: string | null
+      readonly bytes: string | null
+    }>`SELECT first_event_at IS NOT NULL AS first, last_event_at IS NOT NULL AS last,
+        transcript_events::text AS events, transcript_bytes::text AS bytes FROM agent_jobs WHERE key = ${key}`)[0]!
+
+  test("a runner's events reach its job's run once each, scrubbed again; the job keeps its first event and its totals", async () => {
+    const token = await register("nyc-01")
+    const other = await register("nyc-02")
+    const store = await jobs()
+    const transcripts = RunContentTest.transcripts()
+    const { call, claim } = await routes(undefined, transcripts.layer)
+    await Effect.runPromise(store.start(taskOf({ context: { attemptId: "a1" } }), "todo:a1#g1"))
+    const job = (await claim(token)).body.job!
+    expect(await summaryOf(job.key)).toEqual({ first: false, last: false, events: null, bytes: null })
+    const sent = await call("events", token, {
+      key: job.key,
+      claim: job.claim,
+      events: [said(0, "hello"), said(1, "token ghp_abcdefgh1234 and ops@example.org")],
+    })
+    expect([sent.status, sent.body]).toEqual([200, { next: 2 }])
+    const run = transcripts.of("todo:a1")
+    expect(RunContent.page(run, -1).map((row) => (row.update.content as { text: string }).text)).toEqual([
+      "hello",
+      `token ${Transcript.REDACTED} and ${Transcript.REDACTED}`,
+    ])
+    expect(await summaryOf(job.key)).toMatchObject({ first: true, last: true, events: "2" })
+    // An empty post only asks where the run stands.
+    expect((await call("events", token, { key: job.key, claim: job.claim, events: [] })).body).toEqual({ next: 2 })
+    // A gap answers where the runner sends from; a repeat is kept once. Totals wait 30 s between writes.
+    expect((await call("events", token, { key: job.key, claim: job.claim, events: [said(3, "later"), said(1, "x")] })).body)
+      .toEqual({ next: 2 })
+    expect((await summaryOf(job.key)).events).toBe("2")
+    await sql`UPDATE agent_jobs SET last_event_at = now() - interval '31 seconds' WHERE key = ${job.key}`
+    expect((await call("events", token, { key: job.key, claim: job.claim, events: [said(2, "fill")] })).body)
+      .toEqual({ next: 4 })
+    expect((await summaryOf(job.key)).events).toBe("4")
+    expect(Number((await summaryOf(job.key)).bytes)).toBe(RunContent.summary(run).bytes)
+    // A settled job's last events still arrive from its runner; another runner, or an unknown job, is refused.
+    await call("settle", token, { key: job.key, claim: job.claim, outcome: done() })
+    expect((await call("events", token, { key: job.key, claim: job.claim, events: [said(4, "end")] })).body)
+      .toEqual({ next: 5 })
+    const refused = await call("events", other, { key: job.key, claim: job.claim, events: [said(5, "no")] })
+    expect([refused.status, refused.body]).toEqual([409, { code: "not_held" }])
+    expect((await call("events", token, { key: "todo:zz#g1", claim: job.claim, events: [] })).status).toBe(409)
+    expect(RunContent.summary(run).events).toBe(5)
+  })
+
+  test("refuses an event a runner should have dropped, a job with no run, and a body that isn't events", async () => {
+    const token = await register("nyc-01")
+    const store = await jobs()
+    const { call, claim } = await routes()
+    await Effect.runPromise(store.start(taskOf({ context: { attemptId: "a2" } }), "todo:a2#g1"))
+    const job = (await claim(token)).body.job!
+    const dropped = await call("events", token, {
+      key: job.key,
+      claim: job.claim,
+      events: [{ seq: 0, at: 1, kind: "available_commands_update", update: {} }],
+    })
+    expect([dropped.status, dropped.body]).toEqual([400, { code: "invalid" }])
+    expect((await call("events", token, { key: job.key, claim: job.claim, events: [{ seq: -1 }] })).status).toBe(400)
+    await Effect.runPromise(store.start(taskOf(), "plain#g1"))
+    const plain = (await claim(token, { free: 2, running: [job.key] })).body.job!
+    const none = await call("events", token, { key: plain.key, claim: plain.claim, events: [said(0, "hi")] })
+    expect([none.status, none.body]).toEqual([409, { code: "no_transcript" }])
+  })
+
+  test("a run's transcript that can't be reached answers 503, so the runner keeps its spool and sends again", async () => {
+    const token = await register("nyc-01")
+    const store = await jobs()
+    const unreachable = Layer.succeed(RunContent.Transcripts, RunContent.Transcripts.of({
+      append: () => Effect.fail(new RunContent.TranscriptsUnavailable()),
+    }))
+    const { call, claim } = await routes(undefined, unreachable)
+    await Effect.runPromise(store.start(taskOf({ context: { attemptId: "a3" } }), "todo:a3#g1"))
+    const job = (await claim(token)).body.job!
+    const answer = await call("events", token, { key: job.key, claim: job.claim, events: [said(0, "hi")] })
+    expect([answer.status, answer.body]).toEqual([503, { code: "unavailable" }])
+    expect(await summaryOf(job.key)).toMatchObject({ first: false })
   })
 })
 
@@ -370,7 +475,7 @@ describe("unhappy paths, through a database that is down or a starter that refus
   test("todo/Agent fails CodingUnavailable, and the runner routes answer 503", async () => {
     expect(failure(await Effect.runPromise(Effect.exit(TodoSession.agentStep(down)({ attemptId: "a", repoId: REPO })))))
       .toEqual(new TodoSession.CodingUnavailable())
-    const handler = HttpEffect.toWebHandler(RunnersApi.make(down).fetch)
+    const handler = HttpEffect.toWebHandler(RunnersApi.make(down, { runOf: TodoSession.runOf }).fetch.pipe(Effect.provide(RunContentTest.transcripts().layer)))
     const response = await handler(new Request(`http://localhost${AgentRunner.ROUTES.claim}`, {
       method: "POST",
       headers: { authorization: "Bearer some-token" },

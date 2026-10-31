@@ -908,6 +908,20 @@ Watching a TODO's run ([runs.md](features/runs.md#a-run-on-cloudflare)): ChatApi
 
 Steering a TODO's agent ([runs.md](features/runs.md#steering)) records ids, sizes and outcomes; a message's words reach only the run's queue and its model, never a record. `worker/RemoteRuns.test.ts` asserts a sentinel message in no record.
 
+### External agents' transcripts
+
+[docs/features/agent-transcripts.md](features/agent-transcripts.md#observability). Nothing here carries an event's
+content, a prompt, a token or an account.
+
+| Record | Kind | Where | Fields |
+|---|---|---|---|
+| `runner.events`, `runner.transcript` | log | `smthrs runner` | job key, outcome, pending, `next` |
+| `runner.events`; `smithers_runner_requests{route=events}` | log, span; counter | ChatApi | runner, key, events, `next`, outcome |
+| `smithers_agent_event_lag_ms` | histogram | ChatApi | none |
+| `run.transcript`; `smithers_run_transcript_connects` | log, span; counter | ChatApi | run id, outcome, status, `durationMs` |
+| `run_content.append`, `run_content.join`, `run_content.forget` | span, log | `RunContent` | generation, after, events |
+| `transcript.live`, `transcript.closed`, `transcript_event_lag_ms`, `transcript_dials`, `transcript_replays` | browser | the tab | events, verified, outcome, code |
+
 ### Flow usage
 
 Which flows run, and how (Will, 2026-10-20: "Everything is a flow so the most obvious metrics are just what flows are being ran and how"). The durable engine records them for every run on every host, so a flow gets them without declaring anything: `@smthrs/flow` `RunMetrics`, recorded by `@smthrs/engine-store` and by `@smthrs/agent`'s model steps ([its API](../../../packages/smithers/flows/flow/docs/api.md#runmetrics)).

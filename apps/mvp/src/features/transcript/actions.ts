@@ -1,0 +1,159 @@
+import { RetryPolicy } from "@smthrs/flow"
+import { Clock, Effect, FiberHandle, Metric, Option, Queue, Ref, Stream } from "effect"
+import { HttpClient, HttpClientRequest } from "effect/http"
+import * as Socket from "effect/socket/Socket"
+import { GENESIS, transcriptRoute } from "./contract"
+import { chain } from "./digest"
+import { EMPTY, foldAll } from "./fold"
+import { dials, lagMs, replays } from "./metrics"
+import { decodeFrame, type Frame, PANEL, type Panel } from "./schema"
+import { IDLE, TranscriptStore } from "./store"
+
+// What the Transcript panel does (decision 0134, docs/features/agent-transcripts.md#the-panel): it holds one socket to
+// the run it shows, replays the run's events from the start, then follows them live. A socket that drops dials again
+// from the last event it holds, so the panel never holds an event twice or misses one; before dialing again it asks
+// the same route over plain HTTP, and a refusal (signed out, not a Member, no such run) ends it for good. Each event's
+// lag from the runner to this tab is measured. Nothing here logs or counts an event's content.
+
+/** The socket's URL for run `runId` on the app's `origin`, after event `after`: `ws:` for `http:`, `wss:` for `https:`. */
+export const socketUrl = (origin: string, runId: string, after: number) =>
+  `${origin.replace(/^http/, "ws")}${transcriptRoute(runId)}?after=${after}`
+
+const FINAL: Readonly<Record<number, NonNullable<Panel["closed"]>>> = {
+  401: "authentication",
+  403: "forbidden",
+  404: "not_found",
+}
+
+const setPanel = (fields: Partial<Omit<Panel, "id">>): Effect.Effect<void, never, TranscriptStore> =>
+  Effect.flatMap(TranscriptStore, ({ panel }) =>
+    Effect.asVoid(Effect.orDie(panel.update(PANEL, (row) => void Object.assign(row, fields)))))
+
+const panelNow = Effect.flatMap(TranscriptStore, ({ panel }) => Effect.map(panel.get(PANEL), Option.getOrThrow))
+
+/** Takes one frame: events are folded into the items, counted and chained; `live` checks the chain against the run's. */
+export const apply = (frame: Frame) =>
+  Effect.gen(function* () {
+    const store = yield* TranscriptStore
+    const panel = yield* panelNow
+    if (frame.type === "live") {
+      const verified = frame.n === panel.last && frame.digest === panel.digest
+      yield* Metric.update(Metric.withAttributes(replays, { verified: String(verified) }), 1)
+      yield* Metric.update(Metric.withAttributes(dials, { outcome: "live" }), 1)
+      yield* Effect.logInfo("transcript.live").pipe(Effect.annotateLogs({ events: panel.events, verified }))
+      return yield* setPanel({ phase: "live", verified })
+    }
+    // A redial replays after the last event held, so nothing arrives twice; anything at or before it is dropped.
+    const rows = frame.events.filter((row) => row.n > panel.last)
+    if (rows.length === 0) return
+    const folded = foldAll(yield* Ref.get(store.folded), rows)
+    yield* Ref.set(store.folded, folded.state)
+    for (const item of folded.changed) {
+      if (Option.isSome(yield* store.items.get(item.id))) {
+        yield* Effect.orDie(store.items.update(item.id, (row) => void Object.assign(row, item)))
+      } else {
+        yield* Effect.orDie(store.items.insert(item))
+      }
+    }
+    const now = yield* Clock.currentTimeMillis
+    for (const row of rows) yield* Metric.update(lagMs, Math.max(0, now - row.at))
+    yield* setPanel({
+      phase: panel.phase === "connecting" ? "replaying" : panel.phase,
+      events: panel.events + rows.length,
+      last: rows[rows.length - 1]!.n,
+      digest: rows.reduce(chain, panel.digest),
+      lagMs: Math.max(0, now - rows[rows.length - 1]!.at),
+    })
+  })
+
+/** Why the socket ended: a drop to dial again after, or a refusal that ends the panel. */
+class Dropped {
+  readonly _tag = "Dropped"
+  constructor(readonly code: number) {}
+}
+
+/** One dial of the socket, from the last event held, until it closes: fails `Dropped` with the close's code. */
+const session = (runId: string) =>
+  Effect.scoped(Effect.gen(function* () {
+    const store = yield* TranscriptStore
+    const construct = yield* Socket.WebSocketConstructor
+    const events = yield* Queue.unbounded<{ readonly data: unknown } | { readonly code: number }>()
+    const after = (yield* panelNow).last === 0 ? -1 : (yield* panelNow).last
+    yield* setPanel({ phase: (yield* panelNow).phase === "offline" ? "offline" : "connecting" })
+    yield* Effect.acquireRelease(
+      Effect.sync(() => {
+        const socket = construct(socketUrl(store.origin, runId, after))
+        const onMessage = (event: Socket.WebSocketEvent) => Queue.offerUnsafe(events, { data: event.data })
+        const onClose = (event: Socket.WebSocketEvent) => Queue.offerUnsafe(events, { code: (event as CloseEvent).code })
+        socket.addEventListener("message", onMessage)
+        socket.addEventListener("close", onClose)
+        return () => {
+          socket.removeEventListener("message", onMessage)
+          socket.removeEventListener("close", onClose)
+          socket.close(1000)
+        }
+      }),
+      (hangUp) => Effect.sync(hangUp),
+    )
+    const step = (event: { readonly data: unknown } | { readonly code: number }): Effect.Effect<void, Dropped, TranscriptStore> => {
+      if ("code" in event) return Effect.fail(new Dropped(event.code))
+      if (typeof event.data !== "string") return Effect.void
+      const frame = decodeFrame(event.data)
+      return Option.isNone(frame) ? Effect.void : Effect.asVoid(apply(frame.value))
+    }
+    return yield* Stream.fromQueue(events).pipe(Stream.runForEach(step))
+  }))
+
+/** Whether ChatApi refuses the panel run `runId` for good: the route over plain HTTP answers its refusal. */
+const refusalOf = (runId: string) =>
+  Effect.gen(function* () {
+    const store = yield* TranscriptStore
+    const client = yield* HttpClient.HttpClient
+    const response = yield* client.execute(HttpClientRequest.get(`${store.origin}${transcriptRoute(runId)}`)).pipe(
+      Effect.timeout("10 seconds"),
+      Effect.option,
+    )
+    return Option.isNone(response) ? undefined : FINAL[response.value.status]
+  })
+
+/**
+ * Shows run `runId`'s transcript, or none for `null`: lets go of the socket it held, empties the panel, and holds a
+ * socket to the run's until another watch or the store's end.
+ */
+export const watch = (runId: string | null) =>
+  Effect.gen(function* () {
+    const store = yield* TranscriptStore
+    if (runId !== null && (yield* panelNow).runId === runId) return
+    yield* FiberHandle.clear(store.socket)
+    yield* Ref.set(store.folded, EMPTY)
+    const ids = (yield* store.items.toArray).map((item) => item.id)
+    if (ids.length > 0) yield* Effect.orDie(store.items.delete(ids))
+    yield* setPanel({ ...IDLE, runId, phase: runId === null ? "idle" : "connecting", digest: GENESIS })
+    if (runId === null) return
+    const follow: Effect.Effect<void, never, TranscriptStore | HttpClient.HttpClient> = session(runId).pipe(
+      Effect.catch((dropped: Dropped) =>
+        Effect.gen(function* () {
+          const refused = yield* refusalOf(runId)
+          if (refused === undefined) {
+            yield* Metric.update(Metric.withAttributes(dials, { outcome: "dropped" }), 1)
+            yield* setPanel({ phase: "offline" })
+            return yield* Effect.fail(dropped)
+          }
+          yield* Metric.update(Metric.withAttributes(dials, { outcome: refused }), 1)
+          yield* Effect.logWarning("transcript.closed").pipe(Effect.annotateLogs({ outcome: refused }))
+          yield* setPanel({ phase: "closed", closed: refused })
+        })
+      ),
+      Effect.retry(RetryPolicy.schedule<Dropped>(store.redial)),
+      Effect.catch((dropped) =>
+        Effect.andThen(
+          Effect.logWarning("transcript.closed").pipe(Effect.annotateLogs({ outcome: "failed", code: dropped.code })),
+          setPanel({ phase: "closed", closed: "failed" }),
+        )
+      ),
+      Effect.provide(Socket.layerWebSocketConstructorGlobal),
+      Effect.withSpan("transcript.watch"),
+      Effect.annotateLogs({ feature: "transcript" }),
+    )
+    yield* FiberHandle.run(store.socket, follow)
+  })

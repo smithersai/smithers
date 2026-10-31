@@ -16,6 +16,7 @@ browser ── site Worker ── service binding ── ChatApi Worker ── H
 | Hyperdrive | `alchemy dev` passes the binding straight through to `DATABASE_URL` | the `ChatDatabase` config in front of Neon's direct host, query cache off |
 | Workers | local workerd at http://localhost:1337 (HTTP/1.1) and https://localhost:1443 (HTTP/2, [below](#https-and-http2)) | Cloudflare over HTTP/2 and HTTP/3, Workers Logs and Traces persisted |
 | Remote flows | the `FlowExecution` Durable Object in local workerd, its engine in the schema `smithers_flows` of the compose Postgres | the `FlowExecution` Durable Object, hosted by ChatApi, its engine in the schema `smithers_flows` of the Neon project through `ChatDatabase` ([remote-flows.md](features/remote-flows.md)) |
+| Agent transcripts | the `RunContent` Durable Object in local workerd | the `RunContent` Durable Object, hosted by ChatApi, one per run with its own SQLite, kept 30 days after its last event ([agent-transcripts.md](features/agent-transcripts.md)) |
 
 ## Local
 

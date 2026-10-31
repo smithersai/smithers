@@ -27,12 +27,15 @@ import type { Inspection, RunTab, RunPage, RunView } from "../schema"
 import { actionRunPath } from "../../actions/contract"
 import { useRuns } from "./RunsContext"
 import { RunSteers } from "./RunSteers"
+import { transcribed } from "../../transcript/contract"
+import { TranscriptPanel } from "../../transcript/components/TranscriptPanel"
 import { flowWords } from "../words"
 
 // One run's page (decision 0014 §5): its header with Stop, Retry and Resume, then its steps with each one's input and
 // output, its timeline and its journal. Every value is text the engine redacted and cut to 16 KiB before it left the
 // engine; nothing here renders a value as markup. A run on Cloudflare (a TODO's, ruling TODO-3) reads the same, with
 // `Cloud` in its header and Retry when failed, and lists the messages people sent its agent, with a composer while it works.
+// A run whose agent is an external agent shows that agent's Transcript, live (decision 0134).
 export function RunPageView({ fromRuns = false }: { readonly fromRuns?: boolean }) {
   const { queries, actions } = useRuns()
   const { data } = useLiveQuery(queries.page)
@@ -107,6 +110,7 @@ function ReadRunPage({ page, view, actions, fromRuns }: { page: RunPage; view: R
       />
       {view.refusal === null ? null : <p role="alert">{REFUSAL_WORDS[view.refusal] ?? view.refusal}</p>}
       <RunSteers page={page} view={view} steps={steps} />
+      {transcribed(inspection.steps) ? <TranscriptPanel runId={run.runId} /> : null}
       <div className="run-page-values">
         <JsonValue label="Input" value={run.input} />
         {run.result === null ? null : <JsonValue label="Result" value={run.result} />}

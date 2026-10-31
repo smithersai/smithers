@@ -11,7 +11,7 @@ import { Notification, NotificationQueue } from "@smthrs/notifications"
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { Node } from "@smthrs/plan"
 import { ConfigProvider, Context, Effect, Layer, Logger, Metric, Option, Redacted, Schema, Tracer } from "effect"
-import { FetchHttpClient, HttpEffect } from "effect/http"
+import { FetchHttpClient, HttpEffect, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
@@ -24,6 +24,7 @@ import {
   steersRoute,
   stopRoute,
 } from "../src/features/runs/contract.ts"
+import { transcriptRoute } from "../src/features/transcript/contract.ts"
 import * as Actor from "./Actor.ts"
 import * as CloudRuns from "./CloudRuns.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
@@ -224,6 +225,8 @@ const routes = async (
     /** What the run's Durable Object does with a stop; nothing unless set. */
     readonly roles?: RepoRoles.RepoRoles
     readonly stop?: (runId: string) => Effect.Effect<void, unknown>
+    /** What the run's transcript does with an admitted socket; answers `200 handed <runId>` unless set. */
+    readonly transcript?: (runId: string) => Effect.Effect<HttpServerResponse.HttpServerResponse>
   } = {},
 ) => {
   const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
@@ -263,6 +266,7 @@ const routes = async (
         schema: engine.schema,
         flows: [Watched, Reviewed, Checked],
         stop: options.stop ?? (() => Effect.void),
+        transcript: options.transcript ?? ((runId) => Effect.succeed(HttpServerResponse.text(`handed ${runId}`))),
       }, roles)),
     ),
   )
@@ -1294,6 +1298,67 @@ describe("GET /api/cloud-runs", () => {
   })
 })
 
+describe("GET /api/remote-runs/<runId>/transcript", () => {
+  const socket = (origin = "http://chat.test") => ({ headers: { upgrade: "websocket", origin } })
+
+  test("a Member's socket from a page of this app is handed to the run's transcript; a plain GET answers upgrade", async () => {
+    const start = await attempt()
+    const runId = todoExecutionId(start.attemptId)
+    await withEngine(async (engine) => {
+      const h = await routes(engine, { actor: member })
+      const handed = await h.fetch(`${transcriptRoute(runId)}?after=-1`, socket())
+      expect([handed.status, await handed.text()]).toEqual([200, `handed ${runId}`])
+      const plain = await h.fetch(transcriptRoute(runId))
+      expect([plain.status, await plain.json()]).toEqual([426, { code: "upgrade" }])
+      expect(h.count(RemoteRuns.transcriptConnects, { outcome: "connected" })).toBe(1)
+      expect(h.line("run.transcript").map((log) => (log.annotations as { outcome: string }).outcome)).toEqual([
+        "connected",
+        "upgrade",
+      ])
+      expect(h.spans.filter((span) => span.name === "run.transcript")).toHaveLength(2)
+    })
+  })
+
+  test("refuses who may not read the run, another site's page, a run no TODO started, and another method", async () => {
+    const start = await attempt()
+    const runId = todoExecutionId(start.attemptId)
+    await withEngine(async (engine) => {
+      const never = () => Effect.die("never handed")
+      const signedOut = await routes(engine, { transcript: never })
+      const out = await signedOut.fetch(transcriptRoute(runId), socket())
+      expect([out.status, await out.json()]).toEqual([401, { code: "authentication" }])
+      const elsewhere = await routes(engine, { actor: member, roles: {
+        repository: repositoryOf("octo/hello"),
+        resolve: () => Effect.succeed({ role: "guest" as const, held: Option.none() }),
+      }, transcript: never })
+      const guestOnly = await elsewhere.fetch(transcriptRoute(runId), socket())
+      expect([guestOnly.status, await guestOnly.json()]).toEqual([403, { code: "forbidden" }])
+      const h = await routes(engine, { actor: member, transcript: never })
+      const foreign = await h.fetch(transcriptRoute(runId), socket("https://evil.example"))
+      expect([foreign.status, await foreign.json()]).toEqual([403, { code: "origin" }])
+      const unknown = await h.fetch(transcriptRoute(todoExecutionId(uuid())), socket())
+      expect([unknown.status, await unknown.json()]).toEqual([404, { code: "not_found" }])
+      const repoRun = await h.fetch(transcriptRoute(`ci:${uuid()}`), socket())
+      expect(repoRun.status).toBe(404)
+      expect((await h.fetch(transcriptRoute(runId), { method: "POST" })).status).toBe(405)
+      expect(h.count(RemoteRuns.transcriptConnects, { outcome: "origin" })).toBe(1)
+    })
+  })
+
+  test("answers 503 when sessions or the app's database can't, so the tab dials again", async () => {
+    const start = await attempt()
+    const runId = todoExecutionId(start.attemptId)
+    await withEngine(async (engine) => {
+      const sessionsDown = Layer.succeed(Actor.Sessions, Actor.Sessions.of({ resolve: Effect.fail(new Actor.SessionsUnavailable()) }))
+      const down = await routes(engine, { sessions: sessionsDown })
+      expect((await down.fetch(transcriptRoute(runId), socket())).status).toBe(503)
+      const broken = await routes(engine, { actor: member, database: missing("remote_runs_no_transcript_app") })
+      const answered = await broken.fetch(transcriptRoute(runId), socket())
+      expect([answered.status, answered.headers.get("retry-after")]).toEqual([503, "5"])
+    })
+  })
+})
+
 describe("the routes", () => {
   test("handle the run route and the shape, and nothing else", () => {
     const runId = todoExecutionId(uuid())
@@ -1311,6 +1376,9 @@ describe("the routes", () => {
     expect(RemoteRuns.handles(stopRoute(runId))).toBe(true)
     expect(RemoteRuns.parseStopPath(stopRoute(runId))).toBe(runId)
     expect(RemoteRuns.parseStopPath(steersRoute(runId))).toBeUndefined()
+    expect(RemoteRuns.handles(transcriptRoute(runId))).toBe(true)
+    expect(RemoteRuns.parseTranscriptPath(transcriptRoute(runId))).toBe(runId)
+    expect(RemoteRuns.parseTranscriptPath(stopRoute(runId))).toBeUndefined()
   })
 
   test("a path the module doesn't serve is 404", async () => {

@@ -33,5 +33,14 @@
 .run-steer-composer { display:flex; gap:0.5rem; align-items:flex-end; }
 .run-steer-composer > textarea { flex:1; min-width:0; }
 
+/* An external agent's Transcript on its run's page (decision 0134): bounded, so the steps stay one scroll away. */
+.transcript-panel { display:flex; flex-direction:column; gap:0.5rem; }
+.transcript-header { display:flex; align-items:center; gap:0.75rem; }
+.transcript-header > h2 { margin:0; font-size:1rem; }
+.transcript-panel [data-slot=chat-transcript] { max-height:32rem; }
+.transcript-text { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.transcript-meta { margin:0; font-size:0.8125rem; opacity:0.8; }
+.transcript-plan { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:0.25rem; }
+
 /* A step's log lines in a run opened in place on the Runs page (ruling FLOW-13). */
 .runs-log { max-height:24rem; overflow:auto; }

@@ -34,7 +34,7 @@ import {
 } from "effect"
 import { Flow, Interpreter, Sleep } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { FetchHttpClient, type HttpClient, HttpEffect, HttpServerRequest } from "effect/http"
+import { FetchHttpClient, type HttpClient, HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as Socket from "effect/socket/Socket"
 import { SqlClient } from "effect/sql"
 import { rmSync } from "node:fs"
@@ -654,6 +654,9 @@ export class TestChatApi extends Context.Service<
               const { context } = yield* remoteEngine
               yield* Context.get(context, FlowRuntime.FlowRuntime).interrupt(Pause.Pause, runId).pipe(Effect.provide(context))
             }),
+          // A run's transcript lives on its `RunContent` Durable Object, which this Node host doesn't have: the socket is
+          // answered 501, and e2e/agent-runner.spec.ts watches a transcript on a real one.
+          transcript: () => Effect.succeed(HttpServerResponse.empty({ status: 501 })),
         }, roles).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
 
         // Custom domains, as ChatApi routes them (worker/domains/Api.ts), with `domain/Verify` and `domain/Remove` run
