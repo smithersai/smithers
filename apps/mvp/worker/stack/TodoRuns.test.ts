@@ -5,6 +5,7 @@ import { beforeEach, expect, test } from "vitest"
 import { SqlClient } from "effect/sql"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
+import type * as Fleet from "../runners/Fleet.ts"
 import { build } from "../test/flowHost.ts"
 import * as Flows from "../Flows.ts"
 import * as Todo from "../flows/Todo.ts"
@@ -158,11 +159,14 @@ test("a run that died stops its external agent: a queued generation ends, a clai
     const engineDatabase = ExecutionHost.readDatabase((yield* TestDatabase.serverUrl).toString(), engine.schema)
     yield* Effect.exit(Context.get(context, FlowRuntime.FlowRuntime).execute(Dies, { executionId, payload: { fail: true } }))
       .pipe(Effect.provide(context))
-    yield* TodoRuns.settleCrashed(executionId, engineDatabase)
+    const raised: Array<Fleet.Alert> = []
+    yield* TodoRuns.settleCrashed(executionId, engineDatabase, (alert) => Effect.sync(() => void raised.push(alert)))
     expect(yield* sql`SELECT key, status, cancel_requested FROM agent_jobs ORDER BY key`).toEqual([
       { key: "agent#g1", status: "claimed", cancel_requested: true },
       { key: "agent#g2", status: "cancelled", cancel_requested: true },
     ])
+    // The fleet's Run failed alert: `todo/Fail` never ran. The id is the incident, so a second report starts no second one.
+    expect(raised.map((alert) => [alert.kind, alert.subject])).toEqual([["failed", attemptId]])
   }))), 60_000)
 
 test("a TODO whose run died fails `crashed` and frees its lane, once; a run that ended any other way changes nothing", () =>

@@ -9,6 +9,7 @@ import * as Todo from "../flows/Todo.ts"
 import * as TodoBaseClosed from "../flows/TodoBaseClosed.ts"
 import * as TodoDrop from "../flows/TodoDrop.ts"
 import * as TodoSession from "../flows/TodoSession.ts"
+import * as Fleet from "../runners/Fleet.ts"
 import * as Stack from "./Stack.ts"
 
 /** The production adapter from persisted stack receipts to remote executions. */
@@ -93,7 +94,11 @@ export const crashes = Metric.counter("smithers_todo_crashes", {
  * same report again answers the same starts. A TODO the run already settled, a later attempt's, or a dropped one is a
  * stale report, which changes nothing; any other run is not a TODO's. The run page says what it died of (`flow.run.defect`, its `transitioned` decision).
  */
-export const settleCrashed = <E, R>(executionId: string, engine: Layer.Layer<SqlClient.SqlClient, E, R>) =>
+export const settleCrashed = <E, R, AE = never, AR = never>(
+  executionId: string,
+  engine: Layer.Layer<SqlClient.SqlClient, E, R>,
+  raise?: (alert: Fleet.Alert) => Effect.Effect<void, AE, AR>,
+) =>
   Effect.gen(function* () {
     if (!executionId.startsWith(todoExecutionId(""))) return []
     const status = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
@@ -109,7 +114,19 @@ export const settleCrashed = <E, R>(executionId: string, engine: Layer.Layer<Sql
     if (attempt === undefined) return []
     const reported = yield* Stack.report(attempt, { kind: "finished", state: "failed", failure: "crashed" }, { runs: true })
     // An external agent still at work stops with its run: no step waits on its job now, and a settled run offers no Stop.
+    // Its fleet row says why first, because the stop would read Stopping and no probe is left to correct it.
+    yield* Fleet.crashed(attempt.attemptId)
     yield* TodoSession.stop(attempt.attemptId)
+    // Run failed or lost: `todo/Fail` raises this for a run that ended itself (docs/features/fleet.md#alerts).
+    if (reported.outcome !== "stale" && raise !== undefined) {
+      const alert: Fleet.Alert = {
+        alertId: Fleet.alertId.failed(attempt.attemptId),
+        kind: "failed",
+        repoId: attempt.repoId,
+        subject: attempt.attemptId,
+      }
+      yield* Fleet.raiseAll(attempt.attemptId, [alert], raise, () => Effect.void)
+    }
     yield* Metric.update(Metric.withAttributes(crashes, { outcome: reported.outcome }), 1)
     yield* (reported.outcome === "applied" ? Effect.logWarning : Effect.logInfo)("todo.crashed").pipe(
       Effect.annotateLogs({ runId: executionId, attemptId: attempt.attemptId, todoId: attempt.todoId, outcome: reported.outcome }),

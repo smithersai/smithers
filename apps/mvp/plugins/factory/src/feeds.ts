@@ -1,11 +1,13 @@
 import type { Host } from "@smthrs/plugin"
 import { Effect } from "effect"
+import type { SmithersRun } from "./model"
 
 // The factory's one seam to the core's feed queries (decision 0128 §5, §7, docs/features/feeds.md): every read of a
 // repository's feed documents goes through `Feeds`, so how a query learns its repository and a document's name changes
 // here and nowhere else. The core asks them with `params`: `core/feeds` with `{ repo }` (the index), `core/feed` with
 // `{ repo, name }` (one document, synced only while it is followed), `core/feed-items` with `{ repo, name }` (the
-// elements of an index document, one row each, which the host's strip answers through `feed/answer`).
+// elements of an index document, one row each, which the host's strip answers through `feed/answer`). Beside them,
+// `core/agent-runs` with `{ repo }`: the repository's agent runs on Smithers itself (docs/features/fleet.md#queries).
 
 /** A feed document, as the core's feed queries have it. */
 export interface FeedDocument {
@@ -41,6 +43,9 @@ export const DOCUMENT = "core/feed"
 /** The items of one index document, one row per element with an id: what the action strip answers. */
 export const ASKS = "core/feed-items"
 
+/** Smithers' own agent runs of a repository (docs/features/fleet.md#queries), which Agents lists beside the lanes. */
+export const RUNS = "core/agent-runs"
+
 /** The document whose items are the decisions that wait on a maintainer. */
 export const DECISIONS = "for_will"
 
@@ -66,6 +71,8 @@ export interface Feeds {
   readonly asks: (repository: Host.Repository) => Effect.Effect<Host.Live<AskRow>, Host.PluginRefused>
   /** Tells the host the person looks at `ask`, so the strip under the view answers it. */
   readonly select: (ask: AskRow) => Effect.Effect<void, Host.PluginRefused>
+  /** The repository's agent runs on Smithers, live. */
+  readonly runs: (repository: Host.Repository) => Effect.Effect<Host.Live<SmithersRun>, Host.PluginRefused>
 }
 
 /** The feeds over `host`'s reads. */
@@ -74,4 +81,5 @@ export const feedsOf = (host: Reads): Feeds => ({
   document: (repository, name) => host.query<FeedDocument>(DOCUMENT, { repo: repoOf(repository), name }),
   asks: (repository) => host.query<AskRow>(ASKS, { repo: repoOf(repository), name: DECISIONS }),
   select: (ask) => host.select({ query: ASKS, key: ask.key, params: { repo: ask.repo, name: ask.document } }),
+  runs: (repository) => host.query<SmithersRun>(RUNS, { repo: repoOf(repository) }),
 })

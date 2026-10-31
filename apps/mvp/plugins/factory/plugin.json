@@ -79,7 +79,8 @@
       },
       {
         "id": "factory/agents", "title": "Agents", "scope": "repository", "path": "agents", "sizes": ["full"],
-        "minimum": "anyone", "reads": ["core/feeds", "core/feed"], "render": { "kind": "component", "export": "Agents" }
+        "minimum": "anyone", "reads": ["core/feeds", "core/feed", "core/agent-runs"],
+        "render": { "kind": "component", "export": "Agents" }
       },
       {
         "id": "factory/media", "title": "Media", "scope": "repository", "path": "media", "sizes": ["full"],

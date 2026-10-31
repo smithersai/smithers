@@ -250,6 +250,62 @@ export const lanesOf = (agents: ReadonlyArray<Agent>, now: Seconds): ReadonlyArr
     duration: duration(agent.started, agent.ended, now),
   }))
 
+/** One agent run on Smithers, as `core/agent-runs` serves it (docs/features/fleet.md#queries): the fields Agents reads. */
+export interface SmithersRun {
+  readonly key: string
+  readonly agent: string
+  readonly number: number | null
+  readonly title: string | null
+  readonly runner: string | null
+  readonly accountLabel?: string | null | undefined
+  readonly state: string
+  readonly queuedAt: string
+  readonly claimedAt: string | null
+  readonly endedAt: string | null
+}
+
+const RUN_WORDS: Readonly<Record<string, { readonly word: string; readonly tone: Tone }>> = {
+  queued: { word: "waiting", tone: "warn" },
+  working: { word: "running", tone: "run" },
+  stalled: { word: "stalled", tone: "bad" },
+  stopping: { word: "stopping", tone: "warn" },
+  stopped: { word: "stopped", tone: "muted" },
+  failed: { word: "failed", tone: "bad" },
+  done: { word: "done", tone: "ok" },
+  retried: { word: "retried", tone: "muted" },
+}
+
+/** One Smithers run as Agents lists it beside the collector's lanes: its TODO, agent, runner and account. */
+export interface RunLane extends Lane {
+  readonly key: string
+  readonly number: number | null
+}
+
+/**
+ * Smithers' own runs as lanes, newest first, at `nowMs`. During the cutover the collector's lanes and these show side
+ * by side, each in its own section: a lane on Smithers is a run here, never also a collector lane (FINAL.md §4.1).
+ */
+export const runLanesOf = (runs: ReadonlyArray<SmithersRun>, nowMs: number): ReadonlyArray<RunLane> =>
+  [...runs].sort((a, b) => Date.parse(b.queuedAt) - Date.parse(a.queuedAt)).map((run) => {
+    const words = RUN_WORDS[run.state] ?? { word: run.state, tone: "muted" as const }
+    const start = Date.parse(run.claimedAt ?? run.queuedAt) / 1000
+    const end = run.endedAt === null ? null : Date.parse(run.endedAt) / 1000
+    return {
+      key: run.key,
+      number: run.number,
+      name: run.number === null ? run.agent : `T${run.number}`,
+      title: run.title ?? "",
+      phase: "smithers",
+      machine: run.runner ?? "-",
+      model: run.agent,
+      account: run.accountLabel ?? "",
+      state: run.state,
+      tone: words.tone,
+      label: words.word,
+      duration: duration(start, end, Math.floor(nowMs / 1000)),
+    }
+  })
+
 const roundsOf = (status: Status): ReadonlyArray<number> =>
   Object.keys(status.grades).filter((round) => /^v\d+$/.test(round)).map(numberIn).sort((left, right) => left - right)
 

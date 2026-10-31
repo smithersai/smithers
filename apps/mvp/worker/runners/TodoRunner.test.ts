@@ -40,7 +40,12 @@ import { eventually, testFile } from "../test/harness.ts"
 import { machines } from "../test/todoMachines.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
 import * as RunnersApi from "./Api.ts"
+import * as Fleet from "./Fleet.ts"
+import type * as Jobs from "./Jobs.ts"
 import * as Store from "./Store.ts"
+import * as FleetAlert from "../flows/FleetAlert.ts"
+import { type AlertProviders, startAlertProviders } from "../test/alertProviders.ts"
+import { Channels } from "@smthrs/notifications"
 
 const runtime = testFile("todo_runner")
 const root = fileURLToPath(new URL("../../../../", import.meta.url))
@@ -57,6 +62,7 @@ beforeEach(async () => {
   await sql(runtime, "TRUNCATE stack_ops, todo_attempts, todo_requests, todos, stacks, pulls, pull_commits, reviews, runs")
   await sql(runtime, "TRUNCATE agent_jobs, runners, runner_changes, agents, agent_changes RESTART IDENTITY CASCADE")
   await resetModels(runtime)
+  await sql(runtime, "TRUNCATE agent_runs, fleet_alerts, notifications, alert_channels, alert_deliveries, github_repo_roles")
 })
 
 const database = () => runtime.runPromise(Effect.map(Effect.service(TestDatabase.Scratch), (each) => each.database))
@@ -154,9 +160,18 @@ const noModel = Model.make({ stream: () => Stream.die(new Error("Smithers' own a
 
 /**
  * Everything a run needs, with a runner registered for the repository and the coding agent set. `run` sees every
- * command the attempt's machine runs; with `secrets`, SECRETS_KEY is set, so a run could open what its committer sealed.
+ * command the attempt's machine runs; with `secrets`, SECRETS_KEY is set, so a run could open what its committer sealed;
+ * `fleet`, the fleet's alerts.
  */
-const setup = async (options: { readonly run?: (command: string) => number; readonly secrets?: boolean } = {}) => {
+const setup = async (
+  options: {
+    readonly run?: (command: string) => number
+    readonly secrets?: boolean
+    readonly fleet?: Jobs.Alerts
+    readonly capacity?: number
+    readonly heartbeatSeconds?: number
+  } = {},
+) => {
   const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
   const { path, base } = mirror()
   // GitHub's main is the mirror's commit, with the same files.
@@ -166,7 +181,7 @@ const setup = async (options: { readonly run?: (command: string) => number; read
   const db = await database()
   const token = `runner-token-${crypto.randomUUID()}`
   await runtime.runPromise(Store.addRunner(
-    { repoId: REPOSITORY.id, name: "test-runner", tokenSha256: digestSync(token), labels: ["linux"], capacity: 2 },
+    { repoId: REPOSITORY.id, name: "test-runner", tokenSha256: digestSync(token), labels: ["linux"], capacity: options.capacity ?? 2 },
     { actorId: "person-admin", invocationKey: crypto.randomUUID() },
   ))
   await runtime.runPromise(Store.setAgent(
@@ -185,9 +200,9 @@ const setup = async (options: { readonly run?: (command: string) => number; read
   writeFileSync(config, JSON.stringify({
     origin,
     name: "test-runner",
-    capacity: 2,
+    capacity: options.capacity ?? 2,
     stateDir: state,
-    heartbeatSeconds: 2,
+    heartbeatSeconds: options.heartbeatSeconds ?? 2,
     repositories: { [REPOSITORY.id]: { mirror: path } },
     profiles: {
       "acp-test": { argv: [process.execPath, testAgent], env: { ACP_TEST_AGENT_STATE: join(state, "agent-state") } },
@@ -208,6 +223,7 @@ const setup = async (options: { readonly run?: (command: string) => number; read
     http: services.http,
     apiBaseUrl: services.apiBaseUrl,
     start: () => Effect.void,
+    ...(options.fleet === undefined ? {} : { fleet: options.fleet }),
   }
   const registration = Todo.registration(todoServices, TodoAgent.registration(local("agent"), db, Agent.layerSandbox))
     .pipe(
@@ -219,8 +235,12 @@ const setup = async (options: { readonly run?: (command: string) => number; read
       ),
     )
   github.onPullOpened = (number) => void github.merge(number, "maya")
-  const run = (start: Stack.AttemptStart) =>
-    runFlow(Todo.Todo, start, registration, { executionId: todoExecutionId(start.attemptId), schema })
+  const run = (start: Stack.AttemptStart, signal?: AbortSignal) =>
+    runFlow(Todo.Todo, start, registration, {
+      executionId: todoExecutionId(start.attemptId),
+      schema,
+      ...(signal === undefined ? {} : { signal }),
+    })
   /** Run `runId`'s transcript once its session's end arrived: its events, and whether their seqs run on unbroken. */
   const transcript = async (runId: string) => {
     let rows: ReadonlyArray<{ readonly kind: string; readonly seq: number; readonly update: Record<string, unknown> }> = []
@@ -230,7 +250,7 @@ const setup = async (options: { readonly run?: (command: string) => number; read
     }, 60_000)
     return { rows, contiguous: rows.every((row, n) => row.seq === n) }
   }
-  return { github, base, config, run, transcript, schema, state }
+  return { github, base, config, run, transcript, schema, state, db }
 }
 
 const jobs = () =>
@@ -428,6 +448,96 @@ describe("steering and stopping a TODO's external agent", { timeout: 240_000 }, 
       op: { kind: "retry", number: 1 },
     }, { runs: true }))
     expect(retried.kind === "applied" ? retried.receipt.starts.length : 0).toBe(1)
+  })
+})
+
+describe("the fleet over a real runner", { timeout: 300_000 }, () => {
+  let providers: AlertProviders
+  afterEach(async () => {
+    await providers?.close()
+  })
+
+  test("a silent agent reads Stalled and its committer hears it; a quiet CPU-bound build does not; a refused run's failure and a killed runner's outage reach the bell and Telegram once", async () => {
+    providers = await startAlertProviders()
+    const chat = "-1001234500002"
+    await sql(runtime, `INSERT INTO alert_channels (channel, destinations, app_url, updated_by)
+      VALUES ('telegram', '["${chat}"]'::jsonb, 'https://smithers.test/app', 'person-admin')`)
+    await sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role) VALUES ('${REPOSITORY.id}', 'person-ada', 'admin')`)
+    const db = await database()
+    const alerts = FleetAlert.registration(db, "github/smithersai/smithers", Channels.layer({
+      telegram: { token: Redacted.make("123456:SYNTHETIC_FLEET_BOT"), url: providers.url },
+    }))
+    // Each alert the probe or `todo/Fail` raises runs `ops/FleetAlert` on the Node host, as its own execution.
+    const fleet: Jobs.Alerts = {
+      // Fifteen seconds of quiet is a stall here (longer than an agent takes to start its first command and use 5 CPU
+      // seconds); a runner unseen for 20 s is offline.
+      settings: { ...Fleet.DEFAULTS, stallMinutes: 0.25, offlineSeconds: 20 },
+      raise: (alert) =>
+        Effect.promise(() => runFlow(FleetAlert.FleetAlert, alert, alerts, { executionId: alert.alertId })).pipe(Effect.asVoid),
+    }
+    const ctx = await setup({ fleet, capacity: 3, heartbeatSeconds: 2 })
+    const runner = startRunner(ctx.config)
+    running.push(runner.child)
+    const stop = new AbortController()
+    // Three TODOs run at once (decision 0135).
+    await runtime.runPromise(Stack.apply({
+      opId: crypto.randomUUID(),
+      repoId: REPOSITORY.id,
+      actor: maya,
+      via: "person",
+      op: { kind: "configure", lanes: 3, maxOpen: 50, base: "independent" },
+    }, { runs: true }))
+    const silent = await commit("Silent", "run `sleep 240`")
+    const busy = await commit("Busy", "run `busy 300`")
+    const refused = await commit("Refused", "refuse")
+    const runs = [ctx.run(silent, stop.signal), ctx.run(busy, stop.signal), ctx.run(refused)]
+    const state = async (number: number) =>
+      ((await sql(runtime, `SELECT state FROM agent_runs WHERE number = ${number}`)) as Array<{ state: string }>)[0]?.state
+    const bells = async () =>
+      (await sql(runtime, `SELECT recipient, title FROM notifications WHERE kind = 'fleet' ORDER BY title, recipient`)) as Array<
+        { recipient: string; title: string }
+      >
+    // Who heard what, by title: without the second runner's run, which may stall once its runner is killed.
+    const heard = async () =>
+      (await bells()).map((bell) => [bell.recipient, bell.title]).filter(([, title]) => title !== "T2 Busy · Stalled")
+    try {
+      await eventually(async () => (await state(1)) === "stalled", 90_000)
+      await eventually(async () => (await bells()).some((bell) => bell.title === "T1 Silent · Stalled"), 30_000)
+      await eventually(async () => (await bells()).some((bell) => bell.title === "T3 Refused · Failed · implement"), 60_000)
+      expect(await runs[2]).toMatchObject({ status: "completed" })
+      // The busy run's agent says nothing either, but its tree burns CPU: work through probe after probe, never a stall.
+      await new Promise((done) => setTimeout(done, 45_000))
+      expect(await state(2), runner.log()).toBe("working")
+      const killedAt = Date.now()
+      runner.child.kill("SIGKILL")
+      await eventually(async () => (await bells()).some((bell) => bell.title === "Runner test-runner offline"), 120_000)
+      expect(await heard()).toEqual([
+        ["person-ada", "Runner test-runner offline"],
+        ["person-ada", "T1 Silent · Stalled"],
+        ["person-maya", "T1 Silent · Stalled"],
+        ["person-ada", "T3 Refused · Failed · implement"],
+        ["person-maya", "T3 Refused · Failed · implement"],
+      ].sort((a, b) => a[1]!.localeCompare(b[1]!) || a[0]!.localeCompare(b[0]!)))
+      // A dead runner's busy run goes quiet: if it stalled, it stalled only once its runner was gone.
+      const busyStalls = (await sql(runtime, `SELECT opened_at FROM fleet_alerts WHERE kind = 'stalled' AND subject IN
+        (SELECT key FROM agent_runs WHERE number = 2)`)) as Array<{ opened_at: Date }>
+      for (const stall of busyStalls) expect(new Date(stall.opened_at).getTime()).toBeGreaterThanOrEqual(killedAt)
+      // Each bell's message follows it on Telegram, once.
+      const texts = () =>
+        providers.received.filter((each) => each.provider === "telegram")
+          .map((each) => (each.body as { text: string }).text.split("\n")[0])
+          .filter((text) => text !== "T2 Busy · Stalled")
+          .sort()
+      await eventually(() => texts().length === 3, 30_000)
+      expect(texts()).toEqual(["Runner test-runner offline", "T1 Silent · Stalled", "T3 Refused · Failed · implement"])
+      // One incident per outage: later probes start nothing more.
+      await new Promise((done) => setTimeout(done, 5_000))
+      expect((await sql(runtime, `SELECT kind FROM fleet_alerts WHERE kind = 'offline'`)) as Array<{ kind: string }>)
+        .toEqual([{ kind: "offline" }])
+    } finally {
+      stop.abort()
+      await Promise.allSettled(runs)
+    }
   })
 })
 

@@ -144,12 +144,14 @@ Every request carries the runner's token as `Authorization: Bearer`. Schemas: `@
 
 | Route | Body | Answer |
 |---|---|---|
-| `POST /api/runners/claim` | `{ profiles, free, running, waitSeconds ≤ 25 }` | `{ job }` or `{ job: null }`; a held job not in `running` comes back first, `reclaimed: true` |
-| `POST /api/runners/heartbeat` | `{ key, claim, delivered? }` | `{ held, cancel, leaseSeconds: 45, steers? }`: the job's undelivered steers, `{ id, text }` |
+| `POST /api/runners/claim` | `{ profiles, free, running, waitSeconds ≤ 25, machine? }` | `{ job }` or `{ job: null }`; a held job not in `running` comes back first, `reclaimed: true` |
+| `POST /api/runners/heartbeat` | `{ key, claim, delivered?, account?, cpuSeconds?, usage? }` | `{ held, cancel, leaseSeconds: 45, steers? }`: the job's undelivered steers, `{ id, text }` |
 | `POST /api/runners/settle` | `{ key, claim, outcome, delivered? }` | `{ recorded }`; `false` when the claim no longer holds the job. `delivered` records the steers the agent read since the last heartbeat that reported them |
 | `POST /api/runners/events` | `{ key, claim, events }` | `{ next }`: the agent's transcript ([transcripts](agent-transcripts.md#the-events-route)) |
 
-A job is `{ key, claim, generation, task, deadline, leaseSeconds, reclaimed }`; its task is `{ agent, repository, base,
+A claim's `machine` is `{ version?, load1?, diskFreeGb? }`; a heartbeat's `account` is the label the profile's hook
+chose, `cpuSeconds` the agent's process tree's CPU time and `usage` what the agent reported so far, each for the
+[fleet](fleet.md). A job is `{ key, claim, generation, task, deadline, leaseSeconds, reclaimed }`; its task is `{ agent, repository, base,
 system, prompt, limits }`. An outcome is `Done { changes, summary, usage }`, `Failed { reason }`, `Retryable {
 afterSeconds? }` or `Cancelled { processTreeGone }`. Usage an agent doesn't report stays absent, never zero.
 
@@ -168,7 +170,8 @@ Migration `0082_agent_transcripts` adds `agent_jobs.first_event_at`, `last_event
 `transcript_bytes`, a job's [transcript](agent-transcripts.md) summary; the transcript itself is in the run's
 `RunContent` Durable Object.
 
-Nothing here syncs to browsers yet; the fleet view (slice S5) reads them.
+Nothing here syncs to browsers. The [fleet](fleet.md) projects each job into `agent_runs` (migration `0084_fleet`),
+which does, with each runner's machine facts on `runners`.
 
 ## Observability
 
@@ -198,4 +201,5 @@ Nothing here syncs to browsers yet; the fleet view (slice S5) reads them.
   `e2e/agent-runner.spec.ts` "steers" and "stops" run the same through the browser;
   `packages/smithers/evals/agent-steer-cli.eval.ts` steers and stops real agents through a real runner.
 - The agent's transcript, live on the run page: [Transcripts of external agents](agent-transcripts.md).
-- Not built yet: the fleet view and alerts (S5), choosing an agent per TODO, and a Settings page for runners and agents.
+- The fleet view and its alerts: [fleet.md](fleet.md).
+- Not built yet: choosing an agent per TODO, and a Settings page for runners and agents.

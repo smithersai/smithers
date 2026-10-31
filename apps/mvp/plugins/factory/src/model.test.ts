@@ -19,6 +19,7 @@ import {
   reportName,
   reportOf,
   reviewsOf,
+  runLanesOf,
   scoreboardOf,
   specPhase,
   statusOf,
@@ -302,5 +303,24 @@ describe("on-demand documents", () => {
 
   test("the views and their paths: Now is the factory's index", () => {
     expect(VIEWS.map((view) => view.path)).toEqual(["", "for-you", "failures", "reviews", "implementation", "commits", "agents", "media", "docs", "queue"])
+  })
+})
+
+describe("Smithers' own runs", () => {
+  test("as lanes beside the collector's, newest first: the TODO, the runner, the agent and account, the state", () => {
+    const now = Date.parse("2026-10-31T12:00:00Z")
+    const at = (minutes: number) => new Date(now - minutes * 60_000).toISOString()
+    const lanes = runLanesOf([
+      { key: "a#g1", agent: "opus", number: 412, title: "drive", runner: "nyc-01", accountLabel: "claude-3", state: "working", queuedAt: at(80), claimedAt: at(72), endedAt: null },
+      { key: "b#g1", agent: "sol", number: null, title: null, runner: null, state: "queued", queuedAt: at(3), claimedAt: null, endedAt: null },
+      { key: "c#g1", agent: "sol", number: 9, title: "old", runner: "nyc-02", state: "mystery", queuedAt: at(200), claimedAt: at(199), endedAt: at(100) },
+    ], now)
+    expect(lanes.map((lane) => [lane.key, lane.name, lane.title, lane.machine, lane.model, lane.account, lane.label, lane.tone]))
+      .toEqual([
+        ["b#g1", "sol", "", "-", "sol", "", "waiting", "warn"],
+        ["a#g1", "T412", "drive", "nyc-01", "opus", "claude-3", "running", "run"],
+        ["c#g1", "T9", "old", "nyc-02", "sol", "", "mystery", "muted"],
+      ])
+    expect(lanes[1]!.duration).toBe(duration(Math.floor(Date.parse(at(72)) / 1000), null, Math.floor(now / 1000)))
   })
 })

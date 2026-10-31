@@ -8,6 +8,7 @@ import { base64Bytes, LEASE_SECONDS, MAX_RUNNER_BODY_BYTES } from "../../src/fea
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { bearerOf } from "../RunCredentials.ts"
+import * as Fleet from "./Fleet.ts"
 import { Transcripts } from "./RunContent.ts"
 
 // The runner routes (decision 0136, docs/features/agent-runners.md#the-runner-protocol): a runner machine pulls its
@@ -35,6 +36,11 @@ import { Transcripts } from "./RunContent.ts"
 // A lease that runs out doesn't free the job: a runner that stops answering may still be running its agent, so its job
 // waits for it (docs/features/agent-runners.md#a-runner-that-stops-answering). Nothing here logs a token, the
 // Authorization header, a prompt, a summary or a file: runner names, job keys and outcomes only.
+//
+// The fleet (docs/features/fleet.md): a request marks its runner seen, at most every `SEEN_EVERY_SECONDS` so a busy
+// runner doesn't rewrite its synced row with each heartbeat, and closes its open Runner offline incident when it was
+// away; a claim keeps the machine's facts and marks the run Working; a heartbeat keeps the account label, the process
+// tree's CPU seconds and the usage on the job, for the job store's probe to project; a settle ends the run.
 
 /**
  * How long an agent's event took from the runner receiving it to the host storing it, in milliseconds: the
@@ -60,6 +66,9 @@ const ROUTE_OF: Readonly<Record<string, Route>> = {
   [AgentRunner.ROUTES.settle]: "settle",
   [AgentRunner.ROUTES.events]: "events",
 }
+
+/** The most often a runner's `seen_at` is written: the fleet reads Offline after 45 s unseen. */
+export const SEEN_EVERY_SECONDS = 10
 
 /** Whether a path is one of the runner routes. */
 export const handles = (path: string): boolean => Object.hasOwn(ROUTE_OF, path)
@@ -177,11 +186,23 @@ export const make = <E, R>(
       if (Option.isNone(token)) return Option.none<Runner>()
       const tokenSha256 = digestSync(token.value)
       const sql = yield* SqlClient.SqlClient
-      const [row] = yield* sql<{ readonly id: string; readonly name: string; readonly repoId: string }>`
-        UPDATE runners SET seen_at = now()
-        WHERE token_sha256 = ${tokenSha256} AND removed_at IS NULL
-        RETURNING id::text AS id, name, repo_id AS "repoId"`
-      return row === undefined ? Option.none<Runner>() : Option.some({ ...row, tokenSha256 })
+      const [row] = yield* sql<{ readonly id: string; readonly name: string; readonly repoId: string; readonly away: boolean }>`
+        WITH found AS (
+          SELECT id, name, repo_id, seen_at FROM runners WHERE token_sha256 = ${tokenSha256} AND removed_at IS NULL),
+        touched AS (
+          UPDATE runners r SET seen_at = now() FROM found
+          WHERE r.id = found.id
+            AND (found.seen_at IS NULL OR found.seen_at < now() - ${SEEN_EVERY_SECONDS}::int * interval '1 second')
+          RETURNING r.id)
+        SELECT id::text AS id, name, repo_id AS "repoId",
+          coalesce(seen_at < now() - ${Fleet.UNREACHABLE_SECONDS}::int * interval '1 second', false) AS away
+        FROM found`
+      if (row === undefined) return Option.none<Runner>()
+      // Back after an outage: its incident recovered.
+      if (row.away) {
+        yield* sql`UPDATE fleet_alerts SET closed_at = now() WHERE kind = 'offline' AND subject = ${row.id} AND closed_at IS NULL`
+      }
+      return Option.some({ id: row.id, name: row.name, repoId: row.repoId, tokenSha256 })
     })
 
   const claimed = `key, claim::text AS claim, generation, task,
@@ -231,6 +252,11 @@ export const make = <E, R>(
           fields.key = row.key
           fields.generation = row.generation
           fields.agent = task.agent.name
+          // The run reads Working at once; a failure here leaves that to the job's next probe, never refuses the claim.
+          yield* Fleet.claimed(row.key, runner.name).pipe(
+            Effect.provide(database),
+            Effect.catchCause((cause) => Effect.sync(() => void (fields.fleet = codeOf(Cause.squash(cause))))),
+          )
           const job: AgentRunner.Job = {
             key: row.key,
             claim: row.claim,
@@ -249,6 +275,18 @@ export const make = <E, R>(
           }
           return answer(fields, reclaimed ? "reclaimed" : "claimed", { job })
         })
+      const machine = wants.value.machine
+      if (machine !== undefined) {
+        // Rounded, so a claim that changes nothing a person reads doesn't rewrite the synced row.
+        const load1 = machine.load1 === undefined ? null : Math.round(machine.load1 * 10) / 10
+        const disk = machine.diskFreeGb === undefined ? null : Math.round(machine.diskFreeGb)
+        yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
+          sql`
+            UPDATE runners SET version = ${machine.version ?? null}, load1 = ${load1}, disk_free_gb = ${disk}
+            WHERE id = ${runner.id}::uuid
+              AND (version, load1, disk_free_gb) IS DISTINCT FROM (${machine.version ?? null}::text, ${load1}::float8, ${disk}::float8)`
+        ).pipe(Effect.provide(database))
+      }
       const held = yield* reclaim(runner, wants.value.running).pipe(Effect.provide(database))
       if (held !== undefined) return yield* job(held, true)
       const deadline = (yield* Clock.currentTimeMillis) + wants.value.waitSeconds * 1000
@@ -272,7 +310,10 @@ export const make = <E, R>(
       // A lease that ran out still holds the job: the runner came back.
       const [row] = isUuid(beat.value.claim)
         ? yield* sql<{ readonly cancel: boolean; readonly task: unknown }>`
-          UPDATE agent_jobs SET lease_until = now() + ${leaseSeconds}::int * interval '1 second', updated_at = now()
+          UPDATE agent_jobs SET lease_until = now() + ${leaseSeconds}::int * interval '1 second', updated_at = now(),
+            account_label = coalesce(${beat.value.account ?? null}, account_label),
+            cpu_seconds = coalesce(${beat.value.cpuSeconds ?? null}::float8, cpu_seconds),
+            usage = coalesce(${beat.value.usage === undefined ? null : JSON.stringify(beat.value.usage)}::jsonb, usage)
           WHERE key = ${beat.value.key} AND claim = ${beat.value.claim}::uuid AND runner_id = ${runner.id}::uuid
             AND status = 'claimed'
           RETURNING (cancel_requested OR deadline_at <= now()) AS cancel, task`
@@ -345,6 +386,7 @@ export const make = <E, R>(
           UPDATE agent_jobs SET status = ${status}, outcome = ${JSON.stringify(outcome)}::jsonb, claim = NULL,
             lease_until = NULL, settled_at = now(), updated_at = now()
           WHERE key = ${key}`
+        yield* Fleet.settled(key, outcome)
         const delivered = settled.value.delivered ?? []
         if (delivered.length > 0 && options.steering !== undefined) {
           // Recorded with the settlement's claim still checked; a failure is logged and never refuses the settlement.
