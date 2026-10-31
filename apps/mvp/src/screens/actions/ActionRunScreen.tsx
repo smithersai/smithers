@@ -1,3 +1,4 @@
+import { PageBody, PageHeader } from "@smthrs/ui"
 import { useCallback } from "react"
 import { useRuns } from "../../features/runs/components/RunsContext"
 import { Link, useParams, useSearch } from "@tanstack/react-router"
@@ -14,11 +15,15 @@ export function ActionRunScreen() {
   const rendered = useCallback((node: HTMLElement | null) => { if (node !== null) actions.rendered(runId) }, [actions, runId])
   return (
     <main ref={rendered} className="runs-screen" aria-label="Run">
-      <header className="runs-screen-header" aria-label="Repository">
-        <Link to="/$owner/$repo" params={{ owner, repo }}>{owner}/{repo}</Link>
-        <Link to={(from === "runs" ? "/app/runs" : actionsPath(owner, repo)) as never}>Runs</Link>
-      </header>
-      <RunPageView fromRuns={from === "runs"} />
+      <PageHeader
+        aria-label="Repository"
+        back={<Link to="/$owner/$repo" params={{ owner, repo }}>{owner}/{repo}</Link>}
+        nav={<Link to={(from === "runs" ? "/app/runs" : actionsPath(owner, repo)) as never}>Runs</Link>}
+        navLabel="Run"
+      />
+      <PageBody width="wide">
+        <RunPageView fromRuns={from === "runs"} />
+      </PageBody>
     </main>
   )
 }

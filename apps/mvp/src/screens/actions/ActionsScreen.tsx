@@ -1,3 +1,4 @@
+import { PageBody } from "@smthrs/ui"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
 import { HomeTabs } from "../../features/home/components/HomeTabs"
 import { useParams } from "@tanstack/react-router"
@@ -12,11 +13,12 @@ export function ActionsScreen() {
   const { owner, repo } = useParams({ from: "/$owner/$repo/runs" })
   const { data: session } = useLiveQuery(useAuth().queries.session)
   return (
-    <main className="runs-screen" aria-label="Runs"><RepoHeader /><HomeTabs />
-      <header className="runs-screen-header">
+    <main className="runs-screen" aria-label="Runs"><PageBody width="wide"><RepoHeader /><HomeTabs />
+      <header className="runs-repo-header">
         <h1>Runs</h1>
       </header>
       {session?.status === "signed_out" ? <SignInButton /> : <RepoRunsView owner={owner} name={repo} />}
+      </PageBody>
     </main>
   )
 }

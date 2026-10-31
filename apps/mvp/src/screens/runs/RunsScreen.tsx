@@ -1,3 +1,4 @@
+import { PageBody, PageHeader } from "@smthrs/ui"
 import { Link, useSearch } from "@tanstack/react-router"
 import { FlowSummaryView } from "../../features/runs/components/FlowSummaryView"
 import { RunListView } from "../../features/runs/components/RunListView"
@@ -9,12 +10,11 @@ export function RunsScreen() {
   const search = useSearch({ from: "/app/runs" })
   return (
     <main className="runs-screen" aria-label="Runs">
-      <header className="runs-screen-header">
-        <Link to="/app">Back to chat</Link>
-        <h1>Runs</h1>
-      </header>
-      <FlowSummaryView flow={search.flow} />
-      <RunListView flow={search.flow} open={search.open} />
+      <PageHeader back={<Link to="/app">Back to chat</Link>} title="Runs" />
+      <PageBody width="wide">
+        <FlowSummaryView flow={search.flow} />
+        <RunListView flow={search.flow} open={search.open} />
+      </PageBody>
     </main>
   )
 }

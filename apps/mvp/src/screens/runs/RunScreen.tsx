@@ -1,5 +1,6 @@
 import { useCallback } from "react"
 import { useRuns } from "../../features/runs/components/RunsContext"
+import { PageBody, PageHeader } from "@smthrs/ui"
 import { Link, useParams } from "@tanstack/react-router"
 import { RunPageView } from "../../features/runs/components/RunPageView"
 import "./runs-screen.css"
@@ -11,10 +12,10 @@ export function RunScreen() {
   const rendered = useCallback((node: HTMLElement | null) => { if (node !== null) actions.rendered(runId) }, [actions, runId])
   return (
     <main ref={rendered} className="runs-screen" aria-label="Run">
-      <header className="runs-screen-header">
-        <Link to="/app/runs">Runs</Link>
-      </header>
-      <RunPageView />
+      <PageHeader back={<Link to="/app/runs">Runs</Link>} />
+      <PageBody width="wide">
+        <RunPageView />
+      </PageBody>
     </main>
   )
 }
