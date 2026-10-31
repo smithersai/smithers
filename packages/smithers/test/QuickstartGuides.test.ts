@@ -6,7 +6,7 @@ import { createConnection, createServer, type Socket } from "node:net"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
-import { expect, it, onTestFailed } from "vitest"
+import { expect, it, onTestFailed, onTestFinished } from "vitest"
 import { withTemporaryDirectory } from "./helpers/TemporaryDirectory.ts"
 import { childEnvironment } from "./support/node-child.ts"
 
@@ -21,18 +21,20 @@ it.each(["normal", "ssh", "socket"])(
       const stages: Array<
         { operation: string; state: string; startedAtMs: number; elapsedMs?: number; code?: unknown; signal?: unknown }
       > = []
-      onTestFailed(() =>
-        console.error(
-          "Quickstart CLI stages",
-          JSON.stringify({
-            startup,
-            stages: stages.map((record) => ({
-              ...record,
-              elapsedMs: record.elapsedMs ?? Date.now() - record.startedAtMs
-            }))
-          })
-        )
-      )
+      const receipt = () =>
+        "Quickstart CLI stages " + JSON.stringify({
+          startup,
+          stages: stages.map((record) => ({
+            ...record,
+            elapsedMs: record.elapsedMs ?? Date.now() - record.startedAtMs
+          }))
+        })
+      onTestFailed(({ task }) => {
+        // The runner caps live output. Keep the bounded stages in the final
+        // failure summary as well, after long suites have finished printing.
+        for (const error of task.result?.errors ?? []) error.message += `\n${receipt()}`
+      })
+      onTestFinished(() => console.info(receipt()))
       const stage = async <A>(operation: string, body: () => Promise<A>): Promise<A> => {
         const started = Date.now()
         const record = { operation, state: "started", startedAtMs: started }
