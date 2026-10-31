@@ -396,7 +396,7 @@
     "redis": "6.2.1",
     "@types/ws": "8.18.2",
     "ws": "8.22.0",
-    "vibelang-runtime": "file:../../../.vibelang-toolchain/vibelang-runtime-0.0.11-956814eb1e95.tgz"
+    "vibelang-runtime": "file:../../../.vibelang-toolchain/vibelang-runtime-0.0.11-60bd29302ace.tgz"
   },
   "optionalDependencies": {
     "@smthrs/agent": "1.0.0-rc.16",
@@ -429,8 +429,8 @@
     "eslint-plugin-unicorn": "65.0.0",
     "madge": "8.0.0",
     "typescript-eslint": "8.69.0",
-    "vibelang": "file:../../../.vibelang-toolchain/vibelang-0.0.11-c3292f2c8df3.tgz",
-    "vibelang-vite": "file:../../../.vibelang-toolchain/vibelang-vite-0.0.11-a2b67ac4484b.tgz",
+    "vibelang": "file:../../../.vibelang-toolchain/vibelang-0.0.11-bcfe8ed6f069.tgz",
+    "vibelang-vite": "file:../../../.vibelang-toolchain/vibelang-vite-0.0.11-f8e51b377e05.tgz",
     "vitest": "5.0.0",
     "@effect/platform-node": "4.1.0",
     "@effect/platform-node-shared": "4.1.0",
