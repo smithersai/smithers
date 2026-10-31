@@ -61,6 +61,7 @@ Collection.persisted(RequestedStore)                    // the declaration is th
 **Open tabs of the old build.** TanStack DB refuses every read and write through an adapter whose version no longer matches the stored one, so an old tab can't corrupt a migrated store: its writes to a changed collection roll back. To keep old tabs from running at all:
 - The leader announces its epoch with `Ready`. A tab whose epoch is lower reloads, and gets the new build from the service worker. A tab whose epoch is higher than the leader's tells the older tabs to reload, and waits for a leader of its epoch; after `within` it falls back to memory, as when no leader answers. (Slice 2.)
 - Builds before this one don't announce an epoch. For the first deploy, a new tab whose device store an old tab's worker serves sees its changed local collections fail to load until that tab closes; no data is lost.
+- **Addendum, 2026-10-31.** Until slice 2 lands, a tab that a collection's leader refuses for its older version (TanStack DB's "Schema version mismatch … expected <older>") sends `reopen` on the wipe channel, which every build hears: every page loads again and gets the current build, at most once in ten minutes from that tab (`src/device/olderLeader.ts`). On smithers.sh an Arc tab left on a build from before `issue-writes` v2 had kept a newer tab's issue on "Syncing issue…".
 
 ## 3. Synced versus local data
 

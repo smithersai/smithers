@@ -46,6 +46,8 @@ import { activationGate, type Adoption, boundFetch, outboxPrincipal, DeviceIdent
 import { DEVICE_ADOPTED_EVENT, NO_DEVICE_DATA, type SessionState } from "./features/auth/contract"
 import { failedWorker, memoryStorage, pageWipe, unwiped } from "./wipe"
 import { claimEditorTabId } from "./device/editorTab"
+import { olderLeader, watchLeader } from "./device/olderLeader"
+import { deviceRegistry } from "./device/registry"
 import { awaitEditorWrites, hasFailedEditorWrite, hasPendingEditorWrites } from "./features/flows-ui/editorWrites"
 import "./styles/fonts.css"
 import { markStage } from "./bootStages"
@@ -196,18 +198,25 @@ const activation = activationGate(() => {
 })
 void activation.ready.then(() => markStage(performance, "activation"))
 // Reopening loads every page again so a new activation checks the session the browser has now. Once a minute at most
-// from this tab: a second mismatch so soon settles on memory instead of reloading again.
+// from this tab: a second mismatch so soon settles on memory instead of reloading again. A tab of an older build leading
+// the store reopens every page at most once in ten minutes from this tab: a leader that doesn't load again (a build
+// older than the wipe channel) leaves this page on what it can read, never reloading it every minute.
 const REOPENED = "smithers-identity-reopened"
-const reopen = () => {
+const OLDER_LEADER_REOPENED = "smithers-older-leader-reopened"
+const reopen = (
+  why: () => void = () => console.info("auth.device_identity", { outcome: "reopened" }),
+  mark = REOPENED,
+  within = 60_000,
+) => {
   let last = 0
   try {
-    last = Number(sessionStorage.getItem(REOPENED) ?? 0)
-    sessionStorage.setItem(REOPENED, String(Date.now()))
+    last = Number(sessionStorage.getItem(mark) ?? 0)
+    sessionStorage.setItem(mark, String(Date.now()))
   } catch {
     // expected: blocked storage only skips the once-a-minute check
   }
-  if (Date.now() - last < 60_000) return
-  console.info("auth.device_identity", { outcome: "reopened" })
+  if (Date.now() - last < within) return
+  why()
   wipe.reopen()
 }
 // Adopting in place (decision 0023, "Adopting in place"): a page that opened the visitor's data asks its leader to
@@ -292,7 +301,13 @@ const host: Omit<Host, "editorTabId" | "editorTabPersistent" | "editorTabRefusal
       }
     },
     make: (database, coordinator) => createBrowserWASQLitePersistence({ database, ...(coordinator ? { coordinator } : {}) }),
-    coordinator: () => new BrowserCollectionCoordinator({ dbName: "smithers" }),
+    // A tab of an older build leading one of the store's collections refuses this build's migrated rows: every page
+    // loads again, that tab's included, and gets the current build (src/device/olderLeader.ts, decision 0021 §2).
+    coordinator: () =>
+      watchLeader(new BrowserCollectionCoordinator({ dbName: "smithers" }), (error) => {
+        if (!olderLeader(deviceRegistry, error)) return
+        reopen(() => console.info("device.leader", { outcome: "older_build_reopened" }), OLDER_LEADER_REOPENED, 10 * 60_000)
+      }),
   },
   outbox: {
     start: startOfflineExecutor,

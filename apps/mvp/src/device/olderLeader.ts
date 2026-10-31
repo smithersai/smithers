@@ -1,0 +1,55 @@
+import { Migrations } from "@smthrs/effect-tanstack-db"
+
+// A tab of an older build leading the device store (decision 0021 §2, "Open tabs of the old build"). Each collection of
+// the device store has one leading tab, which every other tab's reads and writes of it go through. A tab left open on
+// a build from before a collection's version changed still leads it, and its adapter refuses the migrated store:
+// "Schema version mismatch for collection "issue-writes": found 2, expected 1". Every newer tab then waits on that
+// collection forever (Will's tab on smithers.sh, 2026-10-31: an issue stayed on "Syncing issue…"). Builds from before
+// the epoch announcement can't hear any newer message, but every build hears the wipe channel's `reopen`, which loads
+// every page again, so the service worker gives each the current build.
+
+/** TanStack DB's refusal of an adapter whose version isn't the stored one: the collection, the stored, the adapter's. */
+const MISMATCH = /Schema version mismatch for collection "([^"]+)": found (\d+|missing), expected (\d+)/
+
+/**
+ * Whether `error`, from a request a tab sent the leader of one of the device store's collections, says that leader
+ * runs an older build than `registry`'s: its adapter expects a version below the one this build declares for it.
+ */
+export const olderLeader = (registry: Migrations.Registry, error: unknown): boolean => {
+  const match = MISMATCH.exec(error instanceof Error ? error.message : String(error))
+  if (match === null) return false
+  const ours = Migrations.declarationOf(registry, match[1]!)?.schemaVersion
+  return ours !== undefined && Number(match[3]) < ours
+}
+
+/** A collection coordinator's requests that the leading tab answers. */
+export const LEADER_REQUESTS = [
+  "requestEnsureRemoteSubset",
+  "requestReleaseRemoteSubset",
+  "requestEnsurePersistedIndex",
+  "requestApplyLocalMutations",
+  "requestApplyCommittedTx",
+  "reconcileCommittedTx",
+  "pullSince",
+] as const
+
+/**
+ * `coordinator`, with each of its requests to the leading tab (`LEADER_REQUESTS`) telling `failed` the error it
+ * failed with before failing with it as it did.
+ */
+export const watchLeader = <C extends object>(coordinator: C, failed: (error: unknown) => void): C => {
+  const methods = coordinator as unknown as Record<string, unknown>
+  for (const name of LEADER_REQUESTS) {
+    const original = methods[name]
+    if (typeof original !== "function") continue
+    methods[name] = async (...args: Array<unknown>) => {
+      try {
+        return await (original as (...args: Array<unknown>) => Promise<unknown>).apply(coordinator, args)
+      } catch (error) {
+        failed(error)
+        throw error
+      }
+    }
+  }
+  return coordinator
+}
