@@ -45,9 +45,9 @@ export const presses = Metric.counter("smithers_plugin_presses", {
 })
 
 /** A live list of rows, as `PluginHost.query` answers: the current rows, and a way to hear they changed. */
-export const liveOf = <R>(rows: Stream.Stream<ReadonlyArray<R>>) =>
+export const liveOf = <R>(rows: Stream.Stream<ReadonlyArray<R>>, initial: ReadonlyArray<R> = []) =>
   Effect.gen(function* () {
-    let current: ReadonlyArray<R> = []
+    let current: ReadonlyArray<R> = initial
     const listeners = new Set<() => void>()
     yield* rows.pipe(
       Stream.runForEach((next) =>
@@ -287,15 +287,27 @@ export const readable = (
   return name === FEED_ITEMS ? plugins.itemsOpen.get(itemsKey(repo, params?.name ?? "")) : undefined
 }
 
-/** Repository `repo`'s index, opened once and kept while the host lives. */
+/** How long a plugin's first read of an index waits for its first sync before it answers what the tab has. */
+export const INDEX_FIRST_SYNC = "30 seconds"
+
+/**
+ * Repository `repo`'s index, opened once and kept while the host lives. It answers once its first sync arrived (or
+ * `INDEX_FIRST_SYNC` passed), with those rows: an index still loading is never an empty one, which a plugin would
+ * draw as "No feed yet" and the factory's tab as no tab at all (Will's Factory tab on smithers.sh, 2026-10-31).
+ */
 const indexOf = (plugins: Plugins["Service"], repo: string) =>
   Effect.gen(function* () {
     const known = plugins.opened.get(repo)
     if (known !== undefined) return known
     const index = yield* plugins.feeds.index(repo)
+    // expected: a shape that fails or takes longer answers what the tab has, and its rows follow as they arrive
+    yield* index.byName.preload.pipe(Effect.timeout(INDEX_FIRST_SYNC), Effect.ignore)
+    const synced = yield* index.byName.toArray
+    const again = plugins.opened.get(repo)
+    if (again !== undefined) return again
     const query: CoreQuery = {
       key: "id",
-      live: (yield* liveOf(index.byName.rows).pipe(Scope.provide(plugins.scope))) as CoreQuery["live"],
+      live: (yield* liveOf(index.byName.rows, synced).pipe(Scope.provide(plugins.scope))) as CoreQuery["live"],
       rows: index.byName.tanstack as unknown as CoreQuery["rows"],
     }
     plugins.opened.set(repo, query)

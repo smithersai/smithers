@@ -83,7 +83,7 @@ The host serves three core queries ([plugins.md](plugins.md#the-host-contract)),
 | `core/feed` | `{ repo, name }` | the one document, while the view listens; only shown, never selected |
 | `core/feed-items` | `{ repo, name }`, an index document | the document's items, in order; the strip selects one and answers it through `feed/answer` |
 
-`core/feeds` and `core/feed` rows are `{ id, repo, name, visibility, body, updatedAt }` (`FEED_ROW`). A missing or malformed `repo` or `name` is refused `invalid_fields`, as is a `core/feed-items` name with a `/`: the strip reads items while no view listens, and only the index stays synced.
+`core/feeds` answers once the index's first sync arrived, or after 30 s (`INDEX_FIRST_SYNC`), with those rows: an index still loading is never an empty one, which the factory would draw as "No feed yet" with no Factory tab. `core/feeds` and `core/feed` rows are `{ id, repo, name, visibility, body, updatedAt }` (`FEED_ROW`). A missing or malformed `repo` or `name` is refused `invalid_fields`, as is a `core/feed-items` name with a `/`: the strip reads items while no view listens, and only the index stays synced.
 
 ### Items
 

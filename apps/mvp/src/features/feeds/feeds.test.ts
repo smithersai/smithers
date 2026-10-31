@@ -95,7 +95,8 @@ describe("repository feeds on a tab", { timeout: WITHIN * 2 }, () => {
 
       // The index: every document whose name has no `/`, the Maintainer's private ones too; asked once per repository.
       const index = yield* host.query<FeedDocument>("core/feeds", ASKED)
-      yield* Effect.promise(() => until(() => expect(names(index)).toEqual(["decisions", "lanes"])))
+      // It answers once the index synced: never an empty index first, which a view would draw as "No feed yet".
+      expect(names(index)).toEqual(["decisions", "lanes"])
       expect(yield* host.query("core/feeds", { repo: "octo/hello" })).toBe(index)
       expect(index.current()[1]).toMatchObject({ id: "octo/hello:lanes", repo: "octo/hello", body: [{ lane: "server" }] })
 
