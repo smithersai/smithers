@@ -7,6 +7,9 @@
 /** The OpenAI-compatible provider's origin. */
 export const OPENAI_ORIGIN = "https://models.example.com"
 
+/** OpenAI's own API, whose reasoning models a person's OpenAI-compatible key reaches through the Responses API. */
+export const OPENAI_API_ORIGIN = "https://api.openai.com"
+
 /** The Anthropic-compatible provider's origin. */
 export const ANTHROPIC_ORIGIN = "https://anthropic.example.com"
 
@@ -38,6 +41,13 @@ const openAiStream = (text: string, usage: { readonly input: number; readonly ou
     { id: "c1", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
     { id: "c1", choices: [], usage: { prompt_tokens: usage.input, completion_tokens: usage.output } },
   ])
+
+/** OpenAI's Responses API stream, which api.openai.com's reasoning models answer through (worker/personal/Models.ts). */
+const responsesStream = (text: string, usage: { readonly input: number; readonly output: number }) =>
+  sse([
+    { type: "response.output_text.delta", item_id: "m1", output_index: 0, content_index: 0, delta: text },
+    { type: "response.completed", response: { id: "r1", status: "completed", usage: { input_tokens: usage.input, output_tokens: usage.output } } },
+  ], true)
 
 const anthropicStream = (text: string, usage: { readonly input: number; readonly output: number }) =>
   sse([
@@ -84,7 +94,11 @@ export const scriptedProvider = (
     }
     const usage = answer.usage ?? { input: 3, output: 2 }
     return new Response(
-      url.origin === ANTHROPIC_ORIGIN ? anthropicStream(answer.text ?? "ok", usage) : openAiStream(answer.text ?? "ok", usage),
+      url.origin === ANTHROPIC_ORIGIN
+        ? anthropicStream(answer.text ?? "ok", usage)
+        : url.pathname.endsWith("/responses")
+        ? responsesStream(answer.text ?? "ok", usage)
+        : openAiStream(answer.text ?? "ok", usage),
       { status: 200, headers: { "content-type": "text/event-stream" } },
     )
   }) as typeof globalThis.fetch

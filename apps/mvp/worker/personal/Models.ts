@@ -7,6 +7,7 @@ import type { SqlClient } from "effect/sql"
 import type { ModelTier } from "../../src/features/model/contract.ts"
 import { hostOf, type Protocol, resolveTier } from "../../src/features/personal-model/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
+import { acceptsEffort } from "../ModelTiers.ts"
 import { SecretKeys } from "../secrets/Keys.ts"
 import * as Store from "./Store.ts"
 
@@ -15,6 +16,15 @@ import * as Store from "./Store.ts"
 // model that tier resolves to among their keys (`resolveTier`), with that key, and never by the deployment's model. The
 // key opens in memory for that call only, and goes only to its saved base URL's origin: the planner pins it there, and
 // the provider transport refuses redirects (`@smthrs/model-host`'s `toModel`).
+
+/**
+ * The wire protocol a saved key's call speaks. OpenAI's own API answers its reasoning models' function tools only
+ * through the Responses API: Chat Completions refuses tools beside a reasoning effort for gpt-6 models, which every
+ * agent turn sends. So an OpenAI-compatible key at api.openai.com reaches a model that takes an effort there, with
+ * the same key and origin; every other key and model speaks the protocol it was saved under.
+ */
+export const wireOf = (protocol: Protocol, host: string, modelId: string): ConfiguredModel.ModelProtocol =>
+  protocol === "openai-chat" && host === "api.openai.com" && acceptsEffort(modelId) ? "openai-responses" : protocol
 
 /** The credential name a person's key is planned under. A name only: the planner never reads a value by it. */
 export const CREDENTIAL = "PERSONAL_MODEL_KEY"
@@ -101,7 +111,7 @@ export class PersonalModels extends Context.Service<
               Effect.mapError(() => new PersonalModelUnusable({ reason: "key", host })),
             )
             const planned = ConfiguredModel.planModelBinding(
-              { protocol, baseUrl, modelId, credential: CREDENTIAL },
+              { protocol: wireOf(protocol, host, modelId), baseUrl, modelId, credential: CREDENTIAL },
               [{ name: CREDENTIAL, present: true, origins: [new URL(baseUrl).origin] }],
               { kind: "generation" },
             )

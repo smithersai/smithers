@@ -50,7 +50,7 @@ import {
   usage,
   VALUE,
 } from "./test/harness.ts"
-import { ANTHROPIC_ORIGIN, OPENAI_ORIGIN, type Reply, scriptedProvider } from "./test/provider.ts"
+import { ANTHROPIC_ORIGIN, OPENAI_API_ORIGIN, OPENAI_ORIGIN, type Reply, scriptedProvider } from "./test/provider.ts"
 
 const runtime = testFile("personal_models")
 let host: Awaited<ReturnType<typeof engine>>
@@ -419,6 +419,22 @@ describe("POST /api/me/model/test", () => {
     ])
     expect(h.count(PersonalApi.requests, { op: "test", outcome: "ok" })).toBe(1)
     expect(leaks(h.recorded())).toEqual([])
+  })
+
+  test("a key at api.openai.com reaches its reasoning models through the Responses API, which takes their tools", async () => {
+    // Chat Completions refuses function tools beside a reasoning effort for gpt-6 models, so a TODO's agent failed there.
+    await seed(runtime, "person-member", { baseUrl: OPENAI_API_ORIGIN, modelId: "gpt-6-luna" })
+    const provider = scriptedProvider({ text: "ok" }, globalThis.fetch, [OPENAI_API_ORIGIN])
+    const [status, result] = await testCall(await open({ actor: member, provider: provider.fetch }))
+    expect([status, result]).toEqual([200, expect.objectContaining({ ok: true, sample: "ok" })])
+    expect(provider.seen.map((seen) => [seen.url, seen.body.model])).toEqual([[`${OPENAI_API_ORIGIN}/v1/responses`, "gpt-6-luna"]])
+    expect(provider.seen[0]!.headers.get("authorization")).toBe(`Bearer ${VALUE}`)
+    // A model that takes no reasoning effort stays on Chat Completions, as before.
+    await resetModels(runtime)
+    await seed(runtime, "person-member", { baseUrl: OPENAI_API_ORIGIN, modelId: "gpt-4.1-mini" })
+    const chat = scriptedProvider({ text: "ok" }, globalThis.fetch, [OPENAI_API_ORIGIN])
+    expect((await testCall(await open({ actor: member, provider: chat.fetch })))[1]).toMatchObject({ ok: true })
+    expect(chat.seen.map((seen) => seen.url)).toEqual([`${OPENAI_API_ORIGIN}/v1/chat/completions`])
   })
 
   test("an Anthropic-compatible model is called with its own key header", async () => {

@@ -107,7 +107,11 @@ on a provider.
 
 The model endpoint opens the asker's model before every call (`worker/personal/Models.ts`, `PersonalModels`): their row,
 the key opened under SECRETS_KEY, planned by `@smthrs/rpc`'s `ConfiguredModel.planModelBinding` with the key pinned to
-the base URL's origin, and built by `@smthrs/model-host`'s `toModel`, whose transport refuses redirects.
+the base URL's origin, and built by `@smthrs/model-host`'s `toModel`, whose transport refuses redirects. An
+OpenAI-compatible key at `api.openai.com` reaches a model that takes a reasoning effort (`gpt-5`, `gpt-6`, `o`-series)
+through OpenAI's Responses API (`/v1/responses`, `wireOf`), with the same key and origin: Chat Completions refuses
+function tools beside a reasoning effort for those models, so every agent turn and a TODO's run failed there. Other
+models and other hosts speak the protocol the key was saved under.
 
 - **Everything they cause, by tier.** Every role a person's calls name goes to its tier's model among their keys:
   `agent`, `renderer`, `judge` (Jev and the memory opening's judge) and `summary` (the timeline's summaries, which their
