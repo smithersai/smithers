@@ -107,6 +107,7 @@ Every request carries the runner's token as `Authorization: Bearer`. Schemas: `@
 | `POST /api/runners/claim` | `{ profiles, free, running, waitSeconds ≤ 25 }` | `{ job }` or `{ job: null }`; a held job not in `running` comes back first, `reclaimed: true` |
 | `POST /api/runners/heartbeat` | `{ key, claim }` | `{ held, cancel, leaseSeconds: 45 }` |
 | `POST /api/runners/settle` | `{ key, claim, outcome }` | `{ recorded }`; `false` when the claim no longer holds the job |
+| `POST /api/runners/events` | `{ key, claim, events }` | `{ next }`: the agent's transcript ([transcripts](agent-transcripts.md#the-events-route)) |
 
 A job is `{ key, claim, generation, task, deadline, leaseSeconds, reclaimed }`; its task is `{ agent, repository, base,
 system, prompt, limits }`. An outcome is `Done { changes, summary, usage }`, `Failed { reason }`, `Retryable {
@@ -122,6 +123,10 @@ Migration `0078_agent_runners`:
 | `agents` | `repo_id`, `name`, `labels`, `profile`, `max_hours`, `restarts`, `coding` (one per repository) |
 | `agent_jobs` | one row per generation, `<origin>#g<n>`: its task, `status` (`queued`, `claimed`, `done`, `failed`, `cancelled`, `retryable`), its runner and claim, `pinned_runner`, `not_before`, `deadline_at`, `cancel_requested`, `outcome` |
 | `runner_changes`, `agent_changes` | each Admin change once, by invocation key |
+
+Migration `0082_agent_transcripts` adds `agent_jobs.first_event_at`, `last_event_at`, `transcript_events` and
+`transcript_bytes`, a job's [transcript](agent-transcripts.md) summary; the transcript itself is in the run's
+`RunContent` Durable Object.
 
 Nothing here syncs to browsers yet; the fleet view (slice S5) reads them.
 
@@ -145,5 +150,6 @@ Nothing here syncs to browsers yet; the fleet view (slice S5) reads them.
   (store, routes and Admin writes on Postgres); `worker/runners/TodoRunner.test.ts` (a TODO to a pull request through a
   real `smthrs runner` process and the deterministic ACP test agent, the runner killed mid-job and resumed);
   `e2e/agent-runner.spec.ts` (the same through `alchemy dev` and GitHub).
-- Not built yet: the transcript (S2), Stop and steering on the run page (S3), the fleet view and alerts (S5), choosing
+- The agent's transcript, live on the run page: [Transcripts of external agents](agent-transcripts.md).
+- Not built yet: Stop and steering on the run page (S3), the fleet view and alerts (S5), choosing
   an agent per TODO, and a Settings page for runners and agents.

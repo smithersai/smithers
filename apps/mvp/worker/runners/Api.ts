@@ -1,12 +1,14 @@
-import { AgentRunner } from "@smthrs/agent"
+import { AgentRunner, Transcript } from "@smthrs/agent"
 import { digestSync, WebCrypto } from "@smthrs/crypto"
 import { Clock, Crypto, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
+import { SUMMARY_EVERY_SECONDS } from "../../src/features/transcript/contract.ts"
 import { base64Bytes, LEASE_SECONDS, MAX_RUNNER_BODY_BYTES } from "../../src/features/runners/contract.ts"
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { bearerOf } from "../RunCredentials.ts"
+import { Transcripts } from "./RunContent.ts"
 
 // The runner routes (decision 0136, docs/features/agent-runners.md#the-runner-protocol): a runner machine pulls its
 // jobs over HTTPS, so nothing calls into it. Each request carries the runner's own token as `Authorization: Bearer`; the
@@ -22,12 +24,25 @@ import { bearerOf } from "../RunCredentials.ts"
 //   asked to stop it or its hours are up, `held: false` when the claim no longer holds it.
 // - `POST /api/runners/settle { key, claim, outcome }`: records how the job ended while the claim holds it. A change
 //   over the job's limits is recorded `too_large`.
+// - `POST /api/runners/events { key, claim, events }`: a job's transcript events (decision 0141), from the runner that
+//   holds or held its claim, so the end of a settled job's transcript still arrives. Scrubbed again, they go to the
+//   job's run's `RunContent` (`Transcripts`); the answer is the next `seq` that run lacks of the job's generation. The
+//   job's row keeps when its first event arrived, and, at most every 30 seconds, its last and the run's totals.
 //
 // A lease that runs out doesn't free the job: a runner that stops answering may still be running its agent, so its job
 // waits for it (docs/features/agent-runners.md#a-runner-that-stops-answering). Nothing here logs a token, the
 // Authorization header, a prompt, a summary or a file: runner names, job keys and outcomes only.
 
-/** Runner route requests, by `route` (`claim`, `heartbeat`, `settle`) and `outcome`. */
+/**
+ * How long an agent's event took from the runner receiving it to the host storing it, in milliseconds: the
+ * transcript's lag before any watcher's own network.
+ */
+export const eventLag = Metric.histogram("smithers_agent_event_lag_ms", {
+  description: "Milliseconds from a runner receiving an agent's event to its run's transcript storing it",
+  boundaries: [100, 250, 500, 1000, 2000, 3000, 5000, 10_000, 30_000, 60_000, 300_000],
+})
+
+/** Runner route requests, by `route` (`claim`, `heartbeat`, `settle`, `events`) and `outcome`. */
 export const requests = Metric.counter("smithers_runner_requests", {
   description: "Requests to the runner routes, by route and outcome",
   incremental: true,
@@ -40,6 +55,7 @@ const ROUTE_OF: Readonly<Record<string, Route>> = {
   [AgentRunner.ROUTES.claim]: "claim",
   [AgentRunner.ROUTES.heartbeat]: "heartbeat",
   [AgentRunner.ROUTES.settle]: "settle",
+  [AgentRunner.ROUTES.events]: "events",
 }
 
 /** Whether a path is one of the runner routes. */
@@ -50,7 +66,9 @@ const noStore = { "cache-control": "no-store" }
 const decodeClaim = Schema.decodeUnknownEffect(Schema.fromJsonString(AgentRunner.ClaimRequest))
 const decodeHeartbeat = Schema.decodeUnknownEffect(Schema.fromJsonString(AgentRunner.HeartbeatRequest))
 const decodeSettle = Schema.decodeUnknownEffect(Schema.fromJsonString(AgentRunner.SettleRequest))
+const decodeEvents = Schema.decodeUnknownEffect(Schema.fromJsonString(Transcript.EventsRequest))
 const decodeTask = Schema.decodeUnknownEffect(AgentRunner.Task)
+const scrubShapes = Transcript.scrubber()
 const isUuid = Schema.is(Schema.String.check(Schema.isUUID()))
 
 /** A fresh claim id. */
@@ -105,7 +123,9 @@ export const make = <E, R>(
     readonly leaseSeconds?: number
     readonly pollMillis?: number
     readonly onClaimed?: (task: AgentRunner.Task) => Effect.Effect<void, unknown, R>
-  } = {},
+    /** The run whose transcript a job's events belong to, from its task; none keeps no transcript. */
+    readonly runOf: (task: AgentRunner.Task) => string | undefined
+  },
 ) => {
   const leaseSeconds = options.leaseSeconds ?? LEASE_SECONDS
   const pollMillis = options.pollMillis ?? 1_000
@@ -278,6 +298,46 @@ export const make = <E, R>(
       }))
     }).pipe(Effect.provide(database))
 
+  /** `POST /api/runners/events`. */
+  const events = (request: HttpServerRequest.HttpServerRequest, runner: Runner, fields: Fields) =>
+    Effect.gen(function* () {
+      const sent = yield* bodyOf(request, decodeEvents)
+      if (sent._tag === "Refused") return refuse(fields, sent.status, "invalid")
+      const { key } = sent.value
+      fields.key = key
+      fields.events = sent.value.events.length
+      const sql = yield* SqlClient.SqlClient
+      // The runner that holds or held the job's claim: its settlement may come before its last events.
+      const [row] = yield* sql<{ readonly task: unknown; readonly generation: number }>`
+        SELECT task, generation FROM agent_jobs WHERE key = ${key} AND runner_id = ${runner.id}::uuid`
+      if (row === undefined) return refuse(fields, 409, "not_held")
+      const task = yield* decodeTask(row.task).pipe(Effect.orDie)
+      const runId = options.runOf(task)
+      if (runId === undefined) return refuse(fields, 409, "no_transcript")
+      // Scrubbed again (OBS-5). An event the runner should have dropped or split is refused, not kept.
+      const scrubbed: Array<Transcript.Event> = []
+      for (const event of sent.value.events) {
+        const pieces = Transcript.prepare(event.kind, event.update, scrubShapes)
+        if (pieces.length !== 1) return refuse(fields, 400, "invalid")
+        scrubbed.push({ ...event, update: pieces[0]!.update })
+      }
+      const transcripts = yield* Transcripts
+      const appended = yield* transcripts.append(runId, row.generation, scrubbed)
+      const now = yield* Clock.currentTimeMillis
+      for (const event of scrubbed) yield* Metric.update(eventLag, Math.max(0, now - event.at))
+      if (scrubbed.length > 0) {
+        yield* sql`
+          UPDATE agent_jobs SET
+            first_event_at = COALESCE(first_event_at, now()),
+            last_event_at = now(), transcript_events = ${appended.summary.events},
+            transcript_bytes = ${appended.summary.bytes}
+          WHERE key = ${key} AND (last_event_at IS NULL
+            OR last_event_at <= now() - ${SUMMARY_EVERY_SECONDS}::int * interval '1 second')`
+      }
+      fields.next = appended.next
+      return answer(fields, "stored", { next: appended.next })
+    }).pipe(Effect.provide(database))
+
   const fetch = Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest
     const route = ROUTE_OF[request.url.split("?")[0]!]!
@@ -294,7 +354,9 @@ export const make = <E, R>(
           ? claim(request, runner.value, fields)
           : route === "heartbeat"
           ? heartbeat(request, runner.value, fields)
-          : settle(request, runner.value, fields))
+          : route === "settle"
+          ? settle(request, runner.value, fields)
+          : events(request, runner.value, fields))
       }).pipe(
         Effect.catch((error) =>
           Effect.sync(() => {

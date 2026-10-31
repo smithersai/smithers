@@ -21,6 +21,7 @@ import { Forge } from "./branch/Forge.ts"
 import { Directory } from "./branch/People.ts"
 import { TerminalSockets } from "./branch/Sandboxes.ts"
 import * as BranchRooms from "./BranchRooms.ts"
+import * as RunContent from "./RunContent.ts"
 import * as BranchSandboxes from "./BranchSandboxes.ts"
 import * as BugsApi from "./bugs/Api.ts"
 import * as FeedsApi from "./feeds/Api.ts"
@@ -158,6 +159,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
         task.context?.attemptId === undefined
           ? Effect.void
           : TodoSession.claimed(task.context.attemptId).pipe(Effect.provide(database)),
+      // A TODO's agent writes its transcript to the TODO's run (decision 0141).
+      runOf: TodoSession.runOf,
     })
     const runnerAdmin = yield* RunnerAdmin.make(database)
     // Custom domains (docs/features/domains.md): a Maintainer's, through the deployment's provider; off without one.
@@ -172,6 +175,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     // Each branch's room, `RoomObject`s ChatApi hosts (worker/BranchRooms.ts), and the people a branch can be shared
     // with: everyone who signed in, and local development's own people (docs/features/branch-workspace.md#sharing).
     const roomObjects = (yield* BranchRooms.RoomObject) as Cloudflare.DurableObject<BranchRooms.RoomObjectShape>
+    // Each run's transcript, `RunContent`s ChatApi hosts (worker/RunContent.ts, docs/features/agent-transcripts.md).
+    const runContents = (yield* RunContent.RunContent) as Cloudflare.DurableObject<RunContent.RunContentShape>
     const directory = Directory.layer(
       database,
       [options.fallback, ...Object.values(options.teammates ?? {})].flatMap((person) =>
@@ -227,6 +232,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       flows: [Todo.Todo, RepoFlow.Run, RepoFlow.Jobs, CiJob.CiJob],
       // A repository's run stops on the Durable Object that holds it (docs/features/actions.md#acts).
       stop: (runId) => executions.getByName(runId).cancel(),
+      // A TODO run's transcript, on its own Durable Object (worker/RunContent.ts).
+      transcript: (runId) => RunContent.connect(runContents, runId),
     }, roles)
     const githubApp = yield* GitHubConfig.configured
     const runTodos = yield* Todo.enabled
@@ -315,7 +322,9 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
             Effect.provide(Layer.mergeAll(forge, sockets, rooms, directory, FetchHttpClient.layer)),
           )
         }
-        if (RunnersApi.handles(path)) return yield* runnersApi.fetch
+        if (RunnersApi.handles(path)) {
+          return yield* runnersApi.fetch.pipe(Effect.provide(RunContent.transcriptsLayer(runContents)))
+        }
         // Before the repository routes: `/api/repos/<owner>/<name>/runners/<name>` and `.../agents/<name>`.
         if (RunnerAdmin.handles(path)) {
           return yield* runnerAdmin.fetch.pipe(
@@ -410,6 +419,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     })),
     Effect.provide(BranchSandboxes.live(ChatDatabase)),
     Effect.provide(BranchRooms.live),
+    Effect.provide(RunContent.live),
     Effect.provide(
       Layer.mergeAll(
         HostModel.layerConfig("CHAT_MODEL", DEFAULT_CHAT_MODEL),

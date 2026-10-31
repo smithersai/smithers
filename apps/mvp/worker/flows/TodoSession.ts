@@ -92,6 +92,10 @@ export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E,
     Session.toLayer().pipe(Layer.provide(Jobs.layer(database))),
   )
 
+/** The run whose transcript a TODO's job writes: the attempt's `todo:<attempt>` run (decision 0141). */
+export const runOf = (task: AgentRunner.Task): string | undefined =>
+  task.context?.attemptId === undefined ? undefined : `todo:${task.context.attemptId}`
+
 /**
  * A runner claimed attempt `attemptId`'s job: its TODO no longer waits for one (`todos.waiting`, decision 0135). The
  * claim route runs it for every claim and reclaim (worker/runners/Api.ts `onClaimed`); an attempt the TODO no longer

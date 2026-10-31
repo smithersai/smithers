@@ -83,6 +83,7 @@ import { RunsStore } from "./features/runs/store"
 import { SteerWrites } from "./features/runs/writes"
 import { Status, type StatusView } from "./features/status/status"
 import { Terminal, type TerminalView } from "./features/terminal/terminal"
+import { Transcript, type TranscriptView } from "./features/transcript/transcript"
 import { StatusStore, TabTitle } from "./features/status/store"
 import { SecretsClient } from "./features/secrets/api"
 import { Secrets, type SecretsLayer } from "./features/secrets/secrets"
@@ -273,6 +274,8 @@ export const appLayer = <S = never>(
     // and its terminal.
     Branch.layer({ origin, reopenRoute: host.reopenRoute }),
     Terminal.layer({ origin }),
+    // A run's external agent's transcript, live on its run page (docs/features/agent-transcripts.md).
+    Transcript.layer({ origin }),
     // Git issues (decision 0012): the issue pages, and this tab's answers to the issue writes' steps it started.
     Issues.layer,
     // Pull requests (decision 0012 §6): the list and one pull request's tabs, over the issues' store, and a person's
@@ -561,6 +564,7 @@ export interface BootOptions {
     status: StatusView,
     branch: BranchView,
     terminal: TerminalView,
+    transcript: TranscriptView,
     issues: IssuesLayer,
     runs: RunsView,
     flows: FlowsUiView,
@@ -600,6 +604,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
     const status = yield* Status
     const branch = yield* Branch
     const terminal = yield* Terminal
+    const transcript = yield* Transcript
     const issues = yield* Issues
     const runs = yield* Runs
     const flows = yield* FlowsUi
@@ -636,6 +641,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
         status,
         branch,
         terminal,
+        transcript,
         issues,
         runs,
         flows,

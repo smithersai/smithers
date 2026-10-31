@@ -48,9 +48,16 @@ export interface Runner {
 
 /**
  * Registers a runner for `repo` that runs `capacity` jobs at once, makes its ACP test agent the repository's coding
- * agent, and starts it. `word` makes its name unique to the run. The caller stops it in a `finally`.
+ * agent, and starts it. `word` makes its name unique to the run; `origin` is where the runner reaches the app (its own
+ * unless set, such as a spec's relay). The caller stops it in a `finally`.
  */
-export const startRunner = async (page: Page, repo: string, word: string, capacity: number): Promise<Runner> => {
+export const startRunner = async (
+  page: Page,
+  repo: string,
+  word: string,
+  capacity: number,
+  options: { readonly origin?: string } = {},
+): Promise<Runner> => {
   const state = mkdtempSync(join(tmpdir(), "agent-runner-e2e-"))
   const name = `e2e-${word}`
   const output: Array<Buffer> = []
@@ -76,7 +83,7 @@ export const startRunner = async (page: Page, repo: string, word: string, capaci
     await adminWrite(page, repo, `runners/${name}`, "PUT", { tokenSha256: sha, labels: ["e2e"], capacity })
     await adminWrite(page, repo, `agents/${name}`, "PUT", { labels: ["e2e"], profile: "acp-test", coding: true })
     const config = {
-      origin: new URL(baseURL).origin,
+      origin: options.origin ?? new URL(baseURL).origin,
       name,
       capacity,
       stateDir: state,
