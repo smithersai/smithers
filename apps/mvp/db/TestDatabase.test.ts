@@ -148,7 +148,9 @@ describe("explain", () => {
       () => connecting("postgresql://smithers:smithers@localhost:9/smithers"),
     ],
     ["fetch refused", () => fetch("http://127.0.0.1:2/v1/health").catch((error: unknown) => error)],
-    ["a host that doesn't resolve", () => fetch("http://nowhere.invalid/").catch((error: unknown) => error)],
+    // A name with a 64-character label, which DNS can't carry: the resolver library refuses it before asking any server,
+    // so the failure is the same with no network, or behind a resolver that answers every name.
+    ["a host that doesn't resolve", () => fetch(`http://${"a".repeat(64)}.invalid/`).catch((error: unknown) => error)],
   ])("says to start the compose services for %s", async (_, failure) => {
     const explained = down(await failure())
     expect(explained).toBeInstanceOf(TestDatabase.Unusable)
