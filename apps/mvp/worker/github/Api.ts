@@ -108,15 +108,16 @@ import { Write } from "./Write.ts"
 // - `POST /api/repos/<owner>/<name>/writes`: the one door every git write goes through. It checks sign-in, the App,
 //   the person's role on the repository the path names (`RepoRoles`, decision 0079), the bounds and the payload's
 //   hash, records the write while that role holds, and starts `github/Write` keyed by the device's write id. The
-//   settled row is the result; nothing waits on the remote run. Opening an issue and commenting go to any repository
-//   the deployment may act on; every other write only to its own.
+//   settled row is the result; nothing waits on the remote run. Every write goes to any repository the deployment may
+//   act on, at its minimum role there (decision 0079 slice 2).
 // - `GET /api/shapes/{items,comments,github-sync}`: the synced repository's rows, each with its column list, for a
 //   signed-in person with a role on it, or for anyone once GitHub said the repository is public. A read of `items`
 //   that finds the sync older than 5 minutes starts `github/Reconcile`, once per repository and 5-minute bucket, and
 //   waits at most `RECONCILE_START_TIMEOUT` for admission beside its own work.
 // - `GET /api/shapes/github-writes`: the signed-in person's own writes, their status only.
 // - Triage (§5): the writes route takes a person's Accept or Not accepted, Run triage again, and Enable and Pause, each
-//   at its own minimum role; `issues.opened` starts `triage/Run` while triage is on; and `GET
+//   at its own minimum role; Run triage again and Enable also need a Member of the deployment's own repository, whose
+//   model judges (ruling AUTH-8); `issues.opened` starts `triage/Run` while triage is on; and `GET
 //   /api/shapes/triage-settings` serves whether it is.
 // The webhook, the shapes and Reconcile serve every repository the deployment may act on (decision 0079, slice 1b):
 // its own (`GITHUB_REPOSITORY`) and, with the App, any other `GITHUB_ALLOWED_REPOSITORIES` doesn't leave out. A shape
@@ -147,18 +148,6 @@ const refuse = (status: number, code: WriteRefusal | "not_configured" | "invalid
     status,
     headers: retryAfterSeconds === undefined ? noStore : { ...noStore, "retry-after": String(retryAfterSeconds) },
   })
-
-/**
- * The writes any repository the deployment may act on takes (decision 0079, Slice 1); the rest only its own. Publish
- * and Update branch act on the branch's own repository, wherever `/new` made it (docs/features/branch-publish.md).
- */
-const ANY_REPOSITORY: ReadonlySet<string> = new Set([
-  "issue/create",
-  "issue/comment",
-  "branch/publish",
-  "branch/update",
-  "branch/resync",
-])
 
 /** No person's id: what a signed-out writes shape filters on, so it holds no rows. */
 const NOBODY = ""
@@ -571,6 +560,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           if (!isRepository(target.owner, target.name)) return refused(404, "not_found")
           const repo = repositoryOf(`${target.owner}/${target.name}`)
           const own = repo.id === repository.id
+          fields.repoId = repo.id
+          fields.repository = own ? "own" : "other"
           // Every write needs a role on the repository. No role means a repository the person can't see. On the
           // deployment's own repository that is the session's role, checked before the App as it always was.
           if (own && signed.role === null) return refused(403, "forbidden")
@@ -594,7 +585,6 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           fields.op = write.op
           fields.via = via
           fields.writeId = write.writeId
-          if (!own && !ANY_REPOSITORY.has(write.op)) return refused(404, "not_found")
           // Triage is the person's own act: anyone acting for them is refused, and counted as such (decision 0017).
           if (
             write.op !== "issue/create" && write.op !== "issue/comment" && write.op !== "branch/publish" &&
@@ -608,6 +598,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           // `repo:ask`, Member or above), so a Guest's write goes as the Guest or not at all, never as the bot.
           if (via === "agent" && !canAsk(who)) return refused(403, "forbidden")
           if (!mayWrite(who, write)) return refused(403, "forbidden")
+          // Triage's judge is the deployment's own model, which answers only Members of the deployment's own repository
+          // (ruling AUTH-8, decision 0122): starting the triage flow, on any repository, needs that role too.
+          if ((write.op === "triage/enable" || write.op === "triage/run") && !canAsk(signed)) {
+            fields.refused = "deployment_model"
+            return refused(403, "forbidden")
+          }
           // The App writes triage under the role of the person who enabled it, re-checked by their GitHub login.
           if (write.op === "triage/enable" && who.login === undefined) return refused(401, "authentication")
           // Publish, Update branch and Resync: a branch of this repository the writer may edit; Publish and Resync, one
@@ -652,7 +648,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
               ? (yield* FlowStarter).start(TriageRun, {
                 executionId: triageRunExecutionId(write.writeId),
                 payload: {
-                  repo: `${repository.owner}/${repository.name}`,
+                  repo: `${repo.owner}/${repo.name}`,
                   number: write.number,
                   trigger: "again",
                   key: write.writeId,
@@ -705,7 +701,11 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         )
         const outcome = String(fields.outcome)
         yield* Metric.update(
-          Metric.withAttributes(Metrics.writeRequests, { op: String(fields.op ?? "unknown"), outcome }),
+          Metric.withAttributes(Metrics.writeRequests, {
+            op: String(fields.op ?? "unknown"),
+            outcome,
+            repository: String(fields.repository ?? "unknown"),
+          }),
           1,
         )
         yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })

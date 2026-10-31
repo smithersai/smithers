@@ -18,6 +18,7 @@ import {
   type ListRow,
   mayManageTriage,
   mayManageTriageOnList,
+  mayStartTriage,
   mayTriage,
   mayWrite,
   pageOf,
@@ -303,7 +304,7 @@ describe("triage", () => {
 
   test("the issue's control: buttons for a Member, Run triage again only while the flow is on, its latest write's chip", () => {
     const item = { number: 3, triage: "not_accepted" }
-    expect(triageControlOf(item, [], { triage: false, flowOn: false })).toEqual({
+    expect(triageControlOf(item, [], { triage: false, flowOn: false, start: true })).toEqual({
       shown: true,
       state: "not_accepted",
       pending: undefined,
@@ -312,28 +313,28 @@ describe("triage", () => {
       runAgain: false,
       disabled: false,
     })
-    expect(triageControlOf({ number: 3, triage: "proposed" }, [], { triage: false, flowOn: false }).shown).toBe(false)
-    expect(triageControlOf({ number: 3, triage: "proposed" }, [], { triage: false, flowOn: true }).shown).toBe(true)
-    expect(triageControlOf({ number: 3, triage: "bogus" }, [], { triage: true, flowOn: false })).toMatchObject({
+    expect(triageControlOf({ number: 3, triage: "proposed" }, [], { triage: false, flowOn: false, start: true }).shown).toBe(false)
+    expect(triageControlOf({ number: 3, triage: "proposed" }, [], { triage: false, flowOn: true, start: true }).shown).toBe(true)
+    expect(triageControlOf({ number: 3, triage: "bogus" }, [], { triage: true, flowOn: false, start: true })).toMatchObject({
       shown: true,
       state: "proposed",
       accept: true,
       reject: true,
       runAgain: false,
     })
-    expect(triageControlOf(item, [], { triage: true, flowOn: true }).runAgain).toBe(true)
+    expect(triageControlOf(item, [], { triage: true, flowOn: true, start: true }).runAgain).toBe(true)
     const writes = [
       { id: "w3", op: "issue/triage", number: 3, pending: "requested" },
       { id: "w2", op: "triage/run", number: 3, pending: "not_sent" },
       { id: "w9", op: "issue/triage", number: 9, pending: "not_sent" },
       { id: "e", op: "triage/enable", number: 0, pending: "requested" },
     ]
-    expect(triageControlOf(item, writes, { triage: true, flowOn: true })).toMatchObject({ pending: "requested", disabled: true })
-    expect(triageControlOf(item, writes.slice(1), { triage: true, flowOn: true })).toMatchObject({
+    expect(triageControlOf(item, writes, { triage: true, flowOn: true, start: true })).toMatchObject({ pending: "requested", disabled: true })
+    expect(triageControlOf(item, writes.slice(1), { triage: true, flowOn: true, start: true })).toMatchObject({
       pending: "not_sent",
       disabled: false,
     })
-    expect(triageControlOf({ number: 5, triage: "accepted" }, writes, { triage: true, flowOn: true }).pending).toBeUndefined()
+    expect(triageControlOf({ number: 5, triage: "accepted" }, writes, { triage: true, flowOn: true, start: true }).pending).toBeUndefined()
   })
 
   test("the list's switch: Enable while off or paused, Pause while on, disabled while one is on its way", () => {
@@ -346,15 +347,15 @@ describe("triage", () => {
     expect(triageSwitchOf(undefined, [{ id: "b", op: "issue/triage", number: 1, pending: "requested" }]).disabled).toBe(false)
   })
 
-  test("who triages: a Member and above; who enables: a Maintainer and above; on the deployment's own repository alone", () => {
+  test("who triages: a Member and above; who commits and switches the flow: a Maintainer and above; on any repository, by its role", () => {
     const roles = ["admin", "maintainer", "member", "guest", null] as const
     const signedIn = { status: "signed_in" as const, role: null }
     const on = (role: (typeof roles)[number], own = true) => ({ role, own })
     expect(roles.map((role) => mayTriage(signedIn, undefined, on(role)))).toEqual([true, true, true, false, false])
     expect(roles.map((role) => mayManageTriage(signedIn, undefined, on(role)))).toEqual([true, true, false, false, false])
-    // Triage acts on the deployment's own repository until decision 0079's slice 2: nowhere else, whatever the role.
-    expect(mayTriage(signedIn, undefined, on("admin", false))).toBe(false)
-    expect(mayManageTriage(signedIn, undefined, on("admin", false))).toBe(false)
+    // Another repository: the role ChatApi answered there decides, as on the deployment's own (decision 0079 slice 2).
+    expect(roles.map((role) => mayTriage(signedIn, undefined, on(role, false)))).toEqual([true, true, true, false, false])
+    expect(roles.map((role) => mayManageTriage(signedIn, undefined, on(role, false)))).toEqual([true, true, false, false, false])
     expect(mayTriage({ status: "signed_out", role: null }, { role: "admin" }, on("admin"))).toBe(false)
     expect(mayManageTriage({ status: "signed_out", role: null }, { role: "admin" }, on("admin"))).toBe(false)
     // Offline after an answer, the session this device confirmed is still signed in.
@@ -364,9 +365,28 @@ describe("triage", () => {
   test("an unsynced repository never offers the triage switch even to a Maintainer", () => {
     const signedIn = { status: "signed_in" as const, role: null }
     const maintainer = { role: "maintainer" as const, own: true }
-    expect(mayManageTriageOnList(signedIn, undefined, maintainer, undefined)).toBe(false)
-    expect(mayManageTriageOnList(signedIn, undefined, maintainer, { syncedAt: "2026-10-23" })).toBe(true)
-    expect(mayManageTriageOnList(signedIn, undefined, { role: "member", own: true }, { syncedAt: "2026-10-23" })).toBe(false)
+    expect(mayManageTriageOnList(signedIn, undefined, maintainer, undefined, "enable")).toBe(false)
+    expect(mayManageTriageOnList(signedIn, undefined, maintainer, { syncedAt: "2026-10-23" }, "enable")).toBe(true)
+    expect(mayManageTriageOnList(signedIn, undefined, { role: "member", own: true }, { syncedAt: "2026-10-23" }, "enable")).toBe(false)
+  })
+
+  test("triage's judge is the deployment's own model: elsewhere, only its Members start the flow; any Maintainer there pauses it", () => {
+    const synced = { syncedAt: "2026-10-23" }
+    const elsewhere = { role: "maintainer" as const, own: false }
+    const as = (role: "admin" | "maintainer" | "member" | "guest" | null) => ({ status: "signed_in" as const, role })
+    // The session's role is the person's on the deployment's own repository (ruling AUTH-8, decision 0122).
+    expect([as("admin"), as("member"), as("guest"), as(null)].map((session) => mayStartTriage(session, undefined, elsewhere)))
+      .toEqual([true, true, false, false])
+    expect(mayStartTriage({ status: "signed_out", role: null }, { role: "admin" }, elsewhere)).toBe(false)
+    expect(mayStartTriage({ status: "unreachable", role: null }, { role: "member" }, elsewhere)).toBe(true)
+    // On the deployment's own repository its role there is the session's.
+    expect(mayStartTriage(as(null), undefined, { role: "maintainer", own: true })).toBe(true)
+    expect(mayManageTriageOnList(as("guest"), undefined, elsewhere, synced, "enable")).toBe(false)
+    expect(mayManageTriageOnList(as("guest"), undefined, elsewhere, synced, "pause")).toBe(true)
+    expect(mayManageTriageOnList(as("member"), undefined, elsewhere, synced, "enable")).toBe(true)
+    // Run triage again starts the flow too.
+    const item = { number: 3, triage: "proposed" }
+    expect(triageControlOf(item, [], { triage: true, flowOn: true, start: false })).toMatchObject({ accept: true, runAgain: false })
   })
 })
 

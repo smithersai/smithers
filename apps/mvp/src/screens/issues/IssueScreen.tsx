@@ -15,6 +15,7 @@ import {
   conversationProps,
   draftOf,
   mayManageTriage,
+  mayStartTriage,
   mayTriage,
   mayWrite,
   pageOf,
@@ -73,6 +74,7 @@ export function IssueScreen() {
   const control = triageControlOf(item, triagePending ?? [], {
     triage: session !== undefined && mayTriage(session, confirmed, answer),
     flowOn: triage !== undefined && !triage.paused,
+    start: session !== undefined && mayStartTriage(session, confirmed, answer),
   })
   return (
     <main className="issues-screen"><RepoHeader />{back}

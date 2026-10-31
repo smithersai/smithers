@@ -927,7 +927,7 @@ describe("triage", () => {
   /** The routed issue's triage control, as the issue's page shows it to a Member. */
   const control = (tab: Awaited<ReturnType<typeof tabOf>>, flowOn = true) => {
     const item = tab.issues.queries.item.toArray[0] as { readonly number: number; readonly triage: string } | undefined
-    return item === undefined ? undefined : triageControlOf(item, pending(tab), { triage: true, flowOn })
+    return item === undefined ? undefined : triageControlOf(item, pending(tab), { triage: true, flowOn, start: true })
   }
 
   test("a Member's Accept: Requested at once; ChatApi takes it as theirs; GitHub's labels settle it, pinned, everywhere", async () => {

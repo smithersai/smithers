@@ -278,7 +278,7 @@ engine worker: auth/refresh/check ── asks the tab that started it, on <name>
 - An unreadable wipe marker selects the unwiped host. Directory lookup failures preserve the marker; only `NotFoundError` proves the engine directory absent. Reload still happens if stopping the program throws synchronously.
 - The boot-time half of the wipe runs before the program starts, so a finished wipe isn't logged or counted. A failed one shows as the program's `persistence unavailable` and `browser.engine.unavailable` (`error.type` `WipeUnfinished`) records and the `smithers-wipe` mark staying in localStorage.
 - The `github_app_authorization` revocation webhook isn't handled; a role check ends the session within the hour instead.
-- Per-repository roles cover issue writes, the stack, a repository's home, branches and TODO runs, and the buttons that act on them (decision 0079, `worker/github/RepoRoles.ts`). Triage, commitments, merging, the issues' shapes, the webhook, secrets and custom domains still serve the deployment's repository only. Roles Smithers sets itself (`repository_roles`, 0007 phase 2), the device flow for the TUI and CLI, grants and the visitor cookie are later phases of 0007 and 0008.
+- Per-repository roles cover issue writes, triage, commitments, merging, the issues' shapes and the webhook, the stack, a repository's home, branches and TODO runs, and the buttons that act on them (decision 0079, `worker/github/RepoRoles.ts`). Secrets and custom domains still serve the deployment's repository only. Roles Smithers sets itself (`repository_roles`, 0007 phase 2), the device flow for the TUI and CLI, grants and the visitor cookie are later phases of 0007 and 0008.
 
 ## Tests
 

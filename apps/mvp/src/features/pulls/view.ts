@@ -125,15 +125,15 @@ export interface Pull {
 
 /**
  * Whether the person at the page sees Merge: a Maintainer or above (decision 0007 `repo:merge`) on the repository, as
- * ChatApi answered for it on this tab, which is the deployment's own until decision 0079's slice 2; on an open pull
- * request that isn't a draft, whose head this device has. A person's own press only: the agent has no Merge.
+ * ChatApi answered for it on this tab (decision 0079 slice 2); on an open pull request that isn't a draft, whose head
+ * this device has. A person's own press only: the agent has no Merge.
  */
 export const mayMerge = (
   session: { readonly status: string },
   answer: RepoAnswer | undefined,
   pull: Pull,
 ): boolean => {
-  const role = session.status === "signed_in" && answer?.own === true ? answer.role : null
+  const role = session.status === "signed_in" && answer !== undefined ? answer.role : null
   return (role === "admin" || role === "maintainer") && pull.state === "open" && !pull.draft && !pull.merged &&
     pull.synced > 0 && pull.headSha !== ""
 }

@@ -23,7 +23,7 @@ box: STRIPE_KEY=smthrs-secret-<64 hex>      (environment, derived per branch and
 `PUT /api/repos/<owner>/<name>/secrets/<NAME>` with `{ value, hosts, methods? }` sets or replaces a secret; `DELETE` on the same path deletes it. Both answer `202 { name }` once the flow has started, and the row arrives in the shape.
 
 - **Who:** an Admin acting in person (0007 `repo:secret-write`). An agent, flow or sandbox acting for them is refused (`forbidden`), as is every other role. Signed out is `authentication`.
-- **Which repository:** the one sign-in reads roles on (`GITHUB_REPOSITORY`), since a session carries one role; any other is `not_found`.
+- **Which repository:** the one sign-in reads roles on (`GITHUB_REPOSITORY`), since a session carries one role; any other is `not_found`. Decision 0079 slice 2 kept this fence: a TODO run on another repository needs no secret while the egress (`SANDBOX_SECRETS`) is off.
 - **Name:** an environment variable's name: `^[A-Z_][A-Z0-9_]{0,63}$` (`invalid_name`).
 - **Hosts:** 1 to 16 exact lowercase DNS names, no wildcard, IP address, port or single label such as `localhost` (`invalid_hosts`). **Methods:** optional, from `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`; every method when absent.
 - **Value:** 8 bytes to 16 KiB of text with no control character and no unpaired surrogate (`too_short`, `too_long`, `control_character`, `malformed_text`). The body is at most 32 KiB (`too_large`, 413).

@@ -40,7 +40,7 @@ GET /api/repos/<o>/<n>/compare/<base>...<head> ─▶ the files two commits diff
 | Act | Who | Token on GitHub |
 |---|---|---|
 | Read pull requests, their commits, reviews and checks; compare two commits | as issues: a role on the repository, or anyone once GitHub said it is public | the App's, for the compare route |
-| Merge | a Maintainer or Admin, in person (`repo:merge`); never the agent | the person's own |
+| Merge | a Maintainer or Admin of the pull request's repository, in person (`repo:merge`); never the agent | the person's own |
 | The review's comment | the `review` check, for the person who committed the TODO | the App's (`smithers[bot]`), "Reviewed by Smithers for @maya" |
 | Ask for a review ([review on request](#review-on-request)) | a Maintainer or Admin of the pull request's repository, in person; never the agent | the App's, for the review |
 | A check's commit status | `checks/Run`, never a person or the agent | the App's, minted with only `statuses: write` |
@@ -80,7 +80,7 @@ Screens (`src/screens/pulls/`), at GitHub's paths:
 /$owner/$repo/pull/$n/files         Files: each file's diff (DiffHunks), from the compare route
 ```
 
-- **Merge** shows only to a Maintainer or Admin, on an open pull request that isn't a draft, once the device has its head. It sends `pr/merge` at the head and base the page shows; the page says Merging, then Merged, or why not (`New commits`, `<base> moved`, `Can't merge`, `Not allowed`, `Sign in`).
+- **Merge** shows only to a Maintainer or Admin of the pull request's repository, any repository the deployment acts on (decision 0079 slice 2), on an open pull request that isn't a draft, once the device has its head. It sends `pr/merge` at the head and base the page shows; the page says Merging, then Merged, or why not (`New commits`, `<base> moved`, `Can't merge`, `Not allowed`, `Sign in`).
 - **Review** shows only to a Maintainer or Admin of the repository, on an open pull request once the device has its head. It dispatches `pull/review` at the head the page shows; the page says Review requested, or why not (`New commits`, `Checks running`, `Closed`, `Not allowed`, `Sign in`, `Couldn't review`). The review itself shows on the Checks tab.
 - **The deploy warning** shows beside Merge, and only there, when the base is the repository's default branch. `pulls.default_branch` is the base repository's default branch as GitHub's last read named it; until a read names it, no warning shows.
 - The list also waits for its device query to become ready: a completed GitHub walk cannot declare an empty list while the shared items shape is still hydrating.

@@ -148,8 +148,9 @@ describe("merge", () => {
     expect(mayMerge(signedIn, { role: "member", own: true }, pull())).toBe(false)
     expect(mayMerge(signedIn, undefined, pull())).toBe(false)
     expect(mayMerge({ status: "signed_out" }, maintainer, pull())).toBe(false)
-    // Merging acts on the deployment's own repository until decision 0079's slice 2.
-    expect(mayMerge(signedIn, { role: "maintainer", own: false }, pull())).toBe(false)
+    // Any repository, by the role ChatApi answered there (decision 0079 slice 2).
+    expect(mayMerge(signedIn, { role: "maintainer", own: false }, pull())).toBe(true)
+    expect(mayMerge(signedIn, { role: "member", own: false }, pull())).toBe(false)
     for (const changed of [{ draft: true }, { merged: true }, { state: "closed" }, { synced: 0 }, { headSha: "" }]) {
       expect(mayMerge(signedIn, maintainer, pull(changed))).toBe(false)
     }

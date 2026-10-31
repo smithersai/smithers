@@ -111,9 +111,9 @@ export function IssuesScreen() {
         actions={session !== undefined && mayWrite(session, confirmed, answer)
           ? (
             <>
-              {mayManageTriageOnList(session, confirmed, answer, synced) && session.hostedModel === false
+              {mayManageTriageOnList(session, confirmed, answer, synced, triageSwitch.action) && session.hostedModel === false
                 ? <Button variant="outline" disabled data-triage-off="">{TRIAGE_OFF}</Button>
-                : mayManageTriageOnList(session, confirmed, answer, synced)
+                : mayManageTriageOnList(session, confirmed, answer, synced, triageSwitch.action)
                 ? (
                   <Button
                     variant="outline"

@@ -307,7 +307,7 @@ describe("POST /api/repos/<owner>/<name>/writes", () => {
     const settled = await h.fetch(writesRoute("acme", "widgets"), post(write))
     expect(await settled.json()).toEqual({ txid: null, writeId: write.writeId, status: "done" })
     expect(h.starts).toHaveLength(2)
-    expect(h.count(Metrics.writeRequests, { op: "issue/create", outcome: "existing" })).toBe(2)
+    expect(h.count(Metrics.writeRequests, { op: "issue/create", outcome: "existing", repository: "own" })).toBe(2)
   })
 
   test("end to end on the Node host: a person's issue and the agent's comment reach GitHub and settle with their rows", async () => {
@@ -363,7 +363,7 @@ describe("POST /api/repos/<owner>/<name>/writes", () => {
     }
     expect(await sql(runtime, `SELECT via FROM github_writes ORDER BY created_at`)).toEqual([{ via: "person" }, { via: "person" }])
     expect(h.starts).toHaveLength(2)
-    expect(agent.count(Metrics.writeRequests, { op: "issue/create", outcome: "forbidden" })).toBe(1)
+    expect(agent.count(Metrics.writeRequests, { op: "issue/create", outcome: "forbidden", repository: "own" })).toBe(1)
   })
 
   test("a body that names who acts claims nothing: the request's session or run credential says", async () => {
@@ -561,22 +561,125 @@ describe("POST /api/repos/<owner>/<name>/writes on another repository (decision 
     expect(await sql(runtime, `SELECT role FROM github_repo_roles`)).toEqual([{ role: null }])
   })
 
-  test("only opening an issue and commenting go to another repository: triage, commitments and merging are 404", async () => {
+  /** Triage's, commitments' and merging's writes, one of each, numbered as `number`. */
+  const maintainerWrites = (number = 1) => ({
+    "issue/triage": { writeId: crypto.randomUUID(), op: "issue/triage", number, decision: "accept" },
+    "issue/commitment": { writeId: crypto.randomUUID(), op: "issue/commitment", number, commitment: "now" },
+    "triage/run": { writeId: crypto.randomUUID(), op: "triage/run", number },
+    "triage/enable": { writeId: crypto.randomUUID(), op: "triage/enable" },
+    "triage/pause": { writeId: crypto.randomUUID(), op: "triage/pause" },
+    "pr/merge": { writeId: crypto.randomUUID(), op: "pr/merge", number, headSha: "a".repeat(40), baseSha: "b".repeat(40) },
+  })
+  /** Each write's op and the status the route answered it. */
+  const statuses = async (h: { readonly fetch: (path: string, init: RequestInit) => Promise<Response> }, writes: Record<string, object>) => {
+    const answered: Array<readonly [string, number]> = []
+    for (const [op, write] of Object.entries(writes)) answered.push([op, (await h.fetch(route, post(write))).status])
+    return answered
+  }
+
+  test("triage, commitments and merging go to another repository, by the role GitHub gives there (slice 2)", async () => {
     const github = scriptedGitHub("acme", "widgets")
     github.roles.set("maya", "maintain")
-    const h = await githubHarness(runtime, { own: OWN, actor: await maya(), github })
-    for (const write of [
-      { writeId: crypto.randomUUID(), op: "issue/triage", number: 1, decision: "accept" },
-      { writeId: crypto.randomUUID(), op: "issue/commitment", number: 1, commitment: "now" },
-      { writeId: crypto.randomUUID(), op: "triage/run", number: 1 },
-      { writeId: crypto.randomUUID(), op: "triage/enable" },
-      { writeId: crypto.randomUUID(), op: "triage/pause" },
-      { writeId: crypto.randomUUID(), op: "pr/merge", number: 1, headSha: "a".repeat(40), baseSha: "b".repeat(40) },
-    ]) {
-      const response = await h.fetch(route, post(write))
-      expect([write.op, response.status, await response.json()]).toEqual([write.op, 404, { code: "not_found" }])
+    // GitHub's maintain on acme/widgets decides there, never her session. Starting triage's flow also asks for a Member
+    // of the deployment's own repository, which she is (the third test).
+    const h = await githubHarness(runtime, { own: OWN, actor: await maya("member"), github })
+    expect(await statuses(h, maintainerWrites())).toEqual([
+      ["issue/triage", 202],
+      ["issue/commitment", 202],
+      ["triage/run", 202],
+      ["triage/enable", 202],
+      ["triage/pause", 202],
+      ["pr/merge", 202],
+    ])
+    expect(await sql(runtime, `SELECT DISTINCT repo_id AS "repoId" FROM github_writes`)).toEqual([
+      { repoId: "github/acme/widgets" },
+    ])
+    expect(h.starts.map((start) => start.flow)).toEqual([
+      "github/Write",
+      "github/Write",
+      "triage/Run",
+      "github/Write",
+      "github/Write",
+      "pr/Merge",
+    ])
+    // Run triage again runs acme/widgets' triage, never the deployment's own repository's.
+    expect(h.starts[2]!.payload).toMatchObject({ repo: "acme/widgets", number: 1, trigger: "again" })
+    // Recorded with the repository each write went to, and counted by it.
+    expect(h.line("github.write.request").map((line) => line.annotations)).toEqual(
+      Array.from({ length: 6 }, () => expect.objectContaining({ repoId: "github/acme/widgets", repository: "other", outcome: "started" })),
+    )
+    expect(h.count(Metrics.writeRequests, { op: "pr/merge", outcome: "started", repository: "other" })).toBe(1)
+  })
+
+  test("at each write's minimum on that repository: a Member there triages but sets no commitment, switches no flow, merges nothing", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "write")
+    // An Admin of the deployment's own repository holds no more there than GitHub's write.
+    const h = await githubHarness(runtime, { own: OWN, actor: await maya("admin"), github })
+    expect(await statuses(h, maintainerWrites())).toEqual([
+      ["issue/triage", 202],
+      ["issue/commitment", 403],
+      ["triage/run", 202],
+      ["triage/enable", 403],
+      ["triage/pause", 403],
+      ["pr/merge", 403],
+    ])
+    github.roles.set("maya", "triage")
+    await sql(runtime, `UPDATE github_repo_roles SET checked_at = now() - interval '6 minutes'`)
+    // GitHub's triage is a Guest: no triage of Smithers' (decision 0079's audience table).
+    expect(await statuses(h, maintainerWrites())).toEqual([
+      ["issue/triage", 403],
+      ["issue/commitment", 403],
+      ["triage/run", 403],
+      ["triage/enable", 403],
+      ["triage/pause", 403],
+      ["pr/merge", 403],
+    ])
+  })
+
+  test("triage's judge is the deployment's own model: starting its flow also needs a Member of the deployment's own repository", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "maintain")
+    const h = await githubHarness(runtime, { own: OWN, actor: await maya("guest"), github })
+    expect(await statuses(h, maintainerWrites())).toEqual([
+      ["issue/triage", 202],
+      ["issue/commitment", 202],
+      ["triage/run", 403],
+      ["triage/enable", 403],
+      ["triage/pause", 202],
+      ["pr/merge", 202],
+    ])
+    expect(h.starts.map((start) => start.flow)).not.toContain("triage/Run")
+    expect(h.line("github.write.request").filter((line) => line.annotations.refused === "deployment_model").map((line) => line.annotations.op)).toEqual([
+      "triage/run",
+      "triage/enable",
+    ])
+  })
+
+  test("end to end on the Node host: a Maintainer of a second repository accepts an issue, commits to it and merges there, as herself", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "maintain")
+    github.open("Crash", "Steps")
+    const baseSha = github.refs.get("main")!
+    const headSha = github.push("smithers/t1-readme", { "README.md": "# Widgets\n\nA line\n" })
+    const pull = github.openPull("smithers/t1-readme", "T1: README")
+    const person = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })
+    const actor: Actor.Actor = { ...member(person.personId, person.sessionId), role: "guest", login: "maya" }
+    const h = await githubHarness(runtime, { own: OWN, actor, run: true, github })
+    const accept = { writeId: crypto.randomUUID(), op: "issue/triage", number: 1, decision: "accept" }
+    expect((await h.fetch(route, post(accept))).status).toBe(202)
+    await h.settled()
+    const commit = { writeId: crypto.randomUUID(), op: "issue/commitment", number: 1, commitment: "next" }
+    expect((await h.fetch(route, post(commit))).status).toBe(202)
+    const merge = { writeId: crypto.randomUUID(), op: "pr/merge", number: pull.number, headSha, baseSha }
+    expect((await h.fetch(route, post(merge))).status).toBe(202)
+    await h.settled()
+    for (const write of [accept, commit, merge]) {
+      expect([write.op, await writeRow(runtime, write.writeId)]).toEqual([write.op, expect.objectContaining({ status: "done" })])
     }
-    expect(await sql(runtime, `SELECT * FROM github_writes`)).toEqual([])
+    expect(github.issues.get(1)!.labels).toEqual(["smithers:accepted", "smithers:commit-next"])
+    expect([github.pulls.get(pull.number)!.merged, github.pulls.get(pull.number)!.mergedBy]).toEqual([true, "maya"])
+    expect(github.tree("main").get("README.md")).toBe("# Widgets\n\nA line\n")
   })
 
   test("a write id is its repository's and its person's: resent to another repository, or by another person, 409", async () => {

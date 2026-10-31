@@ -29,7 +29,8 @@ couldn't start a conversation.
    | The model endpoint with the person's own model | anyone signed in: their key pays, and asking is decided above |
    | The deployment's own model (while `HOSTED_MODEL_ENABLED` or an Admin turns it on, ARCH-20) | a Member or above of `GITHUB_REPOSITORY` only: the session's role at the endpoint, at a server flow's call the latest-checked live session's (`SessionStore.deploymentMember`), so a demotion found on one session outranks an older one |
    | Following a conversation (`POST /api/watches`) | a Member or above of `GITHUB_REPOSITORY`, as before: the feed's fold checks each follower as a Member |
-   | Secrets, custom domains, triage, merging | unchanged: `GITHUB_REPOSITORY` only (0079's later slices) |
+   | Secrets, custom domains | unchanged: `GITHUB_REPOSITORY` only (0079's later slices) |
+   | Triage, commitments, merging | the role on the repository (0079 slice 2, 2026-10-31); starting triage's flow also needs a Member of `GITHUB_REPOSITORY`, whose model judges |
 
 2. **Role isolation holds.** A Member, Maintainer or Admin of `GITHUB_REPOSITORY` has no more power on a repository the
    App is installed on than GitHub gives them there: a reader there is a Guest, refused 403.

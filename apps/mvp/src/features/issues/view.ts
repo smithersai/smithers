@@ -1,7 +1,7 @@
 import { COMMITMENTS, COMMITMENT_COPY, type Commitment } from "./lifecycle"
 import type { IssuesViewIssue, IssuesViewTriage } from "@smthrs/ui"
 import { mayAsk, type Role } from "../auth/contract"
-import { hereOf, type RepoAnswer } from "../auth/viewer"
+import { hereOf, type RepoAnswer, viewerOf } from "../auth/viewer"
 import { GITHUB_LIMIT } from "../repo/contract"
 import { githubIssueUrl, MAX_BODY_LENGTH, MAX_TITLE_LENGTH, NOT_SENT_COPY, TRIAGE_STATES, type TriageState } from "./contract"
 
@@ -221,8 +221,8 @@ export const mayWrite = (
 }
 
 /**
- * Whether the person at the page may Accept, mark Not accepted and Run triage again: Member and above (`repo:triage`),
- * on the deployment's own repository, the only one triage acts on until decision 0079's slice 2.
+ * Whether the person at the page may Accept, mark Not accepted and Run triage again: Member and above (`repo:triage`)
+ * on the repository the page names, as ChatApi answered for it (decision 0079 slice 2).
  */
 export const mayTriage = (
   session: SessionNow,
@@ -230,26 +230,49 @@ export const mayTriage = (
   answer: RepoAnswer | undefined,
 ): boolean => {
   const here = hereOf(session, confirmed, answer)
-  return here.signedIn && here.own && mayAsk(here.role)
+  return here.signedIn && mayAsk(here.role)
 }
 
-/** Whether the person at the page may enable and pause the triage flow: Maintainer and above (`repo:triage-flow`), likewise. */
+/**
+ * Whether the person at the page may set an issue's commitment and enable and pause the triage flow: Maintainer and
+ * above (`repo:triage-flow`), likewise.
+ */
 export const mayManageTriage = (
   session: SessionNow,
   confirmed: { readonly role: Role | null } | undefined,
   answer: RepoAnswer | undefined,
 ): boolean => {
   const here = hereOf(session, confirmed, answer)
-  return here.signedIn && here.own && (here.role === "admin" || here.role === "maintainer")
+  return here.signedIn && (here.role === "admin" || here.role === "maintainer")
 }
 
-/** The write route fences triage to the repository whose issues shape can complete (decision 0079). */
+/**
+ * Whether the person may start the triage flow (Enable triage, Run triage again) beside the role those need: its judge
+ * is the deployment's own model, which answers only Members of the deployment's own repository (ruling AUTH-8), so on
+ * another repository the session's role must be Member or above too. On the deployment's own, the role there is it.
+ */
+export const mayStartTriage = (
+  session: SessionNow,
+  confirmed: { readonly role: Role | null } | undefined,
+  answer: RepoAnswer | undefined,
+): boolean => {
+  const viewer = viewerOf(session, confirmed)
+  return viewer.signedIn && (answer?.own === true || mayAsk(viewer.role))
+}
+
+/**
+ * The list's triage switch, as `action` (`triageSwitchOf`): for a Maintainer, once the repository's issues shape
+ * completed a sync; Enable only for a person who may start the flow (`mayStartTriage`), Pause for any Maintainer.
+ */
 export const mayManageTriageOnList = (
   session: SessionNow,
   confirmed: { readonly role: Role | null } | undefined,
   answer: RepoAnswer | undefined,
   synced: unknown,
-): boolean => synced !== undefined && mayManageTriage(session, confirmed, answer)
+  action: "enable" | "pause",
+): boolean =>
+  synced !== undefined && mayManageTriage(session, confirmed, answer) &&
+  (action === "pause" || mayStartTriage(session, confirmed, answer))
 
 /** A row of this device's triage writes (queries.ts `triagePendingQuery`). */
 export interface TriagePendingRow {
@@ -262,13 +285,14 @@ export interface TriagePendingRow {
 /**
  * The triage control on issue `number`'s page: its state, and this device's latest triage write on it while on its way
  * or not sent. `may` says which buttons the person gets (Accept and Not accepted for a Member and above; Run
- * triage again too while the flow is on); a person who may not triage sees the state only, and nothing (`shown` false)
+ * triage again too while the flow is on, for a person who may start it, `mayStartTriage`); a person who may not triage
+ * sees the state only, and nothing (`shown` false)
  * while the issue is proposed and the flow off.
  */
 export const triageControlOf = (
   item: { readonly number: number; readonly triage: string },
   pending: ReadonlyArray<TriagePendingRow>,
-  may: { readonly triage: boolean; readonly flowOn: boolean },
+  may: { readonly triage: boolean; readonly flowOn: boolean; readonly start: boolean },
 ) => {
   const latest = pending.find((row) => row.number === item.number && (row.op === "issue/triage" || row.op === "triage/run"))
   const state = triageOf(item.triage) ?? "proposed"
@@ -278,7 +302,7 @@ export const triageControlOf = (
     pending: latest?.pending === "requested" || latest?.pending === "not_sent" ? (latest.pending as Pending) : undefined,
     accept: may.triage,
     reject: may.triage,
-    runAgain: may.triage && may.flowOn,
+    runAgain: may.triage && may.flowOn && may.start,
     disabled: latest?.pending === "requested",
   }
 }
