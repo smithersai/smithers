@@ -67,7 +67,8 @@
     "./ScriptedJudge": "./src/ScriptedJudge.ts",
     "./Acp": "./src/Acp.ts",
     "./AgentRunner": "./src/AgentRunner.ts",
-    "./ExternalAgent": "./src/ExternalAgent.ts"
+    "./ExternalAgent": "./src/ExternalAgent.ts",
+    "./Transcript": "./src/Transcript.ts"
   },
   "files": [
     "src/**/*.ts",

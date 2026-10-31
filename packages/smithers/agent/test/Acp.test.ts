@@ -88,6 +88,7 @@ describe("Acp against the test agent", () => {
     expect(readFileSync(join(root, "NOTES.md"), "utf8")).toBe("alpha\n")
     const kinds = result.updates.map((update) => update.kind)
     expect(kinds).toEqual([
+      "user_message_chunk",
       "agent_message_chunk",
       "tool_call",
       "tool_call_update",

@@ -197,3 +197,9 @@ export * as ExternalAgent from "./ExternalAgent.ts"
  * @since 1.0.0
  */
 export * as Acp from "./Acp.ts"
+
+/**
+ * @category models
+ * @since 1.0.0
+ */
+export * as Transcript from "./Transcript.ts"

@@ -13,6 +13,8 @@
 //   leak X                          sends X back as message text (for scrubbing tests)
 //   say env NAME                    sends the value of environment variable NAME as message text
 //   late update                     sends one more message a second after the turn ends
+//   talk for N seconds              sends a message chunk every 250 ms for N seconds, as a long answer streams
+//   say N KiB                       sends one message chunk of N KiB of text
 //   fail the prompt                 answers the prompt with JSON-RPC error -32000, as a missing login does
 //   ask permission [KIND,...]       asks session/request_permission with options of those kinds (allow_once and
 //                                   reject_once unless named) and says which option the client chose
@@ -27,6 +29,9 @@
 // every instruction once. ACP_TEST_AGENT_MODE=bad-initialize answers initialize with no protocol version;
 // ACP_TEST_AGENT_NO_LOAD=1 says it can't load sessions. The agent writes its pid to `agent-<pid>.pid` in the state
 // directory, and a detached sleep's pid to `detached-<pid>.pid`, so tests can check what is still running.
+//
+// As the published adapters do, each turn first echoes its prompt as a `user_message_chunk`, and session/load replays
+// every update the session sent before (kept in `<session>.history.jsonl` in the state directory) before it answers.
 
 import { spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
@@ -48,7 +53,11 @@ const writeState = (state) => {
 }
 
 const send = (message) => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`)
-const update = (sessionId, value) => send({ method: "session/update", params: { sessionId, update: value } })
+const historyFile = (sessionId) => join(stateDir, `${sessionId}.history.jsonl`)
+const update = (sessionId, value) => {
+  send({ method: "session/update", params: { sessionId, update: value } })
+  appendFileSync(historyFile(sessionId), `${JSON.stringify(value)}\n`)
+}
 const say = (sessionId, text) =>
   update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text } })
 
@@ -67,6 +76,8 @@ const PATTERNS = [
   [/^run `sleep (\d+)` detached$/, (m) => ({ kind: "detached", seconds: Number(m[1]) })],
   [/^say env ([A-Za-z_][A-Za-z0-9_]*)$/, (m) => ({ kind: "env", name: m[1] })],
   [/^late update$/, () => ({ kind: "late" })],
+  [/^talk for (\d+(?:\.\d+)?) seconds$/, (m) => ({ kind: "talk", seconds: Number(m[1]) })],
+  [/^say (\d+) KiB$/, (m) => ({ kind: "big", kib: Number(m[1]) })],
   [/^fail the prompt$/, () => ({ kind: "fail" })],
   [/^refuse$/, () => ({ kind: "refuse" })],
   [/^exit$/, () => ({ kind: "exit" })],
@@ -112,6 +123,7 @@ const runTurn = async (id, sessionId, text) => {
     send({ id, result: { stopReason } })
     if (late) setTimeout(() => say(sessionId, "Late note."), 1000)
   }
+  update(sessionId, { sessionUpdate: "user_message_chunk", content: { type: "text", text } })
   say(sessionId, `Working through ${state.pending.length} instructions.`)
   while (state.pending.length > 0) {
     if (cancelled) return end("cancelled")
@@ -146,6 +158,17 @@ const runTurn = async (id, sessionId, text) => {
       writeState(state)
       continue
     }
+    if (step.kind === "talk") {
+      const until = Date.now() + step.seconds * 1000
+      let n = 0
+      while (Date.now() < until && !cancelled) {
+        say(sessionId, `word ${n++} `)
+        await new Promise((done) => setTimeout(done, 250))
+      }
+      state.pending.shift()
+      writeState(state)
+      continue
+    }
     if (step.kind === "detached") {
       const toolCallId = randomUUID()
       update(sessionId, { sessionUpdate: "tool_call", toolCallId, title: "Run a command", kind: "execute", status: "in_progress" })
@@ -174,6 +197,7 @@ const runTurn = async (id, sessionId, text) => {
     }
     if (step.kind === "exit") process.exit(3)
     if (step.kind === "leak") say(sessionId, step.text)
+    if (step.kind === "big") say(sessionId, "k".repeat(step.kib * 1024))
     if (step.kind === "permission") {
       const kinds = step.kinds ?? ["allow_once", "reject_once"]
       const answer = await ask("session/request_permission", {
@@ -237,6 +261,12 @@ const handle = (message) => {
     }
     state.cwd = params.cwd
     writeState(state)
+    const replay = existsSync(historyFile(params.sessionId))
+      ? readFileSync(historyFile(params.sessionId), "utf8").split("\n").filter((line) => line !== "")
+      : []
+    for (const line of replay) {
+      send({ method: "session/update", params: { sessionId: params.sessionId, update: JSON.parse(line) } })
+    }
     return send({ id, result: {} })
   }
   if (method === "session/prompt") return void runTurn(id, params.sessionId, textOf(params.prompt))

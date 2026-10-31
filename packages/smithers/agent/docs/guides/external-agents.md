@@ -13,6 +13,8 @@ runner, rather than inside your flow. `@smthrs/agent` gives you three pieces:
   probes, and ends with the files the agent changed.
 - `Acp`, a client of the [Agent Client Protocol](https://agentclientprotocol.com),
   which a runner uses to drive whatever command a profile names.
+- `Transcript`, what a runner sends its host of the agent's session as it
+  happens, and how it makes each event safe and small first.
 
 `smthrs runner` is a runner built on these pieces (see its
 [CLI reference](../../../docs/reference/cli/runner.md)).
@@ -65,6 +67,26 @@ agent's own session id beside its checkout and resumes with ACP's `session/load`
 after a crash, so the agent continues from the last turn its own session
 recorded. A generation after a retryable end goes to the same runner, whose
 checkout holds the work so far.
+
+## Send the transcript
+
+A runner forwards the agent's `session/update` stream as numbered events, so
+its host can show the session live. `Transcript.prepare` makes one update ready
+to leave the runner: it drops the agent's slash commands and configuration
+options, scrubs every string, and bounds the result to
+`Transcript.MAX_EVENT_BYTES`, splitting a long message and cutting any other
+long string.
+
+```ts
+import { Transcript } from "@smthrs/agent"
+
+const scrub = Transcript.scrubber(["value-of-a-secret"])
+const events = Transcript.prepare(update.kind, update.update, scrub)
+```
+
+Number each event from 0 within the job's generation and post them as
+`Transcript.EventsRequest` to `AgentRunner.ROUTES.events`. The host keeps each
+`seq` once and answers `{ next }`, the lowest it lacks; send again from there.
 
 ## Drive an ACP agent
 
