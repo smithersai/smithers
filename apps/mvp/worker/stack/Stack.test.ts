@@ -960,6 +960,27 @@ describe("independent lanes (decision 0135)", () => {
     expect(await applyOn(commit(), true)).toMatchObject({ receipt: { outcome: "stack_full" } })
   })
 
+  test("a raise starts the oldest ready TODOs first, whatever order Postgres reads the stack's rows in", async () => {
+    for (let index = 0; index < 3; index++) await applyOn(commitAfter(null), false)
+    // A new version of T1's row lands after T3's on the heap, and a plan that scans the heap reads T2, T3, T1: the
+    // order a sequential scan, a hash join or a stats change can hand the writer, whose read has no ORDER BY.
+    await sql(`UPDATE todos SET title = title WHERE number = 1`)
+    const raised = await runtime.runPromise(Effect.gen(function* () {
+      const { database } = yield* TestDatabase.Scratch
+      return yield* Effect.gen(function* () {
+        const client = yield* SqlClient.SqlClient
+        for (const setting of ["enable_indexscan", "enable_bitmapscan", "enable_indexonlyscan", "enable_hashjoin", "enable_mergejoin"]) {
+          yield* client.unsafe(`SET ${setting} = off`)
+        }
+        const read = yield* client.unsafe<{ number: number }>(`SELECT number FROM todos WHERE repo_id = '${REPO}'`)
+        expect(read.map((row) => row.number)).toEqual([2, 3, 1])
+        return yield* Stack.apply(configure(2, "independent"), { runs: true })
+      }).pipe(Effect.provide(database))
+    }))
+    expect(raised).toMatchObject({ receipt: { outcome: "configured", starts: [{ number: 1 }, { number: 2 }] } })
+    expect(await states()).toEqual(["working", "working", "queued"])
+  })
+
   test("a Working TODO waits for a runner until its run says one claimed it; any other state is stale and clears it", async () => {
     const made = await applyOn(commit(), true)
     if (made.kind !== "applied") throw new Error("commit refused")

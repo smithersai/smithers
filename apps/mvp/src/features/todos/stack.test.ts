@@ -149,6 +149,11 @@ describe("the stack's invariants, over random histories", () => {
   test("order is the model's: commits append, drops, merges and closes take out, nothing else moves", () =>
     check(Mixed, (history) => play(history, ({ after, model }) => JSON.stringify(openIds(after)) === JSON.stringify(model))))
 
+  test("the result doesn't depend on the order the TODOs arrive in: the writer reads them unordered", () =>
+    check(Mixed, (history) =>
+      play(history, ({ before, op, result }) =>
+        JSON.stringify(apply({ ...before, todos: [...before.todos].reverse() }, op).result) === JSON.stringify(result))))
+
   test("numbers count up from 1 and are never reused", () =>
     check(Mixed, (history) => {
       const seen = new Set<number>()
@@ -324,6 +329,15 @@ describe("apply, case by case", () => {
     expect(lowered.stack).toMatchObject({ lanes: 1, maxOpen: 3, base: "stacked" })
     expect(working(lowered.stack)).toBe(2)
     expect(apply(lowered.stack, { kind: "publish", id: "t1", ordinal: 1 }).result).toMatchObject({ starts: [] })
+  })
+
+  test("starts come oldest first, whatever order the TODOs arrive in", () => {
+    // The writer loads a stack's rows with no ORDER BY: Postgres hands them back in whatever order its plan reads them.
+    const todos = [3, 1, 2].map((number) => row({ id: `t${number}`, number, position: number }))
+    const raised = apply(stack({ nextNumber: 4, lanes: 0, base: "independent", todos }), { kind: "configure", lanes: 3, maxOpen: 50, base: "independent" })
+    expect(startsOf(raised.result).map((start) => start.number)).toEqual([1, 2, 3])
+    const committed = apply(stack({ nextNumber: 4, lanes: 3, base: "independent", todos }), { kind: "commit", id: "t4" })
+    expect(startsOf(committed.result).map((start) => start.number)).toEqual([1, 2, 3])
   })
 
   test("dropping a working TODO stops its attempt, closes the gap, and hands its after to the TODO stacked on it", () => {

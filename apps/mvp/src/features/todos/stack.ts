@@ -139,17 +139,18 @@ const chainReady = (todos: ReadonlyArray<Row>, after: string | null): boolean =>
 export const isReady = (todos: ReadonlyArray<Row>, todo: Row): boolean =>
   todo.state === "queued" && chainReady(todos, todo.after)
 
-/** Starts the oldest ready TODOs while a lane is free. */
+/**
+ * Starts the oldest ready TODOs while a lane is free, oldest first: the starts follow position, never the order of
+ * `todos`, which the writer reads from Postgres unordered.
+ */
 const fill = (todos: ReadonlyArray<Row>, lanes: number): { todos: ReadonlyArray<Row>; starts: ReadonlyArray<Start> } => {
   const free = lanes - todos.filter((todo) => inLane(todo.state)).length
-  const ready = byPosition(todos).filter((todo) => isReady(todos, todo))
-  const starting = new Set(ready.slice(0, Math.max(0, free)).map((todo) => todo.id))
-  const starts: Array<Start> = []
+  const starts = byPosition(todos).filter((todo) => isReady(todos, todo)).slice(0, Math.max(0, free))
+    .map((todo): Start => ({ todoId: todo.id, number: todo.number, ordinal: todo.attempt + 1, revision: todo.revision }))
+  const starting = new Map(starts.map((start) => [start.todoId, start.ordinal]))
   const next = todos.map((todo) => {
-    if (!starting.has(todo.id)) return todo
-    const ordinal = todo.attempt + 1
-    starts.push({ todoId: todo.id, number: todo.number, ordinal, revision: todo.revision })
-    return { ...todo, state: "working" as const, attempt: ordinal }
+    const ordinal = starting.get(todo.id)
+    return ordinal === undefined ? todo : { ...todo, state: "working" as const, attempt: ordinal }
   })
   return { todos: next, starts }
 }
