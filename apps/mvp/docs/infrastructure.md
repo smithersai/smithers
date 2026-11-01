@@ -324,6 +324,8 @@ E2E_RUNNER_MIRROR=<a jj clone of it>      # `jj git clone https://github.com/<ow
 
 The scratch repository is the test account's own, never a `smithersai` one, with the deployment's GitHub App installed on it: the specs open issues, commit TODOs, and let the App open throwaway pull requests there. It keeps one open issue for Make TODO.
 
+A run that was killed never reaches its own cleanup: a Working TODO it left holds the stack's lane, and its runner stays registered. So the setup puts each scratch repository the account administers back before any test (`cleanScratch`, `e2e/stackWrites.ts`): it retires every `e2e-` runner and its agent, drops every open TODO and sets one stacked lane, all through the product's routes, and prints what it found. `pnpm e2e:prod` holds the test account's lock, so nothing there is another run's. A refusal fails the setup at once, naming what stayed dirty. Don't wrap a run in `timeout`: `prod.mjs` waits for Playwright, and what a run finishes it cleans up itself.
+
 **Sign-in.**
 - The setup project (`e2e/deployment/sign-in.setup.ts`) signs the test account `codeplanesmithers` in the way a person does: through GitHub, from the account's own browser profile (`~/.multi-e2e-profile`, or `E2E_GITHUB_PROFILE`).
 - It keeps the app's session cookie and nothing else, in `~/.smithers-e2e/<host>/session.json` (mode 0600; `E2E_SESSION_DIR` moves it). The account's login, person id and role go in `identity.json` beside it.

@@ -1,7 +1,7 @@
 import { expect, type Page, type TestInfo } from "@playwright/test"
 import { recordActions, step, themeOf, writeManifest } from "./fixtures"
 import { cleanUp, type Runner, startRunner } from "./runner"
-import { configureStack, stackChange } from "./stackWrites"
+import { configureStack, dropWord, stackChange } from "./stackWrites"
 import { requires, stackRepository } from "./target"
 import { strictTest as test } from "./watch"
 
@@ -139,6 +139,7 @@ test("todos-independent-run: ten TODOs work at once; one fails, nine publish, an
     const api = { request: runner?.api ?? page.request }
     await cleanUp(
       ...numbers.reverse().map((number) => () => change(api, repository, { op: "drop", number })),
+      () => dropWord(api, repository, word),
       () => configure(api, repository, 1, "stacked"),
       async () => { await runner?.stop() },
     )

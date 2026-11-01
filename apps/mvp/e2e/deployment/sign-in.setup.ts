@@ -9,12 +9,14 @@ import {
   OWN_BRANCH,
   type Place,
   readIdentity,
+  readRepositories,
   type RepositoryAnswer,
   scratchRepositoriesOf,
   sessionFiles,
   target,
 } from "../target"
 import { redactError, redactRequestErrors } from "../redact"
+import { cleanScratch } from "../stackWrites"
 import { leaseProfile } from "./lease"
 import { personOf, readJson, renewal, type SessionAnswer, sessionState, type StorageState, writePrivate } from "./session"
 
@@ -193,6 +195,25 @@ setup("the scratch repositories' roles and sync are read", async () => {
     await request.dispose()
   }
   await writePrivate(files.repositories, JSON.stringify({ checkedAt: Date.now(), repositories }, null, 2))
+})
+
+setup("the scratch repositories start clean", async () => {
+  // A killed run never reached its own cleanup. What it left would fail every later test as a lane that never frees,
+  // so it goes here, once, and the run says what it found. Only a repository the account administers can be put back.
+  const request = await api(files.session)
+  try {
+    const answers = readRepositories(files.repositories)
+    for (const repository of new Set([process.env.E2E_STACK_REPOSITORY, process.env.E2E_FACTORY_REPOSITORY])) {
+      const name = repository?.toLowerCase()
+      if (name === undefined || !scratchRepositoriesOf(process.env).includes(name) || answers[name]?.role !== "admin") continue
+      const left = await cleanScratch({ request }, repository!)
+      const found = [...left.runners, ...left.todos]
+      if (found.length > 0) console.error(`Cleaned ${repository}, which an earlier run left dirty:\n  ${found.join("\n  ")}`)
+      setup.info().annotations.push({ type: "scratch", description: `${repository}: ${found.length === 0 ? "clean" : `${left.runners.length} runners, ${left.todos.length} TODOs cleared`}` })
+    }
+  } finally {
+    await request.dispose()
+  }
 })
 
 setup("the run's own conversation is tracked", async () => {

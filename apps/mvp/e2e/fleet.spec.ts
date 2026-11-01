@@ -2,7 +2,7 @@ import { expect, type Page, type TestInfo } from "@playwright/test"
 import { type AlertProviders, startAlertProviders } from "../worker/test/alertProviders.ts"
 import { recordActions, step, themeOf, writeManifest } from "./fixtures"
 import { cleanUp, startRunner } from "./runner"
-import { stackChange } from "./stackWrites"
+import { dropWord, stackChange } from "./stackWrites"
 import { baseURL, partly, requires, stallMinutes, writeHeaders } from "./target"
 import { strictTest as test } from "./watch"
 
@@ -73,6 +73,7 @@ const runner = async (page: Page, capacity: number) => {
     stop: () =>
       cleanUp(
         ...numbers.reverse().map((number) => () => stackChange(api, repo, { op: "drop", number })),
+        () => dropWord(api, repo, word),
         () => configure(1, 200, "stacked"),
         started.stop,
       ),

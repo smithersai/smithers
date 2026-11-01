@@ -8,7 +8,7 @@ import { expect, test } from "./devices"
 import { step } from "./fixtures"
 import { github } from "./github"
 import { cleanUp, type Runner, startRunner } from "./runner"
-import { configureStack, dropTodo } from "./stackWrites"
+import { configureStack, dropTodo, dropWord } from "./stackWrites"
 import { baseURL, onThisMachine, requires } from "./target"
 import { expectServerError } from "./watch"
 
@@ -218,6 +218,7 @@ test("agent runner: an external agent's TODO publishes a pull request, watched l
     const api = { request: runner?.api ?? page.request }
     await cleanUp(
       async () => { if (number !== undefined) await dropTodo(api, repo, Number(number)) },
+      () => dropWord(api, repo, word),
       () => configureStack(api, repo, 1, "stacked"),
       async () => { await runner?.stop() },
     )
@@ -290,6 +291,7 @@ const withRunner = async (
     const api = { request: runner?.api ?? page.request }
     await cleanUp(
       async () => { if (number !== undefined) await dropTodo(api, repo, Number(number)) },
+      () => dropWord(api, repo, word),
       () => configureStack(api, repo, 1, "stacked"),
       async () => { await runner?.stop() },
     )
