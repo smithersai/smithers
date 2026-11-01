@@ -11,7 +11,7 @@ import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import { type EffectDeclaration, ModelSelection, type Placement } from "../Descriptor.ts"
 import { conservativeEffects, narrowDelegation, projectEffects, unprojectableDelegation } from "./Authority.ts"
-import { keys as declaredKeys } from "./Declared.ts"
+import { keys as declaredKeys } from "./Declared.vibe"
 
 /**
  * @since 0.1.0
