@@ -12,7 +12,7 @@
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import * as LanguageServer from "../LanguageServer.ts"
+import * as LanguageServer from "../LanguageServer.vibe"
 
 /**
  * Most errors attached to one result.

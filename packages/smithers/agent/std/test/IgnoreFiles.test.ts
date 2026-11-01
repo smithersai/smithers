@@ -11,7 +11,7 @@ import * as Grep from "../src/Grep.ts"
 import * as Ignore from "../src/internal/Ignore.ts"
 import * as NativeSearch from "../src/NativeSearch.ts"
 import * as PortableSearch from "../src/PortableSearch.ts"
-import * as Search from "../src/Search.ts"
+import * as Search from "../src/Search.vibe"
 
 const temporary = mkdtempSync(join(tmpdir(), "std-ignore-"))
 afterAll(() => rmSync(temporary, { recursive: true, force: true }))

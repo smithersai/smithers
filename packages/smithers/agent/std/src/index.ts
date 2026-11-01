@@ -42,7 +42,7 @@ export * as Glob from "./Glob.ts"
 export * as Grep from "./Grep.ts"
 
 /** @category services @since 1.0.0 */
-export * as Search from "./Search.ts"
+export * as Search from "./Search.vibe"
 
 /** @category services @since 1.0.0 */
 export * as SearchContract from "./SearchContract.ts"
@@ -78,7 +78,7 @@ export * as TreeFingerprint from "./TreeFingerprint.ts"
 export * as Checkpoints from "./Checkpoints.ts"
 
 /** @category conversions @since 1.0.0 */
-export * as Relocate from "./Relocate.ts"
+export * as Relocate from "./Relocate.vibe"
 
 /**
  * @category flows
@@ -138,7 +138,7 @@ export * as WebSearch from "./WebSearch.ts"
 /** @category services @since 1.0.0 */
 export * as ExaWebSearch from "./ExaWebSearch.ts"
 /** @category services @since 1.0.0 */
-export * as LanguageServer from "./LanguageServer.ts"
+export * as LanguageServer from "./LanguageServer.vibe"
 /** @category flows @since 1.0.0 */
 export * as Lsp from "./Lsp.ts"
 

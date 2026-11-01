@@ -15,7 +15,7 @@ import * as Glob from "../src/Glob.ts"
 import * as Grep from "../src/Grep.ts"
 import * as Ls from "../src/Ls.ts"
 import * as Read from "../src/Read.ts"
-import * as Relocate from "../src/Relocate.ts"
+import * as Relocate from "../src/Relocate.vibe"
 
 const materialized: Checkpoints.Materialized = {
   id: "cp-0-1",

@@ -12,7 +12,7 @@ import * as Exec from "./internal/Exec.ts"
 import * as Grouping from "./internal/Grouping.ts"
 import { notice, truncateBytes } from "./internal/Text.ts"
 import * as Walk from "./internal/Walk.ts"
-import * as Search from "./Search.ts"
+import * as Search from "./Search.vibe"
 import * as Contract from "./SearchContract.ts"
 import * as StdError from "./StdError.ts"
 
