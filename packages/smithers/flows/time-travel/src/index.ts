@@ -83,7 +83,7 @@ export { defaultMaxHistoryEntries, forkWorkspaceName } from "./TimeTravel.ts"
  * @category models
  * @since 0.1.0
  */
-export * as Frame from "./Frame.ts"
+export * as Frame from "./Frame.vibe"
 
 /**
  * @category errors

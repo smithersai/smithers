@@ -26,7 +26,7 @@ import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import { Frame, LineageEdge } from "./Frame.ts"
+import { Frame, LineageEdge } from "./Frame.vibe"
 import { error, type TimeTravelError } from "./TimeTravelError.vibe"
 /**
  * The tier-2 anchor recorded at a frame: the jj pointer current when that seq

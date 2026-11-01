@@ -9,7 +9,7 @@
  * @since 0.1.0
  */
 
-import type { Frame, LineageEdge } from "../Frame.ts"
+import type { Frame, LineageEdge } from "../Frame.vibe"
 
 /**
  * The descendants a rewind of `runId` to `frame` crosses.

@@ -15,9 +15,7 @@
  *
  * @since 0.1.0
  */
-
-import * as Schema from "effect/Schema"
-
+import * as Schema from "effect/Schema";
 /**
  * A point in one lineage's history: the journal sequence number `seq` within
  * lineage `lineageId`.
@@ -31,17 +29,17 @@ import * as Schema from "effect/Schema"
  * @since 0.1.0
  * @category schemas
  */
-export const Frame = Schema.Struct({
-  lineageId: Schema.NonEmptyString,
-  seq: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
-})
+export declare const Frame: Schema.Struct<{
+    readonly lineageId: Schema.NonEmptyString;
+    readonly seq: Schema.Int;
+}>;
 /**
  * The value form of {@link Frame}.
  *
  * @since 0.1.0
  * @category models
  */
-export type Frame = typeof Frame.Type
+export type Frame = typeof Frame.Type;
 /**
  * Why a child lineage exists, and therefore what its parent may still assume
  * about it.
@@ -56,14 +54,14 @@ export type Frame = typeof Frame.Type
  * @since 0.1.0
  * @category schemas
  */
-export const LineageEdgeKind = Schema.Literals(["child", "fork", "continuation"])
+export declare const LineageEdgeKind: Schema.Literals<readonly ["child", "fork", "continuation"]>;
 /**
  * The value form of {@link LineageEdgeKind}.
  *
  * @since 0.1.0
  * @category models
  */
-export type LineageEdgeKind = typeof LineageEdgeKind.Type
+export type LineageEdgeKind = typeof LineageEdgeKind.Type;
 /**
  * One parent→child link in the lineage tree, anchored at the parent frame the
  * child branched from.
@@ -77,20 +75,20 @@ export type LineageEdgeKind = typeof LineageEdgeKind.Type
  * @since 0.1.0
  * @category schemas
  */
-export const LineageEdge = Schema.Struct({
-  parentRunId: Schema.NonEmptyString,
-  parentSeq: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-  childRunId: Schema.NonEmptyString,
-  kind: LineageEdgeKind,
-  attached: Schema.Boolean
-})
+export declare const LineageEdge: Schema.Struct<{
+    readonly parentRunId: Schema.NonEmptyString;
+    readonly parentSeq: Schema.Int;
+    readonly childRunId: Schema.NonEmptyString;
+    readonly kind: Schema.Literals<readonly ["child", "fork", "continuation"]>;
+    readonly attached: Schema.Boolean;
+}>;
 /**
  * The value form of {@link LineageEdge}.
  *
  * @since 0.1.0
  * @category models
  */
-export type LineageEdge = typeof LineageEdge.Type
+export type LineageEdge = typeof LineageEdge.Type;
 /**
  * The journal event type marking a run as fork-created.
  *
@@ -101,7 +99,7 @@ export type LineageEdge = typeof LineageEdge.Type
  * @since 0.1.0
  * @category constants
  */
-export const forkCreatedEventType = "flows.time-travel.fork-created"
+export declare const forkCreatedEventType = "flows.time-travel.fork-created";
 /**
  * The payload of a {@link forkCreatedEventType} record: which run this one was
  * forked from, and how much of that run's journal was copied.
@@ -114,15 +112,15 @@ export const forkCreatedEventType = "flows.time-travel.fork-created"
  * @since 0.1.0
  * @category schemas
  */
-export const ForkCreated = Schema.Struct({
-  parentRunId: Schema.NonEmptyString,
-  forkJournalOffset: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-  childRunId: Schema.NonEmptyString
-})
+export declare const ForkCreated: Schema.Struct<{
+    readonly parentRunId: Schema.NonEmptyString;
+    readonly forkJournalOffset: Schema.Int;
+    readonly childRunId: Schema.NonEmptyString;
+}>;
 /**
  * The value form of {@link ForkCreated}.
  *
  * @since 0.1.0
  * @category models
  */
-export type ForkCreated = typeof ForkCreated.Type
+export type ForkCreated = typeof ForkCreated.Type;
