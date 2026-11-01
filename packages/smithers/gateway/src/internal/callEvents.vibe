@@ -5,7 +5,6 @@
  */
 
 import { CallFact, StepFact } from "@smthrs/journal"
-import * as Schema from "effect/Schema"
 
 /** A sparse historical observation is readable without inventing missing fields.
  * @category models
@@ -28,21 +27,21 @@ export const nativeCallEvent = <Event extends CallObservation>(event: Event): Ev
   }
   const envelope = event.payload as Record<string, unknown>
   if (
-    envelope.version !== 1 || envelope.eventType !== CallFact.eventType || typeof envelope.executionId !== "string" ||
-    typeof envelope.generation !== "number" || !Number.isSafeInteger(envelope.generation) || envelope.generation < 0 ||
-    typeof envelope.sequence !== "number" || !Number.isSafeInteger(envelope.sequence) || envelope.sequence < 0 ||
-    typeof envelope.emittedAtMs !== "number" || !Number.isFinite(envelope.emittedAtMs) || envelope.emittedAtMs < 0 ||
-    envelope.sourceSequence !== 0
+    envelope.version !== 1 || envelope.eventType !== CallFact.eventType || typeof envelope.executionId !== "string"
+    || typeof envelope.generation !== "number" || !Number.isSafeInteger(envelope.generation) || envelope.generation < 0
+    || typeof envelope.sequence !== "number" || !Number.isSafeInteger(envelope.sequence) || envelope.sequence < 0
+    || typeof envelope.emittedAtMs !== "number" || !Number.isFinite(envelope.emittedAtMs) || envelope.emittedAtMs < 0
+    || envelope.sourceSequence !== 0
   ) return undefined
   const fact = Schema.decodeUnknownOption(CallFact.Fact)(envelope.payload)
   if (
-    fact._tag === "None" || fact.value.identity.runId !== event.runId ||
-    envelope.sourceId !== `call-fact-v1:${fact.value.callId}:${fact.value.phase}`
+    fact._tag === "None" || fact.value.identity.runId !== event.runId
+    || envelope.sourceId !== `call-fact-v1:${fact.value.callId}:${fact.value.phase}`
   ) return undefined
   return {
     ...event,
     kind: fact.value.phase === "invoked" ? "control.agent.cell-call-started" : "control.agent.cell-call-settled",
-    payload: JSON.parse(JSON.stringify({ ...fact.value, callFactVersion: 1, at: envelope.emittedAtMs }))
+    payload: JSON.parse(JSON.stringify({ ...fact.value, callFactVersion: 1, at: envelope.emittedAtMs })),
   }
 }
 
@@ -57,20 +56,20 @@ export const nativeStepEvent = <Event extends CallObservation>(event: Event): Ev
   }
   const envelope = event.payload as Record<string, unknown>
   if (
-    envelope.version !== 1 || envelope.eventType !== StepFact.eventType ||
-    typeof envelope.generation !== "number" || !Number.isSafeInteger(envelope.generation) || envelope.generation < 0 ||
-    typeof envelope.sequence !== "number" || !Number.isSafeInteger(envelope.sequence) || envelope.sequence < 0 ||
-    typeof envelope.emittedAtMs !== "number" || !Number.isFinite(envelope.emittedAtMs) || envelope.emittedAtMs < 0
+    envelope.version !== 1 || envelope.eventType !== StepFact.eventType
+    || typeof envelope.generation !== "number" || !Number.isSafeInteger(envelope.generation) || envelope.generation < 0
+    || typeof envelope.sequence !== "number" || !Number.isSafeInteger(envelope.sequence) || envelope.sequence < 0
+    || typeof envelope.emittedAtMs !== "number" || !Number.isFinite(envelope.emittedAtMs) || envelope.emittedAtMs < 0
   ) return undefined
   const decoded = Schema.decodeUnknownOption(StepFact.Fact)(envelope.payload)
   if (decoded._tag === "None") return undefined
   const fact = decoded.value
   const step = fact.step
   if (
-    envelope.executionId !== step.executionId || envelope.sourceSequence !== fact.sourceSequence ||
-    envelope.sourceId !== `step-fact-v1:${step.stepId}:${step.attempt}:${step.ask}:${step.retry}` ||
-    fact.generation > envelope.generation || !Number.isFinite(fact.at) ||
-    typeof fact.payload !== "object" || fact.payload === null || Array.isArray(fact.payload)
+    envelope.executionId !== step.executionId || envelope.sourceSequence !== fact.sourceSequence
+    || envelope.sourceId !== `step-fact-v1:${step.stepId}:${step.attempt}:${step.ask}:${step.retry}`
+    || fact.generation > envelope.generation || !Number.isFinite(fact.at)
+    || typeof fact.payload !== "object" || fact.payload === null || Array.isArray(fact.payload)
   ) return undefined
   return {
     ...event,
@@ -78,8 +77,8 @@ export const nativeStepEvent = <Event extends CallObservation>(event: Event): Ev
     payload: {
       ...fact.payload,
       step: { ...step, generation: fact.generation, frame: fact.frame, ordinal: fact.ordinal },
-      at: fact.at
-    }
+      at: fact.at,
+    },
   }
 }
 
@@ -100,7 +99,7 @@ export const callScope = (event: CallObservation): string | undefined => {
     scope.ask,
     scope.retry,
     scope.scope,
-    scope.generation
+    scope.generation,
   ])
 }
 
@@ -116,7 +115,7 @@ export const openCallIndex = (
   >,
   callId: string | undefined,
   flowName: string | undefined,
-  scope?: string
+  scope?: string,
 ): number => {
   const identified = callId === undefined
     ? -1
@@ -139,8 +138,8 @@ export const callEventKey = (event: CallObservation): string | undefined => {
   event = stepEvent ?? nativeCallEvent(event) ?? event
   const payload = event.payload
   if (
-    (event.kind === "control.agent.cell-call-started" || event.kind === "control.agent.cell-call-settled") &&
-    typeof payload === "object" && payload !== null && "callId" in payload && typeof payload.callId === "string"
+    (event.kind === "control.agent.cell-call-started" || event.kind === "control.agent.cell-call-settled")
+    && typeof payload === "object" && payload !== null && "callId" in payload && typeof payload.callId === "string"
   ) {
     return JSON.stringify([event.kind, payload.callId, callScope(event)])
   }
@@ -159,7 +158,7 @@ export const callEventKey = (event: CallObservation): string | undefined => {
  * @since 1.0.0
  */
 export const uniqueCallEvents = <Event extends CallObservation>(
-  events: ReadonlyArray<Event>
+  events: ReadonlyArray<Event>,
 ): ReadonlyArray<Event> => {
   const native = new Map<string, Event>()
   const normalized = events.map((event) => {
@@ -252,6 +251,6 @@ export const callEventFilter = <Event extends CallObservation>(): CallEventFilte
       seen.add(key)
       const preferred = native.get(key)
       return { _tag: "keep", event: preferred === undefined ? event : { ...preferred, sequence: event.sequence } }
-    }
+    },
   }
 }

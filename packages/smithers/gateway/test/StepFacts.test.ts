@@ -7,7 +7,7 @@ import {
   nativeStepEvent,
   openCallIndex,
   uniqueCallEvents
-} from "../src/internal/callEvents.ts"
+} from "../src/internal/callEvents.vibe"
 
 const step = {
   stepId: "a".repeat(64),

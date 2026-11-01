@@ -236,7 +236,7 @@ const securityReview = Smithers.SecurityReview({
         "src/RunTrace.ts",
         "src/Diagnosis.ts",
         "src/EngineTrace.ts",
-        "src/internal/callEvents.ts",
+        "src/internal/callEvents.vibe",
         "src/internal/nodeEvents.vibe"
       ]
     },
