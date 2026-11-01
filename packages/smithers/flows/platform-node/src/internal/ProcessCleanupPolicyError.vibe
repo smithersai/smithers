@@ -6,8 +6,6 @@
  * @since 1.0.0
  */
 
-import { Schema } from "effect"
-
 /**
  * Which part of the policy was refused.
  *
@@ -24,7 +22,7 @@ export const ProcessCleanupPolicyErrorCode = Schema.Literals(["kill_signal_unsup
  */
 export class ProcessCleanupPolicyError extends Schema.TaggedError<ProcessCleanupPolicyError>()(
   "@smthrs/platform-node/ProcessCleanupPolicyError",
-  { code: ProcessCleanupPolicyErrorCode, message: Schema.String }
+  { code: ProcessCleanupPolicyErrorCode, message: Schema.String },
 ) {
   override readonly name = "ProcessCleanupPolicyError"
 }

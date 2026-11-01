@@ -21,7 +21,7 @@ import { join, parse, resolve } from "node:path"
 import * as Tls from "node:tls"
 import { standardFdsOf } from "./PipedProcess.ts"
 import type { Policy, Snapshot, System } from "./ProcessCleanup.ts"
-import { NativeProcessError, processFault } from "./ProcessFault.ts"
+import { NativeProcessError, processFault } from "./ProcessFault.vibe"
 import { source } from "./SupervisorProgram.ts"
 import { resolveJobExecutable, WindowsProcessJob } from "./WindowsProcessJob.ts"
 
