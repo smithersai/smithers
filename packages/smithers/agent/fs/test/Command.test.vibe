@@ -21,7 +21,7 @@ const multibyteCommand = (totalBytes: number, tokenCount: number): string => {
   const filler = "x".repeat(contentBytes - 7 * runs * tokenCount)
   return Array.from(
     { length: tokenCount },
-    (_, index) => `${"漢𝄞".repeat(runs)}${index === tokenCount - 1 ? filler : ""}`,
+    (_, index) => `${"漢𝄞".repeat(runs)}${index === tokenCount - 1 ? filler : ""}`
   ).join(" ")
 }
 
@@ -41,26 +41,26 @@ describe("Command", () => {
         [
           `review --tags ${"a".repeat(CommandLine.maximumTokenLength + 1)} --tags a --number 1`,
           "CommandLine.lex",
-          `A command token may contain at most ${CommandLine.maximumTokenLength} characters`,
+          `A command token may contain at most ${CommandLine.maximumTokenLength} characters`
         ],
         [
           "a".repeat(Route.maximumRouteNameLength + 1),
           "CommandTree.resolve",
-          "The command name exceeds its resource bounds",
-        ],
+          "The command name exceeds its resource bounds"
+        ]
       ] as const
     ) {
       expect(try failureOf(surface.parse(command))).toMatchObject({
         code: "resource_limit",
         method,
-        description,
+        description
       })
     }
   }
 
   it.effect("lexes quotes and escapes before parsing flags") {
     const argv = try CommandLine.lex(
-      "review --title='fix bug' --number=4821 --tag one --tag=two --no-draft -- --literal value\\ with\\ spaces",
+      "review --title='fix bug' --number=4821 --tag one --tag=two --no-draft -- --literal value\\ with\\ spaces"
     )
     expect(argv).toEqual([
       "review",
@@ -72,7 +72,7 @@ describe("Command", () => {
       "--no-draft",
       "--",
       "--literal",
-      "value with spaces",
+      "value with spaces"
     ])
     expect(try CommandLine.parseFlags(argv.slice(1))).toEqual({
       args: ["--literal", "value with spaces"],
@@ -80,8 +80,8 @@ describe("Command", () => {
         title: "fix bug",
         number: "4821",
         tag: ["one", "two"],
-        draft: false,
-      },
+        draft: false
+      }
     })
   }
 
@@ -89,7 +89,7 @@ describe("Command", () => {
     expect(try CommandLine.lex("x 'a\\nb' 'C:\\path'")).toEqual([
       "x",
       "a\\nb",
-      "C:\\path",
+      "C:\\path"
     ])
     expect(try CommandLine.lex("\"a\\\"b\"")).toEqual(["a\"b"])
     expect(try CommandLine.lex("a\\'b")).toEqual(["a'b"])
@@ -111,11 +111,11 @@ describe("Command", () => {
       "two",
       "--safe=three",
       "--no-draft",
-      "positional",
+      "positional"
     ])
     expect(parsed).toEqual({
       args: ["positional"],
-      options: { safe: ["one", "two", "three"], draft: false },
+      options: { safe: ["one", "two", "three"], draft: false }
     })
     expect(Object.getPrototypeOf(parsed.options)).toBeNull()
     expect(Object.isFrozen(parsed.options)).toBe(true)
@@ -127,7 +127,7 @@ describe("Command", () => {
         ["--no-constructor"],
         ["--prototype"],
         ["--=true"],
-        ["--bad.name=x"],
+        ["--bad.name=x"]
       ]
     ) {
       const error = try failureOf(CommandLine.parseFlags(argv))
@@ -149,7 +149,7 @@ describe("Command", () => {
         "x".repeat(CommandLine.maximumTokenLength + 1),
         `${"x".repeat(CommandLine.maximumTokenLength + 1)} `,
         "x".repeat(CommandLine.maximumCommandBytes + 1),
-        "\ud800",
+        "\ud800"
       ]
     ) {
       expect((try exit(CommandLine.lex(command))) is Exit.Failure).toBe(true)
@@ -164,7 +164,7 @@ describe("Command", () => {
       new Proxy(target, {
         ownKeys: () => {
           throw new Error("trap")
-        },
+        }
       }), ["--safe=x"])
     expect((try exit(CommandLine.parseFlags(hostile))) is Exit.Failure).toBe(true)
   }
@@ -192,7 +192,7 @@ describe("Command", () => {
     expect(try failureOf(CommandLine.lex(overBy1))).toMatchObject({
       code: "resource_limit",
       method: "CommandLine.lex",
-      description: `A command may contain at most ${CommandLine.maximumCommandBytes} UTF-8 bytes`,
+      description: `A command may contain at most ${CommandLine.maximumCommandBytes} UTF-8 bytes`
     })
   }
 
@@ -248,13 +248,13 @@ describe("Command.call decoded boundary", () => {
     let getterCalls = 0
     const accessor = Object.defineProperty({}, "number", {
       enumerable: true,
-      get: () => ++getterCalls,
+      get: () => ++getterCalls
     })
     provide FlowInvoker.layerNoop({ invoke }) {
       for (const input of [accessor, { number: NaN }, { number: 1, tags: ["x".repeat(65_537)] }]) {
         expect(try failureOf(surface.call("review", input as never))).toMatchObject({
           code: "decode_failed",
-          method: "Command.call",
+          method: "Command.call"
         })
       }
     }
@@ -268,7 +268,7 @@ describe("Command.call decoded boundary", () => {
       provide FlowInvoker.layerNoop({ invoke: effect () => output }) {
         expect(try failureOf(surface.call("scalar", 1))).toMatchObject({
           code: "decode_failed",
-          method: "Command.call",
+          method: "Command.call"
         })
       }
     }
@@ -282,7 +282,7 @@ describe("Command.call decoded boundary", () => {
       get: () => {
         getterCalls++
         return "secret"
-      },
+      }
     })
     for (const output of [accessor, { value: "x".repeat(65_537) }]) {
       provide FlowInvoker.layerNoop({ invoke: effect () => output }) {
@@ -298,7 +298,7 @@ describe("Command.call decoded boundary", () => {
       effects: undefined,
       name: "scalar",
       input: Schema.Struct({ number: Schema.Number }),
-      output: Schema.Number,
+      output: Schema.Number
     } as const
     const loading = try Deferred.make<void>()
     const release = try Deferred.make<typeof flow>()

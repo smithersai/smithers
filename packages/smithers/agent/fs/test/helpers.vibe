@@ -23,7 +23,7 @@ export effect function failureOf<E, R>(program: Effect<unknown, E, R>): Effect<E
 export const makeRoute = (
   name: string,
   sourcePath = visibleModule,
-  overrides: Partial<Route.Route> = {},
+  overrides: Partial<Route.Route> = {}
 ): Route.Route => ({
   name,
   segments: name.split("/"),
@@ -37,7 +37,7 @@ export const makeRoute = (
   modelInvocable: true,
   placement: Option.none(),
   ui: Option.none(),
-  ...overrides,
+  ...overrides
 })
 
 /**
@@ -72,7 +72,7 @@ export const latchedInvoke = (): {
             return gate
           },
           begin,
-          gate,
+          gate
         )
       } finally (exit) {
         if (exit is Exit.Failure(let cause) && cause.hasInterrupts()) finish()
@@ -80,6 +80,6 @@ export const latchedInvoke = (): {
     },
     started,
     finalized,
-    release,
+    release
   }
 }

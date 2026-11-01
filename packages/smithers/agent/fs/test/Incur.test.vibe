@@ -33,7 +33,7 @@ effect function text(response: Response): Effect<string> {
 effect function within<A, E>(program: Effect<A, E>, milliseconds: number): Effect<A, E, infer R> {
   return try Effect.timeoutOrElse(program, {
     duration: milliseconds,
-    orElse: effect () => try die(new Error("Metadata wait exceeded test deadline")),
+    orElse: effect () => try die(new Error("Metadata wait exceeded test deadline"))
   })
 }
 
@@ -62,7 +62,7 @@ effect function gatedLoad(gate: Promise<void>, interrupted?: Mock) {
 
 effect function makeCli(
   routes: ReadonlyArray<Route.Route> = [makeRoute("review")],
-  invoke?: FlowInvoker.FlowInvoker["invoke"],
+  invoke?: FlowInvoker.FlowInvoker["invoke"]
 ) {
   const seen: Array<FlowInvoker.Invocation> = []
   const invoker = FlowInvoker.make({
@@ -70,7 +70,7 @@ effect function makeCli(
       seen.push(invocation)
       const number = (invocation.input as { number: number }).number
       return { accepted: true, number }
-    }),
+    })
   })
   provide FlowInvoker.FlowInvoker = invoker {
     return { cli: Incur.createCli("flows", routes), seen }
@@ -92,8 +92,8 @@ const capture = (): infer _ => {
     exits,
     options: {
       stdout: (value: string): number => writes.push(value),
-      exit: (code: number): number => exits.push(code),
-    },
+      exit: (code: number): number => exits.push(code)
+    }
   }
 }
 
@@ -104,7 +104,7 @@ effect function spyOnStdout(writes: Array<string>) {
       ((chunk: unknown) => {
         writes.push(String(chunk))
         return true
-      }) as typeof process.stdout.write,
+      }) as typeof process.stdout.write
     ), writes)
 }
 
@@ -119,7 +119,7 @@ const mcpRequest = (name: string, args: Readonly<Record<string, unknown>>, signa
     method: "POST",
     ...(signal === undefined ? {} : { signal }),
     headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }),
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } })
   })
 
 /** Calls one tool on the MCP surface and returns the JSON-RPC payload. */
@@ -204,7 +204,7 @@ describe("Incur projection", () => {
     try {
       awaited(
         expect(cli.fetch(new Request("http://localhost/openapi.json", { signal: controller.signal })))
-          .rejects.toBe(reason),
+          .rejects.toBe(reason)
       )
       expect(load).not.toHaveBeenCalled()
     } finally {
@@ -239,7 +239,7 @@ describe("Incur projection", () => {
     try {
       awaited(
         expect(cli.fetch(new Request("http://localhost/openapi.json", { signal: controller.signal })))
-          .rejects.toBe(reason),
+          .rejects.toBe(reason)
       )
       expect(awaited(paths(cli))).toEqual(["/review"])
       expect(load).toHaveBeenCalledTimes(1)
@@ -256,12 +256,12 @@ describe("Incur projection", () => {
       controller.abort(reason)
       awaited(
         expect(cli.fetch(new Request("http://localhost/review?number=42", { signal: controller.signal })))
-          .rejects.toBe(reason),
+          .rejects.toBe(reason)
       )
       awaited(
         expect(
-          cli.fetch(mcpRequest("call_write_tool", { name: "review", arguments: { number: 42 } }, controller.signal)),
-        ).rejects.toBe(reason),
+          cli.fetch(mcpRequest("call_write_tool", { name: "review", arguments: { number: 42 } }, controller.signal))
+        ).rejects.toBe(reason)
       )
       expect(seen).toEqual([])
     }
@@ -320,7 +320,7 @@ describe("Incur projection", () => {
           latch.release()
           awaited(settled)
         }
-      },
+      }
     )
   })
 
@@ -356,8 +356,8 @@ describe("Incur projection", () => {
       new Request("http://localhost/review", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ number: 43, tags: ["a", "b"] }),
-      }),
+        body: JSON.stringify({ number: 43, tags: ["a", "b"] })
+      })
     ))
 
     expect(get.status).toBe(200)
@@ -366,7 +366,7 @@ describe("Incur projection", () => {
     expect(json(post).data).toEqual({ accepted: true, number: 43 })
     expect(seen.map((invocation) => invocation.input)).toEqual([
       { number: 42, enabled: true },
-      { number: 43, tags: ["a", "b"] },
+      { number: 43, tags: ["a", "b"] }
     ])
   }
 
@@ -389,7 +389,7 @@ describe("Incur projection", () => {
       effects: undefined,
       name: "scalar",
       input: Schema.NullOr(Schema.String),
-      output: Schema.NullOr(Schema.String),
+      output: Schema.NullOr(Schema.String)
     } as const
     vi.spyOn(Route, "load").mockImplementation(effect () => flow)
     try {
@@ -402,8 +402,8 @@ describe("Incur projection", () => {
         new Request("http://localhost/scalar", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ input: null }),
-        }),
+          body: JSON.stringify({ input: null })
+        })
       ))
       expect(post.status).toBe(200)
       const called = tool(cli, "call_write_tool", { name: "scalar", arguments: { input: null } })
@@ -449,7 +449,7 @@ describe("Incur projection", () => {
       }
     }
     expect(spec.paths["/review"].post.requestBody.content["application/json"].schema.properties).toEqual(
-      declared.properties,
+      declared.properties
     )
 
     const help = capture()
@@ -536,7 +536,7 @@ describe("Incur projection", () => {
     expect(response.status).toBeGreaterThanOrEqual(400)
     expect(body.error).toMatchObject({
       code: "unsupported_schema",
-      message: "An output locator cannot describe command input",
+      message: "An output locator cannot describe command input"
     })
 
     const run = capture()
@@ -570,7 +570,7 @@ describe("Incur projection", () => {
       vi.spyOn(process, "exit").mockImplementation(
         ((code: number) => {
           exits.push(code)
-        }) as never,
+        }) as never
       ), exits)
     try {
       awaited(cli.serve(["x".repeat(5_000)]))
@@ -600,7 +600,7 @@ describe("Incur projection", () => {
     expect(malformed.status).toBe(400)
     expect(json(malformed).error).toMatchObject({
       code: "parse_failed",
-      message: "The request path contains a malformed percent escape",
+      message: "The request path contains a malformed percent escape"
     })
     expect(seen).toHaveLength(1)
   }
@@ -635,7 +635,7 @@ describe("Incur projection", () => {
     const writes: Array<string> = []
     awaited(cli.serve(["nested/visible", "--number", "7", "--format", "json"], {
       stdout: (value) => writes.push(value),
-      exit: () => undefined,
+      exit: () => undefined
     }))
     expect(seen.map((entry) => entry.name)).toEqual(["nested/visible"])
     expect(writes.join("")).toContain("7")
@@ -647,7 +647,7 @@ describe("Incur projection", () => {
       makeRoute("review"),
       makeRoute("nested/visible"),
       makeRoute("domains"),
-      makeRoute("domains/list"),
+      makeRoute("domains/list")
     ])
     for (
       const path of [["review"], ["nested/visible"], ["nested", "visible"], ["domains", "self"], ["domains", "list"]]
@@ -657,7 +657,7 @@ describe("Incur projection", () => {
       expect(run.exits, path.join(" ")).toEqual([1])
       expect(JSON.parse(run.writes.join(""))).toMatchObject({
         code: "UNEXPECTED_ARGUMENT",
-        message: "Unexpected argument: surplus",
+        message: "Unexpected argument: surplus"
       })
     }
     expect(seen).toEqual([])
@@ -669,7 +669,7 @@ describe("Incur projection", () => {
     const exits: Array<number> = []
     const options = {
       stdout: (value: string): number => writes.push(value),
-      exit: (code: number): number => exits.push(code),
+      exit: (code: number): number => exits.push(code)
     }
     awaited(cli.serve(["--help"], options))
     awaited(cli.serve(["missing"], options))
@@ -683,7 +683,7 @@ describe("Incur projection", () => {
       makeRoute("visible"),
       makeRoute("hidden", undefined, { modelInvocable: false }),
       makeRoute("markdown", undefined, { kind: "markdown" }),
-      makeRoute("skill", undefined, { kind: "skill" }),
+      makeRoute("skill", undefined, { kind: "skill" })
     ])
     for (const name of ["hidden", "markdown", "skill"]) {
       expect(awaited(cli.fetch(new Request(`http://localhost/${name}?number=1`))).status).toBe(404)
@@ -770,7 +770,7 @@ describe("Incur projection", () => {
       const { cli } = makeCli(undefined, effect () =>
         try Effect.failCause(Cause.fromReasons<never>([
           ...Cause.interrupt().reasons,
-          ...(defect ? Cause.die(new Error(sentinel)).reasons : []),
+          ...(defect ? Cause.die(new Error(sentinel)).reasons : [])
         ])))
       const response = call(cli, transport)
       expect(response.failed).toBe(true)
@@ -784,7 +784,7 @@ describe("Incur projection", () => {
         throw new FsError({
           code: "invocation_unavailable",
           method: "test.invoke",
-          description: "Public refusal",
+          description: "Public refusal"
         })
       })
       const response = call(cli, transport)
@@ -813,7 +813,7 @@ describe("Incur projection", () => {
     const sentinel = "SECRET_SENTINEL_debug_console"
     const cli = debugCli(
       Logger.layer([Logger.defaultLogger]),
-      FlowInvoker.make({ invoke: effect () => try die(new Error(sentinel)) }),
+      FlowInvoker.make({ invoke: effect () => try die(new Error(sentinel)) })
     )
     const { stderr, stdout } = sync(() => spyOnConsole())
     try {

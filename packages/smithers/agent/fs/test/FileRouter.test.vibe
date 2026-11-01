@@ -28,12 +28,12 @@ layer(platformLayer)("FileRouter", (it) => {
       "domains/list",
       "mixed",
       "review",
-      "skills/demo",
+      "skills/demo"
     ])
     expect(result.routes.find((route) => route.name === "review")?.segments).toEqual(["review"])
     expect(result.routes.find((route) => route.name === "domains/list")?.segments).toEqual(["domains", "list"])
     expect(result.routes.find((route) => route.name === "review")?.sourcePath).toBe(
-      path.join(root, "review", "flow.ts"),
+      path.join(root, "review", "flow.ts")
     )
   }
 
@@ -46,7 +46,7 @@ layer(platformLayer)("FileRouter", (it) => {
     expect(result.warnings).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: "multiple_entry_files", path: path.join(root, "mixed") }),
       expect.objectContaining({ code: "root_level_entry", path: path.join(root, "flow.ts") }),
-      expect.objectContaining({ code: "name_field_ignored", path: path.join(root, "review", "flow.ts") }),
+      expect.objectContaining({ code: "name_field_ignored", path: path.join(root, "review", "flow.ts") })
     ]))
   }
 
@@ -119,7 +119,7 @@ export default ({ input: Schema.Void, output: Schema.Unknown, description: ${JSO
     // fail the scan for every sibling route.
     expect(result.routes.map((route) => [route.name, route.description])).toEqual([
       ["blank", Option.none()],
-      ["named", Option.some("A named flow")],
+      ["named", Option.some("A named flow")]
     ])
   }
 
@@ -132,7 +132,7 @@ export default ({ input: Schema.Void, output: Schema.Unknown, description: ${JSO
       get: () => {
         called = true
         return root
-      },
+      }
     })
     expect((try failureOf(FileRouter.scan(config as FileRouter.ScanConfig))).code).toBe("invalid_root")
     expect(called).toBe(false)
@@ -162,7 +162,7 @@ export default ({ input: Schema.Void, output: Schema.Unknown, description: ${JSO
     expect(result.routes.find((route) => route.name === "linkedui")!.ui.isNone()).toBe(true)
     expect(result.warnings).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: "outside_root", path: path.join(flows, "dir") }),
-      expect.objectContaining({ code: "outside_root", path: path.join(flows, "file", "flow.ts") }),
+      expect.objectContaining({ code: "outside_root", path: path.join(flows, "file", "flow.ts") })
     ]))
   }
 })

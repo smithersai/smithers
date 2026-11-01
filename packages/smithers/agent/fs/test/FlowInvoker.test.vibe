@@ -12,7 +12,7 @@ describe("FlowInvoker", () => {
       invoke: effect (input) => {
         seen.push(input)
         return "done"
-      },
+      }
     })
 
     expect(Object.isFrozen(service)).toBe(true)

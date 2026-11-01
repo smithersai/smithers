@@ -23,15 +23,15 @@ describe("CommandTree", () => {
         "review",
         "nested",
         "--tags",
-        "a".repeat(CommandLine.maximumTokenLength + 1),
-      ])),
+        "a".repeat(CommandLine.maximumTokenLength + 1)
+      ]))
     ).toMatchObject({ code: "resource_limit", method: "CommandTree.resolve" })
     for (const segment of ["", "a".repeat(Route.maximumRouteNameLength + 1)]) {
       for (const prefix of [[], ["review"]]) {
         expect(try failureOf(CommandTree.resolve(tree, [...prefix, segment]))).toMatchObject({
           code: "resource_limit",
           method: "CommandTree.resolve",
-          description: "The command name exceeds its resource bounds",
+          description: "The command name exceeds its resource bounds"
         })
       }
     }
@@ -41,7 +41,7 @@ describe("CommandTree", () => {
     const tree = try CommandTree.make([
       makeRoute("z"),
       makeRoute("domains/list"),
-      makeRoute("domains"),
+      makeRoute("domains")
     ])
 
     expect(CommandTree.traverse(tree).map((route) => route.name)).toEqual(["domains", "domains/list", "z"])
@@ -66,8 +66,8 @@ describe("CommandTree", () => {
     expect((try failureOf(CommandTree.make([makeRoute("same"), makeRoute("same")]))).code).toBe("duplicate_route")
     expect(
       (try failureOf(CommandTree.make([
-        makeRoute("name", undefined, { segments: ["different"] }),
-      ]))).code,
+        makeRoute("name", undefined, { segments: ["different"] })
+      ]))).code
     ).toBe("invalid_route")
 
     const sparse = new Array<Route.Route>(1)
@@ -82,7 +82,7 @@ describe("CommandTree", () => {
       new Proxy(target, {
         ownKeys: () => {
           throw new Error("trap")
-        },
+        }
       }), [makeRoute("bad")])
     expect((try failureOf(CommandTree.make(hostile))).code).toBe("invalid_route")
   }
