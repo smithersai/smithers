@@ -7,7 +7,7 @@
 import * as Effect from "effect/Effect"
 import type { Cron } from "./Cron.ts"
 import * as CronSchedule from "./Cron.ts"
-import type { CatchUp as Policy } from "./Schedule.ts"
+import type { CatchUp as Policy } from "./Schedule.vibe"
 import { TriggerError } from "./TriggerError.vibe"
 
 /**
@@ -29,45 +29,35 @@ export const occurrences = (
   maxCatchUp: number,
   lastFiredAt: Date | undefined,
   now: Date,
-  cron: Cron
-): Effect.Effect<ReadonlyArray<Date>, TriggerError> => {
+  cron: Cron,
+): ReadonlyArray<Date>!TriggerError => {
   if (!Number.isSafeInteger(maxCatchUp) || maxCatchUp < 0) {
-    return Effect.fail(
-      new TriggerError({
-        code: "catch_up_bound_exceeded",
-        message: `maxCatchUp must be a non-negative safe integer, received ${maxCatchUp}`,
-        path: "maxCatchUp"
-      })
-    )
+    throw new TriggerError({
+      code: "catch_up_bound_exceeded",
+      message: `maxCatchUp must be a non-negative safe integer, received ${maxCatchUp}`,
+      path: "maxCatchUp",
+    })
   }
-  if (lastFiredAt === undefined) return Effect.succeed([])
-  if (policy === "none") return Effect.succeed([])
+  if (lastFiredAt === undefined) return []
+  if (policy === "none") return []
   if (policy === "one") {
-    return CronSchedule.previousAtOrBefore(cron, now).pipe(
-      Effect.flatMap((latest) =>
+    return CronSchedule.previousAtOrBefore(cron, now)
+      |> Effect.flatMap(%, (latest) =>
         latest.getTime() <= lastFiredAt.getTime()
           ? Effect.succeed<ReadonlyArray<Date>>([])
           : maxCatchUp < 1
-          ? Effect.fail(
-            new TriggerError({
-              code: "catch_up_bound_exceeded",
-              message: `missed 1 occurrence; maxCatchUp is ${maxCatchUp}`
-            })
-          )
-          : Effect.succeed<ReadonlyArray<Date>>([latest])
-      )
-    )
-  }
-  return CronSchedule.occurrencesBetween(cron, lastFiredAt, now, maxCatchUp + 1).pipe(
-    Effect.flatMap((missed) =>
-      missed.length > maxCatchUp
-        ? Effect.fail(
-          new TriggerError({
+          ? throw new TriggerError({
             code: "catch_up_bound_exceeded",
-            message: `missed ${missed.length} occurrences; maxCatchUp is ${maxCatchUp}`
+            message: `missed 1 occurrence; maxCatchUp is ${maxCatchUp}`,
           })
-        )
-        : Effect.succeed(missed)
-    )
-  )
+          : Effect.succeed<ReadonlyArray<Date>>([latest]))
+  }
+  return CronSchedule.occurrencesBetween(cron, lastFiredAt, now, maxCatchUp + 1)
+    |> Effect.flatMap(%, (missed) =>
+      missed.length > maxCatchUp
+        ? throw new TriggerError({
+          code: "catch_up_bound_exceeded",
+          message: `missed ${missed.length} occurrences; maxCatchUp is ${maxCatchUp}`,
+        })
+        : missed)
 }

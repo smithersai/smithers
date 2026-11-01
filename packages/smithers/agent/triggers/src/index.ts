@@ -11,11 +11,11 @@ export * as Cron from "./Cron.ts"
 /** @category declarations @since 0.1.0 */
 export * as Trigger from "./Trigger.ts"
 /** @category declarations @since 0.1.0 */
-export * as Schedule from "./Schedule.ts"
+export * as Schedule from "./Schedule.vibe"
 /** @category policies @since 0.1.0 */
 export * as Overlap from "./Overlap.ts"
 /** @category policies @since 0.1.0 */
-export * as CatchUp from "./CatchUp.ts"
+export * as CatchUp from "./CatchUp.vibe"
 /** @category services @since 0.1.0 */
 export * as TriggerStore from "./TriggerStore.ts"
 /** @category services @since 0.1.0 */

@@ -5,7 +5,7 @@
  */
 
 import * as Effect from "effect/Effect"
-import * as CatchUp from "../CatchUp.ts"
+import * as CatchUp from "../CatchUp.vibe"
 import * as Cron from "../Cron.ts"
 import type { TriggerError } from "../TriggerError.vibe"
 import type { Registered } from "../TriggerStore.ts"
