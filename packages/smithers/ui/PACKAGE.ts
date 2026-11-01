@@ -251,7 +251,7 @@ const securityReview = Smithers.SecurityReview({
         "EnvironmentVariable rendering a credential-shaped value as plain text: a name CREDENTIAL_NAME misses (including the whole-word PW/PWD/SK/PAT/OTP/TOTP/PIN abbreviations) or a user:password@ URL value, leading whitespace included, CREDENTIAL_URL misses.",
         "A write-only flow-form field that reaches assembleArgs, a draft, or a console call instead of being dropped by publicFormPayload."
       ],
-      paths: ["src/artifacts/SecretField.tsx", "src/artifacts/EnvironmentVariables.tsx", "src/flow-form.ts", "src/internal/useCopyFeedback.ts"]
+      paths: ["src/artifacts/SecretField.tsx", "src/artifacts/EnvironmentVariables.tsx", "src/flow-form.vibe", "src/internal/useCopyFeedback.ts"]
     },
     {
       id: "command-line-assembly",
@@ -265,7 +265,7 @@ const securityReview = Smithers.SecurityReview({
         "splitRunSource or runSearchPayload trusting a sourceCard or run id taken from user-typed args instead of the recorded card.",
         "parseCommand or COMMAND_NAME widening so punctuation or a typo after / executes a side-effecting flow instead of becoming a prompt."
       ],
-      paths: ["src/command-line.ts", "src/run-command.ts", "src/flow-form.ts", "src/flow-arguments.ts"]
+      paths: ["src/command-line.ts", "src/run-command.ts", "src/flow-form.vibe", "src/flow-arguments.ts"]
     },
     {
       id: "untrusted-parse-bounds",
