@@ -7,7 +7,7 @@
 import { JournalEvent } from "@smthrs/journal"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import * as Notification from "./Notification.ts"
+import * as Notification from "./Notification.vibe"
 
 /**
  * The journal `eventType` recorded for one admission decision.

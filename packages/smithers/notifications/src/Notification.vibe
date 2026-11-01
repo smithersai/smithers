@@ -4,8 +4,6 @@
  * @since 0.1.0
  */
 
-import { Schema } from "effect"
-
 /**
  * Producer-supplied attribution carried as data alongside the authenticated
  * source actor. These labels never authorize a notification or a model action.

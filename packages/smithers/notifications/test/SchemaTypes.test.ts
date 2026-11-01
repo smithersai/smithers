@@ -5,7 +5,7 @@
  */
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Notification from "../src/Notification.ts"
+import * as Notification from "../src/Notification.vibe"
 import * as SteerPayload from "../src/SteerPayload.ts"
 
 const humanSteer: Notification.HumanSteer = {
