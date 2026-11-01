@@ -1,6 +1,5 @@
 {
   "compilerOptions": {
-    "allowArbitraryExtensions": true,
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
