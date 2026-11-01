@@ -15,7 +15,7 @@ import * as ConfigProvider from "effect/ConfigProvider"
 import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import * as Endpoint from "./Endpoint.ts"
+import * as Endpoint from "./Endpoint.vibe"
 import * as Resource from "./Resource.ts"
 import type { Configuration as ResourceConfiguration } from "./Resource.ts"
 
