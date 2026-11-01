@@ -195,7 +195,10 @@ describe("project", () => {
   })
 
   test("a claimed job's runner unseen past the threshold alerts once per outage; a cost past the cap alerts", () => {
-    const seen = now - 61_000
+    // Alerting when the view reads Offline leaves a 30 s probe its handoff inside the 90 s an outage has to reach the bell.
+    expect(Fleet.DEFAULTS.offlineSeconds).toBe(Fleet.UNREACHABLE_SECONDS)
+    expect(Fleet.project(job({ lastEventAt: at(now), runnerSeenAt: at(now - 44_000) }), run(), Fleet.DEFAULTS).due).toEqual([])
+    const seen = now - 46_000
     const off = Fleet.project(job({ lastEventAt: at(now), runnerSeenAt: at(seen) }), run(), Fleet.DEFAULTS)
     expect(off.due).toEqual([{ alertId: Fleet.alertId.offline("r1", seen), kind: "offline", repoId: REPO, subject: "r1" }])
     const capped = { ...Fleet.DEFAULTS, maxRunUsd: 5 }

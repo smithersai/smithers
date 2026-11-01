@@ -16,19 +16,22 @@ export interface Settings {
   readonly stallMinutes: number
   /** A run queued this long alerts that it waits for a runner (`AGENT_WAIT_MINUTES`, 5). */
   readonly waitMinutes: number
-  /** A runner unseen this long, with a job claimed, alerts that it is offline (`RUNNER_OFFLINE_SECONDS`, 60). */
+  /** A runner unseen this long, with a job claimed, alerts that it is offline (`RUNNER_OFFLINE_SECONDS`, 45). */
   readonly offlineSeconds: number
   /** A run whose reported cost passes this alerts (`MAX_RUN_USD`); unset, cost never alerts. */
   readonly maxRunUsd: number | undefined
 }
 
-/** The defaults: 10-minute stalls, 5-minute waits, a runner offline after a minute, no cost alert. */
-export const DEFAULTS: Settings = { stallMinutes: 10, waitMinutes: 5, offlineSeconds: 60, maxRunUsd: undefined }
+/**
+ * The defaults: 10-minute stalls, 5-minute waits, a runner offline as soon as the view reads it, no cost alert. An
+ * outage reaches the bell within 90 s of the runner's death: this, then the next probe, up to 38 s apart on production.
+ */
+export const DEFAULTS: Settings = { stallMinutes: 10, waitMinutes: 5, offlineSeconds: 45, maxRunUsd: undefined }
 
 /** CPU seconds an agent's process tree must use, past the last mark, to count as working: a quiet build isn't a stall. */
 export const CPU_ACTIVE_SECONDS = 5
 
-/** How long after its last request a runner reads Offline in the fleet, before it alerts (docs/features/fleet.md). */
+/** How long after its last request a runner reads Offline in the fleet, and the soonest it may alert (docs/features/fleet.md). */
 export const UNREACHABLE_SECONDS = 45
 
 /** The settings from the environment; each bound is checked, and an out-of-bounds value fails the deploy's start. */

@@ -52,5 +52,8 @@ be what browsers sync.
   open generations Failed `crashed`: no probe is left to project them.
 - **Runner offline alerts at 60 s, not 90 s,** so an outage reaches the bell within 90 s of the runner's death, as the
   e2e requires.
+  Amended 2026-11-01: **45 s**, the floor the view already reads Offline at. A probe parked 30 s takes up to 38 s from
+  one to the next on production, its handoff included, so 60 s reached the bell at 79 s on a quiet deployment and past
+  90 s right after a 53-run burst.
 - **Not built:** `/app/fleet` for Admins across repositories, Steer and Stop as row acts (S3's, on the TODO's page),
   and containers beside the runners.
