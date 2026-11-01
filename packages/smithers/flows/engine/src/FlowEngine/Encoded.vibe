@@ -55,7 +55,7 @@ export interface ActionExecuteOptions {
    * executing the action. Never evaluate it for a journal hit or a joined
    * dispatch. The engine diffs only attempts that evaluated this effect.
    */
-  readonly snapshot?: Effect.Effect<unknown, never, FlowRuntime.FlowInstance | Crypto.Crypto> | undefined
+  readonly snapshot?: (unknown!never!FlowRuntime.FlowInstance | Crypto.Crypto) | undefined
 }
 
 /**
@@ -75,9 +75,9 @@ export interface Encoded {
     flow: Flow.Any,
     execute: (
       payload: object,
-      executionId: string
-    ) => Effect.Effect<unknown, unknown, FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime>
-  ) => Effect.Effect<void, never, Scope.Scope>
+      executionId: string,
+    ) => unknown!unknown!FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime,
+  ) => void!never!Scope.Scope
   /**
    * Starts, or joins, one execution of `flow` and answers with its settlement.
    *
@@ -124,11 +124,8 @@ export interface Encoded {
        * as before.
        */
       readonly follow?: boolean | undefined
-    }
-  ) => Effect.Effect<
-    Discard extends true ? void : Flow.Result<unknown, unknown>,
-    FlowRuntime.FlowCycleDetected
-  >
+    },
+  ) => (Discard extends true ? void : Flow.Result<unknown, unknown>)!FlowRuntime.FlowCycleDetected
   /**
    * The settlement of one execution of `flow`, when it has one.
    *
@@ -142,11 +139,8 @@ export interface Encoded {
    */
   readonly poll: (
     flow: Flow.Any,
-    executionId: string
-  ) => Effect.Effect<
-    Option.Option<Flow.Result<unknown, unknown>>,
-    FlowRuntime.FlowExecutionNotFound
-  >
+    executionId: string,
+  ) => Option.Option<Flow.Result<unknown, unknown>>!FlowRuntime.FlowExecutionNotFound
   /**
    * Requests cancellation with normal cleanup and compensation semantics.
    * This is not a pause operation.
@@ -164,8 +158,8 @@ export interface Encoded {
    */
   readonly interrupt: (
     flow: Flow.Any,
-    executionId: string
-  ) => Effect.Effect<void, FlowRuntime.CancelRequestFailed>
+    executionId: string,
+  ) => void!FlowRuntime.CancelRequestFailed
   /**
    * Forces cancellation without guaranteeing cleanup or compensation.
    *
@@ -174,8 +168,8 @@ export interface Encoded {
    */
   readonly interruptUnsafe: (
     flow: Flow.Any,
-    executionId: string
-  ) => Effect.Effect<void, FlowRuntime.CancelRequestFailed>
+    executionId: string,
+  ) => void!FlowRuntime.CancelRequestFailed
   /**
    * Re-drives a durably suspended execution; it does not undo cancellation.
    *
@@ -191,13 +185,13 @@ export interface Encoded {
   readonly resume: (
     flow: Flow.Any,
     executionId: string,
-    options?: FlowRuntime.ResumeOptions & { readonly poll?: boolean | undefined } | undefined
-  ) => Effect.Effect<void>
+    options?: FlowRuntime.ResumeOptions & { readonly poll?: boolean | undefined } | undefined,
+  ) => void!!
   readonly resumeSignal?:
     | ((
       flow: Flow.Any,
-      executionId: string
-    ) => Effect.Effect<void>)
+      executionId: string,
+    ) => void!!)
     | undefined
   /**
    * Resolve a dispatch's recorded identity before retry and dispatch lookup:
@@ -214,13 +208,13 @@ export interface Encoded {
     | ((
       derive: (
         executionId: string,
-        runScoped: boolean
-      ) => Effect.Effect<string, Schema.SchemaError, Crypto.Crypto>,
+        runScoped: boolean,
+      ) => string!Schema.SchemaError!Crypto.Crypto,
       legacy: (
         executionId: string,
-        runScoped: boolean
-      ) => Effect.Effect<ReadonlyArray<string>, Schema.SchemaError, Crypto.Crypto>
-    ) => Effect.Effect<string, Schema.SchemaError, FlowRuntime.FlowInstance | Crypto.Crypto>)
+        runScoped: boolean,
+      ) => ReadonlyArray<string>!Schema.SchemaError!Crypto.Crypto,
+    ) => string!Schema.SchemaError!FlowRuntime.FlowInstance | Crypto.Crypto)
     | undefined
   /**
    * Recognizes live or persisted engine failures and returns their JSON fields.
@@ -230,12 +224,8 @@ export interface Encoded {
    */
   readonly encodeEngineError?: ((error: unknown) => Option.Option<unknown>) | undefined
   readonly actionExecute: (
-    options: ActionExecuteOptions
-  ) => Effect.Effect<
-    Flow.Result<unknown, unknown>,
-    never,
-    FlowRuntime.FlowInstance | Crypto.Crypto
-  >
+    options: ActionExecuteOptions,
+  ) => Flow.Result<unknown, unknown>!never!FlowRuntime.FlowInstance | Crypto.Crypto
   /**
    * The durable wall-clock origin of an action's retry sequence: the
    * persisted start time of the first attempt for `key`, when one exists.
@@ -256,7 +246,7 @@ export interface Encoded {
   readonly actionRetryOrigin?:
     | ((options: {
       readonly key: string
-    }) => Effect.Effect<Option.Option<number>, never, FlowRuntime.FlowInstance | Crypto.Crypto>)
+    }) => Option.Option<number>!never!FlowRuntime.FlowInstance | Crypto.Crypto)
     | undefined
   /**
    * The highest persisted attempt number for `key`, when attempts survive.
@@ -270,7 +260,7 @@ export interface Encoded {
   readonly actionLatestAttempt?:
     | ((options: {
       readonly key: string
-    }) => Effect.Effect<Option.Option<number>, never, FlowRuntime.FlowInstance | Crypto.Crypto>)
+    }) => Option.Option<number>!never!FlowRuntime.FlowInstance | Crypto.Crypto)
     | undefined
   /**
    * The pre-attempt snapshot of the earliest recorded compensable attempt for
@@ -287,21 +277,17 @@ export interface Encoded {
   readonly actionSnapshot?:
     | ((options: {
       readonly key: string
-    }) => Effect.Effect<Option.Option<unknown>, never, FlowRuntime.FlowInstance | Crypto.Crypto>)
+    }) => Option.Option<unknown>!never!FlowRuntime.FlowInstance | Crypto.Crypto)
     | undefined
   readonly deferredResult: (
-    deferred: DurableDeferred.Any
-  ) => Effect.Effect<
-    Option.Option<Exit.Exit<unknown, unknown>>,
-    never,
-    FlowRuntime.FlowInstance
-  >
+    deferred: DurableDeferred.Any,
+  ) => Option.Option<Exit.Exit<unknown, unknown>>!never!FlowRuntime.FlowInstance
   readonly deferredDone: (options: {
     readonly flowName: string
     readonly executionId: string
     readonly deferredName: string
     readonly exit: Exit.Exit<unknown, unknown>
-  }) => Effect.Effect<void>
+  }) => void!!
   readonly deferredDoneIfWaiting?:
     | ((options: {
       readonly flowName: string
@@ -310,15 +296,15 @@ export interface Encoded {
       readonly reason: string
       readonly token: string
       readonly exit: Exit.Exit<unknown, unknown>
-    }) => Effect.Effect<FlowRuntime.DeferredDoneIfWaitingOutcome>)
+    }) => FlowRuntime.DeferredDoneIfWaitingOutcome!!)
     | undefined
   readonly scheduleClock: (
     flow: Flow.Any,
     options: {
       readonly executionId: string
       readonly clock: DurableClock.DurableClock
-    }
-  ) => Effect.Effect<void>
+    },
+  ) => void!!
   /**
    * Admits a new execution of `flow`, `executionId`, that retries the settled
    * execution `source` from its node `step`, and schedules it without awaiting
@@ -338,8 +324,8 @@ export interface Encoded {
   readonly retryFrom?:
     | ((
       flow: Flow.Any,
-      options: { readonly source: string; readonly step: string; readonly executionId: string }
-    ) => Effect.Effect<void, FlowRuntime.RetryFromRefused>)
+      options: { readonly source: string; readonly step: string; readonly executionId: string },
+    ) => void!FlowRuntime.RetryFromRefused)
     | undefined
   /**
    * Records what a driven graph is and how its nodes settled.
@@ -355,6 +341,6 @@ export interface Encoded {
   readonly recordNode?: FlowRuntime.FlowRuntime["Service"]["recordNode"]
   /** Deterministic UTF-8 upper bound including the store's journal envelope. */
   readonly nodeRecordBytes?:
-    | ((record: FlowRuntime.NodeRecord) => Effect.Effect<number, never, FlowRuntime.FlowInstance>)
+    | ((record: FlowRuntime.NodeRecord) => number!never!FlowRuntime.FlowInstance)
     | undefined
 }

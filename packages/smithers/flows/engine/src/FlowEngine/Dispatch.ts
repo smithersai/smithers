@@ -20,8 +20,8 @@ import * as Schema from "effect/Schema"
 import { renderDiagnostic } from "../internal/Diagnostic.ts"
 import { toJsonExit } from "../internal/JsonExit.vibe"
 import { actionKey, ActionKeyEncoding, keyEncodings, ordinalScope, uncanonicalKey } from "./ActionKey.ts"
-import type { ActionExecuteOptions, Encoded } from "./Encoded.ts"
-import { SnapshotBoundary, type SnapshotBoundaryOptions, SnapshotBoundaryRequired } from "./SnapshotBoundary.ts"
+import type { ActionExecuteOptions, Encoded } from "./Encoded.vibe"
+import { SnapshotBoundary, type SnapshotBoundaryOptions, SnapshotBoundaryRequired } from "./SnapshotBoundary.vibe"
 
 type Instance = FlowRuntime.FlowInstance["Service"]
 

@@ -21,7 +21,7 @@ import * as Semaphore from "effect/Semaphore"
 import { renderDiagnostic } from "../internal/Diagnostic.ts"
 import { toJsonExit } from "../internal/JsonExit.vibe"
 import { makeActionExecute, resetActionContext } from "./Dispatch.ts"
-import type { Encoded } from "./Encoded.ts"
+import type { Encoded } from "./Encoded.vibe"
 import { placeExecute, placeInterrupt, placeResume, placeRetryFrom } from "./Placed.ts"
 import { type Declarations, makeExecute } from "./Trampoline.ts"
 
