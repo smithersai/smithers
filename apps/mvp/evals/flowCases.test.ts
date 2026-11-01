@@ -322,6 +322,14 @@ describe("the catalog", () => {
 })
 
 
+test("TODO status reads name the requested repository and number and change nothing", () => {
+  for (const calls of [
+    [call("todo/inspect", { repo: REPO, number: 2 }, "failed")],
+    [call("todo/inspect", { repo: "other/repository", number: 1 }, "failed")],
+    [call("todo/inspect", { repo: REPO, number: 1 }, "failed"), call("todo/Retry", { repo: REPO, number: 1 })],
+  ]) expect(passes("todo-inspect", trial({ calls }))).toBe(false)
+})
+
 test("file tabs are opened before closing the same file, at the requested lines", () => {
   for (const calls of [
     [call("file/close", { path: "README.md" }), call("file/open", { path: "README.md", lines: "2-4" })],
