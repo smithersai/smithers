@@ -6,12 +6,19 @@
  * jj runs with no user configuration, so a host's own settings never change
  * what a checkout holds or what its diff says.
  *
+ * Every checkout of a repository shares its mirror's operation log, refs and
+ * git worktrees, which jj and git keep in files: ten `jj workspace add`s at
+ * once on one mirror fail some of themselves (a packed-ref transaction, or
+ * git's config lock). So each command that changes a mirror (fetch, add, the
+ * diff that snapshots a checkout, forget) runs one at a time per mirror, and a
+ * runner's concurrent jobs queue for it.
+ *
  * @since 1.0.0
  */
 
 import type * as AgentRunner from "@smthrs/agent/AgentRunner"
 import { resolveJjBinary } from "@smthrs/jj/node/resolveJjBinary"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Semaphore } from "effect"
 import { execFile } from "node:child_process"
 import { createHash } from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs"
@@ -50,11 +57,31 @@ export const of = (stateDir: string, origin: string) => {
  */
 export type Checkout = ReturnType<typeof of>
 
-/** One command's exit code and output. */
+/** One command's exit code, output, and the first line of its errors. */
 interface Ran {
   readonly code: number
   readonly stdout: string
+  readonly stderr: string
 }
+
+/** One gate per mirror, by its resolved path: the commands that change it run one at a time. */
+const gates = new Map<string, Semaphore.Semaphore>()
+
+/** `effect`, run while it alone changes `mirror` in this process. */
+const exclusive = (mirror: string) => <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.suspend(() => {
+    const key = resolve(mirror)
+    let gate = gates.get(key)
+    if (gate === undefined) {
+      gate = Semaphore.makeUnsafe(1)
+      gates.set(key, gate)
+    }
+    return gate.withPermits(1)(effect)
+  })
+
+/** The first line of a command's errors, with every absolute path replaced: what a log may say of it. */
+const reasonOf = (stderr: string): string =>
+  (stderr.split("\n").find((line) => line.trim() !== "") ?? "").replace(/\/[^\s'"`:,)]+/g, "<path>").slice(0, 200)
 
 /**
  * Runs `jj args` with no user configuration, for at most `timeoutMs`, in `cwd`
@@ -86,9 +113,9 @@ export const jj = (args: ReadonlyArray<string>, timeoutMs = 120_000, cwd?: strin
         maxBuffer: 64 * 1024 * 1024,
         env: { ...process.env, JJ_CONFIG: config }
       },
-      (error, stdout) => {
+      (error, stdout, stderr) => {
         const code = error === null ? 0 : typeof error.code === "number" ? error.code : 1
-        resume(Effect.succeed({ code, stdout: String(stdout) }))
+        resume(Effect.succeed({ code, stdout: String(stdout), stderr: String(stderr) }))
       }
     )
   })
@@ -97,7 +124,7 @@ const ok = (step: WorkspaceError["step"]) => (ran: Ran) =>
   ran.code === 0
     ? Effect.succeed(ran.stdout)
     : Effect.logWarning("runner.workspace").pipe(
-      Effect.annotateLogs({ step, exitCode: ran.code }),
+      Effect.annotateLogs({ step, exitCode: ran.code, reason: reasonOf(ran.stderr) }),
       Effect.andThen(Effect.fail(new WorkspaceError({ step })))
     )
 
@@ -109,7 +136,7 @@ const ok = (step: WorkspaceError["step"]) => (ran: Ran) =>
  * @since 1.0.0
  */
 export const create = (mirror: string, base: string, checkout: Checkout) =>
-  Effect.gen(function*() {
+  exclusive(mirror)(Effect.gen(function*() {
     const known = yield* jj(["-R", mirror, "log", "--ignore-working-copy", "--no-graph", "-r", base, "-T", "commit_id"])
     if (known.code !== 0) {
       yield* jj(["-R", mirror, "git", "fetch"], 600_000).pipe(Effect.flatMap(ok("fetch")))
@@ -118,7 +145,7 @@ export const create = (mirror: string, base: string, checkout: Checkout) =>
     yield* jj(["-R", mirror, "workspace", "add", "--name", checkout.name, "-r", base, checkout.dir]).pipe(
       Effect.flatMap(ok("add"))
     )
-  })
+  }))
 
 /**
  * Forgets the checkout in its mirror and deletes it and its checkpoint.
@@ -127,7 +154,7 @@ export const create = (mirror: string, base: string, checkout: Checkout) =>
  * @since 1.0.0
  */
 export const remove = (mirror: string, checkout: Checkout) =>
-  jj(["-R", mirror, "workspace", "forget", checkout.name]).pipe(
+  exclusive(mirror)(jj(["-R", mirror, "workspace", "forget", checkout.name])).pipe(
     Effect.andThen(Effect.sync(() => {
       rmSync(checkout.dir, { recursive: true, force: true })
       rmSync(checkout.checkpoint, { force: true })
@@ -161,7 +188,8 @@ const parseSummary = (line: string): { readonly added: Array<string>; readonly d
 /**
  * The checkout's change against `base`: each added or modified file's
  * contents in base64, and each deleted path; `undefined` when the change
- * exceeds `limits`.
+ * exceeds `limits`. The diff snapshots the checkout into `mirror`'s
+ * repository, so it waits its turn on the mirror.
  *
  * @category constructors
  * @since 1.0.0
@@ -169,15 +197,16 @@ const parseSummary = (line: string): { readonly added: Array<string>; readonly d
 export const changes = (
   checkout: Checkout,
   base: string,
-  limits: AgentRunner.Limits
+  limits: AgentRunner.Limits,
+  mirror: string
 ): Effect.Effect<AgentRunner.Changes | undefined, WorkspaceError> =>
   Effect.gen(function*() {
     // Run inside the checkout: the summary's paths are relative to the working directory.
-    const summary = yield* jj(
+    const summary = yield* exclusive(mirror)(jj(
       ["-R", checkout.dir, "diff", "--summary", "--from", base, "--to", "@"],
       120_000,
       checkout.dir
-    ).pipe(
+    )).pipe(
       Effect.flatMap(ok("diff"))
     )
     const added = new Set<string>()

@@ -239,6 +239,7 @@ export const work = (
       profile,
       job,
       checkout,
+      mirror: repository.mirror,
       control,
       env: { ...base, ...chosen.env },
       resume: same ? saved.sessionId : undefined,
@@ -253,6 +254,7 @@ const session = (options: {
   readonly profile: Config.Profile
   readonly job: JobPayload
   readonly checkout: Workspace.Checkout
+  readonly mirror: string
   readonly control: Control
   readonly env: Record<string, string>
   readonly resume: string | undefined
@@ -380,7 +382,7 @@ const session = (options: {
     const settled = yield* Effect.raceFirst(quiet.pipe(Effect.as("quiet" as const)), signal)
     if (settled !== "quiet") return yield* stopped(settled, sessionId, undefined)
     yield* Tree.stop(tree, { graceMs: 2000, settleMs: 5000 }).pipe(Effect.ignore)
-    const changes = yield* Effect.exit(Workspace.changes(checkout, job.task.base, job.task.limits))
+    const changes = yield* Effect.exit(Workspace.changes(checkout, job.task.base, job.task.limits, options.mirror))
     if (Exit.isFailure(changes)) return ended(failed("workspace"), stop)
     if (changes.value === undefined) return ended(failed("too_large"), stop)
     const summary = options.scrub(current !== "" ? current : previous)
