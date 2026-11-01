@@ -92,8 +92,9 @@ export const makeInFlight = (): InFlight => ({ current: 0 })
  * many requests the object was forwarding when it arrived, itself included (`inFlight`), the milliseconds waking took
  * (`awakeMs`) and then Electric's headers (`headersMs`), Electric's status, and whether the request started the
  * container or set the hold, and the proxy's `correlationId`. A failure records `outcome: "unavailable"` and
- * `status: 503`, which `serveObject` answers, with the stage it failed at and the error's tag; never a URL, a
- * parameter, a header or a body.
+ * `status: 503`, which `serveObject` answers, with the stage it failed at and the error's tag, at Warn: like the
+ * gateway's `overloaded`, it is an expected, answered refusal (each ElectricRuntime deploy causes one per held
+ * request), not an unhandled error. Never a URL, a parameter, a header or a body.
  */
 export const forward = <A extends { readonly status: number }, E1, R1, E2, R2>(
   wake: Effect.Effect<Woken, E1, R1>,
@@ -109,7 +110,7 @@ export const forward = <A extends { readonly status: number }, E1, R1, E2, R2>(
     const failed = (stage: "awake" | "electric") => (error: E1 | E2) =>
       Effect.gen(function* () {
         const durationMs = (yield* Clock.currentTimeMillis) - startedAt
-        yield* Effect.logError("electric.object.request").pipe(
+        yield* Effect.logWarning("electric.object.request").pipe(
           Effect.annotateLogs({
             correlationId,
             live,

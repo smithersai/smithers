@@ -178,7 +178,7 @@ describe("forward", () => {
     expect(sent).toBe(false)
     expect(log).toMatchObject([{
       message: "electric.object.request",
-      level: "ERROR",
+      level: "WARN",
       annotations: { live: false, outcome: "unavailable", status: 503, stage: "awake", error: "NoContainerInstanceError", durationMs: 1_500 },
     }])
     expect(JSON.stringify(log)).not.toContain("10.0.0.1")
@@ -317,7 +317,7 @@ describe("serveObject", () => {
       expect(response?.headers).toMatchObject({ "retry-after": String(RETRY_AFTER_SECONDS), "cache-control": "no-store" })
       expect(log.at(-1)).toMatchObject({
         message: "electric.object.request",
-        level: "ERROR",
+        level: "WARN",
         annotations: { correlationId: "0123456789abcdef", outcome: "unavailable", status: 503, stage: "electric", error: fault._tag },
       })
       expect(JSON.stringify(log)).not.toContain("10.0.0.1")
