@@ -1,7 +1,5 @@
 {
   "compilerOptions": {
-    "moduleSuffixes": ["",".d.vibe"],
-    "allowArbitraryExtensions": true,
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
