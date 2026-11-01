@@ -6,9 +6,7 @@
 
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
-import * as HashMap from "effect/HashMap"
 import * as Layer from "effect/Layer"
-import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { Assessment, Classification, type Handler } from "../CompensationHandlers.vibe"
 import { EffectRecord, EffectTier } from "../EffectBoundary.ts"
@@ -66,9 +64,9 @@ export type RollbackReceipt = typeof RollbackReceipt.Type
  */
 export interface Service {
   readonly resolve: (kind: string) => Handler | undefined
-  readonly assess: (effect: EffectRecord) => Effect.Effect<Assessment, TimeTravelError>
-  readonly revert: (effect: EffectRecord) => Effect.Effect<RollbackReceipt, TimeTravelError>
-  readonly rollback: (receipt: RollbackReceipt) => Effect.Effect<void, TimeTravelError>
+  readonly assess: (effect: EffectRecord) => Assessment!TimeTravelError
+  readonly revert: (effect: EffectRecord) => RollbackReceipt!TimeTravelError
+  readonly rollback: (receipt: RollbackReceipt) => void!TimeTravelError
 }
 
 /**
@@ -94,30 +92,28 @@ const missing = (kind: string): TimeTravelError =>
  * a non-boolean flag; each of those would silently resolve nothing or resolve
  * the wrong thing at rewind time, which is the worst moment to learn it.
  */
-const Declaration = Schema.Struct({
-  kind: Schema.NonEmptyString,
-  tier: EffectTier,
-  requiresIdempotencyKey: Schema.optional(Schema.Boolean),
-  compensation: Schema.optional(Schema.NonEmptyString)
-})
+schema Declaration {
+  kind: Schema.NonEmptyString
+  tier: EffectTier
+  requiresIdempotencyKey?: boolean
+  compensation?: Schema.NonEmptyString
+}
 
-const validate = (handler: Handler): Effect.Effect<Handler, TimeTravelError> =>
-  Effect.gen(function*() {
-    yield* Schema.decodeUnknownEffect(Declaration)({
-      kind: handler.kind,
-      tier: handler.tier,
-      requiresIdempotencyKey: handler.requiresIdempotencyKey,
-      compensation: handler.compensation
-    }).pipe(
-      Effect.mapError((cause) => error("invalid", "effect handler declaration is invalid", cause))
-    )
-    for (const member of ["residue", "revert", "rollback"] as const) {
-      if (typeof handler[member] !== "function") {
-        return yield* Effect.fail(error("invalid", `effect handler ${handler.kind} has no ${member} function`))
-      }
-    }
-    return handler
+const validate = effect (handler: Handler): Handler!TimeTravelError => {
+  try (Schema.decodeUnknownEffect(Declaration)({
+    kind: handler.kind,
+    tier: handler.tier,
+    requiresIdempotencyKey: handler.requiresIdempotencyKey,
+    compensation: handler.compensation
   })
+    |> Effect.mapError(%, (cause) => error("invalid", "effect handler declaration is invalid", cause)))
+  for (const member of ["residue", "revert", "rollback"] as const) {
+    if (typeof handler[member] !== "function") {
+      throw error("invalid", `effect handler ${handler.kind} has no ${member} function`)
+    }
+  }
+  return handler
+}
 
 /**
  * Why a handler is not the one that owns an effect's recorded compensation.
@@ -140,7 +136,7 @@ const missingKey = (handler: Handler, effect: EffectRecord): string | undefined 
     ? `Effect ${effect.id} recorded no idempotency key, which handler ${handler.kind} requires.`
     : undefined
 
-const fromHandlers = (handlers: HashMap.HashMap<string, Handler>): Service => {
+const fromHandlers = (handlers: HashMap<string, Handler>): Service => {
   const resolve = (kind: string): Handler | undefined => Option.getOrUndefined(HashMap.get(handlers, kind))
 
   const service = EffectHandlerRegistry.of({
@@ -148,11 +144,11 @@ const fromHandlers = (handlers: HashMap.HashMap<string, Handler>): Service => {
     assess: (effect) => {
       const handler = resolve(effect.kind)
       if (handler === undefined) {
-        return Effect.succeed({
+        return {
           classification: "blocking" as const,
           reason: `No compensation handler is registered for ${effect.kind}.`,
           residue: effect.residue ?? `The ${effect.kind} effect remains outside the journal.`
-        })
+        }
       }
       const blocking = (reason: string): Assessment => ({
         classification: "blocking",
@@ -160,64 +156,60 @@ const fromHandlers = (handlers: HashMap.HashMap<string, Handler>): Service => {
         residue: handler.residue(effect)
       })
       if (handler.tier !== effect.tier) {
-        return Effect.succeed(blocking(`Handler ${effect.kind} is registered for ${handler.tier}, not ${effect.tier}.`))
+        return blocking(`Handler ${effect.kind} is registered for ${handler.tier}, not ${effect.tier}.`)
       }
       if (effect.status !== "succeeded") {
-        return Effect.succeed(blocking(`Effect ${effect.id} has ${effect.status} completion state.`))
+        return blocking(`Effect ${effect.id} has ${effect.status} completion state.`)
       }
       const refusal = descriptorMismatch(handler, effect) ?? missingKey(handler, effect)
-      if (refusal !== undefined) return Effect.succeed(blocking(refusal))
+      if (refusal !== undefined) return blocking(refusal)
       if (handler.assess === undefined) {
-        return Effect.succeed({
+        return {
           classification: "revertible" as const,
           reason: `Handler ${effect.kind} can compensate the recorded effect.`,
           residue: handler.residue(effect)
-        })
+        }
       }
       // The custom verdict is decoded before anything acts on it. A handler
       // returning a classification outside the closed list was neither
       // blocked nor reverted, so the rewind truncated the effect's evidence
       // and left the effect standing.
-      return handler.assess(effect).pipe(
-        Effect.flatMap((verdict) =>
-          Schema.decodeUnknownEffect(Assessment)(verdict).pipe(
-            Effect.catch((issue) =>
-              Effect.succeed(blocking(`Handler ${effect.kind} returned a malformed assessment: ${issue.message}`))
-            )
-          )
+      return handler.assess(effect)
+        |> Effect.flatMap(
+          %,
+          (verdict) =>
+            Schema.decodeUnknownEffect(Assessment)(verdict) catch (issue) =>
+              blocking(`Handler ${effect.kind} returned a malformed assessment: ${issue.message}`)
         )
-      )
     },
     revert: (effect) => {
       const handler = resolve(effect.kind)
-      if (handler === undefined) return Effect.fail(missing(effect.kind))
+      if (handler === undefined) throw missing(effect.kind)
       if (handler.tier !== effect.tier) {
-        return Effect.fail(
-          error(
-            "irreversible",
-            `handler ${effect.kind} cannot compensate ${effect.tier} effect ${effect.id}`
-          )
+        throw error(
+          "irreversible",
+          `handler ${effect.kind} cannot compensate ${effect.tier} effect ${effect.id}`
         )
       }
       const refusal = descriptorMismatch(handler, effect) ?? missingKey(handler, effect)
       if (refusal !== undefined) {
-        return Effect.fail(error("irreversible", `handler ${effect.kind} cannot compensate ${effect.id}: ${refusal}`))
+        throw error("irreversible", `handler ${effect.kind} cannot compensate ${effect.id}: ${refusal}`)
       }
-      return handler.revert(effect).pipe(
-        Effect.map((data) => ({
+      return handler.revert(effect)
+        |> Effect.map(%, (data) => ({
           id: `${effect.id}:rollback`,
           effect,
           data
-        })),
-        Effect.mapError((cause) =>
-          error("compensation_failed", `handler ${effect.kind} could not revert ${effect.id}`, cause)
+        }))
+        |> Effect.mapError(
+          %,
+          (cause) => error("compensation_failed", `handler ${effect.kind} could not revert ${effect.id}`, cause)
         )
-      )
     },
     rollback: (receipt) => {
       const effect = receipt.effect
       const handler = resolve(effect.kind)
-      if (handler === undefined) return Effect.fail(missing(effect.kind))
+      if (handler === undefined) throw missing(effect.kind)
       // The receipt was produced by the handler that reverted the effect, and
       // a durable receipt outlives the composition that wrote it. A handler
       // registered for another tier, or declaring another compensation, is
@@ -227,19 +219,15 @@ const fromHandlers = (handlers: HashMap.HashMap<string, Handler>): Service => {
         ? `handler ${effect.kind} is registered for ${handler.tier}, and the receipt records ${effect.tier}`
         : descriptorMismatch(handler, effect)
       if (refusal !== undefined) {
-        return Effect.fail(
-          error("compensation_failed", `handler ${effect.kind} cannot roll back ${effect.id}: ${refusal}`)
-        )
+        throw error("compensation_failed", `handler ${effect.kind} cannot roll back ${effect.id}: ${refusal}`)
       }
-      return handler.rollback(effect, receipt.data).pipe(
-        Effect.mapError((cause) =>
+      return handler.rollback(effect, receipt.data)
+        |> Effect.mapError(%, (cause) =>
           error(
             "compensation_failed",
             `handler ${effect.kind} could not roll back compensation for ${effect.id}`,
             cause
-          )
-        )
-      )
+          ))
     }
   })
   return service
@@ -254,16 +242,16 @@ const fromHandlers = (handlers: HashMap.HashMap<string, Handler>): Service => {
  */
 export const make = (
   handlers: Iterable<Handler> = []
-): Effect.Effect<Service, TimeTravelError> =>
-  Effect.gen(function*() {
+): Service!TimeTravelError =>
+  effect {
     let registry = HashMap.empty<string, Handler>()
     for (const handler of handlers) {
-      const valid = yield* validate(handler)
-      if (HashMap.has(registry, valid.kind)) return yield* Effect.fail(duplicate(valid.kind))
+      const valid = try validate(handler)
+      if (HashMap.has(registry, valid.kind)) throw duplicate(valid.kind)
       registry = HashMap.set(registry, valid.kind, valid)
     }
     return fromHandlers(registry)
-  })
+  }
 
 /**
  * Constructs an empty immutable registry.

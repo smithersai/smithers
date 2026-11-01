@@ -34,7 +34,10 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./.vibe/declarations/src/index.d.vibe.ts",
+      "default": "./src/index.vibe"
+    },
     "./internal/*": null,
     "./*/index": null,
     "./CompensationHandlers": "./src/CompensationHandlers.vibe",
@@ -46,7 +49,10 @@
     "./TimeTravel": "./src/TimeTravel.ts",
     "./TimeTravelError": "./src/TimeTravelError.vibe",
     "./TimeTravelStore": "./src/TimeTravelStore.ts",
-    "./index": "./src/index.ts"
+    "./index": {
+      "types": "./.vibe/declarations/src/index.d.vibe.ts",
+      "default": "./src/index.vibe"
+    }
   },
   "files": [
     "src/**/*.ts",

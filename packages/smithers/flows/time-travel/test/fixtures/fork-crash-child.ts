@@ -1,5 +1,5 @@
 import * as Effect from "effect/Effect"
-import * as EffectHandlerRegistry from "../../src/internal/EffectHandlerRegistry.ts"
+import * as EffectHandlerRegistry from "../../src/internal/EffectHandlerRegistry.vibe"
 import * as Fork from "../../src/internal/Fork.ts"
 import { runReal } from "../RealTimeTravelHarness.ts"
 

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest"
 describe("browser bundle", () => {
   it("bundles the root without Node built-ins", async () => {
     const result = await build({
-      entryPoints: ["src/index.ts"],
+      entryPoints: ["src/index.vibe"],
       absWorkingDir: fileURLToPath(new URL("..", import.meta.url)),
       bundle: true,
       platform: "browser",

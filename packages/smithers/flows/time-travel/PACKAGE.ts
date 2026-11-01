@@ -6,8 +6,10 @@ import { ReviewTagsMigrationsAndKeys } from "@smthrs/repo-targets"
  * `cwd` anchors every emitted tool run in this package directory.
  */
 import { Smithers } from "@smthrs/targets"
+import * as Input from "@smthrs/targets/Input"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
+  entry: Input.file("src/index.vibe"),
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
   cwd: "packages/smithers/flows/time-travel"
@@ -87,7 +89,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/CompensationHandlers.vibe",
-        "src/internal/EffectHandlerRegistry.ts",
+        "src/internal/EffectHandlerRegistry.vibe",
         "src/internal/Compensation.ts",
         "src/internal/Rewind.ts",
         "src/TimeTravel.ts"
