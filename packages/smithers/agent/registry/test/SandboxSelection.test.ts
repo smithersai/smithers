@@ -10,7 +10,7 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
 import * as Descriptor from "../src/Descriptor.ts"
-import * as MarkdownFlow from "../src/MarkdownFlow.ts"
+import * as MarkdownFlow from "../src/MarkdownFlow.vibe"
 
 const provenance = new Descriptor.Provenance({ source: "test", root: "/flows" })
 

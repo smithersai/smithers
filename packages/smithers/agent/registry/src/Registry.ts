@@ -24,10 +24,10 @@ import {
 import { Discovery, layer as discoveryLayer } from "./Discovery.ts"
 import type * as ExecutionSnapshot from "./ExecutionSnapshot.ts"
 import { readVerifiedBody } from "./internal/Body.ts"
-import * as MarkdownFlow from "./MarkdownFlow.ts"
+import * as MarkdownFlow from "./MarkdownFlow.vibe"
 import * as Pack from "./Pack.ts"
-import type { DiscoveryError, RegistryError } from "./RegistryError.ts"
-import { registryError } from "./RegistryError.ts"
+import type { DiscoveryError, RegistryError } from "./RegistryError.vibe"
+import { registryError } from "./RegistryError.vibe"
 
 /**
  * Configuration for constructing a registry from ordered discovery sources.

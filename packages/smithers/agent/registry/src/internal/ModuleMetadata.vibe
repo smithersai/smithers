@@ -7,7 +7,6 @@
 
 import * as Node from "@smthrs/plan/Node"
 import * as Option from "effect/Option"
-import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import { type EffectDeclaration, ModelSelection, type Placement } from "../Descriptor.ts"
 import { conservativeEffects, narrowDelegation, projectEffects, unprojectableDelegation } from "./Authority.ts"
@@ -160,12 +159,12 @@ const regexPrecedingKeywords = new Set([
   "throw",
   "typeof",
   "void",
-  "yield"
+  "yield",
 ])
 
 /** The punctuation a regular expression may follow, rather than a division. */
 const regexPrecedingPunctuation = new Set(
-  ["(", "[", "{", ",", ":", ";", "=", "!", "?", "&", "|", "+", "-", "*", "%", "^", "~", "<", ">"]
+  ["(", "[", "{", ",", ":", ";", "=", "!", "?", "&", "|", "+", "-", "*", "%", "^", "~", "<", ">"],
 )
 
 /** The statements a label may follow. */
@@ -210,7 +209,7 @@ const start: Context = {
   beforeThat: undefined,
   lineBreak: false,
   closesCondition: false,
-  reading: "likely"
+  reading: "likely",
 }
 
 /** Whether a name token is a property or private name (`a.return`, `#return`) rather than a keyword. */
@@ -218,8 +217,8 @@ const isPropertyName = (token: Token, before: Token | undefined): boolean =>
   token.value.startsWith("#") || (before?.kind === "punctuation" && before.value === ".")
 
 const isKeyword = (token: Token | undefined, before: Token | undefined, keywords: ReadonlySet<string>): boolean =>
-  token?.kind === "identifier" && token.escaped === undefined && keywords.has(token.value) &&
-  !isPropertyName(token, before)
+  token?.kind === "identifier" && token.escaped === undefined && keywords.has(token.value)
+  && !isPropertyName(token, before)
 
 const canStartRegex = (context: Context): boolean => {
   const { beforePrevious, previous } = context
@@ -243,8 +242,8 @@ const canStartRegex = (context: Context): boolean => {
   }
   // `a++ / b` divides: `++` or `--` directly before a `/` is always postfix.
   if (
-    (previous.value === "+" || previous.value === "-") &&
-    beforePrevious?.value === previous.value && beforePrevious.end === previous.start
+    (previous.value === "+" || previous.value === "-")
+    && beforePrevious?.value === previous.value && beforePrevious.end === previous.start
   ) {
     return false
   }
@@ -374,7 +373,7 @@ const nextToken = (source: string, start: number, context: (index: number) => Co
 }
 
 /** Reads template text only; executable substitutions are tokenized by the caller. */
-const templateChunk = (source: string, start: number, opening: boolean) => {
+const templateChunk = (source: string, start: number, opening: boolean): infer _ => {
   for (let index = start + (opening ? 1 : 0); index < source.length; index++) {
     if (source[index] === "\\") {
       index++
@@ -417,7 +416,7 @@ export const tokenize = (source: string, reading: SlashReading = "likely"): Read
       beforeThat: tokens.at(-3),
       lineBreak: previous !== undefined && /[\n\r\u2028\u2029]/.test(source.slice(previous.end, index)),
       closesCondition,
-      reading
+      reading,
     }
   }
   while (offset < source.length) {
@@ -481,8 +480,8 @@ const findFlowObject = (source: string): FlowObject | undefined => {
     const parenthesizedRecord = tokens[index + 2]?.value === "(" && tokens[index + 3]?.value === "{"
     const bareRecord = tokens[index + 2]?.value === "{"
     const record = parenthesizedRecord || bareRecord
-    const constructor = tokens[index + 2]?.value === "Flow" && tokens[index + 3]?.value === "." &&
-      tokens[index + 4]?.value === "make" && tokens[index + 5]?.value === "("
+    const constructor = tokens[index + 2]?.value === "Flow" && tokens[index + 3]?.value === "."
+      && tokens[index + 4]?.value === "make" && tokens[index + 5]?.value === "("
     if (!record && !constructor) continue
     const tag = constructor && tokens[index + 6]?.kind === "string" && tokens[index + 7]?.value === ","
       ? stringLiteral(tokens[index + 6]!.value)
@@ -643,7 +642,7 @@ const propertyKey = (source: string): string | undefined => {
 }
 
 const propertiesFrom = (
-  source: string
+  source: string,
 ): {
   readonly values: ReadonlyMap<string, string>
   readonly offsets: ReadonlyMap<string, number>
@@ -731,7 +730,7 @@ const decodeEscapes = (value: string): string =>
           return codePoint > 0x10ffff ? `\\${sequence}` : String.fromCodePoint(codePoint)
         }
       }
-    }
+    },
   )
 
 /**
@@ -752,9 +751,9 @@ export const stringLiteral = (source: string | undefined): string | undefined =>
   const trimmed = tokens[0]!.value
   const quote = trimmed[0]
   if (
-    (quote !== "\"" && quote !== "'" && quote !== "`") ||
-    trimmed.at(-1) !== quote ||
-    (quote === "`" && trimmed.includes("${"))
+    (quote !== "\"" && quote !== "'" && quote !== "`")
+    || trimmed.at(-1) !== quote
+    || (quote === "`" && trimmed.includes("${"))
   ) {
     return undefined
   }
@@ -785,7 +784,7 @@ const booleanLiteral = (source: string | undefined): boolean | undefined =>
 
 const objectProperties = (
   source: string | undefined,
-  allowEffectsConstructor = false
+  allowEffectsConstructor = false,
 ): ReturnType<typeof propertiesFrom> | undefined => {
   if (source === undefined) {
     return undefined
@@ -793,9 +792,9 @@ const objectProperties = (
   let tokens = tokenize(source)
   // Preserve the supported constructor, without searching arbitrary expressions.
   if (
-    allowEffectsConstructor &&
-    tokens.slice(0, 4).map((token) => token.value).join(" ") === "Effects . make (" &&
-    tokens.at(-1)?.value === ")"
+    allowEffectsConstructor
+    && tokens.slice(0, 4).map((token) => token.value).join(" ") === "Effects . make ("
+    && tokens.at(-1)?.value === ")"
   ) {
     tokens = tokens.slice(4, -1)
   }
@@ -823,16 +822,16 @@ const objectProperties = (
 const effectDeclaration = (
   source: string | undefined,
   capabilities: ReadonlyArray<string>,
-  warnings: Array<MetadataWarning>
+  warnings: Array<MetadataWarning>,
 ): EffectDeclaration => {
   const properties = objectProperties(source, true)
-  const unreadable = source !== undefined &&
-    (properties === undefined || properties.hasUnprojectableMembers)
+  const unreadable = source !== undefined
+    && (properties === undefined || properties.hasUnprojectableMembers)
   if (unreadable) {
     warnings.push({
       message: properties === undefined
         ? "Effects must be a statically projectable object literal; using conservative effects"
-        : "Effects contain an object spread or computed member; using conservative effects"
+        : "Effects contain an object spread or computed member; using conservative effects",
     })
   }
   const paths = (key: "reads" | "writes"): ReadonlyArray<string> | "unreadable" | undefined => {
@@ -854,8 +853,8 @@ const effectDeclaration = (
         writes: paths("writes"),
         mode: literal("mode"),
         onConflict: literal("onConflict"),
-        tier: literal("tier")
-      }
+        tier: literal("tier"),
+      },
   })
   let reportedPolicy = false
   for (const problem of projection.problems) {
@@ -864,7 +863,7 @@ const effectDeclaration = (
         break
       case "unreadableMember":
         warnings.push({
-          message: `Effects ${problem.member} must be a string-literal array; using the conservative wildcard`
+          message: `Effects ${problem.member} must be a string-literal array; using the conservative wildcard`,
         })
         break
       case "invalidMode":
@@ -872,18 +871,18 @@ const effectDeclaration = (
         if (!reportedPolicy) {
           reportedPolicy = true
           warnings.push({
-            message: "Effects mode and conflict policy must be string literals; using conservative effects"
+            message: "Effects mode and conflict policy must be string literals; using conservative effects",
           })
         }
         break
       case "invalidTier":
         warnings.push({
-          message: "Effects tier must be a sealed, compensable, or irreversible string literal; using irreversible"
+          message: "Effects tier must be a sealed, compensable, or irreversible string literal; using irreversible",
         })
         break
       case "underClassifiedTier":
         warnings.push({
-          message: `Effect tier ${problem.declared} under-classifies declared authority; using ${problem.projected}`
+          message: `Effect tier ${problem.declared} under-classifies declared authority; using ${problem.projected}`,
         })
         break
     }
@@ -911,22 +910,22 @@ const schemaNamespaces = (source: string): ReadonlySet<string> => {
         const specifiers = tokens.slice(index + 1, end)
         const bindings: Array<string> = []
         if (
-          module === "effect/Schema" && specifiers.length === 3 &&
-          specifiers[0]?.value === "*" && specifiers[1]?.value === "as" &&
-          specifiers[2]?.kind === "identifier" && specifiers[2].escaped !== true
+          module === "effect/Schema" && specifiers.length === 3
+          && specifiers[0]?.value === "*" && specifiers[1]?.value === "as"
+          && specifiers[2]?.kind === "identifier" && specifiers[2].escaped !== true
         ) {
           bindings.push(specifiers[2].value)
         } else if (module === "effect" && specifiers[0]?.value === "{" && specifiers.at(-1)?.value === "}") {
           for (let part = 1; part < specifiers.length - 1; part++) {
             if (
-              specifiers[part]?.value !== "Schema" || specifiers[part]?.escaped === true ||
-              !["{", ","].includes(specifiers[part - 1]!.value)
+              specifiers[part]?.value !== "Schema" || specifiers[part]?.escaped === true
+              || !["{", ","].includes(specifiers[part - 1]!.value)
             ) continue
             const alias = specifiers[part + 1]?.value === "as" ? specifiers[part + 2] : specifiers[part]
             const after = specifiers[part + 1]?.value === "as" ? part + 3 : part + 1
             if (
-              alias?.kind === "identifier" && alias.escaped !== true &&
-              [",", "}"].includes(specifiers[after]!.value)
+              alias?.kind === "identifier" && alias.escaped !== true
+              && [",", "}"].includes(specifiers[after]!.value)
             ) {
               bindings.push(alias.value)
             }
@@ -948,17 +947,17 @@ const schemaNamespaces = (source: string): ReadonlySet<string> => {
       if (token.kind !== "identifier" || token.value !== name || importTokens.has(index)) return true
       // A namespace read nested in a supported schema call keeps its identity.
       // Grouped members stay opaque: `(S.String) = fake` mutates the member.
-      const nestedSchema = tokens[index - 1]?.value === "(" &&
-        imported.has(tokens[index - 4]?.value ?? "") && tokens[index - 3]!.value === "." &&
-        schemaConstructors.has(tokens[index - 2]!.value)
+      const nestedSchema = tokens[index - 1]?.value === "("
+        && imported.has(tokens[index - 4]?.value ?? "") && tokens[index - 3]!.value === "."
+        && schemaConstructors.has(tokens[index - 2]!.value)
       // A declaration, bare argument, assignment, computed access or alias
       // escapes the namespace identity. Member mutation is also refused.
-      return token.escaped !== true &&
-        !["delete", "+", "-"].includes(tokens[index - 1]?.value ?? "") &&
-        (tokens[index - 1]?.value !== "(" || nestedSchema) &&
-        tokens[index + 1]?.value === "." &&
-        tokens[index + 2]?.kind === "identifier" &&
-        [",", "}", "]", ")", ";", "("].includes(tokens[index + 3]?.value ?? "")
+      return token.escaped !== true
+        && !["delete", "+", "-"].includes(tokens[index - 1]?.value ?? "")
+        && (tokens[index - 1]?.value !== "(" || nestedSchema)
+        && tokens[index + 1]?.value === "."
+        && tokens[index + 2]?.kind === "identifier"
+        && [",", "}", "]", ")", ";", "("].includes(tokens[index + 3]?.value ?? "")
     })
     if (safe) trusted.add(name)
   }
@@ -979,7 +978,7 @@ const delimitedBody = (source: string, opening: string, closing: string): string
 const schemaFields = (
   source: string,
   namespaces: ReadonlySet<string>,
-  depth = 0
+  depth = 0,
 ): Schema.Struct.Fields | undefined => {
   const body = delimitedBody(source, "{", "}")
   if (body === undefined) return undefined
@@ -1019,13 +1018,13 @@ const maxSchemaDepth = 8
 const schemaExpression = (
   source: string,
   namespaces: ReadonlySet<string>,
-  depth = 0
+  depth = 0,
 ): Schema.Top | undefined => {
   if (depth > maxSchemaDepth) return undefined
   const tokens = tokenize(source)
   if (
-    tokens[0]?.kind !== "identifier" || !namespaces.has(tokens[0].value) || tokens[1]?.value !== "." ||
-    tokens[2]?.kind !== "identifier" || tokens[2].escaped === true
+    tokens[0]?.kind !== "identifier" || !namespaces.has(tokens[0].value) || tokens[1]?.value !== "."
+    || tokens[2]?.kind !== "identifier" || tokens[2].escaped === true
   ) return undefined
   const member = tokens[2].value
   const primitives = { String: Schema.String, Number: Schema.Number, Boolean: Schema.Boolean, Null: Schema.Null }
@@ -1104,7 +1103,7 @@ export const parse = (source: string): Metadata => {
       declaresName: false,
       declaredName: Option.none(),
       tag: Option.none(),
-      warnings: [{ message: "Could not statically read the default Flow.make declaration" }]
+      warnings: [{ message: "Could not statically read the default Flow.make declaration" }],
     }
   }
 
@@ -1112,7 +1111,7 @@ export const parse = (source: string): Metadata => {
   const properties = parsedProperties.values
   if (flowObject.record) {
     const validated = Schema.decodeUnknownResult(declaredKeys, { onExcessProperty: "error" })(
-      Object.fromEntries(properties)
+      Object.fromEntries(properties),
     )
     if (Result.isFailure(validated)) {
       warnings.push({ message: `Invalid FlowBinding.Declared record: ${validated.failure.message}` })
@@ -1135,33 +1134,33 @@ export const parse = (source: string): Metadata => {
   if (literalCapabilities === undefined) {
     warnings.push({
       message: "Capabilities must be a string-literal array for discovery; using the conservative wildcard",
-      line: lineAt(parsedProperties.offsets.get("capabilities")!)
+      line: lineAt(parsedProperties.offsets.get("capabilities")!),
     })
   }
   // A delegating flow that declares a readable capability list narrows the
   // delegate grant to it; only an undeclared list keeps the wildcard.
-  const narrowsDelegation = hasUnprojectableFlows &&
-    capabilitiesSource !== undefined &&
-    literalCapabilities !== undefined &&
-    !parsedProperties.hasUnprojectableMembers
+  const narrowsDelegation = hasUnprojectableFlows
+    && capabilitiesSource !== undefined
+    && literalCapabilities !== undefined
+    && !parsedProperties.hasUnprojectableMembers
   if (hasUnprojectableFlows && !narrowsDelegation) {
     warnings.push({
       message: "Flow authority cannot be projected statically; using the conservative wildcard",
-      line: lineAt(parsedProperties.offsets.get("flows")!)
+      line: lineAt(parsedProperties.offsets.get("flows")!),
     })
   }
   if (parsedProperties.hasUnprojectableMembers) {
     warnings.push({
       message:
         "Object spread or computed properties make schemas and authority unprojectable; using conservative projections",
-      line: lineAt(parsedProperties.unprojectableOffset!)
+      line: lineAt(parsedProperties.unprojectableOffset!),
     })
   }
   const capabilities = narrowsDelegation && delegation !== undefined
     ? narrowDelegation(delegation.capabilities, literalCapabilities)
-    : literalCapabilities === undefined ||
-        hasUnprojectableFlows ||
-        parsedProperties.hasUnprojectableMembers
+    : literalCapabilities === undefined
+        || hasUnprojectableFlows
+        || parsedProperties.hasUnprojectableMembers
     ? delegation?.capabilities ?? ["*"]
     : literalCapabilities
 
@@ -1172,8 +1171,8 @@ export const parse = (source: string): Metadata => {
   const modelInvocable = booleanLiteral(modelInvocableSource)
     ?? booleanLiteral(disableModelInvocationSource) !== true
   if (
-    (modelInvocableSource !== undefined && booleanLiteral(modelInvocableSource) === undefined) ||
-    (disableModelInvocationSource !== undefined && booleanLiteral(disableModelInvocationSource) === undefined)
+    (modelInvocableSource !== undefined && booleanLiteral(modelInvocableSource) === undefined)
+    || (disableModelInvocationSource !== undefined && booleanLiteral(disableModelInvocationSource) === undefined)
   ) {
     warnings.push({ message: "Model invocation visibility must be declared as a boolean literal for discovery" })
   }
@@ -1189,7 +1188,7 @@ export const parse = (source: string): Metadata => {
   const budget = budgetProperties === undefined || budgetProperties.hasUnprojectableMembers
     ? undefined
     : Object.fromEntries(
-      [...budgetProperties.values].map(([key, value]) => [key, literalValue(trimTrivia(value)) ?? trimTrivia(value)])
+      [...budgetProperties.values].map(([key, value]) => [key, literalValue(trimTrivia(value)) ?? trimTrivia(value)]),
     )
 
   return {
@@ -1215,6 +1214,6 @@ export const parse = (source: string): Metadata => {
     declaresName: properties.has("name"),
     declaredName: Option.fromUndefinedOr(stringLiteral(properties.get("name"))),
     tag: Option.fromUndefinedOr(flowObject.tag),
-    warnings
+    warnings,
   }
 }

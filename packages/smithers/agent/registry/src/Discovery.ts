@@ -34,12 +34,12 @@ import {
 import * as Frontmatter from "./internal/Frontmatter.ts"
 import { measureLockfiles } from "./internal/Lockfiles.ts"
 import * as ModuleClosure from "./internal/ModuleClosure.ts"
-import * as ModuleMetadata from "./internal/ModuleMetadata.ts"
-import * as Names from "./internal/Names.ts"
-import * as MarkdownFlow from "./MarkdownFlow.ts"
-import * as ModuleFlow from "./ModuleFlow.ts"
-import type { DiscoveryError } from "./RegistryError.ts"
-import { discoveryError } from "./RegistryError.ts"
+import * as ModuleMetadata from "./internal/ModuleMetadata.vibe"
+import * as Names from "./internal/Names.vibe"
+import * as MarkdownFlow from "./MarkdownFlow.vibe"
+import * as ModuleFlow from "./ModuleFlow.vibe"
+import type { DiscoveryError } from "./RegistryError.vibe"
+import { discoveryError } from "./RegistryError.vibe"
 
 /**
  * Discovers flow descriptors from a configured source without loading their

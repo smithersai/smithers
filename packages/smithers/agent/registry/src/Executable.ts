@@ -81,9 +81,9 @@ import { readVerifiedBody } from "./internal/Body.ts"
 import * as Declared from "./internal/Declared.vibe"
 import { isLegacyObjectModule } from "./internal/LegacyModule.ts"
 import * as ModuleClosure from "./internal/ModuleClosure.ts"
-import * as MarkdownFlow from "./MarkdownFlow.ts"
+import * as MarkdownFlow from "./MarkdownFlow.vibe"
 import * as Registry from "./Registry.ts"
-import type { DiscoveryError, RegistryError } from "./RegistryError.ts"
+import type { DiscoveryError, RegistryError } from "./RegistryError.vibe"
 
 /**
  * The delegate a descriptor runs on when it names no single flow of its own.

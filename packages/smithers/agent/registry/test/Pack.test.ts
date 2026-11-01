@@ -21,7 +21,7 @@ import { describe, expect, it } from "vitest"
 import * as Descriptor from "../src/Descriptor.ts"
 import * as Discovery from "../src/Discovery.ts"
 import * as Executable from "../src/Executable.ts"
-import * as MarkdownFlow from "../src/MarkdownFlow.ts"
+import * as MarkdownFlow from "../src/MarkdownFlow.vibe"
 import * as Pack from "../src/Pack.ts"
 import * as Registry from "../src/Registry.ts"
 
