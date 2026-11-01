@@ -1,5 +1,5 @@
 /**
- * The gate proof's stage (decision 0128 "Proof"): production's dependencies without the site, its domain or the docs,
+ * The gate proof's stage (decision 0145 "Proof"): production's dependencies without the site, its domain or the docs,
  * with ChatApi deployed as `GateHarness` (Harness.ts). Deploy it only to a `smithers-gates-*` stage, from apps/mvp:
  *
  *   alchemy deploy --stage smithers-gates-<name> worker/test/gates/alchemy.run.ts

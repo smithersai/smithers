@@ -270,7 +270,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
         ref: request.ref,
         event: request.event,
       })
-      // A job may name only a machine this deployment declared: anything else runs nothing (decision 0128).
+      // A job may name only a machine this deployment declared: anything else runs nothing (decision 0145).
       return planned._tag === "planned" &&
           planned.jobs.some((job) => job.machine !== undefined && !services.machines.includes(job.machine))
         ? { _tag: "refused", reason: "machine" } as const

@@ -1,4 +1,4 @@
-// Drives one gate on the proof stage (decision 0128 "Proof"; worker/test/gates/Harness.ts): plans the commit's
+// Drives one gate on the proof stage (decision 0145 "Proof"; worker/test/gates/Harness.ts): plans the commit's
 // .smithers/flows/gate/flow.ts with the realm `repo/Plan` uses, starts `ci/graph` through the harness door, polls the
 // run, and writes what each job did and how long the whole took.
 // usage: node --import vibelang/register worker/test/gates/drive.ts <url file> <token file> <sha> <flow.ts> <out.json>

@@ -1,5 +1,5 @@
 #!/bin/sh
-# The apps/mvp gate's steps in a gate machine's box (decision 0128; .smithers/flows/gate/flow.ts), run from the
+# The apps/mvp gate's steps in a gate machine's box (decision 0145; .smithers/flows/gate/flow.ts), run from the
 # checkout's root as the job's user, never root:
 #
 #   gate.sh install            node_modules for this checkout: none to do when pnpm-lock.yaml is the image's

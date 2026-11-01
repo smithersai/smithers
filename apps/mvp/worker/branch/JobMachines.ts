@@ -1,6 +1,6 @@
 import { Config, Effect, Option, Schema } from "effect"
 
-// The job machines a deployment declares beside its default one (decision 0128 (c), docs/features/ci.md#machines): each
+// The job machines a deployment declares beside its default one (decision 0145 (c), docs/features/ci.md#machines): each
 // is its own container class, with its own image and instance type, and its own Durable Object class
 // (worker/BranchSandboxes.ts). A branch names one in `SandboxBranch.machine`; a name the deployment didn't declare wakes
 // nothing. Today there is one, `gate`, declared only when GATE_IMAGE is set: a deployment without it has only the

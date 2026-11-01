@@ -1,5 +1,5 @@
 #!/bin/sh
-# The gate machine's entry (decision 0128, gap (d)): as root, before anything runs, /tmp becomes a tmpfs, since the
+# The gate machine's entry (decision 0145, gap (d)): as root, before anything runs, /tmp becomes a tmpfs, since the
 # container's disk is btrfs and its fsync is slow (a shard took 730 s with TMPDIR on disk, 213 s on tmpfs). Then the
 # box idles as `smithers`, as the branch sandbox's does. A mount the runtime refuses leaves /tmp on disk: slower, and the
 # step's own records show it (`findmnt /tmp`).

@@ -1,4 +1,4 @@
-// The gate proof's stage (decision 0128 "Proof"): ChatApi itself, deployed to a `smithers-gates-*` stage only, with one
+// The gate proof's stage (decision 0145 "Proof"): ChatApi itself, deployed to a `smithers-gates-*` stage only, with one
 // door of its own in front: a caller holding the harness token starts `ci/graph` on a planned gate and reads its run.
 // The stage has no GitHub App, so nothing plans the gate from a webhook or reports a status; the door stands in for
 // `repo/Run`'s plan, and every other hop (FlowExecution, ci/graph, ci/job, the gate machines, the artifacts) is the

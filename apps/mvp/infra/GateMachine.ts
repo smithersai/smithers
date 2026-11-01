@@ -1,4 +1,4 @@
-// The gate's job machine (decision 0128 (c), docs/features/ci.md#machines): its own container class, from the prebuilt
+// The gate's job machine (decision 0145 (c), docs/features/ci.md#machines): its own container class, from the prebuilt
 // gate image the deployment names by digest (GATE_IMAGE, infra/gate/Dockerfile), started by each `GateObject`
 // (worker/BranchSandboxes.ts) on GATE_INSTANCE, as `BranchSandbox` is by each `SandboxObject`. An image already in
 // Cloudflare's registry is deployed as is; Alchemy builds nothing. Declared only when GATE_IMAGE is set

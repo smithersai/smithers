@@ -1,7 +1,7 @@
 import { Context, Effect, Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 
-// A run's artifacts (decision 0128 "Artifacts", docs/features/ci.md#artifacts): a job box writes and reads them at
+// A run's artifacts (decision 0145 "Artifacts", docs/features/ci.md#artifacts): a job box writes and reads them at
 // `http://artifacts.smithers.internal/<name>`, which its own object answers (worker/BranchSandboxes.ts), as it answers
 // the forge proxy. `PUT` stores the body, `GET` streams it back, under `ci/<scope>/<name>`, where the scope is the one
 // the object's own `SandboxBranch.artifacts` names: a digest of the run (worker/flows/CiJobMachine.ts `machineOf`), so

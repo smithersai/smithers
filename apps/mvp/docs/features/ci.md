@@ -43,13 +43,13 @@ settles { job0: Result, job1: Result, … }   keyed by position; never fails
 
 - **Waves.** A job's wave is one past its latest need's; a wave starts when the one before it has settled.
 - **A need that didn't pass skips.** A job whose need failed, was cancelled or was skipped settles `skipped` with no steps and no machine, so a skip carries down the graph. A skipped job hasn't passed: the flow fails and its status names it (`Failed: build, test`).
-- **Machines by name.** `machine` is a name the deployment declared, never an image or an instance type; absent, the job runs on the default job machine. `worker/flows/CiJobMachine.ts` carries it onto the job's `SandboxBranch` as `machine`. The deployment routes each name to its container class; until it does, every job runs on the default ([decision 0128](../decisions/0128-gates-on-cloudflare-job-machines.md)).
+- **Machines by name.** `machine` is a name the deployment declared, never an image or an instance type; absent, the job runs on the default job machine. `worker/flows/CiJobMachine.ts` carries it onto the job's `SandboxBranch` as `machine`. The deployment routes each name to its container class; until it does, every job runs on the default ([decision 0145](../decisions/0145-gates-on-cloudflare-job-machines.md)).
 
 A CI job starts only from a repository's flow; no route starts one by name ([no remote door](remote-flows.md#no-remote-door)).
 
 ## Machines
 
-A deployment declares job machines beside its default one ([decision 0128](../decisions/0128-gates-on-cloudflare-job-machines.md) (c)). Each is its own container class, with its own image and instance type, and its own Durable Object class with the same implementation as `SandboxObject` (`worker/BranchSandboxes.ts`). A branch names one in `SandboxBranch.machine`; without one it runs on the default machine.
+A deployment declares job machines beside its default one ([decision 0145](../decisions/0145-gates-on-cloudflare-job-machines.md) (c)). Each is its own container class, with its own image and instance type, and its own Durable Object class with the same implementation as `SandboxObject` (`worker/BranchSandboxes.ts`). A branch names one in `SandboxBranch.machine`; without one it runs on the default machine.
 
 | Machine | Container class | Durable Object | Image | Instance type | Declared when |
 |---|---|---|---|---|---|
@@ -69,7 +69,7 @@ box request (props)      ─┘                         anything else  ─▶ Sa
 
 ## Artifacts
 
-A job box reads and writes its run's artifacts at `http://artifacts.smithers.internal/<name>` ([decision 0128](../decisions/0128-gates-on-cloudflare-job-machines.md#artifacts)). The host is an intercept, like the forge proxy's; the box's own object answers it (`worker/branch/Artifacts.ts`) from the `CiArtifacts` R2 bucket (`infra/GateMachine.ts`), declared with the gate machine. No credential enters the box.
+A job box reads and writes its run's artifacts at `http://artifacts.smithers.internal/<name>` ([decision 0145](../decisions/0145-gates-on-cloudflare-job-machines.md#artifacts)). The host is an intercept, like the forge proxy's; the box's own object answers it (`worker/branch/Artifacts.ts`) from the `CiArtifacts` R2 bucket (`infra/GateMachine.ts`), declared with the gate machine. No credential enters the box.
 
 | Request | Answer |
 |---|---|

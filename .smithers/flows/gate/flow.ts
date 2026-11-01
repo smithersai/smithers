@@ -1,4 +1,4 @@
-// The apps/mvp gate (decision 0128, ruling FLOW-14): Smithers' merge-queue check, run by the repository-flow spine on
+// The apps/mvp gate (decision 0145, ruling FLOW-14): Smithers' merge-queue check, run by the repository-flow spine on
 // Cloudflare job machines (apps/mvp/docs/features/ci.md). 16 shards of the suite at once, each on its own `gate`
 // machine at exactly the commit, then one job that merges their coverage under the suite's 100% thresholds. The steps
 // are apps/mvp/ci/gate.sh's.

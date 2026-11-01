@@ -1,4 +1,4 @@
-# The gate machine's image (decision 0128): the branch sandbox's image (infra/sandbox/Dockerfile, passed as
+# The gate machine's image (decision 0145): the branch sandbox's image (infra/sandbox/Dockerfile, passed as
 # SANDBOX_IMAGE) plus what apps/mvp's suite needs in one box with no Docker: Postgres 17 and PgBouncer from trixie,
 # Electric 1.8.1 copied from its image, Playwright's Chromium and WebKit, and /workspace holding a shallow checkout of
 # COMMIT with `node_modules` installed from its lockfile. A job's checkout fetches only what its own commit adds to
