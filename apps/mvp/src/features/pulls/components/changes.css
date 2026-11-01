@@ -2,7 +2,9 @@
 .changed-files { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
 
 /* Each file's name stays put while its diff scrolls under it. The card token keeps it opaque; nothing else covers it. */
-.changed-file { gap: 0; }
+.changed-file.changed-file { gap: 0; }
+/* The card is the diff's frame: one surface, not a box in a box. */
+.changed-file .sui-diff { margin: 0 -14px -14px; border: 0; border-radius: 0 0 var(--r-2, 10px) var(--r-2, 10px); }
 .changed-file-name {
   position: sticky;
   top: 60px;

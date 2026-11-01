@@ -6,7 +6,7 @@
 }
 
 /* The quiet way back to the list sits at its own width at the column's left. */
-.issues-screen [data-slot="page-body"] > .sui-button { justify-self: start; }
+.issues-screen [data-slot="page-body"] > .sui-button { justify-self: start; padding-inline: 0; }
 
 /* The list card's header names the filters and actions; the page header already names the repository. */
 .issues-screen .sui-issues-repo { display: none; }

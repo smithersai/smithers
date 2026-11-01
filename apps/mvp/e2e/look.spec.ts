@@ -50,5 +50,16 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
       expect(look.linkColors).not.toContain(USER_AGENT_BLUE)
       expect(look.overflow).toBeLessThanOrEqual(0)
     })
+
+    test("an issue: its back link starts at the title's left edge", async ({ page }) => {
+      requires("githubApp", "syncedRepository")
+      await page.goto(`/${syncedRepository()}/issues/1`)
+      const back = page.locator("[data-slot='page-body'] > .sui-button")
+      await expect(back).toBeVisible({ timeout: 30_000 })
+      await expect(page.locator(".sui-item-conv-title")).toBeVisible({ timeout: 30_000 })
+      const [link, title] = await Promise.all([back.boundingBox(), page.locator(".sui-item-conv-title").boundingBox()])
+      const label = await back.evaluate((button) => parseFloat(getComputedStyle(button).paddingLeft))
+      expect(link!.x + label).toBe(title!.x)
+    })
   })
 }

@@ -26,6 +26,10 @@ Proof: `e2e/look.spec.ts` (computed styles) fails 8 of 10 Runs checks on the
 2026-10-31 production build and passes 8 of 8 on the deployed one. Before and
 after shots: `~/Desktop/smithers-ui-audit/index.html`.
 
-Open: a pull request's Files tab was only seen in its syncing state; an
-unknown repository shows GitHub limit reached while the shared GitHub quota is
-spent; `CodeFileView` wraps code mid-token on a phone (`overflow: "wrap"`).
+The "stuck Syncing" note from this pass was wrong. Production loads each page in
+5 to 10 s on a cold device (0 stuck in 34 timed loads, 2026-10-31): the audit shots were
+taken mid-load, and the lanes' preview proxy never finished its shapes. The real
+defect it hid: a direct visit to a TODO rendered no repository header, because its
+route didn't open the repository.
+
+Open: `CodeFileView` wraps code mid-token on a phone (`overflow: "wrap"`).

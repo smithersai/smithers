@@ -134,7 +134,6 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
     <main className="pulls-screen" aria-label={`Pull request ${pull.number}`}><RepoHeader />
       <PageBody width="wide">
         {back}
-        {tab === "conversation" ? null : <h1 className="pull-tab-title">{pull.title} <span>#{pull.number}</span></h1>}
         <LinkTabs aria-label="Pull request">
           {tabs.map((entry) => (
             <Link
@@ -148,6 +147,7 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
             </Link>
           ))}
         </LinkTabs>
+        {tab === "conversation" ? null : <h1 className="pull-tab-title">{pull.title} <span>#{pull.number}</span></h1>}
         {tab === "conversation"
           ? <ItemConversation {...conversationProps(pull, comments ?? [], reviews ?? [], { owner, name: repo })} headerActions={header} />
           : tab === "commits"

@@ -6,7 +6,7 @@
 }
 
 /* The quiet way back to the list sits at its own width at the column's left. */
-.pulls-screen [data-slot="page-body"] > .sui-button { justify-self: start; }
+.pulls-screen [data-slot="page-body"] > .sui-button { justify-self: start; padding-inline: 0; }
 
 /* The list card's header names the filters and actions; the page header already names the repository. */
 .pulls-screen .sui-issues-repo { display: none; }
@@ -25,7 +25,9 @@
 .pull-merge { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
 .pull-refs code { font-family: var(--sui-font-mono, monospace); overflow-wrap: anywhere; }
 
-.pull-tab-title { margin: 0; overflow-wrap: anywhere; }
+/* The same title the conversation tab shows, in the same place under the tabs. */
+.pull-tab-title { margin: 0; font-size: 20px; font-weight: 650; line-height: 1.3; overflow-wrap: anywhere; }
+.pull-tab-title span { font-weight: 400; opacity: 0.65; }
 
 .pulls-screen .list-search-tools { display: flex; align-items: center; gap: 0.5rem; }
 .pulls-screen .list-search-tools input { flex: 1; min-width: 0; }
