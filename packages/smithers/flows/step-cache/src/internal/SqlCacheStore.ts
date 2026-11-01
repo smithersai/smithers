@@ -21,7 +21,7 @@ import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
 import type { Service } from "../CacheStore.ts"
-import * as CacheStoreMetrics from "../CacheStoreMetrics.ts"
+import * as CacheStoreMetrics from "../CacheStoreMetrics.vibe"
 import {
   encodeCanonical,
   jsonLimits,

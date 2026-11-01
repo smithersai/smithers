@@ -39,7 +39,10 @@
     "./internal/*": null,
     "./*/index": null,
     "./CacheStore": "./src/CacheStore.ts",
-    "./CacheStoreMetrics": "./src/CacheStoreMetrics.ts",
+    "./CacheStoreMetrics": {
+      "types": "./src/CacheStoreMetrics.d.vibe.ts",
+      "default": "./src/CacheStoreMetrics.vibe"
+    },
     "./CombinedCacheStore": "./src/CombinedCacheStore.ts",
     "./Migrations": "./src/Migrations.ts",
     "./RemoteCacheStore": "./src/RemoteCacheStore.ts",

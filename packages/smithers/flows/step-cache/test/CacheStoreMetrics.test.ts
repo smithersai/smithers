@@ -11,7 +11,7 @@ import * as Option from "effect/Option"
 import type * as SqlClient from "effect/sql/SqlClient"
 import { CacheStore } from "../src/CacheStore.ts"
 import * as CacheStoreLive from "../src/CacheStore.ts"
-import * as CacheStoreMetrics from "../src/CacheStoreMetrics.ts"
+import * as CacheStoreMetrics from "../src/CacheStoreMetrics.vibe"
 import * as CombinedCacheStore from "../src/CombinedCacheStore.ts"
 import * as Migrations from "../src/Migrations.ts"
 
