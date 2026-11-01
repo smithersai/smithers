@@ -350,12 +350,12 @@ The scratch repository is the test account's own, never a `smithersai` one, with
 
 Every e2e test, locally and against a deployment, fails on each of these that its browsers report and it didn't declare (`e2e/watch.ts`, `e2e/problems.ts`):
 
-- a response of 500 or above from the app's origin, to any request;
+- a response of 500 or above from the app's origin, to any request. The one allowance is a `503` with `retry-after` to a `GET` of a shape, up to two per shape per test: ElectricRuntime answers those while its container is replaced, about 5 minutes after any upload, and the device retries. A third fails the test, so a sustained outage still does;
 - a failed `/api/` request, such as a reset connection, an empty response or an HTTP/2 error. A request the page cancelled itself (`net::ERR_ABORTED`: a navigation, a closed page, an interrupted fetch, the telemetry exporter giving up after 10 s) doesn't count, and neither does one an offline device couldn't send;
 - a console error, including Chrome's line about a refused response, such as a 401. Electric's 409 on a shape, which tells its client to start the shape again, doesn't count, and neither does a failed load from a server on this machine that isn't the app: a test fixture an earlier test stopped;
 - an uncaught page error.
 
-The check watches every browser context a test opens: the default page's, each device's (`e2e/devices.ts`) and any the test opens itself. A failing test's `browser.log` ends with the list. Each problem shows its status, method and path, with the query's parameter names but no values, then its count, marked `declared` or `UNDECLARED`.
+The check watches every browser context a test opens: the default page's, each device's (`e2e/devices.ts`) and any the test opens itself. A failing test's `browser.log` ends with the list. Each problem shows its status, method and path, with the query's parameter names but no values, then its count, marked `declared`, `retried` or `UNDECLARED`.
 
 WebKit also emits a native `Fetch API cannot load … due to access control checks` diagnostic when navigation
 discards a document before its fetch reaches the network. Playwright delivers it as `pageerror` or a console error despite no window

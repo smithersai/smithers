@@ -1,7 +1,8 @@
 // What fails every e2e test unless the test declares it (docs/infrastructure.md#server-and-console-errors): a response
 // of 500 or above from the app's origin, a failed `/api/` request, a console error and a page error, from every page of
 // every browser context the test opened. On 2026-10-25 smithers.sh answered its shapes `500` 60 to 600 times an hour
-// and no spec failed: the browser retried each shape and the specs checked only what rendered in the end.
+// and no spec failed: the browser retried each shape and the specs checked only what rendered in the end. The one
+// allowance is `SHAPE_RETRIES`: Electric's container being replaced under a shape, which a test can overlap by chance.
 //
 // This module is the pure part: what each thing a browser reports counts as, how a test declares the errors it causes
 // on purpose, and the list a failing test shows. e2e/watch.ts feeds it from Playwright's events.
@@ -12,19 +13,26 @@ export const EXPECTED_SERVER_ERROR = "expected server error"
 /** The annotation a test that causes a console or page error on purpose sets: text the error contains. */
 export const EXPECTED_CONSOLE_ERROR = "expected console error"
 
+/**
+ * How many `503`s with `retry-after` one shape may answer a test's `GET`s: ElectricRuntime answers those while its
+ * container is replaced, about 5 minutes after any upload (infra/ElectricAwake.ts), and the device retries. One swap
+ * is one per held shape. A third is an outage, the thing this module exists to catch, and fails as any 5xx does.
+ */
+export const SHAPE_RETRIES = 2
+
 /** What a declaration names: a response status, or `failed` for a request that got no response. */
 export type Status = number | "failed"
 
 /** What a browser reported, as plain data. */
 export type Observation =
-  | { readonly kind: "response"; readonly method: string; readonly url: string; readonly status: number }
+  | { readonly kind: "response"; readonly method: string; readonly url: string; readonly status: number; readonly retryAfter?: string | undefined }
   | { readonly kind: "failed"; readonly method: string; readonly url: string; readonly error: string }
   | { readonly kind: "console"; readonly text: string; readonly url: string | undefined }
   | { readonly kind: "page"; readonly text: string; readonly name?: string }
 
 /** A problem: its line in the list, and what a declaration matches it by. */
 export type Problem =
-  | { readonly kind: "server"; readonly status: Status; readonly path: string; readonly line: string }
+  | { readonly kind: "server"; readonly status: Status; readonly path: string; readonly line: string; readonly shape?: string }
   | { readonly kind: "console"; readonly line: string }
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi
@@ -65,6 +73,12 @@ const at = (origin: string, url: string | undefined): url is string => {
 
 const api = (url: string) => new URL(url).pathname.startsWith("/api/")
 
+const shapePath = (url: string) => new URL(url).pathname.startsWith("/api/shapes/")
+
+/** A shape's answer to come back shortly, which `SHAPE_RETRIES` bounds, and not any other 5xx. */
+const shapeRetry = ({ method, retryAfter, status, url }: Extract<Observation, { kind: "response" }>) =>
+  status === 503 && method === "GET" && retryAfter !== undefined && shapePath(url)
+
 /**
  * A server on this machine that isn't the app: a fixture an earlier test served and stopped (e2e/web-page.spec.ts),
  * whose page stays in the home conversation every local test shares. Nothing in a deployment points at one.
@@ -101,7 +115,10 @@ export const problemOf = (origin: string, observation: Observation): Problem | u
     case "response": {
       if (observation.status < 500 || !at(origin, observation.url)) return undefined
       const path = pathOf(observation.url)
-      return { kind: "server", status: observation.status, path, line: `${observation.status} ${observation.method} ${path}` }
+      const line = `${observation.status} ${observation.method} ${path}`
+      return shapeRetry(observation)
+        ? { kind: "server", status: observation.status, path, line: `${line} retry-after`, shape: pathnameOf(path) }
+        : { kind: "server", status: observation.status, path, line }
     }
     case "failed": {
       const { error } = observation
@@ -116,7 +133,7 @@ export const problemOf = (origin: string, observation: Observation): Problem | u
         // Chrome logs every refused response. A 5xx from the app is already on the list as its response, and a 409 on a
         // shape is Electric's "must refetch", which its client answers by starting the shape again.
         if (code >= 500 && at(origin, observation.url)) return undefined
-        if (code === 409 && at(origin, observation.url) && new URL(observation.url).pathname.startsWith("/api/shapes/")) return undefined
+        if (code === 409 && at(origin, observation.url) && shapePath(observation.url)) return undefined
         const path = placeOf(origin, observation.url)
         return { kind: "server", status: code, path, line: `console ${code} ${path}: Failed to load resource` }
       }
@@ -189,8 +206,8 @@ export const declares = (declaration: Declaration, problem: Problem): boolean =>
     ? problem.kind === "server" && problem.status === declaration.status && declaration.path.test(pathnameOf(problem.path))
     : problem.kind === "console" && declaration.text !== "" && problem.line.includes(declaration.text)
 
-/** One line of the list: the problem, how many times it happened, and whether the test declared it. */
-export type Counted = { readonly line: string; readonly count: number; readonly declared: boolean }
+/** One line of the list: the problem, how many times it happened, and whether the test declared it or `SHAPE_RETRIES` excuses it. */
+export type Counted = { readonly line: string; readonly count: number; readonly declared: boolean; readonly retried: boolean }
 
 /** Every problem a test's browsers reported, counted by its line, in the order each first happened. */
 export class Problems {
@@ -210,23 +227,28 @@ export class Problems {
   /** Each problem, counted, and whether one of the test's annotations declares it. */
   list(annotations: ReadonlyArray<Annotation>): Array<Counted> {
     const declarations = declarationsOf(annotations)
-    return [...this.counts.values()].map(({ problem, count }) => ({
+    const counted = [...this.counts.values()]
+    // A shape's allowance spans its lines: the same shape's requests can name different query parameters.
+    const retries = (shape: string) => counted.reduce((total, { problem, count }) =>
+      problem.kind === "server" && problem.shape === shape ? total + count : total, 0)
+    return counted.map(({ problem, count }) => ({
       line: problem.line,
       count,
       declared: declarations.some((declaration) => declares(declaration, problem)),
+      retried: problem.kind === "server" && problem.shape !== undefined && retries(problem.shape) <= SHAPE_RETRIES,
     }))
   }
 
   /** The problems the test didn't declare, as `<line> ×<count>`: a passing test has none. */
   undeclared(annotations: ReadonlyArray<Annotation>): Array<string> {
-    return this.list(annotations).filter((each) => !each.declared).map((each) => `${each.line} ×${each.count}`)
+    return this.list(annotations).filter((each) => !each.declared && !each.retried).map((each) => `${each.line} ×${each.count}`)
   }
 
   /** The list for a failing test's browser.log: every problem, declared or not. */
   report(annotations: ReadonlyArray<Annotation>): Array<string> {
     const list = this.list(annotations)
     if (list.length === 0) return ["problems: none"]
-    return ["problems (e2e/problems.ts):", ...list.map((each) => `  ${each.declared ? "declared" : "UNDECLARED"} ${each.line} ×${each.count}`)]
+    return ["problems (e2e/problems.ts):", ...list.map((each) => `  ${each.declared ? "declared" : each.retried ? "retried" : "UNDECLARED"} ${each.line} ×${each.count}`)]
   }
 }
 

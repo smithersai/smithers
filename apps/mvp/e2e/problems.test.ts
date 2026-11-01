@@ -18,7 +18,7 @@ import {
 
 const ORIGIN = "https://smithers.example"
 const app = (path: string) => `${ORIGIN}${path}`
-const response = (status: number, url = app("/api/shapes/items?offset=-1&handle=h1"), method = "GET"): Observation => ({ kind: "response", method, url, status })
+const response = (status: number, url = app("/api/shapes/items?offset=-1&handle=h1"), method = "GET"): Extract<Observation, { kind: "response" }> => ({ kind: "response", method, url, status })
 const failed = (error: string, overrides: Partial<Extract<Observation, { kind: "failed" }>> = {}): Observation => ({
   kind: "failed",
   method: "GET",
@@ -205,6 +205,57 @@ describe("environmentAnnotations", () => {
 })
 
 describe("Problems", () => {
+  describe("a shape's retry answer", () => {
+    const shape = (name: string, query = "live=true&handle=h&offset=1_0") => app(`/api/shapes/${name}?${query}`)
+    const retry = (name = "items", query?: string): Observation => ({ ...response(503, shape(name, query)), retryAfter: "5" })
+    const noted = (...observations: ReadonlyArray<Observation>) => {
+      const problems = new Problems(ORIGIN)
+      for (const observation of observations) problems.note(observation)
+      return problems
+    }
+
+    it("passes for one container swap: one 503 on each shape, or two on one", () => {
+      expect(noted(retry("items"), retry("pulls"), retry("todos")).undeclared([])).toEqual([])
+      expect(noted(retry(), retry()).undeclared([])).toEqual([])
+    })
+
+    it("fails a third on one shape, however the requests' queries differ", () => {
+      const problems = noted(retry("items"), retry("items", "offset=-1"), retry("items"), retry("pulls"))
+      expect(problems.undeclared([])).toEqual([
+        "503 GET /api/shapes/items?handle&live&offset retry-after ×2",
+        "503 GET /api/shapes/items?offset retry-after ×1",
+      ])
+    })
+
+    it("shows in a failing test's list as retried until it runs out", () => {
+      expect(noted(retry()).report([])).toEqual([
+        "problems (e2e/problems.ts):",
+        "  retried 503 GET /api/shapes/items?handle&live&offset retry-after ×1",
+      ])
+      expect(noted(retry(), retry(), retry()).report([])).toEqual([
+        "problems (e2e/problems.ts):",
+        "  UNDECLARED 503 GET /api/shapes/items?handle&live&offset retry-after ×3",
+      ])
+    })
+
+    it.each<[string, Observation]>([
+      ["a 503 without retry-after", response(503, shape("items"))],
+      ["a 500 with retry-after", { ...response(500, shape("items")), retryAfter: "5" }],
+      ["a 503 on another API", { ...response(503, app("/api/auth/session")), retryAfter: "5" }],
+      ["a POST to a shape", { ...response(503, shape("items"), "POST"), retryAfter: "5" }],
+    ])("doesn't excuse %s", (_, observation) => {
+      expect(noted(observation).undeclared([])).toHaveLength(1)
+    })
+
+    it("still answers to a declaration past its allowance", () => {
+      expect(noted(retry(), retry(), retry()).undeclared([serverErrorAnnotation(503, "/api/shapes/*")])).toEqual([])
+    })
+
+    it("isn't a problem from another origin", () => {
+      expect(noted({ ...response(503, "https://other.example/api/shapes/items"), retryAfter: "5" }).report([])).toEqual(["problems: none"])
+    })
+  })
+
   it("counts each problem by its line, in the order each first happened, and ignores what isn't one", () => {
     const problems = new Problems(ORIGIN)
     problems.note(response(500))
@@ -212,8 +263,8 @@ describe("Problems", () => {
     problems.note({ kind: "page", text: "boom" })
     problems.note(response(500, app("/api/shapes/items?offset=0_0&handle=h2")))
     expect(problems.list([])).toEqual([
-      { line: "500 GET /api/shapes/items?handle&offset", count: 2, declared: false },
-      { line: "page error: boom", count: 1, declared: false },
+      { line: "500 GET /api/shapes/items?handle&offset", count: 2, declared: false, retried: false },
+      { line: "page error: boom", count: 1, declared: false, retried: false },
     ])
   })
 

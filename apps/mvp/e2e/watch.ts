@@ -61,7 +61,7 @@ export class Watched extends Problems {
       if (url.origin === this.origin && !request.isNavigationRequest()) trace.history.start(trace.id, request.url(), Date.now())
     })
     context.on("response", response => {
-      this.note({ kind: "response", method: response.request().method(), url: response.url(), status: response.status() })
+      this.note({ kind: "response", method: response.request().method(), url: response.url(), status: response.status(), retryAfter: response.headers()["retry-after"] })
       const trace = this.trace(response.request())
       trace?.history.response(trace.id, response.status())
     })
