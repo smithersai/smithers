@@ -42,7 +42,7 @@ const securityReview = Smithers.SecurityReview({
         "FixtureStore.makeFile writing the fixture or its .journal with default permissions instead of owner-only mode.",
         "CachedModel or RecordingModel recording a call whose request carries headers, credentials, or provider options beyond the projected ModelRequest fields."
       ],
-      paths: ["src/Fixture.ts", "src/RecordingModel.ts", "src/CachedModel.ts", "src/FixtureStore.ts"]
+      paths: ["src/Fixture.ts", "src/RecordingModel.ts", "src/CachedModel.vibe", "src/FixtureStore.ts"]
     },
     {
       id: "fixture-store-path-safety",
@@ -81,7 +81,7 @@ const securityReview = Smithers.SecurityReview({
         "canonicalRequestDigest omitting a request field such as tools, params, toolChoice, or serverTools, so two different requests share a recording.",
         "A replayed recorded failure that is not stamped with modelErrorTag and therefore bypasses the caller's quota or refusal handling."
       ],
-      paths: ["src/RecordedModel.ts", "src/CachedModel.ts", "src/Fixture.ts", "src/ModelLike.ts"]
+      paths: ["src/RecordedModel.ts", "src/CachedModel.vibe", "src/Fixture.ts", "src/ModelLike.ts"]
     },
     {
       id: "test-host-isolation",
