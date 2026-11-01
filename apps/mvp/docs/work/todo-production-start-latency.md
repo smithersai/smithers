@@ -54,8 +54,34 @@ claim. A lone read costs four: `BEGIN`, `set_config('search_path')`, the read, `
 records consecutive single-write journal events 130 to 260 ms apart (median), so a round trip
 costs an estimated 15 to 30 ms there; not measured directly.
 
-Fixed: a child's object is started as soon as its admission commits (`WakeBus.Admitted`), not
-after the parent's drive parks and routes; it saves the "child admitted to parent parked" stage.
-Next, by size: fold `BEGIN` and `set_config` into one round trip (one of every four to seven);
-read each run row once per alarm instead of five times; insert journal events without a prior
-`MAX(seq)` read. At 20 ms a round trip, the 3 s goal allows about 150, roughly a tenth of today's.
+Fixed, three commits: a child's object starts as soon as its admission commits (`WakeBus.Admitted`), not after
+the parent's drive parks and routes; an alarm reads its run's row once for what never changes
+(`EngineStore.DriveOptions.row`); a durable journal write allocates its sequence in its `INSERT` instead of reading
+`MAX(seq) + 1` first. Round trips per alarm of the fixture flows, schema already migrated:
+
+| Alarm                     | Before | After |
+| ------------------------- | -----: | ----: |
+| parent, admit to park     |    301 |   285 |
+| child, admit to settle    |    301 |   276 |
+| parent, child's result    |    301 |   277 |
+
+Not done: `BEGIN` and `set_config('search_path')` in one round trip. Hyperdrive's handling of a multi-statement
+simple query or a pipelined extended-protocol batch cannot be proven from here. A per-connection `search_path` is
+unsafe behind transaction pooling (Hyperdrive, and the PgBouncer target the suites run): a session `SET` stays on the
+server connection for the next client, and this client's next transaction may land on another. Schema-qualifying
+every statement removes the need, but touches every store, and one missed name silently reads another schema
+(the reason `PostgresDatabase.ts` gives for `SET LOCAL`). It is the largest cut left: about 80 of the child alarm's
+276 round trips (each transaction's `set_config`, and each lone read's `BEGIN` and `COMMIT`).
+
+Projection with real agents (6 to 8 s after the claim): p50 about 27 to 29 s, p95 about 38 to 40 s, against the
+design's 30 s p95. Schema-qualified SQL would take about 7 s more off p95.
+
+The 3 s goal needs engine state in the execution's Durable Object: the journal, run row, attempts, clocks and
+completions in the object's own SQLite, at under a millisecond a write, with Postgres keeping projections written
+from an outbox (the run catalog, `agent_runs`, the change feed). A start would cost about 40 local writes, two object
+hops and one Postgres transaction for the job. It breaks what one Postgres transaction now makes atomic across runs:
+a child's admission, parent edge, spawn record and inherited cancellation; cycle detection over the global edge
+table; deferred completions and wakes between runs, the step cache and the durable queue; the store-wide sweeps and
+retention queries; `RunInspection` and `/api/remote-runs` reads, and Electric shapes, which would lag the outbox; and
+the SQLite and Postgres parity the engine suites prove. Even then a real agent's spawn after the claim takes 6 to 8 s,
+so 3 s can only bound commit to claim.
