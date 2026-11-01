@@ -15,7 +15,7 @@
  */
 
 import * as Schema from "effect/Schema"
-import * as Effects from "./Effects.ts"
+import * as Effects from "./Effects.vibe"
 
 /**
  * A reference to one declared input of a node: a value hashed inline, or the

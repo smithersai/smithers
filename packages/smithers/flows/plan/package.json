@@ -40,7 +40,10 @@
     "./Planned": "./src/Planned.ts",
     "./internal/*": null,
     "./*/index": null,
-    "./Effects": "./src/Effects.ts",
+    "./Effects": {
+      "types": "./.vibe/declarations/src/Effects.d.vibe.ts",
+      "default": "./src/Effects.vibe"
+    },
     "./CachePolicy": "./src/CachePolicy.vibe",
     "./Repetition": "./src/Repetition.vibe",
     "./FileSet": "./src/FileSet.vibe",
