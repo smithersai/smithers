@@ -339,6 +339,21 @@ test("each mark sits at its message's place, sized by its share, and the band ma
   } finally { driver.dispose(); host.remove(); }
 });
 
+test("the band reaches the screen's bottom when the transcript ends below its last message", async () => {
+  const { timelineDriver } = await import("../src/chat/timelineDriver");
+  const { host, viewport, rail, box, mount } = minimap([0, 1].map(row => rowHtml(row)).join(""));
+  mount("t-0", 0, 400); mount("t-1", 400, 700);
+  Object.defineProperty(viewport, "scrollHeight", { value: 900 });
+  const driver = timelineDriver(rail, box);
+  try {
+    driver.sync({ ids: ["t-0", "t-1"], asks: [], levels: 1, spans: [], arcs: [] });
+    viewport.scrollTop = 700; viewport.dispatchEvent(new Event("scroll")); await frame();
+    const thumb = box.querySelector<HTMLElement>(".sui-tl-thumb")!;
+    expect(parseFloat(thumb.style.top) + parseFloat(thumb.style.height)).toBeCloseTo(300);
+    expect(box.querySelector<HTMLElement>('[data-row="1"]')!.style.height).toBe("100px");
+  } finally { driver.dispose(); host.remove(); }
+});
+
 test("a pushed label keeps a leader to its mark, and a label with no room waits for hover", async () => {
   const { timelineDriver } = await import("../src/chat/timelineDriver");
   const long = "Long enough to wrap onto a second line of the label ".repeat(3);

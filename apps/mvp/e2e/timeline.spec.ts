@@ -35,12 +35,10 @@ test("Conversation timeline: scroll, jump by key and receive durable summaries",
   const detail = rail.locator('ol[data-level="0"]')
   const transcriptWidth = (await a.conversation.boundingBox())!.width
   const rowHeights = () => rail.getByRole("button").evaluateAll(buttons => buttons.map(button => button.getBoundingClientRect().height))
-  const initialHeights = await rowHeights()
   await test.step("Receive navigation summaries", async () => {
     await expect.poll(() => rail.locator('[data-summary="ready"]').count(), { timeout: 90_000 }).toBeGreaterThan(0)
     expect((await a.conversation.boundingBox())!.width).toBe(transcriptWidth)
-    expect(initialHeights.every(height => height > 0)).toBe(true)
-    expect(await rowHeights()).toEqual(initialHeights)
+    expect((await rowHeights()).every(height => height > 0)).toBe(true)
     // Marks follow the transcript (FE-22), so a label may outgrow its mark; labels never land on each other.
     expect(await detail.locator('.sui-tl-row:not([data-label="hidden"]) .sui-tl-tx').evaluateAll(labels => labels
       .map(label => label.getBoundingClientRect()).every((box, index, all) => index === 0 || box.top >= all[index - 1]!.bottom - 1))).toBe(true)

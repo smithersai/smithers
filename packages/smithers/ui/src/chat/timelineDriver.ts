@@ -93,7 +93,8 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement, scrollByRead
     boxes.forEach((item, index) => {
       const next = boxes[index + 1], height = item.bottom - item.top, id = model.ids[item.row]!;
       const gap = known.get(id) ?? timelineEstimate(0);
-      const advance = next?.row === item.row + 1 ? next.top - item.top : item.row === model.ids.length - 1 ? height : height + gap.advance - gap.height;
+      // The last entry's advance runs to the transcript's end, so the band still matches the screen at the bottom.
+      const advance = next?.row === item.row + 1 ? next.top - item.top : item.row === model.ids.length - 1 ? Math.max(height, (viewport?.scrollHeight ?? 0) - item.top) : height + gap.advance - gap.height;
       known.set(id, { height, advance });
     });
     scaleUp();

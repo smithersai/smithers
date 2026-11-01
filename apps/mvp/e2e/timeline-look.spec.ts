@@ -274,7 +274,6 @@ test("Timeline: phases read as what happened, levels arrive, and hover adds deta
 
 // A real conversation of mixed lengths: each mark at its message's place in the transcript (FE-22).
 const LONG = Array.from({ length: 60 }, (_, line) => `Line ${line + 1} of the long answer: the checkout suite passed on the branch and the login redirect stayed green.`).join("\n\n")
-const SHOTS = `${process.env.HOME}/Desktop/smithers-mvp/timeline`
 
 test("Timeline: marks sit where their messages are, the band matches the screen, and phase titles read at every width", async ({ devices, request }) => {
   test.setTimeout(360_000)
@@ -315,7 +314,7 @@ test("Timeline: marks sit where their messages are, the band matches the screen,
       expect(Math.max(...seen.map(mark => mark.height))).toBeGreaterThan(Math.min(...seen.map(mark => mark.height)) * 4)
       const band = await rail(a.page).locator(".sui-tl-thumb").evaluate(el => el.getBoundingClientRect().height)
       const screen = await viewport.evaluate(el => el.clientHeight)
-      expect(Math.abs(band - Math.max(6, screen * scale))).toBeLessThan(screen * scale * .2 + 3)
+      expect(Math.abs(band - Math.max(6, screen * scale))).toBeLessThan(4)
     }).toPass({ timeout: 15_000 })
     const titles = await rail(a.page).locator('ol[data-level="1"] .sui-tl-tx').evaluateAll(spans => spans.map(span => ({ text: span.textContent, width: span.clientWidth, needed: span.scrollWidth })))
     expect(titles.length).toBeGreaterThan(1)
@@ -328,12 +327,18 @@ test("Timeline: marks sit where their messages are, the band matches the screen,
       await a.page.evaluate(wanted => { document.documentElement.dataset.theme = wanted }, theme)
       await a.page.waitForTimeout(400)
       await a.page.screenshot({ path: `test-results/timeline-look/spacing-${size.width}x${size.height}-${theme}.png` })
-      await a.page.screenshot({ path: `${SHOTS}/spacing-${size.width}x${size.height}-${theme}.png` })
     }
   })
   await test.step("A long answer's mark jumps to it", async () => {
-    const tallest = await row.evaluateAll(buttons => buttons.map(button => button.getBoundingClientRect().height).reduce((best, height, index, all) => height > all[best]! ? index : best, 0))
-    await row.nth(tallest).locator(".sui-tl-mk").click({ force: true })
+    // Off-window rows keep their place on the scale, clipped: only one the rail shows can be clicked.
+    const tallest = await row.evaluateAll(buttons => {
+      const clip = buttons[0]!.closest(".sui-tl-clip")!.getBoundingClientRect()
+      const shown = buttons.map((button, index) => ({ box: button.getBoundingClientRect(), index })).filter(({ box }) => box.top >= clip.top - 1 && box.bottom <= clip.bottom + 1)
+      return shown.reduce((best, item) => item.box.height > best.box.height ? item : best).index
+    })
+    await viewport.evaluate(el => { el.scrollTop = 0 })
+    await a.page.waitForTimeout(600)
+    await row.nth(tallest).locator(".sui-tl-mk").click()
     await expect(a.page.locator(`[id="${await row.nth(tallest).getAttribute("aria-controls")}"]`)).toBeInViewport()
   })
 })

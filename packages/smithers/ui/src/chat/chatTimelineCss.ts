@@ -66,7 +66,7 @@ export const chatTimelineCss = `
 .sui-tl-sms{position:absolute;right:4px;top:0;bottom:0;width:3px}
 .sui-tl-sm{position:absolute;left:0;width:3px;border-radius:2px;background:color-mix(in srgb,var(--sui-tl-answer) var(--q-mk),var(--sui-tl-bg));transition:background-color .15s}
 .sui-tl-sm[data-in]{background:color-mix(in srgb,var(--sui-tl-answer) var(--q-mk-in),var(--sui-tl-bg))}
-.sui-tl-blk .sui-tl-tx{position:absolute;left:8px;right:10px;top:0;font-size:10px;line-height:12px;overflow-wrap:break-word;hyphens:auto}
+.sui-tl-blk .sui-tl-tx{position:absolute;left:8px;right:10px;top:0;font-size:10px;line-height:12px;overflow-wrap:break-word}
 .sui-tl-blk[data-in] .sui-tl-tx{color:var(--q-tx-in)}
 .sui-tl-lv[data-strip] .sui-tl-blk .sui-tl-tx{display:none}
 .sui-tl-lens{position:absolute;right:0;width:11px;box-sizing:border-box;border:1px solid color-mix(in srgb,var(--sui-tl-text) var(--q-line),transparent);border-radius:6px;cursor:grab;z-index:2;transition:border-color .15s}
