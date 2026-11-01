@@ -1,6 +1,6 @@
 import { Context, Option } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Annotations from "../src/Annotations.ts"
+import * as Annotations from "../src/Annotations.vibe"
 import * as Placement from "../src/Placement.ts"
 
 describe("Annotations", () => {

@@ -19,12 +19,12 @@
 import type * as Duration from "effect/Duration"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
-import * as Annotations from "./Annotations.ts"
+import * as Annotations from "./Annotations.vibe"
 import * as Effects from "./Effects.ts"
 import * as Flow from "./Flow.ts"
-import { Budget, SandboxSelection } from "./internal/Limits.ts"
-import { build } from "./internal/Signature.ts"
-import * as skillFrontmatter from "./internal/skillFrontmatter.ts"
+import { Budget, SandboxSelection } from "./internal/Limits.vibe"
+import { build } from "./internal/Signature.vibe"
+import * as skillFrontmatter from "./internal/skillFrontmatter.vibe"
 import * as Placement from "./Placement.ts"
 
 /**
@@ -32,7 +32,7 @@ import * as Placement from "./Placement.ts"
  * @category parsing
  * @since 1.0.0
  */
-export { split as splitFrontmatter } from "./internal/skillFrontmatter.ts"
+export { split as splitFrontmatter } from "./internal/skillFrontmatter.vibe"
 
 const input = Schema.Struct({ args: Schema.String })
 const output = Schema.String
@@ -101,7 +101,7 @@ export interface MarkdownFrontmatter {
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export { BudgetCeiling } from "./internal/Limits.ts"
+export { BudgetCeiling } from "./internal/Limits.vibe"
 
 /**
  * A positive, finite dollar ceiling. Dollars are divisible, so `0.5` is fifty
@@ -110,7 +110,7 @@ export { BudgetCeiling } from "./internal/Limits.ts"
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export { UsdCeiling } from "./internal/Limits.ts"
+export { UsdCeiling } from "./internal/Limits.vibe"
 
 /**
  * What a run does when a model call would exceed one of its ceilings: `fail`
@@ -121,7 +121,7 @@ export { UsdCeiling } from "./internal/Limits.ts"
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export { BudgetOnExceeded } from "./internal/Limits.ts"
+export { BudgetOnExceeded } from "./internal/Limits.vibe"
 
 /**
  * The tokens, milliseconds and dollars one run asks a control plane to
@@ -132,7 +132,7 @@ export { BudgetOnExceeded } from "./internal/Limits.ts"
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export { Budget } from "./internal/Limits.ts"
+export { Budget } from "./internal/Limits.vibe"
 
 /**
  * The sandbox providers a flow may name, one per `@smthrs/sandbox` provider
@@ -141,7 +141,7 @@ export { Budget } from "./internal/Limits.ts"
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export { SandboxProvider } from "./internal/Limits.ts"
+export { SandboxProvider } from "./internal/Limits.vibe"
 
 /**
  * The sandbox a flow selects: the provider, plus the neutral network policy
@@ -151,7 +151,7 @@ export { SandboxProvider } from "./internal/Limits.ts"
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export { SandboxSelection } from "./internal/Limits.ts"
+export { SandboxSelection } from "./internal/Limits.vibe"
 
 /**
  * Agent Skills frontmatter that passed {@link validateSkillFrontmatter}.

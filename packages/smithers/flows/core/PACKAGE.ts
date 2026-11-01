@@ -44,7 +44,7 @@ const securityReview = Smithers.SecurityReview({
         "An exception or parser message that is returned without the catch or the summarizeIssue truncation, so frontmatter source text reaches a caller log.",
         "split fence regexes that can backtrack superlinearly on a long document with no closing ---."
       ],
-      paths: ["src/internal/skillFrontmatter.ts", "src/Markdown.ts"]
+      paths: ["src/internal/skillFrontmatter.vibe", "src/Markdown.ts"]
     },
     {
       id: "skill-frontmatter-validation",
@@ -82,7 +82,7 @@ const securityReview = Smithers.SecurityReview({
         "Effects.sealed keeping a declared write set while setting tier \"sealed\", so a side-effecting flow's result is content-shared across runs.",
         "annotate copying Durable.Capabilities, Annotations.Effects, or Annotations.Placement from a caller-supplied context without the flow author opting in."
       ],
-      paths: ["src/Flow.ts", "src/internal/Signature.ts", "src/Annotations.ts"]
+      paths: ["src/Flow.ts", "src/internal/Signature.vibe", "src/Annotations.vibe"]
     },
     {
       id: "identity-digest-stability",
@@ -94,7 +94,7 @@ const securityReview = Smithers.SecurityReview({
         "Digest.canonical or Digest.digest diverging from @smthrs/crypto digestSync or RFC 8785 canonical bytes.",
         "KeyMaterial placing nodeId or other graph-local names into hashed material."
       ],
-      paths: ["src/Flow.ts", "src/internal/Signature.ts", "src/Digest.ts", "src/KeyMaterial.ts"]
+      paths: ["src/Flow.ts", "src/internal/Signature.vibe", "src/Digest.vibe", "src/KeyMaterial.ts"]
     }
   ]
 })
