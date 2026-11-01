@@ -96,6 +96,8 @@ Every page held 11 to 15 shapes, counted from the shape URLs each page requested
 
 ### Tests
 
+The mini farm sets `TEST_ELECTRIC_PORT` together with `ELECTRIC_URL` when a combined unit/e2e command selects a private slot database. `TestDatabase` fixes shape traffic to that local test port; leaving it unset sends shapes to the shared Electric and returns 400 for tables created in the slot database. `db/TestEndpoints.test.ts` checks the running farm selects matching endpoints. Remote-run shape assertions expose Electric’s 400 body and its protocol/correlation headers through `worker/test/shapeResponse.ts`; request parameters and credential headers are omitted.
+
 Every fixture schema uses `<prefix>_<epoch-seconds>_<32 hex>` (at most 63 bytes) from the shared test-schema helper. Once at Vitest startup, the local-fixture-only reaper drops at most 16 matching schemas older than two hours (three times the farm’s 40-minute run cap), skipping schemas with relation locks, including unnamed flow connections. Concurrent reapers use a nonblocking advisory lock; drops use a 100 ms lock timeout, statements 400 ms, and the sweep eight seconds. Cleanup failures log and never fail the run; legacy names, `public`, `smithers_flows` and younger schemas are untouched. Clean scope exits still drop their own schemas.
 
 ChatApi's tests (`worker/`, `db/`) use the compose Postgres and Electric and nothing else (`db/TestDatabase.ts`):

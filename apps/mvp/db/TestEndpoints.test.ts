@@ -71,3 +71,14 @@ test.each([
   expect(String(failure)).not.toContain("owner")
   expect(String(failure)).not.toContain(query)
 })
+
+// In a combined unit/e2e farm command, SQL uses the slot database. Shapes must use that slot's Electric too.
+test("the running farm selects the same Electric port for app and test fixtures", async () => {
+  const url = new URL(await Effect.runPromise(TestDatabase.electricUrl))
+  const expected = process.env.FARM_ELECTRIC_PORT ?? process.env.TEST_ELECTRIC_PORT ?? "30001"
+  expect(url.port).toBe(expected)
+  if (process.env.FARM_ELECTRIC_PORT !== undefined) {
+    expect(new URL(process.env.ELECTRIC_URL!).port).toBe(expected)
+    expect((await Effect.runPromise(TestDatabase.serverUrl)).pathname).toBe(`/smithers_farm_slot${process.env.FARM_SLOT}`)
+  }
+})

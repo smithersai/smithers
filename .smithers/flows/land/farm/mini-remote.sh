@@ -98,7 +98,7 @@ SQL
   fi
   # These follow PASS deliberately: callers cannot reconnect a slot to shared run state.
   CLEAN+=(DATABASE_URL="postgresql://smithers:smithers@localhost:54321/$DATABASE_NAME"
-    ELECTRIC_URL="http://127.0.0.1:$ELECTRIC_PORT"
+    ELECTRIC_URL="http://127.0.0.1:$ELECTRIC_PORT" TEST_ELECTRIC_PORT="$ELECTRIC_PORT"
     SMITHERS_TEST_PG_URL="postgresql://smithers:smithers@localhost:54321/$DATABASE_NAME"
     SMITHERS_TEST_PGBOUNCER_URL="postgresql://smithers:smithers@127.0.0.1:$POOL_PORT/$DATABASE_NAME"
     FARM_SLOT="$SLOT" FARM_POOL_PORT="$POOL_PORT" FARM_ELECTRIC_PORT="$ELECTRIC_PORT")

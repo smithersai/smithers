@@ -52,6 +52,11 @@ temporary directory on exit. The mini checks old process groups before reuse
 and retains a reservation if cleanup is incomplete. Automatic artifact downloads
 are off to protect Mac disk. `MINI_RUN_ARTIFACTS=1` requests test results/media;
 otherwise the output says which remote slot keeps artifacts until reuse.
+Combined unit/e2e commands share the slot database and Electric: the helper passes
+`TEST_ELECTRIC_PORT` alongside `ELECTRIC_URL` so local-only test fixtures select
+the slot endpoint too. `apps/mvp/db/TestEndpoints.test.ts` checks this selection
+in the actual command environment.
+
 Source workspaces and dependencies remain separate from these bounded remote
 slots. No automatic cache pruning runs on the Mac.
 

@@ -35,6 +35,7 @@ import * as RepoRoles from "./github/RepoRoles.ts"
 import { repositoryOf } from "./github/Config.ts"
 import * as Stack from "./stack/Stack.ts"
 import { build } from "./test/flowHost.ts"
+import { explainShapeFailure } from "./test/shapeResponse.ts"
 import { eventually, recorded, signedIn, testFile, uuid } from "./test/harness.ts"
 
 const runtime = testFile("remote_runs")
@@ -322,6 +323,7 @@ const firstShape = async (
     query.set("live", "true")
   }
   const response = await h.fetch(`${REMOTE_RUN_SHAPE_ROUTE}?${query}`)
+  await explainShapeFailure(response)
   const body = response.status === 200
     ? ((await response.json()) as Array<{ value?: Record<string, string>; headers: { operation?: string } }>)
     : []
