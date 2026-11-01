@@ -24,10 +24,10 @@ import * as Inspectable from "effect/Inspectable"
 import * as Schema from "effect/Schema"
 import * as Effects from "./Effects.ts"
 import * as FileSet from "./FileSet.ts"
-import { GraphBuildError } from "./GraphBuildError.ts"
+import { GraphBuildError } from "./GraphBuildError.vibe"
 import * as Conflicts from "./internal/ConflictAnnotation.ts"
 import { jsonMirror } from "./internal/JsonMirror.ts"
-import * as KeyMaterial from "./KeyMaterial.ts"
+import * as KeyMaterial from "./KeyMaterial.vibe"
 import * as StepKey from "./StepKey.ts"
 
 /**

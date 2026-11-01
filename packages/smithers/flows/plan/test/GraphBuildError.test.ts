@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { GraphBuildError, GraphBuildErrorCode, isFatalDiagnostic } from "../src/GraphBuildError.ts"
+import { GraphBuildError, GraphBuildErrorCode, isFatalDiagnostic } from "../src/GraphBuildError.vibe"
 
 describe("GraphBuildError", () => {
   it("is a tagged error naming the site and the fix", () => {

@@ -17,7 +17,7 @@
  * @since 0.1.0
  */
 
-import * as KeyMaterial from "../KeyMaterial.ts"
+import * as KeyMaterial from "../KeyMaterial.vibe"
 import * as Plan from "../Plan.ts"
 
 /**

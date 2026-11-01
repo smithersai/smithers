@@ -10,7 +10,7 @@
 
 import * as Effect from "effect/Effect"
 import * as FileSet from "../FileSet.ts"
-import * as KeyMaterial from "../KeyMaterial.ts"
+import * as KeyMaterial from "../KeyMaterial.vibe"
 import type * as Plan from "../Plan.ts"
 import * as EffectCandidates from "./EffectCandidates.ts"
 

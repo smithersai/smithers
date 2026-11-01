@@ -20,26 +20,26 @@
  * @category errors
  * @slop
  */
-export * as GraphBuildError from "./GraphBuildError.ts"
+export * as GraphBuildError from "./GraphBuildError.vibe"
 
 /**
  * @since 1.0.0-rc.0
  * @category models
  */
-export * as CachePolicy from "./CachePolicy.ts"
+export * as CachePolicy from "./CachePolicy.vibe"
 
 /**
  * @since 1.0.0-rc.0
  * @category models
  */
-export * as Repetition from "./Repetition.ts"
+export * as Repetition from "./Repetition.vibe"
 
 /**
  * @since 0.1.0
  * @category models
  * @slop
  */
-export * as KeyMaterial from "./KeyMaterial.ts"
+export * as KeyMaterial from "./KeyMaterial.vibe"
 
 /**
  * @since 0.1.0
@@ -80,7 +80,7 @@ export * as PlanDiff from "./PlanDiff.ts"
  * @since 1.0.0
  * @category models
  */
-export * as Placement from "./Placement.ts"
+export * as Placement from "./Placement.vibe"
 
 /**
  * @since 0.1.0

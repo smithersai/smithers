@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { GraphBuildError } from "../src/GraphBuildError.ts"
+import { GraphBuildError } from "../src/GraphBuildError.vibe"
 import * as Node from "../src/Node.ts"
 import * as Planned from "../src/Planned.ts"
 
