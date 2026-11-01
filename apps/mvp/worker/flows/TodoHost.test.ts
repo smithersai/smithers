@@ -49,14 +49,15 @@ test("withTodos registers the todo run and a head's checks, and the object runs 
     TodoAgent.registration(seat, services.database, Agent.layerSandbox),
   )
   // An external agent's step runs as its own child execution, with its two continuations (decision 0136).
-  expect(flows.flows.slice(-8)).toEqual([
+  const todoFlows = [
     Todo.Todo,
     ...TodoSession.Session.flows,
     TodoDrop.Drop,
     TodoBaseClosed.Invalidate,
     Checks.ChecksRun,
     Checks.ReviewRun,
-  ])
+  ]
+  expect(flows.flows.slice(-todoFlows.length)).toEqual(todoFlows)
   expect(flows.flows.some((flow) => flow._tag === "issue/Prototype")).toBe(false)
   const values = new Map<string, unknown>()
   const storage: ExecutionHost.Storage = {
