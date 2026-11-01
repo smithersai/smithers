@@ -162,7 +162,7 @@ function CodexLink({ waiting }: { readonly waiting: boolean }) {
           <a href={shown.code.verificationUrl} target="_blank" rel="noreferrer">{OPEN_OPENAI}</a>
         </>
       )}
-      {shown.canLink ? <div className="personal-model-actions"><Button disabled={waiting} onClick={actions.link}>{LINK}</Button></div> : null}
+      {shown.canLink ? <div className="personal-model-actions"><Button variant="solid" disabled={waiting} onClick={actions.link}>{LINK}</Button></div> : null}
       <p role="status" className="personal-model-status">{shown.status}</p>
     </div>
   )
@@ -183,7 +183,7 @@ function AddForm({ kind, status, waiting }: { readonly kind: ConnectionKind; rea
       {kind === "claude_subscription" ? <ClaudeFields /> : null}
       {kind === "moonshot" || kind === "jev" ? <Field><TextField id="personal-model-key" label={KEY} name={FIELDS.key} secret /></Field> : null}
       <div className="personal-model-actions">
-        <Button type="submit" disabled={waiting}>{SAVE}</Button>
+        <Button type="submit" variant="solid" disabled={waiting}>{SAVE}</Button>
       </div>
       <StatusLine status={status} />
     </form>
@@ -262,7 +262,7 @@ export function PersonalModelSettings({ canSave }: { readonly canSave: boolean }
       <div className="personal-model-actions">
         <Popover open={add?.view === "menu"} onOpenChange={(open) => actions.showAdd(open ? "menu" : "closed")}>
           <PopoverTrigger asChild>
-            <Button>{ADD}</Button>
+            <Button variant="solid">{ADD}</Button>
           </PopoverTrigger>
           <PopoverContent align="start" aria-label={ADD}>
             <div className="personal-model-menu">
