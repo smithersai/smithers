@@ -25,6 +25,14 @@ links: [../features/remote-flows.md, ../features/todos.md, ../features/spend-ale
 
 **Not built, by decision (merged plan):** durable spend-alert admission after a failed start, keeping sign-out's tokens past five failed revocations, an authority re-check before a TODO's Publish, and a staging stage.
 
-**Waiting on:** the migration fix and these commits on main, a deploy, then the smoke checks: a TODO's checkout from GitHub, a server seat's alert recorded, a clone's size read with the App's token, the Electric container's environment names without `DATABASE_URL` and shapes answering 200, and `e2e/remote-flows.spec.ts` against production, `E2E_LONG=1` included.
+**Production, 2026-10-21:**
+- 11:47 PDT: deployed 931fed704f46 (the migration fix, the factory stack, these fixes and the sandboxes fixes); the first attempt failed "Script startup exceeded CPU time limit", the retry passed. Electric's container environment names: `ELECTRIC_INSECURE`, `ALCHEMY_CLOUDFLARE_ACCOUNT_ID` (no `DATABASE_URL`); the repositories and messages shapes answer 200; About answers 200.
+- Engine records (`smithers_flows.flows_runs`): `auth/RevokeGitHubToken` 2 completed, `auth/RecheckRole` 1 completed, `chat/Expire` 13 completed and 22 waiting, `github/Apply` 8 and `github/Reconcile` 28 completed, `repo/Clone` 6 completed, `ops/SpendAlert` 5 completed.
+- ChatApi's startup was 416 to 735 ms (Cloudflare's `startup_time_ms` on a scratch upload); its program now loads when the Worker first builds it. 12:35 PDT: deployed b1bab88a7393; the deployed bundle starts in 64 to 76 ms, and `terminal/Open` and `sandbox/Call` completed after the deploy.
+- `e2e/remote-flows.spec.ts` against production: the issues sync passed (a walk of its own, 10 min, 12:48); the signed webhook's `github/Apply` passed at 12:20 and then missed its record once to a tail that had not started streaming (fixed: a new tail waits until it streams).
+
+**Review findings fixed (2026-10-21):** a model call larger than the whole daily budget is refused; only a Member's About read spends the deployment's GitHub token; a clone request is persisted and answered at once, its launch a durable second step of `repo/clone`; a transient About 503 is retried by the `repo/about` flow; a branch made without a head change shows in the refs (migration `refs_changed_at`); a failed alert-channel save clears once another device saves.
+
+**Waiting on:** the long production run (`E2E_LONG=1`: spend alert, answer expiry, role check, the TODO run on `roninjin10/smithers-github-tests`), after the sandboxes builder's production e2e.
 
 **Device store correction:** Repository cache v4 resyncs through `Migrations.synced` (`@smthrs/effect-tanstack-db`, library catalog: carry device stores across deploys), per decision 0021. The deployed v3 schema and fixture remain immutable and validated against their recorded fingerprint. No local row migration applies to this server-backed cache.
