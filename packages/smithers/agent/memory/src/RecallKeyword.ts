@@ -14,7 +14,7 @@ import type * as Layer from "effect/Layer"
 import { resolveBanks } from "./internal/ResolveNamespace.ts"
 import type * as MemoryError from "./MemoryError.ts"
 import * as MemoryStore from "./MemoryStore.ts"
-import * as Namespace from "./Namespace.ts"
+import * as Namespace from "./Namespace.vibe"
 import * as Recall from "./Recall.ts"
 
 /**

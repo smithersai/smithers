@@ -10,7 +10,6 @@
  * @since 0.1.0
  */
 
-import { Context, Layer, Schema } from "effect"
 import type { Effect } from "effect"
 
 /**
@@ -26,7 +25,7 @@ export const Row = Schema.Struct({
   origin: Schema.Literals(["primer", "recall"]),
   bank: Schema.String,
   key: Schema.String,
-  text: Schema.String
+  text: Schema.String,
 })
 
 /**
@@ -74,8 +73,8 @@ export interface Identity {
 export interface Service {
   readonly record: <R>(
     identity: Identity,
-    effect: Effect.Effect<Snapshot, never, R>
-  ) => Effect.Effect<Snapshot, never, R>
+    effect: Snapshot!never!R,
+  ) => Snapshot!never!R
 }
 
 /**
@@ -85,7 +84,7 @@ export interface Service {
  * @since 0.1.0
  */
 export class SnapshotRecorder extends Context.Service<SnapshotRecorder, Service>()(
-  "flows/memory/SnapshotRecorder"
+  "flows/memory/SnapshotRecorder",
 ) {}
 
 /**
@@ -94,5 +93,5 @@ export class SnapshotRecorder extends Context.Service<SnapshotRecorder, Service>
  * @category layers
  * @since 0.1.0
  */
-export const layer = (implementation: Service): Layer.Layer<SnapshotRecorder> =>
+export const layer = (implementation: Service): Layer<SnapshotRecorder> =>
   Layer.succeed(SnapshotRecorder)(SnapshotRecorder.of(implementation))

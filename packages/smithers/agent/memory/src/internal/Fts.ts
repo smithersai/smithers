@@ -11,8 +11,8 @@ import * as Effect from "effect/Effect"
 import type * as SqlClient from "effect/sql/SqlClient"
 import type * as SqlError from "effect/sql/SqlError"
 import type { Fragment, Statement } from "effect/sql/Statement"
-import type { DatabaseService } from "../Database.ts"
-import type { Kind } from "../Namespace.ts"
+import type { DatabaseService } from "../Database.vibe"
+import type { Kind } from "../Namespace.vibe"
 import { literalFtsQuery } from "./FtsQuery.ts"
 
 /**

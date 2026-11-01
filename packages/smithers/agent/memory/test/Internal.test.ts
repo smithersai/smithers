@@ -9,7 +9,7 @@ import * as Ranking from "../src/internal/Ranking.ts"
 import * as Bank from "../src/internal/ResolveNamespace.ts"
 import * as Store from "../src/internal/Store.ts"
 import * as VectorBytes from "../src/internal/VectorBytes.ts"
-import * as Namespace from "../src/Namespace.ts"
+import * as Namespace from "../src/Namespace.vibe"
 
 describe("memory internal helpers", () => {
   it("reads affected-row counts from SQLite and PostgreSQL results", () => {

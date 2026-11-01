@@ -7,7 +7,7 @@
 import * as Effect from "effect/Effect"
 import { resolveNamespace } from "./internal/ResolveNamespace.ts"
 import type * as MemoryError from "./MemoryError.ts"
-import type * as Namespace from "./Namespace.ts"
+import type * as Namespace from "./Namespace.vibe"
 
 /**
  * Parses a public bank name into a validated structured namespace.

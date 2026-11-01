@@ -6,7 +6,7 @@ import * as SqlError from "effect/sql/SqlError"
 import { describe, expect, expectTypeOf, it } from "vitest"
 import { MemoryError } from "../src/MemoryError.ts"
 import * as MemoryStore from "../src/MemoryStore.ts"
-import type * as Namespace from "../src/Namespace.ts"
+import type * as Namespace from "../src/Namespace.vibe"
 import * as TestMemory from "../src/test/TestMemory.ts"
 import { causeMessages, namespace, run, runWithDatabase } from "./fixtures/MemoryStoreHarness.ts"
 

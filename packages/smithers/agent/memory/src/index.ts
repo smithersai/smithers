@@ -20,7 +20,7 @@ export * as Bank from "./Bank.ts"
  * @category database
  * @since 0.1.0
  */
-export * as Database from "./Database.ts"
+export * as Database from "./Database.vibe"
 
 /**
  * @category embeddings @since 0.1.0
@@ -62,7 +62,7 @@ export * as Migrations from "./Migrations.ts"
 /**
  * @category models @since 0.1.0
  */
-export * as Namespace from "./Namespace.ts"
+export * as Namespace from "./Namespace.vibe"
 
 /**
  * @category recall @since 0.1.0
@@ -92,7 +92,7 @@ export * as Source from "./Source.ts"
 /**
  * @category services @since 0.1.0
  */
-export * as SnapshotRecorder from "./SnapshotRecorder.ts"
+export * as SnapshotRecorder from "./SnapshotRecorder.vibe"
 
 /**
  * @category patterns

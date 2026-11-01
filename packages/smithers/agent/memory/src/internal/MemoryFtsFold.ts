@@ -7,7 +7,7 @@
 import * as Dialect from "@smthrs/database/Dialect"
 import * as Effect from "effect/Effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import type { Kind } from "../Namespace.ts"
+import type { Kind } from "../Namespace.vibe"
 import { postgresSearchColumn, postgresSearchIndex } from "./Fts.ts"
 
 /**

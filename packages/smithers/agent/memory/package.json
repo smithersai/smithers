@@ -38,7 +38,10 @@
     "./internal/*": null,
     "./*/index": null,
     "./Bank": "./src/Bank.ts",
-    "./Database": "./src/Database.ts",
+    "./Database": {
+      "types": "./src/Database.d.vibe.ts",
+      "default": "./src/Database.vibe"
+    },
     "./Embedding": "./src/Embedding.ts",
     "./Flows": "./src/Flows.ts",
     "./Maintenance": "./src/Maintenance.ts",
@@ -46,13 +49,19 @@
     "./MemoryStore": "./src/MemoryStore.ts",
     "./MemoryTrellis": "./src/MemoryTrellis.ts",
     "./Migrations": "./src/Migrations.ts",
-    "./Namespace": "./src/Namespace.ts",
+    "./Namespace": {
+      "types": "./src/Namespace.d.vibe.ts",
+      "default": "./src/Namespace.vibe"
+    },
     "./Opening": "./src/Opening.ts",
     "./Recall": "./src/Recall.ts",
     "./RecallFts": "./src/RecallFts.ts",
     "./RecallKeyword": "./src/RecallKeyword.ts",
     "./RecallSemantic": "./src/RecallSemantic.ts",
-    "./SnapshotRecorder": "./src/SnapshotRecorder.ts",
+    "./SnapshotRecorder": {
+      "types": "./src/SnapshotRecorder.d.vibe.ts",
+      "default": "./src/SnapshotRecorder.vibe"
+    },
     "./Source": "./src/Source.ts",
     "./WithMemory": "./src/WithMemory.ts",
     "./index": "./src/index.ts",

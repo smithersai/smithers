@@ -13,7 +13,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
-import type { DatabaseService } from "./Database.ts"
+import type { DatabaseService } from "./Database.vibe"
 import * as Facts from "./internal/Facts.ts"
 import { instrument } from "./internal/Instrument.ts"
 import * as Notes from "./internal/Notes.ts"
@@ -22,7 +22,7 @@ import { error, storeError } from "./internal/Store.ts"
 import * as Threads from "./internal/Threads.ts"
 import type { MemoryError } from "./MemoryError.ts"
 import * as Migrations from "./Migrations.ts"
-import type * as Namespace from "./Namespace.ts"
+import type * as Namespace from "./Namespace.vibe"
 
 /**
  * Explicit run coordinates attached to a memory write.
