@@ -152,8 +152,9 @@ test("a completed history read follows later layout changes until the reader scr
     expect(viewport.scrollTop).toBe(550);
     shift = 8; window.dispatchEvent(new Event("resize")); await frame();
     expect(viewport.scrollTop).toBe(558);
-    viewport.dispatchEvent(new WheelEvent("wheel"));
-    viewport.scrollTop = 600; viewport.dispatchEvent(new Event("scroll"));
+    rail.dispatchEvent(new WheelEvent("wheel", { deltaY: 42, cancelable: true }));
+    expect(viewport.scrollTop).toBe(600);
+    viewport.dispatchEvent(new Event("scroll"));
     shift = 16; window.dispatchEvent(new Event("resize")); await frame();
     expect(viewport.scrollTop).toBe(600);
   } finally { driver.dispose(); host.remove(); }
@@ -180,10 +181,14 @@ test("external navigation cancels an unmounted history request before it can sna
     request();
     host.querySelector<HTMLButtonElement>(".bottom")!.click();
     expect(rail.dataset.navigation).toBeUndefined();
+    request();
+    rail.dispatchEvent(new WheelEvent("wheel", { deltaY: -40, cancelable: true }));
+    expect(viewport.scrollTop).toBe(160);
+    expect(rail.dataset.navigation).toBeUndefined();
     const message = document.createElement("article"); message.id = "cancel-10";
     message.getBoundingClientRect = () => rect(500 - viewport.scrollTop, 700 - viewport.scrollTop);
     viewport.append(message); await frame(); await frame();
-    expect(viewport.scrollTop).toBe(200);
+    expect(viewport.scrollTop).toBe(160);
     box.querySelector("[data-lens]")!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
     box.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientY: .5 }));
     expect(viewport.scrollTop).toBe(550);
@@ -193,4 +198,101 @@ test("external navigation cancels an unmounted history request before it can sna
     await frame();
     expect(viewport.scrollTop).toBe(300);
   } finally { driver.dispose(); host.remove(); }
+});
+
+test("wheel over the rail scrolls the transcript and its in-view marks follow", async () => {
+  const { host, viewport, box, ids, driver } = await wheelFixture();
+  try {
+    driver.sync({ ids, asks: [], levels: 1, spans: [], arcs: [] });
+    expect(box.querySelector('[data-row="0"]')!.getAttribute("aria-current")).toBe("location");
+    const event = new WheelEvent("wheel", { deltaY: 600, bubbles: true, cancelable: true });
+    box.querySelector("button")!.dispatchEvent(event);
+    expect(viewport.scrollTop).toBe(600);
+    expect(event.defaultPrevented).toBe(true);
+    // happy-dom has no layout-driven scroll events; deliver the browser's subsequent scroll notification.
+    viewport.dispatchEvent(new Event("scroll")); await frame();
+    expect(box.querySelector('[data-row="0"]')!.hasAttribute("data-in")).toBe(false);
+    expect(box.querySelector('[data-row="15"]')!.getAttribute("aria-current")).toBe("location");
+    expect(box.querySelector('[data-row="15"]')!.hasAttribute("data-in")).toBe(true);
+  } finally { driver.dispose(); host.remove(); }
+});
+
+/** DOM geometry supplied explicitly because happy-dom does not lay out message boxes. */
+const wheelFixture = async () => {
+  const { timelineDriver } = await import("../src/chat/timelineDriver");
+  const host = document.createElement("div"); host.className = "sui-chat-transcript";
+  host.innerHTML = `<div data-slot="message-scroller-viewport"></div><details class="sui-timeline-disclosure" open><nav><div class="sui-timeline-box"><div class="sui-tl-lv" data-level="0"><div class="sui-tl-clip"><div class="sui-tl-inner"></div></div></div></div></nav></details>`;
+  document.body.append(host);
+  const viewport = host.firstElementChild as HTMLElement, rail = host.querySelector<HTMLElement>("nav")!, box = rail.firstElementChild as HTMLElement;
+  Object.defineProperty(viewport, "clientHeight", { value: 100 });
+  Object.defineProperties(box, { clientHeight: { value: 400 }, clientWidth: { value: 180 } });
+  const ids = Array.from({ length: 30 }, (_, index) => `wheel-${index}`);
+  for (const [index, id] of ids.entries()) {
+    const article = document.createElement("article"); article.id = id;
+    article.getBoundingClientRect = () => rect(index * 40 - viewport.scrollTop, (index + 1) * 40 - viewport.scrollTop);
+    viewport.append(article);
+    const button = document.createElement("button"); button.className = "sui-tl-row"; button.dataset.row = String(index);
+    box.querySelector(".sui-tl-inner")!.append(button);
+  }
+  const driver = timelineDriver(rail, box);
+  return { host, viewport, rail, box, ids, driver };
+};
+
+for (const [mode, delta, lineHeight, distance] of [
+  [0, .5, "24px", .5],
+  [0, -80, "24px", -80],
+  [1, 3, "24px", 72],
+  [1, -2, "normal", -32],
+  [2, 2, "24px", 200],
+] as const) test(`rail wheel normalizes mode ${mode}, delta ${delta}, line height ${lineHeight}`, async () => {
+  const { host, viewport, rail, ids, driver } = await wheelFixture();
+  try {
+    viewport.style.lineHeight = lineHeight;
+    driver.sync({ ids, asks: [], levels: 1, spans: [], arcs: [] });
+    viewport.scrollTop = 400;
+    const inputs: number[] = [];
+    viewport.addEventListener("wheel", event => { inputs.push(event.deltaY); });
+    const event = new WheelEvent("wheel", { deltaY: delta, deltaMode: mode, cancelable: true, bubbles: true });
+    rail.dispatchEvent(event);
+    expect(viewport.scrollTop).toBe(400 + distance);
+    expect(inputs).toEqual([delta]); // the transcript receives its usual input before the forwarded scroll
+    expect(event.defaultPrevented).toBe(true);
+    expect(rail.scrollTop).toBe(0);
+    expect(document.documentElement.scrollTop).toBe(0);
+  } finally { driver.dispose(); host.remove(); }
+});
+
+test("rail wheel leaves horizontal input alone, and detaches on disposal", async () => {
+  const { host, viewport, rail, ids, driver } = await wheelFixture();
+  try {
+    driver.sync({ ids, asks: [], levels: 1, spans: [], arcs: [] });
+    viewport.scrollTop = 400;
+    const inputs: number[] = [];
+    viewport.addEventListener("wheel", event => { inputs.push(event.deltaY); });
+    {
+      const event = new WheelEvent("wheel", { deltaX: 600, deltaY: 0, bubbles: true, cancelable: true });
+      rail.dispatchEvent(event);
+      expect(viewport.scrollTop).toBe(400);
+      expect(event.defaultPrevented).toBe(false);
+    }
+    expect(inputs).toEqual([]);
+    driver.dispose();
+    const event = new WheelEvent("wheel", { deltaY: 600, bubbles: true, cancelable: true });
+    rail.dispatchEvent(event);
+    expect(viewport.scrollTop).toBe(400);
+    expect(event.defaultPrevented).toBe(false);
+  } finally { driver.dispose(); host.remove(); }
+});
+
+test("rail wheel without a transcript viewport leaves the browser gesture alone", async () => {
+  const { timelineDriver } = await import("../src/chat/timelineDriver");
+  const rail = document.createElement("nav"), box = document.createElement("div");
+  rail.append(box); document.body.append(rail);
+  const driver = timelineDriver(rail, box);
+  try {
+    driver.sync({ ids: [], asks: [], levels: 0, spans: [], arcs: [] });
+    const event = new WheelEvent("wheel", { deltaY: 600, bubbles: true, cancelable: true });
+    rail.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  } finally { driver.dispose(); rail.remove(); }
 });

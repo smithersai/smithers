@@ -362,6 +362,17 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
     rail.removeAttribute("data-dragging");
     update();
   };
+  const wheel = (event: WheelEvent) => {
+    if (viewport === null || event.ctrlKey || event.deltaY === 0) return;
+    const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? parseFloat(getComputedStyle(viewport).lineHeight) || 16
+      : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? viewport.clientHeight : 1;
+    event.preventDefault();
+    releaseRead();
+    // Let the transcript cancel its own active jump/reading anchor before moving; synthetic wheel has no native scroll.
+    viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: event.deltaY, deltaX: event.deltaX, deltaMode: event.deltaMode }));
+    viewport.scrollTop += event.deltaY * unit;
+  };
+  rail.addEventListener("wheel", wheel, { passive: false });
   box.addEventListener("keydown", releaseRead, { capture: true });
   box.addEventListener("pointerdown", down);
   box.addEventListener("pointermove", move);
@@ -394,6 +405,7 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
       for (const event of ["wheel", "touchstart", "pointerdown", "keydown"]) viewport?.removeEventListener(event, releaseRead);
       window.removeEventListener("resize", remeasure);
       for (const event of ["pointerdown", "click", "keydown", "wheel", "touchstart"]) transcript?.removeEventListener(event, transcriptActivity, { capture: true });
+      rail.removeEventListener("wheel", wheel);
       box.removeEventListener("keydown", releaseRead, { capture: true });
       box.removeEventListener("pointerdown", down);
       box.removeEventListener("pointermove", move);

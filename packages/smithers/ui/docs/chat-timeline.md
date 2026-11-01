@@ -16,6 +16,8 @@ Level 1 appears once entries no longer fit, and level 2 once phases no longer fi
 
 A lens on each outer strip marks the stretch the next level shows, joined to it by funnel lines. Dragging the thumb or a lens scrubs the transcript. When its target is not mounted, the driver requests it through `onJump`, observes its mount, and restores the requested fractional message position. A newer drag target supersedes an earlier one; `data-navigation="pending"` exposes a history request until mounting completes. Each level holds still while the viewport stays inside it and pages when it leaves, so scrolling never drags it along.
 
+Wheel and trackpad input over the rail (including its open phone sheet) scrolls the transcript, with pixel, line and page deltas; horizontal-only input and pinch zoom keep their native behavior.
+
 A level slides in over 240 ms, then its lens fades in and its funnel draws. It leaves in reverse. With reduced motion, these become a 120 ms fade.
 
 ## Appearance
