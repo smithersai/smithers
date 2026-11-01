@@ -44,7 +44,10 @@
     "./Migrations": "./src/Migrations.ts",
     "./SqlTimeTravelStore": "./src/SqlTimeTravelStore.ts",
     "./TimeTravel": "./src/TimeTravel.ts",
-    "./TimeTravelError": "./src/TimeTravelError.ts",
+    "./TimeTravelError": {
+      "types": "./src/TimeTravelError.d.vibe.ts",
+      "default": "./src/TimeTravelError.vibe"
+    },
     "./TimeTravelStore": "./src/TimeTravelStore.ts",
     "./index": "./src/index.ts"
   },

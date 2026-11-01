@@ -8,7 +8,7 @@ import * as Replay from "../src/internal/Replay.ts"
 import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
 import { ReadOnlyTimeTravel, TimeTravel } from "../src/TimeTravel.ts"
-import { TimeTravelError } from "../src/TimeTravelError.ts"
+import { TimeTravelError } from "../src/TimeTravelError.vibe"
 
 const database = Layer.provideMerge(EngineMigrations.layer, TestDatabase.layer)
 const stack = SqlJournal.layer({ capacity: 16, overflow: "reject" }).pipe(

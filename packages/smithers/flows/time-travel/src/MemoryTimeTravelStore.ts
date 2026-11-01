@@ -24,7 +24,7 @@ import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import { forkCreatedEventType, Frame, type LineageEdge } from "./Frame.ts"
 import * as LineageTree from "./internal/LineageTree.ts"
-import { error, TimeTravelError } from "./TimeTravelError.ts"
+import { error, TimeTravelError } from "./TimeTravelError.vibe"
 import * as TimeTravelStore from "./TimeTravelStore.ts"
 
 /**

@@ -12,7 +12,7 @@ import * as TimeTravel from "../src/index.ts"
 import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.ts"
 import * as Fork from "../src/internal/Fork.ts"
 import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
-import { error, TimeTravelError, TimeTravelErrorCode } from "../src/TimeTravelError.ts"
+import { error, TimeTravelError, TimeTravelErrorCode } from "../src/TimeTravelError.vibe"
 import { TimeTravelStore } from "../src/TimeTravelStore.ts"
 
 /**

@@ -20,7 +20,7 @@
 import type * as Journal from "@smthrs/journal/Journal"
 import type * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as Effect from "effect/Effect"
-import { error, type TimeTravelError } from "../TimeTravelError.ts"
+import { error, type TimeTravelError } from "../TimeTravelError.vibe"
 
 /**
  * What {@link forEachPage} returns from a page callback to end the read
@@ -75,34 +75,29 @@ export interface PageOptions {
  * @since 0.1.0
  * @category constructors
  */
-export const forEachPage = <E>(
+export const forEachPage = effect <E>(
   journal: Journal.Service,
   options: PageOptions,
-  onPage: (entries: ReadonlyArray<JournalEvent.Entry>) => Effect.Effect<void | Stop, E>
-): Effect.Effect<void, E | TimeTravelError> =>
-  Effect.gen(function*() {
-    let after = options.after
-    while (true) {
-      const page = yield* journal.entries({
-        runId: options.runId as JournalEvent.RunId,
-        ...(after === undefined ? {} : { after: after as JournalEvent.Seq }),
-        ...(options.eventTypes === undefined ? {} : { eventTypes: options.eventTypes }),
-        limit: options.pageSize
-      }).pipe(Effect.mapError((cause) => error("unknown", options.readFailure, cause)))
-      if ((yield* onPage(page.entries)) === Stop) return
-      if (!page.hasMore) return
-      if (page.entries.length === 0) {
-        return yield* Effect.fail(
-          error("invalid", `${options.label} returned an empty continuation page for ${options.runId}`)
-        )
-      }
-      const previous = after ?? -1
-      const next = page.entries.reduce((tail, entry) => entry.seq > tail ? entry.seq : tail, previous)
-      if (next <= previous) {
-        return yield* Effect.fail(
-          error("invalid", `${options.label} pagination did not advance for ${options.runId}`)
-        )
-      }
-      after = next
+  onPage: (entries: ReadonlyArray<JournalEvent.Entry>) => void | Stop!E,
+): void!E | TimeTravelError => {
+  let after = options.after
+  while (true) {
+    const page = try (journal.entries({
+      runId: options.runId as JournalEvent.RunId,
+      ...(after === undefined ? {} : { after: after as JournalEvent.Seq }),
+      ...(options.eventTypes === undefined ? {} : { eventTypes: options.eventTypes }),
+      limit: options.pageSize,
+    }) |> Effect.mapError(%, (cause) => error("unknown", options.readFailure, cause)))
+    if ((try onPage(page.entries)) === Stop) return
+    if (!page.hasMore) return
+    if (page.entries.length === 0) {
+      throw error("invalid", `${options.label} returned an empty continuation page for ${options.runId}`)
     }
-  })
+    const previous = after ?? -1
+    const next = page.entries.reduce((tail, entry) => entry.seq > tail ? entry.seq : tail, previous)
+    if (next <= previous) {
+      throw error("invalid", `${options.label} pagination did not advance for ${options.runId}`)
+    }
+    after = next
+  }
+}

@@ -5,7 +5,7 @@
  */
 
 import type * as RunStore from "@smthrs/run-store/RunStore"
-import { error, type TimeTravelError } from "../TimeTravelError.ts"
+import { error, type TimeTravelError } from "../TimeTravelError.vibe"
 
 /**
  * The compare-and-swap snapshot of a row, as `RunStore.claim` expects it.

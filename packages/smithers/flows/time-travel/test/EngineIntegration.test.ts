@@ -46,7 +46,7 @@ import * as CompensationHandlers from "../src/CompensationHandlers.ts"
 import * as EffectBoundary from "../src/EffectBoundary.ts"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
 import { TimeTravel } from "../src/TimeTravel.ts"
-import type { TimeTravelError } from "../src/TimeTravelError.ts"
+import type { TimeTravelError } from "../src/TimeTravelError.vibe"
 import { joinDrive } from "./JoinDrive.ts"
 
 /**

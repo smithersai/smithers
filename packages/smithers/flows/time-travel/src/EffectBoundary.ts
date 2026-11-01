@@ -12,7 +12,7 @@ import * as Effect from "effect/Effect"
 import * as Equal from "effect/Equal"
 import * as Exit from "effect/Exit"
 import * as Schema from "effect/Schema"
-import { error, type TimeTravelError } from "./TimeTravelError.ts"
+import { error, type TimeTravelError } from "./TimeTravelError.vibe"
 
 /**
  * The three effect tiers used by replay, compensation, and retry.

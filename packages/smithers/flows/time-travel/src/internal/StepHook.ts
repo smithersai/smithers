@@ -5,7 +5,7 @@
  */
 
 import * as Effect from "effect/Effect"
-import { error, type TimeTravelError } from "../TimeTravelError.ts"
+import { error, type TimeTravelError } from "../TimeTravelError.vibe"
 
 /**
  * Runs `hook` for `step`, if there is one, reporting its failure as `unknown`

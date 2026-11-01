@@ -12,7 +12,7 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { Assessment, Classification, type Handler } from "../CompensationHandlers.ts"
 import { EffectRecord, EffectTier } from "../EffectBoundary.ts"
-import { error, type TimeTravelError } from "../TimeTravelError.ts"
+import { error, type TimeTravelError } from "../TimeTravelError.vibe"
 
 export {
   /**
