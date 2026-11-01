@@ -9,8 +9,11 @@ import * as Log from "./log.ts"
  * The agent has no tools. It writes JavaScript cells that call flows through
  * `ctx.call`; the standard filesystem and shell flows are the catalog here.
  */
+import * as NodeChildProcessSpawner from "@effect/platform-node/NodeChildProcessSpawner"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeServices from "@effect/platform-node/NodeServices"
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import * as NodePath from "@effect/platform-node/NodePath"
+import * as NodeStdio from "@effect/platform-node/NodeStdio"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentSession from "@smthrs/agent/AgentSession"
 import * as Budget from "@smthrs/agent/Budget"
@@ -328,7 +331,14 @@ export const make = (options: {
     Approvals.layer(options.cwd, approvalMode),
     NodeCrypto.layer,
     // Relative flow paths and commands resolve against `cwd`, never the process's own.
-    Rooted.layer(options.cwd).pipe(Layer.provideMerge(NodeServices.layer))
+    Rooted.layer(options.cwd).pipe(Layer.provideMerge(
+      // Every Node platform service except `NodeTerminal`: OpenTUI owns stdin, and
+      // the terminal reader attaches a process-wide `end` listener per acquisition.
+      Layer.provideMerge(
+        NodeChildProcessSpawner.layer,
+        Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeStdio.layer)
+      )
+    ))
   )
   const runtime = ManagedRuntime.make(layer)
   let turns = 0

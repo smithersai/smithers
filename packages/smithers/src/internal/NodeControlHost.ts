@@ -2,8 +2,11 @@
  * @since 1.0.0
  */
 
+import * as NodeChildProcessSpawner from "@effect/platform-node/NodeChildProcessSpawner"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeServices from "@effect/platform-node/NodeServices"
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import * as NodePath from "@effect/platform-node/NodePath"
+import * as NodeStdio from "@effect/platform-node/NodeStdio"
 import type * as Undici from "@effect/platform-node/Undici"
 import * as NodeGateway from "@smthrs/gateway/node/NodeGateway"
 import * as NodeJj from "@smthrs/jj/node/NodeJj"
@@ -103,7 +106,14 @@ const layerRequestExecutor: Layer.Layer<RequestExecutor.RequestExecutor> = layer
  * @private
  */
 export const platform: NativeControl.Platform = {
-  host: Layer.provideMerge(ControlFileSystem.layer(), NodeServices.layer),
+  // Flow hosts and registry scans never own the interactive terminal.
+  host: Layer.provideMerge(
+    ControlFileSystem.layer(),
+    Layer.provideMerge(
+      NodeChildProcessSpawner.layer,
+      Layer.mergeAll(NodeFileSystem.layer, NodeCrypto.layer, NodePath.layer, NodeStdio.layer)
+    )
+  ),
   crypto: NodeCrypto.layer,
   database: (file) => ControlDatabase.layer(file).pipe(Layer.orDie),
   observe: (file) => ControlDatabase.observe(file).pipe(Layer.orDie),

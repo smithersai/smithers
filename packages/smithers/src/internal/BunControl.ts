@@ -2,9 +2,12 @@
  * @since 1.0.0
  */
 
+import * as BunChildProcessSpawner from "@effect/platform-bun/BunChildProcessSpawner"
 import * as BunCrypto from "@effect/platform-bun/BunCrypto"
+import * as BunFileSystem from "@effect/platform-bun/BunFileSystem"
 import * as BunHttpClient from "@effect/platform-bun/BunHttpClient"
-import * as BunServices from "@effect/platform-bun/BunServices"
+import * as BunPath from "@effect/platform-bun/BunPath"
+import * as BunStdio from "@effect/platform-bun/BunStdio"
 import * as Database from "@smthrs/database/bun/BunDatabase"
 import * as Gateway from "@smthrs/gateway/bun/BunGateway"
 import * as Jj from "@smthrs/jj/bun/BunJj"
@@ -15,16 +18,22 @@ import * as ControlFileSystem from "./ControlFileSystem.ts"
 import * as NativeControl from "./NativeControl.ts"
 import * as NativeControlDatabase from "./NativeControlDatabase.ts"
 
+// Background flow hosts leave terminal input to the renderer.
+const services = Layer.provideMerge(
+  BunChildProcessSpawner.layer,
+  Layer.mergeAll(BunFileSystem.layer, BunCrypto.layer, BunPath.layer, BunStdio.layer)
+)
+
 /** Select existing Bun adapters for the single native control composition.
  * @since 1.0.0
  * @private
  */
 export const platform: NativeControl.Platform = {
-  host: Layer.provideMerge(ControlFileSystem.layer(), BunServices.layer),
+  host: Layer.provideMerge(ControlFileSystem.layer(), services),
   crypto: BunCrypto.layer,
   database: (file) =>
     NativeControlDatabase.make((filename) => Database.layer({ filename }))(file).pipe(
-      Layer.provide(BunServices.layer),
+      Layer.provide(services),
       Layer.orDie
     ),
   observe: (file) =>

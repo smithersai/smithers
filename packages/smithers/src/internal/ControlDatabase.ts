@@ -2,10 +2,19 @@
  * @since 1.0.0
  */
 
-import * as NodeServices from "@effect/platform-node/NodeServices"
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import * as NodePath from "@effect/platform-node/NodePath"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Layer } from "effect"
 import * as NativeControlDatabase from "./NativeControlDatabase.ts"
+
+// Only the filesystem and path services the store opens with. The aggregate
+// `NodeServices.layer` also acquires `NodeTerminal`, which attaches a
+// process-wide stdin `end` listener for as long as the layer's scope is open;
+// a surface that opens the control plane per read (the TUI inbox) therefore
+// accumulated one listener per concurrent open and tripped Node's
+// `MaxListenersExceededWarning` over the rendered screen.
+const services = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
 /** Opens private control state with the existing Node database adapter.
  * @category layers
@@ -13,7 +22,7 @@ import * as NativeControlDatabase from "./NativeControlDatabase.ts"
  */
 export const layer = (file: string) =>
   NativeControlDatabase.make((filename) => NodeDatabase.layer({ filename }))(file).pipe(
-    Layer.provide(NodeServices.layer)
+    Layer.provide(services)
   )
 
 /** Opens existing control or engine state read-only with the Node database adapter.

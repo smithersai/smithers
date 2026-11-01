@@ -101,6 +101,7 @@ import {
 import type { Crypto, Path } from "effect"
 import * as Deferred from "effect/Deferred"
 import { SqlClient } from "effect/sql/SqlClient"
+import type * as Terminal from "effect/Terminal"
 import { createHash, randomUUID } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 import { homedir, hostname } from "node:os"
@@ -455,7 +456,7 @@ export interface Platform {
    * own timeout.
    */
   readonly toolCallLimitMs?: number | undefined
-  readonly host: Layer.Layer<NodeServices.NodeServices>
+  readonly host: Layer.Layer<Exclude<NodeServices.NodeServices, Terminal.Terminal>>
   readonly crypto: Layer.Layer<Crypto.Crypto>
   readonly database: (filename: string) => Layer.Layer<DurableWriter.DurableWriter | SqlClient>
   /** Opens an existing store read-only: no directory, migration, schema object or write lock. */
