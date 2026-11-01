@@ -69,7 +69,6 @@ export const BELL_ROUTES: ReadonlySet<string> = new Set([
   "/$owner/$repo/runs",
   "/$owner/$repo/pulls",
   "/$owner/$repo/stack",
-  "/$owner/$repo/stack/$number",
   "/$owner/$repo/settings",
   "/$owner/$repo/settings/secrets",
   "/$owner/$repo/-/$plugin",
