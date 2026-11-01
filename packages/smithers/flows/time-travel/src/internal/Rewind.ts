@@ -26,7 +26,7 @@ import type { EffectHandlerRegistry } from "./EffectHandlerRegistry.ts"
 import * as HistoryLimit from "./HistoryLimit.ts"
 import * as JournalPages from "./JournalPages.ts"
 import * as Lease from "./Lease.ts"
-import { LineageMetadata } from "./LineageMetadata.ts"
+import { LineageMetadata } from "./LineageMetadata.vibe"
 import * as RunRow from "./RunRow.ts"
 import * as StepHook from "./StepHook.ts"
 
