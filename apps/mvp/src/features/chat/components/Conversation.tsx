@@ -73,7 +73,7 @@ export function Conversation({ empty = <Wordmark />, readOnly = false, timelineT
     <div className="mvp-conversation">
     {failedPin === undefined ? null : <Button variant="ghost" size="sm" aria-label={failedPin.messageId === null ? "Retry unpin" : "Retry pin"} onClick={() => actions.retryPin(failedPin.conversationId)}>Retry</Button>}
     {pin === undefined ? null : <PinnedMessage message={pin} collapsed={collapsed} onUnpin={actions.unpin} onCollapse={() => actions.collapsePin(pin.id, !collapsed)} />}
-    <ChatTranscript empty={history?.opened === true ? empty : null} rail={<TimelineContribution messages={everything} statuses={statuses} unavailable={timelineNotice?.text} drafts={readOnly ? [] : drafts} todos={timelineTodos} onJump={jump} onActivate={activate} />}>
+    <ChatTranscript empty={history?.opened === true ? empty : null} rail={<TimelineContribution messages={everything} statuses={statuses} unavailable={timelineNotice?.text} drafts={readOnly ? [] : drafts} todos={timelineTodos} onJump={jump} onRequestHistory={actions.showMessage} onActivate={activate} />}>
       {history?.earlier === true ? (
         <Button variant="ghost" size="sm" onClick={actions.loadEarlier}>
           Load earlier

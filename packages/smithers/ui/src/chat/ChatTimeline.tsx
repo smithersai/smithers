@@ -38,6 +38,8 @@ export interface ChatTimelineProps {
   readonly unavailable?: string;
   /** The host owns navigation. Without it, jump to the entry's transcript anchor. */
   readonly onJump?: (id: string) => void;
+  /** Mount history only, without scrolling. The driver owns fractional drag positioning after mount. */
+  readonly onRequestHistory?: (id: string) => void;
   /** Explicit activation of a single entry; keyboard traversal and grouped entries only jump. */
   readonly onActivate?: (id: string) => void;
 }
@@ -109,7 +111,7 @@ const useBox = (box: RefObject<HTMLDivElement | null>) => {
 };
 
 /** The vertical scrubber of ruling FE-16: a detailed level beside the chat, and coarser ones as the chat outgrows them. */
-export function ChatTimeline({ entries, phases = [], arcs = [], higherLevels = [], unavailable, onJump, onActivate }: ChatTimelineProps) {
+export function ChatTimeline({ entries, phases = [], arcs = [], higherLevels = [], unavailable, onJump, onRequestHistory, onActivate }: ChatTimelineProps) {
   useInjectUiCss();
   const rail = useRef<HTMLElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -151,8 +153,8 @@ export function ChatTimeline({ entries, phases = [], arcs = [], higherLevels = [
     return () => { made.dispose(); driver.current = null; };
   }, []);
   useLayoutEffect(() => {
-    driver.current?.sync({ ids, asks: entries.map(entry => entry.kind === "ask"), levels, spans, arcs: larger, higher: columns.slice(2), ...(onJump === undefined ? {} : { onJump }) });
-  }, [ids, entries, levels, spans, larger, columns, size, onJump]);
+    driver.current?.sync({ ids, asks: entries.map(entry => entry.kind === "ask"), levels, spans, arcs: larger, higher: columns.slice(2), ...(onRequestHistory === undefined ? {} : { onRequestHistory }) });
+  }, [ids, entries, levels, spans, larger, columns, size, onRequestHistory]);
   const [preview, setPreview] = useState<{ readonly title: string; readonly summary?: string; readonly detail: string; readonly left: number; readonly top: number } | undefined>();
   const show = (element: HTMLElement, title: string, detail: string, summary?: string) => {
     const box = element.getBoundingClientRect();

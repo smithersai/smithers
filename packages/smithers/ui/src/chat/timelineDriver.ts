@@ -15,7 +15,7 @@ export interface TimelineModel {
   readonly arcs: readonly TimelineBlock[];
   readonly higher?: readonly (readonly TimelineBlock[])[];
   /** Widen the transcript history window; mounting is observed before restoring the requested position. */
-  readonly onJump?: (id: string) => void;
+  readonly onRequestHistory?: (id: string) => void;
 }
 
 export interface TimelineDriver {
@@ -47,7 +47,7 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
   let blockWindows: (TimelineWindow | undefined)[] = [];
   const columns = () => [model.spans, model.arcs, ...(model.higher ?? [])];
   let drag: { readonly level: number; readonly grab: number } | undefined;
-  let pendingRead: { readonly row: number; readonly center: boolean; readonly id: string } | undefined;
+  let pendingRead: { readonly fraction: number; readonly center: boolean; readonly id: string } | undefined;
   let frame = 0;
   let layoutWidth = -1, layoutHeight = -1;
   let viewport: HTMLElement | null = null;
@@ -224,9 +224,9 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
 
   const restoreRead = () => {
     if (pendingRead === undefined || viewport === null) return;
-    const row = Math.floor(pendingRead.row);
-    if (!boxes.some(item => item.row === row)) return;
-    viewport.scrollTop = timelineToChat(boxes, pendingRead.row) - (pendingRead.center ? viewport.clientHeight / 2 : 0);
+    const row = model.ids.indexOf(pendingRead.id);
+    if (row < 0 || !boxes.some(item => item.row === row)) return;
+    viewport.scrollTop = timelineToChat(boxes, row + pendingRead.fraction) - (pendingRead.center ? viewport.clientHeight / 2 : 0);
     pendingRead = undefined;
     rail.removeAttribute("data-navigation");
   };
@@ -274,15 +274,15 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
 
   const readRow = (requested: number, center: boolean) => {
     if (viewport === null || model.ids.length === 0) return;
-    const row = Math.max(0, Math.min(model.ids.length - Number.EPSILON, requested));
+    const row = Math.max(0, Math.min(model.ids.length, requested));
     const index = Math.min(model.ids.length - 1, Math.floor(row));
     const id = model.ids[index]!;
     const previous = pendingRead;
-    pendingRead = { row: Math.min(row, index + .999999), center, id };
+    pendingRead = { fraction: Math.min(1, row - index), center, id };
     measure();
     if (boxes.some(item => item.row === index)) { restoreRead(); return; }
     rail.setAttribute("data-navigation", "pending");
-    if (previous?.id !== id) model.onJump?.(id);
+    if (previous?.id !== id) model.onRequestHistory?.(id);
     schedule();
   };
   /** A y on an outer strip to the transcript: the mark under it, and how far down that mark. */
