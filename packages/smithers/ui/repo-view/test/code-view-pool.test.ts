@@ -82,6 +82,8 @@ describe("code view page lifetime", () => {
     const error = spyOn(console, "error").mockImplementation(() => {});
     try {
       old.dispatchEvent(new Event("error"));
+      // pierre settles a failed initialization asynchronously; give it the time it takes.
+      await new Promise((resolve) => setTimeout(resolve, 20));
       expect(currentCodeViewPool()).toBe(next);
       expect(warning).not.toHaveBeenCalled();
     } finally {
@@ -123,8 +125,12 @@ describe("code view page lifetime", () => {
     try {
       HeldWorker.instances[0]!.dispatchEvent(new Event("error"));
       HeldWorker.instances[0]!.dispatchEvent(new Event("error"));
+      await waitFor(() => states.length > 0);
+      await new Promise((resolve) => setTimeout(resolve, 20));
       expect(states).toEqual(["failed"]);
       expect(warning).toHaveBeenCalledTimes(1);
+      // pierre hands the worker's error to the pool's hook instead of logging it; the page's one warning is the report.
+      expect(error).not.toHaveBeenCalled();
       expect(HeldWorker.instances[0]!.terminated).toBe(true);
       expect(codeViewWorkerPool("github-dark").state).toBe("failed");
       disposeCodeViewPool();

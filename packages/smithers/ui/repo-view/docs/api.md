@@ -178,7 +178,7 @@ Every row is a link built by `href`; a plain click or Enter calls `onOpen`.
 
 ```ts
 function PierreDiffView(props: PierreDiffViewProps): JSX.Element
-function patchToCodeViewItems(patch: string, selectedPath?: string | null): CodeViewItem[]
+function patchToCodeViewItems(patch: string, selectedPath?: string | null): CodeViewItem<undefined>[]
 function diffsThemeForMode(mode: PierreDiffMode, palette?: ResolvedPalette): DiffsThemeNames
 function diffStyleForLayout(layout: PierreDiffLayout): "split" | "unified"
 function normalizeDiffPath(path: string | undefined): string

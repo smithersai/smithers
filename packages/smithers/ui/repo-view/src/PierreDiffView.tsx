@@ -79,7 +79,7 @@ export function normalizeDiffPath(path: string | undefined): string {
  * tree that would blank the whole surface, so we degrade honestly to `[]` ("no
  * diff available") instead.
  */
-export function patchToCodeViewItems(patch: string, selectedPath?: string | null): CodeViewItem[] {
+export function patchToCodeViewItems(patch: string, selectedPath?: string | null): CodeViewItem<undefined>[] {
   if (!patch.trim()) return [];
   let files: FileDiffMetadata[];
   try {

@@ -12,12 +12,12 @@
  * the house theme through `setRenderOptions` whenever a view's theme
  * differs from the pool's; pierre re-renders the mounted files itself.
  *
- * The pool is a promise the page keeps, not a fact. A worker that never
- * answers `initialize` (a shell that cannot load a module worker) would
- * leave pierre waiting for a highlight forever, so the pool is probed: an
- * `error` event on the worker, or no initialization inside the deadline,
- * marks it failed, the views remount pierre without it, and highlighting
- * runs on the main thread as before. Views read the pool through
+ * The pool is a promise the page keeps, not a fact, and pierre's own
+ * initialization settles it: a worker that cannot start (a page whose policy
+ * refuses workers, a shell that cannot load a module worker) or that never
+ * answers `initialize` within the deadline rejects it, and pierre reports any
+ * worker error to the pool. Either marks the pool failed, the views remount
+ * pierre without it, and highlighting runs on the main thread as before. Views read the pool through
  * `useSyncExternalStore`; nothing here is component state.
  */
 import type { DiffsThemeNames, ThemesType } from "@pierre/diffs";
@@ -45,17 +45,7 @@ const OFF: CodeViewPool = { state: "off", manager: undefined };
 let pool: CodeViewPool = OFF;
 let started = false;
 let themeKey = "";
-let generation = 0;
-let deadline: ReturnType<typeof setTimeout> | undefined;
-let probeTimer: ReturnType<typeof setTimeout> | undefined;
 const listeners = new Set<() => void>();
-
-const clearProbes = (): void => {
-  clearTimeout(deadline);
-  clearTimeout(probeTimer);
-  deadline = undefined;
-  probeTimer = undefined;
-};
 
 const publish = (next: CodeViewPool): void => {
   pool = next;
@@ -88,15 +78,13 @@ export const spawnWorker = (inBun: boolean = bunRuntime()): Worker => {
   return new Worker(new URL("@pierre/diffs/worker/worker.js", import.meta.url), { type: "module" });
 };
 
-const fail = (reason: string): void => {
-  if (pool.state === "failed") return;
-  clearProbes();
+const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+/** Give up on `manager`'s pool, unless the page has closed it or started another since. */
+const fail = (manager: WorkerPoolManager, reason: string): void => {
+  if (pool.manager !== manager) return;
   console.warn(`code view: highlighting stays on the main thread — ${reason}`);
-  try {
-    terminateWorkerPoolSingleton();
-  } catch {
-    // A pool that never came up has nothing to terminate.
-  }
+  terminateWorkerPoolSingleton();
   publish({ state: "failed", manager: undefined });
 };
 
@@ -105,46 +93,24 @@ const start = (theme: CodeViewTheme): void => {
   if (started) return;
   if (typeof Worker !== "function" || typeof document === "undefined") return;
   started = true;
-  const currentGeneration = generation;
-  // pierre's constructor only queues an asynchronous initialization; a worker that cannot be created or started
-  // shows up as `isWorkingPool() === false`, which the probe below turns into the fallback.
   const manager = getOrCreateWorkerPoolSingleton({
     poolOptions: {
       poolSize: 1,
-      workerFactory: () => {
-        const worker = spawnWorker();
-        worker.addEventListener("error", (event) => {
-          if (generation === currentGeneration) fail(`its worker failed (${(event as ErrorEvent).message || "error"})`);
-        });
-        return worker;
-      },
+      workerFactory: () => spawnWorker(),
+      workerInitializationTimeout: CODE_VIEW_POOL_DEADLINE_MS,
+      // Any worker error, at startup or later, moves the page to the main thread; pierre logs nothing itself.
+      onWorkerError: (event) => fail(manager, `its worker failed (${(event as ErrorEvent).message || "error"})`),
     },
     highlighterOptions: { theme, useTokenTransformer: true, preferredHighlighter: "shiki-js" },
   });
-  // pierre leaves a failed initialization in a promise nobody awaits, an unhandled rejection in the page's console.
-  // Observe it here; the probe reads the outcome from `isWorkingPool()`.
-  manager.initialize().catch(() => {});
   themeKey = keyOf(theme);
   pool = { state: "starting", manager };
-  deadline = setTimeout(() => {
-    if (pool.manager === manager && pool.state === "starting") fail(`its worker did not initialize within ${CODE_VIEW_POOL_DEADLINE_MS / 1000} s`);
-  }, CODE_VIEW_POOL_DEADLINE_MS);
-  (deadline as { unref?: () => void }).unref?.();
-  const probe = (): void => {
-    if (pool.manager !== manager) return;
-    if (manager.isInitialized()) {
-      clearProbes();
-      publish({ state: "ready", manager });
-    } else if (!manager.isWorkingPool()) {
-      clearProbes();
-      fail("its worker failed to initialize");
-    } else {
-      probeTimer = setTimeout(probe, 50);
-      (probeTimer as { unref?: () => void }).unref?.();
-    }
-  };
-  probeTimer = setTimeout(probe, 0);
-  (probeTimer as { unref?: () => void }).unref?.();
+  manager.initialize().then(
+    () => {
+      if (pool.manager === manager && manager.isInitialized()) publish({ state: "ready", manager });
+    },
+    (error: unknown) => fail(manager, `its worker failed to initialize (${messageOf(error)})`),
+  );
 };
 
 /**
@@ -159,7 +125,7 @@ export const codeViewWorkerPool = (theme: CodeViewTheme): CodeViewPool => {
     const manager = pool.manager;
     themeKey = keyOf(theme);
     void manager.setRenderOptions({ theme, useTokenTransformer: true }).catch((error: unknown) => {
-      if (pool.manager === manager) fail(`it could not take the theme (${error instanceof Error ? error.message : String(error)})`);
+      fail(manager, `it could not take the theme (${messageOf(error)})`);
     });
   }
   return pool;
@@ -170,12 +136,10 @@ export const currentCodeViewPool = (): CodeViewPool => pool;
 /**
  * Release the page's highlighter after unmounting its code views, while its
  * DOM still exists. Embedded hosts and tests may close a page without ending
- * the JS process. The next page can create a fresh pool; old worker errors,
- * probes and theme requests cannot change that successor's state.
+ * the JS process. The next page can create a fresh pool; the old pool's
+ * initialization and theme requests cannot change that successor's state.
  */
 export const disposeCodeViewPool = (): void => {
-  generation += 1;
-  clearProbes();
   const hadManager = pool.manager !== undefined;
   pool = OFF;
   started = false;

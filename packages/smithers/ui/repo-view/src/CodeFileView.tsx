@@ -444,7 +444,7 @@ export function CodeFileView({
    * with its column (`data-char`) and keep whitespace out of tokens, which
    * the token events need; it is on only when a gesture is bound.
    */
-  const options = useMemo<FileOptions<AnnotationMeta>>(
+  const options = useMemo<FileOptions<AnnotationMeta, undefined>>(
     () => ({
       theme,
       themeType: resolvedMode,
@@ -486,7 +486,7 @@ export function CodeFileView({
     >
       <pre className="sui-code-view-plain">{contents}</pre>
       <WorkerPoolContext.Provider value={manager}>
-        <File<AnnotationMeta>
+        <File<AnnotationMeta, undefined>
           key={manager === undefined ? "main-thread" : "worker"}
           file={file}
           selectedLines={selectedLines}

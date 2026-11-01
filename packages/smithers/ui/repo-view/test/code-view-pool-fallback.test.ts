@@ -1,5 +1,5 @@
 // How the highlighter's pool gives up and leaves highlighting on the main thread: a worker that never answers
-// `initialize` before the deadline, and a page whose policy refuses to create workers. And where a browser's
+// `initialize` before pierre's deadline, and a page whose policy refuses to create workers. And where a browser's
 // worker comes from. Only the Worker boundary is replaced; pierre's pool manager is real.
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import {
@@ -36,45 +36,64 @@ afterEach(() => {
   SilentWorker.started.length = 0;
 });
 
+/**
+ * Holds pierre's initialization deadline for the test to fire; every other timer runs as usual. pierre arms the
+ * deadline once it has loaded the theme, so a test waits for it.
+ */
+const holdDeadline = () => {
+  const realSetTimeout = globalThis.setTimeout;
+  const deadlines: Array<() => void> = [];
+  const schedule = spyOn(globalThis, "setTimeout").mockImplementation(((run: () => void, ms?: number, ...rest: Array<unknown>) => {
+    if (ms === CODE_VIEW_POOL_DEADLINE_MS) {
+      deadlines.push(run);
+      return deadlines.length as unknown as ReturnType<typeof setTimeout>;
+    }
+    return realSetTimeout(run, ms, ...rest);
+  }) as unknown as typeof setTimeout);
+  return { deadlines, restore: () => schedule.mockRestore() };
+};
+
 describe("the pool's deadline", () => {
-  test("a worker that never initializes hands highlighting back to the main thread at the deadline", () => {
+  test("a worker that never initializes hands highlighting back to the main thread at the deadline", async () => {
     globalThis.Worker = SilentWorker as unknown as typeof Worker;
-    const timers: Array<{ readonly run: () => void; readonly ms: number | undefined }> = [];
-    const schedule = spyOn(globalThis, "setTimeout").mockImplementation(((run: () => void, ms?: number) => {
-      timers.push({ run, ms });
-      return timers.length as unknown as ReturnType<typeof setTimeout>;
-    }) as unknown as typeof setTimeout);
+    const timers = holdDeadline();
     const warning = spyOn(console, "warn").mockImplementation(() => {});
+    // pierre logs its own timed-out initialization too.
+    const error = spyOn(console, "error").mockImplementation(() => {});
     try {
       expect(codeViewWorkerPool("github-dark").state).toBe("starting");
-      const deadline = timers.find((timer) => timer.ms === CODE_VIEW_POOL_DEADLINE_MS)!;
-      deadline.run();
+      await until(() => timers.deadlines.length === 1);
+      expect(currentCodeViewPool().state).toBe("starting");
+      timers.deadlines[0]!();
+      await until(() => currentCodeViewPool().state === "failed");
       expect(currentCodeViewPool()).toEqual({ state: "failed", manager: undefined });
+      expect(warning).toHaveBeenCalledTimes(1);
       expect(warning).toHaveBeenCalledWith(
-        `code view: highlighting stays on the main thread — its worker did not initialize within ${CODE_VIEW_POOL_DEADLINE_MS / 1000} s`,
+        expect.stringMatching(
+          new RegExp(`^code view: highlighting stays on the main thread — its worker failed to initialize \\(.*${CODE_VIEW_POOL_DEADLINE_MS}ms\\)$`),
+        ),
       );
     } finally {
-      schedule.mockRestore();
+      timers.restore();
       warning.mockRestore();
+      error.mockRestore();
     }
   });
 
-  test("a deadline that fires after the page closed changes nothing", () => {
+  test("a deadline that fires after the page closed changes nothing", async () => {
     globalThis.Worker = SilentWorker as unknown as typeof Worker;
-    const timers: Array<{ readonly run: () => void; readonly ms: number | undefined }> = [];
-    const schedule = spyOn(globalThis, "setTimeout").mockImplementation(((run: () => void, ms?: number) => {
-      timers.push({ run, ms });
-      return timers.length as unknown as ReturnType<typeof setTimeout>;
-    }) as unknown as typeof setTimeout);
+    const timers = holdDeadline();
     const warning = spyOn(console, "warn").mockImplementation(() => {});
     try {
       codeViewWorkerPool("github-dark");
+      await until(() => timers.deadlines.length === 1);
       disposeCodeViewPool();
-      timers.find((timer) => timer.ms === CODE_VIEW_POOL_DEADLINE_MS)!.run();
+      timers.deadlines[0]!();
+      await new Promise((resolve) => setTimeout(resolve, 20));
       expect(currentCodeViewPool().state).toBe("off");
       expect(warning).not.toHaveBeenCalled();
     } finally {
-      schedule.mockRestore();
+      timers.restore();
       warning.mockRestore();
     }
   });
@@ -94,7 +113,7 @@ describe("a page that refuses workers", () => {
       await until(() => currentCodeViewPool().state === "failed");
       expect(currentCodeViewPool().manager).toBeUndefined();
       expect(warning).toHaveBeenCalledWith(
-        "code view: highlighting stays on the main thread — its worker failed to initialize",
+        "code view: highlighting stays on the main thread — its worker failed to initialize (worker-src 'none')",
       );
     } finally {
       warning.mockRestore();
