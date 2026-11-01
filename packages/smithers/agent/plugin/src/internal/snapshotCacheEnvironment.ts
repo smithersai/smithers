@@ -9,7 +9,7 @@ import { Action } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import type { FlowsPlugin } from "../Plugin.ts"
-import { PluginError } from "../PluginError.ts"
+import { PluginError } from "../PluginError.vibe"
 import * as Boundary from "./Boundary.ts"
 
 const escapePluginIdentityPart = (value: string): string =>

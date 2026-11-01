@@ -101,8 +101,8 @@ const holds = (term: Term, context: Context): boolean => {
     case "view":
       return context.view === term.view
     case "item":
-      return context.item !== undefined && Object.hasOwn(context.item, term.field) &&
-        Boolean(context.item[term.field])
+      return context.item !== undefined && Object.hasOwn(context.item, term.field)
+        && Boolean(context.item[term.field])
     case "focus":
       return context.focusInput
   }

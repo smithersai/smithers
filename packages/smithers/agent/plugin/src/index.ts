@@ -13,7 +13,7 @@
 
 import type * as Effect from "effect/Effect"
 import type { FlowsConfig, ResolvedConfig } from "./Config.ts"
-import type { ParallelHook, WaterfallHook } from "./Hooks.ts"
+import type { ParallelHook, WaterfallHook } from "./Hooks.vibe"
 
 /**
  * The shared kernel's base hook catalog.
@@ -58,7 +58,7 @@ export * as Config from "./Config.ts"
  * @since 1.0.0-rc.0
  * @category hooks
  */
-export * from "./Hooks.ts"
+export * from "./Hooks.vibe"
 
 /**
  * @since 1.0.0-rc.0
@@ -76,7 +76,7 @@ export * from "./Plugin.ts"
  * @since 1.0.0-rc.0
  * @category errors
  */
-export * from "./PluginError.ts"
+export * from "./PluginError.vibe"
 
 /**
  * @since 1.0.0-rc.0
@@ -94,13 +94,13 @@ export * as Resolve from "./Resolve.ts"
  * @since 1.1.0
  * @category binding
  */
-export * as Bind from "./Bind.ts"
+export * as Bind from "./Bind.vibe"
 
 /**
  * @since 1.1.0
  * @category contributions
  */
-export * as Contribution from "./Contribution.ts"
+export * as Contribution from "./Contribution.vibe"
 
 /**
  * @since 1.1.0
@@ -118,7 +118,7 @@ export * as JsonSchema from "./JsonSchema.ts"
  * @since 1.1.0
  * @category keymap
  */
-export * as Keys from "./Keys.ts"
+export * as Keys from "./Keys.vibe"
 
 /**
  * @since 1.1.0
@@ -136,4 +136,4 @@ export * as Manifest from "./Manifest.ts"
  * @since 1.1.0
  * @category keymap
  */
-export * as When from "./When.ts"
+export * as When from "./When.vibe"

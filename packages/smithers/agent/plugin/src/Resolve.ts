@@ -13,14 +13,14 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import type { FlowsConfig } from "./Config.ts"
 import * as Config from "./Config.ts"
-import type { HookCatalog, HookKind, HookObject } from "./Hooks.ts"
-import { engineHooks, handlerOf, orderOf } from "./Hooks.ts"
+import type { HookCatalog, HookKind, HookObject } from "./Hooks.vibe"
+import { engineHooks, handlerOf, orderOf } from "./Hooks.vibe"
 import type { FlowsHooks } from "./index.ts"
 import * as Boundary from "./internal/Boundary.ts"
-import { mergePluginLayers } from "./internal/mergePluginLayers.ts"
+import { mergePluginLayers } from "./internal/mergePluginLayers.vibe"
 import { snapshotCacheEnvironment } from "./internal/snapshotCacheEnvironment.ts"
 import type { Apply, FlowsPlugin, PluginInput } from "./Plugin.ts"
-import { PluginError, type PluginErrorCode } from "./PluginError.ts"
+import { PluginError, type PluginErrorCode } from "./PluginError.vibe"
 
 /**
  * Maximum nested preset-array depth accepted at startup.

@@ -1,10 +1,10 @@
 import { Cause, Deferred, Effect, Exit, Fiber, Option } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Config from "../src/Config.ts"
-import type { FirstHook, ParallelHook, SequentialHook } from "../src/Hooks.ts"
-import * as Hooks from "../src/Hooks.ts"
+import type { FirstHook, ParallelHook, SequentialHook } from "../src/Hooks.vibe"
+import * as Hooks from "../src/Hooks.vibe"
 import type { FlowsHooks, FlowsPlugin } from "../src/index.ts"
-import type { PluginError } from "../src/PluginError.ts"
+import type { PluginError } from "../src/PluginError.vibe"
 import * as Plugins from "../src/Plugins.ts"
 import * as Resolve from "../src/Resolve.ts"
 

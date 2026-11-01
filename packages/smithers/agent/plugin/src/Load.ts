@@ -15,7 +15,7 @@ import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as EffectPath from "effect/Path"
 import * as Result from "effect/Result"
-import * as Bind from "./Bind.ts"
+import * as Bind from "./Bind.vibe"
 import {
   type Active,
   type Command,
@@ -28,12 +28,12 @@ import {
   type Slot,
   type Tier,
   type View
-} from "./Contribution.ts"
+} from "./Contribution.vibe"
 import * as Patterns from "./internal/patterns.ts"
 import * as JsonSchema from "./JsonSchema.ts"
-import * as Keys from "./Keys.ts"
+import * as Keys from "./Keys.vibe"
 import * as Manifest from "./Manifest.ts"
-import * as When from "./When.ts"
+import * as When from "./When.vibe"
 
 /**
  * What the host's catalog knows about one flow, by tag.

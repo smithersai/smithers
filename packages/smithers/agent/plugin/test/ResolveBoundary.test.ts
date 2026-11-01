@@ -1,9 +1,9 @@
 import { Action } from "@smthrs/flow"
 import { Context, Effect, Exit, Layer, Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
-import * as Hooks from "../src/Hooks.ts"
+import * as Hooks from "../src/Hooks.vibe"
 import type { FlowsPlugin, PluginInput } from "../src/index.ts"
-import { PluginError } from "../src/PluginError.ts"
+import { PluginError } from "../src/PluginError.vibe"
 import * as Plugins from "../src/Plugins.ts"
 import * as Resolve from "../src/Resolve.ts"
 

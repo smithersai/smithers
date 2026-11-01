@@ -11,9 +11,9 @@
 
 import * as Schema from "effect/Schema"
 import type * as JsonSchema from "./JsonSchema.ts"
-import type * as Keys from "./Keys.ts"
+import type * as Keys from "./Keys.vibe"
 import type * as Manifest from "./Manifest.ts"
-import type * as When from "./When.ts"
+import type * as When from "./When.vibe"
 
 /**
  * Why a plugin was not loaded. A closed set: a host lists it on the plugin
@@ -37,7 +37,7 @@ export const Reason = Schema.Literals([
   "reserved",
   "minimum_below_flow",
   "credential_input",
-  "secret_field"
+  "secret_field",
 ])
 
 /**
@@ -63,7 +63,7 @@ export class Refusal extends Schema.TaggedError<Refusal>()("plugin/Refusal", {
   plugin: Schema.optional(Schema.String),
   reason: Reason,
   path: Schema.optional(Schema.String),
-  detail: Schema.String
+  detail: Schema.String,
 }) {}
 
 /**
@@ -101,7 +101,7 @@ export const Point = Schema.Literals([
   "hooks",
   "taps",
   "modelRoles",
-  "records"
+  "records",
 ])
 
 /**

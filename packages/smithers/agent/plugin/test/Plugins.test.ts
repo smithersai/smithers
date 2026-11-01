@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import type { SequentialHook } from "../src/Hooks.ts"
+import type { SequentialHook } from "../src/Hooks.vibe"
 import type { FlowsPlugin } from "../src/index.ts"
 import * as Kernel from "../src/Kernel.ts"
 import * as Plugins from "../src/Plugins.ts"

@@ -6,10 +6,9 @@
  */
 
 import { Action } from "@smthrs/flow"
-import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import type { FlowsPlugin } from "../Plugin.ts"
-import { PluginError } from "../PluginError.ts"
+import { PluginError } from "../PluginError.vibe"
 
 /**
  * Merges plugin layers left-to-right, wrapping each build failure as
@@ -22,7 +21,7 @@ import { PluginError } from "../PluginError.ts"
  */
 export const mergePluginLayers = <H>(
   plugins: ReadonlyArray<FlowsPlugin<H>>,
-  cacheEnvironment: Action.CacheEnvironment | undefined
+  cacheEnvironment: Action.CacheEnvironment | undefined,
 ): Layer.Layer<any, PluginError, any> => {
   const layers = plugins.flatMap((plugin) =>
     plugin.layer
@@ -34,10 +33,10 @@ export const mergePluginLayers = <H>(
                 code: "layer_failed",
                 message: `plugin "${plugin.name}" failed to build its layer`,
                 plugin: plugin.name,
-                cause
-              })
-            )
-          )) as Layer.Layer<any, PluginError, any>
+                cause,
+              }),
+            ),
+          )) as Layer.Layer<any, PluginError, any>,
       ]
       : []
   )

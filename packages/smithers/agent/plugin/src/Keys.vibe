@@ -89,7 +89,7 @@ const named: ReadonlySet<string> = new Set([
   "/",
   "?",
   "[",
-  "]"
+  "]",
 ])
 const modifiers = ["mod", "ctrl", "alt", "shift"] as const
 
@@ -136,11 +136,11 @@ const strokeKey = (expected: string, pressed: string): number | boolean => {
 }
 
 const sameModifiers = (expected: Stroke, pressed: Pressed, options: Options): boolean =>
-  pressed.meta === (options.mac && expected.mod) &&
-  pressed.ctrl === (expected.ctrl || (!options.mac && expected.mod)) &&
-  pressed.alt === expected.alt &&
+  pressed.meta === (options.mac && expected.mod)
+  && pressed.ctrl === (expected.ctrl || (!options.mac && expected.mod))
+  && pressed.alt === expected.alt
   // `?` is typed with Shift on most layouts, so its Shift says nothing.
-  (expected.key === "?" || pressed.shift === expected.shift)
+  && (expected.key === "?" || pressed.shift === expected.shift)
 
 /**
  * Compares the strokes pressed since the keymap last reset with a binding.
