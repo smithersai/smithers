@@ -4,7 +4,7 @@
  * activity scrubber's selection. Moving the selection aims the scroll at the
  * step it lands on, in the chat or in the worker's own tab.
  */
-import type { CliRenderer, ScrollBoxRenderable } from "@opentui/core"
+import type { CliRenderer, MouseEvent, ScrollBoxRenderable } from "@opentui/core"
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type * as Activity from "./activity.ts"
 import * as DragScroll from "./drag-scroll.ts"
@@ -27,6 +27,41 @@ interface Source {
 
 /** The chat's own activity source; a worker's is its tab id. */
 const chat = "chat"
+
+/** A transcript row's identity and where it sat relative to the viewport top. */
+interface Anchor {
+  readonly key: string
+  readonly offset: number
+  readonly height: number
+}
+/**
+ * Rows as seen from the scroll offset `top`, whether that was the live bottom,
+ * and the box's own largest offset then, which shrinking content lowers.
+ */
+interface Position {
+  readonly bottom: boolean
+  readonly top: number
+  readonly max: number
+  readonly anchors: ReadonlyArray<Anchor>
+}
+/** Distance from the viewport's top edge; zero for the row covering it. */
+const edge = (anchor: Anchor): number =>
+  anchor.offset <= 0 && anchor.offset + anchor.height > 0 ? 0 : Math.abs(anchor.offset)
+/** The box's largest scroll offset: hiding programs lowers it. */
+const furthest = (box: ScrollBoxRenderable): number => Math.max(0, box.scrollHeight - box.viewport.height)
+/**
+ * The same rows from a newer scroll offset: a reader's scroll moves every row
+ * alike. Shorter content pulling the offset down to the box's new end is the
+ * box clamping itself, which asks for nothing and leaves the rows alone.
+ */
+const rebase = (position: Position, top: number, max: number): Position =>
+  top === position.top || (top >= max && max < position.max) ? { ...position, top, max } : {
+    // Scrolling up leaves the live bottom; the anchors then place the view.
+    bottom: position.bottom && top >= position.top,
+    top,
+    max,
+    anchors: position.anchors.map((anchor) => ({ ...anchor, offset: anchor.offset - (top - position.top) }))
+  }
 
 export const useTranscriptView = (options: {
   readonly renderer: CliRenderer
@@ -68,6 +103,72 @@ export const useTranscriptView = (options: {
   const previousSurface = useRef(surface)
   const scroll = useRef<ScrollBoxRenderable>(null)
   const workerScroll = useRef<ScrollBoxRenderable | null>(null)
+  // Keep a message at the viewport edge when its programs change height.
+  // Native row positions settle on renderer frames, after React's commit.
+  const viewportPosition = useRef<Position | undefined>(undefined)
+  const pendingPosition = useRef<Position | undefined>(undefined)
+  const cancelPosition = useCallback(() => {
+    pendingPosition.current = undefined
+  }, [])
+  const program = options.expanded || Timeline.program(filter)
+  useLayoutEffect(() => {
+    const saved = viewportPosition.current
+    if (surface !== "chat" || saved === undefined) return
+    // Keys and the wheel reach the box before this commit's frame, so restore
+    // the position the reader scrolled to, not the one last drawn.
+    const box = scroll.current
+    pendingPosition.current = box === null ? saved : rebase(saved, box.scrollTop, furthest(box))
+  }, [program, options.width])
+  useLayoutEffect(() => {
+    viewportPosition.current = undefined
+    pendingPosition.current = undefined
+    if (surface !== "chat" || panel !== undefined) return
+    const frame = () => {
+      const box = scroll.current
+      if (box === null) return
+      const pending = pendingPosition.current
+      if (pending !== undefined) {
+        // Scrolling away from the aimed position is the reader's newer intent:
+        // carry it, so the correction lands where they scrolled to.
+        const aimed = rebase(pending, box.scrollTop, furthest(box))
+        const anchor = [...aimed.anchors].sort((a, b) => edge(a) - edge(b) || b.offset - a.offset).find(
+          ({ key, offset }) => {
+            const child = box.content.findDescendantById(key)
+            return child !== undefined && child.height > 0 && offset > -child.height
+          }
+        )
+        const child = anchor === undefined ? undefined : box.content.findDescendantById(anchor.key)
+        const bottom = furthest(box)
+        const target = aimed.bottom ?
+          bottom
+          : anchor === undefined || child === undefined ?
+          box.scrollTop
+          : Math.min(bottom, Math.max(0, box.scrollTop + child.y - box.viewport.y - anchor.offset))
+        if (box.scrollTop !== target) {
+          box.scrollTop = target
+          // Read the box back: native clamping is not the reader scrolling.
+          pendingPosition.current = { ...aimed, top: box.scrollTop, max: furthest(box) }
+        } else pendingPosition.current = undefined
+      }
+      // Save row identities and their offset from the viewport edge for the
+      // next toggle. A hidden program falls back to the nearest surviving row.
+      const anchors = box.getChildren().filter((child) => child.height > 0).map((child) => ({
+        key: child.id,
+        offset: child.y - box.viewport.y,
+        height: child.height
+      }))
+      viewportPosition.current = {
+        bottom: box.scrollTop >= furthest(box),
+        top: box.scrollTop,
+        max: furthest(box),
+        anchors
+      }
+    }
+    renderer.on("frame", frame)
+    return () => {
+      renderer.off("frame", frame)
+    }
+  }, [renderer, options.conversation, surface, panel])
   /** Inspection borrows navigation; closing gives back the exact view it borrowed. */
   const origin = useRef<{ surface: string; panelFocus: boolean; scrollTop: number } | undefined>(undefined)
   const restore = useRef<{ surface: string; scrollTop: number } | undefined>(undefined)
@@ -208,6 +309,7 @@ export const useTranscriptView = (options: {
     if (pendingReveal.current?.inspection !== activeInspection) cancelReveal()
   }, [activeInspection, cancelReveal])
   const reveal = (key: string) => {
+    pendingPosition.current = undefined
     const box = scroll.current
     const child = box?.content.findDescendantById(key)
     if (box === null || box === undefined || child === undefined) return
@@ -250,6 +352,7 @@ export const useTranscriptView = (options: {
     setPanelFocus(prior.panelFocus)
   }
   const snapToLive = () => {
+    pendingPosition.current = undefined
     cancelReveal()
     setInspectionInterrupted(false)
     inspectionSurface.current = undefined
@@ -260,7 +363,14 @@ export const useTranscriptView = (options: {
     const box = viewport()
     if (box !== null) box.scrollTop = box.scrollHeight
   }
-  const dragScroll = useMemo(() => DragScroll.make(() => renderer.getSelection()?.isDragging === true), [renderer])
+  const dragScroll = useMemo(() => ({
+    ...DragScroll.make(() => renderer.getSelection()?.isDragging === true),
+    // A selection drag owns the viewport: correcting it would move the text
+    // under the pointer. Wheel and scrollbar scrolls are carried instead.
+    onMouse: (event: MouseEvent) => {
+      if (event.type === "drag" && renderer.getSelection()?.isDragging === true) cancelPosition()
+    }
+  }), [renderer, cancelPosition])
   return {
     scroll,
     workerScroll,

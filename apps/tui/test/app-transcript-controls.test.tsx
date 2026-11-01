@@ -1,4 +1,5 @@
 import { type Renderable, ScrollBoxRenderable, TextareaRenderable } from "@opentui/core"
+import { ManualClock } from "@opentui/core/testing"
 import { testRender } from "@opentui/react/test-utils"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
@@ -87,7 +88,7 @@ const seed = (user: string, answer: string, source?: string) => {
   })
   saved.append({ type: "outcome", at: 104, prompt: user, outcome: { _tag: "done", answer } })
 }
-const mount = async (height = 35, width = 140) => {
+const mount = async (height = 35, width = 140, ready = "Beta answer", clock?: ManualClock) => {
   const host: Host.Host = {
     cwd,
     judged: false,
@@ -108,13 +109,13 @@ const mount = async (height = 35, width = 140) => {
         resume={saved.file}
       />,
       // Legacy control bytes cannot distinguish Ctrl+P from Ctrl+Shift+P.
-      { width, height, exitOnCtrlC: false, kittyKeyboard: true }
+      { width, height, exitOnCtrlC: false, kittyKeyboard: true, clock }
     )
     await setImmediate()
   })
   await render()
   if (height > 24) await visibleRow("Alpha answer")
-  await visibleRow("Beta answer")
+  await visibleRow(ready)
 }
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "tui-app-transcript-"))
@@ -539,3 +540,373 @@ test.each([24, 32])(
     expect(inserts(0)).toEqual([])
   }
 )
+
+const cellsToggle = async () => {
+  await command("/filter")
+  await type("Cells")
+  await key("ARROW_DOWN")
+  await key("RETURN")
+  await closePicker()
+  await drainDeferredScroll()
+}
+const seedLongConversation = (wrapped = false) => {
+  for (let index = 0; index < 20; index++) {
+    seed(
+      `Question ${index}`,
+      `Answer ${index}\n${
+        Array.from({ length: 5 }, (_, line) => `Detail ${index}:${line}${wrapped ? " wrapping text".repeat(10) : ""}`)
+          .join("\n")
+      }`,
+      Array.from({ length: 15 }, (_, line) => `const cell${index}line${line} = ${line}`).join("\n")
+    )
+  }
+}
+const firstMessage = () => {
+  const lines = frame().split("\n")
+  const row = lines.findIndex((line) => /Question \d+|Answer \d+|Detail \d+:\d+/.test(line))
+  return { text: lines[row]!.trim(), row }
+}
+
+test("Cells keeps the visible message while browsing a long Chat across repeated toggles", async () => {
+  seedLongConversation()
+  await mount(24, 80, "Detail 19:4")
+  await drainDeferredScroll()
+  for (let index = 0; index < 5; index++) await key("\u001b[5~")
+  const anchor = firstMessage()
+  expect(anchor.text).not.toContain("19")
+  expect(scroll().scrollTop).toBeGreaterThan(0)
+  for (let index = 0; index < 4; index++) {
+    await cellsToggle()
+    const lines = frame().split("\n")
+    const row = lines.findIndex((line) => line.trim() === anchor.text)
+    expect(row).toBeGreaterThan(0)
+    expect(Math.abs(row - anchor.row)).toBeLessThanOrEqual(1)
+    expect(scroll().scrollTop).toBeLessThan(scroll().scrollHeight - scroll().viewport.height)
+    expect(composer().focused).toBe(true)
+  }
+  await type("Draft still works")
+  expect(composer().plainText).toBe("Draft still works")
+  expect(turns).toEqual([])
+})
+
+test("Cells keeps a reader at the live bottom of a long Chat", async () => {
+  seedLongConversation()
+  await mount(24, 80, "Detail 19:4")
+  await drainDeferredScroll()
+  expect(frame()).toContain("Detail 19:4")
+  for (let index = 0; index < 4; index++) {
+    await cellsToggle()
+    expect(frame()).toContain("Detail 19:4")
+    expect(scroll().scrollTop).toBe(scroll().scrollHeight - scroll().viewport.height)
+  }
+})
+
+test("Cells preserves short Chat, and Ctrl+O preserves a scrolled message after resizing", async () => {
+  seed("Code question", "Code answer", "const sourceOnlyNeedle = 7")
+  await mount(48)
+  for (let index = 0; index < 4; index++) {
+    await cellsToggle()
+    expect(frame()).toContain("Alpha question")
+    expect(frame()).toContain("Code answer")
+    expect(scroll().scrollTop).toBe(0)
+  }
+  await act(async () => setup!.renderer.destroy())
+  setup = undefined
+  seedLongConversation(true)
+  await mount(24, 80, "Detail 19:4")
+  for (let index = 0; index < 5; index++) await key("\u001b[5~")
+  for (const [width, height] of [[60, 32], [80, 24]]) {
+    await act(async () => {
+      setup!.resize(width!, height!)
+      await setImmediate()
+    })
+    await drainDeferredScroll()
+    const anchor = firstMessage()
+    await key("o", { ctrl: true })
+    await drainDeferredScroll()
+    expect(frame()).toContain(anchor.text)
+    await key("o", { ctrl: true })
+    await drainDeferredScroll()
+    expect(frame()).toContain(anchor.text)
+    expect(composer().focused).toBe(true)
+  }
+})
+
+test("hiding the program under the viewport chooses a nearby surviving message", async () => {
+  seedLongConversation()
+  await mount(24, 80, "Detail 19:4")
+  await cellsToggle()
+  // Put a program's interior on the top edge, using the native transcript's
+  // actual row geometry rather than a synthetic offset calculation.
+  // Find the middle turn's cell by the public transcript order (two initial
+  // exchanges followed by the question, cell and answer for each fixture turn).
+  const cell = scroll().getChildren()[4 + 10 * 3 + 1]!
+  expect(cell.height).toBeGreaterThan(4)
+  await act(async () => {
+    scroll().scrollTop += cell.y - scroll().viewport.y + 4
+  })
+  await render()
+  expect(frame()).toContain("cell10line")
+  await cellsToggle()
+  expect(frame()).not.toContain("cell10line")
+  expect(frame()).toContain("Answer 10")
+  expect(scroll().scrollTop).toBeGreaterThan(0)
+  expect(scroll().scrollTop).toBeLessThan(scroll().scrollHeight - scroll().viewport.height)
+  await key("\u001b[5~")
+  const prior = scroll().scrollTop
+  await drainDeferredScroll()
+  expect(scroll().scrollTop).toBe(prior)
+})
+
+// Hold the native renderer's clock: input commits can happen between exactly
+// counted frames, including the second frame that settles anchor restoration.
+const inputWithoutFrame = async (bytes: string) => {
+  const id = setup!.renderer.frameId
+  await act(async () => {
+    setup!.renderer.stdin.emit("data", Buffer.from(bytes))
+    await setImmediate()
+  })
+  expect(setup!.renderer.frameId).toBe(id)
+}
+const screenReceipt = (name: string) => {
+  const prefix = process.env.SMITHERS_INTERACTION_RECEIPT
+  if (prefix !== undefined) writeFileSync(`${prefix}-${name}.txt`, frame())
+}
+/** The turn a visible message line belongs to, as the fixture numbers them. */
+const turnOf = (line: string) => Number(/(?:Question|Answer|Detail) (\d+)/.exec(line)![1])
+
+test.each(
+  [0, 1].flatMap((frames) =>
+    ["pageup", "pagedown", "shiftup", "shiftdown", "wheel", "wheeldown", "drag"].map((input) => ({ frames, input }))
+  )
+)(
+  "newer $input wins after Cells and $frames native frames",
+  async ({ frames, input }) => {
+    seedLongConversation()
+    const clock = new ManualClock()
+    await mount(24, 80, "Detail 19:4", clock)
+    await drainDeferredScroll()
+    for (let index = 0; index < 5; index++) await key("\u001b[5~")
+    const start = firstMessage()
+    setup!.renderer.pause()
+    if (input === "drag") {
+      await act(async () => {
+        await setup!.mockMouse.pressDown(8, start.row)
+        await setup!.mockMouse.emitMouseEvent("drag", 20, start.row)
+      })
+      await render()
+    }
+    const bytes = input === "pageup" ? "\x1b[5~" : input === "pagedown" ?
+      "\x1b[6~" :
+      input === "shiftup"
+      ? "\x1b[1;2A"
+      : "\x1b[1;2B"
+    const before = scroll().scrollTop
+    const id = setup!.renderer.frameId
+    if (frames === 0 && ["pageup", "pagedown", "shiftup", "shiftdown"].includes(input)) {
+      // One terminal read, not two separately settled key helpers.
+      await inputWithoutFrame(`\x0f${bytes}`)
+    } else {
+      await inputWithoutFrame("\x0f")
+      for (let index = 0; index < frames; index++) await render()
+      if (input === "wheel" || input === "wheeldown") {
+        await act(async () => {
+          await setup!.mockMouse.scroll(5, 10, input === "wheel" ? "up" : "down")
+        })
+      } else if (input === "drag") {
+        await act(async () => {
+          await setup!.mockMouse.emitMouseEvent("drag", 20, 0)
+          expect(setup!.renderer.getSelection()?.isDragging).toBe(true)
+        })
+      } else await inputWithoutFrame(bytes)
+    }
+    expect(setup!.renderer.frameId).toBe(id + frames)
+    const intended = scroll().scrollTop
+    if (input !== "drag") expect(intended).not.toBe(before)
+    // Give the first frame after the drag real elapsed time, so its native
+    // autoscroll competes with restoration rather than waiting until settled.
+    if (input === "drag") clock.setTime(clock.now() + 400)
+    for (let index = 0; index < 4; index++) await render()
+    screenReceipt(`${input}-${frames}`)
+    if (input === "drag") {
+      await act(async () => setup!.mockMouse.release(20, 0))
+      await render()
+      screenReceipt(`${input}-${frames}-released`)
+      expect(scroll().scrollTop).toBeLessThan(intended)
+      expect(setup!.renderer.getSelection()?.getSelectedText()).not.toBe("")
+    } else {
+      // The newer scroll decides the view: restoring alone would put the row
+      // the reader left back on its own screen row, and it does not.
+      const lines = frame().split("\n")
+      expect(lines.findIndex((line) => line.trim() === start.text)).not.toBe(start.row)
+      // It still lands on the content they scrolled from: about one page away,
+      // never the dozen turns that dropping the position costs.
+      const landed = firstMessage()
+      expect(landed.row).toBeGreaterThanOrEqual(0)
+      expect(Math.abs(turnOf(start.text) - turnOf(landed.text))).toBeLessThanOrEqual(2)
+    }
+    expect(frame()).toMatch(/Question \d+|Answer \d+|Detail \d+:\d+|const cell\d+line/)
+    expect(scroll().scrollTop).toBeGreaterThan(0)
+    expect(scroll().scrollTop).toBeLessThan(scroll().scrollHeight - scroll().viewport.height)
+    if (input === "drag") {
+      await act(async () => setup!.mockMouse.click(composer().x + 3, composer().y))
+    }
+    await type("Still typing")
+    expect(composer().plainText).toBe("Still typing")
+  }
+)
+
+const deltaWithoutFrame = async (text: string) => {
+  const id = setup!.renderer.frameId
+  await act(async () => {
+    turns[0]!.input.onEvent(
+      new AgentEvent.ModelDelta({
+        eventType: "flows.harness.model-delta.v1",
+        delta: { type: "text-delta", id: "interaction-stream", text }
+      })
+    )
+    await setImmediate()
+  })
+  expect(setup!.renderer.frameId).toBe(id)
+}
+
+test.each(["browsing", "live"])("streaming Cells toggle keeps the %s reader and input usable", async (position) => {
+  seedLongConversation()
+  await mount(24, 80, "Detail 19:4", new ManualClock())
+  setup!.renderer.pause()
+  await command("Stream a turn")
+  await stream(0)
+  await drainDeferredScroll()
+  if (position === "browsing") { for (let index = 0; index < 5; index++) await key("\x1b[5~") }
+  const anchor = firstMessage()
+  expect(turns).toHaveLength(1)
+  if (position === "browsing") expect(anchor.text).not.toContain("19")
+  await type("Draft during stream")
+  for (let index = 0; index < 4; index++) {
+    await inputWithoutFrame("\x0f")
+    // Host remains unresolved. New text grows the live cell both before the
+    // first restoration frame and between its first and settling frames.
+    await deltaWithoutFrame(`Stream chunk ${index}\n`.repeat(8))
+    await render()
+    await deltaWithoutFrame(`Stream tail ${index}\n`)
+    for (let frame = 0; frame < 4; frame++) await render()
+    screenReceipt(`stream-${position}-${index}`)
+    if (position === "browsing") {
+      const row = frame().split("\n").findIndex((line) => line.trim() === anchor.text)
+      expect(row).toBeGreaterThan(0)
+      expect(Math.abs(row - anchor.row)).toBeLessThanOrEqual(1)
+      expect(scroll().scrollTop).toBeLessThan(scroll().scrollHeight - scroll().viewport.height)
+    } else {
+      expect(scroll().scrollTop).toBe(scroll().scrollHeight - scroll().viewport.height)
+      if (index % 2 === 0) expect(frame()).toContain(`Stream tail ${index}`)
+      else {
+        expect(frame()).toContain("Stream a turn")
+        expect(frame()).toContain("working")
+      }
+    }
+    expect(composer().focused).toBe(true)
+    expect(composer().plainText).toBe("Draft during stream")
+  }
+  await act(async () => {
+    turns[0]!.input.onEvent(
+      new AgentEvent.Resolved({
+        eventType: "flows.harness.resolved.v1",
+        message: ModelRequest.Message.assistant("Streaming finished")
+      })
+    )
+    turns[0]!.done.resolve({ _tag: "done", answer: "Streaming finished" })
+    await setImmediate()
+  })
+  for (let index = 0; index < 4; index++) await render()
+  await type(" and sent")
+  await key("RETURN")
+  expect(turns).toHaveLength(2)
+  expect(turns[1]!.input.prompt).toBe("Draft during stream and sent")
+})
+
+test.each([0, 1].flatMap((frames) => ["conversation", "surface"].map((change) => ({ frames, change }))))(
+  "pending Cells anchor is discarded on $change change after $frames native frames",
+  async ({ frames, change }) => {
+    seedLongConversation()
+    await mount(24, 80, "Detail 19:4", new ManualClock())
+    setup!.renderer.pause()
+    await drainDeferredScroll()
+    for (let index = 0; index < 5; index++) await key("\x1b[5~")
+    const anchor = firstMessage().text
+    await inputWithoutFrame("\x0f")
+    for (let index = 0; index < frames; index++) await render()
+    if (change === "surface") await inputWithoutFrame("\x13")
+    else {
+      await inputWithoutFrame("/new")
+      await act(async () => {
+        setup!.mockInput.pressKey("RETURN", { meta: true })
+        await setImmediate()
+      })
+    }
+    for (let index = 0; index < 4; index++) await render()
+    screenReceipt(`${change}-${frames}`)
+    if (change === "surface") {
+      expect(frame()).toContain("Asked:")
+      await inputWithoutFrame("\x13")
+      for (let index = 0; index < 4; index++) await render()
+      const position = scroll().scrollTop
+      await inputWithoutFrame("\x1b[5~")
+      expect(scroll().scrollTop).toBeLessThan(position)
+      const intended = scroll().scrollTop
+      for (let index = 0; index < 4; index++) await render()
+      expect(scroll().scrollTop).toBe(intended)
+    } else {
+      expect(frame()).not.toContain(anchor)
+      expect(frame()).not.toContain("Question 19")
+      expect(scroll().scrollTop).toBe(0)
+      await command("New conversation prompt")
+      expect(turns[0]!.input.history).toEqual([])
+    }
+    expect(composer().focused).toBe(true)
+  }
+)
+
+test("rapid Cells toggles and resize retain an unchanged browsing position", async () => {
+  seedLongConversation(true)
+  await mount(24, 80, "Detail 19:4", new ManualClock())
+  setup!.renderer.pause()
+  await drainDeferredScroll()
+  for (let index = 0; index < 5; index++) await key("\x1b[5~")
+  const anchor = firstMessage().text
+  // Several commits before layout, then another change between settling frames.
+  await inputWithoutFrame("\x0f\x0f\x0f")
+  await act(async () => setup!.resize(60, 32))
+  await render()
+  await inputWithoutFrame("\x0f\x0f")
+  for (let index = 0; index < 5; index++) await render()
+  expect(frame()).toContain(anchor)
+  expect(scroll().scrollTop).toBeGreaterThan(0)
+  expect(scroll().scrollTop).toBeLessThan(scroll().scrollHeight - scroll().viewport.height)
+  screenReceipt("rapid-resize")
+  await type("Draft after resize")
+  expect(composer().plainText).toBe("Draft after resize")
+})
+
+test("navigation between two Cells toggles in one burst cannot revive the older anchor", async () => {
+  seedLongConversation()
+  await mount(24, 80, "Detail 19:4", new ManualClock())
+  setup!.renderer.pause()
+  await drainDeferredScroll()
+  for (let index = 0; index < 5; index++) await key("\x1b[5~")
+  const start = firstMessage()
+  const before = scroll().scrollTop
+  await inputWithoutFrame("\x0f\x1b[5~\x0f\x1b[5~Burst draft")
+  const intended = scroll().scrollTop
+  expect(intended).toBeLessThan(before)
+  for (let index = 0; index < 4; index++) await render()
+  // Two page keys up from the reader's own position, not the first anchor.
+  const landed = firstMessage()
+  expect(frame().split("\n").findIndex((line) => line.trim() === start.text)).not.toBe(start.row)
+  expect(Math.abs(turnOf(start.text) - turnOf(landed.text))).toBeLessThanOrEqual(4)
+  expect(scroll().scrollTop).toBeGreaterThan(0)
+  expect(scroll().scrollTop).toBeLessThan(scroll().scrollHeight - scroll().viewport.height)
+  expect(frame()).not.toContain("const cell")
+  expect(frame()).toContain("Burst draft")
+  expect(composer().plainText).toBe("Burst draft")
+  screenReceipt("two-toggle-navigation-burst")
+})

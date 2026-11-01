@@ -410,7 +410,10 @@ Workers and file flows use the same card. A scalar flow result fits on one
 line: `✓ wordcount · 40ms → 5`. There is no extra acknowledgement or finished
 row. A worker's children show the same cards; older batches fold into `… +N earlier`.
 `/filter` shows or hides each kind of row. Cells starts off: a cell keeps its
-rows and hides its program;
+rows and hides its program; showing or hiding it keeps the message you were
+reading where it was, and a reader at the live edge stays there. A page key or
+wheel that arrives while the layout settles moves on from that kept place, and
+a selection drag keeps scrolling where it is pointing.
 `/grep <text>` keeps rows containing the text and `/grep` alone clears it. Chat receives every unsettled worker and the newest
 five settled answers (1,500 characters each) as context, and remains usable
 while workers run. Chat cards carry live progress; Ctrl+S shows every worker's tree.

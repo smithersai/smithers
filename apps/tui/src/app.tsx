@@ -1833,7 +1833,7 @@ export function App(props: AppProps) {
       return dismissMenu()
     }
     clearFailure()
-    snapToLive()
+    if (verb !== "filter") snapToLive()
     const parked = parkedDraft.current
     parkedDraft.current = undefined
     history.current.add(text)
@@ -2663,7 +2663,7 @@ export function App(props: AppProps) {
       restoreQueued: () => restoreQueued(),
       pickModel: () => flushSync(() => setPicker({ kind: "model", query: "", selected: 0 })),
       cycleModel,
-      toggleExpanded: () => setExpanded((value) => !value),
+      toggleExpanded: () => flushSync(() => setExpanded((value) => !value)),
       externalEditor: () => void externalEditor(renderer, setStatus)
     })
   }
