@@ -7,7 +7,7 @@ const cwd = "packages/smithers/agent/plugin"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   testData: ["test/fixtures/*.mjs", "test/fixtures/*.cjs", "test/fixtures/*.json"],
   cwd
 })
@@ -53,7 +53,7 @@ const securityReview = Smithers.SecurityReview({
         "An apply predicate called outside the Effect.try in included, or handed a config that is not the frozen admitted snapshot.",
         "A plugin layer built without the Layer.catchCause wrapper in mergePluginLayers, so a failing layer escapes as a defect instead of layer_failed."
       ],
-      paths: ["src/Resolve.ts", "src/Hooks.ts", "src/Plugin.ts", "src/internal/mergePluginLayers.ts"]
+      paths: ["src/Resolve.ts", "src/Hooks.vibe", "src/Plugin.ts", "src/internal/mergePluginLayers.vibe"]
     },
     {
       id: "startup-resource-bounds",
@@ -94,7 +94,7 @@ const securityReview = Smithers.SecurityReview({
         "Layer.provideMerge(merged, environment) in mergePluginLayers letting a plugin layer that provides Action.layerCacheEnvironment replace the sealed environment read by Action.CurrentCacheEnvironment.",
         "Plugin identities computed from the unfiltered or unsorted input instead of the resolved plugin list."
       ],
-      paths: ["src/internal/snapshotCacheEnvironment.ts", "src/internal/mergePluginLayers.ts", "src/Resolve.ts"]
+      paths: ["src/internal/snapshotCacheEnvironment.ts", "src/internal/mergePluginLayers.vibe", "src/Resolve.ts"]
     },
     {
       id: "dispatch-isolation",
@@ -108,7 +108,7 @@ const securityReview = Smithers.SecurityReview({
         "Ordering that lets an enforce or order value from input override the documented pre, normal, post partition.",
         "A PluginError cause or message that embeds handler arguments or config values that may hold secrets."
       ],
-      paths: ["src/Plugins.ts", "src/Kernel.ts", "src/Hooks.ts", "src/PluginError.ts"]
+      paths: ["src/Plugins.ts", "src/Kernel.ts", "src/Hooks.vibe", "src/PluginError.vibe"]
     }
   ]
 })

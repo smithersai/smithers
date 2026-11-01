@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest"
 import type * as Config from "../src/Config.ts"
 import * as Kernel from "../src/Kernel.ts"
 import * as Plugin from "../src/Plugin.ts"
-import type { PluginError } from "../src/PluginError.ts"
+import type { PluginError } from "../src/PluginError.vibe"
 import type * as Resolve from "../src/Resolve.ts"
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect)

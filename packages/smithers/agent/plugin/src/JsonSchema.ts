@@ -14,7 +14,7 @@
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import type * as Schema from "effect/Schema"
-import { type Reason, Refusal } from "./Contribution.ts"
+import { type Reason, Refusal } from "./Contribution.vibe"
 import * as Path from "./internal/path.ts"
 
 /**

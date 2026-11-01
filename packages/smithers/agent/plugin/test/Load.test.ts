@@ -1,10 +1,10 @@
 import { Effect, Result } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Bind from "../src/Bind.ts"
-import type * as Contribution from "../src/Contribution.ts"
-import * as Keys from "../src/Keys.ts"
+import * as Bind from "../src/Bind.vibe"
+import type * as Contribution from "../src/Contribution.vibe"
+import * as Keys from "../src/Keys.vibe"
 import * as Load from "../src/Load.ts"
-import * as When from "../src/When.ts"
+import * as When from "../src/When.vibe"
 import { host, minimal, owned, queueManifest } from "./support/hostFacts.ts"
 
 const load = (candidates: ReadonlyArray<Load.Candidate>, facts: Load.HostFacts = host()) =>

@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
-import { PluginError, PluginErrorCode } from "../src/PluginError.ts"
+import { PluginError, PluginErrorCode } from "../src/PluginError.vibe"
 
 describe("PluginError wire identity", () => {
   it("round-trips the persisted tagged-error golden vector with its prototype", () => {

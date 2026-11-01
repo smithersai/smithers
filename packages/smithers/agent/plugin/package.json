@@ -37,21 +37,39 @@
     ".": "./src/index.ts",
     "./internal/*": null,
     "./*/index": null,
-    "./Bind": "./src/Bind.ts",
+    "./Bind": {
+      "types": "./src/Bind.d.vibe.ts",
+      "default": "./src/Bind.vibe"
+    },
     "./Config": "./src/Config.ts",
-    "./Contribution": "./src/Contribution.ts",
-    "./Hooks": "./src/Hooks.ts",
+    "./Contribution": {
+      "types": "./src/Contribution.d.vibe.ts",
+      "default": "./src/Contribution.vibe"
+    },
+    "./Hooks": {
+      "types": "./src/Hooks.d.vibe.ts",
+      "default": "./src/Hooks.vibe"
+    },
     "./Host": "./src/Host.ts",
     "./JsonSchema": "./src/JsonSchema.ts",
     "./Kernel": "./src/Kernel.ts",
-    "./Keys": "./src/Keys.ts",
+    "./Keys": {
+      "types": "./src/Keys.d.vibe.ts",
+      "default": "./src/Keys.vibe"
+    },
     "./Load": "./src/Load.ts",
     "./Manifest": "./src/Manifest.ts",
     "./Plugin": "./src/Plugin.ts",
-    "./PluginError": "./src/PluginError.ts",
+    "./PluginError": {
+      "types": "./src/PluginError.d.vibe.ts",
+      "default": "./src/PluginError.vibe"
+    },
     "./Plugins": "./src/Plugins.ts",
     "./Resolve": "./src/Resolve.ts",
-    "./When": "./src/When.ts",
+    "./When": {
+      "types": "./src/When.d.vibe.ts",
+      "default": "./src/When.vibe"
+    },
     "./index": "./src/index.ts"
   },
   "files": [

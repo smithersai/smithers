@@ -14,7 +14,7 @@ import * as Schema from "effect/Schema"
 import * as SchemaGetter from "effect/SchemaGetter"
 import * as SchemaIssue from "effect/SchemaIssue"
 import * as Boundary from "./internal/Boundary.ts"
-import { PluginError } from "./PluginError.ts"
+import { PluginError } from "./PluginError.vibe"
 
 /**
  * Maximum encoded bytes accepted for one plugin configuration.

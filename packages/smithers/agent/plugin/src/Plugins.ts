@@ -21,10 +21,10 @@ import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
-import type { ArgsOf, ContextOf, HookKind, KeysOfKind, SuccessOf } from "./Hooks.ts"
-import { engineHooks } from "./Hooks.ts"
+import type { ArgsOf, ContextOf, HookKind, KeysOfKind, SuccessOf } from "./Hooks.vibe"
+import { engineHooks } from "./Hooks.vibe"
 import type { FlowsHooks } from "./index.ts"
-import { PluginError } from "./PluginError.ts"
+import { PluginError } from "./PluginError.vibe"
 import { defaultParallelConcurrency, type HandlerRecord, type Resolved } from "./Resolve.ts"
 
 const empty: ReadonlyArray<HandlerRecord> = Object.freeze([])
