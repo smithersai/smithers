@@ -23,6 +23,6 @@
     "bun-types": "^1.4.0",
     "effect": "4.1.0",
     "typescript": "~5.9.3",
-    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-9ed30b32a77d.tgz"
+    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-6ea57b82a1dd.tgz"
   }
 }

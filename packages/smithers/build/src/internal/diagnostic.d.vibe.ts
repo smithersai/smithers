@@ -17,7 +17,7 @@
  *
  * @since 0.1.0
  */
-import * as Schema from "effect/Schema"
+import * as Schema from "effect/Schema";
 /**
  * Schema for the JSON-encodable description of a host failure.
  *
@@ -30,20 +30,20 @@ import * as Schema from "effect/Schema"
  * @since 0.1.0
  */
 export declare const Diagnostic: Schema.Struct<{
-  /** The failure's own name or tag: `PlatformError`, `TypeError`. */
-  readonly name: Schema.String
-  /** The platform error code where the host reports one: `ENOENT`, `EACCES`. */
-  readonly code: Schema.optional<Schema.String>
-  /** The failure's message, and the message of one nested cause. */
-  readonly message: Schema.String
-}>
+    /** The failure's own name or tag: `PlatformError`, `TypeError`. */
+    readonly name: Schema.String;
+    /** The platform error code where the host reports one: `ENOENT`, `EACCES`. */
+    readonly code: Schema.optional<Schema.String>;
+    /** The failure's message, and the message of one nested cause. */
+    readonly message: Schema.String;
+}>;
 /**
  * The JSON-encodable description of a host failure.
  *
  * @private
  * @since 0.1.0
  */
-export type Diagnostic = typeof Diagnostic.Type
+export type Diagnostic = typeof Diagnostic.Type;
 /**
  * Describes an arbitrary host failure as bounded JSON.
  *
@@ -62,4 +62,4 @@ export type Diagnostic = typeof Diagnostic.Type
  * @private
  * @since 0.1.0
  */
-export declare const diagnostic: (cause: unknown) => Diagnostic | undefined
+export declare const diagnostic: (cause: unknown) => Diagnostic | undefined;
