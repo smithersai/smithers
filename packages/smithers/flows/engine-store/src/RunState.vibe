@@ -75,7 +75,7 @@ export const RunState = Schema.Struct({
   retryFrom: Schema.optionalKey(Schema.Struct({
     source: Schema.NonEmptyString,
     step: Schema.optionalKey(Schema.NonEmptyString),
-    boundaries: Schema.Array(Schema.NonEmptyString)
+    boundaries: Schema.Array(Schema.NonEmptyString),
   })),
   parentExecutionId: Schema.optionalKey(Schema.NonEmptyString),
   onParentExit: Schema.optionalKey(OnParentExit),
@@ -87,7 +87,7 @@ export const RunState = Schema.Struct({
   // `run` is the cancellation run its flow declared (`Flow.OnCancel`), admitted with the cancellation.
   cancellation: Schema.optionalKey(Schema.Struct({
     interruptedAtMs: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)),
-    run: Schema.optionalKey(Schema.NonEmptyString)
+    run: Schema.optionalKey(Schema.NonEmptyString),
   })),
   // Who started the run and when it was admitted, as its usage metrics label
   // it (`@smthrs/flow` `RunMetrics`): the door and the actor kind, never who.
@@ -97,14 +97,14 @@ export const RunState = Schema.Struct({
   origin: Schema.optionalKey(Schema.Struct({
     door: Schema.String,
     actor: Schema.String,
-    admittedAtMs: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))
+    admittedAtMs: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)),
   })),
   // When the run parked on its current durable wait, and on what, so the
   // resume that ends the wait measures it even in another process.
   parked: Schema.optionalKey(Schema.Struct({
     atMs: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)),
-    kind: Schema.String
-  }))
+    kind: Schema.String,
+  })),
 })
 
 /**
@@ -136,10 +136,10 @@ export type RunState = typeof RunState.Type
 export const ReleaseCause = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("lease-lapsed"),
-    unconfirmedMs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+    unconfirmedMs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   }),
   Schema.Struct({ kind: Schema.Literal("yielded") }),
-  Schema.Struct({ kind: Schema.Literal("interrupted") })
+  Schema.Struct({ kind: Schema.Literal("interrupted") }),
 ])
 
 /**

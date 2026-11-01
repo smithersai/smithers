@@ -15,7 +15,7 @@ import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Effect, Exit, Logger, Schema } from "effect"
 import * as ExitEncoding from "../src/internal/ExitEncoding.ts"
-import { RunState } from "../src/RunState.ts"
+import { RunState } from "../src/RunState.vibe"
 
 /** The shape `@smthrs/agent`'s `agent/run` declares: both channels unknown. */
 const unknownFlow = Flow.make("test/unknown", {

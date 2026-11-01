@@ -35,7 +35,7 @@ import * as EngineStore from "../src/EngineStore.ts"
 import * as Migrations from "../src/Migrations.ts"
 import * as OwnerIdentity from "../src/OwnerIdentity.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
-import * as WakeBus from "../src/WakeBus.ts"
+import * as WakeBus from "../src/WakeBus.vibe"
 import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
 

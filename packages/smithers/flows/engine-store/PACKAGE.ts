@@ -15,7 +15,7 @@ import * as Input from "@smthrs/targets/Input"
 const { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({
   deps: [],
   // Examples are type-checked, linted and run by test/examples.test.ts.
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd: "packages/smithers/flows/engine-store"
 })
 
@@ -189,7 +189,7 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/internal/CacheAdmission.ts",
         "src/internal/CachePublication.ts",
-        "src/internal/CacheOutputPolicy.ts",
+        "src/internal/CacheOutputPolicy.vibe",
         "src/CacheSync.ts",
         "src/ArtifactSync.ts",
         "src/internal/ActionPersistence.ts"
@@ -308,7 +308,7 @@ const securityReview = Smithers.SecurityReview({
         "HostReflection or a test store helper in src exposing host services to action context."
       ],
       paths: [
-        "src/internal/EngineJj.ts",
+        "src/internal/EngineJj.vibe",
         "src/internal/HostReflection.ts",
         "src/internal/RunDriver.ts",
         "src/test/TestStores.ts"

@@ -139,7 +139,7 @@ export * as StepSandbox from "./StepSandbox.ts"
  * @since 0.1.0
  * @category services
  */
-export * as WakeBus from "./WakeBus.ts"
+export * as WakeBus from "./WakeBus.vibe"
 
 /**
  * @since 0.1.0
@@ -163,19 +163,19 @@ export * as OwnerIdentity from "./OwnerIdentity.ts"
  * @since 1.0.0
  * @category services
  */
-export * as ReplayOnly from "./ReplayOnly.ts"
+export * as ReplayOnly from "./ReplayOnly.vibe"
 
 /**
  * @since 1.0.0
  * @category services
  */
-export * as StepLogs from "./StepLogs.ts"
+export * as StepLogs from "./StepLogs.vibe"
 
 /**
  * @since 0.1.0
  * @category schemas
  */
-export * as RunState from "./RunState.ts"
+export * as RunState from "./RunState.vibe"
 
 /**
  * @since 0.1.0

@@ -56,18 +56,30 @@
     "./PlanInputStore": "./src/PlanInputStore.ts",
     "./PlanMergeStore": "./src/PlanMergeStore.ts",
     "./Reconciliation": "./src/Reconciliation.ts",
-    "./ReplayOnly": "./src/ReplayOnly.ts",
+    "./ReplayOnly": {
+      "types": "./src/ReplayOnly.d.vibe.ts",
+      "default": "./src/ReplayOnly.vibe"
+    },
     "./Retention": "./src/Retention.ts",
     "./RunCatalogRead": "./src/RunCatalogRead.ts",
-    "./RunState": "./src/RunState.ts",
+    "./RunState": {
+      "types": "./src/RunState.d.vibe.ts",
+      "default": "./src/RunState.vibe"
+    },
     "./Selection": "./src/Selection.ts",
     "./SelectionStore": "./src/SelectionStore.ts",
     "./StepBoundary": "./src/StepBoundary.ts",
-    "./StepLogs": "./src/StepLogs.ts",
+    "./StepLogs": {
+      "types": "./src/StepLogs.d.vibe.ts",
+      "default": "./src/StepLogs.vibe"
+    },
     "./DeferredClockFold": "./src/DeferredClockFold.ts",
     "./StepCacheFold": "./src/StepCacheFold.ts",
     "./StepSandbox": "./src/StepSandbox.ts",
-    "./WakeBus": "./src/WakeBus.ts",
+    "./WakeBus": {
+      "types": "./src/WakeBus.d.vibe.ts",
+      "default": "./src/WakeBus.vibe"
+    },
     "./WorkspaceSandbox": "./src/WorkspaceSandbox.ts",
     "./index": "./src/index.ts",
     "./test/TestStores": "./src/test/TestStores.ts",

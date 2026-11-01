@@ -23,7 +23,7 @@ import * as Schema from "effect/Schema"
 import * as EngineStoreMetrics from "../src/EngineStoreMetrics.ts"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
-import * as StepLogs from "../src/StepLogs.ts"
+import * as StepLogs from "../src/StepLogs.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
 

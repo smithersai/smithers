@@ -17,7 +17,7 @@ import * as Option from "effect/Option"
 import * as References from "effect/References"
 import * as EngineStoreMetrics from "../src/EngineStoreMetrics.ts"
 import * as StepLogCapture from "../src/internal/StepLogCapture.ts"
-import * as StepLogs from "../src/StepLogs.ts"
+import * as StepLogs from "../src/StepLogs.vibe"
 
 const attribution: StepLogCapture.Attribution = { runId: "capture-run", stepKeyDigest: "c".repeat(64), attempt: 3 }
 
