@@ -42,7 +42,7 @@
  * @since 0.1.0
  */
 import { Schema } from "effect";
-import * as NarrowedCheck from "./NarrowedCheck.vibe";
+import * as NarrowedCheck from "./NarrowedCheck.js";
 /**
  * How many distinct failing checks one run carries forward.
  *
