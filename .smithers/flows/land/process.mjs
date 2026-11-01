@@ -4,10 +4,10 @@ import { spawn } from "node:child_process"
 /**
  * @param {string} command
  * @param {string[]} args
- * @param {{cwd?: string, env?: NodeJS.ProcessEnv, signal?: AbortSignal, timeoutMs?: number, maxBytes?: number, stream?: boolean}} [options]
+ * @param {{cwd?: string, env?: NodeJS.ProcessEnv, signal?: AbortSignal, timeoutMs?: number, maxBytes?: number, stream?: boolean, streamError?: boolean}} [options]
  * @returns {Promise<{status: number | null, signal: NodeJS.Signals | null, stdout: string, stderr: string}>}
  */
-export function runProcess(command, args, { cwd, env = process.env, signal, timeoutMs = 60000, maxBytes = 32 * 1024 * 1024, stream = false } = {}) {
+export function runProcess(command, args, { cwd, env = process.env, signal, timeoutMs = 60000, maxBytes = 32 * 1024 * 1024, stream = false, streamError = false } = {}) {
   return new Promise((resolve, reject) => {
     signal?.throwIfAborted()
     const child = spawn(command, args, { cwd, env, detached: true, stdio: ["ignore", "pipe", "pipe"] })
@@ -30,7 +30,7 @@ export function runProcess(command, args, { cwd, env = process.env, signal, time
       if (stream) output.write(chunk)
     }
     child.stdout.on("data", (chunk) => collect(stdout, process.stdout, chunk))
-    child.stderr.on("data", (chunk) => collect(stderr, process.stderr, chunk))
+    child.stderr.on("data", (chunk) => { collect(stderr, process.stderr, chunk); if (streamError && !stream) process.stderr.write(chunk) })
     const cleanup = () => { clearTimeout(timeout); clearTimeout(escalation); signal?.removeEventListener("abort", abort) }
     child.once("error", (error) => { cleanup(); reject(error) })
     child.once("close", (status, killedBy) => {

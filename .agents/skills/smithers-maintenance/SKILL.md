@@ -46,3 +46,42 @@ already on main. `node .smithers/flows/land/numbering.mjs check` rejects duplica
 numbers and unregistered migrations without an install. Add new migration tests
 in separate files; existing migration tests and ledger identities stay intact.
 See [parallel agents](../../../docs/devx/parallel-agents.md).
+
+## Source-only parallel workspaces
+
+Use `node .smithers/flows/land/workspace.mjs` from the invoking workspace:
+
+- `create ~/smithers-builders/ws-<lane> <lane>`: a full source checkout on
+  immutable `main@origin`, with no install. Never parent a lane on another
+  workspace's mutable working-copy commit.
+- `sync`: fetch, allocate incoming numbers before rebase, rebase the private
+  lane, and repair known generated migration/schema sections. Ordinary conflicts
+  stop the command. Run only in your own workspace.
+- `recover`: preserve dirty source files and deletion metadata under the
+  invoking `.jj/agent-recovery/`, integrate its recorded working-copy operation,
+  run jj's supported stale recovery, and replay only the saved delta. It never
+  overlays a stale full tree. A conflicting delta stays visible and the saved
+  bytes remain available. Do not remove an unresolved safeguard.
+- `land --message "<gitmoji conventional message>" --test "<remote command>"`:
+  serialize with the same `~/smithers-builders/main-push.lock` legacy lanes use,
+  sync, regenerate/check the target index on the mini, run explicit commands,
+  reject conflicts, advance main by ancestry, push, verify, and print
+  `LANDED <full id>`. `--validated "<existing receipt>"` records previously run
+  checks when rerunning is unavailable; it does not claim fresh execution.
+- `land --require path[=content] ...`: require a file/content predicate on
+  fetched main. This fails promptly rather than waiting on a rewritten commit id.
+- `remove`: forget and delete only a tool-owned workspace whose source is
+  already on remote main. Unpublished edits, unresolved safeguards, and ignored
+  personal files (including installs) prevent removal. The source and tool state
+  are deleted together. Never run it on the main checkout or someone else's lane.
+
+`SMITHERS_LOCK_TIMEOUT_MS` bounds admission (default five minutes). The tool
+never steals a live, stale or ownerless landing lock. `SMITHERS_LAND_LOCK` is an
+explicit override for independent repositories/tests; all lanes of this repo
+keep the shared default. `SMITHERS_MINI_RUN` selects the farm client (default
+`~/.smithers-lead/scratchpad-mirror/mini-run`). No test command or install is
+invented on the MacBook. Existing manual landings continue to work.
+
+This is bootstrap automation, like `commit.mjs`: it must recover a source-only
+checkout even when the installed CLI or durable host cannot load. It does not
+introduce a workflow engine, background retry service, or product action.

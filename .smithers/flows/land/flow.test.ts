@@ -1,3 +1,4 @@
+import "./workspace.test.mjs"
 import "./process.test.mjs"
 import "./projection.test.mjs"
 import "./generated.test.mjs"

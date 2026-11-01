@@ -20,8 +20,9 @@ export function decodeProjection(output) {
 /** Only publish the projection if local source stayed unchanged throughout sync and generation. */
 export async function regenerateIndex(root, runner = process.env.SMITHERS_MINI_RUN ?? join(homedir(), ".smithers-lead/scratchpad-mirror/mini-run"), signal) {
   const before = jj(root, ["log", "-r", "@", "--no-graph", "-T", "commit_id"])
+  console.error("PREPARING target index on mini (bounded admission, no local install)")
   const result = await runProcess(runner, [".", "--", "node", ".smithers/flows/land/index-projection.mjs"], {
-    cwd: root, env: { ...process.env, MINI_RUN_SRC: root }, signal, timeoutMs: 15 * 60 * 1000
+    cwd: root, env: { ...process.env, MINI_RUN_SRC: root }, signal, streamError: true, timeoutMs: 15 * 60 * 1000
   })
   if (result.status !== 0) throw new Error(`Remote target index failed: ${result.stderr || result.status}`)
   const source = decodeProjection(result.stdout)

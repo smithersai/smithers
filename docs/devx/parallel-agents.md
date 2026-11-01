@@ -90,3 +90,27 @@ Catalog entry used for device snapshots: `@smthrs/effect-tanstack-db`. Its new
 `snapshot` helper omits the already-derived epoch and sorts history; legacy
 locks remain accepted. Runtime epoch calculation and device preparation are
 unchanged. No existing Postgres migration or ledger key is renamed.
+
+## Implemented: workspace and landing lifecycle
+
+`workspace.mjs` creates a private child of fetched immutable main, without
+installing dependencies. Every mutation coordinates through the legacy mkdir
+lock. Waits are bounded; an unknown owner is never assumed dead. It refuses
+shared mutable ancestry, so a rebase cannot rewrite another workspace's commits.
+A failed fetch/test/push or cancellation releases only this invocation's lock.
+Pushing checks local and remote ancestry and emits the full landed commit id.
+
+The real-jj stale regression reproduced an unsnapshotted edit being overwritten
+by `update-stale` on jj 0.39.0. The remedy first saves only dirty source and
+original bytes (not repository storage or dependencies), integrates the recorded
+working-copy operation, updates the stale workspace, then replays the saved
+three-way delta. Independent upstream changes survive. Conflicts retain both
+visible markers and original saved bytes; landing rejects the markers. An
+operation-abandon fixture reproduces sibling ancestry and verifies recovery.
+No other workspace is updated, reset, or deleted. Temporary safeguards disappear
+after verified landing; removal refuses unresolved safeguards and personal data.
+
+The tool supports file/content readiness predicates on fetched main, with no
+polling for mutable commit ids. Tests use real jj repositories and local remotes:
+concurrent CLI pushes, interrupted child execution, failed network paths,
+readiness, unsafe ancestry, stale edits, deletions, and removal ownership.

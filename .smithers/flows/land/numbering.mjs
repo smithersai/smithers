@@ -106,7 +106,7 @@ export function applyNumbers(root, plan) {
         replacements.set(entry.stem, entry.newStem)
         if (entry.directory === migrations) replacements.set(`${entry.id}_${entry.slug}`, `${entry.next}_${entry.slug}`)
       }
-      if (replacements.size) text = text.replace(new RegExp([...replacements.keys()].sort((a, b) => b.length - a.length).map(escape).join("|"), "g"), (value) => replacements.get(value))
+      if (replacements.size) text = text.replace(new RegExp([...replacements.keys()].sort((a, b) => b.length - a.length).map(escape).join("|") + "(?=$|[^a-zA-Z0-9_-])", "g"), (value) => replacements.get(value))
       // through("NNNN") and exact quoted boundaries occur only in added migration tests.
       if (path.startsWith("apps/mvp/db/") && /\.test\.[cm]?ts$/.test(path)) {
         text = text.replace(/(["'])(\d{4})\1/g, (match, quote, id) => numberMap.has(id) ? `${quote}${numberMap.get(id)}${quote}` : match)
@@ -130,7 +130,7 @@ export function checkNumbers(root) {
   const manifest = join(root, "apps/mvp/db/MigrationManifest.ts")
   const database = existsSync(manifest) ? manifest : join(root, "apps/mvp/db/Database.ts")
   if (existsSync(database)) {
-    const source = readFileSync(database, "utf8")
+    const source = readFileSync(database, "utf8") + (existsSync(manifest) ? readFileSync(join(root, "apps/mvp/db/Database.ts"), "utf8") : "")
     for (const path of treeFiles(migrations)) {
       const entry = identity(path, migrations)
       if (!entry) continue
