@@ -54,6 +54,13 @@ const Fails = Flow.make("Usage/Fails", {
   error: Boom,
   body: opaqueHandlerBody
 })
+const Dies = Flow.make("Usage/Dies", { payload: {}, success: Schema.String, body: opaqueHandlerBody })
+
+/** What a lost database connection dies with inside a store call: an Error named for its kind. */
+class ConnectionClosed extends Error {
+  override readonly name = "SqlError"
+}
+
 const Waits = Flow.make("Usage/Waits", { payload: {}, success: Schema.String, body: opaqueHandlerBody })
 
 type Services =
@@ -353,5 +360,29 @@ describe("usage metrics", () => {
       expect(JSON.stringify(usage)).not.toContain(SENTINEL)
       expect(JSON.stringify(snapshot.filter((entry) => entry.id.startsWith("flows_")).map((entry) => entry.attributes)))
         .not.toContain(SENTINEL)
+    }))
+
+  it.live("a run that dies logs its defect's tag and redacted message, beside its settlement", () =>
+    Effect.gen(function*() {
+      const credential = "sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH"
+      const { lines, value: exit } = yield* withEngine((engine) =>
+        Effect.gen(function*() {
+          yield* engine.register(Dies, () => Effect.die(new ConnectionClosed(`Connection closed, ${credential}`)))
+          return yield* Effect.exit(engine.execute(Dies, { executionId: "usage-dies", payload: {} }))
+        })
+      )
+      expect(Exit.isFailure(exit)).toBe(true)
+      const defect = lines.find((line) => line.message === "flow.run.defect")
+      expect(defect?.level).toBe("WARN")
+      expect(defect?.annotations).toMatchObject({
+        runId: "usage-dies",
+        flow: "Usage/Dies",
+        tag: "SqlError",
+        message: "Connection closed, [REDACTED_API_KEY]"
+      })
+      expect(
+        lines.find((line) => line.message === "flow.run.settled" && line.annotations.flow === "Usage/Dies")?.annotations
+      ).toMatchObject({ outcome: "failed", code: "SqlError" })
+      expect(JSON.stringify(lines)).not.toContain(credential)
     }))
 })

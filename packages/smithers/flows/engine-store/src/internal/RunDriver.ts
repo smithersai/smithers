@@ -8,7 +8,7 @@ import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
 import { DatabaseError, DurableWriter } from "@smthrs/database/DurableWriter"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime, Interpreter, RunMetrics } from "@smthrs/flow"
-import { Journal } from "@smthrs/journal"
+import { Journal, Redaction } from "@smthrs/journal"
 import { Ownership, RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
@@ -3032,6 +3032,21 @@ const parkReason = (
       : { reason: "event" }
   })
 
+/**
+ * What a run that died says about its defect, in its `transitioned` decision
+ * and its `flow.run.defect` log line: the defect's tag, its message redacted
+ * by the journal's own rules, and the node and action it arose in
+ * (`Interpreter.defectOf`). `undefined` for a run that ended any other way,
+ * an interpreter refusal included: its code is its record.
+ */
+const defectRecord = (exit: Exit.Exit<unknown, unknown>): Interpreter.Defect | undefined => {
+  if (Exit.isSuccess(exit) || Option.isSome(Interpreter.refusalCode(exit.cause))) return undefined
+  const defect = Interpreter.defectOf(exit.cause)
+  if (defect === undefined) return undefined
+  const message = Redaction.redact(defect.message)
+  return { ...defect, message: typeof message === "string" ? message : "" }
+}
+
 /** Writes a round's own settlement: a terminal status, or a park. */
 const settleResult = (
   driver: Driver,
@@ -3062,12 +3077,18 @@ const settleResult = (
     const parked = waiting === null
       ? undefined
       : { atMs: yield* Clock.currentTimeMillis, kind: RunMetrics.waitKind(waiting.reason) }
+    const defect = result._tag === "Complete" && status === "failed" ? defectRecord(result.exit) : undefined
     const transitioned = yield* transitionAndRecord(
       driver,
       executionId,
       status,
       yield* encodeState(parked === undefined ? nextState : { ...nextState, parked }),
-      { decision: "transitioned", status, owner: driver.dependencies.owner },
+      {
+        decision: "transitioned",
+        status,
+        owner: driver.dependencies.owner,
+        ...(defect === undefined ? {} : { defect })
+      },
       { cancelRequested: "absent" },
       // A suspension is not an exit: the run is parked and will settle
       // later, so its children keep going and its timers stay armed. A
@@ -3106,6 +3127,11 @@ const settleResult = (
       yield* RunMetrics.recordWait({ flow: activeState.flowName, kind: parked.kind })
     }
     if (status === "suspended") return
+    if (defect !== undefined) {
+      yield* Effect.logWarning("flow.run.defect").pipe(
+        Effect.annotateLogs({ runId: executionId, flow: activeState.flowName, ...defect })
+      )
+    }
     yield* recordSettled(driver, executionId, activeState, settledAs)
     // The settle is durable; tell any in-process caller parked on this
     // run's poll loop, so a run driven to completion by a sweep or a

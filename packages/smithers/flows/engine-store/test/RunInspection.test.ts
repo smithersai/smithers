@@ -41,6 +41,12 @@ const Echo = Action.make("inspection/Echo", {
 const Big = Action.make("inspection/Big", { payload: { size: Schema.Number }, success: Schema.String })
 const Fails = Action.make("inspection/Fails", { payload: {}, success: Schema.String, error: Refused })
 const Gate = Action.make("inspection/Gate", { payload: { label: Schema.String }, success: Schema.String })
+const Crash = Action.make("inspection/Crash", { payload: {}, success: Schema.String })
+
+/** What a lost database connection dies with inside a store call: an Error named for its kind. */
+class ConnectionClosed extends Error {
+  override readonly name = "SqlError"
+}
 
 const Child = Flow.make("inspection/Child", {
   payload: { n: Schema.Number },
@@ -66,6 +72,13 @@ const Failing = Flow.make("inspection/Failing", {
   success: Schema.String,
   error: Refused,
   body: Node.capture({}, () => Fails.call({}))
+})
+
+/** A run whose second step dies, as a step does when its database connection closes under it. */
+const Crashing = Flow.make("inspection/Crashing", {
+  payload: {},
+  success: Schema.String,
+  body: Node.capture({}, () => Echo.call({ token: "before" }).pipe(Node.andThen(Crash.call({}))))
 })
 
 const Gated = Flow.make("inspection/Gated", {
@@ -169,6 +182,7 @@ const runtime = (gate: (label: string) => Effect.Effect<string>) => {
     Big.toLayer(({ size }) => Effect.succeed("é".repeat(size / 2))),
     Fails.toLayer(() => Effect.fail(new Refused({ message: PROVIDER_TEXT }))),
     Gate.toLayer(({ label }) => gate(label)),
+    Crash.toLayer(() => Effect.die(new ConnectionClosed(`Connection closed while holding ${CREDENTIAL}`))),
     Vault.toLayer(() =>
       Effect.succeed({
         seal: Redacted.make(SENTINEL),
@@ -180,13 +194,14 @@ const runtime = (gate: (label: string) => Effect.Effect<string>) => {
     Interpreter.layerWithImplementations(Root, steps),
     Interpreter.layerWithImplementations(Child, steps),
     Interpreter.layerWithImplementations(Failing, steps),
+    Interpreter.layerWithImplementations(Crashing, steps),
     Interpreter.layerWithImplementations(Gated, steps),
     Interpreter.layerWithImplementations(Sealed, steps),
     Interpreter.layerWithImplementations(SealedChild, steps)
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(
-      RunInspection.layerWith({ flows: [Root, Child, Failing, Gated, Sealed, Explosive, Unplannable] })
+      RunInspection.layerWith({ flows: [Root, Child, Failing, Crashing, Gated, Sealed, Explosive, Unplannable] })
     ),
     Layer.provideMerge(engine)
   )
@@ -278,6 +293,32 @@ describe("RunInspection.inspect", () => {
       expect(yield* reads.payload("root-1")).toEqual({
         flowName: Root._tag,
         payload: { token: CREDENTIAL, opaque: expect.anything() }
+      })
+    })))
+
+  it("reads a run that died: the step that died, and its defect's tag, redacted message and node", () =>
+    run(Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      const exit = yield* Effect.exit(engine.execute(Crashing, { executionId: "crashing-1", payload: {} }))
+      expect(Exit.isFailure(exit)).toBe(true)
+      yield* flushed
+      const inspection = yield* (yield* RunInspection.RunInspection).inspect("crashing-1")
+      expect(JSON.stringify(inspection)).not.toContain(CREDENTIAL)
+      expect(inspection.run.status).toBe("failed")
+      // The step that died is failed with its defect's tag, never skipped with no attempts.
+      const crash = inspection.steps.find((step) => step.action === Crash.name)!
+      expect(crash.status).toBe("failed")
+      expect(JSON.parse(crash.output!.text)).toEqual({ failure: "SqlError" })
+      // The run's settlement says what it died of, where, with the message redacted.
+      const settled = inspection.journal.events
+        .filter((event) => event.eventType === "flows.engine.run-decision")
+        .map((event) => JSON.parse(event.payload.text) as { decision: string; status?: string; defect?: unknown })
+        .find((decision) => decision.decision === "transitioned" && decision.status === "failed")!
+      expect(settled.defect).toEqual({
+        tag: "SqlError",
+        message: "Connection closed while holding [REDACTED_API_KEY]",
+        nodeId: crash.nodeId,
+        action: Crash.name
       })
     })))
 

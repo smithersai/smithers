@@ -125,6 +125,115 @@ export const refusalCode = (cause: Cause.Cause<unknown>): Option.Option<Interpre
 }
 
 /**
+ * Where a defect arose: the innermost node whose execution died with it, and
+ * the action that node dispatches. The interpreter annotates a node's defect
+ * with it (`Cause.annotate`), keeping the innermost node's when the defect
+ * travels up through the nodes above it, so a host that settles the run reads
+ * it back with {@link defectOf}.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export class DefectSite extends Context.Service<DefectSite, {
+  readonly nodeId: string
+  readonly action?: string | undefined
+}>()("@smthrs/flow/Interpreter/DefectSite") {}
+
+/**
+ * The most characters of a defect's message {@link defectOf} keeps. A message
+ * is for an operator to read, not a payload: it is cut here, and every writer
+ * redacts it before it reaches a journal or a log.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export const maximumDefectMessageLength = 500
+
+/**
+ * A defect as an operator reads it: its tag (`_tag`, else `code`, else a
+ * `name` other than `Error`, else `defect`), its `code` beside a `_tag` that
+ * has one (a `DatabaseError`'s `busy`), its message, or the first one down its
+ * chain of causes, cut to {@link maximumDefectMessageLength} characters (empty
+ * when none has one), and the node and action it arose in when the interpreter
+ * recorded them.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export interface Defect {
+  readonly tag: string
+  readonly code?: string | undefined
+  readonly message: string
+  readonly nodeId?: string | undefined
+  readonly action?: string | undefined
+}
+
+/** A tag that is an identifier, not text. @private */
+const defectTag = /^[A-Za-z0-9_@$./:-]{1,200}$/
+
+/** The tag of one defect value. @private */
+const tagOfDefect = (defect: unknown): string => {
+  if (typeof defect === "object" && defect !== null) {
+    const record = defect as { readonly _tag?: unknown; readonly code?: unknown; readonly name?: unknown }
+    if (typeof record._tag === "string" && defectTag.test(record._tag)) return record._tag
+    if (typeof record.code === "string" && defectTag.test(record.code)) return record.code
+    if (typeof record.name === "string" && record.name !== "Error" && defectTag.test(record.name)) return record.name
+  }
+  return "defect"
+}
+
+/** The `code` of a defect whose tag is its `_tag`, when it has one. @private */
+const codeOfDefect = (defect: unknown): string | undefined => {
+  if (typeof defect !== "object" || defect === null) return undefined
+  const { _tag, code } = defect as { readonly _tag?: unknown; readonly code?: unknown }
+  return typeof _tag === "string" && typeof code === "string" && defectTag.test(code) ? code : undefined
+}
+
+/** How far down a defect's causes {@link messageOfDefect} looks. @private */
+const maximumCauseDepth = 8
+
+/** The first message in one defect value's chain of causes, cut. @private */
+const messageOfDefect = (defect: unknown): string => {
+  let current = defect
+  for (let depth = 0; depth < maximumCauseDepth; depth++) {
+    const text = typeof current === "string"
+      ? current
+      : typeof current === "object" && current !== null
+      ? (current as { readonly message?: unknown }).message
+      : undefined
+    if (typeof text === "string" && text.length > 0) {
+      return text.length <= maximumDefectMessageLength ? text : `${text.slice(0, maximumDefectMessageLength)}…`
+    }
+    if (typeof current !== "object" || current === null) return ""
+    current = (current as { readonly cause?: unknown }).cause
+  }
+  return ""
+}
+
+/**
+ * The first defect in `cause`, as {@link Defect} describes it, or `undefined`
+ * when the cause holds none. An interpreter refusal is a defect too: its tag
+ * is the refusal's code.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export const defectOf = (cause: Cause.Cause<unknown>): Defect | undefined => {
+  const reason = cause.reasons.find(Cause.isDieReason)
+  if (reason === undefined) return undefined
+  const site = Context.getOrUndefined(Cause.reasonAnnotations(reason), DefectSite)
+  const code = codeOfDefect(reason.defect)
+  return {
+    tag: tagOfDefect(reason.defect),
+    ...(code === undefined ? {} : { code }),
+    message: messageOfDefect(reason.defect),
+    ...(site === undefined
+      ? {}
+      : { nodeId: site.nodeId, ...(site.action === undefined ? {} : { action: site.action }) })
+  }
+}
+
+/**
  * What one interpretation produced: the root's value, every node that settled
  * with the value it settled with, and the nodes the run never reached because
  * a branch went the other way.
@@ -1110,6 +1219,50 @@ const settledRecord = (
 }
 
 /**
+ * A node whose execution died: its defect annotated with where it arose
+ * ({@link DefectSite}, the innermost node keeping its own), and the node
+ * recorded `failed` with the defect's tag and message, so the journal says
+ * which node died and why rather than calling it skipped. The record is cut
+ * and redacted where a runtime journals it, and a record that fails changes
+ * nothing about the defect the run ends with. Typed failures, interruptions
+ * and interpreter refusals pass through unchanged: each has its own record.
+ *
+ * @private
+ */
+const died = (
+  walk: Walk,
+  id: string,
+  action: string | undefined,
+  dispatches: Dispatches,
+  cause: Cause.Cause<unknown>
+): Effect.Effect<never, unknown, FlowInstance> => {
+  const defect = defectOf(cause)
+  if (defect === undefined || Cause.hasInterruptsOnly(cause) || Option.isSome(refusalCode(cause))) {
+    return Effect.failCause(cause)
+  }
+  const annotated = Cause.annotate(cause, Context.make(DefectSite, { nodeId: id, action }))
+  const value = {
+    defect: {
+      _tag: defect.tag,
+      ...(defect.code === undefined ? {} : { code: defect.code }),
+      message: defect.message
+    }
+  }
+  const record = walk.reported.has(id)
+    ? Effect.void
+    : walk.record(settledRecord(walk, id, action, dispatches, "failed", value)).pipe(
+      Effect.andThen(Effect.sync(() => walk.reported.add(id))),
+      // A record that could not be written leaves the node to the skipped
+      // records and the run's defect to its settlement; an interruption of
+      // the record is the walk's own and is raised again.
+      Effect.catchCause((recordCause) =>
+        Cause.hasInterruptsOnly(recordCause) ? Effect.failCause(recordCause) : Effect.void
+      )
+    )
+  return Effect.andThen(record, Effect.failCause(annotated))
+}
+
+/**
  * Runs one node's computation, recording it scheduled and then settled, and
  * completes its deferred with the exit. An interrupted execution is evicted,
  * not memoized: current joiners observe the interruption, but a LATER demand
@@ -1140,6 +1293,7 @@ const execute = (walk: Walk, node: Graph.GraphNode, deferred: Deferred.Deferred<
     Effect.tapError((error) =>
       file(walk, walk.failed, id, error, settledRecord(walk, id, action, dispatches, "failed", error))
     ),
+    Effect.catchCause((cause) => died(walk, id, action, dispatches, cause)),
     Effect.onExit((exit) => {
       if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) walk.inFlight.delete(id)
       walk.executions.delete(id)

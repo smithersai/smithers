@@ -13,7 +13,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, Graph, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Effect, Layer, Schema } from "effect"
+import { Cause, Effect, Layer, Schema } from "effect"
 import type * as Crypto from "effect/Crypto"
 import { withCrypto } from "./Crypto.ts"
 import { layerWired, makeInstance, makeMemoryState, type MemoryState } from "./MemoryFlowRuntime.ts"
@@ -48,7 +48,18 @@ const Chatty = Action.make("node-events/chatty", {
   success: Schema.Number
 })
 
+/** A step whose implementation dies, as a lost database connection does inside a store call. */
+const Crash = Action.make("node-events/crash", {
+  payload: {},
+  success: Schema.Number
+})
+
+class ConnectionClosed extends Error {
+  override readonly name = "SqlError"
+}
+
 const implementations = Layer.mergeAll(
+  Crash.toLayer(() => Effect.die(new ConnectionClosed("Connection closed, token=sk-live-0123456789abcdef0123"))),
   Read.toLayer(({ path }) => Effect.succeed({ value: path.length })),
   Double.toLayer(({ value }) => Effect.succeed(value * 2)),
   Fallible.toLayer(({ fail }) => fail ? Effect.fail("refused") : Effect.succeed(1)),
@@ -89,6 +100,16 @@ const Refused = Flow.make("node-events/refused", {
   error: Schema.String,
   body: () =>
     Fallible.call({ fail: true }).pipe(
+      Node.bindPlanned((value) => Double.call({ value })),
+      Node.map((value) => value + 1)
+    )
+})
+
+const Crashes = Flow.make("node-events/crashes", {
+  payload: {},
+  success: Schema.Number,
+  body: () =>
+    Crash.call({}).pipe(
       Node.bindPlanned((value) => Double.call({ value })),
       Node.map((value) => value + 1)
     )
@@ -196,6 +217,48 @@ describe("Interpreter node events", () => {
       expect(skipped[0]!.attempts).toBe(0)
       expect(settled).toHaveLength(Graph.nodes(Graph.build(Refused, {})).length)
     }))
+
+  it.effect("settles a node that died as failed with its defect's tag and message, and names it on the defect", () =>
+    Effect.gen(function*() {
+      const memory = makeMemoryState()
+      const exit = yield* drive(Effect.exit(Interpreter.interpret(Crashes, {})), memory)
+
+      // The node that died says so, with what killed it; before, it read as
+      // skipped with no attempts, and the journal held no cause at all.
+      const crashed = settledOf(memory).find((record) => record.action === "node-events/crash")!
+      expect(crashed.outcome).toBe("failed")
+      expect(crashed.value).toEqual({
+        defect: { _tag: "SqlError", message: "Connection closed, token=sk-live-0123456789abcdef0123" }
+      })
+      expect(settledOf(memory).find((record) => record.action === "node-events/double")?.outcome).toBe("skipped")
+      // The run's defect names the innermost node that died, and its action.
+      expect(exit._tag).toBe("Failure")
+      const defect = exit._tag === "Failure" ? Interpreter.defectOf(exit.cause) : undefined
+      expect(defect).toEqual({
+        tag: "SqlError",
+        message: "Connection closed, token=sk-live-0123456789abcdef0123",
+        nodeId: crashed.nodeId,
+        action: "node-events/crash"
+      })
+    }))
+
+  it("reads a tagged defect's code beside its tag, and its message from down its chain of causes", () => {
+    // What the engine's writer gives up with: a tag, a code, no message of its own, and the driver's error as its cause.
+    const busy = Object.assign(new Error(""), {
+      _tag: "@smthrs/database/DatabaseError",
+      code: "busy",
+      cause: new Error("canceling statement due to lock timeout")
+    })
+    expect(Interpreter.defectOf(Cause.die(busy))).toEqual({
+      tag: "@smthrs/database/DatabaseError",
+      code: "busy",
+      message: "canceling statement due to lock timeout"
+    })
+    expect(Interpreter.defectOf(Cause.die("plain words"))).toEqual({ tag: "defect", message: "plain words" })
+    expect(Interpreter.defectOf(Cause.die({}))).toEqual({ tag: "defect", message: "" })
+    expect(Interpreter.defectOf(Cause.die(new Error("x".repeat(600))))?.message).toHaveLength(501)
+    expect(Interpreter.defectOf(Cause.fail("typed"))).toBeUndefined()
+  })
 
   it.effect("addresses a resumed walk's records exactly as the first walk addressed them", () =>
     Effect.gen(function*() {
