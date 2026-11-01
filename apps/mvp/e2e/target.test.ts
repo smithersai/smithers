@@ -19,6 +19,9 @@ import {
   parseDescription,
   readIdentity,
   readPlace,
+  readRepositories,
+  type RepositoryAnswer,
+  scratchRepositoriesOf,
   type Run,
   scriptedAgent,
   stackRepository,
@@ -387,6 +390,33 @@ describe("needs", () => {
     expect(brokenOn("vibelangRoles", deployedAs("maintainer", { GITHUB_REPOSITORY: "smithersai/vibelang" }))).toBe(false)
   })
 
+  it("for a scratch repository's Admin, are met by the role the deployment answered there, never the session's", () => {
+    const answered = (answers: Record<string, RepositoryAnswer>) => (name: string) => answers[name]
+    const env = { E2E_STACK_REPOSITORY: "Owner/Scratch", E2E_FACTORY_REPOSITORY: "Owner/Scratch", E2E_RUNNER_MIRROR: "/mirror" }
+    const admin = { ...deployedAs("member", env), repository: answered({ "owner/scratch": { role: "admin", synced: true } }) }
+    expect(NEEDS.stackAdmin.met(admin)).toBe(true)
+    expect(NEEDS.agentRunner.met(admin)).toBe(true)
+    // An Admin of the deployment's own repository is no Admin of the scratch one.
+    const member = { ...deployedAs("admin", env), repository: answered({ "owner/scratch": { role: "member", synced: true } }) }
+    expect(NEEDS.stackAdmin.met(member)).toBe(false)
+    expect(NEEDS.agentRunner.met(member)).toBe(false)
+    // Nothing answered (the setup hasn't asked, or the deployment couldn't say): skipped, never assumed.
+    expect(NEEDS.stackAdmin.met(deployedAs("admin", env))).toBe(false)
+    expect(NEEDS.agentRunner.met({ ...deployedAs("admin", env), repository: answered({}) })).toBe(false)
+    expect(NEEDS.agentRunner.met({ ...admin, env: { ...env, E2E_RUNNER_MIRROR: "" } })).toBe(false)
+    expect(NEEDS.stackAdmin.met({ ...admin, env: { E2E_STACK_REPOSITORY: "smithersai/scratch" }, repository: answered({ "smithersai/scratch": { role: "admin", synced: true } }) })).toBe(false)
+    expect(NEEDS.stackAdmin.met(local)).toBe(true)
+  })
+
+  it("for the synced scratch, are met by a scratch repository the deployment said it syncs", () => {
+    const env = { E2E_ISSUES_REPOSITORY: "owner/scratch" }
+    const synced = (value: boolean) => ({ ...deployedAs("member", env), repository: (name: string) => (name === "owner/scratch" ? { role: "admin" as const, synced: value } : undefined) })
+    expect(NEEDS.syncedScratch.met(synced(true))).toBe(true)
+    expect(NEEDS.secondRepository.met(synced(true))).toBe(true)
+    expect(NEEDS.syncedScratch.met(synced(false))).toBe(false)
+    expect(NEEDS.syncedScratch.met(deployedAs("member", env))).toBe(false)
+  })
+
   it("for a second repository, are met only when the scratch repository isn't the deployment's own", () => {
     const scratch = { E2E_ISSUES_REPOSITORY: "roninjin10/smithers-github-tests" }
     expect(NEEDS.secondRepository.met(deployedAs("member", scratch))).toBe(true)
@@ -497,6 +527,35 @@ describe("the scripted agent's address", () => {
   })
 })
 
+describe("the scratch repositories' answers", () => {
+  it("name each scratch repository the run names once, lowercase, never a smithersai one", () => {
+    expect(scratchRepositoriesOf({
+      E2E_ISSUES_REPOSITORY: "Owner/Scratch",
+      E2E_STACK_REPOSITORY: "owner/scratch",
+      E2E_FACTORY_REPOSITORY: "smithersai/smithers",
+    })).toEqual(["owner/scratch"])
+    expect(scratchRepositoriesOf({ E2E_STACK_REPOSITORY: "not a repository" })).toEqual([])
+  })
+
+  it("read what the setup wrote, by lowercase name, and nothing before it ran", () => {
+    const dir = mkdtempSync(join(tmpdir(), "e2e-repositories-"))
+    try {
+      const path = join(dir, "repositories.json")
+      expect(readRepositories(path)).toEqual({})
+      writeFileSync(path, JSON.stringify({ checkedAt: 1, repositories: { "Owner/Scratch": { role: "admin", synced: true }, "o/none": { role: null, synced: false } } }))
+      expect(readRepositories(path)).toEqual({ "owner/scratch": { role: "admin", synced: true }, "o/none": { role: null, synced: false } })
+      writeFileSync(path, JSON.stringify({}))
+      expect(readRepositories(path)).toEqual({})
+      for (const answer of [{ role: "owner", synced: true }, { role: "admin" }]) {
+        writeFileSync(path, JSON.stringify({ repositories: { "o/r": answer } }))
+        expect(() => readRepositories(path)).toThrow("not what the e2e setup wrote")
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
 describe("the stored session's files", () => {
   const root = mkdtempSync(join(tmpdir(), "e2e-target-"))
   afterAll(() => rmSync(root, { recursive: true, force: true }))
@@ -508,6 +567,8 @@ describe("the stored session's files", () => {
       session: join(root, "smithers.example.workers.dev", "session.json"),
       identity: join(root, "smithers.example.workers.dev", "identity.json"),
       conversation: join(root, "smithers.example.workers.dev", "conversation.json"),
+      repositories: join(root, "smithers.example.workers.dev", "repositories.json"),
+      settings: join(root, "smithers.example.workers.dev", "e2e.env"),
     })
     expect(sessionFiles("http://localhost:1338", { E2E_SESSION_DIR: root }).dir).toBe(join(root, "localhost_1338"))
     expect(sessionFiles("https://smithers.example.workers.dev", {}).dir).toMatch(/\.smithers-e2e\/smithers\.example\.workers\.dev$/)

@@ -3,7 +3,17 @@ import { chromium, expect, request as requests, test as setup } from "@playwrigh
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { DEVICE_PERSON_HEADER } from "../../src/features/auth/contract"
-import { baseURL, type Identity, OWN_BRANCH, type Place, readIdentity, sessionFiles, target } from "../target"
+import {
+  baseURL,
+  type Identity,
+  OWN_BRANCH,
+  type Place,
+  readIdentity,
+  type RepositoryAnswer,
+  scratchRepositoriesOf,
+  sessionFiles,
+  target,
+} from "../target"
 import { redactError, redactRequestErrors } from "../redact"
 import { leaseProfile } from "./lease"
 import { personOf, readJson, renewal, type SessionAnswer, sessionState, type StorageState, writePrivate } from "./session"
@@ -159,6 +169,30 @@ setup("fixture repositories are requested", async () => {
   } finally {
     await request.dispose()
   }
+})
+
+setup("the scratch repositories' roles and sync are read", async () => {
+  // The needs that write to a scratch repository (e2e/target.ts: stackAdmin, agentRunner, syncedScratch) decide from
+  // what the deployment answers here: the account's role on each repository the run names, and whether it syncs it.
+  // Only this run's answers are kept; a repository the deployment can't answer for now is left out, so its tests skip.
+  const identity = readIdentity(files.identity)!
+  const request = await api(files.session)
+  const repositories: Record<string, RepositoryAnswer> = {}
+  try {
+    for (const repository of scratchRepositoriesOf(process.env)) {
+      const response = await request.get(`/api/repos/${repository}/role`, { headers: { [DEVICE_PERSON_HEADER]: identity.personId } })
+      const body = (await response.json().catch(() => ({}))) as { role?: unknown; synced?: unknown; code?: unknown }
+      const answered = response.ok() && (body.role === null || typeof body.role === "string")
+      setup.info().annotations.push({
+        type: "repository",
+        description: `${repository}: ${response.status()} ${answered ? `${String(body.role ?? "no role")}, ${body.synced === true ? "synced" : "not synced"}` : String(body.code ?? "")}`,
+      })
+      if (answered) repositories[repository] = { role: (body.role ?? null) as RepositoryAnswer["role"], synced: body.synced === true }
+    }
+  } finally {
+    await request.dispose()
+  }
+  await writePrivate(files.repositories, JSON.stringify({ checkedAt: Date.now(), repositories }, null, 2))
 })
 
 setup("the run's own conversation is tracked", async () => {

@@ -1,4 +1,5 @@
 import { expect, type Tab, test } from "./devices"
+import { serverState } from "./stackWrites"
 import { requires, scratchRepository, scriptedAgent, stackRepository } from "./target"
 
 // TODOs and the stack, end to end (decision 0016 slice 1, Track A; docs/features/todos.md): two people in real
@@ -91,7 +92,7 @@ test("todo-commit-drop: Ann asks Smithers for a TODO, edits the draft and commit
   await expect(row(ann, word)).toHaveAttribute("data-status", "dropped", { timeout: 60_000 })
 })
 
-test("todo-new-keyboard: New TODO on the stack page, typed and committed with the keyboard, then dropped", async ({ devices }) => {
+test("todo-new-keyboard: New TODO on the stack page, typed and committed with the keyboard, then dropped", async ({ devices, browserName }) => {
   requires("member", "writableStack")
   const repo = stackRepository()
   const keyboardRow = (tab: Tab, word: string) => tab.page.getByRole("region", { name: `${repo} stack` }).locator("[data-slot=issues-row]", { hasText: word })
@@ -114,20 +115,24 @@ test("todo-new-keyboard: New TODO on the stack page, typed and committed with th
   const number = (await keyboardRow(ann, word).textContent())!.match(/T(\d+)/)![1]!
 
   // Drop with the keyboard, from the row's menu: Enter opens it on Drop, Enter asks with the focus on Cancel, the safe
-  // choice; Tab reaches Drop, and Enter drops it. The row leaves the Open list for the Closed one.
+  // choice; Tab reaches Drop, and Enter drops it. The row leaves the Open list for the Closed one. Safari's Tab moves
+  // only between text fields unless its "Press Tab to highlight each item" setting is on; Option-Tab reaches buttons.
+  const nextControl = browserName === "webkit" ? "Alt+Tab" : "Tab"
   await keyboardRow(ann, word).getByRole("button", { name: `T${number} actions` }).focus()
   await ann.page.keyboard.press("Enter")
   await expect(ann.page.getByRole("menuitem", { name: "Drop" })).toBeFocused()
   await ann.page.keyboard.press("Enter")
   const confirm = ann.page.getByRole("dialog", { name: `Drop T${number}?` })
   await expect(confirm.getByRole("button", { name: "Cancel" })).toBeFocused()
-  await ann.page.keyboard.press("Tab")
+  await ann.page.keyboard.press(nextControl)
   await expect(confirm.getByRole("button", { name: "Drop", exact: true })).toBeFocused()
   await ann.page.keyboard.press("Enter")
   await expect(keyboardRow(ann, word)).toHaveCount(0, { timeout: 60_000 })
   await ann.page.getByRole("navigation", { name: "Filter" }).getByRole("link", { name: /Closed/ }).focus()
   await ann.page.keyboard.press("Enter")
   await expect(keyboardRow(ann, word)).toHaveAttribute("data-status", "dropped", { timeout: 60_000 })
+  // The device shows Dropped at once; the stack must hold it too, or the TODO stays open for everyone else.
+  await expect.poll(() => serverState(ann.page, repo, number), { timeout: 60_000 }).toBe("dropped")
 })
 
 // Make TODO on an issue (docs/features/todos.md#from-an-issue) needs an open issue GitHub's projection holds, as
@@ -181,6 +186,7 @@ test("todo-from-issue: Make TODO from an issue's menu drafts it linked; the issu
   await side.getByRole("link", { name: todo }).click()
   await page.getByRole("button", { name: "Drop", exact: true }).click()
   await page.getByRole("dialog").getByRole("button", { name: "Drop", exact: true }).click()
+  await expect.poll(() => serverState(page, repo, todo.slice(1)), { timeout: 60_000 }).toBe("dropped")
   await page.goBack()
   await expect(page).toHaveURL(new RegExp(`/${repo}/issues/${number}$`))
   await expect(side.getByRole("link", { name: todo })).toBeVisible({ timeout: 60_000 })

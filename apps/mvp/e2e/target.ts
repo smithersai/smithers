@@ -5,6 +5,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { DEV_URL } from "../dev/https"
 import { DEVICE_PERSON_HEADER, type Role, ROLES } from "../src/features/auth/contract"
+import { sessionDirOf } from "./settings"
 
 // What the e2e tests run against, and what each test needs from it (docs/rules.md, test.e2e-declared-needs). One suite
 // runs locally against `alchemy dev` and against a deployment (docs/rulings.md TEST-4). A test that needs something a
@@ -48,8 +49,15 @@ export const LOCAL_DEVELOPER: Identity = { origin: new URL(baseURL).origin, logi
  * session and no copy of the checkout carries it. `E2E_SESSION_DIR` moves the root.
  */
 export const sessionFiles = (url: string, env: { readonly E2E_SESSION_DIR?: string | undefined } = process.env) => {
-  const dir = join(env.E2E_SESSION_DIR ?? join(homedir(), ".smithers-e2e"), new URL(url).host.replace(/[^a-z0-9.-]/gi, "_"))
-  return { dir, session: join(dir, "session.json"), identity: join(dir, "identity.json"), conversation: join(dir, "conversation.json") }
+  const dir = sessionDirOf(url, env)
+  return {
+    dir,
+    session: join(dir, "session.json"),
+    identity: join(dir, "identity.json"),
+    conversation: join(dir, "conversation.json"),
+    repositories: join(dir, "repositories.json"),
+    settings: join(dir, "e2e.env"),
+  }
 }
 
 /** Where a deployment run asks: the test account's own branch, private to it, and that branch's conversation. */
@@ -92,6 +100,41 @@ export const readIdentity = (path: string): Identity | undefined => {
   return { origin: value.origin, login: value.login, personId: value.personId, role }
 }
 
+/**
+ * What the deployment answered at setup about the test account on one scratch repository the run names
+ * (`GET /api/repos/<owner>/<name>/role`, decision 0079): its role there and whether the deployment syncs it.
+ */
+export type RepositoryAnswer = { readonly role: Role | null; readonly synced: boolean }
+
+/** The repositories the setup asked about, by lowercase `owner/name`; none before it ran (e2e/deployment/sign-in.setup.ts). */
+export const readRepositories = (path: string): Readonly<Record<string, RepositoryAnswer>> => {
+  let text: string
+  try {
+    text = readFileSync(path, "utf8")
+  } catch {
+    return {}
+  }
+  const value = JSON.parse(text) as { repositories?: Record<string, Partial<RepositoryAnswer>> }
+  const answers: Record<string, RepositoryAnswer> = {}
+  for (const [name, answer] of Object.entries(value.repositories ?? {})) {
+    const role = answer.role ?? null
+    if ((role !== null && !ROLES.includes(role)) || typeof answer.synced !== "boolean") {
+      throw new Error(`${path} is not what the e2e setup wrote; delete it and run the setup again`)
+    }
+    answers[name.toLowerCase()] = { role, synced: answer.synced }
+  }
+  return answers
+}
+
+/** The scratch repositories a deployment run names, which the setup asks about: issues, stack and factory. */
+export const scratchRepositoriesOf = (env: Readonly<Record<string, string | undefined>>): ReadonlyArray<string> => [
+  ...new Set(
+    [env.E2E_ISSUES_REPOSITORY, env.E2E_STACK_REPOSITORY, env.E2E_FACTORY_REPOSITORY]
+      .filter((name): name is string => /^[\w.-]+\/[\w.-]+$/.test(name ?? "") && !/^smithersai\//i.test(name!))
+      .map((name) => name.toLowerCase()),
+  ),
+]
+
 /** The person this run is signed in as. In a deployment, the setup project must have run. */
 export const me = (): Identity => {
   if (target === "local") return LOCAL_DEVELOPER
@@ -117,9 +160,18 @@ export type Run = {
   readonly env: Readonly<Record<string, string | undefined>>
   /** Whether a deployment run has its own conversation to ask in (read only when a need asks). */
   readonly ownConversation?: () => boolean
+  /** What the deployment answered at setup about a scratch repository the run names (read only when a need asks). */
+  readonly repository?: (name: string) => RepositoryAnswer | undefined
 }
 
 const set = (run: Run, ...names: ReadonlyArray<string>) => names.every((name) => (run.env[name] ?? "") !== "")
+
+/** Whether a deployment run names a writable scratch stack, never a smithersai one. */
+const stackSet = (run: Run) =>
+  /^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_STACK_REPOSITORY ?? "") && !/^smithersai\//i.test(run.env.E2E_STACK_REPOSITORY!)
+
+/** Whether the deployment told the setup that the test account is an Admin of the repository `variable` names. */
+const adminOf = (run: Run, variable: string) => run.repository?.((run.env[variable] ?? "").toLowerCase())?.role === "admin"
 
 /** The dev server's own settings file, apps/mvp/.env, which `alchemy dev` reads. */
 export const DOT_ENV = join(dirname(fileURLToPath(import.meta.url)), "..", ".env")
@@ -252,8 +304,7 @@ const needs = {
     reason: "it clones into Code Storage, which the local dev server reaches only with CODE_STORAGE_ORG and CODE_STORAGE_KEY set",
   },
   writableStack: {
-    met: (run) => run.target === "local" ||
-      (/^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_STACK_REPOSITORY ?? "") && !/^smithersai\//i.test(run.env.E2E_STACK_REPOSITORY!)),
+    met: (run) => run.target === "local" || stackSet(run),
     reason: "it commits and drops TODOs: locally on octocat/Spoon-Knife; a deployment needs E2E_STACK_REPOSITORY naming a writable scratch repository with stack shapes and repository membership, never a smithersai one",
   },
   absentRepository: {
@@ -316,18 +367,18 @@ const needs = {
     reason: "it needs the deployment's own model off (decision 0099): a deployment, as a deploy leaves it unless E2E_HOSTED_MODEL=on says an Admin turned it on, or a local dev server started with HOSTED_MODEL_ENABLED=false",
   },
   stackAdmin: {
-    met: (run) => run.target === "local",
-    reason: "it sets a stack's lanes and base, which only a repository Admin may (decision 0135): local development's person is one; the deployment's test account is a Member of its stack's repository",
+    met: (run) => run.target === "local" || (stackSet(run) && adminOf(run, "E2E_STACK_REPOSITORY")),
+    reason: "it sets a stack's lanes and base, which only a repository Admin may (decision 0135): local development's person is one; in a deployment the test account must be an Admin of E2E_STACK_REPOSITORY, as the setup reads from the deployment",
   },
   factoryRepository: {
     met: (run) => run.target === "deployment" && set(run, "E2E_FACTORY_REPOSITORY") && !/^smithersai\//i.test(run.env.E2E_FACTORY_REPOSITORY!),
-    reason: "it runs TODOs to pull requests: run against a live instance whose GITHUB_REPOSITORY is a scratch repository, named in E2E_FACTORY_REPOSITORY, never a smithersai one",
+    reason: "it runs TODOs to pull requests: run against a live instance with the GitHub App on a scratch repository, named in E2E_FACTORY_REPOSITORY, never a smithersai one",
   },
   agentRunner: {
     met: (run) =>
       run.target === "deployment" && set(run, "E2E_FACTORY_REPOSITORY", "E2E_RUNNER_MIRROR") &&
-      !/^smithersai\//i.test(run.env.E2E_FACTORY_REPOSITORY!) && run.role() === "admin",
-    reason: "it runs a TODO to a pull request on an external agent (decision 0136): a dev build signing in through the GitHub App (E2E_TARGET=deployment) on a scratch repository the test account administers, named in E2E_FACTORY_REPOSITORY, never a smithersai one, and E2E_RUNNER_MIRROR naming a jj clone of it on this machine for the spec's own `smthrs runner`",
+      !/^smithersai\//i.test(run.env.E2E_FACTORY_REPOSITORY!) && adminOf(run, "E2E_FACTORY_REPOSITORY"),
+    reason: "it runs TODOs to pull requests on an external agent (decision 0136): a deployment, or a dev build signing in through the GitHub App (E2E_TARGET=deployment), with the App on a scratch repository the test account administers, named in E2E_FACTORY_REPOSITORY, never a smithersai one, and E2E_RUNNER_MIRROR naming a jj clone of it on this machine for the spec's own `smthrs runner`",
   },
   feedKey: {
     // Locally, `alchemy dev` accepts its development feed key (worker/feeds/dev.ts) unless FEED_KEYS is set.
@@ -343,8 +394,9 @@ const needs = {
   },
   syncedScratch: {
     met: (run) => scratchSet(run) &&
-      run.env.E2E_ISSUES_REPOSITORY!.toLowerCase() === (run.env.E2E_SYNCED_REPOSITORY ?? run.env.GITHUB_REPOSITORY ?? "smithersai/smithers").toLowerCase(),
-    reason: "it needs synced issue shapes, triage and stack writes: E2E_ISSUES_REPOSITORY must name the deployment's synced scratch repository (E2E_SYNCED_REPOSITORY), never smithersai; use a dedicated scratch deployment",
+      (run.env.E2E_ISSUES_REPOSITORY!.toLowerCase() === (run.env.E2E_SYNCED_REPOSITORY ?? run.env.GITHUB_REPOSITORY ?? "smithersai/smithers").toLowerCase() ||
+        run.repository?.(run.env.E2E_ISSUES_REPOSITORY!.toLowerCase())?.synced === true),
+    reason: "it needs synced issue shapes, triage and stack writes: E2E_ISSUES_REPOSITORY must name a scratch repository the deployment syncs, never smithersai: its own (E2E_SYNCED_REPOSITORY), or one with the GitHub App installed, as the setup reads from the deployment (decision 0079)",
   },
   secondRepository: {
     met: (run) =>
@@ -465,6 +517,7 @@ const thisRun: Run = {
   role: () => me().role,
   env: process.env,
   ownConversation: () => ownPlace() !== undefined,
+  repository: (name) => (target === "local" ? undefined : readRepositories(sessionFiles(baseURL).repositories)[name.toLowerCase()]),
 }
 
 /** Whether this run meets `name`. */

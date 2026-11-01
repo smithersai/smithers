@@ -10,11 +10,16 @@
 //
 // One run at a time uses the test account on a deployment: the run holds a lock directory, `E2E_PROD_LOCK` or
 // `run.lock` beside the stored session, with an `owner` file saying who holds it, and waits while another run does.
-// A lock whose owner process has ended is reported, never taken over.
+// A lock whose owner process has ended is reported, never taken over. The lock is released as soon as Playwright exits,
+// before the recordings are made.
+//
+// The run's settings, the E2E_* variables naming its scratch repositories, mirror and keys, come from `e2e.env` beside
+// the stored session (e2e/settings.ts), private to its owner; a variable the environment sets wins.
 import { spawnSync } from "node:child_process"
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
+import { settingsFileOf, withSettings } from "./settings.ts"
 
 const url = process.env.E2E_PROD_URL ?? ""
 if (!/^https:\/\//.test(url)) {
@@ -22,7 +27,17 @@ if (!/^https:\/\//.test(url)) {
   process.exit(2)
 }
 
-const lock = process.env.E2E_PROD_LOCK ?? join(process.env.E2E_SESSION_DIR ?? join(homedir(), ".smithers-e2e"), new URL(url).host, "run.lock")
+const settingsFile = settingsFileOf(url)
+let settings
+try {
+  settings = withSettings(process.env, settingsFile)
+} catch (error) {
+  console.error(error.message)
+  process.exit(2)
+}
+if (settings.set.length > 0) console.error(`Settings from ${settingsFile}: ${settings.set.join(", ")}`)
+
+const lock = settings.env.E2E_PROD_LOCK ?? join(settings.env.E2E_SESSION_DIR ?? join(homedir(), ".smithers-e2e"), new URL(url).host, "run.lock")
 const ownerOf = () => {
   try {
     return readFileSync(join(lock, "owner"), "utf8").trim()
@@ -60,12 +75,20 @@ for (let waiting = false; !take(); waiting = true) {
   // A blocking wait between looks; the lock is a directory another process removes.
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20_000)
 }
-const release = () => rmSync(lock, { recursive: true, force: true })
+// Released once: after Playwright exits, or at exit when it never ran. A second release would remove the next run's lock.
+let held = true
+const release = () => {
+  if (!held) return
+  held = false
+  rmSync(lock, { recursive: true, force: true })
+}
 process.on("exit", release)
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, () => process.exit(130))
 
-const env = { ...process.env, E2E_TARGET: "deployment", BASE_URL: url }
+const env = { ...settings.env, E2E_TARGET: "deployment", BASE_URL: url }
 const tests = spawnSync("pnpm", ["exec", "playwright", "test", ...process.argv.slice(2)], { stdio: "inherit", env })
+// The recordings use neither the test account nor the deployment: the next run may start while they are made.
+release()
 const media = join(homedir(), "Desktop/smithers-mvp/prod")
 const recordings = spawnSync("node", ["e2e/gifs.mjs", "test-results-deployment", join(media, "gifs"), join(media, "videos")], { stdio: "inherit", env })
 process.exit(tests.status !== 0 ? (tests.status ?? 1) : (recordings.status ?? 1))

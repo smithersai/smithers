@@ -1,13 +1,10 @@
-import { expect, type Page, type TestInfo } from "@playwright/test"
-import { type ChildProcess, execFileSync, spawn } from "node:child_process"
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
-import { recordActions, step, themeOf, writeManifest } from "./fixtures"
+import { expect, test } from "./devices"
+import { step } from "./fixtures"
 import { github } from "./github"
-import { baseURL, requires } from "./target"
-import { strictTest as test } from "./watch"
+import { type Runner, startRunner } from "./runner"
+import { hideModelNotice } from "./modelNotice"
+import { configureStack, dropTodo } from "./stackWrites"
+import { requires } from "./target"
 
 // A TODO coded by an external agent on a runner (decision 0136, docs/features/agent-runners.md): an Admin registers a
 // runner and names the repository's coding agent, the spec starts that runner itself (`smthrs runner serve`) with the
@@ -16,62 +13,31 @@ import { strictTest as test } from "./watch"
 // agent process and GitHub. The test agent stands in for a model, so this proves the seam; a real agent's lane is the
 // production proof (FINAL.md §5).
 //
-// It writes to GitHub, so it runs only on a dev build signing in through the GitHub App, against a scratch repository
-// the test account administers (`agentRunner`, e2e/target.ts). It never merges.
+// It writes to GitHub, so it runs only signed in through the GitHub App, against a deployment or a dev build, on a
+// scratch repository the test account administers (`agentRunner`, e2e/target.ts). It never merges. The runner's setup
+// is e2e/runner.ts.
 
-const started = new WeakMap<TestInfo, number>()
 const repo = process.env.E2E_FACTORY_REPOSITORY ?? ""
-const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)))
-const smthrs = join(root, "packages/smithers/bin/smithers.mjs")
-const testAgent = join(root, "packages/smithers/agent/test/fixtures/acp-test-agent.mjs")
-
-test.beforeEach(async ({ page }, info) => {
-  started.set(info, Date.now())
-  requires("agentRunner")
-  await page.emulateMedia({ colorScheme: themeOf(info) })
-  await recordActions(page, info, "Maya")
-})
-
-test.afterEach(async ({}, info) => {
-  await writeManifest(info, "flow.json", started.get(info) ?? Date.now(), [{ name: "Maya", video: "video.webm", openedAt: 0 }])
-})
-
-/** An Admin's write to the repository's runners or agents, as the signed-in page. */
-const adminWrite = async (page: Page, path: string, method: "PUT" | "DELETE", body?: unknown) => {
-  const response = await page.request.fetch(new URL(`/api/repos/${repo}/${path}`, baseURL).href, {
-    method,
-    ...(body === undefined ? {} : { data: body }),
-  })
-  expect(response.status(), `${method} ${path}`).toBe(202)
-}
 
 test("agent runner: an external agent's TODO publishes a pull request", {
   annotation: { type: "summary", description: "An Admin points TODOs at an agent on a runner; the App opens its pull request." },
-}, async ({ page }) => {
+}, async ({ devices }) => {
+  requires("agentRunner")
   test.setTimeout(15 * 60_000)
+  // A device of its own (e2e/devices.ts): Commit needs the browser's engine, which a private window can't run.
+  const [maya] = await devices.open("Maya")
+  const page = maya!.page
+  await hideModelNotice(page)
   const word = `a${Date.now().toString(36)}`
-  const state = mkdtempSync(join(tmpdir(), "agent-runner-e2e-"))
-  const name = `e2e-${word}`
-  let runner: ChildProcess | undefined
+  const row = page.getByRole("region", { name: `${repo} stack` }).locator("[data-slot=issues-row]", { hasText: word })
+  let runner: Runner | undefined
+  let number: string | undefined
   try {
     await step("An Admin registers a runner and names the coding agent", async () => {
-      const sha = execFileSync(process.execPath, [smthrs, "runner", "token", "--state", state], { encoding: "utf8" }).trim()
       await page.goto(`/${repo}/stack`)
-      await adminWrite(page, `runners/${name}`, "PUT", { tokenSha256: sha, labels: ["e2e"], capacity: 1 })
-      await adminWrite(page, `agents/${name}`, "PUT", { labels: ["e2e"], profile: "acp-test", coding: true })
-      const config = {
-        origin: new URL(baseURL).origin,
-        name,
-        capacity: 1,
-        stateDir: state,
-        repositories: { [`github/${repo.toLowerCase()}`]: { mirror: process.env.E2E_RUNNER_MIRROR! } },
-        profiles: { "acp-test": { argv: [process.execPath, testAgent], env: { ACP_TEST_AGENT_STATE: join(state, "agent") } } },
-      }
-      writeFileSync(join(state, "runner.json"), JSON.stringify(config))
-      runner = spawn(process.execPath, [smthrs, "runner", "serve", "--config", join(state, "runner.json")], {
-        stdio: ["ignore", "ignore", "pipe"],
-        env: { ...process.env, NODE_TLS_REJECT_UNAUTHORIZED: new URL(baseURL).hostname === "localhost" ? "0" : "1" },
-      })
+      runner = await startRunner(page, repo, word, 1)
+      // Independent lanes: the TODO starts whatever else the shared scratch stack holds open (decision 0135).
+      expect(await configureStack(page, repo, 1, "independent")).toMatchObject({ status: 202 })
     })
 
     const title = `Note alpha ${word}`
@@ -83,14 +49,15 @@ test("agent runner: an external agent's TODO publishes a pull request", {
       await draft.getByRole("button", { name: "Commit", exact: true }).click()
     })
 
-    const row = page.getByRole("region", { name: `${repo} stack` }).locator("[data-slot=issues-row]", { hasText: word })
     await step("The runner's agent works on it", async () => {
       await expect(row).toHaveAttribute("data-status", /running|in_review/, { timeout: 60_000 })
     })
 
     await step("The App opens its pull request with the agent's change", async () => {
-      await expect(row).toHaveAttribute("data-status", "in_review", { timeout: 10 * 60_000 })
-      const number = (await row.textContent())!.match(/T(\d+)/)![1]!
+      // Settled either way, then In review: a failed TODO fails the test at once, with the runner's log.
+      await expect(row).toHaveAttribute("data-status", /in_review|failed/, { timeout: 10 * 60_000 })
+      await expect(row).toHaveAttribute("data-status", "in_review")
+      number = (await row.textContent())!.match(/T(\d+)/)![1]!
       const pulls = await github<Array<{ number: number; head: { ref: string }; user: { type: string } }>>(
         page,
         `/repos/${repo}/pulls?state=open&per_page=100`,
@@ -102,13 +69,13 @@ test("agent runner: an external agent's TODO publishes a pull request", {
       expect(files.map((file) => file.filename)).toEqual(["NOTES.md"])
       expect(files[0]!.patch).toContain(`+alpha ${word}`)
     })
+  } catch (error) {
+    await test.info().attach("runner.log", { body: runner?.log() ?? "" })
+    throw error
   } finally {
-    // The repository codes with Smithers' own agent again, and the runner is retired.
-    await adminWrite(page, `agents/${name}`, "DELETE").catch(() => undefined)
-    await adminWrite(page, `runners/${name}`, "DELETE").catch(() => undefined)
-    runner?.kill("SIGTERM")
-    const stderr = runner?.stderr?.read()?.toString() ?? ""
-    if (test.info().status !== test.info().expectedStatus) test.info().attach("runner.log", { body: stderr })
-    rmSync(state, { recursive: true, force: true })
+    number ??= (await row.textContent({ timeout: 5_000 }).catch(() => null))?.match(/T(\d+)/)?.[1]
+    if (number !== undefined) await dropTodo(page, repo, Number(number))
+    await configureStack(page, repo, 1, "stacked")
+    await runner?.stop()
   }
 })

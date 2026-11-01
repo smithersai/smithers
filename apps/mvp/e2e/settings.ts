@@ -1,0 +1,44 @@
+import { readFileSync, statSync } from "node:fs"
+import { homedir } from "node:os"
+import { join } from "node:path"
+import { parseEnv } from "node:util"
+
+// A deployment run's own settings (docs/infrastructure.md#against-a-deployment): the E2E_* variables that name its
+// scratch repositories, mirror and keys live in `e2e.env` beside the stored session, outside every checkout, so each
+// workspace's `pnpm e2e:prod` reads the same ones and none is committed. The environment wins over the file.
+
+/** The folder a deployment's stored session and settings live in: one per host, under E2E_SESSION_DIR when set. */
+export const sessionDirOf = (url: string, env: { readonly E2E_SESSION_DIR?: string | undefined } = process.env) =>
+  join(env.E2E_SESSION_DIR ?? join(homedir(), ".smithers-e2e"), new URL(url).host.replace(/[^a-z0-9.-]/gi, "_"))
+
+/** The run's settings file for the deployment at `url`. */
+export const settingsFileOf = (url: string, env: { readonly E2E_SESSION_DIR?: string | undefined } = process.env) =>
+  join(sessionDirOf(url, env), "e2e.env")
+
+/** The file can be read by someone other than its owner: it may hold keys, so it must be private, as the session is. */
+export class SettingsNotPrivate extends Error {
+  override readonly name = "SettingsNotPrivate"
+}
+
+/**
+ * `env` with the settings file at `path` under it: a variable `env` already sets keeps its value. No file adds nothing.
+ * Values are never printed; the answer says which names the file set.
+ */
+export const withSettings = (
+  env: Readonly<Record<string, string | undefined>>,
+  path: string,
+): { readonly env: Record<string, string | undefined>; readonly set: ReadonlyArray<string> } => {
+  let text: string
+  try {
+    text = readFileSync(path, "utf8")
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { env: { ...env }, set: [] }
+    throw error
+  }
+  if ((statSync(path).mode & 0o077) !== 0) {
+    throw new SettingsNotPrivate(`${path} can be read by others; it may hold keys: chmod 600 it`)
+  }
+  const parsed = parseEnv(text)
+  const set = Object.keys(parsed).filter((name) => (env[name] ?? "") === "").sort()
+  return { env: { ...env, ...Object.fromEntries(set.map((name) => [name, parsed[name]])) }, set }
+}

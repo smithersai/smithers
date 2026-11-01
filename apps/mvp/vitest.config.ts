@@ -228,6 +228,8 @@ export default defineConfig({
         "e2e/summary.ts",
         "e2e/spend.ts",
         "e2e/deployment/session.ts",
+        "e2e/settings.ts",
+        "e2e/manifests.ts",
         // What fails every e2e test unless it declares it, and when a page's shapes are up to date
         // (docs/infrastructure.md#server-and-console-errors).
         "e2e/problems.ts",

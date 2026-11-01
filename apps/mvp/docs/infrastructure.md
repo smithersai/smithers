@@ -278,6 +278,17 @@ The production app is https://smithers.sh. Our hosted deployment's settings and 
 E2E_PROD_URL=<the production URL> pnpm e2e:prod [spec…] [playwright options…]
 ```
 
+**Settings.** The run's `E2E_*` variables, such as its scratch repositories, runner mirror and keys, can live in `e2e.env` beside the stored session (`~/.smithers-e2e/<host>/e2e.env`), outside every checkout, so each workspace reads the same ones and none is committed (`e2e/settings.ts`). It is dotenv: one `NAME=value` per line, `#` comments. A variable the environment sets wins over the file. The run prints the names it took from the file, never their values, and refuses a file others can read: `chmod 600` it. For smithers.sh:
+
+```sh
+E2E_ISSUES_REPOSITORY=<owner>/<scratch>   # issue writes and Make TODO; synced when the App is installed there
+E2E_STACK_REPOSITORY=<owner>/<scratch>    # TODO commits and drops; stackAdmin when the account is its Admin
+E2E_FACTORY_REPOSITORY=<owner>/<scratch>  # TODO runs on an external agent the spec runs (agentRunner)
+E2E_RUNNER_MIRROR=<a jj clone of it>      # `jj git clone https://github.com/<owner>/<scratch> <dir>`
+```
+
+The scratch repository is the test account's own, never a `smithersai` one, with the deployment's GitHub App installed on it: the specs open issues, commit TODOs, and let the App open throwaway pull requests there. It keeps one open issue for Make TODO.
+
 **Sign-in.**
 - The setup project (`e2e/deployment/sign-in.setup.ts`) signs the test account `codeplanesmithers` in the way a person does: through GitHub, from the account's own browser profile (`~/.multi-e2e-profile`, or `E2E_GITHUB_PROFILE`).
 - It keeps the app's session cookie and nothing else, in `~/.smithers-e2e/<host>/session.json` (mode 0600; `E2E_SESSION_DIR` moves it). The account's login, person id and role go in `identity.json` beside it.
@@ -295,6 +306,8 @@ E2E_PROD_URL=<the production URL> pnpm e2e:prod [spec…] [playwright options…
 - A deployment only: GitHub sign-in (`githubSignIn`), sign-in at one of its aliases (`aliasSignIn`, with `E2E_ALIAS_URL`), and GitHub writes to a scratch repository (`githubScratch`, with `E2E_ISSUES_REPOSITORY`).
 - Code Storage (`codeStorage`), which locally needs its organization and key. Mobile file journeys launch the real clone and wait for its refs and ready repositories-shape row before opening either identity’s page.
 - Mobile TODO writes (`writableStack`): locally Spoon-Knife; in a deployment, `E2E_STACK_REPOSITORY` must name a writable scratch stack with repository membership and shapes, never a `smithersai` repository.
+- A scratch repository's role and sync. The setup asks the deployment about each scratch repository the run names (`E2E_ISSUES_REPOSITORY`, `E2E_STACK_REPOSITORY`, `E2E_FACTORY_REPOSITORY`) with `GET /api/repos/<owner>/<name>/role` and keeps the answers in `repositories.json` beside the session. A repository it couldn't answer for is left out. Setting a stack's lanes (`stackAdmin`) needs the account to be an Admin of `E2E_STACK_REPOSITORY`; running TODOs on a runner (`agentRunner`) needs it to be an Admin of `E2E_FACTORY_REPOSITORY`; synced issue shapes (`syncedScratch`) need the deployment to sync `E2E_ISSUES_REPOSITORY`. Each reads that repository's answer, never the session's role on the deployment's own repository (decision 0079).
+- An external agent (`agentRunner`): the spec registers a runner and coding agent on `E2E_FACTORY_REPOSITORY`, starts `smthrs runner serve` itself with the deterministic ACP test agent, and retires both after (`e2e/runner.ts`). The runner gets this machine's environment without Playwright's `NODE_OPTIONS`, whose VibeLang loader its agents can't resolve from their checkout, and a failing test attaches the runner's log and its agent's stderr. It is how a deployment runs TODOs without a model: the scripted model (`scriptedAgent`) stays in dev builds.
 - Mobile issue/pull details require `syncedRepository`: explicitly set `E2E_SYNCED_REPOSITORY` to the deployment's synced public repository. Missing configuration blocks the run. A complete server snapshot must contain a real item of the requested kind before navigation; empty projections still fail, and detail/layout assertions remain required.
 - Mobile conversations require the run's own conversation and confirm its server shape before checking the populated list. Drafts require Member and confirm the ready draft's server shape before checking Save. Non-live browser shape responses attach status, row counts and completion to `shape-reads.json`, without row contents, parameters or credentials.
 - Mobile docs journeys read the live VibeLang docs source. A refused read remains a failure, with its HTTP status and refusal reason attached as `docs-reads`; a service failure is not a layout pass.
@@ -320,13 +333,14 @@ E2E_PROD_URL=<the production URL> pnpm e2e:prod [spec…] [playwright options…
 **Fixtures.** For a Member or above, the setup requests clones of `octocat/Spoon-Knife` and of the own branch's repository (`POST /api/repos`, idempotent), then tracks the own branch (`POST /api/branches`). It records the branch only when the branch is the account's own and unshared.
 
 **One run at a time.**
-- `pnpm e2e:prod` holds a lock directory for the whole run: `E2E_PROD_LOCK`, or `run.lock` beside the stored session.
+- `pnpm e2e:prod` holds a lock directory while Playwright runs: `E2E_PROD_LOCK`, or `run.lock` beside the stored session. It releases it before making the videos and GIFs, which use neither the test account nor the deployment.
+- Run only the specs you need, and debug a failure after the run releases the lock, not inside it.
 - Its `owner` file names the run's pid and checkout. Another run waits for it.
 - A lock whose owner process has ended is reported and left in place for a person to remove.
 
 **Results.**
 - Playwright's results go to `test-results-deployment/`, apart from a local run's.
-- Videos and GIFs go to `~/Desktop/smithers-mvp/prod/`.
+- Videos and GIFs go to `~/Desktop/smithers-mvp/prod/`. A skipped test gets neither: it writes no manifest, so its blank recording is never made into media or checked (`e2e/manifests.ts`).
 - Two workers, no retries and no traces: a trace holds the session cookie.
 
 **Rehearsal.** A local stack that signs in through GitHub runs as a deployment: `E2E_TARGET=deployment BASE_URL=http://localhost:1338 pnpm exec playwright test`.
