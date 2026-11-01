@@ -18,7 +18,7 @@ export * as TestingError from "./TestingError.ts"
 export * as PlanLike from "./PlanLike.ts"
 
 /** @since 0.0.0 @category services */
-export * as EngineSubject from "./EngineSubject.ts"
+export * as EngineSubject from "./EngineSubject.vibe"
 
 /** @since 0.0.0 @category services */
 export * as ModelLike from "./ModelLike.ts"
@@ -33,13 +33,13 @@ export * as Plan from "./Plan.ts"
 export * as PlanAssertions from "./PlanAssertions.ts"
 
 /** @since 0.0.0 @category assertions */
-export * as JournalAssertions from "./JournalAssertions.ts"
+export * as JournalAssertions from "./JournalAssertions.vibe"
 
 /** @since 0.0.0 @category assertions */
 export * as Divergence from "./Divergence.ts"
 
 /** @since 0.0.0 @category conformance */
-export * as Conformance from "./Conformance.ts"
+export * as Conformance from "./Conformance.vibe"
 
 /** @since 0.0.0 @category models */
 export * as RecordedModel from "./RecordedModel.ts"

@@ -2,7 +2,7 @@ import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Latch from "effect/Latch"
 import * as Ref from "effect/Ref"
-import type { FlowSpec } from "../src/EngineSubject.ts"
+import type { FlowSpec } from "../src/EngineSubject.vibe"
 import * as RestartableEngine from "../src/RestartableEngine.ts"
 import { expect, it } from "../src/Vitest.ts"
 

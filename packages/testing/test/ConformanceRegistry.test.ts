@@ -10,7 +10,7 @@
  * caller.
  */
 import { describe, expect, it } from "vitest"
-import { type ConformanceCase, coreSuite } from "../src/Conformance.ts"
+import { type ConformanceCase, coreSuite } from "../src/Conformance.vibe"
 
 const mutate = (target: object, key: string, value: unknown) => () => {
   ;(target as Record<string, unknown>)[key] = value

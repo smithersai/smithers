@@ -13,7 +13,6 @@
  * @since 0.0.0
  */
 
-import { Context, Effect, Layer } from "effect"
 import type { EngineSubjectError } from "./TestingError.ts"
 import { EngineUnavailableError } from "./TestingError.ts"
 
@@ -42,7 +41,7 @@ export type StepSpec =
      * *pin* chooses the failure value it wants the subject to journal; it is
      * not a laundered engine error.
      */
-    readonly run: (input: unknown) => Effect.Effect<unknown, unknown>
+    readonly run: (input: unknown) => unknown!unknown
   }
   | {
     readonly key: string
@@ -104,11 +103,11 @@ export interface EngineSubject {
     readonly payload: unknown
     readonly executionId?: string
     readonly idempotencyKey?: string
-  }) => Effect.Effect<ExecutionResult, EngineSubjectError>
-  readonly result: (executionId: string) => Effect.Effect<ExecutionResult, EngineSubjectError>
-  readonly interrupt: (executionId: string) => Effect.Effect<void, EngineSubjectError>
-  readonly resume: (executionId: string) => Effect.Effect<ExecutionResult, EngineSubjectError>
-  readonly journal: (executionId: string) => Effect.Effect<ReadonlyArray<JournalEntryLike>, EngineSubjectError>
+  }) => ExecutionResult!EngineSubjectError
+  readonly result: (executionId: string) => ExecutionResult!EngineSubjectError
+  readonly interrupt: (executionId: string) => void!EngineSubjectError
+  readonly resume: (executionId: string) => ExecutionResult!EngineSubjectError
+  readonly journal: (executionId: string) => ReadonlyArray<JournalEntryLike>!EngineSubjectError
 }
 
 /**
@@ -118,7 +117,7 @@ export interface EngineSubject {
  * @since 0.0.0
  */
 export const EngineSubject: Context.Service<EngineSubject, EngineSubject> = Context.Service(
-  "flows/testing/EngineSubject"
+  "flows/testing/EngineSubject",
 )
 
 /**
@@ -135,7 +134,7 @@ export const make = (implementation: EngineSubject): EngineSubject => EngineSubj
  * @category layers
  * @since 0.0.0
  */
-export const layer = (implementation: EngineSubject): Layer.Layer<EngineSubject> =>
+export const layer = (implementation: EngineSubject): Layer<EngineSubject> =>
   Layer.succeed(EngineSubject)(make(implementation))
 
 const unavailable = (operation: string): EngineUnavailableError =>
@@ -151,12 +150,12 @@ const unavailable = (operation: string): EngineUnavailableError =>
 export const makeNoop = (overrides: Partial<EngineSubject> = {}): EngineSubject =>
   EngineSubject.of({
     name: "unavailable",
-    run: () => Effect.fail(unavailable("run")),
-    result: () => Effect.fail(unavailable("result")),
-    interrupt: () => Effect.fail(unavailable("interrupt")),
-    resume: () => Effect.fail(unavailable("resume")),
-    journal: () => Effect.fail(unavailable("journal")),
-    ...overrides
+    run: () => throw unavailable("run"),
+    result: () => throw unavailable("result"),
+    interrupt: () => throw unavailable("interrupt"),
+    resume: () => throw unavailable("resume"),
+    journal: () => throw unavailable("journal"),
+    ...overrides,
   })
 
 /**
@@ -165,5 +164,5 @@ export const makeNoop = (overrides: Partial<EngineSubject> = {}): EngineSubject 
  * @category layers
  * @since 0.0.0
  */
-export const layerNoop = (overrides: Partial<EngineSubject> = {}): Layer.Layer<EngineSubject> =>
+export const layerNoop = (overrides: Partial<EngineSubject> = {}): Layer<EngineSubject> =>
   Layer.succeed(EngineSubject)(makeNoop(overrides))

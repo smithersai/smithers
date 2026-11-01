@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { pathToFileURL } from "node:url"
 import { describe, expect, it } from "vitest"
-import * as Conformance from "../src/Conformance.ts"
+import * as Conformance from "../src/Conformance.vibe"
 import {
   openCodeBehaviorInventory,
   requiredOpenCodeBehaviors,

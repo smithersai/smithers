@@ -6,7 +6,7 @@
 
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
-import type { JournalEntryLike } from "./EngineSubject.ts"
+import type { JournalEntryLike } from "./EngineSubject.vibe"
 import { canonical } from "./internal/Structural.ts"
 import { FixtureDivergenceError } from "./TestingError.ts"
 
