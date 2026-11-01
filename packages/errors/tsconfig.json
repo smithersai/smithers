@@ -41,5 +41,5 @@
     ]
   },
   "include": ["src/**/*"],
-  "vibelang": { "declarationImportStyle": ".ts", "trustedPackages": ["@smthrs/*", "@vitest/*", "vitest"] }
+  "vibelang": { "trustedPackages": ["@smthrs/*", "@vitest/*", "vitest"] }
 }

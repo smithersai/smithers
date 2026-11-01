@@ -11,7 +11,7 @@
  *
  * @since 1.0.0
  */
-import { type SmithersErrorCode } from "./ErrorCode.ts";
+import { type SmithersErrorCode } from "./ErrorCode.js";
 /**
  * Construction options for a {@link SmithersError}.
  *
@@ -96,4 +96,4 @@ export declare class SmithersError extends SmithersError_base<{
  * @since 1.0.0
  */
 export declare const isSmithersError: (value: unknown) => value is SmithersError;
-export { hasSmithersErrorShape } from "./ErrorShape.ts";
+export { hasSmithersErrorShape } from "./ErrorShape.js";
