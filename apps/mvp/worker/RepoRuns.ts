@@ -65,11 +65,17 @@ export const record = (run: RepoRun) =>
 
 /**
  * Settles `execution`'s row, if it is a repository run still working, from the engine's status of the run in
- * `engine`: `done`, `failed`, or `stopped` for a cancelled run. Its object calls this once it settled the run, so a run
- * the engine never began was stopped before it started: `stopped`. A run the engine hasn't settled, or a row already
+ * `engine`: `done`, `failed` (the engine's failure, or `reportedFailure` of a run it completed), or `stopped` for a
+ * cancelled run. Its object calls this once it settled the run, so a run the engine never began was stopped before it
+ * started: `stopped`. A run the engine hasn't settled, or a row already
  * settled, changes nothing; so a settlement seen twice writes once.
  */
-export const settle = <E, R>(execution: string, engine: Layer.Layer<SqlClient.SqlClient, E, R>) =>
+export const settle = <E, R, FE = never, FR = never>(
+  execution: string,
+  engine: Layer.Layer<SqlClient.SqlClient, E, R>,
+  /** Whether a run the engine completed reported failure in its result: a CI run whose jobs failed. */
+  reportedFailure: Effect.Effect<boolean, FE, FR> = Effect.succeed(false),
+) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const working = yield* sql<{ readonly id: string }>`
@@ -83,7 +89,11 @@ export const settle = <E, R>(execution: string, engine: Layer.Layer<SqlClient.Sq
     if (status !== undefined && status !== "completed" && status !== "failed" && status !== "cancelled") {
       return Option.none<string>()
     }
-    const state = status === undefined ? "stopped" : settledState(status)
+    const state = status === undefined
+      ? "stopped"
+      : status === "completed" && (yield* reportedFailure)
+      ? "failed"
+      : settledState(status)
     yield* sql`
       UPDATE runs SET status = ${state}, updated_at = now() WHERE execution = ${execution} AND status = 'working'`
     yield* Metric.update(Metric.withAttributes(writes, { op: "settle", outcome: state }), 1)

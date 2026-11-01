@@ -33,14 +33,21 @@ export const LIMITS = {
   jobs: CiJob.limits.jobs,
 } as const
 
-/** What the body receives. */
+/** A value a person gives a flow run by hand: what its form takes. */
+export type InputValue = string | number | boolean
+
+/** What the body receives: the run's own fields, and, for a run by hand, the person's inputs beside them. */
 export interface Payload {
   readonly run: string
   readonly repo: string
   readonly sha: string
   readonly ref: string
   readonly event: string
+  readonly [input: string]: InputValue
 }
+
+/** The payload fields every run has: a flow's inputs are its other fields. */
+export const RUN_FIELDS = ["run", "repo", "sha", "ref", "event"] as const
 
 /** Why a flow couldn't be planned. */
 export const Reason = Schema.Literals(["too_large", "syntax", "import", "evaluation", "limit", "invalid_plan", "tag", "machine"])
@@ -58,6 +65,39 @@ export type Planned = typeof Planned.Type
 export const Refused = Schema.Struct({ _tag: Schema.Literal("refused"), reason: Reason })
 export type Refused = typeof Refused.Type
 
+/**
+ * A flow's inputs as JSON Schema, the form a person fills to run it by hand: an object whose properties are the flow's
+ * payload fields beyond `RUN_FIELDS`, each a string, number, integer or boolean, with an `enum` from `Schema.Literals`,
+ * and `title`, `description` and `default` from its annotations. A field is required unless optional or defaulted.
+ */
+export const InputProperty = Schema.Struct({
+  type: Schema.Literals(["string", "number", "integer", "boolean"]),
+  enum: Schema.optionalKey(Schema.Array(Schema.Union([Schema.String, Schema.Number, Schema.Boolean]))),
+  title: Schema.optionalKey(Schema.String),
+  description: Schema.optionalKey(Schema.String),
+  default: Schema.optionalKey(Schema.Union([Schema.String, Schema.Number, Schema.Boolean])),
+})
+export const Inputs = Schema.Struct({
+  type: Schema.Literal("object"),
+  properties: Schema.Record(Schema.String, InputProperty),
+  required: Schema.Array(Schema.String),
+})
+export type Inputs = typeof Inputs.Type
+
+/** A flow's inputs, read in the realm. */
+export const Described = Schema.Struct({ _tag: Schema.Literal("described"), tag: Schema.String, inputs: Inputs })
+export type Described = typeof Described.Type
+
+/** Why a flow's inputs couldn't be read: as a plan's, or `inputs`, a field no form can fill. */
+export const InputsRefused = Schema.Struct({
+  _tag: Schema.Literal("refused"),
+  reason: Schema.Union([Reason, Schema.Literal("inputs")]),
+})
+export type InputsRefused = typeof InputsRefused.Type
+
+/** Most input fields a flow may declare. */
+export const MAX_INPUTS = 32
+
 export const Plan = Schema.Union([Planned, Refused])
 export type Plan = typeof Plan.Type
 
@@ -68,8 +108,38 @@ const refused = (reason: Reason): Refused => ({ _tag: "refused", reason })
 const PRELUDE = String.raw`
 "use strict";
 const __inert = new Proxy(function () {}, { get: () => __inert, apply: () => __inert, construct: () => __inert });
+// Schema records what a form needs of a field, and is inert for anything else: a field it can't read stays unknown.
+const __field = (node) => {
+  const field = {
+    __field: node,
+    pipe: (...fns) => fns.reduce((value, fn) => (typeof fn === "function" ? fn(value) : value), field),
+    check: () => field,
+    annotate: (notes) => {
+      const kept = {};
+      for (const key of ["title", "description", "default"]) {
+        if (notes && Object.prototype.hasOwnProperty.call(notes, key)) kept[key] = notes[key];
+      }
+      return __field(Object.assign({}, node, kept));
+    },
+  };
+  return field;
+};
+const __optional = (field) => (field && field.__field ? __field(Object.assign({}, field.__field, { optional: true })) : __inert);
+const __Schema = {
+  String: __field({ type: "string" }),
+  Number: __field({ type: "number" }),
+  Int: __field({ type: "integer" }),
+  Boolean: __field({ type: "boolean" }),
+  Literal: (value) => __field({ type: typeof value, enum: [value] }),
+  Literals: (values) => __field({ type: Array.isArray(values) && values.length > 0 ? typeof values[0] : "unknown", enum: values }),
+  optional: __optional,
+  optionalKey: __optional,
+};
+const __schema = new Proxy(__Schema, { get: (target, key) => (Object.prototype.hasOwnProperty.call(target, key) ? target[key] : __inert) });
 const __modules = {
-  "@smthrs/flow": { Flow: { make: (tag, options) => ({ __smithersFlow: true, tag, body: options && options.body }) } },
+  "@smthrs/flow": {
+    Flow: { make: (tag, options) => ({ __smithersFlow: true, tag, body: options && options.body, payload: options && options.payload }) },
+  },
   "@smthrs/plan": { Node: { all: (members) => ({ kind: "all", members }) } },
   "@smthrs/sandbox": {
     CiJob: {
@@ -84,7 +154,7 @@ const __modules = {
       },
     },
   },
-  "effect": { Schema: __inert },
+  "effect": { Schema: __schema },
 };
 const __require = (name) => {
   if (!Object.prototype.hasOwnProperty.call(__modules, name)) throw new Error("__import__");
@@ -103,6 +173,25 @@ const __plan = (exported, payload) => {
   walk(flow.body(payload), 0);
   return JSON.stringify({ tag: String(flow.tag), jobs });
 };
+const __describe = (exported, runFields) => {
+  const flow = exported && exported.default;
+  if (!flow || flow.__smithersFlow !== true) throw new Error("__plan__");
+  // A payload is a literal of fields; anything else (a Schema.Struct, which the shim leaves inert) no form can read.
+  if (flow.payload !== undefined && (flow.payload === null || typeof flow.payload !== "object")) throw new Error("__inputs__");
+  const fields = flow.payload === undefined ? {} : flow.payload;
+  const properties = {};
+  const required = [];
+  for (const name of Object.keys(fields)) {
+    if (runFields.indexOf(name) >= 0) continue;
+    const field = fields[name] && fields[name].__field;
+    if (!field) throw new Error("__inputs__");
+    const property = { type: field.type };
+    for (const key of ["enum", "title", "description", "default"]) if (field[key] !== undefined) property[key] = field[key];
+    properties[name] = property;
+    if (!field.optional && field.default === undefined) required.push(name);
+  }
+  return JSON.stringify({ tag: String(flow.tag), inputs: { type: "object", properties, required } });
+};
 `
 
 /**
@@ -114,10 +203,10 @@ const IMPORT = /\bfrom\s*["'`]([^"'`]*)["'`]|\bimport\s*["'`]([^"'`]*)["'`]|\b(?
 const decodeJobs = Schema.decodeUnknownOption(Schema.Struct({ tag: Schema.String, jobs: Planned.fields.jobs }))
 
 /**
- * Plans flow `name` from its `flow.ts` source for `payload`: the jobs its body declares, or why it couldn't be planned.
- * The flow's `Flow.make` tag must be `name`, the directory it lives in.
+ * Evaluates `source` in a fresh realm and calls `invocation` (`__plan(...)` or `__describe(...)`) on its exports: the JSON
+ * text it answers, parsed, or why there is none.
  */
-export const plan = (name: string, source: string, payload: Payload): Effect.Effect<Plan, never, QuickJSVariant.Variant> =>
+const evaluate = (source: string, invocation: string) =>
   Effect.gen(function* () {
     if (new TextEncoder().encode(source).length > LIMITS.sourceBytes) return refused("too_large")
     // Imports are checked in the source: the type stripper drops an import nothing uses, so the realm would never see it.
@@ -146,7 +235,7 @@ const __module = { exports: {} };
 (function (module, exports, require) {
 ${compiled}
 })(__module, __module.exports, __require);
-__plan(__module.exports, ${JSON.stringify(payload)});`
+${invocation};`
         const result = context.evalCode(code, "flow.js")
         if (result.error !== undefined) {
           // What the flow threw is its own value: `dump` copies it out as data, and only a string message is read,
@@ -155,33 +244,64 @@ __plan(__module.exports, ${JSON.stringify(payload)});`
           result.error.dispose()
           const thrown = typeof error === "object" && error !== null ? (error as { message?: unknown }).message : error
           const message = typeof thrown === "string" ? thrown : ""
-          return refused(
-            hit || /out of memory|stack overflow|interrupted/i.test(message)
-              ? "limit"
-              : message === "__import__"
-              ? "import"
-              : message === "__plan__"
-              ? "invalid_plan"
-              : "evaluation",
-          )
+          return hit || /out of memory|stack overflow|interrupted/i.test(message)
+            ? refused("limit")
+            : message === "__import__"
+            ? refused("import")
+            : message === "__plan__"
+            ? refused("invalid_plan")
+            : message === "__inputs__"
+            ? { _tag: "refused" as const, reason: "inputs" as const }
+            : refused("evaluation")
         }
         const text: unknown = context.dump(result.value)
         result.value.dispose()
         if (typeof text !== "string" || text.length > LIMITS.planBytes) return refused("invalid_plan")
-        let parsed: unknown
         try {
-          parsed = JSON.parse(text)
+          return { _tag: "evaluated" as const, value: JSON.parse(text) as unknown }
         } catch {
           return refused("invalid_plan")
         }
-        const decoded = decodeJobs(parsed)
-        if (decoded._tag === "None") return refused("invalid_plan")
-        if (decoded.value.tag !== name) return refused("tag")
-        return { _tag: "planned", tag: decoded.value.tag, jobs: decoded.value.jobs } satisfies Planned
       } finally {
         context.dispose()
       }
     } finally {
       runtime.dispose()
     }
+  })
+
+/**
+ * Plans flow `name` from its `flow.ts` source for `payload`: the jobs its body declares, or why it couldn't be planned.
+ * The flow's `Flow.make` tag must be `name`, the directory it lives in.
+ */
+export const plan = (name: string, source: string, payload: Payload): Effect.Effect<Plan, never, QuickJSVariant.Variant> =>
+  Effect.gen(function* () {
+    const evaluated = yield* evaluate(source, `__plan(__module.exports, ${JSON.stringify(payload)})`)
+    // A plan's body can't declare inputs: the realm reads them only when asked to describe the flow.
+    if (evaluated._tag === "refused") return evaluated.reason === "inputs" ? refused("invalid_plan") : evaluated
+    const decoded = decodeJobs(evaluated.value)
+    if (decoded._tag === "None") return refused("invalid_plan")
+    if (decoded.value.tag !== name) return refused("tag")
+    return { _tag: "planned", tag: decoded.value.tag, jobs: decoded.value.jobs } satisfies Planned
   }).pipe(Effect.withSpan("ci.realm.plan", { attributes: { "smithers.ci.flow": name } }))
+
+const decodeDescribed = Schema.decodeUnknownOption(Schema.Struct({ tag: Schema.String, inputs: Inputs }))
+
+/**
+ * Reads flow `name`'s inputs from its `flow.ts` source, without running its body: the form a person fills to run it by
+ * hand, or why it can't be read. `inputs` when a field is one no form can fill, or there are more than `MAX_INPUTS`.
+ */
+export const describe = (
+  name: string,
+  source: string,
+): Effect.Effect<Described | InputsRefused, never, QuickJSVariant.Variant> =>
+  Effect.gen(function* () {
+    const evaluated = yield* evaluate(source, `__describe(__module.exports, ${JSON.stringify(RUN_FIELDS)})`)
+    if (evaluated._tag === "refused") return evaluated
+    const decoded = decodeDescribed(evaluated.value)
+    if (decoded._tag === "None" || Object.keys(decoded.value.inputs.properties).length > MAX_INPUTS) {
+      return { _tag: "refused", reason: "inputs" } as const
+    }
+    if (decoded.value.tag !== name) return refused("tag")
+    return { _tag: "described", tag: decoded.value.tag, inputs: decoded.value.inputs } satisfies Described
+  }).pipe(Effect.withSpan("ci.realm.describe", { attributes: { "smithers.ci.flow": name } }))

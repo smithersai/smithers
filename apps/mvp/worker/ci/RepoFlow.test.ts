@@ -5,7 +5,8 @@
 import wasmfile from "@jitl/quickjs-wasmfile-release-sync"
 import { QuickJSVariant } from "@smthrs/harness"
 import type { SandboxTools } from "@smthrs/sandbox"
-import { Effect, Exit, Layer } from "effect"
+import { FlowRuntime } from "@smthrs/flow"
+import { Context, Effect, Exit, Layer, Option } from "effect"
 import type { QuickJSSyncVariant } from "quickjs-emscripten-core"
 import { beforeEach, describe, expect, test } from "vitest"
 import { noCommands } from "../test/commands.ts"
@@ -13,8 +14,10 @@ import { Machines } from "../branch/Machines.ts"
 import * as CiJobMachine from "../flows/CiJobMachine.ts"
 import { REPOSITORY, reset, services as githubServices } from "../github/test/fixtures.ts"
 import { BOT_LOGIN, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
-import { runFlow } from "../test/flowHost.ts"
-import { testFile } from "../test/harness.ts"
+import * as TestDatabase from "../../db/TestDatabase.ts"
+import * as RepoRuns from "../RepoRuns.ts"
+import { build, runFlow } from "../test/flowHost.ts"
+import { testFile, uuid } from "../test/harness.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
 import * as RepoFlow from "./RepoFlow.ts"
 
@@ -165,6 +168,16 @@ export default Flow.make("ci", {
     }))
     const ran = passing.ran()
     expect(ran.indexOf("make test")).toBeGreaterThan(ran.indexOf("make"))
+    // Retry failed of test and build: test still waits for build; docs' need on lint, which passed, is dropped.
+    const again = machine()
+    expect((await run(github, again, { ...request(sha), run: "ci:retry-graph", only: ["test", "build", "docs"] })).exit)
+      .toEqual(Exit.succeed({
+        state: "success",
+        outcome: "sent",
+        jobs: [{ name: "build", outcome: "passed" }, { name: "test", outcome: "passed" }, { name: "docs", outcome: "passed" }],
+      }))
+    expect(again.ran().indexOf("make test")).toBeGreaterThan(again.ran().indexOf("make"))
+    expect(again.ran()).not.toContain("pnpm lint")
     const failing = machine({ make: 2 })
     const second = github.push("main", { ".smithers/flows/ci/flow.ts": GRAPH, "README.md": "again" })
     expect((await run(github, failing, request(second))).exit).toEqual(Exit.succeed({
@@ -179,6 +192,41 @@ export default Flow.make("ci", {
     }))
     expect(failing.ran()).not.toContain("make test")
     expect(github.statuses.get(second)!.at(-1)!.description).toBe("Failed: build, test")
+  })
+
+  test("a run by hand: the person's inputs reach the body beside the run's fields", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const release = `
+import { Flow } from "@smthrs/flow"
+import { CiJob } from "@smthrs/sandbox"
+export default Flow.make("release", {
+  body: (run: { readonly channel: string; readonly dryRun: boolean }) =>
+    CiJob.make("publish", { steps: [{ name: "publish", run: "pnpm publish --tag " + run.channel + (run.dryRun ? " --dry-run" : "") }] }).call(run),
+})
+`
+    const sha = github.push("main", { ".smithers/flows/release/flow.ts": release })
+    const box = machine()
+    const ran = await run(github, box, {
+      ...request(sha, "release"),
+      event: "manual",
+      // A run's own field is the run's, whatever an input says.
+      input: { channel: "next", dryRun: true, sha: "0".repeat(40) },
+    })
+    expect(ran.exit).toEqual(Exit.succeed({ state: "success", outcome: "sent", jobs: [{ name: "publish", outcome: "passed" }] }))
+    expect(box.ran()).toEqual(["pnpm publish --tag next --dry-run"])
+  })
+
+  test("Retry failed: only the named jobs run, and naming none the flow has runs none", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const sha = github.push("main", { ".smithers/flows/ci/flow.ts": CI })
+    const box = machine()
+    const ran = await run(github, box, { ...request(sha), only: ["lint"] })
+    expect(ran.exit).toEqual(Exit.succeed({ state: "success", outcome: "sent", jobs: [{ name: "lint", outcome: "passed" }] }))
+    expect(box.ran()).toEqual(["pnpm lint"])
+    const none = machine()
+    const nothing = await run(github, none, { ...request(sha), run: "ci:retry-none", only: ["gone"] })
+    expect(nothing.exit).toEqual(Exit.succeed({ state: "failure", outcome: "sent", jobs: [] }))
+    expect(none.ran()).toEqual([])
   })
 
   test("reads flow.ts at the run's commit, not the branch's head", async () => {
@@ -280,5 +328,57 @@ export default Flow.make("ci", {
     const box = machine()
     expect((await run(github, box, request(sha))).exit).toEqual(Exit.succeed({ state: "failure", outcome: "sent", jobs: [] }))
     expect(github.statuses.get(sha)!.at(-1)!.description).toBe("Couldn't run the flow (unreadable)")
+  })
+})
+
+describe("a repository run's row", { timeout: 120_000 }, () => {
+  test("settles failed when its jobs failed, though the engine completed it; done when they passed", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const { services } = await githubServices(runtime, github)
+    const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+    const server = (await Effect.runPromise(TestDatabase.serverUrl)).toString()
+    const box = machine({ "pnpm lint": 1 })
+    const settled = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const { context, engine } = yield* build(
+        ExecutionHost.withRepoFlows(
+          ExecutionHost.withCiJobs({ flows: [], registration: Layer.empty }, box.layer),
+          Effect.succeed({ ...services, machines: [] }),
+          variant,
+        ).registration,
+      )
+      const reads = ExecutionHost.readDatabase(server, engine.schema)
+      const runOf = (flow: string, file: string) =>
+        Effect.gen(function* () {
+          const at = github.push("main", { [`.smithers/flows/${flow}/flow.ts`]: file })
+          const runId = `${flow}:${uuid()}`
+          yield* RepoRuns.record({
+            execution: runId,
+            repoId: REPOSITORY.id,
+            flow,
+            sha: at,
+            ref: "refs/heads/main",
+            event: "push",
+            launchedBy: "github",
+          }).pipe(Effect.provide(scratch.database))
+          const input: RepoFlow.RunRequest = { ...request(at, flow), run: runId }
+          yield* Context.get(context, FlowRuntime.FlowRuntime).execute(RepoFlow.Run, { executionId: runId, payload: input })
+            .pipe(Effect.provide(context))
+          const settle = RepoRuns.settle(runId, reads, RepoFlow.reportedFailure(runId, reads)).pipe(
+            Effect.provide(scratch.database),
+          )
+          return { first: yield* settle, again: yield* settle }
+        })
+      return {
+        failed: yield* runOf("ci", CI),
+        passed: yield* runOf("tidy", CI.replace('Flow.make("ci"', 'Flow.make("tidy"').replace("pnpm lint", "pnpm tidy")),
+      }
+    })) as Effect.Effect<{
+      readonly failed: { readonly first: Option.Option<string>; readonly again: Option.Option<string> }
+      readonly passed: { readonly first: Option.Option<string>; readonly again: Option.Option<string> }
+    }>)
+    expect(settled).toEqual({
+      failed: { first: Option.some("failed"), again: Option.none() },
+      passed: { first: Option.some("done"), again: Option.none() },
+    })
   })
 })

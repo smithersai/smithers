@@ -182,3 +182,131 @@ test("plans this repository's own gate: 16 shards on the gate machine, then the 
   expect(planned.jobs.at(-1)?.needs).toEqual(shards)
   expect(planned.jobs[2]?.steps.map((step) => step.run)).toEqual(["sh apps/mvp/ci/gate.sh install", "sh apps/mvp/ci/gate.sh shard 3 16"])
 })
+
+const describeFlow = (source: string, name = "release") =>
+  Effect.runPromise(
+    Realm.describe(name, source).pipe(Effect.provide(QuickJSVariant.layerVariant(wasmfile as unknown as QuickJSSyncVariant))),
+  )
+
+/** A flow a person runs by hand: inputs beside the run's own fields, typed, optional, defaulted and chosen. */
+const RELEASE = `
+import { Flow } from "@smthrs/flow"
+import { CiJob } from "@smthrs/sandbox"
+import { Schema } from "effect"
+
+const publish = CiJob.make("publish", { steps: [{ name: "publish", run: "pnpm release" }] })
+
+export default Flow.make("release", {
+  payload: {
+    run: Schema.String,
+    repo: Schema.String,
+    sha: Schema.String,
+    ref: Schema.String,
+    event: Schema.String,
+    tag: Schema.String.check(Schema.isMinLength(1)).annotate({ title: "Tag", description: "The dist-tag" }),
+    dryRun: Schema.Boolean.annotate({ default: true }),
+    channel: Schema.Literals(["next", "latest"]),
+    attempts: Schema.optionalKey(Schema.Int),
+    ratio: Schema.optional(Schema.Number),
+    kind: Schema.Literal("npm"),
+  },
+  body: (payload: { readonly dryRun: boolean }) => (payload.dryRun ? publish.call(payload) : publish.call(payload)),
+})
+`
+
+describe("a repository flow's inputs in the realm", () => {
+  test("reads the form a person fills: each field beyond the run's own, its type, choices, notes and default", async () => {
+    expect(await describeFlow(RELEASE)).toEqual({
+      _tag: "described",
+      tag: "release",
+      inputs: {
+        type: "object",
+        properties: {
+          tag: { type: "string", title: "Tag", description: "The dist-tag" },
+          dryRun: { type: "boolean", default: true },
+          channel: { type: "string", enum: ["next", "latest"] },
+          attempts: { type: "integer" },
+          ratio: { type: "number" },
+          kind: { type: "string", enum: ["npm"] },
+        },
+        required: ["tag", "channel", "kind"],
+      },
+    })
+  })
+
+  test("a flow with no inputs has an empty form, and its body never runs", async () => {
+    const source = CI.replace("body: (target", "body: (never: unknown) => { throw new Error('ran') }, ignored: (target")
+    expect(await describeFlow(source, "ci")).toEqual({
+      _tag: "described",
+      tag: "ci",
+      inputs: { type: "object", properties: {}, required: [] },
+    })
+  })
+
+  test("refuses a field no form can fill, too many inputs, a flow under another tag, and what a plan refuses", async () => {
+    const nested = RELEASE.replace('kind: Schema.Literal("npm")', "kind: Schema.Struct({ a: Schema.String })")
+    const mixed = RELEASE.replace('kind: Schema.Literal("npm")', "kind: Schema.Literals([])")
+    const many = RELEASE.replace(
+      'kind: Schema.Literal("npm"),',
+      Array.from({ length: Realm.MAX_INPUTS }, (_, i) => `f${i}: Schema.String,`).join("\n"),
+    )
+    expect(await describeFlow(nested)).toEqual({ _tag: "refused", reason: "inputs" })
+    // A payload declared as one Schema.Struct: no field of it can be read, so none would reach the body.
+    const struct = RELEASE.replace("payload: {", "payload: Schema.Struct({").replace('kind: Schema.Literal("npm"),\n  },', 'kind: Schema.Literal("npm"),\n  }),')
+    expect(struct).toContain("Schema.Struct({")
+    expect(await describeFlow(struct)).toEqual({ _tag: "refused", reason: "inputs" })
+    expect(await describeFlow(mixed)).toEqual({ _tag: "refused", reason: "inputs" })
+    expect(await describeFlow(many)).toEqual({ _tag: "refused", reason: "inputs" })
+    expect(await describeFlow(RELEASE, "ci")).toEqual({ _tag: "refused", reason: "tag" })
+    expect(await describeFlow("export default {}")).toEqual({ _tag: "refused", reason: "invalid_plan" })
+    expect(await describeFlow("import fs from 'node:fs'")).toEqual({ _tag: "refused", reason: "import" })
+  })
+
+  test("a body that throws the realm's own refusal word is no plan", async () => {
+    const source = CI.replace("body: (target", "body: () => { throw new Error('__inputs__') }, ignored: (target")
+    expect(await plan(source)).toEqual({ _tag: "refused", reason: "invalid_plan" })
+  })
+
+  test("a run by hand's inputs reach the body beside the run's fields", async () => {
+    const source = `
+import { Flow } from "@smthrs/flow"
+import { CiJob } from "@smthrs/sandbox"
+export default Flow.make("ci", {
+  body: (payload: { readonly channel: string; readonly event: string }) =>
+    CiJob.make(payload.event + "-" + payload.channel, { steps: [{ name: "s", run: "true" }] }).call(payload),
+})
+`
+    expect(await plan(source, "ci", { ...payload, event: "manual", channel: "next" })).toMatchObject({
+      _tag: "planned",
+      jobs: [{ name: "manual-next" }],
+    })
+  })
+})
+
+test("the e2e test repository's flow run by hand: its form, and its plan quotes the greeting for the shell", async () => {
+  const source = readFileSync(new URL("../../e2e/fixtures/ci-repo/.smithers/flows/hand/flow.ts", import.meta.url), "utf8")
+  expect(await describeFlow(source, "hand")).toEqual({
+    _tag: "described",
+    tag: "hand",
+    inputs: {
+      type: "object",
+      properties: {
+        greeting: { type: "string", title: "Greeting" },
+        wait: { type: "string", enum: ["1", "300"], title: "Wait", default: "1" },
+      },
+      required: ["greeting"],
+    },
+  })
+  expect(await plan(source, "hand", { ...payload, event: "manual", greeting: "it's $(true)", wait: "300" })).toEqual({
+    _tag: "planned",
+    tag: "hand",
+    jobs: [{
+      name: "greet",
+      steps: [
+        { name: "hello", run: "echo 'it'\\''s $(true)'" },
+        { name: "wait", run: "sleep 300" },
+        { name: "again", run: "echo 'it'\\''s $(true)' again" },
+      ],
+    }],
+  })
+})

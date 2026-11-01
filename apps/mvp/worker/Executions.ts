@@ -39,6 +39,7 @@ import * as TodoMachine from "./flows/TodoMachine.ts"
 import * as SessionStore from "./SessionStore.ts"
 import * as Placement from "./Placement.ts"
 import * as RepoRuns from "./RepoRuns.ts"
+import * as RepoFlow from "./ci/RepoFlow.ts"
 import * as RepoConfig from "./RepoConfig.ts"
 import { Forge } from "./branch/Forge.ts"
 import * as SignIn from "./SignIn.ts"
@@ -250,11 +251,11 @@ const object = <E, R>(
             },
             afterAlarm: Effect.flatMap(flowStarter, (started) =>
               sampleLoad.pipe(Effect.provideService(Flows.FlowStarter, started))),
-            // A repository's run settles its row from the engine's status (docs/features/actions.md), and a `todo` run
+            // A repository's run settles its row from the engine's status and its reported result (docs/features/actions.md), and a `todo` run
             // that ended in a defect fails its TODO `crashed` and starts the TODOs that frees (docs/features/todos.md).
             settled: (executionId) =>
               Effect.all([
-                RepoRuns.settle(executionId, database).pipe(
+                RepoRuns.settle(executionId, database, RepoFlow.reportedFailure(executionId, database)).pipe(
                   Effect.provide(appDatabase),
                   Effect.asVoid,
                   // The alarm that forgets the run a day later tries once more.

@@ -1,4 +1,5 @@
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
+import { EngineStore } from "@smthrs/flows"
 import type { QuickJSVariant } from "@smthrs/harness"
 import { Core, GitHub } from "@smthrs/integrations"
 import { Node } from "@smthrs/plan"
@@ -46,9 +47,14 @@ export const RunRequest = Schema.Struct({
   flow: Schema.String.check(Schema.isPattern(FLOW_NAME)),
   sha: CiJob.Target.fields.sha,
   ref: CiJob.Target.fields.ref,
-  event: Schema.Literals(["push", "pull_request"]),
+  /** What started it: a push, a pull request, or a person by hand (docs/features/actions.md#running-a-flow-by-hand). */
+  event: Schema.Literals(["push", "pull_request", "manual"]),
   /** Whether the run's jobs may have the repository's secrets: never for a fork's pull request. */
   secrets: Schema.Boolean,
+  /** A run by hand's inputs, which the flow's body receives beside the run's own fields. */
+  input: Schema.optionalKey(Schema.Record(Schema.String, Schema.Union([Schema.String, Schema.Number, Schema.Boolean]))),
+  /** Only these of the flow's jobs, by name: Retry failed's (docs/features/actions.md#acts). */
+  only: Schema.optionalKey(Schema.Array(Schema.String)),
 })
 export type RunRequest = typeof RunRequest.Type
 
@@ -264,6 +270,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
         )
       if (file === "not_found" || file === "unreadable") return { _tag: "refused", reason: file } as const
       const planned = yield* Realm.plan(request.flow, file, {
+        ...request.input,
         run: request.run,
         repo: request.repo,
         sha: request.sha,
@@ -271,10 +278,21 @@ export const steps = <E, R>(services: Services<E, R>) => {
         event: request.event,
       })
       // A job may name only a machine this deployment declared: anything else runs nothing (decision 0145).
-      return planned._tag === "planned" &&
-          planned.jobs.some((job) => job.machine !== undefined && !services.machines.includes(job.machine))
-        ? { _tag: "refused", reason: "machine" } as const
-        : planned
+      if (
+        planned._tag === "planned" &&
+        planned.jobs.some((job) => job.machine !== undefined && !services.machines.includes(job.machine))
+      ) return { _tag: "refused", reason: "machine" } as const
+      // Retry failed runs only the jobs that didn't pass: the same commit plans the same jobs. A need on a job it
+      // doesn't run again passed before, so it is dropped.
+      const only = request.only
+      if (planned._tag !== "planned" || only === undefined) return planned
+      const kept = planned.jobs.filter((job) => only.includes(job.name))
+      return kept.length === 0 ? { _tag: "refused", reason: "invalid_plan" } as const : {
+        ...planned,
+        jobs: kept.map((job) =>
+          job.needs === undefined ? job : { ...job, needs: job.needs.filter((need) => only.includes(need)) }
+        ),
+      }
     }).pipe(
       Effect.tap((planned) =>
         Effect.andThen(
@@ -357,3 +375,20 @@ export const registration = <E, R, VE, VR>(services: Services<E, R>, variant: La
   )
 }
 
+const decodeReported = Schema.decodeUnknownOption(Schema.fromJsonString(Reported))
+
+/**
+ * Whether run `execution` of a repository flow reported failure: a job that didn't pass, or a flow that couldn't run.
+ * `repo/Run` never fails, so the engine says `completed` either way; its result says which.
+ */
+export const reportedFailure = <E, R>(execution: string, engine: Layer.Layer<SqlClient.SqlClient, E, R>) =>
+  Effect.flatMap(EngineStore.RunInspection.RunInspection, (reads) => reads.inspect(execution, { limit: 1 })).pipe(
+    Effect.map((read) =>
+      Option.exists(
+        Option.flatMap(Option.fromNullishOr(read.run.result), (result) => decodeReported(result.text)),
+        (reported) => reported.state === "failure",
+      )
+    ),
+    Effect.provide(EngineStore.RunInspection.layerWith({ flows: [Run] })),
+    Effect.provide(engine),
+  )

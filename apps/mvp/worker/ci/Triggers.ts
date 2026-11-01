@@ -13,8 +13,11 @@ import { FLOW_NAME } from "./RepoFlow.ts"
 /** Where a repository's manifest lives. */
 export const MANIFEST_PATH = ".smithers/factory.json"
 
-/** The events this slice starts flows on. A row for another event (`cron`, `run.settled`, ...) is skipped. */
-export const EVENTS = ["github.push", "github.pull_request"] as const
+/**
+ * The events this slice starts flows on, and `manual`: a person runs the flow by hand (docs/features/actions.md). A row
+ * for another event (`cron`, `run.settled`, ...) is skipped.
+ */
+export const EVENTS = ["github.push", "github.pull_request", "manual"] as const
 
 /** The pull request actions a trigger matches when it names none: GitHub's `pull_request` defaults. */
 export const DEFAULT_ACTIONS = ["opened", "synchronize", "reopened"] as const
@@ -120,3 +123,13 @@ export const matches = (trigger: Trigger, event: Event): boolean => {
 export const flowsFor = (triggers: ReadonlyArray<Trigger>, event: Event): ReadonlyArray<string> => [
   ...new Set(triggers.filter((trigger) => matches(trigger, event)).map((trigger) => trigger.flow)),
 ]
+
+/** The flows a person may run by hand: those with a `manual` trigger, each once, in the manifest's order, and its title. */
+export const manualFlows = (triggers: ReadonlyArray<Trigger>): ReadonlyArray<{ readonly name: string; readonly title?: string }> => {
+  const seen = new Set<string>()
+  return triggers.flatMap((trigger) => {
+    if (trigger.on !== "manual" || seen.has(trigger.flow)) return []
+    seen.add(trigger.flow)
+    return [trigger.title === undefined ? { name: trigger.flow } : { name: trigger.flow, title: trigger.title }]
+  })
+}

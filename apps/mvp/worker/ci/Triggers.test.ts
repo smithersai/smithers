@@ -113,3 +113,17 @@ test("smithersai/smithers factory at main eeb01ea499d0 is legacy data and never 
   expect(Triggers.flowsFor(triggers, push("main"))).toEqual([])
   expect(Triggers.flowsFor(triggers, pull("main"))).toEqual([])
 })
+
+describe("manualFlows", () => {
+  test("the flows a person may run by hand: each manual row's flow once, in order, with its title; no event starts one", () => {
+    const triggers = Triggers.triggersOf(manifest([
+      { on: "github.push", flow: "ci" },
+      { on: "manual", flow: "release", title: "Release" },
+      { on: "manual", flow: "hand" },
+      { on: "manual", flow: "release", title: "Again" },
+    ]))
+    expect(Triggers.manualFlows(triggers)).toEqual([{ name: "release", title: "Release" }, { name: "hand" }])
+    expect(Triggers.flowsFor(triggers, push("main"))).toEqual(["ci"])
+    expect(Triggers.flowsFor(triggers, pull("main"))).toEqual([])
+  })
+})
