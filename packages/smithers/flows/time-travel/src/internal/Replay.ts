@@ -31,7 +31,7 @@ import type { Frame } from "../Frame.ts"
 import { error, type TimeTravelError } from "../TimeTravelError.ts"
 import * as HistoryLimit from "./HistoryLimit.ts"
 import * as JournalPages from "./JournalPages.ts"
-import { LineageMetadata } from "./LineageMetadata.ts"
+import { LineageMetadata } from "./LineageMetadata.vibe"
 
 /**
  * A pure fold over durable journal evidence.

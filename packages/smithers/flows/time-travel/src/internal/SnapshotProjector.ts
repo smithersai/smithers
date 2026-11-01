@@ -28,7 +28,7 @@ import { error, type TimeTravelError } from "../TimeTravelError.ts"
 import { type Snapshot, TimeTravelStore } from "../TimeTravelStore.ts"
 import * as HistoryLimit from "./HistoryLimit.ts"
 import * as JournalPages from "./JournalPages.ts"
-import { LineageMetadata } from "./LineageMetadata.ts"
+import { LineageMetadata } from "./LineageMetadata.vibe"
 
 /**
  * The anchor facts one lineage has put in force.
