@@ -297,7 +297,17 @@ export class Workspace {
           settled.endedAt ?? Date.now()
         )
       }
-      if (transcript !== undefined) this.transcripts.set(tab.id, transcript)
+      if (transcript !== undefined) {
+        // Seeded history stays in the worker view; the card describes only this execution. Only a
+        // typed model replacement and an unsteered message change the notice, so a file that ends without one
+        // ends without a card notice: re-reading this execution's records says whose switch it was.
+        this.transcripts.set(tab.id, {
+          ...transcript,
+          modelSwitch: tab.continuedFrom === undefined || transcript.modelSwitch === undefined
+            ? transcript.modelSwitch
+            : Session.restore(records.slice(tab.continuedFrom)).transcript.modelSwitch
+        })
+      }
       // A take-over ends with its run.
       if (settled !== tab) settled = ended(settled, settled.endedAt ?? Date.now())
       if (settled === tab) this.tabs.adopt(tab)
@@ -577,6 +587,7 @@ export class Workspace {
       ...(prior?.drivers === undefined ? {} : { drivers: prior.drivers })
     })
     void this.describe(tab)
+    this.transcripts.set(tab.id, { ...this.transcript(tab.id), modelSwitch: undefined })
     const by = request.by ?? "agent"
     if (tab.status === "queued") this.tabs.enqueue(tab.id, { writer, history, by })
     else queueMicrotask(() => this.start(tab, writer, history, by))
@@ -687,6 +698,7 @@ export class Workspace {
           continuedFrom: records.length,
           continuationId: randomUUID()
         })
+        this.transcripts.set(tab.id, { ...this.transcript(tab.id), modelSwitch: undefined })
         if (next.status === "queued") this.tabs.enqueue(next.id, { writer, history, by: "user" })
         else queueMicrotask(() => this.start(next, writer, history, "user"))
         return
@@ -865,9 +877,6 @@ export class Workspace {
       const { variant: _variant, backups: _backups, panel: _panel, answered: _answered, ...rest } = tab
       tab = { ...rest, seat: instead.to }
       this.tabs.put(tab)
-      const text = this.options.host.credit!.notice(instead.from, instead.to)
-      writer.append({ type: "note", at, text })
-      this.transcripts.set(tab.id, Transcript.note(this.transcript(tab.id), text, at))
     }
     // A pinned model, or the stand-in, is the run's only model: no backup replaces it.
     const alone = tab.pinned === true || instead !== undefined
@@ -890,6 +899,11 @@ export class Workspace {
     })
     try {
       writer.append({ type: "user", at, text: tab.prompt })
+      if (instead !== undefined) {
+        const text = this.options.host.credit!.notice(instead.from, instead.to)
+        writer.append({ type: "credit-substitution", at, ...instead, text })
+        this.transcripts.set(tab.id, Transcript.creditSubstitution(this.transcript(tab.id), text, at))
+      }
       const handle = tab.harness !== undefined ? this.runWrapped(tab, writer) : this.options.host.run({
         prompt: tab.prompt,
         seat: tab.seat,
@@ -1599,6 +1613,7 @@ export class Workspace {
       ...(tab.harness === undefined ? {} : { harness: { ...tab.harness, prompt } })
     })
     void this.describe(next)
+    this.transcripts.set(id, { ...this.transcript(id), modelSwitch: undefined })
     if (next.status === "queued") this.tabs.enqueue(id, { writer, history, by: "user" })
     else queueMicrotask(() => this.start(next, writer, history, "user"))
     return { id, status: next.status }

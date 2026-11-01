@@ -18,6 +18,7 @@ export interface Card {
   readonly duration: string
   readonly outcome: string
   readonly failure?: string
+  readonly modelSwitch?: string
   readonly answer?: string
   readonly result?: string
   readonly steps: ReadonlyArray<string>
@@ -112,6 +113,7 @@ export const worker = (
     duration: duration(tab.startedAt, tab.endedAt, now),
     outcome,
     settled,
+    ...(transcript.modelSwitch === undefined ? {} : { modelSwitch: transcript.modelSwitch }),
     ...(settled && tab.answer !== undefined ? { answer: tab.answer } : {}),
     steps: settled ? [] : calls.slice(-3).map(step),
     receipts: [

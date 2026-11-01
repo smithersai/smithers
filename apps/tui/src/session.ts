@@ -103,6 +103,15 @@ export type Record =
   | { readonly type: "user"; readonly at: number; readonly text: string; readonly steered?: boolean }
   /** A row drawn as it happened: a wrapped harness's own `⏺`/`•` rows. */
   | { readonly type: "note"; readonly at: number; readonly text: string }
+  /** The ledger selected a stand-in before execution; no provider failure occurred in this run. */
+  | {
+    readonly type: "credit-substitution"
+    readonly at: number
+    readonly from: string
+    readonly to: string
+    /** The existing ledger copy, retained with its model labels for replay. */
+    readonly text: string
+  }
   | { readonly type: "event"; readonly at: number; readonly event: Activity.Observed }
   | {
     readonly type: "outcome"
@@ -712,6 +721,9 @@ export const restore = (records: ReadonlyArray<Record>): {
         break
       case "note":
         transcript = Transcript.note(transcript, record.text, record.at)
+        break
+      case "credit-substitution":
+        transcript = Transcript.creditSubstitution(transcript, record.text, record.at)
         break
       case "panel":
         if (

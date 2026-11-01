@@ -118,6 +118,8 @@ export type Item =
   }
 
 export interface Transcript {
+  /** Latest typed model replacement in this execution; ordinary notes cannot set it. */
+  readonly modelSwitch?: string
   readonly activity?: Activity.Activity
   /** Earlier turns' journals, so their steps keep their lines and callouts. */
   readonly past?: ReadonlyArray<Activity.Activity>
@@ -177,6 +179,7 @@ export const user = (transcript: Transcript, text: string, queued = false, at?: 
   withId(
     queued ? transcript : {
       ...transcript,
+      modelSwitch: undefined,
       past: [...transcript.past ?? [], transcript.activity ?? Activity.empty],
       activity: Activity.empty
     },
@@ -217,6 +220,10 @@ export const shell = (transcript: Transcript, result: Shell.Result, excluded: bo
 
 export const note = (transcript: Transcript, text: string, at?: number): Transcript =>
   withId(transcript, { kind: "note", text }, at)
+
+/** A pre-launch replacement for spent credit, using the ledger's existing model labels. */
+export const creditSubstitution = (transcript: Transcript, text: string, at: number): Transcript =>
+  note({ ...transcript, modelSwitch: text }, text, at)
 
 /** An error row that settles nothing: a background failure the person must see. */
 export const alert = (transcript: Transcript, text: string, at?: number): Transcript =>
@@ -458,13 +465,10 @@ export const coordinatorFlows: ReadonlyArray<string> = ["read", "grep", "ls"]
 /** Folds one harness event, observed at `at` milliseconds, into the transcript. */
 export const apply = (transcript: Transcript, event: Activity.Observed, at: number): Transcript => {
   if (event._tag === "seat-failed-over") {
-    return note(
-      transcript,
-      Credit.exhausted({ ...event, _tag: "flows/model/ModelError" })
-        ? Credit.notice(event.from, event.to)
-        : `↪ switched to ${Models.labelOf(event.to, [])}`,
-      at
-    )
+    const modelSwitch = Credit.exhausted({ ...event, _tag: "flows/model/ModelError" })
+      ? Credit.notice(event.from, event.to)
+      : `↪ switched to ${Models.labelOf(event.to, [])}`
+    return note({ ...transcript, modelSwitch }, modelSwitch, at)
   }
   if (
     event._tag === "supervisor-settled" && transcript.contextAssessment?.scope === event.scope &&

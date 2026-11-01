@@ -68,7 +68,10 @@ providers this machine can reach. A terminal quota refusal (`OpenAI quota exhaus
 marks the refused model, or every model when the refusal covers the account,
 `no credit` in the picker, listed last, for the rest of the session: routing and backups skip them, and a worker asked for
 one runs once on the model that last answered, else the chat model, with the
-line `↪ GPT-6.1 Sol has no credit · using Qwen 3.8`, and without backups. Its
+line `↪ GPT-6.1 Sol has no credit · using Qwen 3.8` on its card and in its own
+view, and without backups. A model the run fails over to while it works reads
+`↪ switched to GPT-6 Luna` in the same two places, or the credit line when the
+refusal was terminal. Its
 failure card offers **m** Switch model before **r** Resume. A model the person
 pinned (one they named in chat, or chose with **m**) runs alone: it is never
 replaced and never fails over. Chat keeps its **--model** or **/model** choice.
@@ -385,7 +388,8 @@ Up to six workers can run at once (`SMITHERS_TUI_WORKERS` overrides the pool);
 later requests queue FIFO. They share the working directory, so
 independent requests should name disjoint files. Worker transcripts persist in
 separate session files. Chat shows one host-owned card per requested run.
-It updates in place: glyph, title and duration, up to three live steps, then
+It updates in place: glyph, title and duration, the one line naming a model
+that replaced the one asked for, up to three live steps, then
 at most two lines of the final answer, changed files with line counts, and
 the last check's command and exit status. Successful plain VCS inspections leave
 the preceding check in place; pipelines and uncertain commands keep their results.
@@ -393,6 +397,9 @@ Command lines mark physical line breaks with `↵`, preserving quotes, continuat
 and heredoc contents; the original source stays in the opened program.
 **d** Diff, **u** Undo and **enter** Open use
 the run's actual receipts; Undo appears only while changes can be reversed.
+The card carries that line only for the run it shows: its latest replacement,
+cleared when the worker starts another turn. The worker's own view keeps every
+one of them.
 Workers and file flows use the same card. A scalar flow result fits on one
 line: `✓ wordcount · 40ms → 5`. There is no extra acknowledgement or finished
 row. A worker's children show the same cards; older batches fold into `… +N earlier`.

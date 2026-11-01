@@ -52,7 +52,8 @@ export function RunCardView(props: {
           {tail === "" ? null : <span fg={color.text}>{tail}</span>}
         </text>
       </box>
-      {card.steps.length === 0 && card.answer === undefined && card.receipts.length === 0 &&
+      {card.modelSwitch === undefined && card.steps.length === 0 && card.answer === undefined &&
+          card.receipts.length === 0 &&
           (card.result !== undefined || !card.settled)
         ? null :
         (
@@ -62,6 +63,7 @@ export function RunCardView(props: {
             borderColor={props.lane}
             {...(props.focused ? { backgroundColor: color.selected } : {})}
           >
+            {card.modelSwitch === undefined ? null : <text fg={color.faint} wrapMode="word">{card.modelSwitch}</text>}
             {card.steps.map((line, index) => (
               <text key={index} fg={color.text} wrapMode="none">{SubagentCard.clip(line, room)}</text>
             ))}

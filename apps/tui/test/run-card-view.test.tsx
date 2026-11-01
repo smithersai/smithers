@@ -1,4 +1,5 @@
 import { testRender } from "@opentui/react/test-utils"
+import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import { afterEach, expect, test } from "bun:test"
 import { act } from "react"
 import stringWidth from "string-width"
@@ -200,3 +201,38 @@ test.each([
   expect(stringWidth(rows[0]!)).toBeLessThanOrEqual(78)
   if (status === "done") expect(rows).toHaveLength(1)
 })
+
+test.each([[80, 24], [40, 16]])(
+  "a failover notice leaves settled receipts and actions usable at %s×%s",
+  async (width, height) => {
+    const history = Transcript.apply(
+      changed,
+      new AgentEvent.SeatFailedOver({
+        eventType: "flows.harness.seat-failed-over.v1",
+        from: "openai:gpt-6.1-sol",
+        to: "openai:gpt-6-luna",
+        code: "out_of_credit"
+      }),
+      3
+    )
+    const calls: Array<string> = []
+    await mount(RunCard.worker(tab, history, 90_000), width, height, {
+      onOpen: () => calls.push("open"),
+      onDiff: () => calls.push("diff"),
+      onUndo: () => calls.push("undo")
+    })
+    const frame = setup!.captureCharFrame()
+    expect(frame).toContain("GPT-6.1 Sol has no credit")
+    expect(frame).toContain("using")
+    expect(frame).toContain("GPT-6 Luna")
+    expect(frame).toContain("It now returns a + b.")
+    expect(frame).toContain("The check passes.")
+    expect(frame).toContain("math.js +1")
+    expect(frame).toContain("node check.mjs exit 0")
+    expect(frame).toContain("d Diff  u Undo  enter Open")
+    await click("d Diff")
+    await click("u Undo")
+    await click("enter Open")
+    expect(calls).toEqual(["diff", "undo", "open"])
+  }
+)

@@ -12,12 +12,14 @@ import * as Model from "@smthrs/model/Model"
 import { ModelError } from "@smthrs/model/ModelError"
 import type * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as ModelRequest from "@smthrs/model/ModelRequest"
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test"
 import { Effect, Stream } from "effect"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import * as MemoryRepo from "../../../packages/smithers/agent/src/internal/memory/repo.ts"
 import * as Credit from "../src/credit.ts"
+import * as Files from "../src/files.ts"
 import * as Host from "../src/host.ts"
 import * as Models from "../src/models.ts"
 import * as RunCard from "../src/run-card.ts"
@@ -208,7 +210,31 @@ describe("the routing catalog", () => {
 
 // A real host and workspace over scripted seats: Sol has no credit, Qwen answers.
 const roots: Array<string> = []
+let previousRepo: string | undefined
+let previousSessions: string | undefined
+let files: ReturnType<typeof spyOn>
+let memoryCommands: ReturnType<typeof spyOn>
+const memoryRun = MemoryRepo.run
+beforeEach(() => {
+  previousRepo = process.env.SMITHERS_REPO
+  previousSessions = process.env.SMITHERS_TUI_SESSION_DIR
+  process.env.SMITHERS_REPO = "fixture/credit"
+  const root = mkdtempSync(join(tmpdir(), "tui-credit-sessions-"))
+  roots.push(root)
+  process.env.SMITHERS_TUI_SESSION_DIR = root
+  files = spyOn(Files, "lister").mockImplementation(() => () => [])
+  // These fixtures have no Git index. Keep memory's real filesystem fallback without probing Git.
+  memoryCommands = spyOn(MemoryRepo, "run").mockImplementation((command, args, cwd) =>
+    command === "git" ? Effect.succeed(undefined) : memoryRun(command, args, cwd)
+  )
+})
 afterEach(() => {
+  memoryCommands.mockRestore()
+  files.mockRestore()
+  if (previousRepo === undefined) delete process.env.SMITHERS_REPO
+  else process.env.SMITHERS_REPO = previousRepo
+  if (previousSessions === undefined) delete process.env.SMITHERS_TUI_SESSION_DIR
+  else process.env.SMITHERS_TUI_SESSION_DIR = previousSessions
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
@@ -528,6 +554,17 @@ describe("a worker whose model has no credit", () => {
       expect(f.calls).toEqual([sol, qwen])
       const notice = "↪ GPT-6.1 Sol has no credit · using Qwen 3.8"
       expect(f.switches("second")).toEqual([notice])
+      expect(RunCard.worker(done, f.workspace.transcript("second"), Date.now()).modelSwitch).toBe(notice)
+      const saved = Session.load(done.file)
+      expect(saved.filter((record) => record.type === "credit-substitution")).toEqual([{
+        type: "credit-substitution",
+        at: expect.any(Number),
+        from: sol,
+        to: qwen,
+        text: notice
+      }])
+      expect(saved.some((record) => record.type === "note" && record.text === notice)).toBe(false)
+      expect(RunCard.worker(done, Session.restore(saved).transcript, Date.now()).modelSwitch).toBe(notice)
       // The notice is on the worker's record, so a restored session shows it too.
       expect(
         Session.restore(Session.load(done.file)).transcript.items.some((item) =>
