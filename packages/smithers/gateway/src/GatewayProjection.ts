@@ -20,7 +20,7 @@ import { Schema } from "effect"
 import * as Diagnosis from "./Diagnosis.ts"
 import { callScope, openCallIndex, uniqueCallEvents } from "./internal/callEvents.ts"
 import * as NativeResolution from "./internal/nativeResolution.ts"
-import * as NodeEvents from "./internal/nodeEvents.ts"
+import * as NodeEvents from "./internal/nodeEvents.vibe"
 
 /**
  * One run, everything a run card displays, and the diagnosis of what happened

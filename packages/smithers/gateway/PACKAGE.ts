@@ -14,7 +14,7 @@ import * as Input from "@smthrs/targets/Input"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
-  testSources: Input.glob("{test,examples}/**/*.ts"),
+  testSources: Input.glob("{test,examples}/**/*.{ts,vibe}"),
   cwd: "packages/smithers/gateway"
 })
 
@@ -237,7 +237,7 @@ const securityReview = Smithers.SecurityReview({
         "src/Diagnosis.ts",
         "src/EngineTrace.ts",
         "src/internal/callEvents.ts",
-        "src/internal/nodeEvents.ts"
+        "src/internal/nodeEvents.vibe"
       ]
     },
     {

@@ -12,8 +12,6 @@
  */
 
 import { EngineEvent } from "@smthrs/journal"
-import type * as Option from "effect/Option"
-import * as Schema from "effect/Schema"
 
 /** A sparse historical observation is readable without inventing missing fields.
  * @category models
@@ -55,8 +53,8 @@ const envelopeOf = (event: NodeObservation): Record<string, unknown> | undefined
   }
   const envelope = event.payload as Record<string, unknown>
   if (
-    envelope.version !== 1 || typeof envelope.executionId !== "string" ||
-    typeof envelope.emittedAtMs !== "number" || !Number.isFinite(envelope.emittedAtMs)
+    envelope.version !== 1 || typeof envelope.executionId !== "string"
+    || typeof envelope.emittedAtMs !== "number" || !Number.isFinite(envelope.emittedAtMs)
   ) return undefined
   return envelope
 }
@@ -65,7 +63,7 @@ const envelopeOf = (event: NodeObservation): Record<string, unknown> | undefined
 const nodeRecord = <A>(
   event: NodeObservation,
   eventType: string,
-  decode: (payload: unknown) => Option.Option<A>
+  decode: (payload: unknown) => Option<A>,
 ): NodeRecord<A> | undefined => {
   const envelope = envelopeOf(event)
   if (envelope === undefined || envelope.eventType !== eventType) return undefined
@@ -74,7 +72,7 @@ const nodeRecord = <A>(
   return {
     executionId: envelope.executionId as string,
     emittedAtMs: envelope.emittedAtMs as number,
-    payload: payload.value
+    payload: payload.value,
   }
 }
 
@@ -86,7 +84,7 @@ const decodeSettled = Schema.decodeUnknownOption(EngineEvent.NodeSettledPayload)
  * @since 1.0.0
  */
 export const nodeScheduled = (
-  event: NodeObservation
+  event: NodeObservation,
 ): NodeRecord<EngineEvent.NodeScheduledPayload> | undefined =>
   nodeRecord(event, EngineEvent.nodeEventTypes.nodeScheduled, decodeScheduled)
 
@@ -95,6 +93,6 @@ export const nodeScheduled = (
  * @since 1.0.0
  */
 export const nodeSettled = (
-  event: NodeObservation
+  event: NodeObservation,
 ): NodeRecord<EngineEvent.NodeSettledPayload> | undefined =>
   nodeRecord(event, EngineEvent.nodeEventTypes.nodeSettled, decodeSettled)
