@@ -33,7 +33,7 @@ import { type ChildProcessHandle, ChildProcessSpawner, make as makeSpawner } fro
 import * as Schedule from "effect/Schedule"
 import * as Scope from "effect/Scope"
 import * as CommandLine from "./CommandLine.ts"
-import * as Containment from "./internal/Containment.ts"
+import * as Containment from "./internal/Containment.vibe"
 import * as Pipeline from "./internal/Pipeline.ts"
 import * as ProcessLedger from "./ProcessLedger.ts"
 
