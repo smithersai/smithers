@@ -1,16 +1,31 @@
 ---
 title: Every page up to the mock look (FE-20)
-status: in-progress
+status: done
 area: frontend
 owner: Claude Opus ui-polish
 updated: 2026-10-31
-links: [apps/mvp/docs/rulings.md]
+links: [apps/mvp/docs/rulings.md, apps/mvp/e2e/look.spec.ts]
 ---
-Bring every apps/mvp route to the `.specs/design/mock/` look (FE-20): Paper
-palette, rounded cards on the paper background, status pills, phase strips,
-teal accents, quiet secondary actions, consistent spacing, built from
-`@smthrs/ui`. Shared defects (tokens, links, Table, page headers, spacing) are
-fixed in `@smthrs/ui` first, then each area.
+Every apps/mvp route now uses the `.specs/design/mock/` look (FE-20). Shared
+pieces live in `@smthrs/ui`: brand links at zero specificity, card-framed
+`Table` (`variant="plain"` for prose), `PageHeader` and `PageBody` with
+matching `width`, phone-fit `RunList`, solid primary actions. Pages were
+restyled by four Kimi K3 lanes and reviewed by screenshot, then by Fable.
 
-Audit and before/after shots: `~/Desktop/smithers-ui-audit/index.html`.
-The Settings model section waits for the amp-models lane to land.
+Decisions:
+- One solid primary action per page; everything else outline or ghost.
+- Every repository page uses the wide header and column, so moving between
+  Home, Code and Issues never shifts the header; forms keep a narrow card.
+- Issues, pull requests, the stack, runs, secrets and settings drop the
+  Home/Code tab row: the header's title goes home.
+- The repository's top level keeps the About aside and the folder's README
+  (docs/features/repo.md, e2e/repo-browse.spec.ts).
+- Flow editor routes show a pending frame while `beforeLoad` opens them.
+
+Proof: `e2e/look.spec.ts` (computed styles) fails 8 of 10 Runs checks on the
+2026-10-31 production build and passes 8 of 8 on the deployed one. Before and
+after shots: `~/Desktop/smithers-ui-audit/index.html`.
+
+Open: issue, pull request and TODO pages were only seen in their syncing
+state (production sync for the test repository never finished);
+`CodeFileView` wraps code mid-token on a phone (`overflow: "wrap"`).
