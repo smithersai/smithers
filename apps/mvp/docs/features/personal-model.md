@@ -190,6 +190,13 @@ most), kept in the ledger with role `test`. With no `id` it tests each key the t
 the `ModelError` code (`unusable` for a saved model that can't be used here), the provider's HTTP status or `null`, and
 the provider's host. Nothing saved is `404 none`; anyone signed in may test their own.
 
+`e2e/subscriptions.spec.ts` proves each subscription against a deployment: it adds the connection in Settings, commits a
+TODO on the scratch stack, checks the run took `todo/ImplementCli` and not `todo/Implement`, and reads the pull request's
+one-line `NOTES.md` change on GitHub. Claude needs `E2E_CLAUDE_SUBSCRIPTION_TOKEN` (what `claude setup-token` printed).
+Codex's device code needs a person signed in to ChatGPT, so a person links Codex once in Settings and the run sets
+`E2E_CODEX_SUBSCRIPTION=linked`; the spec Checks Access on it first. Run it with `--project=deployment`: each browser
+project opens its own pull request.
+
 ## The Settings section
 
 `/app/settings`, the header's Settings link, shows **Your model** to anyone signed in: one row per connection, in order,

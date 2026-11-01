@@ -294,6 +294,14 @@ const needs = {
     met: (run) => run.target === "local" || set(run, "E2E_PERSONAL_MODEL_KEY"),
     reason: "deployment answers require the test account's saved model: set E2E_PERSONAL_MODEL_KEY; setup saves it and verifies Test before specs run",
   },
+  claudeSubscription: {
+    met: (run) => run.target === "deployment" && set(run, "E2E_CLAUDE_SUBSCRIPTION_TOKEN"),
+    reason: "it runs a TODO with Claude Code on a real Claude plan: a deployment, with E2E_CLAUDE_SUBSCRIPTION_TOKEN set to what `claude setup-token` printed",
+  },
+  codexSubscription: {
+    met: (run) => run.target === "deployment" && run.env.E2E_CODEX_SUBSCRIPTION === "linked",
+    reason: "it runs a TODO with Codex on a real ChatGPT plan: OpenAI's device code needs a person, so link Codex once in Settings and set E2E_CODEX_SUBSCRIPTION=linked",
+  },
   personalModelKey: {
     met: (run) => set(run, "E2E_PERSONAL_MODEL_KEY"),
     reason: "it saves a real provider's key as the person's own model: set E2E_PERSONAL_MODEL_KEY, with optional E2E_PERSONAL_MODEL_BASE_URL, E2E_PERSONAL_MODEL_ID and E2E_PERSONAL_MODEL_PROTOCOL",
