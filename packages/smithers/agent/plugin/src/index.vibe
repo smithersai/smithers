@@ -44,8 +44,8 @@ import type { ParallelHook, WaterfallHook } from "./Hooks.vibe"
  * @since 1.0.0-rc.0
  */
 export interface FlowsHooks {
-  readonly config: WaterfallHook<(config: FlowsConfig) => Effect.Effect<Partial<FlowsConfig> | void, any, never>>
-  readonly configResolved: ParallelHook<(config: ResolvedConfig) => Effect.Effect<void, any, never>>
+  readonly config: WaterfallHook<(config: FlowsConfig) => Partial<FlowsConfig> | void!any!never>
+  readonly configResolved: ParallelHook<(config: ResolvedConfig) => void!any!never>
 }
 
 /**
@@ -70,7 +70,7 @@ export * as Kernel from "./Kernel.ts"
  * @since 1.0.0-rc.0
  * @category models
  */
-export * from "./Plugin.ts"
+export * from "./Plugin.vibe"
 
 /**
  * @since 1.0.0-rc.0

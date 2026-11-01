@@ -6,7 +6,7 @@
  */
 import { Action } from "@smthrs/flow";
 import * as Layer from "effect/Layer";
-import type { FlowsPlugin } from "../Plugin.ts";
+import type { FlowsPlugin } from "../Plugin.vibe";
 import { PluginError } from "../PluginError.vibe";
 /**
  * Merges plugin layers left-to-right, wrapping each build failure as

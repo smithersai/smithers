@@ -1,7 +1,7 @@
 import { Context, Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Config from "../src/Config.ts"
-import type { FlowsPlugin } from "../src/index.ts"
+import type { FlowsPlugin } from "../src/index.vibe"
 import * as Resolve from "../src/Resolve.ts"
 
 type JsonValue = null | boolean | number | string | ReadonlyArray<JsonValue> | JsonRecord

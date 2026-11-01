@@ -76,7 +76,7 @@ describe("reference documentation matches admission", () => {
   })
 
   it("bounds the nested-preset promise by the depth resolution enforces", async () => {
-    const jsdoc = /\/\*\*(?:[^*]|\*(?!\/))*\*\/(?=\s*export type PluginInput)/.exec(read("src/Plugin.ts"))
+    const jsdoc = /\/\*\*(?:[^*]|\*(?!\/))*\*\/(?=\s*export type PluginInput)/.exec(read("src/Plugin.vibe"))
     expect(jsdoc?.[0]).toContain("maximumPluginDepth")
     for (const prose of [jsdoc?.[0] ?? "", read("docs/api.md"), read("docs/concepts/resolution.md")]) {
       expect(prose).not.toMatch(/arbitrarily nested|nested arrays flatten to any depth/i)
