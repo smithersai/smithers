@@ -19,7 +19,7 @@
  */
 import { Context, Effect, Layer } from "effect";
 import type { QuickJSSyncVariant, QuickJSWASMModule } from "quickjs-emscripten-core";
-import * as Sandbox from "./Sandbox.ts";
+import * as Sandbox from "./Sandbox.js";
 /**
  * Caches only a successful asynchronous load; a rejection may be retried.
  *

@@ -9,7 +9,7 @@
 import type * as CoreMarkdown from "@smthrs/core/Markdown";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { type DiscoveryWarning, FlowBodyPrompt, type FlowBudget, type FlowDescriptor as FlowDescriptorType, type Provenance } from "./Descriptor.ts";
+import { type DiscoveryWarning, FlowBodyPrompt, type FlowBudget, type FlowDescriptor as FlowDescriptorType, type Provenance } from "./Descriptor.js";
 /**
  * The fixed decoded input schema for markdown flows.
  *
