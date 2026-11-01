@@ -1,6 +1,7 @@
 /** Deterministic host with workers in every status and a real scratch-file fix. */
 import { createCliRenderer } from "@opentui/core"
 import { createRoot } from "@opentui/react"
+import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import { Effect } from "effect"
 import { readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
@@ -183,6 +184,12 @@ const host: Host.Host = {
             await new Promise((resolve) => setTimeout(resolve, 2500))
             const drained = await Effect.runPromise(
               input.steering!.drain({ boundary: `frame-${frame}`, wouldIdle: frame === 4 })
+            )
+            input.onEvent(
+              new AgentEvent.SteeringDrained({
+                eventType: "flows.harness.steering-drained.v1",
+                messages: drained.inserts
+              })
             )
             const said = drained.inserts.flatMap((message) =>
               message.content.flatMap((part) => (part.type === "text" ? [part.text] : []))
