@@ -1,24 +1,37 @@
 /* Page layout only; components and colors come from @smthrs/ui. */
 .issues-screen {
   min-height: 100dvh;
-  max-width: 64rem;
-  margin: 0 auto;
-  padding: 1rem;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
 }
+
+/* The quiet way back to the list sits at its own width at the column's left. */
+.issues-screen [data-slot="page-body"] > .sui-button { justify-self: start; }
+
+/* The list card's header names the filters and actions; the page header already names the repository. */
+.issues-screen .sui-issues-repo { display: none; }
+
+/* While the list is busy, a header with no actions is an empty bar; the skeleton rows say it. */
+.issues-screen .sui-issues-view[aria-busy] .sui-issues-header:not(:has(.sui-issues-actions)) { display: none; }
+
+/* The schedule filter reads as the tab row it is; its label sits on the row's baseline, not as a tab. */
+.issues-schedule-label { align-self: center; }
+
+.issues-status-line { margin: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.issues-syncing { margin: 0; }
+
+.issues-sign-in [data-slot="card-content"] { display: flex; justify-content: center; }
+
+.issues-loading { display: grid; gap: 10px; }
+.issues-loading-title { height: 24px; max-width: 24rem; }
+.issues-loading-body { height: 16px; }
+
+/* The new-issue form's description starts tall enough for a report. */
+.issues-screen .sui-issue-form textarea { min-height: 9rem; }
 
 .issues-not-sent { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
 .issues-not-sent-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; min-width: 0; }
 .issues-not-sent-title { margin-right: auto; overflow-wrap: anywhere; }
-
-@media (max-width: 60rem) {
-  .issues-screen > .sui-button { align-self: flex-start; }
-  /* Issues or pull requests that are on GitHub (src/features/repo/scope.ts): the link is a tap target. */
-  .issues-screen > p > a { display: inline-flex; align-items: center; min-height: 32px; }
-}
-
 
 .issues-screen .list-search-tools { display: flex; align-items: center; gap: 0.5rem; }
 .issues-screen .list-search-tools input { flex: 1; min-width: 0; }

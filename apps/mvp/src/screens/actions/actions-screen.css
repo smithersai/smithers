@@ -1,0 +1,11 @@
+/* Page layout only; components and colors come from @smthrs/ui. */
+.actions-screen {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.actions-sign-in { display: flex; justify-content: center; }
+
+.repo-runs-loading { display: grid; gap: 10px; }
+.repo-runs-loading [data-slot="skeleton"] { height: 18px; }

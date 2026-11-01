@@ -14,7 +14,15 @@ export function RepoRunsView({ owner, name }: { owner: string; name: string }) {
   const { data } = useLiveQuery(queries.repoRuns)
   const { data: loaded } = useLiveQuery(queries.repoRunsLoaded)
   const runs = repoRunRows(data as ReadonlyArray<RepoRunRow>, owner, name)
-  if (runs.length === 0 && !repoRunsLoaded(loaded as ReadonlyArray<RepoRunsLoaded>, owner, name)) return <Skeleton aria-label="Loading runs" />
+  if (runs.length === 0 && !repoRunsLoaded(loaded as ReadonlyArray<RepoRunsLoaded>, owner, name)) {
+    return (
+      <div role="status" aria-label="Loading runs" className="repo-runs-loading">
+        <Skeleton />
+        <Skeleton />
+        <Skeleton />
+      </div>
+    )
+  }
   return (
     <RunList
       runs={runs}

@@ -2,8 +2,7 @@ import { IssueSort } from "../../features/issues/components/IssueSort"
 import { visibleRows } from "../../features/issues/list"
 import { githubList } from "../../features/repo/scope"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
-import { HomeTabs } from "../../features/home/components/HomeTabs"
-import { Badge, Button, EmptyState, Input, IssuesView } from "@smthrs/ui"
+import { Badge, Button, Card, CardContent, EmptyState, Input, IssuesView, LinkTabs, PageBody } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
@@ -71,97 +70,139 @@ export function IssuesScreen() {
   // Where this deployment doesn't sync the repository's issues, GitHub lists them (decision 0079 slice 1b).
   if (!syncsHere(access, unsynced)) {
     const list = githubList(owner, repo, "issues")
-    return <main className="issues-screen" aria-label="Issues">{header}<HomeTabs /><p><a href={list.href}>{list.text}</a></p></main>
+    return (
+      <main className="issues-screen" aria-label="Issues">{header}
+        <PageBody>
+          <Card><CardContent><p className="issues-status-line"><a href={list.href}>{list.text}</a></p></CardContent></Card>
+        </PageBody>
+      </main>
+    )
   }
   // A repository whose issues this person may not read: sign in, or nothing to show.
-  if (list.refused === "sign_in") return <main className="issues-screen" aria-label="Issues">{header}<HomeTabs /><SignInButton /></main>
+  if (list.refused === "sign_in") {
+    return (
+      <main className="issues-screen" aria-label="Issues">{header}
+        <PageBody>
+          <Card className="issues-sign-in"><CardContent><SignInButton /></CardContent></Card>
+        </PageBody>
+      </main>
+    )
+  }
   if (list.refused === "forbidden") {
-    return <main className="issues-screen" aria-label="Issues">{header}<HomeTabs /><EmptyState title={NOT_FOUND} /></main>
+    return (
+      <main className="issues-screen" aria-label="Issues">{header}
+        <PageBody>
+          <Card><CardContent><EmptyState title={NOT_FOUND} /></CardContent></Card>
+        </PageBody>
+      </main>
+    )
   }
   return (
-    <main className="issues-screen" aria-label="Issues">{header}<HomeTabs />
-      {failure === undefined ? null : <p role="status"><span>{failure}</span>{" "}
-        <Button variant="outline" onClick={() => { repository.actions.retryAbout(owner, repo); repository.actions.role(owner, repo); actions.retry() }}>Try again</Button>{" "}
-        <a href={githubList(owner, repo, "issues").href}>Open on GitHub ↗</a>
-      </p>}
-      <nav aria-label="Schedule">
-        <span>Schedule</span>
-        {[undefined, ...COMMITMENTS].map((commitment) => (
-          <Button key={commitment ?? "all"} variant={search.commitment === commitment ? "secondary" : "ghost"} size="sm" asChild>
-            <Link to="/$owner/$repo/issues" params={{ owner, repo }} search={{ ...search, commitment }} aria-current={search.commitment === commitment ? "page" : undefined}>
+    <main className="issues-screen" aria-label="Issues">{header}
+      <PageBody>
+        {failure === undefined ? null : (
+          <Card><CardContent>
+            <p role="status" className="issues-status-line"><span>{failure}</span>{" "}
+              <Button variant="outline" size="sm" onClick={() => { repository.actions.retryAbout(owner, repo); repository.actions.role(owner, repo); actions.retry() }}>Try again</Button>{" "}
+              <Button asChild variant="outline" size="sm"><a href={githubList(owner, repo, "issues").href}>Open on GitHub ↗</a></Button>
+            </p>
+          </CardContent></Card>
+        )}
+        <LinkTabs aria-label="Schedule" className="issues-schedule">
+          <span className="issues-schedule-label">Schedule</span>
+          {[undefined, ...COMMITMENTS].map((commitment) => (
+            <Link
+              key={commitment ?? "all"}
+              to="/$owner/$repo/issues"
+              params={{ owner, repo }}
+              search={{ ...search, commitment }}
+              aria-current={search.commitment === commitment ? "page" : undefined}
+            >
               {commitment === undefined ? "All" : COMMITMENT_COPY[commitment]}
             </Link>
-          </Button>
-        ))}
-      </nav>
-      {failure !== undefined ? null : listSync === "not_synced"
-        ? <p role="status" data-list-sync="">Issues not synced · <a href={githubList(owner, repo, "issues").href}>Open on GitHub ↗</a></p>
-        : listSync === "syncing" ? <p role="status" data-list-sync="">Syncing issues…</p> : null}
-      <div className="list-search-tools" role="search" aria-label="Search issues">
-        <Input aria-label="Search issues" placeholder="Search issues" value={search.q ?? ""}
-          onChange={(event) => void navigate({ to: "/$owner/$repo/issues", params: { owner, repo }, search: { ...search, q: event.currentTarget.value }, replace: true, resetScroll: false })} />
-        <IssueSort value={search.sort ?? "updated"}
-          onChange={(sort) => void navigate({ to: "/$owner/$repo/issues", params: { owner, repo }, search: { ...search, sort }, resetScroll: false })} />
-      </div>
-      <IssuesView
-        repo={`${owner}/${repo}`}
-        size="full"
-        issues={withTodos(
-          visible,
-          todosByIssue(todosRepoId, todoRows, owner, repo),
-          session !== undefined && mayChange(session, confirmed, answer),
-          (number) => void navigate({ href: todos.actions.fromIssue(owner, repo, number) }),
-        )}
-        unknown={list.unknown || !isReady || access?.installed !== true}
-        href={(issue) => (issue.number === null ? undefined : issuePath(owner, repo, issue.number))}
-        onNavigate={(_, href) => void navigate({ href })}
-        actions={session !== undefined && mayWrite(session, confirmed, answer)
-          ? (
-            <>
-              {mayManageTriageOnList(session, confirmed, answer, synced, triageSwitch.action, own) && session.hostedModel === false && !own
-                ? <Button variant="outline" disabled data-triage-off="">{TRIAGE_OFF}</Button>
-                : mayManageTriageOnList(session, confirmed, answer, synced, triageSwitch.action, own)
-                ? (
-                  <Button
-                    variant="outline"
-                    disabled={triageSwitch.disabled}
-                    onClick={() =>
-                      triageSwitch.action === "enable"
-                        ? actions.enableTriage(owner, repo)
-                        : actions.pauseTriage(owner, repo)}
-                  >
-                    {triageSwitch.action === "enable" ? ENABLE_TRIAGE : PAUSE_TRIAGE}
-                  </Button>
-                )
-                : null}
-              <Button asChild>
-                <Link to="/$owner/$repo/issues/new" params={{ owner, repo }}>{NEW_ISSUE}</Link>
-              </Button>
-            </>
-          )
-          : undefined}
-      />
-      {list.notSent.length === 0 ? null : (
-        <ul className="issues-not-sent" aria-label="Not sent">
-          {list.notSent.map((write) => (
-            <li key={write.id} className="issues-not-sent-row">
-              <span className="issues-not-sent-title">{write.title}</span>
-              {write.reason === undefined ? null : <Badge variant="destructive">{write.reason}</Badge>}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  const to = actions.edit(write.id)
-                  if (to !== undefined) void navigate({ href: to })
-                }}
-              >
-                {EDIT}
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => actions.discard(write.id)}>{DISCARD}</Button>
-            </li>
           ))}
-        </ul>
-      )}
+        </LinkTabs>
+        {failure !== undefined ? null : listSync === "not_synced"
+          ? (
+            <Card><CardContent>
+              <p role="status" data-list-sync="" className="issues-status-line">
+                <span>Issues not synced</span>{" "}
+                <Button asChild variant="outline" size="sm"><a href={githubList(owner, repo, "issues").href}>Open on GitHub ↗</a></Button>
+              </p>
+            </CardContent></Card>
+          )
+          : listSync === "syncing" ? <p role="status" data-list-sync="" className="issues-syncing">Syncing issues…</p> : null}
+        {listSync === "not_synced" && failure === undefined ? null : (
+          <div className="list-search-tools" role="search" aria-label="Search issues">
+            <Input aria-label="Search issues" placeholder="Search issues" value={search.q ?? ""}
+              onChange={(event) => void navigate({ to: "/$owner/$repo/issues", params: { owner, repo }, search: { ...search, q: event.currentTarget.value }, replace: true, resetScroll: false })} />
+            <IssueSort value={search.sort ?? "updated"}
+              onChange={(sort) => void navigate({ to: "/$owner/$repo/issues", params: { owner, repo }, search: { ...search, sort }, resetScroll: false })} />
+          </div>
+        )}
+        {listSync === "not_synced" && failure === undefined ? null : (
+          <IssuesView
+            repo={`${owner}/${repo}`}
+            size="full"
+            loading={listSync === "syncing"}
+            issues={withTodos(
+              visible,
+              todosByIssue(todosRepoId, todoRows, owner, repo),
+              session !== undefined && mayChange(session, confirmed, answer),
+              (number) => void navigate({ href: todos.actions.fromIssue(owner, repo, number) }),
+            )}
+            unknown={listSync !== "syncing" && (list.unknown || !isReady || access?.installed !== true)}
+            href={(issue) => (issue.number === null ? undefined : issuePath(owner, repo, issue.number))}
+            onNavigate={(_, href) => void navigate({ href })}
+            actions={session !== undefined && mayWrite(session, confirmed, answer)
+              ? (
+                <>
+                  {mayManageTriageOnList(session, confirmed, answer, synced, triageSwitch.action, own) && session.hostedModel === false && !own
+                    ? <Button variant="outline" disabled data-triage-off="">{TRIAGE_OFF}</Button>
+                    : mayManageTriageOnList(session, confirmed, answer, synced, triageSwitch.action, own)
+                    ? (
+                      <Button
+                        variant="outline"
+                        disabled={triageSwitch.disabled}
+                        onClick={() =>
+                          triageSwitch.action === "enable"
+                            ? actions.enableTriage(owner, repo)
+                            : actions.pauseTriage(owner, repo)}
+                      >
+                        {triageSwitch.action === "enable" ? ENABLE_TRIAGE : PAUSE_TRIAGE}
+                      </Button>
+                    )
+                    : null}
+                  <Button asChild variant="solid">
+                    <Link to="/$owner/$repo/issues/new" params={{ owner, repo }}>{NEW_ISSUE}</Link>
+                  </Button>
+                </>
+              )
+              : undefined}
+          />
+        )}
+        {list.notSent.length === 0 ? null : (
+          <ul className="issues-not-sent" aria-label="Not sent">
+            {list.notSent.map((write) => (
+              <li key={write.id} className="issues-not-sent-row">
+                <span className="issues-not-sent-title">{write.title}</span>
+                {write.reason === undefined ? null : <Badge variant="destructive">{write.reason}</Badge>}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const to = actions.edit(write.id)
+                    if (to !== undefined) void navigate({ href: to })
+                  }}
+                >
+                  {EDIT}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => actions.discard(write.id)}>{DISCARD}</Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </PageBody>
     </main>
   )
 }

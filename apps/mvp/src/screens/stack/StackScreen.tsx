@@ -1,7 +1,6 @@
 import { NotSentChanges } from "../../features/todos/components/NotSentChanges"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
-import { HomeTabs } from "../../features/home/components/HomeTabs"
-import { Breadcrumbs, Button, EmptyState, IssuesView } from "@smthrs/ui"
+import { Button, Card, CardContent, EmptyState, IssuesView, PageBody } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
@@ -11,7 +10,6 @@ import { useTodos } from "../../features/todos/components/TodosContext"
 import {
   NEW_TODO,
   NO_TODOS,
-  STACK,
   stackFilterOf,
   stackPath,
   todoPath,
@@ -31,9 +29,9 @@ import { useRepoAnswer } from "../../features/repo/components/RepoContext"
 // device's commits the stack hasn't numbered) and Closed (merged and dropped, latest first) tabs with counts, each row
 // with its state icon, title, T<n>, who and when, its branch and pull request, and Drop in its menu; this device's
 // drafts above, and its changes that weren't sent below, with Edit and Discard. New TODO and Drop show for a Member or
-// above. The page's frame paints at once; until the device restored or synced the stack, its list is empty with no
-// counts, never the empty state and never a loading state. A stack this person may not read shows sign-in, or Not
-// found. The route's loader opens the stack (`open`); this screen only renders what the device has.
+// above. The page's frame paints at once; until the device's session is restored, its list is empty with no counts and
+// no empty state; a stack it knows is empty says so in the card. A stack this person may not read shows sign-in, or
+// Not found. The route's loader opens the stack (`open`); this screen only renders what the device has.
 export function StackScreen() {
   const { owner, repo } = useParams({ from: "/$owner/$repo/stack" })
   const search = useSearch({ from: "/$owner/$repo/stack" })
@@ -52,38 +50,50 @@ export function StackScreen() {
   const answer = useRepoAnswer(owner, repo)
   const navigate = useNavigate()
   const status = accessFor(repoId, access)
-  if (status === "sign_in") return <main className="stack-screen" aria-label="Stack"><RepoHeader /><HomeTabs /><EmptyState title="Members can make TODOs." /><SignInButton /></main>
+  if (status === "sign_in") {
+    return (
+      <main className="stack-screen" aria-label="Stack"><RepoHeader />
+        <PageBody>
+          <Card><CardContent><EmptyState title="Members can make TODOs." action={<SignInButton />} /></CardContent></Card>
+        </PageBody>
+      </main>
+    )
+  }
   if (status === "forbidden") {
-    return <main className="stack-screen" aria-label="Stack"><RepoHeader /><HomeTabs /><EmptyState title="Members can make TODOs." /></main>
+    return (
+      <main className="stack-screen" aria-label="Stack"><RepoHeader />
+        <PageBody>
+          <Card><CardContent><EmptyState title="Members can make TODOs." /></CardContent></Card>
+        </PageBody>
+      </main>
+    )
   }
   const rows = stackRows(repoId, todos, sending, requested)
   const may = status === "allowed" && session !== undefined && mayChange(session, confirmed, answer)
   return (
-    <main className="stack-screen" aria-label="Stack"><RepoHeader /><HomeTabs />
-      <Breadcrumbs
-        items={[{ key: "repo", label: `${owner}/${repo}`, href: `/${owner}/${repo}` }, { key: "stack", label: STACK }]}
-        onNavigate={(item) => void navigate({ href: item.href! })}
-      />
-      {draftsOfRepo(repoId, drafts).map((draft) => <DraftCard key={draft.id} draft={draft} />)}
-      <IssuesView
-        repo={`${owner}/${repo}`}
-        aria-label={`${owner}/${repo} stack`}
-        size="full"
-        ordered
-        numberPrefix="T"
-        emptyTitle={NO_TODOS}
-        unknown={status === "unknown" && rows.length === 0}
-        issues={withDrop(stackItemsOf(rows, todos, owner, repo), may, (number) => actions.drop(owner, repo, number))}
-        filter={{
-          state: stackFilterOf(search.state),
-          href: (state) => stackPath(owner, repo, state),
-          onSelect: (_, href) => void navigate({ href }),
-        }}
-        href={(todo) => (todo.number === null ? undefined : todoPath(owner, repo, todo.number))}
-        onNavigate={(_, href) => void navigate({ href })}
-        actions={may ? <Button onClick={() => actions.newDraft(owner, repo)}>{NEW_TODO}</Button> : undefined}
-      />
-      <NotSentChanges repoId={repoId} />
+    <main className="stack-screen" aria-label="Stack"><RepoHeader />
+      <PageBody>
+        {draftsOfRepo(repoId, drafts).map((draft) => <DraftCard key={draft.id} draft={draft} />)}
+        <IssuesView
+          repo={`${owner}/${repo}`}
+          aria-label={`${owner}/${repo} stack`}
+          size="full"
+          ordered
+          numberPrefix="T"
+          emptyTitle={NO_TODOS}
+          unknown={session === undefined}
+          issues={withDrop(stackItemsOf(rows, todos, owner, repo), may, (number) => actions.drop(owner, repo, number))}
+          filter={{
+            state: stackFilterOf(search.state),
+            href: (state) => stackPath(owner, repo, state),
+            onSelect: (_, href) => void navigate({ href }),
+          }}
+          href={(todo) => (todo.number === null ? undefined : todoPath(owner, repo, todo.number))}
+          onNavigate={(_, href) => void navigate({ href })}
+          actions={may ? <Button variant="solid" onClick={() => actions.newDraft(owner, repo)}>{NEW_TODO}</Button> : undefined}
+        />
+        <NotSentChanges repoId={repoId} />
+      </PageBody>
     </main>
   )
 }

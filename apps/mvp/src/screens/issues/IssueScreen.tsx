@@ -1,6 +1,6 @@
 import { OfflineFallback } from "../../features/navigation/components/OfflineFallback"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
-import { Button, EmptyState, NotFound, ItemAsideSection, ItemConversation, Kbd, TriageControl } from "@smthrs/ui"
+import { Button, Card, CardContent, EmptyState, NotFound, ItemAsideSection, ItemConversation, Kbd, PageBody, Skeleton, TriageControl } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
@@ -56,21 +56,62 @@ export function IssueScreen() {
   const navigate = useNavigate()
   const back = <Button asChild variant="ghost"><Link to="/$owner/$repo/issues" params={{ owner, repo }}>Issues</Link></Button>
   const page = pageOf(item, synced, itemReady, syncedReady, access)
-  if (page === "sign_in") return <main className="issues-screen"><RepoHeader />{back}<SignInButton /></main>
-  if (page === "missing") return <main className="issues-screen"><RepoHeader /><NotFound title="Issue not found" back={back} /></main>
+  if (page === "sign_in") {
+    return (
+      <main className="issues-screen"><RepoHeader />
+        <PageBody>
+          {back}
+          <Card className="issues-sign-in"><CardContent><SignInButton /></CardContent></Card>
+        </PageBody>
+      </main>
+    )
+  }
+  if (page === "missing") {
+    return (
+      <main className="issues-screen"><RepoHeader />
+        <PageBody>
+          <NotFound title="Issue not found" back={back} />
+        </PageBody>
+      </main>
+    )
+  }
 
-  if (page === "unknown") return (
-    <main className="issues-screen"><RepoHeader />{back}
-
-      <EmptyState title="Issue unavailable here" action={
-        <>
-          {access?.status === "unavailable" ? <Button variant="outline" onClick={actions.retry}>Try again</Button> : null}
-          {" "}<Button asChild variant="outline"><a href={githubIssueUrl(owner, repo, number)} target="_blank" rel="noopener noreferrer">Open on GitHub ↗</a></Button>
-        </>
-      } />
-    </main>
-  )
-  if (item === undefined) return <main className="issues-screen"><RepoHeader />{back}<OfflineFallback><p role="status">Syncing issue…</p></OfflineFallback></main>
+  if (page === "unknown") {
+    return (
+      <main className="issues-screen"><RepoHeader />
+        <PageBody>
+          {back}
+          <Card><CardContent>
+            <EmptyState title="Issue unavailable here" action={
+              <>
+                {access?.status === "unavailable" ? <Button variant="outline" onClick={actions.retry}>Try again</Button> : null}
+                {" "}<Button asChild variant="outline"><a href={githubIssueUrl(owner, repo, number)} target="_blank" rel="noopener noreferrer">Open on GitHub ↗</a></Button>
+              </>
+            } />
+          </CardContent></Card>
+        </PageBody>
+      </main>
+    )
+  }
+  if (item === undefined) {
+    return (
+      <main className="issues-screen"><RepoHeader />
+        <PageBody>
+          {back}
+          <OfflineFallback>
+            <Card><CardContent>
+              <p role="status">Syncing issue…</p>
+              <div className="issues-loading" aria-hidden>
+                <Skeleton className="issues-loading-title" />
+                <Skeleton className="issues-loading-body" />
+                <Skeleton className="issues-loading-body" />
+              </div>
+            </CardContent></Card>
+          </OfflineFallback>
+        </PageBody>
+      </main>
+    )
+  }
   const shown = conversationProps(item, rows ?? [], { owner, name: repo })
   const made = todosByIssue(todosRepoId, todoRows, owner, repo).get(number)
   const make = mayMakeTodo(session !== undefined && mayChange(session, confirmed, answer), shown)
@@ -80,9 +121,11 @@ export function IssueScreen() {
     start: session !== undefined && mayStartTriage(session, confirmed, answer, (ownModels?.length ?? 0) > 0),
   })
   return (
-    <main className="issues-screen"><RepoHeader />{back}
+    <main className="issues-screen"><RepoHeader />
+      <PageBody>
+        {back}
 
-      <ItemConversation
+        <ItemConversation
         {...shown}
         aside={made === undefined && !make ? undefined : (
           <ItemAsideSection title={TODO} {...(made === undefined ? {} : { links: made.links })} onNavigate={(href) => void navigate({ href })}>
@@ -133,9 +176,12 @@ export function IssueScreen() {
             disabled: view?.submitting === true,
           }
           : undefined}
-      />
-      {view?.submissionFailed === true ? <p role="alert">Not sent</p> : null}
-      {session?.status === "signed_out" ? <SignInButton /> : null}
+        />
+        {view?.submissionFailed === true ? <p role="alert">Not sent</p> : null}
+        {session?.status === "signed_out"
+          ? <Card className="issues-sign-in"><CardContent><SignInButton /></CardContent></Card>
+          : null}
+      </PageBody>
     </main>
   )
 }

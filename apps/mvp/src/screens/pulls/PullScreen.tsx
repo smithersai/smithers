@@ -1,5 +1,5 @@
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
-import { Badge, Button, EmptyState, NotFound, ItemConversation, LinkTabs, RunList } from "@smthrs/ui"
+import { Badge, Button, Card, CardContent, EmptyState, NotFound, ItemConversation, LinkTabs, PageBody, RunList, Skeleton } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link, useParams } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
@@ -40,21 +40,60 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
   const pageAccess = pullAccessOf(access, view)
   const back = <Button asChild variant="ghost"><Link to="/$owner/$repo/pulls" params={{ owner, repo }}>Pull requests</Link></Button>
   const page = pullPageOf(pull, view?.pullAbsent === true, pullReady && view?.installed === true, syncedReady, pageAccess)
-  if (page === "sign_in") return <main className="pulls-screen"><RepoHeader />{back}<SignInButton /></main>
-  if (page === "missing") return <main className="pulls-screen"><RepoHeader /><NotFound title="Pull request not found" back={back} /></main>
+  if (page === "sign_in") {
+    return (
+      <main className="pulls-screen"><RepoHeader />
+        <PageBody>
+          {back}
+          <Card className="pulls-sign-in"><CardContent><SignInButton /></CardContent></Card>
+        </PageBody>
+      </main>
+    )
+  }
+  if (page === "missing") {
+    return (
+      <main className="pulls-screen"><RepoHeader />
+        <PageBody>
+          <NotFound title="Pull request not found" back={back} />
+        </PageBody>
+      </main>
+    )
+  }
 
-  if (page === "unknown") return (
-    <main className="pulls-screen"><RepoHeader />{back}
-
-      <EmptyState title="Pull request unavailable here" action={
-        <>
-          {pageAccess?.status === "unavailable" ? <Button variant="outline" onClick={actions.retry}>Try again</Button> : null}
-          {" "}<Button asChild variant="outline"><a href={githubPullUrl(owner, repo, number)} target="_blank" rel="noopener noreferrer">Open on GitHub ↗</a></Button>
-        </>
-      } />
-    </main>
-  )
-  if (pull === undefined) return <main className="pulls-screen"><RepoHeader />{back}<p role="status">Syncing pull request…</p></main>
+  if (page === "unknown") {
+    return (
+      <main className="pulls-screen"><RepoHeader />
+        <PageBody>
+          {back}
+          <Card><CardContent>
+            <EmptyState title="Pull request unavailable here" action={
+              <>
+                {pageAccess?.status === "unavailable" ? <Button variant="outline" onClick={actions.retry}>Try again</Button> : null}
+                {" "}<Button asChild variant="outline"><a href={githubPullUrl(owner, repo, number)} target="_blank" rel="noopener noreferrer">Open on GitHub ↗</a></Button>
+              </>
+            } />
+          </CardContent></Card>
+        </PageBody>
+      </main>
+    )
+  }
+  if (pull === undefined) {
+    return (
+      <main className="pulls-screen"><RepoHeader />
+        <PageBody>
+          {back}
+          <Card><CardContent>
+            <p role="status">Syncing pull request…</p>
+            <div className="pulls-loading" aria-hidden>
+              <Skeleton className="pulls-loading-title" />
+              <Skeleton className="pulls-loading-body" />
+              <Skeleton className="pulls-loading-body" />
+            </div>
+          </CardContent></Card>
+        </PageBody>
+      </main>
+    )
+  }
   const summary = checksSummaryOf(checks ?? [])
   const tabs: ReadonlyArray<{ readonly tab: PullTab; readonly label: string }> = [
     { tab: "conversation", label: "Conversation" },
@@ -93,38 +132,49 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
   const compared = (files ?? []).find((row) => row.id === filesKey)
   return (
     <main className="pulls-screen" aria-label={`Pull request ${pull.number}`}><RepoHeader />
-      {back}
-      {tab === "conversation" ? null : <h1>{pull.title} <span>#{pull.number}</span></h1>}
-      <LinkTabs aria-label="Pull request">
-        {tabs.map((entry) => (
-          <Link
-            key={entry.tab}
-            to={pullTabPath(owner, repo, number, entry.tab)}
-            // Exact: the conversation's path is the other tabs' prefix, so the router would mark it current on each.
-            activeOptions={{ exact: true }}
-            aria-current={entry.tab === tab ? "page" : undefined}
-          >
-            {entry.label}
-          </Link>
-        ))}
-      </LinkTabs>
-      {tab === "conversation"
-        ? <ItemConversation {...conversationProps(pull, comments ?? [], reviews ?? [], { owner, name: repo })} headerActions={header} />
-        : tab === "commits"
-        ? (
-          (commits ?? []).length === 0 ? <EmptyState title="No commits" /> : <CommitList commits={commits ?? []} />
-        )
-        : tab === "checks"
-        ? <RunList runs={checkRows(checks ?? [])} now={Date.now()} empty={<EmptyState title="No checks" />} />
-        : (
-          <section aria-label="Files" aria-busy={compared?.status !== "ready"}>
-            {compared === undefined || compared.status === "loading"
-              ? null
-              : compared.status === "failed"
-              ? <EmptyState title="Couldn't load files" />
-              : <ChangedFiles files={compared.files} />}
-          </section>
-        )}
+      <PageBody width="wide">
+        {back}
+        {tab === "conversation" ? null : <h1 className="pull-tab-title">{pull.title} <span>#{pull.number}</span></h1>}
+        <LinkTabs aria-label="Pull request">
+          {tabs.map((entry) => (
+            <Link
+              key={entry.tab}
+              to={pullTabPath(owner, repo, number, entry.tab)}
+              // Exact: the conversation's path is the other tabs' prefix, so the router would mark it current on each.
+              activeOptions={{ exact: true }}
+              aria-current={entry.tab === tab ? "page" : undefined}
+            >
+              {entry.label}
+            </Link>
+          ))}
+        </LinkTabs>
+        {tab === "conversation"
+          ? <ItemConversation {...conversationProps(pull, comments ?? [], reviews ?? [], { owner, name: repo })} headerActions={header} />
+          : tab === "commits"
+          ? (
+            (commits ?? []).length === 0
+              ? <Card><CardContent><EmptyState title="No commits" /></CardContent></Card>
+              : <Card><CardContent><CommitList commits={commits ?? []} /></CardContent></Card>
+          )
+          : tab === "checks"
+          ? <RunList runs={checkRows(checks ?? [])} now={Date.now()} empty={<EmptyState title="No checks" />} />
+          : (
+            <section aria-label="Files" aria-busy={compared?.status !== "ready"}>
+              {compared === undefined || compared.status === "loading"
+                ? (
+                  <Card><CardContent>
+                    <div className="pulls-loading" aria-hidden>
+                      <Skeleton className="pulls-loading-body" />
+                      <Skeleton className="pulls-loading-body" />
+                    </div>
+                  </CardContent></Card>
+                )
+                : compared.status === "failed"
+                ? <Card><CardContent><EmptyState title="Couldn't load files" /></CardContent></Card>
+                : <ChangedFiles files={compared.files} />}
+            </section>
+          )}
+      </PageBody>
     </main>
   )
 }

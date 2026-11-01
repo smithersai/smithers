@@ -2,8 +2,7 @@ import { IssueSort } from "../../features/issues/components/IssueSort"
 import { visibleRows } from "../../features/issues/list"
 import { githubList } from "../../features/repo/scope"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
-import { HomeTabs } from "../../features/home/components/HomeTabs"
-import { EmptyState, Input, IssuesView } from "@smthrs/ui"
+import { Button, Card, CardContent, EmptyState, Input, IssuesView, PageBody } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router"
 import { SignInButton } from "../../features/auth/components/SignInButton"
@@ -32,31 +31,54 @@ export function PullsScreen() {
   // Where this deployment doesn't sync the repository's pull requests, GitHub lists them (decision 0079 slice 1b).
   if (!syncsHere(access, unsynced)) {
     const list = githubList(owner, repo, "pulls")
-    return <main className="issues-screen" aria-label="Pull requests"><RepoHeader /><HomeTabs /><p><a href={list.href}>{list.text}</a></p></main>
+    return (
+      <main className="pulls-screen" aria-label="Pull requests"><RepoHeader />
+        <PageBody>
+          <Card><CardContent><p className="pulls-status-line"><a href={list.href}>{list.text}</a></p></CardContent></Card>
+        </PageBody>
+      </main>
+    )
   }
-  if (page.refused === "sign_in") return <main className="pulls-screen" aria-label="Pull requests"><RepoHeader /><HomeTabs /><SignInButton /></main>
+  if (page.refused === "sign_in") {
+    return (
+      <main className="pulls-screen" aria-label="Pull requests"><RepoHeader />
+        <PageBody>
+          <Card className="pulls-sign-in"><CardContent><SignInButton /></CardContent></Card>
+        </PageBody>
+      </main>
+    )
+  }
   if (page.refused === "forbidden") {
-    return <main className="pulls-screen" aria-label="Pull requests"><RepoHeader /><HomeTabs /><EmptyState title={NOT_FOUND} /></main>
+    return (
+      <main className="pulls-screen" aria-label="Pull requests"><RepoHeader />
+        <PageBody>
+          <Card><CardContent><EmptyState title={NOT_FOUND} /></CardContent></Card>
+        </PageBody>
+      </main>
+    )
   }
+  const pending = page.unknown || access?.installed !== true
+  const unknown = listPageOf(rows ?? [], { owner, name: repo }, synced, pullAccessOf(access, view), isReady).unknown || access?.installed !== true
   return (
-    <main className="pulls-screen" aria-label="Pull requests"><RepoHeader /><HomeTabs />
-      {(page.unknown || access?.installed !== true) ? <p role="status" data-list-sync="">Syncing pull requests…</p> : null}
-      <div className="list-search-tools" role="search" aria-label="Search pulls">
-        <Input aria-label="Search pulls" placeholder="Search pulls" value={search.q ?? ""}
-          onChange={(event) => void navigate({ to: "/$owner/$repo/pulls", params: { owner, repo }, search: { ...search, q: event.currentTarget.value }, replace: true, resetScroll: false })} />
-        <IssueSort value={search.sort ?? "updated"}
-          onChange={(sort) => void navigate({ to: "/$owner/$repo/pulls", params: { owner, repo }, search: { ...search, sort }, resetScroll: false })} />
-      </div>
-      <IssuesView
-        repo={`${owner}/${repo}`}
-        size="full"
-        issues={page.pulls}
-        loading={page.loading}
-        unknown={listPageOf(rows ?? [], { owner, name: repo }, synced, pullAccessOf(access, view), isReady).unknown || access?.installed !== true}
-        emptyTitle="No pull requests"
-        href={(pull) => ("href" in pull ? (pull.href as string) : undefined)}
-        onNavigate={(_, href) => void navigate({ href })}
-      />
+    <main className="pulls-screen" aria-label="Pull requests"><RepoHeader />
+      <PageBody>
+        {pending ? <p role="status" data-list-sync="" className="pulls-syncing">Syncing pull requests…</p> : null}
+        <div className="list-search-tools" role="search" aria-label="Search pulls">
+          <Input aria-label="Search pulls" placeholder="Search pulls" value={search.q ?? ""}
+            onChange={(event) => void navigate({ to: "/$owner/$repo/pulls", params: { owner, repo }, search: { ...search, q: event.currentTarget.value }, replace: true, resetScroll: false })} />
+          <IssueSort value={search.sort ?? "updated"}
+            onChange={(sort) => void navigate({ to: "/$owner/$repo/pulls", params: { owner, repo }, search: { ...search, sort }, resetScroll: false })} />
+        </div>
+        <IssuesView
+          repo={`${owner}/${repo}`}
+          size="full"
+          issues={page.pulls}
+          loading={unknown}
+          emptyTitle="No pull requests"
+          href={(pull) => ("href" in pull ? (pull.href as string) : undefined)}
+          onNavigate={(_, href) => void navigate({ href })}
+        />
+      </PageBody>
     </main>
   )
 }

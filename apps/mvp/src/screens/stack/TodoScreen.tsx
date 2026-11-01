@@ -1,5 +1,5 @@
 import { NotSentChanges } from "../../features/todos/components/NotSentChanges"
-import { Button, Breadcrumbs, ConfirmButton, EmptyState, ItemAsideSection, ItemConversation, ItemStateIcon } from "@smthrs/ui"
+import { Button, Breadcrumbs, Card, CardContent, ConfirmButton, EmptyState, ItemAsideSection, ItemConversation, ItemStateIcon, PageBody, Skeleton } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useNavigate, useParams } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
@@ -33,7 +33,23 @@ export function TodoScreen() {
   const answer = useRepoAnswer(owner, repo)
   const navigate = useNavigate()
   const status = accessFor(repoId, access)
-  if (status === "sign_in") return <main className="stack-screen" aria-label="TODO"><SignInButton /></main>
+  if (status === "sign_in") {
+    return (
+      <main className="stack-screen" aria-label="TODO">
+        <PageBody>
+          <Breadcrumbs
+            items={[
+              { key: "repo", label: `${owner}/${repo}`, href: `/${owner}/${repo}` },
+              { key: "stack", label: STACK, href: stackPath(owner, repo) },
+              { key: "todo", label: `T${number}` },
+            ]}
+            onNavigate={(item) => void navigate({ href: item.href! })}
+          />
+          <Card className="stack-sign-in"><CardContent><SignInButton /></CardContent></Card>
+        </PageBody>
+      </main>
+    )
+  }
   const card = todoCardOf(number, stackRows(repoId, todos, sending, requested), todos, requests)
   const screen = status === "forbidden" ? { kind: "missing" as const } : todoScreenOf(card, number, todos, status, owner, repo)
   const todo = todos.find((todo) => todo.number === number)
@@ -41,16 +57,26 @@ export function TodoScreen() {
   const may = session !== undefined && mayChange(session, confirmed, answer)
   return (
     <main className="stack-screen" aria-label="TODO">
-      <Breadcrumbs
-        items={[
-          { key: "repo", label: `${owner}/${repo}`, href: `/${owner}/${repo}` },
-          { key: "stack", label: STACK, href: stackPath(owner, repo) },
-          { key: "todo", label: `T${number}` },
-        ]}
-        onNavigate={(item) => void navigate({ href: item.href! })}
-      />
-      {screen.kind === "waiting" ? <p role="status">Syncing TODO…</p> : null}
-      {screen.kind === "missing" ? <EmptyState title={NOT_FOUND} /> : null}
+      <PageBody>
+        <Breadcrumbs
+          items={[
+            { key: "repo", label: `${owner}/${repo}`, href: `/${owner}/${repo}` },
+            { key: "stack", label: STACK, href: stackPath(owner, repo) },
+            { key: "todo", label: `T${number}` },
+          ]}
+          onNavigate={(item) => void navigate({ href: item.href! })}
+        />
+        {screen.kind === "waiting" ? (
+          <Card><CardContent>
+            <p role="status">Syncing TODO…</p>
+            <div className="stack-loading" aria-hidden>
+              <Skeleton className="stack-loading-title" />
+              <Skeleton className="stack-loading-body" />
+              <Skeleton className="stack-loading-body" />
+            </div>
+          </CardContent></Card>
+        ) : null}
+        {screen.kind === "missing" ? <Card><CardContent><EmptyState title={NOT_FOUND} /></CardContent></Card> : null}
       {screen.kind === "page" ? (
         <ItemConversation
           title={screen.page.title}
@@ -98,7 +124,8 @@ export function TodoScreen() {
             )}
         />
       ) : null}
-      <NotSentChanges repoId={repoId} number={number} />
+        <NotSentChanges repoId={repoId} number={number} />
+      </PageBody>
     </main>
   )
 }
