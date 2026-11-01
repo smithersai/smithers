@@ -3,7 +3,7 @@ import { expect, it } from "@effect/vitest"
 import { Graph } from "@smthrs/flow"
 import { GraphBuildError, isFatalDiagnostic } from "@smthrs/plan/GraphBuildError"
 import * as Effect from "effect/Effect"
-import { dryPlan, intervene, main, plan } from "../../examples/32-intervene.ts"
+import { dryPlan, intervene, main, plan } from "../../examples/32-intervene.vibe"
 
 const literal = (node: Graph.GraphNode): Record<string, unknown> => {
   const first = node.draft.material.inputs[0]
