@@ -3,11 +3,11 @@ import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import { Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Cell from "../src/Cell.ts"
-import * as CellPrompt from "../src/internal/cellPrompt.ts"
+import * as CellPrompt from "../src/internal/cellPrompt.vibe"
 import { printsObservation } from "../src/internal/printsObservation.ts"
 import { untrustedData } from "../src/internal/untrustedData.ts"
-import * as Monitor from "../src/Monitor.ts"
-import * as Tokens from "../src/Tokens.ts"
+import * as Monitor from "../src/Monitor.vibe"
+import * as Tokens from "../src/Tokens.vibe"
 
 const projection = (
   name: string,

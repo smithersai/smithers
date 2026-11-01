@@ -37,12 +37,7 @@
  *
  * @since 0.1.0
  */
-
-import * as CanonicalJson from "@smthrs/model/CanonicalJson"
-import { Effect, Schema } from "effect"
-import * as DemandText from "./internal/demandText.ts"
-import * as elide from "./internal/elide.ts"
-
+import { Schema } from "effect";
 /**
  * How many distinct checks one run carries forward.
  *
@@ -56,8 +51,7 @@ import * as elide from "./internal/elide.ts"
  * @category constants
  * @since 0.1.0
  */
-export const retained = 32
-
+export declare const retained = 32;
 /**
  * Most distinct terms one recorded check may carry.
  *
@@ -71,25 +65,7 @@ export const retained = 32
  * @category constants
  * @since 0.1.0
  */
-export const maxTerms = 256
-
-/**
- * Characters that are part of a term; everything else separates two.
- *
- * The set keeps together every shape that names one thing — `src/_pytest/main.py`,
- * `-rA`, `--include=*.py` minus its glob, a version, a container name — and cuts
- * at whitespace, quotes, brackets, colons, and JSON punctuation. It is the only
- * lexical assumption in this module, and it is about text rather than about any
- * tool: nothing here knows what a test runner, a flag, or a path is.
- *
- * A colon separates because it is what joins a target to a selector inside it —
- * a test id, a line number, a range. Cutting there leaves the file as a target
- * and the selector as an added condition, which is what selecting one case out
- * of a file is; keeping them together would make the pair a target of its own
- * and the narrowing invisible.
- */
-const separator = /[^A-Za-z0-9_./@+-]+/
-
+export declare const maxTerms = 256;
 /**
  * How many UTF-8 bytes of a check's input the demand may quote back.
  *
@@ -101,8 +77,7 @@ const separator = /[^A-Za-z0-9_./@+-]+/
  * @category constants
  * @since 1.0.0-rc.0
  */
-export const labelWidth = 512
-
+export declare const labelWidth = 512;
 /**
  * An input as its label quotes it: canonical JSON, except that an object's
  * longest string member comes last.
@@ -119,21 +94,7 @@ export const labelWidth = 512
  * @category conversions
  * @since 1.0.0-rc.0
  */
-export const label = (input: Schema.Json): string => {
-  if (input === null || typeof input !== "object" || Array.isArray(input)) return CanonicalJson.stringify(input)
-  const record = input as Readonly<Record<string, Schema.Json>>
-  let last: string | undefined
-  for (const [key, value] of Object.entries(record)) {
-    if (typeof value !== "string") continue
-    const current = last === undefined ? undefined : record[last]
-    if (typeof current !== "string" || value.length > current.length) last = key
-  }
-  if (last === undefined) return CanonicalJson.stringify(input)
-  const rest = CanonicalJson.stringify(Object.fromEntries(Object.entries(record).filter(([key]) => key !== last)))
-  const tail = `${JSON.stringify(last)}:${CanonicalJson.stringify(record[last]!)}`
-  return rest === "{}" ? `{${tail}}` : `${rest.slice(0, -1)},${tail}}`
-}
-
+export declare const label: (input: Schema.Json) => string;
 /**
  * Whether a term names a target rather than a condition.
  *
@@ -157,17 +118,7 @@ export const label = (input: Schema.Json): string => {
  * @category predicates
  * @since 0.1.0
  */
-export const targeting = (term: string): boolean => term.includes("/") || term.includes(".")
-
-/**
- * A separator with a real character on both sides of it.
- *
- * {@link targeting} accepts any term carrying a slash or a dot, which is the
- * right rule for {@link narrows} — a term wrongly read as a target only
- * suppresses a demand there. The predicate below needs the stricter one.
- */
-const anchored = /[A-Za-z0-9_@+-][./][A-Za-z0-9_@+-]/
-
+export declare const targeting: (term: string) => boolean;
 /**
  * Whether a term names a target a reader would recognise as one.
  *
@@ -186,8 +137,7 @@ const anchored = /[A-Za-z0-9_@+-][./][A-Za-z0-9_@+-]/
  * @category predicates
  * @since 0.1.0
  */
-export const names = (term: string): boolean => targeting(term) && anchored.test(term)
-
+export declare const names: (term: string) => boolean;
 /**
  * The terms of one call input in the order the canonical document states them.
  *
@@ -203,9 +153,7 @@ export const names = (term: string): boolean => targeting(term) && anchored.test
  * @category conversions
  * @since 0.1.0
  */
-export const lex = (input: Schema.Json): ReadonlyArray<string> =>
-  CanonicalJson.stringify(input).split(separator).filter((term) => term.length > 0)
-
+export declare const lex: (input: Schema.Json) => ReadonlyArray<string>;
 /**
  * The distinct terms of one call input, sorted.
  *
@@ -215,23 +163,7 @@ export const lex = (input: Schema.Json): ReadonlyArray<string> =>
  * @category conversions
  * @since 0.1.0
  */
-export const terms = (input: Schema.Json): ReadonlyArray<string> => [...new Set(lex(input))].sort()
-
-/** A term that is only digits: a magnitude, never a name. */
-const numeral = /^[0-9]+$/
-
-/** Every key name the input document carries, at any depth. */
-const structure = (input: Schema.Json, into: Set<string>): Set<string> => {
-  if (Array.isArray(input)) { for (const item of input) structure(item, into) }
-  else if (input !== null && typeof input === "object") {
-    for (const [key, item] of Object.entries(input)) {
-      into.add(key)
-      structure(item, into)
-    }
-  }
-  return into
-}
-
+export declare const terms: (input: Schema.Json) => ReadonlyArray<string>;
 /**
  * The terms of one call input that could be conditions its author added.
  *
@@ -254,11 +186,99 @@ const structure = (input: Schema.Json, into: Set<string>): Set<string> => {
  * @category conversions
  * @since 0.1.0
  */
-export const conditions = (input: Schema.Json): ReadonlyArray<string> => {
-  const keys = structure(input, new Set())
-  return terms(input).filter((term) => !targeting(term) && !keys.has(term) && !numeral.test(term))
-}
-
+export declare const conditions: (input: Schema.Json) => ReadonlyArray<string>;
+declare const Check_base: Schema.Class<Check, Schema.Struct<{
+    /** The flow the call named. */
+    readonly flow: Schema.String;
+    /** The call's identity, as the controller's own signature names it. */
+    readonly signature: Schema.String;
+    /** The distinct terms of the call's input, sorted; see {@link terms}. */
+    readonly terms: Schema.$Array<Schema.String>;
+    /**
+     * The subset of {@link Check.terms} that could be conditions the call's
+     * author added; see {@link conditions}.
+     *
+     * Stored rather than recomputed because it is a fact about the input
+     * document — its key names — and the ledger keeps terms, not documents.
+     * Defaults empty, so an entry journaled before the field decodes; the only
+     * reader is {@link findOnly}, where an empty set means the check carries no
+     * added condition, which suppresses a demand and never invents one.
+     */
+    readonly conditions: Schema.withDecodingDefaultKey<Schema.withConstructorDefault<Schema.$Array<Schema.String>>, never>;
+    /**
+     * Content address of the workspace the frame that ran this check closed on.
+     *
+     * The *closing* digest, and not the opening one, because a frame's calls are
+     * not ordered against its edits in anything the harness records. A check that
+     * ran in the same frame as an edit is therefore stamped as if it ran after
+     * that edit, which reads a stale check as current and suppresses a demand.
+     * Conservative on purpose: the whole module errs towards asking nothing.
+     *
+     * Empty when the frame had no complete measurement to stamp it with, which
+     * makes the entry inert — an unmeasured tree cannot say anything moved.
+     */
+    readonly digest: Schema.String;
+    /** The call's input as it was written, clipped, for the demand to quote. */
+    readonly label: Schema.String;
+    /**
+     * Whether the call's own result reported a failing exit status.
+     *
+     * Nothing in this module reads it: a check that reported failures is exactly
+     * as good evidence of what the tree does as one that reported none, and the
+     * narrowing relation is about the shape of a question rather than its answer.
+     * It is recorded here because `UnresolvedFailure` asks about the answer, and
+     * two ledgers over the same calls would be two things to keep true. See
+     * `UnresolvedFailure` `failed` for what "reported" means, and why a flow that
+     * declares no exit status is neither failing nor passing.
+     */
+    readonly failing: Schema.withDecodingDefaultKey<Schema.withConstructorDefault<Schema.Boolean>, never>;
+    /**
+     * Whether the call's own result reported a passing exit status.
+     *
+     * Not the negation of {@link Check.failing}, and that is the whole reason it
+     * is a second field: a flow that reports no exit status at all — a read, a
+     * search — is neither failing nor passing, and reading its silence as a pass
+     * would let `Sufficiency` build a completion signal out of a file read. Both
+     * default false, so a result that says nothing about a subject says nothing
+     * here either. See `UnresolvedFailure` `passed`.
+     */
+    readonly passing: Schema.withDecodingDefaultKey<Schema.withConstructorDefault<Schema.Boolean>, never>;
+    /**
+     * Whether the run declared this call as its check: rule 7's
+     * `verification = { flow, input }`, called with that very input. See
+     * `Sandbox.Invocation.declared`.
+     *
+     * The demands that hold a completion over a check read only these. Every
+     * call that reports an exit status lands in this ledger, and a read or a
+     * search is one: a `grep` that matched nothing exits 1, and a later read of
+     * the same file then looked like a failing check the run had stepped around.
+     * On the paired SWE-bench Pro run of 2026-10-14 that held 27 of 85
+     * "Unanswered failure" completions, and all 6 "Only reading" holds stood on
+     * the `git diff` read rule 5 itself asks for (#3994). Telling a read from a
+     * check by its command would be a classifier; the run already says which
+     * call is its check, so the ledger records that. Defaults false, so an
+     * entry journaled before the field holds nothing.
+     */
+    readonly declared: Schema.withDecodingDefaultKey<Schema.withConstructorDefault<Schema.Boolean>, never>;
+    /**
+     * Whether {@link Check.digest} is the tree this check actually read.
+     *
+     * A check is stamped with its frame's closing digest, and a frame may both
+     * edit and check. The frame's writes are calls, though, and calls settle in
+     * order, so the question has an answer rather than a guess: a check with no
+     * standing write after it read the tree the frame closed on and is stable; a
+     * check with a write after it read a tree that is gone and is not. A frame
+     * whose measurement moved with no call declaring it — a shell redirect —
+     * cannot place the move among its calls at all, so nothing in it is stable.
+     *
+     * What it buys each reader: for {@link find} an unstable reading is a stale
+     * check read as current, which costs a demand; for a *failure* carried by
+     * one the stamp would attribute a result to a tree the check never ran over,
+     * so `UnresolvedFailure` requires this. A reading attributed to a checkpoint
+     * is stable by pin rather than by position.
+     */
+    readonly stable: Schema.withDecodingDefaultKey<Schema.withConstructorDefault<Schema.Boolean>, never>;
+}>, {}>;
 /**
  * One check this run has run, and the tree it ran over.
  *
@@ -275,114 +295,8 @@ export const conditions = (input: Schema.Json): ReadonlyArray<string> => {
  * @category models
  * @since 0.1.0
  */
-export class Check extends Schema.Class<Check>("flows/harness/NarrowedCheck/Check")({
-  /** The flow the call named. */
-  flow: Schema.String,
-  /** The call's identity, as the controller's own signature names it. */
-  signature: Schema.String,
-  /** The distinct terms of the call's input, sorted; see {@link terms}. */
-  terms: Schema.Array(Schema.String),
-  /**
-   * The subset of {@link Check.terms} that could be conditions the call's
-   * author added; see {@link conditions}.
-   *
-   * Stored rather than recomputed because it is a fact about the input
-   * document — its key names — and the ledger keeps terms, not documents.
-   * Defaults empty, so an entry journaled before the field decodes; the only
-   * reader is {@link findOnly}, where an empty set means the check carries no
-   * added condition, which suppresses a demand and never invents one.
-   */
-  conditions: Schema.Array(Schema.String).pipe(
-    Schema.withConstructorDefault(Effect.succeed<ReadonlyArray<string>>([])),
-    Schema.withDecodingDefaultKey(Effect.succeed<ReadonlyArray<string>>([]))
-  ),
-  /**
-   * Content address of the workspace the frame that ran this check closed on.
-   *
-   * The *closing* digest, and not the opening one, because a frame's calls are
-   * not ordered against its edits in anything the harness records. A check that
-   * ran in the same frame as an edit is therefore stamped as if it ran after
-   * that edit, which reads a stale check as current and suppresses a demand.
-   * Conservative on purpose: the whole module errs towards asking nothing.
-   *
-   * Empty when the frame had no complete measurement to stamp it with, which
-   * makes the entry inert — an unmeasured tree cannot say anything moved.
-   */
-  digest: Schema.String,
-  /** The call's input as it was written, clipped, for the demand to quote. */
-  label: Schema.String,
-  /**
-   * Whether the call's own result reported a failing exit status.
-   *
-   * Nothing in this module reads it: a check that reported failures is exactly
-   * as good evidence of what the tree does as one that reported none, and the
-   * narrowing relation is about the shape of a question rather than its answer.
-   * It is recorded here because `UnresolvedFailure` asks about the answer, and
-   * two ledgers over the same calls would be two things to keep true. See
-   * `UnresolvedFailure` `failed` for what "reported" means, and why a flow that
-   * declares no exit status is neither failing nor passing.
-   */
-  failing: Schema.Boolean.pipe(
-    Schema.withConstructorDefault(Effect.succeed(false)),
-    Schema.withDecodingDefaultKey(Effect.succeed(false))
-  ),
-  /**
-   * Whether the call's own result reported a passing exit status.
-   *
-   * Not the negation of {@link Check.failing}, and that is the whole reason it
-   * is a second field: a flow that reports no exit status at all — a read, a
-   * search — is neither failing nor passing, and reading its silence as a pass
-   * would let `Sufficiency` build a completion signal out of a file read. Both
-   * default false, so a result that says nothing about a subject says nothing
-   * here either. See `UnresolvedFailure` `passed`.
-   */
-  passing: Schema.Boolean.pipe(
-    Schema.withConstructorDefault(Effect.succeed(false)),
-    Schema.withDecodingDefaultKey(Effect.succeed(false))
-  ),
-  /**
-   * Whether the run declared this call as its check: rule 7's
-   * `verification = { flow, input }`, called with that very input. See
-   * `Sandbox.Invocation.declared`.
-   *
-   * The demands that hold a completion over a check read only these. Every
-   * call that reports an exit status lands in this ledger, and a read or a
-   * search is one: a `grep` that matched nothing exits 1, and a later read of
-   * the same file then looked like a failing check the run had stepped around.
-   * On the paired SWE-bench Pro run of 2026-10-14 that held 27 of 85
-   * "Unanswered failure" completions, and all 6 "Only reading" holds stood on
-   * the `git diff` read rule 5 itself asks for (#3994). Telling a read from a
-   * check by its command would be a classifier; the run already says which
-   * call is its check, so the ledger records that. Defaults false, so an
-   * entry journaled before the field holds nothing.
-   */
-  declared: Schema.Boolean.pipe(
-    Schema.withConstructorDefault(Effect.succeed(false)),
-    Schema.withDecodingDefaultKey(Effect.succeed(false))
-  ),
-  /**
-   * Whether {@link Check.digest} is the tree this check actually read.
-   *
-   * A check is stamped with its frame's closing digest, and a frame may both
-   * edit and check. The frame's writes are calls, though, and calls settle in
-   * order, so the question has an answer rather than a guess: a check with no
-   * standing write after it read the tree the frame closed on and is stable; a
-   * check with a write after it read a tree that is gone and is not. A frame
-   * whose measurement moved with no call declaring it — a shell redirect —
-   * cannot place the move among its calls at all, so nothing in it is stable.
-   *
-   * What it buys each reader: for {@link find} an unstable reading is a stale
-   * check read as current, which costs a demand; for a *failure* carried by
-   * one the stamp would attribute a result to a tree the check never ran over,
-   * so `UnresolvedFailure` requires this. A reading attributed to a checkpoint
-   * is stable by pin rather than by position.
-   */
-  stable: Schema.Boolean.pipe(
-    Schema.withConstructorDefault(Effect.succeed(false)),
-    Schema.withDecodingDefaultKey(Effect.succeed(false))
-  )
-}) {}
-
+export declare class Check extends Check_base {
+}
 /**
  * A check this frame ran, paired with the broader one it stands in for.
  *
@@ -390,12 +304,11 @@ export class Check extends Schema.Class<Check>("flows/harness/NarrowedCheck/Chec
  * @since 0.1.0
  */
 export interface Narrowing {
-  /** The broader check, last run over a tree that has since changed. */
-  readonly earlier: Check
-  /** This frame's check, which repeats it and adds conditions. */
-  readonly later: Check
+    /** The broader check, last run over a tree that has since changed. */
+    readonly earlier: Check;
+    /** This frame's check, which repeats it and adds conditions. */
+    readonly later: Check;
 }
-
 /**
  * Records one settled call as a check, unless its input is a payload.
  *
@@ -405,40 +318,20 @@ export interface Narrowing {
  * @category constructors
  * @since 0.1.0
  */
-export const check = (options: {
-  readonly flow: string
-  readonly signature: string
-  readonly input: Schema.Json
-  readonly digest: string
-  /** Whether the call's result reported a failing exit status. */
-  readonly failing?: boolean | undefined
-  /** Whether the call's result reported a passing exit status. */
-  readonly passing?: boolean | undefined
-  /** Whether the run declared the call as its check; see {@link Check.declared}. */
-  readonly declared?: boolean | undefined
-  /** Whether the frame that ran it left the workspace as it found it. */
-  readonly stable?: boolean | undefined
-}): Check | undefined => {
-  const collected = terms(options.input)
-  if (collected.length > maxTerms) return undefined
-  return new Check({
-    flow: options.flow,
-    signature: options.signature,
-    terms: collected,
-    conditions: conditions(options.input),
-    digest: options.digest,
-    label: elide.head(
-      label(options.input),
-      labelWidth,
-      "the issuing cell in the run record has the whole input"
-    ),
-    failing: options.failing ?? false,
-    passing: options.passing ?? false,
-    declared: options.declared ?? false,
-    stable: options.stable ?? false
-  })
-}
-
+export declare const check: (options: {
+    readonly flow: string;
+    readonly signature: string;
+    readonly input: Schema.Json;
+    readonly digest: string;
+    /** Whether the call's result reported a failing exit status. */
+    readonly failing?: boolean | undefined;
+    /** Whether the call's result reported a passing exit status. */
+    readonly passing?: boolean | undefined;
+    /** Whether the run declared the call as its check; see {@link Check.declared}. */
+    readonly declared?: boolean | undefined;
+    /** Whether the frame that ran it left the workspace as it found it. */
+    readonly stable?: boolean | undefined;
+}) => Check | undefined;
 /**
  * Whether one call's terms are a strict narrowing of another's.
  *
@@ -453,22 +346,7 @@ export const check = (options: {
  * @category predicates
  * @since 0.1.0
  */
-export const narrows = (
-  later: ReadonlyArray<string>,
-  earlier: ReadonlyArray<string>
-): boolean => {
-  const carried = new Set(later)
-  for (const term of earlier) if (!carried.has(term)) return false
-  const known = new Set(earlier)
-  let added = false
-  for (const term of later) {
-    if (known.has(term)) continue
-    if (targeting(term)) return false
-    added = true
-  }
-  return added
-}
-
+export declare const narrows: (later: ReadonlyArray<string>, earlier: ReadonlyArray<string>) => boolean;
 /**
  * Finds the broadest check a completing frame narrowed and did not re-run.
  *
@@ -493,33 +371,14 @@ export const narrows = (
  * @category conversions
  * @since 0.1.0
  */
-export const find = (options: {
-  /** Checks this run ran before this frame, oldest first. */
-  readonly ledger: ReadonlyArray<Check>
-  /** Checks this frame ran. */
-  readonly frame: ReadonlyArray<Check>
-  /** The workspace digest this frame closed on; empty when unmeasured. */
-  readonly digest: string
-}): Narrowing | undefined => {
-  if (options.digest === "") return undefined
-  const reran = new Set(options.frame.map((entry) => entry.signature))
-  let found: Narrowing | undefined = undefined
-  for (const earlier of options.ledger) {
-    if (!earlier.declared) continue
-    if (reran.has(earlier.signature)) continue
-    if (earlier.digest === "") continue
-    if (earlier.digest === options.digest) continue
-    if (found !== undefined && found.earlier.terms.length < earlier.terms.length) continue
-    for (const later of options.frame) {
-      if (later.flow !== earlier.flow) continue
-      if (!narrows(later.terms, earlier.terms)) continue
-      found = { earlier, later }
-      break
-    }
-  }
-  return found
-}
-
+export declare const find: (options: {
+    /** Checks this run ran before this frame, oldest first. */
+    readonly ledger: ReadonlyArray<Check>;
+    /** Checks this frame ran. */
+    readonly frame: ReadonlyArray<Check>;
+    /** The workspace digest this frame closed on; empty when unmeasured. */
+    readonly digest: string;
+}) => Narrowing | undefined;
 /**
  * States which check a completion is standing on, and which one it is missing.
  *
@@ -537,9 +396,7 @@ export const find = (options: {
  * @category constructors
  * @since 0.1.0
  */
-export const demand = (found: Narrowing): string =>
-  DemandText.narrowed(found.earlier.flow, found.earlier.label, found.later.label)
-
+export declare const demand: (found: Narrowing) => string;
 /**
  * The reading a completion stands on, when the run holds no other reading of
  * what it names.
@@ -548,12 +405,11 @@ export const demand = (found: Narrowing): string =>
  * @since 0.1.0
  */
 export interface Only {
-  /** The last check the completing frame ran. */
-  readonly later: Check
-  /** The subjects it names, as {@link names} reads them, sorted. */
-  readonly targets: ReadonlyArray<string>
+    /** The last check the completing frame ran. */
+    readonly later: Check;
+    /** The subjects it names, as {@link names} reads them, sorted. */
+    readonly targets: ReadonlyArray<string>;
 }
-
 /**
  * Finds a completion standing on the run's only reading of its own subjects.
  *
@@ -639,40 +495,23 @@ export interface Only {
  * @category conversions
  * @since 0.1.0
  */
-export const findOnly = (options: {
-  /** Every check this run has run, this frame's included, oldest first. */
-  readonly ledger: ReadonlyArray<Check>
-  /** Signatures the run had already issued before this frame. */
-  readonly before: ReadonlyArray<string>
-  /** Checks this frame ran, in the order they settled. */
-  readonly frame: ReadonlyArray<Check>
-  /**
-   * The distinct terms of the text the run was handed — its teaching, its
-   * catalog, its task — as {@link terms} lexes it.
-   *
-   * The prefix of the run's own context window is that text and nothing else:
-   * nothing model-authored lands there, so a run cannot teach itself a term
-   * by using it.
-   */
-  readonly taught: ReadonlyArray<string>
-}): Only | undefined => {
-  const later = options.frame[options.frame.length - 1]
-  if (later === undefined || !later.declared) return undefined
-  const targets = later.terms.filter(names)
-  if (targets.length === 0) return undefined
-  if (later.conditions.length === 0) return undefined
-  if (options.before.includes(later.signature)) return undefined
-  const others = options.ledger.filter((entry) => entry.signature !== later.signature)
-  const covered = others.some((entry) => targets.every((target) => entry.terms.includes(target)))
-  if (covered) return undefined
-  const known = targets.every((target) => others.some((entry) => entry.terms.includes(target)))
-  if (!known) return undefined
-  const excused = new Set(options.taught)
-  for (const entry of others) for (const term of entry.terms) excused.add(term)
-  if (!later.conditions.some((term) => !excused.has(term))) return undefined
-  return { later, targets }
-}
-
+export declare const findOnly: (options: {
+    /** Every check this run has run, this frame's included, oldest first. */
+    readonly ledger: ReadonlyArray<Check>;
+    /** Signatures the run had already issued before this frame. */
+    readonly before: ReadonlyArray<string>;
+    /** Checks this frame ran, in the order they settled. */
+    readonly frame: ReadonlyArray<Check>;
+    /**
+     * The distinct terms of the text the run was handed — its teaching, its
+     * catalog, its task — as {@link terms} lexes it.
+     *
+     * The prefix of the run's own context window is that text and nothing else:
+     * nothing model-authored lands there, so a run cannot teach itself a term
+     * by using it.
+     */
+    readonly taught: ReadonlyArray<string>;
+}) => Only | undefined;
 /**
  * States that the completion has one reading of its subjects, and asks for the
  * other one.
@@ -686,9 +525,7 @@ export const findOnly = (options: {
  * @category constructors
  * @since 0.1.0
  */
-export const demandOnly = (found: Only): string =>
-  DemandText.narrowOnly(found.later.flow, found.later.label, found.targets)
-
+export declare const demandOnly: (found: Only) => string;
 /**
  * Folds this frame's checks into the run's ledger, newest last and bounded.
  *
@@ -700,32 +537,12 @@ export const demandOnly = (found: Only): string =>
  * @category conversions
  * @since 0.1.0
  */
-export const remember = (
-  ledger: ReadonlyArray<Check>,
-  added: ReadonlyArray<Check>
-): ReadonlyArray<Check> => {
-  const newest = new Map(ledger.map((entry) => [entry.signature, entry]))
-  for (const entry of added) {
-    const earlier = newest.get(entry.signature)
-    newest.delete(entry.signature)
-    // A call the run once declared as its check stays its check when the same
-    // call comes back through a copy of the input rather than the binding.
-    newest.set(
-      entry.signature,
-      earlier !== undefined && earlier.declared && !entry.declared ? new Check({ ...entry, declared: true }) : entry
-    )
-  }
-  const distinct = [...newest.values()]
-  return distinct.slice(Math.max(0, distinct.length - retained))
-}
-
+export declare const remember: (ledger: ReadonlyArray<Check>, added: ReadonlyArray<Check>) => ReadonlyArray<Check>;
 /**
  * The ledger schema carried in controller state.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const Ledger = Schema.Array(Check).pipe(
-  Schema.withConstructorDefault(Effect.succeed<ReadonlyArray<Check>>([])),
-  Schema.withDecodingDefaultKey(Effect.succeed<ReadonlyArray<Check>>([]))
-)
+export declare const Ledger: Schema.withDecodingDefaultKey<Schema.withConstructorDefault<Schema.$Array<typeof Check>>, never>;
+export {};

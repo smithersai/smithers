@@ -45,12 +45,8 @@
  *
  * @since 0.1.0
  */
-
-import type { Schema } from "effect"
-import * as DemandText from "./internal/demandText.ts"
-import type * as NarrowedCheck from "./NarrowedCheck.ts"
-import { targeting } from "./NarrowedCheck.ts"
-
+import type { Schema } from "effect";
+import type * as NarrowedCheck from "./NarrowedCheck.vibe";
 /**
  * The reserved key a flow reports its subject's exit status under.
  *
@@ -64,8 +60,7 @@ import { targeting } from "./NarrowedCheck.ts"
  * @category identifiers
  * @since 0.1.0
  */
-export const exitStatusKey = "exitCode"
-
+export declare const exitStatusKey = "exitCode";
 /**
  * Whether a settled call's result reports a failing exit status.
  *
@@ -77,11 +72,7 @@ export const exitStatusKey = "exitCode"
  * @category predicates
  * @since 0.1.0
  */
-export const failed = (value: Schema.Json): boolean => {
-  const status = exitStatus(value)
-  return status !== undefined && status !== 0
-}
-
+export declare const failed: (value: Schema.Json) => boolean;
 /**
  * The exit status a settled call's result reports about its subject, or
  * nothing where it reports none.
@@ -93,12 +84,7 @@ export const failed = (value: Schema.Json): boolean => {
  * @category getters
  * @since 1.0.0-rc.0
  */
-export const exitStatus = (value: Schema.Json): number | undefined => {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined
-  const status = (value as Record<string, unknown>)[exitStatusKey]
-  return typeof status === "number" ? status : undefined
-}
-
+export declare const exitStatus: (value: Schema.Json) => number | undefined;
 /**
  * Whether a settled call's result reports a passing exit status.
  *
@@ -111,8 +97,7 @@ export const exitStatus = (value: Schema.Json): number | undefined => {
  * @category predicates
  * @since 0.1.0
  */
-export const passed = (value: Schema.Json): boolean => exitStatus(value) === 0
-
+export declare const passed: (value: Schema.Json) => boolean;
 /**
  * A failing check, paired with the reading the run took in its place.
  *
@@ -120,12 +105,11 @@ export const passed = (value: Schema.Json): boolean => exitStatus(value) === 0
  * @since 0.1.0
  */
 export interface Displaced {
-  /** The check that reported a failure and was never re-run. */
-  readonly failed: NarrowedCheck.Check
-  /** A later check over the same tree that revisits its subject. */
-  readonly instead: NarrowedCheck.Check
+    /** The check that reported a failure and was never re-run. */
+    readonly failed: NarrowedCheck.Check;
+    /** A later check over the same tree that revisits its subject. */
+    readonly instead: NarrowedCheck.Check;
 }
-
 /**
  * Whether a later check asks about the same subject as an earlier one.
  *
@@ -151,22 +135,7 @@ export interface Displaced {
  * @category predicates
  * @since 0.1.0
  */
-export const revisits = (
-  later: NarrowedCheck.Check,
-  earlier: NarrowedCheck.Check
-): boolean => {
-  if (later.flow !== earlier.flow) return false
-  if (later.signature === earlier.signature) return false
-  const carried = new Set(later.terms)
-  let named = false
-  for (const term of earlier.terms) {
-    if (!targeting(term)) continue
-    named = true
-    if (!carried.has(term)) return false
-  }
-  return named
-}
-
+export declare const revisits: (later: NarrowedCheck.Check, earlier: NarrowedCheck.Check) => boolean;
 /**
  * Finds the failing check a completion replaced rather than answered.
  *
@@ -208,25 +177,12 @@ export const revisits = (
  * @category conversions
  * @since 0.1.0
  */
-export const find = (options: {
-  /** Every check this run has run, oldest first, this frame's included. */
-  readonly ledger: ReadonlyArray<NarrowedCheck.Check>
-  /** The workspace digest the completing frame closed on; empty when unmeasured. */
-  readonly digest: string
-}): Displaced | undefined => {
-  if (options.digest === "") return undefined
-  let found: Displaced | undefined = undefined
-  for (const [index, earlier] of options.ledger.entries()) {
-    if (!earlier.declared || !earlier.failing || !earlier.stable) continue
-    if (earlier.digest !== options.digest) continue
-    const instead = options.ledger.slice(index + 1).find((candidate) => revisits(candidate, earlier))
-    // Oldest first, keeping the last match: the ledger is ordered by when each
-    // check last ran, so the surviving pair names the most recent failure.
-    if (instead !== undefined) found = { failed: earlier, instead }
-  }
-  return found
-}
-
+export declare const find: (options: {
+    /** Every check this run has run, oldest first, this frame's included. */
+    readonly ledger: ReadonlyArray<NarrowedCheck.Check>;
+    /** The workspace digest the completing frame closed on; empty when unmeasured. */
+    readonly digest: string;
+}) => Displaced | undefined;
 /**
  * States which reading failed, which one replaced it, and what ends it.
  *
@@ -243,5 +199,4 @@ export const find = (options: {
  * @category constructors
  * @since 0.1.0
  */
-export const demand = (found: Displaced): string =>
-  DemandText.unresolved(found.failed.flow, found.failed.label, found.instead.label)
+export declare const demand: (found: Displaced) => string;

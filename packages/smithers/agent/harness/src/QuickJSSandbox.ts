@@ -38,9 +38,9 @@ import * as elide from "./internal/elide.ts"
 import * as printChannel from "./internal/printChannel.ts"
 import { refusal } from "./internal/refusal.ts"
 import * as QuickJSLifecycle from "./QuickJSLifecycle.ts"
-import * as QuickJSVariant from "./QuickJSVariant.ts"
+import * as QuickJSVariant from "./QuickJSVariant.vibe"
 import * as Sandbox from "./Sandbox.ts"
-import * as VariablesPanel from "./VariablesPanel.ts"
+import * as VariablesPanel from "./VariablesPanel.vibe"
 
 /**
  * Every intrinsic the host's own realm-side code reads, bound before a cell runs.
@@ -453,7 +453,7 @@ export {
    * @since 0.1.0
    */
   type VariantService
-} from "./QuickJSVariant.ts"
+} from "./QuickJSVariant.vibe"
 
 /**
  * Provides the single-file build, which Node and a browser both compile.

@@ -11,7 +11,7 @@
  */
 import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as NarrowedCheck from "../src/NarrowedCheck.ts"
+import * as NarrowedCheck from "../src/NarrowedCheck.vibe"
 import journals from "./fixtures/narrowingJournals.json" with { type: "json" }
 
 const command = (text: string): Schema.Json => ({ mode: "unhermetic", command: text })

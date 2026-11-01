@@ -186,8 +186,8 @@ import * as DemandText from "./internal/demandText.ts"
 import * as elide from "./internal/elide.ts"
 import { failedReading, paidTogether } from "./internal/paidUsage.ts"
 import * as Judgement from "./Judgement.ts"
-import * as NarrowedCheck from "./NarrowedCheck.ts"
-import * as UnresolvedFailure from "./UnresolvedFailure.ts"
+import * as NarrowedCheck from "./NarrowedCheck.vibe"
+import * as UnresolvedFailure from "./UnresolvedFailure.vibe"
 
 /**
  * The most of one check's result the brake sends, in UTF-8 bytes.

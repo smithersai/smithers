@@ -96,11 +96,8 @@
  *
  * @since 0.1.0
  */
-
-import { Schema } from "effect"
-import * as Effect from "effect/Effect"
-import type * as NarrowedCheck from "./NarrowedCheck.ts"
-
+import { Schema } from "effect";
+import type * as NarrowedCheck from "./NarrowedCheck.vibe";
 /**
  * How many pristine-tree passes one run carries forward.
  *
@@ -114,42 +111,37 @@ import type * as NarrowedCheck from "./NarrowedCheck.ts"
  * @category constants
  * @since 0.1.0
  */
-export const retained = 16
-
+export declare const retained = 16;
+declare const Pass_base: Schema.Class<Pass, Schema.Struct<{
+    /** The flow the call named. */
+    readonly flow: Schema.String;
+    /** The call's identity, as the controller's own signature names it. */
+    readonly signature: Schema.String;
+    /** The call's input as it was written, clipped, for the observation to quote. */
+    readonly label: Schema.String;
+}>, {}>;
 /**
  * One check that passed over the tree the run was handed.
  *
  * @category models
  * @since 0.1.0
  */
-export class Pass extends Schema.Class<Pass>("flows/harness/VacuousVerification/Pass")({
-  /** The flow the call named. */
-  flow: Schema.String,
-  /** The call's identity, as the controller's own signature names it. */
-  signature: Schema.String,
-  /** The call's input as it was written, clipped, for the observation to quote. */
-  label: Schema.String
-}) {}
-
+export declare class Pass extends Pass_base {
+}
 /**
  * The pristine-tree passes this run carries, oldest first and bounded.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const Ledger = Schema.Array(Pass).pipe(
-  Schema.withConstructorDefault(Effect.succeed<ReadonlyArray<Pass>>([])),
-  Schema.withDecodingDefaultKey(Effect.succeed<ReadonlyArray<Pass>>([]))
-)
-
+export declare const Ledger: Schema.withDecodingDefaultKey<Schema.withConstructorDefault<Schema.$Array<typeof Pass>>, never>;
 /**
  * The pristine-tree passes this run carries, oldest first and bounded.
  *
  * @category models
  * @since 0.1.0
  */
-export type Ledger = typeof Ledger.Type
-
+export type Ledger = typeof Ledger.Type;
 /**
  * Records one frame's passing checks, but only while the tree is untouched.
  *
@@ -184,33 +176,14 @@ export type Ledger = typeof Ledger.Type
  * @category combinators
  * @since 0.1.0
  */
-export const remember = (
-  ledger: Ledger,
-  options: {
+export declare const remember: (ledger: Ledger, options: {
     /** The checks this frame ran. */
-    readonly frame: ReadonlyArray<NarrowedCheck.Check>
+    readonly frame: ReadonlyArray<NarrowedCheck.Check>;
     /** Frames that had changed the workspace before this one. */
-    readonly epoch: number
+    readonly epoch: number;
     /** Signatures this run has watched fail over the tree it was handed. */
-    readonly failed: ReadonlyArray<string>
-  }
-): Ledger => {
-  const refused = new Set(options.failed)
-  const kept = new Map(
-    ledger.filter((entry) => !refused.has(entry.signature)).map((entry) => [entry.signature, entry])
-  )
-  if (options.epoch === 0) {
-    for (const check of options.frame) {
-      if (!check.passing || !check.stable) continue
-      if (refused.has(check.signature)) continue
-      if (kept.has(check.signature)) continue
-      kept.set(check.signature, new Pass({ flow: check.flow, signature: check.signature, label: check.label }))
-    }
-  }
-  const distinct = [...kept.values()]
-  return distinct.slice(Math.max(0, distinct.length - retained))
-}
-
+    readonly failed: ReadonlyArray<string>;
+}) => Ledger;
 /**
  * The `{ flow, input }` pair a cell stored as its verification, if it stored
  * one this module can read.
@@ -224,18 +197,10 @@ export const remember = (
  * @category conversions
  * @since 0.1.0
  */
-export const stored = (
-  agentState: Schema.Json
-): { readonly flow: string; readonly input: Schema.Json } | undefined => {
-  if (agentState === null || typeof agentState !== "object" || Array.isArray(agentState)) return undefined
-  const declared = (agentState as Record<string, Schema.Json>)["verification"]
-  if (declared === null || declared === undefined || typeof declared !== "object" || Array.isArray(declared)) {
-    return undefined
-  }
-  const { flow, input } = declared as Record<string, Schema.Json>
-  return typeof flow === "string" && input !== undefined ? { flow, input } : undefined
-}
-
+export declare const stored: (agentState: Schema.Json) => {
+    readonly flow: string;
+    readonly input: Schema.Json;
+} | undefined;
 /**
  * Finds the pristine-tree pass a stored verification is standing on.
  *
@@ -249,18 +214,14 @@ export const stored = (
  * @category conversions
  * @since 0.1.0
  */
-export const find = (options: {
-  /** Checks that passed over the tree the run was handed, oldest first. */
-  readonly ledger: Ledger
-  /** The signature of the `{ flow, input }` the cell stored. */
-  readonly signature: string
-  /** Verification signatures this run has already been told about. */
-  readonly stated: ReadonlyArray<string>
-}): Pass | undefined => {
-  if (options.stated.includes(options.signature)) return undefined
-  return options.ledger.find((entry) => entry.signature === options.signature)
-}
-
+export declare const find: (options: {
+    /** Checks that passed over the tree the run was handed, oldest first. */
+    readonly ledger: Ledger;
+    /** The signature of the `{ flow, input }` the cell stored. */
+    readonly signature: string;
+    /** Verification signatures this run has already been told about. */
+    readonly stated: ReadonlyArray<string>;
+}) => Pass | undefined;
 /**
  * States that the stored proof was already green before anything changed.
  *
@@ -273,10 +234,5 @@ export const find = (options: {
  * @category constructors
  * @since 0.1.0
  */
-export const observation = (found: Pass): string =>
-  `Vacuous verification — the check you stored as \`state.verification\` is a check this run already watched PASS on the unmodified tree, before any frame of it changed a byte.
-
-- the stored check: ${found.flow} ${found.label}
-- what this run saw it do on the tree it was handed: exit 0
-
-Re-running it after your edit cannot show your change did anything: it reads identically on a broken tree and on a fixed one, so a green result after the edit is the same green result as before it. A proof is a check you have watched FAIL and then watched pass. Nothing is being asked of you and nothing has been refused — if this command is genuinely the only observable the task has, keep it and say in your output that it never failed and why. Otherwise the reading you still need is one that is red right now. This notice is written once per distinct verification.`
+export declare const observation: (found: Pass) => string;
+export {};

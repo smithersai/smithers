@@ -11,7 +11,7 @@ import { Clock, Context, Effect, Layer, Schema } from "effect"
 import * as AgentEvent from "./AgentEvent.ts"
 import type { HarnessError } from "./HarnessError.ts"
 import * as compactionMarks from "./internal/compactionMarks.ts"
-import * as Monitor from "./Monitor.ts"
+import * as Monitor from "./Monitor.vibe"
 
 /**
  * The boundary at which a transcript insertion may be promoted.

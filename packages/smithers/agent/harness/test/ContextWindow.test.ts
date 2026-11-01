@@ -5,7 +5,7 @@ import * as Result from "effect/Result"
 import { readFileSync } from "node:fs"
 import { describe, expect, expectTypeOf, it } from "vitest"
 import * as ContextWindow from "../src/ContextWindow.ts"
-import * as Tokens from "../src/Tokens.ts"
+import * as Tokens from "../src/Tokens.vibe"
 
 const system = Request.SystemPart.make({ text: "Be concise." })
 const tool = Request.ToolDefinition.make({ name: "read", description: "Read", parameters: {} })
