@@ -8,7 +8,7 @@ const cwd = "packages/smithers/mcp"
 // they key the same targets as the sources; the server they spawn is test data.
 const standard = BuildAndCheckTypeScriptPackage({
   cwd,
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   testData: ["examples/**/*.mjs"]
 })
 
@@ -112,8 +112,8 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/StdioTransport.ts",
         "src/McpClient.ts",
         "src/McpFlows.ts",
-        "src/internal/DiagnosticReporter.ts",
-        "src/McpError.ts"
+        "src/internal/DiagnosticReporter.vibe",
+        "src/McpError.vibe"
       ]
     },
     {

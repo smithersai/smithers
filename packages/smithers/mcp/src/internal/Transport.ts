@@ -7,7 +7,7 @@
  */
 
 import { Effect, Stream } from "effect"
-import { McpError } from "../McpError.ts"
+import { McpError } from "../McpError.vibe"
 import * as Limits from "./Limits.ts"
 import type * as Rpc from "./Rpc.ts"
 

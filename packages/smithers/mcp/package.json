@@ -38,9 +38,15 @@
     ".": "./src/index.ts",
     "./internal/*": null,
     "./*/index": null,
-    "./Diagnostics": "./src/Diagnostics.ts",
+    "./Diagnostics": {
+      "types": "./src/Diagnostics.d.vibe.ts",
+      "default": "./src/Diagnostics.vibe"
+    },
     "./McpClient": "./src/McpClient.ts",
-    "./McpError": "./src/McpError.ts",
+    "./McpError": {
+      "types": "./src/McpError.d.vibe.ts",
+      "default": "./src/McpError.vibe"
+    },
     "./McpFlows": "./src/McpFlows.ts",
     "./index": "./src/index.ts"
   },

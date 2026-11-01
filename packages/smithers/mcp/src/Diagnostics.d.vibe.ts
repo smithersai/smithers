@@ -4,10 +4,8 @@
  *
  * @since 1.0.0-rc.0
  */
-
-import { Context, Layer } from "effect"
-import type { Redacted } from "effect"
-
+import { Context, Layer } from "effect";
+import type { Redacted } from "effect";
 /**
  * One bounded diagnostic from a connection. Detail can contain credentials,
  * private tool arguments, or arbitrary server text. Only an explicitly trusted
@@ -17,13 +15,15 @@ import type { Redacted } from "effect"
  * @since 1.0.0-rc.0
  */
 export interface Event {
-  readonly server: string
-  readonly source: "spawn" | "stderr" | "transport" | "remote-error" | "invalid-response" | "invalid-arguments"
-  /** At most 16 KiB of UTF-8 text; never the original unbounded value. */
-  readonly detail: Redacted.Redacted<string>
-  readonly truncated: boolean
+    readonly server: string;
+    readonly source: "spawn" | "stderr" | "transport" | "remote-error" | "invalid-response" | "invalid-arguments";
+    /** At most 16 KiB of UTF-8 text; never the original unbounded value. */
+    readonly detail: Redacted.Redacted<string>;
+    readonly truncated: boolean;
 }
-
+declare const Diagnostics_base: Context.ServiceClass<Diagnostics, "@smthrs/mcp/Diagnostics", {
+    readonly report: (event: Event) => void;
+}>;
 /**
  * Optional diagnostic observer, captured when a connection is opened. The
  * synchronous callback must not block; throws are isolated from the protocol.
@@ -32,10 +32,8 @@ export interface Event {
  * @category services
  * @since 1.0.0-rc.0
  */
-export class Diagnostics extends Context.Service<Diagnostics, {
-  readonly report: (event: Event) => void
-}>()("@smthrs/mcp/Diagnostics") {}
-
+export declare class Diagnostics extends Diagnostics_base {
+}
 /**
  * Installs a trusted host observer. Inspecting detail requires an explicit
  * `Redacted.value` call and responsibility for its destination and retention.
@@ -43,5 +41,5 @@ export class Diagnostics extends Context.Service<Diagnostics, {
  * @category layers
  * @since 1.0.0-rc.0
  */
-export const layer = (report: (event: Event) => void): Layer.Layer<Diagnostics> =>
-  Layer.succeed(Diagnostics)({ report })
+export declare const layer: (report: (event: Event) => void) => Layer.Layer<Diagnostics>;
+export {};
