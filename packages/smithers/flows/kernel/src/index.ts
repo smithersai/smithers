@@ -72,7 +72,7 @@ export * as FileSystem from "./FileSystem.ts"
  * @category namespace exports
  * @since 1.0.0-rc.0
  */
-export * as GrantEvent from "./GrantEvent.ts"
+export * as GrantEvent from "./GrantEvent.vibe"
 
 /**
  * Attended and unattended grant-store services.
@@ -178,4 +178,4 @@ export * as ProcessConfinement from "./ProcessConfinement.ts"
  * @category namespace exports
  * @since 1.0.0
  */
-export * as Unreachable from "./Unreachable.ts"
+export * as Unreachable from "./Unreachable.vibe"

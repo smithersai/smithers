@@ -43,7 +43,10 @@
     "./CommandLine": "./src/CommandLine.ts",
     "./ContainedSpawner": "./src/ContainedSpawner.ts",
     "./FileSystem": "./src/FileSystem.ts",
-    "./GrantEvent": "./src/GrantEvent.ts",
+    "./GrantEvent": {
+      "types": "./.vibe/declarations/src/GrantEvent.d.vibe.ts",
+      "default": "./src/GrantEvent.vibe"
+    },
     "./GrantStore": "./src/GrantStore.ts",
     "./HostError": "./src/HostError.ts",
     "./HostServices": "./src/HostServices.ts",
@@ -59,7 +62,10 @@
     "./test/TestGrantStore": "./src/test/TestGrantStore.ts",
     "./ChildProcessEnvironment": "./src/ChildProcessEnvironment.ts",
     "./ProcessConfinement": "./src/ProcessConfinement.ts",
-    "./Unreachable": "./src/Unreachable.ts"
+    "./Unreachable": {
+      "types": "./.vibe/declarations/src/Unreachable.d.vibe.ts",
+      "default": "./src/Unreachable.vibe"
+    }
   },
   "files": [
     "src/**/*.ts",

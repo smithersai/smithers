@@ -33,7 +33,7 @@ import {
 import { digestSync } from "@smthrs/crypto/Sha256"
 import { Cause, Context, Deferred, Effect, Layer, Option, Schema, type Scope, Semaphore } from "effect"
 import { allows, type CapabilitySet, current, fromPatterns, intersect } from "./CapabilitySet.ts"
-import { DeniedGrant, EnvelopeGrant, type GrantEvent, OnceGrant, RememberedGrant, RunGrant } from "./GrantEvent.ts"
+import { DeniedGrant, EnvelopeGrant, type GrantEvent, OnceGrant, RememberedGrant, RunGrant } from "./GrantEvent.vibe"
 import { Workspace } from "./Workspace.ts"
 
 /**

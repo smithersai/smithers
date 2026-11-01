@@ -16,7 +16,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as Semaphore from "effect/Semaphore"
-import { decode, type GrantEvent, GrantEventSchema } from "./GrantEvent.ts"
+import { decode, type GrantEvent, GrantEventSchema } from "./GrantEvent.vibe"
 import * as GrantStore from "./GrantStore.ts"
 import { Workspace } from "./Workspace.ts"
 
