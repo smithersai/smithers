@@ -1,7 +1,7 @@
 import type { ControlSchema } from "@smthrs/control"
 import { describe, expect, it } from "vitest"
 import * as Projection from "../src/GatewayProjection.ts"
-import { nativeCallEvent, uniqueCallEvents } from "../src/internal/callEvents.ts"
+import { nativeCallEvent, uniqueCallEvents } from "../src/internal/callEvents.vibe"
 
 const identity = (ordinal = 0) => ({
   runId: "run",

@@ -41,7 +41,7 @@ import * as Diagnosis from "./Diagnosis.ts"
 import { GatewayError, settingRefusal } from "./GatewayError.ts"
 import * as GatewayProjection from "./GatewayProjection.ts"
 import * as GatewaySchema from "./GatewaySchema.ts"
-import { callEventKey, nativeCallEvent, nativeStepEvent } from "./internal/callEvents.ts"
+import { callEventKey, nativeCallEvent, nativeStepEvent } from "./internal/callEvents.vibe"
 import { retainedDigestBytes } from "./internal/digestMemory.ts"
 import * as NativeResolution from "./internal/nativeResolution.ts"
 

@@ -23,7 +23,7 @@ import { Schema } from "effect"
 import { callScope, openCallIndex } from "./Diagnosis.ts"
 import { engineExecutionEvidence, engineTraceFromJournal } from "./EngineTrace.ts"
 import { ACTION_RENDERINGS } from "./internal/actionRenderings.ts"
-import { type CallEventFilter, callEventFilter, nativeStepEvent, uniqueCallEvents } from "./internal/callEvents.ts"
+import { type CallEventFilter, callEventFilter, nativeStepEvent, uniqueCallEvents } from "./internal/callEvents.vibe"
 import { inspectLabel } from "./internal/inspectLabels.ts"
 
 export { inspectLabel } from "./internal/inspectLabels.ts"
