@@ -25,7 +25,7 @@ import { homedir, tmpdir } from "node:os"
 import { basename, dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { inside, usableExecutable } from "./AtomicFileSystemTransport.ts"
-import { AtomicHelperError } from "./AtomicHelperError.ts"
+import { AtomicHelperError } from "./AtomicHelperError.vibe"
 
 /* v8 ignore next -- the packed CJS consumer uses its loader's __dirname; source tests use the ESM loader */
 const moduleDirectory = typeof __dirname === "string" ? __dirname : dirname(fileURLToPath(import.meta.url))

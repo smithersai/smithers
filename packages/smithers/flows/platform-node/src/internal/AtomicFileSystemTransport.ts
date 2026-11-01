@@ -13,7 +13,7 @@ import { accessSync, constants, lstatSync, readlinkSync, realpathSync, statSync 
 import { basename, dirname, isAbsolute, join, parse, relative, sep } from "node:path"
 import type { Limits } from "../AtomicFileSystem.ts"
 import { convert, decode, failure, frameHeaderBytes, type HelperResult } from "./AtomicFileSystemProtocol.ts"
-import { AtomicHelperError } from "./AtomicHelperError.ts"
+import { AtomicHelperError } from "./AtomicHelperError.vibe"
 import { atomicHelperFault } from "./AtomicHelperFault.vibe"
 
 let startedHelpers = 0
