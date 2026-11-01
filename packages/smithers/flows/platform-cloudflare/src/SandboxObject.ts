@@ -33,7 +33,7 @@ import * as Effect from "effect/Effect"
 import * as Metric from "effect/Metric"
 import * as Schema from "effect/Schema"
 import type * as ContainerTerminal from "./ContainerTerminal.ts"
-import * as Observed from "./internal/Observed.ts"
+import * as Observed from "./internal/Observed.vibe"
 
 /**
  * The slice of an Effect container client {@link wake} uses.

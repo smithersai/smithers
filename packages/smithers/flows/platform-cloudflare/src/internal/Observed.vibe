@@ -7,9 +7,7 @@
 
 import { RetryPolicy } from "@smthrs/flow"
 import * as Cause from "effect/Cause"
-import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
-import * as Exit from "effect/Exit"
 import * as Metric from "effect/Metric"
 
 /**
@@ -34,7 +32,7 @@ export const failureType = (cause: Cause.Cause<unknown>): string =>
  * @since 1.0.0-rc.17
  */
 export const observed = <A extends string, E, R>(
-  effect: Effect.Effect<A, E, R>,
+  effect: A!E!R,
   options: {
     readonly span: string
     readonly attributes: Record<string, unknown>
@@ -42,22 +40,18 @@ export const observed = <A extends string, E, R>(
     readonly counter: Metric.Metric<number, Metric.CounterState<number>>
     readonly log: string
   }
-): Effect.Effect<A, E, R> =>
+): A!E!R =>
   Effect.flatMap(Clock.currentTimeMillis, (startedAt) =>
-    effect.pipe(
-      Effect.exit,
-      Effect.tap((exit) =>
-        Effect.gen(function*() {
-          const outcome = Exit.isSuccess(exit) ? exit.value : "failed"
-          const failure = Exit.isFailure(exit) ? { "error.type": failureType(exit.cause) } : {}
-          const durationMs = (yield* Clock.currentTimeMillis) - startedAt
-          yield* Effect.annotateCurrentSpan({ [options.attribute]: outcome, ...failure })
-          yield* Metric.update(Metric.withAttributes(options.counter, { outcome }), 1)
-          yield* (Exit.isFailure(exit) ? Effect.logWarning : Effect.logInfo)(options.log).pipe(
-            Effect.annotateLogs({ outcome, durationMs, ...failure })
-          )
-        })
-      ),
-      Effect.withSpan(options.span, { attributes: options.attributes }),
-      Effect.flatMap((exit) => exit)
-    ))
+    effect
+    |> Effect.exit(%)
+    |> Effect.tap(%, effect (exit) => {
+      const outcome = Exit.isSuccess(exit) ? exit.value : "failed"
+      const failure = Exit.isFailure(exit) ? { "error.type": failureType(exit.cause) } : {}
+      const durationMs = (try Clock.currentTimeMillis) - startedAt
+      try Effect.annotateCurrentSpan({ [options.attribute]: outcome, ...failure })
+      try Metric.update(Metric.withAttributes(options.counter, { outcome }), 1)
+      try ((Exit.isFailure(exit) ? Effect.logWarning : Effect.logInfo)(options.log)
+        |> Effect.annotateLogs({ outcome, durationMs, ...failure })(%))
+    })
+    |> Effect.withSpan(%, options.span, { attributes: options.attributes })
+    |> Effect.flatMap(%, (exit) => exit))
