@@ -10,10 +10,7 @@
  */
 
 import type * as Path from "@smthrs/kernel/Path"
-import { Effect, Option, Stream } from "effect"
-import * as ByteSize from "effect/ByteSize"
 import * as FileSystem from "effect/FileSystem"
-import * as PlatformError from "effect/PlatformError"
 import * as Tar from "./Tar.ts"
 
 /**
@@ -84,7 +81,7 @@ export const parse = (bytes: Uint8Array, root: string, path: Path.Path): Tree | 
   return ignores === undefined ? undefined : { kinds: listed, children, contents: absolute(ignores) }
 }
 
-const refusal = (tag: PlatformError.SystemErrorTag, method: string, path: string): PlatformError.PlatformError =>
+const refusal = (tag: PlatformError.SystemErrorTag, method: string, path: string): PlatformError =>
   PlatformError.systemError({ _tag: tag, module: "FileSystem", method, pathOrDescriptor: path })
 
 /** What `stat` says each kind is: links resolved, a dangling one absent. */
@@ -95,7 +92,7 @@ const types: Readonly<Record<Kind, FileSystem.File.Type | undefined>> = {
   f: "File",
   F: "File",
   o: "Unknown",
-  L: undefined
+  L: undefined,
 }
 
 const info = (type: FileSystem.File.Type, size: number): FileSystem.File.Info => ({
@@ -112,7 +109,7 @@ const info = (type: FileSystem.File.Type, size: number): FileSystem.File.Info =>
   gid: Option.none(),
   rdev: Option.none(),
   blksize: Option.none(),
-  blocks: Option.none()
+  blocks: Option.none(),
 })
 
 /**
@@ -127,33 +124,35 @@ export const fileSystem = (tree: Tree, path: Path.Path): FileSystem.FileSystem =
   const kindOf = (value: string) => tree.kinds.get(path.resolve(value))
   const readFile = (value: string) => {
     const bytes = tree.contents.get(path.resolve(value))
-    if (bytes !== undefined) return Effect.succeed(bytes)
+    if (bytes !== undefined) return bytes
     const type = types[kindOf(value) ?? "L"]
-    return Effect.fail(
-      refusal(type === "File" ? "PermissionDenied" : type === undefined ? "NotFound" : "BadResource", "readFile", value)
+    throw refusal(
+      type === "File" ? "PermissionDenied" : type === undefined ? "NotFound" : "BadResource",
+      "readFile",
+      value,
     )
   }
   return FileSystem.makeNoop({
     stat: (value) => {
       const type = types[kindOf(value) ?? "L"]
       return type === undefined
-        ? Effect.fail(refusal("NotFound", "stat", value))
-        : Effect.succeed(info(type, tree.contents.get(path.resolve(value))?.length ?? 0))
+        ? throw refusal("NotFound", "stat", value)
+        : info(type, tree.contents.get(path.resolve(value))?.length ?? 0)
     },
     readDirectory: (value) => {
       const kind = kindOf(value)
-      if (kind === "d") return Effect.succeed([...tree.children.get(path.resolve(value)) ?? []])
+      if (kind === "d") return [...tree.children.get(path.resolve(value)) ?? []]
       const tag = kind === "u" ? "PermissionDenied" : kind === undefined || kind === "L" ? "NotFound" : "BadResource"
-      return Effect.fail(refusal(tag, "readDirectory", value))
+      throw refusal(tag, "readDirectory", value)
     },
     readLink: (value) => {
       const kind = kindOf(value)
       return kind === "D" || kind === "F" || kind === "L"
-        ? Effect.succeed("")
-        : Effect.fail(refusal(kind === undefined ? "NotFound" : "BadResource", "readLink", value))
+        ? ""
+        : throw refusal(kind === undefined ? "NotFound" : "BadResource", "readLink", value)
     },
     readFile,
     readFileString: (value) => Effect.map(readFile(value), (bytes) => new TextDecoder().decode(bytes)),
-    stream: (value) => Stream.fromEffect(readFile(value))
+    stream: (value) => Stream.fromEffect(readFile(value)),
   })
 }
