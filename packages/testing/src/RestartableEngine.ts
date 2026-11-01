@@ -12,7 +12,7 @@ import {
   type EngineSubject as EngineSubjectService,
   EngineSubject as EngineSubjectTag,
   type ExecutionResult
-} from "./EngineSubject.ts"
+} from "./EngineSubject.vibe"
 import { type EngineStore, make as makeMemoryEngine, makeStore } from "./MemoryEngine.ts"
 import type { EngineSubjectError, EngineUnavailableError } from "./TestingError.ts"
 

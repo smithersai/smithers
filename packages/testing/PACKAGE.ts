@@ -123,7 +123,7 @@ const securityReview = Smithers.SecurityReview({
         "src/TestingError.ts",
         "src/RecordedModel.ts",
         "src/PlanAssertions.ts",
-        "src/JournalAssertions.ts",
+        "src/JournalAssertions.vibe",
         "src/Divergence.ts",
         "src/internal/ScoreSuite.ts"
       ]

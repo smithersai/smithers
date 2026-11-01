@@ -7,8 +7,8 @@
  */
 
 import * as Effect from "effect/Effect"
-import type { ConformanceCase } from "../Conformance.ts"
-import type { FlowSpec, JournalEntryLike } from "../EngineSubject.ts"
+import type { ConformanceCase } from "../Conformance.vibe"
+import type { FlowSpec, JournalEntryLike } from "../EngineSubject.vibe"
 import { assert, invoke } from "../internal/Pin.ts"
 import { same } from "../internal/Structural.ts"
 

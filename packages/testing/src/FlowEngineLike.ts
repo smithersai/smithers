@@ -43,7 +43,7 @@ import {
   type FlowSpec,
   type JournalEntryLike,
   type StepSpec
-} from "./EngineSubject.ts"
+} from "./EngineSubject.vibe"
 import { conflict, type ExecutionConflict } from "./internal/Execution.ts"
 import type { EngineSubjectError } from "./TestingError.ts"
 import { EngineUnavailableError } from "./TestingError.ts"
