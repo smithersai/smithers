@@ -27,7 +27,7 @@ const cwd = "packages/smithers/ui"
 
 /** The component sources the suite drives. */
 const sources = [
-  Smithers.glob("//packages/smithers/ui/src/**/*.ts"),
+  Smithers.glob("//packages/smithers/ui/src/**/*.{ts,vibe}"),
   Smithers.glob("//packages/smithers/ui/src/**/*.tsx")
 ]
 
@@ -141,7 +141,7 @@ const docs = Smithers.DocsParity({
  * glob in another package cannot reach them; a label can.
  */
 const sourceFiles = Smithers.Filegroup({
-  srcs: [Smithers.glob("src/**/*.ts"), Smithers.glob("src/**/*.tsx")],
+  srcs: [Smithers.glob("src/**/*.{ts,vibe}"), Smithers.glob("src/**/*.tsx")],
   cwd
 })
 

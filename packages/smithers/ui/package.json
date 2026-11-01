@@ -82,14 +82,14 @@
       "default": "./src/app-operations/index.ts"
     },
     "./app-operations/wiki": {
-      "types": "./src/app-operations/wiki.ts",
-      "import": "./src/app-operations/wiki.ts",
-      "default": "./src/app-operations/wiki.ts"
+      "types": "./src/app-operations/wiki.d.vibe.ts",
+      "import": "./src/app-operations/wiki.vibe",
+      "default": "./src/app-operations/wiki.vibe"
     },
     "./app-operations/http": {
-      "types": "./src/app-operations/http.ts",
-      "import": "./src/app-operations/http.ts",
-      "default": "./src/app-operations/http.ts"
+      "types": "./src/app-operations/http.d.vibe.ts",
+      "import": "./src/app-operations/http.vibe",
+      "default": "./src/app-operations/http.vibe"
     },
     "./command-line": {
       "types": "./src/command-line.ts",
@@ -121,8 +121,8 @@
       "default": "./src/adapters/code-editor/index.tsx"
     },
     "./app-operations/controls": {
-      "types": "./src/app-operations/controls.ts",
-      "default": "./src/app-operations/controls.ts"
+      "types": "./src/app-operations/controls.d.vibe.ts",
+      "default": "./src/app-operations/controls.vibe"
     }
   },
   "files": [
