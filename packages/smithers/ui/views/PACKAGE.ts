@@ -15,7 +15,7 @@ const cwd = "packages/smithers/ui/views"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [harnessPackage.lib, cryptoPackage.lib, flowPackage.lib],
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd
 })
 
