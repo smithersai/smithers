@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { existsSync, readFileSync } from "node:fs"
 import { ExecutionIdentityConflict } from "../src/FlowEngine/layerMemory.ts"
-import { SnapshotBoundaryRequired } from "../src/FlowEngine/SnapshotBoundary.ts"
+import { SnapshotBoundaryRequired } from "../src/FlowEngine/SnapshotBoundary.vibe"
 import { FlowNotRegistered, SuspendedResumeGaveUp } from "../src/FlowEngine/Trampoline.ts"
 import { FlowEngine } from "../src/index.ts"
 
@@ -27,7 +27,7 @@ const refusals = [
   },
   {
     name: "SnapshotBoundaryRequired",
-    owner: "../src/FlowEngine/SnapshotBoundary.ts",
+    owner: "../src/FlowEngine/SnapshotBoundary.vibe",
     tag: "@smthrs/engine/SnapshotBoundaryRequired",
     declared: SnapshotBoundaryRequired
   },

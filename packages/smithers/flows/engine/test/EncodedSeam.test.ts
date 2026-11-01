@@ -14,7 +14,7 @@ const Remote = Flow.make("seam/remote", { payload: {}, body: () => Noop.call({})
 )
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8")
-const source = read("../src/FlowEngine/Encoded.ts")
+const source = read("../src/FlowEngine/Encoded.vibe")
 const reference = read("../docs/reference/engine.md")
 
 const interfaceStart = source.indexOf("export interface Encoded {")

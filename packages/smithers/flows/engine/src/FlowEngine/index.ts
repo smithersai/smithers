@@ -14,7 +14,7 @@
  */
 export { ActionKeyEncoding, type KeyEncoding, keyEncodings } from "./ActionKey.ts"
 export * from "./Authority.ts"
-export * from "./Encoded.ts"
+export * from "./Encoded.vibe"
 export * from "./FlowInstance.vibe"
 export * from "./layerMemory.ts"
 /**
@@ -28,7 +28,7 @@ export * from "./make.ts"
  * @since 0.1.0
  */
 export * as Round from "./Round.ts"
-export * from "./SnapshotBoundary.ts"
+export * from "./SnapshotBoundary.vibe"
 /**
  * The trampoline hosts the loop that raises these two refusals; the loop
  * itself is engine-private, so only the refusals are published.

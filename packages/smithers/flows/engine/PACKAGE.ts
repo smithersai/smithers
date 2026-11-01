@@ -206,8 +206,8 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/FlowEngine/make.ts",
         "src/FlowEngine/Dispatch.ts",
-        "src/FlowEngine/Encoded.ts",
-        "src/FlowEngine/SnapshotBoundary.ts"
+        "src/FlowEngine/Encoded.vibe",
+        "src/FlowEngine/SnapshotBoundary.vibe"
       ]
     },
     {

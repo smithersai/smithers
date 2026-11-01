@@ -19,11 +19,11 @@ export class SnapshotBoundaryRequired extends Schema.TaggedError<SnapshotBoundar
   "@smthrs/engine/SnapshotBoundaryRequired",
   {
     code: Schema.Literal("snapshot_boundary_required").pipe(
-      Schema.withConstructorDefault(Effect.succeed("snapshot_boundary_required"))
+      Schema.withConstructorDefault(Effect.succeed("snapshot_boundary_required")),
     ),
     actionName: Schema.String,
-    message: Schema.String
-  }
+    message: Schema.String,
+  },
 ) {}
 
 /**
@@ -46,17 +46,15 @@ export interface SnapshotBoundaryOptions {
  * @category services
  * @since 0.1.0
  */
-export class SnapshotBoundary extends Context.Service<
-  SnapshotBoundary,
-  {
-    readonly snapshot: (options: SnapshotBoundaryOptions) => Effect.Effect<unknown>
-    readonly restore: (
-      snapshot: unknown,
-      options: SnapshotBoundaryOptions
-    ) => Effect.Effect<void>
-    readonly diff: (
-      snapshot: unknown,
-      options: SnapshotBoundaryOptions
-    ) => Effect.Effect<unknown>
-  }
->()("@smthrs/engine/FlowEngine/SnapshotBoundary") {}
+export service SnapshotBoundary {
+  static readonly key = "@smthrs/engine/FlowEngine/SnapshotBoundary"
+  snapshot: (options: SnapshotBoundaryOptions) => unknown!!
+  restore: (
+    snapshot: unknown,
+    options: SnapshotBoundaryOptions,
+  ) => void!!
+  diff: (
+    snapshot: unknown,
+    options: SnapshotBoundaryOptions,
+  ) => unknown!!
+}
