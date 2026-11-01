@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import {
   Button,
+  Card,
   EmptyState,
   JsonValue,
   RunHeader,
@@ -45,7 +46,7 @@ export function RunPageView({ fromRuns = false }: { readonly fromRuns?: boolean 
       startedAtMs={Date.parse(known.createdAt)} finishedAtMs={known.status === "running" ? null : Date.parse(known.updatedAt)}
       now={view.now ?? Date.now()} />
   }
-  if (page.state !== "read") return <EmptyState title={missingOf(page, view.repo != null)} />
+  if (page.state !== "read") return <Card className="run-page-missing"><EmptyState title={missingOf(page, view.repo != null)} /></Card>
   return <ReadRunPage page={page} view={view} actions={actions} fromRuns={fromRuns} />
 }
 
@@ -84,6 +85,7 @@ function ReadRunPage({ page, view, actions, fromRuns }: { page: RunPage; view: R
       } else if (event.key === "Escape") actions.showInspector(false)
       else if (event.key === "i" && shown !== undefined) { event.preventDefault(); actions.inspectStep(shown.row.id) }
     }}>
+      <Card className="run-page-summary">
       <RunHeader
         title={runTitle(run)}
         state={headerStatusOf(run)}
@@ -111,6 +113,7 @@ function ReadRunPage({ page, view, actions, fromRuns }: { page: RunPage; view: R
         <JsonValue label="Input" value={run.input} />
         {run.result === null ? null : <JsonValue label="Result" value={run.result} />}
       </div>
+      </Card>
       <Tabs value={view.tab} onValueChange={(tab) => actions.showTab(tab as RunTab)}>
         <TabsList>
           <TabsTrigger value="steps" count={steps.length}>Steps</TabsTrigger>
@@ -134,11 +137,14 @@ function ReadRunPage({ page, view, actions, fromRuns }: { page: RunPage; view: R
                 )} />
             )}
           </div>
-          <RunWaterfall steps={graph.timeline.map((step) => step.row)} now={graph.time}
-            cursorMs={at === null ? undefined : graph.time} selected={shown?.row.id ?? null} onSelect={actions.select}
-            segments={graph.segments} />
+          <Card className="run-page-waterfall">
+            <RunWaterfall steps={graph.timeline.map((step) => step.row)} now={graph.time}
+              cursorMs={at === null ? undefined : graph.time} selected={shown?.row.id ?? null} onSelect={actions.select}
+              segments={graph.segments} />
+          </Card>
         </TabsContent>
         <TabsContent value="timeline">
+          <Card className="run-page-waterfall">
           <RunWaterfall
             steps={graph.timeline.map((step) => step.row)}
             now={graph.time}
@@ -147,6 +153,7 @@ function ReadRunPage({ page, view, actions, fromRuns }: { page: RunPage; view: R
             selected={shown?.row.id ?? null}
             onSelect={actions.select}
           />
+          </Card>
         </TabsContent>
         <TabsContent value="journal">
           <RunJournal events={journalOf(page)} originMs={run.createdAtMs} hasMore={page.hasMore} onMore={actions.more} />
