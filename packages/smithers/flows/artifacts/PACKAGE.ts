@@ -5,9 +5,11 @@ import { BuildAndCheckTypeScriptPackage, SdkRules } from "@smthrs/repo-targets"
  * `cwd` anchors every emitted tool run in this package directory.
  */
 import { Smithers } from "@smthrs/targets"
+import * as Input from "@smthrs/targets/Input"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  entry: Input.file("src/index.vibe"),
   cwd: "packages/smithers/flows/artifacts"
 })
 

@@ -16,6 +16,7 @@ const sources = Input.glob("{src,examples}/**/*.{ts,vibe}")
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  entry: Input.file("src/index.vibe"),
   sources,
   cwd: "packages/smithers/flows/canonical"
 })
