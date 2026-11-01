@@ -380,6 +380,46 @@ const alive = (pid: number) => {
   }
 }
 
+describe("half load and overflow (decision 0144)", { timeout: 240_000 }, () => {
+  test("a job the attached runner holds back from is claimed by an overflow runner once it waited, and settles Done", async () => {
+    const ctx = await setup()
+    // The attached runner: held by its own admission rule, as a host over half load or under its disk floor is.
+    const attached = JSON.parse(readFileSync(ctx.config, "utf8")) as Record<string, unknown>
+    writeFileSync(ctx.config, JSON.stringify({ ...attached, admission: { loadPerCpu: 8, diskFloorGb: 100_000 } }))
+    running.push(startRunner(ctx.config).child)
+    // The overflow runner, as `smthrs runner` in a Cloudflare container would be: its own token and the `cloudflare`
+    // label, taking only a job that waited 3 s.
+    const token = `runner-token-${crypto.randomUUID()}`
+    await runtime.runPromise(Store.addRunner(
+      { repoId: REPOSITORY.id, name: "overflow", tokenSha256: digestSync(token), labels: ["linux", "cloudflare"], capacity: 2 },
+      { actorId: "person-admin", invocationKey: crypto.randomUUID() },
+    ))
+    const state = join(scratch, `overflow-${crypto.randomUUID()}`)
+    mkdirSync(state)
+    writeFileSync(join(state, "runner-token"), token, { mode: 0o600 })
+    const config = join(state, "runner.json")
+    writeFileSync(config, JSON.stringify({ ...attached, name: "overflow", stateDir: state, minQueuedSeconds: 3,
+      profiles: { "acp-test": { argv: [process.execPath, testAgent], env: { ACP_TEST_AGENT_STATE: join(state, "agent-state") } } } }))
+    const overflow = startRunner(config)
+    running.push(overflow.child)
+    await eventually(async () =>
+      ((await sql(runtime, `SELECT held FROM runners WHERE name = 'test-runner'`)) as Array<{ held: string | null }>)[0]?.held
+        ?.startsWith("disk ") === true, 60_000)
+    const start = await commit("Note alpha", "add the line `alpha` to `NOTES.md`")
+    const ran = await ctx.run(start)
+    expect(ran.exit, overflow.log()).toEqual(Exit.succeed({ state: "merged" }))
+    expect(ctx.github.tree("main").get("NOTES.md")).toBe("alpha\n")
+    const [job] = (await sql(runtime, `SELECT j.status, j.outcome->>'_tag' AS outcome, r.name AS runner,
+      extract(epoch FROM j.claimed_at - j.created_at)::float8 AS waited
+      FROM agent_jobs j JOIN runners r ON r.id = j.runner_id`)) as Array<
+        { status: string; outcome: string; runner: string; waited: number }
+      >
+    expect(job).toMatchObject({ status: "done", outcome: "Done", runner: "overflow" })
+    expect(job!.waited).toBeGreaterThanOrEqual(3)
+    expect(await sql(runtime, `SELECT runner, state FROM agent_runs`)).toEqual([{ runner: "overflow", state: "done" }])
+  })
+})
+
 describe("steering and stopping a TODO's external agent", { timeout: 240_000 }, () => {
   test("a Member's steer reaches the agent on its runner, reads Delivered, and its change is in the pull request", async () => {
     const ctx = await setup()

@@ -162,7 +162,7 @@ Every request carries the runner's token as `Authorization: Bearer`. Schemas: `@
 
 | Route | Body | Answer |
 |---|---|---|
-| `POST /api/runners/claim` | `{ profiles, free, running, waitSeconds ≤ 25, machine? }` | `{ job }` or `{ job: null }`; a held job not in `running` comes back first, `reclaimed: true` |
+| `POST /api/runners/claim` | `{ profiles, free, running, waitSeconds ≤ 25, machine?, minQueuedSeconds? }` | `{ job }` or `{ job: null }`; a held job not in `running` comes back first, `reclaimed: true` |
 | `POST /api/runners/heartbeat` | `{ key, claim, delivered?, account?, cpuSeconds?, usage? }` | `{ held, cancel, leaseSeconds: 45, steers? }`: the job's undelivered steers, `{ id, text }` |
 | `POST /api/runners/settle` | `{ key, claim, outcome, delivered? }` | `{ recorded }`; `false` when the claim no longer holds the job. `delivered` records the steers the agent read since the last heartbeat that reported them |
 | `POST /api/runners/events` | `{ key, claim, events }` | `{ next }`: the agent's transcript ([transcripts](agent-transcripts.md#the-events-route)) |
@@ -182,6 +182,11 @@ it claims only while its load stays under half its CPUs and its disk keeps 40 GB
 same for every machine and vendor: a held or full runner asks with `free: 0`, the route hands it only a job it holds
 and didn't list, and keeps the reason it sent on `runners.held` (migration `0085_runner_held`) for the
 [fleet](fleet.md), which shows the runner as **Held · load 31/24**. `capacity` stays the hard cap on jobs at once.
+
+**Overflow.** A runner whose `runner.json` sets `minQueuedSeconds` claims only a job that has been claimable that long:
+one no attached runner took because each was held or full. An overflow runner is plain `smthrs runner` with that
+setting and, by convention, the `cloudflare` label; running it in a Cloudflare container is not built yet (decision
+0144, "Not built").
 
 ## Postgres
 

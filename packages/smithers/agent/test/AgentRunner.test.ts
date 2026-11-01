@@ -55,10 +55,13 @@ describe("AgentRunner", () => {
     expect(is(AgentRunner.ClaimRequest)({ ...claim, machine: { load1: -1 } })).toBe(false)
     expect(is(AgentRunner.ClaimRequest)({ ...claim, machine: { version: "" } })).toBe(false)
     expect(is(AgentRunner.ClaimRequest)({ ...claim, machine: { diskFreeGb: -0.5 } })).toBe(false)
-    // Why a runner holds back by its own admission rule (decision 0144).
+    // Why a runner holds back by its own admission rule, and an overflow runner's wait (decision 0144).
     expect(is(AgentRunner.ClaimRequest)({ ...claim, free: 0, machine: { held: "load 31/24" } })).toBe(true)
     expect(is(AgentRunner.ClaimRequest)({ ...claim, machine: { held: "" } })).toBe(false)
     expect(is(AgentRunner.ClaimRequest)({ ...claim, machine: { held: "x".repeat(65) } })).toBe(false)
+    expect(is(AgentRunner.ClaimRequest)({ ...claim, minQueuedSeconds: 60 })).toBe(true)
+    expect(is(AgentRunner.ClaimRequest)({ ...claim, minQueuedSeconds: -1 })).toBe(false)
+    expect(is(AgentRunner.ClaimRequest)({ ...claim, minQueuedSeconds: 1.5 })).toBe(false)
     const beat = { key: "k#g1", claim: "c" }
     expect(is(AgentRunner.HeartbeatRequest)(beat)).toBe(true)
     expect(is(AgentRunner.HeartbeatRequest)({ ...beat, account: "acct-3", cpuSeconds: 12.5, usage: { costUsd: 1 } }))

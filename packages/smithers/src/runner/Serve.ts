@@ -158,7 +158,8 @@ export const loop = (
           free,
           running: [...running.keys()],
           waitSeconds: free > 0 ? 25 : 0,
-          machine: Machine.facts(reading, decision.held)
+          machine: Machine.facts(reading, decision.held),
+          ...(config.minQueuedSeconds === undefined ? {} : { minQueuedSeconds: config.minQueuedSeconds })
         })
       )
       if (claimed._tag === "Failure") {

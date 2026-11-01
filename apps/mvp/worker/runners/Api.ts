@@ -20,7 +20,9 @@ import { Transcripts } from "./RunContent.ts"
 // - `POST /api/runners/claim { profiles, free, running, waitSeconds }`: first a job the runner holds but didn't list
 //   (it restarted), handed back with its claim, `reclaimed`; else, while it has room under its capacity, its
 //   repository's oldest queued job for a profile it has, whose labels it carries, and pinned to no other runner,
-//   claimed with a new claim id and a lease. With nothing queued it waits up to `waitSeconds`, asking again each second.
+//   claimed with a new claim id and a lease. With `minQueuedSeconds` (an overflow runner, decision 0144), only a job
+//   claimable for that long: the route never asks which runners are held or full, so it stays the same for every
+//   machine and vendor. With nothing queued it waits up to `waitSeconds`, asking again each second.
 // - `POST /api/runners/heartbeat { key, claim, delivered? }`: renews the lease while the claim holds the job; `cancel`
 //   when the host asked to stop it or its hours are up, `held: false` when the claim no longer holds it. While it holds,
 //   the host's `steering` records the steers the runner says the agent read, then hands out those it hasn't yet
@@ -222,10 +224,10 @@ export const make = <E, R>(
         RETURNING ${sql.literal(claimed)}`).pipe(Effect.map((rows) => rows[0]))
 
   /**
-   * Claims the oldest job the runner may take, now. The same statement checks the runner's token still names it and
-   * that it has room under its registered capacity.
+   * Claims the oldest job the runner may take, now, among those claimable for at least `minQueuedSeconds`. The same
+   * statement checks the runner's token still names it and that it has room under its registered capacity.
    */
-  const claimOnce = (runner: Runner, claim: string, profiles: ReadonlyArray<string>) =>
+  const claimOnce = (runner: Runner, claim: string, profiles: ReadonlyArray<string>, minQueuedSeconds: number) =>
     Effect.flatMap(SqlClient.SqlClient, (sql) =>
       sql<Claimed>`
         UPDATE agent_jobs SET status = 'claimed', claim = ${claim}::uuid, runner_id = ${runner.id}::uuid,
@@ -238,6 +240,8 @@ export const make = <E, R>(
             AND j.labels <@ r.labels
             AND (j.pinned_runner IS NULL OR j.pinned_runner = r.id)
             AND (j.not_before IS NULL OR j.not_before <= now()) AND j.deadline_at > now()
+            AND greatest(j.created_at, coalesce(j.not_before, j.created_at))
+              <= now() - ${minQueuedSeconds}::int * interval '1 second'
             AND (SELECT count(*) FROM agent_jobs h WHERE h.runner_id = r.id AND h.status = 'claimed') < r.capacity
           ORDER BY j.created_at, j.key FOR UPDATE OF j SKIP LOCKED LIMIT 1)
         RETURNING ${sql.literal(claimed)}`).pipe(Effect.map((rows) => rows[0]))
@@ -294,7 +298,7 @@ export const make = <E, R>(
       if (held !== undefined) return yield* job(held, true)
       const deadline = (yield* Clock.currentTimeMillis) + wants.value.waitSeconds * 1000
       while (wants.value.free > 0) {
-        const row = yield* claimOnce(runner, yield* newClaim, wants.value.profiles).pipe(Effect.provide(database))
+        const row = yield* claimOnce(runner, yield* newClaim, wants.value.profiles, wants.value.minQueuedSeconds ?? 0).pipe(Effect.provide(database))
         if (row !== undefined) return yield* job(row, false)
         const left = deadline - (yield* Clock.currentTimeMillis)
         if (left <= 0) break

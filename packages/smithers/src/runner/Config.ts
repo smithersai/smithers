@@ -76,7 +76,8 @@ export const AdmissionConfig = Schema.Struct({
  * jobs it runs at once (4 unless set), where it keeps its state
  * (`~/.smithers/runner` unless set), how often it heartbeats a job (10 s) and
  * claims again after an empty claim (2 s), when it admits a job
- * ({@link AdmissionConfig}), each repository's local jj mirror
+ * ({@link AdmissionConfig}), and, for an overflow runner, how long a job
+ * must have waited before it takes it (`minQueuedSeconds`), each repository's local jj mirror
  * by the host's repository id, and its profiles by name.
  *
  * @category schemas
@@ -90,6 +91,7 @@ export const Config = Schema.Struct({
   heartbeatSeconds: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 60 }))),
   pollSeconds: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 60 }))),
   admission: Schema.optional(AdmissionConfig),
+  minQueuedSeconds: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 86_400 }))),
   repositories: Schema.Record(NonEmpty, Schema.Struct({ mirror: NonEmpty })),
   profiles: Schema.Record(AgentRunner.Profile, Profile)
 })

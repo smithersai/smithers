@@ -204,7 +204,10 @@ export type Machine = typeof Machine.Type
  * has room for now, the keys of the jobs it is running, and how long the host
  * may hold the request open while nothing is queued. A job the runner holds
  * but doesn't list (it restarted) comes back first, `reclaimed`. The labels it
- * carries are the ones an admin registered, never the ones it claims.
+ * carries are the ones an admin registered, never the ones it claims. With
+ * `minQueuedSeconds`, it takes only a job that has waited that long since it
+ * could first be claimed: an overflow runner's claim, which leaves each job to
+ * the runners that ask without it first.
  *
  * @category schemas
  * @since 1.0.0
@@ -214,7 +217,8 @@ export const ClaimRequest = Schema.Struct({
   free: Count,
   running: Schema.Array(NonEmpty),
   waitSeconds: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 25 })),
-  machine: Schema.optional(Machine)
+  machine: Schema.optional(Machine),
+  minQueuedSeconds: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 86_400 })))
 })
 
 /**

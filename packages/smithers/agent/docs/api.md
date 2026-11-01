@@ -3130,7 +3130,7 @@ reads, `maxHours` (1 to `MAX_HOURS`, 12) and `restarts` (0 to `MAX_RESTARTS`, 5)
 - `Job`: `{ key, claim, generation, task, deadline, leaseSeconds, reclaimed }`,
   what a runner claims. `reclaimed` marks a job handed back to a runner that
   restarted while holding it.
-- `ClaimRequest` `{ profiles, free, running, waitSeconds, machine? }`,
+- `ClaimRequest` `{ profiles, free, running, waitSeconds, machine?, minQueuedSeconds? }` (`minQueuedSeconds`: an overflow runner takes only a job claimable that long),
   `ClaimResponse`, `HeartbeatRequest` `{ key, claim, delivered?, account?,
   cpuSeconds?, usage? }` (`delivered`: the steers the agent read),
   `HeartbeatResponse` `{ held, cancel, leaseSeconds, steers? }` (the steers it
