@@ -30,6 +30,22 @@ let serving: Fiber.Fiber<unknown, unknown> | undefined
 const children: Array<ChildProcess> = []
 
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms))
+/** SIGKILL to `child`'s whole process group, then waits, for at most 10 s, until no process of it is left. */
+const stopGroup = async (child: ChildProcess) => {
+  const group = -child.pid!
+  const signal = (name: NodeJS.Signals | 0) => {
+    try {
+      process.kill(group, name)
+      return true
+    } catch {
+      return false
+    }
+  }
+  signal("SIGKILL")
+  const deadline = Date.now() + 10_000
+  while (signal(0) && Date.now() < deadline) await sleep(20)
+}
+
 const alive = (pid: number) => {
   try {
     process.kill(pid, 0)
@@ -92,7 +108,9 @@ beforeEach(async () => {
 afterEach(async () => {
   if (serving !== undefined) await Effect.runPromise(Fiber.interrupt(serving))
   serving = undefined
-  for (const child of children.splice(0)) child.kill("SIGKILL")
+  // Each runner process leads a process group with the jj commands it runs: all of it is gone before its directory
+  // is deleted, or a command still writing there fails the delete (ENOTEMPTY).
+  await Promise.all(children.splice(0).map(stopGroup))
   await host.close()
   for (const pid of [...pids("agent-"), ...pids("detached-")]) if (alive(pid)) process.kill(pid, "SIGKILL")
   rmSync(root, { recursive: true, force: true })
@@ -249,7 +267,8 @@ describe("smthrs runner serve", () => {
 
 describe("smthrs runner, as processes", () => {
   const runner = (args: ReadonlyArray<string>) => {
-    const child = spawn(process.execPath, [BIN, "runner", ...args], { stdio: ["ignore", "pipe", "pipe"] })
+    // Its own process group, which afterEach stops whole.
+    const child = spawn(process.execPath, [BIN, "runner", ...args], { stdio: ["ignore", "pipe", "pipe"], detached: true })
     children.push(child)
     return child
   }
