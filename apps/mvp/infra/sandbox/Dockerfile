@@ -23,9 +23,10 @@
 #
 # A repository's overflow box (decision 0144, worker/runners/Overflow.ts) runs `smthrs runner serve` on this image: jj
 # from its GitHub release tarball for the build's architecture, checked against the sha256 GitHub publishes for it; the
-# Claude Agent ACP adapter by exact version from npm, the agent an overflow profile usually runs; and `@smthrs/cli` by
-# exact version from npm when SMTHRS_VERSION is set. No published version has `smthrs runner` yet, so it is unset and
-# an overflow box logs `sandbox.overflow` `no_runner` until a release sets it.
+# Claude Agent ACP adapter by exact version from npm, the agent an overflow profile usually runs; and `smthrs` from
+# `cli/`, the tarballs `pack-cli.mjs` packed from the commit this deploy builds (`pnpm dev`, `plan` and `deploy` run it
+# first), so the box's runner is the host's own version, pinned by content rather than by a registry version. npm
+# installs them together under /opt/smthrs, their third-party dependencies from the registry.
 FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
 ARG TARGETARCH
 ARG NODE_VERSION=26.5.0
@@ -41,7 +42,6 @@ ARG JJ_VERSION=0.39.0
 ARG JJ_SHA256_AMD64=8da8d96e9c8696c21ad47847a63d533e249acb0449d9af0f0562b5ea7b024f04
 ARG JJ_SHA256_ARM64=15bbb0199adf57929d1e3cd90ae0b47356858cbe374814769815a1fb87d5ad1d
 ARG CLAUDE_AGENT_ACP_VERSION=0.23.1
-ARG SMTHRS_VERSION=
 RUN apt-get update \
   && apt-get install -y --no-install-recommends bash build-essential ca-certificates curl git less libatomic1 \
        python3 python3-pip python3-venv tini tmux \
@@ -66,7 +66,6 @@ RUN apt-get update \
   && rm /tmp/jj.tar.gz \
   && npm install -g "pnpm@$PNPM_VERSION" "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION" "@openai/codex@$CODEX_VERSION" \
        "@zed-industries/claude-agent-acp@$CLAUDE_AGENT_ACP_VERSION" \
-  && if [ -n "$SMTHRS_VERSION" ]; then npm install -g "@smthrs/cli@$SMTHRS_VERSION"; fi \
   && npm cache clean --force \
   && groupadd --gid 2000 workspace \
   && useradd --create-home --shell /bin/bash --uid 1000 --gid workspace smithers \
@@ -77,6 +76,12 @@ RUN apt-get update \
   && echo 'umask 002' >> /etc/profile \
   && ln -s /bin/sleep /usr/local/bin/smithers-idle
 COPY tmux.conf /etc/tmux.conf
+COPY cli/ /opt/smthrs/
+RUN cd /opt/smthrs \
+  && npm install --omit=dev --ignore-scripts --no-audit --no-fund \
+  && npm cache clean --force \
+  && ln -s /opt/smthrs/node_modules/@smthrs/cli/bin/smithers.mjs /usr/local/bin/smthrs \
+  && smthrs --version
 ENV LANG=C.UTF-8 TERM=xterm-256color
 USER smithers
 WORKDIR /workspace

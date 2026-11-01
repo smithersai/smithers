@@ -15,7 +15,7 @@ import { Scrub } from "@smthrs/secrets"
 import { ConfigProvider, Context, Effect, Exit, Layer, Option, Redacted, Scope, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { FetchHttpClient, HttpEffect } from "effect/http"
-import { type ChildProcess, execFileSync, spawn } from "node:child_process"
+import { type ChildProcess, execFileSync, spawn, spawnSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { createServer, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
@@ -151,10 +151,18 @@ const startRunner = (config: string) => {
   return { child, log: () => log }
 }
 
+/** The sandbox image the overflow test runs its box runner in, and the engine that runs it; none runs it as a process. */
+const boxImage = process.env.OVERFLOW_BOX_IMAGE
+const boxEngine = process.env.OVERFLOW_BOX_ENGINE ?? "podman"
+/** Where the test agent is inside the box. */
+const BOX_AGENT = "/opt/test-agent/acp-test-agent.mjs"
+let containers: Array<string> = []
 let running: Array<ChildProcess> = []
 let servers: Array<Server> = []
 let schemas: Array<string> = []
 afterEach(async () => {
+  for (const name of containers) spawnSync(boxEngine, ["rm", "-f", name], { stdio: "ignore" })
+  containers = []
   for (const child of running) child.kill("SIGKILL")
   for (const server of servers) server.close()
   for (const schema of schemas) {
@@ -480,7 +488,7 @@ describe("overflow on Cloudflare (decision 0144)", { timeout: 240_000 }, () => {
       Effect.provide(branchRoles(ctx.db, `${REPOSITORY.owner}/${REPOSITORY.name}`)),
     ))(new Request(`${DEPLOYMENT}/api/repos/${REPOSITORY.owner}/${REPOSITORY.name}/overflow/cloudflare`, {
       method: "PUT",
-      body: JSON.stringify({ connectionId, profile: "acp-test", argv: [process.execPath, testAgent], labels: ["linux"], minQueuedSeconds: 3 }),
+      body: JSON.stringify({ connectionId, profile: "acp-test", argv: boxImage === undefined ? [process.execPath, testAgent] : ["node", BOX_AGENT], labels: ["linux"], minQueuedSeconds: 3 }),
     }))
     expect(enabled.status).toBe(202)
     await Effect.runPromise(Scope.close(scope, Exit.void))
@@ -529,6 +537,7 @@ describe("overflow on Cloudflare (decision 0144)", { timeout: 240_000 }, () => {
     // The box: what its wake writes, from the same plan, its runner started on it. Only the network differs: the
     // runner reaches this deployment and the model through the intercepts, and its mirror is the test's.
     const files = join(scratch, `box-${crypto.randomUUID()}`)
+    const boxName = `smthrs-box-${crypto.randomUUID()}`
     let boxText = ""
     startBox = async (repoId) => {
       const found = Option.getOrThrow(await runtime.runPromise(Overflow.read(repoId)))
@@ -550,20 +559,32 @@ describe("overflow on Cloudflare (decision 0144)", { timeout: 240_000 }, () => {
         return [line.slice(0, at), line.slice(at + 1)]
       }))
       boxText = `${plan.environment}\n${plan.config}\n${plan.token}`
-      const child = spawn(process.execPath, [smthrs, "runner", "serve", "--config", join(files, "runner.json")], {
-        stdio: ["ignore", "ignore", "pipe"],
-        env: {
-          ...process.env,
-          ...environment,
-          SMITHERS_MODEL_BASE_URL: modelHost,
-          SMITHERS_TELEMETRY: "off",
-          ACP_TEST_AGENT_STATE: join(files, "agent-state"),
-        },
-      })
+      const boxEnvironment = {
+        ...environment,
+        SMITHERS_MODEL_BASE_URL: modelHost,
+        SMITHERS_TELEMETRY: "off",
+        ACP_TEST_AGENT_STATE: join(files, "agent-state"),
+      }
+      // With OVERFLOW_BOX_IMAGE, the runner is the image's own `smthrs`, in a container of the sandbox image built from
+      // this commit (infra/sandbox/pack-cli.mjs), sharing this test's network so its localhost is the intercepts'.
+      const child = boxImage === undefined
+        ? spawn(process.execPath, [smthrs, "runner", "serve", "--config", join(files, "runner.json")], {
+          stdio: ["ignore", "ignore", "pipe"],
+          env: { ...process.env, ...boxEnvironment },
+        })
+        : spawn(boxEngine, [
+          "run", "--rm", "--name", boxName, "--user", "root", "--entrypoint", "smthrs",
+          "--network", boxEngine === "podman" ? `ns:/proc/${process.pid}/ns/net` : "host",
+          "-v", `${files}:${files}`, "-v", `${ctx.path}:${ctx.path}`, "-v", `${testAgent}:${BOX_AGENT}:ro`,
+          "-e", "HOME=/tmp",
+          ...Object.entries(boxEnvironment).flatMap(([name, value]) => ["-e", `${name}=${value}`]),
+          boxImage, "runner", "serve", "--config", join(files, "runner.json"),
+        ], { stdio: ["ignore", "ignore", "pipe"] })
       child.stderr!.on("data", (chunk: Buffer) => void (boxLog += chunk.toString()))
       running.push(child)
     }
     let boxLog = ""
+    if (boxImage !== undefined) containers.push(boxName)
 
     const start = await commit("Note alpha", "add the model's answer to `NOTES.md`")
     const ran = await ctx.run(start)

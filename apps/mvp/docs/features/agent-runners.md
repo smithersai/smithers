@@ -209,8 +209,8 @@ agent/Session probe: queued ≥ minQueuedSeconds, pinned to none, `cloudflare-ov
   rotates it; `DELETE` retires the runner and drops the seal. No person, journal, log or answer sees it.
 - **The box.** `profile` and `argv` are what its runner runs, from the image's ACP adapters; `argv` maps
   `SMITHERS_MODEL_KEY`, `SMITHERS_MODEL_BASE_URL` and `SMITHERS_MODEL_PROTOCOL` to what its agent reads. Its runner admits up
-  to its CPUs and keeps 5 GB free. It holds no repository secret. Without a release of `@smthrs/cli` that has `smthrs
-  runner`, a woken box logs `sandbox.overflow` `no_runner` and sleeps again.
+  to its CPUs and keeps 5 GB free. It holds no repository secret. Its `smthrs` is the deploy's own build
+  (`infra/sandbox/pack-cli.mjs`), so it always matches the host.
 - **Refusals.** `401 authentication`, `403 forbidden` (not an Admin in person), `400 invalid` (a body that doesn't
   read, or a connection that isn't the Admin's active key on a model wire), `404 not_found` (anything but
   `cloudflare`), `503 unavailable` (no SECRETS_KEY, or the flow couldn't start).

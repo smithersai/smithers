@@ -1,6 +1,6 @@
 # 0144: Runners admit at half load; overflow goes to Cloudflare
 
-Date: 2026-11-01. Status: accepted; the box waits on a release of `@smthrs/cli` (see "Still open"). Builds on
+Date: 2026-11-01. Status: accepted. Builds on
 [0136](0136-external-agents-on-runners.md) (external agents on runners), [0143](0143-fleet-and-alerts.md) (the fleet)
 and [0103](0103-sandbox-budgets.md) (sandbox budgets). Ruling (Will, 2026-11-01): "bare metal at half load, overflow
 on Cloudflare".
@@ -60,8 +60,11 @@ job on it, and a full fleet leaves jobs Waiting with nowhere else to run.
    kind `overflow`, so the 20-awake cap and the spend alert hold. The box starts on `OVERFLOW_INSTANCE` (`standard-4`),
    writes the plan (`Overflow.boxPlan`) and starts `smthrs runner serve`. The runner ends after 300 s with no job;
    `sandbox/Keep` then finds the box idle and stops it.
-4. **Image.** `infra/sandbox/Dockerfile` adds jj and the Claude Agent ACP adapter. It installs `@smthrs/cli` only when
-   `SMTHRS_VERSION` is set: no published version has `smthrs runner` yet.
+4. **Image.** `infra/sandbox/Dockerfile` adds jj and the Claude Agent ACP adapter, and installs `smthrs` from `cli/`:
+   the tarballs `infra/sandbox/pack-cli.mjs` packs from the deploy's own commit (`@smthrs/cli` and its 45 workspace
+   dependencies, built clean and packed as a release packs them). `pnpm plan` and `pnpm run deploy` run it first, so
+   the box's runner always matches the host. It is pinned by content (the image digest covers the tarballs), never by
+   a registry version, and nothing is published.
 
 Proof: `worker/runners/Overflow.test.ts` (the setting, egress and wake) and `worker/runners/TodoRunner.test.ts`
 "overflow on Cloudflare". In the second, a held attached runner leaves the job. The box's runner, started from the
@@ -71,8 +74,9 @@ stand in for Cloudflare's.
 
 ## Still open
 
-- **A release.** `@smthrs/cli` with `smthrs runner` and `idleExitSeconds` must be published, and `SMTHRS_VERSION`
-  set in the Dockerfile. Until then a woken box logs `sandbox.overflow` `no_runner` and sleeps.
-- **A real-container run.** Nothing yet runs the box under `alchemy dev` with Docker. The Mac mini has no Docker.
+- **A real Cloudflare run.** The image builds with Docker and `smthrs runner --help` runs in it, and
+  `TodoRunner.test.ts` with `OVERFLOW_BOX_IMAGE` runs the box's runner in that image's container. Nothing yet runs the
+  box under `alchemy dev` or on Cloudflare, so the intercept and the wake's `ContainerSession` steps are unproven
+  there.
 - Will's preference that model calls egress through our Macs conflicts with the 21:10 "no subscription relay"
   ruling, and needs a public Mac endpoint. Will decides it; API-key overflow doesn't need it.

@@ -558,7 +558,7 @@ export const runPackCommand = (command, args, options = {}) =>
     })
   })
 
-const packWorkspace = async (directory, outputDirectory, stagingRoot, options) => {
+export const packWorkspace = async (directory, outputDirectory, stagingRoot, options) => {
   const packageRoot = join(repoRoot, directory)
   const manifestPath = join(packageRoot, "package.json")
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"))

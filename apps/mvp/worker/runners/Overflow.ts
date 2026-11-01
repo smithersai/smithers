@@ -254,7 +254,7 @@ export const boxPlan = (
     config: JSON.stringify(config),
     token: placeholders.token,
     script: [
-      // An image without the runner (no release has it yet: infra/sandbox/Dockerfile) can't serve: exit 3.
+      // An image built without the runner (infra/sandbox/pack-cli.mjs) can't serve: exit 3.
       "command -v smthrs >/dev/null && command -v jj >/dev/null || exit 3",
       "set -e",
       `mkdir -p ${state}`,
