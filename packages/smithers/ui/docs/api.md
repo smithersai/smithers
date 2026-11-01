@@ -308,8 +308,10 @@ function useRelativeTime(ts: number): string
 type RelativeTimeProps // { ts: number; title?: string; relativeUntilMs?: number }
 ```
 
-`RelativeTime` renders a `<time>` element that re-renders off one ref-counted
-one-second interval shared by every mounted instance and hook. A timestamp
+`RelativeTime` renders a `<time>` element that follows one ref-counted
+one-second interval shared by every mounted instance and hook. A tick
+re-renders only the instances whose label changed: a label older than a day is
+an absolute date and never re-renders, however many are mounted. A timestamp
 outside the range `Date` can hold still renders its label and omits `dateTime`
 and `title` rather than throwing.
 

@@ -2,6 +2,11 @@ const MINUTE_MS = 60_000;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 
+// One formatter per format, made once: `toLocaleDateString` with options builds a new `Intl.DateTimeFormat` on every
+// call, which a page of ticking timestamps paid thousands of times a second.
+let dateFormat: Intl.DateTimeFormat | undefined;
+let timeFormat: Intl.DateTimeFormat | undefined;
+
 /**
  * Human timestamp label: relative under 24h ("just now", "3m ago",
  * "2h 14m ago"), an absolute locale date+time beyond. Future timestamps
@@ -25,7 +30,9 @@ export function formatRelativeTime(ts: number, now: number = Date.now()): string
     return minutes === 0 ? `${hours}h ago` : `${hours}h ${minutes}m ago`;
   }
   const date = new Date(ts);
-  const datePart = date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-  const timePart = date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  dateFormat ??= new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric" });
+  timeFormat ??= new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+  const datePart = dateFormat.format(date);
+  const timePart = timeFormat.format(date);
   return `${datePart}, ${timePart}`;
 }

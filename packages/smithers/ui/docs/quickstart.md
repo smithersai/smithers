@@ -43,8 +43,8 @@ const runs: readonly Run[] = [
 ## Render one run
 
 `StatusPill` takes the raw status string and derives its own label and tint.
-`RelativeTime` renders a live timestamp that re-renders off one shared interval,
-however many of them are mounted. `isTerminalRunStatus` answers whether a run
+`RelativeTime` renders a live timestamp that follows one shared interval,
+however many of them are mounted, and re-renders only when its label changes. `isTerminalRunStatus` answers whether a run
 has stopped moving, which is what decides whether the retry button appears:
 
 ```tsx

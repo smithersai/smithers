@@ -3,7 +3,7 @@
 // uncovered: the interval creation, fan-out and ref-counted teardown had no
 // test, and neither did the label's own boundaries.
 import { afterEach, describe, expect, test } from "bun:test";
-import { act } from "react";
+import { act, Profiler } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { formatRelativeTime } from "../src/time/formatRelativeTime";
 import { RelativeTime, TICK_MS, useRelativeTime } from "../src/time/RelativeTime";
@@ -112,6 +112,27 @@ describe("the shared tick store", () => {
       await new Promise((resolve) => setTimeout(resolve, TICK_MS + 200));
     });
     expect(time.textContent).toBe("2s ago");
+  }, 10_000);
+});
+
+describe("a tick re-renders only labels that changed", () => {
+  // Production 2026-10-31: a branch page mounted 7,726 RelativeTimes (7,680 issue rows), every one re-rendered each
+  // second though rows older than a day never change; the idle page's main thread was busy 6.7 s of every 10.3 s and a
+  // settled chat answer took minutes to show.
+  test("a day-old timestamp renders once across ticks; a seconds-old one renders each tick", async () => {
+    const commits = { old: 0, fresh: 0 };
+    const count = (id: string) => () => { commits[id as keyof typeof commits] += 1; };
+    await render(
+      <>
+        <Profiler id="old" onRender={count("old")}><RelativeTime ts={Date.now() - 2 * 86_400_000} /></Profiler>
+        <Profiler id="fresh" onRender={count("fresh")}><RelativeTime ts={Date.now() - 1_500} /></Profiler>
+      </>,
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 2 * TICK_MS + 300));
+    });
+    expect(commits.old).toBe(1);
+    expect(commits.fresh).toBeGreaterThanOrEqual(3);
   }, 10_000);
 });
 
