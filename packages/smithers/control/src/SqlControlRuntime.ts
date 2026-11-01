@@ -103,7 +103,7 @@ import {
   RunSummary,
   SignalPayload
 } from "./ControlSchema.ts"
-import * as ActiveFibers from "./internal/activeFibers.ts"
+import * as ActiveFibers from "./internal/activeFibers.vibe"
 import { canonicalIssue, cappedIssue, schemaIssuePath } from "./internal/issues.ts"
 import {
   accepted,
