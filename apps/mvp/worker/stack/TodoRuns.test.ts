@@ -62,6 +62,19 @@ test("the production TODO adapter sends drop to durable cancellation, even befor
   expect(o.alarm()).not.toBeNull()
 })))
 
+test("a cancel the run's object refuses still starts the pull request's cleanup, and answers unavailable", () => runtime.runPromise(Effect.gen(function* () {
+  // Production 2026-10-31: T112's cancel failed (`cloudflare.execution.cancel`, JournalError) and nothing started
+  // `todo/Drop`, so pull request #122 stayed open.
+  const attempt = { attemptId: crypto.randomUUID(), todoId: crypto.randomUUID(), repoId: "github/test/repo", number: 1, ordinal: 1, revision: 1 }
+  const started: Array<string> = []
+  const runs = TodoRuns.make(
+    { start: (_flow, options) => Effect.sync(() => void started.push(options.executionId)) },
+    () => Effect.fail(new Error("journal unavailable")),
+  )
+  expect(yield* Effect.flip(runs.stop(attempt))).toEqual(new Stack.RunsUnavailable({ errorCode: "unknown" }))
+  expect(started).toEqual([`todo-base-closed:${attempt.attemptId}`, `todo-drop:${attempt.attemptId}`])
+})))
+
 test("admission reads the current attempt and refuses an already dropped TODO", () => runtime.runPromise(Effect.gen(function* () {
   const c = change()
   const result = yield* Stack.apply(c, { runs: true })

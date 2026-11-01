@@ -3,6 +3,7 @@ import type { SqlClient } from "effect/sql"
 import { Cause, Effect, Layer, Option, Predicate, Schema } from "effect"
 import { todoExecutionId } from "../../src/features/pulls/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
+import type * as Flows from "../Flows.ts"
 import type { FlowStarter } from "../Flows.ts"
 import * as Todo from "../flows/Todo.ts"
 import * as TodoBaseClosed from "../flows/TodoBaseClosed.ts"
@@ -20,21 +21,36 @@ export const make = (
     Effect.catch((error) => error._tag === "@smthrs/mvp/flows/StartConflict"
       ? Effect.void : Effect.fail(new Stack.RunsUnavailable({ errorCode: error.errorCode }))),
   ),
-  stop: (attempt) => cancel(todoExecutionId(attempt.attemptId)).pipe(
-    Effect.catchCause((cause) => Cause.hasInterrupts(cause)
-      ? Effect.interrupt
-      : Effect.fail(new Stack.RunsUnavailable({ errorCode: codeOf(Cause.squash(cause)) }))),
-    Effect.andThen(starter.start(TodoBaseClosed.Invalidate, {
-      executionId: `todo-base-closed:${attempt.attemptId}`,
-      payload: { ...attempt, baseClosed: true },
-    }).pipe(Effect.catch((error) => error._tag === "@smthrs/mvp/flows/StartConflict"
-      ? Effect.void : Effect.fail(new Stack.RunsUnavailable({ errorCode: error.errorCode }))))),
-    Effect.andThen(starter.start(TodoDrop.Drop, {
-      executionId: `todo-drop:${attempt.attemptId}`,
-      payload: { attemptId: attempt.attemptId, todoId: attempt.todoId },
-    }).pipe(Effect.catch((error) => error._tag === "@smthrs/mvp/flows/StartConflict"
-      ? Effect.void : Effect.fail(new Stack.RunsUnavailable({ errorCode: error.errorCode }))))),
-  ),
+  // The pull request's cleanup and the descendants' invalidation are started even when the cancel fails: each is its
+  // own durable execution and reads the TODO's state, not the run's, so a run whose object couldn't take the cancel
+  // (production 2026-10-31: `cloudflare.execution.cancel` failed with a JournalError for T112) no longer leaves its
+  // pull request open. Any failure still answers 503, and the outbox's resend makes each of them again; an interrupt
+  // propagates as it is.
+  stop: (attempt) => {
+    const startOrConflict = (started: Effect.Effect<void, Flows.StartConflict | Flows.StartUnavailable>) =>
+      started.pipe(Effect.catch((error) => error._tag === "@smthrs/mvp/flows/StartConflict"
+        ? Effect.void : Effect.fail(new Stack.RunsUnavailable({ errorCode: error.errorCode }))))
+    return Effect.all([
+      cancel(todoExecutionId(attempt.attemptId)).pipe(
+        Effect.catchCause((cause) => Cause.hasInterrupts(cause)
+          ? Effect.interrupt
+          : Effect.fail(new Stack.RunsUnavailable({ errorCode: codeOf(Cause.squash(cause)) }))),
+      ),
+      startOrConflict(starter.start(TodoBaseClosed.Invalidate, {
+        executionId: `todo-base-closed:${attempt.attemptId}`,
+        payload: { ...attempt, baseClosed: true },
+      })),
+      startOrConflict(starter.start(TodoDrop.Drop, {
+        executionId: `todo-drop:${attempt.attemptId}`,
+        payload: { attemptId: attempt.attemptId, todoId: attempt.todoId },
+      })),
+    ], { mode: "result" }).pipe(
+      Effect.flatMap((results) => {
+        const failed = results.find((result) => result._tag === "Failure")
+        return failed === undefined ? Effect.void : Effect.fail(failed.failure)
+      }),
+    )
+  },
 })
 
 /** Whether this attempt still belongs to a live TODO. */
