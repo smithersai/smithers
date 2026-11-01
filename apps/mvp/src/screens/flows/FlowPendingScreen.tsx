@@ -7,7 +7,7 @@ import "./flow-pending.css"
 export function FlowPendingScreen() {
   return (
     <main className="flow-pending-screen" aria-label="Flows" aria-busy="true">
-      <PageHeader back={<Link to="/app/flows">Flows</Link>} />
+      <PageHeader width="narrow" back={<Link to="/app/flows">Flows</Link>} />
       <PageBody width="narrow">
         <Skeleton aria-label="Loading flow" className="flow-pending" />
       </PageBody>

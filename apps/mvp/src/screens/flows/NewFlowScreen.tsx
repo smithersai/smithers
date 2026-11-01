@@ -1,3 +1,4 @@
+import { PageBody, PageHeader } from "@smthrs/ui"
 import { Link } from "@tanstack/react-router"
 import { NewFlowCard } from "../../features/flows-ui/components/NewFlowCard"
 import "./flows-screen.css"
@@ -6,10 +7,10 @@ import "./flows-screen.css"
 export function NewFlowScreen() {
   return (
     <main className="flows-screen" aria-label="New flow">
-      <header className="flows-screen-header">
-        <Link to="/app/flows">Flows</Link>
-      </header>
-      <NewFlowCard />
+      <PageHeader width="narrow" back={<Link to="/app/flows">Flows</Link>} />
+      <PageBody width="narrow">
+        <NewFlowCard />
+      </PageBody>
     </main>
   )
 }

@@ -1,4 +1,4 @@
-import { EmptyState, FlowDraftView } from "@smthrs/ui"
+import { EmptyState, FlowDraftView, Skeleton } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { formReady } from "../actions"
 import { DEVICE_STORAGE_UNAVAILABLE, SESSION_STORAGE, MINE } from "../contract"
@@ -12,7 +12,9 @@ export function NewFlowCard() {
   const { data: editor } = useLiveQuery(queries.editor)
   const { data: form } = useLiveQuery(queries.form)
   if (editor?.state === "unavailable") return <EmptyState title={DEVICE_STORAGE_UNAVAILABLE} />
-  if ((editor?.state !== "available" && editor?.state !== "session") || form === undefined) return null
+  if ((editor?.state !== "available" && editor?.state !== "session") || form === undefined) {
+    return <Skeleton className="flows-loading" />
+  }
   return (
     <div data-draft={editor.state === "session" && (form.name !== "" || form.request !== "") ? "unsaved" : undefined}>
       {editor.state === "session" ? <p role="status">{SESSION_STORAGE}</p> : null}

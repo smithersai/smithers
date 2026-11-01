@@ -1,8 +1,11 @@
-import { FlowDraftView } from "@smthrs/ui"
+import { EmptyState, FlowDraftView, Skeleton } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { DEVICE_STORAGE_UNAVAILABLE, SESSION_STORAGE, draftFailureWords, MINE, SAVE_REFUSALS } from "../contract"
 import { shownRound } from "../round"
 import { useFlowsUi } from "./FlowsUiContext"
+
+/** A draft this device doesn't have: the id names none of the person's drafts. */
+const NO_SUCH_DRAFT = "No such draft"
 
 // One draft at full size (decision 0014 §5): its round's status, as its row says or, when the round's run on this
 // device ended without writing it, Failed with why; questions with the defaults it assumed, its flow.ts and checks;
@@ -10,10 +13,10 @@ import { useFlowsUi } from "./FlowsUiContext"
 export function DraftCard() {
   const { queries, actions } = useFlowsUi()
   const { data: editor } = useLiveQuery(queries.editor)
-  const { data } = useLiveQuery(queries.draft)
+  const { data, isReady } = useLiveQuery(queries.draft)
   const { data: unsent } = useLiveQuery(queries.answers)
   const { data: run } = useLiveQuery(queries.round)
-  if (data === undefined) return null
+  if (data === undefined) return isReady ? <EmptyState title={NO_SUCH_DRAFT} /> : <Skeleton className="flows-loading" />
   const { draft, shown } = data
   const answers = Object.fromEntries(
     (unsent ?? []).filter((answer) => answer.draftId === draft.id).map((answer) => [answer.questionId, answer.value]),

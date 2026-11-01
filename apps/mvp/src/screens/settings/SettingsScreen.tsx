@@ -1,3 +1,4 @@
+import { Card, CardContent, EmptyState, PageBody, PageHeader } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link } from "@tanstack/react-router"
 import { SignInButton } from "../../features/auth/components/SignInButton"
@@ -18,14 +19,45 @@ export function SettingsScreen() {
   const admin = session?.status === "signed_in" && session.role === "admin"
   return (
     <main className="settings-screen" aria-label="Settings">
-      <header className="settings-screen-header">
-        <Link to="/app">Back to chat</Link>
-        <h1>Settings</h1>
-      </header>
-      {session?.status === "signed_out" ? <SignInButton /> : null}
-      {session?.status === "signed_in" ? <PersonalModelSettings canSave={canSave(session)} /> : null}
-      {admin ? <AlertSettings /> : null}
-      {admin ? <SandboxLimitsSettings /> : null}
+      <PageHeader width="narrow" back={<Link to="/app">Back to chat</Link>} title="Settings" />
+      <PageBody width="narrow">
+        {session?.status === "signed_out"
+          ? (
+            <Card>
+              <CardContent>
+                <EmptyState action={<SignInButton />} />
+              </CardContent>
+            </Card>
+          )
+          : null}
+        {session?.status === "signed_in"
+          ? (
+            <Card>
+              <CardContent className="settings-screen-section">
+                <PersonalModelSettings canSave={canSave(session)} />
+              </CardContent>
+            </Card>
+          )
+          : null}
+        {admin
+          ? (
+            <Card>
+              <CardContent className="settings-screen-section">
+                <AlertSettings />
+              </CardContent>
+            </Card>
+          )
+          : null}
+        {admin
+          ? (
+            <Card>
+              <CardContent className="settings-screen-section">
+                <SandboxLimitsSettings />
+              </CardContent>
+            </Card>
+          )
+          : null}
+      </PageBody>
     </main>
   )
 }

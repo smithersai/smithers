@@ -61,29 +61,35 @@ export function DomainSettings() {
   }
   return (
     <section className="domain-settings" aria-label={DOMAINS_HEADING}>
-      <h2>{DOMAINS_HEADING}</h2>
-      <form className="domain-settings-add" aria-label={`${ADD} ${DOMAIN_LABEL}`} onSubmit={submit}>
-        <Field>
-          <Label htmlFor="domain-hostname">{DOMAIN_LABEL}</Label>
-          <Input
-            id="domain-hostname"
-            name="hostname"
-            type="text"
-            inputMode="url"
-            autoComplete="off"
-            spellCheck={false}
-            required
-            placeholder={DOMAIN_PLACEHOLDER}
-          />
-        </Field>
-        <Button type="submit">{ADD}</Button>
-      </form>
-      {adding.map((save) => (
-        <p key={save.hostname} role="status" className="domain-settings-save" data-state={save.state}>
-          <span className="domain-settings-host">{save.hostname}</span>{" "}
-          {save.state === "saving" ? SAVING_TEXT[save.op] : refusalText(save.code)}
-        </p>
-      ))}
+      <Card>
+        <CardHeader>
+          <CardTitle>{DOMAINS_HEADING}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form className="domain-settings-add" aria-label={`${ADD} ${DOMAIN_LABEL}`} onSubmit={submit}>
+            <Field>
+              <Label htmlFor="domain-hostname">{DOMAIN_LABEL}</Label>
+              <Input
+                id="domain-hostname"
+                name="hostname"
+                type="text"
+                inputMode="url"
+                autoComplete="off"
+                spellCheck={false}
+                required
+                placeholder={DOMAIN_PLACEHOLDER}
+              />
+            </Field>
+            <Button type="submit" variant="solid">{ADD}</Button>
+          </form>
+          {adding.map((save) => (
+            <p key={save.hostname} role="status" className="domain-settings-save" data-state={save.state}>
+              <span className="domain-settings-host">{save.hostname}</span>{" "}
+              {save.state === "saving" ? SAVING_TEXT[save.op] : refusalText(save.code)}
+            </p>
+          ))}
+        </CardContent>
+      </Card>
       {domains.map((domain) => (
         <DomainCard
           key={domain.hostname}
@@ -131,7 +137,7 @@ function DomainCard(props: {
         </div>
         {problem === null ? null : <p className="domain-card-problem">{problem}</p>}
         {domain.records.length === 0 || domain.state === "active" ? null : (
-          <Table aria-label={RECORDS_LABEL}>
+          <Table aria-label={RECORDS_LABEL} variant="plain">
             <TableHeader>
               <TableRow>
                 <TableHead>{TYPE}</TableHead>

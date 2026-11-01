@@ -1,4 +1,4 @@
-import { Button, Card, CardContent, CardHeader, CardTitle, EmptyState, Textarea } from "@smthrs/ui"
+import { Button, Card, CardContent, CardHeader, CardTitle, EmptyState, Skeleton, Textarea } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { codeSaveable } from "../actions"
 import { COULDNT_READ_FLOW, DEVICE_STORAGE_UNAVAILABLE, SESSION_STORAGE, NEEDS_SANDBOX, NO_SUCH_FLOW, SAVE, writeRefusalWords } from "../contract"
@@ -18,14 +18,16 @@ export function FlowCodeCard() {
   const { data: code } = useLiveQuery(queries.code)
   if (stopped && (editor?.state === "unavailable" || code === undefined || code.state === "loading")) return <EmptyState title={FLOW_UNAVAILABLE} />
   if (editor?.state === "unavailable") return <EmptyState title={DEVICE_STORAGE_UNAVAILABLE} />
-  if ((editor?.state !== "available" && editor?.state !== "session") || code === undefined || code.state === "loading") return null
+  if ((editor?.state !== "available" && editor?.state !== "session") || code === undefined || code.state === "loading") {
+    return <Skeleton className="flows-loading" />
+  }
   if (code.state !== "read") return <EmptyState title={code.state === "not_found" ? NO_SUCH_FLOW : stopped ? FLOW_UNAVAILABLE : COULDNT_READ_FLOW} />
   return (
     <Card data-draft={(editor.state === "session" || stopped) && code.text !== code.source ? "unsaved" : undefined} aria-label={code.name} className="flows-code">
       <CardHeader className="flows-code-header">
         <CardTitle>{code.name}</CardTitle>
         <span>{SOURCE_PATH}</span>
-        <Button disabled={stopped || !codeSaveable(code)} onClick={() => void actions.saveCode(code.refusal === "stale")}>
+        <Button variant="solid" disabled={stopped || !codeSaveable(code)} onClick={() => void actions.saveCode(code.refusal === "stale")}>
           {code.refusal === "stale" ? "Overwrite newer revision" : SAVE}
         </Button>
       </CardHeader>
