@@ -13,6 +13,7 @@
 
 import * as Context from "effect/Context"
 import * as Digest from "effect/crypto/Digest"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as PlatformError from "effect/PlatformError"
@@ -40,45 +41,45 @@ export interface Crypto {
   /** A uniformly distributed number in `[0, 1)`, read now. */
   nextDoubleUnsafe(): number
   /** `size` random bytes; a size that is not a non-negative safe integer fails with `BadArgument`. */
-  randomBytes(size: number): Uint8Array!PlatformError.PlatformError
+  randomBytes(size: number): Effect.Effect<Uint8Array, PlatformError.PlatformError>
   /** The digest of `data` under `algorithm`. */
-  digest(algorithm: DigestAlgorithm, data: Uint8Array): Uint8Array!PlatformError.PlatformError
+  digest(algorithm: DigestAlgorithm, data: Uint8Array): Effect.Effect<Uint8Array, PlatformError.PlatformError>
   /** A number in `[0, 1)`. */
-  readonly random: number!!
+  readonly random: Effect.Effect<number>
   /** A random boolean. */
-  readonly randomBoolean: boolean!!
+  readonly randomBoolean: Effect.Effect<boolean>
   /** A safe integer. */
-  readonly randomInt: number!!
+  readonly randomInt: Effect.Effect<number>
   /** A number in `[min, max)`. */
-  randomBetween(min: number, max: number): number!!
+  randomBetween(min: number, max: number): Effect.Effect<number>
   /** An integer in `[min, max]`, or `[min, max)` when `halfOpen` is true. */
   randomIntBetween(min: number, max: number, options?: {
     readonly halfOpen?: boolean | undefined
-  }): number!!
+  }): Effect.Effect<number>
   /** The elements in a random order. */
-  randomShuffle<A>(elements: Iterable<A>): Array<A>!!
+  randomShuffle<A>(elements: Iterable<A>): Effect.Effect<Array<A>>
   /** A version 4 UUID, as text or as its 16 bytes. */
   randomUUIDv4(options?: {
     readonly format?: "hex" | undefined
-  }): string!PlatformError.PlatformError
+  }): Effect.Effect<string, PlatformError.PlatformError>
   randomUUIDv4<Format extends "hex" | "bytes">(options: {
     readonly format: Format
-  }): (Format extends "bytes" ? Uint8Array : string)!PlatformError.PlatformError
+  }): Effect.Effect<Format extends "bytes" ? Uint8Array : string, PlatformError.PlatformError>
   randomUUIDv4(options?: {
     readonly format?: "hex" | "bytes" | undefined
-  }): string | Uint8Array!PlatformError.PlatformError
+  }): Effect.Effect<string | Uint8Array, PlatformError.PlatformError>
   /** A version 7 UUID stamped with the `Clock`'s time, as text or as its 16 bytes. */
   randomUUIDv7(options?: {
     readonly format?: "hex" | undefined
-  }): string!PlatformError.PlatformError
+  }): Effect.Effect<string, PlatformError.PlatformError>
   randomUUIDv7<Format extends "hex" | "bytes">(options: {
     readonly format: Format
-  }): (Format extends "bytes" ? Uint8Array : string)!PlatformError.PlatformError
+  }): Effect.Effect<Format extends "bytes" ? Uint8Array : string, PlatformError.PlatformError>
   randomUUIDv7(options?: {
     readonly format?: "hex" | "bytes" | undefined
-  }): string | Uint8Array!PlatformError.PlatformError
+  }): Effect.Effect<string | Uint8Array, PlatformError.PlatformError>
   /** A ULID stamped with the `Clock`'s time. */
-  readonly randomULID: string!PlatformError.PlatformError
+  readonly randomULID: Effect.Effect<string, PlatformError.PlatformError>
 }
 
 /**
@@ -89,14 +90,14 @@ export interface Crypto {
  */
 export const Crypto: Context.Service<Crypto, Crypto> = Context.Service("effect/Crypto")
 
-const hex = (byte: number): string => byte.toString(16).padStart(2, "0")
+const hex = (byte: number) => byte.toString(16).padStart(2, "0")
 
-const stringify = (bytes: Uint8Array): string =>
+const stringify = (bytes: Uint8Array) =>
   [bytes.subarray(0, 4), bytes.subarray(4, 6), bytes.subarray(6, 8), bytes.subarray(8, 10), bytes.subarray(10, 16)]
     .map((segment) => Array.from(segment, hex).join(""))
     .join("-")
 
-const v4Bytes = (bytes: Uint8Array): Uint8Array => {
+const v4Bytes = (bytes: Uint8Array) => {
   bytes[6] = (bytes[6]! & 0x0f) | 0x40
   bytes[8] = (bytes[8]! & 0x3f) | 0x80
   return bytes
@@ -104,10 +105,9 @@ const v4Bytes = (bytes: Uint8Array): Uint8Array => {
 
 const maxTimestamp = 2 ** 48 - 1
 
-const clampTimestamp = (timestampMillis: number): number =>
-  Math.min(Math.max(0, Math.trunc(timestampMillis)), maxTimestamp)
+const clampTimestamp = (timestampMillis: number) => Math.min(Math.max(0, Math.trunc(timestampMillis)), maxTimestamp)
 
-const v7Bytes = (timestampMillis: number, bytes: Uint8Array): Uint8Array => {
+const v7Bytes = (timestampMillis: number, bytes: Uint8Array) => {
   const timestamp = clampTimestamp(timestampMillis)
   bytes[0] = Math.floor(timestamp / 2 ** 40)
   bytes[1] = Math.floor(timestamp / 2 ** 32) & 0xff
@@ -122,9 +122,10 @@ const v7Bytes = (timestampMillis: number, bytes: Uint8Array): Uint8Array => {
 
 const base32Chars = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
-// A source that returns the wrong length is a broken implementation: a defect.
-effect function ulidString(timestampMillis: number, bytes: Uint8Array): string!! {
-  if (bytes.length !== 10) try die(new Error(`ULID randomness must be exactly 10 bytes, received ${bytes.length}`))
+const ulidString = (timestampMillis: number, bytes: Uint8Array) => {
+  if (bytes.length !== 10) {
+    throw new Error(`ULID randomness must be exactly 10 bytes, received ${bytes.length}`)
+  }
   const timestamp = clampTimestamp(timestampMillis)
   let out = ""
   for (let shift = 45; shift >= 0; shift -= 5) {
@@ -145,7 +146,7 @@ effect function ulidString(timestampMillis: number, bytes: Uint8Array): string!!
   return out
 }
 
-const nextBetween = (min: number, max: number, draw: number): number => {
+const nextBetween = (min: number, max: number, draw: number) => {
   const value = draw * (max - min) + min
   if (value !== max || min >= max || !Number.isFinite(max)) return value
   // Rounding can reach the excluded endpoint even for a draw below 1. Return
@@ -158,9 +159,9 @@ const nextBetween = (min: number, max: number, draw: number): number => {
   return view.getFloat64(0)
 }
 
-const readUint53 = (bytes: Uint8Array): number =>
-  (bytes[0]! & 0x1f) * 2 ** 48 + bytes[1]! * 2 ** 40 + bytes[2]! * 2 ** 32 + bytes[3]! * 2 ** 24
-  + bytes[4]! * 2 ** 16 + bytes[5]! * 2 ** 8 + bytes[6]!
+const readUint53 = (bytes: Uint8Array) =>
+  (bytes[0]! & 0x1f) * 2 ** 48 + bytes[1]! * 2 ** 40 + bytes[2]! * 2 ** 32 + bytes[3]! * 2 ** 24 +
+  bytes[4]! * 2 ** 16 + bytes[5]! * 2 ** 8 + bytes[6]!
 
 /**
  * Builds the `Crypto` service from a source of random bytes and a digest, as
@@ -174,12 +175,12 @@ export const make = (impl: {
   readonly randomBytes: (size: number) => Uint8Array
   readonly digest: (
     algorithm: DigestAlgorithm,
-    data: Uint8Array,
-  ) => Uint8Array!PlatformError.PlatformError
+    data: Uint8Array
+  ) => Effect.Effect<Uint8Array, PlatformError.PlatformError>
 }): Crypto => {
   const randomBytesUnsafe = impl.randomBytes
-  const nextDoubleUnsafe = (): number => readUint53(randomBytesUnsafe(7)) / 2 ** 53
-  const nextIntUnsafe = (): number => {
+  const nextDoubleUnsafe = () => readUint53(randomBytesUnsafe(7)) / 2 ** 53
+  const nextIntUnsafe = () => {
     while (true) {
       const bytes = randomBytesUnsafe(7)
       const value = readUint53(bytes)
@@ -187,60 +188,57 @@ export const make = (impl: {
       if (value < Number.MAX_SAFE_INTEGER) return value + 1
     }
   }
-  const randomUUIDv4 = effect (options?: { readonly format?: "hex" | "bytes" | undefined }) => {
-    const bytes = v4Bytes(randomBytesUnsafe(16))
-    return options?.format === "bytes" ? bytes : stringify(bytes)
-  }
-  const randomUUIDv7 = effect (options?: { readonly format?: "hex" | "bytes" | undefined }) => {
-    const bytes = v7Bytes(try Clock.currentTimeMillis, randomBytesUnsafe(16))
-    return options?.format === "bytes" ? bytes : stringify(bytes)
-  }
+  const randomUUIDv4 = (options?: { readonly format?: "hex" | "bytes" | undefined }) =>
+    Effect.sync(() => {
+      const bytes = v4Bytes(randomBytesUnsafe(16))
+      return options?.format === "bytes" ? bytes : stringify(bytes)
+    })
+  const randomUUIDv7 = (options?: { readonly format?: "hex" | "bytes" | undefined }) =>
+    Effect.clockWith((clock) => {
+      const bytes = v7Bytes(clock.currentTimeMillisUnsafe(), randomBytesUnsafe(16))
+      return Effect.succeed(options?.format === "bytes" ? bytes : stringify(bytes))
+    })
   return Crypto.of({
     [TypeId]: TypeId,
-    randomBytes: effect (size) => {
-      if (!Number.isSafeInteger(size) || size < 0) {
-        throw PlatformError.badArgument({
+    randomBytes: (size) =>
+      Number.isSafeInteger(size) && size >= 0
+        ? Effect.sync(() => randomBytesUnsafe(size))
+        : Effect.fail(PlatformError.badArgument({
           module: "Crypto",
           method: "randomBytes",
-          description: "size must be a non-negative safe integer",
-        })
-      }
-      return randomBytesUnsafe(size)
-    },
+          description: "size must be a non-negative safe integer"
+        })),
     nextDoubleUnsafe,
     nextIntUnsafe,
     digest: impl.digest,
-    random: effect {
-      return nextDoubleUnsafe()
-    },
-    randomBoolean: effect {
-      return nextDoubleUnsafe() > 0.5
-    },
-    randomInt: effect {
-      return nextIntUnsafe()
-    },
-    randomBetween: effect (min, max) => nextBetween(min, max, nextDoubleUnsafe()),
-    effect randomIntBetween(min, max, options) {
+    random: Effect.sync(() => nextDoubleUnsafe()),
+    randomBoolean: Effect.sync(() => nextDoubleUnsafe() > 0.5),
+    randomInt: Effect.sync(() => nextIntUnsafe()),
+    randomBetween: (min, max) => Effect.sync(() => nextBetween(min, max, nextDoubleUnsafe())),
+    randomIntBetween(min, max, options) {
       const extra = options?.halfOpen === true ? 0 : 1
-      const minInt = Math.ceil(min)
-      const maxInt = Math.floor(max)
-      return Math.floor(nextDoubleUnsafe() * (maxInt - minInt + extra)) + minInt
+      return Effect.sync(() => {
+        const minInt = Math.ceil(min)
+        const maxInt = Math.floor(max)
+        return Math.floor(nextDoubleUnsafe() * (maxInt - minInt + extra)) + minInt
+      })
     },
-    randomShuffle: effect (elements) => {
-      const buffer = Array.from(elements)
-      for (let i = buffer.length - 1; i >= 1; i = i - 1) {
-        const index = Math.min(i, Math.floor(nextDoubleUnsafe() * (i + 1)))
-        const value = buffer[i]!
-        buffer[i] = buffer[index]!
-        buffer[index] = value
-      }
-      return buffer
-    },
+    randomShuffle: (elements) =>
+      Effect.sync(() => {
+        const buffer = Array.from(elements)
+        for (let i = buffer.length - 1; i >= 1; i = i - 1) {
+          const index = Math.min(i, Math.floor(nextDoubleUnsafe() * (i + 1)))
+          const value = buffer[i]!
+          buffer[i] = buffer[index]!
+          buffer[index] = value
+        }
+        return buffer
+      }),
     randomUUIDv4: randomUUIDv4 as Crypto["randomUUIDv4"],
     randomUUIDv7: randomUUIDv7 as Crypto["randomUUIDv7"],
-    randomULID: effect {
-      return try ulidString(try Clock.currentTimeMillis, randomBytesUnsafe(10))
-    },
+    randomULID: Effect.clockWith((clock) =>
+      Effect.succeed(ulidString(clock.currentTimeMillisUnsafe(), randomBytesUnsafe(10)))
+    )
   })
 }
 
@@ -248,7 +246,7 @@ const digestAlgorithms: Readonly<Record<DigestAlgorithm, Digest.Algorithm>> = {
   "SHA-1": Digest.sha1,
   "SHA-256": Digest.sha256,
   "SHA-384": Digest.sha384,
-  "SHA-512": Digest.sha512,
+  "SHA-512": Digest.sha512
 }
 
 /**
@@ -264,21 +262,20 @@ const digestAlgorithms: Readonly<Record<DigestAlgorithm, Digest.Algorithm>> = {
 export const layerFromDigest = <E, R>(digest: Layer.Layer<Digest.Digest, E, R>): Layer.Layer<Crypto, E, R> =>
   Layer.effect(
     Crypto,
-    effect {
-      const service = try Digest.Digest()
+    Effect.gen(function*() {
+      const service = yield* Digest.Digest
       return make({
         randomBytes: SecureRandom.randomBytesUnsafe,
-        digest: effect (algorithm, data) => {
+        digest: (algorithm, data) => {
           const known = Object.hasOwn(digestAlgorithms, algorithm) ? digestAlgorithms[algorithm] : undefined
-          if (known === undefined) {
-            throw PlatformError.badArgument({
+          return known === undefined
+            ? Effect.fail(PlatformError.badArgument({
               module: "Crypto",
               method: "digest",
-              description: `unsupported digest algorithm ${String(algorithm)}`,
-            })
-          }
-          return try service.digest(known, data)
-        },
+              description: `unsupported digest algorithm ${String(algorithm)}`
+            }))
+            : service.digest(known, data)
+        }
       })
-    },
+    })
   ).pipe(Layer.provide(digest))

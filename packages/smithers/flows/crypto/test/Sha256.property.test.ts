@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import * as FastCheck from "fast-check"
 import { createHash } from "node:crypto"
 import { describe, expect, it } from "vitest"
-import * as Crypto from "../src/Crypto.vibe"
+import * as Crypto from "../src/Crypto.ts"
 import { digest, digestSync, syncCrypto } from "../src/index.ts"
 
 const params = {
