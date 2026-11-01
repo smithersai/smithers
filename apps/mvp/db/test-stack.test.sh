@@ -6,6 +6,8 @@ cd "$app_directory"
 receipt=$(mktemp)
 trap 'rm -f "$receipt"' EXIT
 export MVP_STACK_TEST_RECEIPT="$receipt"
+# Inside a farm slot the owned stack still wins: no slot endpoint reaches the command.
+export FARM_SLOT=9 FARM_ELECTRIC_PORT=1 FARM_POOL_PORT=1
 set +e
 bash "$app_directory/db/test-stack.sh" -- bash -c '
   set -eu
@@ -15,6 +17,9 @@ bash "$app_directory/db/test-stack.sh" -- bash -c '
     assert.equal(database.hostname, "127.0.0.1")
     assert.equal(database.port, process.env.TEST_DATABASE_PORT)
     assert.equal(new URL(process.env.ELECTRIC_URL).port, process.env.TEST_ELECTRIC_PORT)
+    assert.equal(process.env.FARM_SLOT, undefined)
+    assert.equal(process.env.FARM_ELECTRIC_PORT, undefined)
+    assert.equal(process.env.FARM_POOL_PORT, undefined)
   '\''
   count=$(docker compose -p "$MVP_TEST_STACK_PROJECT" exec -T postgres psql -XAt -U smithers -d smithers -c "SELECT count(*) FROM pg_namespace WHERE nspname NOT LIKE '\''pg_%'\'' AND nspname NOT IN ('\''public'\'', '\''information_schema'\'')")
   test "$count" = 0

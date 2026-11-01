@@ -17,6 +17,8 @@ database_port=$(published_port postgres 5432)
 electric_port=$(published_port electric 3000)
 pool_port=$(published_port pgbouncer 5432)
 for port in "$database_port" "$electric_port" "$pool_port"; do [[ "$port" =~ ^[0-9]+$ ]] || exit 1; done
+# This stack replaces a farm slot's database, pool and Electric for the command; fixtures must not mix the two.
+unset FARM_SLOT FARM_ELECTRIC_PORT FARM_POOL_PORT
 export TEST_DATABASE_PORT="$database_port" TEST_ELECTRIC_PORT="$electric_port"
 export DATABASE_URL="postgresql://smithers:smithers@127.0.0.1:$TEST_DATABASE_PORT/smithers"
 export ELECTRIC_URL="http://127.0.0.1:$TEST_ELECTRIC_PORT"
