@@ -14,7 +14,7 @@ import * as MemoryEngine from "../src/MemoryEngine.ts"
 import * as Race from "../src/pins/Race.ts"
 import * as Replay from "../src/pins/Replay.ts"
 import { EngineUnavailableError } from "../src/TestingError.ts"
-import { expect, it } from "../src/Vitest.ts"
+import { expect, it } from "../src/Vitest.vibe"
 
 const failingRaceSubject: Subject = EngineSubject.make({
   name: "failing-race-subject",

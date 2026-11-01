@@ -11,7 +11,7 @@ import type { EngineSubject as Subject, ExecutionResult } from "../src/EngineSub
 import * as EngineSubject from "../src/EngineSubject.vibe"
 import * as Interrupt from "../src/pins/Interrupt.ts"
 import { EngineUnavailableError } from "../src/TestingError.ts"
-import { describe, expect, it } from "../src/Vitest.ts"
+import { describe, expect, it } from "../src/Vitest.vibe"
 
 type Violation =
   | "runFailure"

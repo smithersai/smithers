@@ -4,7 +4,7 @@ import * as Latch from "effect/Latch"
 import * as Ref from "effect/Ref"
 import type { FlowSpec } from "../src/EngineSubject.vibe"
 import * as RestartableEngine from "../src/RestartableEngine.ts"
-import { expect, it } from "../src/Vitest.ts"
+import { expect, it } from "../src/Vitest.vibe"
 
 it.scoped("restarts over the same store and executes only the frontier", () =>
   Effect.gen(function*() {

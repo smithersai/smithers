@@ -23,7 +23,7 @@ import * as Option from "effect/Option"
 import * as EngineSubject from "../../src/EngineSubject.vibe"
 import * as FlowEngineLike from "../../src/FlowEngineLike.ts"
 import { EngineUnavailableError } from "../../src/TestingError.ts"
-import { describe, expect, it } from "../../src/Vitest.ts"
+import { describe, expect, it } from "../../src/Vitest.vibe"
 
 /** Decorates the in-memory runtime, keeping every other operation real. */
 type Runtime = FlowRuntime.FlowRuntime["Service"]

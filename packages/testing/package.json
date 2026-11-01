@@ -36,8 +36,8 @@
     "./package.json": "./package.json",
     ".": "./src/index.ts",
     "./Vitest": {
-      "types": "./src/Vitest.ts",
-      "import": "./src/Vitest.ts"
+      "types": "./.vibe/declarations/src/Vitest.d.vibe.ts",
+      "import": "./src/Vitest.vibe"
     },
     "./internal/*": null,
     "./*/index": null,

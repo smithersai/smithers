@@ -7,7 +7,7 @@
  */
 import { Effect } from "effect"
 import * as Pin from "../src/internal/Pin.ts"
-import { describe, expect, it } from "../src/Vitest.ts"
+import { describe, expect, it } from "../src/Vitest.vibe"
 
 describe("internal pin assertions", () => {
   it.effect("reports assertion failures with and without observations", () =>
