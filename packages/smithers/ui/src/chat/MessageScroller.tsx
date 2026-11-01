@@ -26,6 +26,8 @@ import { subscribeVisibility } from "./visibilitySubscriptionRegistry";
 /* -------------------------------------------------------------------------- */
 
 export type MessageScrollerCommands = {
+  /** Reader wheel/rail input in CSS pixels; releases follow and read anchors before moving. */
+  scrollByReader(delta: number): void;
   scrollToBottom(behavior?: ScrollBehavior): void;
   scrollToTop(behavior?: ScrollBehavior): void;
   /** Jump so the message's top sits `peekPx` below the viewport top. */
@@ -427,9 +429,6 @@ function MessageScrollerProviderImpl({
     ],
   );
 
-  const commandsRef = useRef<MessageScrollerCommands>({ scrollToBottom, scrollToTop, scrollToMessage });
-  commandsRef.current = { scrollToBottom, scrollToTop, scrollToMessage };
-
   /* ---- saved-transcript restore ------------------------------------------ */
 
   const tryRestore = useCallback(() => {
@@ -639,10 +638,32 @@ function MessageScrollerProviderImpl({
     return viewport !== null && viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= 1;
   }, []);
 
-  const onViewportWheel = useCallback((event: WheelEvent) => {
-    if (event.deltaY === 0 || (event.deltaY > 0 && isAtBottomBoundary())) return;
+  const prepareReaderScroll = useCallback((delta: number) => {
+    if (delta === 0 || (delta > 0 && isAtBottomBoundary())) return;
     cancelProgrammaticScroll();
-  }, [cancelProgrammaticScroll, isAtBottomBoundary]);
+    // Input precedes native scrolling. A commit can run before its scroll event;
+    // measuring the still-bottom position here must never leave follow enabled.
+    ignoreNextScrollRef.current = false;
+    if (activeReadRef.current) activeReadRef.current = { ...activeReadRef.current, moved: true };
+    setFollowing(false);
+  }, [cancelProgrammaticScroll, isAtBottomBoundary, setFollowing]);
+
+  const scrollByReader = useCallback((delta: number) => {
+    const viewport = viewportRef.current;
+    if (!viewport || delta === 0) return;
+    prepareReaderScroll(delta);
+    viewport.scrollTop += delta;
+    setFollowing(measure(viewport));
+    remember(viewport);
+    refreshVisibilityFallback();
+  }, [prepareReaderScroll, measure, remember, refreshVisibilityFallback, setFollowing]);
+
+  const commandsRef = useRef<MessageScrollerCommands>({ scrollToBottom, scrollToTop, scrollToMessage, scrollByReader });
+  commandsRef.current = { scrollToBottom, scrollToTop, scrollToMessage, scrollByReader };
+
+  const onViewportWheel = useCallback((event: WheelEvent) => {
+    if (!event.ctrlKey) prepareReaderScroll(event.deltaY);
+  }, [prepareReaderScroll]);
 
   const onViewportKeyDown = useCallback(
     (event: KeyboardEvent) => {
@@ -926,6 +947,11 @@ function MessageScrollerProviderImpl({
   contextValue.commands = commandsRef.current;
 
   return <ScrollerContext.Provider value={contextValue}>{children}</ScrollerContext.Provider>;
+}
+
+/** Internal optional bridge for a rail that can also render outside a transcript. */
+export function useOptionalMessageScroller(): MessageScrollerCommands | undefined {
+  return useContext(ScrollerContext)?.commands;
 }
 
 /** State + commands context for the conversation scroller compound anatomy. */

@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import { type KeyboardEvent, type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { timelineDriver, type TimelineDriver } from "./timelineDriver";
+import { useOptionalMessageScroller } from "./MessageScroller";
 import {
   timelineBlocks, timelineExchanges, timelineLevelCount, timelineIntersections, timelineWidths, type TimelineBlock, type TimelineMarker,
 } from "./timelineZoom";
@@ -133,12 +134,13 @@ export function ChatTimeline({ entries, phases = [], arcs = [], higherLevels = [
   const { widths, gap } = timelineWidths(Math.max(1, drawn), size.width);
   const lefts: number[] = [];
   widths.forEach((width, index) => { lefts.push(index === 0 ? size.width - width : lefts[index - 1]! - gap - width); });
+  const scrollByReader = useOptionalMessageScroller()?.scrollByReader;
   useLayoutEffect(() => {
     if (rail.current === null || box.current === null) return;
-    const made = timelineDriver(rail.current, box.current);
+    const made = timelineDriver(rail.current, box.current, scrollByReader);
     driver.current = made;
     return () => { made.dispose(); driver.current = null; };
-  }, []);
+  }, [scrollByReader]);
   useLayoutEffect(() => {
     driver.current?.sync({ ids, asks: entries.map(entry => entry.kind === "ask"), lengths: entries.map(entry => entry.length ?? timelineLabel(entry).length), levels, spans, arcs: larger, higher: columns.slice(2), ...(onRequestHistory === undefined ? {} : { onRequestHistory }) });
   }, [ids, entries, levels, spans, larger, columns, size, onRequestHistory]);

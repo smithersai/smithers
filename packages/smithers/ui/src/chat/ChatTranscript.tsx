@@ -70,6 +70,7 @@ export function ChatTranscript({
   const { disclosure, beside } = useRailBeside(Boolean(rail));
   const isEmpty = Children.toArray(children).length === 0;
   return (
+    <MessageScrollerProvider scrollAnchor="bottom">
     <div
       data-slot="chat-transcript"
       role="region"
@@ -86,7 +87,6 @@ export function ChatTranscript({
         <summary>Timeline</summary>
         {rail}
       </details> : null}
-      <MessageScrollerProvider scrollAnchor="bottom">
         <div data-slot="message-scroller" className="sui-msg-scroller" data-streaming={pending ? "true" : "false"}>
           <MessageScrollerViewport fade>
             <MessageScrollerContent className="sui-chat-messages" aria-label="Messages">
@@ -96,7 +96,7 @@ export function ChatTranscript({
           </MessageScrollerViewport>
           <MessageScrollerButton />
         </div>
-      </MessageScrollerProvider>
     </div>
+    </MessageScrollerProvider>
   );
 }

@@ -46,7 +46,7 @@ const roomOf = (rail: HTMLElement) => {
   return Math.max(0, transcript.getBoundingClientRect().left - bound - 18);
 };
 
-export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDriver => {
+export const timelineDriver = (rail: HTMLElement, box: HTMLElement, scrollByReader?: (delta: number) => void): TimelineDriver => {
   let model: TimelineModel = { ids: [], asks: [], levels: 0, spans: [], arcs: [] };
   let boxes: readonly TimelineBox[] = [];
   let tops: readonly number[] = [];
@@ -447,9 +447,9 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
       : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? viewport.clientHeight : 1;
     event.preventDefault();
     releaseRead();
-    // Let the transcript cancel its own active jump/reading anchor before moving; synthetic wheel has no native scroll.
-    viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: event.deltaY, deltaX: event.deltaX, deltaMode: event.deltaMode }));
-    viewport.scrollTop += event.deltaY * unit;
+    const delta = event.deltaY * unit;
+    if (scrollByReader) scrollByReader(delta);
+    else viewport.scrollTop += delta;
   };
   rail.addEventListener("wheel", wheel, { passive: false });
   box.addEventListener("keydown", releaseRead, { capture: true });

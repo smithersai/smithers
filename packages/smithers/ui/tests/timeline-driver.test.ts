@@ -256,7 +256,7 @@ for (const [mode, delta, lineHeight, distance] of [
     const event = new WheelEvent("wheel", { deltaY: delta, deltaMode: mode, cancelable: true, bubbles: true });
     rail.dispatchEvent(event);
     expect(viewport.scrollTop).toBe(400 + distance);
-    expect(inputs).toEqual([delta]); // the transcript receives its usual input before the forwarded scroll
+    expect(inputs).toEqual([]); // reader input uses the scroller command, never a synthetic gesture
     expect(event.defaultPrevented).toBe(true);
     expect(rail.scrollTop).toBe(0);
     expect(document.documentElement.scrollTop).toBe(0);

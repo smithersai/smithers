@@ -15,7 +15,7 @@ import {
   useMessageVisibility,
   useMessageBand,
 } from "../src/chat/MessageScroller";
-import { SMITHERS_UI_STYLE_ATTR } from "../src/index";
+import { ChatTranscript, ChatTimeline, SMITHERS_UI_STYLE_ATTR } from "../src/index";
 import { installDarkThemeStyles, removeDarkThemeStyles } from "./theme-test-utils";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -1891,4 +1891,124 @@ test("hosted completion reads the action after an earlier tall run released foll
   metrics().scrollHeight = 1400;
   await act(async () => root!.render(view(true)));
   expect(getViewport().scrollTop).toBe(1000);
+});
+
+
+test("rail wheel releases bottom follow before the next transcript commit", async () => {
+  let commands: MessageScrollerCommands;
+  let following = false;
+  function Probe() {
+    commands = useMessageScroller();
+    following = useMessageScrollerState().following;
+    return null;
+  }
+  const entries = [{ id: "rail-latest", kind: "answer", state: "done", label: "Latest reply" }] as const;
+  const view = () => <ChatTranscript rail={<ChatTimeline entries={entries} />}>
+    <MessageScrollerItem messageId="rail-latest" id="rail-latest">Latest reply</MessageScrollerItem>
+    <Probe />
+  </ChatTranscript>;
+  await render(view(), { scrollHeight: 2000, clientHeight: 200, scrollTop: 0 });
+  const viewport = getViewport();
+  // Supply the browser's clamped layout geometry; happy-dom has no layout.
+  Object.defineProperty(viewport, "scrollTop", {
+    configurable: true,
+    get: () => metrics().scrollTop,
+    set: (top: number) => { metrics().scrollTop = Math.max(0, Math.min(top, metrics().scrollHeight - metrics().clientHeight)); },
+  });
+  await act(async () => commands!.scrollToBottom());
+  expect(viewport.scrollTop).toBe(1800);
+  expect(following).toBe(true);
+  const rail = container!.querySelector('nav')!;
+  const wheel = new WheelEvent("wheel", { deltaY: -800, bubbles: true, cancelable: true });
+  await act(async () => rail.dispatchEvent(wheel));
+  expect(wheel.defaultPrevented).toBe(true);
+  expect(viewport.scrollTop).toBe(1000);
+  // A commit can run before the browser delivers the resulting scroll event.
+  await act(async () => root!.render(view()));
+  await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+  expect(viewport.scrollTop).toBe(1000);
+  await scroll();
+  metrics().scrollHeight += 100;
+  await act(async () => root!.render(view()));
+  expect(viewport.scrollTop).toBe(1000);
+  expect(following).toBe(false);
+});
+
+
+test.each(["rail", "viewport"])("%s wheel releases an arrival read before layout can pin its top again", async (source) => {
+  let commands: MessageScrollerCommands;
+  let following = false;
+  function Probe() {
+    commands = useMessageScroller();
+    following = useMessageScrollerState().following;
+    return null;
+  }
+  geometryByMessageId.set("arrival", { top: 300, height: 1000 });
+  const view = () => <MessageScrollerProvider scrollAnchor="bottom" readAnchor={{ messageId: "arrival", actor: "arrival" }}>
+    <div className="sui-chat-transcript">
+      <ChatTimeline entries={[{ id: "arrival", kind: "answer", state: "done" }]} />
+      <MessageScrollerViewport><MessageScrollerContent>
+        <MessageScrollerItem messageId="arrival" id="arrival">Long arrival</MessageScrollerItem>
+      </MessageScrollerContent></MessageScrollerViewport>
+      <Probe />
+    </div>
+  </MessageScrollerProvider>;
+  await render(view(), { scrollHeight: 2000, clientHeight: 200, scrollTop: 0 });
+  const viewport = getViewport();
+  expect(viewport.scrollTop).toBe(290);
+  expect(following).toBe(true);
+  const target = source === "rail" ? container!.querySelector("nav")! : viewport;
+  let synthetic = 0;
+  viewport.addEventListener("wheel", () => { synthetic++; });
+  await act(async () => {
+    target.dispatchEvent(new WheelEvent("wheel", { deltaY: 100, bubbles: true, cancelable: true }));
+    if (source === "viewport") viewport.scrollTop += 100; // native browser default; happy-dom does not scroll
+  });
+  await act(async () => root!.render(view())); // deliberately precedes the scroll notification
+  expect(viewport.scrollTop).toBe(390);
+  expect(following).toBe(false);
+  await scroll();
+  geometryByMessageId.set("arrival", { top: 500, height: 1000 });
+  const content = viewport.firstElementChild!;
+  await act(async () => resizeCallbacks.get(content)!([], {} as ResizeObserver));
+  expect(viewport.scrollTop).toBe(390);
+  expect(synthetic).toBe(source === "rail" ? 0 : 1);
+  // A downward reader scroll to the edge resumes follow; growth then tracks it.
+  await act(async () => commands!.scrollByReader(1800 - viewport.scrollTop));
+  expect(following).toBe(true);
+  metrics().scrollHeight += 100;
+  await act(async () => root!.render(view()));
+  expect(viewport.scrollTop).toBe(1900);
+});
+
+test("reader delta command tolerates an absent viewport and zero input; bottom and pinch preserve follow", async () => {
+  let commands: MessageScrollerCommands;
+  let following = false;
+  function Probe() {
+    commands = useMessageScroller();
+    following = useMessageScrollerState().following;
+    return null;
+  }
+  const view = (mounted: boolean) => <MessageScrollerProvider scrollAnchor="bottom">
+    <Probe />
+    {mounted ? <MessageScrollerViewport><MessageScrollerContent /></MessageScrollerViewport> : null}
+  </MessageScrollerProvider>;
+  container = document.createElement("div"); document.body.append(container);
+  root = createRoot(container);
+  await act(async () => root!.render(view(false)));
+  await act(async () => commands!.scrollByReader(-100));
+  defaultMetrics = { scrollHeight: 1000, clientHeight: 200, scrollTop: 0 };
+  await act(async () => root!.render(view(true)));
+  metricsByElement.set(getViewport(), { scrollHeight: 1000, clientHeight: 200, scrollTop: 800 });
+  await act(async () => { commands!.scrollByReader(0); commands!.scrollByReader(100); });
+  // Supply clamped boundary geometry: downward wheel against the bottom cannot move.
+  metrics().scrollTop = 800;
+  const pinch = new WheelEvent("wheel", { deltaY: -100, bubbles: true, cancelable: true });
+  Object.defineProperty(pinch, "ctrlKey", { value: true });
+  await act(async () => getViewport().dispatchEvent(pinch));
+  expect(pinch.defaultPrevented).toBe(false);
+  expect(following).toBe(true);
+  metrics().scrollHeight += 100;
+  await act(async () => root!.render(view(true)));
+  expect(getViewport().scrollTop).toBe(1100);
 });

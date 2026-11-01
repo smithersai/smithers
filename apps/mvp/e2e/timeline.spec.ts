@@ -74,8 +74,9 @@ test("Conversation timeline: scroll, jump by key and receive durable summaries",
   })
   const wheelRail = async () => {
     const viewport = a.conversation.locator('[data-slot="message-scroller-viewport"]')
-    await viewport.evaluate(el => { el.scrollTop = 0 })
-    await expect(detail.getByRole("button").first()).toHaveAttribute("aria-current", "location")
+    await viewport.evaluate(el => { el.scrollTop = el.scrollHeight })
+    await expect(a.conversation.locator('[data-slot="message-scroller-button"][data-target="end"]')).toHaveAttribute("data-active", "false")
+    await expect.poll(() => viewport.evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop)).toBeLessThanOrEqual(1)
     const current = () => detail.locator('[aria-current="location"]').evaluateAll(rows => rows.map(row => row.getAttribute("aria-controls")))
     const before = await current()
     const top = await viewport.evaluate(el => el.scrollTop)
@@ -88,13 +89,18 @@ test("Conversation timeline: scroll, jump by key and receive durable summaries",
       el.dispatchEvent(pinch)
       return { prevented: pinch.defaultPrevented, moved: viewport.scrollTop !== top }
     })).toEqual({ prevented: false, moved: false })
-    await a.page.mouse.wheel(0, 600)
-    await expect.poll(() => viewport.evaluate(el => el.scrollTop)).toBeGreaterThan(top + 500)
-    await expect.poll(current).not.toEqual(before)
-    const down = await viewport.evaluate(el => el.scrollTop)
     await a.page.mouse.wheel(0, -600)
-    await expect.poll(() => viewport.evaluate(el => el.scrollTop)).toBeLessThan(down - 500)
-    await expect(detail.getByRole("button").first()).toHaveAttribute("aria-current", "location")
+    await expect.poll(() => viewport.evaluate(el => el.scrollTop)).toBeLessThan(top - 500)
+    await expect.poll(current).not.toEqual(before)
+    const up = await viewport.evaluate(el => el.scrollTop)
+    // Hover/focus commits the real rail preview; successive frames must not re-pin the live edge.
+    await detail.locator('[aria-current="location"]').first().hover()
+    await viewport.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    await expect.poll(() => viewport.evaluate(el => el.scrollTop)).toBe(up)
+    await expect(a.conversation.locator('[data-slot="message-scroller-button"][data-target="end"]')).toHaveAttribute("data-active", "true")
+    await rail.hover({ position: { x: 12, y: 12 } })
+    await a.page.mouse.wheel(0, 400)
+    await expect.poll(() => viewport.evaluate(el => el.scrollTop)).toBeGreaterThan(up + 300)
   }
   await test.step("Scroll the conversation with the wheel over its rail", wheelRail)
   await test.step("Scroll the transcript and follow its band", async () => {
