@@ -38,10 +38,9 @@
  */
 
 import * as ArtifactBackupLease from "@smthrs/artifacts/ArtifactBackupLease"
-import { Sha256 } from "@smthrs/crypto"
+import { type Crypto, Sha256 } from "@smthrs/crypto"
 import { DurableWriter } from "@smthrs/database/DurableWriter"
 import * as Clock from "effect/Clock"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import type * as Layer from "effect/Layer"

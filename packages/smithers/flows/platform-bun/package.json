@@ -120,26 +120,27 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
+    "@smthrs/crypto": "1.0.0-rc.16",
     "@smthrs/database": "1.0.0-rc.16",
     "@smthrs/jj": "1.0.0-rc.16",
     "@smthrs/kernel": "1.0.0-rc.16",
     "@smthrs/sandbox": "1.0.0-rc.16",
     "@types/ws": "8.18.2",
     "redis": "6.2.1",
-    "undici": "8.11.2",
+    "undici": "8.12.3",
     "ws": "8.22.0"
   },
   "peerDependencies": {
     "@smthrs/platform-node": "1.0.0-rc.16",
-    "effect": "4.0.5"
+    "effect": "4.1.0"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/platform-bun": "4.0.5",
-    "@effect/platform-node": "4.0.5",
-    "@effect/platform-node-shared": "4.0.5",
-    "@effect/sql-pg": "4.0.5",
-    "@effect/vitest": "4.0.5",
+    "@effect/platform-bun": "4.1.0",
+    "@effect/platform-node": "4.1.0",
+    "@effect/platform-node-shared": "4.1.0",
+    "@effect/sql-pg": "4.1.0",
+    "@effect/vitest": "4.1.0",
     "@eslint/js": "9.39.5",
     "@smthrs/artifacts": "1.0.0-rc.16",
     "@smthrs/flows": "1.0.0-rc.16",
@@ -147,7 +148,7 @@
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.5",
+    "effect": "4.1.0",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -157,8 +158,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.8",
-    "vibelang-vite": "0.0.8",
+    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-3ee099e972e9.tgz",
+    "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-a2b67ac4484b.tgz",
     "vitest": "5.0.0"
   }
 }

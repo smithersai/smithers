@@ -12,10 +12,10 @@
  * @since 1.0.0
  */
 
-import * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as PlatformError from "effect/PlatformError"
+import * as Crypto from "./Crypto.ts"
 
 /**
  * The most bytes one `crypto.getRandomValues` call may fill, per the Web

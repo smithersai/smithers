@@ -67,8 +67,8 @@ implementation that matches where the code runs:
 
 | Implementation                           | Provide it with                                    | Use it for                                                                                                                                          |
 | ---------------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@effect/platform-node/NodeCrypto`       | `NodeCrypto.layer`                                 | A Node process. [`@smthrs/platform-node`](/api/platform-node) re-exports it as `NodeHost.NodeCrypto`.                                               |
-| `@effect/platform-bun/BunCrypto`         | `BunCrypto.layer`                                  | A Bun process.                                                                                                                                      |
+| `@effect/platform-node/NodeCrypto`       | `Crypto.layerFromDigest(NodeCrypto.layerDigest)`   | A Node process. [`@smthrs/platform-node`](/api/platform-node) re-exports it as `NodeHost.NodeCrypto`.                                               |
+| `@effect/platform-bun/BunCrypto`         | `Crypto.layerFromDigest(BunCrypto.layerDigest)`    | A Bun process.                                                                                                                                      |
 | `@effect/platform-browser/BrowserCrypto` | The layer that module exports                      | A browser tab. Add `@effect/platform-browser` yourself: [`@smthrs/platform-browser`](/api/platform-browser) leaves `Crypto` out of its host bundle. |
 | `WebCrypto` from this package            | `WebCrypto.layer`                                  | Any host with the global WebCrypto: Node, Bun, a browser, or a Cloudflare Worker. It reads randomness only on demand.                               |
 | `syncCrypto` from this package           | `Effect.provideService(Crypto.Crypto, syncCrypto)` | Synchronous code and tests. It answers SHA-256 only and refuses randomness.                                                                         |
@@ -80,10 +80,10 @@ pnpm add @effect/platform-node @effect/platform-node-shared
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { digest } from "@smthrs/crypto"
+import { Crypto, digest } from "@smthrs/crypto"
 import { Effect } from "effect"
 
-const program = digest("hello").pipe(Effect.provide(NodeCrypto.layer))
+const program = digest("hello").pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
 ```
 
 `digestSync`, `Digest`, and `Sha256Error` need no service at all. `digestSync`

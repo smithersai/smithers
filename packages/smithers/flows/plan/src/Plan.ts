@@ -17,8 +17,8 @@
  * @since 0.1.0
  */
 
+import type { Crypto } from "@smthrs/crypto"
 import { DerivedKey, StoredKey } from "@smthrs/keys"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Inspectable from "effect/Inspectable"
 import * as Schema from "effect/Schema"

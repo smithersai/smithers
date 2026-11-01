@@ -92,7 +92,7 @@ object authenticates the request and passes the identity in.
 
 ```ts
 import * as PresenceRoom from "@smthrs/sync/PresenceRoom"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as Effect from "effect/Effect"
 
 export const room = Effect.gen(function*() {

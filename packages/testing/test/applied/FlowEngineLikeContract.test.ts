@@ -10,10 +10,10 @@
  * works. These cases make the refusal explicit, and bound the publication
  * confirmation the adapter ends every run with.
  */
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import * as Cause from "effect/Cause"
-import * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"

@@ -16,7 +16,7 @@ The `next` tag carries the 1.0 release candidates.
 `@effect/platform-node` provides `NodeCrypto` for the example below and is
 optional if you supply your own `Crypto` implementation.
 
-[`effect`](https://effect.website) is a peer dependency at exactly `4.0.5`,
+[`effect`](https://effect.website) is a peer dependency at exactly `4.1.0`,
 because the schemas this package exports have to be the ones your own code
 composes with. Two more dependencies install with the package and are the only
 ones: [`@smthrs/canonical`](/api/canonical) for the serialization and
@@ -36,11 +36,12 @@ On Node.js or Bun, use the platform layer:
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { deriveKey } from "@smthrs/keys"
 import * as Effect from "effect/Effect"
 
 const program = deriveKey({ domain: "docs/install", version: 1 }).pipe(
-  Effect.provide(NodeCrypto.layer)
+  Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
 )
 ```
 
@@ -51,8 +52,8 @@ for anything else:
 
 ```ts
 import { syncCrypto } from "@smthrs/crypto"
+import { Crypto } from "@smthrs/crypto"
 import { deriveKey } from "@smthrs/keys"
-import * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 

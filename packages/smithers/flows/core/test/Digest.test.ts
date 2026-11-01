@@ -2,7 +2,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, it } from "@effect/vitest"
 import { Canonical, CanonicalError, canonicalize } from "@smthrs/canonical"
 import * as Digest from "@smthrs/core/Digest"
-import { Sha256 } from "@smthrs/crypto"
+import { Crypto, Sha256 } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
@@ -12,8 +12,8 @@ import { expect } from "vitest"
 // split the agent side's fingerprints from the main tree's keys, so every
 // assertion below compares the two paths rather than a checked-in constant.
 
-const platform = <A, E>(effect: Effect.Effect<A, E, never | import("effect/Crypto").Crypto>) =>
-  Effect.provide(effect, NodeCrypto.layer)
+const platform = <A, E>(effect: Effect.Effect<A, E, never | import("@smthrs/crypto").Crypto.Crypto>) =>
+  Effect.provide(effect, Crypto.layerFromDigest(NodeCrypto.layerDigest))
 
 const vectors: ReadonlyArray<string> = [
   "",

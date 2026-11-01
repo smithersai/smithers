@@ -23,7 +23,7 @@ const request = (url: string, origin?: string, forwardedProto?: string) =>
 
 describe("control browser origin", () => {
   it.each([undefined, "https:"] as const)(
-    "guards direct TLS with a relative request URL and scheme %s",
+    "guards direct TLS with the socket's scheme and configured scheme %s",
     async (scheme) => {
       const server = HttpRouter.serve(
         ControlServer.layerHttp.pipe(Layer.provide([
@@ -67,12 +67,60 @@ describe("control browser origin", () => {
               )
               return Effect.sync(() => outgoing.destroy())
             })
-            expect([originScheme, status]).toEqual([originScheme, scheme === originScheme ? 200 : 403])
+            // Effect 4.1's Node server gives the request URL the socket's scheme, so a
+            // direct TLS endpoint with no configured scheme knows it is `https:`.
+            expect([originScheme, status]).toEqual([originScheme, (scheme ?? "https:") === originScheme ? 200 : 403])
           }
         }).pipe(Effect.provide(server), Effect.scoped)
       )
     }
   )
+
+  it("refuses an https origin from another host on direct TLS with no configured scheme", async () => {
+    const server = HttpRouter.serve(
+      ControlServer.layerHttp.pipe(Layer.provide([
+        layerNoop,
+        layerNoopAuth(),
+        RpcSerialization.layerNdjson,
+        Layer.succeed(ControlServer.RequestScheme, undefined)
+      ])),
+      { disableListenLog: true, disableLogger: true }
+    ).pipe(Layer.provideMerge(NodeHttpServer.layer(() => createServer({ key, cert }), { host: "127.0.0.1", port: 0 })))
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const server = yield* HttpServer.HttpServer
+        if (server.address._tag !== "InetAddressV4") return yield* Effect.die("expected TCP")
+        const port = server.address.port
+        for (
+          const [origin, expected] of [
+            [`https://127.0.0.1:${port}`, 200],
+            [`https://attacker.example:${port}`, 403],
+            [`https://127.0.0.1:${port + 1}`, 403]
+          ] as const
+        ) {
+          const status = yield* Effect.callback<number>((resume) => {
+            const outgoing = httpsRequest({
+              hostname: "127.0.0.1",
+              port,
+              path: "/rpc",
+              method: "POST",
+              rejectUnauthorized: false,
+              headers: { origin, "content-type": "application/ndjson" }
+            }, (response) => {
+              response.resume()
+              resume(Effect.succeed(response.statusCode ?? 0))
+            })
+            outgoing.on("error", (error) => resume(Effect.die(error)))
+            outgoing.end(
+              `${JSON.stringify({ _tag: "Request", id: "1", tag: "List", payload: { _tag: "runs" }, headers: [] })}\n`
+            )
+            return Effect.sync(() => outgoing.destroy())
+          })
+          expect([origin, status]).toEqual([origin, expected])
+        }
+      }).pipe(Effect.provide(server), Effect.scoped)
+    )
+  })
 
   it("requires the endpoint scheme as well as host and port", async () => {
     await Effect.runPromise(Effect.acquireUseRelease(

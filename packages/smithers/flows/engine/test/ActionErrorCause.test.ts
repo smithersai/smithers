@@ -3,9 +3,9 @@
  * engine boundary against live Error values and raw non-JSON causes.
  */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Effect, Layer, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
 import { effect } from "./Harness.ts"

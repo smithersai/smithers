@@ -25,6 +25,7 @@
 import * as BunChildProcessSpawner from "@effect/platform-bun/BunChildProcessSpawner"
 import * as BunCrypto from "@effect/platform-bun/BunCrypto"
 import * as BunPath from "@effect/platform-bun/BunPath"
+import { Crypto } from "@smthrs/crypto"
 import type { Jj } from "@smthrs/jj"
 import * as BunJj from "@smthrs/jj/bun/BunJj"
 import type { HostServiceIds } from "@smthrs/kernel/HostServices"
@@ -35,7 +36,6 @@ import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import * as HostLiveness from "@smthrs/platform-node/HostLiveness"
 import * as ProcessConfinement from "@smthrs/platform-node/ProcessConfinement"
 import * as ProcessReaper from "@smthrs/platform-node/ProcessReaper"
-import type * as Crypto from "effect/Crypto"
 import type { FileSystem } from "effect/FileSystem"
 import type { HttpClient } from "effect/http/HttpClient"
 import * as Layer from "effect/Layer"
@@ -223,7 +223,7 @@ const reaping = (options?: ContainedOptions): ProcessReaper.Options => ({
 })
 
 /** The two services `BunChildProcessSpawner` resolves paths and files with. */
-const platform = Layer.mergeAll(BunFileSystem.layer, BunPath.layer, BunCrypto.layer)
+const platform = Layer.mergeAll(BunFileSystem.layer, BunPath.layer, Crypto.layerFromDigest(BunCrypto.layerDigest))
 
 /**
  * The network slot on its own: the shared egress client, which never follows a

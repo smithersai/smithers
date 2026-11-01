@@ -3,6 +3,7 @@ import { afterAll, describe, expect, it } from "@effect/vitest"
 import { Effect, Exit, Layer, Logger, Path, PlatformError, Sink, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, ExitCode, make as makeSpawner, makeHandle } from "effect/process/ChildProcessSpawner"
+import * as Redacted from "effect/Redacted"
 import * as Scope from "effect/Scope"
 import { chmodSync, existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -13,6 +14,10 @@ import type { Session } from "../src/Sandbox/Session.ts"
 import * as SandboxConformance from "../src/SandboxConformance/index.ts"
 import { untouchable } from "./helpers/untouchable.ts"
 import { stalledFinalizer } from "./stalledFinalizer.ts"
+
+// Effect 4.1 lets an argument be Redacted; the fake records what a process would receive.
+const argsOf = (command: ChildProcess.StandardCommand): Array<string> =>
+  command.args.map((arg) => Redacted.isRedacted(arg) ? Redacted.value(arg) : arg)
 
 type RunTaskInput = Parameters<AwsSandbox.Sdk["runTask"]>[0]
 type RunTaskOutput = Awaited<ReturnType<AwsSandbox.Sdk["runTask"]>>
@@ -330,16 +335,16 @@ const fakeCli = (faults: CliFaults = {}) => {
           PlatformError.badArgument({ module: "ChildProcess", method: "spawn", description: "no pipelines" })
         )
       }
-      const remoteIndex = command.args.indexOf("--command")
+      const remoteIndex = argsOf(command).indexOf("--command")
       // Guest pids live under a fixed guest path; on this host they live
       // under the test's own root instead.
-      const remote = command.args[remoteIndex + 1]!.replaceAll("/tmp/.smthrs-sbx", `${root}/.pids`)
+      const remote = argsOf(command)[remoteIndex + 1]!.replaceAll("/tmp/.smthrs-sbx", `${root}/.pids`)
       const chunks = Stream.isStream(command.options.stdin)
         ? yield* Stream.runCollect(command.options.stdin as Stream.Stream<Uint8Array>)
         : undefined
       const stdinBytes = chunks === undefined ? undefined : Buffer.concat([...chunks])
       const input = stdinBytes === undefined ? "" : new TextDecoder().decode(stdinBytes)
-      calls.push({ file: command.command, input, args: command.args, remote })
+      calls.push({ file: command.command, input, args: argsOf(command), remote })
       const sessionId = `ecs-execute-command-${calls.length}`
       const wait = faults.wait?.(remote)
       if (

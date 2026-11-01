@@ -2,6 +2,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
+import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Context, Deferred, Effect, Exit, Fiber, FileSystem, Layer, type Path, Schema, Scope } from "effect"
@@ -12,7 +13,7 @@ import * as Discovery from "../src/Discovery.ts"
 import * as Executable from "../src/Executable.ts"
 import * as Registry from "../src/Registry.ts"
 
-const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)
+const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
 class HostPrefix extends Context.Service<HostPrefix, string>()("test/module/HostPrefix") {}
 class Unsupported extends Context.Service<Unsupported, string>()("test/module/Unsupported") {}
 

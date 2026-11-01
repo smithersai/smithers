@@ -286,7 +286,7 @@ program that executes a flow.
 deriving it is a SHA-256. The in-memory engine needs crypto for the same reason
 the durable one does.
 
-**Fix.** Provide a platform crypto layer, such as `NodeCrypto.layer` from
+**Fix.** Provide a platform crypto layer, such as `Crypto.layerFromDigest(NodeCrypto.layerDigest)` from
 `@effect/platform-node`, or the browser equivalent.
 
 ## Cancellation and discarded executions

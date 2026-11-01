@@ -154,3 +154,5 @@ Persist `Migrations.snapshot(lock)` for parallel authoring: it sorts ids and
 mutation names and omits the derived epoch. Both this snapshot and older locks
 with an epoch are accepted by `check` and `lock`. Runtime build comparison still
 uses `registry.epoch`; no device ledger or stored row changes.
+
+Schema fingerprints retain the union grouping used by deployed Effect `4.0.5` locks. Upgrading to Effect `4.1.0` does not change a lock solely because its JSON Schema emitter flattens equivalent `anyOf` alternatives. Keep recorded versions and their fingerprints; do not regenerate old lock entries for this dependency upgrade.

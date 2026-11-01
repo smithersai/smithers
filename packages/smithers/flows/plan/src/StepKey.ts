@@ -27,9 +27,9 @@
  * @since 0.1.0
  */
 
+import type { Crypto } from "@smthrs/crypto"
 import { DerivedKey, type StoredKey } from "@smthrs/keys"
 import * as Cause from "effect/Cause"
-import type * as Crypto from "effect/Crypto"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"

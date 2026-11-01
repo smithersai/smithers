@@ -22,6 +22,7 @@ import { EngineStore, OwnerIdentity, StepBoundary, WorkspaceSandbox } from "@smt
 import { Action } from "@smthrs/flow"
 // Runtime's public subpath avoids the aggregate barrel's browser sync graph.
 // The native host needs the injected runtime, not Yjs or browser storage.
+import type { Crypto } from "@smthrs/crypto"
 import * as Runtime from "@smthrs/flows/Runtime"
 import { RedactedLogger } from "@smthrs/journal"
 import {
@@ -35,7 +36,6 @@ import {
 import type { Ownership } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as FileSystem from "effect/FileSystem"

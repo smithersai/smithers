@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact `4.0.5` peer dependency. Install one
+This package declares `effect` as an exact `4.1.0` peer dependency. Install one
 `effect` release at that version so all Smithers packages share one Effect
 runtime.
 
@@ -20,7 +20,7 @@ deploy.
 ## Install
 
 ```bash
-npm install @smthrs/platform-cloudflare@next @smthrs/flow@next @smthrs/database@next @effect/sql-pg@4.0.5 effect@4.0.5
+npm install @smthrs/platform-cloudflare@next @smthrs/flow@next @smthrs/database@next @effect/sql-pg@4.1.0 effect@4.1.0
 ```
 
 [Installation](docs/installation.md) covers the Worker's compatibility flags and
@@ -38,7 +38,7 @@ import * as Pg from "@effect/sql-pg"
 import { PostgresDatabase } from "@smthrs/database"
 import { CloudflareRuntime, ExecutionObject } from "@smthrs/platform-cloudflare"
 import type { RuntimeContext } from "alchemy"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Redacted from "effect/Redacted"

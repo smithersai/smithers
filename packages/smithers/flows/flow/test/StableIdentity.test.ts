@@ -189,6 +189,7 @@ describe("tutorial callback identity", () => {
         .replace(/^import .*$/gm, "")
       const script = `
         import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+        import { Crypto } from "@smthrs/crypto"
         import { Action, Flow, Graph } from "@smthrs/flow"
         import { Node, Plan } from "@smthrs/plan"
         import { Effect, Schema } from "effect"
@@ -196,7 +197,7 @@ describe("tutorial callback identity", () => {
         const graph = Graph.build(${flow}, ${JSON.stringify(payload)}, { callbackIdentity: "stable" })
         const plan = await Effect.runPromise(Plan.compile({
           planId: "tutorial", flow: ${flow}._tag, nodes: Graph.drafts(graph)
-        }).pipe(Effect.provide(NodeCrypto.layer)))
+        }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))))
         console.log(JSON.stringify({ digest: plan.digest, keys: plan.nodes.map(node => node.key) }))
       `
       const compile = () =>

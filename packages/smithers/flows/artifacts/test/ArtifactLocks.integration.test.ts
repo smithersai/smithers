@@ -1,6 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { describe, expect, it } from "@effect/vitest"
+import { Crypto } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as FileSystem from "effect/FileSystem"
@@ -16,7 +17,7 @@ const payload = new TextEncoder().encode("cross-process-artifact")
 const digest = "97af2a42624678e1e99f77a0cfa63accb6bf32a49ad5ab386a0a68f24ebe2c6c" as ArtifactStore.Digest
 const fixture = new URL("./fixtures/artifact-lock-child.ts", import.meta.url)
 
-const runLayer = Layer.merge(NodeFileSystem.layer, NodeCrypto.layer)
+const runLayer = Layer.merge(NodeFileSystem.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
 
 const launch = (
   mode: "backup-hold" | "freshen-hold" | "lock-hold",

@@ -1,6 +1,6 @@
 // Electric owns a script independent of app and gateway deployments (decision 0118).
 import type { RuntimeContext } from "alchemy"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as Output from "alchemy/Output"
 import { Config, Context, Effect, Option, Redacted } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"

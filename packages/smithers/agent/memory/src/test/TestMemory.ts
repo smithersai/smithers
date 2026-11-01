@@ -7,8 +7,8 @@
  * @since 0.1.0
  */
 
+import { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
-import * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as MemoryStore from "../MemoryStore.ts"

@@ -7,12 +7,12 @@
  * the step's body never runs again. Before encodings were versioned, a change to the derivation re-keyed every
  * recorded step, so a run parked across an upgrade ran its sealed work again.
  */
+import type { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import * as Node from "@smthrs/plan/Node"
 import { Ownership } from "@smthrs/run-store"
-import type * as Crypto from "effect/Crypto"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"

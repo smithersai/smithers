@@ -1,6 +1,6 @@
+import { Crypto } from "@smthrs/crypto"
 import * as Sha256 from "@smthrs/crypto/Sha256"
 import { Deferred, Effect, Fiber, Layer, Redacted, Schema, Stream } from "effect"
-import * as Crypto from "effect/Crypto"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import { describe, expect, it, vi } from "vitest"
 import * as Channels from "../src/Channels.ts"

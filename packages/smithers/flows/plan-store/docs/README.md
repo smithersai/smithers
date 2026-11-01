@@ -42,6 +42,7 @@ migration paths, and browser support.
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Migrations from "@smthrs/plan-store/Migrations"
 import * as PlanStore from "@smthrs/plan-store/PlanStore"
@@ -53,7 +54,7 @@ import * as Option from "effect/Option"
 
 const layer = PlanStore.layer.pipe(
   Layer.provideMerge(Migrations.layer.pipe(Layer.provideMerge(TestDatabase.layer))),
-  Layer.provideMerge(NodeCrypto.layer)
+  Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
 )
 
 const program = Effect.gen(function*() {

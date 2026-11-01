@@ -66,7 +66,7 @@ interface Prepared {
 }
 
 // Admit and detach even when the typed value contains native Date leaves.
-function snapshotDecoded(value: unknown): Effect<unknown, FsError, infer R> {
+effect function snapshotDecoded(value: unknown): Effect<unknown, FsError, infer R> {
   const admitted = Boundary.admitDecoded(value)
   if (!admitted.ok) {
     throw new FsError({
@@ -78,17 +78,17 @@ function snapshotDecoded(value: unknown): Effect<unknown, FsError, infer R> {
   return admitted.value
 }
 
-function validateDecoded(schema: Schema.Top, value: unknown, field: "input" | "output"): Effect<unknown, FsError, infer R> {
-  const decoded = SchemaBridge.recover(
+effect function validateDecoded(schema: Schema.Top, value: unknown, field: "input" | "output"): Effect<unknown, FsError, infer R> {
+  const decoded = try SchemaBridge.recover(
     Schema.decodeUnknownEffect(Schema.toType(schema))(snapshotDecoded(value)),
-    () =>
+    effect () =>
       new FsError({
         code: "decode_failed",
         method: "Command.call",
         description: `The decoded flow ${field} did not satisfy its schema`
       })
   )
-  return snapshotDecoded(decoded)
+  return try snapshotDecoded(decoded)
 }
 
 const routeArgv = (argv: ReadonlyArray<string>): ReadonlyArray<string> => {
@@ -106,23 +106,23 @@ const routeArgv = (argv: ReadonlyArray<string>): ReadonlyArray<string> => {
  * @category constructors
  * @since 0.1.0
  */
-export function make(routes: ReadonlyArray<Route.Route>): Effect<CommandSurface, FsError, infer R> {
-  const validated = CommandTree.make(routes)
+export effect function make(routes: ReadonlyArray<Route.Route>): Effect<CommandSurface, FsError, infer R> {
+  const validated = try CommandTree.make(routes)
   const commandRoutes = CommandTree.traverse(validated).filter(Route.isCommandRoute)
-  const tree = CommandTree.make(commandRoutes)
+  const tree = try CommandTree.make(commandRoutes)
 
-  const prepare = (commandString: string): Effect<Prepared, FsError, infer R> => {
-    const argv = CommandLine.lex(commandString)
-    const resolved = CommandTree.resolve(tree, routeArgv(argv))
-    const flow = Route.load(resolved.route)
-    const schema = SchemaBridge.toCommandSchema(resolved.route.input, flow.input)
-    const parsed = CommandLine.parseFlags(resolved.rest)
-    const input = schema.decode(schema.assemble(parsed.args, parsed.options))
+  const prepare = effect (commandString: string): Effect<Prepared, FsError, infer R> => {
+    const argv = try CommandLine.lex(commandString)
+    const resolved = try CommandTree.resolve(tree, routeArgv(argv))
+    const flow = try Route.load(resolved.route)
+    const schema = try SchemaBridge.toCommandSchema(resolved.route.input, flow.input)
+    const parsed = try CommandLine.parseFlags(resolved.rest)
+    const input = try schema.decode(schema.assemble(parsed.args, parsed.options))
     return Object.freeze({ route: resolved.route, flow, argv, input })
   }
 
-  const invoke = (route: Route.Route, flow: Loaded, input: unknown) =>
-    FlowInvoker.FlowInvoker.invoke(Object.freeze({ name: route.name, flow, input }))
+  const invoke = effect (route: Route.Route, flow: Loaded, input: unknown) =>
+    try FlowInvoker.FlowInvoker.invoke(Object.freeze({ name: route.name, flow, input }))
 
   const listed = Object.freeze(
     CommandTree.traverse(tree).map((route) =>
@@ -135,25 +135,25 @@ export function make(routes: ReadonlyArray<Route.Route>): Effect<CommandSurface,
 
   const surface: CommandSurface = {
     list: () => listed,
-    parse: (commandString) => {
-      const { argv, input, route } = prepare(commandString)
+    parse: effect (commandString) => {
+      const { argv, input, route } = try prepare(commandString)
       return Object.freeze({ route, argv, input })
     },
-    execute: (commandString) =>
-      withSpan("Command.execute") {
-        const { flow, input, route } = prepare(commandString)
-        return SchemaBridge.encodeOutput(flow.output, invoke(route, flow, input))
-      },
-    call: <N extends Route.Name>(name: N, candidate: Route.Input<N>) =>
-      withSpan("Command.call") {
-        const input = snapshotDecoded(candidate)
+    execute: effect (commandString) =>
+      try withSpan(effect {
+        const { flow, input, route } = try prepare(commandString)
+        return try SchemaBridge.encodeOutput(flow.output, try invoke(route, flow, input))
+      }, "Command.execute"),
+    call: effect <N extends Route.Name>(name: N, candidate: Route.Input<N>) =>
+      try withSpan(effect {
+        const input = try snapshotDecoded(candidate)
         const segments = typeof name === "string" ? name.split("/") : []
-        const route = CommandTree.resolveExact(tree, segments)
-        const flow = Route.load(route)
-        const decoded = validateDecoded(flow.input, input, "input")
-        const output = invoke(route, flow, decoded)
-        return validateDecoded(flow.output, output, "output") as Route.Output<N>
-      }
+        const route = try CommandTree.resolveExact(tree, segments)
+        const flow = try Route.load(route)
+        const decoded = try validateDecoded(flow.input, input, "input")
+        const output = try invoke(route, flow, decoded)
+        return (try validateDecoded(flow.output, output, "output")) as Route.Output<N>
+      }, "Command.call")
   }
   return Object.freeze(surface)
 }

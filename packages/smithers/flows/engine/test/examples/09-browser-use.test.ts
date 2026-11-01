@@ -1,4 +1,6 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { expect, it } from "@effect/vitest"
+import { Crypto } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
 import { build } from "esbuild"
 import { dirname, join } from "node:path"
@@ -9,7 +11,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 
 it.effect("runs on the in-memory engine", () =>
   Effect.gen(function*() {
-    const summary = yield* (Effect.provide(main, NodeCrypto.layer))
+    const summary = yield* (Effect.provide(main, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
     expect(summary.result).toBe("built web")
     expect(summary.stepKey).toBe(
       "key1_40330b52aa0c6d60b97d0bed12083cbc4a21fe7427873983ea5288d5db0f7b00"
@@ -30,4 +32,3 @@ it("bundles for the browser with no node: imports", async () => {
   expect(result.outputFiles).toHaveLength(1)
   expect(result.outputFiles[0]!.text).toContain("examples/Compile")
 })
-import * as NodeCrypto from "@effect/platform-node/NodeCrypto"

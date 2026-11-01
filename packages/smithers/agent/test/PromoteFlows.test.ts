@@ -12,6 +12,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as Capability from "@smthrs/capability/Capability"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
@@ -200,7 +201,7 @@ const promoteAndCall = async (capabilityEnvelope: ReadonlyArray<Capability.Capab
         Agent.layerDefaults,
         scriptedCompletionJudge,
         FlowEngine.layerMemory,
-        NodeCrypto.layer
+        Crypto.layerFromDigest(NodeCrypto.layerDigest)
       )
         .pipe(
           Layer.provideMerge(Safety.layer)
@@ -257,7 +258,7 @@ describe("flows/show-script", () => {
           Layer.mergeAll(Interpreter.layer(executable.flow), executable.layer).pipe(
             Layer.provideMerge(Action.layerImplementations),
             Layer.provideMerge(FlowEngine.layerMemory),
-            Layer.provideMerge(NodeCrypto.layer)
+            Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
           )
         ))
         expect(result).toBe("ready")

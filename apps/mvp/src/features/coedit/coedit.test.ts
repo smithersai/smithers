@@ -6,7 +6,7 @@ import { reloadAfter } from "../../test/reloadTiming"
 // would.
 import type { SandboxTools } from "@smthrs/sandbox"
 import { PresenceProtocol, SharedText } from "@smthrs/sync"
-import { type Duration, Effect, Exit, Layer, Logger, ManagedRuntime, Metric } from "effect"
+import { Cause, Context, type Duration, Effect, Exit, Layer, Logger, ManagedRuntime, Metric } from "effect"
 import { Base64 } from "effect/encoding"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
@@ -826,8 +826,13 @@ describe("sending", () => {
         Effect.provide(FetchHttpClient.layer),
         Effect.provideService(FetchHttpClient.Fetch, fetch),
       )))
+    // Effect 4.1 attaches the named Effect.fn frame to each typed failure.
+    const refused = (error: UpdateNotTaken) => Exit.failCause(Cause.annotate(
+      Cause.fail(error),
+      Context.make(Cause.StackTrace, { name: "POST", parent: undefined, stack: expect.any(Function) }),
+    ))
     const answer = (status: number, body: string) => () => Promise.resolve(new Response(body, { status }))
-    expect(await post(() => Promise.reject(new TypeError("fetch failed")))).toEqual(Exit.fail(new UpdateNotTaken({})))
+    expect(await post(() => Promise.reject(new TypeError("fetch failed")))).toEqual(refused(new UpdateNotTaken({})))
     expect(await post(answer(200, "not json"))).toEqual(Exit.fail(new UpdateNotTaken({ status: 200 })))
     expect(await post(answer(403, "denied"))).toEqual(Exit.fail(new UpdateNotTaken({ status: 403 })))
     expect(await post(answer(403, JSON.stringify({ code: "view_only" })))).toEqual(
@@ -835,8 +840,13 @@ describe("sending", () => {
     )
     expect(await post(answer(200, JSON.stringify({ txid: 7 })))).toEqual(Exit.succeed({ txid: 7 }))
     // An answer that never comes is no answer.
-    const never = (_input: RequestInfo | URL, init?: RequestInit) =>
-      new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new Error("aborted"))))
+    const never = (input: RequestInfo | URL, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        const signal = input instanceof Request ? input.signal : init?.signal
+        const aborted = () => reject(new Error("aborted"))
+        if (signal?.aborted) aborted()
+        else signal?.addEventListener("abort", aborted, { once: true })
+      })
     expect(await post(never, "50 millis")).toEqual(Exit.fail(new UpdateNotTaken({})))
   })
 })

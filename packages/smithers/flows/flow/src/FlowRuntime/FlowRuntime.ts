@@ -22,8 +22,8 @@
  * @since 0.1.0
  */
 
+import type { Crypto } from "@smthrs/crypto"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
 import type * as Effect from "effect/Effect"
 import type * as Exit from "effect/Exit"
 import type * as Option from "effect/Option"

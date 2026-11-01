@@ -1,6 +1,7 @@
 /** Public durable model calls, with engine faults injected through its service. */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Capability, Permission } from "@smthrs/capability"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { HarnessError } from "@smthrs/harness"
@@ -30,7 +31,11 @@ const drive = <A, E>(body: Effect.Effect<A, E, ModelStep.Requirements>) =>
       )).pipe(Scope.provide(scope))
     yield* engine.execute(probe, { executionId: "public-model", payload: {}, discard: true })
     return yield* Deferred.await(settled)
-  }).pipe(Effect.provide(Layer.merge(FlowEngine.layerMemory, NodeCrypto.layer)), Effect.scoped, Effect.runPromise)
+  }).pipe(
+    Effect.provide(Layer.merge(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest))),
+    Effect.scoped,
+    Effect.runPromise
+  )
 
 const unwrap = <A, E>(exit: Exit.Exit<A, E>): A => {
   if (Exit.isFailure(exit)) throw Cause.squash(exit.cause)

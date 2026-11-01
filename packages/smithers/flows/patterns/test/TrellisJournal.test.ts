@@ -9,6 +9,7 @@
  * `TrellisError` the journal can encode, with its residue intact.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { EngineStore, StepBoundary } from "@smthrs/engine-store"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
@@ -106,7 +107,7 @@ const durable = <A, E>(filename: string, body: Effect.Effect<A, E, any>): Promis
       Effect.provide(jj),
       Effect.provide(StepBoundary.layerTest()),
       Effect.provide(TestStores.layerAt(filename)),
-      Effect.provide(NodeCrypto.layer)
+      Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
     ) as Effect.Effect<A, E, never>
   )
 

@@ -1,4 +1,5 @@
-import { NodeServices } from "@effect/platform-node"
+import { NodeCrypto, NodeServices } from "@effect/platform-node"
+import { Crypto } from "@smthrs/crypto"
 import { Effect, FileSystem, Layer } from "effect"
 import assert from "node:assert/strict"
 import { test } from "node:test"
@@ -6,8 +7,11 @@ import { layerWired } from "../../../packages/smithers/flows/flow/test/MemoryFlo
 import { checkDelegate, checkLayers } from "../coding/checks.ts"
 import { CodingError } from "../coding/schema.ts"
 
+// Effect 4.1 removed effect/Crypto, and NodeServices.layer no longer provides it.
+const nodeServices = Layer.merge(NodeServices.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
+
 test("a registered build-only check refuses before any source export or process", async () => {
-  const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(NodeServices.layer)))
+  const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(nodeServices)))
   const guarded: FileSystem.FileSystem = {
     ...fs,
     realPath: () => Effect.die(new Error("must not export an unconfigured build")),
@@ -47,8 +51,8 @@ test("a registered build-only check refuses before any source export or process"
       Effect.scoped,
       Effect.provide(
         layerWired(
-          checkLayers({ repositoryPath: "/must-not-export", fs: guarded }).pipe(Layer.provide(NodeServices.layer))
-        ).pipe(Layer.provideMerge(NodeServices.layer))
+          checkLayers({ repositoryPath: "/must-not-export", fs: guarded }).pipe(Layer.provide(nodeServices))
+        ).pipe(Layer.provideMerge(nodeServices))
       )
     )
   )

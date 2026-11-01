@@ -1,12 +1,12 @@
 /** Admission joins an active drive; only new work requests another drive. */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import { Node } from "@smthrs/plan"
 import { RunStore } from "@smthrs/run-store"
 import { Deferred, Effect, Exit, Fiber, Layer, Option, Schema, Scope } from "effect"
-import type * as Crypto from "effect/Crypto"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as RunDriver from "../src/internal/RunDriver.ts"

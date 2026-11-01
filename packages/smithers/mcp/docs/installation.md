@@ -18,8 +18,8 @@ behind `--mcp-config`.
 ## Requirements
 
 - Node.js 22.19.0 or later.
-- [`effect`](https://effect.website) at exactly `4.0.5`, a peer dependency.
-  The package is built and tested on 4.0.5. Connection and tool-call operations
+- [`effect`](https://effect.website) at exactly `4.1.0`, a peer dependency.
+  The package is built and tested on 4.1.0. Connection and tool-call operations
   return an `Effect`, and every schema is an `effect/Schema`. `McpFlows.mcp`
   is synchronous and returns a `FlowBinding.Source`; `Diagnostics.layer` is a
   `Layer` constructor.

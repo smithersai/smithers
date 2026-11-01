@@ -23,6 +23,7 @@ import {
   makeHandle,
   ProcessId
 } from "effect/process/ChildProcessSpawner"
+import * as Redacted from "effect/Redacted"
 import * as Sink from "effect/Sink"
 import * as Stream from "effect/Stream"
 import * as TestClock from "effect/testing/TestClock"
@@ -97,11 +98,15 @@ const spawnerWithPath = (path: string, calls: Array<EffectChildProcess.StandardC
       Effect.sync(() => {
         const standard = command as EffectChildProcess.StandardCommand
         calls.push(standard)
-        const child = spawn(executable ?? standard.command, [...standard.args], {
-          cwd: standard.options.cwd,
-          stdio: ["ignore", "pipe", "pipe"],
-          env: { ...process.env, PATH: path }
-        })
+        const child = spawn(
+          executable ?? standard.command,
+          standard.args.map((arg) => Redacted.isRedacted(arg) ? Redacted.value(arg) : arg),
+          {
+            cwd: standard.options.cwd,
+            stdio: ["ignore", "pipe", "pipe"],
+            env: { ...process.env, PATH: path }
+          }
+        )
         let stdout = ""
         let stderr = ""
         child.stdout?.on("data", (chunk: Buffer) => {

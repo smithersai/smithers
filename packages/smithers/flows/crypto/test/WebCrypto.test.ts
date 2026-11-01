@@ -1,8 +1,9 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto, Effect, type Layer, PlatformError } from "effect"
+import { Effect, type Layer, PlatformError } from "effect"
+import * as Digest from "effect/crypto/Digest"
 import { readFileSync } from "node:fs"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { digest as sha256, digestSync, WebCrypto } from "../src/index.ts"
+import { Crypto, digest as sha256, digestSync, WebCrypto } from "../src/index.ts"
 
 const hex = (bytes: Uint8Array) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")
 
@@ -72,14 +73,21 @@ describe("WebCrypto.make digest", () => {
     expect(hex(await digest("SHA-256", material))).toBe(digestSync(material))
   })
 
-  it.each(["SHA-1", "SHA-256", "SHA-384", "SHA-512"] as const)(
+  it.each(
+    [
+      ["SHA-1", Digest.sha1],
+      ["SHA-256", Digest.sha256],
+      ["SHA-384", Digest.sha384],
+      ["SHA-512", Digest.sha512]
+    ] as const
+  )(
     "agrees with Node's crypto for %s, so a guest and its Node host derive the same ids",
-    async (algorithm) => {
+    async (algorithm, nodeAlgorithm) => {
       const material = new TextEncoder().encode("the same key material on both sides of the machine boundary")
       const onNode = await Effect.runPromise(
         Effect.gen(function*() {
-          return yield* (yield* Crypto.Crypto).digest(algorithm, material)
-        }).pipe(Effect.provide(NodeCrypto.layer))
+          return yield* (yield* Digest.Digest).digest(nodeAlgorithm, material)
+        }).pipe(Effect.provide(NodeCrypto.layerDigest))
       )
       expect(await digest(algorithm, material)).toEqual(onNode)
     }

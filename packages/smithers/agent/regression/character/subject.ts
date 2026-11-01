@@ -23,7 +23,6 @@
  *
  * @since 0.1.0
  */
-import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
 import * as Deferred from "effect/Deferred"
@@ -54,6 +53,8 @@ import * as EgressHttpClient from "../../../flows/platform-node/src/EgressHttpCl
 import * as NativeEquipment from "../../../src/internal/NativeEquipment.ts"
 import type * as Profile from "./profile.ts"
 import * as World from "./world.ts"
+import { Crypto } from "@smthrs/crypto"
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 
 /** Token counts of one model call, as the provider reported them. */
 export interface Usage {
@@ -296,7 +297,7 @@ export const runTurn = (options: TurnOptions): Effect.Effect<Turn> =>
       durationMs: Date.now() - started
     } satisfies Turn
   }).pipe(
-    Effect.provide(Layer.merge(FlowEngine.layerMemory, NodeCrypto.layer)),
+    Effect.provide(Layer.merge(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest))),
     Effect.scoped,
     Effect.orDie
   )

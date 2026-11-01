@@ -2,6 +2,8 @@ import { describe, expect, it } from "@effect/vitest"
 import { Effect, Exit, Sink, Stream } from "effect"
 import * as PlatformError from "effect/PlatformError"
 import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
+import type { Word } from "effect/process/CommandLine"
+import * as Redacted from "effect/Redacted"
 import { execFileSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
@@ -12,6 +14,11 @@ import * as PipedProcess from "../src/internal/PipedProcess.ts"
 import { targetPidOf } from "../src/internal/ProcessSupervisor.ts"
 import * as ProcessReaper from "../src/ProcessReaper.ts"
 import * as ScopedProcess from "../src/ScopedProcess.ts"
+
+// Effect 4.1 types a command's arguments and environment values as Word, text or
+// Redacted text; the fakes read what the process would receive.
+const word = (value: Word): string => Redacted.isRedacted(value) ? Redacted.value(value) : value
+const argsOf = (command: { readonly args: ReadonlyArray<Word> }): Array<string> => command.args.map(word)
 
 vi.mock("../src/ProcessReaper.ts", async (original) => {
   const actual = await original<typeof import("../src/ProcessReaper.ts")>()
@@ -209,7 +216,7 @@ describe("scoped transient processes", () => {
           spawn(prepared).pipe(Effect.tap((handle) =>
             Effect.sync(() => {
               ownerPid = handle.pid
-              ownerPath = prepared.args.at(-2) ?? ""
+              ownerPath = argsOf(prepared).at(-2) ?? ""
             })
           )))
       )

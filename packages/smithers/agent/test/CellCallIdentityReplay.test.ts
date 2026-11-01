@@ -1,4 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as WorkspaceSandbox from "@smthrs/engine-store/WorkspaceSandbox"
@@ -118,7 +119,7 @@ const reopenDeclaration = async (declaration: "retained-prior" | "current"): Pro
       registration
     ).pipe(
       Layer.provide([
-        NodeCrypto.layer,
+        Crypto.layerFromDigest(NodeCrypto.layerDigest),
         AtomicFileSystem.layer,
         Jj.layerNoop({ snapshot: () => Effect.die("sealed calls take no snapshot") }),
         Layer.succeed(FlowEngine.ActionKeyEncoding)(historical ? 2 : FlowEngine.keyEncodings[0])

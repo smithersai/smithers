@@ -5,10 +5,10 @@
  * process reaches the same verdict without running a loser again.
  */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node, type Planned } from "@smthrs/plan"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { withCrypto } from "./Crypto.ts"
 import { layerWired, makeInstance, makeMemoryState, type MemoryState } from "./MemoryFlowRuntime.ts"
 

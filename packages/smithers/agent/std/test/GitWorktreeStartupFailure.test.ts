@@ -1,12 +1,19 @@
 import { NodeServices } from "@effect/platform-node"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import { Effect, PlatformError } from "effect"
+import type { Word } from "effect/process/CommandLine"
+import * as Redacted from "effect/Redacted"
 import { execFileSync } from "node:child_process"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, it } from "vitest"
 import { GitWorktree } from "../src/internal/GitWorktree.ts"
+
+// Effect 4.1 types a command's arguments and environment values as Word, text or
+// Redacted text; the fakes read what the process would receive.
+const word = (value: Word): string => Redacted.isRedacted(value) ? Redacted.value(value) : value
+const argsOf = (command: { readonly args: ReadonlyArray<Word> }): Array<string> => command.args.map(word)
 
 it("commit resolution reports Git startup failure without trying another ref and succeeds after transport recovery", async () => {
   const root = mkdtempSync(join(tmpdir(), "std-git-startup-"))
@@ -33,7 +40,7 @@ it("commit resolution reports Git startup failure without trying another ref and
         let broken = true
         const spawner = ChildProcessSpawner.makeNoop({
           spawn: (command) => {
-            if (command._tag === "StandardCommand") commands.push({ command: command.command, args: command.args })
+            if (command._tag === "StandardCommand") commands.push({ command: command.command, args: argsOf(command) })
             return broken ?
               Effect.fail(PlatformError.systemError({
                 _tag: "NotFound",

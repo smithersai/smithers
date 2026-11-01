@@ -18,6 +18,7 @@ import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
+import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { Journal, type JournalEvent } from "@smthrs/journal"
@@ -318,6 +319,6 @@ export const main = (filename: string): Effect.Effect<Summary> =>
       }).pipe(Effect.provide(base))
     )
   }).pipe(
-    Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodeCrypto.layer)),
+    Effect.provide(Layer.mergeAll(NodeFileSystem.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))),
     Effect.orDie
   )

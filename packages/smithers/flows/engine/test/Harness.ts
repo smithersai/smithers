@@ -1,7 +1,7 @@
 import { it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import type { Flow, FlowRuntime } from "@smthrs/flow"
 import { Effect, Option } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { withCrypto } from "./Crypto.ts"
 
 /** Declares a TestClock-driven test with concrete Node cryptography. */

@@ -7,11 +7,11 @@
 
 import { firstPath as schemaErrorPath } from "@smthrs/canonical/IssuePath"
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
+import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, StepIdentity } from "@smthrs/flow"
 import { DerivedKey, type StoredKey } from "@smthrs/keys"
 import * as Node from "@smthrs/plan/Node"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Option from "effect/Option"

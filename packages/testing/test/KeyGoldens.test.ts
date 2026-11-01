@@ -74,7 +74,7 @@ const buildGraph = (): Graph.Graph => Graph.build(Node.all({ read: reader.call({
 
 const actualKeys = (): Record<string, string> => {
   const keys = Plan.keys(buildGraph())
-  const runKey = <A, E>(effect: Effect.Effect<A, E, import("effect/Crypto").Crypto>): A =>
+  const runKey = <A, E>(effect: Effect.Effect<A, E, import("@smthrs/crypto").Crypto.Crypto>): A =>
     Effect.runSync(Digest.provideSync(effect))
   return {
     "content/basic": runKey(

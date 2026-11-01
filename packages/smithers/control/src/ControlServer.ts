@@ -24,10 +24,12 @@ export const logDefect = (cause: Cause.Cause<unknown>): Effect.Effect<void> =>
   Cause.hasDies(cause) ? Effect.logError("A control RPC handler died") : Effect.void
 
 /**
- * The effective external scheme for hosts whose request URLs are relative.
- * A TLS host or trusted TLS-terminating proxy supplies `https:`; a plain HTTP
- * host supplies `http:`. Forwarding headers are not trusted automatically.
- * Without an absolute URL or this service, browser origins fail closed.
+ * The effective external scheme. A TLS host or trusted TLS-terminating proxy
+ * supplies `https:`; a plain HTTP host supplies `http:`. When set, it decides
+ * over the request URL's scheme, which is the socket's (Node) or the platform's
+ * (web adapters) and is wrong behind a TLS-terminating proxy. Forwarding headers
+ * are not trusted automatically. Without this service or an absolute URL,
+ * browser origins fail closed.
  *
  * @category services
  * @since 1.0.0
@@ -147,9 +149,11 @@ const sameOrigin = (
   if (origin === undefined) return true
   const host = headers.host
   const parsed = URL.parse(origin)
-  // Web adapters retain the absolute URL. Other hosts supply the external
-  // scheme explicitly: a relative URL reveals nothing about transport security.
-  const protocol = URL.parse(request.originalUrl)?.protocol ?? scheme
+  // A configured external scheme decides. Otherwise the request URL's scheme
+  // does: web adapters retain the absolute URL, and Effect 4.1's Node server
+  // builds one from the socket's TLS state. A relative URL reveals nothing
+  // about transport security, so it fails closed.
+  const protocol = scheme ?? URL.parse(request.originalUrl)?.protocol
   return host !== undefined && parsed !== null &&
     (parsed.protocol === "http:" || parsed.protocol === "https:") &&
     parsed.protocol === protocol && parsed.origin === origin && parsed.host === host.toLowerCase()

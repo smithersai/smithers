@@ -1,5 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeServices from "@effect/platform-node/NodeServices"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, type FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
@@ -373,7 +374,7 @@ const engine = (
     Layer.mergeAll(Interpreter.layer(Readopt), adoptAt(() => place), extra).pipe(
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(NodeCrypto.layer),
+      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
       Layer.provideMerge(NodeServices.layer)
     )
   )

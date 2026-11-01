@@ -26,8 +26,8 @@
  * @since 0.1.0
  */
 
+import type { Crypto } from "@smthrs/crypto"
 import * as Clock from "effect/Clock"
-import type * as Crypto from "effect/Crypto"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"

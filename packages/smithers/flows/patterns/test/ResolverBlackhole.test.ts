@@ -1,5 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Unreachable } from "@smthrs/kernel"
@@ -72,6 +73,11 @@ describe("resolver blackhole row outcomes", () => {
         { id: "b", status: "landed" }
       ])
       expect(probeTimes.filter((at) => at === 615000)).toHaveLength(2)
-    }).pipe(Effect.provide(layer), Effect.provide(TestClock.layer()), Effect.scoped, Effect.provide(NodeCrypto.layer))
+    }).pipe(
+      Effect.provide(layer),
+      Effect.provide(TestClock.layer()),
+      Effect.scoped,
+      Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    )
   })
 })

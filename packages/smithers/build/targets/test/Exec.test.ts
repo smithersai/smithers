@@ -54,8 +54,11 @@ const failed = async (value: Exec.Payload, options: Parameters<typeof Exec.run>[
   const exit = await Effect.runPromiseExit(Exec.run(options, value))
   if (Exit.isSuccess(exit)) throw new Error("expected an exec failure")
   const rendered = JSON.stringify(exit.cause)
-  const parsed = JSON.parse(rendered) as { readonly failures?: ReadonlyArray<{ readonly error: Exec.ExecError }> }
-  const error = parsed.failures?.[0]?.error
+  // Effect 4.1 renders a cause as its reasons, each tagged; a failure is `Fail`.
+  const parsed = JSON.parse(rendered) as {
+    readonly reasons?: ReadonlyArray<{ readonly _tag: string; readonly error?: Exec.ExecError }>
+  }
+  const error = parsed.reasons?.find((reason) => reason._tag === "Fail")?.error
   if (error === undefined) throw new Error(`expected an ExecError: ${rendered}`)
   return error
 }

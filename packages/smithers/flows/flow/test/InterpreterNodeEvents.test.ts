@@ -11,10 +11,10 @@
  * from durable records says so, instead of claiming it rebuilt them.
  */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Graph, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Effect, Layer, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { withCrypto } from "./Crypto.ts"
 import { layerWired, makeInstance, makeMemoryState, type MemoryState } from "./MemoryFlowRuntime.ts"
 

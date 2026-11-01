@@ -1,11 +1,11 @@
 /** Fork replay requires surviving attempts copied into the child. */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, RetryPolicy } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import { RunStore } from "@smthrs/run-store"
 import { Effect, Exit, Layer, Schema, Scope } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { SqlClient } from "effect/sql"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"

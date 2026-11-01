@@ -8,6 +8,7 @@
  * deterministic and CI-safe — there is no API key anywhere in it.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
@@ -175,7 +176,7 @@ const run = (
         Layer.provideMerge(Safety.layer),
         Layer.provideMerge(Action.layerImplementations),
         Layer.provideMerge(FlowEngine.layerMemory),
-        Layer.provideMerge(NodeCrypto.layer)
+        Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
       )
     )
   )
@@ -209,7 +210,7 @@ describe("AgentAction.make", () => {
       Layer.provideMerge(Safety.layer),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(NodeCrypto.layer)
+      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
     )
     const result = await Effect.runPromise(
       Both.execute({ diff: "diff" }, { executionId: "per-step-resolver" }).pipe(Effect.provide(layers))
@@ -255,7 +256,7 @@ describe("AgentAction.make", () => {
               Layer.provideMerge(Safety.layer),
               Layer.provideMerge(Action.layerImplementations),
               Layer.provideMerge(FlowEngine.layerMemory),
-              Layer.provideMerge(NodeCrypto.layer)
+              Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
             )
             const fiber = yield* TimedFlow.execute({ millis: 20 }, { executionId: `timeout-${duration}-${stage}` })
               .pipe(
@@ -304,7 +305,7 @@ describe("AgentAction.make", () => {
         Layer.provideMerge(Safety.layer),
         Layer.provideMerge(Action.layerImplementations),
         Layer.provideMerge(FlowEngine.layerMemory),
-        Layer.provideMerge(NodeCrypto.layer)
+        Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
       )
       const result = await Effect.runPromise(
         PacedFlow.execute({ diff: "diff" }, { executionId: `paced-${timed}` }).pipe(
@@ -556,7 +557,7 @@ describe("AgentAction.make", () => {
               Layer.provideMerge(Safety.layer),
               Layer.provideMerge(Action.layerImplementations),
               Layer.provideMerge(FlowEngine.layerMemory),
-              Layer.provideMerge(NodeCrypto.layer)
+              Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
             )
           )
         )
@@ -597,7 +598,7 @@ describe("AgentAction.make", () => {
               Layer.provideMerge(Safety.layer),
               Layer.provideMerge(Action.layerImplementations),
               Layer.provideMerge(FlowEngine.layerMemory),
-              Layer.provideMerge(NodeCrypto.layer)
+              Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
             )
           )
         )
@@ -623,7 +624,8 @@ describe("AgentAction.make", () => {
     const rendered = JSON.stringify(failure)
     expect(rendered).toContain("StructuredOutputFailure")
     const encoded = JSON.parse(JSON.stringify(exit))
-    const error = encoded.cause.failures[0].error
+    // Effect 4.1 renders a cause as its reasons, each tagged; a failure is `Fail`.
+    const error = encoded.cause.reasons.find((reason: { readonly _tag: string }) => reason._tag === "Fail").error
     expect(error.action).toBe("agent/test/Reviewer")
     expect(error.nodeId).toEqual(expect.any(String))
     expect(error.nodeId.length).toBeGreaterThan(0)
@@ -654,7 +656,7 @@ const stack = <ROut, RIn>(
     Layer.provideMerge(Safety.layer),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(NodeCrypto.layer)
+    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
   )
 
 describe("AgentAction completion claim brake", () => {
@@ -686,7 +688,7 @@ describe("AgentAction completion claim brake", () => {
           Layer.provideMerge(Safety.layer),
           Layer.provideMerge(Action.layerImplementations),
           Layer.provideMerge(FlowEngine.layerMemory),
-          Layer.provideMerge(NodeCrypto.layer)
+          Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
         )
       ))
     ))
@@ -1315,7 +1317,7 @@ describe("AgentAction refusals that never reach the provider", () => {
               Layer.provideMerge(Safety.layer),
               Layer.provideMerge(Action.layerImplementations),
               Layer.provideMerge(FlowEngine.layerMemory),
-              Layer.provideMerge(NodeCrypto.layer)
+              Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
             )
           )
         )
@@ -1343,7 +1345,7 @@ describe("AgentAction refusals that never reach the provider", () => {
               Layer.provideMerge(Safety.layer),
               Layer.provideMerge(Action.layerImplementations),
               Layer.provideMerge(FlowEngine.layerMemory),
-              Layer.provideMerge(NodeCrypto.layer)
+              Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
             )
           )
         )
@@ -1819,7 +1821,7 @@ describe("AgentAction payload-chosen seats", () => {
             Layer.provideMerge(Safety.layer),
             Layer.provideMerge(Action.layerImplementations),
             Layer.provideMerge(FlowEngine.layerMemory),
-            Layer.provideMerge(NodeCrypto.layer)
+            Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
           )
         )
       )
@@ -1845,7 +1847,7 @@ describe("AgentAction payload-chosen seats", () => {
             Layer.provideMerge(Safety.layer),
             Layer.provideMerge(Action.layerImplementations),
             Layer.provideMerge(FlowEngine.layerMemory),
-            Layer.provideMerge(NodeCrypto.layer)
+            Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
           )
         )
       )
@@ -1869,7 +1871,7 @@ describe("AgentAction payload-chosen seats", () => {
       Layer.provideMerge(Safety.layer),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(NodeCrypto.layer)
+      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
     )
     for (const [index, model] of ["anthropic:first", "anthropic:second"].entries()) {
       await Effect.runPromise(
@@ -1966,7 +1968,7 @@ describe("AgentAction seat auto", () => {
       Layer.provideMerge(safety),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(engine),
-      Layer.provideMerge(NodeCrypto.layer)
+      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
     )
 
   const Routed = AgentAction.make("agent/test/Routed", {
@@ -2116,7 +2118,11 @@ describe("AgentAction seat auto", () => {
         }))
       }).pipe(
         Effect.provide(stores),
-        Effect.provide(mode === "memory" ? NodeCrypto.layer : Layer.merge(NodeCrypto.layer, TestClock.layer()))
+        Effect.provide(
+          mode === "memory"
+            ? Crypto.layerFromDigest(NodeCrypto.layerDigest)
+            : Layer.merge(Crypto.layerFromDigest(NodeCrypto.layerDigest), TestClock.layer())
+        )
       )
     ))
     if (mode === "deadline") {
@@ -2206,7 +2212,7 @@ describe("AgentAction seat auto", () => {
             Layer.provideMerge(Safety.layer),
             Layer.provideMerge(Action.layerImplementations),
             Layer.provideMerge(FlowEngine.layerMemory),
-            Layer.provideMerge(NodeCrypto.layer)
+            Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
           )
         )
       )
@@ -2721,7 +2727,7 @@ describe("AgentAction seat auto", () => {
             Layer.provideMerge(Safety.layer),
             Layer.provideMerge(Action.layerImplementations),
             Layer.provideMerge(FlowEngine.layerMemory),
-            Layer.provideMerge(NodeCrypto.layer)
+            Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
           ),
           EventSink.layer({
             emit: (event) => Effect.sync(() => event._tag === "relevance-settled" && void settled.push(event))
@@ -2788,7 +2794,7 @@ describe("AgentAction seat auto", () => {
               Layer.provideMerge(Safety.layer),
               Layer.provideMerge(Action.layerImplementations),
               Layer.provideMerge(FlowEngine.layerMemory),
-              Layer.provideMerge(NodeCrypto.layer)
+              Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
             ),
             EventSink.layer({
               emit: (event) => Effect.sync(() => event._tag === "relevance-settled" && void settled.push(event))
@@ -2859,7 +2865,7 @@ describe("AgentAction seat auto", () => {
       Layer.provideMerge(Safety.layer),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(NodeCrypto.layer)
+      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
     )
     const results = await Effect.runPromise(
       Effect.gen(function*() {
@@ -2912,7 +2918,7 @@ describe("AgentAction ordered fallback seats", () => {
       Layer.provideMerge(Safety.layer),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(NodeCrypto.layer)
+      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
     )
     const results = await Effect.runPromise(
       Effect.gen(function*() {

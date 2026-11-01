@@ -7,7 +7,6 @@
  * parses arguments and composes the Node host layers. Procedure:
  * `packages/smithers/flows/engine-store/docs/guides/back-up-and-restore.md`.
  */
-import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { DurableWriter } from "@smthrs/database"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
@@ -15,6 +14,8 @@ import * as DisasterRecovery from "@smthrs/engine-store/DisasterRecovery"
 import { Effect, Layer } from "effect"
 import { resolve } from "node:path"
 import { pathToFileURL } from "node:url"
+import { Crypto } from "@smthrs/crypto"
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 
 const usage = `usage:
   node packages/smithers/flows/engine-store/scripts/flows-backup.mjs backup <database-file> <backup-directory> [objects-directory] [--max-file-size <bytes>]
@@ -52,7 +53,7 @@ export const parseArguments = (argv) => {
   throw new Error(usage)
 }
 
-const host = Layer.mergeAll(NodeFileSystem.layer, NodeCrypto.layer)
+const host = Layer.mergeAll(NodeFileSystem.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
 
 /** Builds the Effect for one parsed invocation. Returns the operator summary line. */
 export const program = (invocation) => {

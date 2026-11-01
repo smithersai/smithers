@@ -52,7 +52,7 @@ To select `watchTransport: "socket"` explicitly, authenticate its upgrade in
 the supplied Socket layer. This Node composition supplies that upgrade header:
 
 ```ts
-import { NodeHttpClient, NodeSocket } from "@effect/platform-node"
+import { NodeHttpClient, NodeWS } from "@effect/platform-node"
 import * as ControlClient from "@smthrs/control/ControlClient"
 import * as Layer from "effect/Layer"
 import { RpcSerialization } from "effect/rpc"
@@ -66,7 +66,7 @@ const authenticatedSocket = Socket.layerWebSocket("ws://127.0.0.1:4000/rpc/ws").
         ? options
         : undefined
       const protocols = configured === undefined ? options as string | Array<string> | undefined : undefined
-      const socket = new NodeSocket.NodeWS.WebSocket(url, protocols, {
+      const socket = new NodeWS.WebSocket(url, protocols, {
         ...configured,
         headers: { ...configured?.headers, Authorization: `Bearer ${credential}` }
       })

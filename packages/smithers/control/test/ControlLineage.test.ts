@@ -10,6 +10,7 @@
  * else, and a journal table that exists but no longer answers.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Migrations as RunStoreMigrations, RunStore } from "@smthrs/run-store"
 import { Effect, Layer } from "effect"
@@ -24,7 +25,7 @@ import * as SqlControlRuntime from "../src/SqlControlRuntime.ts"
  * dropped to model a composition whose journal lives somewhere else.
  */
 const database = Layer.provideMerge(
-  Layer.mergeAll(RunStore.layer, NodeCrypto.layer),
+  Layer.mergeAll(RunStore.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest)),
   Layer.provideMerge(
     Layer.effectDiscard(
       Effect.flatMap(Effect.service(SqlClient.SqlClient), (sql) => sql`DROP TABLE flows_journal_events`)

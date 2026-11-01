@@ -15,19 +15,20 @@
     "@smthrs/scorers": "workspace:*",
     "@smthrs/core": "workspace:*",
     "@smthrs/model": "workspace:*",
-    "effect": "4.0.5",
+    "effect": "4.1.0",
     "@smthrs/cli": "workspace:*",
     "@smthrs/engine": "workspace:*",
     "@smthrs/flow": "workspace:*",
     "@smthrs/flows": "workspace:*",
     "@smthrs/registry": "workspace:*",
-    "@effect/platform-node": "4.0.5"
+    "@effect/platform-node": "4.1.0"
   },
   "devDependencies": {
+    "@smthrs/crypto": "workspace:*",
     "@smthrs/targets": "workspace:*",
     "@types/node": "26.4.1",
     "bun-types": "^1.4.0",
     "typescript": "5.9.3",
-    "vibelang": "0.0.8"
+    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-3ee099e972e9.tgz"
   }
 }

@@ -4,6 +4,7 @@ import { ArtifactStore } from "@smthrs/artifacts"
 import { Control, ControlExecutor, ControlLive, ControlRuntime, Health, SqlControlRuntime } from "@smthrs/control"
 import type { RunSummary } from "@smthrs/control/ControlSchema"
 import * as TestControl from "@smthrs/control/test/TestControl"
+import { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { FlowEngine } from "@smthrs/engine"
 import { EngineStore, StepBoundary } from "@smthrs/engine-store"
@@ -24,7 +25,11 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as HealthHost from "../src/internal/HealthHost.ts"
 
-const testLayer = Layer.mergeAll(TestControl.layer(), FlowEngine.layerMemory, NodeCrypto.layer)
+const testLayer = Layer.mergeAll(
+  TestControl.layer(),
+  FlowEngine.layerMemory,
+  Crypto.layerFromDigest(NodeCrypto.layerDigest)
+)
 
 const summaries: ReadonlyArray<RunSummary> = Array.from({ length: 4 }, (_, index) => ({
   runId: `health-${index}`,
@@ -58,7 +63,7 @@ describe("native health producer lifetime", () => {
     }).pipe(
       Layer.provideMerge(TestStores.layerAt(":memory:")),
       Layer.provide(StepBoundary.layerUnsupported),
-      Layer.provideMerge(NodeCrypto.layer),
+      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
       Layer.provide(NodeJj.layerAt(process.cwd()))
     )
     await Effect.runPromise(
@@ -383,7 +388,7 @@ it("discovers runs committed through an independent SQLite journal instance", ()
                   Registry.layerNoop()
                 ).pipe(Layer.provideMerge(TestStores.layerAt(join(directory, "control.db"))))
               ),
-              Layer.provide(NodeCrypto.layer)
+              Layer.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
             )
           const reader = yield* Layer.build(Layer.fresh(stack()))
           const writer = yield* Layer.build(Layer.fresh(stack()))
@@ -431,7 +436,9 @@ it("discovers runs committed through an independent SQLite journal instance", ()
           yield* TestClock.adjust(5_000)
           expect(yield* Deferred.await(recorded)).toBe(receipt.runId)
           yield* Fiber.interrupt(fiber)
-        })).pipe(Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer))),
+        })).pipe(
+          Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+        ),
       (directory) => Effect.promise(() => rm(directory, { recursive: true, force: true }))
     ).pipe(Effect.provide(TestClock.layer()))
   ))
@@ -454,7 +461,7 @@ it("resumes one discovery lineage after reopening its persisted timer", () =>
                 NodeFileSystem.layer,
                 NodePath.layer
               )))),
-              Layer.provideMerge(NodeCrypto.layer),
+              Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
               Layer.provide(NodeJj.layerAt(process.cwd()))
             )
           const host = (resuming: boolean) =>

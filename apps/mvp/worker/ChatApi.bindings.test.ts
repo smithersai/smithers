@@ -4,7 +4,7 @@
 // sign-in read APP_DOMAIN and APP_ALIASES only once SESSION_SECRET was set, which Alchemy binds from the stack rather
 // than from Config, so no plan ever read them and aliases signed in through their own GitHub callback (decision 0130).
 import * as Alchemy from "alchemy"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as Output from "alchemy/Output"
 import { Stage } from "alchemy/Stage"
 import { run } from "alchemy/Test/Core"

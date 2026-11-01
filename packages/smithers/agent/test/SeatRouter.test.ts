@@ -3,6 +3,7 @@
  * one call, the graph picks the seats, and a declared seat asks nothing.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as WorkspaceSandbox from "@smthrs/engine-store/WorkspaceSandbox"
@@ -585,7 +586,7 @@ describe("SeatRouter.durable", () => {
     ManagedRuntime.make(
       registration(judge).pipe(
         Layer.provideMerge(FlowEngine.layerMemory),
-        Layer.provideMerge(NodeCrypto.layer)
+        Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
       )
     )
 
@@ -629,7 +630,7 @@ describe("SeatRouter.durable", () => {
         Layer.provideMerge(Layer.mergeAll(catalog(everySeat), answering(requests))),
         Layer.provideMerge(Action.layerImplementations),
         Layer.provideMerge(FlowEngine.layerMemory),
-        Layer.provideMerge(NodeCrypto.layer)
+        Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
       )
     )
     try {
@@ -685,7 +686,9 @@ describe("SeatRouter.durable", () => {
         StepBoundary.layer,
         WorkspaceSandbox.layerFileSystem(),
         registration(judge)
-      ).pipe(Layer.provideMerge(Layer.mergeAll(AtomicFileSystem.layer, NodeCrypto.layer, jj)))
+      ).pipe(
+        Layer.provideMerge(Layer.mergeAll(AtomicFileSystem.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest), jj))
+      )
     const execute = Routing.execute({}, { executionId: "run-durable" })
     try {
       await Effect.runPromise(

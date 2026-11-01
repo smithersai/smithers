@@ -15,8 +15,7 @@
  */
 
 import { canonicalize } from "@smthrs/canonical"
-import { digestSync, syncCrypto } from "@smthrs/crypto"
-import * as Crypto from "effect/Crypto"
+import { Crypto, digestSync, syncCrypto } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
 
 /**

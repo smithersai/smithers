@@ -30,9 +30,9 @@
  * @since 0.1.0
  */
 
+import type { Crypto } from "@smthrs/crypto"
 import * as Node from "@smthrs/plan/Node"
 import type * as Repetition from "@smthrs/plan/Repetition"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"

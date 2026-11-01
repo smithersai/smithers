@@ -25,6 +25,7 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as Capability from "@smthrs/capability/Capability"
+import { Crypto } from "@smthrs/crypto"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
@@ -38,7 +39,6 @@ import type * as Route from "@smthrs/model/Route"
 import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
 import { Deferred, Effect, Layer, Option, Schema, Scope, Stream } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { describe, expect, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
@@ -122,7 +122,7 @@ const durableEngine = EngineStore.layer({
   Layer.provide(Layer.sync(DurableEngineState.DurableEngineState)(promptClocks)),
   Layer.provide(StepBoundary.layerTest()),
   Layer.provide(TestStores.layer()),
-  Layer.provide(NodeCrypto.layer)
+  Layer.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
 )
 
 /**
@@ -178,7 +178,7 @@ const driveDurable = (
     )
   }).pipe(
     Effect.provide(durableEngine),
-    Effect.provide(NodeCrypto.layer),
+    Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
     Effect.scoped,
     Effect.runPromise
   )

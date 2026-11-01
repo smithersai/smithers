@@ -8,10 +8,10 @@
  * @since 0.1.0
  */
 
+import type { Crypto } from "@smthrs/crypto"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
 import { DerivedKey } from "@smthrs/keys"
 import * as Cause from "effect/Cause"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import type * as FileSystem from "effect/FileSystem"

@@ -15,19 +15,19 @@
     "check": "vibelang --noEmit"
   },
   "dependencies": {
-    "@effect/sql-pg": "4.0.5",
+    "@effect/sql-pg": "4.1.0",
     "@smthrs/targets": "workspace:*",
-    "effect": "4.0.5"
+    "effect": "4.1.0"
   },
   "devDependencies": {
     "typescript": "5.9.3",
-    "vibelang": "0.0.8",
-    "vibelang-vite": "0.0.8",
+    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-3ee099e972e9.tgz",
+    "vibelang-vite": "file:../../.vibelang-toolchain/vibelang-vite-0.0.11-a2b67ac4484b.tgz",
     "vitest": "5.0.0",
     "@smthrs/plan": "workspace:*",
     "@vitest/coverage-v8": "5.0.0",
     "fast-check": "4.9.0",
-    "vibelang-runtime": "0.0.8",
-    "vibelang-unplugin": "0.0.8"
+    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-144ebc4c7ea9.tgz",
+    "vibelang-unplugin": "file:../../.vibelang-toolchain/vibelang-unplugin-0.0.11-d83e2657e595.tgz"
   }
 }

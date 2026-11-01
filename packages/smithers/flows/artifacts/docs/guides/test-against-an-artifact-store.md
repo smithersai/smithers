@@ -19,6 +19,7 @@ filesystem store uses:
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
+import { Crypto } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
 
 const payload = new TextEncoder().encode("a step's output")
@@ -29,7 +30,7 @@ const roundTrip = Effect.gen(function*() {
   return new TextDecoder().decode(yield* store.get(digest))
 })
 
-const result = await Effect.runPromise(roundTrip.pipe(Effect.provide(NodeCrypto.layer)))
+const result = await Effect.runPromise(roundTrip.pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))))
 ```
 
 It copies on both boundaries, so a test that mutates the array it put still
@@ -44,10 +45,13 @@ the store does:
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
+import { Crypto } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
 
 const expectedAddress = await Effect.runPromise(
-  ArtifactStore.measureBytes(new TextEncoder().encode("payload")).pipe(Effect.provide(NodeCrypto.layer))
+  ArtifactStore.measureBytes(new TextEncoder().encode("payload")).pipe(
+    Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+  )
 )
 ```
 

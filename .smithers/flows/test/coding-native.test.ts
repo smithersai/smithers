@@ -1,4 +1,5 @@
 import { NodeCrypto, NodeServices } from "@effect/platform-node"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Effect, Layer, ManagedRuntime, Redacted, Schema } from "effect"
@@ -223,7 +224,7 @@ test("unprovisioned packaged reserved dispatch refuses through the Action bounda
     Layer.mergeAll(Interpreter.layer(Capture), stackBaseLayer.pipe(Layer.provide(native))).pipe(
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(NodeCrypto.layer)
+      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
     )
   )
   t.after(() => runtime.dispose())

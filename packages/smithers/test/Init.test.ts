@@ -13,6 +13,7 @@ import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, FlowRuntime, Graph } from "@smthrs/flow"
 import * as Model from "@smthrs/model/Model"
@@ -282,7 +283,7 @@ describe("the seat the scaffold writes", () => {
   })
 })
 
-const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)
+const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
 
 describe("generated TypeScript through the public registry and runtime", () => {
   it.each([

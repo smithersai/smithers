@@ -20,11 +20,11 @@
  * themselves; a label never decides.
  */
 import { afterEach, describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { FlowRuntime } from "@smthrs/flow"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as HostLiveness from "@smthrs/platform-node/HostLiveness"
 import { Ownership, RunStore } from "@smthrs/run-store"
-import type * as Crypto from "effect/Crypto"
 import * as Deferred from "effect/Deferred"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"

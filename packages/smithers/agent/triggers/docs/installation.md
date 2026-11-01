@@ -16,7 +16,7 @@ The `next` tag carries the 1.0 release candidates.
 ## Requirements
 
 - Node.js 22.19.0 or later.
-- [`effect`](https://effect.website) `4.0.5`, which supplies the `Effect`,
+- [`effect`](https://effect.website) `4.1.0`, which supplies the `Effect`,
   `Schema`, `Clock`, and SQL client types this package's signatures use.
 - [`@smthrs/control`](/api/control), the authoritative launch boundary. The
   scheduler's Control-backed runner and every channel dispatch go through it.

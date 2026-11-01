@@ -8,6 +8,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, Interpreter } from "@smthrs/flow"
 import { Discovery } from "@smthrs/registry"
@@ -27,7 +28,7 @@ const run = (payload: typeof Request.Type, executionId: string) =>
       Effect.provide(
         Interpreter.layerWithImplementations(DocsSync, layer).pipe(
           Layer.provideMerge(FlowEngine.layerMemory),
-          Layer.provideMerge(NodeCrypto.layer)
+          Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
         )
       )
     )

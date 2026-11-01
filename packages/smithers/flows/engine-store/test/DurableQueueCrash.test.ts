@@ -12,11 +12,11 @@
  * is the SQL `PersistedQueue` store in that file. The completion store's failures are the engine runtime's own
  * `deferredDone`, wrapped; the first worker's death is the interruption of its fiber. Nothing is mocked.
  */
+import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableQueue, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import { Ownership } from "@smthrs/run-store"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"

@@ -17,7 +17,7 @@ The `next` tag carries the 1.0 release candidates. `latest` still carries the
 ## Requirements
 
 - Node.js 22.19.0 or later. The package's `engines` field enforces this floor.
-- [Effect](https://effect.website) at exactly `4.0.5`. It is a peer
+- [Effect](https://effect.website) at exactly `4.1.0`. It is a peer
   dependency so the application and Smithers share one Effect runtime.
 
 The package ships as ESM and CommonJS with TypeScript declarations. Its
@@ -45,7 +45,7 @@ npm install @smthrs/database@next @effect/platform-node @effect/platform-node-sh
   imports `@smthrs/database/node/NodeDatabase` and
   `@smthrs/database/DurableWriter` by name, and a package manager that isolates
   transitive dependencies will not resolve those unless you declare it too.
-- `@effect/platform-node` provides `NodeCrypto.layer`, the `Crypto.Crypto`
+- `@effect/platform-node` provides `Crypto.layerFromDigest(NodeCrypto.layerDigest)`, the `Crypto.Crypto`
   service `MemoryStore.layer` requires for generating thread ids.
 - `@effect/sql-sqlite-node` is the optional database peer required by
   `@smthrs/database/node/NodeDatabase`.

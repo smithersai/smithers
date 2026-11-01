@@ -17,6 +17,8 @@ import { NodeServices } from "@effect/platform-node"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import { Deferred, Effect, Fiber, Layer } from "effect"
 import type * as ChildProcess from "effect/process/ChildProcess"
+import type { Word } from "effect/process/CommandLine"
+import * as Redacted from "effect/Redacted"
 import { execFileSync } from "node:child_process"
 import {
   accessSync,
@@ -40,6 +42,11 @@ import * as Bash from "../src/Bash.ts"
 import * as Checkpoints from "../src/Checkpoints.ts"
 import * as Container from "../src/Container.ts"
 import * as TestRunner from "../src/TestRunner.ts"
+
+// Effect 4.1 types a command's arguments and environment values as Word, text or
+// Redacted text; the fakes read what the process would receive.
+const word = (value: Word): string => Redacted.isRedacted(value) ? Redacted.value(value) : value
+const argsOf = (command: { readonly args: ReadonlyArray<Word> }): Array<string> => command.args.map(word)
 
 const git = (root: string, args: ReadonlyArray<string>): string =>
   execFileSync("git", ["-C", root, ...args], { encoding: "utf8" })
@@ -487,8 +494,8 @@ describe("Checkpoints over a real repository", () => {
         spawn: (command) =>
           Effect.suspend(() => {
             const standard = command as ChildProcess.StandardCommand
-            const tree = standard.args?.find((arg) => arg.startsWith("--work-tree="))?.slice("--work-tree=".length)
-            if (standard.command === "git" && standard.args.includes("read-tree") && tree !== undefined) {
+            const tree = argsOf(standard).find((arg) => arg.startsWith("--work-tree="))?.slice("--work-tree=".length)
+            if (standard.command === "git" && argsOf(standard).includes("read-tree") && tree !== undefined) {
               mkdirSync(scratch, { recursive: true })
               const name = readdirSync(scratch).find((entry) => entry.startsWith("cp-race-")) ?? basename(tree)
               rmSync(join(scratch, name), { recursive: true, force: true })
@@ -532,7 +539,7 @@ describe("Checkpoints over a real repository", () => {
         spawn: (command) =>
           Effect.suspend(() => {
             const standard = command as ChildProcess.StandardCommand
-            if (standard.command === "sh" && standard.args.some((arg) => arg.includes("stat -c %d")) && !raced) {
+            if (standard.command === "sh" && argsOf(standard).some((arg) => arg.includes("stat -c %d")) && !raced) {
               rmSync(scratch, { recursive: true, force: true })
               symlinkSync(victim, scratch)
               raced = true
@@ -593,9 +600,9 @@ describe("Checkpoints over a real repository", () => {
               const standard = command as ChildProcess.StandardCommand
               if (
                 shm === undefined && standard.command === "sh" &&
-                standard.args.some((arg) => arg.includes("stat -c %d"))
+                argsOf(standard).some((arg) => arg.includes("stat -c %d"))
               ) {
-                const args = [...standard.args]
+                const args = argsOf(standard)
                 args[4] = "/dev"
                 return real.spawn({ ...standard, args } as ChildProcess.StandardCommand)
               }

@@ -486,7 +486,11 @@ export const run = (
           Effect.andThen(loaderFromPlan(plan, (entry) => Ref.update(loaderApplied, (entries) => [...entries, entry])))
         ),
         table
-      })
+      }).pipe(
+        // Effect 4.0's migrator died with a failed migration; 4.1 fails with it.
+        // Keep it a defect, as this module's own lower-block appends raise it.
+        Effect.catchTag("MigrationError", (error) => error.kind === "Failed" ? Effect.die(error) : Effect.fail(error))
+      )
     )
     const appliedByLoader = yield* Ref.get(loaderApplied)
     return [...appliedByLoader, ...completed]

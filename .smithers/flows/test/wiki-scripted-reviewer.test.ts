@@ -5,15 +5,19 @@
  * ReviewPage AgentAction renders its request, the scripted model answers it,
  * and exact assessment, the citation check and the verified write all hold.
  */
-import { NodeServices } from "@effect/platform-node"
+import { NodeCrypto, NodeServices } from "@effect/platform-node"
+import { Crypto } from "@smthrs/crypto"
 import { BuiltinScript } from "@smthrs/testing"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import assert from "node:assert/strict"
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { test, type TestContext } from "node:test"
 import type { PageSpec } from "../wiki/schema.ts"
+
+// Effect 4.1 removed effect/Crypto, and NodeServices.layer no longer provides it.
+const nodeServices = Layer.merge(NodeServices.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
 
 /** A repository shaped like the install's real target (codeplanesmithers/canary-sandbox) plus the source shapes real repositories carry. */
 const repository = async (t: TestContext, files: Readonly<Record<string, string>>) => {
@@ -122,7 +126,7 @@ const refresh = async (root: string, pages: ReadonlyArray<PageSpec>) => {
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(NodeServices.layer)
+    Layer.provideMerge(nodeServices)
   )
   const receipt = await Effect.runPromise(Effect.scoped(
     Wiki.execute({ pages, mode: "verified", reviewer: "scripted-install" }, { executionId: "wiki-scripted" })

@@ -1,4 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { Effect, Schema } from "effect"
 import { createHash } from "node:crypto"
 import { describe, expect, it } from "vitest"
@@ -25,9 +26,13 @@ describe("complete maximum-depth key derivation", () => {
       it(`hashes the complete ${kind} document at depth ${depth} through both public paths`, () => {
         const { value, document } = nested(depth, kind)
         const expected = `key1_${createHash("sha256").update(document, "utf8").digest("hex")}`
-        const direct = Effect.runSync(Keys.deriveKey(value).pipe(Effect.provide(NodeCrypto.layer)))
+        const direct = Effect.runSync(
+          Keys.deriveKey(value).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+        )
         const schema = Effect.runSync(
-          Schema.decodeUnknownEffect(Keys.DerivedKey)(value).pipe(Effect.provide(NodeCrypto.layer))
+          Schema.decodeUnknownEffect(Keys.DerivedKey)(value).pipe(
+            Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+          )
         )
         expect(direct).toBe(expected)
         expect(schema).toBe(expected)
@@ -38,10 +43,12 @@ describe("complete maximum-depth key derivation", () => {
     it(`rejects the ${kind} document one level past the maximum with typed failures`, () => {
       const { value } = nested(10_001, kind)
       const direct = Effect.runSync(
-        Effect.flip(Keys.deriveKey(value)).pipe(Effect.provide(NodeCrypto.layer))
+        Effect.flip(Keys.deriveKey(value)).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
       )
       const schema = Effect.runSync(
-        Effect.flip(Schema.decodeUnknownEffect(Keys.DerivedKey)(value)).pipe(Effect.provide(NodeCrypto.layer))
+        Effect.flip(Schema.decodeUnknownEffect(Keys.DerivedKey)(value)).pipe(
+          Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+        )
       )
       expect(direct.code).toBe("canonicalization_failed")
       expect(schema._tag).toBe("SchemaError")

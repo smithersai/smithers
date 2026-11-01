@@ -3,6 +3,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
+import { Crypto } from "@smthrs/crypto"
 import { EngineStore } from "@smthrs/engine-store"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
@@ -35,7 +36,7 @@ import * as Descriptor from "../src/Descriptor.ts"
 import * as Executable from "../src/Executable.ts"
 import * as Registry from "../src/Registry.ts"
 
-const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)
+const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
 const host = async () => {
   const require = createRequire(import.meta.url)
   const enginePath = require.resolve("@smthrs/engine", { paths: [require.resolve("@smthrs/engine-store")] })
@@ -112,7 +113,9 @@ const durableHost = (filename: string, incarnation: number) =>
       })
     )),
     Layer.provideMerge(Action.layerCacheEnvironment({ layers: [], capabilities: {} })),
-    Layer.provideMerge(Layer.mergeAll(AtomicFileSystem.layer, NodePath.layer, NodeCrypto.layer))
+    Layer.provideMerge(
+      Layer.mergeAll(AtomicFileSystem.layer, NodePath.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    )
   )
 
 describe("module layer composition", () => {

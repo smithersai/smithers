@@ -18,13 +18,13 @@
  * @since 0.1.0
  */
 
-import * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as PlatformError from "effect/PlatformError"
 import * as Schema from "effect/Schema"
 import * as SchemaGetter from "effect/SchemaGetter"
 import * as SchemaIssue from "effect/SchemaIssue"
 import * as SchemaParser from "effect/SchemaParser"
+import * as Crypto from "./Crypto.ts"
 import { sha256, Sha256Prefix } from "./internal/sha256.ts"
 
 const digestBytes = 32

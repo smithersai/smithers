@@ -60,11 +60,11 @@
  * @since 0.1.0
  */
 
+import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow } from "@smthrs/flow"
 import { FileInput } from "@smthrs/flow/FileInput"
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"

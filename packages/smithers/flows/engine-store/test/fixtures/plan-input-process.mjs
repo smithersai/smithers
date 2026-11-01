@@ -1,6 +1,5 @@
 // Real process/database/filesystem recovery; Jj itself is a protocol stub.
 import * as NodePath from "@effect/platform-node/NodePath"
-import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import { Jj } from "@smthrs/kernel"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
@@ -15,6 +14,8 @@ import * as PlanScheduler from "../../src/PlanScheduler.ts"
 import * as StepBoundary from "../../src/StepBoundary.ts"
 import * as StepSandbox from "../../src/StepSandbox.ts"
 import * as TestStores from "../../src/test/TestStores.ts"
+import { Crypto } from "@smthrs/crypto"
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 
 const [root, mode] = process.argv.slice(2)
 if (!root || !["crash", "resume"].includes(mode)) throw new Error("Expected temporary workspace and crash/resume mode")
@@ -101,7 +102,7 @@ const report = await Effect.runPromise(Effect.gen(function*() {
   return yield* PlanScheduler.make({ runId: "input-process-run", owner, sourceId: "input-process" }).run(plan)
 }).pipe(
   Effect.provide(Layer.merge(host, executor)),
-  Effect.provide(TestStores.layerAt(join(root, ".flows/state.sqlite"))), Effect.provide(NodeCrypto.layer),
+  Effect.provide(TestStores.layerAt(join(root, ".flows/state.sqlite"))), Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
   Effect.provideService(Clock.Clock, fixtureClock)
 ))
 process.stdout.write(JSON.stringify({ updates, changedEnvironmentRefused, settlements: report.settlements, results: report.results }) + "\n")

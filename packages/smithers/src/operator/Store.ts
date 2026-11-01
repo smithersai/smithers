@@ -5,6 +5,7 @@
  */
 
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { Layer } from "effect"
 import { z } from "incur"
 import type * as Environment from "../Environment.ts"
@@ -46,4 +47,4 @@ export const localRoot = (options: LocalOptions, environment?: Environment.Sourc
  * @since 1.0.0
  */
 export const databaseLayer = (root: string) =>
-  Layer.mergeAll(ControlDatabase.layer(NodeControl.databasePath(root)), NodeCrypto.layer)
+  Layer.mergeAll(ControlDatabase.layer(NodeControl.databasePath(root)), Crypto.layerFromDigest(NodeCrypto.layerDigest))

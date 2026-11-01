@@ -95,7 +95,8 @@ test("app stacks retain their Worker routing and defer required redacted credent
 /**
  * The hostnames a stack's Workers claim, read from source without running any of it: each `domain` (its name,
  * aliases and redirects) and each route `pattern` in every file of the stack's relative import graph that imports
- * `alchemy/Cloudflare`. Running a stack would load its whole app under Node; Vite and Alchemy bundle that code, and
+ * Alchemy's Cloudflare provider (`@alchemy.run/cloudflare`, `alchemy/Cloudflare` through 2.0.0-beta.83). Running a
+ * stack would load its whole app under Node; Vite and Alchemy bundle that code, and
  * Node's loader rejects its extensionless imports. Configured claims are resolved through their pure routing helpers
  * with an injected deployment hostname. Any other nonliteral claim still fails closed.
  */
@@ -115,7 +116,7 @@ const stackHostnames = (stackPath, bindings = new Map()) => {
         .find((candidate) => /\.tsx?$/.test(candidate) && existsSync(candidate))
       if (file !== undefined) pending.push(file)
     }
-    if (!imports.includes("alchemy/Cloudflare")) continue
+    if (!imports.some((name) => name === "@alchemy.run/cloudflare" || name === "alchemy/Cloudflare")) continue
     const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
     const where = (node) => `${relative(root, path)}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1}`
     const bare = (node) => {

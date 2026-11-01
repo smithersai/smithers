@@ -13,10 +13,9 @@
  * @since 1.0.0
  */
 
-import { WebCrypto } from "@smthrs/crypto"
+import { type Crypto, WebCrypto } from "@smthrs/crypto"
 import { OwnerIdentity } from "@smthrs/engine-store"
 import * as Jj from "@smthrs/jj"
-import type * as Crypto from "effect/Crypto"
 import type { FileSystem } from "effect/FileSystem"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import type { HttpClient } from "effect/http/HttpClient"

@@ -1,4 +1,3 @@
-import type * as Crypto from "effect/Crypto"
 /**
  * Issue #59: the attempt counter resumes from the persisted sequence. A
  * durable driver exposes `actionLatestAttempt`, and the engine starts the
@@ -7,6 +6,7 @@ import type * as Crypto from "effect/Crypto"
  * and the retry decision sees the true attempt count.
  */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Context, Effect, Exit, Layer, Logger, Option, Schema } from "effect"

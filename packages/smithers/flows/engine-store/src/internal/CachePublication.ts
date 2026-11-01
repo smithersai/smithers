@@ -36,9 +36,9 @@
  * @since 0.1.0
  */
 
+import type { Crypto } from "@smthrs/crypto"
 import type { CacheStore } from "@smthrs/step-cache"
 import * as Cause from "effect/Cause"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as ArtifactSync from "../ArtifactSync.ts"

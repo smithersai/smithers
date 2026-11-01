@@ -1,4 +1,4 @@
-import type * as Crypto from "effect/Crypto"
+import type { Crypto } from "@smthrs/crypto"
 import type * as Schema from "effect/Schema"
 import { readFileSync } from "node:fs"
 import { expect, expectTypeOf, it } from "vitest"

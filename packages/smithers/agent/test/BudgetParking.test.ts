@@ -13,6 +13,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { ControlFacts, ControlRuntime, type ControlSchema } from "@smthrs/control"
 import { EnvelopeMismatch, PersistenceError } from "@smthrs/control/ControlError"
+import { Crypto } from "@smthrs/crypto"
 import * as HarnessError from "@smthrs/harness/HarnessError"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
@@ -55,7 +56,10 @@ const timeout = new RunawayGuard.Timeout({
   message: "bash ran past 300 ms."
 })
 
-const layer = Layer.merge(TestJournal.layer(), ControlRuntime.layerMemory().pipe(Layer.provide(NodeCrypto.layer)))
+const layer = Layer.merge(
+  TestJournal.layer(),
+  ControlRuntime.layerMemory().pipe(Layer.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+)
 
 /** One launched run over a fresh journal and control runtime. */
 const inWorld = <A, E>(body: (world: World) => Effect.Effect<A, E, Scope.Scope>): Promise<A> =>

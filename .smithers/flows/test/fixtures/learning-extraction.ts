@@ -6,6 +6,7 @@ import { Action, Interpreter } from "@smthrs/flow"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Layer, ManagedRuntime } from "effect"
 import Learning, { layer, machineBinding } from "../../learning/flow.ts"
+import { Crypto } from "@smthrs/crypto"
 
 const [origin, host, run, todo = "7"] = process.argv.slice(2)
 if (!origin || !host || !run) throw new Error("Learning extraction requires its install binding")
@@ -14,7 +15,7 @@ const runtime = ManagedRuntime.make(Layer.mergeAll(
   Interpreter.layer(Learning),
   layer.pipe(Layer.provide(Layer.merge(evaluator, machineBinding({ origin, host, credential: process.env.SMITHERS_LEARNING_TEST_CREDENTIAL }))))
 ).pipe(Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(FlowEngine.layerMemory),
-  Layer.provideMerge(NodeCrypto.layer), Layer.provideMerge(NodeServices.layer)))
+  Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)), Layer.provideMerge(NodeServices.layer)))
 try {
   const output = await runtime.runPromise(Learning.execute({ todo: Number(todo) }, { executionId: run }))
   process.stdout.write(JSON.stringify(output))

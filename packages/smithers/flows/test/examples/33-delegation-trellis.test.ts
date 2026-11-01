@@ -1,5 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { afterAll, expect, it } from "@effect/vitest"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Interpreter } from "@smthrs/flow"
 import { Trellis } from "@smthrs/patterns"
@@ -46,7 +47,7 @@ const executePlan = (authored: Trellis.Plan, work: (leaf: Trellis.Leaf) => Effec
         Layer.mergeAll(DelegateWork.toLayer(work), Interpreter.layer(RunPlan)).pipe(
           Layer.provideMerge(Action.layerImplementations),
           Layer.provideMerge(FlowEngine.layerMemory),
-          Layer.provideMerge(NodeCrypto.layer)
+          Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
         )
       )
     )

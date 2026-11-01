@@ -12,12 +12,12 @@
  * @since 0.1.0
  */
 
+import type { Crypto } from "@smthrs/crypto"
 import * as Arr from "effect/Array"
 import type { NonEmptyReadonlyArray } from "effect/Array"
 import type * as Brand from "effect/Brand"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Base64Url from "effect/encoding/Base64Url"
 import * as Exit from "effect/Exit"

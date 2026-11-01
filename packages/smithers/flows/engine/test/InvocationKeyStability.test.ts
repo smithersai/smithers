@@ -1,4 +1,3 @@
-import type * as Crypto from "effect/Crypto"
 /**
  * Issue #73: invocation keys must not depend on fiber scheduling order.
  *
@@ -16,6 +15,7 @@ import type * as Crypto from "effect/Crypto"
  * action must keep its own identity across both.
  */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, StepIdentity } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Context, Deferred, Effect, Exit, Layer, Schema } from "effect"

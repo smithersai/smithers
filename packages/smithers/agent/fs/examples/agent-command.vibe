@@ -14,28 +14,28 @@ const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)
 // A host normally runs the flow durably. This boundary answers directly so the
 // example shows only routing, decoding, and encoding.
 const invoker = FlowInvoker.make({
-  invoke: ({ input }) => ({ accepted: true, number: (input as { number: number }).number })
+  invoke: effect ({ input }) => ({ accepted: true, number: (input as { number: number }).number })
 })
 
 /** Lists the agent commands under `root` and executes `commandString`. */
-export function runAgentCommand(root: string, commandString: string) {
+export effect function runAgentCommand(root: string, commandString: string) {
   provide platform, FlowInvoker.FlowInvoker = invoker {
-    const { routes } = FileRouter.scan({ root })
-    const commands = Command.make(routes)
-    const output = commands.execute(commandString)
+    const { routes } = try FileRouter.scan({ root })
+    const commands = try Command.make(routes)
+    const output = try commands.execute(commandString)
     return { listed: commands.list(), output }
   }
 }
 
 /** Serves the routes under `root` over HTTP for one request, then closes. */
-export function fetchCommand(root: string, request: Request) {
+export effect function fetchCommand(root: string, request: Request) {
   provide platform, FlowInvoker.FlowInvoker = invoker {
-    const { routes } = FileRouter.scan({ root })
-    const cli = Incur.createCli("flows", routes)
+    const { routes } = try FileRouter.scan({ root })
+    const cli = try Incur.createCli("flows", routes)
     try {
-      return sync(async (cli, request): Promise<unknown> => (await cli.fetch(request)).json(), cli, request)
+      return try sync(async (cli, request): Promise<unknown> => (await cli.fetch(request)).json(), cli, request)
     } finally {
-      sync(async (cli) => cli.close(), cli)
+      try sync(async (cli) => cli.close(), cli)
     }
   }
 }

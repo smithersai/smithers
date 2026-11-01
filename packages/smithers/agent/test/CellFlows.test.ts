@@ -17,6 +17,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as Capability from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow as EngineFlow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
@@ -60,7 +61,6 @@ import {
   Stream
 } from "effect"
 import * as ByteSize from "effect/ByteSize"
-import type * as Crypto from "effect/Crypto"
 import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
 import { readFile, writeFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
@@ -220,7 +220,9 @@ const drive = <A, E>(
     yield* engine.resume(flow, "exec-1")
     return yield* Deferred.await(settled)
   }).pipe(
-    Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, snapshotBoundary)),
+    Effect.provide(
+      Layer.mergeAll(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest), snapshotBoundary)
+    ),
     Effect.scoped,
     Effect.runPromise
   )

@@ -7,7 +7,7 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
-import * as Crypto from "effect/Crypto"
+import { Crypto } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
 import * as Random from "effect/Random"
 import * as OwnerIdentity from "../src/OwnerIdentity.ts"
@@ -17,7 +17,7 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /** Builds the incarnation source over the node `Crypto` implementation. */
 const incarnation = (pid: number | undefined) =>
   Effect.map(Crypto.Crypto, (crypto) => OwnerIdentity.makeIncarnation(pid, crypto)).pipe(
-    Effect.provide(NodeCrypto.layer)
+    Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
   )
 
 describe("OwnerIdentity", () => {
@@ -50,7 +50,7 @@ describe("OwnerIdentity", () => {
       const owner = yield* (
         Effect.flatMap(OwnerIdentity.OwnerIdentity, (identity) => identity.ownerId("layer-host")).pipe(
           Effect.provide(OwnerIdentity.layer),
-          Effect.provide(NodeCrypto.layer)
+          Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
         )
       )
 
@@ -64,7 +64,7 @@ describe("OwnerIdentity", () => {
       const ownerUnder = (layer: typeof OwnerIdentity.layer) =>
         Effect.flatMap(OwnerIdentity.OwnerIdentity, (identity) => identity.ownerId("isolate-host")).pipe(
           Effect.provide(layer),
-          Effect.provide(NodeCrypto.layer),
+          Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
           Random.withSeed("incarnation")
         )
       const drawn = yield* Random.nextIntBetween(0, Number.MAX_SAFE_INTEGER, { halfOpen: true }).pipe(

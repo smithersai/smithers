@@ -3,12 +3,25 @@ import * as Evaluator from "@smthrs/model/Evaluator"
 import { Cause, Effect, Exit, Layer, Option, Sink, Stream } from "effect"
 import type * as ChildProcess from "effect/process/ChildProcess"
 import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
+import type { Word } from "effect/process/CommandLine"
+import * as Redacted from "effect/Redacted"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import * as Container from "../src/Container.ts"
 import { MAX_SHELL_OUTPUT_BYTES } from "../src/internal/Text.ts"
 import * as TestRun from "../src/TestRun.ts"
 import * as TestRunner from "../src/TestRunner.ts"
+
+// Effect 4.1 types a command's arguments and environment values as Word, text or
+// Redacted text; the fakes read what the process would receive.
+const word = (value: Word): string => Redacted.isRedacted(value) ? Redacted.value(value) : value
+const argsOf = (command: { readonly args: ReadonlyArray<Word> }): Array<string> => command.args.map(word)
+const envOf = (
+  command: { readonly options: { readonly env?: Readonly<Record<string, Word | undefined>> | undefined } }
+): Record<string, string | undefined> | undefined =>
+  command.options.env === undefined ? undefined : Object.fromEntries(
+    Object.entries(command.options.env).map(([name, value]) => [name, value === undefined ? undefined : word(value)])
+  )
 
 const execute = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect)
 
@@ -33,7 +46,7 @@ const host = (
       Effect.sync(() => {
         const standard = command as ChildProcess.StandardCommand
         commands?.push(standard)
-        const argv = [standard.command, ...standard.args]
+        const argv = [standard.command, ...argsOf(standard)]
         spawns.push(argv)
         // The working directory is part of what identifies a run: the baseline
         // is the same argv in the scratch worktree.
@@ -513,7 +526,7 @@ describe("TestRun", () => {
     const stalled = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(ChildProcessSpawner.makeNoop({
       spawn: (command) => {
         const standard = command as ChildProcess.StandardCommand
-        const argv = [standard.command, ...standard.args]
+        const argv = [standard.command, ...argsOf(standard)]
         spawns.push(argv)
         const line = argv.join(" ")
         if ((standard.options.cwd ?? "").includes(TestRun.scratchDirectory)) {
@@ -594,8 +607,8 @@ describe("TestRun", () => {
       spawn: (command) =>
         Effect.sync(() => {
           const standard = command as ChildProcess.StandardCommand
-          spawns.push([standard.command, ...standard.args])
-          environments.push(standard.options.env as Record<string, string> | undefined)
+          spawns.push([standard.command, ...argsOf(standard)])
+          environments.push(envOf(standard) as Record<string, string> | undefined)
           return makeHandle({
             pid: ProcessId(1),
             exitCode: Effect.succeed(ExitCode(0)),

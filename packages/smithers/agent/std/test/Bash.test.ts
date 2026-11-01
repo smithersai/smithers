@@ -5,6 +5,8 @@ import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import { Cause, Effect, Exit, Fiber, Layer, Option, Path, Schema, Sink, Stream } from "effect"
 import type * as ChildProcess from "effect/process/ChildProcess"
 import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
+import type { Word } from "effect/process/CommandLine"
+import * as Redacted from "effect/Redacted"
 import { TestClock } from "effect/testing"
 import { describe, expect, it, vi } from "vitest"
 import * as Bash from "../src/Bash.ts"
@@ -15,6 +17,17 @@ import * as LanguageServer from "../src/LanguageServer.ts"
 import * as StdError from "../src/StdError.ts"
 import * as TreeFingerprint from "../src/TreeFingerprint.ts"
 import { layer } from "./TestLayers.ts"
+
+// Effect 4.1 types a command's arguments and environment values as Word, text or
+// Redacted text; the fakes read what the process would receive.
+const word = (value: Word): string => Redacted.isRedacted(value) ? Redacted.value(value) : value
+const argsOf = (command: { readonly args: ReadonlyArray<Word> }): Array<string> => command.args.map(word)
+const envOf = (
+  command: { readonly options: { readonly env?: Readonly<Record<string, Word | undefined>> | undefined } }
+): Record<string, string | undefined> | undefined =>
+  command.options.env === undefined ? undefined : Object.fromEntries(
+    Object.entries(command.options.env).map(([name, value]) => [name, value === undefined ? undefined : word(value)])
+  )
 
 const execute = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect)
 
@@ -53,7 +66,7 @@ const recorder = (spawns: Array<Spawned>) =>
             : undefined
           spawns.push({
             file: standard.command,
-            args: [...standard.args],
+            args: argsOf(standard),
             stdin: text,
             shell: standard.options.shell === true,
             cwd: standard.options.cwd
@@ -976,8 +989,8 @@ describe("Bash", () => {
     const stalled = ChildProcessSpawner.makeNoop({
       spawn: (command) => {
         const standard = command as ChildProcess.StandardCommand
-        spawns.push([...standard.args])
-        environments.push(standard.options.env as Record<string, string> | undefined)
+        spawns.push(argsOf(standard))
+        environments.push(envOf(standard) as Record<string, string> | undefined)
         return Effect.never
       }
     })
@@ -1047,7 +1060,7 @@ describe("Bash", () => {
             const standard = command as ChildProcess.StandardCommand
             const spawn: Spawned = {
               file: standard.command,
-              args: [...standard.args],
+              args: argsOf(standard),
               stdin: undefined,
               shell: standard.options.shell === true,
               cwd: standard.options.cwd
@@ -1244,7 +1257,7 @@ describe("Bash in a registered terminal (T-TRM-05)", () => {
     const spawner = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(ChildProcessSpawner.makeNoop({
       spawn: (command) =>
         Effect.sync(() => {
-          environments.push((command as ChildProcess.StandardCommand).options.env)
+          environments.push(envOf(command as ChildProcess.StandardCommand))
           return makeHandle({
             pid: ProcessId(1),
             exitCode: Effect.succeed(ExitCode(0)),

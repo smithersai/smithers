@@ -16,7 +16,7 @@ TypeScript refuses to run an Effect whose requirement channel still holds
 the composition provided none. This is a composition defect, not a
 `Sha256Error`, which is why it is a defect rather than a typed failure.
 
-**Fix.** Provide a service: `NodeCrypto.layer`, `BunCrypto.layer`,
+**Fix.** Provide a service: `Crypto.layerFromDigest(NodeCrypto.layerDigest)`, `Crypto.layerFromDigest(BunCrypto.layerDigest)`,
 `BrowserCrypto.layer`, or `syncCrypto` for synchronous code and tests. See
 [Installation](./installation.md#provide-a-crypto-service). If the call site
 cannot suspend at all, use `digestSync`, which requires nothing.

@@ -4,9 +4,9 @@
  * @since 0.1.0
  */
 
+import type { Crypto } from "@smthrs/crypto"
 import * as Dialect from "@smthrs/database/Dialect"
 import * as Clock from "effect/Clock"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import type { DatabaseService } from "../Database.ts"
 import type { Service } from "../MemoryStore.ts"

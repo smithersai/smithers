@@ -1,4 +1,4 @@
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import type * as Actor from "./Actor.ts"
 import { program, props } from "./ChatApi.ts"
 import { DEV_FEED_KEY } from "./feeds/dev.ts"

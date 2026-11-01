@@ -12,6 +12,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { ChildFlows, EngineChildren } from "@smthrs/agent"
 import * as ControlLive from "@smthrs/control/ControlLive"
 import * as SqlControlRuntime from "@smthrs/control/SqlControlRuntime"
+import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { NotificationQueue } from "@smthrs/notifications"
 import { TestNodeRuntime } from "@smthrs/platform-node"
@@ -102,7 +103,7 @@ export const main = (filename: string): Effect.Effect<Summary> =>
         Layer.provideMerge(EngineChildren.layer({ flows: [Digest] })),
         Layer.provideMerge(controlPlane),
         Layer.provideMerge(TestNodeRuntime.durableEngine(filename, hostId)),
-        Layer.provideMerge(NodeCrypto.layer)
+        Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
       )
 
     // Phase one: the parent spawns the child and finishes. The child keeps

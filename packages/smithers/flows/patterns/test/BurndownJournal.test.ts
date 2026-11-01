@@ -9,6 +9,7 @@
  * crash replays a recorded landing instead of landing twice.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { EngineStore, StepBoundary } from "@smthrs/engine-store"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
@@ -114,7 +115,7 @@ const durable = <A, E>(body: Effect.Effect<A, E, any>): Promise<A> =>
       Effect.provide(jj),
       Effect.provide(StepBoundary.layerTest()),
       Effect.provide(TestStores.layerAt(":memory:")),
-      Effect.provide(NodeCrypto.layer)
+      Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
     ) as Effect.Effect<A, E, never>
   )
 

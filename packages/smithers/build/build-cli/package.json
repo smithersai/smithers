@@ -721,7 +721,7 @@
     "minimatch": "10.2.6",
     "tsx": "4.23.13",
     "typescript": "7.0.2",
-    "undici": "8.11.2",
+    "undici": "8.12.3",
     "redis": "6.2.1",
     "@types/ws": "8.18.2",
     "ws": "8.22.0"
@@ -741,17 +741,17 @@
     "eslint-plugin-unicorn": "65.0.0",
     "madge": "8.0.0",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.8",
-    "vibelang-vite": "0.0.8",
+    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-3ee099e972e9.tgz",
+    "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-a2b67ac4484b.tgz",
     "vitest": "5.0.0",
-    "@effect/platform-node": "4.0.5",
-    "@effect/platform-node-shared": "4.0.5",
-    "effect": "4.0.5",
-    "vibelang-runtime": "0.0.8"
+    "@effect/platform-node": "4.1.0",
+    "@effect/platform-node-shared": "4.1.0",
+    "effect": "4.1.0",
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-144ebc4c7ea9.tgz"
   },
   "peerDependencies": {
-    "effect": "4.0.5",
-    "vibelang": "0.0.8"
+    "effect": "4.1.0",
+    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-3ee099e972e9.tgz"
   },
   "peerDependenciesMeta": {
     "vibelang": {

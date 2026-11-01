@@ -28,6 +28,7 @@ import * as FlowEngineLike from "@smthrs/agent/FlowEngineLike"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as WorkspaceObservation from "@smthrs/agent/WorkspaceObservation"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
+import { Crypto } from "@smthrs/crypto"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import { Engine, Flow, FlowRuntime, Plan } from "@smthrs/flows"
 import * as EngineLike from "@smthrs/harness/EngineLike"
@@ -102,7 +103,7 @@ const boundary = Effect.gen(function*() {
   Effect.provide(
     Layer.mergeAll(
       Engine.FlowEngine.layerMemory,
-      NodeCrypto.layer,
+      Crypto.layerFromDigest(NodeCrypto.layerDigest),
       QuotaPolicy.layerDefault(),
       Budget.layerUnbounded(),
       WorkspaceObservation.layer(root, { maxPaths }).pipe(Layer.provide(NodeControl.layerHostPlatform))
@@ -191,7 +192,7 @@ const batchedBoundary = Effect.gen(function*() {
       diffIdentity: settled.diffIdentity,
       verified: true
     }))
-  }).pipe(Effect.provide(host), Effect.provide(NodeCrypto.layer))
+  }).pipe(Effect.provide(host), Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
 }).pipe(Effect.scoped)
 
 await Effect.runPromise(

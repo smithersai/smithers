@@ -253,7 +253,7 @@ describe("native search protocol boundaries", () => {
         expect(batches.flat()).toEqual([...names, "a.txt"].sort())
         for (const batch of batches) {
           expect(batch.length).toBeLessThanOrEqual(256)
-          expect(batch.reduce((bytes, target) => bytes + new TextEncoder().encode(target).length + 1, 0))
+          expect(batch.reduce((bytes, target) => bytes + new TextEncoder().encode(String(target)).length + 1, 0))
             .toBeLessThanOrEqual(32_768)
         }
       })

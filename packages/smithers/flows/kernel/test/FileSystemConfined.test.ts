@@ -186,6 +186,8 @@ describe("FileSystem.confined", () => {
         yield* Effect.flip(view.truncate("a")),
         yield* Effect.flip(view.copyFile("a", "b")),
         yield* Effect.flip(view.access("a")),
+        yield* Effect.flip(view.lstat("a")),
+        yield* Effect.flip(view.readDirectoryEntries("a")),
         yield* Effect.flip(view.utimes("a", 0, 0)),
         yield* Effect.flip(view.makeTempDirectory()),
         yield* Effect.flip(view.makeTempDirectoryScoped({ directory: "tmp" }).pipe(Effect.scoped)),

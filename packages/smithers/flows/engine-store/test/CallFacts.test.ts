@@ -1,5 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
+import { Crypto } from "@smthrs/crypto"
 import { CallFact, Journal, JournalEvent, SqlJournal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { AttemptStore, RunStore } from "@smthrs/run-store"
@@ -34,7 +35,7 @@ const services = Layer.mergeAll(
       status: () => Effect.succeed("")
     })
   ),
-  NodeCrypto.layer
+  Crypto.layerFromDigest(NodeCrypto.layerDigest)
 )
 const activate = Effect.gen(function*() {
   const runs = yield* RunStore.RunStore

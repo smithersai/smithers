@@ -33,8 +33,8 @@
 
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import * as RemoteArtifacts from "@smthrs/artifacts/RemoteArtifacts"
+import type { Crypto } from "@smthrs/crypto"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"

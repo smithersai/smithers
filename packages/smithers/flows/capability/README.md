@@ -16,7 +16,7 @@ the answer back to a caller.
 The package holds no state. It reads no files, opens no sockets, and enforces
 nothing. Its one runtime dependency is
 [`@smthrs/canonical`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/canonical/docs), and
-[`effect`](https://effect.website) is a peer in the range `effect@4.0.5`.
+[`effect`](https://effect.website) is a peer in the range `effect@4.1.0`.
 It bundles for a browser unchanged. Enforcement, the grant store, the layers
 that decorate host services, and the journal live in
 [`@smthrs/kernel`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/kernel/docs).
@@ -26,7 +26,7 @@ that decorate host services, and the journal live in
 Published on npm under the `next` tag. Install it with its `effect` peer:
 
 ```sh
-npm install @smthrs/capability@next effect@4.0.5
+npm install @smthrs/capability@next effect@4.1.0
 ```
 
 Name `@next` explicitly: `latest` still points at an older release candidate.

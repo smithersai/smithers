@@ -6,6 +6,7 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Capability, Permission } from "@smthrs/capability"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Model, ModelError, ModelEvent, ModelProxy, ModelRequest, RequestExecutor, Route } from "@smthrs/model"
@@ -161,7 +162,7 @@ const memory = <A, E>(handler: Handler, program: Effect.Effect<A, E, FlowRuntime
     Effect.provide(
       Layer.effectDiscard(Effect.flatMap(FlowRuntime.FlowRuntime, (engine) => engine.register(Probe, handler))).pipe(
         Layer.provideMerge(FlowEngine.layerMemory),
-        Layer.provideMerge(NodeCrypto.layer)
+        Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
       )
     ),
     Effect.scoped

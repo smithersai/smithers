@@ -1,7 +1,7 @@
 // The real GitHub App adapter (worker/GitHubAuth.ts) against a scripted GitHub on loopback HTTP: the token endpoint,
 // `/user` and `/repos/<owner>/<name>`, answering as GitHub documents, including its `200 OK` OAuth errors. Requests go
 // over the real fetch transport through `@smthrs/integrations`. The real GitHub is worker/GitHubAuth.live.test.ts.
-import { Effect, Exit, Redacted } from "effect"
+import { Cause, Context, Effect, Exit, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
@@ -59,8 +59,15 @@ const github = async (answer: (path: string) => { readonly status: number; reado
 }
 
 const run = <A>(effect: Effect.Effect<A, GitHubRefused>) => Effect.runPromiseExit(effect)
-const refused = (step: GitHubRefused["step"], reason: GitHubRefused["reason"]) =>
-  Exit.fail(new GitHubRefused({ step, reason }))
+const refused = (step: GitHubRefused["step"], reason: GitHubRefused["reason"], traced = true) =>
+  traced ? Exit.failCause(Cause.annotate(
+    Cause.fail(new GitHubRefused({ step, reason })),
+    Context.make(Cause.StackTrace, {
+      name: step === "exchange" || step === "refresh" ? "OAuthToken.request" : "GitHubClient.request",
+      parent: undefined,
+      stack: expect.any(Function),
+    }),
+  )) : Exit.fail(new GitHubRefused({ step, reason }))
 const token = Redacted.make("ghu_loopback")
 
 describe("the GitHub App adapter", () => {
@@ -160,7 +167,7 @@ describe("the GitHub App adapter", () => {
     const revoked = await github(() => ({ status: 401, body: { message: "Bad credentials" } }))
     expect(await run(revoked.service.user(token))).toEqual(refused("user", "rejected"))
     const odd = await github(() => ({ status: 200, body: { login: 7 } }))
-    expect(await run(odd.service.user(token))).toEqual(refused("user", "unavailable"))
+    expect(await run(odd.service.user(token))).toEqual(refused("user", "unavailable", false))
   })
 
   test("reads the person's permission on the repository from GitHub's permissions", async () => {

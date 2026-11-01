@@ -18,8 +18,8 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
-    "@effect/platform-node": "4.0.5",
-    "@effect/platform-node-shared": "4.0.5",
+    "@effect/platform-node": "4.1.0",
+    "@effect/platform-node-shared": "4.1.0",
     "@smthrs/agent": "workspace:*",
     "@smthrs/capability": "workspace:*",
     "@smthrs/control": "workspace:*",
@@ -49,10 +49,10 @@
     "@smthrs/ui": "workspace:*",
     "@types/bun": "1.4.4",
     "@types/react": "^19.2.18",
-    "effect": "4.0.5",
+    "effect": "4.1.0",
     "typescript": "~5.9.3",
-    "vibelang": "0.0.8",
-    "vibelang-vite": "0.0.8",
+    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-3ee099e972e9.tgz",
+    "vibelang-vite": "file:../../.vibelang-toolchain/vibelang-vite-0.0.11-a2b67ac4484b.tgz",
     "wrangler": "4.151.2"
   },
   "dependencies": {

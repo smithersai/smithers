@@ -6,10 +6,10 @@
  * classification beside it.
  */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node, Planned } from "@smthrs/plan"
 import { Cause, Deferred, Effect, Exit, Layer, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { OutcomeValueTypeId } from "../src/internal/OutcomeMarker.ts"
 import { withCrypto } from "./Crypto.ts"
 import { layerWired, makeInstance, makeMemoryState, type MemoryState } from "./MemoryFlowRuntime.ts"

@@ -5,9 +5,9 @@
  * @since 1.0.0
  */
 
+import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableClock, FlowRuntime } from "@smthrs/flow"
 import { Effect, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { Failure, fromIntegrationError, toIntegrationError } from "./ActionFailure.ts"
 import { CursorStore } from "./CursorStore.ts"
 import { ExternalEvent } from "./ExternalEvent.ts"

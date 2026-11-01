@@ -12,6 +12,7 @@ import "./stranded.test.mjs"
  * scratch Git checkout, and the failure is the module's own refusal.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Interpreter } from "@smthrs/flow"
 import { Effect, Exit, Layer } from "effect"
@@ -30,7 +31,7 @@ const run = (payload: typeof Request.Type, executionId: string) =>
       Effect.provide(
         Interpreter.layerWithImplementations(Land, layer).pipe(
           Layer.provideMerge(FlowEngine.layerMemory),
-          Layer.provideMerge(NodeCrypto.layer)
+          Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
         )
       )
     )

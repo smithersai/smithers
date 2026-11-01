@@ -17,6 +17,7 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Control, ControlError, ControlExecutor, ControlLive, ControlRuntime, ControlSchema } from "@smthrs/control"
+import { Crypto } from "@smthrs/crypto"
 import { DurableEngineState, type Service as EngineStateService } from "@smthrs/engine-store/DurableEngineState"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as WorkspaceSandbox from "@smthrs/engine-store/WorkspaceSandbox"
@@ -374,7 +375,9 @@ const stack = (options: StackOptions) => {
   engineRoots.add(root)
   const journal = TestJournal.layer()
   const notifications = NotificationQueue.layer.pipe(Layer.provide(journal))
-  const memory = ControlRuntime.layerMemory({ flows: memoryFlows }).pipe(Layer.provide(NodeCrypto.layer))
+  const memory = ControlRuntime.layerMemory({ flows: memoryFlows }).pipe(
+    Layer.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+  )
   const wrap = options.wrapRuntime
   const runtime = wrap === undefined ? memory : Layer.effect(ControlRuntime.ControlRuntime)(
     Effect.map(ControlRuntime.ControlRuntime, (service) => ControlRuntime.make(wrap(service)))
@@ -476,7 +479,7 @@ const stack = (options: StackOptions) => {
     StepBoundary.layer,
     WorkspaceSandbox.layerFileSystem(),
     registration
-  ).pipe(Layer.provide([AtomicFileSystem.layer, NodeCrypto.layer, jj]))
+  ).pipe(Layer.provide([AtomicFileSystem.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest), jj]))
   return ControlLive.layer.pipe(
     Layer.provideMerge(engine),
     Layer.provideMerge(

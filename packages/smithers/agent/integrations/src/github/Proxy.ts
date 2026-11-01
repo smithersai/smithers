@@ -37,6 +37,7 @@ import * as Headers from "effect/http/Headers"
 import * as HttpBody from "effect/http/HttpBody"
 import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
+import type * as HttpMethod from "effect/http/HttpMethod"
 import * as HttpServer from "effect/http/HttpServer"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
@@ -252,7 +253,9 @@ export const make = (
           if (value !== undefined) headers[name] = value
         }
         headers["authorization"] = `Bearer ${credential.token}`
-        const outbound = HttpClientRequest.make(request.method)(`${upstream}${path}`)
+        // Effect 4.1 types a request's method as any string and HttpClientRequest.make as taking an
+        // HttpMethod; 4.0 typed both as HttpMethod. The method goes upstream unchanged, as it did.
+        const outbound = HttpClientRequest.make(request.method as HttpMethod.HttpMethod)(`${upstream}${path}`)
         // The raw body carries no content type of its own, so the caller's,
         // or none, is what GitHub sees.
         const send = http.execute(HttpClientRequest.setHeaders(

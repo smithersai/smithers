@@ -1,4 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { Flow, Graph } from "@smthrs/flow"
 import { Node, Plan } from "@smthrs/plan"
 import { Effect, Schema } from "effect"
@@ -32,6 +33,6 @@ const plan = await Effect.runPromise(
     planId: "stable-identity/process-plan",
     flow: flow._tag,
     nodes: Graph.drafts(graph)
-  }).pipe(Effect.provide(NodeCrypto.layer))
+  }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
 )
 console.log(JSON.stringify({ digest: plan.digest, keys: plan.nodes.map((node) => [node.id, node.key]) }))

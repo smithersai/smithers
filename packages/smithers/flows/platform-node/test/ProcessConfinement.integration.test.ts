@@ -6,6 +6,8 @@ import type { Profile } from "@smthrs/kernel/ProcessConfinement"
 import { Effect, Layer, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import type { Word } from "effect/process/CommandLine"
+import * as Redacted from "effect/Redacted"
 import * as NodeChildProcess from "node:child_process"
 import * as NodeFs from "node:fs"
 import * as NodeHttp from "node:http"
@@ -15,6 +17,17 @@ import * as NodePath from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import * as ProcessConfinement from "../src/ProcessConfinement.ts"
 import * as ProcessSandbox from "../src/ProcessSandbox.ts"
+
+// Effect 4.1 types a command's arguments and environment values as Word, text or
+// Redacted text; the fakes read what the process would receive.
+const word = (value: Word): string => Redacted.isRedacted(value) ? Redacted.value(value) : value
+const argsOf = (command: { readonly args: ReadonlyArray<Word> }): Array<string> => command.args.map(word)
+const envOf = (
+  command: { readonly options: { readonly env?: Readonly<Record<string, Word | undefined>> | undefined } }
+): Record<string, string | undefined> | undefined =>
+  command.options.env === undefined ? undefined : Object.fromEntries(
+    Object.entries(command.options.env).map(([name, value]) => [name, value === undefined ? undefined : word(value)])
+  )
 
 const spawnerLayer = NodeChildProcessSpawner.layer.pipe(
   Layer.provide(Layer.mergeAll(NodeFileSystem.layer, NodeEffectPath.layer))
@@ -254,7 +267,7 @@ int main(int argc, char **argv) {
           ChildProcess.make("/bin/echo", ["default temporary directory"], { cwd: f.workspaceRoot }),
           { workspaceRoot: f.workspaceRoot, reads: [], writes: [], readOnly: [], network: "none" }
         )
-        const privateTmp = wrapped.options.env?.["TMPDIR"]!
+        const privateTmp = envOf(wrapped)?.["TMPDIR"]!
         expect(NodeFs.realpathSync(privateTmp)).toBe(privateTmp)
         if (process.platform === "darwin") expect(privateTmp.startsWith(temporaryRoot + NodePath.sep)).toBe(true)
         return yield* spawn(wrapped)
@@ -274,7 +287,7 @@ int main(int argc, char **argv) {
           ChildProcess.make("/bin/echo", ["alias temporary directory"], { cwd: f.workspaceRoot }),
           { workspaceRoot: f.workspaceRoot, reads: [], writes: [], readOnly: [], network: "none" }
         )
-        if (process.platform === "darwin") expect(wrapped.args[1]).not.toContain(alias)
+        if (process.platform === "darwin") expect(argsOf(wrapped)[1]).not.toContain(alias)
         return yield* spawn(wrapped)
       })).pipe(Effect.provide(spawnerLayer), Effect.timeout("10 seconds"))
     )

@@ -626,6 +626,17 @@
     },
     {
       "name": "@smthrs/crypto",
+      "subpath": "./Crypto",
+      "development": "./src/Crypto.ts",
+      "published": {
+        "types": "./dist/esm/Crypto.d.ts",
+        "import": "./dist/esm/Crypto.js",
+        "require": "./dist/cjs/Crypto.js"
+      },
+      "reason": "Effect 4.1 removed effect/Crypto. @smthrs/crypto keeps that service as its Crypto module, and declarations that name the service, such as an inferred Layer<Crypto>, need a subpath to print it."
+    },
+    {
+      "name": "@smthrs/crypto",
       "subpath": "./Identity",
       "development": "./src/Identity.ts",
       "published": {

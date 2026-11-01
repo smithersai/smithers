@@ -39,6 +39,7 @@ The composition is the production one with the engine swapped:
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Interpreter } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
@@ -50,11 +51,11 @@ const layer = Layer.mergeAll(
 ).pipe(
   Layer.provideMerge(Action.layerImplementations),
   Layer.provideMerge(FlowEngine.layerMemory),
-  Layer.provideMerge(NodeCrypto.layer)
+  Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
 )
 ```
 
-Use the real `NodeCrypto.layer` rather than a stub. Step identity is a digest,
+Use the real `Crypto.layerFromDigest(NodeCrypto.layerDigest)` rather than a stub. Step identity is a digest,
 and a fake digest tests a key derivation nobody ships.
 
 ## Prove a step did not run twice
@@ -63,6 +64,7 @@ Counting dispatches is the cheapest way to assert replay, and the counter lives
 in the implementation rather than in the flow:
 
 ```ts
+import { Crypto } from "@smthrs/crypto"
 let calls = 0
 
 const counted = Greet.toLayer(({ name }) =>
@@ -75,7 +77,7 @@ const counted = Greet.toLayer(({ name }) =>
 const countedLayer = Layer.mergeAll(counted, Interpreter.layer(Greeting)).pipe(
   Layer.provideMerge(Action.layerImplementations),
   Layer.provideMerge(FlowEngine.layerMemory),
-  Layer.provideMerge(NodeCrypto.layer)
+  Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
 )
 
 it.effect("dispatches the action once across two drives", () =>

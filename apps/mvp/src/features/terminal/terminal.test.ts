@@ -7,7 +7,7 @@
 // JSON control (`ready`, `ended`, `resize`), and its close codes say whether to come back (1000 ended, 1003
 // unsupported, 1008 no access, 1011 failed). `terminal/open`'s client and step are also driven over an injected
 // `fetch` for the answers a valid request never gets (test.faults-by-injection).
-import { NodeWS } from "@effect/platform-node/NodeSocket"
+import * as NodeWS from "@effect/platform-node/NodeWS"
 import { Effect, Layer, Logger, Metric, Ref, Scheduler } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"

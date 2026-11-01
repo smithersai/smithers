@@ -1,4 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import * as Cell from "@smthrs/harness/Cell"
@@ -53,7 +54,9 @@ it("rejects a mutated host result through the typed failure channel with its cau
     yield* engine.execute(flow, { executionId: "admission-run", payload: {}, discard: true })
     return yield* Deferred.await(settled)
   }).pipe(
-    Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
+    Effect.provide(
+      Layer.mergeAll(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest), Safety.layer)
+    ),
     Effect.scoped,
     Effect.runPromise
   )

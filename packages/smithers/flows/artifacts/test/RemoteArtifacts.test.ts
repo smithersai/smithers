@@ -4,8 +4,7 @@
  * `com.google.devtools.build.lib.remote.http.HttpCacheClient`.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { syncCrypto } from "@smthrs/crypto"
-import * as Crypto from "effect/Crypto"
+import { Crypto, syncCrypto } from "@smthrs/crypto"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"

@@ -17,6 +17,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import type { DurableFlow } from "@smthrs/control/SqlControlRuntime"
+import { Crypto } from "@smthrs/crypto"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as WorkspaceSandbox from "@smthrs/engine-store/WorkspaceSandbox"
 import { Action, Flow } from "@smthrs/flow"
@@ -165,7 +166,7 @@ export const makeAuthoringFixture = (root: string) => {
           return Plan.compile({ planId, flow: ScriptedAuthor._tag, nodes: Graph.drafts(built) }).pipe(
             Effect.map((plan) => ({ plan, graph: { edges: Graph.edges(built) } }))
           )
-        }).pipe(Effect.provide(NodeCrypto.layer), Effect.orDie)
+        }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)), Effect.orDie)
     }
   ]
   const host = KernelFileSystem.layer.pipe(

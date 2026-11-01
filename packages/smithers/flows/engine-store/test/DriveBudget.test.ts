@@ -10,12 +10,12 @@
  * own engine, as a Durable Object alarm does, over one real store: SQLite, or
  * PostgreSQL in the storage matrix.
  */
+import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import type { Journal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { type Ownership, RunStore } from "@smthrs/run-store"
 import * as Clock from "effect/Clock"
-import type * as Crypto from "effect/Crypto"
 import * as Deferred from "effect/Deferred"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"

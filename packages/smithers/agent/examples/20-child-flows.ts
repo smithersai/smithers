@@ -20,6 +20,7 @@ import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as Digest from "@smthrs/core/Digest"
 import * as Effects from "@smthrs/core/Effects"
+import { Crypto } from "@smthrs/crypto"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { Action, Flow, type FlowRuntime, Interpreter } from "@smthrs/flow"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
@@ -33,7 +34,6 @@ import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Registry from "@smthrs/registry/Registry"
 import { RunStore } from "@smthrs/run-store"
 import type * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
@@ -373,4 +373,4 @@ export const main = (filename: string): Effect.Effect<Summary> =>
         } satisfies Summary
       }).pipe(Effect.provide(stack))
     )
-  }).pipe(Effect.provide(NodeCrypto.layer), Effect.orDie)
+  }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)), Effect.orDie)

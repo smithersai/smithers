@@ -2,9 +2,9 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact `4.0.5` peer dependency.
-It bundles the private `@effect/platform-node` adapter pinned to `4.0.5` as a development dependency. `@effect/sql-sqlite-node` and `@effect/sql-pg` are direct
-dependencies at `4.0.5`, required by its supported backends and public declarations. Keep the application on that version so
+This package declares `effect` as an exact `4.1.0` peer dependency.
+It bundles the private `@effect/platform-node` adapter pinned to `4.1.0` as a development dependency. `@effect/sql-sqlite-node` and `@effect/sql-pg` are direct
+dependencies at `4.1.0`, required by its supported backends and public declarations. Keep the application on that version so
 all Smithers packages share one Effect runtime. `@smthrs/platform-bun` is an optional peer for Bun hosts.
 
 **Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/docs

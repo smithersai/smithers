@@ -1,4 +1,5 @@
 import { NodeCrypto } from "@effect/platform-node"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Effect, Layer, ManagedRuntime, Schema } from "effect"
@@ -55,7 +56,7 @@ test("reserved packaged actions dispatch through NativeCoding and replay without
     ).pipe(
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(NodeCrypto.layer)
+      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
     )
   )
   t.after(() => runtime.dispose())

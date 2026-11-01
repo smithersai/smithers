@@ -24,6 +24,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { describe, expect, it } from "@effect/vitest"
+import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Graph } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import * as Effect from "effect/Effect"
@@ -141,7 +142,11 @@ const withProject = <A, E>(
       Effect.provide(
         Executable.layer({ delegates: [Delegate, Other] }).pipe(
           Layer.provideMerge(
-            Layer.mergeAll(observed(registered), Action.layerImplementations, NodeCrypto.layer)
+            Layer.mergeAll(
+              observed(registered),
+              Action.layerImplementations,
+              Crypto.layerFromDigest(NodeCrypto.layerDigest)
+            )
           ),
           Layer.provideMerge(Registry.layerProject({ root })),
           Layer.orDie
@@ -289,7 +294,11 @@ describe("rebuilding one catalog entry without restarting the host", () => {
         Effect.provide(
           Executable.layer({ delegates: [Delegate, Other], refreshable: () => false }).pipe(
             Layer.provideMerge(
-              Layer.mergeAll(observed(registered), Action.layerImplementations, NodeCrypto.layer)
+              Layer.mergeAll(
+                observed(registered),
+                Action.layerImplementations,
+                Crypto.layerFromDigest(NodeCrypto.layerDigest)
+              )
             ),
             Layer.provideMerge(Registry.layerProject({ root })),
             Layer.orDie

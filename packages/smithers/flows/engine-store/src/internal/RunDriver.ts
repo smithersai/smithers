@@ -5,6 +5,7 @@
  */
 
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
+import type { Crypto } from "@smthrs/crypto"
 import { DatabaseError, DurableWriter } from "@smthrs/database/DurableWriter"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime, Interpreter, RunMetrics } from "@smthrs/flow"
@@ -13,7 +14,6 @@ import { Ownership, RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"

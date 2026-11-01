@@ -885,7 +885,26 @@ describe("Node atomic filesystem", () => {
       const pinned = new Set(["[.]/*", "nested/[.]/mid.txt", "nested/[.]/"])
       const patternOf = (row: string) => row.split(" ")[1]!
       const guarded = yield* matches((root, effect) => run(root, effect))
-      const native = yield* matches((_root, effect) => effect.pipe(Effect.provide(NodeFileSystem.layer)))
+      // Effect 4.1's NodeFileSystem no longer wraps Node's `fs.glob`: FileSystem.make derives glob from
+      // Effect's own matcher. The globber the helper replaces is still Node's, called as 4.0's layer called it.
+      const nodeGlob = Layer.effect(
+        FileSystem.FileSystem,
+        Effect.map(FileSystem.FileSystem, (fs): FileSystem.FileSystem => ({
+          ...fs,
+          glob: (pattern, options) =>
+            Effect.promise(async () => {
+              const rows: Array<string> = []
+              for await (
+                const row of glob(pattern, {
+                  cwd: options?.root,
+                  ...(options?.exclude === undefined ? {} : { exclude: [...options.exclude] })
+                })
+              ) rows.push(row)
+              return rows
+            })
+        }))
+      ).pipe(Layer.provide(NodeFileSystem.layer))
+      const native = yield* matches((_root, effect) => effect.pipe(Effect.provide(nodeGlob)))
       expect(guarded.filter((row) => !pinned.has(patternOf(row)))).toEqual(
         native.filter((row) => !pinned.has(patternOf(row)))
       )

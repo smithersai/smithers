@@ -8,6 +8,7 @@ import {
   makeHandle,
   ProcessId
 } from "effect/process/ChildProcessSpawner"
+import * as Redacted from "effect/Redacted"
 import * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
 import { chmodSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs"
@@ -19,6 +20,10 @@ import type { Session } from "../src/Sandbox/index.ts"
 import * as SandboxConformance from "../src/SandboxConformance/index.ts"
 import { platform } from "./helpers/containedPlatform.ts"
 import { stalledFinalizer } from "./stalledFinalizer.ts"
+
+// Effect 4.1 lets an argument be Redacted; the fake records what a process would receive.
+const argsOf = (command: ChildProcess.StandardCommand): Array<string> =>
+  command.args.map((arg) => Redacted.isRedacted(arg) ? Redacted.value(arg) : arg)
 
 // -----------------------------------------------------------------------------
 // The container engine as a fake: real shells behind docker's argv contract.
@@ -114,8 +119,8 @@ const engine = (fault: (args: ReadonlyArray<string>) => Response | undefined = (
           "", (text, bytes) =>
           text + new TextDecoder().decode(bytes))
         : ""
-      calls.push({ file: command.command, input, args: command.args })
-      const injected = fault(command.args)
+      calls.push({ file: command.command, input, args: argsOf(command) })
+      const injected = fault(argsOf(command))
       if (injected?.failSpawn === true) {
         return yield* Effect.fail(
           PlatformError.badArgument({ module: "ChildProcess", method: "spawn", description: "engine gone" })
@@ -124,7 +129,7 @@ const engine = (fault: (args: ReadonlyArray<string>) => Response | undefined = (
       if (injected !== undefined) {
         return canned(injected)
       }
-      const args = [...command.args]
+      const args = argsOf(command)
       if (args[0] === "create") {
         const name = args[args.indexOf("--name") + 1]!
         if (containers.has(name)) {

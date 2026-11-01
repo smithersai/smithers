@@ -3,7 +3,7 @@
 // as a branch's room does: JSON text frames, the roster from the room and the person's state from the page, and close
 // codes that say whether to come back (1000 left, 1008 no access, 1012 changed). The room's own logic is
 // `PresenceRoom`'s, tested in `@smthrs/sync`; this tests what the page does with it.
-import { NodeWS } from "@effect/platform-node/NodeSocket"
+import * as NodeWS from "@effect/platform-node/NodeWS"
 import { PresenceProtocol } from "@smthrs/sync"
 import { Effect, Layer, ManagedRuntime, Metric } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"

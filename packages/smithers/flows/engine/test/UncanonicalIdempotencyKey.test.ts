@@ -9,10 +9,11 @@
  * impossible invariant violation instead of discarding it.
  */
 import { describe, expect, it } from "@effect/vitest"
+import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import * as StepIdentity from "@smthrs/flow/StepIdentity"
 import { Node } from "@smthrs/plan"
-import { Cause, Crypto, Effect, Exit, Layer, PlatformError, Schema, SchemaIssue } from "effect"
+import { Cause, Effect, Exit, Layer, PlatformError, Schema, SchemaIssue } from "effect"
 import { schemaErrorPath } from "../src/FlowEngine/ActionKey.ts"
 import { FlowEngine } from "../src/index.ts"
 import { invocationKey, runSync, withCrypto } from "./Crypto.ts"

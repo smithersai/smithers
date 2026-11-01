@@ -21,6 +21,7 @@ import * as DatabaseMigrations from "@smthrs/database/Migrations"
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Control, ControlLive, type ControlRuntime, type ControlSchema, SqlControlRuntime } from "@smthrs/control"
+import { Crypto } from "@smthrs/crypto"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
@@ -211,7 +212,7 @@ const host = (root: string, owner: Ownership.OwnerId, engineHost: string, onSwee
     WorkspaceSandbox.layerFileSystem(),
     registration
   ).pipe(
-    Layer.provide([AtomicFileSystem.layer, NodeCrypto.layer, jj]),
+    Layer.provide([AtomicFileSystem.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest), jj]),
     Layer.tap((context) =>
       Effect.sync(() => {
         if (onSweep === undefined) return
@@ -234,7 +235,9 @@ const host = (root: string, owner: Ownership.OwnerId, engineHost: string, onSwee
         registryLayer
       )
     ),
-    Layer.provideMerge(Layer.merge(controlStores(join(root, "control.db")), NodeCrypto.layer))
+    Layer.provideMerge(
+      Layer.merge(controlStores(join(root, "control.db")), Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    )
   )
 }
 

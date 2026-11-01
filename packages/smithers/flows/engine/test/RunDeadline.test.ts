@@ -5,10 +5,10 @@
  * case, which needs a store, lives in `@smthrs/engine-store`.
  */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Clock, Context, Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
 import type * as Duration from "effect/Duration"
 import { TestClock } from "effect/testing"
 import { FlowEngine } from "../src/index.ts"

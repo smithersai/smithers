@@ -1,4 +1,5 @@
-import { NodeServices } from "@effect/platform-node"
+import { NodeCrypto, NodeServices } from "@effect/platform-node"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, HumanTask, Interpreter } from "@smthrs/flow"
 import * as Evaluator from "@smthrs/model/Evaluator"
@@ -31,6 +32,9 @@ import {
   type Work
 } from "../repository/jobs.ts"
 import type { Record as PriorRecord, StepResult } from "../repository/schema.ts"
+
+// Effect 4.1 removed effect/Crypto, and NodeServices.layer no longer provides it.
+const nodeServices = Layer.merge(NodeServices.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
 
 const [distinct, related, same] = levels
 const source = {
@@ -102,7 +106,7 @@ const runStep = async (
 ) => {
   const asked: Array<PairState> = []
   const seat: Array<string> = []
-  const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(NodeServices.layer)))
+  const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(nodeServices)))
   const scripted = evaluator ?? Evaluator.layerScripted((request) => {
     const state = request.state as PairState
     asked.push(state)
@@ -132,7 +136,7 @@ const runStep = async (
       Layer.provide([Jj.layerNoop({}), Layer.succeed(NativeCoding, undefined as never)]),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(NodeServices.layer)
+      Layer.provideMerge(nodeServices)
     )
   )
   try {

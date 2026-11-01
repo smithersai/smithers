@@ -25,6 +25,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { describe, expect, it } from "@effect/vitest"
+import { Crypto } from "@smthrs/crypto"
 import { Action, FlowRuntime } from "@smthrs/flow"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
@@ -149,7 +150,11 @@ const withProject = <A, E>(
       Effect.provide(
         Executable.layer({ delegates: [] }).pipe(
           Layer.provideMerge(
-            Layer.mergeAll(registrations.layer, Action.layerImplementations, NodeCrypto.layer)
+            Layer.mergeAll(
+              registrations.layer,
+              Action.layerImplementations,
+              Crypto.layerFromDigest(NodeCrypto.layerDigest)
+            )
           ),
           Layer.provideMerge(Registry.layerProject({ root })),
           Layer.orDie

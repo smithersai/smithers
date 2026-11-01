@@ -10,7 +10,9 @@ import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
  * row. The first resume parks visibly; the next returns the durable outcome
  * without touching the poisoned evidence or re-running the action.
  */
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
+import { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
@@ -125,7 +127,7 @@ describe("succeeded-row corruption quarantines its evidence and heals on resume 
             Layer.succeed(Jj.Jj, jj),
             Action.layerCacheEnvironment({ layers: [], capabilities: {} }),
             boundary
-          ).pipe(Layer.provideMerge(NodeCrypto.layer))
+          ).pipe(Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
           const services = yield* Layer.build(layer)
           const state = Context.get(services, DurableEngineState.DurableEngineState)
           const run = <A, E>(effect: Effect.Effect<A, E, Layer.Success<typeof layer>>) =>
@@ -420,7 +422,7 @@ describe("succeeded-row corruption quarantines its evidence and heals on resume 
           }),
           Action.layerCacheEnvironment({ layers: [], capabilities: {} }),
           boundary
-        ).pipe(Layer.provideMerge(NodeCrypto.layer))
+        ).pipe(Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
         const services = yield* Layer.build(layer)
         const run = <A, E>(effect: Effect.Effect<A, E, Layer.Success<typeof layer>>) => Effect.provide(effect, services)
         const makeEngine = EngineStore.make({
@@ -683,4 +685,3 @@ describe("a cancel that races the quarantine park", () => {
       expect(Option.isNone(outcome.waiting)).toBe(true)
     }))
 })
-import * as NodeCrypto from "@effect/platform-node/NodeCrypto"

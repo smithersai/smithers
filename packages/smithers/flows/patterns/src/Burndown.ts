@@ -20,6 +20,7 @@
  * @since 1.0.0
  */
 
+import { Crypto } from "@smthrs/crypto"
 import * as Action from "@smthrs/flow/Action"
 import * as Fault from "@smthrs/flow/Fault"
 import * as Flow from "@smthrs/flow/Flow"
@@ -30,7 +31,6 @@ import * as WaitFor from "@smthrs/flow/WaitFor"
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
 import * as Cause from "effect/Cause"
-import * as Crypto from "effect/Crypto"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"

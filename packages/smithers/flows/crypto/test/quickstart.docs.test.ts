@@ -1,7 +1,8 @@
-import { Crypto, Effect } from "effect"
+import { Effect } from "effect"
 import { transformSync } from "esbuild"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
+import * as Crypto from "../src/Crypto.ts"
 import { type Digest, digest, digestSync, type Sha256Error, syncCrypto } from "../src/index.ts"
 
 // Execute the published put fence so the regression follows the example itself.

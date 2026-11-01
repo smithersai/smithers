@@ -1,4 +1,3 @@
-import * as Crypto from "effect/Crypto"
 /**
  * Issue #75: a sealed action's cache key omitted the two pieces of key
  * material the Step Keys spec calls mandatory — the resolved layers and the
@@ -16,6 +15,7 @@ import * as Crypto from "effect/Crypto"
  * cannot opt out of it.
  */
 import { describe, expect, it } from "@effect/vitest"
+import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Exit, Layer, Schema } from "effect"

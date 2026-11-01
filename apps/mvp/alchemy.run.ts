@@ -40,8 +40,8 @@
  * ChatApi reads its settings with Effect Config; see docs/features/chat.md#configuration.
  */
 import * as Alchemy from "alchemy"
-import * as Cloudflare from "alchemy/Cloudflare"
-import * as Neon from "alchemy/Neon"
+import * as Cloudflare from "@alchemy.run/cloudflare"
+import * as Neon from "@alchemy.run/neon"
 import type { State } from "alchemy/State"
 import { Effect, Layer, Option } from "effect"
 import { Databases } from "./infra/ChatDatabase.ts"

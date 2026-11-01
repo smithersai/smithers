@@ -28,6 +28,7 @@ import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import * as ControlLive from "@smthrs/control/ControlLive"
 import type { Receipt } from "@smthrs/control/ControlSchema"
 import * as SqlControlRuntime from "@smthrs/control/SqlControlRuntime"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
@@ -181,7 +182,7 @@ const host = (filename: string) => {
     TestStores.layerAt(filename),
     StepBoundary.layerTest(),
     Layer.succeed(Jj.Jj)(jj)
-  ).pipe(Layer.provideMerge(NodeCrypto.layer))
+  ).pipe(Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
   const withQueue = Layer.provideMerge(NotificationQueue.layer, stores)
   const controlDependencies = Layer.mergeAll(
     SqlControlRuntime.layer(),

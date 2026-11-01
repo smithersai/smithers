@@ -56,6 +56,7 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as HttpBody from "effect/http/HttpBody"
 import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
+import type * as HttpMethod from "effect/http/HttpMethod"
 import type * as HttpServerRequest from "effect/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import * as Url from "effect/http/Url"
@@ -492,7 +493,12 @@ export const execute = (
 
     const client = yield* HttpClient.HttpClient
     const init = yield* Effect.serviceOption(FetchHttpClient.RequestInit)
-    const outgoing = HttpClientRequest.make(method)(Result.getOrThrow(url), { headers, body: request.body })
+    // Effect 4.1 types a request's method as any string and HttpClientRequest.make as taking an
+    // HttpMethod; 4.0 typed both as HttpMethod. The method goes upstream unchanged, as it did.
+    const outgoing = HttpClientRequest.make(method as HttpMethod.HttpMethod)(Result.getOrThrow(url), {
+      headers,
+      body: request.body
+    })
     const sent = yield* client.execute(outgoing).pipe(
       Effect.provideService(FetchHttpClient.RequestInit, { ...Option.getOrUndefined(init), redirect: "manual" }),
       Effect.provideService(HttpClient.TracerDisabledWhen, constTrue),
@@ -545,7 +551,12 @@ export const forward = (
   const body = method === "GET" || method === "HEAD"
     ? HttpBody.empty
     : HttpBody.stream(request.stream, request.headers["content-type"])
-  const outgoing = HttpClientRequest.make(method)(request.originalUrl, { headers: request.headers, body })
+  // Effect 4.1 types a request's method as any string and HttpClientRequest.make as taking an
+  // HttpMethod; 4.0 typed both as HttpMethod. The method goes upstream unchanged, as it did.
+  const outgoing = HttpClientRequest.make(method as HttpMethod.HttpMethod)(request.originalUrl, {
+    headers: request.headers,
+    body
+  })
   return execute(outgoing, policy).pipe(
     Effect.map((answer) =>
       method === "HEAD" || bodiless.has(answer.status)

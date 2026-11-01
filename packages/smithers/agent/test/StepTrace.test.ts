@@ -1,4 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { Journal } from "@smthrs/journal"
@@ -32,12 +33,15 @@ import {
 /** What `run` provides: the SQLite stores, crypto, and a scope. */
 type Provided =
   | Layer.Success<ReturnType<typeof stores>>
-  | Layer.Success<typeof NodeCrypto.layer>
+  | Crypto.Crypto
   | Scope.Scope
 
 const run = <A, E>(effect: Effect.Effect<A, E, Provided>) =>
   Effect.runPromise(
-    Effect.scoped(effect).pipe(Effect.provide(stores(":memory:")), Effect.provide(NodeCrypto.layer))
+    Effect.scoped(effect).pipe(
+      Effect.provide(stores(":memory:")),
+      Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    )
   )
 
 class Unprovided extends Context.Service<Unprovided, { readonly value: string }>()("test/agent/StepTrace/Unprovided") {}
@@ -266,7 +270,11 @@ describe("agent checkpoint process recovery", () => {
           const decisions = after.filter((row) => row.payload.eventType === "control.agent.decision-settled")
           expect(decisions.map((row) => row.payload.payload)).toMatchObject([{ frame: 1 }])
           expect((yield* runs.get(runId)).status).toBe("completed")
-        })).pipe(Effect.provide(stores(filename)), Effect.provide(NodeCrypto.layer), Effect.provide(TestClock.layer()))
+        })).pipe(
+          Effect.provide(stores(filename)),
+          Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
+          Effect.provide(TestClock.layer())
+        )
       )
     } finally {
       if (child.exitCode === null && child.signalCode === null) {

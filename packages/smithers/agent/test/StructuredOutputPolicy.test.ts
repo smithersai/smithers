@@ -19,6 +19,7 @@
  * would answer it from a different mechanism.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
@@ -36,7 +37,6 @@ import * as Registry from "@smthrs/registry/Registry"
 import { RunStore } from "@smthrs/run-store"
 import * as AttemptStore from "@smthrs/run-store/AttemptStore"
 import { Cause, Effect, Exit, Fiber, Layer, Metric, Option, Schema, Stream } from "effect"
-import type * as Crypto from "effect/Crypto"
 import type * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
@@ -260,7 +260,7 @@ const memory = <ROut, RIn>(
     Layer.provideMerge(Safety.layer),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(NodeCrypto.layer)
+    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
   )
 
 const failureOf = (exit: Exit.Exit<unknown, unknown>): unknown =>
@@ -456,7 +456,7 @@ const durable = <A, E>(
   body: Effect.Effect<A, E, Crypto.Crypto | Scope.Scope>
 ): Promise<A> =>
   Effect.runPromise(
-    Effect.scoped(Effect.provide(body, NodeCrypto.layer)).pipe(Effect.orDie)
+    Effect.scoped(Effect.provide(body, Crypto.layerFromDigest(NodeCrypto.layerDigest))).pipe(Effect.orDie)
   )
 
 /** One engine incarnation over already-provided durable stores. */
@@ -493,7 +493,8 @@ const incarnation = (
  */
 const onTestClock = <A, E>(body: Effect.Effect<A, E, Crypto.Crypto | Scope.Scope>): Promise<A> =>
   Effect.runPromise(
-    Effect.scoped(Effect.provide(body, Layer.merge(NodeCrypto.layer, TestClock.layer()))).pipe(Effect.orDie)
+    Effect.scoped(Effect.provide(body, Layer.merge(Crypto.layerFromDigest(NodeCrypto.layerDigest), TestClock.layer())))
+      .pipe(Effect.orDie)
   )
 
 /**

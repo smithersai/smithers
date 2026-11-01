@@ -4,6 +4,7 @@
  * disagree, so the rendering rules get their own cases.
  */
 import * as ChildProcess from "effect/process/ChildProcess"
+import * as Redacted from "effect/Redacted"
 import { describe, expect, it } from "vitest"
 import * as CommandLine from "../src/CommandLine.ts"
 
@@ -141,6 +142,15 @@ describe("CommandLine.cwd and CommandLine.env", () => {
   it("is undefined when a command declares neither", () => {
     expect(CommandLine.cwd(ChildProcess.make("ls"))).toBeUndefined()
     expect(CommandLine.env(ChildProcess.make("ls"))).toBeUndefined()
+  })
+
+  it("reads a Redacted argument or environment value as the text the process receives", () => {
+    const command = ChildProcess.make("curl", ["-H", Redacted.make("authorization: token")], {
+      env: { TOKEN: Redacted.make("secret"), PLAIN: "x", UNSET: undefined }
+    })
+
+    expect(CommandLine.render(command)).toBe("curl -H 'authorization: token'")
+    expect(CommandLine.env(command)).toEqual({ TOKEN: "secret", PLAIN: "x", UNSET: undefined })
   })
 
   it("takes the leftmost stage of a pipeline", () => {

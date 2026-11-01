@@ -40,6 +40,7 @@
  */
 
 import * as Capability from "@smthrs/capability/Capability"
+import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableClock, Fault, FlowRuntime, type RetryPolicy, RunMetrics } from "@smthrs/flow"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
@@ -75,7 +76,6 @@ import * as Checkpoints from "@smthrs/std/Checkpoints"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import type * as Exit from "effect/Exit"

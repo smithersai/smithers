@@ -10,7 +10,7 @@ puts the failure in an Effect error channel instead, as a `SchemaError` whose
 message carries the same code and path. Use the schema when the surrounding
 code is Effect, and the function when it is not.
 
-Every example here is Effect 4. The package declares `effect@4.0.5` as a
+Every example here is Effect 4. The package declares `effect@4.1.0` as a
 peer dependency, and modules such as `effect/SchemaGetter` and
 `effect/SchemaIssue` exist only in that line. See
 [Installation](../installation.md).
@@ -93,7 +93,7 @@ Canonicalized values can contain secrets, including in member names. Treat
 every path segment, `message`, and original `cause` text as caller-controlled
 and potentially sensitive.
 
-**Input retention is opt-in.** In `effect@4.0.5` a schema issue keeps
+**Input retention is opt-in.** In `effect@4.1.0` a schema issue keeps
 the rejected value only when the decode is given `reportInput: true`, and this
 package adds no parse options of its own. Writing `reportInput: false` changes
 nothing on a bare decode; write it to hold that policy against an option a

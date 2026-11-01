@@ -9,6 +9,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { CapabilityPattern } from "@smthrs/capability/Capability"
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine, FlowProxy, Hosts } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
@@ -133,7 +134,9 @@ const caller = (port: number, flow: Flow.Any) =>
   )
 
 const run = <A, E>(effect: Effect.Effect<A, E, any>): Promise<A> =>
-  Effect.runPromise(Effect.scoped(effect).pipe(Effect.provide(NodeCrypto.layer)) as Effect.Effect<A, E>)
+  Effect.runPromise(
+    Effect.scoped(effect).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))) as Effect.Effect<A, E>
+  )
 
 const onCaller = (context: Context.Context<any>) => <A, E>(effect: Effect.Effect<A, E, any>) =>
   Effect.provide(effect, context) as Effect.Effect<A, E>

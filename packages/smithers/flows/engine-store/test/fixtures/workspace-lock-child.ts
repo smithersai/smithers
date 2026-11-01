@@ -4,6 +4,7 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
+import { Crypto } from "@smthrs/crypto"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Effect from "effect/Effect"
@@ -40,7 +41,7 @@ if (root === undefined) {
         files: [{ path: "file", afterDigest: createHash("sha256").update(bytes).digest("hex"), after: bytes }]
       }
     } as never)
-  }).pipe(Effect.provide(AtomicFileSystem.layer), Effect.provide(NodeCrypto.layer))
+  }).pipe(Effect.provide(AtomicFileSystem.layer), Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
   Effect.runPromise(program).catch((cause) => {
     process.stderr.write(`${String(cause)}\n`)
     process.exitCode = 1

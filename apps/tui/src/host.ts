@@ -27,6 +27,7 @@ import * as WorkspaceObservation from "@smthrs/agent/WorkspaceObservation"
 import * as Capability from "@smthrs/capability/Capability"
 import type * as Permission from "@smthrs/capability/Permission"
 import * as NodeControl from "@smthrs/cli/NodeControl"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
@@ -329,7 +330,7 @@ export const make = (options: {
     // Model HTTP keeps the noop store `executor` provides; this one only
     // answers `authorize` below.
     Approvals.layer(options.cwd, approvalMode),
-    NodeCrypto.layer,
+    Crypto.layerFromDigest(NodeCrypto.layerDigest),
     // Relative flow paths and commands resolve against `cwd`, never the process's own.
     Rooted.layer(options.cwd).pipe(Layer.provideMerge(
       // Every Node platform service except `NodeTerminal`: OpenTUI owns stdin, and

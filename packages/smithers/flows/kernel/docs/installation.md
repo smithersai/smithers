@@ -19,7 +19,7 @@ The package requires Node.js 22.19.0 or later and ships as ESM, CommonJS, and
 TypeScript declarations. Its Smithers dependencies install with it:
 [`@smthrs/capability`](/api/capability), [`@smthrs/jj`](/api/jj), and
 [`@smthrs/journal`](/api/journal). The host supplies the
-`effect@4.0.5` peer so the library never installs a second runtime.
+`effect@4.1.0` peer so the library never installs a second runtime.
 
 The root entry point carries no Node built-ins. A package test bundles the
 whole root dependency graph for the browser and asserts that no

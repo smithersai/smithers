@@ -7,6 +7,7 @@
  * matrix. Each hosted case has a `"process"` control beside it, so the
  * behavior it pins is the host mode's and not the fixture's.
  */
+import type { Crypto } from "@smthrs/crypto"
 import * as SlowNetwork from "@smthrs/database/test/SlowNetwork"
 import { Action, DurableClock, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
@@ -14,7 +15,6 @@ import { Ownership, RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
 import * as Deferred from "effect/Deferred"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"

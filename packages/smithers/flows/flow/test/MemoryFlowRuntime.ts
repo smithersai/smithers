@@ -11,9 +11,9 @@
  * policy decisions, snapshot boundaries — is tested in `@smthrs/engine`,
  * against the engine that owns it.
  */
+import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"

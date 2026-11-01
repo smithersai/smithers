@@ -56,7 +56,7 @@ interface, for code that already consumes the service and cannot suspend:
 
 ```ts
 import { digest, syncCrypto } from "@smthrs/crypto"
-import * as Crypto from "effect/Crypto"
+import { Crypto } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
 
 Effect.runSync(Effect.provideService(digest("hello"), Crypto.Crypto, syncCrypto))

@@ -13,10 +13,10 @@
  * timeout does is asserted rather than waited out.
  */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableDeferred, Flow, FlowRuntime, Graph, HumanTask, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Effect, Exit, Layer, Option, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { TestClock } from "effect/testing"
 import { Buffer } from "node:buffer"
 import * as BoundedJson from "../src/internal/BoundedJson.ts"

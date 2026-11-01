@@ -9,9 +9,9 @@
  * it exists. The checks run inside `codex sandbox`, so code the agent wrote
  * can write only its own workspace and has no network.
  */
+import type { Crypto } from "@smthrs/crypto"
 import { Fault, type FlowRuntime } from "@smthrs/flow"
 import { Cause, Deferred, Duration, Effect, Option, Result, Schema, Semaphore } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { matchesGlob } from "node:path"

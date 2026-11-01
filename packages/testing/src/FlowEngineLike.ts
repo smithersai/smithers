@@ -23,11 +23,11 @@
  * @since 0.0.0
  */
 
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
 import * as Cause from "effect/Cause"
-import * as Crypto from "effect/Crypto"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"

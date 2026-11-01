@@ -6,10 +6,10 @@
  * comparison can tell apart.
  */
 import { describe, expect } from "@effect/vitest"
-import { syncCrypto } from "@smthrs/crypto"
+import { Crypto, syncCrypto } from "@smthrs/crypto"
 import { DurableClock, DurableDeferred, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Cause, Crypto, Deferred, Effect, Exit, Fiber, Option, Schema } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { FlowEngine } from "../src/index.ts"
 import { effect, pollUntil } from "./Harness.ts"

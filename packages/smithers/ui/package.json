@@ -139,7 +139,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "d3-force": "3.0.0",
-    "effect": "4.0.5",
+    "effect": "4.1.0",
     "radix-ui": "^1.6.7",
     "recharts": "^3.10.1",
     "@codemirror/autocomplete": "6.20.3",
@@ -178,7 +178,7 @@
     "playwright": "1.62.1",
     "quickjs-emscripten-core": "0.32.0",
     "happy-dom": "20.13.2",
-    "vibelang": "0.0.8",
-    "vibelang-unplugin": "0.0.8"
+    "vibelang": "file:../../../.vibelang-toolchain/vibelang-0.0.11-3ee099e972e9.tgz",
+    "vibelang-unplugin": "file:../../../.vibelang-toolchain/vibelang-unplugin-0.0.11-d83e2657e595.tgz"
   }
 }

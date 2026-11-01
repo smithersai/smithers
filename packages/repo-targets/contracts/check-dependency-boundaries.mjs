@@ -117,20 +117,23 @@ const bannedPackages = [
 /**
  * Modules whose Workflow exports are Cloudflare Workflows. `whole` bans every
  * import of the module; otherwise an imported or accessed name is banned when
- * `names` matches it.
+ * `names` matches it. Alchemy's Cloudflare provider is `alchemy/Cloudflare`
+ * through 2.0.0-beta.83 and the `@alchemy.run/cloudflare` package from beta.84.
  */
+const alchemyCloudflare = String.raw`(?:alchemy\/Cloudflare|@alchemy\.run\/cloudflare)`
+
 const workflowModules = [
   { matches: (specifier) => specifier === "cloudflare:workflows", whole: true, runtime: "Cloudflare Workflows" },
   { matches: (specifier) => specifier === "cloudflare:workers", names: /^Workflow/, runtime: "Cloudflare Workflows" },
   {
-    matches: (specifier) => /^alchemy\/Cloudflare\/Workflows(?:\/|$)/.test(specifier),
+    matches: (specifier) => new RegExp(`^${alchemyCloudflare}\\/Workflows(?:\\/|$)`).test(specifier),
     whole: true,
     runtime: "Cloudflare Workflows through Alchemy",
   },
   {
-    matches: (specifier) => /^alchemy\/Cloudflare(?:\/|$)/.test(specifier),
+    matches: (specifier) => new RegExp(`^${alchemyCloudflare}(?:\\/|$)`).test(specifier),
     // `task`, `sleep`, `sleepUntil` and `waitForEvent` are Alchemy's workflow
-    // step functions, which `alchemy/Cloudflare` re-exports at its root.
+    // step functions, which its Cloudflare module re-exports at its root.
     names: /Workflow|^(?:task|sleep|sleepUntil|waitForEvent)$/,
     runtime: "Cloudflare Workflows through Alchemy",
   },
@@ -365,8 +368,9 @@ export function packageSourceReachedBy(file, specifier, packageDirs) {
  * Banned are another durable runtime's or model SDK's package in any import
  * form (static, type-only, re-export, `import()`, `require()`, an `import()`
  * type); every import of `cloudflare:workflows` and
- * `alchemy/Cloudflare/Workflows`; and a `Workflow*` name imported from
- * `cloudflare:workers`, or one imported from or read off `alchemy/Cloudflare`
+ * `alchemy/Cloudflare/Workflows` (`@alchemy.run/cloudflare/Workflows`); and a
+ * `Workflow*` name imported from `cloudflare:workers`, or one imported from or
+ * read off `alchemy/Cloudflare` (`@alchemy.run/cloudflare`)
  * (with Alchemy's workflow step functions `task`, `sleep`, `sleepUntil` and
  * `waitForEvent`), whether named in the import, accessed on a namespace or
  * default import, or used as a qualified type. A string or comment that

@@ -1,4 +1,4 @@
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Clock, Effect, Layer, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import * as Database from "../db/Database.ts"

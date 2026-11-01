@@ -1,4 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { RunStore } from "@smthrs/run-store"
 import { Effect } from "effect"
 import { TestClock } from "effect/testing"
@@ -116,7 +117,7 @@ describe("queued cell-call trace replay on SQLite", () => {
             expect(new Set(after.map((row) => `${row.sourceId}:${row.sourceSeq}`)).size).toBe(after.length)
           })).pipe(
             Effect.provide(stores(filename)),
-            Effect.provide(NodeCrypto.layer),
+            Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
             Effect.provide(TestClock.layer())
           )
         )

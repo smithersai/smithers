@@ -3,7 +3,7 @@
 // over in-memory sockets and an in-memory storage whose alarm the test fires when the host armed it, on the test clock,
 // against this file's schema of the compose Postgres (`pnpm db:up`).
 import { PresenceRoom } from "@smthrs/sync"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { Deferred, Effect, Fiber, Logger, Metric, Option } from "effect"
 import { SqlClient } from "effect/sql"

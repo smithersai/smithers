@@ -17,7 +17,7 @@
  * @since 1.0.0-rc.0
  * @private
  */
-export const effectVersion = "4.0.5"
+export const effectVersion = "4.1.0"
 
 /**
  * The exact Effect peer a migrated manifest requires. It matches the runtime
@@ -26,7 +26,7 @@ export const effectVersion = "4.0.5"
  * @since 1.0.0-rc.5
  * @private
  */
-export const effectRange = "4.0.5"
+export const effectRange = "4.1.0"
 
 /**
  * What the `effect` entry of one manifest field ends on: {@link effectRange}

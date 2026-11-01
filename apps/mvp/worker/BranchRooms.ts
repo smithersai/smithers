@@ -1,6 +1,6 @@
 import { PresenceProtocol, PresenceRoom } from "@smthrs/sync"
 import { RuntimeContext } from "alchemy"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Clock, Effect, Layer, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { ACCESSES } from "../src/features/branch/contract.ts"

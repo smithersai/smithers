@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact `4.0.5` peer dependency. Install one
+This package declares `effect` as an exact `4.1.0` peer dependency. Install one
 `effect` release at that version so all Smithers packages share one Effect
 runtime.
 
@@ -24,7 +24,7 @@ that fence still sees the bytes its own event recorded.
 npm install @smthrs/step-cache@next effect
 ```
 
-It needs Node.js 22.19.0 or later and `effect` `4.0.5`. The import forms
+It needs Node.js 22.19.0 or later and `effect` `4.1.0`. The import forms
 and the driver layers a durable composition adds are on the
 [installation page](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/step-cache/docs/installation.md).
 

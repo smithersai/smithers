@@ -1,12 +1,12 @@
-import { execFileSync } from "node:child_process"
 import { describe, expect, it } from "@effect/vitest"
 import * as Command from "../src/Command.vibe"
 import * as FlowInvoker from "../src/FlowInvoker.vibe"
 import { failureOf, invalidModule, makeRoute, specialModule } from "./helpers.vibe"
+import { runModuleScript } from "./modules.ts"
 
 describe("Command surface", () => {
   it.effect("advertises only executable model-visible modules in stable order") {
-    const surface = Command.make([
+    const surface = try Command.make([
       makeRoute("z-hidden", undefined, { modelInvocable: false }),
       makeRoute("markdown", undefined, { kind: "markdown" }),
       makeRoute("skill", undefined, { kind: "skill" }),
@@ -23,9 +23,9 @@ describe("Command surface", () => {
   }
 
   it.effect("round-trips listed slash names and schema-decodes flags") {
-    const surface = Command.make([makeRoute("nested/visible")])
-    const slash = surface.parse("nested/visible --number 42 --enabled --tags one --tags two")
-    const spaced = surface.parse("nested visible --number=7")
+    const surface = try Command.make([makeRoute("nested/visible")])
+    const slash = try surface.parse("nested/visible --number 42 --enabled --tags one --tags two")
+    const spaced = try surface.parse("nested visible --number=7")
 
     expect(slash.route.name).toBe("nested/visible")
     expect(slash.input).toEqual({ enabled: true, number: 42, tags: ["one", "two"] })
@@ -34,16 +34,16 @@ describe("Command surface", () => {
   }
 
   it.effect("invokes decoded input and encodes output") {
-    const surface = Command.make([makeRoute("review")])
+    const surface = try Command.make([makeRoute("review")])
     const seen: Array<FlowInvoker.Invocation> = []
     const invoker = FlowInvoker.make({
-      invoke: (invocation) => {
+      invoke: effect (invocation) => {
         seen.push(invocation)
         return { accepted: true, number: (invocation.input as { number: number }).number }
       }
     })
     provide FlowInvoker.FlowInvoker = invoker {
-      expect(surface.execute("review --number 42")).toEqual({ accepted: true, number: 42 })
+      expect(try surface.execute("review --number 42")).toEqual({ accepted: true, number: 42 })
     }
 
     expect(seen).toHaveLength(1)
@@ -51,10 +51,10 @@ describe("Command surface", () => {
   }
 
   it.effect("snapshots programmatic input before loading and requires an exact name") {
-    const surface = Command.make([makeRoute("nested/visible")])
+    const surface = try Command.make([makeRoute("nested/visible")])
     const observed: Array<unknown> = []
     const invoker = FlowInvoker.make({
-      invoke: ({ input }) => {
+      invoke: effect ({ input }) => {
         observed.push(input)
         return { accepted: true, number: (input as { number: number }).number }
       }
@@ -66,31 +66,31 @@ describe("Command surface", () => {
       const pending = fork(surface.call("nested/visible", source), { startImmediately: true })
       source.number = 2
 
-      expect(surface.call("nested/visible", { number: 1 })).toEqual({ accepted: true, number: 1 })
+      expect(try surface.call("nested/visible", { number: 1 })).toEqual({ accepted: true, number: 1 })
       expect(join pending).toEqual({ accepted: true, number: 1 })
       expect(observed).toEqual([{ number: 1 }, { number: 1 }])
       expect(Object.isFrozen(observed[0])).toBe(true)
 
-      expect(failureOf(surface.call("nested/visible/typo", { number: 1 })).code).toBe("unknown_command")
-      expect(failureOf(surface.call(1 as never, { number: 1 } as never)).code).toBe("unknown_command")
+      expect((try failureOf(surface.call("nested/visible/typo", { number: 1 }))).code).toBe("unknown_command")
+      expect((try failureOf(surface.call(1 as never, { number: 1 } as never))).code).toBe("unknown_command")
     }
   }
 
   it.effect("returns typed decode, encode, and load failures without input disclosure") {
-    const surface = Command.make([
+    const surface = try Command.make([
       makeRoute("review"),
       makeRoute("invalid", invalidModule)
     ])
-    const badInput = failureOf(surface.parse("review --number TOP-SECRET"))
+    const badInput = try failureOf(surface.parse("review --number TOP-SECRET"))
     expect(badInput).toMatchObject({
       code: "decode_failed"
     })
     expect(JSON.stringify(badInput)).not.toContain("TOP-SECRET")
 
-    expect(failureOf(surface.parse("invalid --number 1")).code).toBe("load_failed")
+    expect((try failureOf(surface.parse("invalid --number 1"))).code).toBe("load_failed")
 
-    provide FlowInvoker.layerNoop({ invoke: () => ({ accepted: "yes", number: 1 }) }) {
-      expect(failureOf(surface.execute("review --number 1")).code).toBe("encode_failed")
+    provide FlowInvoker.layerNoop({ invoke: effect () => ({ accepted: "yes", number: 1 }) }) {
+      expect((try failureOf(surface.execute("review --number 1"))).code).toBe("encode_failed")
     }
   }
 
@@ -113,18 +113,6 @@ describe("Command surface", () => {
       const flow = await Effect.runPromise(Route.load(route))
       process.stdout.write(flow.description)
     `
-    expect(
-      sync((script) =>
-        execFileSync(process.execPath, [
-          "--import",
-          "vibelang/register",
-          "--experimental-strip-types",
-          "--input-type=module",
-          "-e",
-          script
-        ], {
-          encoding: "utf8"
-        }), script)
-    ).toBe("Special path fixture.")
+    expect(try sync((script) => runModuleScript(script), script)).toBe("Special path fixture.")
   }
 })

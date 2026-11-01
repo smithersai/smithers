@@ -15,10 +15,10 @@
  * The test for this example bundles the file itself for the browser and fails
  * if a Node-only import ever sneaks in.
  */
+import type { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { deriveKey } from "@smthrs/keys"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"

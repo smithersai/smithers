@@ -276,6 +276,23 @@ const ordinaryAnnotations = (annotations: Schema.Annotations.Annotations | undef
   return Object.keys(out).length === 0 ? undefined : out
 }
 
+/**
+ * A representation's annotations as rc.115 carried them. From `effect@4.1.0`
+ * on a string's media type is the representation's `content`, not its
+ * `contentMediaType` annotation; rc.115 printed it as that annotation and did
+ * not print the content schema.
+ *
+ * @private
+ */
+const withContentMediaType = (
+  representation: Exclude<Representation, SchemaRepresentation.Reference>
+): Schema.Annotations.Annotations | undefined => {
+  const content = representation._tag === "String" ? representation.content : undefined
+  return content === undefined || typeof content.mediaType !== "string"
+    ? representation.annotations
+    : { ...representation.annotations, contentMediaType: content.mediaType }
+}
+
 /** @private */
 const finitePattern = "[+-]?\\d*\\.?\\d+(?:[Ee][+-]?\\d+)?"
 
@@ -376,6 +393,7 @@ const builtinChecks: ReadonlyMap<string, BuiltinCheck> = new Map<string, Builtin
   })],
   ["effect/schema/isGUID", pattern("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$")],
   ["effect/schema/isULID", pattern("^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$")],
+  ["effect/schema/isAscii", pattern("^[\\x00-\\x7F]*$")],
   ["effect/schema/isBase64", pattern("^([0-9a-zA-Z+/]{4})*(([0-9a-zA-Z+/]{2}==)|([0-9a-zA-Z+/]{3}=))?$")],
   ["effect/schema/isBase64Url", pattern("^([0-9a-zA-Z-_]{4})*(([0-9a-zA-Z-_]{2}(==)?)|([0-9a-zA-Z-_]{3}(=)?))?$")],
   ["effect/schema/isStartingWith", literalPattern("startsWith", (escaped) => `^${escaped}`)],
@@ -763,7 +781,7 @@ export const fromRepresentation = (document: SchemaRepresentation.Document, opti
     if (cached !== undefined) return cached
 
     let output = on(representation, path)
-    const ordinary = ordinaryAnnotations(representation.annotations)
+    const ordinary = ordinaryAnnotations(withContentMediaType(representation))
     if (ordinary !== undefined) output = { ...output, ...ordinary }
     representation.checks.forEach((check, index) => {
       const compiled = compileCheck(
@@ -1043,6 +1061,89 @@ const rc115CheckIds: ReadonlyMap<string, string> = new Map([
 ])
 
 /**
+ * The default annotations `effect@4.1.0` changed on three built-in checks,
+ * from what 4.1.0 writes to what rc.115 wrote, by check id and annotation
+ * path. A value is written back only where it is exactly 4.1.0's default, so
+ * an author's own annotation is kept as written.
+ *
+ * @private
+ */
+const rc115CheckAnnotations: ReadonlyMap<
+  string,
+  ReadonlyArray<readonly [ReadonlyArray<string>, string, string]>
+> = new Map([
+  ["effect/schema/isStringFinite", [
+    [
+      ["arbitraryConstraint", "patterns", "0", "source"],
+      "^[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:[Ee][+-]?\\d+)?$",
+      "^[+-]?\\d*\\.?\\d+(?:[Ee][+-]?\\d+)?$"
+    ]
+  ]],
+  ["effect/schema/isGUID", [[["arbitraryConstraint", "patterns", "0", "flags"], "u", ""]]],
+  ["effect/schema/isULID", [
+    [
+      ["expected"],
+      "a string matching the RegExp ^[0-7][0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{25}$",
+      "a string matching the RegExp ^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$"
+    ],
+    [
+      ["arbitraryConstraint", "patterns", "0", "source"],
+      "^[0-7][0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{25}$",
+      "^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$"
+    ],
+    [["arbitraryConstraint", "patterns", "0", "flags"], "u", ""]
+  ]]
+])
+
+/**
+ * A copy of `value` with the string at `path` replaced, where it is exactly
+ * `from`. A path that does not reach a string leaves `value` as it is.
+ *
+ * @private
+ */
+const replacedAt = (value: Schema.Json, path: ReadonlyArray<string>, from: string, to: string): Schema.Json => {
+  const [head, ...rest] = path
+  if (head === undefined) return value === from ? to : value
+  if (typeof value !== "object" || value === null || !Object.hasOwn(value, head)) return value
+  if (Array.isArray(value)) {
+    const copy = [...value]
+    copy[Number(head)] = replacedAt(copy[Number(head)], rest, from, to)
+    return copy
+  }
+  const out: Record<string, Schema.Json> = {}
+  for (const [key, member] of Object.entries(value as Readonly<Record<string, Schema.Json>>)) {
+    assignProperty(out, key, key === head ? replacedAt(member, rest, from, to) : member)
+  }
+  return out
+}
+
+/**
+ * A string's `content` written back as rc.115 wrote it: its media type as the
+ * last `contentMediaType` annotation, its content schema dropped, in the key
+ * order rc.115 wrote (`_tag`, `annotations`, `checks`).
+ *
+ * @private
+ */
+const withRc115Content = (value: Readonly<Record<string, Schema.Json>>): Readonly<Record<string, Schema.Json>> => {
+  const content = value["content"]
+  if (
+    value["_tag"] !== "String" || !isObject(content) ||
+    typeof (content as Readonly<Record<string, Schema.Json>>)["mediaType"] !== "string"
+  ) {
+    return value
+  }
+  const mediaType = (content as Readonly<Record<string, Schema.Json>>)["mediaType"] as string
+  const out: Record<string, Schema.Json> = {}
+  const annotations = value["annotations"] as Readonly<Record<string, Schema.Json>> | undefined
+  for (const [key, member] of Object.entries(value)) {
+    if (key === "content" || key === "annotations") continue
+    assignProperty(out, key, member)
+    if (key === "_tag") assignProperty(out, "annotations", { ...annotations, contentMediaType: mediaType })
+  }
+  return out
+}
+
+/**
  * A copy of an encoded representation with every renamed check id written
  * back as rc.115 wrote it. Only an element of a `checks` array is a check.
  * `annotations` and `payload` hold an author's data, which may have any
@@ -1054,8 +1155,11 @@ const rc115CheckIds: ReadonlyMap<string, string> = new Map([
 const withRc115CheckIds = (value: Schema.Json, isCheck = false): Schema.Json => {
   if (Array.isArray(value)) return value.map((member) => withRc115CheckIds(member, isCheck))
   if (!isObject(value)) return value
+  const source = isCheck
+    ? withRc115CheckAnnotations(value)
+    : withRc115Content(value)
   const out: Record<string, Schema.Json> = {}
-  for (const [key, member] of Object.entries(value as Readonly<Record<string, Schema.Json>>)) {
+  for (const [key, member] of Object.entries(source as Readonly<Record<string, Schema.Json>>)) {
     if (key === "annotations" || key === "payload") {
       assignProperty(out, key, member)
       continue
@@ -1074,6 +1178,16 @@ const withRc115CheckIds = (value: Schema.Json, isCheck = false): Schema.Json => 
   return out
 }
 
+/** A check with the default annotations `effect@4.1.0` changed written back as rc.115 wrote them. @private */
+const withRc115CheckAnnotations = (check: Schema.Json): Schema.Json => {
+  const representation = (check as Readonly<Record<string, Schema.Json>>)["representation"]
+  const id = isObject(representation) ? (representation as Readonly<Record<string, Schema.Json>>)["id"] : undefined
+  const changes = typeof id === "string" ? rc115CheckAnnotations.get(id) : undefined
+  return changes === undefined
+    ? check
+    : changes.reduce((out, [path, from, to]) => replacedAt(out, ["annotations", ...path], from, to), check)
+}
+
 /**
  * The versions of a representation identity, newest first. A sealed action's
  * step key hashes one, and a key written under an older version must stay
@@ -1082,7 +1196,8 @@ const withRc115CheckIds = (value: Schema.Json, isCheck = false): Schema.Json => 
  *
  * - `2`, the current version, written since `effect@4.0.4` (2026-10-13):
  *   what the installed release encodes, with the six check ids renamed after
- *   `4.0.0-rc.115` written back. From `4.0.4` on `Schema.brand` is not part of
+ *   `4.0.0-rc.115`, and the check annotations and string `content`
+ *   `effect@4.1.0` changed, written back. From `4.0.4` on `Schema.brand` is not part of
  *   the AST, so a brand contributes nothing.
  * - `1`, what every key written under `4.0.0-rc.115` hashed: version 2 with
  *   each brand restored as the `brands` annotation rc.115 wrote, in the place
@@ -1368,7 +1483,8 @@ const withRc115Brands = (
  * `effect`.
  *
  * The installed release encodes the representation; this writes back the six
- * check ids renamed after rc.115. From `effect@4.0.4` on `Schema.brand` is not
+ * check ids renamed after rc.115, and the check annotations and string
+ * `content` `effect@4.1.0` changed. From `effect@4.0.4` on `Schema.brand` is not
  * part of the AST, so version 2 omits it, and version 1 restores it from the
  * schema value, where the brand still lives.
  *

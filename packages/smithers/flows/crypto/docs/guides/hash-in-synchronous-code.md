@@ -74,7 +74,7 @@ layer:
 
 ```ts
 import { syncCrypto } from "@smthrs/crypto"
-import * as Crypto from "effect/Crypto"
+import { Crypto } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
 
 /** Provides the synchronous SHA-256 service to an Effect-shaped derivation. */

@@ -11,6 +11,7 @@ import * as SqlClient from "effect/sql/SqlClient"
  */
 import { NodeCrypto } from "@effect/platform-node"
 import type { RunSummary } from "@smthrs/control/ControlSchema"
+import { Crypto } from "@smthrs/crypto"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
@@ -160,7 +161,7 @@ const supervised = (
     )
     yield* Scope.close(scope, { _tag: "Success", value: undefined } as never)
     return rows
-  }).pipe(Effect.provide(NodeCrypto.layer))
+  }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
 
 describe("node records reaching the control journal", () => {
   it(

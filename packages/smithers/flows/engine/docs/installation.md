@@ -19,7 +19,7 @@ author against: `Flow`, `Action`, `DurableDeferred`, `DurableClock`, and
 resolve.
 
 `effect` is the peer everything is built on. This release accepts
-`effect@4.0.5`; install one `effect` at that version, because two copies of `effect`
+`effect@4.1.0`; install one `effect` at that version, because two copies of `effect`
 in one process split the service context and a flow authored against one
 instance is not runnable by an engine holding the other.
 
@@ -35,7 +35,7 @@ things, and the type checker names each one it is missing:
 | `FlowRuntime.FlowRuntime`    | `FlowEngine.layerMemory` here, or `EngineStore.layer` from [`@smthrs/engine-store`](/api/engine-store) for durability. |
 | The flow's registration      | `Interpreter.layer(flow)` from `@smthrs/flow`, once per flow you execute.                                              |
 | Each action's implementation | `action.toLayer(...)`, collected by `Action.layerImplementations`.                                                     |
-| `Crypto.Crypto`              | A platform crypto layer, such as `NodeCrypto.layer` from `@effect/platform-node`.                                      |
+| `Crypto.Crypto`              | A platform crypto layer, such as `Crypto.layerFromDigest(NodeCrypto.layerDigest)` from `@effect/platform-node`.        |
 
 The `Crypto` requirement is not optional and it is not only a durability
 concern. Every action dispatch is recorded under a derived step identity, and

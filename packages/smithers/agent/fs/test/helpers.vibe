@@ -13,8 +13,8 @@ export const recordedImports = (): number => (globalThis as { fsRecordedImports?
  * The expected failure a program fails with; a success or a defect fails the
  * test. The program may need services that the enclosing block provides.
  */
-export function failureOf<E, R>(program: Effect<unknown, E, R>): Effect<E, never, R> {
-  return match (exit(program)) {
+export effect function failureOf<E, R>(program: Effect<unknown, E, R>): Effect<E, never, R> {
+  return match (try exit(program)) {
     when Exit.Failure(let cause): Cause.findErrorOption(cause).getOrThrow();
     default: assert.fail("expected the program to fail");
   }
@@ -64,9 +64,9 @@ export const latchedInvoke = (): {
     release = () => resolve({ accepted: true, number: 0 })
   })
   return {
-    invoke: (_invocation) => {
+    invoke: effect (_invocation) => {
       try {
-        return sync(async (begin, gate) => {
+        return try sync(async (begin, gate) => {
           begin()
           return gate
         }, begin, gate)

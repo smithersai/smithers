@@ -1,4 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Interpreter } from "@smthrs/flow"
 import { Effect, Exit, Layer, ManagedRuntime, Schema } from "effect"
@@ -430,7 +431,7 @@ test("a resumed child keeps its journaled Cloud placement even when a local slot
     ).pipe(
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(NodeCrypto.layer)
+      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
     )
   )
   t.after(() => runtime.dispose())

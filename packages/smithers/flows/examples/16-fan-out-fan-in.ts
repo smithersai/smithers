@@ -12,11 +12,11 @@
  */
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
+import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, type FlowRuntime, Graph, Interpreter } from "@smthrs/flow"
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import { TestNodeRuntime } from "@smthrs/platform-node"
 import { Executable, Registry } from "@smthrs/registry"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"

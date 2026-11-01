@@ -17,11 +17,11 @@
  * @since 0.1.0
  */
 
+import type { Crypto } from "@smthrs/crypto"
 import type * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
 import type * as Cause from "effect/Cause"
 import type * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
 import type * as Duration from "effect/Duration"
 import type * as Effect from "effect/Effect"
 import type * as Option from "effect/Option"

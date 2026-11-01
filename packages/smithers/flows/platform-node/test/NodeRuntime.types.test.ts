@@ -1,5 +1,5 @@
+import type { Crypto } from "@smthrs/crypto"
 import type * as KernelJj from "@smthrs/kernel/Jj"
-import type * as Crypto from "effect/Crypto"
 import type * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
 import type * as Layer from "effect/Layer"

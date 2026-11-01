@@ -5,6 +5,7 @@ import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import * as ControlLive from "@smthrs/control/ControlLive"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import * as SqlControlRuntime from "@smthrs/control/SqlControlRuntime"
+import { Crypto } from "@smthrs/crypto"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
@@ -70,7 +71,7 @@ for (
       ).pipe(
         Layer.provideMerge(Action.layerImplementations),
         Layer.provideMerge(FlowEngine.layerMemory),
-        Layer.provideMerge(NodeCrypto.layer)
+        Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
       )
     )
     t.after(() => runtime.dispose())
@@ -138,7 +139,7 @@ test("conflict Done survives a cold host restart without repeating the spent rep
           DurableWriter.layer().pipe(
             Layer.provideMerge(NodeDatabase.layer({ filename: join(directory, "engine.db") }))
           ),
-          NodeCrypto.layer
+          Crypto.layerFromDigest(NodeCrypto.layerDigest)
         )
       )
     )
@@ -265,7 +266,7 @@ test("a failed repair parks for Done without repeating the turn", async () => {
     layer.pipe(
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(NodeCrypto.layer)
+      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
     )
   )
   for (let i = 0; i < 2; i++) {

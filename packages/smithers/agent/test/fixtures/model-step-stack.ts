@@ -7,6 +7,7 @@ import { TestSchemas } from "@smthrs/database"
  * The child-process fixture loads this module under native TypeScript, so it
  * imports nothing from Vitest.
  */
+import { Crypto } from "@smthrs/crypto"
 import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
@@ -14,7 +15,6 @@ import { Model, ModelEvent, ModelRequest, Route } from "@smthrs/model"
 import { Node } from "@smthrs/plan"
 import { NodeHost, NodeRuntime } from "@smthrs/platform-node"
 import { Ownership } from "@smthrs/run-store"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Redacted from "effect/Redacted"
@@ -91,7 +91,9 @@ export const runtime = (options: {
     Layer.effectDiscard(
       Effect.flatMap(FlowRuntime.FlowRuntime, (engine) => engine.register(Probe, options.handler))
     )
-  ).pipe(Layer.provide([NodeHost.AtomicFileSystem.layer, NodeHost.NodeCrypto.layer, stubJj]))
+  ).pipe(
+    Layer.provide([NodeHost.AtomicFileSystem.layer, Crypto.layerFromDigest(NodeHost.NodeCrypto.layerDigest), stubJj])
+  )
 
 /**
  * Drops a scratch schema through a connection of its own, taking the schema's
@@ -103,7 +105,7 @@ export const dropSchema = (schema: string, workspaceRoot: string) =>
     yield* sql.withTransaction(sql`DROP SCHEMA IF EXISTS ${sql(schema)} CASCADE`)
   }).pipe(
     Effect.provide(NodeRuntime.storage(`${postgres.url}?schema=${schema}`, workspaceRoot)),
-    Effect.provide([NodeHost.AtomicFileSystem.layer, NodeHost.NodeCrypto.layer]),
+    Effect.provide([NodeHost.AtomicFileSystem.layer, Crypto.layerFromDigest(NodeHost.NodeCrypto.layerDigest)]),
     Effect.scoped
   )
 

@@ -1,6 +1,7 @@
 /** Files, hashing and publication checks use injected Effect platform services. */
 import { canonical } from "@smthrs/core/Digest"
-import { Crypto, Effect, FileSystem, Path } from "effect"
+import { Crypto } from "@smthrs/crypto"
+import { Effect, FileSystem, Path } from "effect"
 import { reviewEvidence, visibleLine } from "./evidence.ts"
 import type { Provenance } from "./reuse.ts"
 import { type PageSpec, type Receipt, type ReviewedPage, WikiError } from "./schema.ts"

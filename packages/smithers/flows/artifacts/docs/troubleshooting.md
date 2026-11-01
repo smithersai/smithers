@@ -123,7 +123,7 @@ digest starts a fresh upload.
 bytes or the store is implicated.
 
 **What to change.** Check the `Crypto` layer the composition provides.
-`NodeCrypto.layer` from `@effect/platform-node` is the Node implementation. A
+`Crypto.layerFromDigest(NodeCrypto.layerDigest)` from `@effect/platform-node` is the Node implementation. A
 composition with no `Crypto` at all does not compile, so this is a runtime
 refusal, not a missing layer.
 

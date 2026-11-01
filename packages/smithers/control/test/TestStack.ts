@@ -6,12 +6,13 @@
  * notification queue, a populated registry, or a missing executor can each be
  * observed against the same `ControlLive`.
  */
+import { Crypto } from "@smthrs/crypto"
 import type { Journal } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
 import type * as Descriptor from "@smthrs/registry/Descriptor"
-import { Crypto, Effect, Layer } from "effect"
+import { Effect, Layer } from "effect"
 import type { Control } from "../src/Control.ts"
 import * as ControlExecutor from "../src/ControlExecutor.ts"
 import * as ControlLive from "../src/ControlLive.ts"

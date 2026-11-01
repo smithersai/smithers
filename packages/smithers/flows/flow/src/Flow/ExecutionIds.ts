@@ -16,10 +16,9 @@
  * @since 0.1.0
  */
 
-import { Sha256 } from "@smthrs/crypto"
+import { Crypto, Sha256 } from "@smthrs/crypto"
 import { DerivedKey } from "@smthrs/keys"
 import * as Context from "effect/Context"
-import * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"

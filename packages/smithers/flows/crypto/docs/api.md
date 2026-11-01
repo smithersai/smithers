@@ -1,15 +1,17 @@
 ---
 title: "API reference"
-description: "Every public export of @smthrs/crypto: digest, digestSync, Digest, Sha256, Sha256Error, Sha256ErrorCode, syncCrypto, the WebCrypto module for Effect's Crypto over the global WebCrypto, and the Identity module for function identity, with signatures, failures, and the input policy they share."
+description: "Every public export of @smthrs/crypto: digest, digestSync, Digest, Sha256, Sha256Error, Sha256ErrorCode, syncCrypto, the Crypto module for the randomness and digest service Effect 4.0 shipped, the WebCrypto module for that service over the global WebCrypto, and the Identity module for function identity, with signatures, failures, and the input policy they share."
 ---
 
 Every hashing, schema, error, and service name below is exported from the root
-entry point and from `@smthrs/crypto/Sha256`. Two other public modules are
-namespaces of the root: `WebCrypto`, Effect's `Crypto` over the global
+entry point and from `@smthrs/crypto/Sha256`. Three other public modules are
+namespaces of the root: `Crypto`, the randomness and digest service Effect 4.0
+shipped as `effect/Crypto`, `WebCrypto`, that service over the global
 WebCrypto, and `Identity`, function identity.
 
 ```ts
 import {
+  Crypto,
   Digest,
   digest,
   digestSync,
@@ -25,10 +27,10 @@ import {
 ## Example
 
 ```ts
-import { digest, digestSync } from "@smthrs/crypto"
+import { Crypto, digest, digestSync } from "@smthrs/crypto"
 
 const address = await Effect.runPromise(
-  digest("hello").pipe(Effect.provide(NodeCrypto.layer))
+  digest("hello").pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
 )
 const sameAddress = digestSync("hello")
 ```
@@ -197,6 +199,54 @@ accept, are ordinary `SchemaError` validation failures rather than
 `Sha256Error`.
 
 ## Services
+
+### Crypto.Crypto
+
+```ts
+const Crypto: Context.Service<Crypto, Crypto>
+```
+
+The randomness and digest service Effect 4.0 shipped as `effect/Crypto`, with
+the same key, `"effect/Crypto"`, and the same members: `randomBytes`, `digest`,
+`random`, `randomBoolean`, `randomInt`, `randomBetween`, `randomIntBetween`,
+`randomShuffle`, `randomUUIDv4`, `randomUUIDv7`, `randomULID`,
+`nextIntUnsafe` and `nextDoubleUnsafe`. Effect 4.1 removed that module in
+favor of `effect/crypto`'s `Digest` and `SecureRandom`; every Smithers program
+that digests or draws randomness still requires this one service.
+
+### Crypto.DigestAlgorithm
+
+```ts
+type DigestAlgorithm = "SHA-1" | "SHA-256" | "SHA-384" | "SHA-512"
+```
+
+The algorithms `digest` accepts.
+
+### Crypto.make
+
+```ts
+const make: (impl: {
+  readonly randomBytes: (size: number) => Uint8Array
+  readonly digest: (algorithm: DigestAlgorithm, data: Uint8Array) => Effect.Effect<Uint8Array, PlatformError>
+}) => Crypto
+```
+
+Builds the service from a source of random bytes and a digest, as Effect 4.0's
+`Crypto.make` did. Every random member reads `randomBytes`; UUIDv7 and ULID
+stamp the `Clock`'s time. `randomBytes(size)` fails with `BadArgument` when
+`size` is not a non-negative safe integer.
+
+### Crypto.layerFromDigest
+
+```ts
+const layerFromDigest: <E, R>(digest: Layer.Layer<Digest.Digest, E, R>) => Layer.Layer<Crypto, E, R>
+```
+
+The service over a host's Effect 4.1 `Digest` layer, with randomness from the
+global WebCrypto object. What Effect 4.0's `Crypto.layerFromDigest(NodeCrypto.layerDigest)` provided is
+`Crypto.layerFromDigest(NodeCrypto.layerDigest)`, whose digests run
+synchronously on `node:crypto`, so `Effect.runSync` can run them. An algorithm
+outside `DigestAlgorithm` fails with `BadArgument`.
 
 ### syncCrypto
 

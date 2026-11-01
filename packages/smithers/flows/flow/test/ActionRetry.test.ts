@@ -8,9 +8,9 @@
  * pinned ordinals and folds its own cursor positions back on exit.
  */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Effect, Latch, Layer, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { effect } from "./Harness.ts"
 import { layerWired } from "./MemoryFlowRuntime.ts"
 

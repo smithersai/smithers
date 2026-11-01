@@ -16,6 +16,7 @@ import { afterAll, describe, expect, it } from "@effect/vitest"
 import { Capability, CapabilityPattern } from "@smthrs/capability/Capability"
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
 import { PermissionDenied, permissionDenied, toPlatformError } from "@smthrs/capability/Permission"
+import { Crypto } from "@smthrs/crypto"
 import { Action, Engine, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flows"
 import * as Redaction from "@smthrs/journal/Redaction"
 import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
@@ -1308,7 +1309,7 @@ describe("SandboxedFlow.action on an engine", () => {
     Layer.mergeAll(implementation, Interpreter.layer(Parent)).pipe(
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(Engine.FlowEngine.layerMemory),
-      Layer.provideMerge(NodeCrypto.layer)
+      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
     )
 
   it("declares the action over the child's schemas under a derived tag", () => {
@@ -1331,12 +1332,12 @@ describe("SandboxedFlow.action on an engine", () => {
     const partial = Layer.mergeAll(first, Interpreter.layer(Both)).pipe(
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(Engine.FlowEngine.layerMemory),
-      Layer.provideMerge(NodeCrypto.layer)
+      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
     )
     const complete = Layer.mergeAll(first, second, Interpreter.layer(Both)).pipe(
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(Engine.FlowEngine.layerMemory),
-      Layer.provideMerge(NodeCrypto.layer)
+      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
     )
     const requiresNoServices = <A, E>(_effect: Effect.Effect<A, E>) => {}
     // @ts-expect-error implementing RunSum must not discharge Other's requirement
@@ -1395,7 +1396,7 @@ describe("SandboxedFlow.action on an engine", () => {
         const layers = Layer.mergeAll(implementation, Interpreter.layer(Parallel)).pipe(
           Layer.provideMerge(Action.layerImplementations),
           Layer.provideMerge(Engine.FlowEngine.layerMemory),
-          Layer.provideMerge(NodeCrypto.layer)
+          Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
         )
         const exit = yield* Parallel.execute({ n: 5 }, { executionId: "parent-parallel" }).pipe(
           Effect.provide(layers),
@@ -1454,7 +1455,7 @@ describe("SandboxedFlow.action on an engine", () => {
         const layers = Layer.mergeAll(implementation, Interpreter.layer(Recovering)).pipe(
           Layer.provideMerge(Action.layerImplementations),
           Layer.provideMerge(Engine.FlowEngine.layerMemory),
-          Layer.provideMerge(NodeCrypto.layer)
+          Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
         )
         const executionId = `parent-${recovery}`
         const result = yield* Effect.gen(function*() {

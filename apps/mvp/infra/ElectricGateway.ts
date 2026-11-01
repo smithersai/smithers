@@ -1,5 +1,5 @@
 // The private shape gateway owns no container or Durable Object class (decision 0118).
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect } from "effect"
 import { logged } from "./ElectricAwake.ts"
 import { serve } from "./ElectricCache.ts"

@@ -24,12 +24,12 @@ Nothing in this package opens a file or a socket by itself. Every host effect
 goes through an Effect service, which is what lets the same code run in Node,
 in Bun, in a browser tab, and inside a sandbox:
 
-| Service                                               | Needed by                                         | Node layer              |
-| ----------------------------------------------------- | ------------------------------------------------- | ----------------------- |
-| `Crypto.Crypto` from `effect/Crypto`                  | `put` and `get` on every store                    | `NodeCrypto.layer`      |
-| `FileSystem.FileSystem` from `effect/FileSystem`      | the filesystem store, the sweep, the backup lease | `NodeFileSystem.layer`  |
-| `Path.Path` from `effect/Path`                        | the filesystem store                              | `NodePath.layer`        |
-| `HttpClient.HttpClient` from `effect/http/HttpClient` | `RemoteArtifacts`                                 | `FetchHttpClient.layer` |
+| Service                                               | Needed by                                         | Node layer                                       |
+| ----------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------ |
+| `Crypto.Crypto` from `effect/Crypto`                  | `put` and `get` on every store                    | `Crypto.layerFromDigest(NodeCrypto.layerDigest)` |
+| `FileSystem.FileSystem` from `effect/FileSystem`      | the filesystem store, the sweep, the backup lease | `NodeFileSystem.layer`                           |
+| `Path.Path` from `effect/Path`                        | the filesystem store                              | `NodePath.layer`                                 |
+| `HttpClient.HttpClient` from `effect/http/HttpClient` | `RemoteArtifacts`                                 | `FetchHttpClient.layer`                          |
 
 `has` and `findMissing` never hash anything, so they do not require `Crypto`.
 The memory and no-op stores require no `FileSystem` or `Path` at all, which is what makes
@@ -45,11 +45,17 @@ pnpm add @effect/platform-node @effect/platform-node-shared
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
+import { Crypto } from "@smthrs/crypto"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as Layer from "effect/Layer"
 
 /** Everything every tier in this package can ask for. */
-export const host = Layer.mergeAll(NodeCrypto.layer, NodeFileSystem.layer, NodePath.layer, FetchHttpClient.layer)
+export const host = Layer.mergeAll(
+  Crypto.layerFromDigest(NodeCrypto.layerDigest),
+  NodeFileSystem.layer,
+  NodePath.layer,
+  FetchHttpClient.layer
+)
 ```
 
 `FetchHttpClient` ships inside `effect`, so the shared tier adds no dependency

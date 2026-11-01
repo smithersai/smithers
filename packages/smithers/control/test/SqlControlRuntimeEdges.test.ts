@@ -11,12 +11,13 @@ import * as DatabaseMigrations from "@smthrs/database/Migrations"
  * sequence of calls on one runtime can produce them.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { DurableWriter } from "@smthrs/database/DurableWriter"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as EngineMigrations from "@smthrs/engine-store/Migrations"
 import { Migrations } from "@smthrs/journal"
 import { Migrations as RunStoreMigrations, RunStore } from "@smthrs/run-store"
-import { type Crypto, Effect, Layer } from "effect"
+import { Effect, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import {
@@ -75,7 +76,7 @@ const withRuntime = <A, E>(
       const sql = yield* SqlClient.SqlClient
       return yield* use(runtime, sql)
     }).pipe(
-      Effect.provide(Layer.merge(database(), NodeCrypto.layer)),
+      Effect.provide(Layer.merge(database(), Crypto.layerFromDigest(NodeCrypto.layerDigest))),
       Effect.scoped,
       Effect.orDie
     )
@@ -823,7 +824,7 @@ describe("SqlControlRuntime when the run store answers about another row", () =>
       }).pipe(
         Effect.provide(
           Layer.merge(
-            NodeCrypto.layer,
+            Crypto.layerFromDigest(NodeCrypto.layerDigest),
             Layer.effect(
               RunStore.RunStore,
               Effect.map(RunStore.RunStore, (store) => ({ ...store, ...override(store) }))
@@ -989,7 +990,7 @@ describe("SqlControlRuntime layers and stores", () => {
             Layer.orDie,
             Layer.provideMerge(
               Layer.merge(
-                NodeCrypto.layer,
+                Crypto.layerFromDigest(NodeCrypto.layerDigest),
                 Layer.provideMerge(
                   DatabaseMigrations.layer([Migrations.set, RunStoreMigrations.set]),
                   TestDatabase.layer
@@ -1020,7 +1021,7 @@ describe("SqlControlRuntime layers and stores", () => {
       }).pipe(
         Effect.provide(
           Layer.merge(
-            NodeCrypto.layer,
+            Crypto.layerFromDigest(NodeCrypto.layerDigest),
             Layer.effect(
               RunStore.RunStore,
               Effect.map(RunStore.RunStore, (store) => ({

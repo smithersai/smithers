@@ -6,7 +6,7 @@
  * @since 0.1.0
  */
 
-import type * as Crypto from "effect/Crypto"
+import type { Crypto } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
 import { FlowInstance } from "../FlowRuntime/FlowInstance.ts"
 import { CurrentAttempt } from "./Context.ts"

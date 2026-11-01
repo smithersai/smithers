@@ -14,6 +14,7 @@ import * as Credential from "@smthrs/control/Credential"
 import * as CredentialStore from "@smthrs/control/CredentialStore"
 import * as SqlCredentialStore from "@smthrs/control/SqlCredentialStore"
 import * as WebCryptoCipher from "@smthrs/control/WebCryptoCipher"
+import { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
@@ -118,7 +119,7 @@ const tokenSteps = (sources: Readonly<Record<string, AccessTokenSource>>): Effec
     Interpreter.layer(tokenFlow)
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
-    Layer.provideMerge(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer))
+    Layer.provideMerge(Layer.mergeAll(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
   )
   return Effect.forEach(
     Object.keys(sources),

@@ -21,7 +21,7 @@ Every export is a value, a schema, or a pure function. Enforcement, the
 `GrantStore`, the decorating layers, and the journal live in
 [`@smthrs/kernel`](/api/kernel). This package's one runtime dependency is
 [`@smthrs/canonical`](/api/canonical), which itself depends only on the shared
-`effect@4.0.5` peer. Both the kernel and [`@smthrs/jj`](/api/jj) can
+`effect@4.1.0` peer. Both the kernel and [`@smthrs/jj`](/api/jj) can
 therefore depend on it without a cycle, and a protected service names
 permission failures in its own interface.
 

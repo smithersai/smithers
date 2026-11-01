@@ -18,7 +18,7 @@ CommonJS with TypeScript declarations. It has no platform bindings: it reads no
 file, opens no socket, and starts no process, so the same build runs in Node,
 in Bun, in a browser, and in a Cloudflare Worker.
 
-The package requires `effect@4.0.5` as a peer dependency. Install one
+The package requires `effect@4.1.0` as a peer dependency. Install one
 `effect` release at that version so all Smithers packages share one Effect
 runtime. [`effect`](https://effect.website) supplies `Schema`, `Context`,
 `Result`, and `Data`, which appear in this package's public types. Import it

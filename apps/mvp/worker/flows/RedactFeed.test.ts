@@ -2,7 +2,7 @@
 // a role restored while a batch waits on its lock, the engine's retry of a failed batch, a resume by the next
 // incarnation after a crash, and each alarm's start of each open barrier's pass.
 import { TestSchemas } from "@smthrs/database"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Action, Interpreter } from "@smthrs/flow"
 import { Effect, Exit, Fiber, Layer, Metric } from "effect"
 import { SqlClient } from "effect/sql"

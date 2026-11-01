@@ -12,6 +12,7 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
+import { Crypto } from "@smthrs/crypto"
 import type * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { FlowEngine } from "@smthrs/engine"
@@ -163,14 +164,14 @@ const engineLayer = (harness: Harness, handlers: ReadonlyArray<CompensationHandl
       })
     ),
     Layer.provideMerge(
-      // NodeCrypto feeds the merged stack rather than sitting beside it:
+      // WebCrypto feeds the merged stack rather than sitting beside it:
       // OwnerIdentity.layer consumes the Crypto service at construction.
       Layer.mergeAll(
         stores,
         StepBoundary.layerTest(),
         recordingJj(harness.jjCalls),
         OwnerIdentity.layer
-      ).pipe(Layer.provideMerge(NodeCrypto.layer))
+      ).pipe(Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
     ),
     Layer.provideMerge(TestDatabase.layer)
   )

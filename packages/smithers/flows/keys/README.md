@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact `4.0.5` peer dependency. Install one
+This package declares `effect` as an exact `4.1.0` peer dependency. Install one
 `effect` release at that version so all Smithers packages share one Effect
 runtime.
 
@@ -22,7 +22,7 @@ npm install @smthrs/keys@next effect
 `@effect/platform-node` provides `NodeCrypto` for the example below and is
 optional if you supply your own `Crypto` implementation.
 
-`effect` is a peer dependency at exactly `4.0.5`; [`@smthrs/canonical`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/canonical/docs) and
+`effect` is a peer dependency at exactly `4.1.0`; [`@smthrs/canonical`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/canonical/docs) and
 [`@smthrs/crypto`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/crypto/docs) install with the package and are
 the only other runtime dependencies. Node.js 22.19.0 or later; the package
 imports no `node:` built-in, so the same code runs under Bun and in a browser.
@@ -31,12 +31,13 @@ imports no `node:` built-in, so the same code runs under Bun and in a browser.
 
 ```typescript
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { deriveKey, StoredKey } from "@smthrs/keys"
 import { Effect, Schema } from "effect"
 
 const derived = await Effect.runPromise(
   deriveKey({ domain: "example/compile", version: 1, source: "main.ts" }).pipe(
-    Effect.provide(NodeCrypto.layer)
+    Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
   )
 )
 

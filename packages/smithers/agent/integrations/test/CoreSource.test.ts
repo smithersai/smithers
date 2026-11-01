@@ -1,5 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { it as effectIt } from "@effect/vitest"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Deferred, Effect, Fiber, Layer, Schema } from "effect"
@@ -40,7 +41,9 @@ const runEffect = <A, E>(effect: Effect.Effect<A, E, RunContext>) => {
     Interpreter.layer(flow)
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
-    Layer.provideMerge(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, layerMemory))
+    Layer.provideMerge(
+      Layer.mergeAll(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest), layerMemory)
+    )
   )
   return flow.execute({}, { executionId: "source-test" }).pipe(
     Effect.provide(layer),

@@ -1,9 +1,9 @@
 // Deep reviewed and polished by a human on 2026-08-10.
 
 import { describe, expect } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableDeferred, DurableQueue, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Cause, Effect, Exit, Fiber, Layer, Logger, Metric, Option, Schedule, Schema, Tracer } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { PersistedQueue } from "effect/persistence"
 import { TestClock } from "effect/testing"
 import { effectOnTestClock as effect, isComplete, pollUntil } from "./Harness.ts"

@@ -13,7 +13,7 @@ import { readWorkspaceManifests } from "../../../.smithers/flows/release/pack-re
  * The Effect release this repository is built and tested on. Update the family
  * atomically with manifests and both package-manager locks.
  */
-export const EXPECTED_EFFECT_VERSION = "4.0.5"
+export const EXPECTED_EFFECT_VERSION = "4.1.0"
 
 /**
  * The exact Effect peer every published library requires. Wider supported

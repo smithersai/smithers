@@ -189,6 +189,7 @@ export const make = (database: Database): Effect.Effect<Client.SqlClient, never,
       onCommitFailure,
       releaseSavepoint: (name) => `RELEASE SAVEPOINT ${name}`,
       beginTransaction: "BEGIN IMMEDIATE",
+      driver: "sqlite-wasm",
       spanAttributes: [["db.system.name", "sqlite"]]
     })
   })

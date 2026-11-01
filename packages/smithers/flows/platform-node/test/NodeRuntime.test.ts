@@ -33,6 +33,7 @@ import { afterAll, describe, expect, it } from "@effect/vitest"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import * as Capability from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
+import { Crypto } from "@smthrs/crypto"
 import {
   Action,
   DurableDeferred,
@@ -47,7 +48,6 @@ import {
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
-import * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
@@ -384,7 +384,7 @@ describe("the supported Node SQLite composition", () => {
         return yield* artifacts.put(payload)
       }).pipe(
         Effect.provide(NodeRuntime.storage(database, root)),
-        Effect.provide(Layer.merge(NodeFileSystem.layer, NodeCrypto.layer)),
+        Effect.provide(Layer.merge(NodeFileSystem.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))),
         Effect.scoped
       )
     )
@@ -1156,7 +1156,7 @@ describe("the Node host composition", () => {
         Effect.provide(
           Kernel.ProcessLedger.layer({ hostId: containmentHost, ownerPid: previousOwnerPid }).pipe(
             Layer.provide(NodeRuntime.storage(containmentFile)),
-            Layer.provide(Layer.merge(NodeFileSystem.layer, NodeCrypto.layer))
+            Layer.provide(Layer.merge(NodeFileSystem.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
           )
         ),
         Effect.scoped

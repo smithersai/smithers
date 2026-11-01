@@ -13,6 +13,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
+import { Crypto } from "@smthrs/crypto"
 import { DurableWriter } from "@smthrs/database"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import {
@@ -78,7 +79,9 @@ const engine = (filename: string, root: string, hostId: string) =>
       Layer.mergeAll(StepBoundary.layer, WorkspaceSandbox.layerFileSystem(), NodeHost.layer)
     ),
     Layer.provideMerge(stores(filename, root)),
-    Layer.provideMerge(Layer.mergeAll(NodeCrypto.layer, AtomicFileSystem.layer, NodePath.layer))
+    Layer.provideMerge(
+      Layer.mergeAll(Crypto.layerFromDigest(NodeCrypto.layerDigest), AtomicFileSystem.layer, NodePath.layer)
+    )
   )
 
 /**

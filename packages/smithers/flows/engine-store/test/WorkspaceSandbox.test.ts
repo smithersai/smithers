@@ -1867,6 +1867,7 @@ describe("WorkspaceSandbox filesystem host confinement", () => {
         import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem";
         import * as KernelFileSystem from "@smthrs/kernel/FileSystem";
         import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+        import { Crypto } from "@smthrs/crypto";
         import * as FileSystem from "effect/FileSystem";
         import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore";
         import * as Sandbox from "./src/WorkspaceSandbox.ts";
@@ -1890,7 +1891,7 @@ describe("WorkspaceSandbox filesystem host confinement", () => {
             files: [{ path: "file", beforeDigest: createHash("sha256").update("base").digest("hex"),
               afterDigest: createHash("sha256").update(bytes).digest("hex"), after: bytes }]
           }});
-        }).pipe(Effect.provide(AtomicFileSystem.layer), Effect.provide(NodeCrypto.layer)));
+        }).pipe(Effect.provide(AtomicFileSystem.layer), Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))));
         process.stdin.destroy();
       `
         const child = yield* Effect.acquireRelease(

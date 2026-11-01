@@ -26,7 +26,7 @@ npm install @smthrs/scorers@next effect
 ```
 
 It needs Node.js 22.19.0 or later and
-[`effect`](https://effect.website) `4.0.5`, plus
+[`effect`](https://effect.website) `4.1.0`, plus
 [`@smthrs/database`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/database/docs) when you persist
 observations.
 

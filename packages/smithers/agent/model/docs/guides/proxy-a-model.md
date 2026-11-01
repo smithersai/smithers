@@ -34,7 +34,7 @@ key from the Worker's bindings, and `prepare` hands it to the proxy:
 ```ts
 import { ModelProxy, ModelRequest } from "@smthrs/model"
 import { HostModel } from "@smthrs/model-host"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 
