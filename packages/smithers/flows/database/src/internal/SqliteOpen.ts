@@ -6,7 +6,7 @@ import { Context, Duration, Effect, Layer, Schedule, Scope } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { closeSync, lstatSync, openSync, readlinkSync } from "node:fs"
 import { dirname, resolve } from "node:path"
-import * as ReadOnly from "./ReadOnly.ts"
+import * as ReadOnly from "./ReadOnly.vibe"
 import * as ReleasePolicy from "./ReleasePolicy.ts"
 import { isUnsupportedDatabase, UnsupportedDatabase } from "./UnsupportedDatabase.ts"
 

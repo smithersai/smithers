@@ -15,7 +15,7 @@ import * as Input from "@smthrs/targets/Input"
 const { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd: "packages/smithers/flows/database",
   tests: Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] }),
   buildProgram: Smithers.file("//packages/repo-targets/scripts/build.mjs"),
@@ -44,7 +44,7 @@ const test = Smithers.Shell.Test({
   data: [
     lib,
     Smithers.file("scripts/test-matrix.mjs"),
-    Smithers.glob("src/**/*.ts"),
+    Smithers.glob("src/**/*.{ts,vibe}"),
     Smithers.glob("test/**/*.ts"),
     Smithers.glob("examples/**/*.ts"),
     Smithers.file("package.json"),
