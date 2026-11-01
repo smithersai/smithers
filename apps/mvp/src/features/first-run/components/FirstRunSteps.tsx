@@ -23,7 +23,7 @@ export function FirstRunSteps() {
   const { data: session } = useLiveQuery(useAuth().queries.session)
   const navigate = useNavigate()
   const { data: firstRun } = useLiveQuery(queries.state)
-  if (firstRun?.show !== "steps") return null
+  if (firstRun?.show !== "steps" || (firstRun.at === "model" && session?.status === "signed_in")) return null
   const action = (step: Step) => {
     if (step.state !== "next") return null
     if (step.id === "sign_in") return <SignInButton />

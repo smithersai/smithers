@@ -200,3 +200,7 @@ Commit entries open the tree at their recorded revision, including entries synce
 Failed clones keep their reason and Retry in the panel, without an Open link to a repository that could not be imported. Notification rows open their subject directly; Details and E expand other entries.
 
 The panel contains the full synced list and scrolls independently; its unread count excludes read entries. Timeline previews format recorded times for the viewer instead of showing database timestamp strings.
+
+## Model setup (FE-23)
+
+A signed-in person without a usable personal model, when hosted inference is off for them, sees one **Add your model** notice with **Open settings**. A scoped prerequisite follower reads the real session and model rows and contributes one local notice to the shared attention feed. Every surface uses its existing `Notices` owner and anchored `ToastStack`; no conversation space is reserved. The notice remains until a model can answer. Hide applies across this tab's surfaces; reload checks the condition again. Saving a usable model or signing out resolves it. It sends no notification acknowledgment to the server. Existing `notifications.shown` records and counters measure presentation; `notifications.model` records Open settings, resolution and Hide without credentials or content.

@@ -180,3 +180,9 @@ describe("the row", () => {
     expect(sameFirstRun(visitor, { ...visitor, steps: [{ id: "ask", state: "next" }, { id: "ask", state: "later" }] })).toBe(false)
   })
 })
+
+test("a conversation with history never shows first-run steps, signed in or signed out", () => {
+  for (const access of ["sign_in", "add_model", "members_only"] as const) {
+    expect(firstRunOf({ access, hostedModel: false, own: "none", conversations: "none", composerOpen: false, hasHistory: true })).toEqual(HIDDEN)
+  }
+})

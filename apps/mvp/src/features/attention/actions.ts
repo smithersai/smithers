@@ -3,7 +3,7 @@ import { Deferred, Effect, Exit, Metric, Option } from "effect"
 import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { retryAnswer } from "../chat/actions"
 import { focus } from "../status/actions"
-import type { PanelVia, Surface } from "./contract"
+import { MODEL_NOTICE, type PanelVia, type Surface } from "./contract"
 import { panel as panelActs } from "./metrics"
 import { newestNeed } from "./entries"
 import { PANEL, type Panel } from "./schema"
@@ -71,7 +71,14 @@ const record = (subject: string, act: Inbox.Act) =>
   )
 
 /** Hides entry `subject`'s toast: on every device, and it stays in the person's list. */
-export const hide = (subject: string) => Effect.asVoid(record(subject, "hide"))
+export const hide = (subject: string) => Effect.gen(function* () {
+  if (subject !== MODEL_NOTICE) return yield* Effect.asVoid(record(subject, "hide"))
+  const { launches } = yield* AttentionStore
+  const current = yield* launches.get(subject)
+  if (Option.isNone(current)) return
+  yield* launches.update(subject, (row) => { row.hiddenVersion = row.version })
+  yield* Effect.logInfo("notifications.model").pipe(Effect.annotateLogs({ act: "hide" }))
+}).pipe(Effect.orDie)
 
 /**
  * Dismisses entry `subject`: it leaves the person's list on every device. A failure this device toasted itself leaves
@@ -183,6 +190,7 @@ export const open = (subject: string, _surface: Surface) =>
   Effect.gen(function* () {
     const entry = yield* record(subject, "read")
     if (Option.isNone(entry)) return
+    if (subject === MODEL_NOTICE) yield* Effect.logInfo("notifications.model").pipe(Effect.annotateLogs({ act: "open" }))
     if (entry.value.kind === "clone" && entry.value.state === "failed") {
       yield* setPanel({ open: true, expanded: subject, focus: subject, answer: 0 })
       return

@@ -51,8 +51,10 @@ export const firstRunOf = (input: {
   readonly hostedModel: boolean | undefined
   readonly own: OwnModel
   readonly conversations: Conversations
+  readonly hasHistory?: boolean
   readonly composerOpen: boolean
 }): FirstRun => {
+  if (input.hasHistory === true) return HIDDEN
   if (input.access === "wait") return WAITING
   if (input.access === "members_only") {
     if (input.own === "loading") return WAITING

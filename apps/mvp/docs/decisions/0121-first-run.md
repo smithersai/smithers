@@ -43,3 +43,9 @@ them at "Members can ask Smithers.".
   Open from the list.
 - The sign-in prompt's words on `/app` are the list's: specs that looked for "Sign in to ask Smithers." on `/app` look
   for the first step. Branch pages keep the gate as it was.
+
+## 2026-10-31: Model setup is a toast (FE-23)
+
+Will, about 20:25 PDT: “Another problem is this add your model ui is taking up so much space that the timeline and the chat could be using. It should be a toast notification using that UI like any other call to action would be using that UI like needing approvals and stuff”.
+
+The screenshot shows a signed-in conversation with history: `ComposerGate`'s `EmptyState`, also used on branch pages. Replace that gate with a disabled Chat button. The prerequisite is one local notice in the existing attention feed, rendered by `Notices` / `@smthrs/ui` `ToastStack` (library catalog: notifications and UI entries). Its title is “Add your model”; its only action is “Open settings”, to `/app/settings`. It uses 0137's anchored overlay, takes no layout space, and remains until a usable model is saved. Hide lasts for this tab's lifetime across surfaces; reload derives the notice again only while still needed. Model changes and sign-out remove it. Signed-in first-run lists at the model step yield to the toast; signed-out first-run lists remain. This is the existing core prerequisite, not a new plugin capability.

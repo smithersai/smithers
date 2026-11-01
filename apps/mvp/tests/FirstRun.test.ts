@@ -74,9 +74,8 @@ test("the steps, the composer's place and the header's sign-in, for each state o
   await session({ status: "signed_in", login: "member", role: "member", hostedModel: false })
   await until(() => {
     const out = html()
-    expect(out).toContain('aria-label="Done"')
-    expect(out).toMatch(/data-step="model" data-state="next" aria-current="step" data-add-model="">/)
-    expect(out).toMatch(/<button[^>]*>Open settings<\/button>/)
+    expect(out).not.toContain('aria-label="Get started"')
+    expect(out).not.toContain("Open settings")
     expect(out).not.toContain("Sign in with GitHub")
     expect(out).not.toContain("data-gate")
   })
@@ -104,8 +103,8 @@ test("the steps, the composer's place and the header's sign-in, for each state o
   await session({ role: "guest", hostedModel: false, install: "https://github.com/apps/smithers/installations/new" })
   await until(() => {
     const out = html()
-    expect(out).toMatch(/data-step="model" data-state="next" aria-current="step" data-add-model="">/)
-    expect(out).toMatch(/data-step="repository" data-state="later">/)
+    expect(out).not.toContain('aria-label="Get started"')
+    expect(out).not.toContain("Open settings")
     expect(out).not.toContain("Members can ask Smithers.")
     expect(out).not.toContain("data-gate")
   })

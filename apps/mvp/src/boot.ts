@@ -16,6 +16,7 @@ import { Clock, type Duration, Effect, Fiber, Layer, ManagedRuntime, Metric } fr
 import { FetchHttpClient, type HttpClient } from "effect/http"
 import { Clipboard } from "./clipboard"
 import { AuthClient } from "./features/auth/api"
+import { modelNotices } from "./features/attention/modelNotice"
 import { Attention, type AttentionView } from "./features/attention/attention"
 import { AttentionNavigation, AttentionStore } from "./features/attention/store"
 import { followNotice } from "./features/timeline/notice"
@@ -450,7 +451,7 @@ export const appLayer = <S = never>(
   )
   // The first run (decision 0121), above everything: its follower reads sign-in's, your model's, your conversations'
   // and chat's stores, which the layers below build once.
-  return FirstRun.layer.pipe(Layer.provideMerge(app))
+  return Layer.merge(FirstRun.layer, modelNotices).pipe(Layer.provideMerge(app))
 }
 
 /**

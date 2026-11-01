@@ -4,7 +4,7 @@ import { connectionRows, fillYourModel, personalModelConfig, removeConnections, 
 import { requires } from "./target"
 
 // People's own models first (decision 0099, docs/features/model-endpoint.md#hosted-inference): while the deployment's own
-// model is off, as a deploy leaves it, a Member who saved no model sees "Add your model" where the composer would be,
+// model is off, as a deploy leaves it, a Member who saved no model sees the shared "Add your model" toast,
 // and its button opens Settings. With their own model saved, the composer is back, a question is answered, and the
 // timeline's summary of it is written, each by the person's own model: the deployment's would refuse them. Locally it
 // runs against a dev server started with HOSTED_MODEL_ENABLED=false and a key in the environment; in production
@@ -34,7 +34,7 @@ test("byok first: no model shows Add your model; with one, the person's own mode
   const page = a.page
   const conversation = page.url()
   const section = page.getByRole("region", { name: "Your model" })
-  const addModel = page.locator("[data-add-model]")
+  const addModel = page.locator(".sui-toast-stack [data-add-model]")
   const composer = page.getByRole("textbox", { name: "Message Smithers", exact: true })
   const chat = page.getByRole("button", { name: /^Chat\b/ })
   const settings = new URL("/app/settings", conversation).href
@@ -55,12 +55,15 @@ test("byok first: no model shows Add your model; with one, the person's own mode
     await removeConnections(section, SAVED_WITHIN)
   })
 
-  await step("Back in the conversation: Add your model stands where the composer was", async () => {
+  await step("Back in the conversation: Add your model overlays the conversation", async () => {
     await page.goto(conversation)
     await openChat()
     await expect(addModel).toBeVisible({ timeout: 60_000 })
     await expect(addModel).toContainText("Add your model")
     await expect(composer).toHaveCount(0)
+    await expect(page.locator("[data-add-model]")).toHaveCount(1)
+    await expect(page.locator(".app-shell-center [data-add-model], .branch-screen-chat [data-add-model], .sui-empty[data-add-model]")).toHaveCount(0)
+    await expect(addModel.locator("xpath=..")).toHaveAttribute("data-placement", "anchored")
   })
 
   await step("Open settings goes to Your model", async () => {
@@ -71,6 +74,7 @@ test("byok first: no model shows Add your model; with one, the person's own mode
   await step("Add an API key: Base URL, Key and Fast, then Save", async () => {
     await fillYourModel(section, page, { protocol: PROTOCOL, baseUrl: BASE_URL, key: KEY, tiers: { fast: MODEL } })
     await expect(connectionRows(section)).toHaveCount(1, { timeout: SAVED_WITHIN })
+    await expect(addModel).toHaveCount(0)
   })
 
   await step("Ask: the person's own model answers, and writes the timeline's summary", async () => {
@@ -90,7 +94,7 @@ test("byok first: no model shows Add your model; with one, the person's own mode
     expect(body).not.toContain("\"type\":\"error\"")
   })
 
-  await step("Remove: Add your model stands where the composer was again", async () => {
+  await step("Remove: Add your model returns to the shared toast stack", async () => {
     await page.goto(settings)
     await removeConnections(section, SAVED_WITHIN)
     await page.goto(conversation)

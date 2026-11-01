@@ -65,6 +65,7 @@ export class FirstRunStore extends Context.Service<
           hostedModel: session.hostedModel,
           own,
           conversations: conversationsOf(yield* conversations.mine.toArray, search?.loaded === true),
+          hasHistory: (yield* chat.messages.toArray).length > 0,
           composerOpen: Option.isSome(composer) && composer.value.open,
         })
         if (sameFirstRun(next, shown)) return
@@ -91,6 +92,7 @@ export class FirstRunStore extends Context.Service<
           changed(conversations.mine.changes({ initial: true })),
           changed(conversations.search.changes({ initial: true })),
           changed(chat.composer.changes({ initial: true })),
+          changed(chat.messages.changes({ initial: true })),
         ],
         { concurrency: "unbounded" },
       ).pipe(

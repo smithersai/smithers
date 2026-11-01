@@ -34,14 +34,13 @@ test("who may ask: a new person who is Admin of their own repository signs in, a
     await page.goto(scriptedAgent("hello"))
     await a.ready()
     await firstRun(page).getByRole("link", { name: SIGN_IN }).click()
-    await expect(done(page, "Sign in")).toBeVisible({ timeout: 30_000 })
-    await expect(firstRunStep(page, "Add your model")).toHaveAttribute("aria-current", "step")
-    await expect(firstRunStep(page, "Open your repository")).toHaveAttribute("data-state", "later")
+    await expect(page.locator(".sui-toast-stack [data-add-model]")).toBeVisible({ timeout: 30_000 })
+    await expect(firstRun(page)).toHaveCount(0)
     await expect(page.getByText(MEMBERS_ASK)).toHaveCount(0)
   })
 
   await step("Open settings and save their own model", async () => {
-    await firstRunStep(page, "Add your model").getByRole("button", { name: OPEN_SETTINGS }).click()
+    await page.locator(".sui-toast-stack [data-add-model]").getByRole("button", { name: OPEN_SETTINGS }).click()
     const section = page.getByRole("region", { name: "Your model" })
     await expect(section).toBeVisible({ timeout: 30_000 })
     await fillYourModel(section, page, {
@@ -110,9 +109,8 @@ test("who may ask: a Guest of a repository is never stopped on /app, and sees Me
   await step("On /app: Sign in done and the way to their own repository, no dead end", async () => {
     await page.goto("/app")
     await a.ready()
-    await expect(done(page, "Sign in")).toBeVisible({ timeout: 30_000 })
-    await expect(firstRunStep(page, "Add your model")).toHaveAttribute("aria-current", "step")
-    await expect(firstRunStep(page, "Open your repository")).toBeVisible()
+    await expect(page.locator(".sui-toast-stack [data-add-model]")).toBeVisible({ timeout: 30_000 })
+    await expect(firstRun(page)).toHaveCount(0)
     await expect(page.getByText(MEMBERS_ASK)).toHaveCount(0)
   })
 

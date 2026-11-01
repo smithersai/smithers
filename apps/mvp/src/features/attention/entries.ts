@@ -3,7 +3,7 @@ import { noticeDismissDelay, workNoticeVisible } from "@smthrs/ui"
 import { mayAsk } from "../auth/contract"
 import { cloneDetail } from "../repo/contract"
 import type { Session } from "../auth/schema"
-import { HOME_HREF, LISTED_FOR_MS, LOCAL_RECIPIENT } from "./contract"
+import { HOME_HREF, LISTED_FOR_MS, LOCAL_RECIPIENT, MODEL_NOTICE } from "./contract"
 import type { Entry, Notice, NoticeState, Pending } from "./schema"
 
 // The feed as a person sees it (decision 0009 §4), from the synced rows, this device's acts on their way and the clock.
@@ -46,6 +46,7 @@ const SHORT_SHA = 7
 export const wordsOf = (notice: Notice): { readonly word: string | null; readonly detail: string | null } => {
   const join = (separator: string, ...parts: ReadonlyArray<string | null>) =>
     parts.filter((part) => part !== null).join(separator) || null
+  if (notice.subject === MODEL_NOTICE) return { word: notice.title, detail: null }
   if (notice.kind === "main") {
     return { word: "main", detail: join(" ", notice.ref === null ? null : notice.ref.slice(0, SHORT_SHA), notice.title) }
   }
