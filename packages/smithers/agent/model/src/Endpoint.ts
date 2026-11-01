@@ -8,7 +8,7 @@
 
 import * as Result from "effect/Result"
 import { isCredentialName } from "./Auth.ts"
-import { ModelError } from "./ModelError.ts"
+import { ModelError } from "./ModelError.vibe"
 
 /**
  * The public, credential-free HTTP target of a model route.

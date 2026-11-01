@@ -18,7 +18,7 @@ import type { TestContext } from "vitest"
 import { describe, expect, it } from "vitest"
 import * as Evaluator from "../src/Evaluator.ts"
 import * as Model from "../src/Model.ts"
-import { ModelError } from "../src/ModelError.ts"
+import { ModelError } from "../src/ModelError.vibe"
 
 describe("public evaluator failures", () => {
   it("replaces unreachable transport details with the public sentence", () => {

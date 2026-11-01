@@ -3,11 +3,9 @@
  *
  * @since 0.1.0
  */
-
-import { Chunk, Option, Schema } from "effect"
-import { ModelError } from "./ModelError.ts"
-import { JsonObject, type StopReason } from "./ModelRequest.ts"
-
+import { Chunk } from "effect";
+import { ModelError } from "./ModelError.vibe";
+import { type StopReason } from "./ModelRequest.ts";
 /**
  * An unfinished streamed tool call.
  *
@@ -16,11 +14,10 @@ import { JsonObject, type StopReason } from "./ModelRequest.ts"
  * @slop
  */
 export interface OpenToolCall {
-  readonly callId: string
-  readonly name: string
-  readonly fragments: Chunk.Chunk<string>
+    readonly callId: string;
+    readonly name: string;
+    readonly fragments: Chunk.Chunk<string>;
 }
-
 /**
  * Tool-call accumulator state.
  *
@@ -29,9 +26,8 @@ export interface OpenToolCall {
  * @slop
  */
 export interface State {
-  readonly open: ReadonlyArray<OpenToolCall>
+    readonly open: ReadonlyArray<OpenToolCall>;
 }
-
 /**
  * A completed provider tool call with its validated JSON argument text.
  *
@@ -40,11 +36,10 @@ export interface State {
  * @slop
  */
 export interface Completed {
-  readonly callId: string
-  readonly name: string
-  readonly arguments: string
+    readonly callId: string;
+    readonly name: string;
+    readonly arguments: string;
 }
-
 /**
  * The result of completing one streamed tool call.
  *
@@ -52,8 +47,10 @@ export interface Completed {
  * @since 0.1.0
  * @slop
  */
-export type EndResult = { readonly state: State; readonly completed: Completed } | ModelError
-
+export type EndResult = {
+    readonly state: State;
+    readonly completed: Completed;
+} | ModelError;
 /**
  * The result of flushing all tool calls left open by an interrupted stream.
  *
@@ -62,18 +59,9 @@ export type EndResult = { readonly state: State; readonly completed: Completed }
  * @slop
  */
 export interface FlushResult {
-  readonly state: State
-  readonly completed: ReadonlyArray<Completed>
+    readonly state: State;
+    readonly completed: ReadonlyArray<Completed>;
 }
-
-const invalidOutput = (message: string): ModelError => new ModelError({ code: "invalid_provider_output", message })
-const decodeArguments = Schema.decodeUnknownOption(
-  Schema.fromJsonString(JsonObject)
-)
-
-const find = (state: State, callId: string): OpenToolCall | undefined =>
-  state.open.find((entry) => entry.callId === callId)
-
 /**
  * Creates an empty tool-call accumulator.
  *
@@ -81,8 +69,7 @@ const find = (state: State, callId: string): OpenToolCall | undefined =>
  * @since 0.1.0
  * @slop
  */
-export const initial = (): State => ({ open: [] })
-
+export declare const initial: () => State;
 /**
  * Starts recording fragments for a provider tool call.
  *
@@ -90,10 +77,10 @@ export const initial = (): State => ({ open: [] })
  * @since 0.1.0
  * @slop
  */
-export const start = (state: State, call: { readonly callId: string; readonly name: string }): State => ({
-  open: [...state.open.filter((entry) => entry.callId !== call.callId), { ...call, fragments: Chunk.empty() }]
-})
-
+export declare const start: (state: State, call: {
+    readonly callId: string;
+    readonly name: string;
+}) => State;
 /**
  * Appends an argument fragment to an open provider tool call.
  *
@@ -101,12 +88,7 @@ export const start = (state: State, call: { readonly callId: string; readonly na
  * @since 0.1.0
  * @slop
  */
-export const delta = (state: State, callId: string, fragment: string): State => ({
-  open: state.open.map((entry) =>
-    entry.callId === callId ? { ...entry, fragments: Chunk.append(entry.fragments, fragment) } : entry
-  )
-})
-
+export declare const delta: (state: State, callId: string, fragment: string) => State;
 /**
  * Completes a tool call and validates its reassembled argument JSON.
  *
@@ -122,21 +104,7 @@ export const delta = (state: State, callId: string, fragment: string): State => 
  * @since 0.1.0
  * @slop
  */
-export const end = (state: State, callId: string): EndResult => {
-  const call = find(state, callId)
-  if (call === undefined) {
-    return invalidOutput(`Received completion for unknown tool call ${callId}`)
-  }
-  const arguments_ = Chunk.toReadonlyArray(call.fragments).join("") || "{}"
-  if (Option.isNone(decodeArguments(arguments_))) {
-    return invalidOutput(`Invalid JSON input for streamed tool call ${call.name}`)
-  }
-  return {
-    state: { open: state.open.filter((entry) => entry.callId !== callId) },
-    completed: { callId: call.callId, name: call.name, arguments: arguments_ }
-  }
-}
-
+export declare const end: (state: State, callId: string) => EndResult;
 /**
  * Settles unfinished calls after a stream halt. Empty or partial arguments are
  * preserved verbatim so the historical assistant turn records what arrived
@@ -150,15 +118,7 @@ export const end = (state: State, callId: string): EndResult => {
  * @since 0.1.0
  * @slop
  */
-export const flushAborted = (state: State): FlushResult => ({
-  state: initial(),
-  completed: state.open.map((call) => ({
-    callId: call.callId,
-    name: call.name,
-    arguments: Chunk.toReadonlyArray(call.fragments).join("")
-  }))
-})
-
+export declare const flushAborted: (state: State) => FlushResult;
 /**
  * Whether a turn that settled with this reason was cut off before it finished:
  * the output budget ran out (`length`) or the provider stopped it
@@ -173,5 +133,4 @@ export const flushAborted = (state: State): FlushResult => ({
  * @category predicates
  * @since 1.0.0-rc.1
  */
-export const truncated = (stopReason: StopReason | undefined): boolean =>
-  stopReason === "length" || stopReason === "content-filter"
+export declare const truncated: (stopReason: StopReason | undefined) => boolean;

@@ -41,7 +41,7 @@ import * as Stream from "effect/Stream"
 import * as Tracer from "effect/Tracer"
 import * as Auth from "./Auth.ts"
 import { classifyHttpStatus } from "./HttpStatusClassifier.ts"
-import { ModelError } from "./ModelError.ts"
+import { ModelError } from "./ModelError.vibe"
 
 const BODY_LIMIT = 16_384
 const RAW_BODY_LIMIT = 65_536

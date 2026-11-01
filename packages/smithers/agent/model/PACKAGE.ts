@@ -12,7 +12,7 @@ const cwd = "packages/smithers/agent/model"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd
 })
 
@@ -89,9 +89,9 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/RequestExecutor.ts",
         "src/Route.ts",
-        "src/ModelError.ts",
-        "src/FailureCopy.ts",
-        "src/Classifier.ts",
+        "src/ModelError.vibe",
+        "src/FailureCopy.vibe",
+        "src/Classifier.vibe",
         "src/*Messages.ts",
         "src/OpenAI*.ts"
       ]
@@ -107,10 +107,10 @@ const securityReview = Smithers.SecurityReview({
         "Recursive walks of provider JSON (redaction, classification, event decoding) with no depth limit."
       ],
       paths: [
-        "src/Framing.ts",
+        "src/Framing.vibe",
         "src/RequestExecutor.ts",
         "src/Evaluator.ts",
-        "src/ToolStream.ts",
+        "src/ToolStream.vibe",
         "src/AnthropicMessages.ts",
         "src/OpenAI*.ts"
       ]
@@ -151,8 +151,8 @@ const securityReview = Smithers.SecurityReview({
         "Tool-search or deferred-tool responses (OpenAIResponses, DeferredTools) turning provider-supplied names into callable tools without matching the request's declared tools."
       ],
       paths: [
-        "src/ToolStream.ts",
-        "src/ModelEvent.ts",
+        "src/ToolStream.vibe",
+        "src/ModelEvent.vibe",
         "src/DeferredTools.ts",
         "src/AnthropicMessages.ts",
         "src/OpenAI*.ts"

@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Pricing from "../src/Pricing.ts"
+import * as Pricing from "../src/Pricing.vibe"
 
 const million = 1_000_000
 

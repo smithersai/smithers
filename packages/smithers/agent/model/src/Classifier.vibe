@@ -39,7 +39,7 @@ export class ClassifierError extends Schema.TaggedError<ClassifierError>()("flow
   resetAtEpochMillis: Schema.optional(Schema.Number),
   message: Schema.String,
   /** What the reading paid before it failed; see `Evaluator.EvaluatorError.usage`. */
-  usage: Evaluator.EvaluatorError.fields.usage
+  usage: Evaluator.EvaluatorError.fields.usage,
 }) {}
 Fault.register("flows/model/ClassifierError", Evaluator.faults)
 
@@ -231,14 +231,14 @@ export const Answer = Schema.Union([
     value: Schema.Number,
     label: Schema.String,
     probabilities: Schema.Record(Schema.String, Probability),
-    confidence: Probability
+    confidence: Probability,
   }),
   Schema.Struct({ value: Schema.Boolean, probability: Probability }),
   Schema.Struct({
     value: Schema.String,
     probabilities: Schema.Record(Schema.String, Probability),
-    confidence: Probability
-  })
+    confidence: Probability,
+  }),
 ])
 
 /**
@@ -258,7 +258,7 @@ const distribution = (
   keys: ReadonlyArray<string>,
   chosen: string,
   given: Readonly<Record<string, number>> | undefined,
-  aliases: (index: number) => ReadonlyArray<string>
+  aliases: (index: number) => ReadonlyArray<string>,
 ): Result.Result<Readonly<Record<string, number>>, string> => {
   const probabilities: Record<string, number> = Object.create(null)
   for (const [index, key] of keys.entries()) {
@@ -277,7 +277,7 @@ const distribution = (
 const decodeOne = (
   id: string,
   question: BooleanQuestion | ChoiceQuestion | ScoreQuestion,
-  raw: Evaluator.RawAnswer | undefined
+  raw: Evaluator.RawAnswer | undefined,
 ): Result.Result<Answer, ClassifierError> => {
   if (raw === undefined) return Result.fail(invalidAnswer(id, "the transport answered nothing"))
   if (raw.type !== question.type) {
@@ -298,7 +298,7 @@ const decodeOne = (
       return Result.succeed({
         value: raw.choice,
         probabilities: probabilities.success,
-        confidence: Math.max(...Object.values(probabilities.success))
+        confidence: Math.max(...Object.values(probabilities.success)),
       })
     }
     case "score": {
@@ -329,7 +329,7 @@ const decodeOne = (
         value: raw.score,
         label,
         probabilities: probabilities.success,
-        confidence: Math.max(...Object.values(probabilities.success))
+        confidence: Math.max(...Object.values(probabilities.success)),
       })
     }
   }
@@ -353,16 +353,16 @@ const decodeOne = (
  */
 export const decodeAnswers = <Qs extends Questions>(
   questions: Qs,
-  raw: Evaluator.RawAnswers
-): Effect.Effect<AnswersOf<Qs>, ClassifierError> =>
+  raw: Evaluator.RawAnswers,
+): AnswersOf<Qs>!ClassifierError =>
   Effect.suspend(() => {
     const answers: Record<string, Answer> = Object.create(null)
     for (const [id, question] of Object.entries(questions)) {
       const decoded = decodeOne(id, question, Object.hasOwn(raw, id) ? raw[id] : undefined)
-      if (Result.isFailure(decoded)) return Effect.fail(decoded.failure)
+      if (Result.isFailure(decoded)) throw decoded.failure
       answers[id] = decoded.success
     }
-    return Effect.succeed(answers as AnswersOf<Qs>)
+    return answers as AnswersOf<Qs>
   })
 
 /**
@@ -436,12 +436,12 @@ export interface Classifier<Id extends string, State extends Schema.Codec<any, a
   /** The SHA-256 of the canonical JSON of `{ id, questions }`. */
   readonly digest: string
   /** Asks every question about one state. */
-  readonly evaluate: (state: State["Type"]) => Effect.Effect<AnswersOf<Qs>, ClassifierError, Evaluator.Evaluator>
+  readonly evaluate: (state: State["Type"]) => AnswersOf<Qs>!ClassifierError!Evaluator.Evaluator
   /**
    * Asks exactly what {@link Classifier.evaluate} asks, and answers what the
    * reading cost beside its answers. One request; nothing more is sent.
    */
-  readonly read: (state: State["Type"]) => Effect.Effect<Reading<Qs>, ClassifierError, Evaluator.Evaluator>
+  readonly read: (state: State["Type"]) => Reading<Qs>!ClassifierError!Evaluator.Evaluator
   /**
    * Asks every question about each state, one request per state, at most
    * `concurrency` in flight. Results keep the states' order and a failed
@@ -449,8 +449,8 @@ export interface Classifier<Id extends string, State extends Schema.Codec<any, a
    */
   readonly evaluateAll: (
     states: ReadonlyArray<State["Type"]>,
-    options?: EvaluateAllOptions
-  ) => Effect.Effect<ReadonlyArray<Result.Result<AnswersOf<Qs>, ClassifierError>>, never, Evaluator.Evaluator>
+    options?: EvaluateAllOptions,
+  ) => ReadonlyArray<Result.Result<AnswersOf<Qs>, ClassifierError>>!never!Evaluator.Evaluator
 }
 
 /**
@@ -486,7 +486,7 @@ export const fromEvaluatorError = (error: Evaluator.EvaluatorError): ClassifierE
     ...(error.status === undefined ? {} : { status: error.status }),
     ...(error.resetAtEpochMillis === undefined ? {} : { resetAtEpochMillis: error.resetAtEpochMillis }),
     message: error.message,
-    ...(error.usage === undefined ? {} : { usage: error.usage })
+    ...(error.usage === undefined ? {} : { usage: error.usage }),
   })
 
 /**
@@ -499,13 +499,13 @@ export const fromEvaluatorError = (error: Evaluator.EvaluatorError): ClassifierE
  */
 export const make = <const Id extends string, State extends Schema.Codec<any, any>, const Qs extends Questions>(
   id: Id,
-  options: MakeOptions<State, Qs>
+  options: MakeOptions<State, Qs>,
 ): Classifier<Id, State, Qs> => {
   const { description, seatNote, state } = options
   // Rebuild the schema classes from their wire form so no caller-owned map,
   // question or nested criteria remain reachable through this declaration.
   const questions = Schema.decodeUnknownSync(Schema.Record(Schema.String, Question))(
-    Evaluator.encodeQuestions(options.questions)
+    Evaluator.encodeQuestions(options.questions),
   ) as Qs
   for (const question of Object.values(questions)) {
     if (question.criteria !== undefined) Object.freeze(question.criteria)
@@ -519,38 +519,33 @@ export const make = <const Id extends string, State extends Schema.Codec<any, an
   const encodeState = Schema.encodeEffect(state)
 
   const read = SpanFailure.fn(
-    Effect.fn(`Classifier.evaluate(${id})`)((value: State["Type"]) =>
-      Effect.gen(function*() {
-        const evaluator = yield* Evaluator.Evaluator
-        const encoded = yield* encodeState(value).pipe(
-          Effect.mapError((error) => new ClassifierError({ code: "invalid_question", message: error.message }))
-        )
-        const response = yield* evaluator.evaluate({
-          state: encoded,
-          questions,
-          ...(seatNote === undefined ? {} : { seatNote })
-        }).pipe(Effect.mapError(fromEvaluatorError))
-        // An answer this classifier cannot decode was still paid for.
-        const answers = yield* decodeAnswers(questions, response.answers).pipe(
-          Effect.mapError((error) =>
-            response.usage === undefined
-              ? error
-              : new ClassifierError({ code: error.code, message: error.message, usage: response.usage })
-          )
-        )
-        return { ...response, answers }
-      })
-    )
+    Effect.fn(`Classifier.evaluate(${id})`)(effect (value: State["Type"]) => {
+      const evaluator = try Evaluator.Evaluator
+      const encoded = try (encodeState(value)
+        |> Effect.mapError(%, (error) => new ClassifierError({ code: "invalid_question", message: error.message })))
+      const response = try (evaluator.evaluate({
+        state: encoded,
+        questions,
+        ...(seatNote === undefined ? {} : { seatNote }),
+      }) |> Effect.mapError(%, fromEvaluatorError))
+      // An answer this classifier cannot decode was still paid for.
+      const answers = try (decodeAnswers(questions, response.answers)
+        |> Effect.mapError(%, (error) =>
+          response.usage === undefined
+            ? error
+            : new ClassifierError({ code: error.code, message: error.message, usage: response.usage })))
+      return { ...response, answers }
+    }),
   )
 
   const evaluate = (value: State["Type"]) => Effect.map(read(value), (reading) => reading.answers)
 
   const evaluateAll = (
     states: ReadonlyArray<State["Type"]>,
-    all: EvaluateAllOptions = {}
-  ): Effect.Effect<ReadonlyArray<Result.Result<AnswersOf<Qs>, ClassifierError>>, never, Evaluator.Evaluator> =>
+    all: EvaluateAllOptions = {},
+  ): ReadonlyArray<Result.Result<AnswersOf<Qs>, ClassifierError>>!never!Evaluator.Evaluator =>
     Effect.forEach(states, (value) => Effect.result(evaluate(value)), {
-      concurrency: all.concurrency ?? defaultConcurrency
+      concurrency: all.concurrency ?? defaultConcurrency,
     })
 
   return { id, description, state, questions, digest, evaluate, read, evaluateAll }

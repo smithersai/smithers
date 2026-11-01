@@ -23,7 +23,7 @@
 
 import { Cause, Effect } from "effect"
 import * as CanonicalJson from "../CanonicalJson.ts"
-import type { Timing, Usage } from "../ModelEvent.ts"
+import type { Timing, Usage } from "../ModelEvent.vibe"
 import type * as Sink from "../WireTrace.ts"
 
 interface Traced {

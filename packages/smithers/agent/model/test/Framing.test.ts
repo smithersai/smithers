@@ -1,6 +1,6 @@
 import { Deferred, Effect, Fiber, type Scope, Stream } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Framing from "../src/Framing.ts"
+import * as Framing from "../src/Framing.vibe"
 
 const encoder = new TextEncoder()
 
