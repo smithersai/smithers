@@ -34,7 +34,7 @@ export const TriggerErrorCode = Schema.Literals([
   "catch_up_bound_exceeded",
   "runner",
   "runner_timeout",
-  "store"
+  "store",
 ])
 
 /**
@@ -58,7 +58,7 @@ export class TriggerError extends Schema.TaggedError<TriggerError>()("flows/trig
   code: TriggerErrorCode,
   message: Schema.String,
   path: Schema.optional(Schema.String),
-  cause: Schema.optional(Schema.Defect())
+  cause: Schema.optional(Schema.Defect()),
 }) {}
 
 /**
@@ -115,7 +115,7 @@ const summarize = (error: unknown): string =>
 export const fromSchemaError = (
   code: TriggerErrorCode,
   summary: string,
-  error: unknown
+  error: unknown,
 ): TriggerError => {
   const path = issuePath((error as { readonly issue?: unknown } | null)?.issue)
   const detail = summarize(error)
@@ -124,6 +124,6 @@ export const fromSchemaError = (
     code,
     message: field === undefined ? `${summary}: ${detail}` : `${summary} at ${field}: ${detail}`,
     ...(field === undefined ? {} : { path: field }),
-    cause: detail
+    cause: detail,
   })
 }

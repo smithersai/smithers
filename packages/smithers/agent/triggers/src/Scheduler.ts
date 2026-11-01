@@ -21,9 +21,9 @@ import * as Ref from "effect/Ref"
 import * as Result from "effect/Result"
 import type * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
-import * as ActiveRuns from "./internal/ActiveRuns.ts"
+import * as ActiveRuns from "./internal/ActiveRuns.vibe"
 import * as DueOccurrences from "./internal/DueOccurrences.ts"
-import { TriggerError } from "./TriggerError.ts"
+import { TriggerError } from "./TriggerError.vibe"
 import {
   type Claim,
   type Held,
