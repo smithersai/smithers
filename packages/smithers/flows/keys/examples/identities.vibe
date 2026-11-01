@@ -1,5 +1,4 @@
 import { DerivedKey, deriveKey, digest, StoredKey } from "@smthrs/keys"
-import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 
 /**
@@ -30,7 +29,7 @@ export const decodeIdentity = (input: unknown) => Schema.decodeUnknownEffect(Der
  * @throws A schema error if the input is not a supported stored key.
  * @since 1.0.0
  */
-export const readIdentity = (input: unknown) => {
+export const readIdentity = (input: unknown): infer _ => {
   const key = Schema.decodeUnknownSync(StoredKey)(input)
   return { key, digest: digest(key) }
 }
@@ -40,7 +39,7 @@ export const readIdentity = (input: unknown) => {
  *
  * @since 1.0.0
  */
-export const example = Effect.gen(function*() {
-  const key = yield* compileKey("web", ["--minify"])
+export const example = effect {
+  const key = try compileKey("web", ["--minify"])
   return readIdentity(key)
-})
+}

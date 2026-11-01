@@ -3,7 +3,7 @@ import { Crypto } from "@smthrs/crypto"
 import { Effect } from "effect"
 import { createHash } from "node:crypto"
 import { describe, expect, it } from "vitest"
-import { compileKey, decodeIdentity, example, readIdentity } from "../examples/identities.ts"
+import { compileKey, decodeIdentity, example, readIdentity } from "../examples/identities.vibe"
 
 const run = <A, E>(program: Effect.Effect<A, E, import("@smthrs/crypto").Crypto.Crypto>) =>
   Effect.runPromise(Effect.provide(program, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
