@@ -1,4 +1,3 @@
-import { Button } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link } from "@tanstack/react-router"
 import { useAuth } from "../../auth/components/AuthContext"
@@ -14,8 +13,6 @@ export function SecretsLink({ owner, repo }: { readonly owner: string; readonly 
   const answer = useRepoAnswer(owner, repo)
   if (!showsLink(accessOf(session, answer))) return null
   return (
-    <Button asChild variant="ghost">
-      <Link to="/$owner/$repo/settings/secrets" params={{ owner, repo }}>{SECRETS}</Link>
-    </Button>
+    <Link to="/$owner/$repo/settings/secrets" params={{ owner, repo }}>{SECRETS}</Link>
   )
 }

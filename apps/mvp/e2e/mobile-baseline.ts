@@ -35,7 +35,7 @@ const addedRules = [
   ".sui-rh-announce { height:auto; min-height:var(--ctl-h, 32px); }",
   ".sui-rh-more, .sui-rh-release-name, .sui-rh-panel-link { display:inline-flex; align-items:center; min-height:var(--ctl-h, 32px); min-width:32px; }",
   ".plugin-screen-header > a { display:inline-flex; align-items:center; min-height:32px; min-width:32px; }",
-  ".repo-header-name a { display: inline-flex; align-items: center; min-height: 32px; }",
+  ".repo-header .sui-page-header-title a { display: inline-flex; align-items: center; min-height: 32px; }",
   ".runs-screen .sui-page-header-back > a { display:inline-flex; align-items:center; min-height:32px; min-width:32px; }",
   ".runs-screen table[aria-label=\"Flows\"] td > a { display:inline-flex; align-items:center; min-height:32px; min-width:32px; }",
   ".secrets-screen-header > a { display: inline-flex; align-items: center; min-width: 32px; min-height: 32px; }",

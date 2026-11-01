@@ -1,4 +1,4 @@
-import { Button } from "@smthrs/ui"
+import { Button, PageHeader } from "@smthrs/ui"
 import { OfflineFallback } from "../../features/navigation/components/OfflineFallback"
 import { Link, useParams } from "@tanstack/react-router"
 import { BranchHeader } from "../../features/branch/components/BranchHeader"
@@ -12,16 +12,12 @@ export function BranchPendingScreen() {
   const params = useParams({ strict: false })
   return (
     <main className="branch-screen" aria-label="Repository" data-workspace="false">
-      <header className="repo-header" aria-label="Repository">
-        <h1 className="repo-header-name">
-          <Link to="/$owner/$repo" params={{ owner: params.owner!, repo: params.repo! }}>
-            {params.owner} / {params.repo}
-          </Link>
-        </h1>
-        <div role="status" aria-label="Connection" aria-live="polite">
-          <ConnectionPill />
-        </div>
-      </header>
+      <PageHeader
+        className="repo-header"
+        aria-label="Repository"
+        title={<Link to="/$owner/$repo" params={{ owner: params.owner!, repo: params.repo! }}>{params.owner} / {params.repo}</Link>}
+        actions={<div role="status" aria-label="Connection" aria-live="polite"><ConnectionPill /></div>}
+      />
       <div className="branch-screen-view">
         <BranchHeader access={undefined} pending />
         <OfflineFallback>

@@ -12,7 +12,7 @@ for (const width of [390, 1280]) test.describe(`${width}px issues chrome`, () =>
     const bell = page.locator(".repo-header [data-slot=notification-bell]")
     await expect(bell).toHaveCount(1)
     await expect(page.locator(".root-bell")).toHaveCount(0)
-    const heading = (await page.locator(".repo-header-name").boundingBox())!
+    const heading = (await page.locator(".repo-header .sui-page-header-title").boundingBox())!
     expect((await bell.boundingBox())!.y).toBeLessThan(heading.y + heading.height)
   })
 })

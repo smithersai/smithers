@@ -1,4 +1,4 @@
-import { Button } from "@smthrs/ui"
+import { Button, PageHeader } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link, useLocation } from "@tanstack/react-router"
 import { NotificationsBell } from "../../attention/components/NotificationsBell"
@@ -37,62 +37,58 @@ export function RepoHeader({ backTarget }: { readonly backTarget?: Minimized } =
   const { view, repository, clone, about } = data
   const header = cloneHeaderOf(headerOf(repository, clone, view.signedIn, view.answered, about), view.signedIn, answer)
   const defaultBranch = repository?.defaultBranch ?? aboutOf(about)?.defaultBranch ?? null
-  return (
-    <header className="repo-header" aria-label="Repository">
-      <BackToChat target={backTarget ?? { template: "repo", props: minimizedOf(view, defaultBranch) }} />
-      <h1 className="repo-header-name">
-        <Link to="/$owner/$repo" params={{ owner: view.owner, repo: view.name }}>{view.owner} / {view.name}</Link>
-      </h1>
-      {header.kind === "missing" || header.kind === "unavailable" ? null : <>
-      <Button asChild variant="ghost">
-        <Link to="/$owner/$repo/issues" params={{ owner: view.owner, repo: view.name }}>{ISSUES}</Link>
-      </Button>
-      <Button asChild variant="ghost">
-        <Link to="/$owner/$repo/pulls" params={{ owner: view.owner, repo: view.name }}>Pull requests</Link>
-      </Button>
-      <Button asChild variant="ghost">
-        <Link to="/$owner/$repo/runs" params={{ owner: view.owner, repo: view.name }}>Runs</Link>
-      </Button>
-      <Button asChild variant="ghost">
-        <Link to="/$owner/$repo/stack" params={{ owner: view.owner, repo: view.name }}>{STACK}</Link>
-      </Button>
+  const sections = header.kind === "missing" || header.kind === "unavailable" ? undefined : (
+    <>
+      <Link to="/$owner/$repo/issues" params={{ owner: view.owner, repo: view.name }}>{ISSUES}</Link>
+      <Link to="/$owner/$repo/pulls" params={{ owner: view.owner, repo: view.name }}>Pull requests</Link>
+      <Link to="/$owner/$repo/runs" params={{ owner: view.owner, repo: view.name }}>Runs</Link>
+      <Link to="/$owner/$repo/stack" params={{ owner: view.owner, repo: view.name }}>{STACK}</Link>
       <SecretsLink owner={view.owner} repo={view.name} />
       <Slot name="repo.tabs" repository={{ owner: view.owner, name: view.name }} />
-      </>}
-      {(header.kind === "clone" || header.kind === "sign_in") && header.status !== undefined
-        ? <span role="status">{header.status}</span>
-        : null}
       {session?.status === "signed_in" && ownRepository(answer) && mayManageDomains(answer!.role)
-        ? (
-          <Button asChild variant="ghost">
-            <Link to="/$owner/$repo/settings" params={{ owner: view.owner, repo: view.name }}>{SETTINGS}</Link>
-          </Button>
-        )
+        ? <Link to="/$owner/$repo/settings" params={{ owner: view.owner, repo: view.name }}>{SETTINGS}</Link>
         : null}
-      {header.kind === "clone"
-        ? <Button onClick={() => actions.clone(view.owner, view.name)}>{CLONE}</Button>
-        : null}
-      {header.kind === "sign_in"
-        ? (
-          <Button asChild variant="outline">
-            <a href={signInHref(`${location.pathname}${location.searchStr}`)}>{header.text}</a>
-          </Button>
-        )
-        : null}
-      {header.kind === "refused"
-        ? (
-          <>
-            <span role="status">{header.text}</span>
-            {header.retry === false ? null : <Button variant="outline" onClick={() => actions.retryClone(view.owner, view.name)}>{TRY_AGAIN}</Button>}
-          </>
-        )
-        : null}
-      <div role="status" aria-label="Connection" aria-live="polite">
-        <ConnectionPill />
-      </div>
-      <span className="repo-header-bell">
-        <NotificationsBell />
-      </span>
-    </header>
+    </>
+  )
+  return (
+    <PageHeader
+      className="repo-header"
+      aria-label="Repository"
+      back={<BackToChat target={backTarget ?? { template: "repo", props: minimizedOf(view, defaultBranch) }} />}
+      title={<Link to="/$owner/$repo" params={{ owner: view.owner, repo: view.name }}>{view.owner} / {view.name}</Link>}
+      nav={sections}
+      navLabel="Repository sections"
+      actions={
+        <>
+          {(header.kind === "clone" || header.kind === "sign_in") && header.status !== undefined
+            ? <span role="status">{header.status}</span>
+            : null}
+          {header.kind === "clone"
+            ? <Button variant="solid" onClick={() => actions.clone(view.owner, view.name)}>{CLONE}</Button>
+            : null}
+          {header.kind === "sign_in"
+            ? (
+              <Button asChild variant="solid">
+                <a href={signInHref(`${location.pathname}${location.searchStr}`)}>{header.text}</a>
+              </Button>
+            )
+            : null}
+          {header.kind === "refused"
+            ? (
+              <>
+                <span role="status">{header.text}</span>
+                {header.retry === false ? null : <Button variant="outline" onClick={() => actions.retryClone(view.owner, view.name)}>{TRY_AGAIN}</Button>}
+              </>
+            )
+            : null}
+          <div role="status" aria-label="Connection" aria-live="polite">
+            <ConnectionPill />
+          </div>
+          <span className="repo-header-bell">
+            <NotificationsBell />
+          </span>
+        </>
+      }
+    />
   )
 }
