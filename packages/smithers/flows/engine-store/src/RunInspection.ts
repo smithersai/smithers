@@ -9,8 +9,10 @@
  * passes through `@smthrs/journal`'s `Redaction.redact` first and is then cut
  * to {@link valueLimitBytes} of UTF-8, so a credential-shaped string never
  * leaves it and a large value costs a reader a known number of bytes. A
- * failure is reduced to a closed code, the failure's tag, so neither a
- * provider's error text nor a defect's message is released.
+ * failure is reduced to a closed code, the failure's tag, so a provider's
+ * error text is not released. The one message released is a run's defect, on
+ * its `transitioned` decision: the engine wrote it redacted and cut, for an
+ * operator to read why the run died.
  *
  * Built with the engine's flows (`layerWith({ flows })`), the reads know each
  * flow's payload and success schemas and, from each flow's plan, each action's

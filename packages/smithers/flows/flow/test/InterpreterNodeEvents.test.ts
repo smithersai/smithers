@@ -243,16 +243,23 @@ describe("Interpreter node events", () => {
     }))
 
   it("reads a tagged defect's code beside its tag, and its message from down its chain of causes", () => {
-    // What the engine's writer gives up with: a tag, a code, no message of its own, and the driver's error as its cause.
+    // What the engine's writer gives up with: no message of its own, a wrapper whose message says little, and the
+    // driver's error beneath it. Production read `PgConnection: Query failed` until the chain was walked (2026-11-01).
+    const lockTimeout = Object.assign(new Error("canceling statement due to lock timeout"), { code: "55P03" })
     const busy = Object.assign(new Error(""), {
       _tag: "@smthrs/database/DatabaseError",
       code: "busy",
-      cause: new Error("canceling statement due to lock timeout")
+      cause: {
+        _tag: "SqlError",
+        message: "PgConnection: Query failed",
+        reason: { _tag: "LockTimeoutError", message: "PgConnection: Query failed", cause: lockTimeout }
+      }
     })
     expect(Interpreter.defectOf(Cause.die(busy))).toEqual({
       tag: "@smthrs/database/DatabaseError",
       code: "busy",
-      message: "canceling statement due to lock timeout"
+      message: "PgConnection: Query failed: canceling statement due to lock timeout",
+      causes: ["SqlError", "LockTimeoutError", "55P03"]
     })
     expect(Interpreter.defectOf(Cause.die("plain words"))).toEqual({ tag: "defect", message: "plain words" })
     expect(Interpreter.defectOf(Cause.die({}))).toEqual({ tag: "defect", message: "" })

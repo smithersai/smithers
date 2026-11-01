@@ -152,10 +152,12 @@ export const maximumDefectMessageLength = 500
 /**
  * A defect as an operator reads it: its tag (`_tag`, else `code`, else a
  * `name` other than `Error`, else `defect`), its `code` beside a `_tag` that
- * has one (a `DatabaseError`'s `busy`), its message, or the first one down its
- * chain of causes, cut to {@link maximumDefectMessageLength} characters (empty
- * when none has one), and the node and action it arose in when the interpreter
- * recorded them.
+ * has one (a `DatabaseError`'s `busy`), the distinct messages down its chain
+ * of causes, joined and cut to {@link maximumDefectMessageLength} characters
+ * (empty when none has one), the tags and codes below it in `causes` (a lock
+ * timeout's `LockTimeoutError` and `55P03`), and the node and action it arose
+ * in when the interpreter recorded them. A wrapper's message says little, so
+ * the cause beneath it is what names the failure.
  *
  * @category errors
  * @since 1.0.0
@@ -164,6 +166,7 @@ export interface Defect {
   readonly tag: string
   readonly code?: string | undefined
   readonly message: string
+  readonly causes?: ReadonlyArray<string> | undefined
   readonly nodeId?: string | undefined
   readonly action?: string | undefined
 }
@@ -189,26 +192,43 @@ const codeOfDefect = (defect: unknown): string | undefined => {
   return typeof _tag === "string" && typeof code === "string" && defectTag.test(code) ? code : undefined
 }
 
-/** How far down a defect's causes {@link messageOfDefect} looks. @private */
+/** How far down a defect's causes {@link chainOfDefect} looks. @private */
 const maximumCauseDepth = 8
 
-/** The first message in one defect value's chain of causes, cut. @private */
-const messageOfDefect = (defect: unknown): string => {
+/** The defect and what it wraps: `reason` (a `SqlError`'s) before `cause`. @private */
+const chainOfDefect = (defect: unknown): ReadonlyArray<unknown> => {
+  const chain: Array<unknown> = []
   let current = defect
-  for (let depth = 0; depth < maximumCauseDepth; depth++) {
-    const text = typeof current === "string"
-      ? current
-      : typeof current === "object" && current !== null
-      ? (current as { readonly message?: unknown }).message
-      : undefined
-    if (typeof text === "string" && text.length > 0) {
-      return text.length <= maximumDefectMessageLength ? text : `${text.slice(0, maximumDefectMessageLength)}…`
-    }
-    if (typeof current !== "object" || current === null) return ""
-    current = (current as { readonly cause?: unknown }).cause
+  while (chain.length < maximumCauseDepth && current !== undefined && current !== null && !chain.includes(current)) {
+    chain.push(current)
+    if (typeof current !== "object") break
+    const { cause, reason } = current as { readonly cause?: unknown; readonly reason?: unknown }
+    current = typeof reason === "object" && reason !== null ? reason : cause
   }
-  return ""
+  return chain
 }
+
+/** The distinct messages down a chain, cut. @private */
+const messageOfChain = (chain: ReadonlyArray<unknown>): string => {
+  const messages = chain.map((link) =>
+    typeof link === "string" ? link : typeof link === "object" ? (link as { message?: unknown }).message : undefined
+  ).filter((text): text is string => typeof text === "string" && text.length > 0)
+  const message = [...new Set(messages)].join(": ")
+  return message.length <= maximumDefectMessageLength ? message : `${message.slice(0, maximumDefectMessageLength)}…`
+}
+
+/** The distinct tags and codes below a chain's first link. @private */
+const causesOfChain = (
+  chain: ReadonlyArray<unknown>
+): ReadonlyArray<string> => [
+  ...new Set(
+    chain.slice(1).flatMap((link) => {
+      if (typeof link !== "object" || link === null) return []
+      const { _tag, code } = link as { readonly _tag?: unknown; readonly code?: unknown }
+      return [_tag, code].filter((value): value is string => typeof value === "string" && defectTag.test(value))
+    })
+  )
+]
 
 /**
  * The first defect in `cause`, as {@link Defect} describes it, or `undefined`
@@ -223,10 +243,13 @@ export const defectOf = (cause: Cause.Cause<unknown>): Defect | undefined => {
   if (reason === undefined) return undefined
   const site = Context.getOrUndefined(Cause.reasonAnnotations(reason), DefectSite)
   const code = codeOfDefect(reason.defect)
+  const chain = chainOfDefect(reason.defect)
+  const causes = causesOfChain(chain)
   return {
     tag: tagOfDefect(reason.defect),
     ...(code === undefined ? {} : { code }),
-    message: messageOfDefect(reason.defect),
+    message: messageOfChain(chain),
+    ...(causes.length === 0 ? {} : { causes }),
     ...(site === undefined
       ? {}
       : { nodeId: site.nodeId, ...(site.action === undefined ? {} : { action: site.action }) })
@@ -1245,7 +1268,8 @@ const died = (
     defect: {
       _tag: defect.tag,
       ...(defect.code === undefined ? {} : { code: defect.code }),
-      message: defect.message
+      message: defect.message,
+      ...(defect.causes === undefined ? {} : { causes: defect.causes })
     }
   }
   const record = walk.reported.has(id)
