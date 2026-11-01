@@ -1,4 +1,4 @@
-import { Button, Textarea } from "@smthrs/ui"
+import { Button, Card, Textarea } from "@smthrs/ui"
 import { useSyncExternalStore } from "react"
 import { type BugsTab, MAX_WHAT, reasonOf } from "../tab"
 import "./bugs.css"
@@ -11,6 +11,7 @@ export function Report({ tab }: { readonly tab: BugsTab }) {
   const { sending } = tab.queries
   const state = useSyncExternalStore(sending.subscribe, sending.current)
   return (
+    <Card className="bugs-card">
     <form
       className="bugs-form"
       data-page-focus=""
@@ -35,7 +36,7 @@ export function Report({ tab }: { readonly tab: BugsTab }) {
         autoFocus
       />
       <div className="bugs-form-row">
-        <Button type="submit" disabled={state.status === "sending"}>{state.status === "failed" ? "Retry" : "Send"}</Button>
+        <Button type="submit" variant="solid" disabled={state.status === "sending"}>{state.status === "failed" ? "Retry" : "Send"}</Button>
         <p className="bugs-form-status" role="status" aria-live="polite">
           {state.status === "sending" ? "Sending" : null}
           {state.status === "invalid" ? (state.code === "empty" ? "Write what happened" : "Report too long") : null}
@@ -51,5 +52,6 @@ export function Report({ tab }: { readonly tab: BugsTab }) {
         </p>
       </div>
     </form>
+    </Card>
   )
 }

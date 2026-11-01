@@ -1,10 +1,14 @@
 /* The bug plugin's form and inbox (docs/features/bugs.md). */
+.bugs-card {
+  inline-size: 100%;
+  max-inline-size: 40rem;
+  margin: 1.5rem auto;
+  box-sizing: border-box;
+}
+
 .bugs-form {
   display: grid;
   gap: 0.75rem;
-  max-inline-size: 40rem;
-  margin: 1.5rem auto;
-  padding-inline: 1rem;
 }
 
 .bugs-form-row {
