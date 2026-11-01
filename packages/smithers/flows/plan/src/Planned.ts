@@ -28,7 +28,7 @@
  */
 
 import type * as Types from "effect/Types"
-import { GraphBuildError } from "./GraphBuildError.ts"
+import { GraphBuildError } from "./GraphBuildError.vibe"
 
 /**
  * The brand carried by every planned value, and the key its reference is read

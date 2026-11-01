@@ -2,9 +2,9 @@ import * as Context from "effect/Context"
 import * as Schema from "effect/Schema"
 import { execFileSync } from "node:child_process"
 import { describe, expect, it } from "vitest"
-import * as CachePolicy from "../src/CachePolicy.ts"
+import * as CachePolicy from "../src/CachePolicy.vibe"
 import * as FileSet from "../src/FileSet.ts"
-import { GraphBuildError } from "../src/GraphBuildError.ts"
+import { GraphBuildError } from "../src/GraphBuildError.vibe"
 import * as Node from "../src/Node.ts"
 
 describe("confirmed plan regressions", () => {

@@ -16,9 +16,7 @@
  */
 
 import * as Context from "effect/Context"
-import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import * as SchemaGetter from "effect/SchemaGetter"
 
 const CurrentScope = Schema.Literals(["run", "flow", "shared"])
 
@@ -41,10 +39,10 @@ export const CacheScope = Object.assign(
   Schema.Literals(["run", "flow", "shared", "workflow", "global"]).pipe(
     Schema.decodeTo(CurrentScope, {
       decode: SchemaGetter.transform((scope) => scope === "workflow" ? "flow" : scope === "global" ? "shared" : scope),
-      encode: SchemaGetter.transform((scope) => scope)
-    })
+      encode: SchemaGetter.transform((scope) => scope),
+    }),
   ),
-  { literals: CurrentScope.literals }
+  { literals: CurrentScope.literals },
 )
 
 /**
@@ -80,7 +78,7 @@ const PositiveMillis = Schema.Int.check(Schema.isGreaterThan(0))
  */
 export const CachePolicy = Schema.Struct({
   ttlMs: Schema.optionalKey(PositiveMillis),
-  scope: Schema.optionalKey(CacheScope)
+  scope: Schema.optionalKey(CacheScope),
 })
 
 /**
@@ -146,9 +144,9 @@ export const cachePolicyOf = (annotations: Context.Context<never>): CachePolicy 
  */
 export const annotate = <A extends { annotate: (key: typeof CachePolicyAnnotation, value: CachePolicy) => A }>(
   declaration: A,
-  policy: CachePolicy
+  policy: CachePolicy,
 ): A =>
   declaration.annotate(
     CachePolicyAnnotation,
-    Object.freeze({ ...Schema.decodeUnknownSync(CachePolicy)(policy) })
+    Object.freeze({ ...Schema.decodeUnknownSync(CachePolicy)(policy) }),
   )

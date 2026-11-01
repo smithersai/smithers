@@ -55,7 +55,7 @@ const securityReview = Smithers.SecurityReview({
         "An InputRef variant (Literal, Ref, Pending) whose tag, from, or path is not folded into the hashed body.",
         "undefined, NaN, -0 or key order collapsing two different payloads into one canonical form."
       ],
-      paths: ["src/StepKey.ts", "src/KeyMaterial.ts", "src/internal/JsonMirror.ts"]
+      paths: ["src/StepKey.ts", "src/KeyMaterial.vibe", "src/internal/JsonMirror.ts"]
     },
     {
       id: "function-identity-cache-hit",
@@ -122,7 +122,7 @@ const securityReview = Smithers.SecurityReview({
         "Glob matching that backtracks exponentially on repeated '*' or '**' segments.",
         "toJSON or getter evaluation during mirroring that can loop, throw arbitrary objects, or mutate input."
       ],
-      paths: ["src/internal/JsonMirror.ts", "src/FileSet.ts", "src/GraphBuildError.ts", "src/internal/node.ts"]
+      paths: ["src/internal/JsonMirror.ts", "src/FileSet.ts", "src/GraphBuildError.vibe", "src/internal/node.ts"]
     }
   ]
 })

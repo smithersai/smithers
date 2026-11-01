@@ -8,7 +8,7 @@
 import * as Context from "effect/Context"
 import * as Option from "effect/Option"
 import { describe, expect, it } from "vitest"
-import * as Placement from "../src/Placement.ts"
+import * as Placement from "../src/Placement.vibe"
 
 describe("Placement", () => {
   it("tags the four directives with the values a step key hashes", () => {

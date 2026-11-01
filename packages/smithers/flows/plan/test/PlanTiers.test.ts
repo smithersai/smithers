@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
-import * as KeyMaterial from "../src/KeyMaterial.ts"
+import * as KeyMaterial from "../src/KeyMaterial.vibe"
 import * as Plan from "../src/Plan.ts"
 import * as StepKey from "../src/StepKey.ts"
 import { withCrypto } from "./Crypto.ts"
