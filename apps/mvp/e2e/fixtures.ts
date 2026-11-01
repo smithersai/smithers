@@ -4,7 +4,7 @@ import { mkdir, readdir, writeFile } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
 import { recordConsole } from "./console"
 import { describeCrashes, watchCrashes } from "./crashes"
-import { themeFor } from "./frames.ts"
+import { recordable, themeFor } from "./frames.ts"
 import { redactRequestErrors } from "./redact"
 import { allServerRows } from "./shape"
 import { runStartedAt, spendGuard, tokenBudget } from "./spend"
@@ -198,6 +198,8 @@ export const writeManifest = async (
   videos: ReadonlyArray<Video>,
   extra: Record<string, unknown> = {},
 ) => {
+  // A skipped test gets no media (e2e/gifs.mjs): without its manifest nothing makes a video of its blank page.
+  if (!recordable(testInfo.status)) return
   const path = testInfo.outputPath(file)
   const manifest = {
     flow: flowName(testInfo),

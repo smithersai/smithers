@@ -21,7 +21,7 @@
 import { chromium } from "@playwright/test"
 import { execFileSync, spawn } from "node:child_process"
 import { once } from "node:events"
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { checkGif, checkVideo, measuredFrames } from "./check-gifs.mjs"
@@ -43,6 +43,7 @@ import {
   titleCardOf,
   VIDEO_PACE
 } from "./frames.ts"
+import { readManifests } from "./manifests.ts"
 import { withMediaDirectory } from "./mediaDirectory.ts"
 
 const results = process.argv[2] ?? "test-results"
@@ -321,25 +322,6 @@ const titleCard = async (page, width, height, card, status, length) => {
   return Buffer.from(drawn, "base64")
 }
 
-const readManifests = () => {
-  // devices.json wins over flow.json in the same directory: a devices test has no default page.
-  const manifests = readdirSync(results, { recursive: true })
-    .map(String)
-    .filter((path) => path.endsWith("devices.json") || path.endsWith("flow.json"))
-  const byDir = new Map()
-  for (const path of manifests) {
-    const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "."
-    if (byDir.has(dir) && path.endsWith("flow.json")) continue
-    const flow = JSON.parse(readFileSync(join(results, path), "utf8"))
-    // A relative video path is beside its manifest.
-    for (const video of flow.videos) {
-      if (video.video && !video.video.startsWith("/")) video.video = join(results, dir, video.video)
-    }
-    byDir.set(dir, flow)
-  }
-  return [...byDir.values()].sort((left, right) => left.flow.localeCompare(right.flow))
-}
-
 const make = async (flow, page, alike) => {
   const videos = flow.videos.filter((video) => video.video && existsSync(video.video) && statSync(video.video).size > 0)
   if (videos.length === 0) return console.log(`skipped  ${flow.flow}: no video`)
@@ -505,7 +487,8 @@ const page = await browser.newPage()
 const made = []
 let failed = 0
 try {
-  const flows = readManifests()
+  const { flows, skipped } = readManifests(results)
+  for (const flow of skipped) console.log(`skipped  ${flow}: the test skipped`)
   const key = (flow) => `${flow.spec}/${flow.test ?? flow.flow}`
   for (const flow of flows) {
     try {

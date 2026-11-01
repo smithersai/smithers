@@ -268,6 +268,12 @@ export const chaptersOf = (marks: ReadonlyArray<Mark>, startedAt: number) => {
 export const CHAPTERED_SECONDS = 5
 export const MIN_CHAPTERS = 2
 
+/**
+ * Whether a test whose Playwright status is `status` gets a video and GIF. A skipped test did nothing to show: its
+ * page's recording is blank, so it gets neither, and no check of one fails the run.
+ */
+export const recordable = (status: string | undefined) => status !== "skipped"
+
 /** What is wrong with a video Will reviews, from its length in seconds and its chapters: empty when it is fine. */
 export const videoProblems = (seconds: number, chapterCount: number) =>
   seconds > CHAPTERED_SECONDS && chapterCount < MIN_CHAPTERS
