@@ -1089,6 +1089,30 @@ describe("ModelProxy client", () => {
     expect(events).toEqual([large, large])
   })
 
+  it("preserves split UTF-8 and keep-alives between bounded lines", async () => {
+    const event = { type: "text-delta", id: "t", text: "é" }
+    const line = encoder.encode(ndjson(event))
+    const split = line.indexOf(0xc3) + 1
+    let beats = 0
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(line.subarray(0, split))
+        controller.enqueue(line.subarray(split))
+        controller.enqueue(encoder.encode("\n"))
+        controller.enqueue(encoder.encode(ndjson(event) + ndjson({ type: "end" })))
+        controller.close()
+      }
+    })
+    const h = answering(body)
+    const events = await h.run(
+      Stream.runCollect(
+        h.stream(request()).pipe(Stream.provideService(Model.Liveness, Effect.sync(() => void beats++)))
+      )
+    )
+    expect(events).toEqual([event, event])
+    expect(beats).toBe(4)
+  })
+
   it.each([false, true])("ignores oversized data after the terminal line, split chunks: %s", async (split) => {
     const end = ndjson({ type: "end" })
     const trailing = " ".repeat(1_048_577)
