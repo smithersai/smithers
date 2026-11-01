@@ -32,6 +32,8 @@ export interface TimelineMarker {
   readonly id: string;
   /** The id of the entry the span starts at. */
   readonly start: string;
+  /** The last entry actually covered, inclusive. Missing or unavailable coverage remains pending. */
+  readonly end?: string;
   readonly title: string;
   /** One sentence on what happened in the span; shown on hover. */
   readonly summary?: string;
@@ -49,24 +51,32 @@ export interface TimelineBlock {
   readonly closed?: boolean;
 }
 
-/**
- * Folds `ids` into contiguous blocks at `markers`, in entry order. Entries before the first marker, and markers whose
- * entry isn't here, are absorbed by their neighbor; what no marker covers yet is one untitled block, the rail's honest
- * "pending" tail.
- */
+/** Folds recorded coverage into titled spans, with separate pending blocks for every uncovered gap and tail. */
 export const timelineBlocks = (ids: readonly string[], markers: readonly TimelineMarker[], level: number): readonly TimelineBlock[] => {
   if (ids.length === 0) return [];
   const at = new Map(ids.map((id, index) => [id, index]));
-  const known = markers
-    .flatMap(marker => { const start = at.get(marker.start); return start === undefined ? [] : [{ marker, start }]; })
-    .sort((a, b) => a.start - b.start)
-    .filter((item, index, all) => index === 0 || all[index - 1]!.start !== item.start);
-  if (known.length === 0) return [{ id: `pending:${level}:${ids[0]}`, start: 0, end: ids.length }];
-  return known.map(({ marker, start }, index) => ({
-    id: marker.id, start: index === 0 ? 0 : start, end: known[index + 1]?.start ?? ids.length, title: marker.title,
-    ...(marker.summary === undefined ? {} : { summary: marker.summary }),
-    ...(marker.closed === undefined ? {} : { closed: marker.closed }),
-  }));
+  const known = markers.flatMap(marker => {
+    const start = at.get(marker.start), last = marker.end === undefined ? undefined : at.get(marker.end);
+    return start === undefined || last === undefined || last < start ? [] : [{ marker, start, end: last + 1 }];
+  }).sort((a, b) => a.start - b.start);
+  const blocks: TimelineBlock[] = [];
+  let cursor = 0;
+  const pending = (end: number) => {
+    if (end > cursor) blocks.push({ id: `pending:${level}:${ids[cursor]}`, start: cursor, end });
+    cursor = end;
+  };
+  for (const { marker, start, end } of known) {
+    // Overlapping or duplicate coverage cannot rename already-covered entries.
+    if (start < cursor) continue;
+    pending(start);
+    blocks.push({ id: marker.id, start, end, title: marker.title,
+      ...(marker.summary === undefined ? {} : { summary: marker.summary }),
+      ...(marker.closed === undefined ? {} : { closed: marker.closed }),
+    });
+    cursor = end;
+  }
+  pending(ids.length);
+  return blocks;
 };
 
 /** A question and what followed it, as half-open entry indices. Anything before the first question is its own. */

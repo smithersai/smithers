@@ -165,7 +165,7 @@ test("keyboard traversal does not activate an entry's external destination", asy
 
 const phased = (count: number, every: number) => ({
   entries: Array.from({ length: count }, (_, index) => ({ id: `e${index}`, kind: index % 2 === 0 ? "ask" as const : "answer" as const, state: "done" as const, label: `Entry ${index}`, time: `${index}m` })),
-  phases: Array.from({ length: Math.ceil(count / every) }, (_, index) => ({ id: `p${index}`, start: `e${index * every}`, title: `Phase ${index}`, summary: `What happened in ${index}.`, closed: true })),
+  phases: Array.from({ length: Math.ceil(count / every) }, (_, index) => ({ id: `p${index}`, start: `e${index * every}`, end: `e${Math.min(count, (index + 1) * every) - 1}`, title: `Phase ${index}`, summary: `What happened in ${index}.`, closed: true })),
 });
 
 test("phases are logical blocks: never counts, and hover adds their span", async () => {
@@ -189,7 +189,7 @@ test("an unwritten tail is honest: its first entry's label, pending or marked un
   document.body.append(host);
   const root = createRoot(host);
   const { entries } = phased(100, 14);
-  const phases = [{ id: "p0", start: "e0", title: "Research" }, { id: "p1", start: "e60", title: "", closed: false }].slice(0, 1);
+  const phases = [{ id: "p0", start: "e0", end: "e59", title: "Research" }, { id: "p1", start: "e60", title: "", closed: false }].slice(0, 1);
   try {
     await act(async () => root.render(<ChatTimeline entries={entries} />));
     const block = () => host.querySelector<HTMLButtonElement>('ol[data-level="1"] button')!;
@@ -210,7 +210,7 @@ test("a third level appears only when phases outgrow the column, and each level 
   document.body.append(host);
   const root = createRoot(host);
   const small = phased(20, 4), large = phased(400, 8);
-  const arcs = [{ id: "a0", start: "e0", title: "Early arc" }, { id: "a1", start: "e200", title: "Late arc" }];
+  const arcs = [{ id: "a0", start: "e0", end: "e199", title: "Early arc" }, { id: "a1", start: "e200", end: "e399", title: "Late arc" }];
   try {
     await act(async () => root.render(<ChatTimeline entries={small.entries} phases={small.phases} />));
     expect(host.querySelector("nav")!.dataset.levels).toBe("1");
@@ -272,4 +272,21 @@ test("the default jump reaches a mounted transcript anchor and Escape focuses it
     expect(document.activeElement).toBe(host.querySelector("article"));
     expect(host.querySelector("article")?.tabIndex).toBe(-1);
   } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+test("new unsummarized messages never inherit a closed phase's ready label", async () => {
+  const { entries } = phased(100, 14);
+  for (const unavailable of [undefined, "No summary model"]) {
+    const html = renderToStaticMarkup(<ChatTimeline entries={entries} phases={[
+      { id: "research", start: "e0", end: "e59", title: "Research", closed: true },
+    ]} unavailable={unavailable} />);
+    const host = document.createElement("div");
+    host.innerHTML = html;
+    const blocks = host.querySelectorAll<HTMLElement>('ol[data-level="1"] button');
+    expect(blocks.length).toBe(2);
+    expect(blocks[0]!.dataset.summary).toBe("ready");
+    expect(blocks[0]!.getAttribute("aria-label")).toContain("60 messages");
+    expect(blocks[1]!.textContent).toBe("Entry 60");
+    expect(blocks[1]!.dataset.summary).toBe(unavailable ? "unavailable" : "pending");
+  }
 });

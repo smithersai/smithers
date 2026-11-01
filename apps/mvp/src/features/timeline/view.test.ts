@@ -153,13 +153,32 @@ test("an untitled draft remains identifiable and an active TODO names its step",
   expect(railEntries([], [], [], [todo])[0]?.time).toBe(time)
 })
 
-test("a phase stands at the message it starts at; a message without one, or with a malformed one, adds nothing", () => {
-  const mark = JSON.stringify({ title: "Researching issue 450", summary: "Traced the flaky test", closed: true, covered: 3 })
+test("a covered phase stands at its starting message; missing, malformed and unsent coverage adds nothing", () => {
+  const mark = JSON.stringify({ title: "Researching issue 450", summary: "Traced the flaky test", closed: true, covered: 1 })
   const base = { role: "user", status: "done", text: "Find it" }
   const markers = railMarkers([
-    { ...base, id: "plain", phase: "" }, { ...base, id: "broken", phase: "{" }, { ...base, id: "kept", phase: mark }, { ...base, id: "draft", status: "unsent", phase: mark },
-  ] as never, "phase")
-  expect(markers.map(marker => [marker.id, marker.start, marker.title])).toEqual([
-    ["phase:kept", "kept", "Researching issue 450"], ["phase:draft", "unsent:draft", "Researching issue 450"],
+    { ...base, id: "plain", phase: "" },
+    { id: "plain-answer", questionId: "plain", role: "assistant", status: "done", text: "Recorded" },
+    { ...base, id: "broken", phase: "{" },
+    { id: "broken-answer", questionId: "broken", role: "assistant", status: "done", text: "Recorded" },
+    { ...base, id: "kept", phase: mark },
+    { id: "answer", questionId: "kept", role: "assistant", status: "done", text: "Found it" },
+    { ...base, id: "draft", status: "unsent", phase: mark },
+  ], "phase")
+  expect(markers.map(marker => [marker.id, marker.start, marker.end, marker.title])).toEqual([
+    ["phase:kept", "kept", "answer", "Researching issue 450"],
   ])
+})
+
+
+test("phase and arc markers carry the last covered answer, excluding the unsummarized tail", async () => {
+  const { railMarkers } = await import("./view")
+  const phase = (covered: number) => JSON.stringify({ title: "Research", summary: "Read the evidence", closed: true, covered })
+  const messages = Array.from({ length: 6 }, (_, index) => [
+    { id: `q${index}`, role: "user", status: "done", text: "Question", phase: index === 0 || index === 2 ? phase(2) : "", arc: index === 0 ? phase(2) : "" },
+    { id: `a${index}`, questionId: `q${index}`, role: "assistant", status: "done", text: "Answer" },
+  ]).flat()
+  expect(railMarkers(messages, "phase").map(({ start, end }) => [start, end])).toEqual([["q0", "a1"], ["q2", "a3"]])
+  expect(railMarkers(messages, "arc").map(({ start, end }) => [start, end])).toEqual([["q0", "a3"]])
+  expect(railMarkers([{ ...messages[0]!, phase: phase(999) }], "phase")).toEqual([])
 })

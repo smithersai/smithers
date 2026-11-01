@@ -2,7 +2,7 @@ import { formatRelativeTime, type ChatTimelineEntry, type TimelineMarker } from 
 import { Option } from "effect"
 import { postgresTime } from "../chat/view"
 import { isGenericSummary, revisionOf, safeTimelineText } from "./identity"
-import { parseMark } from "./marks"
+import { exchangeUnits, phaseUnits, parseMark } from "./marks"
 
 export interface RailMessage {
   readonly id: string
@@ -94,10 +94,25 @@ export const railEntries = (
 ]
 
 /** The phases or arcs stored on `messages`, as the rail's level 1 or level 2 takes them. */
-export const railMarkers = (messages: readonly RailMessage[], field: "phase" | "arc"): TimelineMarker[] =>
-  messages.flatMap(message => {
-    const mark = parseMark(message[field])
-    if (Option.isNone(mark)) return []
-    const { title, summary, closed } = mark.value
-    return [{ id: `${field}:${message.id}`, start: message.status === "unsent" ? `unsent:${message.id}` : message.id, title: safeTimelineText(title), summary: safeTimelineText(summary), closed }]
-  })
+export const railMarkers = (messages: readonly RailMessage[], field: "phase" | "arc"): TimelineMarker[] => {
+  const exchanges = exchangeUnits(messages);
+  const answers = new Map(messages.filter(message => message.role === "assistant").map(message => [message.questionId, message.id]));
+  const phaseEnds = new Map<string, string>();
+  for (const [index, unit] of exchanges.entries()) {
+    if (Option.isNone(unit.mark)) continue;
+    const covered = unit.mark.value.covered;
+    const last = Number.isSafeInteger(covered) && covered > 0 ? exchanges[index + covered - 1] : undefined;
+    const end = last === undefined ? undefined : answers.get(last.id);
+    if (end !== undefined) phaseEnds.set(unit.id, end);
+  }
+  const units = field === "phase" ? exchanges : phaseUnits(messages);
+  return units.flatMap((unit, index) => {
+    const mark = field === "phase" ? unit.mark : parseMark(messages.find(message => message.id === unit.id)?.arc);
+    if (Option.isNone(mark)) return [];
+    const { title, summary, closed, covered } = mark.value;
+    const last = Number.isSafeInteger(covered) && covered > 0 ? units[index + covered - 1] : undefined;
+    const end = field === "phase" ? phaseEnds.get(unit.id) : last === undefined ? undefined : phaseEnds.get(last.id);
+    if (end === undefined) return [];
+    return [{ id: `${field}:${unit.id}`, start: unit.id, end, title: safeTimelineText(title), summary: safeTimelineText(summary), closed }];
+  });
+}

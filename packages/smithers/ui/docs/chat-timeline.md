@@ -12,7 +12,7 @@
 
 Level 0 holds one 34 px row per entry: a mark whose height follows `length` (neutral for a question, teal for an answer) and up to two lines of summary. A track on its left carries a thumb over what the transcript shows, and a dot at the reading line.
 
-Level 1 appears once entries no longer fit, and level 2 once phases no longer fit level 1. `phases` and `arcs` are `TimelineMarker`s: a block starts at entry `start` and runs to the next one, so sizes follow what happened. Blocks in a column are one height; a strip of marks shows each block's size. Entries that no marker covers are one block titled with the first entry's label, marked pending. The rail never shows a count in place of a title.
+Level 1 appears once entries no longer fit, and level 2 once phases no longer fit level 1. `phases` and `arcs` are `TimelineMarker`s: a block starts at entry `start` and stops at its recorded inclusive `end` anchor, so sizes follow what happened. Blocks in a column are one height; a strip of marks shows each block's size. Entries before, between or after recorded coverage are separate blocks titled with the first entry's label, marked pending. The rail never shows a count in place of a title.
 
 A lens on each outer strip marks the stretch the next level shows, joined to it by funnel lines. Dragging the thumb or a lens scrubs the transcript. Each level holds still while the viewport stays inside it and pages when it leaves, so scrolling never drags it along.
 

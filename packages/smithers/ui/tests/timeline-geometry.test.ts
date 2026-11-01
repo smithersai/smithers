@@ -22,8 +22,8 @@ test("a level appears only when the one inside it no longer fits", () => {
 
 test("blocks follow markers, not a stride, and cover every entry", () => {
   const blocks = timelineBlocks(ids(30), [
-    { id: "b", start: "e4", title: "Fix" }, { id: "a", start: "e2", title: "Research", summary: "Why.", closed: true },
-    { id: "gone", start: "nowhere", title: "Deleted" }, { id: "twin", start: "e4", title: "Same start" },
+    { id: "b", start: "e4", end: "e29", title: "Fix" }, { id: "a", start: "e0", end: "e3", title: "Research", summary: "Why.", closed: true },
+    { id: "gone", start: "nowhere", title: "Deleted" }, { id: "twin", start: "e4", end: "e29", title: "Same start" },
   ], 1);
   expect(blocks.map(({ id, start, end }) => [id, start, end])).toEqual([["a", 0, 4], ["b", 4, 30]]);
   expect(blocks[0]).toMatchObject({ title: "Research", summary: "Why.", closed: true });
@@ -111,4 +111,16 @@ test("search and block heights", () => {
   expect(timelineSearch([1, 3, 5], 0)).toBe(0);
   expect(timelineBlockHeight(100, 2)).toBe(47);
   expect(timelineBlockHeight(NaN, 0)).toBe(0);
+});
+
+test("closed coverage stops at its recorded endpoint, leaving gaps and the growing tail pending", () => {
+  const blocks = timelineBlocks(ids(12), [
+    { id: "p0", start: "e0", end: "e3", title: "Research", closed: true },
+    { id: "p1", start: "e6", end: "e9", title: "Fix", closed: false },
+  ], 1);
+  expect(blocks.map(({ start, end, title }) => [start, end, title])).toEqual([
+    [0, 4, "Research"], [4, 6, undefined], [6, 10, "Fix"], [10, 12, undefined],
+  ]);
+  expect(timelineBlocks(ids(4), [{ id: "bad", start: "e0", end: "missing", title: "Unknown" }], 1))
+    .toEqual([{ id: "pending:1:e0", start: 0, end: 4 }]);
 });
