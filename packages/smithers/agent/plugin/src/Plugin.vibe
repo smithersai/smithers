@@ -12,7 +12,7 @@
 
 import type * as Layer from "effect/Layer"
 import type { FlowsConfig } from "./Config.ts"
-import type { FlowsHooks } from "./index.ts"
+import type { FlowsHooks } from "./index.vibe"
 
 /**
  * Conditional-inclusion predicate, mirroring Vite's `apply`.

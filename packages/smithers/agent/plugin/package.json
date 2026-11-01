@@ -34,7 +34,10 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.d.vibe.ts",
+      "default": "./src/index.vibe"
+    },
     "./internal/*": null,
     "./*/index": null,
     "./Bind": {
@@ -59,7 +62,10 @@
     },
     "./Load": "./src/Load.ts",
     "./Manifest": "./src/Manifest.ts",
-    "./Plugin": "./src/Plugin.ts",
+    "./Plugin": {
+      "types": "./src/Plugin.d.vibe.ts",
+      "default": "./src/Plugin.vibe"
+    },
     "./PluginError": {
       "types": "./src/PluginError.d.vibe.ts",
       "default": "./src/PluginError.vibe"
@@ -73,7 +79,10 @@
       "types": "./src/When.d.vibe.ts",
       "default": "./src/When.vibe"
     },
-    "./index": "./src/index.ts"
+    "./index": {
+      "types": "./src/index.d.vibe.ts",
+      "default": "./src/index.vibe"
+    }
   },
   "files": [
     "src/**/*.ts",

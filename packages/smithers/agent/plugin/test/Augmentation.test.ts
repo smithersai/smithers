@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import * as Config from "../src/Config.ts"
 import type { ParallelHook, SequentialHook } from "../src/Hooks.vibe"
 import * as Hooks from "../src/Hooks.vibe"
-import type { FlowsPlugin } from "../src/index.ts"
+import type { FlowsPlugin } from "../src/index.vibe"
 import * as Plugins from "../src/Plugins.vibe"
 import * as Resolve from "../src/Resolve.ts"
 
@@ -19,7 +19,7 @@ interface TurnContext {
 
 // The harness seam: exactly the `declare module` form the spec documents,
 // pointed at this package's entry module.
-declare module "../src/index.ts" {
+declare module "../src/index.vibe" {
   interface FlowsHooks {
     readonly toolCall: SequentialHook<(ctx: ToolCallContext) => Effect.Effect<Option.Option<ToolOverride>>>
     readonly agentTurnStart: ParallelHook<(turn: TurnContext) => Effect.Effect<void>>

@@ -8,7 +8,7 @@
 import { Action } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import type { FlowsPlugin } from "../Plugin.ts"
+import type { FlowsPlugin } from "../Plugin.vibe"
 import { PluginError } from "../PluginError.vibe"
 import * as Boundary from "./Boundary.ts"
 

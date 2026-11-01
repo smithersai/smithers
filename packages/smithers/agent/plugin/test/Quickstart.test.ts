@@ -36,7 +36,7 @@ it("typechecks the quickstart snippets in the files the guide names", () => {
       types: [],
       // Always the source: a dist left over from an earlier build would check
       // the guide against an API the package no longer has.
-      paths: { "@smthrs/plugin": [join(packageRoot, "src/index.ts")] }
+      paths: { "@smthrs/plugin": [join(packageRoot, "src/index.vibe")] }
     })
     const diagnostics = ts.getPreEmitDiagnostics(program).map((diagnostic) =>
       ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n")

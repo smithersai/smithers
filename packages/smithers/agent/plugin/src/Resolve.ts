@@ -15,11 +15,11 @@ import type { FlowsConfig } from "./Config.ts"
 import * as Config from "./Config.ts"
 import type { HookCatalog, HookKind, HookObject } from "./Hooks.vibe"
 import { engineHooks, handlerOf, orderOf } from "./Hooks.vibe"
-import type { FlowsHooks } from "./index.ts"
+import type { FlowsHooks } from "./index.vibe"
 import * as Boundary from "./internal/Boundary.ts"
 import { mergePluginLayers } from "./internal/mergePluginLayers.vibe"
 import { snapshotCacheEnvironment } from "./internal/snapshotCacheEnvironment.ts"
-import type { Apply, FlowsPlugin, PluginInput } from "./Plugin.ts"
+import type { Apply, FlowsPlugin, PluginInput } from "./Plugin.vibe"
 import { PluginError, type PluginErrorCode } from "./PluginError.vibe"
 
 /**

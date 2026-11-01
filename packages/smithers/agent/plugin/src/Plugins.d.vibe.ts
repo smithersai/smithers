@@ -18,7 +18,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type { ArgsOf, ContextOf, KeysOfKind, SuccessOf } from "./Hooks.vibe";
-import type { FlowsHooks } from "./index.ts";
+import type { FlowsHooks } from "./index.vibe";
 import { PluginError } from "./PluginError.vibe";
 import { type HandlerRecord, type Resolved } from "./Resolve.ts";
 /**

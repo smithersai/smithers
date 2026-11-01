@@ -53,7 +53,7 @@ const securityReview = Smithers.SecurityReview({
         "An apply predicate called outside the Effect.try in included, or handed a config that is not the frozen admitted snapshot.",
         "A plugin layer built without the Layer.catchCause wrapper in mergePluginLayers, so a failing layer escapes as a defect instead of layer_failed."
       ],
-      paths: ["src/Resolve.ts", "src/Hooks.vibe", "src/Plugin.ts", "src/internal/mergePluginLayers.vibe"]
+      paths: ["src/Resolve.ts", "src/Hooks.vibe", "src/Plugin.vibe", "src/internal/mergePluginLayers.vibe"]
     },
     {
       id: "startup-resource-bounds",
