@@ -13,7 +13,7 @@ import type * as Fiber from "effect/Fiber"
 export const register = <K>(
   fibers: Map<K, Fiber.Fiber<unknown, unknown>>,
   key: K,
-  fiber: Fiber.Fiber<unknown, unknown>
+  fiber: Fiber.Fiber<unknown, unknown>,
 ): void => {
   fibers.set(key, fiber)
   fiber.addObserver(() => {
