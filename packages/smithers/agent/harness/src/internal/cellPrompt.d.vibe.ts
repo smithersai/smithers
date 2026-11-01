@@ -66,8 +66,8 @@
  * @since 0.1.0
  */
 import type * as Descriptor from "@smthrs/registry/Descriptor";
-import type * as AgentEvent from "../AgentEvent.js";
-import type * as Cell from "../Cell.js";
+import type * as AgentEvent from "../AgentEvent.ts";
+import type * as Cell from "../Cell.ts";
 /**
  * One rendered prompt section, with the digest that identifies its
  * content.
