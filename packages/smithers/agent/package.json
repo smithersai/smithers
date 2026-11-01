@@ -340,6 +340,16 @@
           "default": "./dist/cjs/StandardFlows.js"
         }
       },
+      "./Transcript": {
+        "import": {
+          "types": "./dist/esm/Transcript.d.ts",
+          "default": "./dist/esm/Transcript.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Transcript.d.ts",
+          "default": "./dist/cjs/Transcript.js"
+        }
+      },
       "./WorkspaceObservation": {
         "import": {
           "types": "./dist/esm/WorkspaceObservation.d.ts",

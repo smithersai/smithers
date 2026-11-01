@@ -775,6 +775,50 @@
       "reason": "Mines a finished run's transcript once for durable facts and steering decisions, judged by one Jev reading, and is the one redacted writer of a mined fact; the memory/mine file flow reads it (45e4f3ca6)."
     },
     {
+      "name": "@smthrs/agent",
+      "subpath": "./Acp",
+      "development": "./src/Acp.ts",
+      "published": {
+        "types": "./dist/esm/Acp.d.ts",
+        "import": "./dist/esm/Acp.js",
+        "require": "./dist/cjs/Acp.js"
+      },
+      "reason": "The ACP client `smthrs runner` drives an external coding agent through (decision 0136); the CLI package supplies the spawn."
+    },
+    {
+      "name": "@smthrs/agent",
+      "subpath": "./AgentRunner",
+      "development": "./src/AgentRunner.ts",
+      "published": {
+        "types": "./dist/esm/AgentRunner.d.ts",
+        "import": "./dist/esm/AgentRunner.js",
+        "require": "./dist/cjs/AgentRunner.js"
+      },
+      "reason": "The vendor-neutral runner contract between a host and `smthrs runner`: job, claim, heartbeat and settle shapes (decision 0136)."
+    },
+    {
+      "name": "@smthrs/agent",
+      "subpath": "./ExternalAgent",
+      "development": "./src/ExternalAgent.ts",
+      "published": {
+        "types": "./dist/esm/ExternalAgent.d.ts",
+        "import": "./dist/esm/ExternalAgent.js",
+        "require": "./dist/cjs/ExternalAgent.js"
+      },
+      "reason": "The ExternalAgent step, which parks a flow until a runner settles the job, so an app can run agents on machines it does not host (decision 0136)."
+    },
+    {
+      "name": "@smthrs/agent",
+      "subpath": "./Transcript",
+      "development": "./src/Transcript.ts",
+      "published": {
+        "types": "./dist/esm/Transcript.d.ts",
+        "import": "./dist/esm/Transcript.js",
+        "require": "./dist/cjs/Transcript.js"
+      },
+      "reason": "What a runner sends its host of an agent's run: event kinds, limits and redaction, shared by the CLI and the host that stores it (decision 0141)."
+    },
+    {
       "name": "@smthrs/cli",
       "subpath": "./BunControl",
       "development": "./src/BunControl.ts",
