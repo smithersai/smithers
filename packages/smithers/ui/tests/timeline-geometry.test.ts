@@ -124,3 +124,11 @@ test("closed coverage stops at its recorded endpoint, leaving gaps and the growi
   expect(timelineBlocks(ids(4), [{ id: "bad", start: "e0", end: "missing", title: "Unknown" }], 1))
     .toEqual([{ id: "pending:1:e0", start: 0, end: 4 }]);
 });
+
+test("a shorter rail invalidates retained row and block windows", () => {
+  const window = { start: 40, end: 62 };
+  const short = rows({ height: 544, current: window, first: 48, last: 50, reading: 49 });
+  expect((short.end - short.start) * 34).toBeLessThanOrEqual(544);
+  const blocks = timelineBlockWindow({ count: 60, levels: 3, height: 544, first: 48, last: 50, current: window });
+  expect((blocks.end - blocks.start) * 34).toBeLessThanOrEqual(544);
+});

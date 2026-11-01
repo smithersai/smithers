@@ -44,6 +44,7 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
   let blockWindow: TimelineWindow | undefined;
   let drag: { readonly kind: "thumb" | "lens1" | "lens2"; readonly grab: number } | undefined;
   let frame = 0;
+  let layoutWidth = -1, layoutHeight = -1;
   let viewport: HTMLElement | null = null;
   const inView = new Set<number>();
   const q = <E extends Element>(selector: string) => box.querySelector<E>(selector);
@@ -153,6 +154,11 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
     const count = model.ids.length;
     if (count === 0) return;
     const height = box.clientHeight;
+    if (height !== layoutHeight || box.clientWidth !== layoutWidth) {
+      layoutHeight = height; layoutWidth = box.clientWidth;
+      rowWindow = undefined; blockWindow = undefined;
+      force = true;
+    }
     const top = viewport?.scrollTop ?? 0, bottom = top + (viewport?.clientHeight ?? 0);
     const firstRow = timelineToRow(boxes, top), lastRow = timelineToRow(boxes, bottom), reading = timelineToRow(boxes, (top + bottom) / 2);
     const firstIndex = boxes.length === 0 ? -1 : timelineSearch(tops, top);
@@ -164,14 +170,14 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
       blockStart: row => model.spans[blockOf(model.spans, row)]?.start ?? row,
       ...(rowWindow === undefined ? {} : { current: rowWindow }),
     });
-    if (nextRows.start !== rowWindow?.start || nextRows.end !== rowWindow?.end) { const animate = rowWindow !== undefined && !force; rowWindow = nextRows; moveRows(nextRows, animate); }
+    if (force || nextRows.start !== rowWindow?.start || nextRows.end !== rowWindow?.end) { const animate = rowWindow !== undefined && !force; rowWindow = nextRows; moveRows(nextRows, animate); }
     const firstBlock = blockOf(model.spans, rowWindow.start), lastBlock = blockOf(model.spans, rowWindow.end - 1);
     if (model.levels >= 2) {
       const nextBlocks = timelineBlockWindow({
         count: model.spans.length, levels: model.levels, height, first: firstBlock, last: lastBlock,
         force: force || drag?.kind === "lens2", ...(blockWindow === undefined ? {} : { current: blockWindow }),
       });
-      if (nextBlocks.start !== blockWindow?.start || nextBlocks.end !== blockWindow?.end) { if (moveBlocks(nextBlocks, blockWindow !== undefined && !force)) blockWindow = nextBlocks; }
+      if (force || nextBlocks.start !== blockWindow?.start || nextBlocks.end !== blockWindow?.end) { if (moveBlocks(nextBlocks, blockWindow !== undefined && !force)) blockWindow = nextBlocks; }
     }
     const thumb = q<HTMLElement>(".sui-tl-thumb"), dot = q<HTMLElement>(".sui-tl-dot"), cursor = q<HTMLElement>(".sui-tl-cur");
     if (thumb !== null && dot !== null && cursor !== null) {

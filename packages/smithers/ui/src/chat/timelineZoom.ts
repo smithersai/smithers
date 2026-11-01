@@ -141,8 +141,8 @@ export const timelineRowWindow = (input: {
 }): TimelineWindow => {
   const { count, levels, height, first, last, reading, current, force, ask, blockStart } = input;
   if (levels <= 1) return { start: 0, end: count };
-  if (!force && holds(current, first, last)) return current!;
   const rows = Math.max(1, Math.floor(height / TIMELINE_PITCH));
+  if (!force && holds(current, first, last) && current!.end - current!.start <= rows) return current!;
   const onExchange = (row: number) => row > 0 && !ask(row) ? row - 1 : row;
   let start = onExchange(clamp(Math.ceil(reading - rows / 2), 0, Math.max(0, count - rows)));
   if (start > first) start = onExchange(first);
@@ -169,8 +169,8 @@ export const timelineBlockWindow = (input: {
 }): TimelineWindow => {
   const { count, levels, height, first, last, current, force } = input;
   if (levels < TIMELINE_MAX_LEVELS) return { start: 0, end: count };
-  if (!force && holds(current, first, last)) return current!;
   const capacity = timelineCapacity(height);
+  if (!force && holds(current, first, last) && current!.end - current!.start <= capacity) return current!;
   const start = Math.min(first, clamp(Math.floor((first + last + 1) / 2 - capacity / 2), 0, Math.max(0, count - capacity)));
   return { start, end: Math.max(Math.min(count, start + capacity), last + 1) };
 };
