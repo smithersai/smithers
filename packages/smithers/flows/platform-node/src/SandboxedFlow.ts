@@ -83,7 +83,8 @@ import type * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import { randomUUID } from "node:crypto"
-import { dirname } from "node:path"
+import { existsSync } from "node:fs"
+import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as Guest from "./internal/SandboxedFlowGuest.ts"
 
@@ -415,6 +416,7 @@ const captureFailure = (context: string) => (cause: ProviderError | Sandbox.Capt
  * resolves bare `fs` and `child_process`, which the gate would report as a
  * foreign failure. A specifier the bundler cannot analyze is left in place,
  * and the deferral also keeps the bundler unloaded until the first execution.
+ * The VibeLang plugin is loaded the same way, for the same reasons.
  */
 interface Bundler {
   readonly build: (options: {
@@ -430,12 +432,41 @@ interface Bundler {
     readonly target: string
     readonly write: false
     readonly logLevel: "silent"
+    readonly plugins: ReadonlyArray<unknown>
   }) => Promise<{ readonly outputFiles: ReadonlyArray<{ readonly contents: Uint8Array }> }>
 }
 
 const bundlerSpecifier = "esbuild"
 
 const loadBundler = (): Promise<Bundler> => import(bundlerSpecifier) as Promise<Bundler>
+
+/** `vibelang-unplugin`'s esbuild plugin, given the project root its options name. */
+type VibeLangPlugin = (options: { readonly root: string }) => unknown
+
+/**
+ * `vibelang-unplugin`'s esbuild plugin compiles the `.vibe` modules the entry
+ * reaches, the entry included. It starts the compiler only when the bundle
+ * loads a `.vibe` module, so a TypeScript-only flow never runs it.
+ */
+const vibeLangPluginSpecifier = "vibelang-unplugin/esbuild"
+
+const loadVibeLangPlugin = async (): Promise<VibeLangPlugin> =>
+  ((await import(vibeLangPluginSpecifier)) as { readonly default: VibeLangPlugin }).default
+
+/**
+ * The project the plugin compiles the entry's own `.vibe` modules with: the
+ * nearest directory above the entry that holds a `tsconfig.json`, else the
+ * working directory. A `.vibe` module of another package compiles with that
+ * package's own project either way. The plugin finds the `vibelang` compiler
+ * from this root, so an entry outside every project falls back to the
+ * working directory's install rather than to a directory that has none.
+ */
+const projectRoot = (entryPath: string): string => {
+  for (let directory = dirname(entryPath);; directory = dirname(directory)) {
+    if (existsSync(join(directory, "tsconfig.json"))) return directory
+    if (dirname(directory) === directory) return process.cwd()
+  }
+}
 
 /**
  * The source runner in development, and the built ESM runner in a release.
@@ -460,7 +491,7 @@ const bundle = (entry: URL | string): Effect.Effect<Uint8Array, SandboxedFlowErr
   Effect.tryPromise({
     try: async () => {
       const entryPath = typeof entry === "string" ? entry : fileURLToPath(entry)
-      const bundler = await loadBundler()
+      const [bundler, vibelang] = await Promise.all([loadBundler(), loadVibeLangPlugin()])
       const built = await bundler.build({
         stdin: {
           contents: main(entryPath),
@@ -473,7 +504,8 @@ const bundle = (entry: URL | string): Effect.Effect<Uint8Array, SandboxedFlowErr
         format: "esm",
         target: "es2022",
         write: false,
-        logLevel: "silent"
+        logLevel: "silent",
+        plugins: [vibelang({ root: projectRoot(entryPath) })]
       })
       return built.outputFiles[0]!.contents
     },

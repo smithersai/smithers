@@ -46,7 +46,7 @@
  * @since 0.1.0
  */
 import type { Schema } from "effect";
-import type * as NarrowedCheck from "./NarrowedCheck.js";
+import type * as NarrowedCheck from "./NarrowedCheck.vibe";
 /**
  * The reserved key a flow reports its subject's exit status under.
  *
