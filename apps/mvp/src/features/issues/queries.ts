@@ -233,7 +233,12 @@ export const conversationQuery = (
           .innerJoin({ issue: items.tanstack }, ({ page, issue }) => Query.eq(page.repoId, issue.repoId))
           .innerJoin({ comment: comments.tanstack }, ({ issue, comment }) => Query.eq(issue.id, comment.itemId))
           .where(({ page, issue, comment }) =>
-            Query.and(Query.eq(issue.number, page.number), Query.isNull(comment.deletedAt))
+            Query.and(
+              Query.eq(issue.number, page.number),
+              Query.eq(issue.kind, "issue"),
+              Query.isNull(issue.deletedAt),
+              Query.isNull(comment.deletedAt),
+            )
           )
           .select(({ comment }) => ({
             id: comment.id,

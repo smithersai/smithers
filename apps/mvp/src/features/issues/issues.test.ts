@@ -471,6 +471,20 @@ describe("a comment", () => {
     )
     await until(() => expect(tab.store.requested.tanstack.size).toBe(0))
   }, WITHIN)
+  test.each(["deleted", "pull"] as const)("leaves out live comments on a %s parent", async (kind) => {
+    const tab = await open()
+    await server(tab.api).seed(7, "Parent")
+    await Effect.runPromise(tab.api.github.run(Store.upsertComment(REPO_ID, 7, comment(77, "Live comment"), Date.now())))
+    await tab.actions.open(OWNER, NAME, 7)
+    await until(() => expect(tab.comments()).toHaveLength(1))
+    await Effect.runPromise(tab.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      kind === "deleted"
+        ? sql`UPDATE items SET deleted_at = now() WHERE id = ${itemId(REPO_ID, 7)}`
+        : sql`UPDATE items SET kind = 'pull' WHERE id = ${itemId(REPO_ID, 7)}`)))
+    await until(() => expect(tab.store.opened(REPO_ID)?.items.tanstack.get(itemId(REPO_ID, 7))).toMatchObject(
+      kind === "deleted" ? { deletedAt: expect.any(String) } : { kind: "pull" }))
+    await until(() => expect(tab.comments()).toEqual([]))
+  }, WITHIN)
 })
 
 describe("loading", () => {
