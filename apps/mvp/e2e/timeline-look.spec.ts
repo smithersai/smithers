@@ -343,6 +343,101 @@ test("Timeline: marks sit where their messages are, the band matches the screen,
   })
 })
 
+/**
+ * What a reader sees of each label in the rail's window, measured from the text's own glyph boxes: a level-0 label
+ * shows at least four whole words or its whole summary, and a phase title breaks only between words and ends early
+ * only when its block can't hold it (FE-16, FE-19, FE-22).
+ */
+const unreadable = (page: Page) => rail(page).evaluate(element => {
+  const words = (span: HTMLElement) => {
+    const text = span.firstChild
+    if (text === null || text.nodeType !== Node.TEXT_NODE) return []
+    const source = text.textContent ?? ""
+    return [...source.matchAll(/\S+/g)].map(match => {
+      const range = document.createRange()
+      range.setStart(text, match.index); range.setEnd(text, match.index + match[0].length)
+      return { word: match[0], rects: [...range.getClientRects()].filter(rect => rect.width > 0) }
+    })
+  }
+  const inside = (rect: DOMRect, box: DOMRect) => rect.left >= box.left - .5 && rect.right <= box.right + .5 && rect.top >= box.top - .5 && rect.bottom <= box.bottom + .5
+  const faults: string[] = []
+  for (const span of element.querySelectorAll<HTMLElement>('ol[data-level="0"] .sui-tl-tx')) {
+    const clip = span.closest(".sui-tl-clip")!.getBoundingClientRect(), box = span.getBoundingClientRect()
+    if (getComputedStyle(span).visibility === "hidden" || box.bottom <= clip.top || box.top >= clip.bottom) continue
+    const all = words(span), seen = all.findIndex(word => !word.rects.every(rect => inside(rect, box) && inside(rect, clip)))
+    const shown = seen === -1 ? all.length : seen
+    if (shown < Math.min(4, all.length)) faults.push(`entry "${span.textContent}" shows ${shown} of ${all.length} words in ${Math.round(box.width)} px`)
+  }
+  for (const span of element.querySelectorAll<HTMLElement>('ol[data-level="1"] .sui-tl-tx')) {
+    const clip = span.closest(".sui-tl-clip")!.getBoundingClientRect(), box = span.getBoundingClientRect()
+    if (getComputedStyle(span).display === "none" || box.bottom <= clip.top || box.top >= clip.bottom) continue
+    if (getComputedStyle(span).hyphens === "auto") faults.push(`phase "${span.textContent}" hyphenates`)
+    const all = words(span)
+    for (const word of all) if (new Set(word.rects.map(rect => Math.round(rect.top))).size > 1) faults.push(`phase "${span.textContent}" breaks "${word.word}"`)
+    const lines = new Set(all.flatMap(word => word.rects.map(rect => Math.round(rect.top)))).size
+    const room = span.closest("button")!.getBoundingClientRect()
+    const fits = lines * parseFloat(getComputedStyle(span).lineHeight) <= Math.min(room.height, clip.bottom - box.top) + .5
+    if (fits && !all.every(word => word.rects.every(rect => inside(rect, box)))) faults.push(`phase "${span.textContent}" is cut in a block that holds ${lines} lines`)
+  }
+  return faults
+})
+
+// Long words and long phase titles, as the summary model writes them.
+const WIDE = [["number counts and their verification", 3], ["authority attestation for the release", 2], ["text extraction and simple replies", 4], ["rate limit information requests", 3]] as const
+const wideTopic = (n: number) => WIDE[[0, 0, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3][n % 12]!]![0]
+
+test("Timeline: every label reads at every desktop width, and the chat keeps its column", {
+  annotation: { type: "summary", description: "At 1190, 1280 and 1440 px the rail shows each summary's words and whole phase titles beside a full-width chat; the branch panel opens it as a sheet." },
+}, async ({ devices, request }) => {
+  test.setTimeout(360_000)
+  const [a] = await devices.open("Timeline widths")
+  await a.page.goto(scriptedAgent("echo"))
+  await a.ready()
+  mkdirSync("test-results/timeline-look", { recursive: true })
+  const row = rail(a.page).locator('ol[data-level="0"] button')
+  const base = await row.count()
+  for (let n = 0; n < 12; n++) {
+    const id = crypto.randomUUID(), answerId = crypto.randomUUID()
+    expect((await request.post("/api/questions", { data: { id, answerId, text: `Topic: ${wideTopic(n)}. Check the rate limit headers for request ${n + 1} again` } })).status()).toBe(202)
+    expect((await request.post(`/api/answers/${answerId}`, { data: { status: "done", text: `Topic: ${wideTopic(n)}. ${n % 3 === 0 ? LONG : `Copy the provided text into reply ${n + 1} and send it back.`}` } })).status()).toBe(200)
+  }
+  await expect.poll(() => row.count(), { timeout: 90_000 }).toBeGreaterThanOrEqual(base + 24)
+  await expect.poll(() => rail(a.page).locator('ol[data-level="0"] [data-summary="ready"]').count(), { timeout: 120_000 }).toBeGreaterThanOrEqual(base + 24)
+  await expect.poll(() => rail(a.page).locator('ol[data-level="1"] [data-summary="ready"]').count(), { timeout: 200_000 }).toBeGreaterThan(1)
+  const viewport = a.page.locator('[data-slot="message-scroller-viewport"]')
+  for (const size of [{ width: 1190, height: 785 }, { width: 1280, height: 800 }, { width: 1440, height: 900 }] as const) await test.step(`Labels at ${size.width}`, async () => {
+    await a.page.setViewportSize(size)
+    await a.page.mouse.move(size.width - 10, size.height - 10)
+    await expect(a.page.locator(".sui-timeline-disclosure > summary")).toBeHidden()
+    for (const at of [1, .5]) {
+      await viewport.evaluate((el, at) => { el.scrollTop = (el.scrollHeight - el.clientHeight) * at }, at)
+      await a.page.waitForTimeout(800)
+      await expect.poll(() => unreadable(a.page), { timeout: 10_000 }).toEqual([])
+    }
+    const frame = await a.page.evaluate(() => {
+      const nav = document.querySelector('nav[aria-label="Conversation timeline"]')!.getBoundingClientRect()
+      const chat = document.querySelector<HTMLElement>('[data-slot="message-scroller-viewport"]')!.getBoundingClientRect()
+      return { railLeft: nav.left, railRight: nav.right, chatLeft: chat.left, chatRight: chat.right }
+    })
+    expect(frame.railLeft, "the rail starts inside the window").toBeGreaterThanOrEqual(0)
+    expect(frame.railRight, "the rail ends before the chat").toBeLessThanOrEqual(frame.chatLeft)
+    expect(frame.chatRight - frame.chatLeft, "the chat keeps a reading column").toBeGreaterThanOrEqual(560)
+    expect(frame.chatRight, "the chat ends inside the window").toBeLessThanOrEqual(size.width)
+  })
+  await test.step("The branch panel opens the rail as a sheet whose labels read", async () => {
+    await a.page.setViewportSize({ width: 1440, height: 900 })
+    await a.page.goto(scriptedAgent("echo", "/octocat/Spoon-Knife/tree/main"))
+    await expect(a.page.getByRole("navigation", { name: "Branch", exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(a.page.getByRole("progressbar", { name: "Loading page" })).toHaveCount(0, { timeout: 60_000 })
+    await a.askAndWaitTaken(`Topic: branch panel. Check the rate limit headers on the branch ${devices.word}`)
+    const sheet = a.page.locator(".branch-screen-conversation .sui-timeline-disclosure")
+    await expect(sheet.locator("summary"), "a narrow panel keeps the rail behind its control").toBeVisible()
+    await sheet.locator("summary").click()
+    await expect(rail(a.page).locator('ol[data-level="0"] [data-summary="ready"]').first()).toBeVisible({ timeout: 120_000 })
+    await expect.poll(() => unreadable(a.page), { timeout: 10_000 }).toEqual([])
+  })
+})
+
 for (const [word, code, text] of [["no_route", "unconfigured", "No summary model is set"], ["out_of_credit", "credit", "The summary model is out of credit"], ["quota_exceeded", "capped", "Today's summaries are spent"], ["provider_internal", "unavailable", "The summary model isn't answering"]] as const) {
   test(`Timeline: summaries that can't be made say so (${code})`, async ({ devices, request }) => {
     test.setTimeout(180_000)
