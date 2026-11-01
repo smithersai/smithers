@@ -87,8 +87,7 @@ const sources = (directory: string): ReadonlyArray<string> => {
   return entries.flatMap((entry) => {
     const path = join(directory, entry.name)
     if (entry.isDirectory()) return sources(path)
-    // A VibeLang module is source too; its generated `.d.vibe.ts` sidecar is not.
-    return /\.(?:tsx?|vibe)$/.test(entry.name) && !/\.test\.(?:tsx?|vibe)$|\.d\.vibe\.ts$/.test(entry.name) ? [path] : []
+    return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : []
   })
 }
 
