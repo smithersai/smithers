@@ -17,12 +17,13 @@ notifications ─▶ Electric (/api/shapes/notifications, your rows) ─▶ ever
 | `run:<id>` | each report of an agent's answer | its launcher | every state: working, waiting, needs you (Answer), failed, done (Open) |
 | | | everyone watching the run's branch who may open it | a quiet toast naming the launcher while it lives (`Waiting` while the launcher is asked), gone 4 s after it settles; never an entry |
 | `clone:<repo id>` | each write to a clone's row (worker/CloneFeed.ts, [repo.md](repo.md#the-clone-in-the-feed)) | the person who asked for the attempt | `Clone · <repository> · Requested`, `Fetching 640.0 KB`, `Indexing`; done; or failed with why and Try again, which runs `repo/clone` again |
-| `main:<repo id>` | GitHub's `push` to the default branch | everyone watching the repository | `main · <commit> <first line>`, raised again for each newer push, including distinct commits in the same second |
-| `release:<repo id>:<tag>` | GitHub's `release` `published` | everyone watching the repository | `Release · <name>` |
+| `main:<repo id>` | GitHub's `push` to the default branch | everyone watching the repository who may read it now | `main · <commit> <first line>`, raised again for each newer push, including distinct commits in the same second |
+| `release:<repo id>:<tag>` | GitHub's `release` `published` | everyone watching the repository who may read it now | `Release · <name>`, refreshed and raised again when the tag is published again later |
 | `fleet:<alert id>` | `ops/FleetAlert`: a TODO's run failed or stalled, waited too long for a runner or cost too much, or a runner went offline ([fleet.md](fleet.md#alerts)) | the committer, and the repository's Maintainers or Admins as the alert's kind says | `Agents · T398 migfix-t3code · Stalled`, in the panel only, never a toast; opens the TODO's page (an outage, the fleet) |
 
 - **You're on a branch** when a tab of yours shows its conversation: the tab runs `watch/set` once per conversation, which follows the branch and its repository at `attention`. A watch stays until you mute it (there is no Unwatch yet). `/app` is the deployment repository's `main`.
 - **Routing** is `@smthrs/notifications`' `Inbox.route` and `Inbox.audience`: the launcher hears their own run; watchers at `attention` hear someone else's run quietly, at `all` as an entry; `muted` hears nothing. Every recipient, including the launcher and anyone with an existing row, hears only of a branch they may open now (worker/branch/Access.ts), checked at each report. Muted recipients with access still see an existing row settle; revoked recipients receive no more updates.
+- **Repository events** (`main`, releases) reach a watcher only while they may read the repository, checked at each delivery (`recordRepoEvent`): they have a live session (not signed out, revoked or past its end), and the role GitHub last confirmed for them on any of their sessions, live or ended (`SessionStore.latestRole`), is a Member's or above. Local development's people, who have no session, count by their fixed role. A check that couldn't reach GitHub confirms nothing, and signing out of the session that found a demotion doesn't undo it. A watch outlives a demotion or a sign-out; the access it was made with doesn't.
 - **Versions.** A row's `version` goes up when it needs attention again (`Inbox.raises`: a new row, a question, a failure, done; a second question while one is open). A row is open while `dismissed_version < version`, hidden while `hidden_version ≥ version`, unread while `read_version < version`. A new version shows again everywhere. A quiet-only change preserves the version; a changed question title raises it.
 
 ## The stack
@@ -152,7 +153,7 @@ The views are `@smthrs/ui`'s `ToastStack` (at most three children), `Toast` (`to
 |---|---|---|
 | `runs.fold` | span, ChatApi | `smithers.run.id`, `smithers.notifications.written` |
 | `smithers_notifications_routed` | counter, ChatApi | `kind`, `state` |
-| `notifications.repo_event` | log and span, ChatApi | `kind`, `repoId`, `watchers`, `written` |
+| `notifications.repo_event` | log and span, ChatApi | `kind`, `repoId`, `watchers`, `readers` (watchers who may read it now), `written` |
 | `notifications.watch`, `notifications.ack` | log, ChatApi | `conversationId` or `subject`, `act`, `version`, `status`, `existing`, `errorCode` |
 | `notifications.request`; `smithers_notification_requests`, `smithers_notification_shape_requests` | span; counters, ChatApi | `route`, `status`; `status`, `live` |
 | `notifications.watch`, `notifications.ack`; `smithers_notification_watches`, `smithers_notification_acks` | log and span; counters, engine | `outcome` (`sent`, `refused`, `unsent`), `act`, `status` or transport `reason` |

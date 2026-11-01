@@ -212,11 +212,12 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const roomObjects = (yield* BranchRooms.RoomObject) as Cloudflare.DurableObject<BranchRooms.RoomObjectShape>
     // Each run's transcript, `RunContent`s ChatApi hosts (worker/RunContent.ts, docs/features/agent-transcripts.md).
     const runContents = (yield* RunContent.RunContent) as Cloudflare.DurableObject<RunContent.RunContentShape>
+    const localPeople = [options.fallback, ...Object.values(options.teammates ?? {})].flatMap((person) =>
+      person === undefined ? [] : [person]
+    )
     const directory = Directory.layer(
       database,
-      [options.fallback, ...Object.values(options.teammates ?? {})].flatMap((person) =>
-        person === undefined ? [] : [{ id: person.actor.subject.id, login: person.login }]
-      ),
+      localPeople.map((person) => ({ id: person.actor.subject.id, login: person.login })),
     )
     const forge = Layer.succeed(Forge, yield* Effect.service(Forge).pipe(
       Effect.provide(Forge.layerConfig), Effect.provide(FetchHttpClient.layer),
@@ -242,7 +243,15 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     )
     // The git loop (docs/features/issues.md): GitHub's webhook, the writes route and the issues' shapes, for every
     // repository the deployment acts on (decision 0079, slice 1b).
-    const github = yield* GitHubApi.make(database, { repository, app, roles, repoFlows, allowed })
+    const github = yield* GitHubApi.make(database, {
+      repository,
+      app,
+      roles,
+      repoFlows,
+      allowed,
+      // Repository notifications reach local development's people, who have no session, by their fixed role.
+      localPeople: localPeople.map((person) => ({ id: person.actor.subject.id, role: person.actor.role })),
+    })
     // TODOs and the stack (docs/features/todos.md): the one route that changes a stack, through its one writer, and the
     // TODOs' shapes.
     const stack = yield* StackApi.make(database, roles)

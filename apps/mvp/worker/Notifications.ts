@@ -11,11 +11,12 @@ import {
 } from "../src/features/attention/contract.ts"
 import { AckRequest, WatchRequest } from "../src/features/attention/schema.ts"
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.ts"
-import { type Actor, refusesPersonOnly, Sessions } from "./Actor.ts"
+import { type Actor, memberOrAbove, refusesPersonOnly, Sessions } from "./Actor.ts"
 import { branchAccess, branchAccessAs, type BranchRoles, canView, isMember, policyOf, underPolicy } from "./branch/Access.ts"
 import * as Conversations from "./branch/Conversations.ts"
 import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
+import * as SessionStore from "./SessionStore.ts"
 import * as ShapeAccess from "./ShapeAccess.ts"
 
 // The personal feed on the server (decision 0009, docs/features/notifications.md): one `notifications` row per person
@@ -336,21 +337,48 @@ export const repoEventOf = (
   return Option.none()
 }
 
+/** Local development's person, who has no session of their own: their id and fixed role (worker/DevChatApi.ts). */
+export interface LocalPerson {
+  readonly id: string
+  readonly role: Actor["role"]
+}
+
 /**
- * Records `event` for everyone watching its repository who isn't muted (`Inbox.audience`), in one transaction:
- * `main:<repo id>` is one row per person whose version goes up each time `main` moves to a newer commit (a late
- * delivery of an older push changes nothing); `release:<repo id>:<tag>` is one row per release. A replay writes
- * nothing. Returns how many rows it wrote.
+ * Records `event` for everyone watching its repository who isn't muted and may still read it (`Inbox.audience`), in one
+ * transaction. A watch outlives the access it was made with, so each watcher is checked at each delivery: a feed is a
+ * Member's, so they hear of it only while they have a live session (not signed out, not revoked, not past its end) and
+ * the role GitHub last confirmed for them, on any of their sessions (`SessionStore.latestRole`), is a Member's or above;
+ * local development's own people (`localPeople`, who have no session) by their fixed role. Someone demoted, signed out
+ * everywhere or never signed in hears nothing. `main:<repo id>` is one row per person whose version goes up each time
+ * `main` moves to a newer commit (a late delivery of an older push changes nothing); `release:<repo id>:<tag>` is one
+ * row per release, refreshed and raised when the tag is published again later (a replay or an older publication
+ * changes nothing). Returns how many rows it wrote.
  */
-export const recordRepoEvent = (event: RepoEvent) =>
+export const recordRepoEvent = (event: RepoEvent, localPeople: ReadonlyArray<LocalPerson> = []) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const watchers = yield* sql<Inbox.Watcher>`
-      SELECT principal_id AS principal, level FROM watches WHERE subject = ${`repo:${event.repoId}`}
-      ORDER BY created_at, principal_id`
+    // A person's watch names their id, a UUID; any other principal has no session, so no role GitHub confirmed.
+    const watchers = yield* sql<Inbox.Watcher & { readonly mayRead: boolean }>`
+      SELECT w.principal_id AS principal, w.level,
+        COALESCE(${SessionStore.latestRole(sql, sql`person.id`)} IN ('admin', 'maintainer', 'member') AND EXISTS (
+          SELECT 1 FROM sessions live
+          WHERE live.person_id = person.id AND live.revoked_at IS NULL AND live.expires_at > now()
+        ), false) AS "mayRead"
+      FROM watches w
+      CROSS JOIN LATERAL (
+        SELECT CASE WHEN w.principal_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          THEN w.principal_id::uuid END AS id
+      ) person
+      WHERE w.subject = ${`repo:${event.repoId}`}
+      ORDER BY w.created_at, w.principal_id`
+    const local = new Map(localPeople.map((person) => [person.id, person.role]))
+    const readers = new Set(
+      watchers.filter(({ principal, mayRead }) => local.has(principal) ? memberOrAbove(local.get(principal)!) : mayRead)
+        .map((watcher) => watcher.principal),
+    )
     const subject = event.kind === "main" ? `main:${event.repoId}` : `release:${event.repoId}:${event.ref}`
     let written = 0
-    for (const recipient of Inbox.audience(watchers)) {
+    for (const recipient of Inbox.audience(watchers, (principal) => readers.has(principal))) {
       const rows = event.kind === "main"
         ? yield* sql`
           INSERT INTO notifications AS n (recipient, subject, kind, state, repo_id, actor, title, ref, href, occurred_at)
@@ -362,16 +390,19 @@ export const recordRepoEvent = (event: RepoEvent) =>
           WHERE EXCLUDED.occurred_at >= n.occurred_at AND EXCLUDED.ref IS DISTINCT FROM n.ref
           RETURNING 1`
         : yield* sql`
-          INSERT INTO notifications (recipient, subject, kind, state, repo_id, actor, title, ref, href, occurred_at)
+          INSERT INTO notifications AS n (recipient, subject, kind, state, repo_id, actor, title, ref, href, occurred_at)
           VALUES (${recipient}, ${subject}, 'release', 'update', ${event.repoId}, ${event.actor}, ${event.title},
             ${event.ref}, ${event.href}, ${event.occurredAt})
-          ON CONFLICT (recipient, subject) DO NOTHING
+          ON CONFLICT (recipient, subject) DO UPDATE SET
+            actor = EXCLUDED.actor, title = EXCLUDED.title, href = EXCLUDED.href, occurred_at = EXCLUDED.occurred_at,
+            version = n.version + 1, updated_at = now()
+          WHERE EXCLUDED.occurred_at > n.occurred_at
           RETURNING 1`
       written += rows.length
     }
     if (written > 0) yield* Metric.update(Metric.withAttributes(routed, { kind: event.kind, state: "update" }), written)
     yield* Effect.logInfo("notifications.repo_event").pipe(
-      Effect.annotateLogs({ kind: event.kind, repoId: event.repoId, watchers: watchers.length, written }),
+      Effect.annotateLogs({ kind: event.kind, repoId: event.repoId, watchers: watchers.length, readers: readers.size, written }),
     )
     return written
   }).pipe(

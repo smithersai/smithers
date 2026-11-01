@@ -59,7 +59,10 @@ const MEMBER_OR_ABOVE: ReadonlySet<Role> = new Set(["admin", "maintainer", "memb
  * Whether `actor` may ask Smithers (`repo:ask`, decision 0007 §2): Member, Maintainer or Admin. A Guest, or a person
  * with no role, may not. An agent acting for a person asks with that person's role.
  */
-export const canAsk = (actor: Actor): boolean => actor.role !== null && MEMBER_OR_ABOVE.has(actor.role)
+/** Whether `role` is a Member's or above (decision 0007 §1). */
+export const memberOrAbove = (role: Role | null): boolean => role !== null && MEMBER_OR_ABOVE.has(role)
+
+export const canAsk = (actor: Actor): boolean => memberOrAbove(actor.role)
 
 /**
  * Whether `actor` may clone a repository into Code Storage: Member, Maintainer or Admin, the tier of

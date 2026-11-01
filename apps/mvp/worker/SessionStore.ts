@@ -15,7 +15,11 @@ const json = (value: Sealed | null) => (value === null ? null : JSON.stringify(v
 const millis = (value: string | null) => (value === null ? null : Number(value))
 
 /** The person's newest authority receipt, including a verified demotion from a session later signed out. */
-const latestRole = (sql: SqlClient.SqlClient, person: Statement.Fragment) => sql`(
+/**
+ * The role GitHub last confirmed for `person`, across all their sessions, live or ended: the newest observation
+ * (`role_generation`) wins, and a check that couldn't reach GitHub only copies it (`keepRole`).
+ */
+export const latestRole = (sql: SqlClient.SqlClient, person: Statement.Fragment) => sql`(
   SELECT authority.role FROM sessions authority WHERE authority.person_id = ${person}
   ORDER BY authority.role_generation DESC, authority.role_checked_at DESC, authority.created_at DESC, authority.id DESC LIMIT 1
 )`

@@ -364,6 +364,11 @@ export interface Options<R = never> {
   readonly repoFlows?: boolean
   /** `GITHUB_ALLOWED_REPOSITORIES` (`RepoRoles.allowed`): none, every repository the App is installed on. */
   readonly allowed?: Option.Option<ReadonlySet<string>>
+  /**
+   * Local development's people, who have no session of their own, with their fixed roles: who among a repository's
+   * watchers may read it besides those whose sessions say so (`Notifications.recordRepoEvent`). A deployment passes none.
+   */
+  readonly localPeople?: ReadonlyArray<Notifications.LocalPerson>
 }
 
 /**
@@ -520,7 +525,9 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         const now = new Date(yield* Clock.currentTimeMillis)
         const repoEvent = Notifications.repoEventOf(event, delivered.payload, repository, now)
         if (Option.isSome(repoEvent)) {
-          fields.notified = yield* Notifications.recordRepoEvent(repoEvent.value).pipe(Effect.provide(database))
+          fields.notified = yield* Notifications.recordRepoEvent(repoEvent.value, options.localPeople).pipe(
+            Effect.provide(database),
+          )
         }
         if (!first) return yield* answer(200, "duplicate")
         return yield* answer(200, Option.isSome(named) || Option.isSome(repoEvent) || Option.isSome(dispatch) || Option.isSome(mirror) ? "applied" : "ignored")

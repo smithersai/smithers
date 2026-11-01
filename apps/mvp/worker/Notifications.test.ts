@@ -530,12 +530,49 @@ describe("GitHub's `main` and release deliveries reach the repository's watchers
     repository: { full_name: "acme/widgets" },
     ...overrides,
   })
-  const watchRepo = () =>
-    sql(
-      `INSERT INTO watches (principal_id, subject, level) VALUES ('person-ann', $1, 'attention'),
-        ('person-ben', $1, 'all'), ('person-cat', $1, 'muted')`,
-      `repo:${REPOSITORY.id}`,
+  // People as sign-in records them: a watch's principal is a person's id, and each session says what GitHub confirmed.
+  const ANN = "00000000-0000-4000-8000-0000000000a1"
+  const BEN = "00000000-0000-4000-8000-0000000000b1"
+  const CAT = "00000000-0000-4000-8000-0000000000c1"
+  let githubIds = 9_000
+  /**
+   * Person `id` (made once), with exactly `sessions`, oldest observation first (`role_generation` follows insertion):
+   * each its role, and whether it ended.
+   */
+  const person = async (
+    id: string,
+    sessions: ReadonlyArray<{ readonly role: string | null; readonly ended?: "revoked" | "expired" }>,
+  ) => {
+    await sql(
+      `INSERT INTO people (id, github_id, github_login) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+      id,
+      githubIds++,
+      `login-${id.slice(-2)}`,
     )
+    await sql(`DELETE FROM sessions WHERE person_id = $1`, id)
+    for (const session of sessions) {
+      await sql(
+        `INSERT INTO sessions (id, token_digest, person_id, role, role_checked_at, expires_at, revoked_at)
+        VALUES ($1, $2, $3, $4, now(),
+          CASE WHEN $5 = 'expired' THEN now() - interval '1 minute' ELSE now() + interval '1 day' END,
+          CASE WHEN $5 = 'revoked' THEN now() ELSE NULL END)`,
+        crypto.randomUUID(),
+        crypto.randomUUID(),
+        id,
+        session.role,
+        session.ended ?? "live",
+      )
+    }
+    return id
+  }
+  const watch = (principal: string, level: string) =>
+    sql(`INSERT INTO watches (principal_id, subject, level) VALUES ($1, $2, $3)`, principal, `repo:${REPOSITORY.id}`, level)
+  /** Ann (a Member) and Ben (a Maintainer) watch the repository; Cat, a Member, muted it. */
+  const watchRepo = async () => {
+    await watch(await person(ANN, [{ role: "member" }]), "attention")
+    await watch(await person(BEN, [{ role: "maintainer" }]), "all")
+    await watch(await person(CAT, [{ role: "member" }]), "muted")
+  }
   const mainRows = () => rows(`main:${REPOSITORY.id}`)
 
   test("distinct pushes in the same second advance the commit and version", async () => {
@@ -557,7 +594,7 @@ describe("GitHub's `main` and release deliveries reach the repository's watchers
     expect((await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("push", push(SHA("a")), { id }))).status).toBe(200)
     expect(await mainRows()).toEqual([
       expect.objectContaining({
-        recipient: "person-ann",
+        recipient: ANN,
         kind: "main",
         state: "update",
         ref: SHA("a"),
@@ -566,7 +603,7 @@ describe("GitHub's `main` and release deliveries reach the repository's watchers
         href: "/acme/widgets",
         version: 1,
       }),
-      expect.objectContaining({ recipient: "person-ben", version: 1 }),
+      expect.objectContaining({ recipient: BEN, version: 1 }),
     ])
     // GitHub redelivers: nothing changes.
     await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("push", push(SHA("a")), { id }))
@@ -577,8 +614,8 @@ describe("GitHub's `main` and release deliveries reach the repository's watchers
     const older = { repository: { full_name: "acme/widgets", default_branch: "main", pushed_at: 1_760_000_050 } }
     await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("push", push(SHA("c"), older)))
     expect(await mainRows()).toEqual([
-      expect.objectContaining({ recipient: "person-ann", ref: SHA("b"), version: 2 }),
-      expect.objectContaining({ recipient: "person-ben", ref: SHA("b"), version: 2 }),
+      expect.objectContaining({ recipient: ANN, ref: SHA("b"), version: 2 }),
+      expect.objectContaining({ recipient: BEN, ref: SHA("b"), version: 2 }),
     ])
     expect(h.line("notifications.repo_event").map((line) => line.annotations)).toContainEqual(
       expect.objectContaining({ kind: "main", repoId: REPOSITORY.id, watchers: 3, written: 2 }),
@@ -613,7 +650,7 @@ describe("GitHub's `main` and release deliveries reach the repository's watchers
     await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("release", release("v1.2.0")))
     expect(await rows(`release:${REPOSITORY.id}:v1.2.0`)).toEqual([
       expect.objectContaining({
-        recipient: "person-ann",
+        recipient: ANN,
         kind: "release",
         title: "Widgets v1.2.0",
         ref: "v1.2.0",
@@ -621,8 +658,59 @@ describe("GitHub's `main` and release deliveries reach the repository's watchers
         href: "/acme/widgets/tree/v1.2.0",
         version: 1,
       }),
-      expect.objectContaining({ recipient: "person-ben", version: 1 }),
+      expect.objectContaining({ recipient: BEN, version: 1 }),
     ])
+  })
+
+  test("a watcher hears only while they may read the repository now: never after a demotion, sign-out or expiry", async () => {
+    await watchRepo()
+    const DAN = "00000000-0000-4000-8000-0000000000d1"
+    const EVE = "00000000-0000-4000-8000-0000000000e1"
+    const FAY = "00000000-0000-4000-8000-0000000000f1"
+    const GUS = "00000000-0000-4000-8000-0000000000f2"
+    const HAL = "00000000-0000-4000-8000-0000000000f3"
+    const IDA = "00000000-0000-4000-8000-0000000000f4"
+    const JO = "00000000-0000-4000-8000-0000000000f5"
+    // Demoted to a Guest; signed out; past the session's end; never signed in.
+    await watch(await person(DAN, [{ role: "guest" }]), "all")
+    await watch(await person(EVE, [{ role: "member", ended: "revoked" }]), "all")
+    await watch(await person(FAY, [{ role: "maintainer", ended: "expired" }]), "all")
+    await watch(GUS, "all")
+    // The newest role GitHub confirmed stands: Hal lost the repository after an older device's check; Ida gained it.
+    await watch(await person(HAL, [{ role: "member" }, { role: null }]), "all")
+    await watch(await person(IDA, [{ role: null }, { role: "member" }]), "all")
+    // A denial stands: Jo signing out of the session that found it doesn't bring back an older session's Member role.
+    await watch(await person(JO, [{ role: "member" }, { role: null, ended: "revoked" }]), "all")
+    // A principal that isn't a person's id has no session, so nobody vouches for it.
+    await watch("person-legacy", "all")
+    const h = await githubHarness(runtime)
+    expect((await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("push", push(SHA("a"))))).status).toBe(200)
+    expect((await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("release", release("v9")))).status).toBe(200)
+    expect((await mainRows()).map((row) => row.recipient)).toEqual([ANN, BEN, IDA])
+    expect((await rows(`release:${REPOSITORY.id}:v9`)).map((row) => row.recipient)).toEqual([ANN, BEN, IDA])
+    expect(h.line("notifications.repo_event").map((line) => line.annotations)).toContainEqual(
+      expect.objectContaining({ kind: "main", watchers: 11, readers: 4, written: 3 }),
+    )
+  })
+
+  test("a tag published again later refreshes its row and raises it; a replay or an older publication changes nothing", async () => {
+    await watchRepo()
+    const h = await githubHarness(runtime)
+    const first = await delivery("release", release("v2"))
+    await h.fetch(GITHUB_WEBHOOK_ROUTE, first)
+    await h.fetch(
+      GITHUB_WEBHOOK_ROUTE,
+      await delivery("release", release("v2", {
+        release: { tag_name: "v2", name: "Widgets v2, again", published_at: "2026-10-21T12:00:00Z", author: { login: "eli" } },
+      })),
+    )
+    const again = await rows(`release:${REPOSITORY.id}:v2`)
+    expect(again).toEqual([
+      expect.objectContaining({ recipient: ANN, title: "Widgets v2, again", actor: "eli", version: 2 }),
+      expect.objectContaining({ recipient: BEN, title: "Widgets v2, again", actor: "eli", version: 2 }),
+    ])
+    await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("release", release("v2")))
+    expect(await rows(`release:${REPOSITORY.id}:v2`)).toEqual(again)
   })
 })
 
