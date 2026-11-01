@@ -1964,14 +1964,11 @@ const recordRunParent = (db: Database): Service["recordRunParent"] =>
   )((childId, parentId) =>
     // An edge already recorded is answered from a read, with no write and so
     // no writer lock. A parent that re-executes its child, as every resume of
-    // a run parked on a child does, records the same edge again inside the
-    // child's partition write (`RunDriver` `admit`); the edge's write names
-    // no partition, so on PostgreSQL it widened that transaction to the
-    // schema's lock, a wait bounded by `lock_timeout` while other partitions'
-    // writers share the schema. With ten TODO runs resuming at once the
-    // widening timed out on every replay the writer allows, and the parent
-    // died with `DatabaseError` `busy` (2026-11-01). An edge is never
-    // changed once written, so the read is as good as the insert's conflict.
+    // a run parked on a child does, records the same edge again, and an edge
+    // is never changed once written, so the read is as good as the insert's
+    // conflict. A new edge's write names no partition: a caller inside a
+    // partition's transaction widens to the schema's lock, a wait bounded by
+    // `lock_timeout`, so `RunDriver` `admit` opens on the whole schema for one.
     selectRunParent(db, childId, parentId).pipe(
       Effect.orDie,
       Effect.flatMap((recorded) =>

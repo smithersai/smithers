@@ -3569,6 +3569,17 @@ const ensureRun = (driver: Driver, flow: Flow.Any, options: Admission): Effect.E
  * false FlowCycleDetected if the execution id was later reused
  * under an inverted topology. The stores' own writes become
  * savepoints of this transaction, so either both commit or neither.
+ *
+ * A new edge is the store's one write here that names no partition, so the
+ * transaction opens on the whole schema rather than the run's partition
+ * ({@link admissionPartition}). A parent records one for each round of a
+ * child's lineage it follows, so a job that handed off three times brings
+ * three, all in the resume after it settles. Opened on the run's partition,
+ * the edge's write widened the transaction to the schema's lock while other
+ * runs' writers shared it: a wait bounded by `lock_timeout`, spent on every
+ * replay the writer allows, and each lane that ran out died `busy` with its
+ * agent's work done (2026-11-01). The lock a transaction opens with waits as
+ * long as it has to.
  */
 const admit = (
   driver: Driver,
@@ -3576,6 +3587,34 @@ const admit = (
   options: Admission,
   payload: unknown,
   origin: Origin
+): Effect.Effect<boolean, FlowCycleDetected> =>
+  Effect.flatMap(
+    admissionPartition(driver, options),
+    (partition) => admitIn(driver, flow, options, payload, origin, partition)
+  )
+
+/**
+ * The partition `admit` writes in: the run's own, or none when it has a
+ * parent edge to record, which takes the whole schema. An edge that lands
+ * between this read and the transaction costs that transaction a wider lock
+ * than it needs, and nothing else.
+ */
+const admissionPartition = (driver: Driver, options: Admission): Effect.Effect<string | undefined> =>
+  options.parent === undefined
+    ? Effect.succeed(options.executionId)
+    : Effect.map(
+      driver.engineState.runParents(options.executionId),
+      (edges) => edges.some((edge) => edge.parentId === options.parent!.executionId) ? options.executionId : undefined
+    )
+
+/** {@link admit}'s transaction, in `partition`. */
+const admitIn = (
+  driver: Driver,
+  flow: Flow.Any,
+  options: Admission,
+  payload: unknown,
+  origin: Origin,
+  partition: string | undefined
 ): Effect.Effect<boolean, FlowCycleDetected> =>
   driver.transactState(
     Effect.gen(function*() {
@@ -3628,7 +3667,7 @@ const admit = (
       }
       return opened
     }),
-    { partition: options.executionId }
+    { partition }
   ).pipe(
     Effect.catchIf((error) => error instanceof Journal.JournalError || error instanceof DatabaseError, Effect.die)
   )

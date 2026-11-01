@@ -155,12 +155,17 @@ to `FlowCycleDetected`.
 
 An edge already recorded is answered `Existing` from a read, with no write. A
 parent records its edge again every time it executes its child, and every
-resume of a run parked on a child does. The write names no partition, so
-inside the child's partition write it would widen the transaction to the
-schema's lock, a wait PostgreSQL bounds by `lock_timeout`; with ten runs
-resuming at once it timed out on every replay the writer allowed and the
-parent died with `DatabaseError` `busy`. An edge never changes once written,
-so the read answers as the insert's conflict would.
+resume of a run parked on a child does. An edge never changes once written, so
+the read answers as the insert's conflict would.
+
+A new edge's write names no partition, so the driver opens that admission on
+the whole schema instead of the run's partition. A parent records a new edge
+for each round of a child's lineage it follows, so a job that handed off three
+times brings three, all in the resume after it settles. Inside a partition's
+transaction the write would widen to the schema's lock, a wait PostgreSQL
+bounds by `lock_timeout`. With ten runs resuming at once it timed out on every
+replay the writer allowed, and the parent died with `DatabaseError` `busy`. A
+transaction's opening lock waits as long as it has to.
 
 `transaction(effect)` runs several store operations atomically. The driver wraps
 the parent-edge record and the run-row creation it guards in one, so a crash
