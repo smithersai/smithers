@@ -22,7 +22,7 @@
   },
   "devDependencies": {
     "typescript": "5.9.3",
-    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-bcfe8ed6f069.tgz",
+    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-4cc0b47f9e9d.tgz",
     "vibelang-vite": "file:../../.vibelang-toolchain/vibelang-vite-0.0.11-f8e51b377e05.tgz",
     "vitest": "5.0.0",
     "@smthrs/plan": "workspace:*",
