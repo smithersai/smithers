@@ -51,6 +51,10 @@ export interface TimelineBlock {
   readonly closed?: boolean;
 }
 
+/** Child marks belong only to the intersection with their parent's recorded coverage. */
+export const timelineIntersections = (parts: readonly TimelineWindow[], range: TimelineWindow): readonly TimelineWindow[] =>
+  parts.map(part => ({ start: Math.max(range.start, part.start), end: Math.min(range.end, part.end) })).filter(part => part.end > part.start);
+
 /** Folds recorded coverage into titled spans, with separate pending blocks for every uncovered gap and tail. */
 export const timelineBlocks = (ids: readonly string[], markers: readonly TimelineMarker[], level: number): readonly TimelineBlock[] => {
   if (ids.length === 0) return [];

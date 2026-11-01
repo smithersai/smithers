@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  timelineBlockHeight, timelineBlocks, timelineBlockWindow, timelineCapacity, timelineExchanges, timelineLevelCount, timelineMarkHeight,
+  timelineIntersections, timelineBlockHeight, timelineBlocks, timelineBlockWindow, timelineCapacity, timelineExchanges, timelineLevelCount, timelineMarkHeight,
   timelineMarks, timelineRowWindow, timelineSearch, timelineToChat, timelineToRow, timelineWidths,
 } from "../src/chat/timelineZoom";
 
@@ -152,4 +152,11 @@ test("fifty arcs stay in a bounded window instead of overflowing the outer track
   expect(window.end).toBeGreaterThan(27);
   const broad = timelineBlockWindow({ count: 50, height: 704, first: 0, last: 49 });
   expect(broad.end - broad.start).toBeLessThanOrEqual(timelineCapacity(704));
+});
+
+test("strip intersections cover a split child on both sides without leaking coverage", () => {
+  const parts = [{ start: 0, end: 3 }, { start: 3, end: 6 }];
+  expect(timelineIntersections(parts, { start: 1, end: 4 })).toEqual([{ start: 1, end: 3 }, { start: 3, end: 4 }]);
+  expect(timelineIntersections(parts, { start: 4, end: 6 })).toEqual([{ start: 4, end: 6 }]);
+  expect(timelineIntersections(parts, { start: 6, end: 6 })).toEqual([]);
 });

@@ -3,7 +3,7 @@ import { type CSSProperties, type KeyboardEvent, type RefObject, useEffect, useL
 import { timelineDriver, type TimelineDriver } from "./timelineDriver";
 import {
   TIMELINE_BLOCK_GAP, timelineBlockHeight, timelineBlocks, timelineCapacity, timelineExchanges, timelineLevelCount,
-  timelineMarkHeight, timelineMarks, timelineWidths, type TimelineBlock, type TimelineMarker,
+  timelineIntersections, timelineMarkHeight, timelineMarks, timelineWidths, type TimelineBlock, type TimelineMarker,
 } from "./timelineZoom";
 export {
   timelineBlocks, timelineCapacity, timelineExchanges, timelineLevelCount, timelineMarkHeight, timelineMarks, timelineWidths,
@@ -264,9 +264,9 @@ export function ChatTimeline({ entries, phases = [], arcs = [], higherLevels = [
         const blocks = columns[index] ?? timelineBlocks(ids, [], lvl);
         const parts = lvl === 1 ? exchanges : columns[index - 1] ?? [];
         const height = blockHeight(blocks);
-        const full = Math.max(4, ...blocks.map(block => parts.filter(part => part.start >= block.start && part.start < block.end).length));
+        const full = Math.max(4, ...blocks.map(block => timelineIntersections(parts, block).length));
         return blockColumn(lvl, blocks, height, block => stripMarks(
-          parts.filter(part => part.start >= block.start && part.start < block.end).map(part => ({
+          timelineIntersections(parts, block).map(part => ({
             start: part.start, end: part.end,
             weight: lvl === 1 ? Math.sqrt(entries.slice(part.start, part.end).reduce((sum, entry) => sum + (entry.length ?? 1), 0) || 1) : part.end - part.start,
             state: worst(entries.slice(part.start, part.end)),
