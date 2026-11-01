@@ -22,12 +22,10 @@
  *
  * @since 1.0.0
  */
-
-import * as Context from "effect/Context"
-import type * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
-import * as Schema from "effect/Schema"
-
+import * as Context from "effect/Context";
+import type * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 /**
  * One dispatch a replay-only engine saw.
  *
@@ -42,14 +40,13 @@ import * as Schema from "effect/Schema"
  * @category models
  */
 export interface Dispatch {
-  readonly runId: string
-  readonly stepKeyDigest: string
-  readonly attempt: number
-  readonly action: string
-  readonly tier: "sealed" | "compensable" | "irreversible"
-  readonly outcome: "replayed" | "resumes" | "would-execute"
+    readonly runId: string;
+    readonly stepKeyDigest: string;
+    readonly attempt: number;
+    readonly action: string;
+    readonly tier: "sealed" | "compensable" | "irreversible";
+    readonly outcome: "replayed" | "resumes" | "would-execute";
 }
-
 /**
  * Receives every dispatch a replay-only engine settles, in settlement order.
  *
@@ -57,39 +54,37 @@ export interface Dispatch {
  * @category models
  */
 export interface Service {
-  readonly observe: (dispatch: Dispatch) => Effect.Effect<void>
+    readonly observe: (dispatch: Dispatch) => Effect.Effect<void>;
 }
-
+declare const ReplayOnly_base: Context.ServiceClass<ReplayOnly, "@smthrs/engine-store/ReplayOnly", Service>;
 /**
  * Service tag. An engine composed with it in context executes no action body.
  *
  * @since 1.0.0
  * @category services
  */
-export class ReplayOnly extends Context.Service<ReplayOnly, Service>()("@smthrs/engine-store/ReplayOnly") {}
-
+export declare class ReplayOnly extends ReplayOnly_base {
+}
+declare const WouldExecute_base: Schema.Class<WouldExecute, Schema.TaggedStruct<"@smthrs/engine-store/WouldExecute", {
+    readonly runId: Schema.String;
+    readonly stepKeyDigest: Schema.String;
+    readonly attempt: Schema.Number;
+    readonly action: Schema.String;
+}>, import("effect/Cause").YieldableError>;
 /**
  * The defect a replay-only dispatch dies with instead of executing.
  *
  * @since 1.0.0
  * @category errors
  */
-export class WouldExecute extends Schema.TaggedError<WouldExecute>()("@smthrs/engine-store/WouldExecute", {
-  runId: Schema.String,
-  stepKeyDigest: Schema.String,
-  attempt: Schema.Number,
-  action: Schema.String
-}) {
-  override get message(): string {
-    return `Action ${this.action} (step ${this.stepKeyDigest}, attempt ${this.attempt}) would execute`
-  }
+export declare class WouldExecute extends WouldExecute_base {
+    get message(): string;
 }
-
 /**
  * Provides a replay-only engine context that reports to `observe`.
  *
  * @since 1.0.0
  * @category layers
  */
-export const layer = (observe: Service["observe"]): Layer.Layer<ReplayOnly> =>
-  Layer.succeed(ReplayOnly, ReplayOnly.of({ observe }))
+export declare const layer: (observe: Service["observe"]) => Layer.Layer<ReplayOnly>;
+export {};
