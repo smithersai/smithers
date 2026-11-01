@@ -11,7 +11,7 @@ import * as Inventory from "../src/Inventory.vibe"
 import * as Mapping from "../src/Mapping.ts"
 import * as RunState from "../src/RunState.ts"
 import * as Scan from "../src/Scan.ts"
-import * as Units from "../src/Units.ts"
+import * as Units from "../src/Units.vibe"
 import { copyFixture, fixture, nodeLayer } from "./fixtures/helpers.ts"
 import golden from "./fixtures/jsx-single.migrated/.smithers/flows/simple-workflow/flow.ts"
 
