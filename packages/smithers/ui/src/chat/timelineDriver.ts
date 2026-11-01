@@ -134,6 +134,7 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement, scrollByRead
       }
     }
     frameEl.style.height = px(height > 0 ? Math.min(height, bottom) : bottom);
+    frameEl.dataset.windowStart = String(window.start); frameEl.dataset.windowEnd = String(window.end);
   };
 
   /** Lays one outer column out for its window: blocks, the strip marks inside them, and how much of a title fits. */
@@ -160,6 +161,7 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement, scrollByRead
     });
     const last = layout[window.end - 1];
     frameEl.style.height = px(last === undefined ? 0 : last.top + last.height);
+    frameEl.dataset.windowStart = String(window.start); frameEl.dataset.windowEnd = String(window.end);
     return true;
   };
 
@@ -237,6 +239,7 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement, scrollByRead
     const height = box.clientHeight;
     if (height !== layoutHeight || box.clientWidth !== layoutWidth) {
       layoutHeight = height; layoutWidth = box.clientWidth;
+      rail.dataset.layoutHeight = String(layoutHeight); rail.dataset.layoutWidth = String(layoutWidth);
       rowWindow = undefined; blockWindows = [];
       force = true;
     }

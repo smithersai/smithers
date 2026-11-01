@@ -304,7 +304,7 @@ const minimap = (rowsHtml: string, blocksHtml = "") => {
   host.innerHTML = `<div data-slot="message-scroller-viewport"></div><nav><div class="sui-timeline-box"><div class="sui-tl-lv" data-level="0"><div class="sui-tl-clip"><div class="sui-tl-inner"><ol>${rowsHtml}</ol><div class="sui-tl-thumb"></div><div class="sui-tl-dot"></div><div class="sui-tl-cur"></div></div></div></div>${blocksHtml}</div></nav>`;
   document.body.append(host);
   const viewport = host.firstElementChild as HTMLElement, rail = host.querySelector<HTMLElement>("nav")!, box = rail.firstElementChild as HTMLElement;
-  Object.defineProperties(box, { clientHeight: { value: 300 }, clientWidth: { value: 340 } });
+  Object.defineProperties(box, { clientHeight: { value: 300, configurable: true }, clientWidth: { value: 340 } });
   Object.defineProperty(viewport, "clientHeight", { value: 200 });
   const mount = (id: string, top: number, bottom: number) => {
     const article = document.createElement("article"); article.id = id;
@@ -400,5 +400,36 @@ test("outer blocks and strips share the scale, and the lens covers exactly level
     expect(li(0).querySelector(".sui-tl-sm")!.hasAttribute("data-in")).toBe(true);
     driver.sync({ ids: [0, 1, 2, 3].map(row => `o-${row}`), asks: [], levels: 2, arcs: [], spans: [{ id: "a", start: 0, end: 4 }] });
     expect(parseFloat(li(0).style.height)).toBeCloseTo(300);
+  } finally { driver.dispose(); host.remove(); }
+});
+
+
+test("render after resize refreshes computed block geometry while retaining its window", async () => {
+  const { timelineDriver } = await import("../src/chat/timelineDriver");
+  const blockHtml = (index: number) => `<li class="sui-tl-blk-li" data-block="${index}"><button class="sui-tl-blk"><i class="sui-tl-sm" data-start="${index * 2}" data-end="${index * 2 + 2}"></i></button></li>`;
+  const { host, rail, box, mount } = minimap(Array.from({ length: 80 }, (_, i) => rowHtml(i)).join(""),
+    `<div class="sui-tl-lv" data-level="1"><div class="sui-tl-clip"><div class="sui-tl-inner"><ol>${Array.from({ length: 40 }, (_, i) => blockHtml(i)).join("")}</ol><div data-lens="1"></div></div></div></div>`);
+  let height = 704;
+  Object.defineProperty(box, "clientHeight", { get: () => height });
+  for (let i = 0; i < 80; i++) mount(`resize-${i}`, i * 100, i * 100 + 100);
+  const model = { ids: Array.from({ length: 80 }, (_, i) => `resize-${i}`), asks: [], levels: 2, arcs: [],
+    spans: Array.from({ length: 40 }, (_, i) => ({ id: `phase-${i}`, start: i * 2, end: i * 2 + 2 })) };
+  const driver = timelineDriver(rail, box);
+  const clip = box.querySelector<HTMLElement>("[data-level='1'] .sui-tl-clip")!;
+  const block = box.querySelector<HTMLElement>("[data-block='0']")!;
+  try {
+    driver.sync(model);
+    height = 544; window.dispatchEvent(new Event("resize")); await frame();
+    const start = clip.dataset.windowStart, expectedHeight = block.style.height;
+    // A React commit can replace DOM geometry after ResizeObserver has recorded the new dimensions.
+    block.style.height = "748px"; clip.style.height = "748px";
+    driver.sync(model);
+    expect(block.style.height).toBe(expectedHeight);
+    expect(clip.dataset.windowStart).toBe(start);
+    expect(rail.dataset.layoutHeight).toBe("544");
+    expect(parseFloat(clip.style.height)).toBeLessThanOrEqual(544);
+    const lens = box.querySelector<HTMLElement>("[data-lens]")!;
+    expect(parseFloat(lens.style.top)).toBeGreaterThanOrEqual(0);
+    expect(parseFloat(lens.style.top) + parseFloat(lens.style.height)).toBeLessThanOrEqual(parseFloat(clip.style.height));
   } finally { driver.dispose(); host.remove(); }
 });

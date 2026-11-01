@@ -20,6 +20,8 @@ A lens on each outer strip marks the stretch the next level shows, joined to it 
 
 Wheel and trackpad input over the rail (including its open phone sheet) scrolls the transcript, with pixel, line and page deltas; horizontal-only input and pinch zoom keep their native behavior.
 
+The position-scale layout recomputes geometry after a render even when a resize observer already recorded the new box dimensions. Numeric `data-layout-width`/`data-layout-height` on the rail and `data-window-start`/`data-window-end` on each clip expose the measured geometry without content.
+
 A level slides in over 240 ms, then its lens fades in and its funnel draws. It leaves in reverse. With reduced motion, these become a 120 ms fade.
 
 ## Appearance
