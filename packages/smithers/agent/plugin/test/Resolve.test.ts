@@ -4,7 +4,7 @@ import * as Config from "../src/Config.ts"
 import * as Hooks from "../src/Hooks.vibe"
 import type { FlowsPlugin, PluginInput } from "../src/index.ts"
 import { PluginError } from "../src/PluginError.vibe"
-import * as Plugins from "../src/Plugins.ts"
+import * as Plugins from "../src/Plugins.vibe"
 import * as Resolve from "../src/Resolve.ts"
 
 const observer = (name: string, sink: Array<string>, extra: Partial<FlowsPlugin> = {}): FlowsPlugin => ({

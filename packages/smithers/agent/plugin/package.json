@@ -64,7 +64,10 @@
       "types": "./src/PluginError.d.vibe.ts",
       "default": "./src/PluginError.vibe"
     },
-    "./Plugins": "./src/Plugins.ts",
+    "./Plugins": {
+      "types": "./src/Plugins.d.vibe.ts",
+      "default": "./src/Plugins.vibe"
+    },
     "./Resolve": "./src/Resolve.ts",
     "./When": {
       "types": "./src/When.d.vibe.ts",

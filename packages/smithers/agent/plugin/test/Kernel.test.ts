@@ -6,7 +6,7 @@ import type { HookCatalog, ParallelHook, WaterfallHook } from "../src/Hooks.vibe
 import type { FlowsHooks, FlowsPlugin } from "../src/index.ts"
 import * as Kernel from "../src/Kernel.ts"
 import type { PluginError } from "../src/PluginError.vibe"
-import * as Plugins from "../src/Plugins.ts"
+import * as Plugins from "../src/Plugins.vibe"
 import * as Resolve from "../src/Resolve.ts"
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect)
