@@ -44,10 +44,7 @@
     "./Glob": "./src/Glob.ts",
     "./Grep": "./src/Grep.ts",
     "./HttpPost": "./src/HttpPost.ts",
-    "./LanguageServer": {
-      "types": "./src/LanguageServer.d.vibe.ts",
-      "default": "./src/LanguageServer.vibe"
-    },
+    "./LanguageServer": "./src/LanguageServer.vibe",
     "./Ls": "./src/Ls.ts",
     "./Lsp": "./src/Lsp.ts",
     "./Manifest": "./src/Manifest.ts",
@@ -55,15 +52,9 @@
     "./PortableSearch": "./src/PortableSearch.ts",
     "./Probe": "./src/Probe.ts",
     "./Read": "./src/Read.ts",
-    "./Relocate": {
-      "types": "./src/Relocate.d.vibe.ts",
-      "default": "./src/Relocate.vibe"
-    },
+    "./Relocate": "./src/Relocate.vibe",
     "./RemoteSearch": "./src/RemoteSearch.ts",
-    "./Search": {
-      "types": "./src/Search.d.vibe.ts",
-      "default": "./src/Search.vibe"
-    },
+    "./Search": "./src/Search.vibe",
     "./SearchConformance": "./src/SearchConformance.ts",
     "./SearchContract": "./src/SearchContract.ts",
     "./ShellCommand": "./src/ShellCommand.ts",

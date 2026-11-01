@@ -35,37 +35,19 @@
   "exports": {
     "./package.json": "./package.json",
     ".": "./src/index.ts",
-    "./GraphBuildError": {
-      "types": "./src/GraphBuildError.d.vibe.ts",
-      "default": "./src/GraphBuildError.vibe"
-    },
+    "./GraphBuildError": "./src/GraphBuildError.vibe",
     "./Node": "./src/Node.ts",
     "./Planned": "./src/Planned.ts",
     "./internal/*": null,
     "./*/index": null,
     "./Effects": "./src/Effects.ts",
-    "./CachePolicy": {
-      "types": "./src/CachePolicy.d.vibe.ts",
-      "default": "./src/CachePolicy.vibe"
-    },
-    "./Repetition": {
-      "types": "./src/Repetition.d.vibe.ts",
-      "default": "./src/Repetition.vibe"
-    },
-    "./FileSet": {
-      "types": "./src/FileSet.d.vibe.ts",
-      "default": "./src/FileSet.vibe"
-    },
-    "./KeyMaterial": {
-      "types": "./src/KeyMaterial.d.vibe.ts",
-      "default": "./src/KeyMaterial.vibe"
-    },
+    "./CachePolicy": "./src/CachePolicy.vibe",
+    "./Repetition": "./src/Repetition.vibe",
+    "./FileSet": "./src/FileSet.vibe",
+    "./KeyMaterial": "./src/KeyMaterial.vibe",
     "./Migrations": null,
     "./Plan": "./src/Plan.ts",
-    "./Placement": {
-      "types": "./src/Placement.d.vibe.ts",
-      "default": "./src/Placement.vibe"
-    },
+    "./Placement": "./src/Placement.vibe",
     "./PlanDiff": "./src/PlanDiff.ts",
     "./PlanStore": null,
     "./StepKey": "./src/StepKey.ts",

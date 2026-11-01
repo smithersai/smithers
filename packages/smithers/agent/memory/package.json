@@ -37,43 +37,22 @@
     ".": "./src/index.ts",
     "./internal/*": null,
     "./*/index": null,
-    "./Bank": {
-      "types": "./src/Bank.d.vibe.ts",
-      "default": "./src/Bank.vibe"
-    },
-    "./Database": {
-      "types": "./src/Database.d.vibe.ts",
-      "default": "./src/Database.vibe"
-    },
-    "./Embedding": {
-      "types": "./src/Embedding.d.vibe.ts",
-      "default": "./src/Embedding.vibe"
-    },
+    "./Bank": "./src/Bank.vibe",
+    "./Database": "./src/Database.vibe",
+    "./Embedding": "./src/Embedding.vibe",
     "./Flows": "./src/Flows.ts",
     "./Maintenance": "./src/Maintenance.ts",
-    "./MemoryError": {
-      "types": "./src/MemoryError.d.vibe.ts",
-      "default": "./src/MemoryError.vibe"
-    },
+    "./MemoryError": "./src/MemoryError.vibe",
     "./MemoryStore": "./src/MemoryStore.ts",
     "./MemoryTrellis": "./src/MemoryTrellis.ts",
     "./Migrations": "./src/Migrations.ts",
-    "./Namespace": {
-      "types": "./src/Namespace.d.vibe.ts",
-      "default": "./src/Namespace.vibe"
-    },
+    "./Namespace": "./src/Namespace.vibe",
     "./Opening": "./src/Opening.ts",
-    "./Recall": {
-      "types": "./src/Recall.d.vibe.ts",
-      "default": "./src/Recall.vibe"
-    },
+    "./Recall": "./src/Recall.vibe",
     "./RecallFts": "./src/RecallFts.ts",
     "./RecallKeyword": "./src/RecallKeyword.ts",
     "./RecallSemantic": "./src/RecallSemantic.ts",
-    "./SnapshotRecorder": {
-      "types": "./src/SnapshotRecorder.d.vibe.ts",
-      "default": "./src/SnapshotRecorder.vibe"
-    },
+    "./SnapshotRecorder": "./src/SnapshotRecorder.vibe",
     "./Source": "./src/Source.ts",
     "./WithMemory": "./src/WithMemory.ts",
     "./index": "./src/index.ts",

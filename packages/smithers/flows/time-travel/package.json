@@ -37,23 +37,14 @@
     ".": "./src/index.ts",
     "./internal/*": null,
     "./*/index": null,
-    "./CompensationHandlers": {
-      "types": "./src/CompensationHandlers.d.vibe.ts",
-      "default": "./src/CompensationHandlers.vibe"
-    },
+    "./CompensationHandlers": "./src/CompensationHandlers.vibe",
     "./EffectBoundary": "./src/EffectBoundary.ts",
-    "./Frame": {
-      "types": "./src/Frame.d.vibe.ts",
-      "default": "./src/Frame.vibe"
-    },
+    "./Frame": "./src/Frame.vibe",
     "./MemoryTimeTravelStore": "./src/MemoryTimeTravelStore.ts",
     "./Migrations": "./src/Migrations.ts",
     "./SqlTimeTravelStore": "./src/SqlTimeTravelStore.ts",
     "./TimeTravel": "./src/TimeTravel.ts",
-    "./TimeTravelError": {
-      "types": "./src/TimeTravelError.d.vibe.ts",
-      "default": "./src/TimeTravelError.vibe"
-    },
+    "./TimeTravelError": "./src/TimeTravelError.vibe",
     "./TimeTravelStore": "./src/TimeTravelStore.ts",
     "./index": "./src/index.ts"
   },
