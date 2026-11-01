@@ -5,7 +5,7 @@
  */
 
 /** @category errors @since 0.1.0 */
-export * as TriggerError from "./TriggerError.ts"
+export * as TriggerError from "./TriggerError.vibe"
 /** @category schedules @since 0.1.0 */
 export * as Cron from "./Cron.ts"
 /** @category declarations @since 0.1.0 */
@@ -25,6 +25,6 @@ export * as Scheduler from "./Scheduler.ts"
 /** @category services @since 1.0.0-rc.0 */
 export * as DispatchReader from "./DispatchReader.ts"
 /** @category channels @since 0.1.0 */
-export * as Channel from "./Channel.ts"
+export * as Channel from "./Channel.vibe"
 /** @category webhooks @since 0.1.0 */
 export * as Webhook from "./Webhook.ts"

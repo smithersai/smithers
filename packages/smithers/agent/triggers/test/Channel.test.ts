@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
-import * as Channel from "../src/Channel.ts"
+import * as Channel from "../src/Channel.vibe"
 
 describe("Channel", () => {
   it("declares start and signal mappings without adding authority", async () => {

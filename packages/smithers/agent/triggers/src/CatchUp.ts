@@ -8,7 +8,7 @@ import * as Effect from "effect/Effect"
 import type { Cron } from "./Cron.ts"
 import * as CronSchedule from "./Cron.ts"
 import type { CatchUp as Policy } from "./Schedule.ts"
-import { TriggerError } from "./TriggerError.ts"
+import { TriggerError } from "./TriggerError.vibe"
 
 /**
  * The occurrences a trigger owes since it last fired, bounded by

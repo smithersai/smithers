@@ -9,7 +9,7 @@ import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import { describe, expect, it } from "vitest"
-import { TriggerError } from "../src/TriggerError.ts"
+import { TriggerError } from "../src/TriggerError.vibe"
 import * as Webhook from "../src/Webhook.ts"
 
 const Payload = Schema.Union([

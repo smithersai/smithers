@@ -30,8 +30,8 @@ import * as Clock from "effect/Clock"
 import * as EffectCron from "effect/Cron"
 import * as Effect from "effect/Effect"
 import * as Result from "effect/Result"
-import * as WallClock from "./internal/WallClock.ts"
-import { TriggerError } from "./TriggerError.ts"
+import * as WallClock from "./internal/WallClock.vibe"
+import { TriggerError } from "./TriggerError.vibe"
 
 /**
  * A parsed cron expression, kept beside the text it came from so the

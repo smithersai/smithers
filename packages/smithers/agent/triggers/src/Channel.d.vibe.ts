@@ -9,14 +9,12 @@
  * @see packages/smithers/agent/triggers/docs/api.md
  * @since 0.1.0
  */
-
-import type { IdempotencyKey } from "@smthrs/control/ControlSchema"
-import type { CredentialRef } from "@smthrs/control/Credential"
-import type * as Effect from "effect/Effect"
-import type * as Redacted from "effect/Redacted"
-import type * as Schema from "effect/Schema"
-import type { TriggerError } from "./TriggerError.ts"
-
+import type { IdempotencyKey } from "@smthrs/control/ControlSchema";
+import type { CredentialRef } from "@smthrs/control/Credential";
+import type * as Effect from "effect/Effect";
+import type * as Redacted from "effect/Redacted";
+import type * as Schema from "effect/Schema";
+import type { TriggerError } from "./TriggerError.vibe";
 /**
  * Opaque inbound transport data. Verification must inspect this value before
  * any payload decoding occurs.
@@ -25,11 +23,10 @@ import type { TriggerError } from "./TriggerError.ts"
  * @since 0.1.0
  */
 export interface RawInbound {
-  readonly body: Uint8Array
-  readonly headers: Readonly<Record<string, string | undefined>>
-  readonly idempotencyKey: IdempotencyKey
+    readonly body: Uint8Array;
+    readonly headers: Readonly<Record<string, string | undefined>>;
+    readonly idempotencyKey: IdempotencyKey;
 }
-
 /**
  * A verified request that starts a flow.
  *
@@ -37,12 +34,11 @@ export interface RawInbound {
  * @since 0.1.0
  */
 export interface Start {
-  readonly start: {
-    readonly flowId: string
-    readonly input: unknown
-  }
+    readonly start: {
+        readonly flowId: string;
+        readonly input: unknown;
+    };
 }
-
 /**
  * A verified request that resolves a waiting flow step.
  *
@@ -50,21 +46,19 @@ export interface Start {
  * @since 0.1.0
  */
 export interface Signal {
-  readonly signal: {
-    readonly runId: string
-    readonly stepId: string
-    readonly value: unknown
-  }
+    readonly signal: {
+        readonly runId: string;
+        readonly stepId: string;
+        readonly value: unknown;
+    };
 }
-
 /**
  * The only operations an inbound channel may request.
  *
  * @category models
  * @since 0.1.0
  */
-export type Inbound = Start | Signal
-
+export type Inbound = Start | Signal;
 /**
  * Authenticates raw request bytes and headers against a credential reference.
  *
@@ -79,11 +73,7 @@ export type Inbound = Start | Signal
  * @category models
  * @since 0.1.0
  */
-export type Verify = (
-  raw: RawInbound,
-  credential: Redacted.Redacted<CredentialRef>
-) => Effect.Effect<void, TriggerError>
-
+export type Verify = (raw: RawInbound, credential: Redacted.Redacted<CredentialRef>) => Effect.Effect<void, TriggerError>;
 /**
  * An authority-free bidirectional channel declaration.
  *
@@ -94,12 +84,11 @@ export type Verify = (
  * @since 0.1.0
  */
 export interface Channel<Payload, Run = never, Outbound = never> {
-  readonly name: string
-  readonly verify: Verify
-  readonly inbound: (payload: Payload) => Inbound
-  readonly outbound?: ((run: Run) => Outbound) | undefined
+    readonly name: string;
+    readonly verify: Verify;
+    readonly inbound: (payload: Payload) => Inbound;
+    readonly outbound?: ((run: Run) => Outbound) | undefined;
 }
-
 /**
  * Configuration for a schema-declared channel.
  *
@@ -107,15 +96,12 @@ export interface Channel<Payload, Run = never, Outbound = never> {
  * @since 0.1.0
  */
 export interface Config<Payload, Run = never, Outbound = never> extends Channel<Payload, Run, Outbound> {
-  readonly schema: Schema.Schema<Payload>
+    readonly schema: Schema.Schema<Payload>;
 }
-
 /**
  * Declares a channel without adding authority or execution behavior.
  *
  * @category constructors
  * @since 0.1.0
  */
-export const make = <Payload, Run = never, Outbound = never>(
-  config: Channel<Payload, Run, Outbound>
-): Channel<Payload, Run, Outbound> => config
+export declare const make: <Payload, Run = never, Outbound = never>(config: Channel<Payload, Run, Outbound>) => Channel<Payload, Run, Outbound>;

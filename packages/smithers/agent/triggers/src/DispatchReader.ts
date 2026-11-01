@@ -23,7 +23,7 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Result from "effect/Result"
 import * as Cron from "./Cron.ts"
-import type { TriggerError } from "./TriggerError.ts"
+import type { TriggerError } from "./TriggerError.vibe"
 import { type FireRecord, type Held, isReservation, type Registered, TriggerStore } from "./TriggerStore.ts"
 
 /**

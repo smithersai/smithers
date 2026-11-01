@@ -20,7 +20,7 @@ import * as Migrations from "./migrations/index.ts"
 import * as Overlap from "./Overlap.ts"
 import * as Schedule from "./Schedule.ts"
 import * as Trigger from "./Trigger.ts"
-import { fromSchemaError, TriggerError } from "./TriggerError.ts"
+import { fromSchemaError, TriggerError } from "./TriggerError.vibe"
 import {
   type ClaimFire,
   type FireRecord,
