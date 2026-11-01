@@ -226,7 +226,7 @@ let bin: string | undefined
  */
 export const buildBin = (): string => {
   bin ??= bundleOnce({
-    entryPoint: fileURLToPath(new URL("../../src/flow/bin.ts", import.meta.url)),
+    entryPoint: fileURLToPath(new URL("../../src/flow/bin.vibe", import.meta.url)),
     directory: fileURLToPath(new URL("../../node_modules/.migrate-bin/", import.meta.url)),
     external: ["effect", "@effect/*", "typescript"],
     keyedOn: [fileURLToPath(new URL("../../package.json", import.meta.url))]

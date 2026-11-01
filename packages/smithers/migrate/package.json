@@ -74,7 +74,10 @@
     "./flow/Repair": "./src/flow/Repair.vibe",
     "./flow/Transform": "./src/flow/Transform.ts",
     "./flow/Verify": "./src/flow/Verify.ts",
-    "./flow/bin": "./src/flow/bin.ts",
+    "./flow/bin": {
+      "types": "./.vibe/declarations/src/flow/bin.d.vibe.ts",
+      "default": "./src/flow/bin.vibe"
+    },
     "./index": "./src/index.ts"
   },
   "files": [
