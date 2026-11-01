@@ -387,6 +387,17 @@ describe("ItemConversation: loading and themes", () => {
     expect(dark).not.toBe(light);
   });
 
+  test("the header's and a comment's meta rows wrap, so a phone breaks no word; an event's time keeps its line", async () => {
+    installDarkThemeStyles();
+    await render(<ItemConversation {...BASE} events={[{ id: "e", kind: "queued", author: "ann", text: "committed", createdAt: ago(60_000) }]} />);
+    expect(getComputedStyle(article().querySelector(".sui-item-conv-meta")!).flexWrap).toBe("wrap");
+    expect(getComputedStyle(article().querySelector(".sui-item-conv-comment-meta")!).flexWrap).toBe("wrap");
+    const event = article().querySelector(".sui-item-conv-event")!;
+    expect(getComputedStyle(event).flexWrap).not.toBe("wrap");
+    expect(getComputedStyle(event.lastElementChild!).flexShrink).toBe("0");
+    expect(getComputedStyle(event.querySelector(".sui-item-conv-event-text")!).flexShrink).not.toBe("0");
+  });
+
   test("the sheet is composed into the shipped stylesheet and namespaced", () => {
     expect(smithersUiCss).toContain(itemConversationCss.trim());
     expect(itemConversationCss.match(/\.[a-z][\w-]*/g)!.every((name) => name.startsWith(".sui-"))).toBe(true);

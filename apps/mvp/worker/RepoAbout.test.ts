@@ -437,6 +437,14 @@ describe("kept for every data center", () => {
     expect(await one.answer("zzz-nope", "unreachable")).toMatchObject({ _tag: "Refused", code: "rate_limited" })
   })
 
+  test("a deployment on another GitHub API has no github.com to ask: its rate limit stands", async () => {
+    const github = scriptedGitHub()
+    const one = await isolate(github, { config: { GITHUB_API_URL: "https://ghe.example" } })
+    github.fail("", "rate_limited")
+    expect(await one.answer("zzz-nope", "nothing")).toMatchObject({ _tag: "Refused", code: "rate_limited" })
+    expect(github.calls).toEqual([""])
+  })
+
   test("a repository GitHub stops having loses its kept answer", async () => {
     const github = scriptedGitHub()
     github.publish("octocat", "Spoon-Knife")

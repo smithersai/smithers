@@ -60,6 +60,8 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
       const [link, title] = await Promise.all([back.boundingBox(), page.locator(".sui-item-conv-title").boundingBox()])
       const label = await back.evaluate((button) => parseFloat(getComputedStyle(button).paddingLeft))
       expect(link!.x + label).toBe(title!.x)
+      // The meta row wraps rather than squeezing its words: the author reads as one line box.
+      expect(await page.locator(".sui-item-conv-meta .sui-item-conv-author").evaluate((author) => author.getClientRects().length)).toBe(1)
     })
   })
 }

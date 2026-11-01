@@ -281,6 +281,8 @@ export const scriptedGitHub = () => {
     if (url.host === "github.com") {
       const early = asked("web")
       if (early !== undefined) return early
+      // The page's existence is asked with HEAD: a GET would fetch the page itself.
+      if (request.method !== "HEAD") return new Response(null, { status: 405 })
       return new Response(null, { status: repositories.has(url.pathname.slice(1).toLowerCase()) ? 200 : 404 })
     }
     if (url.pathname === "/graphql" && request.method === "POST") {
