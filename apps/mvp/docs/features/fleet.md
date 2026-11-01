@@ -95,7 +95,7 @@ Durable flows, no sweeps (FINAL.md §4.2):
 |---|---|---|---|
 | Run failed or lost | `todo/Fail`, once its failure is reported | at once | the committer; the repository's Maintainers and Admins |
 | Run stalled | the probe | no event and under 5 CPU seconds for `AGENT_STALL_MINUTES` (10) | the committer; Maintainers and Admins |
-| Runner offline | the probe of a job on it; `ops/RunnerHealth` once a minute for runners with none | no request for `RUNNER_OFFLINE_SECONDS` (60) | the repository's Admins |
+| Runner offline | the probe of a job on it; `ops/RunnerHealth` once a minute for runners with none | no request for `RUNNER_OFFLINE_SECONDS` (45) | the repository's Admins |
 | Waiting too long | the probe | queued for `AGENT_WAIT_MINUTES` (5) | Maintainers and Admins |
 | Cost | the probe | reported cost past `MAX_RUN_USD` (unset: off) | the committer; Admins |
 
@@ -124,7 +124,7 @@ Durable flows, no sweeps (FINAL.md §4.2):
 |---|---|---|
 | `AGENT_STALL_MINUTES` | 10 | 1 to 720 |
 | `AGENT_WAIT_MINUTES` | 5 | 1 to 720 |
-| `RUNNER_OFFLINE_SECONDS` | 60 | 45 to 3600; a runner reads Offline in the view after 45 s, before it alerts |
+| `RUNNER_OFFLINE_SECONDS` | 45 | 45 to 3600; a runner reads Offline in the view after 45 s |
 | `MAX_RUN_USD` | unset (off) | above 0; raises an alert, stopping stays a person's act |
 
 `FlowExecution` reads them when its Durable Object starts; a value out of bounds fails its start.
@@ -175,9 +175,11 @@ Migration `0084_fleet`:
 - `plugins/fleet/src/model.test.ts`, `tab.test.ts`; `src/plugins/facts.test.ts` (the manifest loads).
 - `packages/smithers/test/Runner.test.ts`: each heartbeat carries the hook's account, the tree's CPU time and usage;
   each claim the machine.
-- `e2e/fleet.spec.ts`: on a build with the GitHub App (`agentRunner`): 53 runs, the oldest listed, on a desktop and a
-  phone; with `AGENT_STALL_MINUTES=1` (`fleetStall`) a silent agent Stalled and a busy one Working; with a Telegram
-  stand-in (`fleetTelegram`) the runner killed and one Runner offline alert within 90 s.
+- `e2e/fleet.spec.ts`: on a build with the GitHub App (`agentRunner`), a deployment included: 53 runs, the oldest
+  listed, on a desktop and a phone; a silent agent Stalled and a busy one Working, waiting out the server's own window
+  (`fleetStall`: `AGENT_STALL_MINUTES=1` on a stack, a deployment's 10 minutes with `E2E_LONG=1`); the runner killed
+  and one Runner offline alert in the bell within 90 s, and with a Telegram stand-in (`fleetTelegram`) one message. A
+  deployment's real Telegram can't be read back, so the summary lists that part as left out.
 
 ## Not yet
 

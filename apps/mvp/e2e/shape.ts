@@ -59,6 +59,12 @@ export const allServerRows = async (request: APIRequestContext): Promise<Array<R
   let query = `${conversation}offset=-1`
   for (let page = 0; page < 1_000; page++) {
     const response = await request.get(`/api/shapes/messages?${query}`)
+    // Electric moved the shape to a new handle: its protocol's must-refetch, which a client answers by starting again.
+    if (response.status() === 409) {
+      rows.clear()
+      query = `${conversation}offset=-1&cache-buster=${crypto.randomUUID()}`
+      continue
+    }
     expect(response.status(), "ChatApi serves the messages shape").toBe(200)
     for (const message of (await response.json()) as Array<ShapeMessage>) {
       const key = message.key ?? message.value?.id

@@ -441,7 +441,9 @@ const make = async (flow, page, alike) => {
 
     // A two-pass palette: one palette from every frame, then each frame mapped onto it with a stable ordered dither.
     const palette = join(work, "palette.png")
-    for (const colors of [128, 64]) {
+    // Fewer colors first; a long flow that stays too big gets a narrower picture, every frame kept.
+    for (const [colors, width] of [[128, GIF_WIDTH], [64, GIF_WIDTH], [64, 640], [64, 480]]) {
+      const sized = `scale='min(${width},iw)':-2:flags=lanczos`
       execFileSync("ffmpeg", [
         "-v",
         "error",
@@ -449,7 +451,7 @@ const make = async (flow, page, alike) => {
         "-i",
         preview,
         "-vf",
-        `palettegen=max_colors=${colors}:stats_mode=full`,
+        `${sized},palettegen=max_colors=${colors}:stats_mode=full`,
         palette
       ])
       execFileSync("ffmpeg", [
@@ -461,7 +463,7 @@ const make = async (flow, page, alike) => {
         "-i",
         palette,
         "-lavfi",
-        "paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle",
+        `[0:v]${sized}[v];[v][1:v]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`,
         gif
       ])
       if (statSync(gif).size <= MAX_GIF_BYTES) break

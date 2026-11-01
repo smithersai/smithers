@@ -25,6 +25,7 @@ import {
   type Run,
   scriptedAgent,
   stackRepository,
+  stallMinutes,
   syncedRepository,
   sessionFiles,
   targetOf,
@@ -197,7 +198,7 @@ describe("needs", () => {
     ])
   })
 
-  it("declares the fleet's stall threshold and Telegram stand-in, which a deployment can't offer, as blocked needs", () => {
+  it("meets the fleet's stall by a server started with it, or a deployment's own window with E2E_LONG=1", () => {
     for (const target of ["local", "deployment"] as const) {
       const run = { ...local, target }
       expect(NEEDS.fleetStall.met({ ...run, env: {} })).toBe(false)
@@ -209,8 +210,10 @@ describe("needs", () => {
         env: { E2E_FLEET_TELEGRAM_URL: "http://127.0.0.1:1340", E2E_FLEET_TELEGRAM_CHAT: "-100123" },
       })).toBe(true)
     }
-    expect(NEEDS.fleetStall.blocked).toBe(true)
-    expect(NEEDS.fleetTelegram.blocked).toBe(true)
+    expect(NEEDS.fleetStall.met(deployedAs("member", { E2E_LONG: "1" }))).toBe(true)
+    expect(NEEDS.fleetStall.met({ ...local, env: { E2E_LONG: "1" } })).toBe(false)
+    expect(stallMinutes({})).toBe(10)
+    expect(stallMinutes({ AGENT_STALL_MINUTES: "1" })).toBe(1)
   })
 
   it("requires a scratch CI fixture independently of the deployment's pusher credentials", () => {
@@ -474,7 +477,7 @@ describe("needs", () => {
 
   it("each say why, and missing account or fixture prerequisites block the run", () => {
     for (const name of Object.keys(NEEDS) as Array<NeedName>) expect(NEEDS[name].reason.length, name).toBeGreaterThan(20)
-    expect((Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].blocked)).toEqual(["timelineVisualFixture", "vibelangMaintainer", "vibelangOpenPull", "absentRepository", "unsyncedRepository", "failedRun", "repositoryRun", "emptySecretsRepository", "syncedRepository", "fleetStall", "fleetTelegram", "member", "ownConversation", "maintainer"])
+    expect((Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].blocked)).toEqual(["timelineVisualFixture", "vibelangMaintainer", "vibelangOpenPull", "absentRepository", "unsyncedRepository", "failedRun", "repositoryRun", "emptySecretsRepository", "syncedRepository", "member", "ownConversation", "maintainer"])
   })
 })
 

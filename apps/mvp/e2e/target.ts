@@ -381,17 +381,15 @@ const needs = {
     reason: "it runs TODOs to pull requests on an external agent (decision 0136): a deployment, or a dev build signing in through the GitHub App (E2E_TARGET=deployment), with the App on a scratch repository the test account administers, named in E2E_FACTORY_REPOSITORY, never a smithersai one, and E2E_RUNNER_MIRROR naming a jj clone of it on this machine for the spec's own `smthrs runner`",
   },
   fleetStall: {
-    met: (run) => run.env.AGENT_STALL_MINUTES === "1",
-    reason: "it waits for a silent agent to read Stalled (docs/features/fleet.md#alerts): the server under test must be " +
-      "started with AGENT_STALL_MINUTES=1, and the spec told so by the same variable; a deployment keeps the 10-minute default",
-    blocked: true,
+    met: (run) => run.env.AGENT_STALL_MINUTES === "1" || (run.target === "deployment" && run.env.E2E_LONG === "1"),
+    reason: "it waits for a silent agent to read Stalled (docs/features/fleet.md#alerts): a server started with " +
+      "AGENT_STALL_MINUTES=1, with the spec told by the same variable, or a deployment's 10-minute window with E2E_LONG=1",
   },
   fleetTelegram: {
     met: (run) => set(run, "E2E_FLEET_TELEGRAM_URL", "E2E_FLEET_TELEGRAM_CHAT"),
     reason: "it reads the Runner offline alert's Telegram message from a stand-in Bot API: start the server with " +
       "ALERT_TELEGRAM_API_URL at the stand-in, set E2E_FLEET_TELEGRAM_URL to the same URL (the spec serves it) and " +
       "E2E_FLEET_TELEGRAM_CHAT to the chat an Admin saved; a deployment's real Telegram can't be read back",
-    blocked: true,
   },
   feedKey: {
     // Locally, `alchemy dev` accepts its development feed key (worker/feeds/dev.ts) unless FEED_KEYS is set.
@@ -661,6 +659,9 @@ export const questionPost = (body: { readonly id: string; readonly answerId: str
 /** The headers a write to ChatApi carries: in a deployment, the person it expects (decision 0023). */
 export const writeHeaders = (): Record<string, string> =>
   target === "deployment" ? { origin: new URL(baseURL).origin, [DEVICE_PERSON_HEADER]: me().personId } : {}
+
+/** How long a silent agent takes to read Stalled on the server under test (`AGENT_STALL_MINUTES`, 10 unless set). */
+export const stallMinutes = (env: Run["env"] = process.env) => Number(env.AGENT_STALL_MINUTES ?? 10)
 
 /** The scratch repository issue specs write to, `owner/name` (the `githubScratch` need). */
 export const scratchRepository = () => {

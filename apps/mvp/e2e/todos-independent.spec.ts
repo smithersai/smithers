@@ -1,6 +1,6 @@
 import { expect, type Page, type TestInfo } from "@playwright/test"
 import { recordActions, step, themeOf, writeManifest } from "./fixtures"
-import { type Runner, startRunner } from "./runner"
+import { cleanUp, type Runner, startRunner } from "./runner"
 import { configureStack, stackChange } from "./stackWrites"
 import { requires, stackRepository } from "./target"
 import { strictTest as test } from "./watch"
@@ -133,11 +133,14 @@ test("todos-independent-run: ten TODOs work at once; one fails, nine publish, an
       await expect(page.getByRole("link", { name: `After T${numbers[0]}` })).toBeVisible({ timeout: 60_000 })
     })
   } catch (error) {
-    await test.info().attach("runner.log", { body: runner?.log() ?? "" })
+    await runner?.attach()
     throw error
   } finally {
-    for (const number of numbers.reverse()) await change(page, repository, { op: "drop", number })
-    await configure(page, repository, 1, "stacked")
-    await runner?.stop()
+    const api = { request: runner?.api ?? page.request }
+    await cleanUp(
+      ...numbers.reverse().map((number) => () => change(api, repository, { op: "drop", number })),
+      () => configure(api, repository, 1, "stacked"),
+      async () => { await runner?.stop() },
+    )
   }
 })
