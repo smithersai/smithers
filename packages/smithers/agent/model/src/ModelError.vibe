@@ -40,7 +40,7 @@ export const ModelErrorCode = Schema.Literals([
   "transport",
   "call_timeout",
   "invalid_provider_output",
-  "unknown"
+  "unknown",
 ])
 
 /**
@@ -130,7 +130,7 @@ export class ModelError extends Schema.TaggedError<ModelError>()("flows/model/Mo
   quotaScope: Schema.optional(Schema.Literals(["model", "account"])),
   providerCode: Schema.optional(Schema.String),
   requestId: Schema.optional(Schema.String),
-  httpStatus: Schema.optional(Schema.Number)
+  httpStatus: Schema.optional(Schema.Number),
 }) {
   /**
    * The failed provider response body, redacted and capped at 16 KiB, present
@@ -174,7 +174,7 @@ const terminalCodes: ReadonlySet<string> = new Set([
   "content_policy",
   "context_overflow",
   "out_of_credit",
-  "invalid_provider_output"
+  "invalid_provider_output",
 ])
 const terminalStatuses: ReadonlySet<number> = new Set([400, 401, 402, 403, 404, 405, 409, 410, 413, 422])
 
@@ -186,7 +186,7 @@ const terminalStatuses: ReadonlySet<number> = new Set([400, 401, 402, 403, 404, 
  * @since 1.0.0-rc.1
  */
 export const isTerminalRefusal = (
-  error: Pick<ModelError, "code" | "httpStatus" | "quotaScope" | "resetAtEpochMillis" | "retryAfterMillis">
+  error: Pick<ModelError, "code" | "httpStatus" | "quotaScope" | "resetAtEpochMillis" | "retryAfterMillis">,
 ): boolean => {
   if (error.httpStatus !== undefined && terminalStatuses.has(error.httpStatus)) return true
   if (terminalCodes.has(error.code)) return true
@@ -217,6 +217,6 @@ export const faults = {
   transport: "dependency",
   call_timeout: "dependency",
   invalid_provider_output: "dependency",
-  unknown: "dependency"
+  unknown: "dependency",
 } as const satisfies Fault.Rows<ModelErrorCode>
 Fault.register("flows/model/ModelError", faults)

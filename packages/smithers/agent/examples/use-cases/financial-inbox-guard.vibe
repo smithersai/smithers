@@ -29,7 +29,7 @@ export const Email = Schema.Struct({
   subject: Schema.String,
   bodyPreview: Schema.String.annotate({ description: "First 500 chars of email body" }),
   attachments: Schema.Array(Schema.String).annotate({ description: "Attachment filenames" }),
-  receivedAt: Schema.String.annotate({ description: "ISO-8601 timestamp" })
+  receivedAt: Schema.String.annotate({ description: "ISO-8601 timestamp" }),
 })
 
 /** What kind of finance email it is. `confidence` is 0 to 100. */
@@ -38,9 +38,9 @@ export const Classification = Schema.Struct({
   category: Schema.Literals(["invoice", "exception", "urgent-approval", "risky-language", "informational"]),
   confidence: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 100 })),
   flags: Schema.Array(Schema.String).annotate({
-    description: "Specific flags raised (e.g. duplicate-vendor, unusual-amount)"
+    description: "Specific flags raised (e.g. duplicate-vendor, unusual-amount)",
   }),
-  summary: Schema.String
+  summary: Schema.String,
 })
 
 /** The invoice fields the email carries. */
@@ -52,7 +52,7 @@ export const InvoiceExtract = Schema.Struct({
   currency: Schema.String,
   dueDate: Schema.String.annotate({ description: "ISO-8601 date" }),
   lineItems: Schema.Array(Schema.Struct({ description: Schema.String, amount: Schema.Number })),
-  poMatch: Schema.Boolean.annotate({ description: "Whether a matching PO was found" })
+  poMatch: Schema.Boolean.annotate({ description: "Whether a matching PO was found" }),
 })
 
 /** The fraud and risk signals in the email. */
@@ -62,9 +62,9 @@ export const RiskAssessment = Schema.Struct({
   signals: Schema.Array(Schema.Struct({
     type: Schema.String.annotate({ description: "e.g. urgency-pressure, bank-change-request, impersonation" }),
     evidence: Schema.String,
-    severity: Schema.Literals(["critical", "high", "medium", "low"])
+    severity: Schema.Literals(["critical", "high", "medium", "low"]),
   })),
-  recommendation: Schema.String
+  recommendation: Schema.String,
 })
 
 /** The action and alert the flow settles with. */
@@ -74,7 +74,7 @@ export const RoutingDecision = Schema.Struct({
   assignee: Schema.String.annotate({ description: "Team or individual to route to" }),
   priority: Schema.Literals(["critical", "high", "normal", "low"]),
   notifyChannels: Schema.Array(Schema.String),
-  summary: Schema.String
+  summary: Schema.String,
 })
 
 /** Normalizes the raw email. */
@@ -83,7 +83,7 @@ export const Ingest = AgentAction.make("examples/FinancialInboxGuard/Ingest", {
   output: Email,
   seat,
   prompt: ({ mailbox, rawEmail }) =>
-    `Normalize this raw email from the ${mailbox} mailbox.\n\nRaw email: ${JSON.stringify(rawEmail)}`
+    `Normalize this raw email from the ${mailbox} mailbox.\n\nRaw email: ${JSON.stringify(rawEmail)}`,
 })
 
 /** Classifies the email. */
@@ -95,12 +95,12 @@ export const Classify = AgentAction.make("examples/FinancialInboxGuard/Classify"
     `You are a financial email classifier. Analyze the email subject, body, sender,
 and attachments to determine the category: invoice, exception (PO mismatch, short-pay, etc.),
 urgent-approval (time-sensitive spend requests), risky-language (social engineering, bank change
-requests, impersonation), or informational. Flag anything anomalous.`
+requests, impersonation), or informational. Flag anything anomalous.`,
   ],
   prompt: ({ email, knownVendors, recentExceptions }) =>
     `Classify this email.\n\nEmail: ${JSON.stringify(email)}\nKnown vendors: ${
       JSON.stringify(knownVendors)
-    }\nRecent exceptions: ${JSON.stringify(recentExceptions)}`
+    }\nRecent exceptions: ${JSON.stringify(recentExceptions)}`,
 })
 
 /** Scans the email for fraud and risk signals. */
@@ -112,12 +112,12 @@ export const DetectRisk = AgentAction.make("examples/FinancialInboxGuard/DetectR
     `You are a financial fraud and risk detection specialist. Scan email content for
 social engineering tactics (urgency pressure, authority impersonation, bank detail change requests),
 unusual patterns (first-time vendor, amount outliers, domain spoofing), and compliance red flags.
-Assign a risk level and cite specific evidence for each signal.`
+Assign a risk level and cite specific evidence for each signal.`,
   ],
   prompt: ({ email, knownDomains, recentBankChanges }) =>
     `Assess this email for risk.\n\nEmail: ${JSON.stringify(email)}\nKnown domains: ${
       JSON.stringify(knownDomains)
-    }\nRecent bank changes: ${JSON.stringify(recentBankChanges)}`
+    }\nRecent bank changes: ${JSON.stringify(recentBankChanges)}`,
 })
 
 /** Pulls the invoice fields, told the email's category. */
@@ -128,12 +128,12 @@ export const ExtractInvoice = AgentAction.make("examples/FinancialInboxGuard/Ext
   system: [
     `You are an invoice data extractor. Parse invoice details from email body and
 attachments: invoice number, vendor, amount, currency, due date, and line items. Cross-reference
-against known PO numbers to determine if there is a match. Be precise with amounts and dates.`
+against known PO numbers to determine if there is a match. Be precise with amounts and dates.`,
   ],
   prompt: ({ category, email, openPOs }) =>
     `Extract the invoice details from this email.\n\nCategory: ${category}\nEmail: ${
       JSON.stringify(email)
-    }\nOpen POs: ${JSON.stringify(openPOs)}`
+    }\nOpen POs: ${JSON.stringify(openPOs)}`,
 })
 
 /** Picks the action, assignee, priority and channels. */
@@ -145,7 +145,7 @@ export const Route = AgentAction.make("examples/FinancialInboxGuard/Route", {
     invoice: InvoiceExtract,
     approvalThreshold: Schema.Number,
     escalationTeam: Schema.String,
-    notifyChannels: Schema.Array(Schema.String)
+    notifyChannels: Schema.Array(Schema.String),
   },
   output: RoutingDecision,
   seat,
@@ -154,7 +154,7 @@ export const Route = AgentAction.make("examples/FinancialInboxGuard/Route", {
       JSON.stringify(notifyChannels)
     }\nClassification: ${JSON.stringify(classification)}\nRisk: ${JSON.stringify(risk)}\nInvoice: ${
       JSON.stringify(invoice)
-    }`
+    }`,
 })
 
 /** The flow: ingest, classify and assess risk in parallel, extract, route. */
@@ -169,7 +169,7 @@ export const FinancialInboxGuard = Flow.make("examples/FinancialInboxGuard", {
     openPOs: Schema.optional(Schema.Array(Schema.Json)),
     approvalThreshold: Schema.optional(Schema.Number),
     escalationTeam: Schema.optional(Schema.String),
-    notifyChannels: Schema.optional(Schema.Array(Schema.String))
+    notifyChannels: Schema.optional(Schema.Array(Schema.String)),
   },
   success: RoutingDecision,
   error: AgentAction.AgentFailure,
@@ -183,7 +183,7 @@ export const FinancialInboxGuard = Flow.make("examples/FinancialInboxGuard", {
     openPOs = [],
     rawEmail,
     recentBankChanges = [],
-    recentExceptions = []
+    recentExceptions = [],
   }) =>
     Node.bindPlanned(
       Ingest.call({ rawEmail, mailbox }),
@@ -191,7 +191,7 @@ export const FinancialInboxGuard = Flow.make("examples/FinancialInboxGuard", {
         Node.bindPlanned(
           Node.all({
             classification: Classify.call({ email, knownVendors, recentExceptions }),
-            risk: DetectRisk.call({ email, knownDomains, recentBankChanges })
+            risk: DetectRisk.call({ email, knownDomains, recentBankChanges }),
           }),
           (checked) =>
             Node.bindPlanned(
@@ -204,11 +204,11 @@ export const FinancialInboxGuard = Flow.make("examples/FinancialInboxGuard", {
                   invoice,
                   approvalThreshold,
                   escalationTeam,
-                  notifyChannels
-                })
-            )
-        )
-    )
+                  notifyChannels,
+                }),
+            ),
+        ),
+    ),
 })
 
 /** Every step the flow calls. */

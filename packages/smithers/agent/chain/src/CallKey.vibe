@@ -68,7 +68,7 @@ export const CallKey = Schema.Struct({
   link: LinkId,
   scriptDigest: Schema.String,
   ordinal: Ordinal,
-  entryDigest: Schema.String
+  entryDigest: Schema.String,
 })
 
 /**
@@ -91,5 +91,5 @@ export const make = (
   link: number,
   scriptDigest: string,
   ordinal: number,
-  entryDigest: string
+  entryDigest: string,
 ): CallKey => ({ link, scriptDigest, ordinal, entryDigest })

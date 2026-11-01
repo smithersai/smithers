@@ -30,14 +30,14 @@ export const ErrorEntry = Schema.Struct({
   message: Schema.String,
   stackTrace: Schema.optional(Schema.String),
   timestamp: Schema.String,
-  fingerprint: Schema.String.annotate({ description: "Normalized signature for dedup grouping" })
+  fingerprint: Schema.String.annotate({ description: "Normalized signature for dedup grouping" }),
 })
 
 /** What the ingester read. */
 export const Ingested = Schema.Struct({
   errors: Schema.Array(ErrorEntry),
   totalIngested: Schema.Number,
-  sources: Schema.Record(Source, Schema.Number)
+  sources: Schema.Record(Source, Schema.Number),
 })
 
 /** Every error sharing one fingerprint. */
@@ -49,14 +49,14 @@ export const Cluster = Schema.Struct({
   source: Source,
   errorIds: Schema.Array(Schema.String),
   firstSeen: Schema.String,
-  lastSeen: Schema.String
+  lastSeen: Schema.String,
 })
 
 /** The clusters, largest first. */
 export const Clusters = Schema.Struct({
   clusters: Schema.Array(Cluster),
   totalClusters: Schema.Number,
-  largestClusterSize: Schema.Number
+  largestClusterSize: Schema.Number,
 })
 
 /** The explainer's analysis of every cluster. */
@@ -68,9 +68,9 @@ export const Explanations = Schema.Struct({
     remediation: Schema.String,
     severity: Schema.Literals(["critical", "high", "medium", "low"]),
     relatedDocs: Schema.optional(Schema.Array(Schema.String)),
-    suggestedOwner: Schema.optional(Schema.String)
+    suggestedOwner: Schema.optional(Schema.String),
   })),
-  summary: Schema.String
+  summary: Schema.String,
 })
 
 /** What the updater wrote, and the remediation table the flow settles with. */
@@ -83,9 +83,9 @@ export const KbUpdate = Schema.Struct({
     rootCause: Schema.String,
     remediation: Schema.String,
     severity: Schema.String,
-    occurrences: Schema.Number
+    occurrences: Schema.Number,
   })),
-  summary: Schema.String
+  summary: Schema.String,
 })
 
 /** Reads and fingerprints the errors. */
@@ -97,12 +97,12 @@ export const Ingest = AgentAction.make("examples/ErrorClusterer/Ingest", {
     `You are an error ingester. Read error logs from the provided sources
 (CI logs, API error endpoints, runtime crash reports). Normalize each error into a
 canonical form with a stable fingerprint derived from the error message and stack trace.
-Strip variable parts (timestamps, request IDs, line numbers) to produce consistent signatures.`
+Strip variable parts (timestamps, request IDs, line numbers) to produce consistent signatures.`,
   ],
   prompt: ({ logPaths, since, sources }) =>
     `Ingest the errors from these sources.\n\nSources: ${JSON.stringify(sources)}\nLog paths: ${
       JSON.stringify(logPaths)
-    }\nSince: ${since}`
+    }\nSince: ${since}`,
 })
 
 /** Explains every cluster. */
@@ -113,10 +113,12 @@ export const Explain = AgentAction.make("examples/ErrorClusterer/Explain", {
   system: [
     `You are an error analyst. For each error cluster, determine the root cause,
 suggest a remediation, and assign a severity. Reference existing documentation or runbooks
-when available. Be specific and actionable — vague advice like "check the logs" is not helpful.`
+when available. Be specific and actionable — vague advice like "check the logs" is not helpful.`,
   ],
   prompt: ({ clusters, kbPath, totalClusters }) =>
-    `Explain these ${totalClusters} error clusters.\n\nKnowledge base: ${kbPath}\nClusters: ${JSON.stringify(clusters)}`
+    `Explain these ${totalClusters} error clusters.\n\nKnowledge base: ${kbPath}\nClusters: ${
+      JSON.stringify(clusters)
+    }`,
 })
 
 /** Writes the explanations to the knowledge base and opens tickets. */
@@ -125,19 +127,19 @@ export const Update = AgentAction.make("examples/ErrorClusterer/Update", {
     explanations: Explanations.fields.explanations,
     kbPath: Schema.String,
     ticketPrefix: Schema.String,
-    clusters: Schema.Array(Cluster)
+    clusters: Schema.Array(Cluster),
   },
   output: KbUpdate,
   seat,
   system: [
     `You are a knowledge base maintainer. Write error explanations and remediation
 steps to the configured KB path as structured entries. Create ticket stubs for critical/high
-severity clusters that lack existing tickets. Output a searchable remediation table.`
+severity clusters that lack existing tickets. Output a searchable remediation table.`,
   ],
   prompt: ({ clusters, explanations, kbPath, ticketPrefix }) =>
     `Update the knowledge base at ${kbPath}.\n\nTicket prefix: ${ticketPrefix}\nExplanations: ${
       JSON.stringify(explanations)
-    }\nClusters: ${JSON.stringify(clusters)}`
+    }\nClusters: ${JSON.stringify(clusters)}`,
 })
 
 type Ingested = typeof Ingested.Type
@@ -162,7 +164,7 @@ const cluster = ({ errors }: Ingested): Clusters => {
         source: err.source,
         errorIds: [],
         firstSeen: err.timestamp,
-        lastSeen: err.timestamp
+        lastSeen: err.timestamp,
       }
       byFingerprint.set(err.fingerprint, found)
     }
@@ -174,7 +176,7 @@ const cluster = ({ errors }: Ingested): Clusters => {
   return {
     clusters,
     totalClusters: clusters.length,
-    largestClusterSize: Math.max(0, ...clusters.map((c) => c.count))
+    largestClusterSize: Math.max(0, ...clusters.map((c) => c.count)),
   }
 }
 
@@ -185,7 +187,7 @@ export const ErrorClusterer = Flow.make("examples/ErrorClusterer", {
     logPaths: Schema.optional(Schema.Array(Schema.String)),
     since: Schema.optional(Schema.String),
     kbPath: Schema.optional(Schema.String),
-    ticketPrefix: Schema.optional(Schema.String)
+    ticketPrefix: Schema.optional(Schema.String),
   },
   success: KbUpdate,
   error: AgentAction.AgentFailure,
@@ -196,9 +198,9 @@ export const ErrorClusterer = Flow.make("examples/ErrorClusterer", {
         Node.bindPlanned(
           Explain.call({ clusters: clustered.clusters, totalClusters: clustered.totalClusters, kbPath }),
           (explained: Planned.Planned<typeof Explanations.Type>) =>
-            Update.call({ explanations: explained.explanations, kbPath, ticketPrefix, clusters: clustered.clusters })
-        )
-    )
+            Update.call({ explanations: explained.explanations, kbPath, ticketPrefix, clusters: clustered.clusters }),
+        ),
+    ),
 })
 
 /** Every step the flow calls. */

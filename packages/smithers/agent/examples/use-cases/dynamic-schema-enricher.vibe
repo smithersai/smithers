@@ -29,7 +29,7 @@ export const DocumentFamily = Schema.Literals([
   "receipt",
   "onboarding",
   "support-ticket",
-  "unknown"
+  "unknown",
 ])
 
 /** Who sent the document, for whom, and what kind of document it is. */
@@ -39,7 +39,7 @@ export const Context = Schema.Struct({
   documentFamily: DocumentFamily,
   rawContent: Schema.String,
   detectedLanguage: Schema.String,
-  summary: Schema.String
+  summary: Schema.String,
 })
 
 /** One field of a resolved schema. */
@@ -47,7 +47,7 @@ export const FieldSpec = Schema.Struct({
   name: Schema.String,
   type: Schema.Literals(["string", "number", "boolean", "date", "array", "object"]),
   required: Schema.Boolean,
-  description: Schema.String
+  description: Schema.String,
 })
 
 /** A tenant's rule for one field. */
@@ -60,7 +60,7 @@ export const ResolvedSchema = Schema.Struct({
   fields: Schema.Array(FieldSpec),
   tenantOverrides: Schema.Array(TenantOverride),
   confidence: Fraction,
-  summary: Schema.String
+  summary: Schema.String,
 })
 
 /** The fields the extractor filled. */
@@ -70,7 +70,7 @@ export const Extraction = Schema.Struct({
   missingRequired: Schema.Array(Schema.String),
   warnings: Schema.Array(Schema.String),
   extractionConfidence: Fraction,
-  summary: Schema.String
+  summary: Schema.String,
 })
 
 /** The validated record the flow settles with. */
@@ -81,7 +81,7 @@ export const TypedOutput = Schema.Struct({
   payload: Schema.Record(Schema.String, Schema.Json),
   valid: Schema.Boolean,
   validationErrors: Schema.Array(Schema.String),
-  summary: Schema.String
+  summary: Schema.String,
 })
 
 /** Names the document's source, tenant and family. */
@@ -90,7 +90,7 @@ export const ParseContext = AgentAction.make("examples/DynamicSchemaEnricher/Con
   output: Context,
   seat,
   prompt: ({ rawInput, source, tenant }) =>
-    `Identify this document's source, tenant, and document family, and detect its language.\n\nSource: ${source}\nTenant: ${tenant}\nDocument:\n${rawInput}`
+    `Identify this document's source, tenant, and document family, and detect its language.\n\nSource: ${source}\nTenant: ${tenant}\nDocument:\n${rawInput}`,
 })
 
 /** Chooses the schema for the document's family and tenant. */
@@ -100,17 +100,17 @@ export const Resolve = AgentAction.make("examples/DynamicSchemaEnricher/Resolve"
     tenant: Schema.String,
     source: Schema.String,
     detectedLanguage: Schema.String,
-    schemaRegistry: Schema.String
+    schemaRegistry: Schema.String,
   },
   output: ResolvedSchema,
   seat,
   system: [
     `You are a schema resolution specialist. Given a document's source, tenant, and family,
 determine the correct output schema to use. Look up tenant-specific field overrides, select the
-appropriate schema family, and return the full field specification with types and requirements.`
+appropriate schema family, and return the full field specification with types and requirements.`,
   ],
   prompt: ({ detectedLanguage, documentFamily, schemaRegistry, source, tenant }) =>
-    `Resolve the output schema for this document.\n\nDocument family: ${documentFamily}\nTenant: ${tenant}\nSource: ${source}\nLanguage: ${detectedLanguage}\nSchema registry: ${schemaRegistry}`
+    `Resolve the output schema for this document.\n\nDocument family: ${documentFamily}\nTenant: ${tenant}\nSource: ${source}\nLanguage: ${detectedLanguage}\nSchema registry: ${schemaRegistry}`,
 })
 
 /** Fills the resolved schema's fields from the raw content. */
@@ -119,19 +119,19 @@ export const Extract = AgentAction.make("examples/DynamicSchemaEnricher/Extract"
     rawContent: Schema.String,
     schemaId: Schema.String,
     fields: Schema.Array(FieldSpec),
-    tenantOverrides: Schema.Array(TenantOverride)
+    tenantOverrides: Schema.Array(TenantOverride),
   },
   output: Extraction,
   seat,
   system: [
     `You are a structured data extractor. Given raw document content and a target schema
 specification, extract every field defined in the schema. Flag any required fields that are missing
-and note confidence levels. Handle ambiguous values by choosing the most likely interpretation.`
+and note confidence levels. Handle ambiguous values by choosing the most likely interpretation.`,
   ],
   prompt: ({ fields, rawContent, schemaId, tenantOverrides }) =>
     `Extract the fields of schema ${schemaId}.\n\nFields: ${JSON.stringify(fields)}\nTenant overrides: ${
       JSON.stringify(tenantOverrides)
-    }\nContent:\n${rawContent}`
+    }\nContent:\n${rawContent}`,
 })
 
 /** Validates the extraction into the final typed record. */
@@ -143,7 +143,7 @@ export const Output = AgentAction.make("examples/DynamicSchemaEnricher/Output", 
     extractedFields: Schema.Record(Schema.String, Schema.Json),
     missingRequired: Schema.Array(Schema.String),
     warnings: Schema.Array(Schema.String),
-    confidence: Schema.Number
+    confidence: Schema.Number,
   },
   output: TypedOutput,
   seat,
@@ -152,7 +152,7 @@ export const Output = AgentAction.make("examples/DynamicSchemaEnricher/Output", 
       JSON.stringify(extractedFields)
     }\nMissing required: ${JSON.stringify(missingRequired)}\nWarnings: ${
       JSON.stringify(warnings)
-    }\nConfidence: ${confidence}`
+    }\nConfidence: ${confidence}`,
 })
 
 /** The flow: context, resolve, extract, output. */
@@ -161,7 +161,7 @@ export const DynamicSchemaEnricher = Flow.make("examples/DynamicSchemaEnricher",
     document: Schema.optional(Schema.String),
     source: Schema.optional(Schema.String),
     tenant: Schema.optional(Schema.String),
-    schemaRegistry: Schema.optional(Schema.String)
+    schemaRegistry: Schema.optional(Schema.String),
   },
   success: TypedOutput,
   error: AgentAction.AgentFailure,
@@ -175,7 +175,7 @@ export const DynamicSchemaEnricher = Flow.make("examples/DynamicSchemaEnricher",
             tenant: context.tenant,
             source: context.source,
             detectedLanguage: context.detectedLanguage,
-            schemaRegistry
+            schemaRegistry,
           }),
           (resolved: Planned.Planned<typeof ResolvedSchema.Type>) =>
             Node.bindPlanned(
@@ -183,7 +183,7 @@ export const DynamicSchemaEnricher = Flow.make("examples/DynamicSchemaEnricher",
                 rawContent: context.rawContent,
                 schemaId: resolved.schemaId,
                 fields: resolved.fields,
-                tenantOverrides: resolved.tenantOverrides
+                tenantOverrides: resolved.tenantOverrides,
               }),
               (extraction: Planned.Planned<typeof Extraction.Type>) =>
                 Output.call({
@@ -193,11 +193,11 @@ export const DynamicSchemaEnricher = Flow.make("examples/DynamicSchemaEnricher",
                   extractedFields: extraction.extractedFields,
                   missingRequired: extraction.missingRequired,
                   warnings: extraction.warnings,
-                  confidence: extraction.extractionConfidence
-                })
-            )
-        )
-    )
+                  confidence: extraction.extractionConfidence,
+                }),
+            ),
+        ),
+    ),
 })
 
 /** Every step the flow calls. */

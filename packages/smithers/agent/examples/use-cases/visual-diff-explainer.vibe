@@ -27,10 +27,10 @@ export const FailedTests = Schema.Struct({
     suite: Schema.String,
     baselinePath: Schema.String,
     currentPath: Schema.String,
-    diffPercentage: Schema.Number
+    diffPercentage: Schema.Number,
   })),
   totalFailed: Schema.Number,
-  runner: Schema.String
+  runner: Schema.String,
 })
 
 /** Each failure's screenshots, encoded. */
@@ -41,8 +41,8 @@ export const ImagePairs = Schema.Struct({
     baselineImage: Schema.String.annotate({ description: "Base64-encoded baseline screenshot" }),
     currentImage: Schema.String.annotate({ description: "Base64-encoded current screenshot" }),
     diffPercentage: Schema.Number,
-    viewport: Schema.optional(Schema.String)
-  }))
+    viewport: Schema.optional(Schema.String),
+  })),
 })
 
 /** What changed in each pair, and why. */
@@ -58,13 +58,13 @@ export const Analysis = Schema.Struct({
       "spacing",
       "typography",
       "z-index",
-      "other"
+      "other",
     ]),
     likelyCause: Schema.String.annotate({ description: "Most probable code-level cause of the visual change" }),
     severity: Schema.Literals(["critical", "major", "minor", "cosmetic"]),
     affectedComponents: Schema.Array(Schema.String),
-    summary: Schema.String
-  }))
+    summary: Schema.String,
+  })),
 })
 
 /** The regression report the flow settles with. */
@@ -78,10 +78,10 @@ export const Report = Schema.Struct({
     changeType: Schema.String,
     likelyCause: Schema.String,
     severity: Schema.String,
-    summary: Schema.String
+    summary: Schema.String,
   })),
   recommendation: Schema.String,
-  markdown: Schema.String
+  markdown: Schema.String,
 })
 
 /** Runs the visual suite and lists its failures. */
@@ -92,10 +92,10 @@ export const RunTests = AgentAction.make("examples/VisualDiffExplainer/RunTests"
   system: [
     `You are a visual regression test runner. Execute the visual test suite,
 identify failed tests, and collect the file paths for baseline and current screenshots.
-Parse test output to extract diff percentages and test metadata.`
+Parse test output to extract diff percentages and test metadata.`,
   ],
   prompt: ({ baselineDir, currentDir, testCommand }) =>
-    `Run the visual tests.\n\nCommand: ${testCommand}\nBaseline directory: ${baselineDir}\nCurrent directory: ${currentDir}`
+    `Run the visual tests.\n\nCommand: ${testCommand}\nBaseline directory: ${baselineDir}\nCurrent directory: ${currentDir}`,
 })
 
 /** Pairs and encodes each failure's screenshots. */
@@ -106,10 +106,10 @@ export const CollectPairs = AgentAction.make("examples/VisualDiffExplainer/Colle
   system: [
     `You are an image pair collector. Read baseline and current screenshot files
 for each failed visual test. Encode images as base64 and pair them with their test metadata.
-Extract viewport information from file names or test config when available.`
+Extract viewport information from file names or test config when available.`,
   ],
   prompt: ({ tests, totalFailed }) =>
-    `Collect the screenshot pairs for ${totalFailed} failed tests.\n\nTests: ${JSON.stringify(tests)}`
+    `Collect the screenshot pairs for ${totalFailed} failed tests.\n\nTests: ${JSON.stringify(tests)}`,
 })
 
 /** Explains every pair in one call. */
@@ -122,9 +122,9 @@ export const AnalyzeDiff = AgentAction.make("examples/VisualDiffExplainer/Analyz
 Compare baseline and current screenshots side by side. Identify exactly what changed,
 which UI region is affected, and infer the most likely code-level cause (CSS change,
 component re-render, data change, layout reflow, etc). Be specific about selectors
-and component names when possible.`
+and component names when possible.`,
   ],
-  prompt: ({ pairs }) => `Explain what changed in each screenshot pair.\n\nPairs: ${JSON.stringify(pairs)}`
+  prompt: ({ pairs }) => `Explain what changed in each screenshot pair.\n\nPairs: ${JSON.stringify(pairs)}`,
 })
 
 /** Writes the regression report. */
@@ -135,12 +135,12 @@ export const WriteReport = AgentAction.make("examples/VisualDiffExplainer/Report
   system: [
     `You are a visual regression report writer. Synthesize analysis findings
 into a clear, actionable report. Prioritize by severity. Include a recommendation on
-whether the changes are intentional (update baselines) or bugs (file issues).`
+whether the changes are intentional (update baselines) or bugs (file issues).`,
   ],
   prompt: ({ findings, outputFile, repository }) =>
     `Write the visual regression report.\n\nRepository: ${repository}\nOutput file: ${outputFile}\nFindings: ${
       JSON.stringify(findings)
-    }`
+    }`,
 })
 
 /** The pipeline: run, collect, analyze, report. */
@@ -150,7 +150,7 @@ export const VisualDiffExplainer = Flow.make("examples/VisualDiffExplainer", {
     baselineDir: Schema.optional(Schema.String),
     currentDir: Schema.optional(Schema.String),
     outputFile: Schema.optional(Schema.String),
-    repository: Schema.optional(Schema.String)
+    repository: Schema.optional(Schema.String),
   },
   success: Report,
   error: AgentAction.AgentFailure,
@@ -159,7 +159,7 @@ export const VisualDiffExplainer = Flow.make("examples/VisualDiffExplainer", {
     currentDir = "__screenshots__/current",
     outputFile = "visual-regression-report.md",
     repository = "unknown",
-    testCommand = "npx playwright test --reporter=json"
+    testCommand = "npx playwright test --reporter=json",
   }) =>
     Node.bindPlanned(
       RunTests.call({ testCommand, baselineDir, currentDir }),
@@ -170,10 +170,10 @@ export const VisualDiffExplainer = Flow.make("examples/VisualDiffExplainer", {
             Node.bindPlanned(
               AnalyzeDiff.call({ pairs: collected.pairs }),
               (analysis: Planned.Planned<typeof Analysis.Type>) =>
-                WriteReport.call({ findings: analysis.findings, outputFile, repository })
-            )
-        )
-    )
+                WriteReport.call({ findings: analysis.findings, outputFile, repository }),
+            ),
+        ),
+    ),
 })
 
 /** Every step the flow calls. */

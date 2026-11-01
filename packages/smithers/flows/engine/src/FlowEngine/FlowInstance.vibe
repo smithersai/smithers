@@ -25,7 +25,7 @@ import * as Lineage from "./Lineage.ts"
 export const makeInstance = (
   flow: Flow.Any,
   executionId: string,
-  lineageDeadline?: Flow.LineageDeadline | undefined
+  lineageDeadline?: Flow.LineageDeadline | undefined,
 ): FlowRuntime.FlowInstance["Service"] & { readonly lineageId: Lineage.JournalLineageId } => {
   // Ordinals are counted per allocation scope, not per run: the engine
   // scopes action dispatches by declaration identity and an optional
@@ -57,7 +57,7 @@ export const makeInstance = (
       },
       // Earliest pre-attempt handle; durable drivers recover it via actionSnapshot.
       snapshots: new Map(),
-      keylessInFlight: new Set()
-    }
+      keylessInFlight: new Set(),
+    },
   } satisfies FlowRuntime.FlowInstance["Service"]
 }

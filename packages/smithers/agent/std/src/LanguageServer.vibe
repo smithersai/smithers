@@ -66,7 +66,7 @@ export interface LanguageServer {
  * @since 1.0.0
  */
 export const LanguageServer: Context.Service<LanguageServer, LanguageServer> = Context.Service(
-  "@smthrs/std/LanguageServer"
+  "@smthrs/std/LanguageServer",
 )
 /**
  * Builds a {@link LanguageServer} from an implementation of its methods.
@@ -98,7 +98,7 @@ export const makeNoop = (): LanguageServer =>
     diagnostics: unsupported,
     sync: unsupported,
     close: unsupported,
-    refresh: unsupported()
+    refresh: unsupported(),
   })
 /**
  * Provides {@link makeNoop}.

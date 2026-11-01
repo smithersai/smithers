@@ -72,7 +72,7 @@ const identifier = Schema.String.check(
   Schema.isMinLength(1),
   Schema.isMaxLength(maxIdentifierLength),
   Schema.makeFilter((value: string) => !loneSurrogate.test(value), { title: "wellFormedIdentifier" }),
-  Schema.makeFilter((value: string) => !embeddedNul.test(value), { title: "nulFreeIdentifier" })
+  Schema.makeFilter((value: string) => !embeddedNul.test(value), { title: "nulFreeIdentifier" }),
 )
 
 /**
@@ -107,9 +107,9 @@ export type RunId = typeof RunId.Type
  */
 export const Seq = Schema.Int.check(
   Schema.isGreaterThanOrEqualTo(0),
-  Schema.isLessThan(Number.MAX_SAFE_INTEGER)
+  Schema.isLessThan(Number.MAX_SAFE_INTEGER),
 ).pipe(
-  Schema.brand("@smthrs/journal/JournalEvent/Seq")
+  Schema.brand("@smthrs/journal/JournalEvent/Seq"),
 )
 
 /**
@@ -151,9 +151,9 @@ export type SourceId = typeof SourceId.Type
  */
 export const SourceSeq = Schema.Int.check(
   Schema.isGreaterThanOrEqualTo(0),
-  Schema.isLessThan(Number.MAX_SAFE_INTEGER)
+  Schema.isLessThan(Number.MAX_SAFE_INTEGER),
 ).pipe(
-  Schema.brand("@smthrs/journal/JournalEvent/SourceSeq")
+  Schema.brand("@smthrs/journal/JournalEvent/SourceSeq"),
 )
 
 /**
@@ -212,7 +212,7 @@ export class Input extends Schema.Class<Input>("@smthrs/journal/JournalEvent/Inp
   /** Non-empty, NUL-free, well-formed UTF-16 of at most 1,024 code units. */
   eventType: identifier,
   payload: Schema.Unknown,
-  meta: Schema.optional(Schema.Unknown)
+  meta: Schema.optional(Schema.Unknown),
 }) {}
 
 /**
@@ -244,7 +244,7 @@ export class Entry extends Schema.Class<Entry>("@smthrs/journal/JournalEvent/Ent
    */
   eventType: identifier,
   payload: Schema.Unknown,
-  meta: Schema.Unknown
+  meta: Schema.Unknown,
 }) {}
 
 /**
@@ -337,7 +337,7 @@ const sha256Rounds = Uint32Array.from([
   0x90befffa,
   0xa4506ceb,
   0xbef9a3f7,
-  0xc67178f2
+  0xc67178f2,
 ])
 
 const rotate = (value: number, bits: number): number => (value >>> bits) | (value << (32 - bits))
@@ -366,7 +366,7 @@ const sha256Hex = (text: string): string => {
     0x510e527f,
     0x9b05688c,
     0x1f83d9ab,
-    0x5be0cd19
+    0x5be0cd19,
   ])
   const words = new Uint32Array(64)
   for (let block = 0; block < length; block += 64) {
@@ -556,7 +556,7 @@ export type ArtifactId = typeof ArtifactId.Type
  */
 export const NonNegativeQuantity = Schema.Int.check(
   Schema.isGreaterThanOrEqualTo(0),
-  Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
+  Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER),
 )
 
 /**

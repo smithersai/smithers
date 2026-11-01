@@ -7,7 +7,7 @@ import * as Schema from "effect/Schema"
 
 const nonnegative = Schema.Int.check(
   Schema.isGreaterThanOrEqualTo(0),
-  Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
+  Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER),
 )
 const positive = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER))
 
@@ -22,7 +22,7 @@ export const Step = Schema.Struct({
   attempt: positive,
   ask: Schema.Union([nonnegative, Schema.Literal("repair")]),
   retry: positive,
-  scope: Schema.String
+  scope: Schema.String,
 })
 
 /** Decoded invocation coordinates.
@@ -45,7 +45,7 @@ export const Fact = Schema.Struct({
   at: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)),
   eventType: Schema.String.check(Schema.isPattern(/^control\.agent\.[a-z-]+$/)),
   sourceSequence: nonnegative,
-  payload: Schema.Json
+  payload: Schema.Json,
 })
 
 /** Decoded checkpoint observation.

@@ -32,7 +32,7 @@ import * as EventTally from "./internal/EventTally.vibe"
  * @since 0.1.0
  */
 export const writes = Metric.counter("flows_journal_writes", {
-  description: "Journal emissions by channel and receipt"
+  description: "Journal emissions by channel and receipt",
 })
 
 /**
@@ -46,7 +46,7 @@ export const durable: {
   readonly [Tag in "Accepted" | "Duplicate"]: Metric.Metric<number, Metric.CounterState<number>>
 } = {
   Accepted: Metric.withAttributes(writes, { channel: "durable", receipt: "accepted" }),
-  Duplicate: Metric.withAttributes(writes, { channel: "durable", receipt: "duplicate" })
+  Duplicate: Metric.withAttributes(writes, { channel: "durable", receipt: "duplicate" }),
 }
 
 /**
@@ -61,7 +61,7 @@ export const lossy: {
 } = {
   Accepted: Metric.withAttributes(writes, { channel: "lossy", receipt: "accepted" }),
   Duplicate: Metric.withAttributes(writes, { channel: "lossy", receipt: "duplicate" }),
-  Dropped: Metric.withAttributes(writes, { channel: "lossy", receipt: "dropped" })
+  Dropped: Metric.withAttributes(writes, { channel: "lossy", receipt: "dropped" }),
 }
 
 /**
@@ -80,7 +80,7 @@ export const lossy: {
  * @since 1.0.0-rc.1
  */
 export const lostEntries = Metric.counter("flows_journal_lost", {
-  description: "Admitted lossy journal entries the writer failed to commit"
+  description: "Admitted lossy journal entries the writer failed to commit",
 })
 
 /**
@@ -126,7 +126,7 @@ export interface JournalTally {
  * @since 1.0.0
  */
 export const tally = <A, E, R>(
-  effect: A!E!R
+  effect: A!E!R,
 ): [tally: JournalTally, result: A]!E!R => {
   const accumulator: EventTally.Accumulator = { events: 0 }
   const open = EventTally.Current()

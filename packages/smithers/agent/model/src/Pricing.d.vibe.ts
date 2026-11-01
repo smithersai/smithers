@@ -12,8 +12,8 @@
  * @since 1.0.0-rc.1
  */
 import { Schema } from "effect";
-import { type ModelPrice } from "./internal/prices.generated.ts";
-import type * as ModelEvent from "./ModelEvent.vibe";
+import { type ModelPrice } from "./internal/prices.generated.js";
+import type * as ModelEvent from "./ModelEvent.js";
 /**
  * USD per million tokens for each token class a provider reports.
  *

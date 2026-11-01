@@ -293,7 +293,7 @@ export class Check extends Schema.Class<Check>("flows/harness/NarrowedCheck/Chec
    */
   conditions: Schema.Array(Schema.String).pipe(
     Schema.withConstructorDefault(Effect.succeed<ReadonlyArray<string>>([])),
-    Schema.withDecodingDefaultKey(Effect.succeed<ReadonlyArray<string>>([]))
+    Schema.withDecodingDefaultKey(Effect.succeed<ReadonlyArray<string>>([])),
   ),
   /**
    * Content address of the workspace the frame that ran this check closed on.
@@ -323,7 +323,7 @@ export class Check extends Schema.Class<Check>("flows/harness/NarrowedCheck/Chec
    */
   failing: Schema.Boolean.pipe(
     Schema.withConstructorDefault(Effect.succeed(false)),
-    Schema.withDecodingDefaultKey(Effect.succeed(false))
+    Schema.withDecodingDefaultKey(Effect.succeed(false)),
   ),
   /**
    * Whether the call's own result reported a passing exit status.
@@ -337,7 +337,7 @@ export class Check extends Schema.Class<Check>("flows/harness/NarrowedCheck/Chec
    */
   passing: Schema.Boolean.pipe(
     Schema.withConstructorDefault(Effect.succeed(false)),
-    Schema.withDecodingDefaultKey(Effect.succeed(false))
+    Schema.withDecodingDefaultKey(Effect.succeed(false)),
   ),
   /**
    * Whether the run declared this call as its check: rule 7's
@@ -357,7 +357,7 @@ export class Check extends Schema.Class<Check>("flows/harness/NarrowedCheck/Chec
    */
   declared: Schema.Boolean.pipe(
     Schema.withConstructorDefault(Effect.succeed(false)),
-    Schema.withDecodingDefaultKey(Effect.succeed(false))
+    Schema.withDecodingDefaultKey(Effect.succeed(false)),
   ),
   /**
    * Whether {@link Check.digest} is the tree this check actually read.
@@ -378,8 +378,8 @@ export class Check extends Schema.Class<Check>("flows/harness/NarrowedCheck/Chec
    */
   stable: Schema.Boolean.pipe(
     Schema.withConstructorDefault(Effect.succeed(false)),
-    Schema.withDecodingDefaultKey(Effect.succeed(false))
-  )
+    Schema.withDecodingDefaultKey(Effect.succeed(false)),
+  ),
 }) {}
 
 /**
@@ -429,12 +429,12 @@ export const check = (options: {
     label: elide.head(
       label(options.input),
       labelWidth,
-      "the issuing cell in the run record has the whole input"
+      "the issuing cell in the run record has the whole input",
     ),
     failing: options.failing ?? false,
     passing: options.passing ?? false,
     declared: options.declared ?? false,
-    stable: options.stable ?? false
+    stable: options.stable ?? false,
   })
 }
 
@@ -454,7 +454,7 @@ export const check = (options: {
  */
 export const narrows = (
   later: ReadonlyArray<string>,
-  earlier: ReadonlyArray<string>
+  earlier: ReadonlyArray<string>,
 ): boolean => {
   const carried = new Set(later)
   for (const term of earlier) if (!carried.has(term)) return false
@@ -701,7 +701,7 @@ export const demandOnly = (found: Only): string =>
  */
 export const remember = (
   ledger: ReadonlyArray<Check>,
-  added: ReadonlyArray<Check>
+  added: ReadonlyArray<Check>,
 ): ReadonlyArray<Check> => {
   const newest = new Map(ledger.map((entry) => [entry.signature, entry]))
   for (const entry of added) {
@@ -711,7 +711,7 @@ export const remember = (
     // call comes back through a copy of the input rather than the binding.
     newest.set(
       entry.signature,
-      earlier !== undefined && earlier.declared && !entry.declared ? new Check({ ...entry, declared: true }) : entry
+      earlier !== undefined && earlier.declared && !entry.declared ? new Check({ ...entry, declared: true }) : entry,
     )
   }
   const distinct = [...newest.values()]
@@ -726,5 +726,5 @@ export const remember = (
  */
 export const Ledger = Schema.Array(Check).pipe(
   Schema.withConstructorDefault(Effect.succeed<ReadonlyArray<Check>>([])),
-  Schema.withDecodingDefaultKey(Effect.succeed<ReadonlyArray<Check>>([]))
+  Schema.withDecodingDefaultKey(Effect.succeed<ReadonlyArray<Check>>([])),
 )

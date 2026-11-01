@@ -39,7 +39,7 @@ export const observed = <A extends string, E, R>(
     readonly attribute: string
     readonly counter: Metric.Metric<number, Metric.CounterState<number>>
     readonly log: string
-  }
+  },
 ): A!E!R =>
   Effect.flatMap(Clock.currentTimeMillis, (startedAt) =>
     effect

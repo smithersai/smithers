@@ -34,7 +34,7 @@ export const StepResult = Schema.Struct({
   failureClass: Schema.optional(FailureClass),
   errorMessage: Schema.optional(Schema.String),
   latencyMs: Schema.Number,
-  attempt: Schema.Number
+  attempt: Schema.Number,
 })
 
 /** The policy controller's decision after a failed attempt. */
@@ -45,7 +45,7 @@ export const PolicyDecision = Schema.Struct({
   budgetSpent: Schema.Number,
   reasoning: Schema.String,
   routeOverride: Schema.optional(Schema.String),
-  escalate: Schema.Boolean
+  escalate: Schema.Boolean,
 })
 
 /** The escalation agent's assessment. */
@@ -57,8 +57,8 @@ export const Escalation = Schema.Struct({
   failureBreakdown: Schema.Array(Schema.Struct({
     failureClass: FailureClass,
     count: Schema.Number,
-    percentage: Schema.Number
-  }))
+    percentage: Schema.Number,
+  })),
 })
 
 /** The report the flow settles with. */
@@ -69,7 +69,7 @@ export const Report = Schema.Struct({
   budgetUsed: Schema.Number,
   budgetTotal: Schema.Number,
   escalated: Schema.Boolean,
-  summary: Schema.String
+  summary: Schema.String,
 })
 
 type StepResult = typeof StepResult.Type
@@ -85,7 +85,7 @@ export const RunStep = AgentAction.make("examples/RetryBudgetManager/Step", {
     budgetTotal: Schema.Number,
     budgetRemaining: Schema.Number,
     routeOverride: Schema.optional(Schema.String),
-    previousError: Schema.optional(Schema.String)
+    previousError: Schema.optional(Schema.String),
   },
   output: StepResult,
   seat,
@@ -93,12 +93,12 @@ export const RunStep = AgentAction.make("examples/RetryBudgetManager/Step", {
     `You are a step executor. Run the given step, capture its result including
 latency and any error details. Classify failures accurately: transient (network blips,
 temporary unavailability), persistent (bad config, missing resource), quota (rate limits,
-capacity), timeout (deadline exceeded). Report honestly — never mask failures.`
+capacity), timeout (deadline exceeded). Report honestly — never mask failures.`,
   ],
   prompt: ({ attempt, budgetRemaining, budgetTotal, command, previousError, routeOverride, stepName }) =>
     `Run step "${stepName}", attempt ${attempt} of ${budgetTotal} (${budgetRemaining} left in the budget).\n\nCommand: ${command}\nRoute override: ${
       routeOverride ?? "none"
-    }\nPrevious error: ${previousError ?? "none"}`
+    }\nPrevious error: ${previousError ?? "none"}`,
 })
 
 /** Decides whether a failed attempt is worth retrying. */
@@ -108,7 +108,7 @@ export const DecidePolicy = AgentAction.make("examples/RetryBudgetManager/Policy
     attempt: Schema.Number,
     budgetTotal: Schema.Number,
     budgetSpent: Schema.Number,
-    history: Schema.Array(StepResult)
+    history: Schema.Array(StepResult),
   },
   output: PolicyDecision,
   seat,
@@ -116,12 +116,12 @@ export const DecidePolicy = AgentAction.make("examples/RetryBudgetManager/Policy
     `You are a retry policy controller. Analyse the failure class, remaining budget,
 and history of previous attempts. Use exponential backoff for transient failures, immediate
 escalation for persistent ones, and cooldown periods for quota errors. Be conservative —
-wasting budget on hopeless retries is worse than escalating early.`
+wasting budget on hopeless retries is worse than escalating early.`,
   ],
   prompt: ({ attempt, budgetSpent, budgetTotal, history, stepResult }) =>
     `Decide the retry policy after attempt ${attempt}.\n\nBudget: ${budgetSpent} of ${budgetTotal} spent\nLatest result: ${
       JSON.stringify(stepResult)
-    }\nHistory: ${JSON.stringify(history)}`
+    }\nHistory: ${JSON.stringify(history)}`,
 })
 
 /** Assesses a run that did not succeed. */
@@ -131,19 +131,19 @@ export const Escalate = AgentAction.make("examples/RetryBudgetManager/Escalation
     stepResults: Schema.Array(StepResult),
     policies: Schema.Array(PolicyDecision),
     budgetTotal: Schema.Number,
-    budgetUsed: Schema.Number
+    budgetUsed: Schema.Number,
   },
   output: Escalation,
   seat,
   system: [
     `You are an escalation analyst. When the retry budget is exhausted or the
 policy controller flags escalation, produce a clear severity assessment, a concrete
-recommendation, and a breakdown of failure classes observed. Be actionable and concise.`
+recommendation, and a breakdown of failure classes observed. Be actionable and concise.`,
   ],
   prompt: ({ budgetTotal, budgetUsed, policies, stepName, stepResults }) =>
     `Escalate step "${stepName}" after ${budgetUsed} of ${budgetTotal} attempts.\n\nResults: ${
       JSON.stringify(stepResults)
-    }\nPolicy decisions: ${JSON.stringify(policies)}`
+    }\nPolicy decisions: ${JSON.stringify(policies)}`,
 })
 
 interface Run {
@@ -167,7 +167,7 @@ const report = ({ budget, escalation, results, stepName }: {
   escalated: escalation !== null,
   summary: escalation === null
     ? `Step "${stepName}" succeeded after ${results.length} attempt(s)`
-    : `Exhausted ${results.length}/${budget} retries — escalated as ${escalation.severity}: ${escalation.recommendation}`
+    : `Exhausted ${results.length}/${budget} retries — escalated as ${escalation.severity}: ${escalation.recommendation}`,
 })
 
 type Requirements = Action.Requirement<
@@ -178,11 +178,11 @@ type Requirements = Action.Requirement<
 const escalate = (
   { budget, stepName }: Run,
   results: ReadonlyArray<Planned.Planned<StepResult>>,
-  policies: ReadonlyArray<Planned.Planned<PolicyDecision>>
+  policies: ReadonlyArray<Planned.Planned<PolicyDecision>>,
 ): Node.Node<Report, AgentAction.AgentFailure, Requirements> =>
   Node.bindPlanned(
     Escalate.call({ stepName, stepResults: results, policies, budgetTotal: budget, budgetUsed: results.length }),
-    (escalation) => Node.map(Node.succeed({ stepName, budget, results, escalation }), report)
+    (escalation) => Node.map(Node.succeed({ stepName, budget, results, escalation }), report),
   )
 
 /**
@@ -194,7 +194,7 @@ const tryStep = (
   run: Run,
   n: number,
   results: ReadonlyArray<Planned.Planned<StepResult>>,
-  policies: ReadonlyArray<Planned.Planned<PolicyDecision>>
+  policies: ReadonlyArray<Planned.Planned<PolicyDecision>>,
 ): Node.Node<Report, AgentAction.AgentFailure, Requirements> => {
   const { budget, command, stepName } = run
   const latest = policies.at(-1)
@@ -206,7 +206,7 @@ const tryStep = (
       budgetTotal: budget,
       budgetRemaining: latest?.budgetRemaining ?? budget,
       routeOverride: latest?.routeOverride,
-      previousError: results.at(-1)?.errorMessage
+      previousError: results.at(-1)?.errorMessage,
     }),
     {
       if: (step) => step.success,
@@ -222,11 +222,11 @@ const tryStep = (
             else: (policy) =>
               n >= budget
                 ? escalate(run, tried, [...policies, policy])
-                : tryStep(run, n + 1, tried, [...policies, policy])
-          }
+                : tryStep(run, n + 1, tried, [...policies, policy]),
+          },
         )
-      }
-    }
+      },
+    },
   )
 }
 
@@ -235,11 +235,11 @@ export const RetryBudgetManager = Flow.make("examples/RetryBudgetManager", {
   payload: {
     command: Schema.String,
     stepName: Schema.optional(Schema.String),
-    budget: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0)))
+    budget: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
   },
   success: Report,
   error: AgentAction.AgentFailure,
-  body: ({ budget = 5, command, stepName = "default-step" }) => tryStep({ stepName, command, budget }, 1, [], [])
+  body: ({ budget = 5, command, stepName = "default-step" }) => tryStep({ stepName, command, budget }, 1, [], []),
 })
 
 /** Every step the flow calls. */

@@ -75,8 +75,8 @@ export interface Encoded {
     flow: Flow.Any,
     execute: (
       payload: object,
-      executionId: string
-    ) => unknown!unknown!FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime
+      executionId: string,
+    ) => unknown!unknown!FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime,
   ) => void!never!Scope.Scope
   /**
    * Starts, or joins, one execution of `flow` and answers with its settlement.
@@ -124,7 +124,7 @@ export interface Encoded {
        * as before.
        */
       readonly follow?: boolean | undefined
-    }
+    },
   ) => (Discard extends true ? void : Flow.Result<unknown, unknown>)!FlowRuntime.FlowCycleDetected
   /**
    * The settlement of one execution of `flow`, when it has one.
@@ -139,7 +139,7 @@ export interface Encoded {
    */
   readonly poll: (
     flow: Flow.Any,
-    executionId: string
+    executionId: string,
   ) => Option.Option<Flow.Result<unknown, unknown>>!FlowRuntime.FlowExecutionNotFound
   /**
    * Requests cancellation with normal cleanup and compensation semantics.
@@ -158,7 +158,7 @@ export interface Encoded {
    */
   readonly interrupt: (
     flow: Flow.Any,
-    executionId: string
+    executionId: string,
   ) => void!FlowRuntime.CancelRequestFailed
   /**
    * Forces cancellation without guaranteeing cleanup or compensation.
@@ -168,7 +168,7 @@ export interface Encoded {
    */
   readonly interruptUnsafe: (
     flow: Flow.Any,
-    executionId: string
+    executionId: string,
   ) => void!FlowRuntime.CancelRequestFailed
   /**
    * Re-drives a durably suspended execution; it does not undo cancellation.
@@ -185,12 +185,12 @@ export interface Encoded {
   readonly resume: (
     flow: Flow.Any,
     executionId: string,
-    options?: FlowRuntime.ResumeOptions & { readonly poll?: boolean | undefined } | undefined
+    options?: FlowRuntime.ResumeOptions & { readonly poll?: boolean | undefined } | undefined,
   ) => void!!
   readonly resumeSignal?:
     | ((
       flow: Flow.Any,
-      executionId: string
+      executionId: string,
     ) => void!!)
     | undefined
   /**
@@ -208,12 +208,12 @@ export interface Encoded {
     | ((
       derive: (
         executionId: string,
-        runScoped: boolean
+        runScoped: boolean,
       ) => string!Schema.SchemaError!Crypto.Crypto,
       legacy: (
         executionId: string,
-        runScoped: boolean
-      ) => ReadonlyArray<string>!Schema.SchemaError!Crypto.Crypto
+        runScoped: boolean,
+      ) => ReadonlyArray<string>!Schema.SchemaError!Crypto.Crypto,
     ) => string!Schema.SchemaError!FlowRuntime.FlowInstance | Crypto.Crypto)
     | undefined
   /**
@@ -224,7 +224,7 @@ export interface Encoded {
    */
   readonly encodeEngineError?: ((error: unknown) => Option.Option<unknown>) | undefined
   readonly actionExecute: (
-    options: ActionExecuteOptions
+    options: ActionExecuteOptions,
   ) => Flow.Result<unknown, unknown>!never!FlowRuntime.FlowInstance | Crypto.Crypto
   /**
    * The durable wall-clock origin of an action's retry sequence: the
@@ -280,7 +280,7 @@ export interface Encoded {
     }) => Option.Option<unknown>!never!FlowRuntime.FlowInstance | Crypto.Crypto)
     | undefined
   readonly deferredResult: (
-    deferred: DurableDeferred.Any
+    deferred: DurableDeferred.Any,
   ) => Option.Option<Exit.Exit<unknown, unknown>>!never!FlowRuntime.FlowInstance
   readonly deferredDone: (options: {
     readonly flowName: string
@@ -303,7 +303,7 @@ export interface Encoded {
     options: {
       readonly executionId: string
       readonly clock: DurableClock.DurableClock
-    }
+    },
   ) => void!!
   /**
    * Admits a new execution of `flow`, `executionId`, that retries the settled
@@ -324,7 +324,7 @@ export interface Encoded {
   readonly retryFrom?:
     | ((
       flow: Flow.Any,
-      options: { readonly source: string; readonly step: string; readonly executionId: string }
+      options: { readonly source: string; readonly step: string; readonly executionId: string },
     ) => void!FlowRuntime.RetryFromRefused)
     | undefined
   /**

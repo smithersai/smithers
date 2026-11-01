@@ -29,5 +29,5 @@ export const withWriteLock = <A, E, R>(key: string, effect: A!E!R): A!E!R =>
     (gate) =>
       Effect.sync(() => {
         if (--gate.users === 0) gates.delete(key)
-      })
+      }),
   ) |> Effect.withSpan(%, "GitHub.Actions.keyed-write")

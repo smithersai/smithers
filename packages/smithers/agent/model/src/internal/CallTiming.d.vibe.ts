@@ -15,8 +15,8 @@
  * @internal
  */
 import type * as Clock from "effect/Clock";
-import type { ModelEvent, Timing } from "../ModelEvent.vibe";
-import type * as RequestExecutor from "../RequestExecutor.ts";
+import type { ModelEvent, Timing } from "../ModelEvent.js";
+import type * as RequestExecutor from "../RequestExecutor.js";
 /**
  * One call's stopwatch: a mark per stage, and the reading so far.
  *

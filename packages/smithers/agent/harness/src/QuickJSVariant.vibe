@@ -59,7 +59,7 @@ export interface VariantService {
  * @since 0.1.0
  */
 export class Variant extends Context.Service<Variant, VariantService>()(
-  "@smthrs/harness/QuickJSSandbox/Variant"
+  "@smthrs/harness/QuickJSSandbox/Variant",
 ) {}
 
 /**
@@ -81,7 +81,7 @@ export const layerVariant = (variant: QuickJSSyncVariant): Layer<Variant> => Lay
  * @since 0.1.0
  */
 export const loadModule = (
-  loader: () => Promise<QuickJSWASMModule>
+  loader: () => Promise<QuickJSWASMModule>,
 ): QuickJSWASMModule!Sandbox.SandboxError =>
   Effect.tryPromise({
     try: loader,
@@ -89,8 +89,8 @@ export const loadModule = (
       new Sandbox.SandboxError({
         code: "runtime_failed",
         message: "QuickJS WebAssembly module could not be loaded",
-        cause
-      })
+        cause,
+      }),
   })
 
 /**

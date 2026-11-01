@@ -1,5 +1,7 @@
 {
+  "vibe": { "sidecarDir": ".vibe/declarations" },
   "compilerOptions": {
+    "rootDirs": [".",".vibe/declarations"],
     "rewriteRelativeImportExtensions": true,
     "target": "ES2022",
     "lib": [

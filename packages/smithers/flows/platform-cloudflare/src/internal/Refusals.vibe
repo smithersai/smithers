@@ -20,7 +20,7 @@ const fileSystemRefusal = (method: string): PlatformError =>
     _tag: "PermissionDenied",
     module: "FileSystem",
     method,
-    description: "not_installed: a Cloudflare Worker has no filesystem"
+    description: "not_installed: a Cloudflare Worker has no filesystem",
   })
 
 const refuse = (method: string): infer _ => () => throw fileSystemRefusal(method)
@@ -62,7 +62,7 @@ export const layerFileSystem: Layer.Layer<FileSystem.FileSystem> = FileSystem.la
   utimes: refuse("utimes"),
   watch: () => Stream.fail(fileSystemRefusal("watch")),
   writeFile: refuse("writeFile"),
-  writeFileString: refuse("writeFileString")
+  writeFileString: refuse("writeFileString"),
 })
 
 /**
@@ -73,12 +73,12 @@ export const layerFileSystem: Layer.Layer<FileSystem.FileSystem> = FileSystem.la
  * @since 1.0.0
  */
 export const layerChildProcessSpawner: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner> = Layer.succeed(
-  ChildProcessSpawner.ChildProcessSpawner
+  ChildProcessSpawner.ChildProcessSpawner,
 )(ChildProcessSpawner.make(() =>
   throw PlatformError.systemError({
     _tag: "NotFound",
     module: "ChildProcess",
     method: "spawn",
-    description: "not_installed: a Cloudflare Worker cannot start a process"
+    description: "not_installed: a Cloudflare Worker cannot start a process",
   })
 ))

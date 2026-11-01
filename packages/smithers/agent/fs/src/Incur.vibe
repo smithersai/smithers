@@ -22,14 +22,14 @@ const mapError = (context: IncurHost.Context, error: FsError): never =>
 // sanitized.
 effect function execute(
   selected: IncurHost.SelectedRoute,
-  context: IncurHost.Context
+  context: IncurHost.Context,
 ): Effect<unknown, never, FlowInvoker.FlowInvoker> {
   const outcome = try exit {
     const input = try selected.schema.decode(selected.schema.assemble(context.args, context.options))
     const output = try FlowInvoker.FlowInvoker.invoke(Object.freeze({
       name: selected.route.name,
       flow: selected.flow,
-      input
+      input,
     }))
     return try SchemaBridge.encodeOutput(selected.flow.output, output)
   }
@@ -48,8 +48,8 @@ effect function execute(
     new FsError({
       code: "invocation_unavailable",
       method: "Incur.execute",
-      description: "The flow invocation failed"
-    })
+      description: "The flow invocation failed",
+    }),
   )
 }
 
@@ -72,9 +72,9 @@ effect function project(route: Route.Route): Effect<IncurHost.Projection> {
             code: "load_failed",
             method: "Incur.project",
             description: "The route metadata load timed out",
-            path: route.name
-          })
-      }
+            path: route.name,
+          }),
+      },
     )
     return { _tag: "Ready", selected }
   } catch (error) {
@@ -100,7 +100,7 @@ effect function groupedRoutes(tree: CommandTree.CommandTree): Effect<ReadonlySet
           code: "duplicate_route",
           method: "Incur.createCli",
           description: "A child route claims the reserved self segment",
-          path: `${route.name}/${IncurHost.selfSegment}`
+          path: `${route.name}/${IncurHost.selfSegment}`,
         })
       }
       grouped.add(route)
@@ -114,7 +114,7 @@ effect function hydrate(
   tree: CommandTree.CommandTree,
   grouped: ReadonlySet<Route.Route>,
   tokens: ReadonlyArray<string>,
-  dispatchTokens: ReadonlyArray<string>
+  dispatchTokens: ReadonlyArray<string>,
 ): Effect<Option<IncurHost.Selection>, FsError, infer R> {
   // Only an unmatched name may fall back to metadata: every other typed
   // failure has to reach the caller.
@@ -131,7 +131,7 @@ effect function hydrate(
     route: resolved.route,
     flow,
     schema,
-    dispatch: Object.freeze(dispatchTokens.slice(0, viaSelf ? consumed + 1 : consumed))
+    dispatch: Object.freeze(dispatchTokens.slice(0, viaSelf ? consumed + 1 : consumed)),
   })
 }
 
@@ -139,7 +139,7 @@ effect function select(
   tree: CommandTree.CommandTree,
   grouped: ReadonlySet<Route.Route>,
   tokens: ReadonlyArray<string>,
-  dispatchTokens: ReadonlyArray<string>
+  dispatchTokens: ReadonlyArray<string>,
 ): Effect<IncurHost.Outcome> {
   try {
     return { _tag: "Selection", selection: try hydrate(tree, grouped, tokens, dispatchTokens) }
@@ -163,7 +163,7 @@ effect function select(
  */
 export effect function createCli(
   name: string,
-  routes: ReadonlyArray<Route.Route>
+  routes: ReadonlyArray<Route.Route>,
 ): Effect<IncurCli.Cli & { close: () => Promise<void> }, FsError, FlowInvoker.FlowInvoker> {
   const validated = try CommandTree.make(routes)
   const executable = CommandTree.traverse(validated).filter(Route.isCommandRoute)
@@ -178,7 +178,7 @@ export effect function createCli(
       execute,
       refuse,
       projectAll,
-      select: effect (tokens, dispatchTokens) => try select(tree, grouped, tokens, dispatchTokens)
-    }
+      select: effect (tokens, dispatchTokens) => try select(tree, grouped, tokens, dispatchTokens),
+    },
   })
 }

@@ -21,7 +21,7 @@ import {
   type ModuleImport,
   type Provenance,
   SchemaRefModule,
-  SchemaRefNone
+  SchemaRefNone,
 } from "./Descriptor.ts"
 import * as ModuleMetadata from "./internal/ModuleMetadata.vibe"
 import { deriveBudget } from "./MarkdownFlow.vibe"
@@ -83,7 +83,7 @@ export const fromModule = (options: FromModuleOptions): FromModuleResult => {
   // source names it after its directory instead.
   const name = Option.getOrElse(
     options.naming === "path" ? options.name : Option.none<string>(),
-    () => options.dirBasename
+    () => options.dirBasename,
   )
   const warnings: Array<DiscoveryWarning> = []
   for (const item of metadata.warnings) {
@@ -91,7 +91,7 @@ export const fromModule = (options: FromModuleOptions): FromModuleResult => {
       "unsupported_module_metadata",
       options.path,
       item.line === undefined ? item.message : `${item.message} at ${options.path}:${item.line}`,
-      name
+      name,
     ))
   }
   // `Flow.make` requires a name, because the name is the tag the flow, its
@@ -107,8 +107,8 @@ export const fromModule = (options: FromModuleOptions): FromModuleResult => {
         "name_field_ignored",
         options.path,
         "Ignoring Flow.make name because this source uses path-derived names",
-        name
-      )
+        name,
+      ),
     )
   }
   const budget = metadata.budget === undefined
@@ -120,8 +120,8 @@ export const fromModule = (options: FromModuleOptions): FromModuleResult => {
         "missing_description",
         options.path,
         "Module flows require a literal description in the default Flow.make value",
-        name
-      )
+        name,
+      ),
     )
     return { descriptor: Option.none(), tag: metadata.tag, warnings }
   }
@@ -139,13 +139,13 @@ export const fromModule = (options: FromModuleOptions): FromModuleResult => {
           // Absent, not empty, when the entry loads nothing beside itself: such
           // a module keeps the identity it had before a closure was recorded.
           ...(imports.length === 0 ? {} : { imports }),
-          ...(hostImports.length === 0 ? {} : { hostImports })
+          ...(hostImports.length === 0 ? {} : { hostImports }),
         }),
         input: metadata.hasInput
           ? new SchemaRefModule({
             path: options.path,
             field: "input",
-            ...metadata.inputDocument === undefined ? {} : { document: metadata.inputDocument }
+            ...metadata.inputDocument === undefined ? {} : { document: metadata.inputDocument },
           })
           : new SchemaRefNone({}),
         output: metadata.hasOutput
@@ -160,10 +160,10 @@ export const fromModule = (options: FromModuleOptions): FromModuleResult => {
         ...budget === undefined ? {} : { budget },
         path: options.path,
         frontmatter: {},
-        provenance: options.provenance
-      })
+        provenance: options.provenance,
+      }),
     ),
     tag: metadata.tag,
-    warnings
+    warnings,
   }
 }

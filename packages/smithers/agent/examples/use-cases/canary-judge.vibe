@@ -34,24 +34,24 @@ export const Telemetry = Schema.Struct({
   throughputRps: Schema.Number.annotate({ description: "Requests per second" }),
   logAnomalies: Schema.Array(Schema.String).annotate({ description: "Notable log patterns or anomalies" }),
   traceWarnings: Schema.Array(Schema.String).annotate({
-    description: "Trace-level warnings (slow spans, retries, etc.)"
-  })
+    description: "Trace-level warnings (slow spans, retries, etc.)",
+  }),
 })
 
 /** How the canary differs from stable. */
 export const Comparison = Schema.Struct({
   latencyDelta: Schema.Struct({
     p50Pct: Schema.Number.annotate({ description: "Percentage change in p50 latency (positive = regression)" }),
-    p99Pct: Schema.Number.annotate({ description: "Percentage change in p99 latency" })
+    p99Pct: Schema.Number.annotate({ description: "Percentage change in p99 latency" }),
   }),
   errorRateDelta: Schema.Number.annotate({ description: "Absolute change in error rate (canary - stable)" }),
   throughputDelta: Schema.Number.annotate({ description: "Percentage change in throughput" }),
   newAnomalies: Schema.Array(Schema.String).annotate({ description: "Anomalies present in canary but not stable" }),
   riskSignals: Schema.Array(Schema.Struct({
     signal: Schema.String,
-    severity: Schema.Literals(["critical", "high", "medium", "low"])
+    severity: Schema.Literals(["critical", "high", "medium", "low"]),
   })),
-  summary: Schema.String
+  summary: Schema.String,
 })
 
 /** The judge's verdict. */
@@ -60,9 +60,9 @@ export const Verdict = Schema.Struct({
   confidence: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 100 })),
   reasons: Schema.Array(Schema.String),
   conditions: Schema.Array(Schema.String).annotate({
-    description: "Conditions that must remain true for decision to hold"
+    description: "Conditions that must remain true for decision to hold",
   }),
-  summary: Schema.String
+  summary: Schema.String,
 })
 
 /** The deploy action the flow settles with. */
@@ -70,7 +70,7 @@ export const DeployAction = Schema.Struct({
   action: Decision,
   commands: Schema.Array(Schema.String).annotate({ description: "Deploy control plane commands to execute" }),
   notifyChannels: Schema.Array(Schema.String),
-  summary: Schema.String
+  summary: Schema.String,
 })
 
 /** Gathers one stream's telemetry. Both streams use this one collector. */
@@ -80,17 +80,17 @@ export const Collect = AgentAction.make("examples/CanaryJudge/Collect", {
     metricsEndpoint: Schema.String,
     logSource: Schema.String,
     traceStore: Schema.String,
-    windowMinutes: Schema.Number
+    windowMinutes: Schema.Number,
   },
   output: Telemetry,
   seat,
   system: [
     `You are a telemetry collector for deployment streams. Query the provided
 metrics endpoints, log sources, and trace stores to gather latency percentiles, error rates,
-throughput, log anomalies, and trace warnings. Normalize all values for consistent comparison.`
+throughput, log anomalies, and trace warnings. Normalize all values for consistent comparison.`,
   ],
   prompt: ({ logSource, metricsEndpoint, stream, traceStore, windowMinutes }) =>
-    `Collect the ${stream} stream's telemetry over the last ${windowMinutes} minutes.\n\nMetrics endpoint: ${metricsEndpoint}\nLog source: ${logSource}\nTrace store: ${traceStore}`
+    `Collect the ${stream} stream's telemetry over the last ${windowMinutes} minutes.\n\nMetrics endpoint: ${metricsEndpoint}\nLog source: ${logSource}\nTrace store: ${traceStore}`,
 })
 
 /** Computes the deltas between the two streams. */
@@ -98,7 +98,7 @@ export const Compare = AgentAction.make("examples/CanaryJudge/Compare", {
   payload: {
     stable: Telemetry,
     canary: Telemetry,
-    thresholds: Schema.Record(Schema.String, Schema.Json)
+    thresholds: Schema.Record(Schema.String, Schema.Json),
   },
   output: Comparison,
   seat,
@@ -106,12 +106,12 @@ export const Compare = AgentAction.make("examples/CanaryJudge/Compare", {
     `You are a deployment telemetry comparator. Given stable and canary telemetry
 snapshots, compute deltas across all dimensions: latency, error rate, throughput. Identify
 anomalies unique to the canary. Flag risk signals with severity levels. Be precise about
-percentage changes and use statistical significance where sample sizes allow.`
+percentage changes and use statistical significance where sample sizes allow.`,
   ],
   prompt: ({ canary, stable, thresholds }) =>
     `Compare the canary with stable.\n\nStable: ${JSON.stringify(stable)}\nCanary: ${
       JSON.stringify(canary)
-    }\nThresholds: ${JSON.stringify(thresholds)}`
+    }\nThresholds: ${JSON.stringify(thresholds)}`,
 })
 
 /** Decides promote, hold or rollback. */
@@ -120,7 +120,7 @@ export const Judge = AgentAction.make("examples/CanaryJudge/Judge", {
     comparison: Comparison,
     riskSignals: Comparison.fields.riskSignals,
     deploymentId: Schema.String,
-    serviceName: Schema.String
+    serviceName: Schema.String,
   },
   output: Verdict,
   seat,
@@ -128,12 +128,12 @@ export const Judge = AgentAction.make("examples/CanaryJudge/Judge", {
     `You are a canary deployment judge. Based on the telemetry comparison, render a
 promote/hold/rollback decision. Promote if all metrics are within acceptable thresholds. Hold if
 there are moderate regressions that need observation. Rollback if there are critical regressions
-or new error patterns. Provide a confidence score and list the conditions that must remain true.`
+or new error patterns. Provide a confidence score and list the conditions that must remain true.`,
   ],
   prompt: ({ comparison, deploymentId, riskSignals, serviceName }) =>
     `Judge deployment ${deploymentId} of ${serviceName}.\n\nComparison: ${JSON.stringify(comparison)}\nRisk signals: ${
       JSON.stringify(riskSignals)
-    }`
+    }`,
 })
 
 /** The command for a decision. Pure, so it is a `Node.map`, not a step. */
@@ -142,12 +142,12 @@ const deploy = (
     readonly verdict: typeof Verdict.Type
     readonly deploymentId: string
     readonly notifyChannels: ReadonlyArray<string>
-  }
+  },
 ): typeof DeployAction.Type => ({
   action: verdict.decision,
   commands: [`deployctl ${verdict.decision} ${deploymentId}`],
   notifyChannels,
-  summary: verdict.summary
+  summary: verdict.summary,
 })
 
 type Streams = { readonly stable: typeof Telemetry.Type; readonly canary: typeof Telemetry.Type }
@@ -165,7 +165,7 @@ export const CanaryJudge = Flow.make("examples/CanaryJudge", {
     thresholds: Schema.optional(Schema.Record(Schema.String, Schema.Json)),
     deploymentId: Schema.optional(Schema.String),
     serviceName: Schema.optional(Schema.String),
-    notifyChannels: Schema.optional(Schema.Array(Schema.String))
+    notifyChannels: Schema.optional(Schema.Array(Schema.String)),
   },
   success: DeployAction,
   error: AgentAction.AgentFailure,
@@ -177,7 +177,7 @@ export const CanaryJudge = Flow.make("examples/CanaryJudge", {
       thresholds = {},
       windowMinutes = 15,
       ...input
-    }
+    },
   ) =>
     Node.bindPlanned(
       Node.all({
@@ -186,15 +186,15 @@ export const CanaryJudge = Flow.make("examples/CanaryJudge", {
           metricsEndpoint: input.stableMetricsEndpoint,
           logSource: input.stableLogSource,
           traceStore: input.stableTraceStore,
-          windowMinutes
+          windowMinutes,
         }),
         canary: Collect.call({
           stream: "canary",
           metricsEndpoint: input.canaryMetricsEndpoint,
           logSource: input.canaryLogSource,
           traceStore: input.canaryTraceStore,
-          windowMinutes
-        })
+          windowMinutes,
+        }),
       }),
       (streams: Planned.Planned<Streams>) =>
         Node.bindPlanned(
@@ -203,10 +203,10 @@ export const CanaryJudge = Flow.make("examples/CanaryJudge", {
             Node.bindPlanned(
               Judge.call({ comparison, riskSignals: comparison.riskSignals, deploymentId, serviceName }),
               (verdict: Planned.Planned<typeof Verdict.Type>) =>
-                Node.map(Node.succeed({ verdict, deploymentId, notifyChannels }), deploy)
-            )
-        )
-    )
+                Node.map(Node.succeed({ verdict, deploymentId, notifyChannels }), deploy),
+            ),
+        ),
+    ),
 })
 
 /** Every step the flow calls. */

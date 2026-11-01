@@ -11,7 +11,7 @@ export const makeFailure = (): SmithersError =>
     "INTEGRATION_ERROR",
     "Provider unavailable",
     { reason: "transport", retryable: true },
-    { cause: new Error("Connection closed") }
+    { cause: new Error("Connection closed") },
   )
 
 /**

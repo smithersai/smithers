@@ -29,7 +29,7 @@ export const ExternalEvent = Schema.Struct({
    * nothing can rebuild.
    */
   eventName: Schema.String.pipe(
-    Schema.refine(isEventName, { expected: "an integration signal name SignalName.eventName could build" })
+    Schema.refine(isEventName, { expected: "an integration signal name SignalName.eventName could build" }),
   ),
   /** What the event is about, or `null` when it addresses nothing narrower. */
   correlationId: Schema.NullOr(Schema.String),
@@ -38,7 +38,7 @@ export const ExternalEvent = Schema.Struct({
   /** The provider's stable delivery identity, used to drop redeliveries. */
   dedupeKey: Schema.NonEmptyString,
   /** When the event was received, in Unix milliseconds. */
-  receivedAtMs: Schema.Number
+  receivedAtMs: Schema.Number,
 })
 
 /**

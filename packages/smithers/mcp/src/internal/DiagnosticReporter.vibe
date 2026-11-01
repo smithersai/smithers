@@ -36,11 +36,11 @@ export const make = (server: string) =>
           server,
           source,
           detail: Redacted.make(new TextDecoder().decode(bytes.subarray(0, 16_384), { stream: truncated })),
-          truncated
+          truncated,
         })
       } catch {
         // Observer failures are not MCP failures. Their messages can themselves
         // contain the diagnostic, so neither attach nor log the thrown value.
       }
-    }
+    },
   )

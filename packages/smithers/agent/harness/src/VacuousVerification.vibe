@@ -126,7 +126,7 @@ export class Pass extends Schema.Class<Pass>("flows/harness/VacuousVerification/
   /** The call's identity, as the controller's own signature names it. */
   signature: Schema.String,
   /** The call's input as it was written, clipped, for the observation to quote. */
-  label: Schema.String
+  label: Schema.String,
 }) {}
 
 /**
@@ -137,7 +137,7 @@ export class Pass extends Schema.Class<Pass>("flows/harness/VacuousVerification/
  */
 export const Ledger = Schema.Array(Pass).pipe(
   Schema.withConstructorDefault(Effect.succeed<ReadonlyArray<Pass>>([])),
-  Schema.withDecodingDefaultKey(Effect.succeed<ReadonlyArray<Pass>>([]))
+  Schema.withDecodingDefaultKey(Effect.succeed<ReadonlyArray<Pass>>([])),
 )
 
 /**
@@ -191,11 +191,11 @@ export const remember = (
     readonly epoch: number
     /** Signatures this run has watched fail over the tree it was handed. */
     readonly failed: ReadonlyArray<string>
-  }
+  },
 ): Ledger => {
   const refused = new Set(options.failed)
   const kept = new Map(
-    ledger.filter((entry) => !refused.has(entry.signature)).map((entry) => [entry.signature, entry])
+    ledger.filter((entry) => !refused.has(entry.signature)).map((entry) => [entry.signature, entry]),
   )
   if (options.epoch === 0) {
     for (const check of options.frame) {
@@ -223,7 +223,7 @@ export const remember = (
  * @since 0.1.0
  */
 export const stored = (
-  agentState: Schema.Json
+  agentState: Schema.Json,
 ): { readonly flow: string; readonly input: Schema.Json } | undefined => {
   if (agentState === null || typeof agentState !== "object" || Array.isArray(agentState)) return undefined
   const declared = (agentState as Record<string, Schema.Json>)["verification"]

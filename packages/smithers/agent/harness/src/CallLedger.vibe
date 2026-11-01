@@ -158,7 +158,7 @@ export class Entry extends Schema.Class<Entry>("flows/harness/CallLedger/Entry")
    */
   bytes: NonNegativeSafeInt.pipe(
     Schema.withConstructorDefault(Effect.succeed(0)),
-    Schema.withDecodingDefaultKey(Effect.succeed(0))
+    Schema.withDecodingDefaultKey(Effect.succeed(0)),
   ),
   /**
    * Whether this call reached the engine declaring a mutation.
@@ -168,7 +168,7 @@ export class Entry extends Schema.Class<Entry>("flows/harness/CallLedger/Entry")
    */
   mutates: Schema.Boolean.pipe(
     Schema.withConstructorDefault(Effect.succeed(false)),
-    Schema.withDecodingDefaultKey(Effect.succeed(false))
+    Schema.withDecodingDefaultKey(Effect.succeed(false)),
   ),
   /**
    * The input bytes this call carried, for a call that declares a write.
@@ -189,7 +189,7 @@ export class Entry extends Schema.Class<Entry>("flows/harness/CallLedger/Entry")
    */
   payloadBytes: NonNegativeSafeInt.pipe(
     Schema.withConstructorDefault(Effect.succeed(0)),
-    Schema.withDecodingDefaultKey(Effect.succeed(0))
+    Schema.withDecodingDefaultKey(Effect.succeed(0)),
   ),
   /**
    * The digest of this call's flow and input together.
@@ -200,8 +200,8 @@ export class Entry extends Schema.Class<Entry>("flows/harness/CallLedger/Entry")
    */
   signature: Schema.String.pipe(
     Schema.withConstructorDefault(Effect.succeed("")),
-    Schema.withDecodingDefaultKey(Effect.succeed(""))
-  )
+    Schema.withDecodingDefaultKey(Effect.succeed("")),
+  ),
 }) {}
 
 /**
@@ -213,7 +213,7 @@ export class Entry extends Schema.Class<Entry>("flows/harness/CallLedger/Entry")
  */
 export const Ledger = Schema.Array(Entry).pipe(
   Schema.withConstructorDefault(Effect.succeed<ReadonlyArray<Entry>>([])),
-  Schema.withDecodingDefaultKey(Effect.succeed<ReadonlyArray<Entry>>([]))
+  Schema.withDecodingDefaultKey(Effect.succeed<ReadonlyArray<Entry>>([])),
 )
 
 /**
@@ -470,7 +470,7 @@ export const entry = (ordinal: number, call: Settlement): Entry => {
     bytes: encoder.encode(whole).byteLength,
     mutates,
     payloadBytes: mutates ? payload(call.input) : 0,
-    signature: mutates ? Digest.digest(CanonicalJson.stringify([call.flow, call.input])) : ""
+    signature: mutates ? Digest.digest(CanonicalJson.stringify([call.flow, call.input])) : "",
   })
 }
 

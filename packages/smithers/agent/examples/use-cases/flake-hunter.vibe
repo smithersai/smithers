@@ -31,8 +31,8 @@ export const RunResult = Schema.Struct({
   stdout: Schema.String,
   stderr: Schema.String,
   signature: Schema.String.annotate({
-    description: "Short fingerprint of the failure, e.g. error message or stack trace head"
-  })
+    description: "Short fingerprint of the failure, e.g. error message or stack trace head",
+  }),
 })
 
 /** Every attempt, collated. `divergent` is true when the runs both passed and failed. */
@@ -46,8 +46,8 @@ export const Evidence = Schema.Struct({
     attempt: Schema.Number,
     outcome: Outcome,
     signature: Schema.String,
-    durationMs: Schema.Number
-  }))
+    durationMs: Schema.Number,
+  })),
 })
 
 /** The flakiness report the flow settles with. */
@@ -57,7 +57,7 @@ export const Report = Schema.Struct({
   flakeRate: Fraction,
   rootCauseCandidates: Schema.Array(Schema.String),
   recommendation: Schema.String,
-  summary: Schema.String
+  summary: Schema.String,
 })
 
 /** One attempt: run the command and report what happened. */
@@ -68,10 +68,10 @@ export const RunTest = AgentAction.make("examples/FlakeHunter/Run", {
   system: [
     `You are a test runner. Execute the provided test command exactly as given.
 Capture stdout, stderr, exit code, and wall-clock duration. Parse the output to extract
-a short failure signature (the key error message or stack trace head). Do not modify the command.`
+a short failure signature (the key error message or stack trace head). Do not modify the command.`,
   ],
   prompt: ({ attempt, command, maxRuns, previousOutcome }) =>
-    `Run attempt ${attempt} of ${maxRuns}.\n\nCommand: ${command}\nPrevious outcome: ${previousOutcome}`
+    `Run attempt ${attempt} of ${maxRuns}.\n\nCommand: ${command}\nPrevious outcome: ${previousOutcome}`,
 })
 
 /** The analyst, asked only when the runs diverged. */
@@ -82,10 +82,10 @@ export const Analyze = AgentAction.make("examples/FlakeHunter/Analyze", {
   system: [
     `You are a flake analyst. Examine the evidence from multiple test runs.
 Identify patterns in timing, error signatures, and environmental factors that explain
-divergent outcomes. Be specific about root-cause candidates and actionable in recommendations.`
+divergent outcomes. Be specific about root-cause candidates and actionable in recommendations.`,
   ],
   prompt: ({ command, evidence }) =>
-    `Analyze why this test's outcomes diverged.\n\nCommand: ${command}\nEvidence: ${JSON.stringify(evidence)}`
+    `Analyze why this test's outcomes diverged.\n\nCommand: ${command}\nEvidence: ${JSON.stringify(evidence)}`,
 })
 
 type RunResult = typeof RunResult.Type
@@ -102,7 +102,7 @@ const pack = (results: ReadonlyArray<RunResult>): Evidence => {
     failures,
     uniqueSignatures: [...new Set(results.map((r) => r.signature))],
     divergent: passes > 0 && failures > 0,
-    runs: results.map(({ attempt, durationMs, outcome, signature }) => ({ attempt, outcome, signature, durationMs }))
+    runs: results.map(({ attempt, durationMs, outcome, signature }) => ({ attempt, outcome, signature, durationMs })),
   }
 }
 
@@ -117,7 +117,7 @@ const consistent = (evidence: Evidence): Report => {
     recommendation: passed
       ? "Test passes consistently — original failure may have been environmental."
       : `Test fails consistently with signature: ${evidence.uniqueSignatures[0] ?? "unknown"}`,
-    summary: `${evidence.totalRuns} runs, all ${passed ? "passed" : "failed"}. No flakiness detected.`
+    summary: `${evidence.totalRuns} runs, all ${passed ? "passed" : "failed"}. No flakiness detected.`,
   }
 }
 
@@ -132,17 +132,18 @@ const rerun = (
   maxRuns: number,
   attempt: number,
   previousOutcome: Planned.Planned<string> | string,
-  results: ReadonlyArray<Planned.Planned<RunResult>>
+  results: ReadonlyArray<Planned.Planned<RunResult>>,
 ): Node.Node<Report, AgentAction.AgentFailure, Requirements> =>
   attempt > maxRuns
     ? Node.branch(Node.map(Node.succeed(results), pack), {
       if: (evidence) => evidence.divergent,
       then: (evidence) => Analyze.call({ command, evidence }),
-      else: (evidence) => Node.map(Node.succeed(evidence), consistent)
+      else: (evidence) => Node.map(Node.succeed(evidence), consistent),
     })
     : Node.bindPlanned(
       RunTest.call({ command, attempt, maxRuns, previousOutcome }),
-      (result: Planned.Planned<RunResult>) => rerun(command, maxRuns, attempt + 1, result.outcome, [...results, result])
+      (result: Planned.Planned<RunResult>) =>
+        rerun(command, maxRuns, attempt + 1, result.outcome, [...results, result]),
     )
 
 /** The flow. `runs` is real at plan time, so it sets how many attempts the plan holds. */
@@ -150,7 +151,7 @@ export const FlakeHunter = Flow.make("examples/FlakeHunter", {
   payload: { command: Schema.String, runs: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))) },
   success: Report,
   error: AgentAction.AgentFailure,
-  body: ({ command, runs = 5 }) => rerun(command, runs, 1, "none", [])
+  body: ({ command, runs = 5 }) => rerun(command, runs, 1, "none", []),
 })
 
 /** Every step the flow calls. */

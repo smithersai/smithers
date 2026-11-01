@@ -14,7 +14,7 @@ const digestFailure = (cause: unknown): ArtifactStoreError =>
   new ArtifactStoreError({
     code: "digest_failed",
     message: "the Crypto service failed to compute an artifact digest",
-    cause
+    cause,
   })
 
 /**

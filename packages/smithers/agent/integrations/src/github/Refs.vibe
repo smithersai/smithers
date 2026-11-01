@@ -61,8 +61,8 @@ const SHA = /^[0-9a-f]{40}$/
  * @since 1.0.0
  */
 export const isBranch = (name: unknown): name is string =>
-  typeof name === "string" && name.length > 0 && name.length <= MAX_BRANCH_LENGTH && !name.includes("..") &&
-  name.split("/").every((segment) => SEGMENT.test(segment) && !segment.startsWith(".") && !segment.endsWith(".lock"))
+  typeof name === "string" && name.length > 0 && name.length <= MAX_BRANCH_LENGTH && !name.includes("..")
+  && name.split("/").every((segment) => SEGMENT.test(segment) && !segment.startsWith(".") && !segment.endsWith(".lock"))
 
 /**
  * `name` when {@link isBranch} holds, else an `invalid-config` failure.
@@ -74,12 +74,12 @@ export const requireBranch = (name: string): string!IntegrationError =>
   isBranch(name) ? name : throw new IntegrationError("invalid-config", "A branch name must follow git's ref rules.", {
     field: "branch",
     branch: typeof name === "string" ? (name as string).slice(0, 64) : typeof name,
-    retryable: false
+    retryable: false,
   })
 
 const spanAttributes = (owner: string, repo: string): Record<string, unknown> => ({
   "github.owner": owner,
-  "github.repo": repo
+  "github.repo": repo,
 })
 
 /**
@@ -93,14 +93,14 @@ const spanAttributes = (owner: string, repo: string): Record<string, unknown> =>
 export const getBranch = (
   owner: string,
   repo: string,
-  name: string
+  name: string,
 ): Option<Branch>!IntegrationError!GitHubClient =>
   (effect {
     const client = try GitHubClient
     const repository = try requireRepositoryPath(owner, repo)
     const branch = try requireBranch(name)
     return try (client.request("GET", `/repos/${repository}/git/ref/heads/${branch}`, undefined, {
-      schema: RefAnswer
+      schema: RefAnswer,
     })
       |> Effect.map(%, (answer) => Option.some({ name: branch, sha: answer.object.sha }))
       |> Effect.catchIf(%, (error) => error.details?.["status"] === 404, () => Option.none<Branch>()))
@@ -120,7 +120,7 @@ export const listBranches = (
   owner: string,
   repo: string,
   prefix: string,
-  options?: { readonly maxPages?: number | undefined }
+  options?: { readonly maxPages?: number | undefined },
 ): { readonly items: ReadonlyArray<Branch>; readonly truncated: boolean }!IntegrationError!GitHubClient =>
   (effect {
     const client = try GitHubClient
@@ -137,8 +137,8 @@ export const listBranches = (
           (cause) =>
             new IntegrationError("decode-failed", `GitHub response for GET ${path} failed schema validation.`, {
               method: "GET",
-              path
-            }, { cause })
+              path,
+            }, { cause }),
         ))
       if (ref.ref.startsWith("refs/heads/")) {
         items.push({ name: ref.ref.slice("refs/heads/".length), sha: ref.object.sha })
@@ -159,7 +159,7 @@ export const listBranches = (
 export const createBranch = (
   owner: string,
   repo: string,
-  input: { readonly name: string; readonly sha: string }
+  input: { readonly name: string; readonly sha: string },
 ): Branch!IntegrationError!GitHubClient =>
   (effect {
     const client = try GitHubClient
@@ -168,12 +168,12 @@ export const createBranch = (
     if (typeof input.sha !== "string" || !SHA.test(input.sha)) {
       throw new IntegrationError("invalid-config", "A commit SHA must be 40 lowercase hex digits.", {
         field: "sha",
-        retryable: false
+        retryable: false,
       })
     }
     const answer = try client.request("POST", `/repos/${repository}/git/refs`, {
       ref: `refs/heads/${branch}`,
-      sha: input.sha
+      sha: input.sha,
     }, { schema: RefAnswer })
     return { name: branch, sha: answer.object.sha }
   }) |> Effect.withSpan(%, "GitHub.Refs.createBranch", { attributes: spanAttributes(owner, repo) })
