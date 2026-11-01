@@ -29,7 +29,7 @@ export const Intake = Schema.Struct({
   contactEmail: Schema.String,
   source: Schema.Literals(["inbound-form", "webinar", "referral", "cold-outbound", "marketplace", "other"]),
   rawNotes: Schema.String,
-  summary: Schema.String
+  summary: Schema.String,
 })
 
 const Firmographics = Schema.Struct({
@@ -37,12 +37,12 @@ const Firmographics = Schema.Struct({
   employeeCount: Schema.Number,
   annualRevenue: Schema.optional(Schema.String),
   hqLocation: Schema.String,
-  fundingStage: Schema.optional(Schema.String)
+  fundingStage: Schema.optional(Schema.String),
 })
 
 const NewsItem = Schema.Struct({
   headline: Schema.String,
-  relevance: Schema.Literals(["low", "medium", "high"])
+  relevance: Schema.Literals(["low", "medium", "high"]),
 })
 
 /** What the enrichment agent found about the company. */
@@ -51,7 +51,7 @@ export const Enrichment = Schema.Struct({
   techStack: Schema.Array(Schema.String),
   recentNews: Schema.Array(NewsItem),
   competitors: Schema.Array(Schema.String),
-  summary: Schema.String
+  summary: Schema.String,
 })
 
 /** The profiler's scored profile. */
@@ -62,7 +62,7 @@ export const Profile = Schema.Struct({
   painPoints: Schema.Array(Schema.String),
   recommendedPlaybook: Schema.String,
   talkingPoints: Schema.Array(Schema.String),
-  summary: Schema.String
+  summary: Schema.String,
 })
 
 /** The CRM record the flow settles with. */
@@ -75,7 +75,7 @@ export const CrmRecord = Schema.Struct({
   nextAction: Schema.String,
   status: Schema.Literals(["new", "enriched", "qualified", "disqualified", "routed"]),
   profileSummary: Schema.String,
-  summary: Schema.String
+  summary: Schema.String,
 })
 
 /** Normalizes the raw lead. */
@@ -84,7 +84,9 @@ export const NormalizeLead = AgentAction.make("examples/LeadEnricher/Intake", {
   output: Intake,
   seat,
   prompt: ({ lead, source }) =>
-    `Normalize this raw inbound lead into a structured lead record.\n\nSource: ${source}\nLead: ${JSON.stringify(lead)}`
+    `Normalize this raw inbound lead into a structured lead record.\n\nSource: ${source}\nLead: ${
+      JSON.stringify(lead)
+    }`,
 })
 
 /** Researches the lead's company. */
@@ -95,10 +97,10 @@ export const Enrich = AgentAction.make("examples/LeadEnricher/Enrich", {
   system: [
     `You are a firmographic enrichment specialist. Given a company name and lead context,
 research the company's industry, size, funding, tech stack, recent news, and competitive landscape.
-Return structured enrichment data to support lead scoring and sales outreach.`
+Return structured enrichment data to support lead scoring and sales outreach.`,
   ],
   prompt: ({ company, contactEmail, rawNotes }) =>
-    `Enrich this lead's company.\n\nCompany: ${company}\nContact email: ${contactEmail}\nRaw notes: ${rawNotes}`
+    `Enrich this lead's company.\n\nCompany: ${company}\nContact email: ${contactEmail}\nRaw notes: ${rawNotes}`,
 })
 
 /** Scores the lead from its intake and enrichment. */
@@ -107,19 +109,19 @@ export const ProfileLead = AgentAction.make("examples/LeadEnricher/Profile", {
     intake: Intake,
     firmographics: Firmographics,
     techStack: Schema.Array(Schema.String),
-    recentNews: Schema.Array(NewsItem)
+    recentNews: Schema.Array(NewsItem),
   },
   output: Profile,
   seat,
   system: [
     `You are a lead profiling strategist. Given raw lead intake and firmographic enrichment,
 determine the account segment, ICP fit score, buyer persona, key pain points, and recommended
-sales playbook. Be specific about talking points that reference the prospect's context.`
+sales playbook. Be specific about talking points that reference the prospect's context.`,
   ],
   prompt: ({ firmographics, intake, recentNews, techStack }) =>
     `Profile this lead.\n\nIntake: ${JSON.stringify(intake)}\nFirmographics: ${
       JSON.stringify(firmographics)
-    }\nTech stack: ${JSON.stringify(techStack)}\nRecent news: ${JSON.stringify(recentNews)}`
+    }\nTech stack: ${JSON.stringify(techStack)}\nRecent news: ${JSON.stringify(recentNews)}`,
 })
 
 /** Writes the CRM record from the profile. */
@@ -131,11 +133,11 @@ export const WriteCrmRecord = AgentAction.make("examples/LeadEnricher/CrmOutput"
     icpFit: Schema.Number,
     recommendedPlaybook: Schema.String,
     painPoints: Schema.Array(Schema.String),
-    talkingPoints: Schema.Array(Schema.String)
+    talkingPoints: Schema.Array(Schema.String),
   },
   output: CrmRecord,
   seat,
-  prompt: (profile) => `Write the CRM record for this profiled lead.\n\nProfile: ${JSON.stringify(profile)}`
+  prompt: (profile) => `Write the CRM record for this profiled lead.\n\nProfile: ${JSON.stringify(profile)}`,
 })
 
 /** The flow: intake, enrich, profile, CRM record. */
@@ -155,7 +157,7 @@ export const LeadEnricher = Flow.make("examples/LeadEnricher", {
                 intake,
                 firmographics: enrichment.firmographics,
                 techStack: enrichment.techStack,
-                recentNews: enrichment.recentNews
+                recentNews: enrichment.recentNews,
               }),
               (profile: Planned.Planned<typeof Profile.Type>) =>
                 WriteCrmRecord.call({
@@ -165,11 +167,11 @@ export const LeadEnricher = Flow.make("examples/LeadEnricher", {
                   icpFit: profile.icpFit,
                   recommendedPlaybook: profile.recommendedPlaybook,
                   painPoints: profile.painPoints,
-                  talkingPoints: profile.talkingPoints
-                })
-            )
-        )
-    )
+                  talkingPoints: profile.talkingPoints,
+                }),
+            ),
+        ),
+    ),
 })
 
 /** Every step the flow calls. */

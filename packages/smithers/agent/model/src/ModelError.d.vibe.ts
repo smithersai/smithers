@@ -8,7 +8,7 @@
  * @since 0.1.0
  */
 import { Schema } from "effect";
-import type { Timing } from "./ModelEvent.vibe";
+import type { Timing } from "./ModelEvent.js";
 /**
  * The provider-neutral failure vocabulary. A consumer branches on these
  * codes; provider message text is not a contract.

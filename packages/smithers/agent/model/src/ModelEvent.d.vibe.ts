@@ -8,7 +8,7 @@
  * @since 0.1.0
  */
 import { Schema } from "effect";
-import { AssistantMessage } from "./ModelRequest.ts";
+import { AssistantMessage } from "./ModelRequest.js";
 /**
  * Token counts a provider reports for one request. Every field is
  * optional: providers disagree on which counters they expose, and a missing
@@ -1603,15 +1603,15 @@ export declare const ModelEvent: Schema.Union<readonly [Schema.Struct<{
             readonly sessionId?: string | undefined;
             readonly itemIds?: readonly string[] | undefined;
         }, cases: Handlers & {
-            readonly retry?: (value: {
+            readonly retry?: ((value: {
                 readonly type: "retry";
                 readonly attempt: number;
                 readonly code: string;
                 readonly delayMillis: number;
                 readonly elapsedMs?: number | undefined;
                 readonly httpStatus?: number | undefined;
-            }) => any;
-            readonly settle?: (value: {
+            }) => any) | undefined;
+            readonly settle?: ((value: {
                 readonly type: "settle";
                 readonly stopReason: "aborted" | "content-filter" | "error" | "length" | "stop" | "tool-calls" | "unknown";
                 readonly responseId?: string | undefined;
@@ -1639,56 +1639,56 @@ export declare const ModelEvent: Schema.Union<readonly [Schema.Struct<{
                 } | undefined;
                 readonly sessionId?: string | undefined;
                 readonly itemIds?: readonly string[] | undefined;
-            }) => any;
-            readonly "text-delta"?: (value: {
+            }) => any) | undefined;
+            readonly "text-delta"?: ((value: {
                 readonly type: "text-delta";
                 readonly id: string;
                 readonly text: string;
-            }) => any;
-            readonly "text-end"?: (value: {
+            }) => any) | undefined;
+            readonly "text-end"?: ((value: {
                 readonly type: "text-end";
                 readonly id: string;
-            }) => any;
-            readonly "text-start"?: (value: {
+            }) => any) | undefined;
+            readonly "text-start"?: ((value: {
                 readonly type: "text-start";
                 readonly id: string;
-            }) => any;
-            readonly "thinking-delta"?: (value: {
+            }) => any) | undefined;
+            readonly "thinking-delta"?: ((value: {
                 readonly type: "thinking-delta";
                 readonly id: string;
                 readonly text: string;
-            }) => any;
-            readonly "thinking-end"?: (value: {
+            }) => any) | undefined;
+            readonly "thinking-end"?: ((value: {
                 readonly type: "thinking-end";
                 readonly id: string;
-            }) => any;
-            readonly "thinking-start"?: (value: {
+            }) => any) | undefined;
+            readonly "thinking-start"?: ((value: {
                 readonly type: "thinking-start";
                 readonly id: string;
                 readonly signature?: string | undefined;
-            }) => any;
-            readonly "tool-call-delta"?: (value: {
+            }) => any) | undefined;
+            readonly "tool-call-delta"?: ((value: {
                 readonly type: "tool-call-delta";
                 readonly id: string;
                 readonly arguments: string;
-            }) => any;
-            readonly "tool-call-end"?: (value: {
+            }) => any) | undefined;
+            readonly "tool-call-end"?: ((value: {
                 readonly type: "tool-call-end";
                 readonly id: string;
                 readonly arguments?: string | undefined;
-            }) => any;
-            readonly "tool-call-start"?: (value: {
+            }) => any) | undefined;
+            readonly "tool-call-start"?: ((value: {
                 readonly type: "tool-call-start";
                 readonly id: string;
                 readonly name: string;
-            }) => any;
-            readonly "tool-result"?: (value: {
+            }) => any) | undefined;
+            readonly "tool-result"?: ((value: {
                 readonly type: "tool-result";
                 readonly id: string;
                 readonly output: string;
                 readonly isError?: boolean | undefined;
-            }) => any;
-            readonly usage?: (value: {
+            }) => any) | undefined;
+            readonly usage?: ((value: {
                 readonly type: "usage";
                 readonly inputTokens?: number | undefined;
                 readonly outputTokens?: number | undefined;
@@ -1697,7 +1697,7 @@ export declare const ModelEvent: Schema.Union<readonly [Schema.Struct<{
                 readonly cacheWriteTokens?: number | undefined;
                 readonly totalTokens?: number | undefined;
                 readonly costUsd?: number | undefined;
-            }) => any;
+            }) => any) | undefined;
         } & (Exclude<keyof Handlers, "retry" | "settle" | "text-delta" | "text-end" | "text-start" | "thinking-delta" | "thinking-end" | "thinking-start" | "tool-call-delta" | "tool-call-end" | "tool-call-start" | "tool-result" | "usage"> extends never ? unknown : never), orElse: OrElse & ((value: Exclude<{
             readonly type: "text-start";
             readonly id: string;
@@ -1808,15 +1808,15 @@ export declare const ModelEvent: Schema.Union<readonly [Schema.Struct<{
             readonly type: keyof Handlers;
         }>) => any)): import("effect/Unify").Unify<{ [K in keyof Handlers]-?: NonNullable<Handlers[K]> extends (...args: Array<any>) => infer R ? R : never; }[keyof Handlers] | (OrElse extends (...args: Array<any>) => infer R ? R : never)>;
         <Handlers, OrElse>(cases: Handlers & {
-            readonly retry?: (value: {
+            readonly retry?: ((value: {
                 readonly type: "retry";
                 readonly attempt: number;
                 readonly code: string;
                 readonly delayMillis: number;
                 readonly elapsedMs?: number | undefined;
                 readonly httpStatus?: number | undefined;
-            }) => any;
-            readonly settle?: (value: {
+            }) => any) | undefined;
+            readonly settle?: ((value: {
                 readonly type: "settle";
                 readonly stopReason: "aborted" | "content-filter" | "error" | "length" | "stop" | "tool-calls" | "unknown";
                 readonly responseId?: string | undefined;
@@ -1844,56 +1844,56 @@ export declare const ModelEvent: Schema.Union<readonly [Schema.Struct<{
                 } | undefined;
                 readonly sessionId?: string | undefined;
                 readonly itemIds?: readonly string[] | undefined;
-            }) => any;
-            readonly "text-delta"?: (value: {
+            }) => any) | undefined;
+            readonly "text-delta"?: ((value: {
                 readonly type: "text-delta";
                 readonly id: string;
                 readonly text: string;
-            }) => any;
-            readonly "text-end"?: (value: {
+            }) => any) | undefined;
+            readonly "text-end"?: ((value: {
                 readonly type: "text-end";
                 readonly id: string;
-            }) => any;
-            readonly "text-start"?: (value: {
+            }) => any) | undefined;
+            readonly "text-start"?: ((value: {
                 readonly type: "text-start";
                 readonly id: string;
-            }) => any;
-            readonly "thinking-delta"?: (value: {
+            }) => any) | undefined;
+            readonly "thinking-delta"?: ((value: {
                 readonly type: "thinking-delta";
                 readonly id: string;
                 readonly text: string;
-            }) => any;
-            readonly "thinking-end"?: (value: {
+            }) => any) | undefined;
+            readonly "thinking-end"?: ((value: {
                 readonly type: "thinking-end";
                 readonly id: string;
-            }) => any;
-            readonly "thinking-start"?: (value: {
+            }) => any) | undefined;
+            readonly "thinking-start"?: ((value: {
                 readonly type: "thinking-start";
                 readonly id: string;
                 readonly signature?: string | undefined;
-            }) => any;
-            readonly "tool-call-delta"?: (value: {
+            }) => any) | undefined;
+            readonly "tool-call-delta"?: ((value: {
                 readonly type: "tool-call-delta";
                 readonly id: string;
                 readonly arguments: string;
-            }) => any;
-            readonly "tool-call-end"?: (value: {
+            }) => any) | undefined;
+            readonly "tool-call-end"?: ((value: {
                 readonly type: "tool-call-end";
                 readonly id: string;
                 readonly arguments?: string | undefined;
-            }) => any;
-            readonly "tool-call-start"?: (value: {
+            }) => any) | undefined;
+            readonly "tool-call-start"?: ((value: {
                 readonly type: "tool-call-start";
                 readonly id: string;
                 readonly name: string;
-            }) => any;
-            readonly "tool-result"?: (value: {
+            }) => any) | undefined;
+            readonly "tool-result"?: ((value: {
                 readonly type: "tool-result";
                 readonly id: string;
                 readonly output: string;
                 readonly isError?: boolean | undefined;
-            }) => any;
-            readonly usage?: (value: {
+            }) => any) | undefined;
+            readonly usage?: ((value: {
                 readonly type: "usage";
                 readonly inputTokens?: number | undefined;
                 readonly outputTokens?: number | undefined;
@@ -1902,7 +1902,7 @@ export declare const ModelEvent: Schema.Union<readonly [Schema.Struct<{
                 readonly cacheWriteTokens?: number | undefined;
                 readonly totalTokens?: number | undefined;
                 readonly costUsd?: number | undefined;
-            }) => any;
+            }) => any) | undefined;
         } & (Exclude<keyof Handlers, "retry" | "settle" | "text-delta" | "text-end" | "text-start" | "thinking-delta" | "thinking-end" | "thinking-start" | "tool-call-delta" | "tool-call-end" | "tool-call-start" | "tool-result" | "usage"> extends never ? unknown : never), orElse: OrElse & ((value: Exclude<{
             readonly type: "text-start";
             readonly id: string;
@@ -2187,7 +2187,7 @@ export declare const ModelEvent: Schema.Union<readonly [Schema.Struct<{
         readonly type: "retry";
         readonly attempt: number;
         readonly code: string;
-        readonly delayMillis?: number;
+        readonly delayMillis?: number | undefined;
         readonly elapsedMs?: number | undefined;
         readonly httpStatus?: number | undefined;
     }, options?: Schema.MakeOptions) => {

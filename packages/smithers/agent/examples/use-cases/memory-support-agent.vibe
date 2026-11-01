@@ -23,7 +23,7 @@ const seat = "anthropic:claude-sonnet-5-5"
 export const MemoryEntry = Schema.Struct({
   key: Schema.String,
   value: Schema.String,
-  updatedAt: Schema.String
+  updatedAt: Schema.String,
 })
 
 /** What the recall agent loaded for one customer. */
@@ -31,7 +31,7 @@ export const Recall = Schema.Struct({
   customerId: Schema.String,
   facts: Schema.Array(MemoryEntry),
   recentTickets: Schema.Array(Schema.String),
-  sentiment: Schema.Literals(["positive", "neutral", "frustrated", "angry"])
+  sentiment: Schema.Literals(["positive", "neutral", "frustrated", "angry"]),
 })
 
 /** The support agent's reply. `confidenceScore` runs from 0 to 100. */
@@ -40,7 +40,7 @@ export const Response = Schema.Struct({
   confidenceScore: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 100 })),
   needsEscalation: Schema.Boolean,
   reasoning: Schema.String,
-  suggestedActions: Schema.Array(Schema.String)
+  suggestedActions: Schema.Array(Schema.String),
 })
 
 /** How the persistence agent changed the customer's memory. */
@@ -48,7 +48,7 @@ export const Persist = Schema.Struct({
   customerId: Schema.String,
   newFacts: Schema.Array(MemoryEntry),
   removedKeys: Schema.Array(Schema.String),
-  summary: Schema.String
+  summary: Schema.String,
 })
 
 /** Where the escalation agent sent the interaction. */
@@ -57,7 +57,7 @@ export const Escalation = Schema.Struct({
   tier: Schema.Literals(["t1", "t2", "t3", "engineering"]),
   reason: Schema.String,
   context: Schema.String,
-  summary: Schema.String
+  summary: Schema.String,
 })
 
 /** What the flow settles with: every step's output, and `null` when nothing was escalated. */
@@ -65,7 +65,7 @@ export const Output = Schema.Struct({
   recall: Recall,
   response: Response,
   persist: Persist,
-  escalation: Schema.NullOr(Escalation)
+  escalation: Schema.NullOr(Escalation),
 })
 
 /** Loads one customer's memory and reads their sentiment. */
@@ -77,12 +77,12 @@ export const RecallMemory = AgentAction.make("examples/MemorySupportAgent/Recall
     `You are a memory retrieval specialist. Given a customer ID, load their
 durable memory store and recent ticket history. Ensure strict isolation — never leak
 facts from one customer into another's context. Assess current sentiment from the
-conversation history.`
+conversation history.`,
   ],
   prompt: ({ conversationHistory, customerId }) =>
     `Load the durable memory for one customer.\n\nCustomer: ${customerId}\nConversation history: ${
       JSON.stringify(conversationHistory)
-    }`
+    }`,
 })
 
 /** Replies to the latest message from what recall loaded. */
@@ -92,7 +92,7 @@ export const Respond = AgentAction.make("examples/MemorySupportAgent/Respond", {
     facts: Schema.Array(MemoryEntry),
     recentTickets: Schema.Array(Schema.String),
     sentiment: Schema.String,
-    latestMessage: Schema.String
+    latestMessage: Schema.String,
   },
   output: Response,
   seat,
@@ -100,12 +100,12 @@ export const Respond = AgentAction.make("examples/MemorySupportAgent/Respond", {
     `You are a senior support agent. Use the customer's recalled memory and
 known facts to craft a personalised, accurate reply. Leverage past preferences,
 known issues, and account configuration. Flag low-confidence answers for escalation
-rather than guessing.`
+rather than guessing.`,
   ],
   prompt: ({ customerId, facts, latestMessage, recentTickets, sentiment }) =>
     `Reply to the customer's latest message.\n\nCustomer: ${customerId}\nSentiment: ${sentiment}\nLatest message: ${latestMessage}\nFacts: ${
       JSON.stringify(facts)
-    }\nRecent tickets: ${JSON.stringify(recentTickets)}`
+    }\nRecent tickets: ${JSON.stringify(recentTickets)}`,
 })
 
 /** Updates the customer's memory from the reply. */
@@ -114,19 +114,19 @@ export const PersistMemory = AgentAction.make("examples/MemorySupportAgent/Persi
     customerId: Schema.String,
     existingFacts: Schema.Array(MemoryEntry),
     reply: Schema.String,
-    latestMessage: Schema.String
+    latestMessage: Schema.String,
   },
   output: Persist,
   seat,
   system: [
     `You are a memory persistence agent. After each support interaction,
 extract new facts learned about the customer and update their durable memory store.
-Remove stale or contradicted facts. Maintain strict per-customer isolation.`
+Remove stale or contradicted facts. Maintain strict per-customer isolation.`,
   ],
   prompt: ({ customerId, existingFacts, latestMessage, reply }) =>
     `Update the customer's durable memory after this interaction.\n\nCustomer: ${customerId}\nLatest message: ${latestMessage}\nReply: ${reply}\nExisting facts: ${
       JSON.stringify(existingFacts)
-    }`
+    }`,
 })
 
 /** Picks an escalation tier and packages the context for it. */
@@ -137,7 +137,7 @@ export const Escalate = AgentAction.make("examples/MemorySupportAgent/Escalate",
     reasoning: Schema.String,
     suggestedActions: Schema.Array(Schema.String),
     sentiment: Schema.String,
-    recentTickets: Schema.Array(Schema.String)
+    recentTickets: Schema.Array(Schema.String),
   },
   output: Escalation,
   seat,
@@ -145,12 +145,12 @@ export const Escalate = AgentAction.make("examples/MemorySupportAgent/Escalate",
     `You are an escalation router. When a support interaction exceeds the
 agent's confidence or requires specialised access, determine the correct escalation
 tier and package the full context so the receiving team can act without re-asking
-the customer.`
+the customer.`,
   ],
   prompt: ({ confidenceScore, customerId, reasoning, recentTickets, sentiment, suggestedActions }) =>
     `Escalate this support interaction.\n\nCustomer: ${customerId}\nConfidence score: ${confidenceScore}\nSentiment: ${sentiment}\nReasoning: ${reasoning}\nSuggested actions: ${
       JSON.stringify(suggestedActions)
-    }\nRecent tickets: ${JSON.stringify(recentTickets)}`
+    }\nRecent tickets: ${JSON.stringify(recentTickets)}`,
 })
 
 type Requirements = Action.Requirement<
@@ -167,7 +167,7 @@ type Requirements = Action.Requirement<
 const settle = (
   recall: Planned.Planned<typeof Recall.Type>,
   response: Planned.Planned<typeof Response.Type>,
-  persist: Planned.Planned<typeof Persist.Type>
+  persist: Planned.Planned<typeof Persist.Type>,
 ): Node.Node<typeof Output.Type, AgentAction.AgentFailure, Requirements> =>
   Node.branch(Node.succeed({ response, persist }), {
     if: (done) => done.response.needsEscalation,
@@ -179,11 +179,12 @@ const settle = (
           reasoning: response.reasoning,
           suggestedActions: response.suggestedActions,
           sentiment: recall.sentiment,
-          recentTickets: recall.recentTickets
+          recentTickets: recall.recentTickets,
         }),
-        (escalation: Planned.Planned<typeof Escalation.Type>) => Node.succeed({ recall, response, persist, escalation })
+        (escalation: Planned.Planned<typeof Escalation.Type>) =>
+          Node.succeed({ recall, response, persist, escalation }),
       ),
-    else: () => Node.succeed({ recall, response, persist, escalation: null })
+    else: () => Node.succeed({ recall, response, persist, escalation: null }),
   })
 
 /** The flow: recall, respond, persist, and escalate when the reply asks for it. */
@@ -191,7 +192,7 @@ export const MemorySupportAgent = Flow.make("examples/MemorySupportAgent", {
   payload: {
     customerId: Schema.optional(Schema.String),
     conversationHistory: Schema.optional(Schema.Array(Schema.Json)),
-    latestMessage: Schema.optional(Schema.String)
+    latestMessage: Schema.optional(Schema.String),
   },
   success: Output,
   error: AgentAction.AgentFailure,
@@ -205,7 +206,7 @@ export const MemorySupportAgent = Flow.make("examples/MemorySupportAgent", {
             facts: recall.facts,
             recentTickets: recall.recentTickets,
             sentiment: recall.sentiment,
-            latestMessage
+            latestMessage,
           }),
           (response: Planned.Planned<typeof Response.Type>) =>
             Node.bindPlanned(
@@ -213,12 +214,12 @@ export const MemorySupportAgent = Flow.make("examples/MemorySupportAgent", {
                 customerId: recall.customerId,
                 existingFacts: recall.facts,
                 reply: response.reply,
-                latestMessage
+                latestMessage,
               }),
-              (persist: Planned.Planned<typeof Persist.Type>) => settle(recall, response, persist)
-            )
-        )
-    )
+              (persist: Planned.Planned<typeof Persist.Type>) => settle(recall, response, persist),
+            ),
+        ),
+    ),
 })
 
 /** Every step the flow calls. */

@@ -4,8 +4,8 @@
  * @since 0.1.0
  */
 import { Chunk } from "effect";
-import { ModelError } from "./ModelError.vibe";
-import { type StopReason } from "./ModelRequest.ts";
+import { ModelError } from "./ModelError.js";
+import { type StopReason } from "./ModelRequest.js";
 /**
  * An unfinished streamed tool call.
  *

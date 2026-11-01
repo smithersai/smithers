@@ -16,7 +16,7 @@ export const RunCatalogErrorCode = Schema.Literals([
   "invalid_options",
   "list_failed",
   "invalid_cursor",
-  "source_changed"
+  "source_changed",
 ])
 /**
  * Catalog failure codes.
@@ -33,5 +33,5 @@ export type RunCatalogErrorCode = typeof RunCatalogErrorCode.Type
  */
 export class RunCatalogError extends Schema.TaggedError<RunCatalogError>()(
   "@smthrs/engine-store/RunCatalogError",
-  { code: RunCatalogErrorCode, message: Schema.String, cause: Schema.optional(Schema.Unknown) }
+  { code: RunCatalogErrorCode, message: Schema.String, cause: Schema.optional(Schema.Unknown) },
 ) {}

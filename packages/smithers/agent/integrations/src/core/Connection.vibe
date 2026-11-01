@@ -38,7 +38,7 @@ export const ConnectionId = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9]
  */
 export const CredentialReference = Schema.Struct({
   id: Schema.NonEmptyString,
-  name: Schema.NonEmptyString
+  name: Schema.NonEmptyString,
 })
 
 /**
@@ -61,7 +61,7 @@ export const Connection = Schema.Struct({
   /** The containers the connection may be used with. Empty means none: allowlists fail closed. */
   containers: Schema.Array(Schema.NonEmptyString),
   /** A provider API origin override, for enterprise hosts and fixture servers. */
-  apiBaseUrl: Schema.optionalKey(Schema.String)
+  apiBaseUrl: Schema.optionalKey(Schema.String),
 })
 
 /**
@@ -154,7 +154,7 @@ export const resolveSecret = (options: {
       throw new IntegrationError(
         "permission-denied",
         `Principal "${principal}" may not use connection "${connection.id}".`,
-        details
+        details,
       )
     }
     return try (options.credentials.resolve({ id: connection.credential.id, name: connection.credential.name })
@@ -165,7 +165,7 @@ export const resolveSecret = (options: {
           error._tag === "/control/Unauthorized" ? "permission-denied" : "credentials-missing",
           `The credential for connection "${connection.id}" could not be resolved.`,
           { ...details, credentialFailure: error.code },
-          { cause: error }
+          { cause: error },
         )))
   }
 }

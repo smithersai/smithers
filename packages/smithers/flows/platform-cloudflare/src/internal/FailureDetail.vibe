@@ -62,7 +62,7 @@ const text = (value: string): string =>
  */
 export const detail = (
   cause: Cause.Cause<unknown>,
-  statement: string | undefined
+  statement: string | undefined,
 ): Readonly<Record<string, string>> => {
   const errors = chain(Cause.squash(cause))
   const result: Record<string, string> = {}
@@ -104,7 +104,7 @@ export const detail = (
  * @since 1.0.0
  */
 export const withFailedStatement = <A, E, R>(
-  effect: A!E!R
+  effect: A!E!R,
 ): readonly [Exit.Exit<A, E>, string | undefined]!never!R =>
   Effect.flatMap(Effect.tracer, (base) => {
     const recent: Array<Tracer.Span> = []
@@ -117,7 +117,7 @@ export const withFailedStatement = <A, E, R>(
         }
         return span
       },
-      context: base.context
+      context: base.context,
     })
     return Effect.map(Effect.exit(Effect.withTracer(effect, tracer)), (exit) => {
       let statement: string | undefined

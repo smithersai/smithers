@@ -26,13 +26,13 @@ export const Issue = Schema.Struct({
   title: Schema.String,
   type: Schema.Literals(types),
   priority: Schema.Literals(["P0", "P1", "P2", "P3"]),
-  suggestedLabels: Schema.Array(Schema.String)
+  suggestedLabels: Schema.Array(Schema.String),
 })
 
 /** The triager's answer: every open issue, triaged. */
 export const Triaged = Schema.Struct({
   repo: Schema.String,
-  issues: Schema.Array(Issue)
+  issues: Schema.Array(Issue),
 })
 
 /** The board the flow settles with. */
@@ -44,9 +44,9 @@ export const Board = Schema.Struct({
     cards: Schema.Array(Schema.Struct({
       number: Schema.Number,
       title: Schema.String,
-      priority: Schema.String
-    }))
-  }))
+      priority: Schema.String,
+    })),
+  })),
 })
 
 /** Fetches and triages every open issue in one pass. */
@@ -58,10 +58,10 @@ export const TriageIssues = AgentAction.make("examples/GitHubIssues/Triage", {
     `You triage GitHub issues. Fetch the OPEN issues for the given
 repo with: gh issue list --repo <repo> --state open --limit 100 --json number,title,labels
 Then, for every issue, decide its type (bug | feature | question | chore), a
-priority (P0-P3), and up to 3 suggested labels. Return all issues, no omissions.`
+priority (P0-P3), and up to 3 suggested labels. Return all issues, no omissions.`,
   ],
   prompt: ({ repo }) =>
-    `Triage every open issue in ${repo}. Use the gh CLI to fetch them, then classify, prioritize, and label each one.`
+    `Triage every open issue in ${repo}. Use the gh CLI to fetch them, then classify, prioritize, and label each one.`,
 })
 
 /**
@@ -70,7 +70,7 @@ priority (P0-P3), and up to 3 suggested labels. Return all issues, no omissions.
  * one the triager echoed.
  */
 const board = (
-  { issues, repo }: { readonly repo: string; readonly issues: ReadonlyArray<typeof Issue.Type> }
+  { issues, repo }: { readonly repo: string; readonly issues: ReadonlyArray<typeof Issue.Type> },
 ): typeof Board.Type => ({
   repo,
   total: issues.length,
@@ -78,8 +78,8 @@ const board = (
     name,
     cards: issues
       .filter((issue) => issue.type === name)
-      .map(({ number, priority, title }) => ({ number, title, priority }))
-  }))
+      .map(({ number, priority, title }) => ({ number, title, priority })),
+  })),
 })
 
 /** The flow: triage every open issue, then build the board. */
@@ -90,8 +90,9 @@ export const GitHubIssues = Flow.make("examples/GitHubIssues", {
   body: ({ repo = "smithersai/smithers" }) =>
     Node.bindPlanned(
       TriageIssues.call({ repo }),
-      (triaged: Planned.Planned<typeof Triaged.Type>) => Node.map(Node.succeed({ repo, issues: triaged.issues }), board)
-    )
+      (triaged: Planned.Planned<typeof Triaged.Type>) =>
+        Node.map(Node.succeed({ repo, issues: triaged.issues }), board),
+    ),
 })
 
 /** Every step the flow calls. */

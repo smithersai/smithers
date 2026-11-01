@@ -42,7 +42,7 @@ export const Structured = Schema.Struct({
   format: Schema.String,
   constraints: Schema.Array(Schema.String),
   successCriteria: Schema.Array(Schema.String),
-  outOfScope: Schema.Array(Schema.String)
+  outOfScope: Schema.Array(Schema.String),
 })
 
 /** The Socratic principle the next question applies. */
@@ -57,7 +57,7 @@ export const Principle = Schema.Literals([
   "analogy",
   "irony",
   "recollection",
-  "none"
+  "none",
 ])
 
 /** One draft of the extracted prompt, and what the flow settles with. */
@@ -70,7 +70,7 @@ export const RctfPrompt = Schema.Struct({
   nextPrinciple: Principle,
   resolved: Schema.Boolean,
   overridden: Schema.Boolean.annotate({ description: "True if the user told you to ship below the threshold." }),
-  overrideReason: Schema.NullOr(Schema.String)
+  overrideReason: Schema.NullOr(Schema.String),
 })
 
 /** A prompt a caller's cache returned for the same key. */
@@ -84,7 +84,7 @@ export const CachedPrompt = Schema.Struct({
   scoreReason: Schema.String,
   createdAt: Schema.String,
   source: Schema.Literals(["extracted", "manual"]),
-  overridden: Schema.Boolean
+  overridden: Schema.Boolean,
 })
 
 type RctfPrompt = typeof RctfPrompt.Type
@@ -96,7 +96,7 @@ const emptyStructured: typeof Structured.Type = {
   format: "",
   constraints: [],
   successCriteria: [],
-  outOfScope: []
+  outOfScope: [],
 }
 
 /** The draft a provided prompt stands for. */
@@ -109,7 +109,7 @@ const provided = (prompt: string): RctfPrompt => ({
   nextPrinciple: "none",
   resolved: true,
   overridden: false,
-  overrideReason: null
+  overrideReason: null,
 })
 
 /** The draft a cache hit stands for. Unrecognizable cached slots are replaced by empty ones, as in 0.x. */
@@ -124,7 +124,7 @@ const fromCache = (cached: typeof CachedPrompt.Type): RctfPrompt => {
       format: s.format,
       constraints: Schema.is(Schema.Array(Schema.String))(s.constraints) ? s.constraints : [],
       successCriteria: Schema.is(Schema.Array(Schema.String))(s.successCriteria) ? s.successCriteria : [],
-      outOfScope: Schema.is(Schema.Array(Schema.String))(s.outOfScope) ? s.outOfScope : []
+      outOfScope: Schema.is(Schema.Array(Schema.String))(s.outOfScope) ? s.outOfScope : [],
     }
     : emptyStructured
   return {
@@ -136,7 +136,7 @@ const fromCache = (cached: typeof CachedPrompt.Type): RctfPrompt => {
     nextPrinciple: "none",
     resolved: true,
     overridden: cached.overridden,
-    overrideReason: null
+    overrideReason: null,
   }
 }
 
@@ -156,7 +156,7 @@ const priorDraftBlock = (draft: RctfPrompt | undefined): string =>
     "```",
     "",
     "Refine this draft. If a slot is already strongly filled, leave it.",
-    "Identify the weakest slot and ask one Socratic question to improve it."
+    "Identify the weakest slot and ask one Socratic question to improve it.",
   ].join("\n")
 
 /** One draft: refine the prior draft with the person's answer, ask one question, and self-score. */
@@ -166,14 +166,14 @@ export const Draft = AgentAction.make("examples/ExtractPrompt/Draft", {
     threshold: Schema.Number,
     stakes: Stakes,
     priorDraft: Schema.optional(RctfPrompt),
-    answer: Schema.optional(Schema.String)
+    answer: Schema.optional(Schema.String),
   },
   output: RctfPrompt,
   seat,
   system: [
     `You are a prompt extraction agent. Your job: turn an under-specified
 human request into a high-quality, structured prompt suitable for paste
-into another LLM.`
+into another LLM.`,
   ],
   prompt: ({ answer, context, priorDraft, stakes, threshold }) =>
     `# Extract Prompt (R-C-T-F via Socratic questioning)
@@ -273,7 +273,7 @@ ${answer === undefined ? "" : `## The user's answer to your last question\n${ans
 
 Fill \`prompt\` with the rendered, paste-ready prompt body assembled from the
 structured slots. Fill \`nextQuestion\` with the next Socratic question (empty
-when \`resolved: true\`).`
+when \`resolved: true\`).`,
 })
 
 type Requirements = Action.Requirement<"examples/ExtractPrompt/Draft">
@@ -297,7 +297,7 @@ const extract = (
   loop: Loop,
   turn: number,
   priorDraft: Planned.Planned<RctfPrompt> | undefined,
-  answer: Planned.Planned<string> | undefined
+  answer: Planned.Planned<string> | undefined,
 ): Node.Node<RctfPrompt, Failure, Requirements> =>
   Node.branch(
     Draft.call({ context: loop.context, threshold: loop.threshold, stakes: loop.stakes, priorDraft, answer }),
@@ -311,11 +311,11 @@ const extract = (
           ? Node.succeed(draft)
           : Node.bindPlanned(
             HumanTask.decode(Schema.String)(
-              HumanTask.action.call({ name: `extract-prompt-${turn}`, kind: "ask", prompt: draft.nextQuestion })
+              HumanTask.action.call({ name: `extract-prompt-${turn}`, kind: "ask", prompt: draft.nextQuestion }),
             ),
-            Node.capture({ loop, turn }, (reply: Planned.Planned<string>) => extract(loop, turn + 1, draft, reply))
-          ))
-    }
+            Node.capture({ loop, turn }, (reply: Planned.Planned<string>) => extract(loop, turn + 1, draft, reply)),
+          )),
+    },
   )
 
 /** The flow. Its payload is real at plan time, so the passthroughs are decided before anything runs. */
@@ -326,7 +326,7 @@ export const ExtractPrompt = Flow.make("examples/ExtractPrompt", {
     stakes: Schema.optional(Stakes),
     threshold: Schema.optional(Fraction),
     maxTurns: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
-    context: Schema.optional(Schema.String)
+    context: Schema.optional(Schema.String),
   },
   success: RctfPrompt,
   error: Schema.Union([AgentAction.AgentFailure, HumanTask.HumanTaskFailed]),
@@ -337,9 +337,9 @@ export const ExtractPrompt = Flow.make("examples/ExtractPrompt", {
       { context, threshold: threshold ?? stakesToThreshold(stakes), stakes, maxTurns },
       1,
       undefined,
-      undefined
+      undefined,
     )
-  })
+  }),
 })
 
 /** Every step the flow calls. */

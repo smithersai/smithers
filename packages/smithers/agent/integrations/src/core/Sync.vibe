@@ -139,7 +139,7 @@ export const runSync = (options: RunOptions): Report!IntegrationError!SourceStor
       throw new IntegrationError(
         "invalid-config",
         `Sync maxPages must be an integer between 1 and ${MAX_PAGES_LIMIT}.`,
-        { ...scope, maxPages, retryable: false }
+        { ...scope, maxPages, retryable: false },
       )
     }
     const store = try SourceStore
@@ -147,7 +147,7 @@ export const runSync = (options: RunOptions): Report!IntegrationError!SourceStor
       throw new IntegrationError(
         "permission-denied",
         `Connection "${adapter.connectionId}" is revoked, so it is not synchronized.`,
-        { ...scope, retryable: false }
+        { ...scope, retryable: false },
       )
     }
     let cursor = try store.cursor(adapter.connectionId, adapter.stream)
@@ -161,7 +161,7 @@ export const runSync = (options: RunOptions): Report!IntegrationError!SourceStor
       swept: 0,
       cursor,
       reset: false,
-      done: false
+      done: false,
     }
     while (report.pages < maxPages && !report.done) {
       const changes = try adapter.changes(cursor)
@@ -171,7 +171,7 @@ export const runSync = (options: RunOptions): Report!IntegrationError!SourceStor
         throw new IntegrationError(
           "decode-failed",
           `Sync adapter for "${adapter.connectionId}:${adapter.stream}" reported more pages without a cursor.`,
-          { ...scope, retryable: false }
+          { ...scope, retryable: false },
         )
       }
       const committed = try store.commit({ ...scope, changes })
@@ -186,7 +186,7 @@ export const runSync = (options: RunOptions): Report!IntegrationError!SourceStor
         swept: report.swept + committed.swept,
         cursor,
         reset: report.reset || changes.reset,
-        done: changes.done
+        done: changes.done,
       }
     }
     return report
@@ -195,6 +195,6 @@ export const runSync = (options: RunOptions): Report!IntegrationError!SourceStor
     attributes: {
       "integration.provider": options.adapter.provider,
       "integration.connection": options.adapter.connectionId,
-      "integration.stream": options.adapter.stream
-    }
+      "integration.stream": options.adapter.stream,
+    },
   })

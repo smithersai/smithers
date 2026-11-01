@@ -22,7 +22,7 @@ export const ProcessCleanupPolicyErrorCode = Schema.Literals(["kill_signal_unsup
  */
 export class ProcessCleanupPolicyError extends Schema.TaggedError<ProcessCleanupPolicyError>()(
   "@smthrs/platform-node/ProcessCleanupPolicyError",
-  { code: ProcessCleanupPolicyErrorCode, message: Schema.String }
+  { code: ProcessCleanupPolicyErrorCode, message: Schema.String },
 ) {
   override readonly name = "ProcessCleanupPolicyError"
 }

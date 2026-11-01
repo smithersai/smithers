@@ -44,7 +44,7 @@ export const LOGIN_PATTERN =
 const PermissionAnswer = Schema.Struct({
   permission: Schema.String,
   role_name: Schema.String,
-  user: Schema.optional(Schema.NullOr(Schema.Struct({ id: Schema.Number })))
+  user: Schema.optional(Schema.NullOr(Schema.Struct({ id: Schema.Number }))),
 })
 
 const requireLogin = (login: string): string!IntegrationError =>
@@ -53,7 +53,7 @@ const requireLogin = (login: string): string!IntegrationError =>
     : throw new IntegrationError("invalid-config", "A GitHub login is not a valid account name.", {
       field: "login",
       login: typeof login === "string" ? login.slice(0, 64) : typeof login,
-      retryable: false
+      retryable: false,
     })
 
 /**
@@ -71,7 +71,7 @@ const requireLogin = (login: string): string!IntegrationError =>
 export const permission = (
   owner: string,
   repo: string,
-  login: string
+  login: string,
 ): Option<Permission>!IntegrationError!GitHubClient =>
   (effect {
     const client = try GitHubClient
@@ -81,20 +81,20 @@ export const permission = (
       "GET",
       `/repos/${repository}/collaborators/${account}/permission`,
       undefined,
-      { schema: PermissionAnswer }
+      { schema: PermissionAnswer },
     )
       |> Effect.map(%, (answer) =>
         Option.some<Permission>({
           permission: answer.permission,
           roleName: answer.role_name,
-          ...(answer.user === undefined || answer.user === null ? {} : { userId: answer.user.id })
+          ...(answer.user === undefined || answer.user === null ? {} : { userId: answer.user.id }),
         }))
       |> Effect.catchIf(
         %,
         (error) => error.details?.["status"] === 404,
-        () => Option.none<Permission>()
+        () => Option.none<Permission>(),
       ))
   })
   |> Effect.withSpan(%, "GitHub.Collaborators.permission", {
-    attributes: { "github.owner": owner, "github.repo": repo }
+    attributes: { "github.owner": owner, "github.repo": repo },
   })

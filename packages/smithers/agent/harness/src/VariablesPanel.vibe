@@ -57,7 +57,7 @@ export class Binding extends Schema.Class<Binding>("flows/harness/VariablesPanel
    */
   type: Schema.String,
   /** One cheap measure of the value, already rendered; empty when there is none. */
-  size: Schema.String
+  size: Schema.String,
 }) {}
 
 /**
@@ -73,7 +73,7 @@ export class Stamp extends Schema.Class<Stamp>("flows/harness/VariablesPanel/Sta
   /** The frame whose cell last changed the binding's cheap shape. */
   frame: NonNegativeSafeInt,
   /** The frame whose cell first bound the name. */
-  since: NonNegativeSafeInt
+  since: NonNegativeSafeInt,
 }) {}
 
 /**
@@ -84,7 +84,7 @@ export class Stamp extends Schema.Class<Stamp>("flows/harness/VariablesPanel/Sta
  */
 export const Ledger = Schema.Array(Stamp).pipe(
   Schema.withConstructorDefault(Effect.succeed<ReadonlyArray<Stamp>>([])),
-  Schema.withDecodingDefaultKey(Effect.succeed<ReadonlyArray<Stamp>>([]))
+  Schema.withDecodingDefaultKey(Effect.succeed<ReadonlyArray<Stamp>>([])),
 )
 
 /**
@@ -151,7 +151,7 @@ export const render = (options: {
     elide.head(
       `- ${entry.name} (${entry.type}${entry.size === "" ? "" : `, ${entry.size}`}) — ${marked(entry, options.frame)}`,
       CallLedger.width,
-      "the name is what recalls the value"
+      "the name is what recalls the value",
     )
   )
   return [
@@ -159,6 +159,6 @@ export const render = (options: {
     ...lines,
     ...(uncounted > 0
       ? [`- … and ${uncounted} older name${uncounted === 1 ? "" : "s"} not listed here; they are still bound.`]
-      : [])
+      : []),
   ].join("\n")
 }

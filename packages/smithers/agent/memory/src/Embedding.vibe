@@ -42,7 +42,7 @@ export interface EmbedManyResponse {
  * @since 0.1.0
  */
 export type EmbedMany = (
-  inputs: ReadonlyArray<string>
+  inputs: ReadonlyArray<string>,
 ) => ReadonlyArray<ReadonlyArray<number>>!MemoryError.MemoryError
 
 /**
@@ -70,7 +70,7 @@ const unavailable = (message: string): MemoryError.MemoryError =>
 
 const validate = (
   inputs: ReadonlyArray<string>,
-  vectors: ReadonlyArray<ReadonlyArray<number>>
+  vectors: ReadonlyArray<ReadonlyArray<number>>,
 ): EmbedManyResponse!MemoryError.MemoryError => {
   const invalid = () => throw unavailable("embedding provider returned an invalid batch")
   const dimensions = vectors[0]?.length
@@ -109,7 +109,7 @@ export const make = (embedMany: EmbedMany): Service => {
     embedMany: (inputs) =>
       inputs.length === 0
         ? { embeddings: [] }
-        : (embedMany(inputs) |> Effect.flatMap(%, (vectors) => validate(inputs, vectors)))
+        : (embedMany(inputs) |> Effect.flatMap(%, (vectors) => validate(inputs, vectors))),
   }
   return Embedding.of(service)
 }
@@ -146,7 +146,7 @@ export const layerNoop: Layer.Layer<Embedding> = Layer.succeed(Embedding)(makeNo
  * @since 0.1.0
  */
 export const layerFake = (
-  vectors: ReadonlyArray<ReadonlyArray<number>> | ((input: string, index: number) => ReadonlyArray<number>)
+  vectors: ReadonlyArray<ReadonlyArray<number>> | ((input: string, index: number) => ReadonlyArray<number>),
 ): Layer.Layer<Embedding> =>
   layer((inputs) =>
     inputs.map((input, index) => typeof vectors === "function" ? vectors(input, index) : vectors[index] ?? [])

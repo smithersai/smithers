@@ -44,7 +44,7 @@ export interface ActiveRuns {
   readonly update: (
     triggerId: string,
     occurrence: number,
-    change: (entry: Active) => Active
+    change: (entry: Active) => Active,
   ) => void!!
   readonly remove: (triggerId: string, occurrence: number) => void!!
 }
@@ -61,7 +61,7 @@ export const make: ActiveRuns!! = Effect.map(
     const fenced = (
       triggerId: string,
       occurrence: number,
-      change: (entry: Active) => Active | undefined
+      change: (entry: Active) => Active | undefined,
     ): void!! =>
       Ref.update(entries, (current) => {
         const entry = current.get(triggerId)
@@ -76,7 +76,7 @@ export const make: ActiveRuns!! = Effect.map(
       get: (triggerId) => Effect.map(Ref.get(entries), (current) => current.get(triggerId)),
       take: (triggerId, entry) => Ref.update(entries, (current) => new Map(current).set(triggerId, entry)),
       update: fenced,
-      remove: (triggerId, occurrence) => fenced(triggerId, occurrence, () => undefined)
+      remove: (triggerId, occurrence) => fenced(triggerId, occurrence, () => undefined),
     }
-  }
+  },
 )

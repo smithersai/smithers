@@ -67,7 +67,7 @@ export interface FlushResult {
 
 const invalidOutput = (message: string): ModelError => new ModelError({ code: "invalid_provider_output", message })
 const decodeArguments = Schema.decodeUnknownOption(
-  Schema.fromJsonString(JsonObject)
+  Schema.fromJsonString(JsonObject),
 )
 
 const find = (state: State, callId: string): OpenToolCall | undefined =>
@@ -90,7 +90,7 @@ export const initial = (): State => ({ open: [] })
  * @slop
  */
 export const start = (state: State, call: { readonly callId: string; readonly name: string }): State => ({
-  open: [...state.open.filter((entry) => entry.callId !== call.callId), { ...call, fragments: Chunk.empty() }]
+  open: [...state.open.filter((entry) => entry.callId !== call.callId), { ...call, fragments: Chunk.empty() }],
 })
 
 /**
@@ -103,7 +103,7 @@ export const start = (state: State, call: { readonly callId: string; readonly na
 export const delta = (state: State, callId: string, fragment: string): State => ({
   open: state.open.map((entry) =>
     entry.callId === callId ? { ...entry, fragments: Chunk.append(entry.fragments, fragment) } : entry
-  )
+  ),
 })
 
 /**
@@ -132,7 +132,7 @@ export const end = (state: State, callId: string): EndResult => {
   }
   return {
     state: { open: state.open.filter((entry) => entry.callId !== callId) },
-    completed: { callId: call.callId, name: call.name, arguments: arguments_ }
+    completed: { callId: call.callId, name: call.name, arguments: arguments_ },
   }
 }
 
@@ -154,8 +154,8 @@ export const flushAborted = (state: State): FlushResult => ({
   completed: state.open.map((call) => ({
     callId: call.callId,
     name: call.name,
-    arguments: Chunk.toReadonlyArray(call.fragments).join("")
-  }))
+    arguments: Chunk.toReadonlyArray(call.fragments).join(""),
+  })),
 })
 
 /**

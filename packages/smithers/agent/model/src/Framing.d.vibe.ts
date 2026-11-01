@@ -5,7 +5,7 @@
  */
 import * as Sse from "effect/encoding/Sse";
 import * as Stream from "effect/Stream";
-import { ModelError } from "./ModelError.vibe";
+import { ModelError } from "./ModelError.js";
 /**
  * A byte-stream framing strategy selected independently of a protocol.
  *

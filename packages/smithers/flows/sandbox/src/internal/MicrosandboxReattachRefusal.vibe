@@ -19,7 +19,7 @@ import * as Schema from "effect/Schema"
 export const MicrosandboxReattachRefusalCode = Schema.Literals([
   "network_mismatch",
   "limits_mismatch",
-  "ownership_not_recorded"
+  "ownership_not_recorded",
 ])
 
 /**
@@ -31,7 +31,7 @@ export const MicrosandboxReattachRefusalCode = Schema.Literals([
 export class MicrosandboxReattachRefusal
   extends Schema.TaggedError<MicrosandboxReattachRefusal>()("@smthrs/sandbox/MicrosandboxReattachRefusal", {
     code: MicrosandboxReattachRefusalCode,
-    message: Schema.String
+    message: Schema.String,
   })
 {
   override readonly name = "MicrosandboxReattachRefusal"

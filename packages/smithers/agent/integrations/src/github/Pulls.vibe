@@ -58,8 +58,8 @@ export const PullEnd = Schema.Struct({ ref: Schema.String, sha: Schema.String })
 export const PullBase = Schema.Struct({
   ...PullEnd.fields,
   repo: Schema.NullOr(Schema.Struct({ default_branch: Schema.String })).pipe(
-    Schema.withDecodingDefault(Effect.succeed(null))
-  )
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
 })
 
 /**
@@ -92,7 +92,7 @@ export const PullRequest = Schema.Struct({
   changed_files: Schema.Number.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
   created_at: Schema.String,
   updated_at: Schema.String,
-  closed_at: Schema.NullOr(Schema.String)
+  closed_at: Schema.NullOr(Schema.String),
 })
 
 /**
@@ -114,9 +114,9 @@ export const PullCommit = Schema.Struct({
   sha: Schema.String,
   commit: Schema.Struct({
     message: Schema.String,
-    author: Schema.NullOr(Schema.Struct({ name: Schema.String, date: Schema.String }))
+    author: Schema.NullOr(Schema.Struct({ name: Schema.String, date: Schema.String })),
   }),
-  author: IssueUser
+  author: IssueUser,
 })
 
 /**
@@ -141,7 +141,7 @@ export const Review = Schema.Struct({
   body: Schema.NullOr(Schema.String),
   state: Schema.String,
   commit_id: Schema.NullOr(Schema.String),
-  submitted_at: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed(null)))
+  submitted_at: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
 })
 
 /**
@@ -197,7 +197,7 @@ const invalid = (field: string, message: string, value?: unknown): IntegrationEr
   new IntegrationError("invalid-config", message, {
     field,
     ...(value === undefined ? {} : { value: typeof value === "string" ? value.slice(0, 64) : typeof value }),
-    retryable: false
+    retryable: false,
   })
 
 const requireNumber = (number: number): number!IntegrationError =>
@@ -215,7 +215,7 @@ const incomplete = (operation: string): IntegrationError =>
   new IntegrationError(
     "poll-failed",
     `${operation}: the search ran out of its ${RECONCILE_PAGES}-page budget before it could rule the write out.`,
-    { operation, incomplete: true, retryable: false }
+    { operation, incomplete: true, retryable: false },
   )
 
 const requireWriteId = (writeId: string): string!IntegrationError =>
@@ -246,20 +246,20 @@ const requireEvent = (event: ReviewEvent): ReviewEvent!IntegrationError =>
 const decodeFailed = (path: string, cause: unknown): IntegrationError =>
   new IntegrationError("decode-failed", `GitHub response for GET ${path} failed schema validation.`, {
     method: "GET",
-    path
+    path,
   }, { cause })
 
 const decodeAll = <A>(
   schema: Schema.Decoder<A>,
   items: ReadonlyArray<unknown>,
-  path: string
+  path: string,
 ): ReadonlyArray<A>!IntegrationError =>
   Schema.decodeUnknownEffect(Schema.Array(schema))(items) |> Effect.mapError(%, (cause) => decodeFailed(path, cause))
 
 const spanAttributes = (owner: string, repo: string, number?: number): Record<string, unknown> => ({
   "github.owner": owner,
   "github.repo": repo,
-  ...(number === undefined ? {} : { "github.number": number })
+  ...(number === undefined ? {} : { "github.number": number }),
 })
 
 /**
@@ -272,7 +272,7 @@ const spanAttributes = (owner: string, repo: string, number?: number): Record<st
 export const getPull = (
   owner: string,
   repo: string,
-  number: number
+  number: number,
 ): PullRequest!IntegrationError!GitHubClient =>
   (effect {
     const client = try GitHubClient
@@ -297,7 +297,7 @@ export const listPulls = (
     readonly state?: "open" | "closed" | "all" | undefined
     readonly head?: string | undefined
     readonly maxPages?: number | undefined
-  }
+  },
 ): { readonly items: ReadonlyArray<PullRequest>; readonly truncated: boolean }!IntegrationError!GitHubClient =>
   (effect {
     const client = try GitHubClient
@@ -324,7 +324,7 @@ export const listPulls = (
 export const findPullByHead = (
   owner: string,
   repo: string,
-  options: { readonly head: string; readonly writeId?: string | undefined }
+  options: { readonly head: string; readonly writeId?: string | undefined },
 ): Option<PullRequest>!IntegrationError!GitHubClient =>
   (effect {
     const writeId = options.writeId === undefined ? undefined : try requireWriteId(options.writeId)
@@ -357,7 +357,7 @@ export const createPull = (
     readonly title: string
     readonly body: string
     readonly draft?: boolean | undefined
-  }
+  },
 ): PullRequest!IntegrationError!GitHubClient =>
   (effect {
     const client = try GitHubClient
@@ -372,7 +372,7 @@ export const createPull = (
       base,
       title: input.title,
       body: input.body,
-      draft: input.draft ?? false
+      draft: input.draft ?? false,
     }, { schema: PullRequest })
   }) |> Effect.withSpan(%, "GitHub.Pulls.createPull", { attributes: spanAttributes(owner, repo) })
 
@@ -387,7 +387,7 @@ export const createPull = (
 export const closePull = (
   owner: string,
   repo: string,
-  number: number
+  number: number,
 ): PullRequest!IntegrationError!GitHubClient =>
   (effect {
     const client = try GitHubClient
@@ -395,7 +395,7 @@ export const closePull = (
     const pull = try requireNumber(number)
     return try client.request("PATCH", `/repos/${repository}/pulls/${pull}`, { state: "closed" }, {
       schema: PullRequest,
-      retryUnsafeWrites: true
+      retryUnsafeWrites: true,
     })
   }) |> Effect.withSpan(%, "GitHub.Pulls.closePull", { attributes: spanAttributes(owner, repo, number) })
 
@@ -414,7 +414,7 @@ export const setBase = (
   owner: string,
   repo: string,
   number: number,
-  base: string
+  base: string,
 ): PullRequest!IntegrationError!GitHubClient =>
   (effect {
     const client = try GitHubClient
@@ -423,17 +423,17 @@ export const setBase = (
     const branch = try requireBranch(base)
     return try client.request("PATCH", `/repos/${repository}/pulls/${pull}`, { base: branch }, {
       schema: PullRequest,
-      retryUnsafeWrites: true
+      retryUnsafeWrites: true,
     })
   }) |> Effect.withSpan(%, "GitHub.Pulls.setBase", { attributes: spanAttributes(owner, repo, number) })
 
 const ReadyAnswer = Schema.Struct({
   data: Schema.optionalKey(Schema.NullOr(Schema.Struct({
     markPullRequestReadyForReview: Schema.NullOr(Schema.Struct({
-      pullRequest: Schema.Struct({ isDraft: Schema.Boolean })
-    }))
+      pullRequest: Schema.Struct({ isDraft: Schema.Boolean }),
+    })),
   }))),
-  errors: Schema.optionalKey(Schema.Array(Schema.Struct({ message: Schema.String })))
+  errors: Schema.optionalKey(Schema.Array(Schema.Struct({ message: Schema.String }))),
 })
 
 /**
@@ -449,23 +449,23 @@ const ReadyAnswer = Schema.Struct({
 export const markReady = (
   owner: string,
   repo: string,
-  nodeId: string
+  nodeId: string,
 ): void!IntegrationError!GitHubClient =>
   (effect {
     const client = try GitHubClient
     try requireRepositoryPath(owner, repo)
     try requireNodeId("nodeId", nodeId)
     const answer = try client.request("POST", "/graphql", {
-      query: "mutation($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) " +
-        "{ pullRequest { isDraft } } }",
-      variables: { id: nodeId }
+      query: "mutation($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) "
+        + "{ pullRequest { isDraft } } }",
+      variables: { id: nodeId },
     }, { schema: ReadyAnswer, retryUnsafeWrites: true })
     if ((answer.errors !== undefined && answer.errors.length > 0) || !answer.data?.markPullRequestReadyForReview) {
       throw new IntegrationError("delivery-failed", "GitHub refused to mark the pull request ready.", {
         status: 422,
         graphql: true,
         retryable: false,
-        outcomeUnknown: false
+        outcomeUnknown: false,
       })
     }
   }) |> Effect.withSpan(%, "GitHub.Pulls.markReady", { attributes: spanAttributes(owner, repo) })
@@ -473,12 +473,12 @@ export const markReady = (
 const UpdateBranchAnswer = Schema.Struct({
   data: Schema.optionalKey(Schema.NullOr(Schema.Struct({
     updatePullRequestBranch: Schema.NullOr(Schema.Struct({
-      pullRequest: Schema.NullOr(Schema.Struct({ headRefOid: Schema.String }))
-    }))
+      pullRequest: Schema.NullOr(Schema.Struct({ headRefOid: Schema.String })),
+    })),
   }))),
   errors: Schema.optionalKey(
-    Schema.Array(Schema.Struct({ message: Schema.String, type: Schema.optionalKey(Schema.String) }))
-  )
+    Schema.Array(Schema.Struct({ message: Schema.String, type: Schema.optionalKey(Schema.String) })),
+  ),
 })
 
 /**
@@ -502,7 +502,7 @@ const UpdateBranchAnswer = Schema.Struct({
 export const updateBranch = (
   owner: string,
   repo: string,
-  input: { readonly pullNodeId: string; readonly expectedHeadOid: string; readonly method: UpdateMethod }
+  input: { readonly pullNodeId: string; readonly expectedHeadOid: string; readonly method: UpdateMethod },
 ): { readonly headSha: string }!IntegrationError!GitHubClient =>
   (effect {
     const client = try GitHubClient
@@ -511,11 +511,11 @@ export const updateBranch = (
     const expectedHeadOid = try requireSha("expectedHeadOid", input.expectedHeadOid)
     const method = try requireUpdateMethod(input.method)
     const answer = try client.request("POST", "/graphql", {
-      query: "mutation($input: UpdatePullRequestBranchInput!) " +
-        "{ updatePullRequestBranch(input: $input) { pullRequest { headRefOid } } }",
+      query: "mutation($input: UpdatePullRequestBranchInput!) "
+        + "{ updatePullRequestBranch(input: $input) { pullRequest { headRefOid } } }",
       variables: {
-        input: { pullRequestId, expectedHeadOid, updateMethod: method === "merge" ? "MERGE" : "REBASE" }
-      }
+        input: { pullRequestId, expectedHeadOid, updateMethod: method === "merge" ? "MERGE" : "REBASE" },
+      },
     }, { schema: UpdateBranchAnswer })
     const pullRequest = answer.data?.updatePullRequestBranch?.pullRequest
     if (
@@ -527,7 +527,7 @@ export const updateBranch = (
         graphql: true,
         ...(type === undefined ? {} : { type: type.slice(0, 64) }),
         retryable: false,
-        outcomeUnknown: false
+        outcomeUnknown: false,
       })
     }
     return { headSha: pullRequest.headRefOid }
@@ -556,7 +556,7 @@ export const mergePull = (
     readonly method: MergeMethod
     readonly commitTitle?: string | undefined
     readonly commitMessage?: string | undefined
-  }
+  },
 ): Merged!IntegrationError!GitHubClient =>
   (effect {
     const client = try GitHubClient
@@ -568,7 +568,7 @@ export const mergePull = (
       sha,
       merge_method: method,
       ...(input.commitTitle === undefined ? {} : { commit_title: input.commitTitle }),
-      ...(input.commitMessage === undefined ? {} : { commit_message: input.commitMessage })
+      ...(input.commitMessage === undefined ? {} : { commit_message: input.commitMessage }),
     }, { schema: MergeAnswer })
   }) |> Effect.withSpan(%, "GitHub.Pulls.mergePull", { attributes: spanAttributes(owner, repo, number) })
 
@@ -584,7 +584,7 @@ export const listCommits = (
   owner: string,
   repo: string,
   number: number,
-  options?: { readonly maxPages?: number | undefined }
+  options?: { readonly maxPages?: number | undefined },
 ): { readonly items: ReadonlyArray<PullCommit>; readonly truncated: boolean }!IntegrationError!GitHubClient =>
   (effect {
     const client = try GitHubClient
@@ -607,7 +607,7 @@ export const listReviews = (
   owner: string,
   repo: string,
   number: number,
-  options?: { readonly maxPages?: number | undefined }
+  options?: { readonly maxPages?: number | undefined },
 ): { readonly items: ReadonlyArray<Review>; readonly truncated: boolean }!IntegrationError!GitHubClient =>
   (effect {
     const client = try GitHubClient
@@ -633,7 +633,7 @@ export const createReview = (
   owner: string,
   repo: string,
   number: number,
-  input: { readonly commitId: string; readonly event: ReviewEvent; readonly body: string }
+  input: { readonly commitId: string; readonly event: ReviewEvent; readonly body: string },
 ): Review!IntegrationError!GitHubClient =>
   (effect {
     const client = try GitHubClient
@@ -647,7 +647,7 @@ export const createReview = (
     return try client.request("POST", `/repos/${repository}/pulls/${pull}/reviews`, {
       commit_id: commitId,
       event,
-      body: input.body
+      body: input.body,
     }, { schema: Review })
   }) |> Effect.withSpan(%, "GitHub.Pulls.createReview", { attributes: spanAttributes(owner, repo, number) })
 
@@ -664,7 +664,7 @@ export const findReviewByWrite = (
   owner: string,
   repo: string,
   number: number,
-  options: { readonly writeId: string }
+  options: { readonly writeId: string },
 ): Option<Review>!IntegrationError!GitHubClient =>
   (effect {
     const writeId = try requireWriteId(options.writeId)

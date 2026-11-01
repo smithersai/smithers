@@ -87,7 +87,7 @@ export const Status = Schema.Struct({
   context: Schema.String,
   description: Schema.NullOr(Schema.String),
   target_url: Schema.NullOr(Schema.String),
-  created_at: Schema.String
+  created_at: Schema.String,
 })
 
 /**
@@ -104,7 +104,7 @@ const invalid = (field: string, message: string, value: unknown): IntegrationErr
   new IntegrationError("invalid-config", message, {
     field,
     value: typeof value === "string" ? value.slice(0, 64) : typeof value,
-    retryable: false
+    retryable: false,
   })
 
 const requireInput = (sha: string, input: Input): Record<string, string>!IntegrationError => {
@@ -124,7 +124,7 @@ const requireInput = (sha: string, input: Input): Record<string, string>!Integra
     state: input.state,
     context: input.context,
     ...(input.description === undefined ? {} : { description: cut(input.description) }),
-    ...(input.targetUrl === undefined ? {} : { target_url: input.targetUrl })
+    ...(input.targetUrl === undefined ? {} : { target_url: input.targetUrl }),
   }
 }
 
@@ -153,7 +153,7 @@ export const create = (
   owner: string,
   repo: string,
   sha: string,
-  input: Input
+  input: Input,
 ): Status!IntegrationError!GitHubClient =>
   (effect {
     const client = try GitHubClient
@@ -161,9 +161,9 @@ export const create = (
     const body = try requireInput(sha, input)
     return try client.request("POST", `/repos/${repository}/statuses/${sha}`, body, {
       schema: Status,
-      retryUnsafeWrites: true
+      retryUnsafeWrites: true,
     })
   })
   |> Effect.withSpan(%, "GitHub.Statuses.create", {
-    attributes: { "github.owner": owner, "github.repo": repo, "github.status.state": input.state }
+    attributes: { "github.owner": owner, "github.repo": repo, "github.status.state": input.state },
   })

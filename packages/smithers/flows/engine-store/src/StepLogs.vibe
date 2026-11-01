@@ -57,7 +57,7 @@ export const defaultLimits: Limits = {
   records: 1_000,
   recordBytes: 4 * 1024,
   queue: 256,
-  flush: "5 seconds"
+  flush: "5 seconds",
 }
 
 /**
@@ -67,7 +67,7 @@ export const defaultLimits: Limits = {
  * @since 1.0.0
  */
 export const Limits: Context.Reference<Limits> = Context.Reference<Limits>("@smthrs/engine-store/StepLogs/Limits", {
-  defaultValue: () => defaultLimits
+  defaultValue: () => defaultLimits,
 })
 
 /**

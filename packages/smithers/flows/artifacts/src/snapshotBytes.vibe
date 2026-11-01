@@ -30,5 +30,5 @@ const snapshotFailure = (cause: unknown): ArtifactStoreError =>
 export const snapshotBytes = (bytes: Uint8Array): Uint8Array!ArtifactStoreError =>
   Effect.try({
     try: () => new Uint8Array(bytes),
-    catch: (cause) => snapshotFailure(cause)
+    catch: (cause) => snapshotFailure(cause),
   })

@@ -25,7 +25,7 @@ export const IssueReport = Schema.Struct({
   title: Schema.optional(Schema.String),
   traceback: Schema.optional(Schema.String),
   description: Schema.optional(Schema.String),
-  endpoint: Schema.optional(Schema.String)
+  endpoint: Schema.optional(Schema.String),
 })
 
 /** What the issue reader found. */
@@ -34,7 +34,7 @@ export const Analysis = Schema.Struct({
   reproSteps: Schema.Array(Schema.String),
   expectedBehavior: Schema.String,
   actualBehavior: Schema.String,
-  summary: Schema.String
+  summary: Schema.String,
 })
 
 /** The test the author wrote. */
@@ -43,7 +43,7 @@ export const AuthoredTest = Schema.Struct({
   testName: Schema.String,
   assertion: Schema.String,
   linesOfCode: Schema.Number,
-  summary: Schema.String
+  summary: Schema.String,
 })
 
 /** What running the test showed. */
@@ -52,7 +52,7 @@ export const RunResult = Schema.Struct({
   didFail: Schema.Boolean,
   exitCode: Schema.Number,
   errorOutput: Schema.String,
-  summary: Schema.String
+  summary: Schema.String,
 })
 
 /** The handoff the flow settles with. */
@@ -60,7 +60,7 @@ export const Report = Schema.Struct({
   reproTestPath: Schema.String,
   verified: Schema.Boolean,
   readyForFix: Schema.Boolean,
-  summary: Schema.String
+  summary: Schema.String,
 })
 
 /** Reads the issue and pins down what is broken. */
@@ -71,9 +71,9 @@ export const AnalyzeIssue = AgentAction.make("examples/FailingTestAuthor/Analyze
   system: [
     `You are a bug triage specialist. Read the issue description and any
 traceback provided, then identify the affected component, minimal reproduction steps,
-and the gap between expected and actual behavior. Be precise and concise.`
+and the gap between expected and actual behavior. Be precise and concise.`,
   ],
-  prompt: ({ issue }) => `Analyze this issue.\n\nIssue: ${JSON.stringify(issue)}`
+  prompt: ({ issue }) => `Analyze this issue.\n\nIssue: ${JSON.stringify(issue)}`,
 })
 
 /** Writes the smallest test that reproduces the bug. */
@@ -83,7 +83,7 @@ export const AuthorTest = AgentAction.make("examples/FailingTestAuthor/Author", 
     reproSteps: Schema.Array(Schema.String),
     expectedBehavior: Schema.String,
     actualBehavior: Schema.String,
-    testDir: Schema.String
+    testDir: Schema.String,
   },
   output: AuthoredTest,
   seat,
@@ -91,12 +91,12 @@ export const AuthorTest = AgentAction.make("examples/FailingTestAuthor/Author", 
     `You are a test engineer. Write the smallest possible failing test that
 reproduces the reported bug. The test must fail for the right reason — it should assert
 the expected behavior that is currently broken. Follow existing test conventions in the
-codebase. Do NOT attempt to fix the bug.`
+codebase. Do NOT attempt to fix the bug.`,
   ],
   prompt: ({ actualBehavior, component, expectedBehavior, reproSteps, testDir }) =>
     `Write a failing test in ${testDir}.\n\nComponent: ${component}\nReproduction steps: ${
       JSON.stringify(reproSteps)
-    }\nExpected behavior: ${expectedBehavior}\nActual behavior: ${actualBehavior}`
+    }\nExpected behavior: ${expectedBehavior}\nActual behavior: ${actualBehavior}`,
 })
 
 /**
@@ -106,19 +106,19 @@ codebase. Do NOT attempt to fix the bug.`
  */
 export const RunTest = Action.make("examples/FailingTestAuthor/Run", {
   payload: { testPath: Schema.String, testCmd: Schema.String },
-  success: RunResult
+  success: RunResult,
 })
 
 /** The handoff. Pure, so it is a `Node.map`, not a step. */
 const report = (
-  { run, testPath }: { readonly testPath: string; readonly run: typeof RunResult.Type }
+  { run, testPath }: { readonly testPath: string; readonly run: typeof RunResult.Type },
 ): typeof Report.Type => ({
   reproTestPath: testPath,
   verified: run.didFail,
   readyForFix: run.didFail,
   summary: run.didFail
     ? `Verified failing test at ${testPath} — ready for fix`
-    : "Test did not fail as expected — repro may be incomplete"
+    : "Test did not fail as expected — repro may be incomplete",
 })
 
 /** The flow: analyze, author, run, report. */
@@ -126,7 +126,7 @@ export const FailingTestAuthor = Flow.make("examples/FailingTestAuthor", {
   payload: {
     issue: Schema.optional(IssueReport),
     testDir: Schema.optional(Schema.String),
-    testCmd: Schema.optional(Schema.String)
+    testCmd: Schema.optional(Schema.String),
   },
   success: Report,
   error: AgentAction.AgentFailure,
@@ -140,16 +140,16 @@ export const FailingTestAuthor = Flow.make("examples/FailingTestAuthor", {
             reproSteps: analysis.reproSteps,
             expectedBehavior: analysis.expectedBehavior,
             actualBehavior: analysis.actualBehavior,
-            testDir
+            testDir,
           }),
           (test: Planned.Planned<typeof AuthoredTest.Type>) =>
             Node.bindPlanned(
               RunTest.call({ testPath: test.testPath, testCmd }),
               (run: Planned.Planned<typeof RunResult.Type>) =>
-                Node.map(Node.succeed({ testPath: test.testPath, run }), report)
-            )
-        )
-    )
+                Node.map(Node.succeed({ testPath: test.testPath, run }), report),
+            ),
+        ),
+    ),
 })
 
 /** Every agent step the flow calls. The host implements {@link RunTest}. */

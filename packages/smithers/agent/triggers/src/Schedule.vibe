@@ -71,8 +71,8 @@ export const Schedule = Schema.Struct({
   catchUp: CatchUp.pipe(Schema.withDecodingDefault(Effect.succeed("none" as const))),
   maxCatchUp: Schema.Int.check(
     Schema.isGreaterThanOrEqualTo(0),
-    Schema.isLessThanOrEqualTo(maxCatchUpLimit)
-  ).pipe(Schema.withDecodingDefault(Effect.succeed(0)))
+    Schema.isLessThanOrEqualTo(maxCatchUpLimit),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed(0))),
 })
 
 /**
@@ -96,7 +96,7 @@ export type Schedule = typeof Schedule.Type
  * @since 0.1.0
  */
 export const validate = <A extends { readonly cron: string; readonly timezone?: string | undefined }>(
-  declaration: A
+  declaration: A,
 ): A!TriggerError => Effect.as(Cron.parse(declaration.cron, declaration.timezone), declaration)
 
 /**

@@ -85,7 +85,7 @@ export interface Flow<
   I extends Schema.Top,
   O extends Schema.Top,
   Err extends Schema.Top = typeof Schema.Never,
-  Requires = Action.Requirement<string>
+  Requires = Action.Requirement<string>,
 > extends Pipeable {
   readonly [TypeId]: {
     readonly _Input: Types.Invariant<I>
@@ -217,7 +217,7 @@ interface Options<
   I extends Schema.Top,
   O extends Schema.Top,
   Err extends Schema.Top,
-  Requires
+  Requires,
 > {
   readonly name: string
   readonly description: string | undefined
@@ -253,7 +253,7 @@ interface Options<
 const built = new WeakMap<object, Options<Schema.Top, Schema.Top, Schema.Top, unknown>>()
 
 const optionsOf = <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
-  self: Flow<I, O, Err, Requires>
+  self: Flow<I, O, Err, Requires>,
 ): Options<I, O, Err, Requires> => built.get(self) as unknown as Options<I, O, Err, Requires>
 
 /** Whether a schema is the struct `@smthrs/flow` requires of a payload. */
@@ -284,9 +284,9 @@ export const build = <
   I extends Schema.Top,
   O extends Schema.Top,
   Err extends Schema.Top,
-  Requires = Action.Requirement<string>
+  Requires = Action.Requirement<string>,
 >(
-  options: Options<I, O, Err, Requires>
+  options: Options<I, O, Err, Requires>,
 ): Flow<I, O, Err, Requires> => {
   const payload = payloadOf(options.input)
   const wrapped = isStruct(options.input)
@@ -299,7 +299,7 @@ export const build = <
   const capabilities = Option.getOrElse(annotatedCapabilities, () => options.capabilities)
   const effects = Option.getOrElse(
     Annotations.getOption(options.annotations, Annotations.Effects),
-    () => options.effects
+    () => options.effects,
   )
   const declared = {
     payload,
@@ -308,7 +308,7 @@ export const build = <
     ...(effects === undefined ? {} : { effects }),
     success: options.output,
     error: options.error,
-    annotations: options.annotations
+    annotations: options.annotations,
   }
   const body = options.body
   // A signature without a body IS the action a host implements later; the flow
@@ -318,7 +318,7 @@ export const build = <
     ? Action.make(options.name, {
       ...declared,
       declaredFrom: options.original?.action,
-      tier: tierOf(effects)
+      tier: tierOf(effects),
     }) as unknown as Action.Declared<
       string,
       Payload<I>,
@@ -349,13 +349,13 @@ export const build = <
     ...(options.budget === undefined ? {} : { budget: options.budget }),
     ...(options.deadline === undefined ? {} : { deadline: options.deadline }),
     declaredFrom: options.original?.flow,
-    body: nativeBody
+    body: nativeBody,
   }) as unknown as Durable.Flow<string, Payload<I>, O, Err, Requires>
   const self: Flow<I, O, Err, Requires> = {
     [TypeId]: {
       _Input: identity,
       _Output: identity,
-      _Error: identity
+      _Error: identity,
     },
     name: options.name,
     description: options.description,
@@ -376,11 +376,11 @@ export const build = <
     pipe() {
       // eslint-disable-next-line prefer-rest-params
       return pipeArguments(this, arguments)
-    }
+    },
   }
   built.set(self, {
     ...options,
-    original: options.original ?? { flow, action }
+    original: options.original ?? { flow, action },
   })
   return self
 }
@@ -403,22 +403,22 @@ export const isFlow = (value: unknown): value is Any => Predicate.hasProperty(va
  */
 export const within: {
   (
-    placement: Placement.Placement
+    placement: Placement.Placement,
   ): <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
-    self: Flow<I, O, Err, Requires>
+    self: Flow<I, O, Err, Requires>,
   ) => Flow<I, O, Err, Requires>
   <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
     self: Flow<I, O, Err, Requires>,
-    placement: Placement.Placement
+    placement: Placement.Placement,
   ): Flow<I, O, Err, Requires>
 } = dual(2, <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
   self: Flow<I, O, Err, Requires>,
-  placement: Placement.Placement
+  placement: Placement.Placement,
 ): Flow<I, O, Err, Requires> => {
   const options = optionsOf(self)
   return build({
     ...options,
-    annotations: Annotations.add(options.annotations, Annotations.Placement, placement)
+    annotations: Annotations.add(options.annotations, Annotations.Placement, placement),
   })
 })
 
@@ -439,24 +439,24 @@ export const within: {
 export const annotate: {
   <Key, S>(
     key: Context.Key<Key, S>,
-    value: S
+    value: S,
   ): <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
-    self: Flow<I, O, Err, Requires>
+    self: Flow<I, O, Err, Requires>,
   ) => Flow<I, O, Err, Requires>
   <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires, Key, S>(
     self: Flow<I, O, Err, Requires>,
     key: Context.Key<Key, S>,
-    value: S
+    value: S,
   ): Flow<I, O, Err, Requires>
 } = dual(3, <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires, Key, S>(
   self: Flow<I, O, Err, Requires>,
   key: Context.Key<Key, S>,
-  value: S
+  value: S,
 ): Flow<I, O, Err, Requires> => {
   const options = optionsOf(self)
   return build({
     ...options,
-    annotations: Annotations.add(options.annotations, key, value)
+    annotations: Annotations.add(options.annotations, key, value),
   })
 })
 
@@ -473,19 +473,19 @@ export const annotate: {
  */
 export const withFlows: {
   (
-    flows: ReadonlyArray<Reference>
+    flows: ReadonlyArray<Reference>,
   ): <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
-    self: Flow<I, O, Err, Requires>
+    self: Flow<I, O, Err, Requires>,
   ) => Flow<I, O, Err, Requires>
   <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
     self: Flow<I, O, Err, Requires>,
-    flows: ReadonlyArray<Reference>
+    flows: ReadonlyArray<Reference>,
   ): Flow<I, O, Err, Requires>
 } = dual(2, <I extends Schema.Top, O extends Schema.Top, Err extends Schema.Top, Requires>(
   self: Flow<I, O, Err, Requires>,
-  flows: ReadonlyArray<Reference>
+  flows: ReadonlyArray<Reference>,
 ): Flow<I, O, Err, Requires> =>
   build({
     ...optionsOf(self),
-    flows: [...flows]
+    flows: [...flows],
   }))

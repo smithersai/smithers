@@ -34,6 +34,6 @@ export const loggingReporter: Reporter = {
       session: event.session,
       reason: event.reason,
       message: event.message,
-      probes: event.probes
-    })
+      probes: event.probes,
+    }),
 }

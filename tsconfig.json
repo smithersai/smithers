@@ -1,6 +1,8 @@
 {
+  "vibe": { "sidecarDir": ".vibe/declarations" },
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
+    "rootDirs": [".",".vibe/declarations"],
     "rewriteRelativeImportExtensions": true,
     "noEmit": true,
     "lib": [

@@ -20,7 +20,7 @@ import * as Schema from "effect/Schema"
  */
 export const BudgetCeiling = Schema.Int.check(
   Schema.isGreaterThan(0),
-  Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
+  Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER),
 )
 
 /**
@@ -58,7 +58,7 @@ export const Budget = Schema.Struct({
   tokens: Schema.optional(BudgetCeiling),
   milliseconds: Schema.optional(BudgetCeiling),
   usd: Schema.optional(UsdCeiling),
-  onExceeded: Schema.optional(BudgetOnExceeded)
+  onExceeded: Schema.optional(BudgetOnExceeded),
 })
 
 /**
@@ -86,7 +86,7 @@ export const SandboxProvider = Schema.Literals([
   "just-bash",
   "kubernetes",
   "microsandbox",
-  "vercel"
+  "vercel",
 ])
 
 /**
@@ -102,11 +102,11 @@ export const SandboxSelection = Schema.Struct({
   provider: SandboxProvider,
   network: Schema.optionalKey(Schema.Union([
     Schema.Literals(["none", "open"]),
-    Schema.Struct({ allow: Schema.Array(Schema.String) })
+    Schema.Struct({ allow: Schema.Array(Schema.String) }),
   ])),
   cpus: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThan(0))),
   memoryMib: Schema.optionalKey(BudgetCeiling),
-  timeoutSecs: Schema.optionalKey(BudgetCeiling)
+  timeoutSecs: Schema.optionalKey(BudgetCeiling),
 })
 
 /**

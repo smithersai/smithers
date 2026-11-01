@@ -21,7 +21,7 @@ export const Kind = Schema.Literals([
   "catalog",
   "call_failed",
   "script_failed",
-  "denied"
+  "denied",
 ])
 
 /**
@@ -42,7 +42,7 @@ export type Kind = typeof Kind.Type
  */
 export const Observation = Schema.Struct({
   kind: Kind,
-  message: Schema.String
+  message: Schema.String,
 })
 
 /**
@@ -64,7 +64,7 @@ export type Observation = typeof Observation.Type
  */
 export const make = (kind: Kind, message: string): Observation => ({
   kind,
-  message: message.length > 8192 ? `${message.slice(0, 8192 - "[truncated]".length)}[truncated]` : message
+  message: message.length > 8192 ? `${message.slice(0, 8192 - "[truncated]".length)}[truncated]` : message,
 })
 
 /**

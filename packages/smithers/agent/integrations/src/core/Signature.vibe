@@ -81,7 +81,7 @@ export interface VerifyOptions {
 const decodeHex = (value: string): Uint8Array =>
   Uint8Array.from(
     { length: value.length / 2 },
-    (_, index) => Number.parseInt(value.slice(index * 2, index * 2 + 2), 16)
+    (_, index) => Number.parseInt(value.slice(index * 2, index * 2 + 2), 16),
   )
 // `atob` refuses what does not decode, such as a length one past a whole
 // quantum or padding that does not end one; a refusal is a mismatch.

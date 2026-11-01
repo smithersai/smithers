@@ -92,7 +92,7 @@ const types: Readonly<Record<Kind, FileSystem.File.Type | undefined>> = {
   f: "File",
   F: "File",
   o: "Unknown",
-  L: undefined
+  L: undefined,
 }
 
 const info = (type: FileSystem.File.Type, size: number): FileSystem.File.Info => ({
@@ -109,7 +109,7 @@ const info = (type: FileSystem.File.Type, size: number): FileSystem.File.Info =>
   gid: Option.none(),
   rdev: Option.none(),
   blksize: Option.none(),
-  blocks: Option.none()
+  blocks: Option.none(),
 })
 
 /**
@@ -129,7 +129,7 @@ export const fileSystem = (tree: Tree, path: Path.Path): FileSystem.FileSystem =
     throw refusal(
       type === "File" ? "PermissionDenied" : type === undefined ? "NotFound" : "BadResource",
       "readFile",
-      value
+      value,
     )
   }
   return FileSystem.makeNoop({
@@ -153,6 +153,6 @@ export const fileSystem = (tree: Tree, path: Path.Path): FileSystem.FileSystem =
     },
     readFile,
     readFileString: (value) => Effect.map(readFile(value), (bytes) => new TextDecoder().decode(bytes)),
-    stream: (value) => Stream.fromEffect(readFile(value))
+    stream: (value) => Stream.fromEffect(readFile(value)),
   })
 }

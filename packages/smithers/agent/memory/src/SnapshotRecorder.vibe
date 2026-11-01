@@ -25,7 +25,7 @@ export const Row = Schema.Struct({
   origin: Schema.Literals(["primer", "recall"]),
   bank: Schema.String,
   key: Schema.String,
-  text: Schema.String
+  text: Schema.String,
 })
 
 /**
@@ -73,7 +73,7 @@ export interface Identity {
 export interface Service {
   readonly record: <R>(
     identity: Identity,
-    effect: Snapshot!never!R
+    effect: Snapshot!never!R,
   ) => Snapshot!never!R
 }
 
@@ -84,7 +84,7 @@ export interface Service {
  * @since 0.1.0
  */
 export class SnapshotRecorder extends Context.Service<SnapshotRecorder, Service>()(
-  "flows/memory/SnapshotRecorder"
+  "flows/memory/SnapshotRecorder",
 ) {}
 
 /**

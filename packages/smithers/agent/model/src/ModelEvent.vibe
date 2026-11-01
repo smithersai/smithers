@@ -36,11 +36,11 @@ export const Usage = withStatics(
     cacheWriteTokens: Schema.optional(Schema.Number),
     totalTokens: Schema.optional(Schema.Number),
     /** The USD charge the provider itself reported for the call, when it reports one. */
-    costUsd: Schema.optional(Schema.Number)
+    costUsd: Schema.optional(Schema.Number),
   }).annotate({ identifier: "flows/model/Usage" }),
   {
-    make: (input: Usage): Usage => input
-  }
+    make: (input: Usage): Usage => input,
+  },
 )
 
 /**
@@ -112,7 +112,7 @@ export type TextEnd = typeof TextEnd.Type
 export const ThinkingStart = Schema.Struct({
   type: Schema.Literal("thinking-start"),
   id: Schema.String,
-  signature: Schema.optional(Schema.String)
+  signature: Schema.optional(Schema.String),
 })
 /**
  * The decoded form of {@link ThinkingStart}.
@@ -132,7 +132,7 @@ export type ThinkingStart = typeof ThinkingStart.Type
 export const ThinkingDelta = Schema.Struct({
   type: Schema.Literal("thinking-delta"),
   id: Schema.String,
-  text: Schema.String
+  text: Schema.String,
 })
 /**
  * The decoded form of {@link ThinkingDelta}.
@@ -168,7 +168,7 @@ export type ThinkingEnd = typeof ThinkingEnd.Type
 export const ToolCallStart = Schema.Struct({
   type: Schema.Literal("tool-call-start"),
   id: Schema.String,
-  name: Schema.String
+  name: Schema.String,
 })
 /**
  * The decoded form of {@link ToolCallStart}.
@@ -188,7 +188,7 @@ export type ToolCallStart = typeof ToolCallStart.Type
 export const ToolCallDelta = Schema.Struct({
   type: Schema.Literal("tool-call-delta"),
   id: Schema.String,
-  arguments: Schema.String
+  arguments: Schema.String,
 })
 /**
  * The decoded form of {@link ToolCallDelta}.
@@ -209,7 +209,7 @@ export type ToolCallDelta = typeof ToolCallDelta.Type
 export const ToolCallEnd = Schema.Struct({
   type: Schema.Literal("tool-call-end"),
   id: Schema.String,
-  arguments: Schema.optional(Schema.String)
+  arguments: Schema.optional(Schema.String),
 })
 /**
  * The decoded form of {@link ToolCallEnd}.
@@ -232,7 +232,7 @@ export const ToolResult = Schema.Struct({
   type: Schema.Literal("tool-result"),
   id: Schema.String,
   output: Schema.String,
-  isError: Schema.optional(Schema.Boolean)
+  isError: Schema.optional(Schema.Boolean),
 })
 /**
  * The decoded form of {@link ToolResult}.
@@ -258,7 +258,7 @@ export const UsageEvent = Schema.Struct({
   cachedInputTokens: Schema.optional(Schema.Number),
   cacheWriteTokens: Schema.optional(Schema.Number),
   totalTokens: Schema.optional(Schema.Number),
-  costUsd: Schema.optional(Schema.Number)
+  costUsd: Schema.optional(Schema.Number),
 })
 /**
  * The decoded form of {@link UsageEvent}.
@@ -292,7 +292,7 @@ export const Retry = Schema.Struct({
    */
   delayMillis: Schema.Number.pipe(
     Schema.withConstructorDefault(Effect.succeed(0)),
-    Schema.withDecodingDefaultKey(Effect.succeed(0))
+    Schema.withDecodingDefaultKey(Effect.succeed(0)),
   ),
   /**
    * Milliseconds the failed attempt ran before it failed. The journal stamps
@@ -302,7 +302,7 @@ export const Retry = Schema.Struct({
    */
   elapsedMs: Schema.optional(Schema.Number),
   /** The HTTP status that failed the attempt, when a response carried one. */
-  httpStatus: Schema.optional(Schema.Number)
+  httpStatus: Schema.optional(Schema.Number),
 })
 /**
  * The decoded form of {@link Retry}.
@@ -326,7 +326,7 @@ export const FailedTry = Schema.Struct({
   /** Why: a `ModelError` code, or the code of a kernel permission failure. */
   code: Schema.String,
   /** The HTTP status that failed it, when a response carried one. */
-  httpStatus: Schema.optional(Schema.Number)
+  httpStatus: Schema.optional(Schema.Number),
 })
 /**
  * The decoded form of {@link FailedTry}.
@@ -382,7 +382,7 @@ export const Timing = Schema.Struct({
   /** The response stream closed. */
   closedMs: Schema.optional(Schema.Number),
   /** The tries that failed before the answered one, oldest first. */
-  failedTries: Schema.optional(Schema.Array(FailedTry))
+  failedTries: Schema.optional(Schema.Array(FailedTry)),
 })
 /**
  * The decoded form of {@link Timing}.
@@ -413,7 +413,7 @@ export const Settle = Schema.Struct({
    * provider that keeps reasoning server side answers the next request with
    * these ids rather than the text they stand for.
    */
-  itemIds: Schema.optional(Schema.Array(Schema.String))
+  itemIds: Schema.optional(Schema.Array(Schema.String)),
 })
 /**
  * The decoded form of {@link Settle}.
@@ -446,7 +446,7 @@ export const ModelEvent = Object.assign(
     ToolResult,
     UsageEvent,
     Retry,
-    Settle
+    Settle,
   ]).pipe(Schema.toTaggedUnion("type")),
   {
     TextStart: TextStart.make,
@@ -462,8 +462,8 @@ export const ModelEvent = Object.assign(
     Usage: (input: Usage): UsageEvent => ({ type: "usage", ...input }),
     Retry: Retry.make,
     Settle: Settle.make,
-    settledMessage
-  }
+    settledMessage,
+  },
 )
 
 /**
@@ -496,7 +496,7 @@ export type ModelEvent = typeof ModelEvent.Type
  * @slop
  */
 export function settledMessage(
-  events: Iterable<ModelEvent>
+  events: Iterable<ModelEvent>,
 ): { readonly message: AssistantMessage; readonly usage: Usage } {
   const parts: Array<AssistantMessage["content"][number]> = []
   const indexes = new Map<string, number>()
@@ -551,7 +551,7 @@ export function settledMessage(
           const arguments_ = event.arguments ?? current.arguments
           parts[index] = {
             ...current,
-            arguments: arguments_
+            arguments: arguments_,
           }
         }
         break
@@ -564,11 +564,11 @@ export function settledMessage(
           cachedInputTokens: event.cachedInputTokens,
           cacheWriteTokens: event.cacheWriteTokens,
           totalTokens: event.totalTokens,
-          costUsd: event.costUsd
+          costUsd: event.costUsd,
         }
         usage = {
           ...usage,
-          ...Object.fromEntries(Object.entries(next).filter(([, value]) => value !== undefined))
+          ...Object.fromEntries(Object.entries(next).filter(([, value]) => value !== undefined)),
         }
         break
       }
@@ -597,8 +597,8 @@ export function settledMessage(
       content: parts,
       stopReason,
       responseId,
-      itemIds
+      itemIds,
     }),
-    usage
+    usage,
   }
 }

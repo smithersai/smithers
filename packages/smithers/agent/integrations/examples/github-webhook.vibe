@@ -43,7 +43,7 @@ export const readIssueComment = (delivery: Delivery, secret: string): IssueComme
     payload: delivery.body,
     secret,
     signature: delivery.signature,
-    prefix: Core.Signature.GITHUB_SIGNATURE_PREFIX
+    prefix: Core.Signature.GITHUB_SIGNATURE_PREFIX,
   })
   |> Effect.map(%, (verified) => {
     if (!verified) return undefined
@@ -53,6 +53,6 @@ export const readIssueComment = (delivery: Delivery, secret: string): IssueComme
       repository: event.value.repository.full_name,
       issueNumber: event.value.issue.number,
       author: event.value.comment.user?.login ?? "unknown",
-      body: event.value.comment.body ?? ""
+      body: event.value.comment.body ?? "",
     }
   })

@@ -70,7 +70,7 @@ export interface Session {
   /** Starts one command on the machine; its scope is the process's lifetime. */
   readonly spawn: (
     command: string,
-    options: RemoteOptions
+    options: RemoteOptions,
   ) => RemoteProcess!ProviderError!Scope
   /** The complete contents at an absolute guest path; `not_found` when absent. */
   readonly readFile: (path: string) => Uint8Array!ProviderError
