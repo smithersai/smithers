@@ -223,6 +223,19 @@ export const holdChapters = (repeat: ReadonlyArray<number>, frames: ReadonlyArra
   return held
 }
 
+/** A known screenshot-tool interval on the test clock, retained in the media manifest. */
+export interface Capture { readonly start: number; readonly end: number }
+
+/** Remove only declared evidence captures, never an inferred visual glitch.
+ * Chromium temporarily resizes tall documents during a full-page screenshot.
+ * Frame intervals overlap the cut conservatively, including the recording lag.
+ */
+export const withoutCaptures = (frames: ReadonlyArray<Frame>, captures: ReadonlyArray<Capture>, startedAt: number) =>
+  frames.map((frame, index) => captures.some(({ start, end }) => {
+    const from = Math.max(startedAt, start - RECORDING_LAG * 1000)
+    return startedAt + index * 1000 / FPS < end && startedAt + (index + 1) * 1000 / FPS > from
+  }) ? { detail: 0, changed: 0 } : frame)
+
 /** Where each recorded frame starts in the output, in output frames, for a `plan`'s repeats. */
 export const outputStarts = (repeat: ReadonlyArray<number>) => {
   const starts: Array<number> = []

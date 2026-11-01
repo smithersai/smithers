@@ -9,3 +9,12 @@ The deployment-auth setup saves through Settings' `PUT /api/me/model` and verifi
 Deployment specs run with one worker because they share an account. Tests that remove or replace the model must disable traces and restore it in `afterEach`, including on failure. Personal-model tests exercise Remove without asking the hosted model afterward. Setup has video and trace disabled; the restoration helper never reports credential-bearing request diagnostics or provider bodies. Never pass keys on a command line or print them.
 
 For a deployment: `BASE_URL=https://your-deployment.example pnpm exec playwright test agent.spec.ts --grep 'ask:'` runs deployment setup first. For collection only: `pnpm exec playwright test --list`. Run the prerequisite regression with `pnpm vitest run e2e/target.test.ts --coverage.enabled=false`.
+
+Mobile layout audits retain full-document PNG evidence and original recordings.
+Full-page capture can temporarily resize Chromium's recorded surface. The
+`fullPageScreenshot` helper records these tool intervals as `captures` in the
+media manifest; `gifs.mjs` excludes them before allocating scene and chapter
+holds. It never infers exclusions from visual glitches. Unmarked flashes,
+blank pages, frozen previews and missing chapters still fail validation.
+The helper and teardown await renderer paint acknowledgments spanning two
+recording sample slots, so short audits retain their final visible screen.

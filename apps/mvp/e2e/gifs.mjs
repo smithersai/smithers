@@ -41,7 +41,8 @@ import {
   retime,
   themeFor,
   titleCardOf,
-  VIDEO_PACE
+  VIDEO_PACE,
+  withoutCaptures
 } from "./frames.ts"
 import { readManifests } from "./manifests.ts"
 import { withMediaDirectory } from "./mediaDirectory.ts"
@@ -342,7 +343,7 @@ const make = async (flow, page, alike) => {
     const composed = join(work, "composed.mkv")
     compose(timed, end, composed)
     const [width, height] = probe(composed, "stream=width,height").split(",").map(Number)
-    const frames = measurePanes(composed, timed)
+    const frames = withoutCaptures(measurePanes(composed, timed), flow.captures ?? [], flow.startedAt ?? 0)
     // An older manifest has neither `startedAt` nor `marks`: its video has no chapters, and the check fails it.
     const found = chaptersOf(flow.marks ?? [], flow.startedAt ?? 0)
     const videoRepeat = holdChapters(

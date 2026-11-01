@@ -1,4 +1,4 @@
-import { Button, LinkTabs, NotificationBell, RepoAbout, FileTabs, ItemAsideSection, ItemConversation, IssuesView, RepositoryHome, SmithersUiStyles } from "@smthrs/ui"
+import { Button, WebPageView, LinkTabs, NotificationBell, RepoAbout, FileTabs, ItemAsideSection, ItemConversation, IssuesView, RepositoryHome, SmithersUiStyles } from "@smthrs/ui"
 import { RepoView, RepoViewStyles } from "@smthrs/repo-view"
 import { listPageOf } from "../../src/features/pulls/view"
 import { createRoot } from "react-dom/client"
@@ -53,7 +53,9 @@ createRoot(document.getElementById("app")!).render(screen === null ? <>
   </main>
 </> : <>
   <SmithersUiStyles withTheme /><a className="root-skip" href="#main-content">Skip to content</a>
-  {screen === "shell" ? <main id="main-content" tabIndex={-1} className="app-shell"><header className="app-shell-header"><div className="app-shell-agent">Smithers</div><nav className="app-shell-nav" aria-label="Pages">{["Conversations", "Flows", "Runs", "Settings", "Queue", "Report a bug"].map(label => <a href="#" key={label}>{label}</a>)}</nav><NotificationBell unread={337} /><Button aria-label="Theme">Theme</Button><span aria-label="Account"><span>codeplanesmithers</span><Button>Sign out</Button></span></header><div className="app-shell-composer"><Button aria-keyshortcuts="Meta+K Control+K">Chat <kbd>⌘K</kbd></Button></div></main> : screen === "branch" ? <main className="branch-screen" data-workspace="false">
+  {screen === "web-page" ? <main style={{ width: "100%", padding: "16px", height: "800px", display: "flex" }}>
+    <WebPageView size="full" url="https://example.com/" preview={{ title: "A repository page with a long title on a narrow screen", description: "A persisted page opened at full size." }} />
+  </main> : screen === "shell" ? <main id="main-content" tabIndex={-1} className="app-shell"><header className="app-shell-header"><div className="app-shell-agent">Smithers</div><nav className="app-shell-nav" aria-label="Pages">{["Conversations", "Flows", "Runs", "Settings", "Queue", "Report a bug"].map(label => <a href="#" key={label}>{label}</a>)}</nav><NotificationBell unread={337} /><Button aria-label="Theme">Theme</Button><span aria-label="Account"><span>codeplanesmithers</span><Button>Sign out</Button></span></header><div className="app-shell-composer"><Button aria-keyshortcuts="Meta+K Control+K">Chat <kbd>⌘K</kbd></Button></div></main> : screen === "branch" ? <main className="branch-screen" data-workspace="false">
     <header className="repo-header"><h1>octocat / Spoon-Knife</h1><NotificationBell /></header>
     <div className="branch-screen-view"><LinkTabs className="home-tabs"><a href="#home">Home</a><a href="#code">Code</a></LinkTabs><div style={{ minHeight: "1200px" }}>Files</div></div>
   </main> : screen === "issues" ? <main className="issues-screen">

@@ -260,3 +260,21 @@ test("tablet: the full account name remains readable", async () => {
     expect(await name.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
   } finally { await page.close() }
 })
+
+for (const width of [390, 768, 1280]) test(`${width}: pending web page stays inside its figure`, async () => {
+  const page = await browser.newPage({ viewport: { width, height: 844 } })
+  try {
+    await page.goto(`${origin}?screen=web-page`)
+    const figure = page.locator(".sui-web-page-view")
+    await figure.waitFor()
+    expect(await figure.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+    const pending = page.locator(".sui-web-page-pending")
+    expect(await pending.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+    const preview = await page.locator(".sui-web-page-pending .sui-web-page-preview").boundingBox()
+    const bounds = await pending.boundingBox()
+    expect(preview!.x).toBeGreaterThanOrEqual(bounds!.x)
+    expect(preview!.x + preview!.width).toBeLessThanOrEqual(bounds!.x + bounds!.width)
+  } finally {
+    await page.close()
+  }
+})

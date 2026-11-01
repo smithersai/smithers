@@ -1,3 +1,4 @@
+import { capturesOf, fullPageScreenshot, painted } from "./fullPageScreenshot"
 import { expect, request as apiRequests, type Page, type TestInfo, type Locator, type Request } from "@playwright/test"
 import { expectServerError, strictTest as base } from "./watch"
 import { writeFile } from "node:fs/promises"
@@ -116,6 +117,8 @@ const test = base.extend<{ recording: void; issueLayout: IssueLayoutSync; mobile
     await use()
     page.off("requestfinished", onFinished)
     if (info.status === "skipped") return
+    // Short audits must leave the final viewport painted before the recorder closes.
+    if (!page.isClosed()) await painted(page)
     await Promise.all(reads)
     await writeFile(info.outputPath("shape-applied.json"), JSON.stringify(appliedShapes, null, 2))
     await info.attach("shape-applied", { path: info.outputPath("shape-applied.json"), contentType: "application/json" })
@@ -126,7 +129,7 @@ const test = base.extend<{ recording: void; issueLayout: IssueLayoutSync; mobile
     await writeFile(info.outputPath("page-errors.json"), JSON.stringify(errors, null, 2))
     const name = info.titlePath.slice(1).join("-").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 150)
     // Playwright moves its temporary recording beside the manifest during teardown.
-    await writeManifest(info, "flow.json", startedAt, [{ name: "", video: "video.webm", openedAt: 0 }], { test: name, flow: name })
+    await writeManifest(info, "flow.json", startedAt, [{ name: "", video: "video.webm", openedAt: 0 }], { test: name, flow: name, captures: capturesOf(page) })
   }, { auto: true }],
 })
 test.use({ video: "on", screenshot: "only-on-failure", colorScheme: "light" })
@@ -187,7 +190,7 @@ const audit = async (page: Page, info: TestInfo, name = "screen", scope?: Locato
   await writeFile(receipt, JSON.stringify({ route: page.url(), viewport: page.viewportSize(), controls: { selected: controls.selected, checked: controls.checked }, auditMs: Date.now() - startedAt, findings }, null, 2))
   await info.attach(`layout-audit-${name}`, { path: receipt, contentType: "application/json" })
   if (page.viewportSize()?.width === 1280) await desktopBaseline(page, info, name, snapshotReady)
-  else await page.screenshot({ path: info.outputPath(`${name}.png`), fullPage: true, animations: "disabled" })
+  else await fullPageScreenshot(page, info.outputPath(`${name}.png`))
   expect.soft(findings, `${page.url()} at ${JSON.stringify(page.viewportSize())}`).toEqual([])
 }
 

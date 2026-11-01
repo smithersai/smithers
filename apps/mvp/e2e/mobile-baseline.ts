@@ -1,3 +1,4 @@
+import { fullPageScreenshot } from "./fullPageScreenshot"
 import { errors, expect, type Page, type TestInfo } from "@playwright/test"
 import { writeFile } from "node:fs/promises"
 import { captureState, paintAt, removeMobileStyles, restoreMobileStyles, scrollTo } from "./baseline-dom"
@@ -121,7 +122,7 @@ export const desktopBaseline = async (page: Page, info: TestInfo, name: string, 
       remaining()
       expect((await page.evaluate(captureState)).document, "document dimensions must remain stable across the CSS comparison").toEqual(dimensions)
       const file = tiles.length === 1 ? name : `${name}-${tile.x}-${tile.y}`
-      const png = await page.screenshot({ path: info.outputPath(`${file}${baseline ? "-baseline" : ""}.png`), fullPage: true, clip: tile, animations: "disabled", timeout: remaining() })
+      const png = await fullPageScreenshot(page, info.outputPath(`${file}${baseline ? "-baseline" : ""}.png`), { clip: tile, timeout: remaining() })
       expect({ width: png.readUInt32BE(16), height: png.readUInt32BE(20) }, "the PNG covers its entire document tile").toEqual({ width: tile.width, height: tile.height })
       if (baseline) capturedBaseline++
       else capturedCurrent++

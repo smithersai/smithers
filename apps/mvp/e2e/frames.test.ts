@@ -19,6 +19,7 @@ import {
   MEASURE_HEIGHT,
   MEASURE_WIDTH,
   measure,
+  withoutCaptures,
   outputStarts,
   placeOfPath,
   plainLabel,
@@ -416,5 +417,44 @@ describe("problems", () => {
     expect(problems([...playing(10), shown(PIXELS), shown(PIXELS), ...playing(10)], 10)).toEqual([])
     expect(problems([cut, shown(500)], 10)).toEqual(["too short: 2 frames"])
     expect(problems(playing(20), MAX_GIF_BYTES + 1)).toEqual(["too big: 5.0 MB"])
+  })
+})
+
+
+describe("withoutCaptures", () => {
+  it("cuts declared screenshot intervals, including overlapping frame edges and recording lag", () => {
+    const frames = Array(10).fill(shown(0))
+    const kept = (captures: Array<{ start: number; end: number }>) => withoutCaptures(frames, captures, 1000).map((frame) => isBlank(frame) ? 0 : 1)
+    expect(withoutCaptures(frames, [], 1000)).toEqual(frames)
+    expect(kept([{ start: 1450, end: 1600 }])).toEqual([1, 1, 1, 0, 0, 0, 1, 1, 1, 1])
+    expect(kept([{ start: 1000, end: 1100 }, { start: 1800, end: 1900 }])).toEqual([0, 1, 1, 1, 1, 1, 0, 0, 0, 1])
+    expect(kept([{ start: 0, end: 500 }, { start: 3000, end: 3100 }])).toEqual(Array(10).fill(1))
+    expect(frames).toEqual(Array(10).fill(shown(0)))
+  })
+
+  it("removes the measured production screenshot flash without exempting ordinary flashes", () => {
+    // Measurements from the saved mobile docs GIF: frame 34 is a compressed
+    // full-document capture between matching viewport frames (320 x 180).
+    const frames = [...Array(34).fill({ detail: 2481, changed: 1 }),
+      { detail: 8171, changed: 9516, skip: 0 }, { detail: 2486, changed: 9524, skip: 9513 },
+      ...Array(20).fill({ detail: 2486, changed: 1 })]
+    expect(problems(frames, 1)).toContain("glitched: 1 frames flash for 0.1 s")
+    const edited = withoutCaptures(frames, [{ start: 3400, end: 3500 }], 0)
+    expect(problems(edited.filter((frame) => !isBlank(frame)), 1).filter((problem) => problem.startsWith("glitched"))).toEqual([])
+    expect(withoutCaptures(frames, [], 0)).toEqual(frames)
+  })
+
+  it("allocates chapter holds to real frames when a screenshot ends a chapter", () => {
+    const frames = withoutCaptures(Array(20).fill(shown(0)), [{ start: 500, end: 1000 }], 0)
+    const repeat = holdChapters(plan(frames, { ...GIF_PACE, quiet: 1, scene: 1, hold: 0 }), frames,
+      [{ t: 0, label: "Open document" }, { t: 1, label: "Read document" }], GIF_PACE.chapter)
+    expect(repeat.slice(0, 3).reduce((sum, count) => sum + count, 0)).toBeGreaterThanOrEqual(GIF_PACE.chapter)
+    expect(repeat.slice(3, 10)).toEqual(Array(7).fill(0))
+  })
+
+  it("does not excuse unmarked visual flashes or turn blank recordings into content", () => {
+    const flash = [...Array(10).fill(shown(0)), { ...shown(2000), skip: 0 }, shown(2000), ...Array(10).fill(shown(0))]
+    expect(problems(withoutCaptures(flash, [], 0), 10)).toContain("glitched: 1 frames flash for 0.1 s")
+    expect(plan(withoutCaptures(Array(20).fill(blank), [{ start: 500, end: 900 }], 0), GIF_PACE)).toEqual(Array(20).fill(0))
   })
 })
