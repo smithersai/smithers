@@ -26,7 +26,7 @@ import type { FlowId, RunId, RunSummary } from "@smthrs/control/ControlSchema"
 import type { Credential, CredentialRef } from "@smthrs/control/Credential"
 import * as WebhookChannel from "@smthrs/control/WebhookChannel"
 import { Cause, Effect, Redacted, Schema } from "effect"
-import { decode as decodeExternalEvent, type ExternalEvent } from "./ExternalEvent.ts"
+import { decode as decodeExternalEvent, type ExternalEvent } from "./ExternalEvent.vibe"
 import { IntegrationError, isIntegrationError, toInvalidInput, toUnauthorized } from "./IntegrationError.ts"
 import * as SignalName from "./SignalName.ts"
 

@@ -38,7 +38,7 @@ export * as Commits from "./github/Commits.ts"
  * @category constructors
  * @since 1.0.0
  */
-export * as Config from "./github/Config.ts"
+export * as Config from "./github/Config.vibe"
 
 /**
  * @category getters
@@ -68,7 +68,7 @@ export * as Once from "./github/Once.ts"
  * @category schemas
  * @since 1.0.0
  */
-export * as Payload from "./github/Payload.ts"
+export * as Payload from "./github/Payload.vibe"
 
 /**
  * @category services

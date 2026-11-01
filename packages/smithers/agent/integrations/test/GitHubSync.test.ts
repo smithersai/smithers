@@ -1,6 +1,6 @@
 import { Effect, Layer, Option } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
-import type { SourceRecord } from "../src/core/SourceRecord.ts"
+import type { SourceRecord } from "../src/core/SourceRecord.vibe"
 import { layerMemory, SourceStore } from "../src/core/SourceStore.ts"
 import { runSync } from "../src/core/Sync.ts"
 import { commentId, issueId, make, PROVIDER } from "../src/github/Sync.ts"

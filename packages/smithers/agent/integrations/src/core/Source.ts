@@ -10,7 +10,7 @@ import { Action, DurableClock, FlowRuntime } from "@smthrs/flow"
 import { Effect, Schema } from "effect"
 import { Failure, fromIntegrationError, toIntegrationError } from "./ActionFailure.ts"
 import { CursorStore } from "./CursorStore.ts"
-import { ExternalEvent } from "./ExternalEvent.ts"
+import { ExternalEvent } from "./ExternalEvent.vibe"
 import { IntegrationError } from "./IntegrationError.ts"
 
 /**

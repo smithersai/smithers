@@ -9,7 +9,7 @@ import {
   type SourceRecord,
   supersedes,
   tombstone
-} from "../src/core/SourceRecord.ts"
+} from "../src/core/SourceRecord.vibe"
 
 const record = (overrides: Partial<SourceRecord> = {}): SourceRecord => ({
   provider: "example",

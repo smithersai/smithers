@@ -8,7 +8,7 @@ import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import { Failure, fromIntegrationError } from "../src/core/ActionFailure.ts"
 import { CursorStore, layerMemory } from "../src/core/CursorStore.ts"
-import type { ExternalEvent } from "../src/core/ExternalEvent.ts"
+import type { ExternalEvent } from "../src/core/ExternalEvent.vibe"
 import { IntegrationError } from "../src/core/IntegrationError.ts"
 import { type Batch, type RunContext, runWithCursor } from "../src/core/Source.ts"
 

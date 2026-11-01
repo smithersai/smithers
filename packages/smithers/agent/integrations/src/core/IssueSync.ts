@@ -6,7 +6,7 @@ import { isRecord } from "@smthrs/canonical/Record"
 import type { FlowRuntime } from "@smthrs/flow"
 import { Schema } from "effect"
 import { Failure } from "./ActionFailure.ts"
-import type { ExternalEvent } from "./ExternalEvent.ts"
+import type { ExternalEvent } from "./ExternalEvent.vibe"
 
 /** Persisted connector routing.
  * @category schemas

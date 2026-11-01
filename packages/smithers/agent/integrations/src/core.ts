@@ -8,7 +8,7 @@
  * @category constructors
  * @since 1.0.0
  */
-export * as AccessToken from "./core/AccessToken.ts"
+export * as AccessToken from "./core/AccessToken.vibe"
 
 /**
  * @category schemas
@@ -44,7 +44,7 @@ export * as CursorStore from "./core/CursorStore.ts"
  * @category schemas
  * @since 1.0.0
  */
-export * as ExternalEvent from "./core/ExternalEvent.ts"
+export * as ExternalEvent from "./core/ExternalEvent.vibe"
 
 /**
  * @category errors
@@ -98,7 +98,7 @@ export * as Source from "./core/Source.ts"
  * @category schemas
  * @since 1.0.0
  */
-export * as SourceRecord from "./core/SourceRecord.ts"
+export * as SourceRecord from "./core/SourceRecord.vibe"
 
 /**
  * @category services

@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Payload from "../src/github/Payload.ts"
+import * as Payload from "../src/github/Payload.vibe"
 
 describe("payload schemas", () => {
   const decodeWith = <A>(schema: Schema.Schema<A>, value: unknown) =>
