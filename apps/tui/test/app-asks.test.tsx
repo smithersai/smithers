@@ -1,12 +1,14 @@
 import { testRender } from "@opentui/react/test-utils"
 import type { AgentEvent } from "@smthrs/harness/AgentEvent"
-import { afterEach, beforeEach, expect, test } from "bun:test"
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test"
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { setImmediate, setTimeout } from "node:timers/promises"
 import { act } from "react"
 import { App } from "../src/app.tsx"
+import * as Approvals from "../src/approvals.ts"
+import { Asks } from "../src/asks.ts"
 import type * as Host from "../src/host.ts"
 
 // Needs you from the chat: an ask a worker puts to the person shows beside Summary and on its card, and
@@ -227,7 +229,7 @@ test("two asks from one worker count separately and keep a as chat text", async 
   expect(frame()).not.toContain("enter Answer")
   await key("RETURN")
   await waitFor(() => turns.length === 3)
-  expect(turns[2]!.input.prompt).toContain("a")
+  expect(turns[2]!.input.prompt).toBe("a")
   expect(answers).toBe(0)
   expect(frame()).toContain("Summary ◆2")
 })
@@ -495,4 +497,93 @@ test("a on a focused ask card opens its answer form", async () => {
   await key("ARROW_DOWN")
   await key("RETURN")
   expect(await answered()).toMatchObject({ answer: "plus" })
+})
+
+// Time controls intent checks, not native dispatch: bytes still reach the actual App/editor.
+test.each(
+  [
+    ["one burst", undefined, ["sum", "plus"]],
+    ["short delay", Approvals.armMs - 1, ["sum", "plus"]],
+    ["long delay", Approvals.armMs + 1, ["sum", "plus"]],
+    ["free text burst", undefined, undefined],
+    ["free text short delay", Approvals.armMs - 1, undefined],
+    ["free text long delay", Approvals.armMs + 1, undefined]
+  ] as const
+)("a then Enter sends exactly a without answering (%s)", async (_name, delay, options) => {
+  await delegate("add")
+  const clock = spyOn(Date, "now").mockReturnValue(10_000)
+  const answers = spyOn(Asks.prototype, "answer")
+  try {
+    await ask(1, "New name?", options)
+    await render()
+    clock.mockReturnValue(10_000 + Approvals.armMs)
+    if (delay !== undefined) {
+      await type("a")
+      expect(frame()).toContain("enter Answer")
+      clock.mockReturnValue(10_000 + Approvals.armMs + delay)
+    }
+    await act(async () => {
+      setup!.renderer.stdin.emit("data", Buffer.from(delay === undefined ? "a\r" : "\r"))
+      await setImmediate()
+    })
+    await render()
+    expect(answers).not.toHaveBeenCalled()
+    expect(turns.slice(2).map((turn) => turn.input.prompt)).toEqual(["a"])
+    expect(frame()).toContain("Summary ◆1")
+    expect(frame()).not.toContain("enter Answer")
+  } finally {
+    answers.mockRestore()
+    clock.mockRestore()
+  }
+})
+
+test.each(
+  [
+    ["up selects first", "a\x1b[A\r", "sum"],
+    ["down selects second", "a\x1b[B\r", "plus"],
+    ["tab selects other", "a\t\ttotal\r", "total"],
+    ["free text selected", "a\tnew name\r", "new name"],
+    ["paste selects other", "a\x1b[200~total\x1b[201~\r", "total"]
+  ] as const
+)("explicit answer intent survives one burst (%s)", async (name, burst, expected) => {
+  await delegate("add")
+  const clock = spyOn(Date, "now").mockReturnValue(10_000)
+  const answers = spyOn(Asks.prototype, "answer")
+  try {
+    const answered = await ask(1, "New name?", name === "free text selected" ? undefined : ["sum", "plus"])
+    await render()
+    clock.mockReturnValue(10_000 + Approvals.armMs)
+    await act(async () => {
+      setup!.renderer.stdin.emit("data", Buffer.from(burst))
+      await setImmediate()
+    })
+    await render()
+    expect(answers.mock.calls.map((call) => call[1])).toEqual([expected])
+    expect(await answered()).toMatchObject({ answer: expected })
+    expect(turns).toHaveLength(2)
+    expect(frame()).not.toContain("Summary ◆1")
+  } finally {
+    answers.mockRestore()
+    clock.mockRestore()
+  }
+})
+
+test("Enter returns focus in time for the remaining bytes in the same burst", async () => {
+  await delegate("add")
+  await ask(1, "New name?", ["sum", "plus"])
+  await settle()
+  const answers = spyOn(Asks.prototype, "answer")
+  try {
+    await act(async () => {
+      setup!.renderer.stdin.emit("data", Buffer.from("a\rnext message"))
+      await setImmediate()
+    })
+    await render()
+    expect(turns.slice(2).map((turn) => turn.input.prompt)).toEqual(["a"])
+    expect(answers).not.toHaveBeenCalled()
+    expect(frame()).toContain("next message")
+    expect(frame()).toContain("Summary ◆1")
+  } finally {
+    answers.mockRestore()
+  }
 })

@@ -364,8 +364,9 @@ question, then each option on its own line and `other…` for your own words,
 or free text; PageUp/PageDown scroll the question. Up/Down or Tab select the
 answer, a number picks its option, Enter answers, Esc goes back and leaves
 it open. Until you select an answer,
-ordinary typing after the chat's **a** returns to Chat with the **a**. For
-400 ms after opening, Enter and numbers wait unless you move the cursor.
+ordinary typing after the chat's **a** returns to Chat with the **a**, and
+Enter sends **a** as a chat message. For 400 ms after opening, numbers wait
+unless you move the cursor; Enter in deliberately opened answer forms waits too.
 A worker's `ctx.park` asks the person the same way and waits for the answer;
 a park no one can answer fails the worker instead of deciding for you. A child worker that fails
 on something a person can answer (a sign-in, a refusal, a plan that did not

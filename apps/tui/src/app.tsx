@@ -444,7 +444,7 @@ export function App(props: AppProps) {
       fields: [],
       draft: {},
       focus: 0,
-      // A choice starts on its first option, so Enter alone answers it.
+      // A deliberate opening starts on its first option; Chat's `a` keeps its typing intent.
       ask: {
         question: ask.question,
         options: ask.options ?? [],

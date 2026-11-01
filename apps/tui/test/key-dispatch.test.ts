@@ -1507,3 +1507,13 @@ test("a valid number explicitly answers an armed form opened from Chat", () => {
   Dispatch.formKey(key("2"), askForm(0, ["sum", "plus"], undefined, { lead: "a" }), act)
   expect(seen).toEqual({ changed: [undefined], filled: [{ answer: "plus" }], chat: [] })
 })
+
+test.each(["return", "kpenter"])("%s after Chat's a submits the restored composer at any arm time", (name) => {
+  for (const armedAt of [later(), Date.now() - 500]) {
+    const { seen, act } = askAct()
+    const event = key(name)
+    Dispatch.formKey(event, askForm(0, ["sum", "plus"], undefined, { lead: "a", armedAt }), act)
+    expect(seen).toEqual({ changed: [undefined], filled: [], chat: ["a"] })
+    expect(event.defaultPrevented).toBe(false)
+  }
+})

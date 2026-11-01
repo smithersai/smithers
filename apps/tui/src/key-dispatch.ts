@@ -36,7 +36,10 @@ export interface AskChoices {
   readonly options: ReadonlyArray<string>
   /** Index into `options`; `options.length` is `other…`, where the answer is typed. */
   readonly choice: number
-  /** Until then enter and numbers wait unless the cursor moved: keys typed ahead are not an answer. */
+  /**
+   * Until then, unless the cursor moved, numbers wait, as does enter in a
+   * deliberately opened form: keys typed ahead are not an answer.
+   */
   readonly armedAt: number
   /** An arrow or tab selected the answer input or moved the cursor. */
   readonly moved?: true
@@ -393,7 +396,7 @@ export const checklistKey = (key: KeyEvent, state: { readonly rows: number }, ac
  * typing goes to `other…`. Until `armedAt`, unless the cursor moved, enter and
  * numbers wait. After the chat's `a`, typing and editing keys return to the
  * chat with that `a` until an arrow or tab selects the answer, regardless of
- * elapsed time; an editing key then edits it there.
+ * elapsed time; Enter sends it there and an editing key edits it there.
  */
 const askKey = (key: KeyEvent, open: FlowForm, ask: AskChoices, act: {
   readonly change: (next: FlowForm | undefined) => void
@@ -411,6 +414,11 @@ const askKey = (key: KeyEvent, open: FlowForm, ask: AskChoices, act: {
     return act.change(undefined)
   }
   if (key.name === "return" || key.name === "kpenter") {
+    if (ask.lead !== undefined && ask.moved !== true) {
+      // Restore the chat's input before native dispatch submits this same key.
+      act.change(undefined)
+      return act.chat(ask.lead)
+    }
     key.preventDefault()
     const answer = answerOf(ask, open.draft)
     if (answer === undefined || !armed) return
