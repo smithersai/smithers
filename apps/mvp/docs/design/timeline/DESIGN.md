@@ -1,6 +1,6 @@
 # Conversation timeline
 
-The chat's timeline rail: a vertical scrubber beside the conversation, ruling [FE-16](../../rulings.md). [Interactive mock](timeline.html). Library catalog entries: `@smthrs/ui` for the rail and transcript slot; `@smthrs/flow` for durability; `@smthrs/agent` `ModelStep` for summary calls; `@smthrs/model` `ModelProxy` for the metered role; `@smthrs/effect-tanstack-db` for the device projection; `@smthrs/crypto` for content identity.
+The chat's timeline rail: a vertical scrubber beside the conversation, rulings [FE-16 and FE-22](../../rulings.md). [Interactive mock](timeline.html); its look stands, its even rows are superseded by FE-22. Library catalog entries: `@smthrs/ui` for the rail and transcript slot; `@smthrs/flow` for durability; `@smthrs/agent` `ModelStep` for summary calls; `@smthrs/model` `ModelProxy` for the metered role; `@smthrs/effect-tanstack-db` for the device projection; `@smthrs/crypto` for content identity.
 
 ## What the rail shows
 
@@ -28,10 +28,12 @@ A block takes its most urgent member's state, in the order failed, waiting, work
 
 **Viewport.** The viewport is the transcript's scroll area (`[data-slot="message-scroller-viewport"]`). Entries whose boxes cross it are in view (`aria-current="location"`), and the band follows scroll and resize (`ChatTimeline.tsx`). Clicking an entry centers it in the transcript; clicking a block jumps to its first entry (`ChatTimeline.tsx`).
 
-**Levels.** Level 0 holds entries in rows of a fixed 34 px. A further level appears only when the one inside it no longer fits, and the mock's three is the limit. `n` is the entry count, `p` the phase count and `H` the rail's height (`timelineLevelCount`, `packages/smithers/ui/src/chat/timelineZoom.ts`):
+**Position scale.** One scale runs through every level (FE-22, `timelineZoom.ts`). An entry's size is its transcript box and the distance to the next entry's top, so views between messages count. A message that has never mounted stands on `timelineEstimate(length)`; once measured, its size is kept even after it unmounts, and the estimate never returns. A change eases over 260 ms and is held during a drag. A window measures from its own first row, so nothing above it can move it.
+
+**Levels.** Level 0 is a minimap of the window it shows: each mark's top and height are its message's, scaled to the rail, never above 1:1. A further level appears only when the one inside it no longer fits, and the mock's three is the limit. `n` is the entry count, `p` the phase count and `H` the rail's height (`timelineLevelCount`, `packages/smithers/ui/src/chat/timelineZoom.ts`):
 
 ```
-capacity(H) = max(2, floor(H / 34))          rows or blocks a column holds
+capacity(H) = max(2, floor(H / 34))          entries or blocks a column's window holds
 
 levels = 1   when n <= capacity(H)           entries fit
 levels = 2   when p <= capacity(H)           phases fit
@@ -65,11 +67,12 @@ So level 1 appears once the conversation no longer fits level 0, and level 2 onc
 
 - **Placement.** A vertical rail left of the chat, with time running down and a 32 px gap to the messages. No card or panel; the chat keeps its width.
 - **A quiet companion.** The chat is the main content (Will, 2026-10-20: "it needs to be less prominent"). At rest the rail's summaries use the muted and faint text tones at 11 px (10 px in outer levels), its marks are 3 px wide at about half strength, off-screen entries drop to 85 % opacity, and the thumb, dot, lens and funnel lines are soft. No accent is bright. Hovering the rail or focusing it from the keyboard brings it to full contrast in 150 ms. Summaries stay visible either way.
-- **Level 0** touches the chat and holds entries in fixed 34 px rows. Each entry has a mark whose height grows with the message's length (log scale), neutral for a question and teal for an answer, and its summary of up to two lines. Level 0 holds still while the viewport stays inside it. When the viewport leaves, it pages to recenter, animated, so scrolling never drags it along.
+- **Level 0** touches the chat. Each entry has a mark at its message's position, as tall as the message's share of the window and at least 3 px, neutral for a question and teal for an answer, and its summary of up to two lines. Level 0 holds still while the viewport stays inside it. When the viewport leaves, it pages to recenter, animated, so scrolling never drags it along.
+- **Labels.** A label sits at its mark's top. When the label above it reaches that far, it slides down to the next free slot inside its own message and a thin leader joins it to its mark; it never leaves its message, so it always reads as that message's. A window too dense for every label keeps them by rank: failed, waiting and working first, then longest, then earliest. A label takes two lines if it wants them and one if that's what's left; the rest appear on hover or focus. The rank ignores scrolling, so labels don't flicker while reading (`timelineLabels`).
 - **Viewport.** Level 0's left edge is a track. A thumb on it covers what the transcript shows, a dot marks the middle, and a short cursor line crosses the marks. In-view entries are a step brighter. Clicking an entry jumps; dragging the thumb scrubs.
-- **Level 1** appears by the rule above and usually covers the whole conversation. Each block is one phase: its title, then a strip on the right with one mark per exchange, as tall as the phase is long against the longest. Blocks are all one height, so a two-line title always fits and the column doesn't reflow when level 2 arrives (decision 0138). A lens, a capsule on the strip, marks the stretch level 0 shows. Two lines run from the lens's ends into level 0's track ends, with a faint fill between them. Dragging the lens scrubs, and level 0 follows.
-- **Level 2** appears by the rule above. Its blocks are arcs of phases, and its lens marks the stretch level 1 shows. A title whose words don't fit its column is hidden rather than cut. On a rail under 300 px wide (a 1,280 px window), level 2 is a strip without labels; hover still shows them.
-- **A level appears.** The new column slides in 18 px from the left and fades in over 240 ms while the existing columns ease to their new positions and widths. Level 0's window pages to the new message in the same motion. Then the lens fades in and the funnel lines draw from the lens to the inner level over 220 ms. Nothing jumps: rows are fixed, blocks are uniform, and each window animates from where it was.
+- **Level 1** appears by the rule above and usually covers the whole conversation. Each block is one phase: its title, then a strip on the right with one mark per exchange at its place on the position scale. A block takes a 28 px floor, which holds two lines of title, and a share of the column's free room by what it covers, so every title stays visible while tall blocks are long stretches (`timelineBlockLayout`, replaces 0138's uniform blocks). A title wraps to its block's height; a word too wide breaks only as a last resort, and an ellipsis ends a title only when the block is out of lines, with the full title on hover. Phases keep at least 84 px, 66 px of text, at every rail width. A lens, a capsule on the strip, covers exactly the span level 0 shows, on the same scale. Two lines run from the lens's ends into level 0's track ends, with a faint fill between them. Dragging the lens scrubs, and level 0 follows.
+- **Level 2** appears by the rule above. Its blocks are arcs of phases, and its lens marks the stretch level 1 shows. On a rail under 300 px wide (a 1,280 px window), level 2 is a strip without labels; hover still shows them.
+- **A level appears.** The new column slides in 18 px from the left and fades in over 240 ms while the existing columns ease to their new positions and widths. Level 0's window pages to the new message in the same motion. Then the lens fades in and the funnel lines draw from the lens to the inner level over 220 ms. Nothing jumps: each window animates from where it was.
 - **A level leaves** (the chat got shorter, which is rare). The same steps run in reverse: the funnel lines undraw and the lens fades in 150 ms, then the column slides out and fades over 220 ms while the others ease back.
 - **Reduced motion.** No slide and no line drawing: the column, lens and lines fade in or out over 120 ms, and the other columns move at once.
 - **States.** Streaming pulses teal, Needs you is gold, Couldn't answer is ember and Waiting is hatched, all at reduced strength until the rail comes forward. In level 0 those words replace the summary; outer strips show the colors.
@@ -84,7 +87,7 @@ Screenshots: `screenshots/scrubber-{short,medium,long}-{light,dark}.png` (1440 �
 |---|---|
 | One rail entry per question and per answer | `timeline/view.ts` `railEntries` |
 | Summary text on every settled entry, always visible | `timeline/steps.ts`, `store.ts`; FE-16 22:09 |
-| Mark height from message length | `RailMessage.text` (`view.ts`) |
+| Mark position and height from the transcript, or from message length until measured | `timelineZoom.ts`, `RailMessage.text` (`view.ts`); FE-22 |
 | Question neutral, answer teal | entry `kind` `ask`/`answer` (`view.ts`) |
 | `Working` with a pulsing mark | `working` state (`view.ts`), pulse (`chatTimelineCss.ts`) |
 | `Needs you`, gold | `waiting` state from `needs_you` (`view.ts`); `agent-status.md` |
@@ -96,7 +99,7 @@ Screenshots: `screenshots/scrubber-{short,medium,long}-{light,dark}.png` (1440 �
 | Phase titles and sentences | `timeline/phases` (`timeline/steps.ts`); FE-19 |
 | Block mark color from its most urgent member | `ChatTimeline.tsx` |
 | Lens and funnel lines | FE-16 21:14 and 22:10 |
-| Fixed 34 px rows; levels added by the rule above | `timelineZoom.ts`, `tests/timeline-geometry.test.ts` |
+| Position scale; levels added by the rule above | `timelineZoom.ts`, `tests/timeline-geometry.test.ts`, `e2e/timeline-look.spec.ts` |
 | Level slides in, then the funnel draws; the reverse on removal | Will, 2026-10-20: "we should make sure we animate them in when they do appear" |
 | Quiet at rest, full contrast on hover or focus | Will, 2026-10-20: "it needs to be less prominent" |
 | Hover: Person or Smithers · time · tokens; sentence, N messages · time – time | `ChatTimeline.tsx` preview, `view.ts` |

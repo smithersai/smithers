@@ -254,7 +254,7 @@ test("horizontal keys move between an entry and the blocks that contain it", asy
 
 test("the stylesheet is the mock's: quiet at rest, forward on hover, no level headers, reduced motion", () => {
   for (const rule of [
-    "--q-off:.85;--q-mk:30%", "--q-off:1;--q-mk:48%", ".sui-tl-mk{position:absolute;left:11px;top:2px;width:3px", "@keyframes sui-tl-in{from{opacity:0;transform:translateX(-18px)}}",
+    "--q-off:.85;--q-mk:30%", "--q-off:1;--q-mk:48%", ".sui-tl-mk{position:absolute;left:11px;top:0;bottom:0;width:3px", "@keyframes sui-tl-in{from{opacity:0;transform:translateX(-18px)}}",
     "font-size:10px;line-height:12px", "@media(prefers-reduced-motion:reduce)", "sui-tl-fade 120ms",
   ]) expect(chatTimelineCss).toContain(rule);
   expect(chatTimelineCss).not.toContain("content:attr(aria-label)");

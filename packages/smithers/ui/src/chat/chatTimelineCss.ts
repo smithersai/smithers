@@ -30,17 +30,20 @@ export const chatTimelineCss = `
 }}
 .sui-tl-lv{position:absolute;top:0;transition:left 240ms cubic-bezier(.2,.7,.2,1),width 240ms cubic-bezier(.2,.7,.2,1)}
 .sui-tl-clip{position:absolute;top:0;left:-8px;right:-6px;overflow:hidden;transition:height 260ms cubic-bezier(.2,.7,.2,1)}
-.sui-tl-inner{position:relative;margin-left:8px;width:calc(100% - 14px);transition:transform 260ms cubic-bezier(.2,.7,.2,1)}
-.sui-tl-inner>ol{list-style:none;margin:0;padding:0}
-.sui-tl-lv[data-level="0"] .sui-tl-inner>ol{display:flex;flex-direction:column}
-.sui-tl-row{position:relative;display:block;flex:none;width:100%;height:34px;margin:0;border:0;background:none;font:inherit;color:inherit;cursor:pointer;text-align:start;padding:0 2px 0 22px;border-radius:6px;opacity:var(--q-off);transition:opacity .15s,background-color .15s}
-.sui-tl-row[data-kind=ask]{padding-top:4px}
+.sui-tl-inner{position:relative;margin-left:8px;width:calc(100% - 14px)}
+.sui-tl-inner>ol{position:relative;z-index:0;list-style:none;margin:0;padding:0}
+.sui-tl-row{position:absolute;left:0;display:block;width:100%;margin:0;padding:0;border:0;background:none;font:inherit;color:inherit;cursor:pointer;text-align:start;border-radius:4px;opacity:var(--q-off);transition:opacity .15s,background-color .15s,top var(--sui-tl-move,0ms) cubic-bezier(.2,.7,.2,1),height var(--sui-tl-move,0ms) cubic-bezier(.2,.7,.2,1)}
+.sui-tl-row::before{content:"";position:absolute;inset:-1px 0}
 .sui-tl-row[data-in]{opacity:1}
-.sui-tl-mk{position:absolute;left:11px;top:2px;width:3px;border-radius:2px;background:color-mix(in srgb,var(--sui-tl-answer) var(--q-mk),var(--sui-tl-bg));transition:background-color .15s}
-.sui-tl-row[data-kind=ask] .sui-tl-mk{top:7px;background:color-mix(in srgb,var(--sui-tl-ask) var(--q-mk),var(--sui-tl-bg))}
+.sui-tl-mk{position:absolute;left:11px;top:0;bottom:0;width:3px;border-radius:2px;background:color-mix(in srgb,var(--sui-tl-answer) var(--q-mk),var(--sui-tl-bg));transition:background-color .15s}
+.sui-tl-row[data-kind=ask] .sui-tl-mk{background:color-mix(in srgb,var(--sui-tl-ask) var(--q-mk),var(--sui-tl-bg))}
 .sui-tl-row[data-in] .sui-tl-mk{background:color-mix(in srgb,var(--sui-tl-answer) var(--q-mk-in),var(--sui-tl-bg))}
 .sui-tl-row[data-kind=ask][data-in] .sui-tl-mk{background:color-mix(in srgb,var(--sui-tl-ask) var(--q-mk-in),var(--sui-tl-bg))}
-.sui-tl-tx{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;font-size:11px;line-height:14px;color:var(--q-tx);letter-spacing:-.05px;transition:color .15s}
+.sui-tl-tx{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:var(--sui-tl-lines,2);overflow:hidden;font-size:11px;line-height:14px;color:var(--q-tx);letter-spacing:-.05px;transition:color .15s}
+.sui-tl-row .sui-tl-tx{position:absolute;left:22px;right:2px;top:0}
+.sui-tl-row[data-label=hidden] .sui-tl-tx{visibility:hidden}
+.sui-tl-lead{display:none;position:absolute;left:14px;top:0;width:6px;box-sizing:border-box;border-left:1px solid color-mix(in srgb,var(--sui-tl-text) var(--q-line),transparent);border-bottom:1px solid color-mix(in srgb,var(--sui-tl-text) var(--q-line),transparent);border-bottom-left-radius:4px;pointer-events:none}
+.sui-tl-lead[data-on]{display:block}
 .sui-tl-row[data-in] .sui-tl-tx{color:var(--q-tx-in)}
 .sui-tl-row[data-summary=pending] .sui-tl-tx,.sui-tl-blk[data-summary=pending] .sui-tl-tx{font-style:italic}
 .sui-tl-row[data-summary=unavailable] .sui-tl-tx,.sui-tl-blk[data-summary=unavailable] .sui-tl-tx{font-style:italic;opacity:.75}
@@ -58,12 +61,12 @@ export const chatTimelineCss = `
 .sui-tl-thumb::before{content:"";position:absolute;inset:0 -6px}
 .sui-tl-dot{position:absolute;left:-.5px;width:8px;height:8px;margin-top:-4px;border-radius:50%;background:color-mix(in srgb,var(--sui-tl-text) var(--q-dot),var(--sui-tl-bg));box-shadow:0 0 0 2px var(--sui-tl-bg);cursor:grab;z-index:3;transition:background-color .15s}
 .sui-tl-cur{position:absolute;left:7px;width:10px;height:1px;background:color-mix(in srgb,var(--sui-tl-text) var(--q-ui),transparent);z-index:1;pointer-events:none}
-.sui-tl-blk-li{position:absolute;left:0;right:0}
+.sui-tl-blk-li{position:absolute;left:0;right:0;transition:top var(--sui-tl-move,0ms) cubic-bezier(.2,.7,.2,1),height var(--sui-tl-move,0ms) cubic-bezier(.2,.7,.2,1)}
 .sui-tl-blk{position:absolute;inset:0;display:block;width:100%;margin:0;padding:0;border:0;background:none;font:inherit;color:inherit;cursor:pointer;text-align:start;border-radius:4px}
 .sui-tl-sms{position:absolute;right:4px;top:0;bottom:0;width:3px}
 .sui-tl-sm{position:absolute;left:0;width:3px;border-radius:2px;background:color-mix(in srgb,var(--sui-tl-answer) var(--q-mk),var(--sui-tl-bg));transition:background-color .15s}
 .sui-tl-sm[data-in]{background:color-mix(in srgb,var(--sui-tl-answer) var(--q-mk-in),var(--sui-tl-bg))}
-.sui-tl-blk .sui-tl-tx{position:absolute;left:9px;right:12px;top:0;font-size:10px;line-height:12px}
+.sui-tl-blk .sui-tl-tx{position:absolute;left:8px;right:10px;top:0;font-size:10px;line-height:12px;overflow-wrap:break-word;hyphens:auto}
 .sui-tl-blk[data-in] .sui-tl-tx{color:var(--q-tx-in)}
 .sui-tl-lv[data-strip] .sui-tl-blk .sui-tl-tx{display:none}
 .sui-tl-lens{position:absolute;right:0;width:11px;box-sizing:border-box;border:1px solid color-mix(in srgb,var(--sui-tl-text) var(--q-line),transparent);border-radius:6px;cursor:grab;z-index:2;transition:border-color .15s}
@@ -89,7 +92,8 @@ g[data-leaving] .sui-tl-ln{stroke-dasharray:1;animation:sui-tl-draw 150ms ease r
 .sui-timeline-preview strong{display:block;font-weight:500;color:var(--text,#211d18)}
 .sui-timeline-preview span{display:block}
 @media(prefers-reduced-motion:reduce){
-.sui-tl-lv,.sui-tl-clip,.sui-tl-inner{transition:none}
+.sui-tl-lv,.sui-tl-clip{transition:none}
+.sui-tl-row,.sui-tl-blk-li{transition:opacity .15s,background-color .15s}
 [data-state=working] .sui-tl-mk,.sui-tl-sm[data-state=working]{animation:none}
 .sui-tl-lv[data-entering],.sui-tl-lv[data-entering] .sui-tl-lens,g[data-entering] .sui-tl-beam,g[data-entering] .sui-tl-ln{animation:sui-tl-fade 120ms ease both}
 .sui-tl-lv[data-leaving],.sui-tl-lv[data-leaving] .sui-tl-lens,g[data-leaving] .sui-tl-beam,g[data-leaving] .sui-tl-ln{animation:sui-tl-fade 120ms ease reverse both}

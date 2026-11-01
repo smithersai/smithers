@@ -93,7 +93,8 @@ test("thumb dragging preserves its top-edge position and resize rebuilds its vis
     expect(rail.hasAttribute("data-dragging")).toBe(false);
     box.querySelector(".sui-tl-dot")!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
     box.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientY: 68 }));
-    expect(viewport.scrollTop).toBe(80);
+    // 23 rows of 40 px fill 804 px: the rail reads 68 px as 68 / (804 / 920) of transcript.
+    expect(viewport.scrollTop).toBeCloseTo(68 * 920 / 804, 5);
     box.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true }));
     expect(rail.hasAttribute("data-dragging")).toBe(false);
     viewport.scrollTop = 2000; viewport.dispatchEvent(new Event("scroll")); await frame();
@@ -295,4 +296,109 @@ test("rail wheel without a transcript viewport leaves the browser gesture alone"
     rail.dispatchEvent(event);
     expect(event.defaultPrevented).toBe(false);
   } finally { driver.dispose(); rail.remove(); }
+});
+
+
+const minimap = (rowsHtml: string, blocksHtml = "") => {
+  const host = document.createElement("div"); host.className = "sui-chat-transcript";
+  host.innerHTML = `<div data-slot="message-scroller-viewport"></div><nav><div class="sui-timeline-box"><div class="sui-tl-lv" data-level="0"><div class="sui-tl-clip"><div class="sui-tl-inner"><ol>${rowsHtml}</ol><div class="sui-tl-thumb"></div><div class="sui-tl-dot"></div><div class="sui-tl-cur"></div></div></div></div>${blocksHtml}</div></nav>`;
+  document.body.append(host);
+  const viewport = host.firstElementChild as HTMLElement, rail = host.querySelector<HTMLElement>("nav")!, box = rail.firstElementChild as HTMLElement;
+  Object.defineProperties(box, { clientHeight: { value: 300 }, clientWidth: { value: 340 } });
+  Object.defineProperty(viewport, "clientHeight", { value: 200 });
+  const mount = (id: string, top: number, bottom: number) => {
+    const article = document.createElement("article"); article.id = id;
+    article.getBoundingClientRect = () => rect(top - viewport.scrollTop, bottom - viewport.scrollTop);
+    viewport.append(article);
+  };
+  return { host, viewport, rail, box, mount };
+};
+const rowHtml = (row: number, state = "done", text = "A summary") => `<button class="sui-tl-row" data-row="${row}" data-state="${state}"><i class="sui-tl-mk"></i><i class="sui-tl-lead"></i><span class="sui-tl-tx">${text}</span></button>`;
+
+test("each mark sits at its message's place, sized by its share, and the band matches the screen (FE-22)", async () => {
+  const { timelineDriver } = await import("../src/chat/timelineDriver");
+  const { host, viewport, rail, box, mount } = minimap([0, 1, 2].map(row => rowHtml(row)).join(""));
+  mount("m-0", 0, 40); mount("m-1", 60, 1140); mount("m-2", 1160, 1200);
+  const driver = timelineDriver(rail, box);
+  const style = (row: number) => box.querySelector<HTMLElement>(`[data-row="${row}"]`)!.style;
+  try {
+    driver.sync({ ids: ["m-0", "m-1", "m-2"], asks: [true, false, true], levels: 1, spans: [], arcs: [] });
+    // 1,200 px of transcript on 300 px of rail.
+    expect([style(0).top, style(0).height, style(1).top, style(1).height, style(2).top]).toEqual(["0px", "10px", "15px", "270px", "290px"]);
+    expect(style(0).zIndex).toBe("3");
+    expect(box.querySelector<HTMLElement>(".sui-tl-thumb")!.style.height).toBe("50px");
+    viewport.scrollTop = 400; viewport.dispatchEvent(new Event("scroll")); await frame();
+    expect(box.querySelector<HTMLElement>(".sui-tl-thumb")!.style.top).toBe("100px");
+    expect(box.querySelector<HTMLElement>(".sui-tl-dot")!.style.top).toBe("125px");
+    expect(box.querySelector<HTMLElement>(".sui-tl-clip")!.style.height).toBe("300px");
+    expect(box.querySelector<HTMLElement>(".sui-tl-inner")!.style.getPropertyValue("--sui-tl-move")).toBe("0ms");
+  } finally { driver.dispose(); host.remove(); }
+});
+
+test("a pushed label keeps a leader to its mark, and a label with no room waits for hover", async () => {
+  const { timelineDriver } = await import("../src/chat/timelineDriver");
+  const long = "Long enough to wrap onto a second line of the label ".repeat(3);
+  const { host, rail, box, mount } = minimap([rowHtml(0, "done", long), rowHtml(1, "failed"), rowHtml(2), rowHtml(3)].join(""));
+  mount("l-0", 0, 30); mount("l-1", 30, 900); mount("l-2", 900, 906); mount("l-3", 906, 912);
+  const driver = timelineDriver(rail, box);
+  const row = (index: number) => box.querySelector<HTMLElement>(`[data-row="${index}"]`)!;
+  try {
+    driver.sync({ ids: ["l-0", "l-1", "l-2", "l-3"], asks: [], lengths: [1, 1, 1, 1], levels: 1, spans: [], arcs: [] });
+    expect(row(0).querySelector<HTMLElement>(".sui-tl-tx")!.style.getPropertyValue("--sui-tl-lines")).toBe("2");
+    expect(row(1).querySelector<HTMLElement>(".sui-tl-tx")!.style.top).not.toBe("0px");
+    expect(row(1).querySelector(".sui-tl-lead")!.hasAttribute("data-on")).toBe(true);
+    expect(row(0).querySelector(".sui-tl-lead")!.hasAttribute("data-on")).toBe(false);
+    expect(row(3).dataset.label).toBe("hidden");
+    expect(row(3).querySelector(".sui-tl-lead")!.hasAttribute("data-on")).toBe(false);
+  } finally { driver.dispose(); host.remove(); }
+});
+
+test("unmounted history stands on its estimate, then its measure, and a drag holds the scale still", async () => {
+  const { timelineDriver } = await import("../src/chat/timelineDriver");
+  const { timelineEstimate } = await import("../src/chat/timelineZoom");
+  const { host, viewport, rail, box, mount } = minimap([0, 1, 2].map(row => rowHtml(row)).join(""));
+  mount("h-1", 0, 100); mount("h-2", 120, 220);
+  const driver = timelineDriver(rail, box);
+  const model = { ids: ["h-0", "h-1", "h-2"], asks: [], lengths: [800, 1, 1], levels: 1, spans: [], arcs: [] };
+  const top = (row: number) => parseFloat(box.querySelector<HTMLElement>(`[data-row="${row}"]`)!.style.top);
+  try {
+    driver.sync(model);
+    const estimate = timelineEstimate(800).advance;
+    expect(top(1)).toBeCloseTo(estimate * 300 / (estimate + 220));
+    box.querySelector(".sui-tl-thumb")!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    expect(rail.hasAttribute("data-dragging")).toBe(true);
+    const held = top(1);
+    mount("h-0", -200, -180); await frame(); await frame();
+    expect(top(1)).toBe(held);
+    box.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+    await frame();
+    // Measured, and kept when the message unmounts again: the estimate never comes back.
+    expect(top(1)).toBeCloseTo(200 * 300 / 420);
+    viewport.querySelector("#h-0")!.remove(); await frame(); await frame();
+    expect(top(1)).toBeCloseTo(200 * 300 / 420);
+  } finally { driver.dispose(); host.remove(); }
+});
+
+test("outer blocks and strips share the scale, and the lens covers exactly level 0's window", async () => {
+  const { timelineDriver } = await import("../src/chat/timelineDriver");
+  const blockHtml = (index: number, start: number, end: number) => `<li class="sui-tl-blk-li" data-block="${index}"><button class="sui-tl-blk"><i class="sui-tl-sm" data-start="${start}" data-end="${end}"></i><span class="sui-tl-tx">Phase</span></button></li>`;
+  const { host, rail, box, mount } = minimap([0, 1, 2, 3].map(row => rowHtml(row)).join(""),
+    `<div class="sui-tl-lv" data-level="1"><div class="sui-tl-clip"><div class="sui-tl-inner"><ol>${blockHtml(0, 0, 3)}${blockHtml(1, 3, 4)}</ol><div class="sui-tl-lens" data-lens="1"></div></div></div></div>`);
+  for (const row of [0, 1, 2, 3]) mount(`o-${row}`, row * 100, row * 100 + 100);
+  const driver = timelineDriver(rail, box);
+  const li = (index: number) => box.querySelector<HTMLElement>(`[data-block="${index}"]`)!;
+  try {
+    driver.sync({ ids: [0, 1, 2, 3].map(row => `o-${row}`), asks: [], levels: 2, arcs: [],
+      spans: [{ id: "a", start: 0, end: 3 }, { id: "b", start: 3, end: 4 }] });
+    expect(parseFloat(li(0).style.height)).toBeGreaterThan(parseFloat(li(1).style.height) * 2);
+    expect(parseFloat(li(1).style.top) + parseFloat(li(1).style.height)).toBeCloseTo(300);
+    expect(li(0).querySelector<HTMLElement>(".sui-tl-sm")!.style.top).toBe("0px");
+    expect(li(0).querySelector<HTMLElement>(".sui-tl-tx")!.style.getPropertyValue("--sui-tl-lines")).toBe(String(Math.floor(parseFloat(li(0).style.height) / 12)));
+    const lens = box.querySelector<HTMLElement>("[data-lens]")!;
+    expect(lens.style.top).toBe("0px");
+    expect(parseFloat(lens.style.height)).toBeCloseTo(300);
+    expect(li(0).querySelector(".sui-tl-sm")!.hasAttribute("data-in")).toBe(true);
+    driver.sync({ ids: [0, 1, 2, 3].map(row => `o-${row}`), asks: [], levels: 2, arcs: [], spans: [{ id: "a", start: 0, end: 4 }] });
+    expect(parseFloat(li(0).style.height)).toBeCloseTo(300);
+  } finally { driver.dispose(); host.remove(); }
 });

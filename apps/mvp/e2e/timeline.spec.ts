@@ -41,9 +41,9 @@ test("Conversation timeline: scroll, jump by key and receive durable summaries",
     expect((await a.conversation.boundingBox())!.width).toBe(transcriptWidth)
     expect(initialHeights.every(height => height > 0)).toBe(true)
     expect(await rowHeights()).toEqual(initialHeights)
-    // Level 0 scrolls inside its column once the shared conversation is long, so only a row's own fit is fixed.
-    expect(await detail.getByRole("button").evaluateAll(buttons => buttons.every(button =>
-      button.querySelector(".sui-tl-tx")!.getBoundingClientRect().height <= button.getBoundingClientRect().height + 1))).toBe(true)
+    // Marks follow the transcript (FE-22), so a label may outgrow its mark; labels never land on each other.
+    expect(await detail.locator('.sui-tl-row:not([data-label="hidden"]) .sui-tl-tx').evaluateAll(labels => labels
+      .map(label => label.getBoundingClientRect()).every((box, index, all) => index === 0 || box.top >= all[index - 1]!.bottom - 1))).toBe(true)
   })
   await test.step("Preview an entry on hover and focus", async () => {
     await a.page.locator(`[id="${firstQuestionId}"]`).scrollIntoViewIfNeeded()
@@ -122,7 +122,7 @@ test("Conversation timeline: scroll, jump by key and receive durable summaries",
         const box = button.getBoundingClientRect(), clip = button.closest(".sui-tl-clip")!.getBoundingClientRect()
         return box.top >= clip.top && box.bottom <= clip.bottom
       }).every(button => {
-        const box = button.getBoundingClientRect()
+        const box = (button.querySelector(".sui-tl-mk") ?? button).getBoundingClientRect()
         const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
         return hit !== null && button.contains(hit)
       }))).toBe(true)

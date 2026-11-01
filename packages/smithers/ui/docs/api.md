@@ -345,7 +345,6 @@ receives the same band when visibility changes.
 | `timelineLevelCount(entries, spans, height)` | Columns needed; zero for an empty list. |
 | `timelineBlocks(ids, markers, level)` | Contiguous `TimelineBlock`s at `markers`; an unmarked conversation is one pending block. |
 | `timelineExchanges(asks)` | Half-open entry ranges, each a question and what followed it. |
-| `timelineMarkHeight(length)`, `timelineMarks(parts, room, gap)` | A mark's height, and stacked marks by share. |
 | `timelineWidths(levels, available)` | Column widths, innermost first, and their gap. |
 | `TimelineMarker` | `{ id, start, title, summary?, closed? }`; `start` is an entry id. |
 | `TimelineBlock` | `{ id, start, end, title?, summary?, closed? }`; entry indices form a half-open range. |
