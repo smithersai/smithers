@@ -39,7 +39,7 @@ import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import type * as Sink from "effect/Sink"
 import * as Stream from "effect/Stream"
-import * as Observed from "./internal/Observed.ts"
+import * as Observed from "./internal/Observed.vibe"
 
 /**
  * The options of one command run in the container: the slice of a
