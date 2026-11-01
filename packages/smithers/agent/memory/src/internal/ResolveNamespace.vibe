@@ -5,7 +5,7 @@
  */
 
 import * as Effect from "effect/Effect"
-import { MemoryError } from "../MemoryError.ts"
+import { MemoryError } from "../MemoryError.vibe"
 import * as Namespace from "../Namespace.vibe"
 
 /**

@@ -13,7 +13,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import type * as MemoryError from "./MemoryError.ts";
+import type * as MemoryError from "./MemoryError.vibe";
 import * as MemoryStore from "./MemoryStore.ts";
 import * as Namespace from "./Namespace.vibe";
 /**

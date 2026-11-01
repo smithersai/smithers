@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 import * as Effect from "effect/Effect";
-import { MemoryError } from "../MemoryError.ts";
+import { MemoryError } from "../MemoryError.vibe";
 import * as Namespace from "../Namespace.vibe";
 /**
  * Maps a structured namespace to the public bank name recall accepts.

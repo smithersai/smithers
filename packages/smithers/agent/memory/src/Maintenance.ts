@@ -8,7 +8,7 @@ import * as Digest from "@smthrs/core/Digest"
 import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import { MemoryError } from "./MemoryError.ts"
+import { MemoryError } from "./MemoryError.vibe"
 import { MemoryStore, type Message, type Service } from "./MemoryStore.ts"
 
 /**

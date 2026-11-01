@@ -20,7 +20,7 @@ import * as Notes from "./internal/Notes.ts"
 import * as Search from "./internal/Search.ts"
 import { error, storeError } from "./internal/Store.ts"
 import * as Threads from "./internal/Threads.ts"
-import type { MemoryError } from "./MemoryError.ts"
+import type { MemoryError } from "./MemoryError.vibe"
 import * as Migrations from "./Migrations.ts"
 import type * as Namespace from "./Namespace.vibe"
 

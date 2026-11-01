@@ -7,7 +7,7 @@
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import type { DatabaseService } from "../Database.vibe"
-import type { MemoryError } from "../MemoryError.ts"
+import type { MemoryError } from "../MemoryError.vibe"
 import type { Fact, ListFactsInput, Service } from "../MemoryStore.ts"
 import type * as Namespace from "../Namespace.vibe"
 import { canonicalJson } from "./Canonical.ts"
