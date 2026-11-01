@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { CodeReviewLoop, layer, maxIterations } from "../../../examples/use-cases/code-review-loop.ts"
+import { CodeReviewLoop, layer, maxIterations } from "../../../examples/use-cases/code-review-loop.vibe"
 import * as Kit from "../../../examples/use-cases/kit.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "code-review-loop-"))

@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { ErrorClusterer, layer } from "../../../examples/use-cases/error-clusterer.ts"
+import { ErrorClusterer, layer } from "../../../examples/use-cases/error-clusterer.vibe"
 import * as Kit from "../../../examples/use-cases/kit.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "error-clusterer-"))

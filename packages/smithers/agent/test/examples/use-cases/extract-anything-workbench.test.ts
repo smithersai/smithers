@@ -4,7 +4,7 @@ import * as Exit from "effect/Exit"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { ExtractAnythingWorkbench, layer } from "../../../examples/use-cases/extract-anything-workbench.ts"
+import { ExtractAnythingWorkbench, layer } from "../../../examples/use-cases/extract-anything-workbench.vibe"
 import * as Kit from "../../../examples/use-cases/kit.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "extract-anything-workbench-"))

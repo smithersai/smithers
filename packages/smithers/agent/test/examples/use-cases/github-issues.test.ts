@@ -5,8 +5,8 @@ import * as Exit from "effect/Exit"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type { Issue } from "../../../examples/use-cases/github-issues.ts"
-import { GitHubIssues, layer } from "../../../examples/use-cases/github-issues.ts"
+import type { Issue } from "../../../examples/use-cases/github-issues.vibe"
+import { GitHubIssues, layer } from "../../../examples/use-cases/github-issues.vibe"
 import * as Kit from "../../../examples/use-cases/kit.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "github-issues-"))

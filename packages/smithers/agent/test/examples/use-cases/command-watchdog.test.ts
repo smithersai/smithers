@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { CommandWatchdog, layer } from "../../../examples/use-cases/command-watchdog.ts"
+import { CommandWatchdog, layer } from "../../../examples/use-cases/command-watchdog.vibe"
 import * as Kit from "../../../examples/use-cases/kit.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "command-watchdog-"))

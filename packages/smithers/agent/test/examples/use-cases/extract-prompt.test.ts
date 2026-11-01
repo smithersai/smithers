@@ -7,7 +7,7 @@ import * as Schedule from "effect/Schedule"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { ExtractPrompt, layer } from "../../../examples/use-cases/extract-prompt.ts"
+import { ExtractPrompt, layer } from "../../../examples/use-cases/extract-prompt.vibe"
 import * as Kit from "../../../examples/use-cases/kit.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "extract-prompt-"))
