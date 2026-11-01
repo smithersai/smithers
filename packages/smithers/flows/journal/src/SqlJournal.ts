@@ -1706,11 +1706,39 @@ export const make = (
             return duplicate
           }
         }
-        // Admission reservations are provisional. Allocate above the durable
-        // tail in this transaction so a queued entry can never commit behind
-        // a reader's cursor, even when another connection overtook it.
-        const insert = enforceCompactionFloor
+        // Every write allocates its sequence in the INSERT itself, above both
+        // its reservation and the durable tail it reads under the run's
+        // writer lock, and returns the sequence it took. A durable write so
+        // costs one round trip where a `MAX(seq)` read used to precede it; a
+        // queued entry's provisional reservation never commits behind a
+        // reader's cursor, even when another connection overtook it, and it
+        // also yields to the compaction floor.
+        const insert = !enforceCompactionFloor
           ? sql<JournalRow>`
+              INSERT INTO flows_journal_events (
+                run_id, seq, event_id, source_id, source_seq, emitted_at_ms,
+                event_type, payload_json, meta_json
+              )
+              SELECT
+                ${queued.runId},
+                (SELECT ${Dialect.greatest(sql)}(${queued.seq}, COALESCE(MAX(seq), -1) + 1)
+                  FROM flows_journal_events WHERE run_id = ${queued.runId}),
+                ${queued.eventId},
+                ${queued.sourceId},
+                ${queued.sourceSeq},
+                ${queued.emittedAtMs},
+                ${queued.eventType},
+                ${queued.payloadJson},
+                ${queued.metaJson}
+              WHERE NOT EXISTS (
+                SELECT 1 FROM flows_journal_events
+                WHERE run_id = ${queued.runId} AND seq >= ${Number.MAX_SAFE_INTEGER - 1}
+              )
+              ON CONFLICT DO NOTHING
+              RETURNING run_id, seq, event_id, source_id, source_seq, emitted_at_ms,
+                event_type, payload_json, meta_json
+            `
+          : sql<JournalRow>`
               INSERT INTO flows_journal_events (
                 run_id, seq, event_id, source_id, source_seq, emitted_at_ms,
                 event_type, payload_json, meta_json
@@ -1734,25 +1762,6 @@ export const make = (
               ) AND NOT EXISTS (
                 SELECT 1 FROM flows_journal_events
                 WHERE run_id = ${queued.runId} AND seq >= ${Number.MAX_SAFE_INTEGER - 1}
-              )
-              ON CONFLICT DO NOTHING
-              RETURNING run_id, seq, event_id, source_id, source_seq, emitted_at_ms,
-                event_type, payload_json, meta_json
-            `
-          : sql<JournalRow>`
-              INSERT INTO flows_journal_events (
-                run_id, seq, event_id, source_id, source_seq, emitted_at_ms,
-                event_type, payload_json, meta_json
-              ) VALUES (
-                ${queued.runId},
-                ${queued.seq},
-                ${queued.eventId},
-                ${queued.sourceId},
-                ${queued.sourceSeq},
-                ${queued.emittedAtMs},
-                ${queued.eventType},
-                ${queued.payloadJson},
-                ${queued.metaJson}
               )
               ON CONFLICT DO NOTHING
               RETURNING run_id, seq, event_id, source_id, source_seq, emitted_at_ms,
@@ -2121,8 +2130,8 @@ export const make = (
                     const durableSourceSeq = validated.sourceSeq === undefined
                       ? yield* nextDurable("source_seq", validated.runId, validated.sourceId)
                       : 0
-                    const durableSeq = yield* nextDurable("seq", validated.runId, undefined)
-                    const { seq, sourceSeq } = yield* reserve(validated, durableSeq, durableSourceSeq)
+                    // The run's durable tail is read by the INSERT itself (`insertOne`'s `allocate`).
+                    const { seq, sourceSeq } = yield* reserve(validated, 0, durableSourceSeq)
                     const queued = queuedOf(prepared, emittedAtMs, seq, sourceSeq)
                     const commit = yield* insertOne(queued, fence)
                     return { commit, queued, sourceSeq }
@@ -2236,7 +2245,6 @@ export const make = (
         }
         const batch = [...deferred.get(runId) ?? []]
         if (batch.length === 0) return
-        const durableSeq = yield* nextDurable("seq", runId as RunId, undefined)
         for (const entry of batch) {
           const validated = entry.sourceSeq === undefined
             ? entry.prepared.validated
@@ -2244,7 +2252,7 @@ export const make = (
           const durableSourceSeq = validated.sourceSeq === undefined
             ? yield* nextDurable("source_seq", validated.runId, validated.sourceId)
             : 0
-          const { seq, sourceSeq } = yield* reserve(validated, durableSeq, durableSourceSeq)
+          const { seq, sourceSeq } = yield* reserve(validated, 0, durableSourceSeq)
           // Keep one producer identity even if sibling savepoints flush this
           // batch again before COMMIT, or a rollback leaves it queued.
           entry.sourceSeq = sourceSeq

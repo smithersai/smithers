@@ -123,6 +123,25 @@ describe("SqlJournal.recorded", () => {
     ))
 })
 
+describe("SqlJournal durable allocation", () => {
+  it.effect("a durable write reads no sequence floor before its insert, and still allocates above another journal's", () =>
+    withDatabase((open, sql, trace) =>
+      Effect.gen(function*() {
+        const first = yield* open()
+        const second = yield* open()
+        yield* first.emitDurable(input(run, "a"), owner)
+        // The second journal's floor for the run is unknown, and the first's is behind this write.
+        yield* second.emitDurable(input(run, "b"), owner)
+        trace.statements.length = 0
+        yield* first.emitDurable(input(run, "c"), owner)
+        // Each statement is a round trip on the production database: the insert allocates its own sequence.
+        expect(trace.statements.filter((text) => text.includes("MAX(seq) + 1 AS next"))).toEqual([])
+        expect(inserts(trace)).toHaveLength(1)
+        expect(yield* committed(sql, run)).toEqual(["0:source/a", "1:source/b", "2:source/c"])
+      })
+    ))
+})
+
 describe("SqlJournal.recall", () => {
   it.effect("reads a run's entries in one statement, so a journal that started without them knows them", () =>
     withDatabase((open, _sql, trace) =>

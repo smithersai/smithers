@@ -198,6 +198,26 @@ describe("SqlJournal durable emission", () => {
       })
     ))
 
+  effect("emitDurable rejects a reservation the in-process floor has already taken to the ceiling", () =>
+    withJournal(
+      Effect.gen(function*() {
+        const journal = yield* Journal
+        const sql = yield* Effect.service(SqlClient.SqlClient)
+        yield* sql`
+          INSERT INTO flows_journal_events (
+            run_id, seq, event_id, source_id, source_seq, emitted_at_ms,
+            event_type, payload_json, meta_json
+          ) VALUES (
+            'run', ${Number.MAX_SAFE_INTEGER - 2}, 'below-ceiling', 'other', 0, 0, 'x', '1', 'null'
+          )
+        `
+        // A queued entry reserves the last sequence below the ceiling; the durable write's reservation is above it.
+        yield* journal.emitLossy(input(runId("run"), sourceId("q"), "queued", 1))
+        const failure = yield* Effect.flip(journal.emitDurableUnfenced(input(runId("run"), sourceId("s"), "x", 1)))
+        expect((failure as JournalError).code).toBe("invalid_event")
+      })
+    ))
+
   effect("emitDurable reports a failed sink", () =>
     withJournal(
       Effect.gen(function*() {
