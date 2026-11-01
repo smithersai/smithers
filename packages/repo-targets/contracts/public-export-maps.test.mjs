@@ -233,7 +233,7 @@ process.stdout.write(JSON.stringify([
       if (baseline.retiredPackages.some(({ name }) => name === entry.name)) continue
       const manifest = current.get(entry.name).manifest
       assert.ok(entry.reason.length > 0)
-      assert.deepEqual(exportTarget(manifest.exports, entry.subpath), entry.development)
+      assert.deepEqual(asReviewedSource(exportTarget(manifest.exports, entry.subpath)), entry.development)
       assert.deepEqual(exportTarget(manifest.publishConfig.exports, entry.subpath), moduleDeclarations(entry.published))
       if (entry.development === null) {
         // A closing wildcard has no source; it only denies a reviewed directory's deep paths.
