@@ -34,7 +34,10 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.d.vibe.ts",
+      "default": "./src/index.vibe"
+    },
     "./internal/*": null,
     "./*/index": null,
     "./ArtifactBackupLease": "./src/ArtifactBackupLease.ts",
@@ -47,7 +50,10 @@
     "./CombinedArtifacts": "./src/CombinedArtifacts.ts",
     "./FileLease": "./src/FileLease.ts",
     "./RemoteArtifacts": "./src/RemoteArtifacts.ts",
-    "./index": "./src/index.ts"
+    "./index": {
+      "types": "./src/index.d.vibe.ts",
+      "default": "./src/index.vibe"
+    }
   },
   "files": [
     "src/**/*.ts",
