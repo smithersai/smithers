@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Kit from "../../../examples/use-cases/kit.ts"
-import { layer, McpHealthProbe } from "../../../examples/use-cases/mcp-health-probe.ts"
+import { layer, McpHealthProbe } from "../../../examples/use-cases/mcp-health-probe.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "mcp-health-probe-"))
 

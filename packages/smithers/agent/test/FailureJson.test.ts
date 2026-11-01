@@ -11,7 +11,7 @@
  */
 import { describe, expect, it } from "vitest"
 import * as AgentSession from "../src/AgentSession.ts"
-import { failureJson } from "../src/internal/FailureJson.ts"
+import { failureJson } from "../src/internal/FailureJson.vibe"
 
 /** A cause that refers to itself, which no round trip can render. */
 const cyclic = (): Record<string, unknown> => {

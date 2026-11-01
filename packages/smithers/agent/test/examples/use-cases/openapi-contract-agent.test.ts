@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Kit from "../../../examples/use-cases/kit.ts"
-import { layer, OpenApiContractAgent } from "../../../examples/use-cases/openapi-contract-agent.ts"
+import { layer, OpenApiContractAgent } from "../../../examples/use-cases/openapi-contract-agent.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "openapi-contract-agent-"))
 

@@ -4,7 +4,7 @@ import * as Exit from "effect/Exit"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { DynamicSchemaEnricher, layer } from "../../../examples/use-cases/dynamic-schema-enricher.ts"
+import { DynamicSchemaEnricher, layer } from "../../../examples/use-cases/dynamic-schema-enricher.vibe"
 import * as Kit from "../../../examples/use-cases/kit.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "dynamic-schema-enricher-"))

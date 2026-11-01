@@ -4,7 +4,7 @@ import * as Exit from "effect/Exit"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { ConfigDiffExplainer, layer } from "../../../examples/use-cases/config-diff-explainer.ts"
+import { ConfigDiffExplainer, layer } from "../../../examples/use-cases/config-diff-explainer.vibe"
 import * as Kit from "../../../examples/use-cases/kit.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "config-diff-explainer-"))

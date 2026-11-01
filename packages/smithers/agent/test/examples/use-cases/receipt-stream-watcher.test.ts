@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Kit from "../../../examples/use-cases/kit.ts"
-import { layer, ReceiptStreamWatcher } from "../../../examples/use-cases/receipt-stream-watcher.ts"
+import { layer, ReceiptStreamWatcher } from "../../../examples/use-cases/receipt-stream-watcher.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "receipt-stream-watcher-"))
 

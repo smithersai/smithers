@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Kit from "../../../examples/use-cases/kit.ts"
-import { layer, LogDigest } from "../../../examples/use-cases/log-digest.ts"
+import { layer, LogDigest } from "../../../examples/use-cases/log-digest.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "log-digest-"))
 

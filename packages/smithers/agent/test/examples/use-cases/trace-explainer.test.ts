@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Kit from "../../../examples/use-cases/kit.ts"
-import { layer, TraceExplainer } from "../../../examples/use-cases/trace-explainer.ts"
+import { layer, TraceExplainer } from "../../../examples/use-cases/trace-explainer.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "trace-explainer-"))
 

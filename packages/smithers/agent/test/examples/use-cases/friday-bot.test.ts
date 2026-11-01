@@ -5,7 +5,7 @@ import * as Exit from "effect/Exit"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { FridayBot, layer } from "../../../examples/use-cases/friday-bot.ts"
+import { FridayBot, layer } from "../../../examples/use-cases/friday-bot.vibe"
 import * as Kit from "../../../examples/use-cases/kit.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "friday-bot-"))
