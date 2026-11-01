@@ -22,6 +22,7 @@ import type { ViewsView } from "./features/views/views"
 import { AppScreen } from "./screens/app/AppScreen"
 import { BlobScreen, TreeScreen } from "./screens/branch/BranchScreen"
 import { BranchPendingScreen } from "./screens/branch/BranchPendingScreen"
+import { FlowPendingScreen } from "./screens/flows/FlowPendingScreen"
 import { CodeScreen } from "./screens/flows/CodeScreen"
 import { DraftScreen } from "./screens/flows/DraftScreen"
 import { FlowsScreen } from "./screens/flows/FlowsScreen"
@@ -229,6 +230,7 @@ const newFlowRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.newFlow,
   component: NewFlowScreen,
+  pendingComponent: FlowPendingScreen,
   validateSearch: (search: Record<string, unknown>): { readonly name?: string } =>
     typeof search.name === "string" && search.name !== "" ? { name: search.name } : {},
   beforeLoad: (load) => enter(load, local, () => load.context.flows.actions.openNew(load.search.name)),
@@ -239,6 +241,7 @@ const draftRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.draft,
   component: DraftScreen,
+  pendingComponent: FlowPendingScreen,
   beforeLoad: (load) => enter(load, local, () => load.context.flows.actions.openDraft(load.params.draftId)),
 })
 
@@ -247,6 +250,7 @@ const codeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.code,
   component: CodeScreen,
+  pendingComponent: FlowPendingScreen,
   beforeLoad: (load) => enter(load, local, () => load.context.flows.actions.openCode(load.params.name)),
 })
 
