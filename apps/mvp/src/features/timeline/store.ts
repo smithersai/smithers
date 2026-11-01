@@ -139,7 +139,7 @@ export const followSummaries = (
       yield* lane.stop(result.error.code)
     }))
   yield* Effect.scoped(window.changes({ initial: true }).pipe(
-    Stream.map(changes => changes.toReversed()),
+    Stream.map(changes => [...changes].reverse()),
     Stream.flattenIterable,
     Stream.filter(change => change.type !== "delete" && (change.value.role === "assistant" || change.value.role === "user") && change.value.status === "done" && change.value.text.trim() !== ""),
     Stream.interruptWhen(Deferred.await(stopped)),

@@ -11,6 +11,12 @@ const runtime = testFile("timeline_summaries")
 const person = (id: string) => ({ subject: { kind: "person" as const, id }, role: "member" as const })
 const actor = person("summary-person")
 const sql = <A>(use: (sql: SqlClient.SqlClient) => Effect.Effect<A, unknown>) => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, use))
+// The worker's lib is ES2022, which has no Promise.withResolvers.
+const resolvers = () => {
+  let resolve!: () => void
+  const promise = new Promise<void>(done => { resolve = done })
+  return { promise, resolve }
+}
 const revision = (n: number) => `${n}`.padStart(64, "a")
 /** The durable run behind a claim: each device's own. */
 const owner = crypto.randomUUID(), rival = crypto.randomUUID()
@@ -194,7 +200,7 @@ test("two revisions recorded at once can't both replace the phases: the second r
   await poster(h)({ op: "claim_spans", ...older })
   await poster(h)({ op: "claim_spans", ...newer })
   // Both requests pass their reads, then wait on the row this transaction holds, as two devices racing would.
-  const release = Promise.withResolvers<void>(), holding = Promise.withResolvers<void>()
+  const release = resolvers(), holding = resolvers()
   const held = sql(sql => sql.withTransaction(sql`SELECT id FROM messages WHERE id = ${ids[0]!} FOR UPDATE`.pipe(
     Effect.andThen(Effect.promise(() => { holding.resolve(); return release.promise })),
   )))
