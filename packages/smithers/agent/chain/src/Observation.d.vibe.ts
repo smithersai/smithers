@@ -7,9 +7,7 @@
  *
  * @since 0.1.0
  */
-
-import { Schema } from "effect"
-
+import { Schema } from "effect";
 /**
  * Which gate produced the observation, or which stage failed.
  *
@@ -17,15 +15,7 @@ import { Schema } from "effect"
  * @since 0.1.0
  * @slop
  */
-export const Kind = Schema.Literals([
-  "shape",
-  "fuel",
-  "catalog",
-  "call_failed",
-  "script_failed",
-  "denied"
-])
-
+export declare const Kind: Schema.Literals<readonly ["shape", "fuel", "catalog", "call_failed", "script_failed", "denied"]>;
 /**
  * The decoded form of {@link Kind}.
  *
@@ -33,8 +23,7 @@ export const Kind = Schema.Literals([
  * @since 0.1.0
  * @slop
  */
-export type Kind = typeof Kind.Type
-
+export type Kind = typeof Kind.Type;
 /**
  * One gate observation: its kind and the prose the next authoring reads.
  *
@@ -42,11 +31,10 @@ export type Kind = typeof Kind.Type
  * @since 0.1.0
  * @slop
  */
-export const Observation = Schema.Struct({
-  kind: Kind,
-  message: Schema.String
-})
-
+export declare const Observation: Schema.Struct<{
+    readonly kind: Schema.Literals<readonly ["shape", "fuel", "catalog", "call_failed", "script_failed", "denied"]>;
+    readonly message: Schema.String;
+}>;
 /**
  * The decoded form of {@link Observation}.
  *
@@ -54,8 +42,7 @@ export const Observation = Schema.Struct({
  * @since 0.1.0
  * @slop
  */
-export type Observation = typeof Observation.Type
-
+export type Observation = typeof Observation.Type;
 /**
  * Builds an observation, capping its message at 8192 UTF-16 code units
  * including a truncation marker.
@@ -64,11 +51,7 @@ export type Observation = typeof Observation.Type
  * @since 0.1.0
  * @slop
  */
-export const make = (kind: Kind, message: string): Observation => ({
-  kind,
-  message: message.length > 8192 ? `${message.slice(0, 8192 - "[truncated]".length)}[truncated]` : message
-})
-
+export declare const make: (kind: Kind, message: string) => Observation;
 /**
  * Renders an observation as one context line for the next author call,
  * applying the message cap to older journal entries too.
@@ -77,5 +60,4 @@ export const make = (kind: Kind, message: string): Observation => ({
  * @since 0.1.0
  * @slop
  */
-export const render = (observation: Observation): string =>
-  `[${observation.kind}] ${make(observation.kind, observation.message).message}`
+export declare const render: (observation: Observation) => string;

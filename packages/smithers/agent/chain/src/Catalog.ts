@@ -10,7 +10,7 @@
 
 import * as Digest from "@smthrs/core/Digest"
 import { Clock, Context, type Effect, Layer, Random, Schema } from "effect"
-import type * as CallKey from "./CallKey.ts"
+import type * as CallKey from "./CallKey.vibe"
 
 /**
  * A call that reached its entry and failed there. The chain journals it as

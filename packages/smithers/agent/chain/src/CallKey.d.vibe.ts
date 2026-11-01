@@ -8,9 +8,7 @@
  *
  * @since 0.1.0
  */
-
-import { Schema } from "effect"
-
+import { Schema } from "effect";
 /**
  * A link's index in its chain, counted from zero.
  *
@@ -18,8 +16,7 @@ import { Schema } from "effect"
  * @since 0.1.0
  * @slop
  */
-export const LinkId = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
-
+export declare const LinkId: Schema.Int;
 /**
  * The decoded form of {@link LinkId}.
  *
@@ -27,8 +24,7 @@ export const LinkId = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo
  * @since 0.1.0
  * @slop
  */
-export type LinkId = typeof LinkId.Type
-
+export type LinkId = typeof LinkId.Type;
 /**
  * A call's position within its link, counted from zero in issue order.
  *
@@ -36,8 +32,7 @@ export type LinkId = typeof LinkId.Type
  * @since 0.1.0
  * @slop
  */
-export const Ordinal = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
-
+export declare const Ordinal: Schema.Int;
 /**
  * The decoded form of {@link Ordinal}.
  *
@@ -45,8 +40,7 @@ export const Ordinal = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualT
  * @since 0.1.0
  * @slop
  */
-export type Ordinal = typeof Ordinal.Type
-
+export type Ordinal = typeof Ordinal.Type;
 /**
  * The scriptDigest recorded for calls the harness itself issues (bootstrap
  * and recovery author calls), which belong to no authored script.
@@ -55,8 +49,7 @@ export type Ordinal = typeof Ordinal.Type
  * @since 0.1.0
  * @slop
  */
-export const harnessDigest = ""
-
+export declare const harnessDigest = "";
 /**
  * The four components a settled call is keyed by: its link, the digest of
  * the script that issued it, its ordinal in that script, and the digest of
@@ -66,13 +59,12 @@ export const harnessDigest = ""
  * @since 0.1.0
  * @slop
  */
-export const CallKey = Schema.Struct({
-  link: LinkId,
-  scriptDigest: Schema.String,
-  ordinal: Ordinal,
-  entryDigest: Schema.String
-})
-
+export declare const CallKey: Schema.Struct<{
+    readonly link: Schema.Int;
+    readonly scriptDigest: Schema.String;
+    readonly ordinal: Schema.Int;
+    readonly entryDigest: Schema.String;
+}>;
 /**
  * The decoded form of {@link CallKey}.
  *
@@ -80,8 +72,7 @@ export const CallKey = Schema.Struct({
  * @since 0.1.0
  * @slop
  */
-export type CallKey = typeof CallKey.Type
-
+export type CallKey = typeof CallKey.Type;
 /**
  * Builds a call key from its four components.
  *
@@ -89,9 +80,4 @@ export type CallKey = typeof CallKey.Type
  * @since 0.1.0
  * @slop
  */
-export const make = (
-  link: number,
-  scriptDigest: string,
-  ordinal: number,
-  entryDigest: string
-): CallKey => ({ link, scriptDigest, ordinal, entryDigest })
+export declare const make: (link: number, scriptDigest: string, ordinal: number, entryDigest: string) => CallKey;

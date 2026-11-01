@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import * as CallKey from "../src/CallKey.ts"
+import * as CallKey from "../src/CallKey.vibe"
 
 describe("CallKey", () => {
   it("builds the identity of one settled call", () => {
