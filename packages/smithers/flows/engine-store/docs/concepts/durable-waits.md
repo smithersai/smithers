@@ -145,27 +145,29 @@ which is what a test asserting the polling fallback provides.
 row's `state_json` carries only the first creating parent and a diamond gives a
 run a second one.
 
-`recordRunParent(childId, parentId)` is first writer wins per pair, and the
-cycle check runs inside the same write transaction as the insert: the edge is
+`recordRunParent(childId, parentId)` is first writer wins per pair. An edge
+already recorded is answered `Existing` from a read, with no write: a parent
+records its edge again every time it executes its child, and every resume of a
+run parked on a child does. An edge never changes once written, so the read
+answers as the insert's conflict would.
+
+A new edge whose child has no children writes in its child's and its parent's
+partitions, with no walk and no schema-wide lock. A cycle runs through every one
+of its edges' children, so such an edge can close none, and this is the common
+edge: a parent spawning a child, or following a round of a child's lineage. A
+job that handed off three times brings its parent three, all in the resume after
+it settles, across every lane at once.
+
+Any other edge is checked in a write that names no partition: the edge is
 inserted, the child's ancestor chain is walked over the durable edges, and on a
 hit the transaction rolls back and the call fails with `RunParentCycleError`. A
 rejected edge therefore leaves no durable trace, and of two concurrent writers
-whose edges jointly close a cycle exactly one fails. The driver maps that error
-to `FlowCycleDetected`.
-
-An edge already recorded is answered `Existing` from a read, with no write. A
-parent records its edge again every time it executes its child, and every
-resume of a run parked on a child does. An edge never changes once written, so
-the read answers as the insert's conflict would.
-
-A new edge's write names no partition, so the driver opens that admission on
-the whole schema instead of the run's partition. A parent records a new edge
-for each round of a child's lineage it follows, so a job that handed off three
-times brings three, all in the resume after it settles. Inside a partition's
-transaction the write would widen to the schema's lock, a wait PostgreSQL
-bounds by `lock_timeout`. With ten runs resuming at once it timed out on every
-replay the writer allowed, and the parent died with `DatabaseError` `busy`. A
-transaction's opening lock waits as long as it has to.
+whose edges jointly close a cycle exactly one fails: every edge's writer holds
+both its runs' partitions or the whole schema, so of a cycle's edges, the one
+that commits last sees the edge into its child, takes this path, and sees the
+rest. The driver maps that error to `FlowCycleDetected`, and opens the admission
+on the whole schema when it can tell beforehand: a lock a transaction takes
+after it opens gives up at `lock_timeout`, while the one it opens with waits.
 
 `transaction(effect)` runs several store operations atomically. The driver wraps
 the parent-edge record and the run-row creation it guards in one, so a crash

@@ -101,16 +101,21 @@ Writes that touch one run's rows name that run:
   for the run whose rows it changes.
 
 What stays schema-wide: schema creation, migrations, and every write that
-decides from rows across runs: the run-parent edges and their cycle walk (a
-child's admission widens to the schema for that one write), a run's
+decides from rows across runs: a run-parent edge whose child already has
+children, and its cycle walk (`admit` opens on the schema for it), a run's
 cancellation and its cascade to every descendant, a lineage's or a tree's
 cancellation, step-cache publication, plan storage, retention and time
 travel's truncations. A nested write to another run, such as a handoff's
 successor or a cancelled child, joins that run's partition instead, and a
 terminal transition that ends its children joins each child's partition
-before it reads the child's rows to decide. An alarm of a root run, start to
-settlement, therefore takes no schema-wide lock once its schema is installed:
-`platform-cloudflare/test/DriveWrites.test.ts` asserts `schemaWide` is zero.
+before it reads the child's rows to decide. A new edge whose child has no
+children can close no cycle, so it joins its child's and its parent's
+partitions and walks nothing. An alarm of a root run, start to settlement,
+therefore takes no schema-wide lock once its schema is installed:
+`platform-cloudflare/test/DriveWrites.test.ts` asserts `schemaWide` is zero. A
+run's waits and a child's admission take none either:
+`engine-store/test/RunParentReplayLock.test.ts` drives both beside another run's
+open writer.
 
 ## What still guarantees one writer per run
 

@@ -14,19 +14,21 @@ import { TestSchemas } from "@smthrs/database"
  * open for its whole length, with a writer that replays a busy write once, so
  * the old widening fails in well under a second.
  *
- * A new edge does take the schema's lock, and takes it where `admit` opens its
- * transaction. A parent records one for every round of a child's lineage the
- * first time it follows that round: a job that handed off three times gave its
- * parent three new edges in the resume after it settled, and that widening was
- * what still killed three of ten lanes after the first fix (2026-11-01). The
- * second case parks that follow behind another run's writer for longer than
- * the writer's replays last: the opening lock waits it out, as a widening
- * can't.
+ * A new edge whose child has no children can close no cycle, so it takes no
+ * schema lock either. A parent records one for every round of a child's
+ * lineage the first time it follows that round: a job that handed off three
+ * times gave its parent three new edges in the resume after it settled, and
+ * those widenings killed three of ten lanes after the first fix (2026-11-01).
+ * The second case keeps another run's writer open until the parent has
+ * finished, so nothing a run's own wait or admission writes may need the
+ * schema's lock: a clock's schedule, a deferred's completion and consumption
+ * took it on every wait, 2 s each at ten lanes. The rest prove what the lock gave:
+ * edges that close a cycle still fail, written at once on separate connections.
  */
 import * as Pg from "@effect/sql-pg"
 import { DurableWriter, PostgresDatabase } from "@smthrs/database"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
-import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Interpreter, Sleep } from "@smthrs/flow"
 import { SqlJournal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { Node } from "@smthrs/plan"
@@ -37,8 +39,8 @@ import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import * as Scope from "effect/Scope"
 import * as SqlClient from "effect/sql/SqlClient"
 import { connect } from "node:net"
 import { describe, expect, it } from "vitest"
@@ -88,16 +90,22 @@ const LastRound = Flow.make("parent-edge/LastRound", {
   success: Schema.String,
   body: Node.capture({}, () => Closing.call({}))
 })
-/** A job that hands off to its next round, as `ExternalJob`'s `launched` does. */
+/** A job that parks on a clock, then hands off to its next round, as `ExternalJob`'s `observe` does. */
 const Job = Flow.make("parent-edge/Job", {
   payload: {},
   success: Schema.String,
-  body: Node.capture({}, () => Opening.call({}).pipe(Node.andThen(LastRound.to({}))))
+  error: Sleep.SleepRequestInvalid,
+  body: Node.capture({}, () =>
+    Opening.call({}).pipe(
+      Node.andThen(Sleep.action.call({ millis: 10 })),
+      Node.andThen(LastRound.to({}))
+    ))
 })
 /** A run that waits on the job, as a TODO's run does on `agent/Session`. */
 const Parent = Flow.make("parent-edge/Parent", {
   payload: {},
   success: Schema.String,
+  error: Sleep.SleepRequestInvalid,
   body: Node.capture({}, () => Job.child({}))
 })
 
@@ -113,8 +121,8 @@ const jj = Layer.succeed(
   })
 )
 
-/** The engine on `schema`, its lock waits 100 ms, its writer replaying a busy write once, and `opening` as the job's step. */
-const engineOn = (schema: string, opening: Effect.Effect<string>) => {
+/** The engine on `schema`, its lock waits 100 ms, its writer replaying a busy write once. */
+const engineOn = (schema: string) => {
   const stores = Layer.mergeAll(
     SqlJournal.layer({ capacity: 1024, overflow: "reject" }),
     RunStore.layer,
@@ -127,8 +135,9 @@ const engineOn = (schema: string, opening: Effect.Effect<string>) => {
     Layer.provideMerge(Layer.mergeAll(stores, StepBoundary.layerUnsupported, jj))
   )
   const steps = Layer.mergeAll(
-    Opening.toLayer(() => opening),
-    Closing.toLayer(() => Effect.succeed("done"))
+    Opening.toLayer(() => Effect.succeed("opened")),
+    Closing.toLayer(() => Effect.succeed("done")),
+    Sleep.layer
   )
   return Layer.mergeAll(
     Interpreter.layerWithImplementations(Parent, steps),
@@ -187,35 +196,90 @@ describe("a parent edge recorded again", () => {
     30_000
   )
 
-  it("waits out another run's writer when a parent first follows a round of its child's lineage", () => {
+  it("waits for no other run's writer when a job parks on a clock and its parent follows it to a new round", () => {
     const schema = TestSchemas.schemaName("parent_edge")
     return Effect.runPromise(withCrypto(Effect.scoped(Effect.gen(function*() {
-      const scope = yield* Effect.scope
       const dropper = yield* client(schema)
       yield* Effect.addFinalizer(() => TestDatabase.dropSchema(dropper, schema).pipe(Effect.orDie))
-      // The job's step, its last before it hands off: from here another run's writer shares the schema, for far
-      // longer than the engine's writer replays a busy write. The parent's follow of the next round lands inside it.
-      const opening = Effect.gen(function*() {
-        const otherSql = yield* client(schema).pipe(Effect.provideService(Scope.Scope, scope), Effect.orDie)
-        const opened = yield* Deferred.make<void>()
-        const writer = DurableWriter.make(otherSql).write(
-          Effect.andThen(Deferred.succeed(opened, undefined), Effect.sleep("1 second")),
-          { partition: "another-run" }
-        )
-        yield* Effect.forkIn(Effect.ignore(writer), scope)
-        yield* Deferred.await(opened)
-        return "opened"
-      })
+      const released = yield* Deferred.make<void>()
       const answer = yield* Effect.gen(function*() {
         const sql = yield* SqlClient.SqlClient
         const engine = yield* FlowRuntime.FlowRuntime
-        const done = yield* engine.execute(Parent, { executionId: "parent", payload: {} })
+        // Another run's writer shares the schema until the parent is done, so a schema lock anywhere in the parent's
+        // admissions never comes: the first when it spawns the job, or the one when it follows the job's next round.
+        const opened = yield* Deferred.make<void>()
+        yield* DurableWriter.make(dropper).write(
+          Effect.andThen(Deferred.succeed(opened, undefined), Deferred.await(released)),
+          { partition: "another-run" }
+        ).pipe(Effect.forkScoped)
+        yield* Deferred.await(opened)
+        const done = yield* engine.execute(Parent, { executionId: "parent", payload: {} }).pipe(
+          Effect.timeoutOption("10 seconds")
+        )
         const edges = yield* sql<{ readonly child_id: string }>`
           SELECT child_id FROM flows_run_parents WHERE parent_id = 'parent'`
         return { done, edges: edges.length }
-      }).pipe(Effect.provide(engineOn(schema, opening)))
+      }).pipe(Effect.provide(engineOn(schema)), Effect.ensuring(Deferred.succeed(released, undefined)))
       // The job's first round and the round the parent followed it to.
-      expect(answer).toEqual({ done: "done", edges: 2 })
+      expect(answer).toEqual({ done: Option.some("done"), edges: 2 })
     }))))
   }, 30_000)
+
+  /** The engine state on `schema`, a connection of its own, writing with the default writer. */
+  const stateOn = (schema: string) =>
+    Effect.gen(function*() {
+      const sql = yield* client(schema)
+      const writer = DurableWriter.make(sql)
+      return yield* DurableEngineState.make.pipe(
+        Effect.provideService(DurableWriter.DurableWriter, writer),
+        Effect.provideService(SqlClient.SqlClient, sql)
+      )
+    })
+
+  it(
+    "lets exactly one of edges that close a cycle commit, written at once",
+    () =>
+      Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        const schema = TestSchemas.schemaName("parent_edge")
+        const dropper = yield* client(schema)
+        yield* Effect.addFinalizer(() => TestDatabase.dropSchema(dropper, schema).pipe(Effect.orDie))
+        yield* Migrations.run.pipe(Effect.provideService(SqlClient.SqlClient, dropper))
+        const [first, second, third] = [yield* stateOn(schema), yield* stateOn(schema), yield* stateOn(schema)]
+        // Two runs each made the other's child, then three around a ring, every edge's child with no children.
+        for (const ring of [["a", "b"], ["x", "y", "z"]] as const) {
+          for (let round = 0; round < 10; round++) {
+            const named = ring.map((id) => `${id}-${round}`)
+            const exits = yield* Effect.all(
+              named.map((child, index) =>
+                Effect.exit([first, second, third][index]!.recordRunParent(child, named[(index + 1) % named.length]!))
+              ),
+              { concurrency: "unbounded" }
+            )
+            const failed = exits.filter((exit) => exit._tag === "Failure")
+            expect(failed, `${ring.length} runs, round ${round}`).toHaveLength(1)
+          }
+        }
+      }))),
+    60_000
+  )
+
+  it(
+    "still refuses an edge from a run with children to one of its descendants, and an edge to itself",
+    () =>
+      Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        const schema = TestSchemas.schemaName("parent_edge")
+        const dropper = yield* client(schema)
+        yield* Effect.addFinalizer(() => TestDatabase.dropSchema(dropper, schema).pipe(Effect.orDie))
+        yield* Migrations.run.pipe(Effect.provideService(SqlClient.SqlClient, dropper))
+        const state = yield* stateOn(schema)
+        expect((yield* state.recordRunParent("leaf", "middle"))._tag).toBe("Recorded")
+        expect((yield* state.recordRunParent("middle", "root"))._tag).toBe("Recorded")
+        expect((yield* Effect.flip(state.recordRunParent("root", "leaf"))).path).toEqual(["root", "middle", "leaf"])
+        expect(yield* state.runParents("root")).toEqual([])
+        expect((yield* Effect.flip(state.recordRunParent("loop", "loop")))._tag).toBe(
+          "@smthrs/engine-store/RunParentCycleError"
+        )
+      }))),
+    30_000
+  )
 })

@@ -1064,8 +1064,9 @@ const transitionAndRecord = (
       return transitioned
     }),
     // The run's own rows. Ending its children (`afterTransitioned`) reads
-    // the edge table, which only schema-wide writes change, and joins each
-    // child's partition before it reads the child's rows (`lockedRounds`).
+    // the edge table, whose writers hold the parent's partition or the whole
+    // schema, and joins each child's partition before it reads the child's
+    // rows (`lockedRounds`).
     { partition: runId }
   ).pipe(
     Effect.catchTag("TransitionRefused", ({ outcome }) => Effect.succeed(outcome)),
@@ -3619,16 +3620,16 @@ const ensureRun = (driver: Driver, flow: Flow.Any, options: Admission): Effect.E
  * under an inverted topology. The stores' own writes become
  * savepoints of this transaction, so either both commit or neither.
  *
- * A new edge is the store's one write here that names no partition, so the
- * transaction opens on the whole schema rather than the run's partition
- * ({@link admissionPartition}). A parent records one for each round of a
- * child's lineage it follows, so a job that handed off three times brings
- * three, all in the resume after it settles. Opened on the run's partition,
- * the edge's write widened the transaction to the schema's lock while other
- * runs' writers shared it: a wait bounded by `lock_timeout`, spent on every
- * replay the writer allows, and each lane that ran out died `busy` with its
- * agent's work done (2026-11-01). The lock a transaction opens with waits as
- * long as it has to.
+ * The transaction opens on the run's partition, and a new edge joins its
+ * parent's. A parent records one for each round of a child's lineage it
+ * follows, so a job that handed off three times brings three in the resume
+ * after it settles, all at once across a stack's lanes. Only an edge whose
+ * child already has children can close a cycle, so only that edge takes the
+ * whole schema, and the transaction opens on it ({@link admissionPartition}):
+ * the lock a transaction opens with waits as long as it has to, where one taken
+ * inside a partition's transaction gives up at `lock_timeout` and spends the
+ * writer's replays. Each lane that ran out died `busy` with its agent's work
+ * done (2026-11-01).
  */
 const admit = (
   driver: Driver,
@@ -3643,18 +3644,19 @@ const admit = (
   )
 
 /**
- * The partition `admit` writes in: the run's own, or none when it has a
- * parent edge to record, which takes the whole schema. An edge that lands
- * between this read and the transaction costs that transaction a wider lock
- * than it needs, and nothing else.
+ * The partition `admit` writes in: the run's own, or none for a new edge that
+ * could close a cycle, which takes the whole schema. A child that gains a child
+ * between this read and the transaction costs it a wider lock, taken late.
  */
 const admissionPartition = (driver: Driver, options: Admission): Effect.Effect<string | undefined> =>
-  options.parent === undefined
-    ? Effect.succeed(options.executionId)
-    : Effect.map(
-      driver.engineState.runParents(options.executionId),
-      (edges) => edges.some((edge) => edge.parentId === options.parent!.executionId) ? options.executionId : undefined
-    )
+  Effect.gen(function*() {
+    if (options.parent === undefined) return options.executionId
+    const parentId = options.parent.executionId
+    if (parentId === options.executionId) return undefined
+    const parents = yield* driver.engineState.runParents(options.executionId)
+    if (parents.some((edge) => edge.parentId === parentId)) return options.executionId
+    return (yield* driver.engineState.runChildren(options.executionId)).length === 0 ? options.executionId : undefined
+  })
 
 /** {@link admit}'s transaction, in `partition`. */
 const admitIn = (

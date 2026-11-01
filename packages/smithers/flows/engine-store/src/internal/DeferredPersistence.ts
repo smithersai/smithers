@@ -165,6 +165,10 @@ export const make = (
      * the journal's write transaction inside it. See
      * {@link StateTransaction.make} for the order and what it guarantees.
      */
+    // Every transaction here reads and changes one execution's rows and its
+    // journal, so each names that execution. Unnamed, each took the whole
+    // schema and waited for every other run's writers, on every wait a run
+    // parks on: 51 schema-wide writes in ten lanes' 7 minutes (2026-11-01).
     const transactState = StateTransaction.make(state, journal)
     const timers = yield* FiberMap.make<string>()
     const fireRetryPolicy = dependencies.fireRetryPolicy ?? defaultFireRetryPolicy
@@ -245,7 +249,8 @@ export const make = (
             ).pipe(Effect.orDie)
             yield* alongside
             return { _tag: "Admitted" as const, completion }
-          })
+          }),
+          { partition: options.executionId }
         ).pipe(Effect.orDie)
         if (admission._tag === "NotWaiting") return "NotWaiting"
         const row = admission.completion.row
@@ -386,7 +391,8 @@ export const make = (
             }, dependencies.owner)
             yield* emitClockScheduled(scheduled.row)
             return scheduled
-          })
+          }),
+          { partition: options.executionId }
         ).pipe(Effect.orDie)
         yield* flushLossy
         yield* armClock(scheduled.row)
@@ -469,7 +475,8 @@ export const make = (
                     sourceSeq: 0
                   }, { ...address, consumedAtMs })
                 ).pipe(Effect.asVoid)
-                : Effect.void)
+                : Effect.void),
+            { partition: address.executionId }
           ).pipe(Effect.orDie)
         }
         return Option.map(row, (value) => value.exit as Exit.Exit<unknown, unknown>)
