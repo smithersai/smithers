@@ -69,10 +69,9 @@
 import * as Digest from "@smthrs/core/Digest"
 import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import type * as Descriptor from "@smthrs/registry/Descriptor"
-import { Option } from "effect"
 import type * as AgentEvent from "../AgentEvent.ts"
 import type * as Cell from "../Cell.ts"
-import * as Monitor from "../Monitor.ts"
+import * as Monitor from "../Monitor.vibe"
 import { untrustedData } from "./untrustedData.ts"
 
 /**
@@ -346,13 +345,13 @@ const environmentText = (environment: Environment, profile: Profile): string | u
   const lines = profile === "workspace" ? [`- History: ${historyFact}`] : []
   if (environment.locale !== undefined) {
     lines.push(
-      `- Locale: ${environment.locale}; output and files decode as that.`
+      `- Locale: ${environment.locale}; output and files decode as that.`,
     )
   }
   const absent = environment.absentTools === undefined ? [] : [...environment.absentTools].sort()
   if (absent.length > 0) {
     lines.push(
-      `- Not installed: ${absent.join(", ")}. Calls to them fail; use \`ctx.flows\`.`
+      `- Not installed: ${absent.join(", ")}. Calls to them fail; use \`ctx.flows\`.`,
     )
   }
   return lines.length === 0
@@ -377,7 +376,7 @@ const catalogText = (flows: Readonly<Record<string, CatalogProjection>>): string
     const origin = JSON.stringify({
       source: projection.provenance?.source ?? "unknown",
       root: projection.provenance?.root,
-      path: projection.path
+      path: projection.path,
     })
     const heading = `- ${name} (${projection.tier})${capabilities}: ${projection.description}\n  provenance: ${origin}`
     // The input schema is the difference between choosing a call and guessing
@@ -422,7 +421,7 @@ export const make = (
   flows: Readonly<Record<string, CatalogProjection>>,
   environment: Environment = {},
   stance?: typeof AgentEvent.Stance.Type,
-  profile: Profile = "workspace"
+  profile: Profile = "workspace",
 ): ReadonlyArray<Section> => {
   const facts = environmentText(environment, profile)
   const catalog = catalogText(flows)
@@ -439,6 +438,6 @@ export const make = (
     ...(flows.jev === undefined
       ? []
       : [{ id: "cell-jev" as const, text: jevText, digest: digest("cell-jev", jevText) }]),
-    { id: "cell-catalog", text: catalog, digest: digest("cell-catalog", catalog) }
+    { id: "cell-catalog", text: catalog, digest: digest("cell-catalog", catalog) },
   ]
 }

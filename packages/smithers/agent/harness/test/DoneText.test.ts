@@ -9,7 +9,7 @@
  */
 import { Option } from "effect"
 import { describe, expect, it } from "vitest"
-import * as DoneText from "../src/DoneText.ts"
+import * as DoneText from "../src/DoneText.vibe"
 
 const cell = (source: string): string => "```cell\n" + source + "\n```"
 

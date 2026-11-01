@@ -9,7 +9,7 @@
 import * as Digest from "@smthrs/core/Digest"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as TruncatedOutput from "../src/TruncatedOutput.ts"
+import * as TruncatedOutput from "../src/TruncatedOutput.vibe"
 
 /** A payload comfortably over the ledger's floor. */
 const long = (seed: string): string => seed.repeat(Math.ceil(2048 / seed.length))

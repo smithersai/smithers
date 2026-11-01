@@ -38,10 +38,16 @@
     "./internal/*": null,
     "./*/index": null,
     "./AgentEvent": "./src/AgentEvent.ts",
-    "./CallLedger": "./src/CallLedger.ts",
+    "./CallLedger": {
+      "types": "./src/CallLedger.d.vibe.ts",
+      "default": "./src/CallLedger.vibe"
+    },
     "./Cell": "./src/Cell.ts",
     "./CellCalls": "./src/CellCalls.ts",
-    "./CellHistory": "./src/CellHistory.ts",
+    "./CellHistory": {
+      "types": "./src/CellHistory.d.vibe.ts",
+      "default": "./src/CellHistory.vibe"
+    },
     "./CellTurn": "./src/CellTurn.ts",
     "./CellValidation": "./src/CellValidation.ts",
     "./Compaction": "./src/Compaction.ts",
@@ -52,8 +58,14 @@
     "./FlowBinding": "./src/FlowBinding.ts",
     "./HarnessError": "./src/HarnessError.ts",
     "./Judgement": "./src/Judgement.ts",
-    "./Monitor": "./src/Monitor.ts",
-    "./NarrowedCheck": "./src/NarrowedCheck.ts",
+    "./Monitor": {
+      "types": "./src/Monitor.d.vibe.ts",
+      "default": "./src/Monitor.vibe"
+    },
+    "./NarrowedCheck": {
+      "types": "./src/NarrowedCheck.d.vibe.ts",
+      "default": "./src/NarrowedCheck.vibe"
+    },
     "./Notifications": "./src/Notifications.ts",
     "./Plan": "./src/Plan.ts",
     "./QuickJSSandbox": "./src/QuickJSSandbox.ts",
@@ -61,16 +73,34 @@
     "./Sandbox": "./src/Sandbox.ts",
     "./Steering": "./src/Steering.ts",
     "./StructuredOutput": "./src/StructuredOutput.ts",
-    "./Sufficiency": "./src/Sufficiency.ts",
+    "./Sufficiency": {
+      "types": "./src/Sufficiency.d.vibe.ts",
+      "default": "./src/Sufficiency.vibe"
+    },
     "./Supervisor": "./src/Supervisor.ts",
-    "./Tokens": "./src/Tokens.ts",
+    "./Tokens": {
+      "types": "./src/Tokens.d.vibe.ts",
+      "default": "./src/Tokens.vibe"
+    },
     "./Transcript": "./src/Transcript.ts",
-    "./TruncatedOutput": "./src/TruncatedOutput.ts",
+    "./TruncatedOutput": {
+      "types": "./src/TruncatedOutput.d.vibe.ts",
+      "default": "./src/TruncatedOutput.vibe"
+    },
     "./UnmovedTree": "./src/UnmovedTree.ts",
-    "./UnresolvedFailure": "./src/UnresolvedFailure.ts",
+    "./UnresolvedFailure": {
+      "types": "./src/UnresolvedFailure.d.vibe.ts",
+      "default": "./src/UnresolvedFailure.vibe"
+    },
     "./FailedCall": "./src/FailedCall.ts",
-    "./VacuousVerification": "./src/VacuousVerification.ts",
-    "./VariablesPanel": "./src/VariablesPanel.ts",
+    "./VacuousVerification": {
+      "types": "./src/VacuousVerification.d.vibe.ts",
+      "default": "./src/VacuousVerification.vibe"
+    },
+    "./VariablesPanel": {
+      "types": "./src/VariablesPanel.d.vibe.ts",
+      "default": "./src/VariablesPanel.vibe"
+    },
     "./index": "./src/index.ts"
   },
   "files": [

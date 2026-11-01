@@ -6,7 +6,7 @@
  */
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as CallLedger from "../src/CallLedger.ts"
+import * as CallLedger from "../src/CallLedger.vibe"
 
 const settlement = (
   flow: string,

@@ -13,9 +13,7 @@
  *
  * @since 0.1.0
  */
-
-import { Context, Effect, Layer } from "effect"
-
+import { Context, Effect, Layer } from "effect";
 /**
  * One cell the current turn executed.
  *
@@ -23,12 +21,11 @@ import { Context, Effect, Layer } from "effect"
  * @since 0.1.0
  */
 export interface ExecutedCell {
-  /** Zero-based execution order within this turn. */
-  readonly ordinal: number
-  /** The cell's JavaScript, as it ran. */
-  readonly source: string
+    /** Zero-based execution order within this turn. */
+    readonly ordinal: number;
+    /** The cell's JavaScript, as it ran. */
+    readonly source: string;
 }
-
 /**
  * Records and reports the current turn's executed cells.
  *
@@ -36,20 +33,20 @@ export interface ExecutedCell {
  * @since 0.1.0
  */
 export interface Service {
-  /** Records the source of one cell the controller is executing. */
-  readonly record: (source: string) => Effect.Effect<void>
-  /** Every cell this turn executed, oldest first. */
-  readonly cells: () => Effect.Effect<ReadonlyArray<ExecutedCell>>
+    /** Records the source of one cell the controller is executing. */
+    readonly record: (source: string) => Effect.Effect<void>;
+    /** Every cell this turn executed, oldest first. */
+    readonly cells: () => Effect.Effect<ReadonlyArray<ExecutedCell>>;
 }
-
+declare const CellHistory_base: Context.ServiceClass<CellHistory, "@smthrs/harness/CellHistory", Service>;
 /**
  * Service tag for the current turn's executed cells.
  *
  * @category services
  * @since 0.1.0
  */
-export class CellHistory extends Context.Service<CellHistory, Service>()("@smthrs/harness/CellHistory") {}
-
+export declare class CellHistory extends CellHistory_base {
+}
 /**
  * Constructs a history that records what the controller executes.
  *
@@ -61,17 +58,7 @@ export class CellHistory extends Context.Service<CellHistory, Service>()("@smthr
  * @category constructors
  * @since 0.1.0
  */
-export const make: Effect.Effect<Service> = Effect.sync(() => {
-  const recorded: Array<ExecutedCell> = []
-  return CellHistory.of({
-    record: (source) =>
-      Effect.sync(() => {
-        recorded.push({ ordinal: recorded.length, source })
-      }),
-    cells: () => Effect.sync(() => [...recorded])
-  })
-})
-
+export declare const make: Effect.Effect<Service>;
 /**
  * Constructs a history over a fixed cell list.
  *
@@ -82,47 +69,33 @@ export const make: Effect.Effect<Service> = Effect.sync(() => {
  * @category constructors
  * @since 0.1.0
  */
-export const makeCells = (cells: ReadonlyArray<ExecutedCell>): Service =>
-  CellHistory.of({
-    record: () => Effect.void,
-    cells: () => Effect.succeed(cells)
-  })
-
+export declare const makeCells: (cells: ReadonlyArray<ExecutedCell>) => Service;
 /**
  * Constructs a history that records nothing, optionally overriding operations.
  *
  * @category constructors
  * @since 0.1.0
  */
-export const makeNoop = (overrides: Partial<Service> = {}): Service =>
-  CellHistory.of({
-    record: () => Effect.void,
-    cells: () => Effect.succeed([]),
-    ...overrides
-  })
-
+export declare const makeNoop: (overrides?: Partial<Service>) => Service;
 /**
  * Provides a history that records what the controller executes.
  *
  * @category layers
  * @since 0.1.0
  */
-export const layer: Layer.Layer<CellHistory> = Layer.effect(CellHistory)(make)
-
+export declare const layer: Layer.Layer<CellHistory>;
 /**
  * Provides a history over a fixed cell list.
  *
  * @category layers
  * @since 0.1.0
  */
-export const layerCells = (cells: ReadonlyArray<ExecutedCell>): Layer.Layer<CellHistory> =>
-  Layer.succeed(CellHistory)(makeCells(cells))
-
+export declare const layerCells: (cells: ReadonlyArray<ExecutedCell>) => Layer.Layer<CellHistory>;
 /**
  * Provides a history that records nothing.
  *
  * @category layers
  * @since 0.1.0
  */
-export const layerNoop = (overrides: Partial<Service> = {}): Layer.Layer<CellHistory> =>
-  Layer.succeed(CellHistory)(makeNoop(overrides))
+export declare const layerNoop: (overrides?: Partial<Service>) => Layer.Layer<CellHistory>;
+export {};
