@@ -1,7 +1,7 @@
 import { Cause, Effect, Layer, Result, Schema } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { describe, expect, it } from "vitest"
-import * as BrowserOtel from "../src/BrowserOtel.ts"
+import * as BrowserOtel from "../src/BrowserOtel.vibe"
 import * as NodeOtel from "../src/NodeOtel.ts"
 import * as Otel from "../src/Otel.ts"
 import * as Otlp from "../src/Otlp.ts"

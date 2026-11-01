@@ -46,7 +46,7 @@ const securityReview = Smithers.SecurityReview({
         "A new code path that reads process.env or Resource.layerFromEnv.",
         "NodeOtel's OTLP*Exporter constructors, which read OTEL_EXPORTER_OTLP_*_HEADERS, TIMEOUT, and CLIENT_CERTIFICATE/KEY straight from process.env and bypass the ConfigProvider isolation, left undocumented or without explicit overrides."
       ],
-      paths: ["src/Otlp.ts", "src/NodeOtel.ts", "src/BrowserOtel.ts", "src/Otel.ts", "src/Resource.ts"]
+      paths: ["src/Otlp.ts", "src/NodeOtel.ts", "src/BrowserOtel.vibe", "src/Otel.ts", "src/Resource.ts"]
     },
     {
       id: "journal-log-redaction",

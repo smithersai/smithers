@@ -8,7 +8,6 @@ import * as WebSdk from "@effect/opentelemetry/WebSdk"
 import type { LogRecordProcessor } from "@opentelemetry/sdk-logs"
 import type { MetricReader } from "@opentelemetry/sdk-metrics"
 import type { SpanProcessor } from "@opentelemetry/sdk-trace-base"
-import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Resource from "./Resource.ts"
 import type { Configuration as ResourceConfiguration } from "./Resource.ts"
@@ -46,6 +45,6 @@ export const layerOtel = (options: Options): Layer.Layer<never, Resource.Invalid
         spanProcessor: options.spanProcessor?.(),
         logRecordProcessor: options.logRecordProcessor?.(),
         metricReader: options.metricReader?.(),
-        loggerMergeWithExisting: options.loggerMergeWithExisting
-      })))
+        loggerMergeWithExisting: options.loggerMergeWithExisting,
+      }))),
   )
