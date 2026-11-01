@@ -9,9 +9,7 @@
  *
  * @since 0.1.0
  */
-
-import * as Schema from "effect/Schema"
-
+import * as Schema from "effect/Schema";
 /**
  * A process identity scoped to a host and a unique ownership nonce.
  *
@@ -27,16 +25,15 @@ import * as Schema from "effect/Schema"
  * @since 0.1.0
  * @category models
  */
-export const OwnerId = Schema.Struct({
-  hostId: Schema.String,
-  pid: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-  nonce: Schema.String
-})
-
+export declare const OwnerId: Schema.Struct<{
+    readonly hostId: Schema.String;
+    readonly pid: Schema.Int;
+    readonly nonce: Schema.String;
+}>;
 /**
  * A process identity scoped to a host and a unique ownership nonce.
  *
  * @since 0.1.0
  * @category models
  */
-export type OwnerId = typeof OwnerId.Type
+export type OwnerId = typeof OwnerId.Type;

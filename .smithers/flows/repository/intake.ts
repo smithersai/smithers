@@ -4,7 +4,7 @@ import * as Classifier from "@smthrs/model/Classifier"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Option, Result, Schema } from "effect"
 import * as Journal from "../../../packages/smithers/flows/journal/src/Journal.ts"
-import * as JournalEvent from "../../../packages/smithers/flows/journal/src/JournalEvent.ts"
+import * as JournalEvent from "../../../packages/smithers/flows/journal/src/JournalEvent.vibe"
 import { CodingError } from "../coding/schema.ts"
 import type { Event, IntakeScreening } from "./schema.ts"
 
