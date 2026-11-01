@@ -94,7 +94,7 @@ const warningSnapshot = (warning: Descriptor.DiscoveryWarning): Warning =>
  * @category constructors
  * @since 0.1.0
  */
-export effect function scan(config: ScanConfig): Effect<ScanResult, FsError, FileSystem | Path> {
+export effect function scan(config: ScanConfig): Effect<ScanResult, FsError, FileSystem.FileSystem | Path> {
   const fileSystem = try FileSystem()
   const path = try Path()
   const root = try snapshotRoot(config, path)

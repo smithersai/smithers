@@ -3,7 +3,7 @@
  *
  * @since 0.1.0
  */
-import { Effect, Path } from "effect";
+import { Effect, FileSystem as FileSystem_1, Path } from "effect";
 import * as Descriptor from "@smthrs/registry/Descriptor";
 import { FsError } from "./FsError.vibe";
 import * as Route from "./Route.vibe";
@@ -43,4 +43,4 @@ export interface ScanResult {
  * @category constructors
  * @since 0.1.0
  */
-export declare function scan(config: ScanConfig): Effect.Effect<ScanResult, FsError, FileSystem | Path.Path>;
+export declare function scan(config: ScanConfig): Effect.Effect<ScanResult, FsError, FileSystem_1.FileSystem | Path.Path>;
