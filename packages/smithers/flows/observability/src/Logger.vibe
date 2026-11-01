@@ -4,13 +4,9 @@
  * @since 0.1.0
  */
 
-import * as Context from "effect/Context"
-import * as Formatter from "effect/Formatter"
 import * as Layer from "effect/Layer"
 import * as Logger from "effect/Logger"
 import type * as LogLevel from "effect/LogLevel"
-import * as References from "effect/References"
-import * as Tracer from "effect/Tracer"
 
 /**
  * Options shared by the built-in logger layers.
@@ -38,7 +34,7 @@ export interface Options {
  */
 const withMinimumLogLevel = (
   layer: Layer.Layer<never>,
-  minimumLogLevel: LogLevel.LogLevel | undefined
+  minimumLogLevel: LogLevel.LogLevel | undefined,
 ): Layer.Layer<never> =>
   minimumLogLevel === undefined
     ? layer
@@ -49,7 +45,7 @@ const optionsWithDefaults = (options?: Options): {
   readonly mergeWithExisting: boolean
 } => ({
   minimumLogLevel: options?.minimumLogLevel,
-  mergeWithExisting: options?.mergeWithExisting ?? false
+  mergeWithExisting: options?.mergeWithExisting ?? false,
 })
 
 /**
@@ -62,9 +58,9 @@ export const layerPrettyDev = (options?: Options): Layer.Layer<never> => {
   const resolved = optionsWithDefaults(options)
   return withMinimumLogLevel(
     Logger.layer([Logger.consolePretty({ colors: "auto", mode: "auto" })], {
-      mergeWithExisting: resolved.mergeWithExisting
+      mergeWithExisting: resolved.mergeWithExisting,
     }),
-    resolved.minimumLogLevel
+    resolved.minimumLogLevel,
   )
 }
 
@@ -96,9 +92,9 @@ export const layerStructuredJson = (options?: Options): Layer.Layer<never> => {
   const resolved = optionsWithDefaults(options)
   return withMinimumLogLevel(
     Logger.layer([Logger.withConsoleLog(Logger.map(formatStructured, Formatter.formatJson))], {
-      mergeWithExisting: resolved.mergeWithExisting
+      mergeWithExisting: resolved.mergeWithExisting,
     }),
-    resolved.minimumLogLevel
+    resolved.minimumLogLevel,
   )
 }
 
@@ -112,7 +108,7 @@ export const layerStructuredJson = (options?: Options): Layer.Layer<never> => {
 export const layerNoop = (options?: Pick<Options, "minimumLogLevel">): Layer.Layer<never> =>
   withMinimumLogLevel(
     Logger.layer([]),
-    options?.minimumLogLevel ?? "None"
+    options?.minimumLogLevel ?? "None",
   )
 
 /**
@@ -125,6 +121,6 @@ export const layer = (logger: Logger.Logger<unknown, unknown>, options?: Options
   const resolved = optionsWithDefaults(options)
   return withMinimumLogLevel(
     Logger.layer([logger], { mergeWithExisting: resolved.mergeWithExisting }),
-    resolved.minimumLogLevel
+    resolved.minimumLogLevel,
   )
 }

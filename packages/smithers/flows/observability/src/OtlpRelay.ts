@@ -24,7 +24,7 @@ import type * as LogLevel from "effect/LogLevel"
 import * as Metric from "effect/Metric"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
-import * as FlowsMetric from "./Metric.ts"
+import * as FlowsMetric from "./Metric.vibe"
 
 /**
  * The largest request body {@link serve} reads when

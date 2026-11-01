@@ -1,6 +1,6 @@
 import { Effect, Logger as EffectLogger, References, Tracer } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Logger from "../src/Logger.ts"
+import * as Logger from "../src/Logger.vibe"
 
 const captured = () => {
   const values: Array<{ options: EffectLogger.Options<unknown>; annotations: Readonly<Record<string, unknown>> }> = []

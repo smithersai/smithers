@@ -15,7 +15,7 @@ import * as Queue from "effect/Queue"
 import * as References from "effect/References"
 import * as Schema from "effect/Schema"
 import { schemaIssuePath } from "./internal/schemaIssuePath.ts"
-import { droppedLogRecords } from "./Metric.ts"
+import { droppedLogRecords } from "./Metric.vibe"
 
 /**
  * Largest queue accepted by the forwarding logger.
