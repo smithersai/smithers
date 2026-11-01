@@ -17,15 +17,10 @@
  * @since 1.0.0-rc.17
  */
 
-import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import * as Logger from "effect/Logger"
-import * as LogLevel from "effect/LogLevel"
 import * as Metric from "effect/Metric"
-import * as References from "effect/References"
-import * as Tracer from "effect/Tracer"
 
 /**
  * What {@link layer} counts and keeps.
@@ -78,9 +73,10 @@ export interface Entry {
  * @category services
  * @since 1.0.0-rc.17
  */
-export class Recent extends Context.Service<Recent, {
-  readonly entries: Effect.Effect<ReadonlyArray<Entry>>
-}>()("@smthrs/observability/LogFailures/Recent") {}
+export service Recent {
+  static readonly key = "@smthrs/observability/LogFailures/Recent"
+  entries: ReadonlyArray<Entry>!!
+}
 
 /**
  * Lines logged at `Warn` or above, by `level` (`warn`, `error`, `fatal`),
@@ -91,7 +87,7 @@ export class Recent extends Context.Service<Recent, {
  */
 export const failures = Metric.counter("flows_observability_log_failures", {
   description: "Log lines at Warn or above, by record, code and area",
-  incremental: true
+  incremental: true,
 })
 
 /**
@@ -109,7 +105,7 @@ export const defaultCodeFields: ReadonlyArray<string> = [
   "error.type",
   "error",
   "name",
-  "status"
+  "status",
 ]
 
 /**
@@ -141,7 +137,7 @@ const recordPattern = /^[A-Za-z0-9_ .:'/@-]{1,96}$/
 const identifier = /^[A-Za-z0-9_.:/@-]{1,64}$/
 
 /** A value set that keeps at most `limit` distinct values; past it a new one reads `other`. */
-const bounded = (limit: number) => {
+const bounded = (limit: number): (value: string) => string => {
   const seen = new Set<string>()
   return (value: string): string => {
     if (seen.has(value)) return value
@@ -166,7 +162,7 @@ const codeOfValue = (value: unknown): string | undefined => {
   return asCode(record.code) ?? asCode(record._tag) ?? (record.name === "Error" ? undefined : asCode(record.name))
 }
 
-const codeOfCause = (cause: Cause.Cause<unknown>): string | undefined => {
+const codeOfCause = (cause: Cause<unknown>): string | undefined => {
   for (const reason of cause.reasons) {
     const code = Cause.isFailReason(reason)
       ? codeOfValue(reason.error)
@@ -225,7 +221,7 @@ export const layer = (options?: Options): Layer.Layer<Recent> =>
         level,
         record: recordOf(message),
         code: found === undefined ? "none" : code(found),
-        area: typeof rawArea === "string" && identifier.test(rawArea) ? area(rawArea) : "none"
+        area: typeof rawArea === "string" && identifier.test(rawArea) ? area(rawArea) : "none",
       }
       Metric.withAttributes(failures, attributes).updateUnsafe(1, fiber.context)
       if (keep === 0) return
@@ -233,13 +229,13 @@ export const layer = (options?: Options): Layer.Layer<Recent> =>
       entries.push({
         at: date.getTime(),
         ...attributes,
-        ...(span === undefined ? {} : { traceId: span.traceId, spanId: span.spanId })
+        ...(span === undefined ? {} : { traceId: span.traceId, spanId: span.spanId }),
       })
       if (entries.length > keep) entries.shift()
     })
 
     return Layer.merge(
       Logger.layer([logger], { mergeWithExisting: true }),
-      Layer.succeed(Recent, Recent.of({ entries: Effect.sync(() => entries.slice()) }))
+      Layer.succeed(Recent, Recent.of({ entries: Effect.sync(() => entries.slice()) })),
     )
   }))

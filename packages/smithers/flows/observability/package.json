@@ -45,11 +45,26 @@
     },
     "./FetchFailures": "./src/FetchFailures.ts",
     "./JournalLogger": "./src/JournalLogger.ts",
-    "./LogFailures": "./src/LogFailures.ts",
-    "./Logger": "./src/Logger.ts",
-    "./Metric": "./src/Metric.ts",
-    "./NodeOtel": "./src/NodeOtel.ts",
-    "./Otel": "./src/Otel.ts",
+    "./LogFailures": {
+      "types": "./src/LogFailures.d.vibe.ts",
+      "default": "./src/LogFailures.vibe"
+    },
+    "./Logger": {
+      "types": "./src/Logger.d.vibe.ts",
+      "default": "./src/Logger.vibe"
+    },
+    "./Metric": {
+      "types": "./src/Metric.d.vibe.ts",
+      "default": "./src/Metric.vibe"
+    },
+    "./NodeOtel": {
+      "types": "./src/NodeOtel.d.vibe.ts",
+      "default": "./src/NodeOtel.vibe"
+    },
+    "./Otel": {
+      "types": "./src/Otel.d.vibe.ts",
+      "default": "./src/Otel.vibe"
+    },
     "./Otlp": "./src/Otlp.ts",
     "./Resource": "./src/Resource.ts",
     "./index": "./src/index.ts"

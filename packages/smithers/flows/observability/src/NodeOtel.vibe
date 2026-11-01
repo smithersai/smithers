@@ -11,9 +11,7 @@ import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
 import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs"
 import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics"
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base"
-import * as ConfigProvider from "effect/ConfigProvider"
 import type * as Duration from "effect/Duration"
-import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Endpoint from "./Endpoint.vibe"
 import * as Resource from "./Resource.ts"
@@ -51,7 +49,7 @@ export interface Options {
  * @since 0.1.0
  */
 export const layerOtel = (
-  options: Options
+  options: Options,
 ): Layer.Layer<never, Resource.InvalidResourceConfiguration | Endpoint.InvalidExporterEndpoint> =>
   Layer.unwrap(
     Effect.map(
@@ -60,31 +58,31 @@ export const layerOtel = (
         NodeSdk.layer(() => {
           const resource = Resource.toOpenTelemetryConfiguration(decoded)
           const spanProcessor = new BatchSpanProcessor(
-            new OTLPTraceExporter({ url: Endpoint.signalUrl(endpoint, "traces") })
+            new OTLPTraceExporter({ url: Endpoint.signalUrl(endpoint, "traces") }),
           )
           const logRecordProcessor = new BatchLogRecordProcessor({
-            exporter: new OTLPLogExporter({ url: Endpoint.signalUrl(endpoint, "logs") })
+            exporter: new OTLPLogExporter({ url: Endpoint.signalUrl(endpoint, "logs") }),
           })
           const metricReader = options.exportIntervalMillis === undefined
             ? new PeriodicExportingMetricReader({
-              exporter: new OTLPMetricExporter({ url: Endpoint.signalUrl(endpoint, "metrics") })
+              exporter: new OTLPMetricExporter({ url: Endpoint.signalUrl(endpoint, "metrics") }),
             })
             : new PeriodicExportingMetricReader({
               exporter: new OTLPMetricExporter({ url: Endpoint.signalUrl(endpoint, "metrics") }),
-              exportIntervalMillis: options.exportIntervalMillis
+              exportIntervalMillis: options.exportIntervalMillis,
             })
           return {
             resource,
             spanProcessor,
             logRecordProcessor,
             metricReader,
-            shutdownTimeout: options.shutdownTimeout
+            shutdownTimeout: options.shutdownTimeout,
           }
         }).pipe(
           // NodeSdk merges Resource.layerFromEnv after our admission check.
           // Isolate that lookup so only the validated explicit resource and
           // the SDK metadata already included in its budget reach exporters.
-          Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({})))
-        )
-    )
+          Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),
+        ),
+    ),
   )

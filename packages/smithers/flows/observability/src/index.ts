@@ -59,25 +59,25 @@ export * as JournalLogger from "./JournalLogger.ts"
  * @category observability
  * @since 1.0.0-rc.17
  */
-export * as LogFailures from "./LogFailures.ts"
+export * as LogFailures from "./LogFailures.vibe"
 
 /**
  * @category observability
  * @since 0.1.0
  */
-export * as Logger from "./Logger.ts"
+export * as Logger from "./Logger.vibe"
 
 /**
  * @category observability
  * @since 0.1.0
  */
-export * as Metric from "./Metric.ts"
+export * as Metric from "./Metric.vibe"
 
 /**
  * @category observability
  * @since 0.1.0
  */
-export * as Otel from "./Otel.ts"
+export * as Otel from "./Otel.vibe"
 
 /**
  * @category observability

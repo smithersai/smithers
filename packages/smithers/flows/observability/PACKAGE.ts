@@ -23,7 +23,7 @@ const securityReview = Smithers.SecurityReview({
         "isAbsoluteHttpUrl accepting a value with userinfo, query, fragment, backslash, or a code unit at or below 0x20 that new URL repairs.",
         "signalUrl or normalize producing a URL whose host differs from the decoded endpoint's host."
       ],
-      paths: ["src/Endpoint.vibe", "src/Otlp.ts", "src/NodeOtel.ts"]
+      paths: ["src/Endpoint.vibe", "src/Otlp.ts", "src/NodeOtel.vibe"]
     },
     {
       id: "exporter-header-secrecy",
@@ -46,7 +46,7 @@ const securityReview = Smithers.SecurityReview({
         "A new code path that reads process.env or Resource.layerFromEnv.",
         "NodeOtel's OTLP*Exporter constructors, which read OTEL_EXPORTER_OTLP_*_HEADERS, TIMEOUT, and CLIENT_CERTIFICATE/KEY straight from process.env and bypass the ConfigProvider isolation, left undocumented or without explicit overrides."
       ],
-      paths: ["src/Otlp.ts", "src/NodeOtel.ts", "src/BrowserOtel.vibe", "src/Otel.ts", "src/Resource.ts"]
+      paths: ["src/Otlp.ts", "src/NodeOtel.vibe", "src/BrowserOtel.vibe", "src/Otel.vibe", "src/Resource.ts"]
     },
     {
       id: "journal-log-redaction",

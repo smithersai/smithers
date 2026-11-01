@@ -13,7 +13,7 @@ import {
   truncatedMarker,
   unrenderableMarker
 } from "../src/JournalLogger.ts"
-import { droppedLogRecords } from "../src/Metric.ts"
+import { droppedLogRecords } from "../src/Metric.vibe"
 
 const run = <A, E>(program: Effect.Effect<A, E, never>) => Effect.runPromise(program.pipe(Effect.scoped))
 const runId = (value: string): JournalEvent.RunId => Schema.decodeUnknownSync(JournalEvent.RunId)(value)
