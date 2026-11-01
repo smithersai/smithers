@@ -89,7 +89,7 @@ export * as Frame from "./Frame.ts"
  * @category errors
  * @since 0.1.0
  */
-export * as TimeTravelError from "./TimeTravelError.ts"
+export * as TimeTravelError from "./TimeTravelError.vibe"
 
 /**
  * @category services

@@ -23,7 +23,7 @@ import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.ts
 import * as Recovery from "../src/internal/Recovery.ts"
 import type { AuditDetail } from "../src/internal/Rewind.ts"
 import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
-import { error } from "../src/TimeTravelError.ts"
+import { error } from "../src/TimeTravelError.vibe"
 import { type Audit, TimeTravelStore } from "../src/TimeTravelStore.ts"
 import { row as makeRow } from "./MemoryHarness.ts"
 

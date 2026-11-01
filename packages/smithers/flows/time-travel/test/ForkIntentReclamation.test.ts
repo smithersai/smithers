@@ -18,7 +18,7 @@ import * as Memory from "../src/MemoryTimeTravelStore.ts"
 import * as Migrations from "../src/Migrations.ts"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
 import { forkWorkspaceName, makeWith } from "../src/TimeTravel.ts"
-import { error } from "../src/TimeTravelError.ts"
+import { error } from "../src/TimeTravelError.vibe"
 import { TimeTravelStore } from "../src/TimeTravelStore.ts"
 import { withRealFixture } from "./RealTimeTravelHarness.ts"
 

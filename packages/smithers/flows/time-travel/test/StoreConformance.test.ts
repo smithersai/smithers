@@ -12,7 +12,7 @@ import { TestClock } from "effect/testing"
 import { forkCreatedEventType, type LineageEdge } from "../src/Frame.ts"
 import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
-import { TimeTravelError } from "../src/TimeTravelError.ts"
+import { TimeTravelError } from "../src/TimeTravelError.vibe"
 import type * as TimeTravelStore from "../src/TimeTravelStore.ts"
 
 const owner = { hostId: "owner-host", pid: 10, nonce: "owner-nonce" } as const

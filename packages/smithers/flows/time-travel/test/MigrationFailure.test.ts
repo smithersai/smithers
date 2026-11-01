@@ -8,7 +8,7 @@ import * as Exit from "effect/Exit"
 import * as Result from "effect/Result"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
-import { TimeTravelError } from "../src/TimeTravelError.ts"
+import { TimeTravelError } from "../src/TimeTravelError.vibe"
 
 const messages = (value: unknown): ReadonlyArray<string> => {
   const found: Array<string> = []

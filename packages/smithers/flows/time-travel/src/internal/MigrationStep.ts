@@ -5,7 +5,7 @@
  */
 
 import * as Effect from "effect/Effect"
-import { error } from "../TimeTravelError.ts"
+import { error } from "../TimeTravelError.vibe"
 
 /**
  * Names the SQL object while retaining the driver failure.

@@ -24,10 +24,10 @@ import type * as JournalEvent from "@smthrs/journal/JournalEvent"
 import type * as Projection from "@smthrs/journal/Projection"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { error, type TimeTravelError } from "../TimeTravelError.ts"
+import { error, type TimeTravelError } from "../TimeTravelError.vibe"
 import { type Snapshot, TimeTravelStore } from "../TimeTravelStore.ts"
-import * as HistoryLimit from "./HistoryLimit.ts"
-import * as JournalPages from "./JournalPages.ts"
+import * as HistoryLimit from "./HistoryLimit.vibe"
+import * as JournalPages from "./JournalPages.vibe"
 import { LineageMetadata } from "./LineageMetadata.vibe"
 
 /**

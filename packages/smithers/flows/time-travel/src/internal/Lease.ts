@@ -9,7 +9,7 @@ import type { LivenessEvidence, OwnerId } from "@smthrs/run-store/Ownership"
 import type * as RunStore from "@smthrs/run-store/RunStore"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
-import { error, type TimeTravelError } from "../TimeTravelError.ts"
+import { error, type TimeTravelError } from "../TimeTravelError.vibe"
 import * as RunRow from "./RunRow.ts"
 
 /**

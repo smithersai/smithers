@@ -9,7 +9,7 @@ import * as Registry from "../src/internal/EffectHandlerRegistry.ts"
 import * as Recovery from "../src/internal/Recovery.ts"
 import * as Rewind from "../src/internal/Rewind.ts"
 import * as Memory from "../src/MemoryTimeTravelStore.ts"
-import { error } from "../src/TimeTravelError.ts"
+import { error } from "../src/TimeTravelError.vibe"
 import { type Audit, TimeTravelStore } from "../src/TimeTravelStore.ts"
 
 for (const boundary of ["before-restore", "after-restore"] as const) {

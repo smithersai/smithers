@@ -14,7 +14,7 @@ import * as Rewind from "../src/internal/Rewind.ts"
 import * as Memory from "../src/MemoryTimeTravelStore.ts"
 import * as Migrations from "../src/Migrations.ts"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
-import { error } from "../src/TimeTravelError.ts"
+import { error } from "../src/TimeTravelError.vibe"
 import { TimeTravelStore } from "../src/TimeTravelStore.ts"
 
 const owner = { hostId: "generation-evidence", pid: 0, nonce: "generation-evidence" } as const

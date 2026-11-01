@@ -103,7 +103,7 @@ const securityReview = Smithers.SecurityReview({
         "`Effect.annotateLogs`, `Effect.annotateCurrentSpan`, or `Effect.log*` passed an effect's `input`, `output`, a receipt, or `detail_json`.",
         "Audit detail or receipt JSON returned from a public read verb (`replay`, `inspect`) to a caller that only needs the frame."
       ],
-      paths: ["src/TimeTravelError.ts", "src/EffectBoundary.ts", "src/internal/**", "src/TimeTravel.ts"]
+      paths: ["src/TimeTravelError.vibe", "src/EffectBoundary.ts", "src/internal/**", "src/TimeTravel.ts"]
     },
     {
       id: "fork-workspace-path",
@@ -146,8 +146,8 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/internal/Replay.ts",
-        "src/internal/JournalPages.ts",
-        "src/internal/HistoryLimit.ts",
+        "src/internal/JournalPages.vibe",
+        "src/internal/HistoryLimit.vibe",
         "src/internal/SnapshotProjector.ts",
         "src/internal/Rewind.ts",
         "src/Frame.ts",

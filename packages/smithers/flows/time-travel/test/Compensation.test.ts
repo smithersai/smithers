@@ -15,7 +15,7 @@ import { TestClock } from "effect/testing"
 import type { EffectRecord } from "../src/EffectBoundary.ts"
 import * as Compensation from "../src/internal/Compensation.ts"
 import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.ts"
-import { error, TimeTravelError } from "../src/TimeTravelError.ts"
+import { error, TimeTravelError } from "../src/TimeTravelError.vibe"
 
 /**
  * Rewind preflight decides, before a single effect is undone, whether the

@@ -18,7 +18,7 @@ import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
 import * as Migrations from "../src/Migrations.ts"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
 import { makeWith, ReadOnlyTimeTravel, TimeTravel } from "../src/TimeTravel.ts"
-import type { TimeTravelError } from "../src/TimeTravelError.ts"
+import type { TimeTravelError } from "../src/TimeTravelError.vibe"
 import { TimeTravelStore } from "../src/TimeTravelStore.ts"
 
 const entries: ReadonlyArray<JournalEvent.Entry> = [

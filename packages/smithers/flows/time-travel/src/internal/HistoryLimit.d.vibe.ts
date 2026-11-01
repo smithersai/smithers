@@ -13,10 +13,8 @@
  *
  * @since 0.1.0
  */
-
-import * as Effect from "effect/Effect"
-import { error, type TimeTravelError } from "../TimeTravelError.ts"
-
+import * as Effect from "effect/Effect";
+import { type TimeTravelError } from "../TimeTravelError.vibe";
 /**
  * The cap applied when neither the service nor the call names one.
  *
@@ -27,8 +25,7 @@ import { error, type TimeTravelError } from "../TimeTravelError.ts"
  * @since 0.1.0
  * @category constants
  */
-export const defaultMaxHistoryEntries = 100_000
-
+export declare const defaultMaxHistoryEntries = 100000;
 /**
  * Resolves a caller-supplied cap against a fallback, refusing a value that is
  * not a positive safe integer with `invalid` before anything durable happens.
@@ -36,27 +33,11 @@ export const defaultMaxHistoryEntries = 100_000
  * @since 0.1.0
  * @category validators
  */
-export const resolve = (
-  value: number | undefined,
-  fallback: number
-): Effect.Effect<number, TimeTravelError> => {
-  if (value === undefined) return Effect.succeed(fallback)
-  if (!Number.isSafeInteger(value) || value < 1) {
-    return Effect.fail(
-      error("invalid", `maxHistoryEntries must be a positive integer, not ${String(value)}`)
-    )
-  }
-  return Effect.succeed(value)
-}
-
+export declare const resolve: (value: number | undefined, fallback: number) => Effect.Effect<number, TimeTravelError>;
 /**
  * The refusal an operation raises once its read would pass the cap.
  *
  * @since 0.1.0
  * @category constructors
  */
-export const exceeded = (operation: string, runId: string, limit: number): TimeTravelError =>
-  error(
-    "limit_exceeded",
-    `${operation} of ${runId} would read more than ${limit} journal entries; raise maxHistoryEntries to allow it`
-  )
+export declare const exceeded: (operation: string, runId: string, limit: number) => TimeTravelError;

@@ -28,9 +28,9 @@ import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import type { Frame } from "../Frame.ts"
-import { error, type TimeTravelError } from "../TimeTravelError.ts"
-import * as HistoryLimit from "./HistoryLimit.ts"
-import * as JournalPages from "./JournalPages.ts"
+import { error, type TimeTravelError } from "../TimeTravelError.vibe"
+import * as HistoryLimit from "./HistoryLimit.vibe"
+import * as JournalPages from "./JournalPages.vibe"
 import { LineageMetadata } from "./LineageMetadata.vibe"
 
 /**
