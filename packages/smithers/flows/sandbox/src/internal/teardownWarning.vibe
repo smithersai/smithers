@@ -17,5 +17,5 @@ import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.t
 export const warnTeardown = (
   provider: "vercel" | "daytona" | "cloudflare" | "aws" | "microsandbox",
   operation: "stop" | "delete" | "destroy" | "stopTasks" | "deregisterTaskDefinition" | "kill",
-  error: ProviderError
-): Effect.Effect<void> => Effect.logWarning("sandbox teardown failed", { provider, operation, code: error.code })
+  error: ProviderError,
+): void!! => Effect.logWarning("sandbox teardown failed", { provider, operation, code: error.code })

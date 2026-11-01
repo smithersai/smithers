@@ -23,6 +23,6 @@
 
 export * from "./layer.ts"
 export * from "./make.ts"
-export * from "./Options.ts"
-export * from "./Reporter.ts"
-export * from "./SandboxUnhealthy.ts"
+export * from "./Options.vibe"
+export * from "./Reporter.vibe"
+export * from "./SandboxUnhealthy.vibe"

@@ -10,7 +10,7 @@ import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import type { Work } from "../Sandbox/Work.ts"
-import { Conflicted, Merged, MergeError, type Outcome } from "./Outcome.ts"
+import { Conflicted, Merged, MergeError, type Outcome } from "./Outcome.vibe"
 import { make as repositoryAt, output, type Repository } from "./Repository.ts"
 import { recordConflicts, type Strategy } from "./Strategy.ts"
 

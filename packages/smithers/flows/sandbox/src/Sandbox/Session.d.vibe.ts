@@ -3,14 +3,12 @@
  *
  * @since 0.1.0
  */
-
-import type * as Effect from "effect/Effect"
-import type * as FileSystem from "effect/FileSystem"
-import type { Signal } from "effect/process/ChildProcess"
-import type { Scope } from "effect/Scope"
-import type { RemoteOptions, RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts"
-import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
-
+import type * as Effect from "effect/Effect";
+import type * as FileSystem from "effect/FileSystem";
+import type { Signal } from "effect/process/ChildProcess";
+import type { Scope } from "effect/Scope";
+import type { RemoteOptions, RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts";
+import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts";
 /**
  * One provisioned machine, held for the scope that acquired it.
  *
@@ -61,31 +59,28 @@ import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.t
  * @since 0.1.0
  */
 export interface Session {
-  /** The provider-neutral session key this machine was acquired under. */
-  readonly id: string
-  /** The vendor's own identifier, for diagnostics and result filing. */
-  readonly remoteId: string
-  /** The absolute guest path work happens under; `spawn`'s default `cwd`. */
-  readonly workdir: string
-  /** Starts one command on the machine; its scope is the process's lifetime. */
-  readonly spawn: (
-    command: string,
-    options: RemoteOptions
-  ) => Effect.Effect<RemoteProcess, ProviderError, Scope>
-  /** The complete contents at an absolute guest path; `not_found` when absent. */
-  readonly readFile: (path: string) => Effect.Effect<Uint8Array, ProviderError>
-  /** Writes the complete contents at an absolute guest path, creating parents. */
-  readonly writeFile: (path: string, content: Uint8Array) => Effect.Effect<void, ProviderError>
-  /** Sends one signal to a process this session started. */
-  readonly kill?: ((process: RemoteProcess, signal: Signal) => Effect.Effect<void, ProviderError>) | undefined
-  /** A cheap round-trip proving the machine is still alive. */
-  readonly ping?: Effect.Effect<void, ProviderError> | undefined
-  /** Native overrides for operations `fileSystem` would otherwise probe. */
-  readonly files?: Partial<FileSystem.FileSystem> | undefined
-  /**
-   * Starts a child machine from this machine's current tree under a new
-   * session key. The child holds none of this machine's credentials, and its
-   * lifetime is the acquiring scope. `fanOut` is the bounded way to call it.
-   */
-  readonly fork?: ((session: string) => Effect.Effect<Session, ProviderError, Scope>) | undefined
+    /** The provider-neutral session key this machine was acquired under. */
+    readonly id: string;
+    /** The vendor's own identifier, for diagnostics and result filing. */
+    readonly remoteId: string;
+    /** The absolute guest path work happens under; `spawn`'s default `cwd`. */
+    readonly workdir: string;
+    /** Starts one command on the machine; its scope is the process's lifetime. */
+    readonly spawn: (command: string, options: RemoteOptions) => Effect.Effect<RemoteProcess, ProviderError, Scope>;
+    /** The complete contents at an absolute guest path; `not_found` when absent. */
+    readonly readFile: (path: string) => Effect.Effect<Uint8Array, ProviderError>;
+    /** Writes the complete contents at an absolute guest path, creating parents. */
+    readonly writeFile: (path: string, content: Uint8Array) => Effect.Effect<void, ProviderError>;
+    /** Sends one signal to a process this session started. */
+    readonly kill?: ((process: RemoteProcess, signal: Signal) => Effect.Effect<void, ProviderError>) | undefined;
+    /** A cheap round-trip proving the machine is still alive. */
+    readonly ping?: Effect.Effect<void, ProviderError> | undefined;
+    /** Native overrides for operations `fileSystem` would otherwise probe. */
+    readonly files?: Partial<FileSystem.FileSystem> | undefined;
+    /**
+     * Starts a child machine from this machine's current tree under a new
+     * session key. The child holds none of this machine's credentials, and its
+     * lifetime is the acquiring scope. `fanOut` is the bounded way to call it.
+     */
+    readonly fork?: ((session: string) => Effect.Effect<Session, ProviderError, Scope>) | undefined;
 }

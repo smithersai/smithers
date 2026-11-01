@@ -5,8 +5,8 @@
  */
 
 import * as Schema from "effect/Schema"
-import { Healthy } from "./Healthy.ts"
-import { Unhealthy } from "./Unhealthy.ts"
+import { Healthy } from "./Healthy.vibe"
+import { Unhealthy } from "./Unhealthy.vibe"
 
 /**
  * Schema for every state a sandbox health probe can report.

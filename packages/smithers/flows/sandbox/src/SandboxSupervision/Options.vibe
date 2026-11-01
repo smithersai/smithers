@@ -6,9 +6,9 @@
 
 import type * as Duration from "effect/Duration"
 import type * as Effect from "effect/Effect"
-import type { HealthState } from "../SandboxHealth/HealthState.ts"
-import type { ProbeOptions } from "../SandboxHealth/ProbeOptions.ts"
-import type { Reporter } from "./Reporter.ts"
+import type { HealthState } from "../SandboxHealth/HealthState.vibe"
+import type { ProbeOptions } from "../SandboxHealth/ProbeOptions.vibe"
+import type { Reporter } from "./Reporter.vibe"
 
 /**
  * Supervision configuration.
@@ -24,7 +24,7 @@ export interface Options extends ProbeOptions {
    * supervised provider, which means a provider without `ping` is never
    * probed.
    */
-  readonly probe?: Effect.Effect<HealthState> | undefined
+  readonly probe?: (HealthState!!) | undefined
   /**
    * How many consecutive unhealthy probes retire the session. Default 1. A
    * higher tolerance rides out a probe that lost a race with a loaded machine;

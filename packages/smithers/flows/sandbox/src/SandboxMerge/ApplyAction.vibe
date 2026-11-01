@@ -6,11 +6,10 @@
 
 import { Action, RetryPolicy } from "@smthrs/flow"
 import { isGitLockContention } from "@smthrs/jj"
-import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { Work } from "../Sandbox/Work.ts"
 import { apply } from "./apply.ts"
-import { MergeError, Outcome } from "./Outcome.ts"
+import { MergeError, Outcome } from "./Outcome.vibe"
 
 /**
  * Confirmed shared Git lock contention; only the engine retries it.
@@ -20,7 +19,7 @@ import { MergeError, Outcome } from "./Outcome.ts"
  */
 export class GitLockContention extends Schema.TaggedError<GitLockContention>()(
   "@smthrs/sandbox/SandboxMerge/GitLockContention",
-  { message: Schema.String }
+  { message: Schema.String },
 ) {}
 
 /**
@@ -38,7 +37,7 @@ export const Apply = Action.make("@smthrs/sandbox/SandboxMerge/Apply", {
     onto: Schema.String.check(Schema.isPattern(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/)),
     message: Schema.String,
     key: Schema.String,
-    fetch: Schema.optional(Schema.Union([Schema.Array(Schema.String), Schema.Literal(false)]))
+    fetch: Schema.optional(Schema.Union([Schema.Array(Schema.String), Schema.Literal(false)])),
   },
   success: Outcome,
   error: Schema.Union([MergeError, GitLockContention]),
@@ -47,8 +46,8 @@ export const Apply = Action.make("@smthrs/sandbox/SandboxMerge/Apply", {
     factor: 1,
     maxMs: 100,
     maxAttempts: 1_201,
-    nonRetryable: ["@smthrs/sandbox/SandboxMerge/MergeError"]
-  })
+    nonRetryable: ["@smthrs/sandbox/SandboxMerge/MergeError"],
+  }),
 })
 
 /**
@@ -59,17 +58,15 @@ export const Apply = Action.make("@smthrs/sandbox/SandboxMerge/Apply", {
  * @since 1.0.0
  */
 export const layerApply = Apply.toLayer(({ work, ...options }) =>
-  Schema.decodeUnknownEffect(Work)(work).pipe(
-    Effect.orDie,
-    Effect.flatMap((decoded) => apply(decoded, options)),
-    Effect.mapError((error) =>
-      error.reason === "vcs_failed" && isGitLockContention(error)
-        ? new GitLockContention({ message: error.message })
-        // Host errors can carry non-JSON objects. The raw effect preserves them;
-        // the action journals only the portable failure fields.
-        : new MergeError({
-          reason: error.reason,
-          message: error.message
-        })
-    )
-  ), { implementationVersion: "sandbox-merge/v1" })
+  Schema.decodeUnknownEffect(Work)(work)
+  |> Effect.orDie(%)
+  |> Effect.flatMap(%, (decoded) => apply(decoded, options))
+  |> Effect.mapError(%, (error) =>
+    error.reason === "vcs_failed" && isGitLockContention(error)
+      ? new GitLockContention({ message: error.message })
+      // Host errors can carry non-JSON objects. The raw effect preserves them;
+      // the action journals only the portable failure fields.
+      : new MergeError({
+        reason: error.reason,
+        message: error.message,
+      })), { implementationVersion: "sandbox-merge/v1" })

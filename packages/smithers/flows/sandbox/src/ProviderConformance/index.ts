@@ -12,5 +12,5 @@
  */
 
 export * from "./check.ts"
-export * from "./Commands.ts"
+export * from "./Commands.vibe"
 export * from "./Violation.ts"

@@ -8,7 +8,7 @@ import * as Layer from "effect/Layer"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import type { Provider } from "../RemoteChildProcessSpawner/Provider.ts"
 import { make } from "./make.ts"
-import type { Options } from "./Options.ts"
+import type { Options } from "./Options.vibe"
 
 /**
  * Provides `ChildProcessSpawner` backed by a supervised remote session.

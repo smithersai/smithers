@@ -8,7 +8,7 @@ import * as Effect from "effect/Effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Stream from "effect/Stream"
-import { MergeError } from "./Outcome.ts"
+import { MergeError } from "./Outcome.vibe"
 
 /**
  * A host jj repository, as a merge strategy sees it.

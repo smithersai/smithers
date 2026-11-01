@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 
-import type { Commands } from "../ProviderConformance/Commands.ts"
+import type { Commands } from "../ProviderConformance/Commands.vibe"
 
 /**
  * The provider-conformance command fixture every POSIX-shell session can run.

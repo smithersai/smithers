@@ -20,7 +20,7 @@ import { elapsed } from "./deadline.ts"
 import { finalizeWithin } from "./finalizeWithin.ts"
 import { hostKillScript } from "./killScript.ts"
 import { linuxSignalNumber } from "./linuxSignals.ts"
-import { warnTeardown } from "./teardownWarning.ts"
+import { warnTeardown } from "./teardownWarning.vibe"
 
 type VendorSandbox = Awaited<ReturnType<ReturnType<Sdk["Sandbox"]["builder"]>["create"]>>
 type ExecHandle = Awaited<ReturnType<VendorSandbox["execStreamWith"]>>

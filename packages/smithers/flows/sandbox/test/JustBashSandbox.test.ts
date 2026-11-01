@@ -11,7 +11,7 @@ import { env as hostEnv } from "node:process"
 import * as JustBashSandbox from "../src/JustBashSandbox/index.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import * as Sandbox from "../src/Sandbox/index.ts"
-import type { Session } from "../src/Sandbox/Session.ts"
+import type { Session } from "../src/Sandbox/Session.vibe"
 import * as SandboxConformance from "../src/SandboxConformance/index.ts"
 import { untouchable } from "./helpers/untouchable.ts"
 

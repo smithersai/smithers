@@ -6,10 +6,10 @@
 
 import * as Layer from "effect/Layer"
 import { make } from "./make.ts"
-import type { PingProvider } from "./PingProvider.ts"
-import type { ProbeOptions } from "./ProbeOptions.ts"
-import { SandboxHealth } from "./SandboxHealth.ts"
-import type { Service } from "./Service.ts"
+import type { PingProvider } from "./PingProvider.vibe"
+import type { ProbeOptions } from "./ProbeOptions.vibe"
+import { SandboxHealth } from "./SandboxHealth.vibe"
+import type { Service } from "./Service.vibe"
 
 /**
  * Provides `SandboxHealth` backed by the given provider's ping.

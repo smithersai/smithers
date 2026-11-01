@@ -8,7 +8,7 @@ import * as Context from "effect/Context"
 import type * as Effect from "effect/Effect"
 import type { Scope } from "effect/Scope"
 import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
-import type { Session } from "./Session.ts"
+import type { Session } from "./Session.vibe"
 
 /**
  * A configured sandbox provider: something that can turn a session key into a

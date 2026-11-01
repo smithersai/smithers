@@ -12,7 +12,7 @@ import type * as FileSystem from "effect/FileSystem"
 import * as Option from "effect/Option"
 import * as PlatformError from "effect/PlatformError"
 import * as Stream from "effect/Stream"
-import type { Session } from "../Sandbox/Session.ts"
+import type { Session } from "../Sandbox/Session.vibe"
 import { refusalReason } from "./platformReason.ts"
 
 const encoder = new TextEncoder()

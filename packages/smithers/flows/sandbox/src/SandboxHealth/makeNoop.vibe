@@ -4,10 +4,9 @@
  * @since 0.1.0
  */
 
-import * as Effect from "effect/Effect"
-import { Healthy } from "./Healthy.ts"
-import { SandboxHealth } from "./SandboxHealth.ts"
-import type { Service } from "./Service.ts"
+import { Healthy } from "./Healthy.vibe"
+import { SandboxHealth } from "./SandboxHealth.vibe"
+import type { Service } from "./Service.vibe"
 
 /**
  * A no-op service that always reports `Healthy` for hosts without a remote

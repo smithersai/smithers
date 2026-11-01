@@ -43,7 +43,7 @@ import { ExternalJob } from "@smthrs/flow"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import type { Session } from "../Sandbox/Session.ts"
+import type { Session } from "../Sandbox/Session.vibe"
 import * as SandboxTools from "../SandboxTools/index.ts"
 
 /**
