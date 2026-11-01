@@ -37,12 +37,18 @@
     ".": "./src/index.ts",
     "./internal/*": null,
     "./*/index": null,
-    "./Bank": "./src/Bank.ts",
+    "./Bank": {
+      "types": "./src/Bank.d.vibe.ts",
+      "default": "./src/Bank.vibe"
+    },
     "./Database": {
       "types": "./src/Database.d.vibe.ts",
       "default": "./src/Database.vibe"
     },
-    "./Embedding": "./src/Embedding.ts",
+    "./Embedding": {
+      "types": "./src/Embedding.d.vibe.ts",
+      "default": "./src/Embedding.vibe"
+    },
     "./Flows": "./src/Flows.ts",
     "./Maintenance": "./src/Maintenance.ts",
     "./MemoryError": "./src/MemoryError.ts",
@@ -54,7 +60,10 @@
       "default": "./src/Namespace.vibe"
     },
     "./Opening": "./src/Opening.ts",
-    "./Recall": "./src/Recall.ts",
+    "./Recall": {
+      "types": "./src/Recall.d.vibe.ts",
+      "default": "./src/Recall.vibe"
+    },
     "./RecallFts": "./src/RecallFts.ts",
     "./RecallKeyword": "./src/RecallKeyword.ts",
     "./RecallSemantic": "./src/RecallSemantic.ts",

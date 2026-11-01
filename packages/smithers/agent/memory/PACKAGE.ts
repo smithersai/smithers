@@ -93,7 +93,7 @@ const securityReview = Smithers.SecurityReview({
         "runRemember or runRecall bound as a model-facing handler instead of handlersFor(boundFlow), which skips the policy entirely.",
         "namespaceForBank letting a crafted bank string such as \"user-x\" or \"global-\" alias a namespace the policy did not list."
       ],
-      paths: ["src/Flows.ts", "src/WithMemory.ts", "src/internal/ResolveNamespace.ts", "src/Bank.ts"]
+      paths: ["src/Flows.ts", "src/WithMemory.ts", "src/internal/ResolveNamespace.vibe", "src/Bank.vibe"]
     },
     {
       id: "namespace-scoped-queries",
@@ -142,7 +142,7 @@ const securityReview = Smithers.SecurityReview({
         "A tag group, bank list, query, key, text, or maxTokens accepted without the MAX_* caps before the store runs.",
         "A recursive walk or unbounded scan (vector pages, FTS paging loop) with no row or iteration ceiling."
       ],
-      paths: ["src/Namespace.vibe", "src/Recall.ts", "src/Flows.ts", "src/RecallSemantic.ts", "src/internal/Search.ts"]
+      paths: ["src/Namespace.vibe", "src/Recall.vibe", "src/Flows.ts", "src/RecallSemantic.ts", "src/internal/Search.ts"]
     },
     {
       id: "embedding-provider-output",
@@ -153,7 +153,7 @@ const securityReview = Smithers.SecurityReview({
         "A vector with non-finite, missing, or mismatched-dimension components stored or compared without rejection.",
         "Stored vector bytes decoded without a length check in VectorBytes."
       ],
-      paths: ["src/Embedding.ts", "src/RecallSemantic.ts", "src/internal/VectorBytes.ts"]
+      paths: ["src/Embedding.vibe", "src/RecallSemantic.ts", "src/internal/VectorBytes.ts"]
     },
     {
       id: "model-write-provenance",
@@ -165,7 +165,7 @@ const securityReview = Smithers.SecurityReview({
         "runRemember recording empty provenance, so a model-written fact is indistinguishable from an operator-written one.",
         "putFact replacing an existing fact key written by a different source without superseding or recording the prior author."
       ],
-      paths: ["src/Flows.ts", "src/Namespace.vibe", "src/Recall.ts", "src/internal/Facts.ts", "src/internal/Store.ts"]
+      paths: ["src/Flows.ts", "src/Namespace.vibe", "src/Recall.vibe", "src/internal/Facts.ts", "src/internal/Store.ts"]
     },
     {
       id: "ttl-and-retention",

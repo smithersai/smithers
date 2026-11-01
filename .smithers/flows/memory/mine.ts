@@ -23,7 +23,7 @@ import * as MemoryMine from "@smthrs/agent/MemoryMine"
 import { Fault } from "@smthrs/flow"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, FileSystem, Path, Schema } from "effect"
-import * as Bank from "../../../packages/smithers/agent/memory/src/Bank.ts"
+import * as Bank from "../../../packages/smithers/agent/memory/src/Bank.vibe"
 import * as MemoryStore from "../../../packages/smithers/agent/memory/src/MemoryStore.ts"
 
 /** One journal row: its sequence, its event type and its payload. */
