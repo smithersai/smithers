@@ -48,6 +48,17 @@ export function databaseTemplate(source) {
     .replace(/^\s*\n/, "")
 }
 
+/** Existing schema versions are immutable even when only one side edited its lock. */
+export function checkHistory(base, next) {
+  if (!base) return
+  for (const family of ["stores", "payloads"]) for (const [id, entry] of Object.entries(base[family] ?? {})) {
+    if (!next?.[family]?.[id] || next[family][id].kind !== entry.kind) throw new Error(`Schema history is immutable at ${family}.${id}`)
+    for (const [version, fingerprint] of Object.entries(entry.versions)) {
+      if (next[family][id].versions?.[version] !== fingerprint) throw new Error(`Schema history is immutable at ${family}.${id}.versions.${version}`)
+    }
+  }
+}
+
 /** Capture each side before rebase so conflict markers are never parsed as source or JSON. */
 export function captureGenerated(root, target) {
   jj(root, ["status"])
@@ -97,7 +108,10 @@ export function repairGenerated(root, context) {
       delete value.epoch
       return value
     }
-    const merged = mergeHistory(parse(history.base), parse(history.local), parse(history.remote))
+    const base = parse(history.base), local = parse(history.local), remote = parse(history.remote)
+    checkHistory(base, local)
+    checkHistory(base, remote)
+    const merged = mergeHistory(base, local, remote)
     if (merged === undefined) throw new Error("Refusing to remove device schema history")
     writes.push([schemaPath, `${JSON.stringify(merged, null, 2)}\n`])
   }

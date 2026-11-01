@@ -107,6 +107,8 @@ export function applyNumbers(root, plan) {
         if (entry.directory === migrations) replacements.set(`${entry.id}_${entry.slug}`, `${entry.next}_${entry.slug}`)
       }
       if (replacements.size) text = text.replace(new RegExp([...replacements.keys()].sort((a, b) => b.length - a.length).map(escape).join("|") + "(?=$|[^a-zA-Z0-9_-])", "g"), (value) => replacements.get(value))
+      const decisionMap = new Map(plan.renames.filter((entry) => entry.directory === decisions).map((entry) => [entry.digits, String(entry.next).padStart(4, "0")]))
+      text = text.replace(/(\b[Dd]ecision\s+`?|^#\s*|\[)(\d{4,})(?=$|[\s:\]`.,)])/g, (match, prefix, id) => decisionMap.has(id) ? `${prefix}${decisionMap.get(id)}` : match)
       // through("NNNN") and exact quoted boundaries occur only in added migration tests.
       if (path.startsWith("apps/mvp/db/") && /\.test\.[cm]?ts$/.test(path)) {
         text = text.replace(/(["'])(\d{4})\1/g, (match, quote, id) => numberMap.has(id) ? `${quote}${numberMap.get(id)}${quote}` : match)

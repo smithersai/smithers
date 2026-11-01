@@ -168,10 +168,11 @@ test("two concurrent CLI landings serialize and retain both remote changes", asy
   writeFileSync(join(lane, "one.txt"), "one\n")
   writeFileSync(join(second, "two.txt"), "two\n")
   const script = join(import.meta.dirname, "workspace.mjs")
-  const env = { ...process.env, SMITHERS_LAND_LOCK: lock }
+  const env = { ...process.env, SMITHERS_LAND_LOCK: lock, SMITHERS_CO_AUTHOR: "Test Agent <test@example.invalid>" }
   const results = await Promise.all([lane, second].map((cwd, i) => runProcess(process.execPath, [script, "land", "--message", `lane ${i}`, "--test", "node -e '0'"], { cwd, env })))
   for (const result of results) { assert.equal(result.status, 0, result.stderr); assert.match(result.stdout, /LANDED [a-f0-9]{40}/) }
   assert.equal(existsSync(lock), false)
+  assert.match(jj(lane, ["log", "-r", "main@origin", "--no-graph", "-T", "description"]), /Co-Authored-By: Test Agent <test@example.invalid>$/)
   jj(remote, ["git", "import", "--ignore-working-copy"])
   assert.equal(jj(remote, ["file", "show", "--ignore-working-copy", "-r", "main", "one.txt"]), "one")
   assert.equal(jj(remote, ["file", "show", "--ignore-working-copy", "-r", "main", "two.txt"]), "two")

@@ -249,9 +249,9 @@ export function removeWorkspace(root) {
 
 /**
  * @param {string} root
- * @param {{message?: string, tests?: string[], validation?: string, requirements?: string[], signal?: AbortSignal}} [options]
+ * @param {{message?: string, tests?: string[], validation?: string, requirements?: string[], coAuthor?: string, signal?: AbortSignal}} [options]
  */
-export async function landWorkspace(root, { message, tests = [], validation, requirements = [], signal } = {}) {
+export async function landWorkspace(root, { message, tests = [], validation, requirements = [], coAuthor, signal } = {}) {
   syncWorkspace(root)
   signal?.throwIfAborted()
   for (const requirement of requirements) {
@@ -280,7 +280,12 @@ export async function landWorkspace(root, { message, tests = [], validation, req
   if (!tests.length && !validation) throw new Error("Supply --test <command> or --validated <existing test receipt>; nothing pushed")
   if (revision(root, `main ~ ::${commit}`)) throw new Error("Local main has unpublished work; refusing to move it backwards")
   if (message) {
-    const text = `${message}\n\nLanding-Tests: ${tests.length ? tests.join("; ") : validation}\nCo-Authored-By: Codex GPT-6.1 Sol <noreply@openai.com>`
+    if (coAuthor && /[\r\n]/.test(coAuthor)) throw new Error("Co-author must be one trailer value")
+    const authors = message.split(/\r?\n/).filter((line) => line.startsWith("Co-Authored-By: "))
+    if (coAuthor) authors.push(`Co-Authored-By: ${coAuthor}`)
+    const body = message.split(/\r?\n/).filter((line) => !line.startsWith("Co-Authored-By: ")).join("\n").trimEnd()
+    const trailers = [...new Set(authors)].join("\n")
+    const text = `${body}\n\nLanding-Tests: ${tests.length ? tests.join("; ") : validation}${trailers ? `\n${trailers}` : ""}`
     jj(root, ["describe", "-r", commit, "-m", text])
   } else if (!jj(root, ["log", "-r", commit, "--no-graph", "-T", "description"]).trim()) throw new Error("Describe the change or supply --message")
   const pushed = revision(root, candidate)
@@ -302,7 +307,7 @@ export async function main(args = process.argv.slice(2), cwd = process.cwd()) {
     return
   }
   const [command, ...rest] = args
-  const options = { tests: [], requirements: [], signal: undefined }
+  const options = { tests: [], requirements: [], coAuthor: process.env.SMITHERS_CO_AUTHOR, signal: undefined }
   if (command === "land") {
     for (let i = 0; i < rest.length; i += 2) {
       if (!rest[i + 1]?.trim()) throw new Error(`Missing value: ${rest[i]}`)

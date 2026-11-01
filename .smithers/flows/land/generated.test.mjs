@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { test } from "node:test"
 import { jj, migrations } from "./numbering.mjs"
-import { captureGenerated, repairGenerated, mergeHistory, databaseTemplate, migrationManifest, checkManifest, databasePath, schemaPath, manifestPath } from "./generated.mjs"
+import { captureGenerated, repairGenerated, mergeHistory, checkHistory, databaseTemplate, migrationManifest, checkManifest, databasePath, schemaPath, manifestPath } from "./generated.mjs"
 
 const db = (id) => `import x from "./migrations/${id}_test.ts"\nimport { Effect } from "effect"\n\n/** Every migration in \`db/migrations\`, by \`<id>_<name>\`. */\nexport const migrations = {\n  "${id}_test": x,\n}\n\nexport const migrate = Effect.succeed(migrations)\n`
 const lock = (stores, epoch = 100) => JSON.stringify({ epoch, stores, payloads: {}, mutations: ["ask"] })
@@ -69,4 +69,14 @@ test("canonical registration is independent of directory order, ignores tests, a
   assert.throws(() => migrationManifest(["0001_a.ts", "0001_b.ts"]), /Duplicate/)
   assert.equal(databaseTemplate(db("0001")), databaseTemplate(db("0002")))
   checkManifest(resolve(import.meta.dirname, "../../.."))
+})
+
+
+test("history rejects a one-sided fingerprint edit, removal or kind change before merge", () => {
+  const base = { stores: { a: entry("original") }, payloads: {} }
+  checkHistory(undefined, base)
+  checkHistory(base, { stores: { a: { kind: "synced", versions: { 1: "original", 2: "new" } } }, payloads: {} })
+  assert.throws(() => checkHistory(base, { stores: { a: entry("changed") } }), /versions.1/)
+  assert.throws(() => checkHistory(base, { stores: {} }), /stores.a/)
+  assert.throws(() => checkHistory(base, { stores: { a: { kind: "local", versions: { 1: "original" } } } }), /stores.a/)
 })

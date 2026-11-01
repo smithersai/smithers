@@ -75,6 +75,9 @@ Use `node .smithers/flows/land/workspace.mjs` from the invoking workspace:
   personal files (including installs) prevent removal. The source and tool state
   are deleted together. Never run it on the main checkout or someone else's lane.
 
+`SMITHERS_CO_AUTHOR` supplies your own co-author trailer when the tool describes
+a change; it never assigns a different agent as author.
+
 `SMITHERS_LOCK_TIMEOUT_MS` bounds admission (default five minutes). The tool
 never steals a live, stale or ownerless landing lock. `SMITHERS_LAND_LOCK` is an
 explicit override for independent repositories/tests; all lanes of this repo
