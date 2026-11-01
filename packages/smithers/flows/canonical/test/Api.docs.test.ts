@@ -2,7 +2,7 @@ import * as Schema from "effect/Schema"
 import { readFileSync } from "node:fs"
 import * as ts from "typescript"
 import { describe, expect, it } from "vitest"
-import { BoundedJson } from "../src/index.ts"
+import { BoundedJson } from "../src/index.vibe"
 import { firstPath } from "../src/IssuePath.vibe"
 import { make } from "../src/ReadonlyMap.ts"
 

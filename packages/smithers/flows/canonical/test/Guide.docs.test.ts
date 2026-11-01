@@ -3,7 +3,7 @@ import * as Schema from "effect/Schema"
 import { readFileSync } from "node:fs"
 import * as ts from "typescript"
 import { describe, expect, it } from "vitest"
-import { Canonical } from "../src/index.ts"
+import { Canonical } from "../src/index.vibe"
 
 const guide = readFileSync(new URL("../docs/guides/use-the-schema.md", import.meta.url), "utf8")
 

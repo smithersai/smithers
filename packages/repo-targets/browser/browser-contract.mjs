@@ -15,7 +15,7 @@
  */
 export const BROWSER_SAFE = [
   { name: "@smthrs/artifacts", entry: "packages/smithers/flows/artifacts/src/index.ts" },
-  { name: "@smthrs/canonical", entry: "packages/smithers/flows/canonical/src/index.ts" },
+  { name: "@smthrs/canonical", entry: "packages/smithers/flows/canonical/src/index.vibe" },
   { name: "@smthrs/capability", entry: "packages/smithers/flows/capability/src/index.ts" },
   { name: "@smthrs/chain", entry: "packages/smithers/agent/chain/src/index.ts" },
   { name: "@smthrs/crypto", entry: "packages/smithers/flows/crypto/src/index.ts" },

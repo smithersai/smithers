@@ -19,11 +19,17 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.d.vibe.ts",
+      "default": "./src/index.vibe"
+    },
     "./internal/*": null,
     "./*/index": null,
     "./Canonical": "./src/Canonical.vibe",
-    "./index": "./src/index.ts",
+    "./index": {
+      "types": "./src/index.d.vibe.ts",
+      "default": "./src/index.vibe"
+    },
     "./Record": "./src/Record.ts",
     "./BoundedJson": "./src/BoundedJson.ts",
     "./IssuePath": {
