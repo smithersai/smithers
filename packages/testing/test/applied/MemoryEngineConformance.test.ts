@@ -3,7 +3,7 @@ import { coreSuite } from "../../src/Conformance.vibe"
 import { make as makeEngineSubject } from "../../src/EngineSubject.vibe"
 import * as MemoryEngine from "../../src/MemoryEngine.ts"
 import * as RestartableEngine from "../../src/RestartableEngine.ts"
-import { describe, it } from "../../src/Vitest.ts"
+import { describe, it } from "../../src/Vitest.vibe"
 
 // Executable reference semantics. The question closes only when these pins run
 // against the production engine.

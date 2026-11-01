@@ -32,7 +32,7 @@ import * as TestClock from "effect/testing/TestClock"
 import * as Conformance from "../../src/Conformance.vibe"
 import * as EngineSubject from "../../src/EngineSubject.vibe"
 import * as FlowEngineLike from "../../src/FlowEngineLike.ts"
-import { describe, expect, it } from "../../src/Vitest.ts"
+import { describe, expect, it } from "../../src/Vitest.vibe"
 
 // The seam, spelled out: the runtime is an argument. Swapping this one
 // expression for a durable runtime layer runs the identical case list against

@@ -15,8 +15,6 @@
 import * as EffectVitest from "@effect/vitest"
 import * as Layer from "effect/Layer"
 import type * as Scope from "effect/Scope"
-import * as TestClock from "effect/testing/TestClock"
-import * as TestConsole from "effect/testing/TestConsole"
 import { assert, describe, expect, it as vitestIt, type TestOptions } from "vitest"
 import { type Body, runEffectTest } from "./internal/TestEffectRunner.ts"
 
