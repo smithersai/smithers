@@ -348,7 +348,7 @@ test("a pushed label keeps a leader to its mark, and a label with no room waits 
   const row = (index: number) => box.querySelector<HTMLElement>(`[data-row="${index}"]`)!;
   try {
     driver.sync({ ids: ["l-0", "l-1", "l-2", "l-3"], asks: [], lengths: [1, 1, 1, 1], levels: 1, spans: [], arcs: [] });
-    expect(row(0).querySelector<HTMLElement>(".sui-tl-tx")!.style.getPropertyValue("--sui-tl-lines")).toBe("1");
+    expect(row(0).dataset.label).toBeUndefined();
     expect(row(1).querySelector<HTMLElement>(".sui-tl-tx")!.style.top).not.toBe("0px");
     expect(row(1).querySelector(".sui-tl-lead")!.hasAttribute("data-on")).toBe(true);
     expect(row(0).querySelector(".sui-tl-lead")!.hasAttribute("data-on")).toBe(false);

@@ -125,7 +125,7 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement, scrollByRead
       delete element.dataset.label;
       const shift = label.y - mark.y;
       bottom = Math.max(bottom, label.y + label.lines * 14);
-      if (tx !== null) { tx.style.top = px(shift); tx.style.setProperty("--sui-tl-lines", String(label.lines)); }
+      if (tx !== null) tx.style.top = px(shift);
       if (lead !== null) {
         if (Math.abs(shift) > 2) { lead.dataset.on = ""; lead.style.height = px(Math.max(0, shift) + 7); } else lead.removeAttribute("data-on");
       }
