@@ -119,7 +119,7 @@ export * as EffectBoundary from "./EffectBoundary.ts"
  * @category services
  * @since 0.1.0
  */
-export * as CompensationHandlers from "./CompensationHandlers.ts"
+export * as CompensationHandlers from "./CompensationHandlers.vibe"
 
 /**
  * @category migrations
