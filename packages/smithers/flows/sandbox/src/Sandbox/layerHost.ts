@@ -18,7 +18,7 @@ import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.t
 import * as SandboxHealth from "../SandboxHealth/index.ts"
 import { fileSystem } from "./fileSystem.ts"
 import type { Provider } from "./Provider.ts"
-import type { Session } from "./Session.ts"
+import type { Session } from "./Session.vibe"
 
 /**
  * A spawn-only view of a session something else already holds. It declares

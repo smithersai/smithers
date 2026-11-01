@@ -5,9 +5,9 @@
  */
 
 import * as Layer from "effect/Layer"
-import { makeNoop } from "./makeNoop.ts"
-import { SandboxHealth } from "./SandboxHealth.ts"
-import type { Service } from "./Service.ts"
+import { makeNoop } from "./makeNoop.vibe"
+import { SandboxHealth } from "./SandboxHealth.vibe"
+import type { Service } from "./Service.vibe"
 
 /**
  * Layer form of `makeNoop`.

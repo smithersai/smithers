@@ -17,7 +17,7 @@ import {
 import { tmpdir } from "node:os"
 import { isAbsolute, join } from "node:path"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
-import type { Session } from "../src/Sandbox/Session.ts"
+import type { Session } from "../src/Sandbox/Session.vibe"
 import * as SandboxConformance from "../src/SandboxConformance/index.ts"
 import * as VercelSandbox from "../src/VercelSandbox/index.ts"
 import type { Sdk } from "../src/VercelSandbox/Sdk.ts"

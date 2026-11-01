@@ -12,7 +12,7 @@
  */
 
 import * as Effect from "effect/Effect"
-import type { GarbageCollector } from "../MicrosandboxSandbox/GarbageCollector.ts"
+import type { GarbageCollector } from "../MicrosandboxSandbox/GarbageCollector.vibe"
 
 /**
  * How many command starts pass between two collections: with the concurrent

@@ -5,7 +5,7 @@
  */
 
 import * as Schema from "effect/Schema"
-import { UnhealthyReason } from "../SandboxHealth/UnhealthyReason.ts"
+import { UnhealthyReason } from "../SandboxHealth/UnhealthyReason.vibe"
 
 /**
  * A supervised sandbox session failed its liveness probe and was retired.
@@ -18,7 +18,7 @@ import { UnhealthyReason } from "../SandboxHealth/UnhealthyReason.ts"
  * @since 0.1.0
  */
 export class SandboxUnhealthy extends Schema.Class<SandboxUnhealthy>(
-  "@smthrs/sandbox/SandboxSupervision/SandboxUnhealthy"
+  "@smthrs/sandbox/SandboxSupervision/SandboxUnhealthy",
 )({
   _tag: Schema.tag("sandbox-unhealthy"),
   /** The provider-neutral session key that was retired. */
@@ -28,5 +28,5 @@ export class SandboxUnhealthy extends Schema.Class<SandboxUnhealthy>(
   /** The probe's own description of the failure, when it had one. */
   message: Schema.optional(Schema.String),
   /** How many consecutive unhealthy probes it took to reach the verdict. */
-  probes: Schema.Int
+  probes: Schema.Int,
 }) {}

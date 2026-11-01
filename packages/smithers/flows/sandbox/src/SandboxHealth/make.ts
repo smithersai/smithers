@@ -4,12 +4,12 @@
  * @since 0.1.0
  */
 
-import { makeNoop } from "./makeNoop.ts"
-import type { PingProvider } from "./PingProvider.ts"
+import { makeNoop } from "./makeNoop.vibe"
+import type { PingProvider } from "./PingProvider.vibe"
 import { probe } from "./probe.ts"
-import type { ProbeOptions } from "./ProbeOptions.ts"
-import { SandboxHealth } from "./SandboxHealth.ts"
-import type { Service } from "./Service.ts"
+import type { ProbeOptions } from "./ProbeOptions.vibe"
+import { SandboxHealth } from "./SandboxHealth.vibe"
+import type { Service } from "./Service.vibe"
 
 /**
  * Builds the service from a provider's ping capability.

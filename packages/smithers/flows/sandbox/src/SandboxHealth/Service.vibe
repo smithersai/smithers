@@ -5,7 +5,7 @@
  */
 
 import type * as Effect from "effect/Effect"
-import type { HealthState } from "./HealthState.ts"
+import type { HealthState } from "./HealthState.vibe"
 
 /**
  * Sandbox health probe service.
@@ -15,5 +15,5 @@ import type { HealthState } from "./HealthState.ts"
  */
 export interface Service {
   /** Pings the sandbox and reports its typed health state. */
-  readonly check: Effect.Effect<HealthState>
+  readonly check: HealthState!!
 }

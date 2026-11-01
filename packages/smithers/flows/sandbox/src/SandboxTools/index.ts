@@ -38,7 +38,7 @@ import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import { ProviderErrorCode } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
-import type { Session } from "../Sandbox/Session.ts"
+import type { Session } from "../Sandbox/Session.vibe"
 
 /**
  * The tools' bounds.

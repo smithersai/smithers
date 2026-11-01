@@ -11,7 +11,7 @@
  * @since 0.1.0
  */
 
-export * from "./GarbageCollector.ts"
+export * from "./GarbageCollector.vibe"
 export * from "./labels.ts"
 export * from "./make.ts"
 export * from "./reap.ts"

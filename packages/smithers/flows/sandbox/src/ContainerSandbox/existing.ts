@@ -21,7 +21,7 @@ import { linuxFileSystem } from "../internal/linuxFileSystem.ts"
 import { gather, type GatheredRun, remoteProcessOf } from "../internal/localProcess.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
-import type { Session } from "../Sandbox/Session.ts"
+import type { Session } from "../Sandbox/Session.vibe"
 
 /**
  * One program to run inside a container: the request half of

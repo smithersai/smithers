@@ -21,7 +21,7 @@ import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import { type NetworkPolicy, refuseNetworkPolicy } from "../Sandbox/NetworkPolicy.ts"
 import type { Provider } from "../Sandbox/Provider.ts"
 import { refuseResourceLimits, type ResourceLimits } from "../Sandbox/ResourceLimits.ts"
-import type { Session } from "../Sandbox/Session.ts"
+import type { Session } from "../Sandbox/Session.vibe"
 
 /**
  * What the scratch-directory provider needs from its host.

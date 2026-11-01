@@ -13,11 +13,11 @@ import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Stream from "effect/Stream"
 import { boundedCheck } from "../internal/boundedCheck.ts"
 import { defaultCheckTimeout, elapsed } from "../internal/deadline.ts"
-import { describeExit } from "../internal/describeExit.ts"
+import { describeExit } from "../internal/describeExit.vibe"
 import { layer } from "../RemoteChildProcessSpawner/layer.ts"
 import type { Provider } from "../RemoteChildProcessSpawner/Provider.ts"
 import { make as makeHealth } from "../SandboxHealth/make.ts"
-import { type Commands, defaultCopiesStdin, defaultStopsWithin } from "./Commands.ts"
+import { type Commands, defaultCopiesStdin, defaultStopsWithin } from "./Commands.vibe"
 import type { Violation } from "./Violation.ts"
 
 /**

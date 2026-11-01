@@ -7,11 +7,11 @@
 import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import { boundedMessage } from "../internal/boundedMessage.ts"
-import type { HealthState } from "./HealthState.ts"
-import { Healthy } from "./Healthy.ts"
-import type { PingProvider } from "./PingProvider.ts"
-import type { ProbeOptions } from "./ProbeOptions.ts"
-import { Unhealthy } from "./Unhealthy.ts"
+import type { HealthState } from "./HealthState.vibe"
+import { Healthy } from "./Healthy.vibe"
+import type { PingProvider } from "./PingProvider.vibe"
+import type { ProbeOptions } from "./ProbeOptions.vibe"
+import { Unhealthy } from "./Unhealthy.vibe"
 
 /**
  * Default deadline used when a probe does not specify one.

@@ -5,7 +5,7 @@
  */
 
 import * as Effect from "effect/Effect"
-import { type Conflicted, Merged, MergeError } from "./Outcome.ts"
+import { type Conflicted, Merged, MergeError } from "./Outcome.vibe"
 import type { Repository } from "./Repository.ts"
 
 /**

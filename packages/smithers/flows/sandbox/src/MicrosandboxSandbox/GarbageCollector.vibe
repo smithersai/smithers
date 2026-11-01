@@ -35,7 +35,7 @@ import * as Layer from "effect/Layer"
  */
 export interface GarbageCollector {
   /** Collects the whole heap, synchronously. */
-  readonly collect: Effect.Effect<void>
+  readonly collect: void!!
 }
 
 /**
@@ -45,7 +45,7 @@ export interface GarbageCollector {
  * @since 1.0.0
  */
 export const GarbageCollector: Context.Service<GarbageCollector, GarbageCollector> = Context.Service(
-  "@smthrs/sandbox/MicrosandboxSandbox/GarbageCollector"
+  "@smthrs/sandbox/MicrosandboxSandbox/GarbageCollector",
 )
 
 /**
@@ -58,5 +58,5 @@ export const GarbageCollector: Context.Service<GarbageCollector, GarbageCollecto
  * @since 1.0.0
  */
 export const layerGarbageCollectorNoop: Layer.Layer<GarbageCollector> = Layer.succeed(GarbageCollector)({
-  collect: Effect.void
+  collect: Effect.void,
 })
