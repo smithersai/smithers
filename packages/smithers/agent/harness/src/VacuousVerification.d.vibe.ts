@@ -97,7 +97,7 @@
  * @since 0.1.0
  */
 import { Schema } from "effect";
-import type * as NarrowedCheck from "./NarrowedCheck.js";
+import type * as NarrowedCheck from "./NarrowedCheck.vibe";
 /**
  * How many pristine-tree passes one run carries forward.
  *
