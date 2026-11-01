@@ -71,7 +71,10 @@
     "./flow/Lock": "./src/flow/Lock.ts",
     "./flow/MigrateFlow": "./src/flow/MigrateFlow.ts",
     "./flow/Options": "./src/flow/Options.ts",
-    "./flow/Repair": "./src/flow/Repair.ts",
+    "./flow/Repair": {
+      "types": "./src/flow/Repair.d.vibe.ts",
+      "default": "./src/flow/Repair.vibe"
+    },
     "./flow/Transform": "./src/flow/Transform.ts",
     "./flow/Verify": "./src/flow/Verify.ts",
     "./flow/bin": "./src/flow/bin.ts",
