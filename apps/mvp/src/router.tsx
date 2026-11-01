@@ -687,7 +687,7 @@ const todoRoute = createRoute({
     stringify: (params) => ({ ...params, number: String(params.number) }),
   },
   beforeLoad: ({ context, params, ...load }) =>
-    enterRepo(
+    enterRepository(
       context,
       params,
       load,

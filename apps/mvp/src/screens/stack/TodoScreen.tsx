@@ -39,7 +39,6 @@ export function TodoScreen() {
         <PageBody width="wide">
           <Breadcrumbs
             items={[
-              { key: "repo", label: `${owner}/${repo}`, href: `/${owner}/${repo}` },
               { key: "stack", label: STACK, href: stackPath(owner, repo) },
               { key: "todo", label: `T${number}` },
             ]}
@@ -60,7 +59,6 @@ export function TodoScreen() {
       <PageBody width="wide">
         <Breadcrumbs
           items={[
-            { key: "repo", label: `${owner}/${repo}`, href: `/${owner}/${repo}` },
             { key: "stack", label: STACK, href: stackPath(owner, repo) },
             { key: "todo", label: `T${number}` },
           ]}
