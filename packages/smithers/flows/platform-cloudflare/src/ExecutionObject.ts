@@ -23,7 +23,7 @@
 
 import { canonicalize } from "@smthrs/canonical"
 import { DatabaseMetrics } from "@smthrs/database"
-import { type DurableEngineState, EngineStore } from "@smthrs/engine-store"
+import { type DurableEngineState, EngineStore, WakeBus } from "@smthrs/engine-store"
 import { type Flow, FlowRuntime, RetryPolicy, RunMetrics } from "@smthrs/flow"
 import { JournalMetrics } from "@smthrs/journal"
 import { RunStore } from "@smthrs/run-store"
@@ -331,7 +331,9 @@ export const driveDuration = Metric.timer("smithers_cloudflare_execution_drive_d
 
 /**
  * Executions {@link alarm} handed to another object, by `route`: `start` or
- * `wake`. Counted when the {@link Router} call succeeds.
+ * `wake` after the drive, or `admitted` for a child started the moment its
+ * admission committed, during the drive. Counted when the {@link Router} call
+ * succeeds.
  *
  * @category metrics
  * @since 1.0.0
@@ -638,6 +640,42 @@ const route = <E, R>(executionId: string, router: Router<E, R>) =>
   })
 
 /**
+ * How long {@link admitted} waits for the child's object to take its intent
+ * before it leaves the start to the routing after the drive: two seconds.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const admittedStartTimeoutMs = 2_000
+
+/**
+ * Starts a child on its own object as soon as its admission commits, while the
+ * parent's drive goes on (`WakeBus.Admitted`), so the child's own alarm runs
+ * beside the rest of the parent's drive instead of after it parks. A TODO's
+ * agent session waited about two seconds for that drive on smithers.sh.
+ *
+ * It is a shortcut and never the record: {@link route} reads the store after
+ * every drive and starts the same child again, which its object answers as a
+ * duplicate. So a start that fails or outlasts {@link admittedStartTimeoutMs}
+ * is logged and left to the routing; it never fails the drive.
+ */
+const admitted = <RE, RR>(router: Router<RE, RR>, context: Context.Context<RR>) => (admission: WakeBus.Admission) =>
+  Schema.decodeUnknownEffect(Intent)(admission).pipe(
+    Effect.flatMap(router.start),
+    Effect.timeout(admittedStartTimeoutMs),
+    Effect.andThen(Metric.update(Metric.withAttributes(routed, { route: "admitted" }), 1)),
+    Effect.catchCause((cause) =>
+      Effect.logWarning("cloudflare.execution.admitted").pipe(Effect.annotateLogs({
+        "smithers.execution.id": admission.executionId,
+        "smithers.flow": admission.flow,
+        outcome: "deferred",
+        "error.type": RetryPolicy.failureType(cause)
+      }))
+    ),
+    Effect.provideContext(context)
+  )
+
+/**
  * Arms the alarm for a parked execution, then reads the store once more.
  *
  * Another object's {@link wake} can land while this alarm runs: Durable
@@ -680,6 +718,9 @@ const backoff = (attempt: number): number => Option.getOrThrow(RetryPolicy.nextD
  *    or until it spends `driveBudgetMs` ({@link driveBudget}) and yields at a
  *    step boundary. How long the drive took is recorded by its outcome
  *    ({@link driveDuration}) and logged as `smithers.execution.drive_ms`.
+ *    A child the drive admits is started on its own object as soon as its
+ *    admission commits, so it runs beside the rest of the drive; step 4
+ *    starts it again, which changes nothing.
  * 4. Routes: reads from the store which executions the drive left for other
  *    objects, and hands each to `router`. A child the drive admitted and the
  *    round a `.to()` handoff admitted are started on their own objects; a
@@ -809,6 +850,7 @@ const settleOrDrive = <E, R, RS, RE, RR>(
       yield* storage.deleteAlarm()
       return { _tag: "Forgotten" } as const
     }
+    const routerContext = yield* Effect.context<RR>()
     const attempt = ((yield* storage.get<number>(failuresKey)) ?? 0) + 1
     yield* storage.put(failuresKey, attempt)
     yield* storage.setAlarm((yield* Clock.currentTimeMillis) + backoff(attempt))
@@ -849,7 +891,10 @@ const settleOrDrive = <E, R, RS, RE, RR>(
           return { _tag: "Yielded" } as const
         }
         return { _tag: "Parked", wakeAtMs: yield* arm(storage, value.executionId, driven.wakeAtMs ?? null) } as const
-      }).pipe(Effect.provide(options.runtime(value)))
+      }).pipe(
+        Effect.provide(options.runtime(value)),
+        Effect.provideService(WakeBus.Admitted, admitted(options.router, routerContext))
+      )
     }))
     if (Exit.isSuccess(outcome)) {
       yield* storage.delete(failuresKey)

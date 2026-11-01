@@ -1599,6 +1599,17 @@ fallback.
 | `layer`      | `Layer<WakeBus>`                                   | Provides a fresh bus.                       |
 | `makeNoop`   | `(overrides?: Partial<Service>) => Service`        | Wakes are dropped and waiters park forever. |
 | `layerNoop`  | `(overrides?: Partial<Service>) => Layer<WakeBus>` | Provides it.                                |
+| `Admitted`   | `Context.Reference<(admission: Admission) => Effect<void>>` | Called once a child's admission commits. |
+| `Admission`  | `{ flow, executionId, payload }`                   | The child, its payload encoded as stored.   |
+
+`Admitted` is what the engine calls once a child run it admitted has
+committed, its row and parent edge durable; the default does nothing. A host
+that drives each execution in its own place provides it to start the child
+there at once, while the parent's drive goes on. It is a shortcut, never the
+record: the host must still start children from what the store holds after
+the drive, so a lost or refused announcement only delays the child. A child
+admitted inside a transaction whose commit the journal cannot observe is not
+announced.
 
 `wake(executionId)` resumes every waiter parked on that execution; with no
 waiters the wake is dropped. `awaitWake(executionId)` parks until the next one,

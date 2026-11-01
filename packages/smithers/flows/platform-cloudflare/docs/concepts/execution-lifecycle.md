@@ -186,13 +186,21 @@ its execution id:
 
 ```
 parent object                 child object
-  alarm: drive ─ parks on the child
-         route ─ start(child) ──► start: store intent, alarm at now
+  alarm: drive ─ admits the child ─ start(child) ──► start: store intent, alarm at now
+         drive ─ parks on the child                  alarm: drive ─ claims the child
+         route ─ start(child) ──► start: duplicate, alarm at now
                                   alarm: drive ─ settles, records the parent's wake
                                          route ─ wake(parent)
   alarm ◄──────────────────────────────────────────┘
          drive ─ reads the child's result, settles
 ```
+
+A child also starts the moment its admission commits, during the parent's
+drive (`WakeBus.Admitted`), so its object claims it beside the rest of that
+drive instead of after the parent parks. That start is a shortcut: it waits at
+most `admittedStartTimeoutMs` (2 seconds), a failure is logged as
+`cloudflare.execution.admitted` and fails nothing, and the routing below starts
+the child again either way.
 
 The routes are read from the store after every drive, never taken from what
 the drive reported, so they survive the alarm: one that dies after its drive
@@ -250,25 +258,27 @@ lease alone.
 
 ## Guarantees and their evidence
 
-| Guarantee                                                                                 | Proven by                                                   |
-| ----------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| A started execution runs to completion from its alarm.                                    | `test/ExecutionObject.test.ts`, over Postgres and PgBouncer |
-| A duplicate `start` or a duplicate alarm runs no step twice.                              | `test/ExecutionObject.test.ts`                              |
-| A `start` whose caller dies before its write still leads to a run.                        | `test/ExecutionObject.test.ts`                              |
-| A parked timer arms the alarm for its due time, and a later alarm resumes the run.        | `test/ExecutionObject.test.ts`                              |
-| An incarnation killed inside a step is replaced at once, without repeating settled steps. | `test/Crash.test.ts`: a `SIGKILL`ed Node process            |
-| An alarm that dies mid-drive leaves its attempt counted and a successor armed.            | `test/ExecutionObject.test.ts`                              |
-| A real object finishes a run after `ctx.abort()` inside a step, one backoff later.        | `test/WorkerdSmoke.test.ts` (`FLOWS_WORKERD_SMOKE=1`)       |
-| workerd starts no alarm handler beside a running one.                                     | `test/WorkerdSmoke.test.ts`, the `Probe` object             |
-| No payload or failure text reaches a log line, span attribute, failed span or metric.     | `test/Observability.test.ts`                                |
-| A settled object answers duplicates without a drive and empties itself after its window.  | `test/ExecutionObject.test.ts`; `test/WorkerdSmoke.test.ts` |
-| A late `start` after the window runs no step again and the object forgets it again.       | `test/ExecutionObject.test.ts`; `test/WorkerdSmoke.test.ts` |
-| A parent's child runs on its own object, and its settlement wakes the parent.             | `test/Routing.test.ts`; `test/WorkerdSmoke.test.ts`         |
-| A child's failure fails its parent.                                                       | `test/Routing.test.ts`; `test/WorkerdSmoke.test.ts`         |
-| Each round of a handoff lineage runs on its own object, a reset round included.           | `test/Routing.test.ts`; `test/WorkerdSmoke.test.ts`         |
-| A wake that lands while the woken object's alarm runs is kept.                            | `test/Routing.test.ts`                                      |
-| A failed router call retries, and the next alarm routes what the drive left.              | `test/Routing.test.ts`                                      |
-| A cancelled parent's routing wakes the current round of the child lineage it cancelled.   | `test/Routing.test.ts`                                      |
+| Guarantee                                                                                  | Proven by                                                   |
+| ------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
+| A started execution runs to completion from its alarm.                                     | `test/ExecutionObject.test.ts`, over Postgres and PgBouncer |
+| A duplicate `start` or a duplicate alarm runs no step twice.                               | `test/ExecutionObject.test.ts`                              |
+| A `start` whose caller dies before its write still leads to a run.                         | `test/ExecutionObject.test.ts`                              |
+| A parked timer arms the alarm for its due time, and a later alarm resumes the run.         | `test/ExecutionObject.test.ts`                              |
+| An incarnation killed inside a step is replaced at once, without repeating settled steps.  | `test/Crash.test.ts`: a `SIGKILL`ed Node process            |
+| An alarm that dies mid-drive leaves its attempt counted and a successor armed.             | `test/ExecutionObject.test.ts`                              |
+| A real object finishes a run after `ctx.abort()` inside a step, one backoff later.         | `test/WorkerdSmoke.test.ts` (`FLOWS_WORKERD_SMOKE=1`)       |
+| workerd starts no alarm handler beside a running one.                                      | `test/WorkerdSmoke.test.ts`, the `Probe` object             |
+| No payload or failure text reaches a log line, span attribute, failed span or metric.      | `test/Observability.test.ts`                                |
+| A settled object answers duplicates without a drive and empties itself after its window.   | `test/ExecutionObject.test.ts`; `test/WorkerdSmoke.test.ts` |
+| A late `start` after the window runs no step again and the object forgets it again.        | `test/ExecutionObject.test.ts`; `test/WorkerdSmoke.test.ts` |
+| A parent's child runs on its own object, and its settlement wakes the parent.              | `test/Routing.test.ts`; `test/WorkerdSmoke.test.ts`         |
+| A child's object starts as soon as its admission commits, before the parent's drive parks. | `test/Routing.test.ts`                                      |
+| A child start that fails during the drive is left to the routing after it.                 | `test/Routing.test.ts`                                      |
+| A child's failure fails its parent.                                                        | `test/Routing.test.ts`; `test/WorkerdSmoke.test.ts`         |
+| Each round of a handoff lineage runs on its own object, a reset round included.            | `test/Routing.test.ts`; `test/WorkerdSmoke.test.ts`         |
+| A wake that lands while the woken object's alarm runs is kept.                             | `test/Routing.test.ts`                                      |
+| A failed router call retries, and the next alarm routes what the drive left.               | `test/Routing.test.ts`                                      |
+| A cancelled parent's routing wakes the current round of the child lineage it cancelled.    | `test/Routing.test.ts`                                      |
 
 ## Limits
 

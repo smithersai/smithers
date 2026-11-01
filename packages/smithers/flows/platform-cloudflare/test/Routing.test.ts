@@ -49,6 +49,10 @@ const runsIn = (schema: string) =>
     }))
   )
 
+/** Whether the `Parent` run is still in its drive (`running`), read from the store. */
+const parentDriving = (runs: Effect.Effect<ReadonlyArray<{ readonly flow: string; readonly status: string }>>) =>
+  Effect.map(runs, (rows) => rows.find((run) => run.flow === Parent._tag)?.status === "running")
+
 class RouteFailed extends Schema.TaggedError<RouteFailed>()("RouteFailed", {}) {}
 
 /**
@@ -105,11 +109,16 @@ for (const target of Postgres.targets) {
     it.live("a child that settles while its parent's alarm is still routing it wakes the parent all the same", () => {
       // The child's object runs its alarm the moment it is started, inside
       // the parent's routing: its settlement wakes the parent before the
-      // parent's alarm has armed what its own drive left.
+      // parent's alarm has armed what its own drive left. A start during the
+      // parent's drive is refused, so the child starts only from that routing.
       const c = setup(target, {
         router: (objects) => ({
           start: (intent) =>
-            objects.router.start(intent).pipe(Effect.andThen(objects.alarm(intent.executionId)), Effect.asVoid),
+            Effect.gen(function*() {
+              if (yield* parentDriving(c.runs)) return yield* new RouteFailed()
+              yield* objects.router.start(intent)
+              yield* objects.alarm(intent.executionId)
+            }),
           wake: objects.router.wake
         })
       })
@@ -136,7 +145,12 @@ for (const target of Postgres.targets) {
       let failures = 1
       const c = setup(target, {
         router: (objects) => ({
-          start: (intent) => failures-- > 0 ? Effect.fail(new RouteFailed()) : objects.router.start(intent),
+          // Every start during the parent's drive fails as well, so only the routing after it starts the child.
+          start: (intent) =>
+            Effect.gen(function*() {
+              if ((yield* parentDriving(c.runs)) || failures-- > 0) return yield* new RouteFailed()
+              yield* objects.router.start(intent)
+            }),
           wake: objects.router.wake
         })
       })
@@ -218,6 +232,62 @@ for (const target of Postgres.targets) {
         expect(c.steps).toEqual([`cleanup:${label}`])
         expect(c.objects.outcomes.get(`cleanup:${label}`)).toEqual([settled])
         expect(Object.values(alarms(c.objects))).toEqual(["forget", "forget", "forget"])
+      }).pipe(Effect.ensuring(c.cleanup))
+    })
+
+    it.live("a parent starts its child's object as soon as the child is admitted, before its own drive parks", () => {
+      // A TODO's agent session waited about two seconds on smithers.sh for its parent's drive to park and route it.
+      // Each start records what the parent's row said at that moment: `running` is during the parent's drive.
+      const starts: Array<string> = []
+      const c = setup(target, {
+        router: (objects) => ({
+          start: (intent) =>
+            Effect.gen(function*() {
+              const parent = (yield* c.runs).find((run) => run.flow === Parent._tag)
+              starts.push(`${intent.flow} while the parent is ${parent?.status}`)
+              yield* objects.router.start(intent)
+            }),
+          wake: objects.router.wake
+        })
+      })
+      const parentId = `parent-${randomUUID()}`
+      return Effect.gen(function*() {
+        const intent = yield* ExecutionObject.intent(Parent, { executionId: parentId, payload: { label: "early" } })
+        yield* ExecutionObject.start(c.objects.object(parentId).storage, intent, Effect.void)
+        yield* c.objects.alarm(parentId)
+        // The routing after the drive starts it again, which its object answers as a duplicate.
+        expect(starts).toEqual([`${Child._tag} while the parent is running`, `${Child._tag} while the parent is suspended`])
+
+        yield* c.objects.run()
+        expect((yield* c.runs).map((run) => run.status)).toEqual(["completed", "completed"])
+        expect(c.steps).toEqual(["child:early", "parent:child:early"])
+      }).pipe(Effect.ensuring(c.cleanup))
+    })
+
+    it.live("a child start that fails during the drive is left to the routing after it", () => {
+      let failed = 0
+      const c = setup(target, {
+        router: (objects) => ({
+          start: (intent) =>
+            Effect.gen(function*() {
+              if (yield* parentDriving(c.runs)) {
+                failed++
+                return yield* new RouteFailed()
+              }
+              yield* objects.router.start(intent)
+            }),
+          wake: objects.router.wake
+        })
+      })
+      const parentId = `parent-${randomUUID()}`
+      return Effect.gen(function*() {
+        const intent = yield* ExecutionObject.intent(Parent, { executionId: parentId, payload: { label: "late" } })
+        yield* ExecutionObject.start(c.objects.object(parentId).storage, intent, Effect.void)
+        expect(yield* c.objects.alarm(parentId)).toEqual({ _tag: "Parked", wakeAtMs: null })
+        expect(failed).toBe(1)
+        yield* c.objects.run()
+        expect((yield* c.runs).map((run) => run.status)).toEqual(["completed", "completed"])
+        expect(c.steps).toEqual(["child:late", "parent:child:late"])
       }).pipe(Effect.ensuring(c.cleanup))
     })
 

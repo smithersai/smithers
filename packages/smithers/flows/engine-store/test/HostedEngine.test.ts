@@ -37,6 +37,7 @@ import * as RunDriver from "../src/internal/RunDriver.ts"
 import * as OwnerIdentity from "../src/OwnerIdentity.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
+import * as WakeBus from "../src/WakeBus.ts"
 import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
 import * as PersistentDatabase from "./fixtures/PersistentDatabase.ts"
 import { withCrypto } from "./Sha256.ts"
@@ -806,6 +807,38 @@ describe("a settled child's drive", () => {
         )
       )
     )
+
+  it("announces the child it admits once the child's row has committed, and nothing else", () =>
+    run(Effect.gen(function*() {
+      const inStore = <A, E>(
+        effect: Effect.Effect<A, E, RunStore.RunStore | DurableEngineState.DurableEngineState | SqlClient.SqlClient>
+      ) => Effect.provide(effect, TestStores.layerAt(filename))
+      // Each announcement with whether another connection already reads the child's row: it has committed.
+      const announced: Array<WakeBus.Admission & { readonly committed: boolean }> = []
+      const announce = (admission: WakeBus.Admission) =>
+        inStore(Effect.flatMap(RunStore.RunStore, (runs) => runs.get(admission.executionId))).pipe(
+          Effect.as(true),
+          Effect.orElseSucceed(() => false),
+          Effect.map((committed) => {
+            announced.push({ ...admission, committed })
+          })
+        )
+      const drive = <F extends Flow.Any>(flow: F, executionId: string) =>
+        EngineStore.drive(flow, { executionId, payload: {} }).pipe(
+          Effect.provide(hosted(executionId, [])),
+          Effect.provideService(WakeBus.Admitted, announce)
+        )
+
+      expect(yield* drive(Waits, "announces")).toEqual({ _tag: "Parked", wakeAtMs: undefined })
+      const [edge] = yield* inStore(
+        Effect.flatMap(DurableEngineState.DurableEngineState, (state) => state.runChildren("announces"))
+      )
+      // The parent's own admission is not a child's; the child's comes once, after its commit.
+      expect(announced).toEqual([{ flow: LegOne._tag, executionId: edge!.childId, payload: {}, committed: true }])
+      // The child hands off to its next round: no parent admitted that round, so nothing more is announced.
+      expect(yield* drive(LegOne, edge!.childId)).toEqual({ _tag: "Settled", status: "completed" })
+      expect(announced).toHaveLength(1)
+    })))
 
   it("records its parent's wake again when the invocation that settled it died first, and only once", () =>
     run(Effect.gen(function*() {

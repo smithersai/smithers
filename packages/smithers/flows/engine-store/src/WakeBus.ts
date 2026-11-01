@@ -35,6 +35,42 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 
 /**
+ * A run the engine admitted as another run's child, announced to
+ * {@link Admitted} once its row has committed: its flow, its id, and its
+ * payload as stored (encoded).
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Admission {
+  readonly flow: string
+  readonly executionId: string
+  readonly payload: unknown
+}
+
+/**
+ * What the engine calls once a child run it admitted has committed. The
+ * default does nothing.
+ *
+ * A host that drives each execution in its own place, such as a Cloudflare
+ * Durable Object per execution, provides it to start the child there at once,
+ * while the parent's drive goes on, instead of after the drive parks. The
+ * announcement is a shortcut, never the record: the child's row and its
+ * parent edge are durable before it is made, and a host must still start
+ * children from what the store holds after the drive. So the effect never
+ * fails, and one that is lost or refused delays the child; it loses nothing.
+ * A child admitted inside a transaction whose commit the journal cannot
+ * observe is not announced.
+ *
+ * @category context
+ * @since 1.0.0
+ */
+export const Admitted = Context.Reference<(admission: Admission) => Effect.Effect<void>>(
+  "@smthrs/engine-store/WakeBus/Admitted",
+  { defaultValue: () => () => Effect.void }
+)
+
+/**
  * Wake bus operations.
  *
  * @category models

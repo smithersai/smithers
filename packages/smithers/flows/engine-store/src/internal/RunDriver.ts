@@ -3585,6 +3585,12 @@ const ensureRun = (driver: Driver, flow: Flow.Any, options: Admission): Effect.E
       admittedAtMs: yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
     }
     if (!(yield* admit(driver, flow, options, payload, origin))) return
+    // A child's host may start it at once, while this drive goes on (`WakeBus.Admitted`); after the commit only, so
+    // the child it starts always finds its row and its parent edge.
+    if (options.parent !== undefined) {
+      const announce = yield* WakeBus.Admitted
+      yield* driver.journal.whenCommitted(announce({ flow: flow._tag, executionId: options.executionId, payload }))
+    }
     yield* Effect.logInfo("flow.run.created").pipe(Effect.annotateLogs({
       "smithers.execution.id": options.executionId,
       "smithers.flow": flow._tag,
