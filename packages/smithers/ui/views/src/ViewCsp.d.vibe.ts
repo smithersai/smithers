@@ -15,11 +15,7 @@
  *
  * @since 0.1.0
  */
-
-import { digestSync } from "@smthrs/crypto"
-import { Base64 } from "effect/encoding"
-import type * as Bridge from "./Bridge.ts"
-
+import type * as Bridge from "./Bridge.vibe";
 /**
  * The frame's `sandbox` attribute: scripts for the page's runtime, and
  * nothing else. No `allow-same-origin`, `allow-forms`, `allow-popups`,
@@ -28,8 +24,7 @@ import type * as Bridge from "./Bridge.ts"
  * @category constants
  * @since 0.1.0
  */
-export const sandbox = "allow-scripts"
-
+export declare const sandbox = "allow-scripts";
 /**
  * The attribute on the frame document's `<html>` element that carries the
  * per-mount nonce for `ui/initialize`.
@@ -37,21 +32,14 @@ export const sandbox = "allow-scripts"
  * @category constants
  * @since 0.1.0
  */
-export const nonceAttribute = "data-smithers-nonce"
-
+export declare const nonceAttribute = "data-smithers-nonce";
 /**
  * A script's CSP source expression: `'sha256-<base64>'` over its UTF-8 text.
  *
  * @category hashing
  * @since 0.1.0
  */
-export const hash = (script: string): string => {
-  const hex = digestSync(script)
-  const bytes = new Uint8Array(32)
-  for (let index = 0; index < 32; index++) bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16)
-  return `'sha256-${Base64.encode(bytes)}'`
-}
-
+export declare const hash: (script: string) => string;
 /**
  * The frame's policy for a runtime with the given {@link hash}.
  *
@@ -63,25 +51,7 @@ export const hash = (script: string): string => {
  * @category policies
  * @since 0.1.0
  */
-export const policy = (runtimeHash: string): string =>
-  [
-    "default-src 'none'",
-    `script-src ${runtimeHash}`,
-    "script-src-attr 'none'",
-    "style-src 'unsafe-inline'",
-    "img-src data:",
-    "font-src data:",
-    "connect-src 'none'",
-    "media-src 'none'",
-    "object-src 'none'",
-    "frame-src 'none'",
-    "child-src 'none'",
-    "worker-src 'none'",
-    "manifest-src 'none'",
-    "base-uri 'none'",
-    "form-action 'none'"
-  ].join("; ")
-
+export declare const policy: (runtimeHash: string) => string;
 /**
  * The inputs of one frame document.
  *
@@ -94,18 +64,11 @@ export const policy = (runtimeHash: string): string =>
  * @since 0.1.0
  */
 export interface FrameDocumentOptions {
-  readonly runtime: string
-  readonly nonce: string
-  readonly theme: Bridge.Theme
-  readonly styles: string
+    readonly runtime: string;
+    readonly nonce: string;
+    readonly theme: Bridge.Theme;
+    readonly styles: string;
 }
-
-/** Keeps a script or style sheet from closing its own element early. */
-const inert = (text: string, tag: "script" | "style"): string => text.replace(new RegExp(`</(${tag})`, "gi"), "<\\/$1")
-
-const attribute = (value: string): string =>
-  value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-
 /**
  * The frame's `srcdoc`: the policy, the page's styles and the runtime, and no
  * view content. The view's HTML arrives later over the bridge. The runtime is
@@ -117,13 +80,4 @@ const attribute = (value: string): string =>
  * @category documents
  * @since 0.1.0
  */
-export const frameDocument = (options: FrameDocumentOptions): string => {
-  const runtime = inert(options.runtime, "script")
-  return `<!doctype html><html ${nonceAttribute}="${attribute(options.nonce)}" data-theme="${
-    attribute(options.theme)
-  }"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${
-    attribute(policy(hash(runtime)))
-  }"><meta name="referrer" content="no-referrer"><style>${
-    inert(options.styles, "style")
-  }</style></head><body><script>${runtime}</script></body></html>`
-}
+export declare const frameDocument: (options: FrameDocumentOptions) => string;

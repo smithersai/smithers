@@ -16,36 +16,29 @@
  *
  * @since 0.1.0
  */
-
-import * as Option from "effect/Option"
-import * as Schema from "effect/Schema"
-
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 /**
  * The most interactions one view may declare.
  *
  * @category constants
  * @since 0.1.0
  */
-export const maxDeclared = 32
-
+export declare const maxDeclared = 32;
 /**
  * The longest `arg` an event may carry, in UTF-16 code units.
  *
  * @category constants
  * @since 0.1.0
  */
-export const maxArgLength = 256
-
+export declare const maxArgLength = 256;
 /**
  * The longest label a `message` interaction may carry.
  *
  * @category constants
  * @since 0.1.0
  */
-export const maxLabelLength = 80
-
-const namePattern = /^[a-z][A-Za-z0-9_-]{0,31}$/
-
+export declare const maxLabelLength = 80;
 /**
  * An interaction's name: a lowercase letter, then up to 31 letters, digits,
  * `_` or `-`. It never contains `:`, which separates the name from its
@@ -54,16 +47,14 @@ const namePattern = /^[a-z][A-Za-z0-9_-]{0,31}$/
  * @category schemas
  * @since 0.1.0
  */
-export const Name = Schema.String.check(Schema.isPattern(namePattern))
-
+export declare const Name: Schema.String;
 /**
  * An interaction's name.
  *
  * @category models
  * @since 0.1.0
  */
-export type Name = typeof Name.Type
-
+export type Name = typeof Name.Type;
 /**
  * An event that changes the view's own state: the parent runs `reduce` and
  * renders again. It never calls a model.
@@ -71,8 +62,9 @@ export type Name = typeof Name.Type
  * @category schemas
  * @since 0.1.0
  */
-export const StateInteraction = Schema.Struct({ kind: Schema.Literal("state") })
-
+export declare const StateInteraction: Schema.Struct<{
+    readonly kind: Schema.Literal<"state">;
+}>;
 /**
  * An event that becomes a question from the person. `label` is the question's
  * text, such as the label of the button that sent it.
@@ -80,54 +72,55 @@ export const StateInteraction = Schema.Struct({ kind: Schema.Literal("state") })
  * @category schemas
  * @since 0.1.0
  */
-export const MessageInteraction = Schema.Struct({
-  kind: Schema.Literal("message"),
-  label: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(maxLabelLength))
-})
-
+export declare const MessageInteraction: Schema.Struct<{
+    readonly kind: Schema.Literal<"message">;
+    readonly label: Schema.String;
+}>;
 /**
  * One declared interaction.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const Interaction = Schema.Union([StateInteraction, MessageInteraction])
-
+export declare const Interaction: Schema.Union<readonly [Schema.Struct<{
+    readonly kind: Schema.Literal<"state">;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"message">;
+    readonly label: Schema.String;
+}>]>;
 /**
  * One declared interaction.
  *
  * @category models
  * @since 0.1.0
  */
-export type Interaction = typeof Interaction.Type
-
+export type Interaction = typeof Interaction.Type;
 /**
  * A view's `interactions` export: each event name it may send, and its kind.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const Declared = Schema.Record(Schema.String, Interaction).check(
-  Schema.isPropertyNames(Name),
-  Schema.isMaxProperties(maxDeclared)
-)
-
+export declare const Declared: Schema.$Record<Schema.String, Schema.Union<readonly [Schema.Struct<{
+    readonly kind: Schema.Literal<"state">;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"message">;
+    readonly label: Schema.String;
+}>]>>;
 /**
  * A view's `interactions` export.
  *
  * @category models
  * @since 0.1.0
  */
-export type Declared = typeof Declared.Type
-
+export type Declared = typeof Declared.Type;
 /**
  * The argument a `data-event="name:arg"` attribute carries.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const Arg = Schema.String.check(Schema.isMaxLength(maxArgLength))
-
+export declare const Arg: Schema.String;
 /**
  * One event a view sent: the declared name and the optional argument from its
  * `data-event` attribute. `reduce` receives exactly this.
@@ -135,18 +128,17 @@ export const Arg = Schema.String.check(Schema.isMaxLength(maxArgLength))
  * @category schemas
  * @since 0.1.0
  */
-export const Event = Schema.Struct({ name: Name, arg: Schema.optionalKey(Arg) })
-
+export declare const Event: Schema.Struct<{
+    readonly name: Schema.String;
+    readonly arg: Schema.optionalKey<Schema.String>;
+}>;
 /**
  * One event a view sent.
  *
  * @category models
  * @since 0.1.0
  */
-export type Event = typeof Event.Type
-
-const decodeEvent = Schema.decodeUnknownOption(Event)
-
+export type Event = typeof Event.Type;
 /**
  * Reads a `data-event` attribute: `"name"` or `"name:arg"`. Everything after
  * the first `:` is the argument. A malformed name or an overlong argument is
@@ -155,21 +147,14 @@ const decodeEvent = Schema.decodeUnknownOption(Event)
  * @category parsing
  * @since 0.1.0
  */
-export const parse = (attribute: string): Option.Option<Event> => {
-  const at = attribute.indexOf(":")
-  return at === -1
-    ? decodeEvent({ name: attribute })
-    : decodeEvent({ name: attribute.slice(0, at), arg: attribute.slice(at + 1) })
-}
-
+export declare const parse: (attribute: string) => Option.Option<Event>;
 /**
  * Writes the `data-event` attribute for an event: the inverse of {@link parse}.
  *
  * @category parsing
  * @since 0.1.0
  */
-export const format = (event: Event): string => event.arg === undefined ? event.name : `${event.name}:${event.arg}`
-
+export declare const format: (event: Event) => string;
 /**
  * The declared interaction an event names, or `None` when the view did not
  * declare it. Own properties only, so `constructor` or `__proto__` never
@@ -178,7 +163,4 @@ export const format = (event: Event): string => event.arg === undefined ? event.
  * @category lookups
  * @since 0.1.0
  */
-export const lookup = (declared: Declared, name: string): Option.Option<Interaction> =>
-  name !== "constructor" && name !== "__proto__" && Object.hasOwn(declared, name)
-    ? Option.some(declared[name]!)
-    : Option.none()
+export declare const lookup: (declared: Declared, name: string) => Option.Option<Interaction>;
