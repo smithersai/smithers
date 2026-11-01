@@ -1,6 +1,6 @@
 import { Effect, Layer } from "effect"
 import { expect, test } from "vitest"
-import { counter, program } from "../examples/render-a-view.ts"
+import { counter, program } from "../examples/render-a-view.vibe"
 import { PresentationRealm } from "../src/index.ts"
 import { bundle } from "./fixtures/bundle.ts"
 import { layerSingleFile } from "./fixtures/quickjs.ts"
