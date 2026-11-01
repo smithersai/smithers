@@ -47,7 +47,7 @@
 
 import { Effect, Schema } from "effect"
 import { IntegrationError } from "../core/IntegrationError.ts"
-import type { SourceRecord } from "../core/SourceRecord.ts"
+import type { SourceRecord } from "../core/SourceRecord.vibe"
 import type { Changes, SyncAdapter } from "../core/Sync.ts"
 import { type GitHubClient, MAX_PER_PAGE } from "./GitHubClient.ts"
 import { repositoryPath } from "./Repository.ts"

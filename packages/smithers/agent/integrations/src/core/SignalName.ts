@@ -13,7 +13,7 @@
 import type { SignalPayload } from "@smthrs/control/ControlSchema"
 import { SmithersError } from "@smthrs/errors/SmithersError"
 import type { Notification } from "@smthrs/notifications/Notification"
-import type { ExternalEvent } from "./ExternalEvent.ts"
+import type { ExternalEvent } from "./ExternalEvent.vibe"
 
 /**
  * The reserved prefix. A workflow's own signals must not use it.

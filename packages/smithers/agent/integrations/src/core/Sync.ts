@@ -26,7 +26,7 @@
 
 import { Effect } from "effect"
 import { IntegrationError } from "./IntegrationError.ts"
-import type { SourceRecord } from "./SourceRecord.ts"
+import type { SourceRecord } from "./SourceRecord.vibe"
 import { SourceStore } from "./SourceStore.ts"
 
 /**

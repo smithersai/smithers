@@ -1,7 +1,7 @@
 import { Effect, Layer, Option } from "effect"
 import { describe, expect, it } from "vitest"
 import type { IntegrationError } from "../src/core/IntegrationError.ts"
-import { reference, type SourceRecord, tombstone } from "../src/core/SourceRecord.ts"
+import { reference, type SourceRecord, tombstone } from "../src/core/SourceRecord.vibe"
 import { covers, cursorKey, type Grant, layerMemory, MAX_RETRIEVE_LIMIT, SourceStore } from "../src/core/SourceStore.ts"
 import type { Changes } from "../src/core/Sync.ts"
 import { inContainer, record, runWith, sqlLayer } from "./SourceStoreFixtures.ts"

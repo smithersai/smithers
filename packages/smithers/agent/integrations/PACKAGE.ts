@@ -17,7 +17,7 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
   // Examples are linted and type-checked with the sources and run by the suite.
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd: "packages/smithers/agent/integrations"
 })
 
@@ -73,7 +73,7 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/core/Signature.ts",
         "src/core/Channel.ts",
-        "src/github/Payload.ts"
+        "src/github/Payload.vibe"
       ]
     },
     {
@@ -90,7 +90,7 @@ const securityReview = Smithers.SecurityReview({
         "src/github/GitHubClient.ts",
         "src/core/Redact.ts",
         "src/core/RedactedError.ts",
-        "src/core/AccessToken.ts"
+        "src/core/AccessToken.vibe"
       ]
     },
     {
@@ -136,7 +136,7 @@ const securityReview = Smithers.SecurityReview({
         "A token endpoint request that follows redirects, or accepts a non-https tokenUrl for a non-loopback host.",
         "A token response body echoed into an error without stripping access_token, refresh_token, or client_secret."
       ],
-      paths: ["src/core/Pkce.ts", "src/core/AuthorizationUrl.ts", "src/core/OAuthToken.ts", "src/core/AccessToken.ts"]
+      paths: ["src/core/Pkce.ts", "src/core/AuthorizationUrl.ts", "src/core/OAuthToken.ts", "src/core/AccessToken.vibe"]
     },
     {
       id: "source-store-grants",
@@ -151,7 +151,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/core/SourceStore.ts",
-        "src/core/SourceRecord.ts",
+        "src/core/SourceRecord.vibe",
         "src/core/CursorStore.ts",
         "src/core/Sync.ts"
       ]

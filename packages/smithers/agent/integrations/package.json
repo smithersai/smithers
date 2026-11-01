@@ -39,13 +39,19 @@
     "./*/index": null,
     "./Environment": "./src/Environment.ts",
     "./core": "./src/core.ts",
-    "./core/AccessToken": "./src/core/AccessToken.ts",
+    "./core/AccessToken": {
+      "types": "./src/core/AccessToken.d.vibe.ts",
+      "default": "./src/core/AccessToken.vibe"
+    },
     "./core/ActionFailure": "./src/core/ActionFailure.ts",
     "./core/AuthorizationUrl": "./src/core/AuthorizationUrl.ts",
     "./core/Channel": "./src/core/Channel.ts",
     "./core/Connection": "./src/core/Connection.ts",
     "./core/CursorStore": "./src/core/CursorStore.ts",
-    "./core/ExternalEvent": "./src/core/ExternalEvent.ts",
+    "./core/ExternalEvent": {
+      "types": "./src/core/ExternalEvent.d.vibe.ts",
+      "default": "./src/core/ExternalEvent.vibe"
+    },
     "./core/IntegrationError": "./src/core/IntegrationError.ts",
     "./core/JsonPath": "./src/core/JsonPath.ts",
     "./core/OAuthToken": "./src/core/OAuthToken.ts",
@@ -53,16 +59,25 @@
     "./core/SignalName": "./src/core/SignalName.ts",
     "./core/Signature": "./src/core/Signature.ts",
     "./core/Source": "./src/core/Source.ts",
-    "./core/SourceRecord": "./src/core/SourceRecord.ts",
+    "./core/SourceRecord": {
+      "types": "./src/core/SourceRecord.d.vibe.ts",
+      "default": "./src/core/SourceRecord.vibe"
+    },
     "./core/SourceStore": "./src/core/SourceStore.ts",
     "./core/Sync": "./src/core/Sync.ts",
     "./github": "./src/github.ts",
     "./github/Actions": "./src/github/Actions.ts",
     "./github/AppAuth": "./src/github/AppAuth.ts",
-    "./github/Config": "./src/github/Config.ts",
+    "./github/Config": {
+      "types": "./src/github/Config.d.vibe.ts",
+      "default": "./src/github/Config.vibe"
+    },
     "./github/GitHubClient": "./src/github/GitHubClient.ts",
     "./github/Issues": "./src/github/Issues.ts",
-    "./github/Payload": "./src/github/Payload.ts",
+    "./github/Payload": {
+      "types": "./src/github/Payload.d.vibe.ts",
+      "default": "./src/github/Payload.vibe"
+    },
     "./github/Proxy": "./src/github/Proxy.ts",
     "./github/RateLimit": "./src/github/RateLimit.ts",
     "./github/Repository": "./src/github/Repository.ts",

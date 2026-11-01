@@ -10,7 +10,7 @@
  * @since 1.0.0
  */
 
-import { Duration, type Redacted } from "effect"
+import { type Redacted } from "effect"
 import * as Environment from "../Environment.ts"
 
 /**
@@ -28,7 +28,7 @@ export const DEFAULT_API_BASE_URL = "https://api.github.com"
  * @category constants
  * @since 1.0.0
  */
-export const DEFAULT_REQUEST_TIMEOUT: Duration.Duration = Duration.seconds(30)
+export const DEFAULT_REQUEST_TIMEOUT: Duration = Duration.seconds(30)
 
 /**
  * An App's OAuth client: its client id and client secret.
@@ -109,11 +109,11 @@ const firstNonEmpty = (candidates: ReadonlyArray<string | undefined>): string | 
  */
 export const resolve = (
   config: GitHubConfig = {},
-  env: Readonly<Record<string, string | undefined>> = Environment.ambientEnvironment()
+  env: Readonly<Record<string, string | undefined>> = Environment.ambientEnvironment(),
 ): ResolvedGitHubConfig => ({
   token: config.token === undefined
     ? firstNonEmpty([env["SMITHERS_GITHUB_TOKEN"], env["GITHUB_TOKEN"]])
     : firstNonEmpty([config.token]),
   apiBaseUrl: firstNonEmpty([config.apiBaseUrl, env["SMITHERS_GITHUB_API_BASE_URL"]]) ?? DEFAULT_API_BASE_URL,
-  requestTimeout: config.requestTimeout ?? DEFAULT_REQUEST_TIMEOUT
+  requestTimeout: config.requestTimeout ?? DEFAULT_REQUEST_TIMEOUT,
 })

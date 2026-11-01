@@ -5,7 +5,7 @@ import { inspect } from "node:util"
 import { afterEach, describe, expect, expectTypeOf, it } from "vitest"
 import { fromIntegrationError } from "../src/core/ActionFailure.ts"
 import { type IntegrationError, isIntegrationError } from "../src/core/IntegrationError.ts"
-import { DEFAULT_API_BASE_URL, DEFAULT_REQUEST_TIMEOUT, resolve } from "../src/github/Config.ts"
+import { DEFAULT_API_BASE_URL, DEFAULT_REQUEST_TIMEOUT, resolve } from "../src/github/Config.vibe"
 import { isRateLimitResponse, lastPageNumber, nextPageUrl, retryAfterMs } from "../src/github/GitHubClient.ts"
 import { type Fixture, json, startFixture } from "./Fixture.ts"
 import {
