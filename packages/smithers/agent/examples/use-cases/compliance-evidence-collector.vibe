@@ -33,14 +33,14 @@ export const PlannedControl = Schema.Struct({
   sources: Schema.Array(Schema.Struct({
     sourceId: Schema.String,
     endpoint: Schema.String,
-    preferredMethod: Method,
-  })),
+    preferredMethod: Method
+  }))
 })
 
 /** The collection plan. */
 export const Plan = Schema.Struct({
   controls: Schema.Array(PlannedControl),
-  totalSources: Schema.Number,
+  totalSources: Schema.Number
 })
 
 /** Raw evidence from one source for one control. */
@@ -51,7 +51,7 @@ export const EvidenceItem = Schema.Struct({
   rawPayload: Schema.String,
   fetchedAt: Schema.String,
   method: Method,
-  status: Schema.Literals(["collected", "partial", "failed"]),
+  status: Schema.Literals(["collected", "partial", "failed"])
 })
 
 /** One structured finding. */
@@ -61,7 +61,7 @@ export const Normalized = Schema.Struct({
   finding: Schema.String,
   compliant: Schema.Boolean,
   severity: Schema.optional(Schema.Literals(["info", "low", "medium", "high", "critical"])),
-  extractedFields: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  extractedFields: Schema.optional(Schema.Record(Schema.String, Schema.String))
 })
 
 /** The review packet the flow settles with. */
@@ -75,9 +75,9 @@ export const Packet = Schema.Struct({
     controlId: Schema.String,
     status: Schema.Literals(["compliant", "non-compliant", "insufficient-evidence"]),
     evidence: Schema.Array(Schema.String),
-    recommendation: Schema.optional(Schema.String),
+    recommendation: Schema.optional(Schema.String)
   })),
-  summary: Schema.String,
+  summary: Schema.String
 })
 
 type EvidenceItem = typeof EvidenceItem.Type
@@ -90,12 +90,12 @@ export const PlanCollection = AgentAction.make("examples/ComplianceEvidenceColle
   seat,
   system: [
     `You are a compliance planning agent. Given a compliance framework and scope,
-identify the controls that need evidence and plan which sources to query for each.`,
+identify the controls that need evidence and plan which sources to query for each.`
   ],
   prompt: ({ controls, framework, scope }) =>
     `Plan the evidence collection for ${framework}.\n\nScope: ${JSON.stringify(scope ?? null)}\nControls: ${
       JSON.stringify(controls ?? null)
-    }`,
+    }`
 })
 
 /** Collects raw evidence from one source. */
@@ -105,17 +105,17 @@ export const Fetch = AgentAction.make("examples/ComplianceEvidenceCollector/Fetc
     sourceId: Schema.String,
     endpoint: Schema.String,
     method: Method,
-    timeoutMs: Positive,
+    timeoutMs: Positive
   },
   output: EvidenceItem,
   seat,
   timeout: ({ timeoutMs }) => timeoutMs,
   system: [
     `You are an evidence fetcher. Collect raw evidence from the assigned source
-using the preferred method (API call, MCP tool, or browser fallback). Return the raw payload.`,
+using the preferred method (API call, MCP tool, or browser fallback). Return the raw payload.`
   ],
   prompt: ({ controlId, endpoint, method, sourceId }) =>
-    `Fetch evidence for control ${controlId} from source ${sourceId} by ${method}.\n\nEndpoint: ${endpoint}`,
+    `Fetch evidence for control ${controlId} from source ${sourceId} by ${method}.\n\nEndpoint: ${endpoint}`
 })
 
 /** Extracts a finding from one evidence item. */
@@ -125,12 +125,12 @@ export const Normalize = AgentAction.make("examples/ComplianceEvidenceCollector/
   seat,
   system: [
     `You are an evidence normalizer. Take raw evidence payloads and extract
-structured findings: compliance status, severity, and key fields.`,
+structured findings: compliance status, severity, and key fields.`
   ],
   prompt: ({ controlId, method, rawPayload, sourceId }) =>
     `Normalize the evidence for control ${controlId} from source ${sourceId} (fetched by ${method}).\n\nRaw payload: ${
       JSON.stringify(rawPayload)
-    }`,
+    }`
 })
 
 /** Assembles the review packet. */
@@ -140,12 +140,12 @@ export const AssemblePacket = AgentAction.make("examples/ComplianceEvidenceColle
   seat,
   system: [
     `You are a compliance packet assembler. Aggregate normalized findings into
-a final review packet with per-control verdicts, evidence references, and recommendations.`,
+a final review packet with per-control verdicts, evidence references, and recommendations.`
   ],
   prompt: ({ controls, findings, framework }) =>
     `Assemble the ${framework} review packet.\n\nControls: ${JSON.stringify(controls)}\nFindings: ${
       JSON.stringify(findings)
-    }`,
+    }`
 })
 
 /**
@@ -166,16 +166,16 @@ export const FetchEvidence = Flow.make("examples/ComplianceEvidenceCollector/Fet
             sourceId: source.sourceId,
             endpoint: source.endpoint,
             method: source.preferredMethod,
-            timeoutMs,
+            timeoutMs
           }),
-          { onFailure: () => Node.succeed(null) },
-        ),
+          { onFailure: () => Node.succeed(null) }
+        )
       ])
     ))
     if (Object.keys(members).length === 0) return Node.succeed([])
     const joined = Bounded.all(members, { concurrency })
     return Node.map(joined, (fetched) => Object.values(fetched).filter(Schema.is(EvidenceItem)))
-  },
+  }
 })
 
 /** Normalizes every collected evidence item, once all of them are in. */
@@ -191,15 +191,15 @@ export const NormalizeEvidence = Flow.make("examples/ComplianceEvidenceCollector
         controlId: item.controlId,
         sourceId: item.sourceId,
         rawPayload: item.rawPayload,
-        method: item.method,
-      }),
+        method: item.method
+      })
     ]))
     const joined = Bounded.all(members, { concurrency })
     return Node.map(
       joined,
-      (normalized): ReadonlyArray<Normalized> => Object.values(normalized).filter(Schema.is(Normalized)),
+      (normalized): ReadonlyArray<Normalized> => Object.values(normalized).filter(Schema.is(Normalized))
     )
-  },
+  }
 })
 
 /** The flow: plan, fetch, normalize, assemble. */
@@ -209,7 +209,7 @@ export const ComplianceEvidenceCollector = Flow.make("examples/ComplianceEvidenc
     scope: Schema.optional(Schema.Json),
     controls: Schema.optional(Schema.Json),
     maxConcurrency: Schema.optional(Positive),
-    timeoutMs: Schema.optional(Positive),
+    timeoutMs: Schema.optional(Positive)
   },
   success: Packet,
   error: AgentAction.AgentFailure,
@@ -220,9 +220,9 @@ export const ComplianceEvidenceCollector = Flow.make("examples/ComplianceEvidenc
         (evidence) =>
           Node.bindPlanned(
             NormalizeEvidence.child({ evidence, concurrency: maxConcurrency }),
-            (findings) => AssemblePacket.call({ framework, findings, controls: plan.controls }),
-          ),
-      )),
+            (findings) => AssemblePacket.call({ framework, findings, controls: plan.controls })
+          )
+      ))
 })
 
 /** Every step the flow calls, and the child flows it starts. */
@@ -232,5 +232,5 @@ export const layer = Layer.mergeAll(
   Normalize.layer,
   AssemblePacket.layer,
   Interpreter.layer(FetchEvidence),
-  Interpreter.layer(NormalizeEvidence),
+  Interpreter.layer(NormalizeEvidence)
 )

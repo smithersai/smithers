@@ -29,21 +29,21 @@ const Risk = Schema.Literals(["low", "medium", "high"])
 export const Analysis = Schema.Struct({
   changedFiles: Schema.Array(Schema.String),
   affectedModules: Schema.Array(Schema.String),
-  riskLevel: Risk,
+  riskLevel: Risk
 })
 
 /** One test the selector wants run first. */
 export const PriorityTest = Schema.Struct({
   file: Schema.String,
   reason: Schema.String,
-  confidence: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
+  confidence: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 }))
 })
 
 /** The selector's answer. */
 export const Selection = Schema.Struct({
   priorityTests: Schema.Array(PriorityTest),
   deferredTests: Schema.Array(Schema.String),
-  totalCandidates: Schema.Number,
+  totalCandidates: Schema.Number
 })
 
 /** What one runner reports. */
@@ -51,7 +51,7 @@ export const RunResult = Schema.Struct({
   testFile: Schema.String,
   status: Schema.Literals(["pass", "fail", "error", "skipped"]),
   durationMs: Schema.Number,
-  errorMessage: Schema.optional(Schema.String),
+  errorMessage: Schema.optional(Schema.String)
 })
 
 /** The verdict the flow settles with. */
@@ -60,7 +60,7 @@ export const Adjudication = Schema.Struct({
   failedTests: Schema.Array(Schema.String),
   deferredTests: Schema.Array(Schema.String),
   shouldExpandRun: Schema.Boolean,
-  summary: Schema.String,
+  summary: Schema.String
 })
 
 type RunResult = typeof RunResult.Type
@@ -72,9 +72,9 @@ export const AnalyzeChange = AgentAction.make("examples/TestSharderJudge/Analyze
   seat,
   system: [
     `You are a change analyzer. Inspect the diff and surrounding context
-to determine which files changed, what modules are affected, and the overall risk level.`,
+to determine which files changed, what modules are affected, and the overall risk level.`
   ],
-  prompt: ({ baseBranch, diff }) => `Analyze this change against ${baseBranch}.\n\nDiff:\n${diff}`,
+  prompt: ({ baseBranch, diff }) => `Analyze this change against ${baseBranch}.\n\nDiff:\n${diff}`
 })
 
 /** Picks the highest-signal tests and defers the rest. */
@@ -83,19 +83,19 @@ export const SelectTests = AgentAction.make("examples/TestSharderJudge/Select", 
     changedFiles: Schema.Array(Schema.String),
     affectedModules: Schema.Array(Schema.String),
     riskLevel: Risk,
-    testGlob: Schema.String,
+    testGlob: Schema.String
   },
   output: Selection,
   seat,
   system: [
     `You are a test selector. Given a change analysis, identify the highest-signal
 tests to run first. Prioritize tests that directly cover changed code paths. Defer tests
-that are unlikely to be affected.`,
+that are unlikely to be affected.`
   ],
   prompt: ({ affectedModules, changedFiles, riskLevel, testGlob }) =>
     `Select the tests to run first among ${testGlob}.\n\nChanged files: ${
       JSON.stringify(changedFiles)
-    }\nAffected modules: ${JSON.stringify(affectedModules)}\nRisk level: ${riskLevel}`,
+    }\nAffected modules: ${JSON.stringify(affectedModules)}\nRisk level: ${riskLevel}`
 })
 
 /** Runs one test file. The run gives up after the payload's `timeoutMs`, as 0.x's task did. */
@@ -106,10 +106,9 @@ export const RunTest = AgentAction.make("examples/TestSharderJudge/Run", {
   timeout: ({ timeoutMs }) => timeoutMs,
   system: [
     `You are a test runner. Execute the assigned test file and report the result.
-Capture the status, duration, and any error messages.`,
+Capture the status, duration, and any error messages.`
   ],
-  prompt: ({ reason, runner, testFile }) =>
-    `Run the test file ${testFile} with ${runner}.\nSelected because: ${reason}`,
+  prompt: ({ reason, runner, testFile }) => `Run the test file ${testFile} with ${runner}.\nSelected because: ${reason}`
 })
 
 /** Judges the combined results. */
@@ -120,12 +119,12 @@ export const Adjudicate = AgentAction.make("examples/TestSharderJudge/Adjudicate
   system: [
     `You are a result adjudicator. Analyze test results and decide whether
 the change is safe (green), uncertain and needs more tests (yellow), or broken (red).
-If uncertainty remains, recommend expanding to deferred tests.`,
+If uncertainty remains, recommend expanding to deferred tests.`
   ],
   prompt: ({ deferredTests, results, riskLevel }) =>
     `Adjudicate the test results for this change.\n\nRisk level: ${riskLevel}\nResults: ${
       JSON.stringify(results)
-    }\nDeferred tests: ${JSON.stringify(deferredTests)}`,
+    }\nDeferred tests: ${JSON.stringify(deferredTests)}`
 })
 
 /**
@@ -138,7 +137,7 @@ export const RunShards = Flow.make("examples/TestSharderJudge/RunShards", {
     tests: Schema.Array(PriorityTest),
     runner: Schema.String,
     timeoutMs: Schema.Number,
-    concurrency: Schema.Int.check(Schema.isGreaterThan(0)),
+    concurrency: Schema.Int.check(Schema.isGreaterThan(0))
   },
   success: Schema.Array(RunResult),
   body: ({ concurrency, runner, tests, timeoutMs }) => {
@@ -147,12 +146,12 @@ export const RunShards = Flow.make("examples/TestSharderJudge/RunShards", {
     const members = Object.fromEntries(tests.map((test, index) => [
       `${index}`,
       Node.catch(RunTest.call({ testFile: test.file, reason: test.reason, runner, timeoutMs }), {
-        onFailure: () => Node.succeed(null),
-      }),
+        onFailure: () => Node.succeed(null)
+      })
     ]))
     const joined = Bounded.all(members, { concurrency })
     return Node.map(joined, (ran) => Object.values(ran).filter(Schema.is(RunResult)))
-  },
+  }
 })
 
 /** The flow: analyze, select, run the shards, adjudicate. */
@@ -163,7 +162,7 @@ export const TestSharderJudge = Flow.make("examples/TestSharderJudge", {
     testGlob: Schema.optional(Schema.String),
     runner: Schema.optional(Schema.String),
     maxConcurrency: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
-    timeoutMs: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
+    timeoutMs: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0)))
   },
   success: Adjudication,
   error: AgentAction.AgentFailure,
@@ -173,7 +172,7 @@ export const TestSharderJudge = Flow.make("examples/TestSharderJudge", {
     maxConcurrency = 4,
     runner = "npx vitest run",
     testGlob = "**/*.test.{ts,tsx}",
-    timeoutMs = 60_000,
+    timeoutMs = 60_000
   }) =>
     Node.bindPlanned(
       AnalyzeChange.call({ diff, baseBranch }),
@@ -183,16 +182,16 @@ export const TestSharderJudge = Flow.make("examples/TestSharderJudge", {
             changedFiles: analysis.changedFiles,
             affectedModules: analysis.affectedModules,
             riskLevel: analysis.riskLevel,
-            testGlob,
+            testGlob
           }),
           (selection: Planned.Planned<typeof Selection.Type>) =>
             Node.bindPlanned(
               RunShards.child({ tests: selection.priorityTests, runner, timeoutMs, concurrency: maxConcurrency }),
               (results: Planned.Planned<ReadonlyArray<RunResult>>) =>
-                Adjudicate.call({ results, deferredTests: selection.deferredTests, riskLevel: analysis.riskLevel }),
-            ),
-        ),
-    ),
+                Adjudicate.call({ results, deferredTests: selection.deferredTests, riskLevel: analysis.riskLevel })
+            )
+        )
+    )
 })
 
 /** Every step the flow calls, and the child flow it starts. */
@@ -201,5 +200,5 @@ export const layer = Layer.mergeAll(
   SelectTests.layer,
   RunTest.layer,
   Adjudicate.layer,
-  Interpreter.layer(RunShards),
+  Interpreter.layer(RunShards)
 )

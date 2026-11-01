@@ -42,7 +42,7 @@ export type CloudflareHost =
 /** Effect's fetch client, told never to follow a redirect on its own. */
 const layerHttpClient: Layer.Layer<HttpClient> = Layer.provide(
   FetchHttpClient.layer,
-  Layer.succeed(FetchHttpClient.RequestInit)({ redirect: "manual" }),
+  Layer.succeed(FetchHttpClient.RequestInit)({ redirect: "manual" })
 )
 
 /**
@@ -72,5 +72,5 @@ export const layer: Layer.Layer<CloudflareHost> = Layer.mergeAll(
   layerHttpClient,
   Refusals.layerFileSystem,
   Refusals.layerChildProcessSpawner,
-  Jj.layerNoop({}),
+  Jj.layerNoop({})
 ).pipe(Layer.provideMerge(WebCrypto.layer))

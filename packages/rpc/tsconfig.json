@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "moduleSuffixes": ["",".d.vibe"],
+    "moduleSuffixes": ["", ".d.vibe"],
     "allowArbitraryExtensions": true,
     "target": "ES2022",
     "lib": [

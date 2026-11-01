@@ -63,7 +63,7 @@ const envelopeOf = (event: NodeObservation): Record<string, unknown> | undefined
 const nodeRecord = <A>(
   event: NodeObservation,
   eventType: string,
-  decode: (payload: unknown) => Option<A>,
+  decode: (payload: unknown) => Option<A>
 ): NodeRecord<A> | undefined => {
   const envelope = envelopeOf(event)
   if (envelope === undefined || envelope.eventType !== eventType) return undefined
@@ -72,7 +72,7 @@ const nodeRecord = <A>(
   return {
     executionId: envelope.executionId as string,
     emittedAtMs: envelope.emittedAtMs as number,
-    payload: payload.value,
+    payload: payload.value
   }
 }
 
@@ -84,7 +84,7 @@ const decodeSettled = Schema.decodeUnknownOption(EngineEvent.NodeSettledPayload)
  * @since 1.0.0
  */
 export const nodeScheduled = (
-  event: NodeObservation,
+  event: NodeObservation
 ): NodeRecord<EngineEvent.NodeScheduledPayload> | undefined =>
   nodeRecord(event, EngineEvent.nodeEventTypes.nodeScheduled, decodeScheduled)
 
@@ -93,6 +93,6 @@ export const nodeScheduled = (
  * @since 1.0.0
  */
 export const nodeSettled = (
-  event: NodeObservation,
+  event: NodeObservation
 ): NodeRecord<EngineEvent.NodeSettledPayload> | undefined =>
   nodeRecord(event, EngineEvent.nodeEventTypes.nodeSettled, decodeSettled)

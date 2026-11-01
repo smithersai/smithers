@@ -69,13 +69,13 @@ const failure = (
   code: JournalAssertionCode,
   message: string,
   expected: unknown,
-  actual?: unknown,
+  actual?: unknown
 ): never!JournalAssertionError =>
   throw new JournalAssertionError({
     code,
     message,
     expected,
-    ...(actual === undefined ? {} : { actual }),
+    ...(actual === undefined ? {} : { actual })
   })
 
 const idempotencyKeyOf = (entry: JournalEntryLike): unknown =>
@@ -114,14 +114,14 @@ export const expectJournal = (unordered: ReadonlyArray<JournalEntryLike>): Journ
           named.map((entry) => JSON.stringify(entry.kind)).join(", ")
         }`,
         "effect",
-        named.map((entry) => entry.kind),
+        named.map((entry) => entry.kind)
       )
     const notExecuted = () =>
       failure(
         "effect_not_executed",
         `expected effect ${JSON.stringify(key)} to execute at least once`,
         key,
-        presentKeys,
+        presentKeys
       )
     return {
       atLeastOnce: () =>
@@ -146,7 +146,7 @@ export const expectJournal = (unordered: ReadonlyArray<JournalEntryLike>): Journ
             "effect_journaled_more_than_once",
             `expected effect ${JSON.stringify(key)} to be journaled at most once; found ${matching.length}`,
             1,
-            matching.length,
+            matching.length
           ),
       // Three outcomes, three codes. `missing_idempotency_key` used to fire
       // when the effect never ran, which is `effect_not_executed`, and an
@@ -162,7 +162,7 @@ export const expectJournal = (unordered: ReadonlyArray<JournalEntryLike>): Journ
               JSON.stringify(idempotencyKey)
             }; the entry carries none`,
             idempotencyKey,
-            presentKeys,
+            presentKeys
           )
         }
         const mismatch = matching.find((entry) => idempotencyKeyOf(entry) !== idempotencyKey)
@@ -172,13 +172,13 @@ export const expectJournal = (unordered: ReadonlyArray<JournalEntryLike>): Journ
             "idempotency_key_mismatch",
             `expected effect ${JSON.stringify(key)} to have idempotency key ${JSON.stringify(idempotencyKey)}`,
             idempotencyKey,
-            idempotencyKeyOf(mismatch),
+            idempotencyKeyOf(mismatch)
           )
       },
       exactlyOnce: () =>
         throw new ExactlyOnceUnsupportedError({
-          message: `exactly-once is unsupported for effect ${JSON.stringify(key)}`,
-        }),
+          message: `exactly-once is unsupported for effect ${JSON.stringify(key)}`
+        })
     }
   }
 
@@ -200,7 +200,7 @@ export const expectJournal = (unordered: ReadonlyArray<JournalEntryLike>): Journ
           "execution_order_mismatch",
           `expected steps to execute in order: ${keys.map((key) => JSON.stringify(key)).join(", ")}`,
           keys,
-          entries.map((entry) => entry.stepKey),
+          entries.map((entry) => entry.stepKey)
         )
     },
     terminal: (status) => {
@@ -211,10 +211,10 @@ export const expectJournal = (unordered: ReadonlyArray<JournalEntryLike>): Journ
           "terminal_status_mismatch",
           `expected terminal status ${JSON.stringify(status)}, received ${JSON.stringify(entry?.outcome)}`,
           status,
-          entry?.outcome,
+          entry?.outcome
         )
     },
     effect,
-    prefix: (untilIndex) => entries.filter((entry) => entry.index <= untilIndex),
+    prefix: (untilIndex) => entries.filter((entry) => entry.index <= untilIndex)
   }
 }

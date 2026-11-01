@@ -23,7 +23,7 @@ const seat = "anthropic:claude-sonnet-5-5"
 const analyzer = [
   `You are a trace analysis expert. Given ingested spans, identify the
 primary bottleneck, the hot path through the trace, and any spans that consumed
-disproportionate tokens or time. Be precise and data-driven.`,
+disproportionate tokens or time. Be precise and data-driven.`
 ]
 
 /** One normalized span. */
@@ -33,7 +33,7 @@ export const Span = Schema.Struct({
   tokenCount: Schema.optional(Schema.Number),
   failed: Schema.Boolean,
   error: Schema.optional(Schema.String),
-  children: Schema.optional(Schema.Array(Schema.String)),
+  children: Schema.optional(Schema.Array(Schema.String))
 })
 
 /** Every span the traces hold, with their totals. */
@@ -41,7 +41,7 @@ export const Ingested = Schema.Struct({
   spans: Schema.Array(Span),
   totalDurationMs: Schema.Number,
   totalTokens: Schema.Number,
-  failedSpanCount: Schema.Number,
+  failedSpanCount: Schema.Number
 })
 
 /** Where the trace spent its time and tokens. */
@@ -49,15 +49,15 @@ export const Analysis = Schema.Struct({
   bottleneck: Schema.Struct({
     spanName: Schema.String,
     reason: Schema.Literals(["latency", "tokens", "failure", "retry-storm"]),
-    impact: Schema.String,
+    impact: Schema.String
   }),
   hotPath: Schema.Array(Schema.String),
   failureSummary: Schema.NullOr(Schema.String),
   tokenHogs: Schema.Array(Schema.Struct({
     spanName: Schema.String,
     tokenCount: Schema.Number,
-    percentOfTotal: Schema.Number,
-  })),
+    percentOfTotal: Schema.Number
+  }))
 })
 
 /** The optimization report the flow settles with. */
@@ -67,9 +67,9 @@ export const Report = Schema.Struct({
   optimizations: Schema.Array(Schema.Struct({
     target: Schema.String,
     suggestion: Schema.String,
-    estimatedSaving: Schema.String,
+    estimatedSaving: Schema.String
   })),
-  summary: Schema.String,
+  summary: Schema.String
 })
 
 /** Reads the trace store and normalizes its spans. */
@@ -78,7 +78,7 @@ export const Ingest = AgentAction.make("examples/TraceExplainer/Ingest", {
   output: Ingested,
   seat,
   system: analyzer,
-  prompt: ({ source }) => `Ingest the traces at ${source} and normalize their spans.`,
+  prompt: ({ source }) => `Ingest the traces at ${source} and normalize their spans.`
 })
 
 /** Finds the bottleneck, hot path and token hogs. */
@@ -87,7 +87,7 @@ export const Analyze = AgentAction.make("examples/TraceExplainer/Analyze", {
     spans: Schema.Array(Span),
     totalDurationMs: Schema.Number,
     totalTokens: Schema.Number,
-    failedSpanCount: Schema.Number,
+    failedSpanCount: Schema.Number
   },
   output: Analysis,
   seat,
@@ -95,7 +95,7 @@ export const Analyze = AgentAction.make("examples/TraceExplainer/Analyze", {
   prompt: ({ failedSpanCount, spans, totalDurationMs, totalTokens }) =>
     `Analyze these spans.\n\nTotal duration (ms): ${totalDurationMs}\nTotal tokens: ${totalTokens}\nFailed spans: ${failedSpanCount}\nSpans: ${
       JSON.stringify(spans)
-    }`,
+    }`
 })
 
 /** Turns the analysis into an optimization report. */
@@ -106,7 +106,7 @@ export const Explain = AgentAction.make("examples/TraceExplainer/Report", {
     failureSummary: Analysis.fields.failureSummary,
     tokenHogs: Analysis.fields.tokenHogs,
     totalDurationMs: Schema.Number,
-    totalTokens: Schema.Number,
+    totalTokens: Schema.Number
   },
   output: Report,
   seat,
@@ -115,7 +115,7 @@ export const Explain = AgentAction.make("examples/TraceExplainer/Report", {
       JSON.stringify(hotPath)
     }\nFailure summary: ${failureSummary ?? "none"}\nToken hogs: ${
       JSON.stringify(tokenHogs)
-    }\nTotal duration (ms): ${totalDurationMs}\nTotal tokens: ${totalTokens}`,
+    }\nTotal duration (ms): ${totalDurationMs}\nTotal tokens: ${totalTokens}`
 })
 
 /** The flow: ingest, analyze, report. */
@@ -132,7 +132,7 @@ export const TraceExplainer = Flow.make("examples/TraceExplainer", {
             spans: ingested.spans,
             totalDurationMs: ingested.totalDurationMs,
             totalTokens: ingested.totalTokens,
-            failedSpanCount: ingested.failedSpanCount,
+            failedSpanCount: ingested.failedSpanCount
           }),
           (analysis: Planned.Planned<typeof Analysis.Type>) =>
             Explain.call({
@@ -141,10 +141,10 @@ export const TraceExplainer = Flow.make("examples/TraceExplainer", {
               failureSummary: analysis.failureSummary,
               tokenHogs: analysis.tokenHogs,
               totalDurationMs: ingested.totalDurationMs,
-              totalTokens: ingested.totalTokens,
-            }),
-        ),
-    ),
+              totalTokens: ingested.totalTokens
+            })
+        )
+    )
 })
 
 /** Every step the flow calls. */

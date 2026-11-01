@@ -20,7 +20,7 @@ export const ArtifactStoreErrorCode = Schema.Literals([
   "invalid_configuration",
   "invalid_digest",
   "unavailable",
-  "transport_failed",
+  "transport_failed"
 ])
 
 /**
@@ -52,8 +52,8 @@ export class ArtifactStoreError extends Schema.TaggedError<ArtifactStoreError>()
   {
     code: ArtifactStoreErrorCode,
     message: Schema.String,
-    cause: Schema.optional(Schema.Unknown),
-  },
+    cause: Schema.optional(Schema.Unknown)
+  }
 ) {}
 
 /**
@@ -71,8 +71,8 @@ export class ArtifactMissing extends Schema.TaggedError<ArtifactMissing>()(
   "@smthrs/artifacts/ArtifactMissing",
   {
     code: Schema.Literal("artifact_missing"),
-    digest: Sha256.Digest,
-  },
+    digest: Sha256.Digest
+  }
 ) {}
 
 /**
@@ -91,6 +91,6 @@ export class ArtifactCorruption extends Schema.TaggedError<ArtifactCorruption>()
   {
     code: Schema.Literal("artifact_corruption"),
     recordedDigest: Sha256.Digest,
-    measuredDigest: Sha256.Digest,
-  },
+    measuredDigest: Sha256.Digest
+  }
 ) {}

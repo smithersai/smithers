@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "moduleSuffixes": ["",".d.vibe"],
+    "moduleSuffixes": ["", ".d.vibe"],
     "allowArbitraryExtensions": true,
     "target": "ES2022",
     "lib": ["ES2022", "ES2024.String", "DOM", "DOM.Iterable"],
@@ -39,5 +39,8 @@
     ]
   },
   "include": ["src/**/*"],
-  "vibelang": { "declarationImportStyle": ".ts", "trustedPackages": ["@smthrs/*", "@vitest/*", "incur", "vitest", "zod"] }
+  "vibelang": {
+    "declarationImportStyle": ".ts",
+    "trustedPackages": ["@smthrs/*", "@vitest/*", "incur", "vitest", "zod"]
+  }
 }

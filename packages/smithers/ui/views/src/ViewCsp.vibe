@@ -78,7 +78,7 @@ export const policy = (runtimeHash: string): string =>
     "worker-src 'none'",
     "manifest-src 'none'",
     "base-uri 'none'",
-    "form-action 'none'",
+    "form-action 'none'"
   ].join("; ")
 
 /**

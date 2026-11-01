@@ -12,7 +12,7 @@ import type * as StepBoundary from "../StepBoundary.ts"
 
 const Outputs = Schema.Struct({
   outputs: Schema.Array(Schema.Struct({ path: Schema.String, digest: Schema.NullOr(ArtifactStore.Digest) })),
-  trees: Schema.optional(Schema.Array(Schema.Struct({ path: Schema.String, identity: Schema.String }))),
+  trees: Schema.optional(Schema.Array(Schema.Struct({ path: Schema.String, identity: Schema.String })))
 })
 // The existing abstract boundary protocol records its exact declared path set.
 // Validate that format separately; it does not claim a filesystem blob manifest.
@@ -34,7 +34,7 @@ export type Decision =
  */
 export const replay = (
   descriptor: FileBoundary | undefined,
-  evidence: StepBoundary.BoundaryEvidence,
+  evidence: StepBoundary.BoundaryEvidence
 ): Decision => {
   const mismatch = { _tag: "Refused", reason: "output-boundary-mismatch" } as const
   if (descriptor === undefined) return mismatch

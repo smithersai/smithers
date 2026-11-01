@@ -15,7 +15,7 @@
  */
 export class Count extends Schema.Class<Count>("flows/harness/Tokens/Count")({
   value: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-  estimated: Schema.Boolean,
+  estimated: Schema.Boolean
 }) {}
 
 /**
@@ -29,7 +29,7 @@ export class Count extends Schema.Class<Count>("flows/harness/Tokens/Count")({
 export class Segment extends Schema.Class<Segment>("flows/harness/Tokens/Segment")({
   digest: Schema.String,
   zone: Schema.Literals(["prefix", "tail"]),
-  tokens: Count,
+  tokens: Count
 }) {}
 
 /**
@@ -44,7 +44,7 @@ export class Accounting extends Schema.Class<Accounting>("flows/harness/Tokens/A
   prefix: Count,
   tail: Count,
   total: Count,
-  bySegment: Schema.Array(Segment),
+  bySegment: Schema.Array(Segment)
 }) {}
 
 /** A deterministic local approximation, not provider billing data.
@@ -90,17 +90,17 @@ export const count = (text: string, estimator: Estimator = estimate): Count =>
 export const combine = (segments: ReadonlyArray<Segment>): Accounting => {
   const prefix = segments.filter((segment) => segment.zone === "prefix").reduce(
     (sum, segment) => sum + segment.tokens.value,
-    0,
+    0
   )
   const tail = segments.filter((segment) => segment.zone === "tail").reduce(
     (sum, segment) => sum + segment.tokens.value,
-    0,
+    0
   )
   const estimated = segments.some((segment) => segment.tokens.estimated)
   return new Accounting({
     prefix: new Count({ value: prefix, estimated }),
     tail: new Count({ value: tail, estimated }),
     total: new Count({ value: prefix + tail, estimated }),
-    bySegment: segments,
+    bySegment: segments
   })
 }

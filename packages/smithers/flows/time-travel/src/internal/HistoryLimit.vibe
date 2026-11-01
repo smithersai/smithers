@@ -38,7 +38,7 @@ export const defaultMaxHistoryEntries = 100_000
  */
 export const resolve = (
   value: number | undefined,
-  fallback: number,
+  fallback: number
 ): number!TimeTravelError => {
   if (value === undefined) return fallback
   if (!Number.isSafeInteger(value) || value < 1) {
@@ -56,5 +56,5 @@ export const resolve = (
 export const exceeded = (operation: string, runId: string, limit: number): TimeTravelError =>
   error(
     "limit_exceeded",
-    `${operation} of ${runId} would read more than ${limit} journal entries; raise maxHistoryEntries to allow it`,
+    `${operation} of ${runId} would read more than ${limit} journal entries; raise maxHistoryEntries to allow it`
   )

@@ -25,7 +25,7 @@ export const ProcessFaultCode = Schema.Literals([
   "status_invalid",
   "status_unknown",
   "cleanup_unverified",
-  "owner_identity_missing",
+  "owner_identity_missing"
 ])
 
 /**
@@ -43,7 +43,7 @@ export type ProcessFaultCode = typeof ProcessFaultCode.Type
 export class ProcessFault extends Schema.TaggedError<ProcessFault>()("@smthrs/platform-node/ProcessFault", {
   code: ProcessFaultCode,
   message: Schema.String,
-  cause: Schema.optional(Schema.Unknown),
+  cause: Schema.optional(Schema.Unknown)
 }) {
   override readonly name = "ProcessFault"
 }
@@ -56,7 +56,7 @@ export class ProcessFault extends Schema.TaggedError<ProcessFault>()("@smthrs/pl
 export const processFault = (
   code: ProcessFaultCode,
   message: string,
-  detail: { readonly cause?: unknown } = {},
+  detail: { readonly cause?: unknown } = {}
 ): ProcessFault => new ProcessFault({ ...detail, code, message })
 
 /**
@@ -76,8 +76,8 @@ export class NativeProcessError extends Schema.TaggedError<NativeProcessError>()
     reason: Schema.optional(Schema.String),
     syscall: Schema.optional(Schema.String),
     path: Schema.optional(Schema.String),
-    signal: Schema.optional(Schema.String),
-  },
+    signal: Schema.optional(Schema.String)
+  }
 ) {
   override readonly name = "NativeProcessError"
 }

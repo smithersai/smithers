@@ -27,10 +27,10 @@ export const SourceContext = Schema.Struct({
     sourceId: Schema.String,
     title: Schema.String,
     relevantExcerpts: Schema.Array(Schema.String),
-    topics: Schema.Array(Schema.String),
+    topics: Schema.Array(Schema.String)
   })),
   keyFacts: Schema.Record(Schema.String, Schema.String),
-  summary: Schema.String,
+  summary: Schema.String
 })
 
 /** Every answered question with its sources, and every question left unanswered. */
@@ -41,14 +41,14 @@ export const SurveyAnswers = Schema.Struct({
     answer: Schema.String,
     confidence: Schema.Literals(["high", "medium", "low"]),
     sourceRefs: Schema.Array(Schema.String),
-    reasoning: Schema.String,
+    reasoning: Schema.String
   })),
   unanswered: Schema.Array(Schema.Struct({
     questionId: Schema.String,
     questionText: Schema.String,
-    reason: Schema.String,
+    reason: Schema.String
   })),
-  summary: Schema.String,
+  summary: Schema.String
 })
 
 /** The audit of the answers. */
@@ -57,20 +57,20 @@ export const Validation = Schema.Struct({
   contradictions: Schema.Array(Schema.Struct({
     questionIds: Schema.Array(Schema.String),
     description: Schema.String,
-    severity: Severity,
+    severity: Severity
   })),
   unsupportedClaims: Schema.Array(Schema.Struct({
     questionId: Schema.String,
     claim: Schema.String,
-    issue: Schema.String,
+    issue: Schema.String
   })),
   revisedAnswers: Schema.Array(Schema.Struct({
     questionId: Schema.String,
     originalAnswer: Schema.String,
     revisedAnswer: Schema.String,
-    reason: Schema.String,
+    reason: Schema.String
   })),
-  summary: Schema.String,
+  summary: Schema.String
 })
 
 /** What the flow settles with: the answers and their audit. */
@@ -85,12 +85,12 @@ export const GatherContext = AgentAction.make("examples/SurveyAnswererAgent/Gath
     `You are a source material analyst. Given a set of documents or data sources
 and a survey/questionnaire, extract all relevant facts, excerpts, and key data points that
 could be used to answer the survey questions. Organize findings by topic and track provenance
-so every answer can be traced back to its source.`,
+so every answer can be traced back to its source.`
   ],
   prompt: ({ questions, sources }) =>
     `Gather the source material these survey questions need.\n\nSources: ${JSON.stringify(sources)}\nQuestions: ${
       JSON.stringify(questions)
-    }`,
+    }`
 })
 
 /** Answers every question from the gathered context. */
@@ -98,7 +98,7 @@ export const GenerateAnswers = AgentAction.make("examples/SurveyAnswererAgent/Ge
   payload: {
     questions: Schema.Array(Schema.Json),
     documentSummaries: SourceContext.fields.documentSummaries,
-    keyFacts: SourceContext.fields.keyFacts,
+    keyFacts: SourceContext.fields.keyFacts
   },
   output: SurveyAnswers,
   seat,
@@ -107,12 +107,12 @@ export const GenerateAnswers = AgentAction.make("examples/SurveyAnswererAgent/Ge
 of survey questions, produce precise, well-supported answers. For each answer, cite the source
 references and assign a confidence level. If a question cannot be answered from the available
 material, flag it as unanswered with a clear reason. Prefer factual, verifiable statements
-over speculative ones.`,
+over speculative ones.`
   ],
   prompt: ({ documentSummaries, keyFacts, questions }) =>
     `Answer every survey question from the source context.\n\nQuestions: ${JSON.stringify(questions)}\nKey facts: ${
       JSON.stringify(keyFacts)
-    }\nDocument summaries: ${JSON.stringify(documentSummaries)}`,
+    }\nDocument summaries: ${JSON.stringify(documentSummaries)}`
 })
 
 /** Audits the answers against each other and the sources. */
@@ -121,7 +121,7 @@ export const Validate = AgentAction.make("examples/SurveyAnswererAgent/Validate"
     answers: SurveyAnswers.fields.answers,
     unanswered: SurveyAnswers.fields.unanswered,
     keyFacts: SourceContext.fields.keyFacts,
-    documentSummaries: SourceContext.fields.documentSummaries,
+    documentSummaries: SourceContext.fields.documentSummaries
   },
   output: Validation,
   seat,
@@ -129,21 +129,21 @@ export const Validate = AgentAction.make("examples/SurveyAnswererAgent/Validate"
     `You are a consistency and accuracy auditor for survey responses. Given a set of
 answers and their source context, check for internal contradictions between answers, unsupported
 claims, and factual inconsistencies. If you find issues, propose revised answers that resolve
-the contradictions while staying faithful to the source material. Be strict but fair.`,
+the contradictions while staying faithful to the source material. Be strict but fair.`
   ],
   prompt: ({ answers, documentSummaries, keyFacts, unanswered }) =>
     `Check these survey answers for contradictions and unsupported claims.\n\nAnswers: ${
       JSON.stringify(answers)
     }\nUnanswered: ${JSON.stringify(unanswered)}\nKey facts: ${JSON.stringify(keyFacts)}\nDocument summaries: ${
       JSON.stringify(documentSummaries)
-    }`,
+    }`
 })
 
 /** The flow: gather, answer, audit. */
 export const SurveyAnswererAgent = Flow.make("examples/SurveyAnswererAgent", {
   payload: {
     sources: Schema.optional(Schema.Array(Schema.Json)),
-    questions: Schema.optional(Schema.Array(Schema.Json)),
+    questions: Schema.optional(Schema.Array(Schema.Json))
   },
   success: Output,
   error: AgentAction.AgentFailure,
@@ -155,7 +155,7 @@ export const SurveyAnswererAgent = Flow.make("examples/SurveyAnswererAgent", {
           GenerateAnswers.call({
             questions,
             documentSummaries: context.documentSummaries,
-            keyFacts: context.keyFacts,
+            keyFacts: context.keyFacts
           }),
           (answers: Planned.Planned<typeof SurveyAnswers.Type>) =>
             Node.bindPlanned(
@@ -163,12 +163,12 @@ export const SurveyAnswererAgent = Flow.make("examples/SurveyAnswererAgent", {
                 answers: answers.answers,
                 unanswered: answers.unanswered,
                 keyFacts: context.keyFacts,
-                documentSummaries: context.documentSummaries,
+                documentSummaries: context.documentSummaries
               }),
-              (validation: Planned.Planned<typeof Validation.Type>) => Node.succeed({ answers, validation }),
-            ),
-        ),
-    ),
+              (validation: Planned.Planned<typeof Validation.Type>) => Node.succeed({ answers, validation })
+            )
+        )
+    )
 })
 
 /** Every step the flow calls. */

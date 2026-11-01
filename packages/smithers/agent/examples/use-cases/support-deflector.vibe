@@ -31,14 +31,14 @@ export const Classification = Schema.Struct({
   confidence: Percent,
   riskLevel: Schema.Literals(["low", "medium", "high"]),
   escalate: Schema.Boolean,
-  reasoning: Schema.String,
+  reasoning: Schema.String
 })
 
 const Article = Schema.Struct({
   title: Schema.String,
   relevance: Percent,
   snippet: Schema.String,
-  source: Schema.String,
+  source: Schema.String
 })
 
 /** The articles retrieval found, and how well they cover the ticket. */
@@ -50,7 +50,7 @@ export const Draft = Schema.Struct({
   body: Schema.String,
   tone: Schema.Literals(["empathetic", "professional", "technical"]),
   suggestedActions: Schema.Array(Schema.String),
-  confidenceInDraft: Percent,
+  confidenceInDraft: Percent
 })
 
 /** The package handed to a person. */
@@ -58,14 +58,14 @@ export const Escalation = Schema.Struct({
   reason: Schema.String,
   priority: Schema.Literals(["urgent", "high", "normal"]),
   assignTo: Schema.String,
-  context: Schema.String,
+  context: Schema.String
 })
 
 /** What the flow settles with. */
 export const Outcome = Schema.Struct({
   status: Schema.Literals(["deflected", "escalated"]),
   ticketId: Schema.String,
-  summary: Schema.String,
+  summary: Schema.String
 })
 
 /** Labels the ticket. */
@@ -76,10 +76,10 @@ export const Classify = AgentAction.make("examples/SupportDeflector/Classify", {
   system: [
     `You are a support ticket classifier. Analyze the inbound ticket and determine
 its category, customer sentiment, confidence level, and whether it should be escalated.
-Escalate when risk is high, sentiment is angry, or the issue involves data loss / security.`,
+Escalate when risk is high, sentiment is angry, or the issue involves data loss / security.`
   ],
   prompt: ({ body, customer, subject }) =>
-    `Classify this support ticket.\n\nSubject: ${subject}\nBody: ${body}\nCustomer: ${customer}`,
+    `Classify this support ticket.\n\nSubject: ${subject}\nBody: ${body}\nCustomer: ${customer}`
 })
 
 /** Finds articles for the classified ticket. */
@@ -90,10 +90,10 @@ export const Retrieve = AgentAction.make("examples/SupportDeflector/Retrieve", {
   system: [
     `You are a knowledge-base retrieval specialist. Given a classified support ticket,
 search for relevant documentation, FAQ entries, and past resolutions. Return the most relevant
-articles with relevance scores. Aim for high coverage so the draft agent can compose a reply.`,
+articles with relevance scores. Aim for high coverage so the draft agent can compose a reply.`
   ],
   prompt: ({ category, reasoning, subject }) =>
-    `Find knowledge for this ticket.\n\nSubject: ${subject}\nCategory: ${category}\nReasoning: ${reasoning}`,
+    `Find knowledge for this ticket.\n\nSubject: ${subject}\nCategory: ${category}\nReasoning: ${reasoning}`
 })
 
 /** Drafts the reply from the labels and the articles. */
@@ -103,19 +103,19 @@ export const DraftReply = AgentAction.make("examples/SupportDeflector/DraftReply
     sentiment: Schema.String,
     articles: Schema.Array(Article),
     subject: Schema.String,
-    body: Schema.String,
+    body: Schema.String
   },
   output: Draft,
   seat,
   system: [
     `You are a support response drafter. Using the classification and retrieved knowledge,
 compose a helpful, accurate reply. Match the tone to the customer's sentiment — be empathetic with
-frustrated users, concise with technical users. Include actionable next steps.`,
+frustrated users, concise with technical users. Include actionable next steps.`
   ],
   prompt: ({ articles, body, category, sentiment, subject }) =>
     `Draft a reply to this ticket.\n\nSubject: ${subject}\nBody: ${body}\nCategory: ${category}\nSentiment: ${sentiment}\nArticles: ${
       JSON.stringify(articles)
-    }`,
+    }`
 })
 
 /** Prepares the escalation package. */
@@ -127,16 +127,16 @@ export const Escalate = AgentAction.make("examples/SupportDeflector/Escalate", {
     sentiment: Schema.String,
     reasoning: Schema.String,
     draftConfidence: Schema.Number,
-    coverageScore: Schema.Number,
+    coverageScore: Schema.Number
   },
   output: Escalation,
   seat,
   system: [
     `You are an escalation specialist. When a ticket cannot be safely deflected,
 prepare a thorough escalation package with context, priority, and recommended assignee
-so the human agent can resolve it quickly.`,
+so the human agent can resolve it quickly.`
   ],
-  prompt: (ticket) => `Escalate this ticket.\n\nTicket: ${JSON.stringify(ticket)}`,
+  prompt: (ticket) => `Escalate this ticket.\n\nTicket: ${JSON.stringify(ticket)}`
 })
 
 type Classification = typeof Classification.Type
@@ -164,8 +164,8 @@ export const SupportDeflector = Flow.make("examples/SupportDeflector", {
       id: Schema.optional(Schema.String),
       subject: Schema.optional(Schema.String),
       body: Schema.optional(Schema.String),
-      customer: Schema.optional(Schema.String),
-    })),
+      customer: Schema.optional(Schema.String)
+    }))
   },
   success: Outcome,
   error: AgentAction.AgentFailure,
@@ -183,7 +183,7 @@ export const SupportDeflector = Flow.make("examples/SupportDeflector", {
                 sentiment: classification.sentiment,
                 articles: knowledge.articles,
                 subject,
-                body,
+                body
               }),
               (draft: Planned.Planned<Draft>) =>
                 Node.branch(Node.succeed({ classification, knowledge, draft }), {
@@ -197,16 +197,16 @@ export const SupportDeflector = Flow.make("examples/SupportDeflector", {
                         sentiment: classification.sentiment,
                         reasoning: classification.reasoning,
                         draftConfidence: draft.confidenceInDraft,
-                        coverageScore: knowledge.coverageScore,
+                        coverageScore: knowledge.coverageScore
                       }),
                       Node.map(
                         Node.succeed({ category: classification.category, riskLevel: classification.riskLevel }),
                         ({ category, riskLevel }): typeof Outcome.Type => ({
                           status: "escalated",
                           ticketId,
-                          summary: `Ticket escalated to human agent — ${riskLevel} risk, ${category} category`,
-                        }),
-                      ),
+                          summary: `Ticket escalated to human agent — ${riskLevel} risk, ${category} category`
+                        })
+                      )
                     ),
                   else: () =>
                     Node.map(
@@ -214,14 +214,14 @@ export const SupportDeflector = Flow.make("examples/SupportDeflector", {
                       ({ articles, tone }): typeof Outcome.Type => ({
                         status: "deflected",
                         ticketId,
-                        summary: `Auto-replied with ${tone} response covering ${articles.length} knowledge articles`,
-                      }),
-                    ),
-                }),
-            ),
-        ),
+                        summary: `Auto-replied with ${tone} response covering ${articles.length} knowledge articles`
+                      })
+                    )
+                })
+            )
+        )
     )
-  },
+  }
 })
 
 /** Every step the flow calls. */

@@ -30,14 +30,14 @@ export const Alert = Schema.Struct({
   severity: Severity.annotate({ description: "Raw severity from source" }),
   message: Schema.String.annotate({ description: "Alert message body" }),
   timestamp: Schema.String.annotate({ description: "ISO-8601 timestamp" }),
-  labels: Schema.String.annotate({ description: "JSON-encoded key-value labels attached to the alert" }),
+  labels: Schema.String.annotate({ description: "JSON-encoded key-value labels attached to the alert" })
 })
 
 /** The batch after deduplication. */
 export const DedupeResult = Schema.Struct({
   uniqueAlerts: Schema.Array(Alert).annotate({ description: "Alerts after deduplication" }),
   suppressedCount: Schema.Number.annotate({ description: "Number of alerts dropped as duplicates" }),
-  suppressedIds: Schema.Array(Schema.String).annotate({ description: "IDs of suppressed duplicate alerts" }),
+  suppressedIds: Schema.Array(Schema.String).annotate({ description: "IDs of suppressed duplicate alerts" })
 })
 
 /** Recent incidents and noise rules the classifier weighs alerts against. */
@@ -46,13 +46,13 @@ export const IncidentContext = Schema.Struct({
     id: Schema.String,
     title: Schema.String,
     status: Schema.Literals(["open", "mitigated", "resolved"]),
-    relatedAlertPatterns: Schema.Array(Schema.String),
+    relatedAlertPatterns: Schema.Array(Schema.String)
   })).annotate({ description: "Active or recent incidents that may correlate" }),
   noiseRules: Schema.Array(Schema.Struct({
     pattern: Schema.String.annotate({ description: "Regex or substring pattern to match" }),
     reason: Schema.String.annotate({ description: "Why this pattern is considered noise" }),
-    expiresAt: Schema.optional(Schema.String.annotate({ description: "When this rule expires" })),
-  })).annotate({ description: "Known-noise suppression rules" }),
+    expiresAt: Schema.optional(Schema.String.annotate({ description: "When this rule expires" }))
+  })).annotate({ description: "Known-noise suppression rules" })
 })
 
 /** One verdict per unique alert. */
@@ -60,20 +60,20 @@ export const Classification = Schema.Struct({
   classifications: Schema.Array(Schema.Struct({
     alertId: Schema.String,
     verdict: Schema.Literals(["escalate", "suppress", "observe"]).annotate({
-      description: "Whether to page, suppress, or watch",
+      description: "Whether to page, suppress, or watch"
     }),
     confidence: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 })).annotate({
-      description: "Model confidence in the verdict",
+      description: "Model confidence in the verdict"
     }),
     matchedNoiseRule: Schema.optional(
-      Schema.String.annotate({ description: "Noise rule pattern that matched, if any" }),
+      Schema.String.annotate({ description: "Noise rule pattern that matched, if any" })
     ),
     matchedIncidentId: Schema.optional(
-      Schema.String.annotate({ description: "Existing incident this correlates with" }),
+      Schema.String.annotate({ description: "Existing incident this correlates with" })
     ),
     reasoning: Schema.String.annotate({ description: "Why this verdict was chosen" }),
-    riskLevel: Severity.annotate({ description: "Assessed risk after context" }),
-  })),
+    riskLevel: Severity.annotate({ description: "Assessed risk after context" })
+  }))
 })
 
 /** What the dispatcher did. */
@@ -81,12 +81,12 @@ export const SinkResult = Schema.Struct({
   paged: Schema.Array(Schema.Struct({
     alertId: Schema.String,
     channel: Schema.String.annotate({ description: "PagerDuty, Slack, etc." }),
-    ticketUrl: Schema.optional(Schema.String),
+    ticketUrl: Schema.optional(Schema.String)
   })).annotate({ description: "Alerts that were paged out" }),
   ticketed: Schema.Array(Schema.Struct({ alertId: Schema.String, ticketUrl: Schema.String })).annotate({
-    description: "Alerts filed as tickets for later review",
+    description: "Alerts filed as tickets for later review"
   }),
-  dropped: Schema.Array(Schema.String).annotate({ description: "Alert IDs silently suppressed" }),
+  dropped: Schema.Array(Schema.String).annotate({ description: "Alert IDs silently suppressed" })
 })
 
 /** The counts the flow settles with. */
@@ -96,7 +96,7 @@ export const Output = Schema.Struct({
   escalated: Schema.Number,
   ticketed: Schema.Number,
   observed: Schema.Number,
-  summary: Schema.String,
+  summary: Schema.String
 })
 
 type Alert = typeof Alert.Type
@@ -110,12 +110,12 @@ export const LookUpContext = AgentAction.make("examples/AlertSuppressor/Context"
   system: [
     `You are an incident-context retriever. Given a set of alerts, look up
 recent incidents and active noise-suppression rules from the configured sources.
-Return structured context so the classifier can make informed decisions.`,
+Return structured context so the classifier can make informed decisions.`
   ],
   prompt: ({ alerts, incidentSource, noiseRules }) =>
     `Look up incident context for these alerts.\n\nIncident source: ${incidentSource}\nAlerts: ${
       JSON.stringify(alerts)
-    }\nConfigured noise rules: ${JSON.stringify(noiseRules)}`,
+    }\nConfigured noise rules: ${JSON.stringify(noiseRules)}`
 })
 
 /** Gives each unique alert a verdict. */
@@ -123,7 +123,7 @@ export const Classify = AgentAction.make("examples/AlertSuppressor/Classify", {
   payload: {
     uniqueAlerts: Schema.Array(Alert),
     noiseRules: IncidentContext.fields.noiseRules,
-    recentIncidents: IncidentContext.fields.recentIncidents,
+    recentIncidents: IncidentContext.fields.recentIncidents
   },
   output: Classification,
   seat,
@@ -131,12 +131,12 @@ export const Classify = AgentAction.make("examples/AlertSuppressor/Classify", {
     `You are an alert classifier. For each unique alert, decide whether to
 escalate (page on-call), suppress (known noise or duplicate of open incident), or
 observe (low risk, file a ticket). Cross-reference with recent incidents and noise rules.
-Be conservative: when in doubt, escalate.`,
+Be conservative: when in doubt, escalate.`
   ],
   prompt: ({ noiseRules, recentIncidents, uniqueAlerts }) =>
     `Classify each unique alert.\n\nUnique alerts: ${JSON.stringify(uniqueAlerts)}\nNoise rules: ${
       JSON.stringify(noiseRules)
-    }\nRecent incidents: ${JSON.stringify(recentIncidents)}`,
+    }\nRecent incidents: ${JSON.stringify(recentIncidents)}`
 })
 
 /** Pages, tickets or drops each classified alert. */
@@ -144,19 +144,19 @@ export const Dispatch = AgentAction.make("examples/AlertSuppressor/Dispatch", {
   payload: {
     classifications: Classification.fields.classifications,
     pageChannel: Schema.String,
-    ticketSystem: Schema.String,
+    ticketSystem: Schema.String
   },
   output: SinkResult,
   seat,
   system: [
     `You are an alert dispatcher. For escalated alerts, page the on-call via
 the appropriate channel. For observed alerts, file a ticket. For suppressed alerts, log
-and drop. Report every action taken.`,
+and drop. Report every action taken.`
   ],
   prompt: ({ classifications, pageChannel, ticketSystem }) =>
     `Dispatch these verdicts.\n\nPage channel: ${pageChannel}\nTicket system: ${ticketSystem}\nClassifications: ${
       JSON.stringify(classifications)
-    }`,
+    }`
 })
 
 /** Keeps the first alert per source, message and labels. */
@@ -184,7 +184,7 @@ const summarize = (
     readonly classification: typeof Classification.Type
     readonly sink: typeof SinkResult.Type
     readonly pageChannel: string
-  },
+  }
 ): typeof Output.Type => ({
   totalReceived: received,
   suppressed: deduped.suppressedCount + sink.dropped.length,
@@ -196,8 +196,8 @@ const summarize = (
     `Deduplicated ${deduped.suppressedCount} duplicates.`,
     `Escalated ${sink.paged.length} to ${pageChannel}.`,
     `Filed ${sink.ticketed.length} tickets.`,
-    `Suppressed ${sink.dropped.length} as known noise.`,
-  ].join(" "),
+    `Suppressed ${sink.dropped.length} as known noise.`
+  ].join(" ")
 })
 
 /** The flow: dedupe and look up context, classify, dispatch, count. */
@@ -207,12 +207,12 @@ export const AlertSuppressor = Flow.make("examples/AlertSuppressor", {
     noiseRules: Schema.optional(Schema.Array(Schema.Json)),
     incidentSource: Schema.optional(Schema.String),
     pageChannel: Schema.optional(Schema.String),
-    ticketSystem: Schema.optional(Schema.String),
+    ticketSystem: Schema.optional(Schema.String)
   },
   success: Output,
   error: AgentAction.AgentFailure,
   body: (
-    { alerts = [], incidentSource = "opsgenie", noiseRules = [], pageChannel = "pagerduty", ticketSystem = "jira" },
+    { alerts = [], incidentSource = "opsgenie", noiseRules = [], pageChannel = "pagerduty", ticketSystem = "jira" }
   ) => {
     // The payload is real at plan time, so the dedupe runs here, beside the lookup.
     const deduped = dedupe(alerts)
@@ -223,7 +223,7 @@ export const AlertSuppressor = Flow.make("examples/AlertSuppressor", {
           Classify.call({
             uniqueAlerts: deduped.uniqueAlerts,
             noiseRules: context.noiseRules,
-            recentIncidents: context.recentIncidents,
+            recentIncidents: context.recentIncidents
           }),
           (classification: Planned.Planned<typeof Classification.Type>) =>
             Node.bindPlanned(
@@ -231,12 +231,12 @@ export const AlertSuppressor = Flow.make("examples/AlertSuppressor", {
               (sink: Planned.Planned<typeof SinkResult.Type>) =>
                 Node.map(
                   Node.succeed({ received: alerts.length, deduped, classification, sink, pageChannel }),
-                  summarize,
-                ),
-            ),
-        ),
+                  summarize
+                )
+            )
+        )
     )
-  },
+  }
 })
 
 /** Every step the flow calls. */

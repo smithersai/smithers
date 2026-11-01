@@ -27,7 +27,7 @@ import {
   SandboxProvider,
   type SandboxSelection,
   SchemaRefMarkdownArgs,
-  SchemaRefMarkdownOutput,
+  SchemaRefMarkdownOutput
 } from "./Descriptor.ts"
 import type { EffectProblem } from "./internal/Authority.ts"
 import { narrowDelegation, projectEffects, unprojectableDelegation } from "./internal/Authority.ts"
@@ -113,7 +113,7 @@ export const fromMarkdown = (options: FromMarkdownOptions): FromMarkdownResult =
       code: "missing_description",
       path: options.path,
       name,
-      message: "Markdown flows require a non-empty frontmatter description",
+      message: "Markdown flows require a non-empty frontmatter description"
     })
     return { descriptor: Option.none(), warnings }
   }
@@ -122,7 +122,7 @@ export const fromMarkdown = (options: FromMarkdownOptions): FromMarkdownResult =
       code: "invalid_description",
       path: options.path,
       name,
-      message: "Frontmatter description exceeds the 1024-character Agent Skills limit",
+      message: "Frontmatter description exceeds the 1024-character Agent Skills limit"
     })
   }
 
@@ -146,7 +146,7 @@ export const fromMarkdown = (options: FromMarkdownOptions): FromMarkdownResult =
     warnings.push({
       code: "invalid_budget",
       path: options.path,
-      message: "Frontmatter budget must declare at least one ceiling; flow refused",
+      message: "Frontmatter budget must declare at least one ceiling; flow refused"
     })
   }
   if (warnings.some((item) => item.code === "invalid_budget")) return { descriptor: Option.none(), warnings }
@@ -161,7 +161,7 @@ export const fromMarkdown = (options: FromMarkdownOptions): FromMarkdownResult =
       code: "invalid_model",
       path: options.path,
       name,
-      message: "model must be a non-empty list of non-empty seat names",
+      message: "model must be a non-empty list of non-empty seat names"
     })
     return { descriptor: Option.none(), warnings }
   }
@@ -172,7 +172,7 @@ export const fromMarkdown = (options: FromMarkdownOptions): FromMarkdownResult =
       code: "invalid_model",
       path: options.path,
       name,
-      message: "Ignoring model; expected a non-empty seat name or a list of them",
+      message: "Ignoring model; expected a non-empty seat name or a list of them"
     })
   }
   const model = validModels ? Option.some(selected) : Option.none<ModelSelection>()
@@ -187,7 +187,7 @@ export const fromMarkdown = (options: FromMarkdownOptions): FromMarkdownResult =
         body: new BodyRefMarkdown({
           path: options.path,
           baseDirectory: options.baseDirectory,
-          contentDigest: options.contentDigest ?? Digest.digest(options.text),
+          contentDigest: options.contentDigest ?? Digest.digest(options.text)
         }),
         input: new SchemaRefMarkdownArgs({}),
         output: new SchemaRefMarkdownOutput({}),
@@ -201,10 +201,10 @@ export const fromMarkdown = (options: FromMarkdownOptions): FromMarkdownResult =
         ...(budget === undefined ? {} : { budget }),
         path: options.path,
         frontmatter: fields,
-        provenance: options.provenance,
-      }),
+        provenance: options.provenance
+      })
     ),
-    warnings,
+    warnings
   }
 }
 
@@ -217,7 +217,7 @@ export const fromMarkdown = (options: FromMarkdownOptions): FromMarkdownResult =
 export const loadBody = (text: string, baseDirectory: string): FlowBodyPrompt =>
   new FlowBodyPrompt({
     text: Frontmatter.split(text).body,
-    baseDirectory,
+    baseDirectory
   })
 
 /**
@@ -235,7 +235,7 @@ export const renderPrompt = (body: FlowBodyPrompt, input: { readonly args: strin
     `- Base directory: ${body.baseDirectory}`,
     "- Resolve relative resource paths from this directory and read only the files you need.",
     "</skill_resources>",
-    ...(input.args === "" ? [] : ["", input.args]),
+    ...(input.args === "" ? [] : ["", input.args])
   ].join("\n")
 
 /**
@@ -267,14 +267,14 @@ export const toCoreFrontmatter = (descriptor: FlowDescriptorType): CoreMarkdown.
     modelInvocable: descriptor.modelInvocable,
     ...(Object.keys(ceilings).length === 0 ? {} : { budget: ceilings }),
     ...(deadline === undefined ? {} : { deadline }),
-    ...(descriptor.sandbox === undefined ? {} : { sandbox: descriptor.sandbox }),
+    ...(descriptor.sandbox === undefined ? {} : { sandbox: descriptor.sandbox })
   }
 }
 
 const deriveName = (
   options: FromMarkdownOptions,
   fields: Record<string, unknown>,
-  warnings: Array<DiscoveryWarning>,
+  warnings: Array<DiscoveryWarning>
 ): string => {
   if (options.naming === "frontmatter") {
     const derived = Names.deriveFromFrontmatter({ fields, dirBasename: options.dirBasename, path: options.path })
@@ -286,7 +286,7 @@ const deriveName = (
     warnings.push({
       code: "name_field_ignored",
       path: options.path,
-      message: "Ignoring frontmatter name because this source uses path-derived names",
+      message: "Ignoring frontmatter name because this source uses path-derived names"
     })
   }
   return Option.getOrElse(options.name, () => options.dirBasename)
@@ -296,7 +296,7 @@ const deriveCapabilities = (
   fields: Record<string, unknown>,
   delegation: ReturnType<typeof unprojectableDelegation> | undefined,
   path: string,
-  warnings: Array<DiscoveryWarning>,
+  warnings: Array<DiscoveryWarning>
 ): ReadonlyArray<string> | undefined => {
   if (!Object.hasOwn(fields, "capabilities")) {
     warnings.push({
@@ -304,7 +304,7 @@ const deriveCapabilities = (
       path,
       message: delegation === undefined
         ? "Markdown authority is not declared; the flow receives every capability"
-        : "Delegated flow authority cannot be projected statically; the flow receives every capability",
+        : "Delegated flow authority cannot be projected statically; the flow receives every capability"
     })
     return delegation?.capabilities ?? ["*"]
   }
@@ -315,7 +315,7 @@ const deriveCapabilities = (
     warnings.push({
       code: "invalid_capabilities",
       path,
-      message: "Frontmatter capabilities should be a string array; accepting the space-separated string",
+      message: "Frontmatter capabilities should be a string array; accepting the space-separated string"
     })
     capabilities = value.split(/\s+/).filter((capability) => capability.length > 0)
   } else if (
@@ -331,7 +331,7 @@ const deriveCapabilities = (
       path,
       message: `Frontmatter capabilities must be a string array, got ${
         JSON.stringify(value)
-      }; the flow is not discovered`,
+      }; the flow is not discovered`
     })
     return undefined
   }
@@ -344,7 +344,7 @@ const deriveCapabilities = (
 const deriveFlows = (
   fields: Record<string, unknown>,
   path: string,
-  warnings: Array<DiscoveryWarning>,
+  warnings: Array<DiscoveryWarning>
 ): ReadonlyArray<string> => {
   const value = fields.flows ?? fields["allowed-tools"]
   if (value === undefined) return []
@@ -357,7 +357,7 @@ const deriveFlows = (
   warnings.push({
     code: "invalid_allowed_tools",
     path,
-    message: "Ignoring malformed flows; expected a string array or Agent Skills allowed-tools string",
+    message: "Ignoring malformed flows; expected a string array or Agent Skills allowed-tools string"
   })
   return []
 }
@@ -365,7 +365,7 @@ const deriveFlows = (
 const deriveModelInvocable = (
   fields: Record<string, unknown>,
   path: string,
-  warnings: Array<DiscoveryWarning>,
+  warnings: Array<DiscoveryWarning>
 ): boolean => {
   if (!Object.hasOwn(fields, "disable-model-invocation")) {
     return true
@@ -386,7 +386,7 @@ const deriveModelInvocable = (
   warnings.push({
     code: "invalid_model_invocation",
     path,
-    message: "Ignoring disable-model-invocation; expected a boolean",
+    message: "Ignoring disable-model-invocation; expected a boolean"
   })
   return true
 }
@@ -397,37 +397,37 @@ const effectWarning = (problem: EffectProblem, path: string): DiscoveryWarning =
       return {
         code: "invalid_effect_declaration",
         path,
-        message: "Frontmatter effects must be an object; using conservative effects",
+        message: "Frontmatter effects must be an object; using conservative effects"
       }
     case "unreadableMember":
       return {
         code: "invalid_effect_declaration",
         path,
-        message: `Frontmatter effects.${problem.member} must be a string array; using the conservative wildcard`,
+        message: `Frontmatter effects.${problem.member} must be a string array; using the conservative wildcard`
       }
     case "invalidMode":
       return {
         code: "invalid_effect_declaration",
         path,
-        message: "Frontmatter effects.mode must be hermetic or expected; using expected",
+        message: "Frontmatter effects.mode must be hermetic or expected; using expected"
       }
     case "invalidOnConflict":
       return {
         code: "invalid_effect_declaration",
         path,
-        message: "Frontmatter effects.onConflict must be serialize, lane, or fail; using serialize",
+        message: "Frontmatter effects.onConflict must be serialize, lane, or fail; using serialize"
       }
     case "invalidTier":
       return {
         code: "invalid_effect_tier",
         path,
-        message: "Ignoring invalid effects.tier; using irreversible",
+        message: "Ignoring invalid effects.tier; using irreversible"
       }
     case "underClassifiedTier":
       return {
         code: "invalid_effect_tier",
         path,
-        message: `Effect tier ${problem.declared} under-classifies declared authority; using ${problem.projected}`,
+        message: `Effect tier ${problem.declared} under-classifies declared authority; using ${problem.projected}`
       }
   }
 }
@@ -436,7 +436,7 @@ const deriveEffects = (
   fields: Record<string, unknown>,
   capabilities: ReadonlyArray<string>,
   path: string,
-  warnings: Array<DiscoveryWarning>,
+  warnings: Array<DiscoveryWarning>
 ): EffectDeclaration => {
   const value = fields.effects
   const object = typeof value === "object" && value !== null && !Array.isArray(value)
@@ -465,8 +465,8 @@ const deriveEffects = (
         writes: paths("writes"),
         mode: literal("mode"),
         onConflict: literal("onConflict"),
-        tier: literal("tier"),
-      },
+        tier: literal("tier")
+      }
   })
   for (const problem of projection.problems) {
     warnings.push(effectWarning(problem, path))
@@ -482,7 +482,7 @@ const isPlacement = Schema.is(Placement)
 const derivePlacement = (
   fields: Record<string, unknown>,
   path: string,
-  warnings: Array<DiscoveryWarning>,
+  warnings: Array<DiscoveryWarning>
 ): Option.Option<Placement> => {
   const value = fields.placement
   if (value === undefined) return Option.none()
@@ -490,7 +490,7 @@ const derivePlacement = (
   warnings.push({
     code: "invalid_placement",
     path,
-    message: `Ignoring invalid placement; expected ${placements}`,
+    message: `Ignoring invalid placement; expected ${placements}`
   })
   return Option.none()
 }
@@ -522,7 +522,7 @@ const sandboxKeys = new Set(["provider", "network", "cpus", "memoryMib", "timeou
 const deriveSandbox = (
   fields: Record<string, unknown>,
   path: string,
-  warnings: Array<DiscoveryWarning>,
+  warnings: Array<DiscoveryWarning>
 ): SandboxSelection | "refused" | undefined => {
   const value = fields.sandbox
   if (value === undefined) return undefined
@@ -542,7 +542,7 @@ const deriveSandbox = (
     return refuse(
       `Unknown sandbox provider ${JSON.stringify(provider ?? null)}; expected one of ${
         SandboxProvider.literals.join(", ")
-      }`,
+      }`
     )
   }
   // The raw value, not the derived one: an unreadable placement is dropped by
@@ -591,7 +591,7 @@ const deriveSandbox = (
   return {
     provider,
     ...(network === undefined ? {} : { network }),
-    ...limits,
+    ...limits
   }
 }
 
@@ -625,7 +625,7 @@ export const deriveBudget = (
   fields: Record<string, unknown>,
   path: string,
   warnings: Array<DiscoveryWarning>,
-  label = "Frontmatter budget",
+  label = "Frontmatter budget"
 ): FlowBudget | undefined => {
   const value = fields.budget
   if (value === undefined) return undefined
@@ -633,7 +633,7 @@ export const deriveBudget = (
     warnings.push({
       code: "invalid_budget",
       path,
-      message: `${label} must be an object of tokens, milliseconds and usd; ignoring it`,
+      message: `${label} must be an object of tokens, milliseconds and usd; ignoring it`
     })
     return undefined
   }
@@ -654,7 +654,7 @@ export const deriveBudget = (
     warnings.push({
       code: "invalid_budget",
       path,
-      message: `${label}.${key} must be a positive safe integer; ignoring it`,
+      message: `${label}.${key} must be a positive safe integer; ignoring it`
     })
     return undefined
   }
@@ -673,7 +673,7 @@ export const deriveBudget = (
     warnings.push({
       code: "invalid_budget",
       path,
-      message: `${label}.usd must be a positive dollar amount; ignoring it`,
+      message: `${label}.usd must be a positive dollar amount; ignoring it`
     })
     return undefined
   })()
@@ -685,7 +685,7 @@ export const deriveBudget = (
     warnings.push({
       code: "invalid_budget",
       path,
-      message: `${label}.onExceeded must be one of ${BudgetOnExceeded.literals.join(", ")}; ignoring it`,
+      message: `${label}.onExceeded must be one of ${BudgetOnExceeded.literals.join(", ")}; ignoring it`
     })
     return undefined
   }
@@ -698,7 +698,7 @@ export const deriveBudget = (
     warnings.push({
       code: "invalid_budget",
       path,
-      message: `${label} has an unknown key: ${key}`,
+      message: `${label} has an unknown key: ${key}`
     })
   }
   if (tokens === undefined && milliseconds === undefined && usd === undefined) return undefined
@@ -706,7 +706,7 @@ export const deriveBudget = (
     ...(tokens === undefined ? {} : { tokens }),
     ...(milliseconds === undefined ? {} : { milliseconds }),
     ...(usd === undefined ? {} : { usd }),
-    ...(onExceeded === undefined ? {} : { onExceeded }),
+    ...(onExceeded === undefined ? {} : { onExceeded })
   }
 }
 
@@ -724,7 +724,7 @@ export const deriveBudget = (
 const deriveDeadline = (
   fields: Record<string, unknown>,
   path: string,
-  warnings: Array<DiscoveryWarning>,
+  warnings: Array<DiscoveryWarning>
 ): number | undefined => {
   const value = fields.deadline
   if (value === undefined) return undefined
@@ -733,7 +733,7 @@ const deriveDeadline = (
   warnings.push({
     code: "invalid_deadline",
     path,
-    message: "Frontmatter deadline must be a positive duration such as 30 minutes, or whole milliseconds; flow refused",
+    message: "Frontmatter deadline must be a positive duration such as 30 minutes, or whole milliseconds; flow refused"
   })
   return undefined
 }
@@ -741,13 +741,13 @@ const deriveDeadline = (
 const validateStandardFields = (
   fields: Record<string, unknown>,
   path: string,
-  warnings: Array<DiscoveryWarning>,
+  warnings: Array<DiscoveryWarning>
 ): void => {
   if (Object.hasOwn(fields, "license") && typeof fields.license !== "string") {
     warnings.push({
       code: "invalid_license",
       path,
-      message: "Frontmatter license must be a string when provided",
+      message: "Frontmatter license must be a string when provided"
     })
   }
 
@@ -757,7 +757,7 @@ const validateStandardFields = (
       warnings.push({
         code: "invalid_compatibility",
         path,
-        message: "Frontmatter compatibility must be a string of at most 500 characters",
+        message: "Frontmatter compatibility must be a string of at most 500 characters"
       })
     }
   }
@@ -773,7 +773,7 @@ const validateStandardFields = (
       warnings.push({
         code: "invalid_metadata",
         path,
-        message: "Frontmatter metadata must be a string-to-string mapping",
+        message: "Frontmatter metadata must be a string-to-string mapping"
       })
     }
   }
@@ -782,14 +782,14 @@ const validateStandardFields = (
 const warnUnsupportedSchema = (
   fields: Record<string, unknown>,
   path: string,
-  warnings: Array<DiscoveryWarning>,
+  warnings: Array<DiscoveryWarning>
 ): void => {
   for (const key of ["input", "schema"]) {
     if (Object.hasOwn(fields, key)) {
       warnings.push({
         code: "unsupported_input_schema",
         path,
-        message: `Ignoring unsupported markdown flow ${key} frontmatter`,
+        message: `Ignoring unsupported markdown flow ${key} frontmatter`
       })
     }
   }
@@ -813,7 +813,7 @@ const knownFields = new Set([
   "metadata",
   "disable-model-invocation",
   "input",
-  "schema",
+  "schema"
 ])
 
 const warnUnknownFields = (fields: Record<string, unknown>, path: string, warnings: Array<DiscoveryWarning>): void => {
@@ -822,7 +822,7 @@ const warnUnknownFields = (fields: Record<string, unknown>, path: string, warnin
       warnings.push({
         code: "unknown_frontmatter_key",
         path,
-        message: `Unknown frontmatter key: ${key}`,
+        message: `Unknown frontmatter key: ${key}`
       })
     }
   }

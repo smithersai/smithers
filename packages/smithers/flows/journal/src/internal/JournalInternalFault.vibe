@@ -33,7 +33,7 @@ export type JournalInternalFaultCode = typeof JournalInternalFaultCode.Type
 export class JournalInternalFault
   extends Schema.TaggedError<JournalInternalFault>()("@smthrs/journal/JournalInternalFault", {
     code: JournalInternalFaultCode,
-    message: Schema.String,
+    message: Schema.String
   })
 {
   override readonly name = "JournalInternalFault"

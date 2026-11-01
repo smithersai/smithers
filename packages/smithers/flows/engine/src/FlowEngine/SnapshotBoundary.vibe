@@ -19,11 +19,11 @@ export class SnapshotBoundaryRequired extends Schema.TaggedError<SnapshotBoundar
   "@smthrs/engine/SnapshotBoundaryRequired",
   {
     code: Schema.Literal("snapshot_boundary_required").pipe(
-      Schema.withConstructorDefault(Effect.succeed("snapshot_boundary_required")),
+      Schema.withConstructorDefault(Effect.succeed("snapshot_boundary_required"))
     ),
     actionName: Schema.String,
-    message: Schema.String,
-  },
+    message: Schema.String
+  }
 ) {}
 
 /**
@@ -51,10 +51,10 @@ export service SnapshotBoundary {
   snapshot: (options: SnapshotBoundaryOptions) => unknown!!
   restore: (
     snapshot: unknown,
-    options: SnapshotBoundaryOptions,
+    options: SnapshotBoundaryOptions
   ) => void!!
   diff: (
     snapshot: unknown,
-    options: SnapshotBoundaryOptions,
+    options: SnapshotBoundaryOptions
   ) => unknown!!
 }

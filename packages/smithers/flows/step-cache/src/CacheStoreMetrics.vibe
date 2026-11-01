@@ -29,7 +29,7 @@ import * as Metric from "effect/Metric"
  * @since 0.1.0
  */
 export const lookups = Metric.counter("flows_step_cache_lookups", {
-  description: "Step cache lookups by outcome",
+  description: "Step cache lookups by outcome"
 })
 
 /**
@@ -39,7 +39,7 @@ export const lookups = Metric.counter("flows_step_cache_lookups", {
  * @since 0.1.0
  */
 export const hit: Metric.Metric<number, Metric.CounterState<number>> = Metric.withAttributes(lookups, {
-  outcome: "hit",
+  outcome: "hit"
 })
 
 /**
@@ -52,7 +52,7 @@ export const hit: Metric.Metric<number, Metric.CounterState<number>> = Metric.wi
  * @since 0.1.0
  */
 export const miss: Metric.Metric<number, Metric.CounterState<number>> = Metric.withAttributes(lookups, {
-  outcome: "miss",
+  outcome: "miss"
 })
 
 /**
@@ -77,7 +77,7 @@ export const miss: Metric.Metric<number, Metric.CounterState<number>> = Metric.w
  * @since 0.1.0
  */
 export const puts = Metric.counter("flows_step_cache_puts", {
-  description: "Step cache recordings by outcome",
+  description: "Step cache recordings by outcome"
 })
 
 /**
@@ -91,7 +91,7 @@ export const put: {
 } = {
   Inserted: Metric.withAttributes(puts, { outcome: "inserted" }),
   ExistingSame: Metric.withAttributes(puts, { outcome: "existing_same" }),
-  Conflict: Metric.withAttributes(puts, { outcome: "conflict" }),
+  Conflict: Metric.withAttributes(puts, { outcome: "conflict" })
 }
 
 /**
@@ -107,7 +107,7 @@ export const put: {
  * @since 1.0.0-rc.0
  */
 export const remoteFailures = Metric.counter("flows_step_cache_remote_failures", {
-  description: "Shared step cache refusals by operation",
+  description: "Shared step cache refusals by operation"
 })
 
 /**
@@ -120,5 +120,5 @@ export const remoteFailure: {
   readonly [Operation in "get" | "put"]: Metric.Metric<number, Metric.CounterState<number>>
 } = {
   get: Metric.withAttributes(remoteFailures, { operation: "get" }),
-  put: Metric.withAttributes(remoteFailures, { operation: "put" }),
+  put: Metric.withAttributes(remoteFailures, { operation: "put" })
 }

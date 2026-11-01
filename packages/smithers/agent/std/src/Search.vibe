@@ -168,7 +168,7 @@ export const makeNoop = (): Search => {
   const unavailable = () =>
     throw new StdError.StdError({
       code: "provider_unavailable",
-      message: "No search implementation is configured",
+      message: "No search implementation is configured"
     })
   return make({ grep: unavailable, glob: unavailable })
 }

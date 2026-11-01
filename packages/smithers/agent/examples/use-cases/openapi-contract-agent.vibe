@@ -35,8 +35,8 @@ export const ContractSource = Schema.Struct({
       name: Schema.String,
       in: Schema.Literals(["path", "query", "header"]),
       required: Schema.Boolean,
-      schemaType: Schema.String,
-    }))),
+      schemaType: Schema.String
+    })))
   })),
   sharedModels: Schema.Array(Schema.Struct({
     name: Schema.String.annotate({ description: "Model/component name, e.g. User" }),
@@ -45,10 +45,10 @@ export const ContractSource = Schema.Struct({
       Schema.Struct({
         type: Schema.String,
         description: Schema.optional(Schema.String),
-        required: Schema.optional(Schema.Boolean),
-      }),
-    ),
-  })),
+        required: Schema.optional(Schema.Boolean)
+      })
+    )
+  }))
 })
 
 /** The generated interfaces and operation signatures. */
@@ -60,18 +60,18 @@ export const Interfaces = Schema.Struct({
       name: Schema.String,
       type: Schema.String.annotate({ description: "TypeScript type expression" }),
       optional: Schema.Boolean,
-      description: Schema.optional(Schema.String),
+      description: Schema.optional(Schema.String)
     })),
-    zodSchema: Schema.String.annotate({ description: "Equivalent zod schema as a code string" }),
+    zodSchema: Schema.String.annotate({ description: "Equivalent zod schema as a code string" })
   })),
   operationSignatures: Schema.Array(Schema.Struct({
     operationId: Schema.String,
     method: Schema.String,
     path: Schema.String,
     inputType: Schema.String.annotate({ description: "Name of the request interface" }),
-    outputType: Schema.String.annotate({ description: "Name of the response interface" }),
+    outputType: Schema.String.annotate({ description: "Name of the response interface" })
   })),
-  summary: Schema.String,
+  summary: Schema.String
 })
 
 /** One sample typed call per endpoint, with coverage. */
@@ -83,14 +83,14 @@ export const TypedCalls = Schema.Struct({
     outputInterface: Schema.String,
     samplePayload: JsonObject.annotate({ description: "Example typed request body" }),
     expectedShape: JsonObject.annotate({ description: "Example typed response shape" }),
-    validationNotes: Schema.Array(Schema.String).annotate({ description: "Any type mismatches or warnings" }),
+    validationNotes: Schema.Array(Schema.String).annotate({ description: "Any type mismatches or warnings" })
   })),
   coverage: Schema.Struct({
     totalEndpoints: Schema.Number,
     typedEndpoints: Schema.Number,
-    warnings: Schema.Array(Schema.String),
+    warnings: Schema.Array(Schema.String)
   }),
-  summary: Schema.String,
+  summary: Schema.String
 })
 
 /** What the flow settles with. */
@@ -102,7 +102,7 @@ export const ParseContract = AgentAction.make("examples/OpenApiContractAgent/Par
     specPath: Schema.optional(Schema.String),
     specContent: Schema.optional(Schema.String),
     format: Schema.String,
-    filterPaths: Schema.optional(Schema.Array(Schema.String)),
+    filterPaths: Schema.optional(Schema.Array(Schema.String))
   },
   output: ContractSource,
   seat,
@@ -110,12 +110,12 @@ export const ParseContract = AgentAction.make("examples/OpenApiContractAgent/Par
     `You are an OpenAPI and JSON Schema specialist. Parse raw API specifications
 into a normalized contract source representation. Identify all endpoints, HTTP methods,
 operation IDs, request/response schemas, parameters, and shared model definitions.
-Handle both OpenAPI 3.x and JSON Schema drafts. Resolve $ref pointers and inline definitions.`,
+Handle both OpenAPI 3.x and JSON Schema drafts. Resolve $ref pointers and inline definitions.`
   ],
   prompt: ({ filterPaths, format, specContent, specPath }) =>
     `Parse this ${format} spec into a normalized contract source.\n\nSpec path: ${specPath ?? "none"}\nFilter paths: ${
       JSON.stringify(filterPaths ?? [])
-    }\nSpec content: ${JSON.stringify(specContent ?? "")}`,
+    }\nSpec content: ${JSON.stringify(specContent ?? "")}`
 })
 
 /** Writes the interfaces, zod schemas and operation signatures. */
@@ -128,12 +128,12 @@ export const GenerateInterfaces = AgentAction.make("examples/OpenApiContractAgen
 produce strongly-typed TypeScript interfaces and equivalent zod schemas for every model
 and every request/response pair. Generate operation signatures mapping each endpoint to
 its input and output types. Prefer precise types over 'any'. Use branded types where IDs
-or dates appear. Ensure naming consistency across interfaces.`,
+or dates appear. Ensure naming consistency across interfaces.`
   ],
   prompt: ({ brandedIds, contract, includeZod, naming }) =>
     `Generate interfaces for this contract.\n\nNaming: ${naming}\nInclude zod: ${includeZod}\nBranded IDs: ${brandedIds}\nContract: ${
       JSON.stringify(contract)
-    }`,
+    }`
 })
 
 /** Writes and checks a sample typed call per endpoint. */
@@ -145,12 +145,12 @@ export const TypedCallsStep = AgentAction.make("examples/OpenApiContractAgent/Ty
     `You are a typed API call builder. Given generated interfaces and operation
 signatures, produce sample typed calls for every endpoint. Validate that request payloads
 conform to input interfaces and response shapes match output interfaces. Flag any type
-mismatches, missing required fields, or schema drift. Report coverage statistics.`,
+mismatches, missing required fields, or schema drift. Report coverage statistics.`
   ],
   prompt: ({ authScheme, baseUrl, contract, interfaces }) =>
     `Build typed calls against ${baseUrl} with ${authScheme} auth.\n\nInterfaces: ${
       JSON.stringify(interfaces)
-    }\nContract: ${JSON.stringify(contract)}`,
+    }\nContract: ${JSON.stringify(contract)}`
 })
 
 /** The flow: parse, generate, build calls. */
@@ -164,7 +164,7 @@ export const OpenApiContractAgent = Flow.make("examples/OpenApiContractAgent", {
     includeZod: Schema.optional(Schema.Boolean),
     brandedIds: Schema.optional(Schema.Boolean),
     baseUrl: Schema.optional(Schema.String),
-    authScheme: Schema.optional(Schema.String),
+    authScheme: Schema.optional(Schema.String)
   },
   success: Output,
   error: AgentAction.AgentFailure,
@@ -177,7 +177,7 @@ export const OpenApiContractAgent = Flow.make("examples/OpenApiContractAgent", {
     includeZod = true,
     namingConvention = "PascalCase",
     specContent,
-    specPath,
+    specPath
   }) =>
     Node.bindPlanned(ParseContract.call({ specPath, specContent, format, filterPaths }), (contract) =>
       Node.bindPlanned(
@@ -185,9 +185,9 @@ export const OpenApiContractAgent = Flow.make("examples/OpenApiContractAgent", {
         (interfaces) =>
           Node.bindPlanned(
             TypedCallsStep.call({ interfaces, contract, baseUrl, authScheme }),
-            (typedCalls) => Node.succeed({ interfaces, typedCalls }),
-          ),
-      )),
+            (typedCalls) => Node.succeed({ interfaces, typedCalls })
+          )
+      ))
 })
 
 /** Every step the flow calls. */

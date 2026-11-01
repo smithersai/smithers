@@ -27,7 +27,7 @@ export const PluginErrorCode = Schema.Literals([
   "invalid_hook_result",
   "resource_limit",
   "hook_failed",
-  "layer_failed",
+  "layer_failed"
 ])
 
 /**
@@ -58,5 +58,5 @@ export class PluginError extends Schema.TaggedError<PluginError>()("flows/plugin
   plugin: Schema.optional(Schema.String),
   hook: Schema.optional(Schema.String),
   path: Schema.optional(Schema.String),
-  cause: Schema.optional(Schema.Unknown),
+  cause: Schema.optional(Schema.Unknown)
 }) {}

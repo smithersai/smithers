@@ -79,7 +79,7 @@ const parseReference = (text: string): { readonly root: Root; readonly path: Rea
     const segment = segmentPattern.exec(rest)
     if (segment === null || path.length === maximumSegments) return undefined
     path.push(
-      segment[1] !== undefined ? segment[1] : segment[2] !== undefined ? Number(segment[2]) : { event: segment[3]! },
+      segment[1] !== undefined ? segment[1] : segment[2] !== undefined ? Number(segment[2]) : { event: segment[3]! }
     )
     rest = rest.slice(segment[0].length)
   }
@@ -89,7 +89,7 @@ const parseReference = (text: string): { readonly root: Root; readonly path: Rea
 const walk = (
   value: Schema.Json,
   at: string,
-  visit: (text: string, at: string) => void,
+  visit: (text: string, at: string) => void
 ): void => {
   if (typeof value === "string") {
     if (value.startsWith("$")) visit(value, at)
@@ -110,7 +110,7 @@ const walk = (
  */
 export const references = (
   args: { readonly [key: string]: Schema.Json },
-  at = "",
+  at = ""
 ): Result.Result<ReadonlyArray<Reference>, Refusal> => {
   const found: Array<Reference> = []
   let refused: Refusal | undefined
@@ -122,7 +122,7 @@ export const references = (
         refused ??= new Refusal({
           reason: "invalid",
           path: at === "" ? written : `${at}.${written}`,
-          detail: "the reference is outside the binding grammar",
+          detail: "the reference is outside the binding grammar"
         })
       }
     })
@@ -138,7 +138,7 @@ const text = (root: Root, path: ReadonlyArray<Segment>): string =>
         : typeof segment === "number"
         ? `${out}[${segment}]`
         : `${out}[$event.${segment.event}]`,
-    `$${root}`,
+    `$${root}`
   )
 
 const own = (value: unknown, key: string | number): { readonly found: boolean; readonly value?: unknown } => {
@@ -201,6 +201,6 @@ const fill = (value: Schema.Json, scope: Scope): Result.Result<unknown, string> 
  */
 export const bind = (
   args: { readonly [key: string]: Schema.Json },
-  scope: Scope,
+  scope: Scope
 ): Result.Result<{ readonly [key: string]: unknown }, string> =>
   fill(args, scope) as Result.Result<{ readonly [key: string]: unknown }, string>

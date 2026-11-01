@@ -33,5 +33,5 @@ export const mark = (spawner: ChildProcessSpawner["Service"]): ChildProcessSpawn
  */
 export const inherit = (
   source: ChildProcessSpawner["Service"],
-  wrapper: ChildProcessSpawner["Service"],
+  wrapper: ChildProcessSpawner["Service"]
 ): ChildProcessSpawner["Service"] => isContained(source) ? mark(wrapper) : wrapper

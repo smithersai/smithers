@@ -78,7 +78,7 @@ const routeReferences = effect (input: ReadonlyArray<Route.Route>): Effect<Reado
           throw new FsError({
             code: "invalid_route",
             method: "CommandTree.make",
-            description: "Routes must be supplied as an ordinary dense array",
+            description: "Routes must be supplied as an ordinary dense array"
           })
         }
         if (input.length > maximumRoutes) {
@@ -88,7 +88,7 @@ const routeReferences = effect (input: ReadonlyArray<Route.Route>): Effect<Reado
           throw new FsError({
             code: "invalid_route",
             method: "CommandTree.make",
-            description: "Routes must be supplied as an ordinary dense array",
+            description: "Routes must be supplied as an ordinary dense array"
           })
         }
         const output: Array<Route.Route> = []
@@ -99,7 +99,7 @@ const routeReferences = effect (input: ReadonlyArray<Route.Route>): Effect<Reado
               code: "invalid_route",
               method: "CommandTree.make",
               description: "Routes must be supplied as enumerable data properties",
-              path: `$[${index}]`,
+              path: `$[${index}]`
             })
           }
           output.push(descriptor.value as Route.Route)
@@ -110,8 +110,8 @@ const routeReferences = effect (input: ReadonlyArray<Route.Route>): Effect<Reado
       cause instanceof FsError ? cause : new FsError({
         code: "invalid_route",
         method: "CommandTree.make",
-        description: "Routes could not be inspected without executing user code",
-      }),
+        description: "Routes could not be inspected without executing user code"
+      })
   })
 }
 
@@ -130,8 +130,8 @@ const freezeTree = (root: MutableTree): CommandTree => {
       frame.node,
       Object.freeze({
         route: frame.node.route.isSome() ? Object.freeze(Option.some(frame.node.route.value)) : Option.none(),
-        children: ReadonlyMap.make(entries),
-      }),
+        children: ReadonlyMap.make(entries)
+      })
     )
   }
   return frozen.get(root)!
@@ -170,7 +170,7 @@ export effect function make(input: ReadonlyArray<Route.Route>): Effect<CommandTr
         code: "duplicate_route",
         method: "CommandTree.make",
         description: "Two routes claim the same command name",
-        path: route.name,
+        path: route.name
       })
     }
     node.route = Option.some(route)
@@ -182,7 +182,7 @@ effect function resolutionTokens(input: ReadonlyArray<string>): Effect<ReadonlyA
   const captured = Boundary.stringArray(input, {
     maxItems: maximumResolutionTokens,
     maxLength: CommandLine.maximumTokenLength,
-    allowEmpty: true,
+    allowEmpty: true
   })
   if (!captured.ok) {
     if (captured.kind === "invalid_text") {
@@ -190,7 +190,7 @@ effect function resolutionTokens(input: ReadonlyArray<string>): Effect<ReadonlyA
         code: "parse_failed",
         method: "CommandTree.resolve",
         description: "The command arguments must be well-formed text without NUL",
-        path: captured.path,
+        path: captured.path
       })
     }
     throw resourceLimit("CommandTree.resolve", "The command arguments exceed their resource bounds")
@@ -229,7 +229,7 @@ export effect function resolve(tree: CommandTree, input: ReadonlyArray<string>):
     throw new FsError({
       code: "unknown_command",
       method: "CommandTree.resolve",
-      description: "No command matches the supplied name",
+      description: "No command matches the supplied name"
     })
   }
   return Object.freeze({ route: matched.route, rest: Object.freeze(argv.slice(matched.consumed)) })
@@ -243,14 +243,14 @@ export effect function resolve(tree: CommandTree, input: ReadonlyArray<string>):
  */
 export effect function resolveExact(
   tree: CommandTree,
-  argv: ReadonlyArray<string>,
+  argv: ReadonlyArray<string>
 ): Effect<Route.Route, FsError, infer R> {
   const { rest, route } = try resolve(tree, argv)
   if (rest.length !== 0) {
     throw new FsError({
       code: "unknown_command",
       method: "CommandTree.resolveExact",
-      description: "No command exactly matches the supplied name",
+      description: "No command exactly matches the supplied name"
     })
   }
   return route

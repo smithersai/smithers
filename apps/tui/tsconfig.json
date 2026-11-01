@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "moduleSuffixes": ["",".d.vibe"],
+    "moduleSuffixes": ["", ".d.vibe"],
     "rewriteRelativeImportExtensions": true,
     "allowArbitraryExtensions": true,
     "lib": ["ESNext", "DOM", "DOM.AsyncIterable"],

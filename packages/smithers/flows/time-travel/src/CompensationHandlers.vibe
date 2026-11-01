@@ -74,7 +74,7 @@ export type Classification = typeof Classification.Type
 export const Assessment = Schema.Struct({
   classification: Classification,
   reason: Schema.String,
-  residue: Schema.String,
+  residue: Schema.String
 })
 /**
  * The value form of {@link Assessment}.
@@ -141,7 +141,7 @@ export interface Handler {
  * @category services
  */
 export class CompensationHandlers extends Context.Service<CompensationHandlers, ReadonlyArray<Handler>>()(
-  "@smthrs/time-travel/CompensationHandlers",
+  "@smthrs/time-travel/CompensationHandlers"
 ) {}
 
 /**

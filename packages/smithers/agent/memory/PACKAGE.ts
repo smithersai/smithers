@@ -142,7 +142,13 @@ const securityReview = Smithers.SecurityReview({
         "A tag group, bank list, query, key, text, or maxTokens accepted without the MAX_* caps before the store runs.",
         "A recursive walk or unbounded scan (vector pages, FTS paging loop) with no row or iteration ceiling."
       ],
-      paths: ["src/Namespace.vibe", "src/Recall.vibe", "src/Flows.ts", "src/RecallSemantic.ts", "src/internal/Search.ts"]
+      paths: [
+        "src/Namespace.vibe",
+        "src/Recall.vibe",
+        "src/Flows.ts",
+        "src/RecallSemantic.ts",
+        "src/internal/Search.ts"
+      ]
     },
     {
       id: "embedding-provider-output",

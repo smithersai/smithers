@@ -78,7 +78,7 @@ export error SmithersError {
     code: SmithersErrorCode,
     summary: string,
     details?: Record<string, unknown>,
-    options: SmithersErrorOptions = {},
+    options: SmithersErrorOptions = {}
   ) {
     const docsUrl = ERROR_REFERENCE_URL
     const suffix = ` See ${docsUrl}`
@@ -102,7 +102,7 @@ export error SmithersError {
       code,
       summary: summaryWithoutDocsUrl,
       docsUrl,
-      ...(details !== undefined ? { details: Object.freeze({ ...details }) } : {}),
+      ...(details !== undefined ? { details: Object.freeze({ ...details }) } : {})
     })
     const cause = options.cause
     if (cause !== undefined) {
@@ -128,7 +128,7 @@ Object.defineProperty(SmithersError.prototype, Symbol.for("nodejs.util.inspect.c
   value: undefined,
   enumerable: false,
   writable: true,
-  configurable: true,
+  configurable: true
 })
 
 /**
