@@ -14,7 +14,7 @@ import { basename, dirname, isAbsolute, join, parse, relative, sep } from "node:
 import type { Limits } from "../AtomicFileSystem.ts"
 import { convert, decode, failure, frameHeaderBytes, type HelperResult } from "./AtomicFileSystemProtocol.ts"
 import { AtomicHelperError } from "./AtomicHelperError.ts"
-import { atomicHelperFault } from "./AtomicHelperFault.ts"
+import { atomicHelperFault } from "./AtomicHelperFault.vibe"
 
 let startedHelpers = 0
 

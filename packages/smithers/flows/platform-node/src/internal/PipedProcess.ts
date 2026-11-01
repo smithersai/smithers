@@ -15,7 +15,7 @@ import type * as Scope from "effect/Scope"
 import * as Sink from "effect/Sink"
 import * as Stream from "effect/Stream"
 import * as Native from "node:child_process"
-import { NativeProcessError } from "./ProcessFault.ts"
+import { NativeProcessError } from "./ProcessFault.vibe"
 
 // Effect 4.1 lets an argument or an environment value be Redacted; the
 // process receives its value, as Effect's own spawners pass it.

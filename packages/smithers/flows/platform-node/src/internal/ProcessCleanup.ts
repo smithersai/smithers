@@ -9,7 +9,7 @@ import * as Effect from "effect/Effect"
 import type * as PlatformError from "effect/PlatformError"
 import type * as ChildProcess from "effect/process/ChildProcess"
 import { constants } from "node:os"
-import { ProcessCleanupPolicyError } from "./ProcessCleanupPolicyError.ts"
+import { ProcessCleanupPolicyError } from "./ProcessCleanupPolicyError.vibe"
 import * as Supervisor from "./ProcessSupervisor.ts"
 
 /**

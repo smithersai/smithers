@@ -8,8 +8,6 @@
  * @since 1.0.0
  */
 
-import { Schema } from "effect"
-
 /**
  * Which rule of the helper protocol or transport was broken.
  * @category models
@@ -33,7 +31,7 @@ export const AtomicHelperFaultCode = Schema.Literals([
   "helper_timeout",
   "response_limit_exceeded",
   "helper_rejected",
-  "helper_exited"
+  "helper_exited",
 ])
 
 /**
@@ -51,7 +49,7 @@ export type AtomicHelperFaultCode = typeof AtomicHelperFaultCode.Type
  */
 export class AtomicHelperFault extends Schema.TaggedError<AtomicHelperFault>()(
   "@smthrs/platform-node/AtomicHelperFault",
-  { code: AtomicHelperFaultCode, message: Schema.String }
+  { code: AtomicHelperFaultCode, message: Schema.String },
 ) {
   override readonly name = "AtomicHelperFault"
 }
@@ -77,8 +75,8 @@ export class AtomicHelperRejection extends Schema.TaggedError<AtomicHelperReject
     code: Schema.String,
     syscall: Schema.optional(Schema.String),
     message: Schema.String,
-    cause: Schema.optional(Schema.Unknown)
-  }
+    cause: Schema.optional(Schema.Unknown),
+  },
 ) {
   override readonly name = "AtomicHelperRejection"
 }
