@@ -37,10 +37,22 @@ describe("PageHeader", () => {
 
 describe("PageHeader nav buttons", () => {
   test("a button among the sections reads like a section link: muted, borderless, no underline", () => {
-    const rule = composeSmithersUiStyles().split("\n").find((line) => line.startsWith(".sui-page-header-nav .sui-button {"));
+    const rule = composeSmithersUiStyles().split("\n").find((line) => line.startsWith(".sui-page-header-nav :is(.sui-button-link, .sui-button-ghost) {"));
     expect(rule).toContain("background:transparent");
     expect(rule).toContain("border:0");
     expect(rule).toContain("text-decoration:none");
+  });
+});
+
+describe("PageHeader slots", () => {
+  test("a solid button among the sections keeps its own look; only link and ghost buttons read as section links", () => {
+    expect(composeSmithersUiStyles()).not.toContain(".sui-page-header-nav .sui-button {");
+  });
+
+  test("the back slot lays its items in one row, so a status beside the wordmark never wraps under it", () => {
+    const rule = composeSmithersUiStyles().split("\n").find((line) => line.startsWith(".sui-page-header-back {"));
+    expect(rule).toContain("display:flex");
+    expect(rule).toContain("align-items:center");
   });
 });
 

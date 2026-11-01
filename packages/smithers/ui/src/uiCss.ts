@@ -317,6 +317,7 @@ export const tableCss = `
 .sui-page-header-inner { box-sizing:border-box; max-width:1040px; margin:0 auto; min-height:52px; padding:8px 56px 8px 24px; display:flex; align-items:center; gap:16px; min-width:0; }
 .sui-page-header[data-width='narrow'] .sui-page-header-inner { max-width:760px; }
 .sui-page-header[data-width='wide'] .sui-page-header-inner { max-width:1280px; }
+.sui-page-header-back { display:flex; align-items:center; gap:8px; min-width:0; flex:none; }
 .sui-page-header-back a, .sui-page-header-back button { color:${t.mutedForeground}; font-size:13px; text-decoration:none; white-space:nowrap; }
 .sui-page-header-back a:hover { color:${t.foreground}; }
 .sui-page-header-title { margin:0; min-width:0; color:${t.foreground}; font-size:15px; font-weight:650; line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -325,8 +326,8 @@ export const tableCss = `
 .sui-page-header-nav > a { display:inline-flex; align-items:center; min-height:${t.controlHeight}; padding:0 10px; border-radius:${t.radiusControl}; color:${t.mutedForeground}; font-size:13px; text-decoration:none; white-space:nowrap; }
 .sui-page-header-nav > a:hover { background:${t.hoverSubtle}; color:${t.foreground}; }
 .sui-page-header-nav > a[aria-current='page'] { background:${t.primarySoft}; color:${t.primary}; font-weight:650; }
-.sui-page-header-nav .sui-button { flex:none; min-height:${t.controlHeight}; padding:0 10px; border:0; border-radius:${t.radiusControl}; background:transparent; box-shadow:none; color:${t.mutedForeground}; font-size:13px; font-weight:400; text-decoration:none; white-space:nowrap; }
-.sui-page-header-nav .sui-button:hover { background:${t.hoverSubtle}; color:${t.foreground}; text-decoration:none; }
+.sui-page-header-nav :is(.sui-button-link, .sui-button-ghost) { flex:none; min-height:${t.controlHeight}; padding:0 10px; border:0; border-radius:${t.radiusControl}; background:transparent; box-shadow:none; color:${t.mutedForeground}; font-size:13px; font-weight:400; text-decoration:none; white-space:nowrap; }
+.sui-page-header-nav :is(.sui-button-link, .sui-button-ghost):hover { background:${t.hoverSubtle}; color:${t.foreground}; text-decoration:none; }
 .sui-page-header-actions { margin-inline-start:auto; display:flex; align-items:center; gap:8px; flex:none; }
 .sui-page-body { box-sizing:border-box; width:100%; max-width:1040px; margin:0 auto; padding:24px 24px 64px; display:grid; align-content:start; gap:16px; min-width:0; }
 .sui-page-body[data-width='narrow'] { max-width:760px; }
