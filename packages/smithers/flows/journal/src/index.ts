@@ -41,7 +41,7 @@ export * as ExecutionFact from "./ExecutionFact.ts"
  * @category events
  * @since 1.0.0
  */
-export * as CallFact from "./CallFact.ts"
+export * as CallFact from "./CallFact.vibe"
 
 /**
  * @since 1.0.0

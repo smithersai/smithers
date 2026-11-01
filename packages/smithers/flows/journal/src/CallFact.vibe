@@ -52,10 +52,11 @@ export type Call = typeof Call.Type
  * @category services
  * @since 1.0.0
  */
-export class Annotation extends Context.Service<Annotation, {
-  readonly phase: "invoked" | "settled"
-  readonly call: Call
-}>()("@smthrs/journal/CallFact/Annotation") {}
+export service Annotation {
+  static readonly key = "@smthrs/journal/CallFact/Annotation"
+  phase: "invoked" | "settled"
+  call: Call
+}
 
 /** Public result vocabulary. Executable outcomes remain in the protected attempt row.
  * @category schemas
