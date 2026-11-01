@@ -499,9 +499,15 @@ describe("the repository's runners and agents", () => {
       ])
       expect((await asAdmin.send("agents/smithers", "PUT", { labels: [], profile: "p" })).status).toBe(400)
       expect((await asAdmin.send("agents/coder", "PUT", { labels: [], profile: "p", maxHours: 13 })).status).toBe(400)
+      // Production 2026-11-01: a TODO committed in the seconds after the 202 read no agent and took its committer's
+      // connection instead. The read says when the write has landed; only an Admin in person reads it.
+      expect((await asAdmin.send("agents/coder", "GET")).status).toBe(404)
       expect((await asAdmin.send("agents/coder", "PUT", { labels: ["linux"], profile: "coder-profile", coding: true })).status)
         .toBe(202)
       expect(await query(Store.codingAgent(REPO))).toEqual(Option.some(agent))
+      expect(await asAdmin.send("agents/coder", "GET")).toEqual({ status: 200, body: { name: "coder", coding: true } })
+      expect((await asMember.send("agents/coder", "GET")).status).toBe(403)
+      expect((await asNobody.send("agents/coder", "GET")).status).toBe(401)
       expect((await asAdmin.send("agents/coder", "DELETE")).status).toBe(202)
       expect((await asAdmin.send("runners/nyc-01", "DELETE")).status).toBe(202)
       expect(await query(Store.codingAgent(REPO))).toEqual(Option.none())

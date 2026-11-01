@@ -15,6 +15,7 @@ import { installedOn, roleOn } from "../branch/Access.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
 import * as AdminFlows from "./AdminFlows.ts"
+import * as Store from "./Store.ts"
 
 // The Admin routes for a repository's runners and agents (decision 0136, docs/features/agent-runners.md#admin):
 //
@@ -22,7 +23,8 @@ import * as AdminFlows from "./AdminFlows.ts"
 //   (`admin/AddRunner`); `DELETE` retires it (`admin/RemoveRunner`). The runner made its token itself
 //   (`smthrs runner token`); only its SHA-256 comes here.
 // - `PUT /api/repos/<owner>/<name>/agents/<agent> { labels, profile, maxHours?, restarts?, coding? }` names an external
-//   agent (`admin/SetAgent`); `DELETE` removes it (`admin/RemoveAgent`).
+//   agent (`admin/SetAgent`); `DELETE` removes it (`admin/RemoveAgent`). `GET` answers `{ name, coding }` once the write
+//   has landed, 404 before: a 202 means the flow started, and until it writes, TODOs read the repository's old agent.
 //
 // Each needs an Admin of the repository (the role they work with there, decision 0079) acting in person, never an
 // agent, flow or sandbox acting for them; the route admits the write, then starts the flow and answers 202.
@@ -68,15 +70,16 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
     const starter = yield* Flows.FlowStarter
     const startedAt = yield* Clock.currentTimeMillis
     const route = parseAdminRoute(request.url.split("?")[0]!)!
-    const op = request.method === "DELETE" ? "delete" : "put"
+    const op = request.method === "DELETE" ? "delete" : request.method === "GET" ? "get" : "put"
     const fields: Fields = { kind: route.kind, op }
     const refuse = (status: number, code: Refusal) => {
       fields.code = code
       return HttpServerResponse.jsonUnsafe({ code }, { status, headers: noStore })
     }
     const response = yield* Effect.gen(function* () {
-      if (request.method !== "PUT" && request.method !== "DELETE") {
-        return HttpServerResponse.empty({ status: 405, headers: { allow: "PUT, DELETE" } })
+      const readable = route.kind === "agents"
+      if (request.method !== "PUT" && request.method !== "DELETE" && !(op === "get" && readable)) {
+        return HttpServerResponse.empty({ status: 405, headers: { allow: readable ? "GET, PUT, DELETE" : "PUT, DELETE" } })
       }
       const actor = yield* sessions.resolve
       if (Option.isNone(actor)) return refuse(401, "authentication")
@@ -89,6 +92,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
       if (!isName(route.item)) return refuse(400, "invalid")
       fields.repoId = repo
       fields.name = route.item
+      if (op === "get") {
+        const agent = yield* Store.agent(repo, route.item).pipe(Effect.provide(database))
+        if (Option.isNone(agent)) return refuse(404, "not_found")
+        fields.outcome = "read"
+        return HttpServerResponse.jsonUnsafe(agent.value, { headers: noStore })
+      }
       const executionId = adminExecutionId(route.kind, op, crypto.randomUUID())
       const actorId = actor.value.subject.id
       const start = (flow: (typeof AdminFlows.flows)[number], payload: unknown) =>

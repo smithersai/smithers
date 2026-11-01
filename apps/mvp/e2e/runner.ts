@@ -84,6 +84,12 @@ export const startRunner = async (
     const sha = (JSON.parse(token) as { sha256: string }).sha256
     await adminWrite(page, repo, `runners/${name}`, "PUT", { tokenSha256: sha, labels: ["e2e"], capacity })
     await adminWrite(page, repo, `agents/${name}`, "PUT", { labels: ["e2e"], profile: "acp-test", coding: true })
+    // A 202 means `admin/SetAgent` started. A TODO committed before it writes reads no agent and takes its committer's
+    // connection instead: production's write landed 2 to 6 s after its 202, and one lane of ten lost that race.
+    await expect.poll(async () => {
+      const response = await page.request.get(new URL(`/api/repos/${repo}/agents/${name}`, baseURL).href)
+      return response.status() === 200 ? ((await response.json()) as { readonly coding: boolean }).coding : false
+    }, { timeout: 60_000 }).toBe(true)
     const config = {
       origin: options.origin ?? new URL(baseURL).origin,
       name,

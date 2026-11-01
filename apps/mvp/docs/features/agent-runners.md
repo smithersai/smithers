@@ -46,6 +46,9 @@ An Admin of the repository does each step in person; an agent, a flow or a sandb
    set) is how many more generations a retryable end may have. At most one agent is the coding agent; `DELETE` it, or
    set another, and TODOs code with their committers' model connections again. `smithers` is reserved.
 
+   The `202` means the write started. `GET` the same path answers `{ "name", "coding" }` once it has landed, and `404`
+   before: a TODO committed sooner reads the repository's old coding agent, or none.
+
 4. Write `runner.json` on the machine and start the runner. The [CLI reference](../../../../packages/smithers/docs/reference/cli/runner.md)
    describes every field: the origin, the runner's name, its capacity, each repository's local `jj` mirror, and each
    profile's `argv`, `env`, `prestart` hook and `secretEnv`.

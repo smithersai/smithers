@@ -114,6 +114,15 @@ export const removeAgent = (
 
 const decodeAgent = Schema.decodeUnknownEffect(AgentRunner.Agent)
 
+/** Agent `name` of repository `repoId`, once its write landed: its name and whether TODOs code with it. */
+export const agent = (repoId: string, name: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<{ readonly name: string; readonly coding: boolean }>`
+      SELECT name, coding FROM agents WHERE repo_id = ${repoId} AND name = ${name}`
+    return Option.fromNullishOr(row)
+  })
+
 /** Repository `repoId`'s coding agent, or none when it codes with Smithers' own. A row the schema refuses dies. */
 export const codingAgent = (repoId: string): Effect.Effect<Option.Option<AgentRunner.Agent>, unknown, SqlClient.SqlClient> =>
   Effect.gen(function* () {
