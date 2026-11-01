@@ -13,6 +13,7 @@ export interface TimelineModel {
   readonly levels: number;
   readonly spans: readonly TimelineBlock[];
   readonly arcs: readonly TimelineBlock[];
+  readonly higher?: readonly (readonly TimelineBlock[])[];
   /** Widen the transcript history window; mounting is observed before restoring the requested position. */
   readonly onJump?: (id: string) => void;
 }
@@ -43,8 +44,9 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
   let boxes: readonly TimelineBox[] = [];
   let tops: readonly number[] = [];
   let rowWindow: TimelineWindow | undefined;
-  let blockWindow: TimelineWindow | undefined;
-  let drag: { readonly kind: "thumb" | "lens1" | "lens2"; readonly grab: number } | undefined;
+  let blockWindows: (TimelineWindow | undefined)[] = [];
+  const columns = () => [model.spans, model.arcs, ...(model.higher ?? [])];
+  let drag: { readonly level: number; readonly grab: number } | undefined;
   let pendingRead: { readonly row: number; readonly center: boolean; readonly id: string } | undefined;
   let frame = 0;
   let layoutWidth = -1, layoutHeight = -1;
@@ -78,8 +80,8 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
     q<HTMLElement>(`.sui-tl-row[data-row="${next.start}"]`)?.setAttribute("tabindex", "0");
   };
 
-  const moveBlocks = (next: TimelineWindow, animate: boolean): boolean => {
-    const content = inner(1), frameEl = clip(1);
+  const moveBlocks = (lvl: number, next: TimelineWindow, animate: boolean): boolean => {
+    const content = inner(lvl), frameEl = clip(lvl);
     if (content === null || frameEl === null) return false;
     const first = content.querySelector<HTMLElement>(`[data-block="${next.start}"]`);
     const last = content.querySelector<HTMLElement>(`[data-block="${next.end - 1}"]`);
@@ -135,22 +137,23 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
       upper!.setAttribute("d", T); lower!.setAttribute("d", B);
       beam!.setAttribute("d", `${T} L${x} ${y1 - CORNER} Q${x} ${y1} ${x - CORNER} ${y1} C${x - CORNER - k} ${y1} ${right + k} ${l.bottom - .5} ${right} ${l.bottom - .5} Z`);
     };
-    const lv0 = level(0), c0 = clip(0);
-    if (lv0 === null || c0 === null) return;
-    const frame0 = rect(c0), x0 = rect(lv0).left + 3.5;
-    const outer = model.levels >= 2;
-    track(0, outer ? `M${x0} ${frame0.top + CORNER} L${x0} ${frame0.bottom - CORNER}` : `M${x0} ${frame0.top} L${x0} ${frame0.bottom}`);
-    if (!outer) { track(1, ""); track(2, ""); return; }
-    funnel(1, q("[data-lens='1']"), x0, frame0.top, frame0.bottom);
-    const lv1 = level(1), c1 = clip(1);
-    if (lv1 === null || c1 === null) return;
-    const frame1 = rect(c1), x1 = rect(lv1).left + 3.5;
-    const third = model.levels >= 3 ? level(2) : null;
-    track(1, third ? `M${x1} ${frame1.top + CORNER} L${x1} ${frame1.bottom - CORNER}` : `M${x1} ${frame1.top} L${x1} ${frame1.bottom}`);
-    if (third === null) { track(2, ""); return; }
-    funnel(2, q("[data-lens='2']"), x1, frame1.top, frame1.bottom);
-    const x2 = rect(third).left + 3.5, height = box.clientHeight;
-    track(2, `M${x2} 0 L${x2} ${height}`);
+    for (let lvl = 0; lvl < model.levels; lvl++) {
+      const column = level(lvl), frame = clip(lvl);
+      if (column === null || frame === null) continue;
+      const bounds = rect(frame), x = rect(column).left + 3.5;
+      const corner = lvl < model.levels - 1 ? CORNER : 0;
+      track(lvl, `M${x} ${bounds.top + corner} L${x} ${Math.max(bounds.top + corner, bounds.bottom - corner)}`);
+      if (lvl > 0) {
+        const lower = level(lvl - 1), lowerClip = clip(lvl - 1);
+        if (lower !== null && lowerClip !== null) {
+          const bounds = rect(lowerClip);
+          funnel(lvl, q(`[data-lens='${lvl}']`), rect(lower).left + 3.5, bounds.top, bounds.bottom);
+        }
+      }
+    }
+    box.querySelectorAll<SVGPathElement>(".sui-tl-trk").forEach(path => {
+      if (Number(path.dataset.t) >= model.levels) path.setAttribute("d", "");
+    });
   };
 
   const update = (force = false) => {
@@ -159,7 +162,7 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
     const height = box.clientHeight;
     if (height !== layoutHeight || box.clientWidth !== layoutWidth) {
       layoutHeight = height; layoutWidth = box.clientWidth;
-      rowWindow = undefined; blockWindow = undefined;
+      rowWindow = undefined; blockWindows = [];
       force = true;
     }
     const top = viewport?.scrollTop ?? 0, bottom = top + (viewport?.clientHeight ?? 0);
@@ -168,19 +171,37 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
     const lastIndex = boxes.length === 0 ? -1 : timelineSearch(tops, bottom);
     const visible = boxes.length === 0 ? [] : boxes.slice(boxes[firstIndex]!.bottom < top && firstIndex < boxes.length - 1 ? firstIndex + 1 : firstIndex, lastIndex + 1).map(item => item.row);
     const vf = visible[0] ?? 0, vl = visible.at(-1) ?? vf;
-    const nextRows = drag?.kind === "thumb" && rowWindow !== undefined ? rowWindow : timelineRowWindow({
+    const nextRows = drag?.level === 0 && rowWindow !== undefined ? rowWindow : timelineRowWindow({
       count, levels: model.levels, height, first: vf, last: vl, reading, force: force || (drag !== undefined), ask: row => model.asks[row] === true,
       blockStart: row => model.spans[blockOf(model.spans, row)]?.start ?? row,
       ...(rowWindow === undefined ? {} : { current: rowWindow }),
     });
     if (force || nextRows.start !== rowWindow?.start || nextRows.end !== rowWindow?.end) { const animate = rowWindow !== undefined && !force; rowWindow = nextRows; moveRows(nextRows, animate); }
-    const firstBlock = blockOf(model.spans, rowWindow.start), lastBlock = blockOf(model.spans, rowWindow.end - 1);
-    if (model.levels >= 2) {
-      const nextBlocks = timelineBlockWindow({
-        count: model.spans.length, levels: model.levels, height, first: firstBlock, last: lastBlock,
-        force: force || drag?.kind === "lens2", ...(blockWindow === undefined ? {} : { current: blockWindow }),
+    let firstEntry = rowWindow.start, lastEntry = rowWindow.end - 1;
+    const blocksByLevel = columns();
+    for (let lvl = 1; lvl < model.levels; lvl++) {
+      const blocks = blocksByLevel[lvl - 1] ?? [];
+      if (blocks.length === 0) continue;
+      const current = blockWindows[lvl - 1];
+      const next = timelineBlockWindow({
+        count: blocks.length, levels: model.levels, level: lvl, height,
+        first: blockOf(blocks, firstEntry), last: blockOf(blocks, lastEntry),
+        force: force || drag?.level === lvl + 1, ...(current === undefined ? {} : { current }),
       });
-      if (force || nextBlocks.start !== blockWindow?.start || nextBlocks.end !== blockWindow?.end) { if (moveBlocks(nextBlocks, blockWindow !== undefined && !force)) blockWindow = nextBlocks; }
+      if (force || next.start !== current?.start || next.end !== current?.end) {
+        if (moveBlocks(lvl, next, current !== undefined && !force)) blockWindows[lvl - 1] = next;
+      }
+      const content = inner(lvl), lens = q<HTMLElement>(`[data-lens='${lvl}']`);
+      markBlocks(lvl, blocks, firstEntry, lastEntry);
+      if (content !== null && lens !== null) {
+        const first = content.querySelector<HTMLElement>(`[data-block="${next.start}"]`);
+        const last = content.querySelector<HTMLElement>(`[data-block="${next.end - 1}"]`);
+        const low = first?.offsetTop ?? 0, high = (last?.offsetTop ?? 0) + (last?.offsetHeight ?? 0);
+        const range = lensRange(content, firstEntry, lastEntry, low, high);
+        lens.style.top = px(range.top); lens.style.height = px(Math.max(0, range.bottom - range.top));
+      }
+      firstEntry = blocks[next.start]?.start ?? firstEntry;
+      lastEntry = (blocks[next.end - 1]?.end ?? lastEntry + 1) - 1;
     }
     const thumb = q<HTMLElement>(".sui-tl-thumb"), dot = q<HTMLElement>(".sui-tl-dot"), cursor = q<HTMLElement>(".sui-tl-cur");
     if (thumb !== null && dot !== null && cursor !== null) {
@@ -197,26 +218,6 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
       const element = q<HTMLElement>(`.sui-tl-row[data-row="${row}"]`);
       element?.setAttribute("data-in", ""); element?.setAttribute("aria-current", "location");
       inView.add(row);
-    }
-    if (model.levels >= 2) {
-      const content = inner(1), lens = q<HTMLElement>("[data-lens='1']");
-      markBlocks(1, model.spans, rowWindow.start, rowWindow.end - 1);
-      if (content !== null && lens !== null && blockWindow !== undefined) {
-        const firstEl = content.querySelector<HTMLElement>(`[data-block="${blockWindow.start}"]`);
-        const lastEl = content.querySelector<HTMLElement>(`[data-block="${blockWindow.end - 1}"]`);
-        const lo = firstEl?.offsetTop ?? 0, hi = (lastEl?.offsetTop ?? 0) + (lastEl?.offsetHeight ?? 0);
-        const range = lensRange(content, rowWindow.start, rowWindow.end - 1, lo, hi);
-        lens.style.top = px(range.top); lens.style.height = px(Math.max(0, range.bottom - range.top));
-      }
-    }
-    if (model.levels >= 3 && blockWindow !== undefined) {
-      const content = inner(2), lens = q<HTMLElement>("[data-lens='2']");
-      const span0 = model.spans[blockWindow.start], span1 = model.spans[blockWindow.end - 1];
-      if (content !== null && lens !== null && span0 !== undefined && span1 !== undefined) {
-        markBlocks(2, model.arcs, span0.start, span1.end - 1);
-        const range = lensRange(content, span0.start, span1.end - 1, 0, box.clientHeight);
-        lens.style.top = px(range.top); lens.style.height = px(Math.max(0, range.bottom - range.top));
-      }
     }
     drawFunnels();
   };
@@ -301,10 +302,10 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
     if (target.classList?.contains("sui-tl-thumb") || target.classList?.contains("sui-tl-dot")) {
       const content = inner(0);
       if (content === null || viewport === null) return;
-      drag = { kind: "thumb", grab: event.clientY - content.getBoundingClientRect().top - timelineToRow(boxes, viewport.scrollTop) * TIMELINE_PITCH };
+      drag = { level: 0, grab: event.clientY - content.getBoundingClientRect().top - timelineToRow(boxes, viewport.scrollTop) * TIMELINE_PITCH };
     } else if (lens !== undefined) {
       const rect = target.getBoundingClientRect();
-      drag = { kind: lens === "1" ? "lens1" : "lens2", grab: event.clientY - (rect.top + rect.height / 2) };
+      drag = { level: Number(lens), grab: event.clientY - (rect.top + rect.height / 2) };
     } else return;
     event.preventDefault();
     box.setPointerCapture?.(event.pointerId);
@@ -312,7 +313,7 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
   };
   const move = (event: PointerEvent) => {
     if (drag === undefined || viewport === null) return;
-    if (drag.kind === "thumb") {
+    if (drag.level === 0) {
       const content = inner(0);
       if (content === null || rowWindow === undefined) return;
       const y = event.clientY - content.getBoundingClientRect().top - drag.grab;
@@ -320,7 +321,7 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
       readRow(row, false);
       return;
     }
-    const content = inner(drag.kind === "lens1" ? 1 : 2);
+    const content = inner(drag.level);
     if (content === null) return;
     const row = stripToRow(content, event.clientY - content.getBoundingClientRect().top - drag.grab);
     if (row !== undefined) readRow(row, true);
@@ -344,7 +345,7 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement): TimelineDri
       remeasure();
       const rowsGone = rowWindow !== undefined && rowWindow.end > next.ids.length;
       if (rowsGone) rowWindow = undefined;
-      if (blockWindow !== undefined && blockWindow.end > next.spans.length) blockWindow = undefined;
+      blockWindows = blockWindows.map((window, index) => window !== undefined && window.end <= (columns()[index]?.length ?? 0) ? window : undefined);
       // Rows may have changed under their indices: nothing stays marked from before.
       box.querySelectorAll(".sui-tl-row[data-in]").forEach(row => { row.removeAttribute("data-in"); row.removeAttribute("aria-current"); });
       inView.clear();

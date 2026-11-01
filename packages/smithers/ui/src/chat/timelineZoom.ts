@@ -7,8 +7,6 @@
 export const TIMELINE_PITCH = 34;
 /** The gap between blocks in an outer level. */
 export const TIMELINE_BLOCK_GAP = 6;
-/** The mock's three columns: entries, phases, arcs. */
-export const TIMELINE_MAX_LEVELS = 3;
 
 const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value));
 const measured = (height: number) => Math.max(0, Number.isFinite(height) ? height : 0);
@@ -20,11 +18,13 @@ export const timelineCapacity = (height: number): number => Math.max(2, Math.flo
  * The columns a conversation needs: a level appears only when the one inside it no longer fits (FE-16). `spans` is how
  * many phases the level-1 column has.
  */
-export const timelineLevelCount = (entries: number, spans: number, height: number): number => {
+export const timelineLevelCount = (entries: number, spans: number, height: number, outerCounts: readonly number[] = []): number => {
   if (entries <= 0) return 0;
   const capacity = timelineCapacity(height);
-  if (entries <= capacity) return 1;
-  return spans <= capacity ? 2 : TIMELINE_MAX_LEVELS;
+  const counts = [entries, spans, ...outerCounts];
+  const fitting = counts.findIndex(count => count <= capacity);
+  // If the last supplied summary level overflows, show the next level as pending until its summaries arrive.
+  return fitting < 0 ? counts.length + 1 : fitting + 1;
 };
 
 /** A marker a host supplies: this phase or arc starts at entry `start`, with what the summary model wrote. */
@@ -104,6 +104,11 @@ export const timelineMarks = <A extends { readonly weight: number }>(parts: read
 
 /** Columns' widths, innermost first, and the gap between them, for `available` px of rail. */
 export const timelineWidths = (levels: number, available: number): { readonly widths: readonly number[]; readonly gap: number } => {
+  if (levels > 3) {
+    const room = measured(available), gap = Math.min(12, room / (levels * 4));
+    const free = Math.max(0, room - gap * (levels - 1)), total = levels + 7;
+    return { widths: Array.from({ length: levels }, (_, level) => free * (level === 0 ? 6 : level === 1 ? 3 : 1) / total), gap };
+  }
   const gap = available < 300 ? 18 : 20;
   if (levels <= 1) return { widths: [Math.min(available, 200)], gap };
   if (levels === 2) {
@@ -157,22 +162,21 @@ export const timelineRowWindow = (input: {
   return { start, end };
 };
 
-/** Level 1's blocks: all of them with two levels; else the same hold-then-page rule around the blocks level 0 covers. */
+/** Each outer column holds its bounded window, then pages around the inner column’s covered blocks. */
 export const timelineBlockWindow = (input: {
   readonly count: number;
-  readonly levels: number;
   readonly height: number;
   readonly first: number;
   readonly last: number;
   readonly current?: TimelineWindow;
   readonly force?: boolean;
 }): TimelineWindow => {
-  const { count, levels, height, first, last, current, force } = input;
-  if (levels < TIMELINE_MAX_LEVELS) return { start: 0, end: count };
+  const { count, height, first, last, current, force } = input;
   const capacity = timelineCapacity(height);
+  if (count <= capacity) return { start: 0, end: count };
   if (!force && holds(current, first, last) && current!.end - current!.start <= capacity) return current!;
   const start = Math.min(first, clamp(Math.floor((first + last + 1) / 2 - capacity / 2), 0, Math.max(0, count - capacity)));
-  return { start, end: Math.max(Math.min(count, start + capacity), last + 1) };
+  return { start, end: Math.min(count, start + capacity) };
 };
 
 /** A block's height when `perColumn` of them fill a column of `height`. */

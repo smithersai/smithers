@@ -2,7 +2,7 @@
 import { type CSSProperties, type KeyboardEvent, type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { timelineDriver, type TimelineDriver } from "./timelineDriver";
 import {
-  TIMELINE_BLOCK_GAP, TIMELINE_MAX_LEVELS, timelineBlockHeight, timelineBlocks, timelineCapacity, timelineExchanges, timelineLevelCount,
+  TIMELINE_BLOCK_GAP, timelineBlockHeight, timelineBlocks, timelineCapacity, timelineExchanges, timelineLevelCount,
   timelineMarkHeight, timelineMarks, timelineWidths, type TimelineBlock, type TimelineMarker,
 } from "./timelineZoom";
 export {
@@ -32,6 +32,8 @@ export interface ChatTimelineProps {
   readonly phases?: readonly TimelineMarker[];
   /** Larger arcs of phases: level 2, when level 1 no longer fits. */
   readonly arcs?: readonly TimelineMarker[];
+  /** Further model-summarized semantic levels, innermost first. Missing coverage stays pending. */
+  readonly higherLevels?: readonly (readonly TimelineMarker[])[];
   /** Why entries without a summary won't get one now; the rail marks them, and an outer block untitled for it. */
   readonly unavailable?: string;
   /** The host owns navigation. Without it, jump to the entry's transcript anchor. */
@@ -107,7 +109,7 @@ const useBox = (box: RefObject<HTMLDivElement | null>) => {
 };
 
 /** The vertical scrubber of ruling FE-16: a detailed level beside the chat, and coarser ones as the chat outgrows them. */
-export function ChatTimeline({ entries, phases = [], arcs = [], unavailable, onJump, onActivate }: ChatTimelineProps) {
+export function ChatTimeline({ entries, phases = [], arcs = [], higherLevels = [], unavailable, onJump, onActivate }: ChatTimelineProps) {
   useInjectUiCss();
   const rail = useRef<HTMLElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -117,10 +119,12 @@ export function ChatTimeline({ entries, phases = [], arcs = [], unavailable, onJ
   const spans = useMemo(() => timelineBlocks(ids, phases, 1), [ids, phases]);
   const larger = useMemo(() => timelineBlocks(ids, arcs, 2), [ids, arcs]);
   const exchanges = useMemo(() => timelineExchanges(entries.map(entry => entry.kind === "ask")), [entries]);
-  const levels = timelineLevelCount(entries.length, spans.length, size.height);
+  const supplied = useMemo(() => [spans, larger, ...higherLevels.map((markers, index) => timelineBlocks(ids, markers, index + 3))], [spans, larger, higherLevels, ids]);
+  const levels = timelineLevelCount(entries.length, spans.length, size.height, supplied.slice(1).map(blocks => blocks.length));
+  const columns = useMemo(() => [...supplied, timelineBlocks(ids, [], supplied.length + 1)], [supplied, ids]);
   // A level on its way out stays drawn until its exit has played; one on its way in is marked for its entrance.
   const [shown, setShown] = useState(levels);
-  const [entering, setEntering] = useState(TIMELINE_MAX_LEVELS);
+  const [entering, setEntering] = useState(Infinity);
   const previous = useRef(levels);
   useLayoutEffect(() => {
     const from = previous.current;
@@ -128,7 +132,7 @@ export function ChatTimeline({ entries, phases = [], arcs = [], unavailable, onJ
     if (levels <= from) return;
     setEntering(from);
     setShown(levels);
-    const timer = setTimeout(() => setEntering(TIMELINE_MAX_LEVELS), 520);
+    const timer = setTimeout(() => setEntering(Infinity), 520);
     return () => clearTimeout(timer);
   }, [levels]);
   useEffect(() => {
@@ -147,8 +151,8 @@ export function ChatTimeline({ entries, phases = [], arcs = [], unavailable, onJ
     return () => { made.dispose(); driver.current = null; };
   }, []);
   useLayoutEffect(() => {
-    driver.current?.sync({ ids, asks: entries.map(entry => entry.kind === "ask"), levels, spans, arcs: larger, ...(onJump === undefined ? {} : { onJump }) });
-  }, [ids, entries, levels, spans, larger, size, onJump]);
+    driver.current?.sync({ ids, asks: entries.map(entry => entry.kind === "ask"), levels, spans, arcs: larger, higher: columns.slice(2), ...(onJump === undefined ? {} : { onJump }) });
+  }, [ids, entries, levels, spans, larger, columns, size, onJump]);
   const [preview, setPreview] = useState<{ readonly title: string; readonly summary?: string; readonly detail: string; readonly left: number; readonly top: number } | undefined>();
   const show = (element: HTMLElement, title: string, detail: string, summary?: string) => {
     const box = element.getBoundingClientRect();
@@ -170,7 +174,7 @@ export function ChatTimeline({ entries, phases = [], arcs = [], unavailable, onJ
       if (to < 0 || to >= levels) return;
       event.preventDefault();
       const row = entries.indexOf(entry);
-      const blocks = to === 1 ? spans : larger;
+      const blocks = columns[to - 1] ?? [];
       const target = to === 0 ? element.closest(".sui-timeline-box")!.querySelector<HTMLElement>(`[data-row="${row}"]`)
         : element.closest(".sui-timeline-box")!.querySelector<HTMLElement>(`ol[data-level="${to}"] li:nth-child(${Math.max(1, blocks.findIndex(block => block.start <= row && block.end > row) + 1)}) button`);
       target?.focus({ preventScroll: true });
@@ -187,12 +191,12 @@ export function ChatTimeline({ entries, phases = [], arcs = [], unavailable, onJ
     const pitch = height + TIMELINE_BLOCK_GAP;
     const width = widths[lvl] ?? widths.at(-1)!;
     const lines = Math.max(1, Math.floor((height - 1) / 12.5));
-    const strip = lvl === 2 && width < 30;
+    const strip = width < 30;
     const left = lefts[lvl] ?? lefts.at(-1)!;
-    return <div key={lvl} className="sui-tl-lv" data-level={lvl} data-strip={strip || undefined} data-entering={lvl >= entering || undefined} data-leaving={leaving || undefined} style={{ left, width, height: lvl === 2 ? size.height : undefined }}>
-      <div className="sui-tl-clip" style={lvl === 2 ? { height: size.height, left: 0, right: 0, overflow: "visible" } : undefined}>
-        <div className="sui-tl-inner" style={{ height: blocks.length * pitch - TIMELINE_BLOCK_GAP, ...(lvl === 2 ? { marginLeft: 0, width: "100%" } : {}) }}>
-          <ol data-level={lvl} aria-label={lvl === 1 ? "Phases" : "Arcs"}>
+    return <div key={lvl} className="sui-tl-lv" data-level={lvl} data-strip={strip || undefined} data-entering={lvl >= entering || undefined} data-leaving={leaving || undefined} style={{ left, width, height: size.height }}>
+      <div className="sui-tl-clip" style={{ height: Math.min(size.height, blocks.length * pitch - TIMELINE_BLOCK_GAP), maxHeight: size.height }}>
+        <div className="sui-tl-inner" style={{ height: blocks.length * pitch - TIMELINE_BLOCK_GAP }}>
+          <ol data-level={lvl} aria-label={lvl === 1 ? "Phases" : lvl === 2 ? "Arcs" : `Summary level ${lvl}`}>
             {blocks.map((block, index) => {
               const members = entries.slice(block.start, block.end);
               const first = members[0]!;
@@ -219,16 +223,12 @@ export function ChatTimeline({ entries, phases = [], arcs = [], unavailable, onJ
     </div>;
   };
   const leaving = (lvl: number) => lvl >= levels && lvl < drawn;
-  const columnHeight1 = drawn >= TIMELINE_MAX_LEVELS ? timelineBlockHeight(size.height, timelineCapacity(size.height)) : timelineBlockHeight(size.height, spans.length);
-  // More arcs than fit stay readable at a line each; level 2 shows them all and clips the rest.
-  const columnHeight2 = Math.max(12, timelineBlockHeight(size.height, larger.length));
-  const fullPhase = Math.max(4, ...spans.map(span => exchanges.filter(x => x.start >= span.start && x.start < span.end).length));
-  const fullArc = Math.max(4, ...larger.map(arc => spans.filter(span => span.start >= arc.start && span.start < arc.end).length));
+  const blockHeight = (blocks: readonly TimelineBlock[]) => timelineBlockHeight(size.height, Math.max(1, Math.min(timelineCapacity(size.height), blocks.length)));
   return <nav ref={rail} className="sui-chat-timeline" aria-label="Conversation timeline" data-levels={levels}>
     <div ref={box} className="sui-timeline-box" onPointerLeave={hide}>
       <svg className="sui-tl-fun" aria-hidden="true">
-        {[0, 1, 2].map(t => <path key={t} className="sui-tl-trk" data-t={t} />)}
-        {[1, 2].filter(f => f < drawn).map(f => <g key={f} data-f={f} data-entering={f >= entering || undefined} data-leaving={leaving(f) || undefined}><path className="sui-tl-beam" /><path className="sui-tl-ln" pathLength={1} /><path className="sui-tl-ln" pathLength={1} /></g>)}
+        {Array.from({ length: drawn }, (_, level) => level).map(t => <path key={t} className="sui-tl-trk" data-t={t} />)}
+        {Array.from({ length: Math.max(0, drawn - 1) }, (_, index) => index + 1).map(f => <g key={f} data-f={f} data-entering={f >= entering || undefined} data-leaving={leaving(f) || undefined}><path className="sui-tl-beam" /><path className="sui-tl-ln" pathLength={1} /><path className="sui-tl-ln" pathLength={1} /></g>)}
       </svg>
       {entries.length === 0 ? null : <div className="sui-tl-lv" data-level={0} style={{ left: lefts[0], width: widths[0] }}>
         <div className="sui-tl-clip" style={{ height: Math.min(size.height, entries.length * 34) }}>
@@ -257,14 +257,19 @@ export function ChatTimeline({ entries, phases = [], arcs = [], unavailable, onJ
           </div>
         </div>
       </div>}
-      {drawn >= 2 ? blockColumn(1, spans, columnHeight1, span => stripMarks(
-        exchanges.filter(x => x.start >= span.start && x.start < span.end).map(x => {
-          const members = entries.slice(x.start, x.end);
-          return { start: x.start, end: x.end, weight: Math.sqrt(members.reduce((sum, member) => sum + (member.length ?? 1), 0) || 1), state: worst(members) };
-        }), columnHeight1, 3, fullPhase), leaving(1)) : null}
-      {drawn >= 3 ? blockColumn(2, larger, columnHeight2, arc => stripMarks(
-        spans.filter(span => span.start >= arc.start && span.start < arc.end).map(span => ({ start: span.start, end: span.end, weight: span.end - span.start, state: worst(entries.slice(span.start, span.end)) })),
-        columnHeight2, 2, fullArc), leaving(2)) : null}
+      {Array.from({ length: Math.max(0, drawn - 1) }, (_, index) => {
+        const lvl = index + 1;
+        const blocks = columns[index] ?? timelineBlocks(ids, [], lvl);
+        const parts = lvl === 1 ? exchanges : columns[index - 1] ?? [];
+        const height = blockHeight(blocks);
+        const full = Math.max(4, ...blocks.map(block => parts.filter(part => part.start >= block.start && part.start < block.end).length));
+        return blockColumn(lvl, blocks, height, block => stripMarks(
+          parts.filter(part => part.start >= block.start && part.start < block.end).map(part => ({
+            start: part.start, end: part.end,
+            weight: lvl === 1 ? Math.sqrt(entries.slice(part.start, part.end).reduce((sum, entry) => sum + (entry.length ?? 1), 0) || 1) : part.end - part.start,
+            state: worst(entries.slice(part.start, part.end)),
+          })), height, lvl === 1 ? 3 : 2, full), leaving(lvl));
+      })}
     </div>
     <div className="sui-timeline-preview" role="tooltip" hidden={preview === undefined} style={preview ? { left: preview.left, top: preview.top } : undefined}>
       {preview ? <><strong>{preview.title}</strong>{preview.summary ? <span>{preview.summary}</span> : null}<span>{preview.detail}</span></> : null}

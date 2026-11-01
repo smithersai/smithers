@@ -83,12 +83,12 @@ test("a page starts on its block when that still covers the screen, and always c
 });
 
 test("level 1's window holds, then pages around the blocks level 0 covers", () => {
-  const blocks = (extra: Partial<Parameters<typeof timelineBlockWindow>[0]>) => timelineBlockWindow({ count: 60, levels: 3, height: 804, first: 30, last: 31, ...extra });
-  expect(blocks({ levels: 2 })).toEqual({ start: 0, end: 60 });
+  const blocks = (extra: Partial<Parameters<typeof timelineBlockWindow>[0]>) => timelineBlockWindow({ count: 60, height: 804, first: 30, last: 31, ...extra });
+  expect(blocks({ count: 20 })).toEqual({ start: 0, end: 20 });
   expect(blocks({ current: { start: 20, end: 43 }, first: 30, last: 31 })).toEqual({ start: 20, end: 43 });
   const page = blocks({});
   expect(page).toEqual({ start: 19, end: 42 });
-  expect(blocks({ first: 0, last: 40 }).end).toBe(41);
+  expect(blocks({ first: 0, last: 40 }).end).toBe(23);
   expect(blocks({ force: true, current: { start: 0, end: 5 } })).toEqual(page);
 });
 
@@ -129,6 +129,27 @@ test("a shorter rail invalidates retained row and block windows", () => {
   const window = { start: 40, end: 62 };
   const short = rows({ height: 544, current: window, first: 48, last: 50, reading: 49 });
   expect((short.end - short.start) * 34).toBeLessThanOrEqual(544);
-  const blocks = timelineBlockWindow({ count: 60, levels: 3, height: 544, first: 48, last: 50, current: window });
+  const blocks = timelineBlockWindow({ count: 60, height: 544, first: 48, last: 50, current: window });
   expect((blocks.end - blocks.start) * 34).toBeLessThanOrEqual(544);
+});
+
+test("semantic summary levels continue beyond arcs only when each inner level overflows", () => {
+  expect(timelineLevelCount(2000, 200, 704, [50])).toBe(4);
+  expect(timelineLevelCount(20000, 2000, 704, [500, 50, 8])).toBe(5);
+  expect(timelineLevelCount(2000, 20, 704, [50])).toBe(2);
+  for (const levels of [4, 5, 12]) {
+    const { widths, gap } = timelineWidths(levels, 262);
+    expect(widths.length).toBe(levels);
+    expect(widths.every(width => width >= 0)).toBe(true);
+    expect(widths.reduce((sum, width) => sum + width, 0) + gap * (levels - 1)).toBeCloseTo(262);
+  }
+});
+
+test("fifty arcs stay in a bounded window instead of overflowing the outer track", () => {
+  const window = timelineBlockWindow({ count: 50, height: 704, first: 24, last: 27 });
+  expect(window.end - window.start).toBeLessThanOrEqual(timelineCapacity(704));
+  expect(window.start).toBeLessThanOrEqual(24);
+  expect(window.end).toBeGreaterThan(27);
+  const broad = timelineBlockWindow({ count: 50, height: 704, first: 0, last: 49 });
+  expect(broad.end - broad.start).toBeLessThanOrEqual(timelineCapacity(704));
 });

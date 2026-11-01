@@ -290,3 +290,18 @@ test("new unsummarized messages never inherit a closed phase's ready label", asy
     expect(blocks[1]!.dataset.summary).toBe(unavailable ? "unavailable" : "pending");
   }
 });
+
+test("fifty arcs create another level and clip every outer window", () => {
+  const { entries, phases } = phased(2000, 8);
+  const arcs = Array.from({ length: 50 }, (_, index) => ({ id: `arc-${index}`, start: `e${index * 40}`, end: `e${index * 40 + 39}`, title: `Arc ${index}` }));
+  const host = document.createElement("div");
+  host.innerHTML = renderToStaticMarkup(<ChatTimeline entries={entries} phases={phases} arcs={arcs} />);
+  expect(host.querySelector("nav")!.dataset.levels).toBe("4");
+  expect(host.querySelectorAll(".sui-tl-lv").length).toBe(4);
+  expect(host.querySelectorAll(".sui-tl-clip[style*=visible]").length).toBe(0);
+  expect(host.querySelector('ol[data-level="3"] button')!.getAttribute("data-summary")).toBe("pending");
+  const higher = [[{ id: "release", start: "e0", end: "e1999", title: "Preparing the release" }]];
+  host.innerHTML = renderToStaticMarkup(<ChatTimeline entries={entries} phases={phases} arcs={arcs} higherLevels={higher} />);
+  expect(host.querySelector('ol[data-level="3"] button')!.textContent).toBe("Preparing the release");
+  expect(host.querySelector('ol[data-level="3"] button')!.getAttribute("data-summary")).toBe("ready");
+});
