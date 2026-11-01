@@ -4,8 +4,6 @@
  * @since 1.0.0-rc.0
  */
 
-import { Schema } from "effect"
-
 /**
  * Stable, model-facing failure codes for MCP operations.
  *
@@ -19,7 +17,7 @@ export const Code = Schema.Literals([
   "protocol_error",
   "tool_not_found",
   "tool_failed",
-  "invalid_response"
+  "invalid_response",
 ])
 
 /**
@@ -48,5 +46,5 @@ export type Code = typeof Code.Type
 export class McpError extends Schema.TaggedError<McpError>()("flows/mcp/McpError", {
   code: Code,
   message: Schema.String,
-  server: Schema.optional(Schema.String)
+  server: Schema.optional(Schema.String),
 }) {}

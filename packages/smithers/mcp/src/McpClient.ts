@@ -15,13 +15,13 @@ import { isRecord } from "@smthrs/canonical/Record"
 import { Effect, Exit, Result, Schema, Scope } from "effect"
 import type * as HttpClient from "effect/http/HttpClient"
 import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import * as DiagnosticReporter from "./internal/DiagnosticReporter.ts"
+import * as DiagnosticReporter from "./internal/DiagnosticReporter.vibe"
 import * as HttpTransport from "./internal/HttpTransport.ts"
 import * as JsonLimits from "./internal/JsonLimits.ts"
 import * as Limits from "./internal/Limits.ts"
 import * as StdioTransport from "./internal/StdioTransport.ts"
 import * as Transport from "./internal/Transport.ts"
-import { McpError } from "./McpError.ts"
+import { McpError } from "./McpError.vibe"
 
 /**
  * One remote tool as the server describes it.

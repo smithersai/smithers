@@ -10,7 +10,7 @@
  */
 
 import { Effect } from "effect"
-import { McpError } from "../McpError.ts"
+import { McpError } from "../McpError.vibe"
 
 /**
  * Builds the `protocol_error` failure both modules report for malformed

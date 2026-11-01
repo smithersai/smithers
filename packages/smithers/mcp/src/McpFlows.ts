@@ -17,7 +17,7 @@ import * as Effects from "@smthrs/core/Effects"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { Effect, Exit, Schema, Scope } from "effect"
 import * as McpClient from "./McpClient.ts"
-import { McpError } from "./McpError.ts"
+import { McpError } from "./McpError.vibe"
 
 /**
  * Decoded input accepted by every MCP tool flow, which is whatever the remote

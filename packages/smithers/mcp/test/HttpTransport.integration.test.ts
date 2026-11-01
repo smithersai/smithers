@@ -19,10 +19,10 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net"
 import { inspect } from "node:util"
 import { afterEach, describe, expect, it } from "vitest"
-import * as Diagnostics from "../src/Diagnostics.ts"
+import * as Diagnostics from "../src/Diagnostics.vibe"
 import * as HttpTransport from "../src/internal/HttpTransport.ts"
 import * as McpClient from "../src/McpClient.ts"
-import { McpError } from "../src/McpError.ts"
+import { McpError } from "../src/McpError.vibe"
 
 type Message = Record<string, unknown>
 
