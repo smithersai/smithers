@@ -98,14 +98,17 @@ export interface Admitted {
 }
 
 /**
- * The recorded repository run `runId` is, or descends from (a job it started, and the runs those started), walking
- * at most `LINEAGE_DEPTH` generations of parents in `engine`; none for any other run. A run's parents are its
- * `parent_run_id` and every run that spawned it (`flows_run_parents`), as the engine's own inspection reads them. A
- * recorded run the engine hasn't begun is admitted as itself.
+ * `runId`'s ancestors nearest first, one generation at a time, at most `LINEAGE_DEPTH` generations of parents in
+ * `engine`, `runId` itself first. A run's parents are its `parent_run_id` and every run that spawned it
+ * (`flows_run_parents`), as the engine's own inspection reads them. `found` ends the walk with its answer.
  */
-export const admit = <E, R>(runId: string, engine: Layer.Layer<SqlClient.SqlClient, E, R>, depth = LINEAGE_DEPTH) =>
+export const firstAncestor = <A, E, R, E2, R2>(
+  runId: string,
+  engine: Layer.Layer<SqlClient.SqlClient, E, R>,
+  found: (generation: ReadonlyArray<string>) => Effect.Effect<Option.Option<A>, E2, R2>,
+  depth = LINEAGE_DEPTH,
+) =>
   Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
     const parentsOf = (ids: ReadonlyArray<string>) =>
       Effect.flatMap(SqlClient.SqlClient, (engineSql) =>
         engineSql<{ readonly id: string }>`
@@ -119,10 +122,24 @@ export const admit = <E, R>(runId: string, engine: Layer.Layer<SqlClient.SqlClie
     let generation: ReadonlyArray<string> = [runId]
     for (let walked = 0; generation.length > 0; walked++) {
       for (const id of generation) seen.add(id)
-      const rows = yield* sql<{ readonly execution: string; readonly repo_id: string }>`
-        SELECT execution, repo_id FROM runs WHERE execution IN ${sql.in(generation)} ORDER BY execution LIMIT 1`
-      if (rows[0] !== undefined) return Option.some<Admitted>({ execution: rows[0].execution, repoId: rows[0].repo_id })
+      const answer = yield* found(generation)
+      if (Option.isSome(answer)) return answer
       generation = walked === depth ? [] : (yield* parentsOf(generation)).filter((id) => !seen.has(id))
     }
-    return Option.none<Admitted>()
+    return Option.none<A>()
   })
+
+/**
+ * The recorded repository run `runId` is, or descends from (a job it started, and the runs those started); none for
+ * any other run. A recorded run the engine hasn't begun is admitted as itself.
+ */
+export const admit = <E, R>(runId: string, engine: Layer.Layer<SqlClient.SqlClient, E, R>, depth = LINEAGE_DEPTH) =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    firstAncestor(runId, engine, (generation) =>
+      Effect.map(
+        sql<{ readonly execution: string; readonly repo_id: string }>`
+          SELECT execution, repo_id FROM runs WHERE execution IN ${sql.in(generation)} ORDER BY execution LIMIT 1`,
+        (rows) => rows[0] === undefined
+          ? Option.none<Admitted>()
+          : Option.some<Admitted>({ execution: rows[0].execution, repoId: rows[0].repo_id }),
+      ), depth))

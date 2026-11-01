@@ -249,8 +249,13 @@ export const make = <E, R, EE, ER, RS>(
      */
     const access = (runId: string, actor: Actor) => Effect.gen(function* () {
       const ownRole = mayRead(Option.some(actor))
-      // A TODO's run; repository flows may also be named `todo`.
-      const attempt = yield* attemptOf(runId)
+      // A TODO's run or a run it started, such as its `agent/Session`, whose page reads it; repository flows may also
+      // be named `todo`.
+      const attempt = yield* RepoRuns.firstAncestor(runId, engine.database, (generation) =>
+        Effect.map(
+          Effect.forEach(generation, attemptOf),
+          (attempts) => Option.fromNullishOr(attempts.find(Option.isSome)).pipe(Option.flatten),
+        ))
       if (Option.isSome(attempt)) {
         const permitted = yield* memberOn(actor, attempt.value.repoId)
         return { allowed: permitted, watched: permitted, repoRun: Option.none<RepoRuns.Admitted>() }

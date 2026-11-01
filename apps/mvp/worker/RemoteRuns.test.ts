@@ -487,6 +487,24 @@ describe("GET /api/remote-runs/<runId>", () => {
     })
   })
 
+  test("a Member reads the runs a TODO's run started, as its page does; who may not read the TODO may not read them", async () => {
+    const start = await attempt()
+    const runId = todoExecutionId(start.attemptId)
+    await withEngine(async (engine) => {
+      await engine.run(runId)
+      const [child] = await engine.children(runId)
+      const h = await routes(engine, { actor: member })
+      const [status, read] = await json(await h.fetch(remoteRunRoute(child!)))
+      expect([status, read.run.parentRunId]).toEqual([200, runId])
+      expect((await firstShape(h, child!)).rows).toEqual([{ run_id: child, revision: expect.any(String) }])
+      // Reading it isn't acting on it: a child has no steer and no stop of its own.
+      expect((await h.fetch(`${remoteRunRoute(child!)}/stop`, { method: "POST" })).status).toBe(404)
+      const guest_ = await routes(engine, { actor: guest })
+      expect((await guest_.fetch(remoteRunRoute(child!))).status).toBe(403)
+      expect(recorded(h)).not.toContain(SENTINEL)
+    })
+  })
+
   test("refuses who may not read it, a bad page, a run no TODO started and one the engine hasn't begun", async () => {
     const start = await attempt()
     const runId = todoExecutionId(start.attemptId)
