@@ -11,17 +11,18 @@
  * (state/controller/forms.ts) resolves option providers against the seams
  * and holds the draft in the card's payload.
  */
-import { REPO_TOKEN } from "./command-line"
-import { splitRunSource } from "./run-command"
-import { SchemaRepresentation } from "effect"
-import type { JsonSchema, Schema, SchemaAST } from "effect"
+import { REPO_TOKEN } from "./command-line.ts"
+import { splitRunSource } from "./run-command.ts"
+import type { Schema } from "effect"
 
 /** Reuse Effect's importer; unsupported declarations keep their existing JSON launch path. */
 export const declaredInput = (document: unknown): Schema.Top | undefined => {
   if (document === null || typeof document !== "object") return undefined
   try {
     return SchemaRepresentation.fromJsonSchemaDocument(document as JsonSchema.Document<"draft-2020-12">)
-  } catch { return undefined }
+  } catch {
+    return undefined
+  }
 }
 
 export type FieldKind = "text" | "textarea" | "number" | "boolean" | "select" | "write-only"
@@ -52,7 +53,7 @@ export const OPTION_PROVIDERS = [
   /** The target repository's open pull requests (the Review a PR app's picker). */
   "pull-requests",
   /** The flows the target repository declares (`.smithers/factory.json`). */
-  "repository-flows"
+  "repository-flows",
 ] as const
 export type OptionProvider = (typeof OPTION_PROVIDERS)[number]
 
@@ -136,7 +137,11 @@ export const text = (payload: Readonly<Record<string, unknown>>, key: string): s
 }
 
 /** `--name value` when the value is present, for the flag grammars. */
-export const flag = (payload: Readonly<Record<string, unknown>>, key: string, name: string = key): string | undefined => {
+export const flag = (
+  payload: Readonly<Record<string, unknown>>,
+  key: string,
+  name: string = key,
+): string | undefined => {
   const value = text(payload, key)
   return value === undefined ? undefined : `--${name} ${value}`
 }
@@ -156,7 +161,9 @@ const unwrapOptional = (ast: SchemaAST.AST): { readonly ast: SchemaAST.AST; read
   const optional = ast.context?.isOptional === true
   if (ast._tag === "Union") {
     const rest = ast.types.filter((member) => member._tag !== "Undefined")
-    if (rest.length === 1 && rest[0] !== undefined) return { ast: rest[0], optional: optional || rest.length < ast.types.length }
+    if (rest.length === 1 && rest[0] !== undefined) {
+      return { ast: rest[0], optional: optional || rest.length < ast.types.length }
+    }
   }
   return { ast, optional }
 }
@@ -175,9 +182,10 @@ const literalOptions = (ast: SchemaAST.AST): ReadonlyArray<FieldOption> | undefi
 const controlOf = (ast: SchemaAST.AST): Pick<FormField, "kind" | "options"> => {
   // Effect's JSON representation of Number also names non-finite values as
   // strings. A JSON launch can send only the finite numeric branch.
-  const numeric = (node: SchemaAST.AST): boolean => node._tag === "Number" ||
-    (node._tag === "Literal" && ["Infinity", "-Infinity", "NaN"].includes(String(node.literal))) ||
-    (node._tag === "Union" && node.types.every(numeric))
+  const numeric = (node: SchemaAST.AST): boolean =>
+    node._tag === "Number"
+    || (node._tag === "Literal" && ["Infinity", "-Infinity", "NaN"].includes(String(node.literal)))
+    || (node._tag === "Union" && node.types.every(numeric))
   if (ast._tag === "Union" && ast.types.some(type => type._tag === "Number") && numeric(ast)) return { kind: "number" }
   switch (ast._tag) {
     case "Number":
@@ -214,11 +222,20 @@ const formObject = (ast: SchemaAST.AST, payload: Readonly<Record<string, unknown
   )
 }
 
-export const formFieldsFor = (input: Schema.Top, hints: FormHints | undefined = undefined, payload: Readonly<Record<string, unknown>> = {}): ReadonlyArray<FormField> => {
+export const formFieldsFor = (
+  input: Schema.Top,
+  hints: FormHints | undefined = undefined,
+  payload: Readonly<Record<string, unknown>> = {},
+): ReadonlyArray<FormField> => {
   const ast = formObject(input.ast, payload)
   if (ast === undefined) return []
   const required = hints?.requires?.(payload) ?? []
-  return ast.propertySignatures.filter(signature => unwrapOptional(signature.type).ast._tag !== "Never").filter(signature => hints?.fields?.[String(signature.name)]?.hidden !== true || payload[String(signature.name)] === undefined && (!unwrapOptional(signature.type).optional || required.includes(String(signature.name)))).map((signature) => {
+  return ast.propertySignatures.filter(signature => unwrapOptional(signature.type).ast._tag !== "Never").filter(
+    signature =>
+      hints?.fields?.[String(signature.name)]?.hidden !== true
+      || payload[String(signature.name)] === undefined
+        && (!unwrapOptional(signature.type).optional || required.includes(String(signature.name))),
+  ).map((signature) => {
     const name = String(signature.name)
     const { ast: inner, optional } = unwrapOptional(signature.type)
     const control = controlOf(inner)
@@ -232,7 +249,7 @@ export const formFieldsFor = (input: Schema.Top, hints: FormHints | undefined = 
       required: required.includes(name) || (hint?.required ?? !optional),
       ...(hint?.placeholder === undefined ? {} : { placeholder: hint.placeholder }),
       ...(control.options === undefined || kind !== "select" ? {} : { options: control.options }),
-      ...(hint?.optionsFrom === undefined ? {} : { optionsFrom: hint.optionsFrom })
+      ...(hint?.optionsFrom === undefined ? {} : { optionsFrom: hint.optionsFrom }),
     }
   })
 }
@@ -248,8 +265,7 @@ const tokensOf = (args: string | undefined): Array<string> =>
  * it takes. Counting slots alone spent `codeplanesmithers/canary-sandbox` on
  * the schedule name behind it (R102 follow-up), which no schedule is called.
  */
-const namesARepository = (field: FormField, token: string): boolean =>
-  field.name === "repo" && REPO_TOKEN.test(token)
+const namesARepository = (field: FormField, token: string): boolean => field.name === "repo" && REPO_TOKEN.test(token)
 
 /** What the positional read made of a line the grammar refused. */
 export interface PositionalRead {
@@ -288,10 +304,12 @@ export interface PositionalRead {
 export const positionalRead = (
   fields: ReadonlyArray<FormField>,
   hints: FormHints | undefined,
-  args: string | undefined
+  args: string | undefined,
 ): PositionalRead => {
   if (hints?.partial !== undefined) return { payload: hints.partial(args ?? ""), skipped: [] }
-  const source = fields.some((field) => field.name === "sourceCard") ? splitRunSource(args) : { args, sourceCard: undefined }
+  const source = fields.some((field) => field.name === "sourceCard")
+    ? splitRunSource(args)
+    : { args, sourceCard: undefined }
   const tokens = tokensOf(source.args)
   const flag = tokens.findIndex((token) => token.startsWith("--"))
   const positional = flag === -1 ? tokens : tokens.slice(0, flag)
@@ -332,7 +350,7 @@ export const positionalRead = (
 export const partialPayload = (
   fields: ReadonlyArray<FormField>,
   hints: FormHints | undefined,
-  args: string | undefined
+  args: string | undefined,
 ): Readonly<Record<string, unknown>> => positionalRead(fields, hints, args).payload
 
 /** What the input schema says about one property, past `Schema.optional`. */
@@ -343,7 +361,10 @@ interface PropertyShape {
 }
 
 /** The flow's input struct as the submission reads it: one shape per property, in schema order. */
-const inputShape = (input: Schema.Top, payload: Readonly<Record<string, unknown>> = {}): ReadonlyMap<string, PropertyShape> => {
+const inputShape = (
+  input: Schema.Top,
+  payload: Readonly<Record<string, unknown>> = {},
+): ReadonlyMap<string, PropertyShape> => {
   const ast = formObject(input.ast, payload)
   const shape = new Map<string, PropertyShape>()
   if (ast === undefined) return shape
@@ -361,9 +382,15 @@ const inputShape = (input: Schema.Top, payload: Readonly<Record<string, unknown>
  * `assembleArgs` writes and every list grammar reads. Text that is not the
  * JSON an object field needs is the form's refusal, not the flow's problem.
  */
-const asProperty = (shape: PropertyShape | undefined, value: FieldValue, arrays: ArrayEncoding): { readonly value: unknown } | { readonly invalid: true } => {
+const asProperty = (
+  shape: PropertyShape | undefined,
+  value: FieldValue,
+  arrays: ArrayEncoding,
+): { readonly value: unknown } | { readonly invalid: true } => {
   if (typeof value !== "string" || shape === undefined) return { value }
-  if (shape.tag === "Arrays" && arrays === "words") return { value: value.trim() === "" ? [] : value.trim().split(/\s+/) }
+  if (shape.tag === "Arrays" && arrays === "words") {
+    return { value: value.trim() === "" ? [] : value.trim().split(/\s+/) }
+  }
   if (shape.ast._tag === "Literal" && String(shape.ast.literal) === value) return { value: shape.ast.literal }
   if (shape.ast._tag === "Union") {
     const literal = shape.ast.types.find(member => member._tag === "Literal" && String(member.literal) === value)
@@ -402,13 +429,13 @@ export const submissionPayload = (
   fields: ReadonlyArray<FormField>,
   given: Readonly<Record<string, unknown>>,
   draft: FormDraft,
-  arrays: ArrayEncoding = "words"
+  arrays: ArrayEncoding = "words",
 ): Submission => {
   const shape = inputShape(input, { ...given, ...draft })
   const represented = new Set(fields.map((field) => field.name))
   // What the form could not represent stays exactly as the invocation gave it.
   const payload: Record<string, unknown> = Object.fromEntries(
-    Object.entries(given).filter(([name]) => !represented.has(name))
+    Object.entries(given).filter(([name]) => !represented.has(name)),
   )
   for (const field of fields) {
     if (field.kind === "write-only") continue
@@ -423,7 +450,9 @@ export const submissionPayload = (
         continue
       }
       const converted = asProperty(property, value, arrays)
-      if ("invalid" in converted) return { error: `${field.label} is not valid JSON. Fix it before submitting the form.` }
+      if ("invalid" in converted) {
+        return { error: `${field.label} is not valid JSON. Fix it before submitting the form.` }
+      }
       payload[field.name] = converted.value
       continue
     }
@@ -443,7 +472,9 @@ const coerce = (field: FormField, value: unknown, arrays: ArrayEncoding): FieldV
       return Number.isFinite(number) && String(value).trim() !== "" ? number : undefined
     }
     case "boolean":
-      return typeof value === "boolean" ? value : ["true", "on", "yes", "1"].includes(String(value).trim().toLowerCase())
+      return typeof value === "boolean"
+        ? value
+        : ["true", "on", "yes", "1"].includes(String(value).trim().toLowerCase())
     default:
       return typeof value === "object" ? JSON.stringify(value) : String(value)
   }
@@ -455,11 +486,19 @@ const coerce = (field: FormField, value: unknown, arrays: ArrayEncoding): FieldV
  *
  * @category derivation
  */
-export const draftFrom = (fields: ReadonlyArray<FormField>, given: Readonly<Record<string, unknown>>, arrays: ArrayEncoding = "words"): Record<string, FieldValue> => {
+export const draftFrom = (
+  fields: ReadonlyArray<FormField>,
+  given: Readonly<Record<string, unknown>>,
+  arrays: ArrayEncoding = "words",
+): Record<string, FieldValue> => {
   const draft: Record<string, FieldValue> = {}
   for (const field of fields) {
     if (field.kind === "write-only") continue
-    const value = coerce(field, given[field.name] ?? (field.kind === "boolean" && field.required ? false : undefined), arrays)
+    const value = coerce(
+      field,
+      given[field.name] ?? (field.kind === "boolean" && field.required ? false : undefined),
+      arrays,
+    )
     if (value !== undefined) draft[field.name] = value
   }
   return draft
@@ -470,7 +509,9 @@ const blank = (value: FieldValue | undefined): boolean =>
 
 /** The required fields the draft has not filled, in schema order. */
 export const missingFields = (fields: ReadonlyArray<FormField>, draft: FormDraft): Array<string> =>
-  fields.filter((field) => field.required && field.kind !== "boolean" && blank(draft[field.name])).map((field) => field.name)
+  fields.filter((field) => field.required && field.kind !== "boolean" && blank(draft[field.name])).map((field) =>
+    field.name
+  )
 
 /** The slash line a filled form assembles to, and the values it could not carry. */
 export interface AssembledLine {
@@ -519,15 +560,22 @@ export interface AssembledLine {
 export const assembleLine = (
   fields: ReadonlyArray<FormField>,
   hints: FormHints | undefined,
-  payload: Readonly<Record<string, unknown>>
+  payload: Readonly<Record<string, unknown>>,
 ): AssembledLine => {
   payload = publicFormPayload(fields, payload)
   if (hints?.args !== undefined) return builtLine(fields, hints, hints.args, payload)
-  const groups = [...fields.filter((field) => field.name === "sourceCard"), ...fields.filter((field) => field.name !== "sourceCard")]
+  const groups = [
+    ...fields.filter((field) => field.name === "sourceCard"),
+    ...fields.filter((field) => field.name !== "sourceCard"),
+  ]
     .flatMap((field): Array<LineGroup> => {
       const value = payload[field.name]
       if (value === undefined || value === null) return []
-      if (field.kind === "boolean") return value === true || value === "true" ? [{ field, kind: "flag", text: `--${field.name}` }] : []
+      if (field.kind === "boolean") {
+        return value === true || value === "true"
+          ? [{ field, kind: "flag", text: `--${field.name}` }]
+          : []
+      }
       if (Array.isArray(value)) {
         const items = value.map(String).filter((item) => item.trim() !== "").map((item) => item.trim())
         return items.length === 0 ? [] : [{ field, kind: "items", text: items.join(" "), items }]
@@ -554,7 +602,7 @@ export const assembleLine = (
 export const assembleArgs = (
   fields: ReadonlyArray<FormField>,
   hints: FormHints | undefined,
-  payload: Readonly<Record<string, unknown>>
+  payload: Readonly<Record<string, unknown>>,
 ): string => assembleLine(fields, hints, payload).args
 
 /**
@@ -608,9 +656,16 @@ const parsedJson = (value: unknown): unknown => {
 /** Whether the grammar's read of a field is the value written: whitespace-collapsed text, a number, or equal JSON. */
 const readsAs = (got: unknown, want: unknown): boolean => {
   if (got === undefined || got === null) return false
-  const asText = (value: unknown) => Array.isArray(value) ? collapse(value.map(String).join(" ")) : typeof value === "object" ? JSON.stringify(value) : collapse(value)
+  const asText = (value: unknown): string =>
+    Array.isArray(value)
+      ? collapse(value.map(String).join(" "))
+      : typeof value === "object"
+      ? JSON.stringify(value)
+      : collapse(value)
   if (asText(got) === asText(want)) return true
-  if (typeof want === "number" || typeof got === "number") return Number(got) === Number(want) && String(want).trim() !== ""
+  if (typeof want === "number" || typeof got === "number") {
+    return Number(got) === Number(want) && String(want).trim() !== ""
+  }
   const left = parsedJson(got)
   const right = parsedJson(want)
   return left !== undefined && typeof left === "object" && JSON.stringify(left) === JSON.stringify(right)
@@ -624,10 +679,12 @@ const readsBackAsWritten = (
   fields: ReadonlyArray<FormField>,
   hints: FormHints | undefined,
   groups: ReadonlyArray<LineGroup>,
-  flags: ReadonlyArray<string>
+  flags: ReadonlyArray<string>,
 ): boolean => {
   const expected = new Map<string, string>()
-  for (const group of groups) expected.set(group.field.name, group.field.kind === "number" ? String(Number(group.text)) : group.text)
+  for (const group of groups) {
+    expected.set(group.field.name, group.field.kind === "number" ? String(Number(group.text)) : group.text)
+  }
   const read = positionalRead(fields, hints, [...groups.map(lineText), ...flags].join(" ")).payload
   const booleans = new Set(fields.filter((field) => field.kind === "boolean").map((field) => field.name))
   const readNames = Object.keys(read).filter((name) => read[name] !== undefined && !booleans.has(name))
@@ -637,10 +694,15 @@ const readsBackAsWritten = (
 }
 
 const present = (value: unknown): boolean =>
-  value !== undefined && value !== null && !(typeof value === "string" && value.trim() === "") && !(Array.isArray(value) && value.length === 0)
+  value !== undefined && value !== null && !(typeof value === "string" && value.trim() === "")
+  && !(Array.isArray(value) && value.length === 0)
 
 const valueText = (value: unknown): string =>
-  Array.isArray(value) ? value.map(String).join(" ") : typeof value === "object" ? JSON.stringify(value) : String(value).trim()
+  Array.isArray(value)
+    ? value.map(String).join(" ")
+    : typeof value === "object"
+    ? JSON.stringify(value)
+    : String(value).trim()
 
 /**
  * Whether a flow's builder wrote this value where its grammar cannot read a
@@ -658,7 +720,7 @@ const placedSafely = (field: FormField, value: unknown, args: string, withoutFie
   // Quoting a duplicate is not evidence about this field's placement. Compare
   // exposed tokens with the builder's output when this field is absent, so
   // independent flags remain valid but an unquoted copy cannot hide.
-  const exposed = (line: string) => line.replace(/"(?:\\.|[^"\\])*"/g, " ").split(/\s+/).filter(quotable)
+  const exposed = (line: string): string[] => line.replace(/"(?:\\.|[^"\\])*"/g, " ").split(/\s+/).filter(quotable)
   const baseline = exposed(withoutField())
   return exposed(args).every((token) => {
     const index = baseline.indexOf(token)
@@ -673,7 +735,7 @@ const builtLine = (
   fields: ReadonlyArray<FormField>,
   hints: FormHints,
   build: (payload: Readonly<Record<string, unknown>>) => string,
-  payload: Readonly<Record<string, unknown>>
+  payload: Readonly<Record<string, unknown>>,
 ): AssembledLine => {
   const carried: Record<string, unknown> = { ...payload }
   const withheld: Array<string> = []
@@ -681,11 +743,13 @@ const builtLine = (
   for (;;) {
     const args = build(carried).trim()
     const live = checked.filter((field) => present(carried[field.name]))
-    let refused = live.filter((field) => !placedSafely(field, carried[field.name], args, () => {
-      const without = { ...carried }
-      delete without[field.name]
-      return build(without)
-    }))
+    let refused = live.filter((field) =>
+      !placedSafely(field, carried[field.name], args, () => {
+        const without = { ...carried }
+        delete without[field.name]
+        return build(without)
+      })
+    )
     if (refused.length === 0 && hints.partial !== undefined) {
       const read = hints.partial(args)
       refused = live.filter((field) => !readsAs(read[field.name], carried[field.name]))
@@ -701,7 +765,11 @@ const builtLine = (
 }
 
 /** Write-only properties are never an input to a durable command or form. */
-export const publicFormPayload = (fields: ReadonlyArray<FormField>, payload: Readonly<Record<string, unknown>>, payloadField?: string): Record<string, unknown> => {
+export const publicFormPayload = (
+  fields: ReadonlyArray<FormField>,
+  payload: Readonly<Record<string, unknown>>,
+  payloadField?: string,
+): Record<string, unknown> => {
   // Leave other forms' input (including malformed input their schema refuses)
   // untouched. Object.entries would normalize a non-object into a valid map.
   if (!fields.some(field => field.kind === "write-only")) return payload
@@ -709,7 +777,8 @@ export const publicFormPayload = (fields: ReadonlyArray<FormField>, payload: Rea
   if (payloadField !== undefined) {
     const nested = payload[payloadField]
     return nested !== null && typeof nested === "object" && !Array.isArray(nested)
-      ? { ...payload, [payloadField]: publicFormPayload(fields, nested as Record<string, unknown>) } : { ...payload }
+      ? { ...payload, [payloadField]: publicFormPayload(fields, nested as Record<string, unknown>) }
+      : { ...payload }
   }
   const privateNames = new Set(fields.filter(field => field.kind === "write-only").map(field => field.name))
   return Object.fromEntries(Object.entries(payload).filter(([name]) => !privateNames.has(name)))
@@ -728,7 +797,14 @@ export const missingLabels = (fields: ReadonlyArray<FormField>, draft: FormDraft
  * @category derivation
  * @since 0.1.0
  */
-export const fileSubmission = (input: Schema.Top, fields: ReadonlyArray<FormField>, given: Readonly<Record<string, unknown>>, draft: FormDraft): Submission => {
+export const fileSubmission = (
+  input: Schema.Top,
+  fields: ReadonlyArray<FormField>,
+  given: Readonly<Record<string, unknown>>,
+  draft: FormDraft,
+): Submission => {
   const missing = missingLabels(fields, draft)
-  return missing.length > 0 ? { error: `Needs: ${missing.join(", ")}` } : submissionPayload(input, fields, given, draft, "json")
+  return missing.length > 0
+    ? { error: `Needs: ${missing.join(", ")}` }
+    : submissionPayload(input, fields, given, draft, "json")
 }

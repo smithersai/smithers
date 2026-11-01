@@ -62,9 +62,9 @@
       "default": "./src/vault/index.ts"
     },
     "./flow-form": {
-      "types": "./src/flow-form.ts",
-      "import": "./src/flow-form.ts",
-      "default": "./src/flow-form.ts"
+      "types": "./.vibe/declarations/src/flow-form.d.vibe.ts",
+      "import": "./src/flow-form.vibe",
+      "default": "./src/flow-form.vibe"
     },
     "./diff-paginate": {
       "types": "./src/diff-paginate.ts",
