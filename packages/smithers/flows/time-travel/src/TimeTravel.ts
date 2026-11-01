@@ -332,10 +332,13 @@ const workspaceRoot = ".flows/forks"
  * constant would make two services on two machines look same-host and invite a
  * probe of PID 0. Two incarnations never claim the same host.
  */
+// Distinguish incarnations in one realm even when an injected clock and
+// random source repeat. Host entropy still distinguishes separate realms.
+let ownerOrdinal = 0n
 const mintOwner: Effect.Effect<OwnerId> = Effect.gen(function*() {
   const nowMs = yield* Clock.currentTimeMillis
   const entropy = yield* Random.nextIntBetween(0, 0x7fffffff)
-  const incarnation = `${nowMs}:${entropy}`
+  const incarnation = `${nowMs}:${entropy}:${++ownerOrdinal}`
   return { hostId: `time-travel:${incarnation}`, pid: 0, nonce: `time-travel:${incarnation}` }
 })
 

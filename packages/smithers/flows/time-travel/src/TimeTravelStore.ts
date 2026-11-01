@@ -248,6 +248,9 @@ const admittedAuditPatchKeys = new Set<string>(auditPatchKeys)
  * @category validators
  */
 export const validateAuditPatch = (patch: AuditPatch): Effect.Effect<AuditPatch, TimeTravelError> => {
+  if (patch === null || typeof patch !== "object" || Array.isArray(patch)) {
+    return Effect.fail(error("invalid", "invalid audit patch: expected an object"))
+  }
   const unknown = Object.keys(patch).find((key) => !admittedAuditPatchKeys.has(key))
   if (unknown !== undefined) {
     return Effect.fail(error("invalid", `audit patch contains unknown key ${unknown}`))

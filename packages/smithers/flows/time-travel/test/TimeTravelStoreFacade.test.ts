@@ -112,3 +112,14 @@ describe("TimeTravelStore.ForkIntent", () => {
     }
   })
 })
+
+describe("untyped audit patches", () => {
+  for (const input of [null, undefined, 42, true, "", []]) {
+    it.effect(`refuses ${String(input)} through the typed channel without blaming status`, () =>
+      Effect.gen(function*() {
+        const refused = yield* Effect.flip(TimeTravelStore.validateAuditPatch(input as never))
+        expect(refused.code).toBe("invalid")
+        expect(refused.message).toBe("invalid audit patch: expected an object")
+      }))
+  }
+})

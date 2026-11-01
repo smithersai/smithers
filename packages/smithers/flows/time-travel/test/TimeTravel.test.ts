@@ -299,7 +299,7 @@ describe("TimeTravel", () => {
 })
 
 describe("TimeTravel wiring", () => {
-  it.effect("mints distinct deterministic owners while preserving the durable service key across restart layers", () =>
+  it.effect("mints distinct owners with repeated clock and random outputs across restart layers", () =>
     Effect.gen(function*() {
       const store = MemoryTimeTravelStore.make({
         records: [
@@ -383,7 +383,7 @@ describe("TimeTravel wiring", () => {
         Effect.scoped(
           Effect.gen(function*() {
             const firstContext = yield* Layer.build(serviceLayer).pipe(Random.withSeed("owner-a"))
-            const secondContext = yield* Layer.build(serviceLayer).pipe(Random.withSeed("owner-b"))
+            const secondContext = yield* Layer.build(serviceLayer).pipe(Random.withSeed("owner-a"))
             const first = Context.get(firstContext, TimeTravel)
             const second = Context.get(secondContext, TimeTravel)
             const position = { runId: "run", frame: { lineageId, seq: 0 } } as const
