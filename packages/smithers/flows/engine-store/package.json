@@ -56,7 +56,7 @@
     "./PlanInputStore": "./src/PlanInputStore.ts",
     "./PlanMergeStore": "./src/PlanMergeStore.ts",
     "./Reconciliation": "./src/Reconciliation.ts",
-    "./ReplayOnly": "./src/ReplayOnly.vibe",
+    "./ReplayOnly": "./src/ReplayOnly.ts",
     "./Retention": "./src/Retention.ts",
     "./RunCatalogRead": "./src/RunCatalogRead.ts",
     "./RunState": "./src/RunState.vibe",
