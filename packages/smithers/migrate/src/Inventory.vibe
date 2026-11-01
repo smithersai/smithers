@@ -122,21 +122,21 @@ export const factoryBindings: ReadonlyArray<string> = [
   "outputs",
   "smithers",
   "tables",
-  "useCtx"
+  "useCtx",
 ]
 
 const runtimeCalls = new Set(
   Constructs.byKind("runtime").map((entry) => entry.name).concat(
     Constructs.byKind("store").map((entry) => entry.name),
     Constructs.byKind("server").map((entry) => entry.name),
-    ["defineTool", "createHttpTool", "createOpenApiTools"]
-  )
+    ["defineTool", "createHttpTool", "createOpenApiTools"],
+  ),
 )
 
 const agentNames = new Set(Constructs.byKind("agent").map((entry) => entry.name))
 
 const ctxMethods = new Set(
-  Constructs.byKind("ctx").map((entry) => entry.name.slice("ctx.".length))
+  Constructs.byKind("ctx").map((entry) => entry.name.slice("ctx.".length)),
 )
 
 /**
@@ -152,7 +152,7 @@ const ctxMethods = new Set(
  */
 export const factoryNames = (
   sources: ReadonlyMap<string, string>,
-  parse: typeof Ts.parse = Ts.parse
+  parse: typeof Ts.parse = Ts.parse,
 ): ReadonlySet<string> => {
   const names = new Set<string>(["createSmithers", "createSmithersPostgres", "createSmithersCloudflare"])
   for (const [file, text] of sources) {
@@ -164,11 +164,11 @@ export const factoryNames = (
         return
       }
       if (
-        ts.isVariableDeclaration(node) &&
-        ts.isIdentifier(node.name) &&
-        node.initializer !== undefined &&
-        (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer)) &&
-        /\bcreateSmithers\w*\s*\(/.test(node.initializer.getText())
+        ts.isVariableDeclaration(node)
+        && ts.isIdentifier(node.name)
+        && node.initializer !== undefined
+        && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))
+        && /\bcreateSmithers\w*\s*\(/.test(node.initializer.getText())
       ) {
         names.add(node.name.text)
       }
@@ -179,7 +179,7 @@ export const factoryNames = (
 
 const attributeDetail = (
   node: ts.JsxOpeningLikeElement,
-  props: ReadonlyArray<string>
+  props: ReadonlyArray<string>,
 ): Record<string, string> => {
   const detail: Record<string, string> = {}
   for (const prop of props) {
@@ -193,7 +193,7 @@ const attributeDetail = (
 const memberConstructs: Readonly<Record<string, string>> = {
   outputs: "outputs.<key>",
   tables: "tables.<key>",
-  db: "db.<member>"
+  db: "db.<member>",
 }
 
 /** The factory bindings that are called rather than read. */
@@ -281,7 +281,7 @@ const entry = (
   node: ts.Node,
   construct: string,
   props: ReadonlyArray<string>,
-  detail?: Record<string, string> | undefined
+  detail?: Record<string, string> | undefined,
 ): InventoryEntry => {
   const position = Ts.positionOf(source, node)
   const sorted = [...props].sort()
@@ -311,7 +311,7 @@ export const scanFile = (
      * without the prefix, as {@link module:Detect.WorkflowFile} records them.
      */
     readonly headers?: ReadonlyMap<string, string> | undefined
-  }
+  },
 ): ReadonlyArray<InventoryEntry> => {
   const parse = options.parse ?? Ts.parse
   const source = parse(file, text)
@@ -334,14 +334,14 @@ export const scanFile = (
   }
   for (const record of Ts.imports(source)) {
     const specifier = record.specifier
-    const old = specifier === "smthrs" ||
-      specifier === "smithers" ||
-      specifier === "smithers-orchestrator" ||
-      specifier.startsWith("smthrs/") ||
-      specifier.startsWith("smithers/") ||
-      specifier.startsWith("smithers-orchestrator/") ||
-      specifier.startsWith("@smithers/") ||
-      specifier.startsWith("@smthrs/")
+    const old = specifier === "smthrs"
+      || specifier === "smithers"
+      || specifier === "smithers-orchestrator"
+      || specifier.startsWith("smthrs/")
+      || specifier.startsWith("smithers/")
+      || specifier.startsWith("smithers-orchestrator/")
+      || specifier.startsWith("@smithers/")
+      || specifier.startsWith("@smthrs/")
     // A pack splits the factory across files: one module calls
     // `createSmithers` and re-exports the bindings, and every workflow imports
     // them from there. Without this the whole pack scans as zero constructs.
@@ -362,15 +362,15 @@ export const scanFile = (
 
   Ts.forEachNode(source, (node) => {
     if (
-      ts.isVariableDeclaration(node) &&
-      ts.isObjectBindingPattern(node.name) &&
-      node.initializer !== undefined &&
-      ts.isCallExpression(node.initializer) &&
-      options.factories.has(Ts.calleeName(node.initializer)) &&
+      ts.isVariableDeclaration(node)
+      && ts.isObjectBindingPattern(node.name)
+      && node.initializer !== undefined
+      && ts.isCallExpression(node.initializer)
+      && options.factories.has(Ts.calleeName(node.initializer))
       // A foreign `createSmithers` hands back a foreign `Workflow` and a
       // foreign `Task`. Binding them would file that project's props against
       // 0.x components that never declared them.
-      !foreign.has(Ts.calleeName(node.initializer))
+      && !foreign.has(Ts.calleeName(node.initializer))
     ) {
       for (const [local, imported] of Ts.destructuredNames(node.name)) {
         if (factoryBindings.includes(imported)) bound.set(local, imported)
@@ -466,7 +466,7 @@ export const scanFile = (
    */
   const payloadFields = (
     node: ts.JsxOpeningLikeElement,
-    prompt: ts.JsxOpeningLikeElement | undefined
+    prompt: ts.JsxOpeningLikeElement | undefined,
   ): Record<string, string> | undefined => {
     const deps = depsChains(Ts.attributeText(node, "deps"))
     if (prompt === undefined) {
@@ -501,7 +501,7 @@ export const scanFile = (
    */
   const payloadSources = (
     node: ts.JsxOpeningLikeElement,
-    prompt: ts.JsxOpeningLikeElement | undefined
+    prompt: ts.JsxOpeningLikeElement | undefined,
   ): Record<string, string> | undefined => {
     const deps = depsChains(Ts.attributeText(node, "deps"))
     if (prompt === undefined) {
@@ -515,8 +515,8 @@ export const scanFile = (
       const value = Ts.attributeText(prompt, name)
       if (value === undefined) return undefined
       const parts = value.split(".")
-      const known = (parts.length === 3 && parts[0] === "deps" && deps.has(parts[1] ?? "")) ||
-        (parts.length === 3 && parts[0] === "ctx" && parts[1] === "input")
+      const known = (parts.length === 3 && parts[0] === "deps" && deps.has(parts[1] ?? ""))
+        || (parts.length === 3 && parts[0] === "ctx" && parts[1] === "input")
       if (!known) return undefined
       fields[name] = value
     }
@@ -532,7 +532,7 @@ export const scanFile = (
    * value.
    */
   const componentsIn = (
-    nodes: ReadonlyArray<ts.Node>
+    nodes: ReadonlyArray<ts.Node>,
   ): ReadonlyArray<
     { construct: string; id: string; opening: ts.JsxOpeningLikeElement; children: ReadonlyArray<ts.JsxChild> }
   > => {
@@ -557,7 +557,7 @@ export const scanFile = (
             construct,
             id,
             opening,
-            children: ts.isJsxElement(node) ? node.children : []
+            children: ts.isJsxElement(node) ? node.children : [],
           })
           return
         }
@@ -570,14 +570,14 @@ export const scanFile = (
 
   /** `Construct:id` pairs, the form a hit's detail carries a child list in. */
   const encodeChildren = (
-    children: ReadonlyArray<{ construct: string; id: string }>
+    children: ReadonlyArray<{ construct: string; id: string }>,
   ): string => children.map((child) => `${child.construct}:${child.id}`).join(",")
 
   /** Each named child step's payload sources, as JSON, for a group's rewrite. */
   const encodePayloads = (
     children: ReadonlyArray<
       { construct: string; id: string; opening: ts.JsxOpeningLikeElement; children: ReadonlyArray<ts.JsxChild> }
-    >
+    >,
   ): string | undefined => {
     const record: Record<string, Record<string, string> | null> = {}
     let any = false
@@ -603,7 +603,7 @@ export const scanFile = (
   const encodeOutputs = (
     children: ReadonlyArray<
       { construct: string; id: string; opening: ts.JsxOpeningLikeElement; children: ReadonlyArray<ts.JsxChild> }
-    >
+    >,
   ): string | undefined => {
     const record: Record<string, string | null> = {}
     let any = false
@@ -618,12 +618,12 @@ export const scanFile = (
 
   /** The named child steps that run on an agent. */
   const agentChildren = (
-    children: ReadonlyArray<{ id: string; opening: ts.JsxOpeningLikeElement }>
+    children: ReadonlyArray<{ id: string; opening: ts.JsxOpeningLikeElement }>,
   ): ReadonlyArray<string> =>
     children
       .filter((child) =>
-        child.id !== "" &&
-        Ts.attributeNames(child.opening).some((name) => name === "agent" || name === "fallbackAgent")
+        child.id !== ""
+        && Ts.attributeNames(child.opening).some((name) => name === "agent" || name === "fallbackAgent")
       )
       .map((child) => child.id)
 
@@ -720,7 +720,7 @@ export const scanFile = (
       }
 
       hits.push(
-        entry(file, source, node, construct, present, Object.keys(detail).length === 0 ? undefined : detail)
+        entry(file, source, node, construct, present, Object.keys(detail).length === 0 ? undefined : detail),
       )
       return
     }
@@ -744,8 +744,8 @@ export const scanFile = (
           [],
           member === "db.<member>"
             ? { member: node.name.text }
-            : { key: node.name.text }
-        )
+            : { key: node.name.text },
+        ),
       )
       return
     }
@@ -764,8 +764,8 @@ export const scanFile = (
           : []
         const model = options !== undefined && ts.isObjectLiteralExpression(options)
           ? options.properties.find((property) =>
-            "name" in property && property.name !== undefined && ts.isIdentifier(property.name) &&
-            property.name.text === "model"
+            "name" in property && property.name !== undefined && ts.isIdentifier(property.name)
+            && property.name.text === "model"
           )
           : undefined
         const detail = model !== undefined && ts.isPropertyAssignment(model) && ts.isStringLiteral(model.initializer)
@@ -781,8 +781,8 @@ export const scanFile = (
       const name = node.expression.text
       const resolved = bound.get(name) ?? (options.factories.has(name) ? "createSmithers" : undefined)
       if (
-        resolved !== undefined &&
-        (runtimeCalls.has(resolved) || agentNames.has(resolved) || factoryCalls.has(resolved))
+        resolved !== undefined
+        && (runtimeCalls.has(resolved) || agentNames.has(resolved) || factoryCalls.has(resolved))
       ) {
         hits.push(entry(file, source, node, resolved, []))
       }
@@ -802,7 +802,7 @@ export const scanFile = (
 export const zodChains = (
   file: string,
   text: string,
-  parse: typeof Ts.parse = Ts.parse
+  parse: typeof Ts.parse = Ts.parse,
 ): ReadonlyArray<{ readonly name: string; readonly chain: string }> => {
   const source = parse(file, text)
   const chains: Array<{ name: string; chain: string }> = []
@@ -824,7 +824,7 @@ export const zodChains = (
 export const mdxImports = (
   file: string,
   text: string,
-  parse: typeof Ts.parse = Ts.parse
+  parse: typeof Ts.parse = Ts.parse,
 ): ReadonlyArray<{ readonly local: string; readonly specifier: string }> => {
   const source = parse(file, text)
   const found: Array<{ local: string; specifier: string }> = []
@@ -855,7 +855,7 @@ const withoutExtension = (file: string): string => file.replace(/\.(?:[cm]?[jt]s
 export const factoryReexports = (
   sources: ReadonlyMap<string, string>,
   factories: ReadonlySet<string>,
-  parse: typeof Ts.parse = Ts.parse
+  parse: typeof Ts.parse = Ts.parse,
 ): ReadonlyMap<string, ReadonlyMap<string, string>> => {
   const modules = new Map<string, ReadonlyMap<string, string>>()
   for (const [file, text] of sources) {
@@ -889,8 +889,8 @@ export const factoryReexports = (
  */
 export const scan = (
   detection: Detect.Detection,
-  parse: typeof Ts.parse = Ts.parse
-): Effect.Effect<ReadonlyArray<InventoryEntry>, MigrateError, FileSystem.FileSystem> =>
+  parse: typeof Ts.parse = Ts.parse,
+): ReadonlyArray<InventoryEntry>!MigrateError!FileSystem.FileSystem =>
   Effect.sync(() => {
     const factories = factoryNames(detection.sources, parse)
     const reexports = factoryReexports(detection.sources, factories, parse)
@@ -899,7 +899,7 @@ export const scan = (
       ...detection.components,
       ...detection.libs,
       ...detection.tests,
-      ...detection.uis.filter((ui) => ui.resolved).map((ui) => ui.path)
+      ...detection.uis.filter((ui) => ui.resolved).map((ui) => ui.path),
     ]
     const headers = new Map(detection.workflowFiles.map((workflow) => [workflow.path, workflow.headers]))
     const seen = new Set<string>()
@@ -916,7 +916,7 @@ export const scan = (
         prompt: (specifier) => detection.sources.get(resolveRelative(file, specifier)),
         reexports: (specifier) =>
           specifier.startsWith(".") ? reexports.get(withoutExtension(resolveRelative(file, specifier))) : undefined,
-        ...(carried === undefined ? {} : { headers: carried })
+        ...(carried === undefined ? {} : { headers: carried }),
       }))
     }
     return hits.sort((left, right) =>
