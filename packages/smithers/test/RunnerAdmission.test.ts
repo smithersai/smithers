@@ -155,4 +155,23 @@ describe("smthrs runner serve, admitting by load", () => {
     expect(rows.filter((each) => each.state !== "queued")).toHaveLength(1)
     expect(host.machines.at(-1)?.held).toMatch(/^load 24\.\d\/24$/)
   }, 60_000)
+
+  test(
+    "with idleExitSeconds, a runner with no job for that long ends; one with a job keeps serving until it settles",
+    async () => {
+      const config = JSON.parse(readFileSync(configPath, "utf8")) as Record<string, unknown>
+      writeFileSync(configPath, JSON.stringify({ ...config, idleExitSeconds: 2 }))
+      const row = host.enqueue(
+        Host.task({ base: mirror.base, prompt: "run `sleep 4`\nadd the line `alpha` to `NOTES.md`" })
+      )
+      const startedAt = Date.now()
+      const exit = await Effect.runPromise(Effect.exit(RunnerCmd.serve(configPath, { read: () => reading(1) })))
+      expect(exit._tag).toBe("Success")
+      expect(row.state).toBe("settled")
+      // It served the 4 s job, then 2 s with none.
+      expect(Date.now() - startedAt).toBeGreaterThanOrEqual(6000)
+      expect(Date.now() - startedAt).toBeLessThan(30_000)
+    },
+    60_000
+  )
 })

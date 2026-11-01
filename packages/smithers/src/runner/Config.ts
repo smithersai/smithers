@@ -66,7 +66,7 @@ export type Profile = typeof Profile.Type
  * @since 1.0.0
  */
 export const AdmissionConfig = Schema.Struct({
-  loadPerCpu: Schema.optional(Schema.Number.check(Schema.isBetween({ minimum: 0.05, maximum: 8 }))),
+  loadPerCpu: Schema.optional(Schema.Number.check(Schema.isBetween({ minimum: 0.05, maximum: 1000 }))),
   diskFloorGb: Schema.optional(Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 100_000 }))),
   jobLoad: Schema.optional(Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 64 })))
 })
@@ -77,7 +77,9 @@ export const AdmissionConfig = Schema.Struct({
  * (`~/.smithers/runner` unless set), how often it heartbeats a job (10 s) and
  * claims again after an empty claim (2 s), when it admits a job
  * ({@link AdmissionConfig}), and, for an overflow runner, how long a job
- * must have waited before it takes it (`minQueuedSeconds`), each repository's local jj mirror
+ * must have waited before it takes it (`minQueuedSeconds`) and how long it
+ * serves with no job before it ends (`idleExitSeconds`, never unless set),
+ * each repository's local jj mirror
  * by the host's repository id, and its profiles by name.
  *
  * @category schemas
@@ -92,6 +94,7 @@ export const Config = Schema.Struct({
   pollSeconds: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 60 }))),
   admission: Schema.optional(AdmissionConfig),
   minQueuedSeconds: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 86_400 }))),
+  idleExitSeconds: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 86_400 }))),
   repositories: Schema.Record(NonEmpty, Schema.Struct({ mirror: NonEmpty })),
   profiles: Schema.Record(AgentRunner.Profile, Profile)
 })

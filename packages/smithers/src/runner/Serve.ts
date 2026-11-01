@@ -29,7 +29,8 @@ import type * as Session from "./Session.ts"
 const isAccount = Schema.is(AgentRunner.Profile)
 
 /**
- * Runs the claim loop forever under `config`, with `controls` shared with the
+ * Runs the claim loop under `config`, forever or until it served no job for
+ * `idleExitSeconds`, with `controls` shared with the
  * job's registration (`Job.registration`), reading the machine with `read`
  * before each claim.
  *
@@ -144,7 +145,15 @@ export const loop = (
 
     let backoff = 1
     let admission = Admission.initial
+    let busyAt = yield* Clock.currentTimeMillis
     while (true) {
+      const now = yield* Clock.currentTimeMillis
+      if (running.size > 0) busyAt = now
+      else if (config.idleExitSeconds !== undefined && now - busyAt >= config.idleExitSeconds * 1000) {
+        // An overflow box's runner ends when the overflow is gone, and its machine sleeps (decision 0144).
+        yield* Effect.logInfo("runner.idle_exit").pipe(Effect.annotateLogs({ idleSeconds: config.idleExitSeconds }))
+        return
+      }
       const reading = read()
       const decision = Admission.decide(config.admission, admission, reading, yield* Clock.currentTimeMillis)
       admission = decision.state
@@ -152,12 +161,14 @@ export const loop = (
       // A held or full runner still asks, with no room and no wait: its machine row stays current and says why, and
       // a job it holds but doesn't list comes back.
       const free = decision.held === undefined ? Math.max(0, room) : 0
+      // A runner that ends when idle never waits on the host past its idle time.
+      const wait = config.idleExitSeconds === undefined ? 25 : Math.min(25, config.idleExitSeconds)
       const claimed = yield* Effect.result(
         host.claim({
           profiles,
           free,
           running: [...running.keys()],
-          waitSeconds: free > 0 ? 25 : 0,
+          waitSeconds: free > 0 ? wait : 0,
           machine: Machine.facts(reading, decision.held),
           ...(config.minQueuedSeconds === undefined ? {} : { minQueuedSeconds: config.minQueuedSeconds })
         })

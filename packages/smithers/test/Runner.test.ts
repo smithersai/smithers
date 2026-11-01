@@ -78,7 +78,7 @@ const configure = (profiles: Record<string, Partial<Config.Profile>> = {}) => {
     heartbeatSeconds: 1,
     pollSeconds: 1,
     // This suite is about jobs, not the machine running it: a busy test machine mustn't hold its claims.
-    admission: { loadPerCpu: 8, diskFloorGb: 0 },
+    admission: { loadPerCpu: 1000, diskFloorGb: 0 },
     repositories: { [REPOSITORY]: { mirror: mirror.path } },
     profiles: {
       "test-agent": agent,

@@ -62,6 +62,7 @@ commit. The runner settles the files the agent changed.
 | `pollSeconds` | The wait after a claim that found nothing; 2 unless set. |
 | `admission` | When the machine takes another job (see [Admission](#admission)): `loadPerCpu` (0.5 unless set), `diskFloorGb` (40 unless set), `jobLoad` (1 unless set). |
 | `minQueuedSeconds` | For an overflow runner: take only a job that has waited this long, so the runners that ask without it take each job first. Unset on attached runners. |
+| `idleExitSeconds` | End `serve` after this many seconds with no job, so an overflow box sleeps; never unless set. |
 | `repositories` | Each repository the host may name, by the host's repository id, mapped to a local jj repository the runner checks out from. The runner fetches it when a job's base commit is missing. |
 | `profiles` | What each profile runs. The host only ever passes a profile's name. |
 
