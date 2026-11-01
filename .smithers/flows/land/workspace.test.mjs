@@ -28,6 +28,18 @@ function fixture(t) {
   return { root, directory, remote, lane: join(directory, "lane"), lock: join(directory, "main-push.lock") }
 }
 
+test("sync refuses a working copy below the lane's top, before rewriting anything", (t) => {
+  const { root } = fixture(t)
+  writeFileSync(join(root, "first.txt"), "first\n")
+  jj(root, ["commit", "-m", "first"])
+  writeFileSync(join(root, "second.txt"), "second\n")
+  jj(root, ["commit", "-m", "second"])
+  jj(root, ["edit", "description(substring:first)"])
+  const before = jj(root, ["log", "-r", "all()", "--no-graph", "-T", 'commit_id ++ "\\n"'])
+  assert.throws(() => syncWorkspace(root), /lane's top/)
+  assert.equal(jj(root, ["log", "-r", "all()", "--no-graph", "-T", 'commit_id ++ "\\n"']), before)
+})
+
 test("one mkdir lock coordinates legacy owners, bounded waits and concurrent tool users", async (t) => {
   const { lock } = fixture(t)
   mkdirSync(lock); writeFileSync(join(lock, "owner"), "legacy lane\n")

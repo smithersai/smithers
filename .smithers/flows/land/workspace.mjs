@@ -8,8 +8,8 @@ import { basename, dirname, join, resolve } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 import { pathToFileURL } from "node:url"
 import { sourcePath, writeSource } from "./files.mjs"
-import { jj, planNumbers, applyNumbers, checkNumbers } from "./numbering.mjs"
-import { captureGenerated, repairGenerated, checkManifest, indexPath } from "./generated.mjs"
+import { jj, prepareLane, checkNumbers } from "./numbering.mjs"
+import { captureLane, repairLane, checkManifest, indexPath } from "./generated.mjs"
 import { regenerateIndex } from "./projection.mjs"
 import { runProcess } from "./process.mjs"
 import { engineeringGateEnvironment } from "./engineering-gate-environment.mjs"
@@ -168,6 +168,11 @@ export function ensureFresh(root) {
   } catch (error) { throw new Error(`Recovery stopped; preserved source at ${saved.saved}: ${error.message}`) }
 }
 
+/** A lane is prepared from its top: commits above @ would be rebased without their numbers or generated files. */
+function assertLaneTop(root) {
+  if (revision(root, "(@:: ~ @) ~ empty()")) throw new Error("The working copy has commits above it; run sync from the lane's top")
+}
+
 function assertPrivateAncestry(root) {
   const others = revision(root, "((main@origin..@) | @::) & working_copies() ~ @")
   if (others) throw new Error("Another workspace shares mutable lane ancestry; refusing to rewrite its commits")
@@ -176,25 +181,28 @@ function assertPrivateAncestry(root) {
 /** Prepare before rebase, then repair known projections, leaving all ordinary conflicts visible. */
 export function syncWorkspace(root) {
   ensureFresh(root)
+  assertLaneTop(root)
   console.error("FETCH main")
   jj(root, ["git", "fetch", "--remote", "origin"])
   assertPrivateAncestry(root)
   rejectConflicts(root)
-  const numbering = planNumbers(root)
-  for (const entry of applyNumbers(root, numbering)) console.error(`RENUMBER ${entry.path} -> ${entry.to}`)
-  const context = captureGenerated(root, "main@origin")
+  // Every commit of a stacked lane gets its own numbers and generated files, not only the head.
+  const renames = prepareLane(root)
+  for (const entry of renames) console.error(`RENUMBER ${entry.path} -> ${entry.to}`)
+  const contexts = captureLane(root, "main@origin")
   console.error("REBASE private lane")
   jj(root, ["rebase", "-b", "@", "-d", "main@origin"])
-  repairGenerated(root, context)
+  repairLane(root, contexts)
   // An index is purely a projection: restore main's bytes, then regenerate from the merged declarations.
   if (existsSync(join(root, indexPath)) && revision(root, "@ & conflicts()")) {
     const unresolved = jj(root, ["resolve", "--list"]).split("\n").filter((line) => line.startsWith(indexPath + " "))
     if (unresolved.length) jj(root, ["restore", "--from", "main@origin", indexPath])
   }
   rejectConflicts(root)
+  if (revision(root, "main@origin..@ & conflicts()")) throw new Error("A lane commit below the head still has conflicts; resolve it before landing")
   checkNumbers(root)
   checkManifest(root)
-  return numbering.renames
+  return renames
 }
 
 export function createWorkspace(root, destination, name) {

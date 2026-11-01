@@ -120,10 +120,61 @@ export function applyNumbers(root, plan) {
     const next = source.join("\n")
     if (next !== original.toString("utf8")) writes.push([path, next])
   }
+  // A lane's earlier commit holds only some of its files: rename those it holds.
+  const held = plan.renames.filter((entry) => existsSync(join(root, entry.path)))
   // Validate all destinations before touching any files.
-  for (const entry of plan.renames) if (existsSync(join(root, entry.to))) throw new Error(`Rename destination exists: ${entry.to}`)
+  for (const entry of held) if (existsSync(join(root, entry.to))) throw new Error(`Rename destination exists: ${entry.to}`)
   for (const [path, text] of writes) writeSource(root, path, text)
-  for (const entry of plan.renames) renameSync(sourcePath(root, entry.path), sourcePath(root, entry.to))
+  for (const entry of held) renameSync(sourcePath(root, entry.path), sourcePath(root, entry.to))
+  return plan.renames
+}
+
+/** The lane's commits from its common ancestor to `@`, oldest first, by change id; refuses a lane with a merge. */
+export function laneCommits(root, base) {
+  const rows = lines(jj(root, ["log", "--ignore-working-copy", "--reversed", "--no-graph", "-r", `${base}..@`,
+    "-T", 'change_id ++ " " ++ parents.len() ++ "\\n"']))
+  if (rows.some((row) => !row.endsWith(" 1"))) throw new Error("Number allocation needs a linear lane: one parent per commit")
+  return rows.map((row) => row.split(" ")[0])
+}
+
+/**
+ * Runs `edit` in a fresh child of each lane commit, oldest first, and makes what it leaves there that commit's
+ * tree (only `paths` when given). `--restore-descendants` keeps every later commit's own tree, so no rewrite
+ * conflicts with the commits above it. The working copy returns to the lane's head.
+ */
+export function eachLaneCommit(root, lane, edit, paths = () => []) {
+  const [head, scratch] = jj(root, ["log", "--ignore-working-copy", "-r", "@", "--no-graph",
+    "-T", 'change_id ++ " " ++ (empty && description == "")']).split(" ")
+  // jj drops an empty, undescribed working copy once it moves away: that one is made again on the lane's top.
+  const commits = scratch === "true" ? lane.filter((change) => change !== head) : lane
+  if (!commits.length) return
+  try {
+    for (const change of commits) {
+      jj(root, ["new", change])
+      const only = edit(change)
+      // An empty list: the edit changed nothing for this commit.
+      if (only === undefined || only.length) {
+        jj(root, ["restore", "--from", "@", "--into", change, "--restore-descendants", ...(only === undefined ? paths(change) : only)])
+      }
+      jj(root, ["abandon", "@"])
+    }
+  } finally {
+    if (scratch === "true") jj(root, ["new", commits.at(-1)])
+    else jj(root, ["edit", head])
+  }
+}
+
+/**
+ * `planNumbers` for the whole lane, then applied to every commit of it: each commit's tree gets the renames of the
+ * files it holds and the references the lane had added by then, so every commit is valid on its own after the
+ * rebase, not just the lane's head. A one-commit lane is edited in place, as before.
+ */
+export function prepareLane(root, target = "main@origin") {
+  const plan = planNumbers(root, target)
+  if (!plan.renames.length) return []
+  const lane = laneCommits(root, plan.base)
+  if (lane.length <= 1) return applyNumbers(root, plan)
+  eachLaneCommit(root, lane, () => { applyNumbers(root, plan) })
   return plan.renames
 }
 
@@ -149,8 +200,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const args = process.argv.slice(2)
     if (args[0] === "check") checkNumbers(root)
     else if (args[0] === "prepare" && args.length <= 2) {
-      const plan = planNumbers(root, args[1] ?? "main@origin")
-      for (const entry of applyNumbers(root, plan)) console.log(`RENUMBER ${entry.path} -> ${entry.to}`)
+      for (const entry of prepareLane(root, args[1] ?? "main@origin")) console.log(`RENUMBER ${entry.path} -> ${entry.to}`)
       checkNumbers(root)
     } else throw new Error("Usage: node .smithers/flows/land/numbering.mjs check|prepare [main@origin]\nprepare before rebase, under main-push.lock after fetch")
   } catch (error) { console.error(error.message); process.exitCode = 1 }

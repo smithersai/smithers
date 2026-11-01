@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { test } from "node:test"
 import { jj, migrations } from "./numbering.mjs"
-import { captureGenerated, repairGenerated, mergeHistory, checkHistory, canonicalHistory, databaseTemplate, migrationManifest, checkManifest, databasePath, schemaPath, manifestPath } from "./generated.mjs"
+import { captureGenerated, repairGenerated, captureLane, repairLane, mergeHistory, checkHistory, canonicalHistory, databaseTemplate, migrationManifest, checkManifest, databasePath, schemaPath, manifestPath } from "./generated.mjs"
 
 const db = (id) => `import x from "./migrations/${id}_test.ts"\nimport { Effect } from "effect"\n\n/** Every migration in \`db/migrations\`, by \`<id>_<name>\`. */\nexport const migrations = {\n  "${id}_test": x,\n}\n\nexport const migrate = Effect.succeed(migrations)\n`
 const lock = (stores, epoch = 100) => JSON.stringify({ epoch, stores, payloads: {}, mutations: ["ask"] })
@@ -65,6 +65,86 @@ test("rebasing two real lanes repairs only generated database/lock conflicts", (
   assert.equal(readFileSync(join(root, databasePath), "utf8"), before)
 })
 
+test("rebasing a lane of several commits repairs the generated files of each commit", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "devx-generated-lane-"))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  jj(root, ["git", "init", "."])
+  jj(root, ["config", "set", "--repo", "user.name", "Devx"])
+  jj(root, ["config", "set", "--repo", "user.email", "devx@example.invalid"])
+  mkdirSync(join(root, migrations), { recursive: true })
+  mkdirSync(join(root, "apps/mvp/src/device"), { recursive: true })
+  writeFileSync(join(root, migrations, "0001_test.ts"), "export default 1\n")
+  writeFileSync(join(root, databasePath), db("0001"))
+  writeFileSync(join(root, schemaPath), lock({ a: entry("a") }))
+  jj(root, ["commit", "-m", "base"])
+  const base = jj(root, ["log", "-r", "@-", "--no-graph", "-T", "commit_id"])
+  writeFileSync(join(root, migrations, "0002_test.ts"), "export default 2\n")
+  writeFileSync(join(root, databasePath), db("0002"))
+  writeFileSync(join(root, schemaPath), lock({ a: entry("a"), remote: entry("r") }, 101))
+  jj(root, ["commit", "-m", "remote"])
+  jj(root, ["bookmark", "set", "published", "-r", "@-"])
+  jj(root, ["new", base])
+  writeFileSync(join(root, migrations, "0003_test.ts"), "export default 3\n")
+  writeFileSync(join(root, databasePath), db("0003"))
+  writeFileSync(join(root, schemaPath), lock({ a: entry("a"), first: entry("f") }, 101))
+  jj(root, ["commit", "-m", "first"])
+  writeFileSync(join(root, migrations, "0004_test.ts"), "export default 4\n")
+  writeFileSync(join(root, databasePath), db("0004"))
+  writeFileSync(join(root, schemaPath), lock({ a: entry("a"), first: entry("f"), second: entry("s") }, 102))
+  jj(root, ["commit", "-m", "second"])
+  const contexts = captureLane(root, "published")
+  jj(root, ["rebase", "-b", "@", "-d", "published"])
+  assert.ok(jj(root, ["log", "-r", "published..@ & conflicts()", "--no-graph", "-T", "commit_id"]))
+  repairLane(root, contexts)
+  assert.equal(jj(root, ["log", "-r", "conflicts()", "--no-graph", "-T", "commit_id"]), "")
+  const manifest = (rev) => jj(root, ["file", "show", "-r", rev, manifestPath])
+  const stores = (rev) => Object.keys(JSON.parse(jj(root, ["file", "show", "-r", rev, schemaPath])).stores)
+  assert.match(manifest("description(substring:first)"), /"0003_test"/)
+  assert.doesNotMatch(manifest("description(substring:first)"), /"0004_test"/)
+  assert.match(manifest("description(substring:second)"), /"0002_test":[\s\S]*"0003_test":[\s\S]*"0004_test":/)
+  assert.deepEqual(stores("description(substring:first)"), ["a", "first", "remote"])
+  assert.deepEqual(stores("description(substring:second)"), ["a", "first", "remote", "second"])
+  // The second commit's own change is only its own migration, registration and store.
+  assert.deepEqual(jj(root, ["diff", "-r", "description(substring:second)", "--name-only"]).split("\n").sort(), [manifestPath, `${migrations}/0004_test.ts`, schemaPath])
+  assert.equal(jj(root, ["log", "-r", "@-", "--no-graph", "-T", "description"]).trim(), "second")
+})
+
+test("a lane whose commits already hold manifest entries is repaired against main's new migration", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "devx-generated-manifest-"))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  jj(root, ["git", "init", "."])
+  jj(root, ["config", "set", "--repo", "user.name", "Devx"])
+  jj(root, ["config", "set", "--repo", "user.email", "devx@example.invalid"])
+  mkdirSync(join(root, migrations), { recursive: true })
+  const database = 'import { migrations } from "./MigrationManifest.ts"\nexport { migrations }\nexport const migrate = 1\n'
+  const manifest = (...names) => migrationManifest(names.map((name) => `${name}.ts`))
+  writeFileSync(join(root, databasePath), database)
+  writeFileSync(join(root, migrations, "0001_base.ts"), "export default 1\n")
+  writeFileSync(join(root, manifestPath), manifest("0001_base"))
+  jj(root, ["commit", "-m", "base"])
+  const base = jj(root, ["log", "-r", "@-", "--no-graph", "-T", "commit_id"])
+  writeFileSync(join(root, migrations, "0002_remote.ts"), "export default 2\n")
+  writeFileSync(join(root, manifestPath), manifest("0001_base", "0002_remote"))
+  jj(root, ["commit", "-m", "remote"])
+  jj(root, ["bookmark", "set", "published", "-r", "@-"])
+  jj(root, ["new", base])
+  writeFileSync(join(root, migrations, "0003_first.ts"), "export default 3\n")
+  writeFileSync(join(root, manifestPath), manifest("0001_base", "0003_first"))
+  jj(root, ["commit", "-m", "first"])
+  writeFileSync(join(root, migrations, "0004_second.ts"), "export default 4\n")
+  writeFileSync(join(root, manifestPath), manifest("0001_base", "0003_first", "0004_second"))
+  jj(root, ["commit", "-m", "second"])
+  const contexts = captureLane(root, "published")
+  jj(root, ["rebase", "-b", "@", "-d", "published"])
+  assert.ok(jj(root, ["log", "-r", "published..@ & conflicts()", "--no-graph", "-T", "commit_id"]))
+  repairLane(root, contexts)
+  assert.equal(jj(root, ["log", "-r", "conflicts()", "--no-graph", "-T", "commit_id"]), "")
+  const show = (rev, path) => `${jj(root, ["file", "show", "-r", rev, path])}\n`
+  assert.equal(show("description(substring:first)", manifestPath), manifest("0001_base", "0002_remote", "0003_first"))
+  assert.equal(show("description(substring:second)", manifestPath), manifest("0001_base", "0002_remote", "0003_first", "0004_second"))
+  assert.equal(show("description(substring:second)", databasePath), database)
+})
+
 test("canonical registration is independent of directory order, ignores tests, and rejects collisions", () => {
   assert.equal(migrationManifest(["0002_b.ts", "0001_a.ts", "0001_a.test.ts"]), migrationManifest(["0001_a.ts", "0002_b.ts"]))
   assert.throws(() => migrationManifest(["0001_a.ts", "0001_b.ts"]), /Duplicate/)
@@ -87,4 +167,7 @@ test("old lock writers normalize with the SDK's code-unit ordering and no duplic
   const value = canonicalHistory({ stores: { z: entry("z"), A: entry("A"), a: entry("a") }, payloads: {}, mutations: ["z", "A", "a", "z"] })
   assert.deepEqual(Object.keys(value.stores), ["A", "a", "z"])
   assert.deepEqual(value.mutations, ["A", "a", "z"])
+  // A merge sorts keys; the lock still reads in the SDK's order, so a merged lane's diff is only its versions.
+  const merged = canonicalHistory(mergeHistory({ stores: {}, payloads: {}, mutations: [] }, { stores: { a: entry("a") }, payloads: {}, mutations: ["ask"] }, { stores: {}, payloads: { p: entry("p") }, mutations: [] }))
+  assert.deepEqual(Object.keys(merged), ["stores", "payloads", "mutations"])
 })

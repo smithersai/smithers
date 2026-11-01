@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { test } from "node:test"
-import { jj, planNumbers, applyNumbers, checkNumbers, unique, decisions, migrations } from "./numbering.mjs"
+import { jj, planNumbers, applyNumbers, prepareLane, checkNumbers, unique, decisions, migrations } from "./numbering.mjs"
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "devx-numbers-"))
@@ -46,6 +46,41 @@ test("repairs two parallel claims and only lane-added references; repeat is idem
   assert.equal(existsSync(join(root, migrations, "0076_lane.ts")), false)
   assert.deepEqual(planNumbers(root, "published").renames, [])
   checkNumbers(root)
+})
+
+test("a lane of several commits renumbers each commit's own additions, so every commit stays valid on main", (t) => {
+  const root = fixture(t)
+  const base = jj(root, ["log", "-r", "published", "--no-graph", "-T", "commit_id"])
+  writeFileSync(join(root, decisions, "0131-remote.md"), "remote\n")
+  writeFileSync(join(root, migrations, "0076_remote.ts"), "export default 76\n")
+  jj(root, ["commit", "-m", "remote"])
+  jj(root, ["bookmark", "set", "published", "-r", "@-"])
+  jj(root, ["new", base])
+  // First commit: a decision and a migration that collide with main's.
+  writeFileSync(join(root, decisions, "0131-first.md"), "# 0131: First\n")
+  writeFileSync(join(root, migrations, "0076_first.ts"), "export default 76\n")
+  writeFileSync(join(root, "apps/mvp/db/Database.test.ts"), 'test("existing", () => through("0076"))\ntest("0076_first", () => { through("0075"); through("0076") })\n')
+  jj(root, ["commit", "-m", "first"])
+  // Second commit: its own migration and decision, citing the first's.
+  writeFileSync(join(root, decisions, "0132-second.md"), "# 0132: Second\nBuilds on [0131](0131-first.md).\n")
+  writeFileSync(join(root, migrations, "0077_second.ts"), "// after 0076_first\n")
+  jj(root, ["commit", "-m", "second"])
+  const files = (rev, directory) => jj(root, ["file", "list", "-r", rev, directory]).split("\n").sort()
+  const show = (rev, path) => jj(root, ["file", "show", "-r", rev, path])
+  const renamed = prepareLane(root, "published")
+  assert.deepEqual(renamed.map((entry) => entry.to), [`${decisions}/0132-first.md`, `${decisions}/0133-second.md`, `${migrations}/0077_first.ts`, `${migrations}/0078_second.ts`])
+  // Each commit holds its own renamed files and none of the later commit's.
+  assert.deepEqual(files("description(substring:first)", migrations), [`${migrations}/0075_base.ts`, `${migrations}/0077_first.ts`])
+  assert.deepEqual(files("description(substring:first)", decisions), [`${decisions}/0130-base.md`, `${decisions}/0132-first.md`])
+  assert.equal(show("description(substring:first)", "apps/mvp/db/Database.test.ts"), 'test("existing", () => through("0076"))\ntest("0077_first", () => { through("0076"); through("0077") })')
+  assert.deepEqual(files("description(substring:second)", migrations), [`${migrations}/0075_base.ts`, `${migrations}/0077_first.ts`, `${migrations}/0078_second.ts`])
+  assert.equal(show("description(substring:second)", `${decisions}/0133-second.md`), "# 0133: Second\nBuilds on [0132](0132-first.md).")
+  assert.equal(show("description(substring:second)", `${migrations}/0078_second.ts`), "// after 0077_first")
+  // Nothing conflicts, the second commit adds only its own files, and the working copy stays on the lane's head.
+  assert.equal(jj(root, ["log", "-r", "conflicts()", "--no-graph", "-T", "commit_id"]), "")
+  assert.deepEqual(jj(root, ["diff", "-r", "description(substring:second)", "--name-only"]).split("\n").sort(), [`${migrations}/0078_second.ts`, `${decisions}/0133-second.md`])
+  assert.equal(jj(root, ["log", "-r", "@-", "--no-graph", "-T", "description"]).trim(), "second")
+  assert.deepEqual(planNumbers(root, "published").renames, [])
 })
 
 test("older noncolliding migration moves after published head; preserves relative order", (t) => {

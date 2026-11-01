@@ -2,7 +2,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 import { sourcePath, writeSource } from "./files.mjs"
-import { jj, migrations } from "./numbering.mjs"
+import { eachLaneCommit, jj, laneCommits, migrations } from "./numbering.mjs"
 
 export const databasePath = "apps/mvp/db/Database.ts"
 export const manifestPath = "apps/mvp/db/MigrationManifest.ts"
@@ -66,19 +66,48 @@ export function canonicalHistory(history) {
     ...entries[id],
     versions: Object.fromEntries(Object.entries(entries[id].versions).sort(([a], [b]) => Number(a) - Number(b)))
   }]))
-  return { ...history, stores: ordered(history.stores), payloads: ordered(history.payloads), mutations: [...new Set(history.mutations ?? [])].sort() }
+  // The SDK's snapshot order (stores, payloads, mutations), whatever order a merge built the keys in.
+  const { stores, payloads, mutations, ...rest } = history
+  return { stores: ordered(stores), payloads: ordered(payloads), mutations: [...new Set(mutations ?? [])].sort(), ...rest }
 }
 
 /** Capture each side before rebase so conflict markers are never parsed as source or JSON. */
-export function captureGenerated(root, target) {
+export function captureGenerated(root, target, revision = "@") {
   jj(root, ["status"])
   const base = jj(root, ["log", "--ignore-working-copy", "-r", `heads(::@ & ::${target})`, "--no-graph", "-T", "commit_id"])
   if (!base || /\n/.test(base)) throw new Error("Generated preparation needs one common ancestor")
   const result = { target, base, files: {} }
   for (const path of [databasePath, schemaPath]) {
-    result.files[path] = { base: at(root, base, path), local: at(root, "@", path), remote: at(root, target, path) }
+    result.files[path] = { base: at(root, base, path), local: at(root, revision, path), remote: at(root, target, path) }
   }
+  // A lane already on the manifest registers migrations there and leaves Database.ts alone.
+  result.registers = at(root, base, manifestPath) !== at(root, revision, manifestPath)
   return result
+}
+
+/** `captureGenerated` for every commit of the lane, oldest first, before the rebase. */
+export function captureLane(root, target) {
+  const { base } = captureGenerated(root, target)
+  return laneCommits(root, base).map((change) => ({ change, context: captureGenerated(root, target, change) }))
+}
+
+/**
+ * After the rebase, `repairGenerated` in each lane commit, for the generated files that commit's lane had changed by
+ * then: every commit of a stacked lane registers its own migrations and merges its own schema history.
+ */
+export function repairLane(root, captured) {
+  const contexts = new Map(captured.map((entry) => [entry.change, entry.context]))
+  const written = []
+  eachLaneCommit(root, captured.map((entry) => entry.change), (change) => {
+    const context = contexts.get(change)
+    const files = Object.fromEntries(Object.entries(context.files).filter(([path, sides]) =>
+      sides.local !== sides.base || (path === databasePath && context.registers)))
+    const paths = repairGenerated(root, { ...context, files })
+    written.push(...paths.map((path) => `${change} ${path}`))
+    // Restore only what was repaired; a commit that changed no generated file is left as it is.
+    return paths
+  })
+  return written
 }
 
 /** Static imports work in Workers and preserve Effect SQL's existing numeric ledger keys. */
@@ -100,7 +129,7 @@ export function migrationManifest(names) {
 export function repairGenerated(root, context) {
   const writes = []
   const db = context.files[databasePath]
-  if (db.local !== undefined || db.remote !== undefined) {
+  if (db !== undefined && (db.local !== undefined || db.remote !== undefined)) {
     const a = databaseTemplate(db.base), b = databaseTemplate(db.local), c = databaseTemplate(db.remote)
     let template
     if (b === c || c === a) template = b
@@ -111,7 +140,7 @@ export function repairGenerated(root, context) {
     writes.push([manifestPath, registered], [databasePath, `import { migrations } from "./MigrationManifest.ts"\nexport { migrations }\n${template}`])
   }
   const history = context.files[schemaPath]
-  if (history.local !== undefined || history.remote !== undefined) {
+  if (history !== undefined && (history.local !== undefined || history.remote !== undefined)) {
     const parse = (text) => {
       if (text === undefined) return undefined
       const value = JSON.parse(text)
