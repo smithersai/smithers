@@ -42,7 +42,10 @@
     "./CheckSuite": "./src/CheckSuite.ts",
     "./Debate": "./src/Debate.ts",
     "./DelegationChain": "./src/DelegationChain.ts",
-    "./DriftDetector": "./src/DriftDetector.ts",
+    "./DriftDetector": {
+      "types": "./.vibe/declarations/src/DriftDetector.d.vibe.ts",
+      "default": "./src/DriftDetector.vibe"
+    },
     "./Escalation": "./src/Escalation.ts",
     "./Intervene": "./src/Intervene.ts",
     "./Kanban": "./src/Kanban.ts",
