@@ -33,11 +33,11 @@
 import { Action } from "@smthrs/flow"
 import { Effect, Option } from "effect"
 import { IntegrationError } from "../core/IntegrationError.ts"
-import * as Commits from "./Commits.ts"
+import * as Commits from "./Commits.vibe"
 import type { GitHubClient } from "./GitHubClient.ts"
 import * as Issues from "./Issues.ts"
-import * as Pulls from "./Pulls.ts"
-import * as Refs from "./Refs.ts"
+import * as Pulls from "./Pulls.vibe"
+import * as Refs from "./Refs.vibe"
 
 /**
  * The commit trailer that carries a write's key.

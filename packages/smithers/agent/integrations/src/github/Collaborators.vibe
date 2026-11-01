@@ -9,7 +9,6 @@
  * @since 1.0.0
  */
 
-import { Effect, Option, Schema } from "effect"
 import { IntegrationError } from "../core/IntegrationError.ts"
 import { GitHubClient } from "./GitHubClient.ts"
 import { requireRepositoryPath } from "./Repository.ts"
@@ -48,16 +47,14 @@ const PermissionAnswer = Schema.Struct({
   user: Schema.optional(Schema.NullOr(Schema.Struct({ id: Schema.Number })))
 })
 
-const requireLogin = (login: string): Effect.Effect<string, IntegrationError> =>
+const requireLogin = (login: string): string!IntegrationError =>
   typeof login === "string" && LOGIN_PATTERN.test(login)
-    ? Effect.succeed(encodeURIComponent(login))
-    : Effect.fail(
-      new IntegrationError("invalid-config", "A GitHub login is not a valid account name.", {
-        field: "login",
-        login: typeof login === "string" ? login.slice(0, 64) : typeof login,
-        retryable: false
-      })
-    )
+    ? encodeURIComponent(login)
+    : throw new IntegrationError("invalid-config", "A GitHub login is not a valid account name.", {
+      field: "login",
+      login: typeof login === "string" ? login.slice(0, 64) : typeof login,
+      retryable: false
+    })
 
 /**
  * `login`'s permission on the repository:
@@ -75,29 +72,29 @@ export const permission = (
   owner: string,
   repo: string,
   login: string
-): Effect.Effect<Option.Option<Permission>, IntegrationError, GitHubClient> =>
-  Effect.gen(function*() {
-    const client = yield* GitHubClient
-    const repository = yield* requireRepositoryPath(owner, repo)
-    const account = yield* requireLogin(login)
-    return yield* client.request(
+): Option<Permission>!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const account = try requireLogin(login)
+    return try (client.request(
       "GET",
       `/repos/${repository}/collaborators/${account}/permission`,
       undefined,
       { schema: PermissionAnswer }
-    ).pipe(
-      Effect.map((answer) =>
+    )
+      |> Effect.map(%, (answer) =>
         Option.some<Permission>({
           permission: answer.permission,
           roleName: answer.role_name,
           ...(answer.user === undefined || answer.user === null ? {} : { userId: answer.user.id })
-        })
-      ),
-      Effect.catchIf(
+        }))
+      |> Effect.catchIf(
+        %,
         (error) => error.details?.["status"] === 404,
-        () => Effect.succeed(Option.none<Permission>())
-      )
-    )
-  }).pipe(
-    Effect.withSpan("GitHub.Collaborators.permission", { attributes: { "github.owner": owner, "github.repo": repo } })
-  )
+        () => Option.none<Permission>()
+      ))
+  })
+  |> Effect.withSpan(%, "GitHub.Collaborators.permission", {
+    attributes: { "github.owner": owner, "github.repo": repo }
+  })

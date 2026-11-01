@@ -3,10 +3,8 @@
  * @since 1.0.0
  */
 
-import { Effect, Semaphore } from "effect"
-
 interface Gate {
-  readonly semaphore: Semaphore.Semaphore
+  readonly semaphore: Semaphore
   users: number
 }
 
@@ -19,7 +17,7 @@ const gates = new Map<string, Gate>()
  * @since 1.0.0
  * @category concurrency
  */
-export const withWriteLock = <A, E, R>(key: string, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+export const withWriteLock = <A, E, R>(key: string, effect: A!E!R): A!E!R =>
   Effect.acquireUseRelease(
     Effect.sync(() => {
       const gate = gates.get(key) ?? { semaphore: Semaphore.makeUnsafe(1), users: 0 }
@@ -32,4 +30,4 @@ export const withWriteLock = <A, E, R>(key: string, effect: Effect.Effect<A, E, 
       Effect.sync(() => {
         if (--gate.users === 0) gates.delete(key)
       })
-  ).pipe(Effect.withSpan("GitHub.Actions.keyed-write"))
+  ) |> Effect.withSpan(%, "GitHub.Actions.keyed-write")

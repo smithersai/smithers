@@ -71,7 +71,7 @@ const securityReview = Smithers.SecurityReview({
         "An idempotency or dedupe key built from attacker-chosen fields alone, so a replay with a new key is processed twice."
       ],
       paths: [
-        "src/core/Signature.ts",
+        "src/core/Signature.vibe",
         "src/core/Channel.ts",
         "src/github/Payload.vibe"
       ]
@@ -120,7 +120,7 @@ const securityReview = Smithers.SecurityReview({
         "A connection-scoped layer that falls back to ambientEnvironment() tokens when the connection's credential fails to resolve."
       ],
       paths: [
-        "src/core/Connection.ts",
+        "src/core/Connection.vibe",
         "src/Environment.ts",
         "src/*/Config.{ts,vibe}"
       ]
@@ -153,7 +153,7 @@ const securityReview = Smithers.SecurityReview({
         "src/core/SourceStore.ts",
         "src/core/SourceRecord.vibe",
         "src/core/CursorStore.ts",
-        "src/core/Sync.ts"
+        "src/core/Sync.vibe"
       ]
     }
   ]

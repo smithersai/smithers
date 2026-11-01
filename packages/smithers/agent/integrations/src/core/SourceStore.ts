@@ -46,7 +46,7 @@ import type { Fragment } from "effect/sql/Statement"
 import * as CursorStore from "./CursorStore.ts"
 import { IntegrationError, isIntegrationError } from "./IntegrationError.ts"
 import * as SourceRecord from "./SourceRecord.vibe"
-import type { Changes } from "./Sync.ts"
+import type { Changes } from "./Sync.vibe"
 
 /**
  * The container id a grant uses to cover a whole connection, and the

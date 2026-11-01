@@ -32,7 +32,7 @@ export * as Channel from "./core/Channel.ts"
  * @category schemas
  * @since 1.0.0
  */
-export * as Connection from "./core/Connection.ts"
+export * as Connection from "./core/Connection.vibe"
 
 /**
  * @category services
@@ -80,7 +80,7 @@ export * as Pkce from "./core/Pkce.ts"
  * @category verification
  * @since 1.0.0
  */
-export * as Signature from "./core/Signature.ts"
+export * as Signature from "./core/Signature.vibe"
 
 /**
  * @category constructors
@@ -110,4 +110,4 @@ export * as SourceStore from "./core/SourceStore.ts"
  * @category constructors
  * @since 1.0.0
  */
-export * as Sync from "./core/Sync.ts"
+export * as Sync from "./core/Sync.vibe"

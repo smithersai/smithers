@@ -21,10 +21,9 @@
  * @since 1.0.0
  */
 
-import { Effect, Schema } from "effect"
 import { IntegrationError } from "../core/IntegrationError.ts"
 import { GitHubClient } from "./GitHubClient.ts"
-import { requireBranch } from "./Refs.ts"
+import { requireBranch } from "./Refs.vibe"
 import { requireRepositoryPath } from "./Repository.ts"
 
 /**
@@ -173,10 +172,10 @@ const MAX_CHANGES = 1000
 const invalid = (field: string, message: string): IntegrationError =>
   new IntegrationError("invalid-config", message, { field, retryable: false })
 
-const requireSha = (field: string, sha: string): Effect.Effect<string, IntegrationError> =>
+const requireSha = (field: string, sha: string): string!IntegrationError =>
   typeof sha === "string" && SHA.test(sha)
-    ? Effect.succeed(sha)
-    : Effect.fail(invalid(field, "A commit SHA must be 40 lowercase hex digits."))
+    ? sha
+    : throw invalid(field, "A commit SHA must be 40 lowercase hex digits.")
 
 // A repository-relative path: segments that are not empty, `.` or `..`, with
 // no control character or backslash.
@@ -225,26 +224,26 @@ export const createOnBranch = (
     readonly additions: ReadonlyArray<FileAddition>
     readonly deletions: ReadonlyArray<string>
   }
-): Effect.Effect<string, IntegrationError, GitHubClient> =>
-  Effect.gen(function*() {
-    const client = yield* GitHubClient
-    yield* requireRepositoryPath(owner, repo)
-    const branch = yield* requireBranch(input.branch)
-    const expectedHeadOid = yield* requireSha("expectedHeadOid", input.expectedHeadOid)
+): string!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    try requireRepositoryPath(owner, repo)
+    const branch = try requireBranch(input.branch)
+    const expectedHeadOid = try requireSha("expectedHeadOid", input.expectedHeadOid)
     if (typeof input.headline !== "string" || input.headline.trim().length === 0 || input.headline.includes("\n")) {
-      return yield* Effect.fail(invalid("headline", "A commit headline is one line, not blank."))
+      throw invalid("headline", "A commit headline is one line, not blank.")
     }
     const changes = input.additions.length + input.deletions.length
     if (changes === 0 || changes > MAX_CHANGES) {
-      return yield* Effect.fail(invalid("fileChanges", `A commit changes 1 to ${MAX_CHANGES} files.`))
+      throw invalid("fileChanges", `A commit changes 1 to ${MAX_CHANGES} files.`)
     }
     if (!input.additions.every((file) => isFilePath(file.path) && isBase64(file.contents))) {
-      return yield* Effect.fail(invalid("additions", "An addition is a repository path and base64 contents."))
+      throw invalid("additions", "An addition is a repository path and base64 contents.")
     }
     if (!input.deletions.every(isFilePath)) {
-      return yield* Effect.fail(invalid("deletions", "A deletion is a repository path."))
+      throw invalid("deletions", "A deletion is a repository path.")
     }
-    const answer = yield* client.request("POST", "/graphql", {
+    const answer = try client.request("POST", "/graphql", {
       query: "mutation($input: CreateCommitOnBranchInput!) " +
         "{ createCommitOnBranch(input: $input) { commit { oid } } }",
       variables: {
@@ -262,18 +261,16 @@ export const createOnBranch = (
     const commit = answer.data?.createCommitOnBranch?.commit
     if (answer.errors !== undefined && answer.errors.length > 0 || commit === undefined) {
       const stale = (answer.errors ?? []).some(isStale)
-      return yield* Effect.fail(
-        new IntegrationError(
-          "delivery-failed",
-          stale
-            ? "GitHub refused the commit: the branch moved since the expected head."
-            : "GitHub refused the commit.",
-          { status: stale ? 409 : 422, stale, graphql: true, retryable: false, outcomeUnknown: false }
-        )
+      throw new IntegrationError(
+        "delivery-failed",
+        stale
+          ? "GitHub refused the commit: the branch moved since the expected head."
+          : "GitHub refused the commit.",
+        { status: stale ? 409 : 422, stale, graphql: true, retryable: false, outcomeUnknown: false }
       )
     }
     return commit.oid
-  }).pipe(Effect.withSpan("GitHub.Commits.createOnBranch", { attributes: spanAttributes(owner, repo) }))
+  }) |> Effect.withSpan(%, "GitHub.Commits.createOnBranch", { attributes: spanAttributes(owner, repo) })
 
 /**
  * What {@link mergeInto} did: made merge commit `sha` on the branch, or found
@@ -306,19 +303,19 @@ export const mergeInto = (
   owner: string,
   repo: string,
   input: { readonly base: string; readonly head: string; readonly commitMessage?: string | undefined }
-): Effect.Effect<MergedInto, IntegrationError, GitHubClient> =>
-  Effect.gen(function*() {
-    const client = yield* GitHubClient
-    const repository = yield* requireRepositoryPath(owner, repo)
-    const base = yield* requireBranch(input.base)
-    const head = typeof input.head === "string" && SHA.test(input.head) ? input.head : yield* requireBranch(input.head)
-    const answer = yield* client.request("POST", `/repos/${repository}/merges`, {
+): MergedInto!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const base = try requireBranch(input.base)
+    const head = typeof input.head === "string" && SHA.test(input.head) ? input.head : try requireBranch(input.head)
+    const answer = try client.request("POST", `/repos/${repository}/merges`, {
       base,
       head,
       ...(input.commitMessage === undefined ? {} : { commit_message: input.commitMessage })
     }, { schema: MergeIntoAnswer, retryUnsafeWrites: true })
     return answer === null ? { kind: "upToDate" } as const : { kind: "merged", sha: answer.sha } as const
-  }).pipe(Effect.withSpan("GitHub.Commits.mergeInto", { attributes: spanAttributes(owner, repo) }))
+  }) |> Effect.withSpan(%, "GitHub.Commits.mergeInto", { attributes: spanAttributes(owner, repo) })
 
 /**
  * Commit `sha`'s tree, parents and message:
@@ -331,13 +328,13 @@ export const getCommit = (
   owner: string,
   repo: string,
   sha: string
-): Effect.Effect<GitCommit, IntegrationError, GitHubClient> =>
-  Effect.gen(function*() {
-    const client = yield* GitHubClient
-    const repository = yield* requireRepositoryPath(owner, repo)
-    const commit = yield* requireSha("sha", sha)
-    return yield* client.request("GET", `/repos/${repository}/git/commits/${commit}`, undefined, { schema: GitCommit })
-  }).pipe(Effect.withSpan("GitHub.Commits.getCommit", { attributes: spanAttributes(owner, repo) }))
+): GitCommit!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const commit = try requireSha("sha", sha)
+    return try client.request("GET", `/repos/${repository}/git/commits/${commit}`, undefined, { schema: GitCommit })
+  }) |> Effect.withSpan(%, "GitHub.Commits.getCommit", { attributes: spanAttributes(owner, repo) })
 
 /**
  * Compares commit `base` with commit `head`:
@@ -356,13 +353,13 @@ export const compare = (
   repo: string,
   base: string,
   head: string
-): Effect.Effect<Comparison, IntegrationError, GitHubClient> =>
-  Effect.gen(function*() {
-    const client = yield* GitHubClient
-    const repository = yield* requireRepositoryPath(owner, repo)
-    const from = yield* requireSha("base", base)
-    const to = yield* requireSha("head", head)
-    const answer = yield* client.request("GET", `/repos/${repository}/compare/${from}...${to}`, undefined, {
+): Comparison!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const from = try requireSha("base", base)
+    const to = try requireSha("head", head)
+    const answer = try client.request("GET", `/repos/${repository}/compare/${from}...${to}`, undefined, {
       schema: CompareAnswer
     })
     const commits = answer.commits.map((commit): ComparedCommit => ({
@@ -379,4 +376,4 @@ export const compare = (
       commits,
       commitsTruncated: answer.total_commits > commits.length
     }
-  }).pipe(Effect.withSpan("GitHub.Commits.compare", { attributes: spanAttributes(owner, repo) }))
+  }) |> Effect.withSpan(%, "GitHub.Commits.compare", { attributes: spanAttributes(owner, repo) })
