@@ -30,7 +30,7 @@ export * as RunStore from "./RunStore.ts"
  * @category metrics
  * @since 0.1.0
  */
-export * as RunStoreMetrics from "./RunStoreMetrics.ts"
+export * as RunStoreMetrics from "./RunStoreMetrics.vibe"
 
 /**
  * @category ownership

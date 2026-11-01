@@ -12,7 +12,7 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
   // Examples are type-checked, linted, and run by test/Examples.test.ts.
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd: "packages/smithers/flows/run-store"
 })
 
@@ -148,7 +148,7 @@ const securityReview = Smithers.SecurityReview({
         "Effect.annotateCurrentSpan, log, or metric attributes that include state_json, checkpoint, outcome, or metadata values rather than ids.",
         "Error messages or RunStoreError causes that embed the rejected JSON payload text."
       ],
-      paths: ["src/RunStore.ts", "src/AttemptStore.ts", "src/RunStoreMetrics.ts", "src/internal/SpanOutcome.ts"]
+      paths: ["src/RunStore.ts", "src/AttemptStore.ts", "src/RunStoreMetrics.vibe", "src/internal/SpanOutcome.ts"]
     }
   ]
 })

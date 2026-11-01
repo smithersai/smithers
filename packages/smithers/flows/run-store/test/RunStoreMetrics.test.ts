@@ -13,7 +13,7 @@ import * as Migrations from "../src/Migrations.ts"
 import type { LivenessEvidence, OwnerId } from "../src/Ownership.ts"
 import { type RunRow, type RunSnapshot, RunStore } from "../src/RunStore.ts"
 import * as RunStoreLive from "../src/RunStore.ts"
-import * as RunStoreMetrics from "../src/RunStoreMetrics.ts"
+import * as RunStoreMetrics from "../src/RunStoreMetrics.vibe"
 
 const migrated = <A, E>(effect: Effect.Effect<A, E, DurableWriter.DurableWriter | SqlClient.SqlClient | RunStore>) =>
   effect.pipe(
