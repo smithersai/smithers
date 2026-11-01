@@ -28,7 +28,7 @@ import * as Metric from "effect/Metric"
  * @since 0.1.0
  */
 export const claims = Metric.counter("flows_run_claims", {
-  description: "Ownership claim compare-and-swaps by operation and outcome"
+  description: "Ownership claim compare-and-swaps by operation and outcome",
 })
 
 /**
@@ -40,7 +40,7 @@ export const claims = Metric.counter("flows_run_claims", {
  * @since 0.1.0
  */
 export const transitions = Metric.counter("flows_run_transitions", {
-  description: "Fenced run state transitions by outcome and target status"
+  description: "Fenced run state transitions by outcome and target status",
 })
 
 /**
@@ -53,7 +53,7 @@ export const transitions = Metric.counter("flows_run_transitions", {
  * @since 0.1.0
  */
 export const heartbeats = Metric.counter("flows_run_heartbeats", {
-  description: "Fenced ownership heartbeats by outcome"
+  description: "Fenced ownership heartbeats by outcome",
 })
 
 /** Rewrites an outcome tag (`AlreadyClaimed`) as an attribute value (`already_claimed`). */
@@ -63,10 +63,10 @@ const attributeValue = (tag: string): string => tag.replace(/(?<=[a-z0-9])(?=[A-
 const byOutcome = <const Tags extends ReadonlyArray<string>>(
   metric: Metric.Metric<number, Metric.CounterState<number>>,
   attributes: Readonly<Record<string, string>>,
-  tags: Tags
+  tags: Tags,
 ): { readonly [Tag in Tags[number]]: Metric.Metric<number, Metric.CounterState<number>> } =>
   Object.fromEntries(
-    tags.map((tag) => [tag, Metric.withAttributes(metric, { ...attributes, outcome: attributeValue(tag) })])
+    tags.map((tag) => [tag, Metric.withAttributes(metric, { ...attributes, outcome: attributeValue(tag) })]),
   ) as { [Tag in Tags[number]]: Metric.Metric<number, Metric.CounterState<number>> }
 
 const claimTags = ["Claimed", "NotFound", "AlreadyClaimed", "HeartbeatFresh", "SnapshotChanged"] as const
@@ -89,7 +89,7 @@ export const claim = byOutcome(claims, { op: "claim" }, claimTags)
 export const claimAndOwn = byOutcome(
   claims,
   { op: "claim_and_own" },
-  ["Activated", "NotFound", "AlreadyClaimed", "HeartbeatFresh", "SnapshotChanged", "EvidenceRequired"] as const
+  ["Activated", "NotFound", "AlreadyClaimed", "HeartbeatFresh", "SnapshotChanged", "EvidenceRequired"] as const,
 )
 
 /**
@@ -103,7 +103,7 @@ export const claimAndOwn = byOutcome(
 export const activate = byOutcome(
   claims,
   { op: "activate" },
-  ["Activated", "ClaimLost", "SnapshotChanged"] as const
+  ["Activated", "ClaimLost", "SnapshotChanged"] as const,
 )
 
 /**
@@ -115,7 +115,7 @@ export const activate = byOutcome(
 export const abandonClaim = byOutcome(
   claims,
   { op: "abandon_claim" },
-  ["Abandoned", "ClaimLost"] as const
+  ["Abandoned", "ClaimLost"] as const,
 )
 
 /**
@@ -127,7 +127,7 @@ export const abandonClaim = byOutcome(
 export const recoverClaim = byOutcome(
   claims,
   { op: "recover_claim" },
-  ["Recovered", "NotFound", "ClaimFresh", "ClaimChanged", "LivenessUnconfirmed"] as const
+  ["Recovered", "NotFound", "ClaimFresh", "ClaimChanged", "LivenessUnconfirmed"] as const,
 )
 
 /**
@@ -139,7 +139,7 @@ export const recoverClaim = byOutcome(
 export const steal = byOutcome(
   claims,
   { op: "steal" },
-  ["Claimed", "NotFound", "AlreadyClaimed", "HeartbeatFresh", "SnapshotChanged", "LivenessUnconfirmed"] as const
+  ["Claimed", "NotFound", "AlreadyClaimed", "HeartbeatFresh", "SnapshotChanged", "LivenessUnconfirmed"] as const,
 )
 
 /**
@@ -161,5 +161,5 @@ export const heartbeat = byOutcome(heartbeats, {}, ["Updated", "FenceLost", "Not
 export const transition = byOutcome(
   transitions,
   {},
-  ["Transitioned", "FenceLost", "NotFound", "GuardFailed"] as const
+  ["Transitioned", "FenceLost", "NotFound", "GuardFailed"] as const,
 )

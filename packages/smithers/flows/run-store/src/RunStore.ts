@@ -57,7 +57,7 @@ import { heartbeatSkewAllowance, heartbeatStaleAfter } from "./Heartbeat.ts"
 import * as Boundary from "./internal/Boundary.ts"
 import * as Companion from "./internal/Companion.ts"
 import { observeExit, observeOutcome } from "./internal/SpanOutcome.ts"
-import * as RunStoreMetrics from "./RunStoreMetrics.ts"
+import * as RunStoreMetrics from "./RunStoreMetrics.vibe"
 
 /** JSON text carrying an arbitrary decoded value. */
 const UnknownFromJsonString = Schema.fromJsonString(Schema.Unknown)
