@@ -5,7 +5,7 @@ import * as Output from "alchemy/Output"
 import { Config, Context, Effect, Option, Redacted } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { ELECTRIC_POOL_SIZE } from "./Connections.ts"
-import { directOr, forward, type Host, isLive, logged, makeAwake, makeInFlight, recordStart } from "./ElectricAwake.ts"
+import { type Host, logged, makeAwake, makeInFlight, recordStart, serveObject } from "./ElectricAwake.ts"
 import { LONG_POLL_TIMEOUT_MS } from "./ElectricConfig.ts"
 
 /** The Electric release the app is built against; docker-compose.yml runs the same one. */
@@ -60,7 +60,8 @@ class Electric extends Cloudflare.Container<Electric>()("Electric", containerPro
  * Starts Electric's container when a request needs it, with Postgres' direct URL from the Worker's secret binding as
  * its `DATABASE_URL`, holds it running for 6 hours after its last request (infra/ElectricAwake.ts), and forwards each
  * request to its port, recording how long waking and Electric's headers took. Electric's response goes back as the
- * container sent it (`directOr`), its body never re-streamed through the object.
+ * container sent it (`directOr`), its body never re-streamed through the object; a container that can't answer, as
+ * while a deploy replaces it, is answered 503 with `retry-after` (`serveObject`).
  */
 export class ElectricObject extends Cloudflare.DurableObject<ElectricObject, {}>()(
   "ElectricObject", { transferredFrom: "ElectricGateway" },
@@ -94,7 +95,14 @@ const ElectricObjectLive = ElectricObject.make(
             // A raw `Response` body is handed back untouched (`HttpServerResponse.toWeb`).
             return HttpServerResponse.raw(response, { status: response.status })
           })
-          return yield* forward(wake, directOr(direct, port.fetch(request)), isLive(request.url), inFlight)
+          return yield* serveObject({
+            wake,
+            direct,
+            waited: port.fetch(request),
+            url: request.url,
+            requestId: request.headers["x-request-id"],
+            inFlight,
+          })
         })),
       }
     })

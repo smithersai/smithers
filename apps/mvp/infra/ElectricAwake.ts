@@ -13,6 +13,7 @@
 // waited up to 26 s, while Electric's container used at most a fifth of its CPU (docs/infrastructure.md#electric).
 import { Logger } from "@smthrs/observability"
 import { Clock, Duration, Effect, Metric } from "effect"
+import { HttpServerResponse } from "effect/http"
 
 /**
  * How long the container keeps running after the object's last request: Cloudflare's maximum, 6 hours. A longer one
@@ -90,23 +91,35 @@ export const makeInFlight = (): InFlight => ({ current: 0 })
  * Wakes Electric, then sends the request, recording one log line `electric.object.request`: whether it was live, how
  * many requests the object was forwarding when it arrived, itself included (`inFlight`), the milliseconds waking took
  * (`awakeMs`) and then Electric's headers (`headersMs`), Electric's status, and whether the request started the
- * container or set the hold. A failure records the stage it failed at and the error's tag; never a URL, a parameter, a
- * header or a body.
+ * container or set the hold, and the proxy's `correlationId`. A failure records `outcome: "unavailable"` and
+ * `status: 503`, which `serveObject` answers, with the stage it failed at and the error's tag; never a URL, a
+ * parameter, a header or a body.
  */
 export const forward = <A extends { readonly status: number }, E1, R1, E2, R2>(
   wake: Effect.Effect<Woken, E1, R1>,
   send: Effect.Effect<A, E2, R2>,
   live: boolean,
   inFlight: InFlight,
+  requestId?: string,
 ): Effect.Effect<A, E1 | E2, R1 | R2> =>
   Effect.gen(function* () {
+    const correlationId = correlationOf(requestId)
     const startedAt = yield* Clock.currentTimeMillis
     const arrived = ++inFlight.current
     const failed = (stage: "awake" | "electric") => (error: E1 | E2) =>
       Effect.gen(function* () {
         const durationMs = (yield* Clock.currentTimeMillis) - startedAt
         yield* Effect.logError("electric.object.request").pipe(
-          Effect.annotateLogs({ live, inFlight: arrived, outcome: "failed", stage, error: tagOf(error), durationMs }),
+          Effect.annotateLogs({
+            correlationId,
+            live,
+            inFlight: arrived,
+            outcome: "unavailable",
+            status: 503,
+            stage,
+            error: tagOf(error),
+            durationMs,
+          }),
         )
       })
     const woken = yield* wake.pipe(Effect.tapError(failed("awake")))
@@ -115,6 +128,7 @@ export const forward = <A extends { readonly status: number }, E1, R1, E2, R2>(
     const answeredAt = yield* Clock.currentTimeMillis
     yield* Effect.logInfo("electric.object.request").pipe(
       Effect.annotateLogs({
+        correlationId,
         live,
         inFlight: arrived,
         outcome: "answered",
@@ -165,3 +179,43 @@ export const recordStart = <A, E, R>(start: Effect.Effect<A, E, R>, instanceId: 
     yield* Metric.update(containerStarts, 1)
     yield* Effect.logInfo("electric.container.start").pipe(Effect.annotateLogs({ instanceId, startedAt }))
   })), Effect.withSpan("electric.container.start"))
+
+/**
+ * The proxy's correlation id (`x-request-id`, ShapeProxy's generated span id) when the request carries a valid one, or
+ * `unavailable`; never arbitrary header content.
+ */
+export const correlationOf = (requestId: string | undefined): string =>
+  requestId !== undefined && /^[a-f0-9]{16}$/.test(requestId) ? requestId : "unavailable"
+
+/** How long a device waits after a 503 from the gateway or its object, in seconds: about a quarter of Electric's 20 s long poll. */
+export const RETRY_AFTER_SECONDS = 5
+
+/** What the object's handler needs for one request: the waker, both ways to Electric's port, and the request's identity. */
+export interface Serve<E1, R1, E2, R2, E3, R3> {
+  readonly wake: Effect.Effect<Woken, E1, R1>
+  readonly direct: Effect.Effect<HttpServerResponse.HttpServerResponse, E2, R2>
+  readonly waited: Effect.Effect<HttpServerResponse.HttpServerResponse, E3, R3>
+  readonly url: string
+  readonly requestId?: string | undefined
+  readonly inFlight: InFlight
+}
+
+/** What the object answers when Electric's container can't: `503`, with `retry-after` and `cache-control: no-store`. */
+export const unavailable = (): HttpServerResponse.HttpServerResponse =>
+  HttpServerResponse.empty({ status: 503, headers: { "retry-after": String(RETRY_AFTER_SECONDS), "cache-control": "no-store" } })
+
+/**
+ * The object's handler for one request: wakes Electric and forwards the request (`forward`, `directOr`). A container
+ * that can't answer is answered `unavailable` (503), never a failure the Worker would answer 500: Cloudflare replaces
+ * Electric's container on each ElectricRuntime deploy and may restart it on its host, and every request in flight then
+ * fails at the port (`ContainerCrashedError`, `ContainerNotRunningError`) or at the start ("no container instance").
+ * On smithers.sh on 2026-11-01 each deploy of ElectricRuntime answered every page's held live requests 500. A device
+ * keeps its rows on a 503 and asks again under its sync policy (decision 0008 §5), as for an overloaded object
+ * (infra/ElectricRelay.ts). A defect still dies.
+ */
+export const serveObject = <E1, R1, E2, R2, E3, R3>(
+  options: Serve<E1, R1, E2, R2, E3, R3>,
+): Effect.Effect<HttpServerResponse.HttpServerResponse, never, R1 | R2 | R3> =>
+  forward(options.wake, directOr(options.direct, options.waited), isLive(options.url), options.inFlight, options.requestId).pipe(
+    Effect.catch(() => Effect.succeed(unavailable())),
+  )

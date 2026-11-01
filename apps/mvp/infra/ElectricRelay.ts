@@ -7,10 +7,10 @@
 // (decision 0008 §5), as it does for any shape Electric can't answer right now.
 import { Cause, Clock, Effect } from "effect"
 import { HttpServerResponse } from "effect/http"
-import { tagOf } from "./ElectricAwake.ts"
+import { correlationOf, RETRY_AFTER_SECONDS, tagOf, unavailable } from "./ElectricAwake.ts"
 
-/** How long a device waits after an overloaded answer, in seconds: about a quarter of Electric's 20 s long poll. */
-export const RETRY_AFTER_SECONDS = 5
+/** How long a device waits after an overloaded answer, in seconds (infra/ElectricAwake.ts). */
+export { RETRY_AFTER_SECONDS }
 
 /** What Cloudflare's runtime rejects a call into an overloaded Durable Object with (its `overloaded` property is set). */
 export const isOverloaded = (error: unknown): boolean =>
@@ -30,7 +30,7 @@ export const relay = <E, R>(
   requestId?: string,
 ): Effect.Effect<HttpServerResponse.HttpServerResponse, E, R> =>
   Effect.gen(function* () {
-    const correlationId = requestId !== undefined && /^[a-f0-9]{16}$/.test(requestId) ? requestId : "unavailable"
+    const correlationId = correlationOf(requestId)
     const startedAt = yield* Clock.currentTimeMillis
     const since = Effect.map(Clock.currentTimeMillis, (now) => now - startedAt)
     return yield* call.pipe(
@@ -54,10 +54,7 @@ export const relay = <E, R>(
           yield* Effect.logWarning("electric.gateway.request").pipe(
             Effect.annotateLogs({ correlationId, live, status: 503, outcome: "overloaded", durationMs, errorTag: tagOf(error) }),
           )
-          return HttpServerResponse.empty({
-            status: 503,
-            headers: { "retry-after": String(RETRY_AFTER_SECONDS), "cache-control": "no-store" },
-          })
+          return unavailable()
         })
       ),
     )

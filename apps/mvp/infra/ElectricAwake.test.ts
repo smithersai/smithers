@@ -1,9 +1,21 @@
 // Electric's container stays running between visits, and each request the gateway's object forwards is recorded
 // (infra/ElectricAwake.ts), over a host that records the object's calls to the container in order.
 import { Deferred, Effect, Fiber, Logger, Metric } from "effect"
+import { HttpServerResponse } from "effect/http"
 import { TestClock } from "effect/testing"
 import { describe, expect, test } from "vitest"
-import { directOr, forward, type Host, isLive, logged, makeAwake, makeInFlight, type Woken } from "./ElectricAwake.ts"
+import {
+  directOr,
+  forward,
+  type Host,
+  isLive,
+  logged,
+  makeAwake,
+  makeInFlight,
+  RETRY_AFTER_SECONDS,
+  serveObject,
+  type Woken,
+} from "./ElectricAwake.ts"
 
 /** Cloudflare's bound on `setInactivityTimeout`: greater than 0 and at most 6 hours, or the call rejects. */
 const PLATFORM_MAX_MS = 21_600_000
@@ -167,7 +179,7 @@ describe("forward", () => {
     expect(log).toMatchObject([{
       message: "electric.object.request",
       level: "ERROR",
-      annotations: { live: false, outcome: "failed", stage: "awake", error: "NoContainerInstanceError", durationMs: 1_500 },
+      annotations: { live: false, outcome: "unavailable", status: 503, stage: "awake", error: "NoContainerInstanceError", durationMs: 1_500 },
     }])
     expect(JSON.stringify(log)).not.toContain("10.0.0.1")
   })
@@ -176,7 +188,7 @@ describe("forward", () => {
     for (const [error, name] of [[new RangeError("port 3000 at 10.0.0.1"), "RangeError"], ["closed", "string"]] as const) {
       const { exit, log } = await run(forward(Effect.succeed(woken), Effect.fail(error), true, makeInFlight()))
       expect(exit._tag).toBe("Failure")
-      expect(log[0]!.annotations).toMatchObject({ live: true, outcome: "failed", stage: "electric", error: name })
+      expect(log[0]!.annotations).toMatchObject({ live: true, outcome: "unavailable", status: 503, stage: "electric", error: name })
       expect(JSON.stringify(log)).not.toContain("10.0.0.1")
     }
   })
@@ -197,7 +209,7 @@ describe("forward", () => {
     }))
     expect(inFlight.current).toBe(0)
     expect(log.map((record) => [record.annotations.outcome, record.annotations.inFlight])).toEqual([
-      ["failed", 3],
+      ["unavailable", 3],
       ["answered", 1],
       ["answered", 2],
     ])
@@ -267,4 +279,64 @@ test("container starts record time and instance identity only after success", as
   expect(bad.log).toEqual([])
   const after = Effect.runSync(Metric.value(containerStarts))
   expect(after.count - before.count).toBe(1)
+})
+
+describe("serveObject", () => {
+  // Cloudflare replaces Electric's container when ElectricRuntime deploys a new version, and its host may restart it:
+  // every request in flight then fails at the port with ContainerCrashedError ("Container exited while waiting for
+  // port 3000", cause "Network connection lost") or ContainerNotRunningError. On smithers.sh on 2026-11-01 at
+  // 05:48:26 UTC, the deploy of version 5873fd91 failed 27 held live requests that way, and the object answered each
+  // 500, which reached every open page as a failed shape request (shape-500 report).
+  class ContainerCrashedError extends Error {
+    readonly _tag = "ContainerCrashedError"
+  }
+  class ContainerNotRunningError extends Error {
+    readonly _tag = "ContainerNotRunningError"
+  }
+  const url = "http://electric-gateway/v1/shape?table=items&offset=1_0&handle=h&live=true"
+  const answered = HttpServerResponse.text("[]", { status: 200 })
+  /** The object's handler over `self`, whose port answers with `port`, both ways. */
+  const serving = (self: Host, port: Effect.Effect<HttpServerResponse.HttpServerResponse, unknown>, requestId?: string) =>
+    serveObject({ wake: makeAwake(self), direct: port, waited: port, url, requestId, inFlight: makeInFlight() })
+
+  test("Electric's answer passes through, and its record carries the proxy's correlation id", () => {
+    const { exit, log } = runLogged(serving(host().self, Effect.succeed(answered), "0123456789abcdef"))
+    expect(exit).toMatchObject({ _tag: "Success", value: answered })
+    expect(log.at(-1)).toMatchObject({
+      message: "electric.object.request",
+      annotations: { correlationId: "0123456789abcdef", outcome: "answered", status: 200, live: true },
+    })
+  })
+
+  test("a container that exits mid-request is answered 503 with retry-after and no-store, never 500", () => {
+    for (const fault of [new ContainerCrashedError("Network connection lost to 10.0.0.1"), new ContainerNotRunningError("call start()")]) {
+      const { exit, log } = runLogged(serving(host().self, Effect.fail(fault), "0123456789abcdef"))
+      expect(exit._tag).toBe("Success")
+      const response = exit._tag === "Success" ? exit.value : undefined
+      expect(response?.status).toBe(503)
+      expect(response?.headers).toMatchObject({ "retry-after": String(RETRY_AFTER_SECONDS), "cache-control": "no-store" })
+      expect(log.at(-1)).toMatchObject({
+        message: "electric.object.request",
+        level: "ERROR",
+        annotations: { correlationId: "0123456789abcdef", outcome: "unavailable", status: 503, stage: "electric", error: fault._tag },
+      })
+      expect(JSON.stringify(log)).not.toContain("10.0.0.1")
+    }
+  })
+
+  test("a container Cloudflare can't provide is answered 503 too, at the awake stage", () => {
+    const { self } = host(false)
+    const refusing: Host = { ...self, start: Effect.fail(new Error("There is no container instance that can be provided")) }
+    const { exit, log } = runLogged(serving(refusing, Effect.succeed(answered)))
+    expect(exit._tag === "Success" ? exit.value.status : undefined).toBe(503)
+    expect(log.at(-1)!.annotations).toMatchObject({ correlationId: "unavailable", outcome: "unavailable", status: 503, stage: "awake" })
+  })
+
+  test("a correlation id that isn't the proxy's generated span id is never logged", () => {
+    for (const invalid of ["private-customer-content", "0123456789ABCDEF", undefined]) {
+      const { log } = runLogged(serving(host().self, Effect.succeed(answered), invalid))
+      expect(log.at(-1)!.annotations.correlationId).toBe("unavailable")
+      expect(JSON.stringify(log)).not.toContain("private-customer-content")
+    }
+  })
 })
