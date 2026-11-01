@@ -2,9 +2,19 @@
 .app-shell {
   /* A fixed height, so the conversation scrolls inside and stays pinned to its newest message. */
   height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* The centered column under the full-width bar. */
+.app-shell-center {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
   max-width: 48rem;
   margin: 0 auto;
-  padding: 1rem;
+  padding: 0.75rem 1rem 1rem;
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -20,31 +30,28 @@
 .app-shell-composer > * { flex: 1; }
 .app-shell-composer > button { flex: none; }
 
-/* The header: the connection pill, the theme button and the account, at the end of the row. */
-.app-shell-header { min-width: 0; flex-wrap: wrap; display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; }
-.app-shell-header [aria-label="Account"] { display: flex; align-items: center; gap: 0.5rem; }
+/* The bar: wordmark, the agent's status and the connection pill at the left; pages in the middle; bell, theme and
+   account at the right (PageHeader's layout). */
+.app-shell-header { flex: none; }
+.app-shell-brand { display: inline-flex; align-items: center; }
+.app-shell-brand .sui-wordmark { width: 5.5rem; }
 
-/* The agent's pill, first in the header row; the rest stay at the end. */
-.app-shell-agent { display: flex; align-items: center; margin-inline-end: auto; }
+.app-shell-agent { display: flex; align-items: center; min-width: 0; }
+.app-shell-agent:empty { display: none; }
 
 /* The connection pill's live region: always rendered, so screen readers hear each change; it takes no room while empty. */
-.app-shell-connection { display: flex; align-items: center; gap: 0.5rem; }
-.app-shell-connection:empty { margin-inline-end: -0.5rem; }
+.app-shell-connection { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+.app-shell-connection:empty { display: none; }
 
-/* The pages the header links to: Flows and Runs. */
-.app-shell-nav { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
-.app-shell-nav a { color: var(--brand, #0f766e); text-decoration: none; white-space: nowrap; }
-
-@media (max-width: 60rem) {
-  .app-shell-header { flex-wrap: wrap; }
-  .app-shell-header [aria-label="Account"] { min-width: 0; }
-  .app-shell-header [aria-label="Account"] > span { overflow-wrap: anywhere; }
-  .app-shell-nav { order: 1; flex: 0 0 100%; overflow-x: auto; flex-wrap: nowrap; }
-  .app-shell-nav > * { flex-shrink: 0; }
-  .app-shell-nav > a { display: inline-flex; align-items: center; min-width: 32px; min-height: 32px; }
-}
+/* The empty chat: a quiet centered mark instead of a page-filling logo, and no empty timeline label beside it. */
+.app-shell .sui-chat-empty .sui-wordmark { max-width: 20rem; }
+.app-shell .sui-chat-transcript:has(.sui-chat-empty) > .sui-timeline-disclosure { display: none; }
 
 @media (max-width: 40rem) {
+  .app-shell-header .sui-page-header-inner { padding-inline: 16px; }
+  /* The account's sign-out stays; the login's name yields to the pages' row on a phone. */
+  .app-shell-header [aria-label="Account"] > span:first-child { display: none; }
+  .app-shell .sui-chat-empty .sui-wordmark { max-width: 13rem; }
   .app-shell-composer kbd, .sui-chat-composer kbd { display: none; }
 }
 

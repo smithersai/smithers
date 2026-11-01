@@ -1,6 +1,5 @@
 /* Page layout only; components and colors come from @smthrs/ui. */
-.conversations-screen { max-width: 48rem; margin: 0 auto; padding: 1rem; display: flex; flex-direction: column; gap: 1rem; }
-.conversations-screen-header { display: flex; align-items: center; gap: 1rem; }
+.conversations-screen { min-height: 100dvh; }
 .conversation-list { display: flex; flex-direction: column; gap: 0.75rem; }
 .conversation-list-search { display: flex; gap: 0.5rem; align-items: center; }
 .conversation-list-search > input { flex: 1; min-width: 0; }
@@ -11,6 +10,6 @@
 .conversation-list-repo { min-width: 0; opacity: 0.7; font-size: 0.875rem; overflow-wrap: anywhere; }
 
 @media (max-width: 60rem) {
-  .conversations-screen-header > a { display: inline-flex; align-items: center; min-width: 32px; min-height: 32px; }
+  .conversations-screen-header .sui-page-header-back > a { display: inline-flex; align-items: center; min-width: 32px; min-height: 32px; }
   .conversation-list-row > a { min-height: 32px; flex-wrap: wrap; }
 }

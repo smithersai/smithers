@@ -1,3 +1,4 @@
+import { PageBody, PageHeader } from "@smthrs/ui"
 import { Link, useParams } from "@tanstack/react-router"
 import { ConnectionPill } from "../../features/chat/components/ConnectionPill"
 import { usePlugins } from "../../plugins/components/PluginsContext"
@@ -13,12 +14,18 @@ export function PluginScreen() {
   if (view === undefined) return null
   return (
     <main className="plugin-screen" aria-label={view.title} data-view={view.id}>
-      <header className="plugin-screen-header">
-        <Link to="/app">Back to chat</Link>
-        <h1>{view.title}</h1>
-        <div role="status" aria-label="Connection" aria-live="polite"><ConnectionPill /></div>
-      </header>
-      <PluginView view={view} />
+      <PageHeader
+        className="plugin-screen-header"
+        back={<Link to="/app">Back to chat</Link>}
+        title={view.title}
+        width="default"
+        actions={
+          <span role="status" aria-label="Connection" aria-live="polite"><ConnectionPill /></span>
+        }
+      />
+      <PageBody className="plugin-screen-body">
+        <PluginView view={view} />
+      </PageBody>
     </main>
   )
 }

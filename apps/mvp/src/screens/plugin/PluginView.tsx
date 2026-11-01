@@ -1,4 +1,5 @@
 import type { Contribution, Host } from "@smthrs/plugin"
+import { Card, CardContent, EmptyState } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { SignInButton } from "../../features/auth/components/SignInButton"
 import { useAuth } from "../../features/auth/components/AuthContext"
@@ -20,7 +21,15 @@ export function PluginView({ view, repository }: { readonly view: Contribution.V
   if (session === undefined) return null
   const viewer = contributionViewer(session, confirmed, repository === undefined ? undefined : { answer })
   if (!actions.allows(view.minimum, viewer) || view.render.kind !== "component") {
-    return session.status === "signed_out" ? <SignInButton /> : null
+    return session.status === "signed_out"
+      ? (
+        <Card className="plugin-screen-signin">
+          <CardContent>
+            <EmptyState title={`Sign in to ${view.title.toLowerCase()}.`} action={<SignInButton />} />
+          </CardContent>
+        </Card>
+      )
+      : null
   }
   return (
     <>

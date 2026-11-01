@@ -1,4 +1,4 @@
-import { Badge, Button, Input } from "@smthrs/ui"
+import { Badge, Button, Card, CardContent, Input } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useNavigate } from "@tanstack/react-router"
 import { OPEN_SETTINGS } from "../../auth/contract"
@@ -72,24 +72,28 @@ export function FirstRunSteps() {
   }
   return (
     <section className="first-run" aria-label={GET_STARTED}>
-      <ol className="first-run-steps">
-        {firstRun.steps.map((step, index) => (
-          <li
-            key={step.id}
-            className="first-run-step"
-            data-step={step.id}
-            data-state={step.state}
-            aria-current={step.state === "next" ? "step" : undefined}
-            {...(step.id === "model" && step.state === "next" ? { "data-add-model": "" } : {})}
-          >
-            {step.state === "done"
-              ? <Badge variant={MARK.done} role="img" aria-label={DONE}>✓</Badge>
-              : <Badge variant={MARK[step.state]} aria-hidden="true">{index + 1}</Badge>}
-            <span className="first-run-title">{STEP_TITLES[step.id]}</span>
-            {action(step)}
-          </li>
-        ))}
-      </ol>
+      <Card>
+        <CardContent>
+          <ol className="first-run-steps">
+            {firstRun.steps.map((step, index) => (
+              <li
+                key={step.id}
+                className="first-run-step"
+                data-step={step.id}
+                data-state={step.state}
+                aria-current={step.state === "next" ? "step" : undefined}
+                {...(step.id === "model" && step.state === "next" ? { "data-add-model": "" } : {})}
+              >
+                {step.state === "done"
+                  ? <Badge variant={MARK.done} role="img" aria-label={DONE}>✓</Badge>
+                  : <Badge variant={MARK[step.state]} aria-hidden="true">{index + 1}</Badge>}
+                <span className="first-run-title">{STEP_TITLES[step.id]}</span>
+                {action(step)}
+              </li>
+            ))}
+          </ol>
+        </CardContent>
+      </Card>
     </section>
   )
 }

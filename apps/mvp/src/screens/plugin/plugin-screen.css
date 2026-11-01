@@ -1,11 +1,8 @@
 /* Page layout only; components and colors come from @smthrs/ui. */
-.plugin-screen { min-height: 100dvh; display: flex; flex-direction: column; gap: 1rem; padding: 1rem; min-width: 0; }
-.plugin-screen-header { display: flex; align-items: center; gap: 1rem; }
-@media (max-width: 60rem) {
-  .plugin-screen-header > a { display:inline-flex; align-items:center; min-height:32px; min-width:32px; }
-}
-.plugin-screen-header h1 { margin: 0; font-size: 1.125rem; }
-.plugin-screen-view { flex: 1; min-height: 0; }
+.plugin-screen { min-height: 100dvh; display: flex; flex-direction: column; min-width: 0; }
+.plugin-screen-body { flex: 1; min-height: 0; }
+.plugin-screen-view { min-width: 0; }
+.plugin-screen-signin { max-width: 26rem; margin: 2rem auto; }
 .action-strip { display: flex; flex-direction: column; gap: 0.5rem; max-width: 48rem; width: 100%; margin: 0 auto; }
 .action-strip-buttons { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .action-strip-buttons [data-slot="kbd"] { margin-left: 0.5rem; }
