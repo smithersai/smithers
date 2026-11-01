@@ -16,7 +16,7 @@
 import * as Flow from "@smthrs/flow/Flow"
 import { dual } from "effect/Function"
 import * as Schema from "effect/Schema"
-import * as Compose from "./internal/Compose.ts"
+import * as Compose from "./internal/Compose.vibe"
 import * as Decorate from "./internal/Decorate.ts"
 import { PatternError } from "./PatternError.ts"
 

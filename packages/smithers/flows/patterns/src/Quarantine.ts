@@ -14,7 +14,7 @@
 
 import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
-import * as Compose from "./internal/Compose.ts"
+import * as Compose from "./internal/Compose.vibe"
 import { PatternError } from "./PatternError.ts"
 
 /**

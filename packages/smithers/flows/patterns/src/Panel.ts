@@ -15,10 +15,10 @@ import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Bounded from "./Bounded.ts"
-import * as Compose from "./internal/Compose.ts"
+import * as Compose from "./internal/Compose.vibe"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
-import { OpaqueInput } from "./internal/Payload.ts"
+import { OpaqueInput } from "./internal/Payload.vibe"
 import { PatternError } from "./PatternError.ts"
 
 /**
