@@ -24,58 +24,49 @@
  *
  * @since 0.1.0
  */
-
-import * as Result from "effect/Result"
-import * as Schema from "effect/Schema"
-
+import * as Schema from "effect/Schema";
 /**
  * The file a repository declares its home in, at its default branch's head.
  *
  * @category constants
  * @since 0.1.0
  */
-export const path = ".smithers/home.json"
-
+export declare const path = ".smithers/home.json";
 /**
  * Maximum length of one block's title or one link's label.
  *
  * @category constants
  * @since 0.1.0
  */
-export const maximumTitleLength = 120
-
+export declare const maximumTitleLength = 120;
 /**
  * Maximum length of one text block.
  *
  * @category constants
  * @since 0.1.0
  */
-export const maximumTextLength = 4096
-
+export declare const maximumTextLength = 4096;
 /**
  * Maximum length of one link URL.
  *
  * @category constants
  * @since 0.1.0
  */
-export const maximumUrlLength = 2048
-
+export declare const maximumUrlLength = 2048;
 /**
  * Maximum number of blocks one home declares, unknown kinds included.
  *
  * @category constants
  * @since 0.1.0
  */
-export const maximumBlocks = 32
-
+export declare const maximumBlocks = 32;
 /**
  * Maximum number of sections one home declares.
  *
  * @category constants
  * @since 0.1.0
  */
-export const maximumSections = 8
-
+export declare const maximumSections = 8;
 /**
  * Maximum number of entries in one list a block carries: a `cards` block's
  * cards, a `releases` block's releases, a `links` block's links.
@@ -83,24 +74,21 @@ export const maximumSections = 8
  * @category constants
  * @since 0.1.0
  */
-export const maximumEntries = 12
-
+export declare const maximumEntries = 12;
 /**
  * Maximum number of a `stats` block's stats.
  *
  * @category constants
  * @since 0.1.0
  */
-export const maximumStats = 6
-
+export declare const maximumStats = 6;
 /**
  * Maximum number of a `hero` block's actions.
  *
  * @category constants
  * @since 0.1.0
  */
-export const maximumActions = 3
-
+export declare const maximumActions = 3;
 /**
  * Maximum length of a short line of prose: a card's text, a release's summary,
  * a hero's tagline.
@@ -108,16 +96,14 @@ export const maximumActions = 3
  * @category constants
  * @since 0.1.0
  */
-export const maximumLineLength = 280
-
+export declare const maximumLineLength = 280;
 /**
  * Maximum length of a `code` block's source.
  *
  * @category constants
  * @since 0.1.0
  */
-export const maximumCodeLength = 4096
-
+export declare const maximumCodeLength = 4096;
 /**
  * The shape of raw HTML in a string: a tag, a closing tag, a comment, or a
  * processing instruction opener. Prose that mentions `a < b` does not match;
@@ -126,43 +112,28 @@ export const maximumCodeLength = 4096
  * @category constants
  * @since 0.1.0
  */
-export const htmlPattern = /<\/?[A-Za-z!?]/
-
-const noHtml = Schema.makeFilter<string>(
-  (text) => htmlPattern.test(text) ? "must not contain HTML; blocks are declared values, never markup" : true
-)
-
+export declare const htmlPattern: RegExp;
 /**
  * A one-line title or label: non-empty, bounded, one line, no HTML.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const Title = Schema.NonEmptyString.check(
-  Schema.isMaxLength(maximumTitleLength),
-  Schema.isPattern(/^[^\r\n]*$/),
-  noHtml
-)
-
+export declare const Title: Schema.NonEmptyString;
 /**
  * A paragraph of plain text: non-empty, bounded, no HTML.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const Prose = Schema.NonEmptyString.check(Schema.isMaxLength(maximumTextLength), noHtml)
-
+export declare const Prose: Schema.NonEmptyString;
 /**
  * A link target: an absolute `http` or `https` URL.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const Url = Schema.NonEmptyString.check(
-  Schema.isMaxLength(maximumUrlLength),
-  Schema.isPattern(/^https?:\/\/[^\s<>"']+$/i)
-)
-
+export declare const Url: Schema.NonEmptyString;
 /**
  * Where a home's docs are listed: the absolute `https` URL of the docs site's
  * index in the `llms.txt` format, such as `https://vibelang.sh/llms.txt`,
@@ -171,28 +142,14 @@ export const Url = Schema.NonEmptyString.check(
  * @category schemas
  * @since 0.1.0
  */
-export const DocsUrl = Schema.NonEmptyString.check(
-  Schema.isMaxLength(maximumUrlLength),
-  Schema.isPattern(/^https:\/\/[^\s<>"'@]+$/i)
-)
-
+export declare const DocsUrl: Schema.NonEmptyString;
 /**
  * A relative path that cannot escape the repository.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const RepositoryPath = Schema.NonEmptyString.check(
-  Schema.isMaxLength(1024),
-  Schema.makeFilter<string>((value) =>
-    value.startsWith("/") || value.includes("\\") ||
-      value.split("/").some((part) => part === "" || part === "." || part === "..") ||
-      /[%:?#]/.test(value) || [...value].some((character) => character.charCodeAt(0) < 0x20)
-      ? "must be a relative in-repository path" :
-      true
-  )
-)
-
+export declare const RepositoryPath: Schema.NonEmptyString;
 /**
  * A flow's name as a home names it: a slash command or a repository flow,
  * at most {@link maximumTitleLength} characters.
@@ -200,11 +157,7 @@ export const RepositoryPath = Schema.NonEmptyString.check(
  * @category schemas
  * @since 0.1.0
  */
-export const FlowName = Schema.NonEmptyString.check(
-  Schema.isMaxLength(maximumTitleLength),
-  Schema.isPattern(/^[a-z0-9_-]+(?:[./][a-z0-9_-]+)*$/)
-)
-
+export declare const FlowName: Schema.NonEmptyString;
 /**
  * A short line of prose: non-empty, one line, at most
  * {@link maximumLineLength} characters, no HTML.
@@ -212,12 +165,7 @@ export const FlowName = Schema.NonEmptyString.check(
  * @category schemas
  * @since 0.1.0
  */
-export const Line = Schema.NonEmptyString.check(
-  Schema.isMaxLength(maximumLineLength),
-  Schema.isPattern(/^[^\r\n]*$/),
-  noHtml
-)
-
+export declare const Line: Schema.NonEmptyString;
 /**
  * A shell command a person copies, such as `npm install effect`: one line, at
  * most {@link maximumLineLength} characters, no HTML. A page shows it as text
@@ -226,8 +174,7 @@ export const Line = Schema.NonEmptyString.check(
  * @category schemas
  * @since 0.1.0
  */
-export const Command = Line
-
+export declare const Command: Schema.NonEmptyString;
 /**
  * A `code` block's source: non-empty, at most {@link maximumCodeLength}
  * characters, no NUL. It may hold `<` and `>`, since source code does, and a
@@ -236,13 +183,7 @@ export const Command = Line
  * @category schemas
  * @since 0.1.0
  */
-export const Code = Schema.NonEmptyString.check(
-  Schema.isMaxLength(maximumCodeLength),
-  // NUL is exactly what the pattern refuses; the app's stored homes hash this very pattern (apps/mvp/src/device).
-  // eslint-disable-next-line no-control-regex
-  Schema.isPattern(/^[^\u0000]*$/)
-)
-
+export declare const Code: Schema.NonEmptyString;
 /**
  * The language a `code` block is written in, as a lowercase name such as
  * `ts`, `tsx`, `sh` or `json`: a page may color it, and shows it as plain
@@ -251,35 +192,24 @@ export const Code = Schema.NonEmptyString.check(
  * @category schemas
  * @since 0.1.0
  */
-export const Language = Schema.NonEmptyString.check(Schema.isPattern(/^[a-z][a-z0-9+#-]{0,19}$/))
-
+export declare const Language: Schema.NonEmptyString;
 /**
  * A calendar date, `YYYY-MM-DD`, that exists.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const IsoDate = Schema.String.check(
-  Schema.makeFilter<string>((value) => {
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
-    if (match === null) return "must be a date, YYYY-MM-DD"
-    const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])]
-    const date = new Date(0)
-    date.setUTCFullYear(year, month - 1, day)
-    return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
-      ? true
-      : "must be a date that exists"
-  })
-)
-
+export declare const IsoDate: Schema.String;
 /**
  * A link: a label and the absolute `http` or `https` URL it opens.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const Link = Schema.Struct({ label: Title, url: Url })
-
+export declare const Link: Schema.Struct<{
+    readonly label: Schema.NonEmptyString;
+    readonly url: Schema.NonEmptyString;
+}>;
 /**
  * Who may see a section:
  *
@@ -293,24 +223,21 @@ export const Link = Schema.Struct({ label: Title, url: Url })
  * @category schemas
  * @since 0.1.0
  */
-export const Audience = Schema.Literals(["everyone", "contributor", "maintainer"])
-
+export declare const Audience: Schema.Literals<readonly ["everyone", "contributor", "maintainer"]>;
 /**
  * Who may see a section.
  *
  * @category models
  * @since 0.1.0
  */
-export type Audience = typeof Audience.Type
-
+export type Audience = typeof Audience.Type;
 /**
  * The audiences, from the widest to the narrowest.
  *
  * @category constants
  * @since 0.1.0
  */
-export const audiences: ReadonlyArray<Audience> = ["everyone", "contributor", "maintainer"]
-
+export declare const audiences: ReadonlyArray<Audience>;
 /**
  * Who counts as a contributor to a home: `role`, a person signed in with a
  * role on the repository (the default); or `anyone`, everyone with the link,
@@ -319,40 +246,39 @@ export const audiences: ReadonlyArray<Audience> = ["everyone", "contributor", "m
  * @category schemas
  * @since 0.1.0
  */
-export const Contributors = Schema.Literals(["role", "anyone"])
-
+export declare const Contributors: Schema.Literals<readonly ["role", "anyone"]>;
 /**
  * Who counts as a contributor to a home.
  *
  * @category models
  * @since 0.1.0
  */
-export type Contributors = typeof Contributors.Type
-
+export type Contributors = typeof Contributors.Type;
 /**
  * A paragraph of plain text under an optional title.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const TextBlock = Schema.Struct({
-  type: Schema.Literal("text"),
-  title: Schema.optional(Title),
-  text: Prose
-})
-
+export declare const TextBlock: Schema.Struct<{
+    readonly type: Schema.Literal<"text">;
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+    readonly text: Schema.NonEmptyString;
+}>;
 /**
  * A list of links under an optional title: each a label and the URL it opens.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const LinksBlock = Schema.Struct({
-  type: Schema.Literal("links"),
-  title: Schema.optional(Title),
-  links: Schema.NonEmptyArray(Link).check(Schema.isMaxLength(maximumEntries))
-})
-
+export declare const LinksBlock: Schema.Struct<{
+    readonly type: Schema.Literal<"links">;
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+    readonly links: Schema.NonEmptyArray<Schema.Struct<{
+        readonly label: Schema.NonEmptyString;
+        readonly url: Schema.NonEmptyString;
+    }>>;
+}>;
 /**
  * The repository's flows, which the page lists from its own catalog: the
  * block carries no rows.
@@ -360,11 +286,10 @@ export const LinksBlock = Schema.Struct({
  * @category schemas
  * @since 0.1.0
  */
-export const FlowsBlock = Schema.Struct({
-  type: Schema.Literal("flows"),
-  title: Schema.optional(Title)
-})
-
+export declare const FlowsBlock: Schema.Struct<{
+    readonly type: Schema.Literal<"flows">;
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+}>;
 /**
  * A prompt: a heading over the way to ask, and the flow that takes the
  * question, if not the conversation itself.
@@ -372,21 +297,19 @@ export const FlowsBlock = Schema.Struct({
  * @category schemas
  * @since 0.1.0
  */
-export const PromptBlock = Schema.Struct({
-  type: Schema.Literal("prompt"),
-  flow: Schema.optional(FlowName),
-  title: Schema.optional(Title),
-  placeholder: Schema.optional(Title)
-})
-
+export declare const PromptBlock: Schema.Struct<{
+    readonly type: Schema.Literal<"prompt">;
+    readonly flow: Schema.optional<Schema.NonEmptyString>;
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+    readonly placeholder: Schema.optional<Schema.NonEmptyString>;
+}>;
 /**
  * The pictures an app block may wear: what the flow's result looks like.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const AppPicture = Schema.Literals(["issue", "review", "wiki", "schedule"])
-
+export declare const AppPicture: Schema.Literals<readonly ["issue", "review", "wiki", "schedule"]>;
 /**
  * An app: one flow's button, with a title and a picture. A page shows it only
  * when it has that flow.
@@ -394,25 +317,23 @@ export const AppPicture = Schema.Literals(["issue", "review", "wiki", "schedule"
  * @category schemas
  * @since 0.1.0
  */
-export const AppBlock = Schema.Struct({
-  type: Schema.Literal("app"),
-  flow: FlowName,
-  title: Title,
-  picture: AppPicture
-})
-
+export declare const AppBlock: Schema.Struct<{
+    readonly type: Schema.Literal<"app">;
+    readonly flow: Schema.NonEmptyString;
+    readonly title: Schema.NonEmptyString;
+    readonly picture: Schema.Literals<readonly ["issue", "review", "wiki", "schedule"]>;
+}>;
 /**
  * A Markdown file of the repository, read at the home's own commit.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const MarkdownBlock = Schema.Struct({
-  type: Schema.Literal("markdown"),
-  path: RepositoryPath,
-  title: Schema.optional(Title)
-})
-
+export declare const MarkdownBlock: Schema.Struct<{
+    readonly type: Schema.Literal<"markdown">;
+    readonly path: Schema.NonEmptyString;
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+}>;
 /**
  * The repository's live stack of changes, which the page reads itself: the
  * block carries no rows.
@@ -420,22 +341,20 @@ export const MarkdownBlock = Schema.Struct({
  * @category schemas
  * @since 0.1.0
  */
-export const StackBlock = Schema.Struct({
-  type: Schema.Literal("stack"),
-  title: Schema.optional(Title)
-})
-
+export declare const StackBlock: Schema.Struct<{
+    readonly type: Schema.Literal<"stack">;
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+}>;
 /**
  * The view a repository flow declares, drawn in this place.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const ViewBlock = Schema.Struct({
-  type: Schema.Literal("view"),
-  flow: FlowName
-})
-
+export declare const ViewBlock: Schema.Struct<{
+    readonly type: Schema.Literal<"view">;
+    readonly flow: Schema.NonEmptyString;
+}>;
 /**
  * A project's opening: its name, a tagline, a paragraph, the command that
  * installs it, up to {@link maximumActions} links (the first is the primary
@@ -444,16 +363,21 @@ export const ViewBlock = Schema.Struct({
  * @category schemas
  * @since 0.1.0
  */
-export const HeroBlock = Schema.Struct({
-  type: Schema.Literal("hero"),
-  title: Title,
-  tagline: Schema.optional(Line),
-  text: Schema.optional(Line),
-  install: Schema.optional(Command),
-  actions: Schema.optional(Schema.NonEmptyArray(Link).check(Schema.isMaxLength(maximumActions))),
-  announcement: Schema.optional(Link)
-})
-
+export declare const HeroBlock: Schema.Struct<{
+    readonly type: Schema.Literal<"hero">;
+    readonly title: Schema.NonEmptyString;
+    readonly tagline: Schema.optional<Schema.NonEmptyString>;
+    readonly text: Schema.optional<Schema.NonEmptyString>;
+    readonly install: Schema.optional<Schema.NonEmptyString>;
+    readonly actions: Schema.optional<Schema.NonEmptyArray<Schema.Struct<{
+        readonly label: Schema.NonEmptyString;
+        readonly url: Schema.NonEmptyString;
+    }>>>;
+    readonly announcement: Schema.optional<Schema.Struct<{
+        readonly label: Schema.NonEmptyString;
+        readonly url: Schema.NonEmptyString;
+    }>>;
+}>;
 /**
  * Source code shown as an example, with the file it would live in and its
  * language.
@@ -461,14 +385,13 @@ export const HeroBlock = Schema.Struct({
  * @category schemas
  * @since 0.1.0
  */
-export const CodeBlock = Schema.Struct({
-  type: Schema.Literal("code"),
-  title: Schema.optional(Title),
-  file: Schema.optional(Title),
-  language: Schema.optional(Language),
-  code: Code
-})
-
+export declare const CodeBlock: Schema.Struct<{
+    readonly type: Schema.Literal<"code">;
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+    readonly file: Schema.optional<Schema.NonEmptyString>;
+    readonly language: Schema.optional<Schema.NonEmptyString>;
+    readonly code: Schema.NonEmptyString;
+}>;
 /**
  * One card: a title, a line under it, a small label above it (such as a
  * package's name) and the URL it opens.
@@ -476,34 +399,42 @@ export const CodeBlock = Schema.Struct({
  * @category schemas
  * @since 0.1.0
  */
-export const Card = Schema.Struct({
-  title: Title,
-  text: Schema.optional(Line),
-  label: Schema.optional(Title),
-  url: Schema.optional(Url)
-})
-
+export declare const Card: Schema.Struct<{
+    readonly title: Schema.NonEmptyString;
+    readonly text: Schema.optional<Schema.NonEmptyString>;
+    readonly label: Schema.optional<Schema.NonEmptyString>;
+    readonly url: Schema.optional<Schema.NonEmptyString>;
+}>;
 /**
  * A grid of up to {@link maximumEntries} cards, with a link to the rest.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const CardsBlock = Schema.Struct({
-  type: Schema.Literal("cards"),
-  title: Schema.optional(Title),
-  cards: Schema.NonEmptyArray(Card).check(Schema.isMaxLength(maximumEntries)),
-  more: Schema.optional(Link)
-})
-
+export declare const CardsBlock: Schema.Struct<{
+    readonly type: Schema.Literal<"cards">;
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+    readonly cards: Schema.NonEmptyArray<Schema.Struct<{
+        readonly title: Schema.NonEmptyString;
+        readonly text: Schema.optional<Schema.NonEmptyString>;
+        readonly label: Schema.optional<Schema.NonEmptyString>;
+        readonly url: Schema.optional<Schema.NonEmptyString>;
+    }>>;
+    readonly more: Schema.optional<Schema.Struct<{
+        readonly label: Schema.NonEmptyString;
+        readonly url: Schema.NonEmptyString;
+    }>>;
+}>;
 /**
  * One stat: a short value over its label, such as `MIT` over `License`.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const Stat = Schema.Struct({ value: Title, label: Title })
-
+export declare const Stat: Schema.Struct<{
+    readonly value: Schema.NonEmptyString;
+    readonly label: Schema.NonEmptyString;
+}>;
 /**
  * A row of up to {@link maximumStats} declared facts. They are the
  * repository's own words, never counted by the page.
@@ -511,12 +442,14 @@ export const Stat = Schema.Struct({ value: Title, label: Title })
  * @category schemas
  * @since 0.1.0
  */
-export const StatsBlock = Schema.Struct({
-  type: Schema.Literal("stats"),
-  title: Schema.optional(Title),
-  stats: Schema.NonEmptyArray(Stat).check(Schema.isMaxLength(maximumStats))
-})
-
+export declare const StatsBlock: Schema.Struct<{
+    readonly type: Schema.Literal<"stats">;
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+    readonly stats: Schema.NonEmptyArray<Schema.Struct<{
+        readonly value: Schema.NonEmptyString;
+        readonly label: Schema.NonEmptyString;
+    }>>;
+}>;
 /**
  * One release: its name, the page that describes it, its date and a line of
  * what changed.
@@ -524,13 +457,12 @@ export const StatsBlock = Schema.Struct({
  * @category schemas
  * @since 0.1.0
  */
-export const Release = Schema.Struct({
-  name: Title,
-  url: Url,
-  date: IsoDate,
-  summary: Schema.optional(Line)
-})
-
+export declare const Release: Schema.Struct<{
+    readonly name: Schema.NonEmptyString;
+    readonly url: Schema.NonEmptyString;
+    readonly date: Schema.String;
+    readonly summary: Schema.optional<Schema.NonEmptyString>;
+}>;
 /**
  * Up to {@link maximumEntries} releases, newest first as declared, with a link
  * to the rest.
@@ -538,13 +470,20 @@ export const Release = Schema.Struct({
  * @category schemas
  * @since 0.1.0
  */
-export const ReleasesBlock = Schema.Struct({
-  type: Schema.Literal("releases"),
-  title: Schema.optional(Title),
-  releases: Schema.NonEmptyArray(Release).check(Schema.isMaxLength(maximumEntries)),
-  more: Schema.optional(Link)
-})
-
+export declare const ReleasesBlock: Schema.Struct<{
+    readonly type: Schema.Literal<"releases">;
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+    readonly releases: Schema.NonEmptyArray<Schema.Struct<{
+        readonly name: Schema.NonEmptyString;
+        readonly url: Schema.NonEmptyString;
+        readonly date: Schema.String;
+        readonly summary: Schema.optional<Schema.NonEmptyString>;
+    }>>;
+    readonly more: Schema.optional<Schema.Struct<{
+        readonly label: Schema.NonEmptyString;
+        readonly url: Schema.NonEmptyString;
+    }>>;
+}>;
 /**
  * The repository's issues and pull requests at a glance, which the page
  * reads itself: how many are proposed, accepted and not accepted, the ones
@@ -553,19 +492,17 @@ export const ReleasesBlock = Schema.Struct({
  * @category schemas
  * @since 0.1.0
  */
-export const IssuesBlock = Schema.Struct({
-  type: Schema.Literal("issues"),
-  title: Schema.optional(Title)
-})
-
+export declare const IssuesBlock: Schema.Struct<{
+    readonly type: Schema.Literal<"issues">;
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+}>;
 /**
  * A key a person presses for an `action` block's button: one lowercase letter.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const Key = Schema.String.check(Schema.isPattern(/^[a-z]$/))
-
+export declare const Key: Schema.String;
 /**
  * A primary button that runs one flow when a person presses it, or presses
  * its `key` while not typing, such as New branch: unlike an `app` block, it
@@ -575,13 +512,12 @@ export const Key = Schema.String.check(Schema.isPattern(/^[a-z]$/))
  * @category schemas
  * @since 0.1.0
  */
-export const ActionBlock = Schema.Struct({
-  type: Schema.Literal("action"),
-  flow: FlowName,
-  title: Title,
-  key: Schema.optional(Key)
-})
-
+export declare const ActionBlock: Schema.Struct<{
+    readonly type: Schema.Literal<"action">;
+    readonly flow: Schema.NonEmptyString;
+    readonly title: Schema.NonEmptyString;
+    readonly key: Schema.optional<Schema.String>;
+}>;
 /**
  * Recent flow runs, which the page reads itself, failures first. The block
  * carries no rows.
@@ -589,69 +525,129 @@ export const ActionBlock = Schema.Struct({
  * @category schemas
  * @since 0.1.0
  */
-export const RunsBlock = Schema.Struct({
-  type: Schema.Literal("runs"),
-  title: Schema.optional(Title)
-})
-
+export declare const RunsBlock: Schema.Struct<{
+    readonly type: Schema.Literal<"runs">;
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+}>;
 /**
  * One declared block.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const Block = Schema.Union([
-  TextBlock,
-  LinksBlock,
-  FlowsBlock,
-  PromptBlock,
-  MarkdownBlock,
-  StackBlock,
-  AppBlock,
-  ViewBlock,
-  HeroBlock,
-  CodeBlock,
-  CardsBlock,
-  StatsBlock,
-  ReleasesBlock,
-  IssuesBlock,
-  RunsBlock,
-  ActionBlock
-])
-
+export declare const Block: Schema.Union<readonly [Schema.Struct<{
+    readonly type: Schema.Literal<"text">;
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+    readonly text: Schema.NonEmptyString;
+}>, Schema.Struct<{
+    readonly type: Schema.Literal<"links">;
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+    readonly links: Schema.NonEmptyArray<Schema.Struct<{
+        readonly label: Schema.NonEmptyString;
+        readonly url: Schema.NonEmptyString;
+    }>>;
+}>, Schema.Struct<{
+    readonly type: Schema.Literal<"flows">;
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+}>, Schema.Struct<{
+    readonly type: Schema.Literal<"prompt">;
+    readonly flow: Schema.optional<Schema.NonEmptyString>;
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+    readonly placeholder: Schema.optional<Schema.NonEmptyString>;
+}>, Schema.Struct<{
+    readonly type: Schema.Literal<"markdown">;
+    readonly path: Schema.NonEmptyString;
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+}>, Schema.Struct<{
+    readonly type: Schema.Literal<"stack">;
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+}>, Schema.Struct<{
+    readonly type: Schema.Literal<"app">;
+    readonly flow: Schema.NonEmptyString;
+    readonly title: Schema.NonEmptyString;
+    readonly picture: Schema.Literals<readonly ["issue", "review", "wiki", "schedule"]>;
+}>, Schema.Struct<{
+    readonly type: Schema.Literal<"view">;
+    readonly flow: Schema.NonEmptyString;
+}>, Schema.Struct<{
+    readonly type: Schema.Literal<"hero">;
+    readonly title: Schema.NonEmptyString;
+    readonly tagline: Schema.optional<Schema.NonEmptyString>;
+    readonly text: Schema.optional<Schema.NonEmptyString>;
+    readonly install: Schema.optional<Schema.NonEmptyString>;
+    readonly actions: Schema.optional<Schema.NonEmptyArray<Schema.Struct<{
+        readonly label: Schema.NonEmptyString;
+        readonly url: Schema.NonEmptyString;
+    }>>>;
+    readonly announcement: Schema.optional<Schema.Struct<{
+        readonly label: Schema.NonEmptyString;
+        readonly url: Schema.NonEmptyString;
+    }>>;
+}>, Schema.Struct<{
+    readonly type: Schema.Literal<"code">;
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+    readonly file: Schema.optional<Schema.NonEmptyString>;
+    readonly language: Schema.optional<Schema.NonEmptyString>;
+    readonly code: Schema.NonEmptyString;
+}>, Schema.Struct<{
+    readonly type: Schema.Literal<"cards">;
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+    readonly cards: Schema.NonEmptyArray<Schema.Struct<{
+        readonly title: Schema.NonEmptyString;
+        readonly text: Schema.optional<Schema.NonEmptyString>;
+        readonly label: Schema.optional<Schema.NonEmptyString>;
+        readonly url: Schema.optional<Schema.NonEmptyString>;
+    }>>;
+    readonly more: Schema.optional<Schema.Struct<{
+        readonly label: Schema.NonEmptyString;
+        readonly url: Schema.NonEmptyString;
+    }>>;
+}>, Schema.Struct<{
+    readonly type: Schema.Literal<"stats">;
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+    readonly stats: Schema.NonEmptyArray<Schema.Struct<{
+        readonly value: Schema.NonEmptyString;
+        readonly label: Schema.NonEmptyString;
+    }>>;
+}>, Schema.Struct<{
+    readonly type: Schema.Literal<"releases">;
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+    readonly releases: Schema.NonEmptyArray<Schema.Struct<{
+        readonly name: Schema.NonEmptyString;
+        readonly url: Schema.NonEmptyString;
+        readonly date: Schema.String;
+        readonly summary: Schema.optional<Schema.NonEmptyString>;
+    }>>;
+    readonly more: Schema.optional<Schema.Struct<{
+        readonly label: Schema.NonEmptyString;
+        readonly url: Schema.NonEmptyString;
+    }>>;
+}>, Schema.Struct<{
+    readonly type: Schema.Literal<"issues">;
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+}>, Schema.Struct<{
+    readonly type: Schema.Literal<"runs">;
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+}>, Schema.Struct<{
+    readonly type: Schema.Literal<"action">;
+    readonly flow: Schema.NonEmptyString;
+    readonly title: Schema.NonEmptyString;
+    readonly key: Schema.optional<Schema.String>;
+}>]>;
 /**
  * One declared block.
  *
  * @category models
  * @since 0.1.0
  */
-export type Block = typeof Block.Type
-
+export type Block = typeof Block.Type;
 /**
  * The kinds of block this reader knows, by their `type`.
  *
  * @category constants
  * @since 0.1.0
  */
-export const kinds: ReadonlyArray<Block["type"]> = [
-  "text",
-  "links",
-  "flows",
-  "prompt",
-  "markdown",
-  "stack",
-  "app",
-  "view",
-  "hero",
-  "code",
-  "cards",
-  "stats",
-  "releases",
-  "issues",
-  "runs",
-  "action"
-]
-
+export declare const kinds: ReadonlyArray<Block["type"]>;
 /**
  * The kinds of block whose rows a page reads itself, under its own access
  * checks: the declaration names the block, never its data.
@@ -659,8 +655,7 @@ export const kinds: ReadonlyArray<Block["type"]> = [
  * @category constants
  * @since 0.1.0
  */
-export const liveKinds: ReadonlyArray<Block["type"]> = ["flows", "stack", "issues", "runs"]
-
+export declare const liveKinds: ReadonlyArray<Block["type"]>;
 /**
  * A section's heading and audience, as declared. A section's blocks are read
  * one by one, so a block of a kind this reader doesn't know is skipped there
@@ -669,11 +664,10 @@ export const liveKinds: ReadonlyArray<Block["type"]> = ["flows", "stack", "issue
  * @category schemas
  * @since 0.1.0
  */
-export const SectionHeading = Schema.Struct({
-  title: Schema.optional(Title),
-  audience: Schema.optional(Audience)
-})
-
+export declare const SectionHeading: Schema.Struct<{
+    readonly title: Schema.optional<Schema.NonEmptyString>;
+    readonly audience: Schema.optional<Schema.Literals<readonly ["everyone", "contributor", "maintainer"]>>;
+}>;
 /**
  * One section of a home: an optional heading, who may see it, and its blocks.
  *
@@ -681,11 +675,10 @@ export const SectionHeading = Schema.Struct({
  * @since 0.1.0
  */
 export interface Section {
-  readonly title?: string
-  readonly audience: Audience
-  readonly blocks: ReadonlyArray<Block>
+    readonly title?: string;
+    readonly audience: Audience;
+    readonly blocks: ReadonlyArray<Block>;
 }
-
 /**
  * Why a file is not a home:
  *
@@ -705,8 +698,7 @@ export interface Section {
  * @category models
  * @since 0.1.0
  */
-export type Invalid = "json" | "shape" | "sections" | "section" | "blocks" | "block"
-
+export type Invalid = "json" | "shape" | "sections" | "section" | "blocks" | "block";
 /**
  * What {@link read} answers: the sections to draw, in order, each with its
  * blocks, and how many blocks it skipped because their kind is unknown; or
@@ -715,33 +707,17 @@ export type Invalid = "json" | "shape" | "sections" | "section" | "blocks" | "bl
  * @category models
  * @since 0.1.0
  */
-export type Read =
-  | {
-    readonly _tag: "Declared"
-    readonly sections: ReadonlyArray<Section>
-    readonly contributors: Contributors
+export type Read = {
+    readonly _tag: "Declared";
+    readonly sections: ReadonlyArray<Section>;
+    readonly contributors: Contributors;
     /** The docs index the home declares, a {@link DocsUrl}; absent when it declares none. */
-    readonly docs?: string
-    readonly skipped: number
-  }
-  | { readonly _tag: "Invalid"; readonly reason: Invalid }
-
-const known = new Set<unknown>(kinds)
-const decodeBlock = Schema.decodeUnknownResult(Block)
-const decodeHeading = Schema.decodeUnknownResult(SectionHeading)
-const isContributors = Schema.is(Contributors)
-const isDocsUrl = Schema.is(DocsUrl)
-
-/** A block that names a kind as a string this reader doesn't know: a newer declaration's. */
-const unknownKind = (value: unknown): boolean => {
-  if (typeof value !== "object" || value === null) return false
-  const type: unknown = (value as { readonly type?: unknown }).type
-  return typeof type === "string" && !known.has(type)
-}
-
-const isObject = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-
+    readonly docs?: string;
+    readonly skipped: number;
+} | {
+    readonly _tag: "Invalid";
+    readonly reason: Invalid;
+};
 /**
  * Reads `.smithers/home.json`'s text: the sections it declares, or why it is
  * not a home. A file with `blocks` is one section for everyone; a file with
@@ -765,53 +741,7 @@ const isObject = (value: unknown): value is Readonly<Record<string, unknown>> =>
  * @category reading
  * @since 0.1.0
  */
-export const read = (text: string): Read => {
-  let document: unknown
-  try {
-    document = JSON.parse(text)
-  } catch {
-    return { _tag: "Invalid", reason: "json" }
-  }
-  if (!isObject(document)) return { _tag: "Invalid", reason: "shape" }
-  const { blocks, sections, contributors = "role", docs } = document
-  if (!isContributors(contributors)) return { _tag: "Invalid", reason: "shape" }
-  if (docs !== undefined && !isDocsUrl(docs)) return { _tag: "Invalid", reason: "shape" }
-  const declared: ReadonlyArray<unknown> | undefined = Array.isArray(blocks) && sections === undefined
-    ? [{ blocks }]
-    : Array.isArray(sections) && blocks === undefined
-    ? sections
-    : undefined
-  if (declared === undefined) return { _tag: "Invalid", reason: "shape" }
-  if (declared.length > maximumSections) return { _tag: "Invalid", reason: "sections" }
-  let count = 0
-  for (const section of declared) {
-    if (!isObject(section) || !Array.isArray(section.blocks)) return { _tag: "Invalid", reason: "section" }
-    count += section.blocks.length
-  }
-  if (count > maximumBlocks) return { _tag: "Invalid", reason: "blocks" }
-  const read: Array<Section> = []
-  let skipped = 0
-  for (const section of declared as ReadonlyArray<Readonly<Record<string, unknown>>>) {
-    const heading = decodeHeading(section)
-    if (Result.isFailure(heading)) return { _tag: "Invalid", reason: "section" }
-    const drawn: Array<Block> = []
-    for (const entry of section.blocks as ReadonlyArray<unknown>) {
-      if (unknownKind(entry)) {
-        skipped++
-        continue
-      }
-      const decoded = decodeBlock(entry)
-      if (Result.isFailure(decoded)) return { _tag: "Invalid", reason: "block" }
-      drawn.push(decoded.success)
-    }
-    const { title, audience = "everyone" } = heading.success
-    read.push(title === undefined ? { audience, blocks: drawn } : { title, audience, blocks: drawn })
-  }
-  return docs === undefined
-    ? { _tag: "Declared", sections: read, contributors, skipped }
-    : { _tag: "Declared", sections: read, contributors, docs, skipped }
-}
-
+export declare const read: (text: string) => Read;
 /**
  * Whether a viewer of audience `viewer` may see a section for `section`: a
  * maintainer sees every section, a contributor every section but a
@@ -828,9 +758,7 @@ export const read = (text: string): Read => {
  * @category audiences
  * @since 0.1.0
  */
-export const sees = (viewer: Audience, section: Audience): boolean =>
-  audiences.indexOf(viewer) >= audiences.indexOf(section)
-
+export declare const sees: (viewer: Audience, section: Audience) => boolean;
 /**
  * The sections a viewer of audience `viewer` may see, in order. A page that
  * holds a whole home calls this before drawing it; a server that answers a
@@ -840,9 +768,7 @@ export const sees = (viewer: Audience, section: Audience): boolean =>
  * @category audiences
  * @since 0.1.0
  */
-export const visible = (sections: ReadonlyArray<Section>, viewer: Audience): ReadonlyArray<Section> =>
-  sections.filter((section) => sees(viewer, section.audience))
-
+export declare const visible: (sections: ReadonlyArray<Section>, viewer: Audience) => ReadonlyArray<Section>;
 /**
  * The audience a viewer has on a home that says who counts as a contributor:
  * with `anyone`, everyone is at least a contributor; otherwise the audience
@@ -859,5 +785,4 @@ export const visible = (sections: ReadonlyArray<Section>, viewer: Audience): Rea
  * @category audiences
  * @since 0.1.0
  */
-export const widen = (viewer: Audience, contributors: Contributors): Audience =>
-  viewer === "everyone" && contributors === "anyone" ? "contributor" : viewer
+export declare const widen: (viewer: Audience, contributors: Contributors) => Audience;

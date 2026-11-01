@@ -95,7 +95,7 @@ const securityReview = Smithers.SecurityReview({
         "A CSP directive that admits a scheme, a host, 'unsafe-inline' script or 'unsafe-eval', or drops script-src-attr 'none'.",
         "frameDocument writing view content, or a runtime or style sheet that can close its own element early."
       ],
-      paths: ["src/ViewCsp.ts"]
+      paths: ["src/ViewCsp.vibe"]
     },
     {
       id: "bridge-admission",
@@ -107,7 +107,7 @@ const securityReview = Smithers.SecurityReview({
         "Values over maxValuesBytes, or more than maxInteractionsPerSecond in a window, admitted.",
         "acceptInitialize accepting a nonce that does not match exactly."
       ],
-      paths: ["src/Bridge.ts", "src/Interactions.ts"]
+      paths: ["src/Bridge.vibe", "src/Interactions.vibe"]
     }
   ]
 })
