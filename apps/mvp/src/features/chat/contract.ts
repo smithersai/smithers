@@ -98,6 +98,7 @@ export const CHAT_TELEMETRY = {
   records: [
     "question asked",
     "question stored",
+    "chat branch delivery waiting",
     "question not sent",
     "question not admitted",
     "answer not started",

@@ -1,6 +1,6 @@
-import { SyncPolicy } from "@smthrs/effect-electric"
+import { ShapeSource, SyncPolicy } from "@smthrs/effect-electric"
 import type { Outbox } from "@smthrs/effect-tanstack-db"
-import { Effect, Metric, Option, Stream } from "effect"
+import { Context, Effect, Exit, Fiber, Layer, Logger, Metric, Option, Scope, Stream } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { dispatches, FlowDispatch } from "../../flows/dispatch"
 import {
@@ -13,10 +13,15 @@ import {
   TestChatApi,
 } from "../../test/chatApi"
 import { EngineFaults, QuestionFaults } from "../../test/faults"
-import { copyableText, setDraft, show, takeBack } from "./actions"
+import { ask, copyableText, retryAnswer, setDraft, show, takeBack } from "./actions"
 import { Chat } from "./chat"
-import { HOME_DRAFT } from "./schema"
-import { ChatStore } from "./store"
+import { shaOf } from "../../../worker/test/branch"
+import { Branch } from "../branch/branch"
+import { ViewsStore } from "../views/store"
+import { firstAnswerText } from "./metrics"
+import { HOME_DRAFT, PLACE } from "./schema"
+import { SharedPrompt } from "./sharedPrompt"
+import { ChatStore, chatConfig, confirmDelivery, timeFirstText } from "./store"
 import { postgresTime, timeOf } from "./view"
 
 // Message controls on the app's own layer (docs/features/chat.md#message-controls), driven as React drives them: Copy
@@ -47,8 +52,10 @@ const openApi = async () => {
 }
 
 /** A tab on `device`, faulty when asked, as React reads it. Opening another on the same device is a reload. */
-const openOn = async (api: TestChatApi["Service"], device: NodeDevice, faulty = false) => {
-  const runtime = faulty ? openFaultyTab(api, { ...quick, host: device }) : openTab(api, { ...quick, host: device })
+const openOn = async (api: TestChatApi["Service"], device: NodeDevice, faulty = false, options: TabOptions = {}) => {
+  const runtime = faulty
+    ? openFaultyTab(api, { ...quick, ...options, host: device })
+    : openTab(api, { ...quick, ...options, host: device })
   runtimes.push(runtime)
   const { queries, actions } = await runtime.runPromise(Effect.service(Chat))
   const store = await runtime.runPromise(Effect.service(ChatStore))
@@ -400,5 +407,182 @@ describe("times", () => {
     expect(timeOf(question!)).toBeGreaterThan(before - 60_000)
     expect(timeOf(answer!)).toBeGreaterThanOrEqual(timeOf(question!)!)
     expect(timeOf({ local: 1, at: 1_000, createdAt: "" })).toBe(1_000)
+  })
+})
+
+// A question, its draft, its delivery and its timing stay in their own conversation (docs/features/chat.md).
+describe("drafts and delivery stay in their own conversation", () => {
+  /** A tab showing branch `feature` of `octo/hello`, whose conversation it asks in. */
+  const onBranch = async (options: TabOptions = {}) => {
+    const { api, device } = await openApi()
+    api.branches.github.publish("octo", "hello", { defaultBranch: "main", branches: { main: shaOf("main"), feature: shaOf("feature") } })
+    const tab = await openOn(api, device, false, options)
+    const branch = await tab.run(Effect.service(Branch))
+    await branch.actions.open("octo", "hello", "feature")
+    const conversationId = Option.getOrThrow(await tab.run(tab.store.place.get(PLACE))).conversationId!
+    return { api, device, tab, conversationId }
+  }
+
+  test("Retry on an answer asks again and leaves the composer's draft as it is", async () => {
+    const { api, device } = await openApi()
+    const tab = await openOn(api, device)
+    const { answerId } = await answered(tab, api, "original", "answer")
+    tab.actions.setDraft("unrelated draft")
+    await tab.run(retryAnswer(answerId))
+    expect(tab.shown().filter((line) => line.endsWith(" original"))).toHaveLength(2)
+    expect(tab.composer()).toMatchObject({ draft: "unrelated draft" })
+    expect(Option.getOrThrow(await tab.run(tab.store.drafts.get(HOME_DRAFT))).text).toBe("unrelated draft")
+  }, 60_000)
+
+  test("Retry on an answer whose question this device doesn't have does nothing", async () => {
+    const { api, device } = await openApi()
+    const tab = await openOn(api, device)
+    const { answerId, questionId } = await answered(tab, api, "original", "answer")
+    tab.actions.setDraft("unrelated draft")
+    // Electric has delivered the answer and not (yet) its question (test.faults-by-injection).
+    const messages = { ...tab.store.messages, get: (id: string) => id === questionId ? Effect.succeed(Option.none()) : tab.store.messages.get(id) }
+    await expect(tab.run(retryAnswer(answerId).pipe(Effect.provideService(ChatStore, { ...tab.store, messages })))).resolves.toBeUndefined()
+    expect(tab.shown().filter((line) => line.endsWith(" original"))).toHaveLength(1)
+    expect(tab.composer()).toMatchObject({ draft: "unrelated draft" })
+  }, 60_000)
+
+  test("Retry on a shared branch's answer leaves its shared prompt alone", async () => {
+    const { api, tab, conversationId } = await onBranch()
+    const asked = await tab.actions.ask("branch question")
+    if (!asked.asked) throw new Error(asked.reason)
+    const reply = await tab.run(api.answerTo("branch question"))
+    reply.say("answer")
+    reply.done()
+    const opened = tab.store.opened(conversationId)!
+    await until(async () => expect(Option.getOrThrow(await tab.run(opened.messages.get(asked.answerId))).status).toBe("done"), 25_000)
+    await tab.run(show(conversationId, true))
+    // Anything written to the shared prompt now fails the retry (test.faults-by-injection).
+    const prompt = SharedPrompt.of({ set: () => Effect.die(new Error("the retry changed the shared prompt")) })
+    await tab.run(setDraft("shared draft").pipe(Effect.provideService(SharedPrompt, SharedPrompt.of({ set: () => Effect.void }))))
+    await tab.run(retryAnswer(asked.answerId).pipe(Effect.provideService(SharedPrompt, prompt)))
+    expect(tab.composer()).toMatchObject({ draft: "shared draft" })
+  }, 60_000)
+
+  test("a question taken back after the person showed another conversation goes to its own conversation's draft", async () => {
+    const { api, device } = await openOffline()
+    let entered!: () => void
+    let release!: () => void
+    const deleting = new Promise<void>((resolve) => { entered = resolve })
+    const held = new Promise<void>((resolve) => { release = resolve })
+    // The outbox's storage holds the delete until the test lets it go (test.faults-by-injection).
+    const storage = { ...device.outbox.storage, delete: async (key: string) => {
+      entered()
+      await held
+      return device.outbox.storage.delete(key)
+    } }
+    const tab = await openOn(api, { ...device, outbox: { ...device.outbox, storage } } as NodeDevice)
+    const asked = await tab.actions.ask("take me back")
+    if (!asked.asked) throw new Error(asked.reason)
+    await until(() => expect(tab.shown()).toEqual(["user queued take me back"]))
+    const editing = tab.run(takeBack(asked.questionId))
+    try {
+      await deleting
+      await tab.run(show("another-conversation"))
+      tab.actions.setDraft("another draft")
+    } finally { release() }
+    expect(await editing).toBe("edited")
+    expect(tab.composer()).toMatchObject({ draft: "another draft" })
+    expect(Option.getOrThrow(await tab.run(tab.store.drafts.get("another-conversation"))).text).toBe("another draft")
+    await tab.run(show(null))
+    expect(tab.composer()).toMatchObject({ draft: "take me back" })
+  }, 60_000)
+
+  test("a branch's refused shape shows Sync failed, which the home shape syncing doesn't clear; Retry does", async () => {
+    let refusing = true
+    // Electric's proxy refuses the branch conversations' message shapes, never the home one's (test.faults-by-injection).
+    const source = ShapeSource.ShapeSource.of({ request: (url, init) =>
+      refusing && new URL(url).searchParams.has("conversation")
+        ? Effect.succeed(new Response("forbidden", { status: 403 }))
+        : ShapeSource.fetchSource.request(url, init),
+    })
+    const { api, device } = await openApi()
+    const tab = await openOn(api, device, false, { replace: Layer.succeed(ShapeSource.ShapeSource, source) })
+    await until(() => expect(tab.queries.connection.toArray[0]).toMatchObject({ status: "up" }))
+    await tab.run(show("refused-branch"))
+    await until(() => expect(tab.queries.connection.toArray[0]).toMatchObject({ status: "failed", retry: true }))
+    const synced = await tab.run(Effect.forkIn(tab.store.messages.sync.pipe(
+      Stream.filter((event) => event._tag === "Succeeded"), Stream.take(1), Stream.runDrain,
+    ), tab.store.scope, { startImmediately: true }))
+    await tab.run(tab.store.messages.reconnect)
+    await tab.run(Fiber.join(synced).pipe(Effect.timeout("10 seconds")))
+    await tab.run(Effect.sleep("1200 millis"))
+    expect(tab.queries.connection.toArray[0]).toMatchObject({ status: "failed", retry: true })
+    refusing = false
+    await tab.run(tab.store.retryNow)
+    await until(() => expect(tab.queries.connection.toArray[0]).toMatchObject({ status: "up" }))
+  }, 60_000)
+
+  test("a branch answer's first text is timed in the branch's conversation", async () => {
+    const { api, tab } = await onBranch()
+    const before = (await tab.run(Metric.value(firstAnswerText))).count
+    const asked = await tab.actions.ask("branch timing")
+    if (!asked.asked) throw new Error(asked.reason)
+    const reply = await tab.run(api.answerTo("branch timing"))
+    reply.say("first text")
+    reply.done()
+    await until(async () => expect((await tab.run(Metric.value(firstAnswerText))).count).toBe(before + 1), 25_000)
+  }, 60_000)
+
+  test("a branch answer that settles without text ends its timing, unrecorded", async () => {
+    const { api, tab, conversationId } = await onBranch()
+    const asked = await tab.actions.ask("branch empty answer")
+    if (!asked.asked) throw new Error(asked.reason)
+    const before = (await tab.run(Metric.value(firstAnswerText))).count
+    const follower = await tab.run(Effect.forkIn(
+      timeFirstText(asked.answerId, Date.now(), conversationId), tab.store.scope, { startImmediately: true },
+    ))
+    const reply = await tab.run(api.answerTo("branch empty answer"))
+    reply.fail()
+    await expect(tab.run(Fiber.join(follower).pipe(Effect.timeout("15 seconds")))).resolves.toBeUndefined()
+    expect((await tab.run(Metric.value(firstAnswerText))).count).toBe(before)
+  }, 60_000)
+
+  test("a branch conversation the device can't open while confirming a question keeps the question in the outbox", async () => {
+    const { api, tab, conversationId } = await onBranch()
+    const errors: string[] = []
+    const nextDevice = nodeDevice({ agent: api })
+    // The outbox's mutation errors, as TanStack DB's executor sees them: `OutboxRetry` is sent again, `OutboxDefect` never.
+    const host = { ...nextDevice, outbox: { ...nextDevice.outbox, start: (config: Parameters<typeof nextDevice.outbox.start>[0]) =>
+      nextDevice.outbox.start({ ...config, mutationFns: { ...config.mutationFns, ask: async (params) => {
+        try { return await config.mutationFns.ask!(params) } catch (error) { errors.push((error as Error).name); throw error }
+      } } }) } }
+    const views = await tab.run(Effect.service(ViewsStore))
+    let unavailable = true
+    // The device can't open the branch's views collection while the question is confirmed (test.faults-by-injection).
+    const context = await tab.run(Layer.build(ChatStore.layer(chatConfig(api.origin, quick as never), host)).pipe(
+      Effect.provideService(ViewsStore, { ...views, forConversation: (id) => unavailable
+        ? Effect.die(new Error("collection unavailable")) : views.forConversation(id) }),
+      Scope.provide(tab.store.scope),
+    ))
+    const store = Context.get(context, ChatStore)
+    await tab.run(store.place.update(PLACE, (place) => { place.conversationId = conversationId }))
+    const queued = await tab.run(ask("delivery opening fault").pipe(Effect.provideService(ChatStore, store)))
+    if (!queued.asked) throw new Error(queued.reason)
+    await until(() => expect(errors.length).toBeGreaterThan(0), 20_000)
+    expect(errors[0]).toBe("OutboxRetry")
+    unavailable = false
+    await tab.run(store.outbox.retryNow)
+    await until(() => expect(store.opened(conversationId)?.messages.tanstack.has(queued.questionId)).toBe(true), 20_000)
+    await until(() => expect(store.asking.tanstack.has(queued.questionId)).toBe(false), 20_000)
+  }, 60_000)
+
+  test("confirming a question in a branch: a defect opening it is Outbox.Retry, logged; interruption stays cancellation", async () => {
+    const { api, device } = await openApi()
+    const tab = await openOn(api, device)
+    const row = { id: "queued", answerId: "answer", text: "question", queuedAt: 1, v: 2 as const, conversationId: "branch" }
+    const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+    const logger = Logger.make((options) => void logs.push(Logger.formatStructured.log(options)))
+    const dying = { messages: tab.store.messages, open: () => Effect.die(new Error("branch collection unavailable")) }
+    await expect(tab.run(Effect.result(confirmDelivery(row, dying, "1 second")).pipe(
+      Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
+    ))).resolves.toMatchObject({ _tag: "Failure", failure: { _tag: "Retry" } })
+    expect(logs).toMatchObject([{ message: "chat branch delivery waiting", annotations: { feature: "chat", reason: "branch_open" } }])
+    const interrupted = await tab.run(Effect.exit(confirmDelivery(row, { ...dying, open: () => Effect.interrupt }, "1 second")))
+    expect(Exit.hasInterrupts(interrupted)).toBe(true)
   })
 })

@@ -96,6 +96,9 @@ export interface ChatHost {
 /** The Web Lock the tab leading the outbox holds. */
 export const OUTBOX_LOCK = "smithers-outbox"
 
+/** The home conversation's shape among the pill's shapes; a branch conversation's is its id, a UUID. */
+const HOME_SHAPE = "home"
+
 /** ChatApi's shape on `origin`, as the browser reaches it. */
 export const chatConfig = (origin: string, options: Omit<ChatConfig, "shapeUrl">): ChatConfig => ({
   shapeUrl: `${origin}${SHAPE_ROUTE}`,
@@ -331,12 +334,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
   // counts from then, and the restore waits as long at most: a device store in memory restores from the network.
   yield* observeLoad(messages).pipe(Effect.forkIn(scope, { startImmediately: true }))
 
-  const delivered = (row: Asking) =>
-    Effect.gen(function* () {
-      const synced = row.conversationId === undefined ? messages : (yield* open(row.conversationId)).messages
-      yield* Effect.ignore(Effect.timeout(synced.restored, confirmWithin))
-      yield* synced.awaitRow((message) => message.id === row.id, confirmWithin)
-    })
+  const delivered = (row: Asking) => confirmDelivery(row, { messages, open }, confirmWithin)
 
   // This device's agent answers the question ChatApi took: `chat/Answer`, with the answer's id as its execution id. It
   // waits until the engine has recorded the run, so the outbox keeps the question until a run exists to answer it; the
@@ -461,6 +459,13 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
         ...(config.retry === undefined ? {} : { retry: config.retry }),
       })
       yield* observeLoad(branchMessages).pipe(Effect.forkIn(scope, { startImmediately: true }))
+      // Its shape's requests count toward the pill as the home conversation's do.
+      yield* reportShape(conversationId, { shape: "pending", stopReason: null })
+      const branchReaching = yield* FiberHandle.make<void, never>()
+      yield* branchMessages.sync.pipe(
+        Stream.runForEach(onSync(conversationId, branchReaching)),
+        Effect.forkIn(scope, { startImmediately: true }),
+      )
       const branchViews = yield* viewsStore.forConversation(conversationId)
       const branchHistory = yield* Collection.local<History, string>({
         id: `chat-history:${conversationId}`,
@@ -601,28 +606,50 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
       Effect.annotateLogs({ feature: "chat" }),
     )
 
-  const onSync = (event: ElectricCollection.SyncEvent) => {
+  // Every open conversation's shape: the pill shows the worst of them, so a home shape that syncs never hides a branch's
+  // that stopped, or the reverse. Keyed by conversation id, the home conversation's by `HOME_SHAPE`.
+  type ShapeSignal = Pick<Signals, "shape" | "stopReason">
+  const shapes = new Map<string, ShapeSignal>([[HOME_SHAPE, { shape: "pending", stopReason: null }]])
+  const worstShape = (): ShapeSignal => {
+    const all = [...shapes.values()]
+    return all.find(({ shape }) => shape === "stopped")
+      ?? all.find(({ shape }) => shape === "failing")
+      ?? all.find(({ shape }) => shape === "pending")
+      ?? { shape: "ok", stopReason: null }
+  }
+  const reportShape = (source: string, signal: ShapeSignal) =>
+    Effect.suspend(() => {
+      shapes.set(source, signal)
+      const worst = worstShape()
+      return update(() => worst)
+    })
+
+  const onSync = (source: string, reached: FiberHandle.FiberHandle<void, never>) => (event: ElectricCollection.SyncEvent) => {
+    const shapeOf = () => shapes.get(source)?.shape
     switch (event._tag) {
       case "Sent":
         return Effect.gen(function* () {
-          const shape = (yield* Ref.get(state)).shape
+          const shape = shapeOf()
           if (shape !== "failing" && shape !== "pending") return
           yield* FiberHandle.run(
-            reaching,
+            reached,
             Effect.sleep(reachedAfter).pipe(
-              Effect.andThen(update((now) => (now.shape === "failing" || now.shape === "pending" ? { shape: "ok" } : {}))),
+              Effect.andThen(Effect.suspend(() => {
+                const now = shapeOf()
+                return now === "failing" || now === "pending" ? reportShape(source, { shape: "ok", stopReason: null }) : Effect.void
+              })),
             ),
           )
         })
       case "Succeeded":
-        return update(() => ({ shape: "ok", stopReason: null }))
+        return reportShape(source, { shape: "ok", stopReason: null })
       case "Failed":
-        return FiberHandle.clear(reaching).pipe(Effect.andThen(update(() => ({ shape: "failing" }))))
+        return FiberHandle.clear(reached).pipe(Effect.andThen(reportShape(source, { shape: "failing", stopReason: null })))
       case "Stopped":
-        return update(() => ({
+        return FiberHandle.clear(reached).pipe(Effect.andThen(reportShape(source, {
           shape: "stopped",
           stopReason: event.error.status === undefined ? "invalid_response" : "refused",
-        }))
+        })))
     }
   }
 
@@ -683,15 +710,20 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
       )
     ).pipe(
       Effect.andThen(FiberHandle.clear(deadline)),
-      Effect.andThen(
-        update((now) => ({ overdue: false, shape: now.shape === "stopped" ? "pending" : now.shape })),
-      ),
+      // Every stopped shape was just sent again.
+      Effect.andThen(Effect.suspend(() => {
+        for (const [source, signal] of shapes) {
+          if (signal.shape === "stopped") shapes.set(source, { shape: "pending", stopReason: null })
+        }
+        const worst = worstShape()
+        return update(() => ({ overdue: false, ...worst }))
+      })),
     ),
   })
 
   const background = <E>(stream: Stream.Stream<E>, each: (event: E) => Effect.Effect<void>) =>
     stream.pipe(Stream.runForEach(each), Effect.forkIn(scope, { startImmediately: true }))
-  yield* background(messages.sync, onSync)
+  yield* background(messages.sync, onSync(HOME_SHAPE, reaching))
   // This tab's engine failing is for good: the pill says so until the page reloads.
   yield* (yield* BrowserEngine.BrowserEngine).unavailable.pipe(
     Effect.andThen(update(() => ({ engine: true }))),
@@ -716,6 +748,32 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
   return store
 })
 
+/**
+ * Waits until question `row` shows in the device's rows of its own conversation (`delivered` in `make`). A branch
+ * conversation the device can't open now (its collections failed to open, a defect) fails `Outbox.Retry`, so the outbox
+ * keeps the question and sends it again, as after a failed confirmation; the outbox never retries a defect.
+ * Interruption stays cancellation.
+ */
+export const confirmDelivery = (
+  row: Asking,
+  store: Pick<ChatStore["Service"], "messages" | "open">,
+  within: Duration.Input,
+) =>
+  Effect.gen(function* () {
+    const synced = row.conversationId === undefined
+      ? store.messages
+      : (yield* store.open(row.conversationId).pipe(
+        Effect.catchDefect(() =>
+          Effect.logWarning("chat branch delivery waiting").pipe(
+            Effect.annotateLogs({ feature: "chat", reason: "branch_open" }),
+            Effect.andThen(Effect.fail(new Outbox.Retry({}))),
+          )
+        ),
+      )).messages
+    yield* Effect.ignore(Effect.timeout(synced.restored, within))
+    yield* synced.awaitRow((message) => message.id === row.id, within)
+  })
+
 /** Sets `history.earlier`: the device has more messages than the window shows. */
 export const markEarlier = (history: Collection.Collection<History, string>, total: number) =>
   Effect.gen(function* () {
@@ -732,8 +790,10 @@ export const markEarlier = (history: Collection.Collection<History, string>, tot
  * question queued offline counts its time in the queue. Ends without a record when the answer settles with no text,
  * and with the store otherwise. Run it with `startImmediately`, so it follows changes before the ask returns.
  */
-export const timeFirstText = Effect.fnUntraced(function* (answerId: string, askedAt: number) {
-  const { messages } = yield* ChatStore
+export const timeFirstText = Effect.fnUntraced(function* (answerId: string, askedAt: number, conversationId?: string) {
+  const store = yield* ChatStore
+  // The answer's own conversation: the home one, or the branch's it was asked in.
+  const { messages } = conversationId === undefined ? store : yield* store.open(conversationId)
   const decided = yield* messages.changes({ initial: true }).pipe(
     Stream.flattenIterable,
     Stream.filter((change) => change.key === answerId),

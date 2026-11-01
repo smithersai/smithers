@@ -61,6 +61,7 @@ Logs:
 | `persistent storage requested` | boot asked the browser to keep the site's storage | Info | `granted` (`true`, `false`) |
 | `question asked` | `ask` put a question into the outbox | Info | `questionId`, `answerId`, `question.length`, `queued` (whether the pill showed) |
 | `question stored` | a send got the question into Postgres, this device's engine recorded the run that answers it, and Electric delivered it | Info | `questionId`, `answerId`, `taken` (`inserted`, or `existing` for a resend ChatApi answered 200) |
+| `chat branch delivery waiting` | ChatApi took a question asked in a branch's conversation, but the device couldn't open that conversation to see it arrive; the outbox sends it again | Warn | `questionId`, `answerId`, `reason` (`branch_open`) |
 | `answer not started` | ChatApi took the question, but this device's engine didn't record the run that answers it; the outbox sends the question again | Warn | `questionId`, `answerId`, `reason` (`refused`, `unavailable` when this tab has no engine, `invalid`, `defect`, `interrupted` when the tab closed first) |
 | `question not sent` | ChatApi refused it for good; it stays on the device, unsent | Warn | `questionId`, `answerId`, `reason` (`refused` 400, `conflict` 409, `too_large` 413), `status` |
 | `question not admitted` | the outbox couldn't take it (another tab leads the outbox, so this one takes the lead and sends it once it leads; or its storage failed); it stays unsent until then | Warn | `questionId` |
@@ -130,7 +131,7 @@ Metrics (`src/features/chat/metrics.ts`, `src/boot.ts`, `src/page.ts`, and `@smt
 | `smithers_web_message_copies` | counter (engine worker) | `door` (`button`, `slash`, `agent`, `unknown` when the tab is gone), `which` (`message` or `latest`), `outcome` (`copied`, `failed`, `not_found`, `gone`) |
 | `smithers_web_question_edits` | counter (engine worker) | `door`, `outcome` (`edited`, `not_found`, `sent`, `failed`, `gone`) |
 | `smithers_web_composer_opens` | counter | `via` = `shortcut` or `button`; an open composer opened again doesn't count |
-| `smithers_web_answer_first_text_ms` | histogram | from asking to the answer's first text on the asking tab, time queued included |
+| `smithers_web_answer_first_text_ms` | histogram | from asking to the answer's first text on the asking tab, in the conversation it was asked in, time queued included |
 | `smithers_web_sync_failures` | counter | each time the pill showed: `reason` = `offline`, `unreachable`, `refused`, `invalid_response` or `engine` |
 | `smithers_browser_engine_unavailable` | counter | `reason` = `worker-failed` or `engine-failed` (`BrowserEngine`) |
 | `smithers_web_sync_retries` | counter | `via` = `button`, `online` or `adopted` |

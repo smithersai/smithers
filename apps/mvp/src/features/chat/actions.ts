@@ -126,6 +126,24 @@ const keepDraft = (draft: string, awaitPersistence = false) =>
     else yield* persisted.pipe(Effect.ignore, Effect.forkIn(scope))
   }).pipe(Effect.orDie)
 
+/**
+ * Keeps `draft` on the device for conversation `key`, which this tab no longer shows: the composer and the shown
+ * conversation's prompt stay as they are, and showing `key` again finds it.
+ */
+const keepDraftAway = (key: string, draft: string) =>
+  Effect.gen(function* () {
+    const { drafts, scope } = yield* ChatStore
+    const kept = yield* drafts.get(key)
+    const write = Option.isSome(kept)
+      ? kept.value.text === draft
+        ? undefined
+        : yield* draft === "" ? drafts.delete(key) : drafts.update(key, (row) => { row.text = draft; delete row.generation })
+      : draft === ""
+      ? undefined
+      : yield* drafts.insert({ id: key, text: draft })
+    if (write !== undefined) yield* persistDraft(write, key).pipe(Effect.ignore, Effect.forkIn(scope))
+  }).pipe(Effect.orDie)
+
 /** The draft the device kept for the conversation this tab shows; empty when none. */
 const keptDraft = Effect.gen(function* () {
   const { drafts } = yield* ChatStore
@@ -260,7 +278,7 @@ export interface FromView {
  * `MAX_QUESTION_LENGTH` changes nothing, so the draft stays. Sent from a view (`from`), it names the view and carries
  * the values, goes to the view's own conversation, and leaves the draft as it is.
  */
-const askAdmitted = (question: string, from: FromView | undefined, conversationId: string | undefined, draft: string, store: ChatStore["Service"]): Effect.Effect<QuestionSubmitted, never, ChatStore> =>
+const askAdmitted = (question: string, from: FromView | undefined, conversationId: string | undefined, draft: string, store: ChatStore["Service"], clearDraft: boolean): Effect.Effect<QuestionSubmitted, never, ChatStore> =>
   Effect.gen(function* () {
     const questionId = crypto.randomUUID()
     const answerId = crypto.randomUUID()
@@ -279,16 +297,19 @@ const askAdmitted = (question: string, from: FromView | undefined, conversationI
     }).pipe(
       Effect.withSpan("chat.ask", { attributes: { questionId, answerId, "question.length": question.length } }),
     )
-    if (from === undefined && (yield* placeNow) === conversationId && (yield* composerNow).draft === draft) yield* setDraft("")
+    if (clearDraft && from === undefined && (yield* placeNow) === conversationId && (yield* composerNow).draft === draft) yield* setDraft("")
     yield* Metric.update(Metric.withAttributes(questionsAsked, { queued: String(queued) }), 1)
-    yield* Effect.forkIn(timeFirstText(answerId, askedAt), store.scope, { startImmediately: true })
+    yield* Effect.forkIn(timeFirstText(answerId, askedAt, conversationId), store.scope, { startImmediately: true })
     yield* Effect.logInfo("question asked").pipe(
       Effect.annotateLogs({ questionId, answerId, "question.length": question.length, queued }),
     )
     return { asked: true, questionId, answerId } as const
   })
 
-export const ask = (text: string, from?: FromView): Effect.Effect<AskResult, never, ChatStore> =>
+export const ask = (text: string, from?: FromView): Effect.Effect<AskResult, never, ChatStore> => submit(text, from, true)
+
+/** `ask`, where `clearDraft` says whether the composer's draft was the question: Retry on an answer asks without it. */
+const submit = (text: string, from: FromView | undefined, clearDraft: boolean): Effect.Effect<AskResult, never, ChatStore> =>
   Effect.gen(function* () {
     const question = text.trim()
     if (question === "") return { asked: false, reason: "empty" } as const
@@ -297,7 +318,7 @@ export const ask = (text: string, from?: FromView): Effect.Effect<AskResult, nev
     const conversationId = from === undefined ? yield* placeNow : from.conversationId
     const draft = (yield* composerNow).draft
     const revision = from === undefined ? yield* Ref.get(store.draftRevision) : 0
-    const key = JSON.stringify([conversationId, question, revision, from?.source, from?.data])
+    const key = JSON.stringify([conversationId, question, revision, from?.source, from?.data, clearDraft])
     return yield* Effect.uninterruptibleMask((restore) => Effect.gen(function* () {
       const pending = yield* Deferred.make<QuestionSubmitted>()
       const existing = yield* Ref.modify(store.pendingAsks, (held) => held.has(key)
@@ -305,7 +326,7 @@ export const ask = (text: string, from?: FromView): Effect.Effect<AskResult, nev
         : [undefined, new Map(held).set(key, pending)] as const)
       if (existing !== undefined) return yield* restore(Deferred.await(existing))
       // Reserve and install cleanup atomically, so cancellation cannot strand another Send.
-      return yield* restore(askAdmitted(question, from, conversationId, draft, store)).pipe(Effect.onExit((exit) =>
+      return yield* restore(askAdmitted(question, from, conversationId, draft, store, clearDraft)).pipe(Effect.onExit((exit) =>
         Effect.andThen(Deferred.done(pending, exit), Ref.update(store.pendingAsks, (held) => { const next = new Map(held); next.delete(key); return next }))))
     }))
   }).pipe(Effect.annotateLogs({ feature: "chat" }))
@@ -373,15 +394,19 @@ export const resendUnadmitted = Effect.gen(function* () {
   yield* Effect.forEach(ordered, ({ id }) => resendUnsent(id), { discard: true })
 })
 
-/** Retry on an answer Smithers couldn't give: asks its question again, under new ids. */
+/**
+ * Retry on an answer Smithers couldn't give: asks its question again, under new ids, in the conversation shown. The
+ * composer's draft and a shared prompt stay as they are: the draft was never the question. An answer whose question
+ * this device doesn't have (yet) is not retried.
+ */
 export const retryAnswer = (answerId: string) =>
   Effect.gen(function* () {
     const { messages } = yield* windowNow
     const answer = yield* messages.get(answerId)
     if (Option.isNone(answer) || answer.value.questionId === null) return
-    // Postgres inserts a question and its answer in one statement, and Electric delivers them together.
-    const question = Option.getOrThrow(yield* messages.get(answer.value.questionId))
-    yield* ask(question.text)
+    const question = yield* messages.get(answer.value.questionId)
+    if (Option.isNone(question)) return
+    yield* submit(question.value.text, undefined, false)
   })
 
 /** Widens the window to message `id`, which the rail spans and the transcript hasn't shown yet. */
@@ -495,6 +520,8 @@ const editable = (questionId?: string) =>
 export const takeBack = (questionId?: string): Effect.Effect<EditAnswer["outcome"], never, ChatStore> =>
   Effect.gen(function* () {
     const store = yield* ChatStore
+    // The conversation the question is taken back into, as the person may show another while the outbox waits.
+    const from = (yield* placeNow) ?? HOME_DRAFT
     const found = yield* editable(questionId)
     if (Option.isNone(found)) return "not_found"
     const question = found.value
@@ -512,8 +539,10 @@ export const takeBack = (questionId?: string): Effect.Effect<EditAnswer["outcome
         Effect.succeed(reason === "gone" || reason === "sending" ? "sent" as const : "failed" as const)),
     )
     if (outcome === "edited") {
-      yield* setDraft(question.text)
-      yield* openComposer("button")
+      if (((yield* placeNow) ?? HOME_DRAFT) === from) {
+        yield* setDraft(question.text)
+        yield* openComposer("button")
+      } else yield* keepDraftAway(from, question.text)
     }
     yield* Effect.logWithLevel(outcome === "failed" ? "Warn" : "Info")("queued question taken back").pipe(
       Effect.annotateLogs({ questionId: question.id, outcome }),
