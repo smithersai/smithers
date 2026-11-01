@@ -4,20 +4,14 @@
  *
  * @since 1.0.0
  */
-
-import * as Metric from "effect/Metric"
-
+import * as Metric from "effect/Metric";
 /**
  * Times a worker became leader.
  *
  * @category metrics
  * @since 1.0.0
  */
-export const leaderships = Metric.counter("smithers_browser_runtime_leaderships", {
-  description: "Times a browser worker took the engine lock and started the engine",
-  incremental: true
-})
-
+export declare const leaderships: Metric.Counter<number>;
 /**
  * Unfinished runs a new leader found, by `outcome`: `settled`, `parked`,
  * `unfinished` or `failed` for a run it drove, `unknown-flow` for one whose
@@ -26,11 +20,7 @@ export const leaderships = Metric.counter("smithers_browser_runtime_leaderships"
  * @category metrics
  * @since 1.0.0
  */
-export const wakes = Metric.counter("smithers_browser_runtime_wakes", {
-  description: "Unfinished runs a new browser leader drove, by outcome",
-  incremental: true
-})
-
+export declare const wakes: Metric.Counter<number>;
 /**
  * Preparations of the app's shared database a new leader ran before serving
  * it, by `outcome`: `prepared`, `failed`, or `skipped` when the engine serves
@@ -39,11 +29,7 @@ export const wakes = Metric.counter("smithers_browser_runtime_wakes", {
  * @category metrics
  * @since 1.0.0
  */
-export const preparations = Metric.counter("smithers_browser_runtime_preparations", {
-  description: "Preparations of the app's shared database a new browser leader ran before serving it, by outcome",
-  incremental: true
-})
-
+export declare const preparations: Metric.Counter<number>;
 /**
  * Follower requests the leader handled, by `request` and `outcome`
  * (`replied` or `refused`).
@@ -51,11 +37,7 @@ export const preparations = Metric.counter("smithers_browser_runtime_preparation
  * @category metrics
  * @since 1.0.0
  */
-export const requests = Metric.counter("smithers_browser_runtime_requests", {
-  description: "Follower requests the browser leader handled, by request and outcome",
-  incremental: true
-})
-
+export declare const requests: Metric.Counter<number>;
 /**
  * Statements the leader ran on the app's shared database, by `outcome`
  * (`executed`, `failed` or `lost`), statements of a transaction an earlier
@@ -66,7 +48,4 @@ export const requests = Metric.counter("smithers_browser_runtime_requests", {
  * @category metrics
  * @since 1.0.0
  */
-export const statements = Metric.counter("smithers_browser_runtime_statements", {
-  description: "Statements the browser leader ran on the app's shared database, by outcome",
-  incremental: true
-})
+export declare const statements: Metric.Counter<number>;

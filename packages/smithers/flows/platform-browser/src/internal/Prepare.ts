@@ -21,7 +21,7 @@ import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import type * as SharedSqlite from "../SharedSqlite.ts"
-import { preparations } from "./Metrics.ts"
+import { preparations } from "./Metrics.vibe"
 import { SqlConnection } from "./SqlConnection.ts"
 
 /**
