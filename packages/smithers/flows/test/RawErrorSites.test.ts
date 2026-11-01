@@ -25,7 +25,7 @@ const testSupport = "published test support: its failure fails the caller's test
 /** Reviewed files, with the number of raw sites each keeps and why. */
 const reviewed: ReadonlyArray<readonly [file: string, count: number, why: string]> = [
   [
-    "crypto/src/Crypto.vibe",
+    "crypto/src/Crypto.ts",
     1,
     "a randomBytes source that returns the wrong length for a ULID: a broken implementation, as Effect 4.0's Crypto reported it"
   ],

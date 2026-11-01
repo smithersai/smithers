@@ -24,7 +24,7 @@ import * as Schema from "effect/Schema"
 import * as SchemaGetter from "effect/SchemaGetter"
 import * as SchemaIssue from "effect/SchemaIssue"
 import * as SchemaParser from "effect/SchemaParser"
-import * as Crypto from "./Crypto.vibe"
+import * as Crypto from "./Crypto.ts"
 import { sha256, Sha256Prefix } from "./internal/sha256.ts"
 
 const digestBytes = 32

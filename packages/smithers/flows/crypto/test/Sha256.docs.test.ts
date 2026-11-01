@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import * as Crypto from "../src/Crypto.vibe"
+import * as Crypto from "../src/Crypto.ts"
 import { Digest, digest, digestSync, Sha256 } from "../src/index.ts"
 
 // The signatures docs/api.md publishes for the two schemas, annotated onto the
