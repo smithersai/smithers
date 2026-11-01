@@ -175,6 +175,11 @@ const needs = {
   },
   faults: devBuildOnly("the app's faulty services (`/app?faults`, e2e/faults.ts) are in dev builds only"),
   scriptedAgent: devBuildOnly("the scripted model (`/app?agent=<script>`) is in dev builds only"),
+  timelineVisualFixture: {
+    met: (run) => run.target === "local" && run.env.E2E_TIMELINE_VISUAL_FIXTURE === "fresh",
+    reason: "needs an exclusive fresh local database: run only timeline-look's visual journey in local-turns with E2E_TIMELINE_VISUAL_FIXTURE=fresh",
+    blocked: true,
+  },
   devPeople: {
     met: (run) => run.target === "local" && !githubAppLocally(run),
     reason: "local development's second and third people (the smithers_dev_person cookie) exist only without GitHub sign-in; a deployment needs another real test account",

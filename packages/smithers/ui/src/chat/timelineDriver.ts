@@ -30,8 +30,6 @@ export interface TimelineDriver {
 const px = (value: number) => `${value}px`;
 const CORNER = 6;
 const MOVE = "260ms";
-/** Inter's mean advance at the rail's sizes: how many lines a label wants, before anything is drawn. */
-const LABEL_CHAR = 5.6;
 const TITLE_LINE = 12;
 
 /** The transcript viewport beside `rail`: the one `[data-slot="message-scroller-viewport"]` of its transcript. */
@@ -110,12 +108,11 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement, scrollByRead
     content.style.setProperty("--sui-tl-move", animate ? MOVE : "0ms");
     frameEl.style.transition = animate ? "" : "none";
     const elements = [...box.querySelectorAll<HTMLElement>(".sui-tl-row")];
-    const text = Math.max(1, content.clientWidth - 24);
     const inWindow = elements.filter(element => { const row = Number(element.dataset.row); return row >= window.start && row < window.end; });
     const labels = timelineLabels(inWindow.map(element => {
       const mark = layout.marks[Number(element.dataset.row)]!;
       return { y: mark.y, height: mark.height, urgent: !["done", "queued"].includes(element.dataset.state ?? "done"),
-        lines: Math.min(2, Math.ceil((element.querySelector(".sui-tl-tx")?.textContent?.length ?? 0) * LABEL_CHAR / text)) || 1 };
+        lines: 1 };
     }), height);
     let bottom = layout.height;
     for (const element of elements) {
@@ -418,12 +415,16 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement, scrollByRead
       const rect = target.getBoundingClientRect();
       drag = { level: Number(lens), grab: event.clientY - (rect.top + rect.height / 2) };
     } else return;
+    rail.dataset.dragLevel = String(drag.level);
+    rail.dataset.dragStage = "grabbed";
     event.preventDefault();
     box.setPointerCapture?.(event.pointerId);
     rail.setAttribute("data-dragging", "");
   };
   const move = (event: PointerEvent) => {
-    if (drag === undefined || viewport === null) return;
+    if (drag === undefined) return;
+    rail.dataset.dragStage = viewport === null ? "no-viewport" : "moving";
+    if (viewport === null) return;
     if (drag.level === 0) {
       const content = inner(0);
       if (content === null || rowWindow === undefined || rows === undefined) return;
@@ -441,6 +442,7 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement, scrollByRead
     if (drag === undefined) return;
     drag = undefined;
     rail.removeAttribute("data-dragging");
+    delete rail.dataset.dragStage; delete rail.dataset.dragLevel;
     scaleUp();
     update();
   };

@@ -1,7 +1,7 @@
 import { tokens as t } from "../tokens";
 
-// The approved mock's rail (apps/mvp/docs/design/timeline/timeline.html): a quiet companion to the chat. Every value
-// here is the mock's. `--sui-tl-*` are the rail's own: the `q-` ones are what hover or keyboard focus brings forward.
+// The approved mock's rail (apps/mvp/docs/design/timeline/timeline.html), with Will's single-line entry summaries.
+// `--sui-tl-*` belong to the rail; the `q-` ones are what hover or keyboard focus brings forward.
 export const chatTimelineCss = `
 .sui-chat-transcript:has(> .sui-timeline-disclosure){position:relative;overflow:visible;container-type:inline-size}
 .sui-timeline-disclosure{position:absolute;inset-inline-end:8px;top:6px;z-index:9}
@@ -40,7 +40,7 @@ export const chatTimelineCss = `
 .sui-tl-row[data-in] .sui-tl-mk{background:color-mix(in srgb,var(--sui-tl-answer) var(--q-mk-in),var(--sui-tl-bg))}
 .sui-tl-row[data-kind=ask][data-in] .sui-tl-mk{background:color-mix(in srgb,var(--sui-tl-ask) var(--q-mk-in),var(--sui-tl-bg))}
 .sui-tl-tx{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:var(--sui-tl-lines,2);overflow:hidden;font-size:11px;line-height:14px;color:var(--q-tx);letter-spacing:-.05px;transition:color .15s}
-.sui-tl-row .sui-tl-tx{position:absolute;left:22px;right:2px;top:0}
+.sui-tl-row .sui-tl-tx{position:absolute;left:22px;right:2px;top:0;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sui-tl-row[data-label=hidden] .sui-tl-tx{visibility:hidden}
 .sui-tl-lead{display:none;position:absolute;left:14px;top:0;width:6px;box-sizing:border-box;border-left:1px solid color-mix(in srgb,var(--sui-tl-text) var(--q-line),transparent);border-bottom:1px solid color-mix(in srgb,var(--sui-tl-text) var(--q-line),transparent);border-bottom-left-radius:4px;pointer-events:none}
 .sui-tl-lead[data-on]{display:block}

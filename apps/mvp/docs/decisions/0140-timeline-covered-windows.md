@@ -1,0 +1,15 @@
+# Timeline coverage and bounded windows
+
+2026-10-31 · Implements FE-16 and FE-19, retaining FE-22’s position scale; follows decision 0138.
+
+A marker carries the inclusive id of its last covered message (`TimelineMarker.end`). The host translates persisted exchange/phase coverage into this anchor. The UI never infers coverage from a later marker or from the conversation's current length. Missing or invalid coverage, gaps and the growing tail are separate pending blocks, or unavailable when the host supplies a reason.
+
+Every column uses a height-bounded window. Size changes invalidate all windows before transforms, clipping, lenses and funnels are recomputed. There is no three-level limit: `higherLevels` accepts further semantic summaries. An overflowing last supplied level exposes a pending outer level; the UI does not invent semantic boundaries or titles. The existing app currently supplies phases and arcs; further summaries require a host contribution through this public interface.
+
+A drag keeps the requested message ID and fractional position independent of mounted transcript geometry. For an unmounted target, the rail calls `onRequestHistory`, the host's mounting-only history action and observes mounting before restoring that position. Click navigation still uses `onJump`; it never participates in lens restoration. A newer target supersedes the prior request. Child strip marks are intersected with their parent coverage so no mark spans into an uncovered tail. The requested point stays anchored through observed layout changes until the reader scrolls or navigates; pending reads also cancel on navigation or conversation replacement. Requests clamped at a scroll boundary preserve the transcript's live-edge behavior. Disposal disconnects the mount observer and input listeners. `data-navigation="pending"` exposes a pending history request without recording content.
+
+The shared `@smthrs/ui` rail uses one line per message summary. The visual journey asserts screenshot references and bounded clipping/lenses across themes, desktop sizes, resize, drag, phone sheets and reduced motion. A separate comparison fixture feeds the approved mock's conversation into the production component, keeping mock/app PNGs directly comparable; it does not substitute for the full-app journey.
+
+Resize observation can precede React’s new block heights. FE-22 supersedes fixed-pitch transforms with a position-scale layout; a completed render recomputes that geometry even when selected indices stay the same, without forcing window reselection. Numeric layout dimensions and window ranges make this ordering observable.
+
+The visual journey uses an exclusive fresh local database, fixed API batches seeded before opening each device, and actual recorded entry/phase/arc results before capture. Missing fixture prerequisites are reported as blocked. The shared home conversation is never silently treated as a short fixture after another journey has filled it. A real resize after dragging both proves anchor retention and selects a repeatable window for its reference, independent of the intentionally held slice during pointer movement.

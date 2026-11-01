@@ -90,6 +90,16 @@ describe("the target", () => {
 })
 
 describe("needs", () => {
+  it("requires an explicitly selected exclusive local fixture for timeline references", () => {
+    expect(NEEDS.timelineVisualFixture.met(local)).toBe(false)
+    for (const value of ["", "true", "shared"]) {
+      expect(NEEDS.timelineVisualFixture.met({ ...local, env: { E2E_TIMELINE_VISUAL_FIXTURE: value } })).toBe(false)
+    }
+    expect(NEEDS.timelineVisualFixture.met({ ...local, env: { E2E_TIMELINE_VISUAL_FIXTURE: "fresh" } })).toBe(true)
+    expect(NEEDS.timelineVisualFixture.met(deployedAs("member", { E2E_TIMELINE_VISUAL_FIXTURE: "fresh" }))).toBe(false)
+    expect(NEEDS.timelineVisualFixture.blocked).toBe(true)
+  })
+
   it("declares browser-specific and existing-data prerequisites", () => {
     expect(NEEDS.chromium.met(local)).toBe(false)
     for (const name of ["chromium", "webkit", "firefox"]) {
@@ -146,6 +156,7 @@ describe("needs", () => {
       "chromium",
       "duplicateDrafts",
       "inspectRun",
+      "timelineVisualFixture",
       "outsideRoles",
       "vibelangFeed",
       "sandboxSecrets",
@@ -162,6 +173,8 @@ describe("needs", () => {
       "syncedRepository",
       "modelQuotaRefusal",
       "liveModel",
+      "claudeSubscription",
+      "codexSubscription",
       "personalModelKey",
       "hostedModelOff",
       "factoryRepository",
@@ -413,7 +426,7 @@ describe("needs", () => {
 
   it("each say why, and missing account or fixture prerequisites block the run", () => {
     for (const name of Object.keys(NEEDS) as Array<NeedName>) expect(NEEDS[name].reason.length, name).toBeGreaterThan(20)
-    expect((Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].blocked)).toEqual(["vibelangMaintainer", "vibelangOpenPull", "absentRepository", "unsyncedRepository", "failedRun", "repositoryRun", "emptySecretsRepository", "syncedRepository", "member", "ownConversation", "maintainer"])
+    expect((Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].blocked)).toEqual(["timelineVisualFixture", "vibelangMaintainer", "vibelangOpenPull", "absentRepository", "unsyncedRepository", "failedRun", "repositoryRun", "emptySecretsRepository", "syncedRepository", "member", "ownConversation", "maintainer"])
   })
 })
 

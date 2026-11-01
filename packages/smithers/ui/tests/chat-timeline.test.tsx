@@ -305,3 +305,17 @@ test("fifty arcs create another level and clip every outer window", () => {
   expect(host.querySelector('ol[data-level="3"] button')!.textContent).toBe("Preparing the release");
   expect(host.querySelector('ol[data-level="3"] button')!.getAttribute("data-summary")).toBe("ready");
 });
+
+test("entry summaries stay on one quiet line", () => {
+  expect(chatTimelineCss).toContain('.sui-tl-row .sui-tl-tx{position:absolute;left:22px;right:2px;top:0;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}');
+});
+
+test("pending messages without host labels keep the transcript's state words", () => {
+  const host = document.createElement("div");
+  host.innerHTML = renderToStaticMarkup(<ChatTimeline entries={[
+    { id: "unsent", kind: "ask", state: "failed" },
+    { id: "reply", kind: "answer", state: "working" },
+  ]} />);
+  expect([...host.querySelectorAll('ol[data-level="0"] .sui-tl-tx')].map(element => element.textContent)).toEqual(["Not sent", "Working"]);
+  expect(host.querySelectorAll('ol[data-level="0"] [data-summary="pending"]').length).toBe(2);
+});

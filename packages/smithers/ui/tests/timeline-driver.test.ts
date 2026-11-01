@@ -97,6 +97,10 @@ test("thumb dragging preserves its top-edge position and resize rebuilds its vis
     expect(viewport.scrollTop).toBeCloseTo(68 * 920 / 804, 5);
     box.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true }));
     expect(rail.hasAttribute("data-dragging")).toBe(false);
+    expect(rail.dataset.dragStage).toBeUndefined();
+    expect(rail.dataset.dragLevel).toBeUndefined();
+    box.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientY: 70 }));
+    expect(rail.dataset.dragStage).toBeUndefined();
     viewport.scrollTop = 2000; viewport.dispatchEvent(new Event("scroll")); await frame();
     expect(box.querySelector('[data-row="0"]')!.hasAttribute("data-in")).toBe(false);
     height = 544; window.dispatchEvent(new Event("resize")); await frame();
@@ -344,7 +348,7 @@ test("a pushed label keeps a leader to its mark, and a label with no room waits 
   const row = (index: number) => box.querySelector<HTMLElement>(`[data-row="${index}"]`)!;
   try {
     driver.sync({ ids: ["l-0", "l-1", "l-2", "l-3"], asks: [], lengths: [1, 1, 1, 1], levels: 1, spans: [], arcs: [] });
-    expect(row(0).querySelector<HTMLElement>(".sui-tl-tx")!.style.getPropertyValue("--sui-tl-lines")).toBe("2");
+    expect(row(0).querySelector<HTMLElement>(".sui-tl-tx")!.style.getPropertyValue("--sui-tl-lines")).toBe("1");
     expect(row(1).querySelector<HTMLElement>(".sui-tl-tx")!.style.top).not.toBe("0px");
     expect(row(1).querySelector(".sui-tl-lead")!.hasAttribute("data-on")).toBe(true);
     expect(row(0).querySelector(".sui-tl-lead")!.hasAttribute("data-on")).toBe(false);
