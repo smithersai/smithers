@@ -98,19 +98,19 @@ polls. Completed predecessor history remains unchanged. On normal parent exit,
 `onParentExit` belongs to the child's creating round and is retained through its
 handoffs; explicit cancellation still cascades to linked children.
 
-| Export                  | Signature                                                                                                                           | Meaning                                                                                                                    |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `Options`               | interface                                                                                                                           | Construction options. See below.                                                                                           |
-| `make`                  | `(options: Options) => Effect<FlowRuntime["Service"], never, Requirements>`                                                         | Builds the `FlowRuntime` service the port in [`@smthrs/flow`](/api/flow) declares.                                         |
-| `layer`                 | `(options: Options) => Layer<SnapshotBoundary \| FlowRuntime, never, Requirements>`                                                 | Provides both, using the ambient `Jj` for action bodies and engine bookkeeping.                                            |
-| `layerWithPrivilegedJj` | `(options: Options, privilegedJj: Layer<Jj, E, R>) => Layer<SnapshotBoundary \| FlowRuntime, E, Requirements \| R>`                 | The same, with a private repository for engine bookkeeping while ambient `Jj` stays for action bodies.                     |
-| `Sweep`                 | `"process" \| { readonly host: string }`                                                                                            | Who wakes the store's runs. See `Options.sweep`.                                                                           |
-| `nextWake`              | `(executionId: string) => Effect<Option<number>, RunStoreError, RunStore \| DurableEngineState>`                                    | When a host must next drive the execution, in epoch milliseconds. See [Hosted executions](#hosted-executions).             |
-| `Driven`                | `{ _tag: "Settled"; status } \| { _tag: "Parked"; wakeAtMs: number \| undefined } \| { _tag: "Unfinished" } \| { _tag: "Yielded" }` | What one `drive` left an execution as.                                                                                     |
-| `DriveOptions`          | `{ executionId: string; payload: object; budgetMs?: number; holdMs?: number }`                                                      | What `drive` drives, with an optional budget and hold. See [Drive budget](#drive-budget).                                  |
-| `Driver`                | `Context.Service<{ admit, drive, reportRecovery }>`                                                                                 | Provided by `layer` and `layerWithPrivilegedJj` beside `FlowRuntime`. See [Registration recovery](#registration-recovery). |
-| `drive`                 | `(flow: Flow.Any, options: DriveOptions) => Effect<Driven, FlowCycleDetected \| RunStoreError, Driver>`                             | Drives one execution once, for its host. See [Hosted executions](#hosted-executions).                                      |
-| `Recovery`              | `{ registrations: number; durationMs: number }`                                                                                     | What `Driver.reportRecovery` reports and answers. See [Registration recovery](#registration-recovery).                     |
+| Export                  | Signature                                                                                                                           | Meaning                                                                                                                      |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `Options`               | interface                                                                                                                           | Construction options. See below.                                                                                             |
+| `make`                  | `(options: Options) => Effect<FlowRuntime["Service"], never, Requirements>`                                                         | Builds the `FlowRuntime` service the port in [`@smthrs/flow`](/api/flow) declares.                                           |
+| `layer`                 | `(options: Options) => Layer<SnapshotBoundary \| FlowRuntime, never, Requirements>`                                                 | Provides both, using the ambient `Jj` for action bodies and engine bookkeeping.                                              |
+| `layerWithPrivilegedJj` | `(options: Options, privilegedJj: Layer<Jj, E, R>) => Layer<SnapshotBoundary \| FlowRuntime, E, Requirements \| R>`                 | The same, with a private repository for engine bookkeeping while ambient `Jj` stays for action bodies.                       |
+| `Sweep`                 | `"process" \| { readonly host: string }`                                                                                            | Who wakes the store's runs. See `Options.sweep`.                                                                             |
+| `nextWake`              | `(executionId: string) => Effect<Option<number>, RunStoreError, RunStore \| DurableEngineState>`                                    | When a host must next drive the execution, in epoch milliseconds. See [Hosted executions](#hosted-executions).               |
+| `Driven`                | `{ _tag: "Settled"; status } \| { _tag: "Parked"; wakeAtMs: number \| undefined } \| { _tag: "Unfinished" } \| { _tag: "Yielded" }` | What one `drive` left an execution as.                                                                                       |
+| `DriveOptions`          | `{ executionId: string; payload: object; budgetMs?: number; holdMs?: number; row?: RunRow }`                                        | What `drive` drives, with an optional budget and hold, and the row the host already read. See [Drive budget](#drive-budget). |
+| `Driver`                | `Context.Service<{ admit, drive, reportRecovery }>`                                                                                 | Provided by `layer` and `layerWithPrivilegedJj` beside `FlowRuntime`. See [Registration recovery](#registration-recovery).   |
+| `drive`                 | `(flow: Flow.Any, options: DriveOptions) => Effect<Driven, FlowCycleDetected \| RunStoreError, Driver>`                             | Drives one execution once, for its host. See [Hosted executions](#hosted-executions).                                        |
+| `Recovery`              | `{ registrations: number; durationMs: number }`                                                                                     | What `Driver.reportRecovery` reports and answers. See [Registration recovery](#registration-recovery).                       |
 
 ### EngineStore.Options
 
@@ -313,6 +313,11 @@ Set the budget at the invocation's limit less the longest step it may start.
 Each yield counts on `EngineStoreMetrics.driveYields` and logs
 `engine-store: drive yielded its budget at a step boundary` with the budget and
 the elapsed time.
+
+`row` is the run's row as the host read it at the start of the drive. The
+drive takes the run's existence, flow and capability ceilings from it, which
+never change, instead of reading the row again for each; its status and claim
+are still read fresh before the claim.
 
 A run its own flow parks on a wake due within `holdMs` (`defaultHoldMs`, five
 seconds, unless set), such as a durable sleep of a second or a clock that came
@@ -1590,17 +1595,17 @@ nonce is a UUIDv4 from the injected `Crypto` service.
 Edge-triggered in-process wakes, with durable polling as the miss-tolerant
 fallback.
 
-| Export       | Signature                                          | Meaning                                     |
-| ------------ | -------------------------------------------------- | ------------------------------------------- |
-| `WakeBus`    | `Context.Service<Service>`                         | Service tag.                                |
-| `Service`    | `{ wake, awaitWake, waiters }`                     | See below.                                  |
-| `makeUnsafe` | `() => Service`                                    | Constructs a bus. Nothing is durable.       |
-| `make`       | `Effect<Service>`                                  | The same, as an effect.                     |
-| `layer`      | `Layer<WakeBus>`                                   | Provides a fresh bus.                       |
-| `makeNoop`   | `(overrides?: Partial<Service>) => Service`        | Wakes are dropped and waiters park forever. |
-| `layerNoop`  | `(overrides?: Partial<Service>) => Layer<WakeBus>` | Provides it.                                |
-| `Admitted`   | `Context.Reference<(admission: Admission) => Effect<void>>` | Called once a child's admission commits. |
-| `Admission`  | `{ flow, executionId, payload }`                   | The child, its payload encoded as stored.   |
+| Export       | Signature                                                   | Meaning                                     |
+| ------------ | ----------------------------------------------------------- | ------------------------------------------- |
+| `WakeBus`    | `Context.Service<Service>`                                  | Service tag.                                |
+| `Service`    | `{ wake, awaitWake, waiters }`                              | See below.                                  |
+| `makeUnsafe` | `() => Service`                                             | Constructs a bus. Nothing is durable.       |
+| `make`       | `Effect<Service>`                                           | The same, as an effect.                     |
+| `layer`      | `Layer<WakeBus>`                                            | Provides a fresh bus.                       |
+| `makeNoop`   | `(overrides?: Partial<Service>) => Service`                 | Wakes are dropped and waiters park forever. |
+| `layerNoop`  | `(overrides?: Partial<Service>) => Layer<WakeBus>`          | Provides it.                                |
+| `Admitted`   | `Context.Reference<(admission: Admission) => Effect<void>>` | Called once a child's admission commits.    |
+| `Admission`  | `{ flow, executionId, payload }`                            | The child, its payload encoded as stored.   |
 
 `Admitted` is what the engine calls once a child run it admitted has
 committed, its row and parent edge durable; the default does nothing. A host

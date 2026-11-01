@@ -550,10 +550,11 @@ const drive = <RS>(storage: Storage<RS>, flow: Flow.Any, value: Intent, budgetMs
   Effect.gen(function*() {
     const control = yield* Effect.serviceOption(AdmissionControl)
     const prepare = Effect.gen(function*() {
-      const held = yield* (yield* RunStore.RunStore).get(value.executionId).pipe(
-        Effect.as(true),
-        Effect.catchIf((error) => error.code === "not_found_row", () => Effect.succeed(false))
+      // The one read of the run's row before the drive: the drive takes its existence and identity from it.
+      const row = yield* (yield* RunStore.RunStore).get(value.executionId).pipe(
+        Effect.catchIf((error) => error.code === "not_found_row", () => Effect.succeed(undefined))
       )
+      const held = row !== undefined
       let cancelled = (yield* storage.get<number>(cancelledKey)) !== undefined
       if (!held && !cancelled && Option.isSome(control) && !(yield* control.value.allowed(value))) {
         yield* storage.put(cancelledKey, yield* Clock.currentTimeMillis)
@@ -565,7 +566,7 @@ const drive = <RS>(storage: Storage<RS>, flow: Flow.Any, value: Intent, budgetMs
         }))
         cancelled = true
       }
-      if (cancelled && !held) return false
+      if (cancelled && !held) return { admitted: false, row } as const
       if (!held) {
         const payload = yield* (Schema.decodeUnknownEffect(Schema.toCodecJson(flow.payloadSchema))(
           value.payload
@@ -577,15 +578,21 @@ const drive = <RS>(storage: Storage<RS>, flow: Flow.Any, value: Intent, budgetMs
       const cancel = (yield* FlowRuntime.FlowRuntime).interrupt(flow, value.executionId).pipe(Effect.provide(context))
       if (Option.isSome(control)) control.value.activate(cancel)
       if (cancelled) yield* cancel
-      return true
+      return { admitted: true, row } as const
     })
     // Persist admission before exposing cancellation to an active runtime. No
     // action runs in this critical section, and cancellation can never miss a
     // run between the tombstone check and row creation.
-    const admitted = yield* Option.isSome(control) ? control.value.gate.withPermit(prepare) : prepare
-    if (!admitted) return { _tag: "Settled" } as const
-    return yield* EngineStore.drive(flow, { executionId: value.executionId, payload: {}, budgetMs })
+    const prepared = yield* Option.isSome(control) ? control.value.gate.withPermit(prepare) : prepare
+    if (!prepared.admitted) return unadmitted
+    return yield* EngineStore.drive(flow, { executionId: value.executionId, payload: {}, budgetMs, row: prepared.row })
   })
+
+/**
+ * What {@link drive} answers for a cancelled intent the store never admitted: the one drive that may leave no row,
+ * so the only one whose routing first asks whether the row exists. Every other drive read it.
+ */
+const unadmitted = { _tag: "Settled" } as const
 
 /** Where one alarm's time went, in milliseconds: building its runtime, driving, and routing what the drive left. */
 interface Timing {
@@ -872,11 +879,11 @@ const settleOrDrive = <E, R, RS, RE, RR>(
         }))
         const driven = yield* timedDrive(storage, flow, value, options.driveBudgetMs ?? defaultDriveBudgetMs, timing)
         const routingAtMs = yield* Clock.currentTimeMillis
-        // A cancelled intent may have no engine row at all.
-        const exists = yield* (yield* RunStore.RunStore).get(value.executionId).pipe(
+        // A cancelled intent may have no engine row at all; every drive that ran read the row it left.
+        const exists = driven !== unadmitted || (yield* (yield* RunStore.RunStore).get(value.executionId).pipe(
           Effect.as(true),
           Effect.catchIf((error) => error.code === "not_found_row", () => Effect.succeed(false))
-        )
+        ))
         if (exists) yield* route(value.executionId, options.router)
         timing.routeMs = (yield* Clock.currentTimeMillis) - routingAtMs
         if (driven._tag === "Settled") {

@@ -257,7 +257,7 @@ export interface Service {
    * such as after a restart: an idle run waits for a slot of the resume lane
    * (`Options.resumeConcurrency`).
    */
-  readonly resumeHosted: (flow: Flow.Any, executionId: string) => Effect.Effect<void>
+  readonly resumeHosted: (flow: Flow.Any, executionId: string, row?: RunStore.RunRow) => Effect.Effect<void>
   readonly scheduleResume: (
     flowName: string,
     executionId: string,
@@ -4137,12 +4137,14 @@ const decodeSettlement = (
 const authorizeControl = (
   driver: Driver,
   flow: Flow.Any,
-  executionId: string
+  executionId: string,
+  // A row the caller already read: the flow and ceilings checked here never change, so it is never stale for them.
+  known?: RunStore.RunRow
 ): Effect.Effect<boolean, RunStore.RunStoreError> =>
   Effect.gen(function*() {
-    const row = yield* driver.store.get(executionId).pipe(
+    const row = known ?? (yield* driver.store.get(executionId).pipe(
       Effect.catch((error) => error.code === "not_found_row" ? Effect.succeed(undefined) : Effect.fail(error))
-    )
+    ))
     if (row === undefined) return false
     const state = yield* decodeState(row.stateJson)
     if (state.flowName !== flow._tag) return false
@@ -4506,11 +4508,12 @@ const resume = Effect.fn("FlowEngine.resume")((
   flow: Flow.Any,
   executionId: string,
   options: Parameters<Service["resume"]>[2],
-  ask?: RunCoordinator.Ask
+  ask?: RunCoordinator.Ask,
+  known?: RunStore.RunRow
 ) =>
   Effect.gen(function*() {
     yield* Effect.annotateCurrentSpan({ executionId, flow: flow._tag })
-    if (!(yield* authorizeControl(driver, flow, executionId).pipe(Effect.orDie))) return
+    if (!(yield* authorizeControl(driver, flow, executionId, known).pipe(Effect.orDie))) return
     if (options?.poll === true) {
       const row = yield* driver.store.get(executionId).pipe(Effect.orDie)
       if (row.status === "suspended" && row.cancelRequestedAtMs === null) {
@@ -4540,7 +4543,7 @@ const service = (driver: Driver): Service => ({
   interrupt: (flow, executionId) => interrupt(driver, flow, executionId),
   interruptUnsafe,
   resume: (flow, executionId, options) => resume(driver, flow, executionId, options),
-  resumeHosted: (flow, executionId) => resume(driver, flow, executionId, { poll: true }, { resumed: true }),
+  resumeHosted: (flow, executionId, row) => resume(driver, flow, executionId, { poll: true }, { resumed: true }, row),
   scheduleResume: (flowName, executionId, reason, sourceId) =>
     scheduleResume(driver, flowName, executionId, reason, sourceId),
   active: active(driver),

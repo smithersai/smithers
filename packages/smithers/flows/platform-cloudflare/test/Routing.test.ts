@@ -256,7 +256,10 @@ for (const target of Postgres.targets) {
         yield* ExecutionObject.start(c.objects.object(parentId).storage, intent, Effect.void)
         yield* c.objects.alarm(parentId)
         // The routing after the drive starts it again, which its object answers as a duplicate.
-        expect(starts).toEqual([`${Child._tag} while the parent is running`, `${Child._tag} while the parent is suspended`])
+        expect(starts).toEqual([
+          `${Child._tag} while the parent is running`,
+          `${Child._tag} while the parent is suspended`
+        ])
 
         yield* c.objects.run()
         expect((yield* c.runs).map((run) => run.status)).toEqual(["completed", "completed"])
@@ -345,6 +348,35 @@ for (const target of Postgres.targets) {
           "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"
         ])
       }).pipe(Effect.ensuring(c.cleanup))
+    })
+
+    it.live("a child's alarm reads its run's row once for what never changes before its claim", () => {
+      const schema = Postgres.freshSchema()
+      return Effect.gen(function*() {
+        const scope = yield* Scope.make()
+        const trace = yield* Scope.provide(StatementTrace.proxy(target.url), scope)
+        const objects = Objects.make({
+          flows,
+          runtime: runtime({ record: Effect.succeed, database: Postgres.database(schema, trace.url) })
+        })
+        const parentId = `parent-${randomUUID()}`
+        const intent = yield* ExecutionObject.intent(Parent, { executionId: parentId, payload: { label: "once" } })
+        yield* ExecutionObject.start(objects.object(parentId).storage, intent, Effect.void)
+        yield* objects.alarm(parentId)
+        const childId = [...objects.objects.keys()].find((id) => id !== parentId)!
+        const from = trace.statements.length
+        yield* objects.alarm(childId)
+        const statements = trace.statements.slice(from).map((statement) => statement.sql)
+        const claim = statements.findIndex((sql) => sql.includes("UPDATE flows_runs SET claim_host_id"))
+        // Each read outside a transaction costs four round trips on PostgreSQL. Before the claim: the object's read,
+        // whose existence and identity the drive reuses; the resume's fresh status; the drive's own; and the claim's
+        // locked read. The engine's existence read and its control check's read are gone.
+        expect(
+          statements.slice(0, claim).filter((sql) => sql.includes("SELECT run_id AS \"runId\", status AS \"status\""))
+        )
+          .toHaveLength(4)
+        yield* Scope.close(scope, Exit.void)
+      }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(schema))))
     })
 
     it.live("a child's failure fails its parent", () => {

@@ -131,6 +131,14 @@ export interface DriveOptions {
    * park back. A wake past the budget's end is handed back too.
    */
   readonly holdMs?: number | undefined
+  /**
+   * The run's row as the host read it at the start of this drive, if the
+   * host read it. The drive then takes the run's existence and identity (its
+   * flow and capability ceilings, which never change) from it instead of
+   * reading the row again for each; what can change, its status and claim,
+   * is still read fresh before the claim.
+   */
+  readonly row?: RunStore.RunRow | undefined
 }
 
 /**
@@ -1451,11 +1459,11 @@ const hostDriver = (store: Store) =>
     // Compared under the host ceiling, as every call of the typed service is.
     drive: Effect.fn("EngineStore.drive")(function*(flow, input) {
       yield* Effect.annotateCurrentSpan({ executionId: input.executionId, flow: flow._tag })
-      const admitted = yield* store.runStore.get(input.executionId).pipe(
+      const admitted = input.row !== undefined || (yield* store.runStore.get(input.executionId).pipe(
         Effect.as(true),
         Effect.catchIf((error) => error.code === "not_found_row", () => Effect.succeed(false))
-      )
-      const resumed = store.driver.resumeHosted(flow, input.executionId)
+      ))
+      const resumed = store.driver.resumeHosted(flow, input.executionId, input.row)
       let round = admitted
         ? resumed
         : store.driver.execute(flow, { executionId: input.executionId, payload: input.payload, discard: false })
