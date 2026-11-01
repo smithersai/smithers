@@ -86,7 +86,7 @@ const securityReview = Smithers.SecurityReview({
         "A rewind option such as `detachedChildren: \"cancel\"` or `wholeRepo` reachable from an unvalidated string rather than the decoded literal union."
       ],
       paths: [
-        "src/CompensationHandlers.ts",
+        "src/CompensationHandlers.vibe",
         "src/internal/EffectHandlerRegistry.ts",
         "src/internal/Compensation.ts",
         "src/internal/Rewind.ts",

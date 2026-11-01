@@ -37,7 +37,10 @@
     ".": "./src/index.ts",
     "./internal/*": null,
     "./*/index": null,
-    "./CompensationHandlers": "./src/CompensationHandlers.ts",
+    "./CompensationHandlers": {
+      "types": "./src/CompensationHandlers.d.vibe.ts",
+      "default": "./src/CompensationHandlers.vibe"
+    },
     "./EffectBoundary": "./src/EffectBoundary.ts",
     "./Frame": {
       "types": "./src/Frame.d.vibe.ts",

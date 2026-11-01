@@ -10,7 +10,7 @@ import * as HashMap from "effect/HashMap"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import { Assessment, Classification, type Handler } from "../CompensationHandlers.ts"
+import { Assessment, Classification, type Handler } from "../CompensationHandlers.vibe"
 import { EffectRecord, EffectTier } from "../EffectBoundary.ts"
 import { error, type TimeTravelError } from "../TimeTravelError.vibe"
 

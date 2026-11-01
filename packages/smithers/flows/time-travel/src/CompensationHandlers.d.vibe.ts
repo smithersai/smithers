@@ -34,14 +34,12 @@
  *
  * @since 0.1.0
  */
-
-import * as Context from "effect/Context"
-import type * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
-import * as Schema from "effect/Schema"
-import type { EffectRecord, EffectTier } from "./EffectBoundary.ts"
-import type { TimeTravelError } from "./TimeTravelError.vibe"
-
+import * as Context from "effect/Context";
+import type * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
+import type { EffectRecord, EffectTier } from "./EffectBoundary.ts";
+import type { TimeTravelError } from "./TimeTravelError.vibe";
 /**
  * A handler's preflight verdict on one crossed effect: `revertible` means the
  * rewind compensates it, `warning` means it stands and the rewind discloses
@@ -50,15 +48,14 @@ import type { TimeTravelError } from "./TimeTravelError.vibe"
  * @since 0.1.0
  * @category models
  */
-export const Classification = Schema.Literals(["revertible", "warning", "blocking"])
+export declare const Classification: Schema.Literals<readonly ["revertible", "warning", "blocking"]>;
 /**
  * The value form of {@link Classification}.
  *
  * @since 0.1.0
  * @category models
  */
-export type Classification = typeof Classification.Type
-
+export type Classification = typeof Classification.Type;
 /**
  * A handler's preflight result: the {@link Classification}, why, and the
  * operator-facing `residue` that remains outside the journal if the boundary
@@ -71,19 +68,18 @@ export type Classification = typeof Classification.Type
  * @since 0.1.0
  * @category models
  */
-export const Assessment = Schema.Struct({
-  classification: Classification,
-  reason: Schema.String,
-  residue: Schema.String
-})
+export declare const Assessment: Schema.Struct<{
+    readonly classification: Schema.Literals<readonly ["revertible", "warning", "blocking"]>;
+    readonly reason: Schema.String;
+    readonly residue: Schema.String;
+}>;
 /**
  * The value form of {@link Assessment}.
  *
  * @since 0.1.0
  * @category models
  */
-export type Assessment = typeof Assessment.Type
-
+export type Assessment = typeof Assessment.Type;
 /**
  * One adapter's compensation for the effects it performs.
  *
@@ -99,60 +95,56 @@ export type Assessment = typeof Assessment.Type
  * @category models
  */
 export interface Handler {
-  /** The effect kind this compensates — the action name the engine journaled. */
-  readonly kind: string
-  /** The tier this handler is valid for. A mismatch assesses as blocking. */
-  readonly tier: EffectTier
-  /**
-   * Whether an idempotency key is required for the compensation to be safe.
-   * When true, an effect recorded without one assesses as blocking and is
-   * never reverted.
-   */
-  readonly requiresIdempotencyKey?: boolean | undefined
-  /**
-   * The compensation descriptor this handler implements, matched against the
-   * `compensation` the adapter recorded on the effect's boundary. An effect
-   * that recorded a descriptor resolves only to the handler declaring the
-   * same one: a handler swapped in after a restart with a different
-   * descriptor assesses as blocking, refuses to revert, and refuses to roll a
-   * receipt back. An effect that recorded none resolves by `kind` alone.
-   */
-  readonly compensation?: string | undefined
-  /** Operator-facing disclosure of what remains outside the journal. */
-  readonly residue: (effect: EffectRecord) => string
-  /** Optional refinement of the default `revertible` verdict. */
-  readonly assess?: ((effect: EffectRecord) => Effect.Effect<Assessment, TimeTravelError>) | undefined
-  /** Performs the compensation and returns its rollback material. */
-  readonly revert: (effect: EffectRecord) => Effect.Effect<unknown, TimeTravelError>
-  /**
-   * Undoes a compensation this handler performed, from the receipt `revert`
-   * returned. A rewind that fails after compensating replays these in reverse,
-   * so this is REQUIRED even when the answer is "nothing to undo": a silent
-   * default would make a handler that forgot to write one indistinguishable
-   * from one that deliberately has nothing to do.
-   */
-  readonly rollback: (effect: EffectRecord, receipt: unknown) => Effect.Effect<void, TimeTravelError>
+    /** The effect kind this compensates — the action name the engine journaled. */
+    readonly kind: string;
+    /** The tier this handler is valid for. A mismatch assesses as blocking. */
+    readonly tier: EffectTier;
+    /**
+     * Whether an idempotency key is required for the compensation to be safe.
+     * When true, an effect recorded without one assesses as blocking and is
+     * never reverted.
+     */
+    readonly requiresIdempotencyKey?: boolean | undefined;
+    /**
+     * The compensation descriptor this handler implements, matched against the
+     * `compensation` the adapter recorded on the effect's boundary. An effect
+     * that recorded a descriptor resolves only to the handler declaring the
+     * same one: a handler swapped in after a restart with a different
+     * descriptor assesses as blocking, refuses to revert, and refuses to roll a
+     * receipt back. An effect that recorded none resolves by `kind` alone.
+     */
+    readonly compensation?: string | undefined;
+    /** Operator-facing disclosure of what remains outside the journal. */
+    readonly residue: (effect: EffectRecord) => string;
+    /** Optional refinement of the default `revertible` verdict. */
+    readonly assess?: ((effect: EffectRecord) => Effect.Effect<Assessment, TimeTravelError>) | undefined;
+    /** Performs the compensation and returns its rollback material. */
+    readonly revert: (effect: EffectRecord) => Effect.Effect<unknown, TimeTravelError>;
+    /**
+     * Undoes a compensation this handler performed, from the receipt `revert`
+     * returned. A rewind that fails after compensating replays these in reverse,
+     * so this is REQUIRED even when the answer is "nothing to undo": a silent
+     * default would make a handler that forgot to write one indistinguishable
+     * from one that deliberately has nothing to do.
+     */
+    readonly rollback: (effect: EffectRecord, receipt: unknown) => Effect.Effect<void, TimeTravelError>;
 }
-
+declare const CompensationHandlers_base: Context.ServiceClass<CompensationHandlers, "@smthrs/time-travel/CompensationHandlers", readonly Handler[]>;
 /**
  * The handlers a composition contributes to time travel.
  *
  * @since 0.1.0
  * @category services
  */
-export class CompensationHandlers extends Context.Service<CompensationHandlers, ReadonlyArray<Handler>>()(
-  "@smthrs/time-travel/CompensationHandlers"
-) {}
-
+export declare class CompensationHandlers extends CompensationHandlers_base {
+}
 /**
  * Provides a set of handlers.
  *
  * @since 0.1.0
  * @category layers
  */
-export const layer = (handlers: ReadonlyArray<Handler>): Layer.Layer<CompensationHandlers> =>
-  Layer.succeed(CompensationHandlers)(handlers)
-
+export declare const layer: (handlers: ReadonlyArray<Handler>) => Layer.Layer<CompensationHandlers>;
 /**
  * Provides no handlers — the default, and what a composition with no
  * irreversible adapters wants.
@@ -160,4 +152,5 @@ export const layer = (handlers: ReadonlyArray<Handler>): Layer.Layer<Compensatio
  * @since 0.1.0
  * @category layers
  */
-export const layerNoop: Layer.Layer<CompensationHandlers> = layer([])
+export declare const layerNoop: Layer.Layer<CompensationHandlers>;
+export {};
