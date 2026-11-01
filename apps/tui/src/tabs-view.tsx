@@ -53,10 +53,12 @@ export function TabStrip(props: {
     )
   const used = pinned.reduce((sum, chip) => sum + stringWidth(chip.label) + 3, 0) + stringWidth(needs) +
     (summaryCounts === "" ? 0 : stringWidth(summaryCounts) + 3)
-  const label = focused === undefined ? "" : SubagentCard.clip(
-    `▸ ${focused.label}${focused.detail === undefined ? "" : ` · ${focused.detail}`}`,
-    Math.max(0, props.width - used - 2)
-  )
+  const room = Math.max(0, props.width - used - 2)
+  const detail = focused?.detail === undefined ? "" : ` · ${focused.detail}`
+  const shownDetail = stringWidth(detail) + 3 <= room ? detail : ""
+  const label = focused === undefined ?
+    "" :
+    `${SubagentCard.clip(`▸ ${focused.label}`, room - stringWidth(shownDetail))}${shownDetail}`
   return (
     <box style={{ flexDirection: "row", height: 1, width: props.width, flexShrink: 0, overflow: "hidden" }}>
       {pinned.map((chip) => (
@@ -215,9 +217,23 @@ export function WorkerView(props: {
       ? seatName(tab, props.models)
       : `${tab.harness.vendor}${
         tab.harness.session === undefined ? "" : ` · session ${tab.harness.session.slice(0, 8)}`
-      }`,
-    Tabs.clock(Tabs.elapsed(tab, props.now))
+      }`
   ].join(" · ")
+  const actions = Tabs.actions(tab)
+  // The actions keep their room; the model gives up cells before the clock gives up any.
+  const room = Math.max(
+    0,
+    props.width - 1 - actions.reduce(
+      (total, action) => total + stringWidth(`${action.keys[0]} ${action.label}`) + 3,
+      0
+    )
+  )
+  const elapsed = Tabs.clock(Tabs.elapsed(tab, props.now))
+  const metadata = room < stringWidth(elapsed) ?
+    "" :
+    room < stringWidth(elapsed) + 4 ?
+    elapsed :
+    `${SubagentCard.clip(facts, room - stringWidth(elapsed) - 3)} · ${elapsed}`
   const lines = Subagents.lines(
     Timeline.rows(transcript),
     Subagents.batches(transcript, props.tabs, tab.id),
@@ -241,8 +257,8 @@ export function WorkerView(props: {
           </text>
         </box>
         <box style={{ flexDirection: "row", height: 1 }}>
-          <text fg={color.faint} wrapMode="none" style={{ flexShrink: 1 }}>{facts}</text>
-          {Tabs.actions(tab).map((action) => (
+          <text fg={color.faint} wrapMode="none" style={{ width: room, flexShrink: 0 }}>{metadata}</text>
+          {actions.map((action) => (
             <Button
               key={action.id}
               keys={action.keys[0]!}

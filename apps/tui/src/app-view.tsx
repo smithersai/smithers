@@ -402,18 +402,30 @@ export function StatusLine(props: {
 }) {
   const renderer = useRenderer()
   const width = props.width ?? renderer.width
-  const right = props.items.reduce((total, item) => total + stringWidth(item.text) + 2, 0) +
-    (props.meter.label === "" ? 0 : stringWidth(props.meter.label) + 2)
-  const available = Math.max(0, width - right - 1)
-  const hints = Keys.fit(props.hints, Math.max(0, available - Math.min(stringWidth(props.lead), 24) - 2), stringWidth)
+  const meterWidth = props.meter.label === "" ? 0 : stringWidth(props.meter.label) + 2
+  const hints = Keys.fit(
+    props.hints,
+    Math.max(0, width - meterWidth - 1 - Math.min(stringWidth(props.lead), 24) - 2),
+    stringWidth
+  )
   const hintsWidth = hints.reduce((total, binding) => total + Keys.hintWidth(binding, stringWidth) + 2, 0)
+  // Actions fit first. Status items, including clocks, appear whole or wait for more room.
+  let room = Math.max(0, width - meterWidth - hintsWidth - 3)
+  const items = props.items.filter((item) => {
+    const cost = stringWidth(item.text) + 2
+    if (cost > room) return false
+    room -= cost
+    return true
+  })
+  const right = items.reduce((total, item) => total + stringWidth(item.text) + 2, meterWidth)
+  const available = Math.max(0, width - right - 1)
   const project = clipProject(props.lead, Math.max(0, available - hintsWidth - 2))
   return (
     <box style={{ flexDirection: "row", height: 1, paddingLeft: 1, flexShrink: 0, width }}>
       <text fg={color.faint} wrapMode="none" style={{ flexShrink: 0, marginRight: 2 }}>{project}</text>
       <View.KeyHints bindings={hints} />
       <box style={{ flexGrow: 1 }} />
-      <View.StatusItems items={props.items} onSelect={props.onItem} />
+      <View.StatusItems items={items} onSelect={props.onItem} />
       {props.meter.label === "" ?
         null :
         (

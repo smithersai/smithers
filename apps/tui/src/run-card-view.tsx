@@ -24,7 +24,13 @@ export function RunCardView(props: {
     : card.outcome === "done" || card.outcome === "working" || card.failure !== undefined
     ? card.duration
     : `${card.outcome} · ${card.duration}`
-  const metadata = ` · ${aside}${card.undone ? " · undone" : ""}`
+  const fullMetadata = ` · ${aside}${card.undone ? " · undone" : ""}`
+  const clockMetadata = card.outcome === "requested" || card.outcome === "queued" ? "" : ` · ${card.duration}`
+  const metadata = stringWidth(fullMetadata) < room ?
+    fullMetadata :
+    stringWidth(clockMetadata) < room
+    ? clockMetadata
+    : ""
   const outcome = card.failure !== undefined ?
     ` · failed: ${card.failure}` :
     card.result !== undefined

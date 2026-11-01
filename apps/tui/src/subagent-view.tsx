@@ -217,6 +217,18 @@ export const rowGlyph = (row: Inbox.Row, now: number): { readonly glyph: string;
 const callGlyph = { done: "●", failed: "●", running: "◐", requested: "○", cancelled: "■" } as const
 
 /**
+ * A graph box's second line, inside its fixed width: the clock reads whole and
+ * the model name gives up cells for it, so a box never shows `41.…`.
+ */
+const graphSub = (row: Inbox.Row): string => {
+  const room = Graph.size.width - 4
+  if (row.clock === "") return SubagentCard.clip(row.seat, room)
+  if (row.seat === "") return SubagentCard.clip(row.clock, room)
+  const rest = room - stringWidth(row.clock) - 3
+  return rest < 1 ? SubagentCard.clip(row.clock, room) : `${SubagentCard.clip(row.seat, rest)} · ${row.clock}`
+}
+
+/**
  * The run forest around `row` as a graph: its root worker and every agent under it, or a flow run
  * and its node calls. Rows supply each box's name, seat and clock.
  */
@@ -236,7 +248,7 @@ export const forest = (
       glyph: glyph.glyph,
       tone: glyph.tone,
       name: each.name,
-      sub: [each.seat, each.clock].filter((part) => part !== "").join(" · "),
+      sub: graphSub(each),
       children
     }
   }
@@ -354,13 +366,18 @@ export const treeRow = (
   seat: number
 ): { readonly title: string; readonly gap: number; readonly aside: string } => {
   const pad = (text: string, width: number) => SubagentCard.clip(text, width - 1).padEnd(width)
+  // The columns leave the clipped name one cell and the space before it, so the pane never cuts them off.
+  const cap = Math.max(0, inner - 3 - lead)
+  // A clock reads whole or not at all: a narrow pane never trims `5.1s` to `5.1`.
+  const clock = stringWidth(row.clock) <= cap ? row.clock : ""
   // A clock wider than its column, a park's `resets 21:43`, takes the empty seat column too.
-  const aside = `${
-    row.seat === "" && stringWidth(row.clock) >= columns.clock
-      ? pad(row.clock, seat + columns.clock)
-      : `${pad(row.seat, seat)}${pad(row.clock, columns.clock)}`
-  }`
-  const right = seat + columns.clock
+  const clockWidth = Math.min(cap, Math.max(columns.clock, stringWidth(clock) + 1))
+  // The model name gives up cells for the clock before the clock gives up any.
+  const seatWidth = Math.max(0, Math.min(seat, cap - clockWidth))
+  const right = seatWidth + clockWidth
+  const aside = row.seat === "" && stringWidth(clock) >= columns.clock
+    ? pad(clock, right)
+    : `${pad(row.seat, seatWidth)}${clock.padEnd(clockWidth)}`
   // One space always separates the clipped name from the seat column.
   const title = SubagentCard.clip(row.name, Math.max(1, inner - 2 - lead - right))
   return { title, gap: Math.max(1, inner - 1 - lead - stringWidth(title) - right), aside }

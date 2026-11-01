@@ -231,6 +231,8 @@ by side in the overview's cards pane, the POC's open questions under it.
 In the Summary overview **g** draws the selected row's run forest as a graph, left to right: a worker and every agent under it, or a flow run and its node calls; j and k move the selection and **g** returns to the list.
 
 The footer shows the project and branch, clipped from the left, then key hints.
+Key hints come before contributed status items, and an item appears whole or
+waits for room, so a clock never reads `5.1` without its unit.
 Context use appears only from 70% as `ctx 74%`. Ctrl+O details show session
 input and output tokens including agents, with dollars marked estimated.
 
@@ -404,7 +406,7 @@ stopped, else `●`, in
 the color of its state (running, waiting for queued, parked or children, done,
 failed, stopped), its model and its clock. Chat and Summary stay pinned in
 the tab strip beside run counts. Only the focused run has a chip, with its
-title and clock clipped to fit; finished runs open from Summary. Click a tab,
+title clipped to fit beside its whole clock; finished runs open from Summary. Click a tab,
 a worker or a card to open it. A worker's tab starts with
 its title in its lane color and `Back (ctrl+y)` (`Release (ctrl+y)` while
 driving it), then its status, model, clock and buttons for the actions its
