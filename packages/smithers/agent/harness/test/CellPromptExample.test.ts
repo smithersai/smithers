@@ -1,7 +1,7 @@
 import { Effect, Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Cell from "../src/Cell.ts"
-import * as CellPrompt from "../src/internal/cellPrompt.vibe"
+import * as CellPrompt from "../src/internal/cellPrompt.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import type * as Sandbox from "../src/Sandbox.ts"
 

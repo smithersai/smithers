@@ -138,7 +138,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/internal/untrustedData.ts",
-        "src/internal/cellPrompt.vibe",
+        "src/internal/cellPrompt.ts",
         "src/internal/printsObservation.ts",
         "src/CallLedger.vibe",
         "src/NarrowedCheck.vibe",
