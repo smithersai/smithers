@@ -46,3 +46,16 @@ test("a requested read above the live edge lands on its own entry and stops foll
   expect(decideTranscriptScroll({ following: true }, tall, { top: 0, height: 0 }, "user"))
     .toEqual({ top: 4560, following: true });
 });
+
+test("an explicit read interrupts deferred follow before its scroll event arrives", async () => {
+  const { transcriptFollowInterrupted } = await import("../src/chat/transcriptScroll");
+  expect(transcriptFollowInterrupted(1200, { scrollTop: 300, clientHeight: 600, scrollHeight: 2400 }, 64)).toBe(true);
+  // Content growth without a new scroll position keeps following armed.
+  expect(transcriptFollowInterrupted(1200, { scrollTop: 1200, clientHeight: 600, scrollHeight: 2400 }, 64)).toBe(false);
+  // Browser anchoring at the new bottom and end clamping preserve the live edge.
+  expect(transcriptFollowInterrupted(1200, { scrollTop: 1800, clientHeight: 600, scrollHeight: 2400 }, 64)).toBe(false);
+  expect(transcriptFollowInterrupted(1200, { scrollTop: 0, clientHeight: 600, scrollHeight: 300 }, 64)).toBe(false);
+  expect(transcriptFollowInterrupted(300, { scrollTop: 301, clientHeight: 600, scrollHeight: 2400 }, 64)).toBe(false);
+  expect(transcriptFollowInterrupted(1700, { scrollTop: 1736, clientHeight: 600, scrollHeight: 2400 }, 64)).toBe(false);
+  expect(transcriptFollowInterrupted(1700, { scrollTop: 1735, clientHeight: 600, scrollHeight: 2400 }, 64)).toBe(true);
+});

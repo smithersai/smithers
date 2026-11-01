@@ -17,7 +17,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { cn } from "../cn";
-import { decideTranscriptScroll } from "./transcriptScroll";
+import { decideTranscriptScroll, transcriptFollowInterrupted } from "./transcriptScroll";
 import { prefersReducedMotion, useInjectUiCss } from "../styles";
 import { subscribeVisibility } from "./visibilitySubscriptionRegistry";
 
@@ -844,6 +844,7 @@ function MessageScrollerProviderImpl({
       // An in-flight programmatic jump-to-latest keeps re-targeting the moving
       // bottom, so streaming growth mid-flight cannot strand the jump.
       const jumpingToLatest = ignoreScrollUntilBottomRef.current;
+      if (followingRef.current && !jumpingToLatest && !restorePendingRef.current && transcriptFollowInterrupted(snapshotRef.current.scrollTop, viewport, thresholdRef.current)) setFollowing(false);
       if (anchoringRef.current && (followingRef.current || jumpingToLatest) && !restorePendingRef.current) {
         viewport.scrollTop = viewport.scrollHeight;
         if (jumpingToLatest && measure(viewport)) {

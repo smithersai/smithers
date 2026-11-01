@@ -29,3 +29,11 @@ export function decideTranscriptScroll(
     : maxTop;
   return { top: Math.min(maxTop, Math.max(0, target)), following: true };
 }
+
+/** A new position away from the live edge is an explicit read, even before the browser delivers its scroll event. */
+export const transcriptFollowInterrupted = (
+  rememberedTop: number,
+  viewport: { readonly scrollTop: number; readonly clientHeight: number; readonly scrollHeight: number },
+  threshold: number,
+): boolean => Math.abs(viewport.scrollTop - rememberedTop) > 1 &&
+  Math.max(0, viewport.scrollHeight - viewport.clientHeight) - viewport.scrollTop > threshold;
