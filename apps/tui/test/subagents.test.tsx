@@ -86,7 +86,7 @@ describe("run receipts", () => {
     })
     expect(Subagents.result(patched)).toEqual({
       files: [{ path: "src/cart.js", added: 2, removed: 1 }],
-      check: { command: "npm test; npm run lint", exit: 0 }
+      check: { command: "npm test ↵ npm run lint", exit: 0 }
     })
     const undone = Transcript.undone(patched, [edit!.identity!], ["src/cart.js"], 20)
     expect(Subagents.result(undone).files).toEqual([])
@@ -97,18 +97,21 @@ describe("run receipts", () => {
     const check = (command: string, exitCode: number) =>
       Subagents.result(cell(Transcript.empty, 10, "", [{ flow: "bash", input: { command }, exitCode }])).check
     expect(check("node -e \"process.exit(7)\"\nnode -e \"process.exit(0)\"", 0)).toEqual({
-      command: "node -e \"process.exit(7)\"; node -e \"process.exit(0)\"",
+      command: "node -e \"process.exit(7)\" ↵ node -e \"process.exit(0)\"",
       exit: 0
     })
     expect(check("node -e \"process.exit(0)\"\nnode -e \"process.exit(7)\"", 7)).toEqual({
-      command: "node -e \"process.exit(0)\"; node -e \"process.exit(7)\"",
+      command: "node -e \"process.exit(0)\" ↵ node -e \"process.exit(7)\"",
       exit: 7
     })
     expect(check("bun test \\\n  ./test &&\n  bun run typecheck\n", 0)).toEqual({
-      command: "bun test ./test && bun run typecheck",
+      command: "bun test \\ ↵   ./test && ↵   bun run typecheck ↵ ",
       exit: 0
     })
-    expect(check("if test -f a; then\n  echo a\nfi", 0)).toEqual({ command: "if test -f a; then echo a; fi", exit: 0 })
+    expect(check("if test -f a; then\n  echo a\nfi", 0)).toEqual({
+      command: "if test -f a; then ↵   echo a ↵ fi",
+      exit: 0
+    })
   })
 
   it("keeps a version-control validation or failure as the check, and drops only a state display", () => {
@@ -127,7 +130,7 @@ describe("run receipts", () => {
     expect(check("git status && npm test", 0)).toEqual({ command: "git status && npm test", exit: 0 })
     expect(check("git commit -m fix", 0)).toEqual({ command: "git commit -m fix", exit: 0 })
     expect(check("git status", 128)).toEqual({ command: "git status", exit: 128 })
-    for (const shown of ["git status --porcelain; git diff", "git diff -- src", "jj st", "git log --oneline | head"]) {
+    for (const shown of ["git status --porcelain; git diff", "git diff -- src", "jj st"]) {
       expect(check(shown, 0)).toEqual({ command: "npm test", exit: 0 })
     }
   })

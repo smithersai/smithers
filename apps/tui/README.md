@@ -387,7 +387,11 @@ independent requests should name disjoint files. Worker transcripts persist in
 separate session files. Chat shows one host-owned card per requested run.
 It updates in place: glyph, title and duration, up to three live steps, then
 at most two lines of the final answer, changed files with line counts, and
-the last command's exit status. **d** Diff, **u** Undo and **enter** Open use
+the last check's command and exit status. Successful plain VCS inspections leave
+the preceding check in place; pipelines and uncertain commands keep their results.
+Command lines mark physical line breaks with `↵`, preserving quotes, continuations
+and heredoc contents; the original source stays in the opened program.
+**d** Diff, **u** Undo and **enter** Open use
 the run's actual receipts; Undo appears only while changes can be reversed.
 Workers and file flows use the same card. A scalar flow result fits on one
 line: `✓ wordcount · 40ms → 5`. There is no extra acknowledgement or finished

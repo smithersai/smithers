@@ -98,13 +98,13 @@ test("a multiline command is one step and one receipt", () => {
     transcript([{ flow: "bash", subject: script, status: "running", startedAt: 3_000 }]),
     5_000
   )
-  expect(live.steps).toEqual(["◐ node -e \"process.exit(7)\"; node -e \"process.exit(0)\""])
+  expect(live.steps).toEqual(["◐ node -e \"process.exit(7)\" ↵ node -e \"process.exit(0)\""])
   const settled = RunCard.worker(
     { ...tab, status: "done", endedAt: 6_000 },
     transcript([{ flow: "bash", subject: script, status: "ok", exit: 0, startedAt: 3_000 }]),
     9_000
   )
-  expect(settled.receipts).toEqual(["node -e \"process.exit(7)\"; node -e \"process.exit(0)\" exit 0"])
+  expect(settled.receipts).toEqual(["node -e \"process.exit(7)\" ↵ node -e \"process.exit(0)\" exit 0"])
 })
 
 test("a failed git validation is the receipt; a state display after the check is not", () => {

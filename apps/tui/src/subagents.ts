@@ -9,31 +9,27 @@ import type { Tab } from "./workspace.ts"
 /** A settled worker's evidence in one line: each changed file's counts, and its last command's exit status. */
 export interface Result {
   readonly files: ReadonlyArray<SubagentCard.File>
+  /** Compact command display and the shell's result; original source stays in the transcript. */
   readonly check?: { readonly command: string; readonly exit: number }
 }
 
 /**
- * A whole command on one line, as the shell read it: a line break reads as `;`
- * unless the line already continues (`&&`, `|`, `\`).
+ * Compact source display: mark each physical line break with `↵` and keep the rest of the source as
+ * written, without interpreting shell syntax. A tab reads as one space so the line measures and clips
+ * as a terminal draws it; no other character is added, dropped or reordered.
  */
-export const oneLine = (command: string): string =>
-  command.split("\n").map((line) => line.trim()).filter((line) => line !== "").reduce((joined, line) =>
-    joined === ""
-      ? line
-      : joined.endsWith("\\")
-      ? `${joined.slice(0, -1).trimEnd()} ${line}`
-      : /(?:;|&&|\|\||\||\{|\(|\bthen|\bdo|\belse)$/.test(joined)
-      ? `${joined} ${line}`
-      : `${joined}; ${line}`, "")
+export const oneLine = (command: string): string => command.replaceAll(/\r\n|[\n\r]/g, " ↵ ").replaceAll("\t", " ")
 
-const showsState = /^(?:git|jj)\s+(?:status|st|diff|log|show|blame)\b(?!.*\s--(?:check|exit-code|quiet)\b)/
+const showsState =
+  /^(?:git|jj)[ \t]+(?:status|st|diff|log|show|blame)\b(?!.*[ \t]--(?:check|exit-code|quiet)\b)(?:[ \t]+[A-Za-z0-9_./:@%+=,-]+)*[ \t]*$/
 /**
- * A command that only shows version control's state (`git status`, `jj diff`) checks nothing about the
- * work; one that validates (`git diff --check`), does anything else, or fails is a check.
+ * Omit only successful plain VCS inspections, optionally separated by known command boundaries.
+ * The whole segment must match: pipes, redirections, quotes, expansions and other uncertain syntax
+ * stay receipts. In particular, operators inside quoted arguments cannot turn into command boundaries.
  */
 const inspects = (command: string, exit: number): boolean =>
   exit === 0 &&
-  command.split(/\s*(?:&&|\|\||;)\s*/).every((segment) => segment === "" || showsState.test(segment))
+  command.trim().split(/[ \t]*(?:&&|\|\||;|\n)[ \t]*/).every((segment) => showsState.test(segment))
 
 /**
  * A worker's result from its transcript: files summed per path in first-seen order, undone changes left
@@ -45,8 +41,10 @@ export const result = (transcript: Transcript.Transcript): Result => {
   for (const item of transcript.items) {
     if (item.kind !== "cell") continue
     for (const call of item.calls) {
-      const command = oneLine(call.subject)
-      if (call.exit !== undefined && !inspects(command, call.exit)) check = { command, exit: call.exit }
+      const command = call.subject
+      if (call.exit !== undefined && !inspects(command, call.exit)) {
+        check = { command: oneLine(command), exit: call.exit }
+      }
       for (const patch of call.patches ?? []) {
         if (patch.undone === true) continue
         const counts = SubagentCard.diffCounts(patch.patch)
