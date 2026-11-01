@@ -8,7 +8,7 @@
 
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as Schedule from "./Schedule.ts"
+import * as Schedule from "./Schedule.vibe"
 import { fromSchemaError, type TriggerError } from "./TriggerError.vibe"
 
 /**

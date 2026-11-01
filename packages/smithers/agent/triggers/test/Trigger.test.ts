@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
-import * as Schedule from "../src/Schedule.ts"
+import * as Schedule from "../src/Schedule.vibe"
 import * as Trigger from "../src/Trigger.ts"
 
 describe("Trigger", () => {

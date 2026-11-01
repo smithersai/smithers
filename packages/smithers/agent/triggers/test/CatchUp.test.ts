@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
-import * as CatchUp from "../src/CatchUp.ts"
+import * as CatchUp from "../src/CatchUp.vibe"
 import * as Cron from "../src/Cron.ts"
 
 describe("CatchUp", () => {

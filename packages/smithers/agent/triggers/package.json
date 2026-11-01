@@ -38,7 +38,10 @@
     "./migrations/*": null,
     "./internal/*": null,
     "./*/index": null,
-    "./CatchUp": "./src/CatchUp.ts",
+    "./CatchUp": {
+      "types": "./src/CatchUp.d.vibe.ts",
+      "default": "./src/CatchUp.vibe"
+    },
     "./Channel": {
       "types": "./src/Channel.d.vibe.ts",
       "default": "./src/Channel.vibe"
@@ -46,7 +49,10 @@
     "./Cron": "./src/Cron.ts",
     "./DispatchReader": "./src/DispatchReader.ts",
     "./Overlap": "./src/Overlap.ts",
-    "./Schedule": "./src/Schedule.ts",
+    "./Schedule": {
+      "types": "./src/Schedule.d.vibe.ts",
+      "default": "./src/Schedule.vibe"
+    },
     "./Scheduler": "./src/Scheduler.ts",
     "./SqlTriggerStore": "./src/SqlTriggerStore.ts",
     "./Trigger": "./src/Trigger.ts",
