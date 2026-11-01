@@ -6,8 +6,8 @@ import { Effect, Exit, Option } from "effect"
 import type { SqlClient } from "effect/sql/SqlClient"
 import type { SqlError } from "effect/sql/SqlError"
 import type { Fragment } from "effect/sql/Statement"
-import * as ReadOnly from "./internal/ReadOnly.ts"
-import * as ReadTransaction from "./internal/ReadTransaction.ts"
+import * as ReadOnly from "./internal/ReadOnly.vibe"
+import * as ReadTransaction from "./internal/ReadTransaction.vibe"
 
 /**
  * Whether `sql` is a PostgreSQL client. Every other dialect, including SQLite

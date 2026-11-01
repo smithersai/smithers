@@ -15,7 +15,7 @@
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Metric from "effect/Metric"
-import * as Tallies from "./internal/WriteTally.ts"
+import * as Tallies from "./internal/WriteTally.vibe"
 
 /**
  * Counter over write transaction replays. Incremented once per scheduled

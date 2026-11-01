@@ -4,8 +4,6 @@
  * @since 1.0.0
  */
 
-import { Context, Duration, Effect } from "effect"
-
 /**
  * One open tally: what the writes inside it cost so far.
  *
@@ -15,8 +13,8 @@ import { Context, Duration, Effect } from "effect"
 export interface Accumulator {
   transactions: number
   schemaWide: number
-  lockWait: Duration.Duration
-  maxLockWait: Duration.Duration
+  lockWait: Duration
+  maxLockWait: Duration
 }
 
 /**
@@ -49,15 +47,14 @@ export const Current = Context.Reference<ReadonlyArray<Accumulator>>("@smthrs/da
  * @category internal
  * @since 1.0.0
  */
-export const record = (waited: Duration.Duration, wait: Wait): Effect.Effect<void> =>
-  Effect.gen(function*() {
-    for (const accumulator of yield* Current) {
-      if (wait === "schema" || wait === "partition") accumulator.transactions += 1
-      if (wait === "schema" || wait === "widen") accumulator.schemaWide += 1
-      accumulator.lockWait = Duration.sum(accumulator.lockWait, waited)
-      accumulator.maxLockWait = Duration.millis(Math.max(
-        Duration.toMillis(accumulator.maxLockWait),
-        Duration.toMillis(waited)
-      ))
-    }
-  })
+export const record = effect (waited: Duration, wait: Wait): void!! => {
+  for (const accumulator of try Current) {
+    if (wait === "schema" || wait === "partition") accumulator.transactions += 1
+    if (wait === "schema" || wait === "widen") accumulator.schemaWide += 1
+    accumulator.lockWait = Duration.sum(accumulator.lockWait, waited)
+    accumulator.maxLockWait = Duration.millis(Math.max(
+      Duration.toMillis(accumulator.maxLockWait),
+      Duration.toMillis(waited)
+    ))
+  }
+}

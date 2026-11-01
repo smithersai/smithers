@@ -4,8 +4,6 @@
  * @since 1.0.0
  */
 
-import { Context } from "effect"
-
 /**
  * The partition the transaction or savepoint about to begin writes, or
  * `undefined` for the whole store. `DurableWriter.write` sets it around the
