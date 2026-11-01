@@ -1,7 +1,6 @@
 import { Badge, Button, Card, CardContent, Input } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useNavigate } from "@tanstack/react-router"
-import { OPEN_SETTINGS } from "../../auth/contract"
 import { useAuth } from "../../auth/components/AuthContext"
 import { SignInButton } from "../../auth/components/SignInButton"
 import { INSTALL } from "../../repo/contract"
@@ -15,7 +14,7 @@ const MARK = { done: "success", next: "default", later: "muted" } as const
 
 // The first run's steps (decision 0121), just above the composer's place on `/app` until the person has a conversation
 // of their own: each step's mark (✓ once done, else its number) and title, and the current step's one action. Sign in
-// is sign-in's own link; Open settings goes to Your model; at Ask, the composer's Chat ⌘K under the list is the button.
+// is sign-in's own link; signed-in model setup uses the shared toast; at Ask, Chat ⌘K under the list is the button.
 // For a person who may not ask in `/app`'s conversation (ruling AUTH-8), Open your repository takes the repository's
 // name and opens its page, beside Install, the Smithers GitHub App's installation, when the deployment has one.
 export function FirstRunSteps() {
@@ -57,18 +56,7 @@ export function FirstRunSteps() {
         </form>
       )
     }
-    if (step.id !== "model") return null
-    return (
-      <Button
-        size="sm"
-        onClick={() => {
-          actions.press("model")
-          void navigate({ to: "/app/settings" })
-        }}
-      >
-        {OPEN_SETTINGS}
-      </Button>
-    )
+    return null
   }
   return (
     <section className="first-run" aria-label={GET_STARTED}>
@@ -82,7 +70,6 @@ export function FirstRunSteps() {
                 data-step={step.id}
                 data-state={step.state}
                 aria-current={step.state === "next" ? "step" : undefined}
-                {...(step.id === "model" && step.state === "next" ? { "data-add-model": "" } : {})}
               >
                 {step.state === "done"
                   ? <Badge variant={MARK.done} role="img" aria-label={DONE}>✓</Badge>

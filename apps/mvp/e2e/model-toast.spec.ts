@@ -26,7 +26,7 @@ test("model setup overlays existing history, survives reload, opens Settings and
     expect((await page.request.post("/api/questions", { data: { id, answerId, text } })).status()).toBe(202)
     expect((await page.request.post(`/api/answers/${answerId}`, { data: { status: "failed", failure: "unfinished" } })).status()).toBe(200)
     await page.reload()
-    await expect(page.getByRole("region", { name: "Conversation", exact: true })).toContainText(text, { timeout: 60_000 })
+    await expect(page.locator("section.app-shell-conversation")).toContainText(text, { timeout: 60_000 })
     await expect(notice).toBeVisible({ timeout: 30_000 })
     await expect(page.locator("[data-add-model]")).toHaveCount(1)
     await expect(page.locator(".app-shell-center [data-add-model], .sui-empty[data-add-model]")).toHaveCount(0)
@@ -36,7 +36,7 @@ test("model setup overlays existing history, survives reload, opens Settings and
   })
 
   await step("Hide gives the conversation the same space; reload checks the prerequisite again", async () => {
-    const conversation = page.getByRole("region", { name: "Conversation", exact: true })
+    const conversation = page.locator("section.app-shell-conversation")
     const before = await conversation.boundingBox()
     await notice.getByRole("button", { name: "Hide", exact: true }).click()
     await expect(notice).toHaveCount(0)
