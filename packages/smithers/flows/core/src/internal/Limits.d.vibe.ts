@@ -6,9 +6,7 @@
  *
  * @since 1.0.0-rc.17
  */
-
-import * as Schema from "effect/Schema"
-
+import * as Schema from "effect/Schema";
 /**
  * A positive safe-integer budget ceiling.
  *
@@ -18,11 +16,7 @@ import * as Schema from "effect/Schema"
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export const BudgetCeiling = Schema.Int.check(
-  Schema.isGreaterThan(0),
-  Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
-)
-
+export declare const BudgetCeiling: Schema.Int;
 /**
  * A positive, finite dollar ceiling. Dollars are divisible, so `0.5` is fifty
  * cents.
@@ -30,8 +24,7 @@ export const BudgetCeiling = Schema.Int.check(
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export const UsdCeiling = Schema.Finite.check(Schema.isGreaterThan(0))
-
+export declare const UsdCeiling: Schema.Finite;
 /**
  * What a run does when a model call would exceed one of its ceilings.
  *
@@ -42,8 +35,7 @@ export const UsdCeiling = Schema.Finite.check(Schema.isGreaterThan(0))
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export const BudgetOnExceeded = Schema.Literals(["fail", "warn", "skip-remaining", "park"])
-
+export declare const BudgetOnExceeded: Schema.Literals<readonly ["fail", "warn", "skip-remaining", "park"]>;
 /**
  * The ceilings a flow declares for one run, and what exceeding them does.
  *
@@ -54,21 +46,19 @@ export const BudgetOnExceeded = Schema.Literals(["fail", "warn", "skip-remaining
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export const Budget = Schema.Struct({
-  tokens: Schema.optional(BudgetCeiling),
-  milliseconds: Schema.optional(BudgetCeiling),
-  usd: Schema.optional(UsdCeiling),
-  onExceeded: Schema.optional(BudgetOnExceeded)
-})
-
+export declare const Budget: Schema.Struct<{
+    readonly tokens: Schema.optional<Schema.Int>;
+    readonly milliseconds: Schema.optional<Schema.Int>;
+    readonly usd: Schema.optional<Schema.Finite>;
+    readonly onExceeded: Schema.optional<Schema.Literals<readonly ["fail", "warn", "skip-remaining", "park"]>>;
+}>;
 /**
  * The ceilings a flow declares for one run.
  *
  * @category models
  * @since 1.0.0-rc.17
  */
-export type Budget = typeof Budget.Type
-
+export type Budget = typeof Budget.Type;
 /**
  * The sandbox providers a flow may name, one per `@smthrs/sandbox` provider
  * module.
@@ -76,19 +66,7 @@ export type Budget = typeof Budget.Type
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export const SandboxProvider = Schema.Literals([
-  "aws",
-  "cloudflare",
-  "command",
-  "container",
-  "daytona",
-  "directory",
-  "just-bash",
-  "kubernetes",
-  "microsandbox",
-  "vercel"
-])
-
+export declare const SandboxProvider: Schema.Literals<readonly ["aws", "cloudflare", "command", "container", "daytona", "directory", "just-bash", "kubernetes", "microsandbox", "vercel"]>;
 /**
  * The sandbox a flow selects: the provider, plus the neutral network policy
  * and resource limits every `@smthrs/sandbox` provider accepts
@@ -98,21 +76,19 @@ export const SandboxProvider = Schema.Literals([
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export const SandboxSelection = Schema.Struct({
-  provider: SandboxProvider,
-  network: Schema.optionalKey(Schema.Union([
-    Schema.Literals(["none", "open"]),
-    Schema.Struct({ allow: Schema.Array(Schema.String) })
-  ])),
-  cpus: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThan(0))),
-  memoryMib: Schema.optionalKey(BudgetCeiling),
-  timeoutSecs: Schema.optionalKey(BudgetCeiling)
-})
-
+export declare const SandboxSelection: Schema.Struct<{
+    readonly provider: Schema.Literals<readonly ["aws", "cloudflare", "command", "container", "daytona", "directory", "just-bash", "kubernetes", "microsandbox", "vercel"]>;
+    readonly network: Schema.optionalKey<Schema.Union<readonly [Schema.Literals<readonly ["none", "open"]>, Schema.Struct<{
+        readonly allow: Schema.$Array<Schema.String>;
+    }>]>>;
+    readonly cpus: Schema.optionalKey<Schema.Finite>;
+    readonly memoryMib: Schema.optionalKey<Schema.Int>;
+    readonly timeoutSecs: Schema.optionalKey<Schema.Int>;
+}>;
 /**
  * The sandbox a flow selects.
  *
  * @category models
  * @since 1.0.0-rc.17
  */
-export type SandboxSelection = typeof SandboxSelection.Type
+export type SandboxSelection = typeof SandboxSelection.Type;

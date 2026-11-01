@@ -25,7 +25,7 @@ import * as Effect from "effect/Effect"
  * @category hashing
  * @since 1.0.0
  */
-export const provideSync = <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>): Effect.Effect<A, E> =>
+export const provideSync = <A, E>(effect: A!E!Crypto.Crypto): A!E =>
   Effect.provideService(effect, Crypto.Crypto, syncCrypto)
 
 /**

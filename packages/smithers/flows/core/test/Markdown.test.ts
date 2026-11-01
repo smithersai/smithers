@@ -3,7 +3,7 @@ import * as Option from "effect/Option"
 import * as Result from "effect/Result"
 
 import { describe, expect, it } from "vitest"
-import * as Annotations from "../src/Annotations.ts"
+import * as Annotations from "../src/Annotations.vibe"
 import * as Effects from "../src/Effects.ts"
 
 import * as Markdown from "../src/Markdown.ts"
