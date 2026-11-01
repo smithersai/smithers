@@ -39,7 +39,10 @@
     "./*/index": null,
     "./CompensationHandlers": "./src/CompensationHandlers.ts",
     "./EffectBoundary": "./src/EffectBoundary.ts",
-    "./Frame": "./src/Frame.ts",
+    "./Frame": {
+      "types": "./src/Frame.d.vibe.ts",
+      "default": "./src/Frame.vibe"
+    },
     "./MemoryTimeTravelStore": "./src/MemoryTimeTravelStore.ts",
     "./Migrations": "./src/Migrations.ts",
     "./SqlTimeTravelStore": "./src/SqlTimeTravelStore.ts",

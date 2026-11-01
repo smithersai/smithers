@@ -4,7 +4,7 @@
  * by two edges is one descendant.
  */
 import { describe, expect, it } from "@effect/vitest"
-import type { LineageEdge } from "../src/Frame.ts"
+import type { LineageEdge } from "../src/Frame.vibe"
 import * as LineageTree from "../src/internal/LineageTree.ts"
 
 const edge = (

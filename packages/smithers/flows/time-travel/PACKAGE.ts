@@ -150,7 +150,7 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/HistoryLimit.vibe",
         "src/internal/SnapshotProjector.ts",
         "src/internal/Rewind.ts",
-        "src/Frame.ts",
+        "src/Frame.vibe",
         "src/TimeTravel.ts"
       ]
     }
