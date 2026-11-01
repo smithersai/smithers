@@ -19,7 +19,7 @@ import { Runtime } from "@smthrs/flows"
 import { Ownership } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import * as CloudflareHost from "./CloudflareHost.ts"
+import * as CloudflareHost from "./CloudflareHost.vibe"
 
 /**
  * What one execution's runtime is configured with.

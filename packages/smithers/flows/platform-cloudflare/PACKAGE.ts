@@ -95,7 +95,7 @@ const securityReview = Smithers.SecurityReview({
         "CloudflareRuntime.layer's canExecute admitting a run other than its own executionId, or a sweep other than { host: executionId }.",
         "An OwnerIdentity that can mint one incarnation number for two runtimes, such as one read from process.pid."
       ],
-      paths: ["src/CloudflareHost.ts", "src/CloudflareRuntime.ts"]
+      paths: ["src/CloudflareHost.vibe", "src/CloudflareRuntime.ts"]
     },
     {
       id: "alarm-never-drops-an-execution",
@@ -125,7 +125,7 @@ const securityReview = Smithers.SecurityReview({
         "The start span ending with the caller's exit, whose failure becomes an exported exception.",
         "failureType reading anything but an error's tag."
       ],
-      paths: ["src/ExecutionObject.ts", "src/internal/FailureDetail.ts"]
+      paths: ["src/ExecutionObject.ts", "src/internal/FailureDetail.vibe"]
     },
     {
       id: "fail-closed-refusals",
@@ -137,7 +137,7 @@ const securityReview = Smithers.SecurityReview({
         "A ChildProcessSpawner or Jj operation that succeeds.",
         "The FetchHttpClient RequestInit set to anything other than redirect: \"manual\"."
       ],
-      paths: ["src/CloudflareHost.ts", "src/internal/Refusals.ts"]
+      paths: ["src/CloudflareHost.vibe", "src/internal/Refusals.vibe"]
     }
   ]
 })
