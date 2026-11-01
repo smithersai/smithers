@@ -53,7 +53,7 @@ export * as FileSet from "./FileSet.vibe"
  * @category models
  * @slop
  */
-export * as Effects from "./Effects.ts"
+export * as Effects from "./Effects.vibe"
 
 /**
  * @since 0.1.0
