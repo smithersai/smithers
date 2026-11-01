@@ -21,7 +21,7 @@
  */
 
 import { Schema } from "effect"
-import type * as Notification from "./Notification.ts"
+import type * as Notification from "./Notification.vibe"
 
 /**
  * How hard the model should think.

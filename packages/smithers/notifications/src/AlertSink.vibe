@@ -8,7 +8,6 @@
  * @since 1.0.0
  */
 
-import { Context, Effect, Layer, Schema } from "effect"
 import type { Alert } from "./AlertPolicy.ts"
 
 /**
@@ -81,7 +80,7 @@ export interface SinkService {
    * A failure means the page did not go out. Succeeding on a page that was
    * dropped is the one thing this port must never do.
    */
-  readonly deliver: (alert: Alert) => Effect.Effect<void, AlertError>
+  readonly deliver: (alert: Alert) => void!AlertError
 }
 
 /**
@@ -102,4 +101,4 @@ export class Sink extends Context.Service<Sink, SinkService>()("/notifications/A
  * @category layers
  * @since 0.1.0
  */
-export const layerNoop: Layer.Layer<Sink> = Layer.succeed(Sink)({ deliver: () => Effect.void })
+export const layerNoop: Layer<Sink> = Layer.succeed(Sink)({ deliver: () => Effect.void })

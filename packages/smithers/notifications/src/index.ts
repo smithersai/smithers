@@ -20,13 +20,13 @@ export * as Channels from "./Channels.ts"
  * @category routing
  * @since 1.0.0
  */
-export * as Inbox from "./Inbox.ts"
+export * as Inbox from "./Inbox.vibe"
 
 /**
  * @category models
  * @since 0.1.0
  */
-export * as Notification from "./Notification.ts"
+export * as Notification from "./Notification.vibe"
 
 /**
  * @category events

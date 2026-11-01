@@ -3,7 +3,7 @@
  * notification, and what a harness reads back out of one.
  */
 import { describe, expect, it } from "vitest"
-import type * as Notification from "../src/Notification.ts"
+import type * as Notification from "../src/Notification.vibe"
 import * as SteerPayload from "../src/SteerPayload.ts"
 
 const provenance = { sourceRunId: "run", sourceLineageId: "run/root", sourceTurn: 0, sourceActor: "human:will" }

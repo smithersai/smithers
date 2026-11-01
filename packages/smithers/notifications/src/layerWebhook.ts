@@ -15,7 +15,7 @@ import * as Headers from "effect/http/Headers"
 import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import { alertId } from "./AlertPolicy.ts"
-import { AlertError, Sink } from "./AlertSink.ts"
+import { AlertError, Sink } from "./AlertSink.vibe"
 
 /**
  * How long the webhook sink waits for an answer before it calls the page

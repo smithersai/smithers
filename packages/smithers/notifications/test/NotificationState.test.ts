@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import type { Notification } from "../src/Notification.ts"
-import { coalesceKey } from "../src/Notification.ts"
+import type { Notification } from "../src/Notification.vibe"
+import { coalesceKey } from "../src/Notification.vibe"
 import * as NotificationState from "../src/NotificationState.ts"
 
 const notification = (

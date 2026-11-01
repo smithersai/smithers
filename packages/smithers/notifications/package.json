@@ -39,8 +39,14 @@
     "./*/index": null,
     "./Alerts": "./src/Alerts.ts",
     "./Channels": "./src/Channels.ts",
-    "./Inbox": "./src/Inbox.ts",
-    "./Notification": "./src/Notification.ts",
+    "./Inbox": {
+      "types": "./.vibe/declarations/src/Inbox.d.vibe.ts",
+      "default": "./src/Inbox.vibe"
+    },
+    "./Notification": {
+      "types": "./.vibe/declarations/src/Notification.d.vibe.ts",
+      "default": "./src/Notification.vibe"
+    },
     "./NotificationEvent": "./src/NotificationEvent.ts",
     "./NotificationQueue": "./src/NotificationQueue.ts",
     "./NotificationState": "./src/NotificationState.ts",

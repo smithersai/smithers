@@ -21,7 +21,7 @@ import * as Journal from "../../../packages/smithers/flows/journal/src/Journal.t
 import * as JournalEvent from "../../../packages/smithers/flows/journal/src/JournalEvent.vibe"
 import * as Migrations from "../../../packages/smithers/flows/journal/src/Migrations.ts"
 import * as SqlJournal from "../../../packages/smithers/flows/journal/src/SqlJournal.ts"
-import type { Notification } from "../../../packages/smithers/notifications/src/Notification.ts"
+import type { Notification } from "../../../packages/smithers/notifications/src/Notification.vibe"
 import * as NotificationEvent from "../../../packages/smithers/notifications/src/NotificationEvent.ts"
 import * as NotificationQueue from "../../../packages/smithers/notifications/src/NotificationQueue.ts"
 import * as LocalControl from "../../../packages/smithers/src/internal/LocalControl.ts"

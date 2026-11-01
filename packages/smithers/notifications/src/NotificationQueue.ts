@@ -13,7 +13,7 @@ import { Journal, JournalEvent } from "@smthrs/journal"
 import { Context, Effect, HashMap, Layer, Option, Schema, SchemaIssue, Semaphore } from "effect"
 import * as FoldCache from "./internal/foldCache.ts"
 import * as Replay from "./internal/replay.ts"
-import * as NotificationModel from "./Notification.ts"
+import * as NotificationModel from "./Notification.vibe"
 import * as NotificationEvent from "./NotificationEvent.ts"
 import * as NotificationState from "./NotificationState.ts"
 

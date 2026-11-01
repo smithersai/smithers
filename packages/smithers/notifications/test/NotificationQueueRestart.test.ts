@@ -18,7 +18,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import type { Notification } from "../src/Notification.ts"
+import type { Notification } from "../src/Notification.vibe"
 import * as NotificationQueue from "../src/NotificationQueue.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-queue-restart-"))
