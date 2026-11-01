@@ -5,7 +5,7 @@
  * page → panel → element. The user's messages keep the composer's shape. The shapes are opencode's: a left `┃` bar and a filled panel
  * instead of a boxed border, and a selected row filled with the brand color.
  */
-import { RGBA, type ScrollBoxRenderable } from "@opentui/core"
+import { CodeRenderable, type Renderable, RGBA, type ScrollBoxRenderable } from "@opentui/core"
 import { clip, diffCounts } from "@smthrs/rpc/SubagentCard"
 import type { UserFailure } from "@smthrs/rpc/UserFailure"
 import { memo, type ReactNode, type RefObject, useState } from "react"
@@ -235,6 +235,20 @@ export const sameEntry = (a: EntryProps, b: EntryProps): boolean =>
 
 export const Entry = memo(EntryView, sameEntry)
 
+// Markdown's Code children hide their initial buffer until the syntax worker
+// replies. Keep the native text fallback visible, including on replacements.
+// Run after Markdown refreshes its blocks, before those children draw.
+function drawAvailableMarkdown(this: Renderable) {
+  const visit = (node: Renderable) => {
+    if (node instanceof CodeRenderable) {
+      node.drawUnstyledText = true
+      node.streaming = false
+    }
+    for (const child of node.getChildren()) visit(child)
+  }
+  visit(this)
+}
+
 function EntryView(props: EntryProps) {
   const { item } = props
   switch (item.kind) {
@@ -260,7 +274,7 @@ function EntryView(props: EntryProps) {
     case "answer":
       return (
         <box style={{ marginBottom: 1, paddingLeft: 2, paddingRight: 2 }}>
-          <markdown content={item.text} syntaxStyle={syntax} />
+          <markdown content={item.text} syntaxStyle={syntax} renderAfter={drawAvailableMarkdown} />
           {props.hint === undefined ? null : (
             <text fg={color.faint} wrapMode="none" style={{ alignSelf: "flex-end" }}>
               {props.hint}
