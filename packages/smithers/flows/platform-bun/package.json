@@ -159,7 +159,7 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-4d39e9355d86.tgz",
+    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-9ed30b32a77d.tgz",
     "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-f8e51b377e05.tgz",
     "vitest": "5.0.0"
   }
