@@ -260,6 +260,10 @@ test("the stylesheet is the mock's: quiet at rest, forward on hover, no level he
   expect(chatTimelineCss).not.toContain("content:attr(aria-label)");
 });
 
+test("labels break only between words, never with a hyphen", () => {
+  expect(chatTimelineCss).toMatch(/\.sui-tl-tx\{[^}]*-webkit-hyphens:none;hyphens:none/);
+});
+
 test("the default jump reaches a mounted transcript anchor and Escape focuses it", async () => {
   const host = document.createElement("div");
   document.body.append(host);

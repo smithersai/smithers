@@ -95,6 +95,12 @@ export const timelineExchanges = (asks: readonly boolean[]): readonly { readonly
   return starts.map((start, index) => ({ start, end: starts[index + 1] ?? asks.length }));
 };
 
+/**
+ * The room a host gives the rail beside its transcript: enough for a level-0 summary's words on its line and whole-word
+ * phase titles. A host shifts its chat column to leave it, rather than squeezing the rail (`chat-timeline.md`).
+ */
+export const TIMELINE_ROOM = 380;
+
 /** Columns' widths, innermost first, and the gap between them, for `available` px of rail. */
 export const timelineWidths = (levels: number, available: number): { readonly widths: readonly number[]; readonly gap: number } => {
   if (levels > 3) {
@@ -104,13 +110,16 @@ export const timelineWidths = (levels: number, available: number): { readonly wi
   }
   const gap = available < 300 ? 18 : 20;
   if (levels <= 1) return { widths: [Math.min(available, 200)], gap };
+  // Level 0 takes its room first, so a summary reads whole; what it leaves widens the phase titles, up to a cap.
   if (levels === 2) {
-    const outer = clamp(Math.round(available * .4), 84, 92);
-    return { widths: [Math.min(200, available - outer - gap), outer], gap };
+    const least = clamp(Math.round(available * .4), 84, 92);
+    const level0 = Math.min(200, available - least - gap);
+    return { widths: [level0, Math.max(least, Math.min(140, available - level0 - gap))], gap };
   }
   const outermost = available >= 300 ? clamp(Math.round(available * .19), 46, 62) : 18;
-  const middle = clamp(Math.round(available * (available >= 300 ? .264 : .33)), 84, 90);
-  return { widths: [Math.min(190, available - middle - outermost - 2 * gap), middle, outermost], gap };
+  const least = clamp(Math.round(available * (available >= 300 ? .264 : .33)), 84, 90);
+  const level0 = Math.min(190, available - least - outermost - 2 * gap);
+  return { widths: [level0, Math.max(least, Math.min(130, available - level0 - outermost - 2 * gap)), outermost], gap };
 };
 
 /** The inclusive-exclusive stretch a column shows. */

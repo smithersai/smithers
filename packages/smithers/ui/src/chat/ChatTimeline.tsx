@@ -6,7 +6,7 @@ import {
   timelineBlocks, timelineExchanges, timelineLevelCount, timelineIntersections, timelineWidths, type TimelineBlock, type TimelineMarker,
 } from "./timelineZoom";
 export {
-  timelineBlocks, timelineCapacity, timelineExchanges, timelineLevelCount, timelineWidths,
+  timelineBlocks, timelineCapacity, timelineExchanges, timelineLevelCount, timelineWidths, TIMELINE_ROOM,
   type TimelineBlock, type TimelineMarker,
 } from "./timelineZoom";
 import { useInjectUiCss } from "../styles";

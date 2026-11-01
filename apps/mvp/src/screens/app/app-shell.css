@@ -20,6 +20,17 @@
   gap: 1rem;
 }
 
+/* Where the timeline rail shows beside the chat (1,180 px and up, @smthrs/ui chatTimelineCss), the column leaves the
+   rail the room it wants: centered when its margin already holds that, else shifted right into the empty space, so
+   the rail never squeezes. The rail ends 18 px left of the transcript, which starts inside the column's 1rem padding. */
+@media (min-width: 1180px) {
+  .app-shell-center {
+    --app-shell-start: max(calc(var(--sui-timeline-want) + 18px - 1rem), calc((100% - 48rem) / 2));
+    width: min(48rem, calc(100% - var(--app-shell-start) - 1rem));
+    margin: 0 auto 0 var(--app-shell-start);
+  }
+}
+
 .app-shell-conversation { order: 1; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
 /* The first run's steps, right above the composer's place; it takes no room once they're gone. */

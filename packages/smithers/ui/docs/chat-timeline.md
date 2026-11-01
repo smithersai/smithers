@@ -32,6 +32,8 @@ A mark pulses teal while working. `Needs you` is gold, a failure is ember and a 
 
 The rail needs room beside the transcript: a viewport of at least 1,180 px and a transcript of at least 600 px. It measures the space to the page's left edge, or to an ancestor marked `data-rail-bound`. Below that it is closed behind `Timeline`, which opens the same levels in a sheet over the chat at full contrast; Escape closes it.
 
+Wherever the rail shows beside the chat, the host leaves it `TIMELINE_ROOM` (380 px): a centered chat column whose margin is narrower shifts right into its empty space instead of squeezing the rail. `timelineWidths` gives level 0 its room first (200 px with two levels, about 190 px with three), so a summary's words read on its line, and widens the phase column with what remains, up to 140 px. Labels never hyphenate (`hyphens:none`): a phase title wraps between words, and the full title shows on hover only when its block is too short to hold it. A narrow panel, such as the branch page's conversation, keeps the rail behind `Timeline` at every window width.
+
 ## Pending and unavailable
 
 `label` carries a distinct short placeholder while a summary is pending, shown in italics; a nonempty `summary` takes precedence, and the accessible name keeps both. Pass `unavailable` when summaries can't be made: entries and blocks missing one are marked, and hover shows that text.

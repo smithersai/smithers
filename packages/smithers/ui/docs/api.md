@@ -345,7 +345,8 @@ receives the same band when visibility changes.
 | `timelineLevelCount(entries, spans, height)` | Columns needed; zero for an empty list. |
 | `timelineBlocks(ids, markers, level)` | Contiguous `TimelineBlock`s at `markers`; an unmarked conversation is one pending block. |
 | `timelineExchanges(asks)` | Half-open entry ranges, each a question and what followed it. |
-| `timelineWidths(levels, available)` | Column widths, innermost first, and their gap. |
+| `timelineWidths(levels, available)` | Column widths, innermost first, and their gap: level 0 takes its room first, then phase titles widen. |
+| `TIMELINE_ROOM` | The px a host leaves the rail beside the transcript (380). |
 | `TimelineMarker` | `{ id, start, title, summary?, closed? }`; `start` is an entry id. |
 | `TimelineBlock` | `{ id, start, end, title?, summary?, closed? }`; entry indices form a half-open range. |
 

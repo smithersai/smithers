@@ -1,4 +1,5 @@
-import { PageHeader, Wordmark } from "@smthrs/ui"
+import { PageHeader, TIMELINE_ROOM, Wordmark } from "@smthrs/ui"
+import type { CSSProperties } from "react"
 import { NotificationsBell } from "../../features/attention/components/NotificationsBell"
 import { SettingsLink } from "../../features/auth/components/SettingsLink"
 import { ComposerGate } from "../../features/auth/components/ComposerGate"
@@ -64,7 +65,8 @@ export function AppShell() {
             because the open composer docks over the column's foot and would hide them (decision 0015). */}
         <Notices surface="conversation" />
       </PageHeader>
-      <div className="app-shell-center">
+      {/* The room the timeline rail wants beside the chat; app-shell.css shifts the column to leave it. */}
+      <div className="app-shell-center" style={{ "--sui-timeline-want": `${TIMELINE_ROOM}px` } as CSSProperties}>
         {/* Until the person has a conversation of their own, the steps to their first one, above the composer's place,
             which they take while a step before Ask shows (decision 0121). */}
         <div className="app-shell-start">

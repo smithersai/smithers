@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   timelineIntersections, timelineBlockLayout, timelineBlocks, timelineBlockWindow, timelineCapacity, timelineEstimate, timelineExchanges, timelineLabels,
-  timelineLevelCount, timelineOffsets, timelineRowAt, timelineRowLayout, timelineRowWindow, timelineSearch, timelineToChat, timelineToRow, timelineTrack, timelineWidths,
+  timelineLevelCount, timelineOffsets, timelineRowAt, timelineRowLayout, timelineRowWindow, timelineSearch, timelineToChat, timelineToRow, timelineTrack, timelineWidths, TIMELINE_ROOM,
 } from "../src/chat/timelineZoom";
 
 const ids = (count: number) => Array.from({ length: count }, (_, index) => `e${index}`);
@@ -149,13 +149,23 @@ test("outer blocks follow what they cover above a floor that holds a title", () 
 
 test("columns take the mock's widths at both windows", () => {
   expect(timelineWidths(1, 342)).toEqual({ widths: [200], gap: 20 });
-  expect(timelineWidths(2, 342)).toEqual({ widths: [200, 92], gap: 20 });
+  expect(timelineWidths(2, 342)).toEqual({ widths: [200, 122], gap: 20 });
   expect(timelineWidths(3, 342)).toEqual({ widths: [150, 90, 62], gap: 20 });
   expect(timelineWidths(3, 262)).toEqual({ widths: [122, 86, 18], gap: 18 });
 });
 
+test("the room a host gives the rail goes to whole summaries first, then to phase titles", () => {
+  const level0 = (levels: number) => timelineWidths(levels, TIMELINE_ROOM).widths[0]!;
+  expect(level0(2)).toBe(200);
+  expect(level0(3)).toBeGreaterThanOrEqual(186);
+  expect(timelineWidths(2, TIMELINE_ROOM)).toEqual({ widths: [200, 140], gap: 20 });
+  expect(timelineWidths(2, 600)).toEqual({ widths: [200, 140], gap: 20 });
+  expect(timelineWidths(3, 414)).toEqual({ widths: [190, 122, 62], gap: 20 });
+  expect(timelineWidths(3, 600)).toEqual({ widths: [190, 130, 62], gap: 20 });
+});
+
 test("a phase column keeps a readable measure at every width the rail shows at", () => {
-  for (const available of [180, 212, 230, 262, 299, 300, 342]) for (const levels of [2, 3]) {
+  for (const available of [180, 212, 230, 262, 299, 300, 342, 380, 414, 600]) for (const levels of [2, 3]) {
     const { widths, gap } = timelineWidths(levels, available);
     expect(widths[1]).toBeGreaterThanOrEqual(84);
     expect(widths[0]).toBeGreaterThan(0);

@@ -39,7 +39,7 @@ export const chatTimelineCss = `
 .sui-tl-row[data-kind=ask] .sui-tl-mk{background:color-mix(in srgb,var(--sui-tl-ask) var(--q-mk),var(--sui-tl-bg))}
 .sui-tl-row[data-in] .sui-tl-mk{background:color-mix(in srgb,var(--sui-tl-answer) var(--q-mk-in),var(--sui-tl-bg))}
 .sui-tl-row[data-kind=ask][data-in] .sui-tl-mk{background:color-mix(in srgb,var(--sui-tl-ask) var(--q-mk-in),var(--sui-tl-bg))}
-.sui-tl-tx{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:var(--sui-tl-lines,2);overflow:hidden;font-size:11px;line-height:14px;color:var(--q-tx);letter-spacing:-.05px;transition:color .15s}
+.sui-tl-tx{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:var(--sui-tl-lines,2);overflow:hidden;font-size:11px;line-height:14px;color:var(--q-tx);letter-spacing:-.05px;-webkit-hyphens:none;hyphens:none;transition:color .15s}
 .sui-tl-row .sui-tl-tx{position:absolute;left:22px;right:2px;top:0;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sui-tl-row[data-label=hidden] .sui-tl-tx{visibility:hidden}
 .sui-tl-lead{display:none;position:absolute;left:14px;top:0;width:6px;box-sizing:border-box;border-left:1px solid color-mix(in srgb,var(--sui-tl-text) var(--q-line),transparent);border-bottom:1px solid color-mix(in srgb,var(--sui-tl-text) var(--q-line),transparent);border-bottom-left-radius:4px;pointer-events:none}
