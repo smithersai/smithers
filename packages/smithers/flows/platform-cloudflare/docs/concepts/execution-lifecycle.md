@@ -301,7 +301,10 @@ caller's `requestedAtMs` (older intents remain readable);
 `cloudflare.execution.request` records it when the object receives the call.
 `cloudflare.execution.ready` records `readyAtMs` after runtime construction.
 The engine emits `flow.run.created` with `createdAtMs` after admission commits,
-and `flow.run.claimed` with `claimedAtMs` after activation. Alarm failures
+and `flow.run.claimed` with `claimedAtMs` after activation. The claim also names
+the incarnation that took the run (`ownerHostId`, `ownerPid`) and, for a steal,
+the one it took the run from (`stolenFromHostId`, `stolenFromPid`) and the
+liveness `evidence`. Alarm failures
 include their cause tag, attempt, `delayMs`, and `retryAtMs`. These fields
 contain no payload or provider message. Outcome counters retain bounded labels;
 execution ids belong only to logs and spans.

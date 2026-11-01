@@ -1109,14 +1109,32 @@ interface RecoveredClaim {
 }
 
 /**
- * What a claim or steal got, and what admitted it: the liveness evidence a
- * steal carried, or the dead claimant's claim a claim released first.
+ * What a claim or steal got, and what admitted it: the owner a steal took the
+ * run from and the liveness evidence it carried, or the dead claimant's claim
+ * a claim released first.
  */
 interface Takeover {
   readonly claim: RunStore.StealOutcome
+  readonly stolenFrom?: Ownership.OwnerId | undefined
   readonly evidence?: Ownership.LivenessEvidence["kind"] | undefined
   readonly recoveredClaim?: RecoveredClaim | undefined
 }
+
+/**
+ * Who took a run, and from whom, for the claim's log line: this driver's
+ * incarnation, and for a steal the owner it took the run from and the
+ * evidence that admitted it. Two live engines that each judge the other dead
+ * show as claims that alternate between their incarnations.
+ */
+const claimants = (driver: Driver, takeover: Takeover) => ({
+  ownerHostId: driver.dependencies.owner.hostId,
+  ownerPid: driver.dependencies.owner.pid,
+  ...(takeover.stolenFrom === undefined ? {} : {
+    stolenFromHostId: takeover.stolenFrom.hostId,
+    stolenFromPid: takeover.stolenFrom.pid,
+    evidence: takeover.evidence
+  })
+})
 
 /**
  * Claims a row and activates it under this driver, answering whether the
@@ -1155,7 +1173,8 @@ const claimAndActivate: (driver: Driver, row: RunStore.RunRow) => Effect.Effect<
   yield* recordClaim("Activated")
   yield* Effect.logInfo("flow.run.claimed").pipe(Effect.annotateLogs({
     "smithers.execution.id": row.runId,
-    claimedAtMs: claim.claimedAtMs
+    claimedAtMs: claim.claimedAtMs,
+    ...claimants(driver, takeover)
   }))
   // The run is this driver's now, so whatever it was told about the
   // previous owner is spent.
@@ -1233,7 +1252,7 @@ const steal = (
         kind: evidence
       }
     ).pipe(Effect.orDie)
-    return { claim, evidence, recoveredClaim }
+    return { claim, stolenFrom: row.owner, evidence, recoveredClaim }
   })
 
 /**
