@@ -11,7 +11,7 @@ import * as Input from "@smthrs/targets/Input"
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd: "packages/smithers/agent/memory"
 })
 
@@ -132,7 +132,7 @@ const securityReview = Smithers.SecurityReview({
         "A character that opens a fence or label (<, [, newline, U+2028/2029) left unescaped in row text, bank, or key by escapeText or escapeLabel.",
         "A truncation in fit or the byte budget that splits an escape sequence or drops the closing fence."
       ],
-      paths: ["src/Source.ts", "src/SnapshotRecorder.ts"]
+      paths: ["src/Source.ts", "src/SnapshotRecorder.vibe"]
     },
     {
       id: "untrusted-input-bounds",
@@ -142,7 +142,7 @@ const securityReview = Smithers.SecurityReview({
         "A tag group, bank list, query, key, text, or maxTokens accepted without the MAX_* caps before the store runs.",
         "A recursive walk or unbounded scan (vector pages, FTS paging loop) with no row or iteration ceiling."
       ],
-      paths: ["src/Namespace.ts", "src/Recall.ts", "src/Flows.ts", "src/RecallSemantic.ts", "src/internal/Search.ts"]
+      paths: ["src/Namespace.vibe", "src/Recall.ts", "src/Flows.ts", "src/RecallSemantic.ts", "src/internal/Search.ts"]
     },
     {
       id: "embedding-provider-output",
@@ -165,7 +165,7 @@ const securityReview = Smithers.SecurityReview({
         "runRemember recording empty provenance, so a model-written fact is indistinguishable from an operator-written one.",
         "putFact replacing an existing fact key written by a different source without superseding or recording the prior author."
       ],
-      paths: ["src/Flows.ts", "src/Namespace.ts", "src/Recall.ts", "src/internal/Facts.ts", "src/internal/Store.ts"]
+      paths: ["src/Flows.ts", "src/Namespace.vibe", "src/Recall.ts", "src/internal/Facts.ts", "src/internal/Store.ts"]
     },
     {
       id: "ttl-and-retention",

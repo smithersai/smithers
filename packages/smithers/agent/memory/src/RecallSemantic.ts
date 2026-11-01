@@ -23,7 +23,7 @@ import * as RcMap from "effect/RcMap"
 import type * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
 import * as Stream from "effect/Stream"
-import type { DatabaseService } from "./Database.ts"
+import type { DatabaseService } from "./Database.vibe"
 import * as Embedding from "./Embedding.ts"
 import { digest } from "./internal/Digest.ts"
 import { searchableText } from "./internal/FactProjection.ts"
@@ -32,7 +32,7 @@ import { bankForNamespace, resolveBanks, resolveNamespace } from "./internal/Res
 import { vectorBytes } from "./internal/VectorBytes.ts"
 import * as MemoryError from "./MemoryError.ts"
 import * as MemoryStore from "./MemoryStore.ts"
-import * as Namespace from "./Namespace.ts"
+import * as Namespace from "./Namespace.vibe"
 import * as Recall from "./Recall.ts"
 
 /**

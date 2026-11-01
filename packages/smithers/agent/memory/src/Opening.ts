@@ -7,7 +7,7 @@
 import { Context, Effect, Layer } from "effect"
 import type { MemoryError } from "./MemoryError.ts"
 import * as Recall from "./Recall.ts"
-import type { Row } from "./SnapshotRecorder.ts"
+import type { Row } from "./SnapshotRecorder.vibe"
 import { render } from "./Source.ts"
 
 /**

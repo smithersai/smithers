@@ -9,7 +9,7 @@ import * as Schema from "effect/Schema"
 import type * as SqlClient from "effect/sql/SqlClient"
 import { MemoryError } from "../MemoryError.ts"
 import type { Fact, ListNotesInput, Note, NoteStatus, Provenance, SearchRowsInput, Thread } from "../MemoryStore.ts"
-import * as Namespace from "../Namespace.ts"
+import * as Namespace from "../Namespace.vibe"
 
 /**
  * A raw `memory_facts` row.

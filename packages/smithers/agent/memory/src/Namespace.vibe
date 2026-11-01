@@ -30,7 +30,7 @@ export type Kind = typeof Kind.Type
  */
 export const Namespace = Schema.Struct({
   kind: Kind,
-  id: Schema.NonEmptyString
+  id: Schema.NonEmptyString,
 })
 
 /**
@@ -108,9 +108,9 @@ export const Tags = Schema.Array(Tag).pipe(
   Schema.check(
     Schema.makeFilter(
       (tags) => new Set(tags).size === tags.length ? undefined : "invalid_tag: memory tags must be unique",
-      { identifier: "invalid_tag" }
-    )
-  )
+      { identifier: "invalid_tag" },
+    ),
+  ),
 )
 
 /**
@@ -163,18 +163,18 @@ const TagGroupSchema: Schema.Codec<TagGroup> = Schema.suspend(
     Schema.Union([
       Schema.Struct({
         tags: Tags,
-        match: Schema.optional(MatchMode)
+        match: Schema.optional(MatchMode),
       }),
       Schema.Struct({
-        and: Schema.Array(TagGroupSchema)
+        and: Schema.Array(TagGroupSchema),
       }),
       Schema.Struct({
-        or: Schema.Array(TagGroupSchema)
+        or: Schema.Array(TagGroupSchema),
       }),
       Schema.Struct({
-        not: TagGroupSchema
-      })
-    ])
+        not: TagGroupSchema,
+      }),
+    ]),
 )
 
 const isTags = Schema.is(Tags)
@@ -202,15 +202,15 @@ const shapeRefusal: Refusal = { kind: "shape" }
 
 const depthRefusal: Refusal = {
   kind: "budget",
-  message: `invalid_tag: tag-group depth exceeds ${MAX_TAG_GROUP_DEPTH}`
+  message: `invalid_tag: tag-group depth exceeds ${MAX_TAG_GROUP_DEPTH}`,
 }
 
 const nodesRefusal: Refusal = {
   kind: "budget",
-  message: `invalid_tag: tag-group node count exceeds ${MAX_TAG_GROUP_NODES}`
+  message: `invalid_tag: tag-group node count exceeds ${MAX_TAG_GROUP_NODES}`,
 }
 
-const ignore = () => {}
+const ignore = (): void => {}
 
 /**
  * The one traversal of a tag-group tree.
@@ -229,7 +229,7 @@ const ignore = () => {}
 const walkTagGroup = (
   root: unknown,
   onLeaf: (leaf: Leaf) => void,
-  onOperator: (operator: Operator, arity: number) => void
+  onOperator: (operator: Operator, arity: number) => void,
 ): Refusal | undefined => {
   type Frame =
     | { readonly close: false; readonly value: unknown; readonly depth: number }
@@ -292,15 +292,15 @@ const tagGroupBudgetIssue = (root: TagGroup): string | undefined => {
 }
 
 const TagGroupPreflight = Schema.declare<TagGroup>(isTagGroupShape, {
-  identifier: "TagGroup"
+  identifier: "TagGroup",
 }).pipe(
   Schema.check(
     Schema.makeFilter(
       tagGroupBudgetIssue,
       { identifier: "invalid_tag" },
-      true
-    )
-  )
+      true,
+    ),
+  ),
 )
 
 /**
@@ -354,9 +354,9 @@ export const matches = (tagGroup: TagGroup, tags: ReadonlyArray<string>): boolea
           ? children.every(Boolean)
           : operator === "or"
           ? children.some(Boolean)
-          : !children[0]
+          : !children[0],
       )
-    }
+    },
   )
   return refusal === undefined && values.length === 1 ? values[0]! : false
 }

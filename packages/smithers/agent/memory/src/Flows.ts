@@ -18,7 +18,7 @@ import * as Schema from "effect/Schema"
 import { resolveNamespace } from "./internal/ResolveNamespace.ts"
 import { MemoryError } from "./MemoryError.ts"
 import * as MemoryStore from "./MemoryStore.ts"
-import * as Namespace from "./Namespace.ts"
+import * as Namespace from "./Namespace.vibe"
 import * as Recall from "./Recall.ts"
 import * as WithMemory from "./WithMemory.ts"
 

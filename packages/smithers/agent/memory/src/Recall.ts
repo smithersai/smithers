@@ -18,7 +18,7 @@ import { compareText } from "./internal/Canonical.ts"
 import * as Bank from "./internal/ResolveNamespace.ts"
 import type * as MemoryError from "./MemoryError.ts"
 import * as MemoryStore from "./MemoryStore.ts"
-import * as Namespace from "./Namespace.ts"
+import * as Namespace from "./Namespace.vibe"
 
 /**
  * Maximum banks accepted by one model-facing recall request.

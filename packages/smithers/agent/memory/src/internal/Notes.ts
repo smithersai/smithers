@@ -6,10 +6,10 @@
 
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
-import type { DatabaseService } from "../Database.ts"
+import type { DatabaseService } from "../Database.vibe"
 import type { MemoryError } from "../MemoryError.ts"
 import type { ListNotesInput, Note, Service, StatusFilter } from "../MemoryStore.ts"
-import type * as Namespace from "../Namespace.ts"
+import type * as Namespace from "../Namespace.vibe"
 import { canonicalJson, compareText } from "./Canonical.ts"
 import * as Fts from "./Fts.ts"
 import { resolveNamespace } from "./ResolveNamespace.ts"

@@ -54,7 +54,7 @@ import { resolveBanks } from "./internal/ResolveNamespace.ts"
 import type { MemoryError } from "./MemoryError.ts"
 import * as MemoryStore from "./MemoryStore.ts"
 import * as Recall from "./Recall.ts"
-import * as SnapshotRecorder from "./SnapshotRecorder.ts"
+import * as SnapshotRecorder from "./SnapshotRecorder.vibe"
 
 /**
  * Source input and retry identity.
